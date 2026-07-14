@@ -1,5 +1,6 @@
 # Local-only planning / agent dirs (same convention as the anki_miner desktop repo)
 .claude/
+/AGENTS.md
 docs/
 .claude-runner/
 .codex
