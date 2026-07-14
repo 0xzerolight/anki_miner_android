@@ -5,6 +5,7 @@ docs/
 .claude-runner/
 .codex
 sdd/
+.agents
 
 # Gradle / Android
 .gradle/
