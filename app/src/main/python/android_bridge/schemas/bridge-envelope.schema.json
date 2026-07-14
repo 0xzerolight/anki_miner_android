@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://anki-miner.app/schemas/android-bridge/v1/envelope.json",
+  "title": "Anki Miner Android bridge envelope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "type", "payload"],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "type": {"type": "string", "pattern": "^[a-z][a-z0-9]*(\\.[a-z][a-z0-9]*)+$"},
+    "payload": {"type": "object"}
+  }
+}
