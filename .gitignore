@@ -1,0 +1,50 @@
+# Local-only planning / agent dirs (same convention as the anki_miner desktop repo)
+.claude/
+docs/
+.claude-runner/
+.codex
+sdd/
+
+# Gradle / Android
+.gradle/
+build/
+local.properties
+captures/
+*.apk
+*.aab
+*.ap_
+output-metadata.json
+.cxx/
+
+# IDE
+.idea/
+.vscode/
+*.iml
+*.swp
+*.swo
+*~
+
+# Python (Chaquopy tooling venvs + bytecode)
+__pycache__/
+*.py[cod]
+.venv
+venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# Native build outputs (CI builds/caches these; see tools/*/build scripts)
+tools/ffmpeg/out/
+tools/wheels/out/
+
+# Signing — never commit
+*.jks
+*.keystore
+keystore.properties
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
