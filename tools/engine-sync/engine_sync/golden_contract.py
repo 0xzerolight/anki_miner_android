@@ -22,6 +22,7 @@ SCHEMA_VERSION = 1
 TOOL_NAME = "anki-miner-engine-golden-dumper"
 TOOL_VERSION = "1"
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+ASSET_NAME_RE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 UNIDIC_FEATURE_FIELDS = (
     "pos1",
     "pos2",
@@ -134,6 +135,14 @@ def sha256_bytes(value: bytes) -> str:
 
 
 def sha256_file(path: Path) -> str:
+    try:
+        file_stat = path.lstat()
+    except OSError as exc:
+        raise GoldenContractError(f"cannot inspect file {path}: {exc}") from exc
+    if stat.S_ISLNK(file_stat.st_mode):
+        raise GoldenContractError(f"golden inputs may not contain symlinks: {path}")
+    if not stat.S_ISREG(file_stat.st_mode):
+        raise GoldenContractError(f"golden input is not a regular file: {path}")
     digest = hashlib.sha256()
     try:
         with path.open("rb") as stream:
@@ -193,7 +202,21 @@ def sha256_tree(root: Path) -> str:
     digest = hashlib.sha256()
     for path in _tree_files(root):
         relative = path.relative_to(root).as_posix().encode("utf-8")
-        content = path.read_bytes()
+        try:
+            entry_stat = path.lstat()
+            if stat.S_ISLNK(entry_stat.st_mode):
+                raise GoldenContractError(
+                    f"golden inputs may not contain symlinks: {path}"
+                )
+            if not stat.S_ISREG(entry_stat.st_mode):
+                raise GoldenContractError(
+                    f"golden tree entry is not a regular file: {path}"
+                )
+            content = path.read_bytes()
+        except GoldenContractError:
+            raise
+        except OSError as exc:
+            raise GoldenContractError(f"cannot hash {path}: {exc}") from exc
         digest.update(len(relative).to_bytes(8, "big"))
         digest.update(relative)
         digest.update(len(content).to_bytes(8, "big"))
@@ -202,9 +225,58 @@ def sha256_tree(root: Path) -> str:
 
 
 def sha256_path(path: Path) -> str:
-    if path.is_file():
+    try:
+        path_stat = path.lstat()
+    except OSError as exc:
+        raise GoldenContractError(f"cannot inspect golden input {path}: {exc}") from exc
+    if stat.S_ISLNK(path_stat.st_mode):
+        raise GoldenContractError(f"golden inputs may not contain symlinks: {path}")
+    if stat.S_ISREG(path_stat.st_mode):
         return sha256_file(path)
-    return sha256_tree(path)
+    if stat.S_ISDIR(path_stat.st_mode):
+        return sha256_tree(path)
+    raise GoldenContractError(f"golden input has unsupported type: {path}")
+
+
+def _normalize_existing_path(path: Path, *, label: str, kind: str) -> Path:
+    unresolved = path.expanduser().absolute()
+    try:
+        path_stat = unresolved.lstat()
+    except OSError as exc:
+        raise GoldenContractError(f"{label} does not exist: {unresolved}") from exc
+    if stat.S_ISLNK(path_stat.st_mode):
+        raise GoldenContractError(f"{label} must not be a symlink: {unresolved}")
+    valid = {
+        "file": stat.S_ISREG(path_stat.st_mode),
+        "directory": stat.S_ISDIR(path_stat.st_mode),
+        "asset": stat.S_ISREG(path_stat.st_mode) or stat.S_ISDIR(path_stat.st_mode),
+    }
+    if kind not in valid:
+        raise AssertionError(f"unsupported path kind: {kind}")
+    if not valid[kind]:
+        expected = "a regular file or directory" if kind == "asset" else f"a {kind}"
+        raise GoldenContractError(f"{label} must be {expected}: {unresolved}")
+    try:
+        return unresolved.resolve(strict=True)
+    except OSError as exc:
+        raise GoldenContractError(f"cannot resolve {label}: {unresolved}") from exc
+
+
+def _normalize_output_path(path: Path) -> Path:
+    unresolved = path.expanduser().absolute()
+    try:
+        output_stat = unresolved.lstat()
+    except FileNotFoundError:
+        return unresolved
+    except OSError as exc:
+        raise GoldenContractError(
+            f"cannot inspect --output {unresolved}: {exc}"
+        ) from exc
+    if stat.S_ISLNK(output_stat.st_mode):
+        raise GoldenContractError(f"--output must not be a symlink: {unresolved}")
+    if not stat.S_ISREG(output_stat.st_mode):
+        raise GoldenContractError(f"--output must be a regular file: {unresolved}")
+    return unresolved
 
 
 def _git(root: Path, *args: str) -> str:
@@ -338,6 +410,9 @@ def _working_package_entries(
 
 
 def verify_engine_root(engine_root: Path, expected_revision: str) -> str:
+    engine_root = _normalize_existing_path(
+        engine_root, label="--engine-root", kind="directory"
+    )
     package = engine_root / "anki_miner"
     revision = _git(engine_root, "rev-parse", "HEAD")
     if revision != expected_revision:
@@ -545,8 +620,14 @@ def _validate_tokenization(cases: Any, corpus: Sequence[Mapping[str, Any]]) -> N
         label = f"cases.tokenization[{case_index}]"
         case = _expect_dict(raw_case, label, {"id", "text", "tokens"})
         case_id, text, tokens = case["id"], case["text"], case["tokens"]
-        if not isinstance(case_id, str) or not case_id or case_id in seen:
-            raise GoldenContractError(f"{label}.id must be a unique non-empty string")
+        if (
+            not isinstance(case_id, str)
+            or CASE_ID_RE.fullmatch(case_id) is None
+            or case_id in seen
+        ):
+            raise GoldenContractError(
+                f"{label}.id must be a unique lowercase case identifier"
+            )
         seen.add(case_id)
         if case_id != corpus_case["id"] or text != corpus_case["text"]:
             raise GoldenContractError(
@@ -563,8 +644,10 @@ def _validate_tokenization(cases: Any, corpus: Sequence[Mapping[str, Any]]) -> N
                 {"surface", "is_unknown", "offsets", "features"},
             )
             surface = token["surface"]
-            if not isinstance(surface, str) or not isinstance(
-                token["is_unknown"], bool
+            if (
+                not isinstance(surface, str)
+                or not surface
+                or not isinstance(token["is_unknown"], bool)
             ):
                 raise GoldenContractError(
                     f"{token_label} surface/is_unknown have invalid types"
@@ -575,15 +658,22 @@ def _validate_tokenization(cases: Any, corpus: Sequence[Mapping[str, Any]]) -> N
                 {"codepoint_start", "codepoint_end", "utf16_start", "utf16_end"},
             )
             if not all(
-                isinstance(value, int) and value >= 0 for value in offsets.values()
+                isinstance(value, int) and not isinstance(value, bool) and value >= 0
+                for value in offsets.values()
             ):
                 raise GoldenContractError(
                     f"{token_label}.offsets must be non-negative integers"
                 )
             start, end = offsets["codepoint_start"], offsets["codepoint_end"]
-            if start < previous_end or end < start or text[start:end] != surface:
+            if start < previous_end or end <= start or text[start:end] != surface:
                 raise GoldenContractError(
                     f"{token_label} has invalid code-point offsets"
+                )
+            gap = text[previous_end:start]
+            if gap and not gap.isspace():
+                raise GoldenContractError(
+                    f"{token_label} omitted non-whitespace text {gap!r} "
+                    f"at offset {previous_end}"
                 )
             if offsets["utf16_start"] != _utf16_offset(text, start) or offsets[
                 "utf16_end"
@@ -602,6 +692,13 @@ def _validate_tokenization(cases: Any, corpus: Sequence[Mapping[str, Any]]) -> N
                 raise GoldenContractError(
                     f"{token_label}.features must normalize '*' to null"
                 )
+
+        trailing = text[previous_end:]
+        if trailing and not trailing.isspace():
+            raise GoldenContractError(
+                f"{label} omitted trailing non-whitespace text {trailing!r} "
+                f"at offset {previous_end}"
+            )
 
         expectation = corpus_case["expect"].get("token")
         if isinstance(expectation, Mapping):
@@ -851,6 +948,13 @@ def validate_fixture(
         "provenance.data",
         {"corpus_sha256", "assets_sha256", "sha256"},
     )
+    asset_names = [asset.name for asset in assets]
+    if len(set(asset_names)) != len(asset_names):
+        raise GoldenContractError("fixture validation received duplicate asset names")
+    if any(ASSET_NAME_RE.fullmatch(name) is None for name in asset_names):
+        raise GoldenContractError(
+            "fixture validation received an invalid asset identifier"
+        )
     expected_assets = {asset.name: sha256_path(asset.path) for asset in assets}
     if _expect_sha256(data["corpus_sha256"], "data.corpus_sha256") != sha256_file(
         corpus_path
@@ -906,15 +1010,19 @@ def parse_assets(values: Sequence[str]) -> tuple[GoldenAsset, ...]:
         name, separator, raw_path = value.partition("=")
         if not separator or not name or not raw_path:
             raise GoldenContractError("--asset must have the form NAME=PATH")
+        if ASSET_NAME_RE.fullmatch(name) is None:
+            raise GoldenContractError(
+                f"asset name must be a stable lowercase identifier: {name!r}"
+            )
         if name == RESERVED_UNIDIC_ASSET:
             raise GoldenContractError(
                 f"asset name {RESERVED_UNIDIC_ASSET!r} is reserved for --dicdir"
             )
         if name in seen:
             raise GoldenContractError(f"duplicate asset name: {name}")
-        path = Path(raw_path).expanduser().resolve()
-        if not path.exists():
-            raise GoldenContractError(f"asset does not exist: {path}")
+        path = _normalize_existing_path(
+            Path(raw_path), label=f"asset {name!r}", kind="asset"
+        )
         seen.add(name)
         assets.append(GoldenAsset(name, path))
     return tuple(sorted(assets, key=lambda asset: asset.name))
@@ -1058,26 +1166,38 @@ def run_exporter(
     runtime_distributions: Sequence[str] = RUNTIME_DISTRIBUTIONS,
 ) -> bool:
     python = python.expanduser().absolute()
-    engine_root = engine_root.expanduser().resolve()
-    exporter_path = exporter_path.expanduser().resolve()
-    corpus_path = corpus_path.expanduser().resolve()
-    output_path = output_path.expanduser().resolve()
+    engine_root = _normalize_existing_path(
+        engine_root, label="--engine-root", kind="directory"
+    )
+    exporter_path = _normalize_existing_path(
+        exporter_path, label="--exporter", kind="file"
+    )
+    corpus_path = _normalize_existing_path(corpus_path, label="--corpus", kind="file")
+    output_path = _normalize_output_path(output_path)
     verify_engine_root(engine_root, expected_revision)
-    if not exporter_path.is_file() or not corpus_path.is_file():
-        raise GoldenContractError("--exporter and --corpus must be files")
     if any(asset.name == RESERVED_UNIDIC_ASSET for asset in assets):
         raise GoldenContractError(
             f"asset name {RESERVED_UNIDIC_ASSET!r} is reserved for --dicdir"
         )
     if len({asset.name for asset in assets}) != len(assets):
         raise GoldenContractError("duplicate asset names")
+    normalized_assets: list[GoldenAsset] = []
     for asset in assets:
-        if not asset.path.exists():
-            raise GoldenContractError(f"asset does not exist: {asset.path}")
+        if ASSET_NAME_RE.fullmatch(asset.name) is None:
+            raise GoldenContractError(
+                f"asset name must be a stable lowercase identifier: {asset.name!r}"
+            )
+        normalized_assets.append(
+            GoldenAsset(
+                asset.name,
+                _normalize_existing_path(
+                    asset.path, label=f"asset {asset.name!r}", kind="asset"
+                ),
+            )
+        )
+    assets = tuple(sorted(normalized_assets, key=lambda asset: asset.name))
     if dicdir is not None:
-        dicdir = dicdir.expanduser().resolve()
-        if not dicdir.is_dir():
-            raise GoldenContractError("--dicdir must be a directory")
+        dicdir = _normalize_existing_path(dicdir, label="--dicdir", kind="directory")
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     bootstrap_path = Path(__file__).with_name("_golden_bootstrap.py")
@@ -1120,7 +1240,7 @@ def run_exporter(
             os.fspath(effective_dicdir),
         ]
         for asset in assets:
-            command.extend(("--asset", f"{asset.name}={asset.path.resolve()}"))
+            command.extend(("--asset", f"{asset.name}={asset.path}"))
         _run_checked_process(
             command,
             cwd=temp_root,

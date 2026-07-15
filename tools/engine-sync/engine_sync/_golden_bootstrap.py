@@ -90,9 +90,16 @@ def main() -> int:
     if not exporter.is_file() or not (engine_package / "__init__.py").is_file():
         return _fail("exporter or engine package is missing")
 
-    for name in tuple(sys.modules):
-        if name == "anki_miner" or name.startswith("anki_miner."):
-            del sys.modules[name]
+    preloaded_engine_modules = sorted(
+        name
+        for name in sys.modules
+        if name == "anki_miner" or name.startswith("anki_miner.")
+    )
+    if preloaded_engine_modules:
+        return _fail(
+            "engine modules were loaded before golden bootstrap: "
+            + ", ".join(preloaded_engine_modules)
+        )
     loaded_names: set[str] = set()
     recording_finder = _RecordingFinder(engine_package, loaded_names)
     sys.meta_path.insert(0, recording_finder)

@@ -2,12 +2,17 @@ from __future__ import annotations
 
 import hashlib
 import json
+from copy import deepcopy
 import unittest
 from pathlib import Path
 
 import jsonschema
 
-from engine_sync.golden_contract import UNIDIC_FEATURE_FIELDS
+from engine_sync.golden_contract import (
+    ASSET_NAME_RE,
+    CASE_ID_RE,
+    UNIDIC_FEATURE_FIELDS,
+)
 
 
 class GoldenFilesTests(unittest.TestCase):
@@ -51,6 +56,17 @@ class GoldenFilesTests(unittest.TestCase):
         ):
             self.assertEqual(case_properties[section]["$ref"], "#/$defs/inactive_cases")
         self.assertEqual(schema["$defs"]["inactive_cases"]["maxItems"], 0)
+        for definition in ("tokenization_case", "morphology_case", "compound_case"):
+            self.assertEqual(
+                schema["$defs"][definition]["properties"]["id"]["pattern"],
+                CASE_ID_RE.pattern,
+            )
+        self.assertEqual(
+            schema["$defs"]["provenance"]["properties"]["data"]["properties"][
+                "assets_sha256"
+            ]["propertyNames"]["pattern"],
+            ASSET_NAME_RE.pattern,
+        )
         self.assertEqual(
             set(schema["$defs"]["word"]["properties"]),
             {
@@ -123,6 +139,27 @@ class GoldenFilesTests(unittest.TestCase):
                 (self.project_root / "golden/corpus/tokenizer-v1.json").read_bytes()
             ).hexdigest(),
         )
+
+    def test_schema_rejects_empty_surfaces_and_raw_unidic_stars(self) -> None:
+        schema = json.loads(
+            (
+                self.project_root / "golden/schema/engine-goldens-v1.schema.json"
+            ).read_text(encoding="utf-8")
+        )
+        fixture = json.loads(
+            (self.project_root / "golden/engine-v1.json").read_text(encoding="utf-8")
+        )
+        validator = jsonschema.Draft202012Validator(schema)
+
+        empty_surface = deepcopy(fixture)
+        empty_surface["cases"]["tokenization"][0]["tokens"][0]["surface"] = ""
+        with self.assertRaises(jsonschema.ValidationError):
+            validator.validate(empty_surface)
+
+        raw_star = deepcopy(fixture)
+        raw_star["cases"]["tokenization"][0]["tokens"][0]["features"]["orthBase"] = "*"
+        with self.assertRaises(jsonschema.ValidationError):
+            validator.validate(raw_star)
 
 
 if __name__ == "__main__":

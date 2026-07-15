@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import platform
 import subprocess
 import sys
@@ -416,6 +417,39 @@ class GoldenContractTests(unittest.TestCase):
         with self.assertRaisesRegex(GoldenContractError, "normalize '\\*' to null"):
             self._validate(payload)
 
+    def test_token_stream_must_cover_all_non_whitespace_text(self) -> None:
+        for removed_index, expected_error in (
+            (0, "omitted non-whitespace text"),
+            (1, "omitted non-whitespace text"),
+            (2, "omitted trailing non-whitespace text"),
+        ):
+            with self.subTest(removed_index=removed_index):
+                payload = self._payload()
+                del payload["cases"]["tokenization"][0]["tokens"][removed_index]
+                with self.assertRaisesRegex(GoldenContractError, expected_error):
+                    self._validate(payload)
+
+    def test_tokens_must_have_positive_spans_and_non_empty_surfaces(self) -> None:
+        payload = self._payload()
+        payload["cases"]["tokenization"][0]["tokens"][0]["surface"] = ""
+        with self.assertRaisesRegex(GoldenContractError, "surface/is_unknown"):
+            self._validate(payload)
+
+        payload = self._payload()
+        offsets = payload["cases"]["tokenization"][0]["tokens"][0]["offsets"]
+        offsets["codepoint_end"] = offsets["codepoint_start"]
+        offsets["utf16_end"] = offsets["utf16_start"]
+        with self.assertRaisesRegex(GoldenContractError, "code-point offsets"):
+            self._validate(payload)
+
+    def test_boolean_token_offsets_are_rejected(self) -> None:
+        payload = self._payload()
+        payload["cases"]["tokenization"][0]["tokens"][0]["offsets"][
+            "codepoint_start"
+        ] = False
+        with self.assertRaisesRegex(GoldenContractError, "non-negative integers"):
+            self._validate(payload)
+
     def test_utf16_offsets_are_checked_independently(self) -> None:
         payload = self._payload()
         payload["cases"]["tokenization"][0]["tokens"][1]["offsets"]["utf16_end"] = 2
@@ -453,6 +487,47 @@ class GoldenContractTests(unittest.TestCase):
             platform.python_version(),
         )
 
+    def test_bootstrap_rejects_preloaded_engine_in_subprocess(self) -> None:
+        bootstrap = (
+            Path(__file__).resolve().parents[1] / "engine_sync/_golden_bootstrap.py"
+        )
+        marker = self.root / "exporter-ran"
+        self.exporter.write_text(
+            f"from pathlib import Path\nPath({str(marker)!r}).touch()\n",
+            encoding="utf-8",
+        )
+        launcher = self.root / "preload.py"
+        launcher.write_text(
+            "\n".join(
+                (
+                    "import runpy",
+                    "import sys",
+                    f"sys.path.insert(0, {str(self.engine)!r})",
+                    "import anki_miner",
+                    f"sys.argv = [{str(bootstrap)!r}, {str(self.exporter)!r}, "
+                    f"{str(self.engine)!r}]",
+                    f"runpy.run_path({str(bootstrap)!r}, run_name='__main__')",
+                )
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        environment = dict(os.environ)
+        environment["PYTHONHASHSEED"] = "0"
+        result = REAL_RUN(
+            [sys.executable, "-s", "-P", "-B", str(launcher)],
+            cwd=self.root,
+            env=environment,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 97)
+        self.assertIn(
+            "engine modules were loaded before golden bootstrap", result.stderr
+        )
+        self.assertFalse(marker.exists())
+
     def test_check_mode_reports_drift_without_writing(self) -> None:
         self._prepare_fake_exporter()
         output = self.root / "golden.json"
@@ -475,6 +550,84 @@ class GoldenContractTests(unittest.TestCase):
     def test_reserved_unidic_asset_name_is_rejected(self) -> None:
         with self.assertRaisesRegex(GoldenContractError, "reserved"):
             parse_assets([f"{RESERVED_UNIDIC_ASSET}={self.asset_path}"])
+
+    def test_asset_names_are_stable_lowercase_identifiers(self) -> None:
+        with self.assertRaisesRegex(GoldenContractError, "lowercase identifier"):
+            parse_assets([f"Dictionary-Asset={self.asset_path}"])
+
+    def test_hashes_reject_root_symlinks_and_special_files(self) -> None:
+        regular_file = self.root / "regular.bin"
+        regular_file.write_bytes(b"payload")
+        linked_file = self.root / "linked-file"
+        linked_file.symlink_to(regular_file)
+        linked_directory = self.root / "linked-directory"
+        linked_directory.symlink_to(self.asset_path, target_is_directory=True)
+        fifo = self.root / "asset.fifo"
+        os.mkfifo(fifo)
+
+        for path in (linked_file, linked_directory):
+            with self.subTest(path=path):
+                with self.assertRaisesRegex(GoldenContractError, "symlinks"):
+                    sha256_path(path)
+                with self.assertRaisesRegex(
+                    GoldenContractError, "must not be a symlink"
+                ):
+                    parse_assets([f"asset={path}"])
+        with self.assertRaisesRegex(GoldenContractError, "symlinks"):
+            sha256_file(linked_file)
+        with self.assertRaisesRegex(GoldenContractError, "unsupported type"):
+            sha256_path(fifo)
+        with self.assertRaisesRegex(GoldenContractError, "regular file"):
+            sha256_file(fifo)
+        with self.assertRaisesRegex(GoldenContractError, "regular file or directory"):
+            parse_assets([f"asset={fifo}"])
+
+    def test_runner_rejects_programmatic_root_symlinks_before_execution(self) -> None:
+        engine_link = self.root / "engine-link"
+        engine_link.symlink_to(self.engine, target_is_directory=True)
+        exporter_link = self.root / "exporter-link.py"
+        exporter_link.symlink_to(self.exporter)
+        corpus_link = self.root / "corpus-link.json"
+        corpus_link.symlink_to(self.corpus)
+        dicdir_link = self.root / "dicdir-link"
+        dicdir_link.symlink_to(self.asset_path, target_is_directory=True)
+        asset_link = self.root / "asset-link"
+        asset_link.symlink_to(self.asset_path, target_is_directory=True)
+
+        base = {
+            "python": Path(sys.executable),
+            "exporter_path": self.exporter,
+            "engine_root": self.engine,
+            "expected_revision": self.revision,
+            "corpus_path": self.corpus,
+            "output_path": self.root / "unused.json",
+            "dicdir": self.asset_path,
+            "runtime_distributions": (),
+        }
+        variants = (
+            {"engine_root": engine_link},
+            {"exporter_path": exporter_link},
+            {"corpus_path": corpus_link},
+            {"dicdir": dicdir_link},
+            {"assets": (GoldenAsset("asset", asset_link),)},
+        )
+        for variant in variants:
+            with self.subTest(variant=next(iter(variant))):
+                with self.assertRaisesRegex(GoldenContractError, "symlink"):
+                    run_exporter(**(base | variant))
+
+    def test_corpus_case_ids_are_stable_lowercase_identifiers(self) -> None:
+        corpus = json.loads(self.corpus.read_text(encoding="utf-8"))
+        corpus["cases"][0]["id"] = "Astral"
+        self.corpus.write_text(
+            json.dumps(corpus, ensure_ascii=False) + "\n", encoding="utf-8"
+        )
+        payload = self._payload()
+        payload["cases"]["tokenization"][0]["id"] = "Astral"
+        payload["cases"]["morphology"][0]["id"] = "Astral"
+        payload["cases"]["compounds"][0]["id"] = "Astral"
+        with self.assertRaisesRegex(GoldenContractError, "lowercase case identifier"):
+            self._validate(payload)
 
     def test_empty_active_section_is_rejected(self) -> None:
         payload = self._payload()

@@ -140,6 +140,7 @@
             "corpus_sha256": {"$ref": "#/$defs/sha256"},
             "assets_sha256": {
               "type": "object",
+              "propertyNames": {"pattern": "^[a-z][a-z0-9_]{0,63}$"},
               "additionalProperties": {"$ref": "#/$defs/sha256"}
             },
             "sha256": {"$ref": "#/$defs/sha256"}
@@ -207,33 +208,39 @@
         "formBase", "iConType", "fConType", "aType", "aConType", "aModeType"
       ],
       "properties": {
-        "pos1": {"type": ["string", "null"]},
-        "pos2": {"type": ["string", "null"]},
-        "pos3": {"type": ["string", "null"]},
-        "pos4": {"type": ["string", "null"]},
-        "cType": {"type": ["string", "null"]},
-        "cForm": {"type": ["string", "null"]},
-        "lForm": {"type": ["string", "null"]},
-        "lemma": {"type": ["string", "null"]},
-        "orth": {"type": ["string", "null"]},
-        "pron": {"type": ["string", "null"]},
-        "orthBase": {"type": ["string", "null"]},
-        "pronBase": {"type": ["string", "null"]},
-        "goshu": {"type": ["string", "null"]},
-        "iType": {"type": ["string", "null"]},
-        "iForm": {"type": ["string", "null"]},
-        "fType": {"type": ["string", "null"]},
-        "fForm": {"type": ["string", "null"]},
-        "kana": {"type": ["string", "null"]},
-        "kanaBase": {"type": ["string", "null"]},
-        "form": {"type": ["string", "null"]},
-        "formBase": {"type": ["string", "null"]},
-        "iConType": {"type": ["string", "null"]},
-        "fConType": {"type": ["string", "null"]},
-        "aType": {"type": ["string", "null"]},
-        "aConType": {"type": ["string", "null"]},
-        "aModeType": {"type": ["string", "null"]}
+        "pos1": {"$ref": "#/$defs/feature_value"},
+        "pos2": {"$ref": "#/$defs/feature_value"},
+        "pos3": {"$ref": "#/$defs/feature_value"},
+        "pos4": {"$ref": "#/$defs/feature_value"},
+        "cType": {"$ref": "#/$defs/feature_value"},
+        "cForm": {"$ref": "#/$defs/feature_value"},
+        "lForm": {"$ref": "#/$defs/feature_value"},
+        "lemma": {"$ref": "#/$defs/feature_value"},
+        "orth": {"$ref": "#/$defs/feature_value"},
+        "pron": {"$ref": "#/$defs/feature_value"},
+        "orthBase": {"$ref": "#/$defs/feature_value"},
+        "pronBase": {"$ref": "#/$defs/feature_value"},
+        "goshu": {"$ref": "#/$defs/feature_value"},
+        "iType": {"$ref": "#/$defs/feature_value"},
+        "iForm": {"$ref": "#/$defs/feature_value"},
+        "fType": {"$ref": "#/$defs/feature_value"},
+        "fForm": {"$ref": "#/$defs/feature_value"},
+        "kana": {"$ref": "#/$defs/feature_value"},
+        "kanaBase": {"$ref": "#/$defs/feature_value"},
+        "form": {"$ref": "#/$defs/feature_value"},
+        "formBase": {"$ref": "#/$defs/feature_value"},
+        "iConType": {"$ref": "#/$defs/feature_value"},
+        "fConType": {"$ref": "#/$defs/feature_value"},
+        "aType": {"$ref": "#/$defs/feature_value"},
+        "aConType": {"$ref": "#/$defs/feature_value"},
+        "aModeType": {"$ref": "#/$defs/feature_value"}
       }
+    },
+    "feature_value": {
+      "anyOf": [
+        {"type": "string", "not": {"const": "*"}},
+        {"type": "null"}
+      ]
     },
     "offsets": {
       "type": "object",
@@ -251,7 +258,7 @@
       "additionalProperties": false,
       "required": ["surface", "is_unknown", "offsets", "features"],
       "properties": {
-        "surface": {"type": "string"},
+        "surface": {"type": "string", "minLength": 1},
         "is_unknown": {"type": "boolean"},
         "offsets": {"$ref": "#/$defs/offsets"},
         "features": {"$ref": "#/$defs/features"}
