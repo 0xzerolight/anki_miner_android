@@ -22,6 +22,12 @@ MACHINE_ABIS = {
     62: "x86_64",
     183: "arm64-v8a",
 }
+ABI_ELF_CLASSES = {
+    "x86": 1,
+    "armeabi-v7a": 1,
+    "x86_64": 2,
+    "arm64-v8a": 2,
+}
 EXECUTABLE_NATIVE_NAMES = {"libffmpeg.so", "libffprobe.so"}
 UNIDIC_PAYLOAD_NAMES = {
     "char.bin",
@@ -38,10 +44,14 @@ UNIDIC_ARCHIVE_SUFFIXES = (
     ".imy",
     ".tar",
     ".tar.gz",
+    ".tar.zst",
+    ".tar.zstd",
     ".tgz",
     ".whl",
     ".xz",
     ".zip",
+    ".zst",
+    ".zstd",
 )
 ET_DYN = 3
 PT_INTERP = 3
@@ -65,8 +75,16 @@ class Inspection:
 
 
 def safe_entry_name(name: str, archive_name: str) -> PurePosixPath:
-    path = PurePosixPath(name)
-    if path.is_absolute() or ".." in path.parts:
+    if not name or "\x00" in name or "\\" in name:
+        raise ArtifactError(f"{archive_name}: unsafe archive entry {name!r}")
+    without_directory_marker = name[:-1] if name.endswith("/") else name
+    components = without_directory_marker.split("/")
+    if not without_directory_marker or any(
+        component in {"", ".", ".."} for component in components
+    ):
+        raise ArtifactError(f"{archive_name}: unsafe archive entry {name!r}")
+    path = PurePosixPath(without_directory_marker)
+    if path.is_absolute():
         raise ArtifactError(f"{archive_name}: unsafe archive entry {name!r}")
     return path
 
@@ -83,20 +101,24 @@ def parse_elf(
         raise ArtifactError(f"{logical_name}: truncated ELF header")
     elf_class = data[4]
     data_encoding = data[5]
-    if data_encoding == 1:
-        endian = "<"
-    elif data_encoding == 2:
-        endian = ">"
-    else:
+    if data_encoding != 1:
         raise ArtifactError(
-            f"{logical_name}: unsupported ELF byte order {data_encoding}"
+            f"{logical_name}: Android ELF must be little-endian, found encoding "
+            f"{data_encoding}"
         )
+    endian = "<"
 
     elf_type = struct.unpack_from(f"{endian}H", data, 16)[0]
     machine = struct.unpack_from(f"{endian}H", data, 18)[0]
     abi = MACHINE_ABIS.get(machine)
     if abi is None:
         raise ArtifactError(f"{logical_name}: unsupported ELF machine {machine}")
+    expected_class = ABI_ELF_CLASSES[abi]
+    if elf_class != expected_class:
+        raise ArtifactError(
+            f"{logical_name}: ABI {abi} requires ELF class {expected_class}, "
+            f"found {elf_class}"
+        )
     if abi not in inspection.allowed_abis:
         raise ArtifactError(
             f"{logical_name}: contains ABI {abi}, allowed: {sorted(inspection.allowed_abis)}",
@@ -222,10 +244,16 @@ def inspect_zip(
         raise ArtifactError(f"{logical_name}: invalid ZIP/IMY archive") from error
 
     with archive:
+        seen_entries: set[str] = set()
         for info in archive.infolist():
             entry_path = safe_entry_name(info.filename, logical_name)
             entry_name = f"{logical_name}!/{entry_path.as_posix()}"
             direct_path = entry_path.as_posix()
+            if direct_path in seen_entries:
+                raise ArtifactError(
+                    f"{logical_name}: duplicate archive entry {direct_path!r}"
+                )
+            seen_entries.add(direct_path)
             required_direct = (
                 depth == 0 and direct_path in inspection.required_direct_entries
             )
