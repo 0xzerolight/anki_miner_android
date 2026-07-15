@@ -13,5 +13,4 @@ requirements:
   host: []
 
 about:
-  license: BSD-3-Clause
-  license_file: COPYING
+  license_file: BSD

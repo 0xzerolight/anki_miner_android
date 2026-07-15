@@ -1,10 +1,17 @@
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import io
+import json
+import os
 from pathlib import Path
+import shutil
+import subprocess
+import sys
 import tarfile
 import tempfile
+import types
 import unittest
 from unittest import mock
 import zipfile
@@ -19,7 +26,26 @@ SPEC.loader.exec_module(s1a_wheels)
 
 
 class S1aWheelToolTests(unittest.TestCase):
-    def _fake_wheel_set(self, dist: Path) -> list[Path]:
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.identity = s1a_wheels.builder_identity()
+
+    def setUp(self) -> None:
+        self.environment = mock.patch.dict(
+            os.environ,
+            s1a_wheels.REPRODUCIBLE_ENV,
+            clear=False,
+        )
+        self.environment.start()
+        self.previous_umask = os.umask(0o022)
+        self.recipe = s1a_wheels.source_recipe_key()
+        self.build = s1a_wheels.build_key(self.recipe, self.identity)
+
+    def tearDown(self) -> None:
+        os.umask(self.previous_umask)
+        self.environment.stop()
+
+    def _fake_wheel_set(self, dist: Path, payload_suffix: bytes = b"") -> list[Path]:
         filenames = []
         for platform in ("arm64_v8a", "x86_64"):
             filenames.extend(
@@ -33,9 +59,49 @@ class S1aWheelToolTests(unittest.TestCase):
         for filename in filenames:
             path = dist / filename.split("-", 1)[0] / filename
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_bytes(filename.encode())
+            path.write_bytes(filename.encode() + payload_suffix)
             paths.append(path)
         return paths
+
+    def _fake_stage(self, root: Path, stage_id: str) -> tuple[Path, list[Path]]:
+        stage = root / f"s1a-{self.build}-{stage_id}"
+        dist = stage / "chaquopy/source/server/pypi/dist"
+        wheels = self._fake_wheel_set(dist)
+        (stage / "patchelf").mkdir(parents=True)
+        manifest = {
+            "schema": s1a_wheels.MANIFEST_SCHEMA,
+            "stage_id": stage_id,
+            "recipe_key": self.recipe,
+            "build_key": self.build,
+            "builder_identity": self.identity,
+            "recipe_inventory": s1a_wheels.recipe_inventory(),
+            "ndk": s1a_wheels.NDK_VERSION,
+            "python_target": s1a_wheels.PYTHON_TARGET,
+            "source_hashes": {
+                name: entry["sha256"]
+                for name, entry in s1a_wheels.source_entries().items()
+            },
+            "host_wheels": {
+                filename: sha256
+                for _, filename, sha256 in s1a_wheels.host_entries()
+            },
+        }
+        (stage / "manifest.json").write_text(
+            json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        return stage, wheels
+
+    @staticmethod
+    def _fake_verify(path: Path):
+        package, abi = s1a_wheels._wheel_identity(path)
+        return package, abi, {
+            "filename": path.name,
+            "sha256": s1a_wheels.digest(path),
+            "size": path.stat().st_size,
+            "licenses": [],
+            "elf": {"abi": abi},
+        }
 
     def test_locks_are_exact_and_complete(self) -> None:
         sources = s1a_wheels.source_entries()
@@ -55,10 +121,89 @@ class S1aWheelToolTests(unittest.TestCase):
         self.assertIn("Cython==3.1.5", {requirement for requirement, _, _ in requirements})
         self.assertEqual(len(requirements), len({filename for _, filename, _ in requirements}))
 
-    def test_recipe_key_covers_patches_and_locks(self) -> None:
-        key = s1a_wheels.recipe_key()
-        self.assertRegex(key, r"^[0-9a-f]{64}$")
-        self.assertEqual(key, s1a_wheels.recipe_key())
+    def test_recipe_key_uses_explicit_paths_modes_and_bytes_but_not_outputs(self) -> None:
+        self.assertRegex(self.recipe, r"^[0-9a-f]{64}$")
+        inventory = s1a_wheels.recipe_inventory()
+        self.assertEqual(len(inventory), len({entry["path"] for entry in inventory}))
+        self.assertIn("tools/wheels/recipes/fugashi/patches/fugashi-android-link.patch", {
+            entry["path"] for entry in inventory
+        })
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "repo"
+            copied = repo / "tools/wheels"
+            copied.parent.mkdir(parents=True)
+            shutil.copytree(
+                s1a_wheels.TOOL_ROOT,
+                copied,
+                ignore=shutil.ignore_patterns("__pycache__", "out"),
+            )
+            (repo / "scripts").mkdir()
+            for name in s1a_wheels.RECIPE_REPO_FILES:
+                source = s1a_wheels.ROOT / name
+                destination = repo / name
+                shutil.copy2(source, destination)
+            original = s1a_wheels.source_recipe_key(copied, repo)
+            output = copied / "out/cache.whl"
+            output.parent.mkdir()
+            output.write_bytes(b"ignored output")
+            self.assertEqual(original, s1a_wheels.source_recipe_key(copied, repo))
+            lock = copied / "sources.lock"
+            lock.write_bytes(lock.read_bytes() + b"\n")
+            changed_bytes = s1a_wheels.source_recipe_key(copied, repo)
+            self.assertNotEqual(original, changed_bytes)
+            script = copied / "build-s1a-wheels.sh"
+            script.chmod(script.stat().st_mode & ~0o111)
+            changed_mode = s1a_wheels.source_recipe_key(copied, repo)
+            self.assertNotEqual(changed_bytes, changed_mode)
+            android_env = repo / "scripts/android-env.sh"
+            android_env.write_bytes(android_env.read_bytes() + b"\n")
+            self.assertNotEqual(changed_mode, s1a_wheels.source_recipe_key(copied, repo))
+
+    def test_recipe_key_command_is_network_free_and_stable(self) -> None:
+        result = subprocess.run(
+            [str(MODULE_PATH), "recipe-key"],
+            check=True,
+            stdout=subprocess.PIPE,
+            text=True,
+        )
+        self.assertEqual(self.recipe, result.stdout.strip())
+
+    def test_builder_identity_and_build_key_cover_required_host_tools(self) -> None:
+        self.assertEqual("cpython", self.identity["python"]["implementation"])
+        self.assertRegex(self.identity["python"]["executable_sha256"], r"^[0-9a-f]{64}$")
+        self.assertEqual("linux", self.identity["host"]["os"])
+        self.assertEqual("x86_64", self.identity["host"]["machine"])
+        self.assertEqual(
+            {
+                "bash",
+                "coreutils",
+                "findutils",
+                "git",
+                "grep",
+                "make",
+                "patch",
+                "sed",
+                "unzip",
+            },
+            set(self.identity["tools"]),
+        )
+        expected = hashlib.sha256(
+            self.recipe.encode("ascii")
+            + b"\n"
+            + s1a_wheels._canonical_json(self.identity),
+        ).hexdigest()
+        self.assertEqual(expected, self.build)
+
+    def test_reproducible_environment_and_expected_keys_are_enforced(self) -> None:
+        s1a_wheels.enforce_reproducible_environment()
+        with mock.patch.dict(os.environ, {"SOURCE_DATE_EPOCH": "1"}):
+            with self.assertRaisesRegex(s1a_wheels.WheelError, "SOURCE_DATE_EPOCH"):
+                s1a_wheels.enforce_reproducible_environment()
+        with mock.patch.object(s1a_wheels, "builder_identity", return_value=self.identity):
+            with self.assertRaisesRegex(s1a_wheels.WheelError, "stale source recipe key"):
+                s1a_wheels._validate_expected_keys("0" * 64, self.build)
+            with self.assertRaisesRegex(s1a_wheels.WheelError, "stale build key"):
+                s1a_wheels._validate_expected_keys(self.recipe, "0" * 64)
 
     def test_safe_extractor_rejects_traversal_and_links(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -80,8 +225,15 @@ class S1aWheelToolTests(unittest.TestCase):
             with self.assertRaises(s1a_wheels.WheelError):
                 s1a_wheels.safe_extract(linked, root / "out-linked")
 
-    def test_recipes_keep_dictionary_out_and_pin_cross_build(self) -> None:
+    def test_recipes_match_pinned_chaquopy_schema_layout(self) -> None:
         recipe_root = ROOT / "tools/wheels/recipes"
+        mecab = (recipe_root / "chaquopy-libmecab/meta.yaml").read_text(encoding="utf-8")
+        fugashi = (recipe_root / "fugashi/meta.yaml").read_text(encoding="utf-8")
+        self.assertIn("  license_file: BSD", mecab)
+        self.assertIn("  license_file: LICENSE", fugashi)
+        self.assertNotIn("  license:", mecab + fugashi)
+        self.assertNotIn("\npatches:", fugashi)
+        self.assertTrue((recipe_root / "fugashi/patches/fugashi-android-link.patch").is_file())
         combined = "\n".join(
             path.read_text(encoding="utf-8")
             for path in sorted(recipe_root.rglob("*"))
@@ -92,6 +244,119 @@ class S1aWheelToolTests(unittest.TestCase):
         self.assertIn("chaquopy-libmecab 0.996", combined)
         self.assertNotIn("unidic-lite", combined.casefold())
         self.assertNotIn("mecab-ipadic", combined.casefold())
+
+    def test_staged_recipe_validation_rejects_forbidden_property_before_build(self) -> None:
+        class FakeSchemaError(Exception):
+            pass
+
+        class FakeValidationError(Exception):
+            pass
+
+        class FakeValidator:
+            VALIDATORS = {"properties": lambda *args: iter(())}
+
+            @classmethod
+            def check_schema(cls, schema):
+                if not isinstance(schema, dict):
+                    raise FakeSchemaError()
+
+            def __init__(self, schema):
+                self.schema = schema
+
+            def validate(self, instance):
+                def validate_object(schema, value):
+                    if not isinstance(schema, dict) or schema.get("type") != "object":
+                        return
+                    if not isinstance(value, dict):
+                        raise FakeValidationError()
+                    properties = schema.get("properties", {})
+                    if schema.get("additionalProperties") is False:
+                        if set(value) - set(properties):
+                            raise FakeValidationError()
+                    for name, nested in properties.items():
+                        if name in value:
+                            validate_object(nested, value[name])
+
+                validate_object(self.schema, instance)
+
+        class FakeTemplateError(Exception):
+            pass
+
+        class FakeTemplate:
+            def __init__(self, value, undefined):
+                self.value = value
+
+            def render(self, **kwargs):
+                return self.value
+
+        jsonschema = types.ModuleType("jsonschema")
+        jsonschema.Draft4Validator = FakeValidator
+        jsonschema.SchemaError = FakeSchemaError
+        jsonschema.ValidationError = FakeValidationError
+        jsonschema.validators = types.SimpleNamespace(
+            extend=lambda validator, additions: validator,
+        )
+        yaml = types.ModuleType("yaml")
+        yaml.safe_load = json.loads
+        yaml.YAMLError = ValueError
+        jinja2 = types.ModuleType("jinja2")
+        jinja2.StrictUndefined = object()
+        jinja2.Template = FakeTemplate
+        jinja2.TemplateError = FakeTemplateError
+
+        with tempfile.TemporaryDirectory() as temporary:
+            chaquopy = Path(temporary) / "chaquopy"
+            pypi = chaquopy / "server/pypi"
+            packages = pypi / "packages"
+            packages.mkdir(parents=True)
+            schema = {
+                "type": "object",
+                "properties": {
+                    "package": {"type": "object"},
+                    "source": {},
+                    "build": {},
+                    "requirements": {},
+                    "about": {
+                        "type": "object",
+                        "properties": {"license_file": {}},
+                        "additionalProperties": False,
+                    },
+                },
+                "additionalProperties": False,
+            }
+            (pypi / "meta-schema.yaml").write_text(json.dumps(schema), encoding="utf-8")
+            recipe_names = sorted(
+                path.name
+                for path in s1a_wheels.TOOL_ROOT.joinpath("recipes").iterdir()
+                if path.is_dir()
+            )
+            for name in recipe_names:
+                recipe = packages / name
+                recipe.mkdir()
+                (recipe / "meta.yaml").write_text(
+                    json.dumps(
+                        {
+                            "package": {"name": name, "version": "1"},
+                            "about": {"license_file": "LICENSE"},
+                        },
+                    ),
+                    encoding="utf-8",
+                )
+            modules = {"jsonschema": jsonschema, "yaml": yaml, "jinja2": jinja2}
+            with mock.patch.dict(sys.modules, modules):
+                self.assertEqual(recipe_names, s1a_wheels.validate_recipes(chaquopy))
+                invalid = packages / recipe_names[0] / "meta.yaml"
+                document = json.loads(invalid.read_text(encoding="utf-8"))
+                document["about"]["license"] = "forbidden"
+                invalid.write_text(json.dumps(document), encoding="utf-8")
+                with self.assertRaisesRegex(s1a_wheels.WheelError, "invalid staged custom recipe"):
+                    s1a_wheels.validate_recipes(chaquopy)
+
+        build_script = (ROOT / "tools/wheels/build-s1a-wheels.sh").read_text(encoding="utf-8")
+        self.assertLess(
+            build_script.index("validate-recipes"),
+            build_script.index('build-wheel.py --abi'),
+        )
 
     def test_builder_patch_is_network_closed(self) -> None:
         source = MODULE_PATH.read_text(encoding="utf-8")
@@ -124,48 +389,134 @@ class S1aWheelToolTests(unittest.TestCase):
             with self.assertRaisesRegex(s1a_wheels.WheelError, "dictionary"):
                 s1a_wheels.verify_s1a_wheel(wheel)
 
-    def test_publication_is_complete_hashed_and_immutable(self) -> None:
+    def test_publication_requires_two_identical_validated_stages(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            wheels = self._fake_wheel_set(root / "dist")
-
-            def fake_verify(path: Path):
-                package, abi = s1a_wheels._wheel_identity(path)
-                return package, abi, {
-                    "filename": path.name,
-                    "sha256": s1a_wheels.digest(path),
-                    "size": path.stat().st_size,
-                    "licenses": [],
-                    "elf": {"abi": abi},
-                }
-
-            with mock.patch.object(s1a_wheels, "verify_s1a_wheel", side_effect=fake_verify):
-                manifest_path = s1a_wheels.publish(root / "dist", root / "published")
-            document = s1a_wheels.load_json(manifest_path)
-            self.assertEqual(s1a_wheels.recipe_key(), document["recipe_key"])
-            self.assertEqual({"arm64-v8a", "x86_64"}, set(document["wheels"]))
-            self.assertEqual(3, len(document["wheels"]["arm64-v8a"]))
-            self.assertEqual(3, len(document["wheels"]["x86_64"]))
+            stage_a, wheels = self._fake_stage(root, "clean-a")
+            stage_b, _ = self._fake_stage(root, "clean-b")
+            with (
+                mock.patch.object(s1a_wheels, "builder_identity", return_value=self.identity),
+                mock.patch.object(s1a_wheels, "verify_s1a_wheel", side_effect=self._fake_verify),
+            ):
+                manifest_path = s1a_wheels.publish(
+                    stage_a,
+                    stage_b,
+                    root / "published",
+                    self.recipe,
+                    self.build,
+                )
+            document = s1a_wheels.load_json(manifest_path, s1a_wheels.MANIFEST_SCHEMA)
+            self.assertEqual(self.recipe, document["recipe_key"])
+            self.assertEqual(self.build, document["build_key"])
+            self.assertEqual(f"s1a-wheels-{self.build}", manifest_path.parent.name)
+            self.assertTrue(document["reproducibility"]["wheel_sets_byte_identical"])
             self.assertEqual(
                 {path.name for path in wheels},
                 {path.name for path in manifest_path.parent.glob("*.whl")},
             )
-            with mock.patch.object(s1a_wheels, "verify_s1a_wheel", side_effect=fake_verify):
-                with self.assertRaisesRegex(s1a_wheels.WheelError, "immutable"):
-                    s1a_wheels.publish(root / "dist", root / "published")
+            keys = s1a_wheels.verify_publication(manifest_path)
+            self.assertEqual(
+                {"schema": 2, "recipe_key": self.recipe, "build_key": self.build},
+                keys,
+            )
+            with (
+                mock.patch.object(s1a_wheels, "builder_identity", return_value=self.identity),
+                mock.patch.object(s1a_wheels, "verify_s1a_wheel", side_effect=self._fake_verify),
+                self.assertRaisesRegex(s1a_wheels.WheelError, "immutable"),
+            ):
+                s1a_wheels.publish(
+                    stage_a,
+                    stage_b,
+                    root / "published",
+                    self.recipe,
+                    self.build,
+                )
+
+    def test_publication_rejects_nonreproducible_or_stale_stage(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            stage_a, _ = self._fake_stage(root, "clean-a")
+            stage_b, wheels_b = self._fake_stage(root, "clean-b")
+            wheels_b[0].write_bytes(wheels_b[0].read_bytes() + b"different")
+            with mock.patch.object(s1a_wheels, "builder_identity", return_value=self.identity):
+                with self.assertRaisesRegex(s1a_wheels.WheelError, "byte-for-byte"):
+                    s1a_wheels.publish(
+                        stage_a,
+                        stage_b,
+                        root / "published",
+                        self.recipe,
+                        self.build,
+                    )
+            wheels_b[0].write_bytes(wheels_b[0].read_bytes().removesuffix(b"different"))
+            stage_document = json.loads((stage_b / "manifest.json").read_text(encoding="utf-8"))
+            stage_document["recipe_key"] = "0" * 64
+            (stage_b / "manifest.json").write_text(json.dumps(stage_document), encoding="utf-8")
+            with mock.patch.object(s1a_wheels, "builder_identity", return_value=self.identity):
+                with self.assertRaisesRegex(s1a_wheels.WheelError, "stale S1a stage"):
+                    s1a_wheels.publish(
+                        stage_a,
+                        stage_b,
+                        root / "published",
+                        self.recipe,
+                        self.build,
+                    )
+
+    def test_obsolete_publication_and_parent_mismatch_are_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            stage_a, _ = self._fake_stage(root, "clean-a")
+            stage_b, _ = self._fake_stage(root, "clean-b")
+            with (
+                mock.patch.object(s1a_wheels, "builder_identity", return_value=self.identity),
+                mock.patch.object(s1a_wheels, "verify_s1a_wheel", side_effect=self._fake_verify),
+            ):
+                manifest = s1a_wheels.publish(
+                    stage_a,
+                    stage_b,
+                    root / "published",
+                    self.recipe,
+                    self.build,
+                )
+            with mock.patch.object(s1a_wheels, "source_recipe_key", return_value="f" * 64):
+                with self.assertRaisesRegex(s1a_wheels.WheelError, "obsolete"):
+                    s1a_wheels.verify_publication(manifest)
+            moved = root / "published/stale-parent"
+            manifest.parent.rename(moved)
+            with self.assertRaisesRegex(s1a_wheels.WheelError, "parent directory"):
+                s1a_wheels.verify_publication(moved / "manifest.json")
 
     def test_failed_publication_leaves_no_partial_directory(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            self._fake_wheel_set(root / "dist")
-            with mock.patch.object(
-                s1a_wheels,
-                "verify_s1a_wheel",
-                side_effect=s1a_wheels.WheelError("inspection failed"),
+            stage_a, _ = self._fake_stage(root, "clean-a")
+            stage_b, _ = self._fake_stage(root, "clean-b")
+            with (
+                mock.patch.object(s1a_wheels, "builder_identity", return_value=self.identity),
+                mock.patch.object(
+                    s1a_wheels,
+                    "verify_s1a_wheel",
+                    side_effect=s1a_wheels.WheelError("inspection failed"),
+                ),
+                self.assertRaisesRegex(s1a_wheels.WheelError, "inspection failed"),
             ):
-                with self.assertRaisesRegex(s1a_wheels.WheelError, "inspection failed"):
-                    s1a_wheels.publish(root / "dist", root / "published")
+                s1a_wheels.publish(
+                    stage_a,
+                    stage_b,
+                    root / "published",
+                    self.recipe,
+                    self.build,
+                )
             self.assertFalse((root / "published").exists())
+
+    def test_gradle_requires_manifest_recipe_and_build_keys(self) -> None:
+        gradle = (ROOT / "app/build.gradle.kts").read_text(encoding="utf-8")
+        self.assertIn('gradleProperty("ankiMinerS1aManifest")', gradle)
+        self.assertIn('gradleProperty("ankiMinerS1aRecipeKey")', gradle)
+        self.assertIn('gradleProperty("ankiMinerS1aBuildKey")', gradle)
+        self.assertIn('document["schema"] == 2', gradle)
+        self.assertIn('recipeKey == s1aRecipeKeyProperty.get()', gradle)
+        self.assertIn('buildKey == s1aBuildKeyProperty.get()', gradle)
+        self.assertIn('"s1a-wheels-$buildKey"', gradle)
 
 
 if __name__ == "__main__":

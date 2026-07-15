@@ -12,7 +12,18 @@ val pythonVersion = libs.versions.python.get()
 val pythonTargetVersion = "3.13.9-0"
 val androidNdkVersion = "28.2.13676358"
 val s1aManifestProperty = providers.gradleProperty("ankiMinerS1aManifest")
-val s1aEnabled = s1aManifestProperty.isPresent
+val s1aRecipeKeyProperty = providers.gradleProperty("ankiMinerS1aRecipeKey")
+val s1aBuildKeyProperty = providers.gradleProperty("ankiMinerS1aBuildKey")
+val s1aPropertyPresence =
+    listOf(
+        s1aManifestProperty.isPresent,
+        s1aRecipeKeyProperty.isPresent,
+        s1aBuildKeyProperty.isPresent,
+    )
+require(s1aPropertyPresence.all { it == s1aPropertyPresence.first() }) {
+    "S1a requires ankiMinerS1aManifest, ankiMinerS1aRecipeKey, and ankiMinerS1aBuildKey together"
+}
+val s1aEnabled = s1aPropertyPresence.first()
 
 data class S1aWheels(val byAbi: Map<String, List<File>>)
 
@@ -32,12 +43,17 @@ fun sha256(file: File): String {
 fun loadS1aWheels(): S1aWheels {
     val manifest = file(s1aManifestProperty.get()).canonicalFile
     require(manifest.isFile) { "S1a wheel manifest not found: $manifest" }
+    require(manifest.name == "manifest.json") { "S1a wheel manifest filename must be manifest.json" }
     val document = JsonSlurper().parse(manifest) as Map<*, *>
-    require(document["schema"] == 1) { "Unsupported S1a wheel manifest schema" }
+    require(document["schema"] == 2) { "Unsupported S1a wheel manifest schema" }
     val recipeKey = document["recipe_key"] as? String ?: error("S1a recipe key missing")
+    val buildKey = document["build_key"] as? String ?: error("S1a build key missing")
     require(recipeKey.matches(Regex("[0-9a-f]{64}"))) { "Invalid S1a recipe key" }
-    require(manifest.parentFile.name == "s1a-wheels-$recipeKey") {
-        "S1a manifest is not in its immutable recipe-key directory"
+    require(buildKey.matches(Regex("[0-9a-f]{64}"))) { "Invalid S1a build key" }
+    require(recipeKey == s1aRecipeKeyProperty.get()) { "S1a manifest recipe key is stale" }
+    require(buildKey == s1aBuildKeyProperty.get()) { "S1a manifest build key is stale" }
+    require(manifest.parentFile.name == "s1a-wheels-$buildKey") {
+        "S1a manifest is not in its immutable build-key directory"
     }
     require(document["api_level"] == 26) { "S1a wheels must target Android API 26" }
     require(document["ndk"] == androidNdkVersion) { "S1a NDK version mismatch" }

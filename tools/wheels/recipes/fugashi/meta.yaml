@@ -19,8 +19,4 @@ requirements:
     - chaquopy-libmecab 0.996
 
 about:
-  license: MIT AND BSD-3-Clause
   license_file: LICENSE
-
-patches:
-  - fugashi-android-link.patch
