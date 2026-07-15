@@ -72,6 +72,32 @@ def test_dispatch_does_not_swallow_process_control_exceptions(
     assert stopped.value.code == 7
 
 
+@pytest.mark.parametrize(
+    ("literal", "code"),
+    [
+        ("1e309", "non_finite_number"),
+        ("-1e309", "non_finite_number"),
+        ("9223372036854775808", "integer_out_of_range"),
+        ("-9223372036854775809", "integer_out_of_range"),
+    ],
+)
+def test_dispatch_serializes_numeric_policy_errors_without_raw_value_error(
+    literal: str,
+    code: str,
+) -> None:
+    raw = (
+        '{"schemaVersion":1,"type":"job.cancel",'
+        '"payload":{"runId":"run_00000000000000000000000000000000",'
+        '"nested":{"value":' + literal + "}}}"
+    )
+
+    response = boundary.dispatch(raw)
+    decoded = decode_envelope(response, expected_type="bridge.error")
+
+    assert decoded.payload["code"] == code
+    assert "ValueError" not in response
+
+
 def test_dispatch_bootstrap_success_returns_versioned_envelope(tmp_path: Path) -> None:
     env = dict(os.environ)
     env["PYTHONPATH"] = os.pathsep.join((str(PYTHON_ROOT), str(DESKTOP_ROOT)))

@@ -14,6 +14,12 @@ from typing import Any
 
 BRIDGE_SCHEMA_VERSION = 1
 
+# Kotlin decodes integer-valued fields as ``Long`` and floating-point fields as
+# ``Double``. Keep Python on that same deliberately narrow wire domain instead
+# of accepting its arbitrary-precision ints or non-finite IEEE values.
+JSON_INTEGER_MIN = -(1 << 63)
+JSON_INTEGER_MAX = (1 << 63) - 1
+
 _MESSAGE_TYPE_RE = re.compile(r"^[a-z][a-z0-9]*(?:\.[a-z][a-z0-9]*)+$")
 
 
@@ -42,6 +48,26 @@ def _camel_case(name: str) -> str:
     return head + "".join(part[:1].upper() + part[1:] for part in tail)
 
 
+def normalize_integral_json_number(value: object) -> int | None:
+    """Normalize a mathematical JSON integer into the signed-64 wire domain.
+
+    Draft 2020-12 considers ``1`` and ``1.0`` integers. Booleans, non-integral
+    doubles, non-finite doubles, and values outside Kotlin ``Long`` are not.
+    """
+
+    if type(value) is int:
+        converted = value
+    elif type(value) is float and math.isfinite(value) and value.is_integer():
+        if value < JSON_INTEGER_MIN or value > JSON_INTEGER_MAX:
+            return None
+        converted = int(value)
+    else:
+        return None
+    if converted < JSON_INTEGER_MIN or converted > JSON_INTEGER_MAX:
+        return None
+    return converted
+
+
 def to_json_value(value: Any, *, _seen: set[int] | None = None) -> Any:
     """Convert common engine values into JSON-compatible data.
 
@@ -50,7 +76,14 @@ def to_json_value(value: Any, *, _seen: set[int] | None = None) -> Any:
     graphs are rejected instead of being silently truncated.
     """
 
-    if value is None or isinstance(value, (str, bool, int)):
+    if value is None or isinstance(value, (str, bool)):
+        return value
+    if isinstance(value, int):
+        if normalize_integral_json_number(value) is None:
+            raise BridgeProtocolError(
+                "integer_out_of_range",
+                "JSON integers must fit a signed 64-bit Kotlin Long",
+            )
         return value
     if isinstance(value, float):
         if not math.isfinite(value):
@@ -141,6 +174,37 @@ def _reject_non_finite(literal: str) -> None:
     )
 
 
+def _parse_json_integer(literal: str) -> int:
+    try:
+        value = int(literal)
+    except (ValueError, OverflowError) as exc:
+        raise BridgeProtocolError(
+            "integer_out_of_range",
+            "JSON integers must fit a signed 64-bit Kotlin Long",
+        ) from exc
+    if normalize_integral_json_number(value) is None:
+        raise BridgeProtocolError(
+            "integer_out_of_range",
+            "JSON integers must fit a signed 64-bit Kotlin Long",
+        )
+    return value
+
+
+def _parse_json_float(literal: str) -> float:
+    try:
+        value = float(literal)
+    except (ValueError, OverflowError) as exc:
+        raise BridgeProtocolError(
+            "invalid_json_number", "Malformed JSON floating-point number"
+        ) from exc
+    if not math.isfinite(value):
+        raise BridgeProtocolError(
+            "non_finite_number",
+            "JSON floating-point numbers must be finite IEEE-754 doubles",
+        )
+    return value
+
+
 def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     result: dict[str, Any] = {}
     for key, value in pairs:
@@ -155,8 +219,10 @@ def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
 def decode_envelope(raw: str, *, expected_type: str | None = None) -> DecodedMessage:
     """Decode a strict RFC JSON bridge envelope.
 
-    Python otherwise accepts JavaScript ``NaN``/``Infinity`` tokens and keeps
-    the last duplicate object key. Neither behavior is allowed here.
+    The numeric wire domain is Kotlin-compatible: signed 64-bit integer tokens
+    and finite IEEE-754 double tokens. Python otherwise accepts arbitrary-size
+    integers, exponent overflow, JavaScript ``NaN``/``Infinity`` tokens, and
+    duplicate object keys; none are allowed here.
     """
 
     if not isinstance(raw, str):
@@ -167,11 +233,13 @@ def decode_envelope(raw: str, *, expected_type: str | None = None) -> DecodedMes
         envelope = json.loads(
             raw,
             parse_constant=_reject_non_finite,
+            parse_float=_parse_json_float,
+            parse_int=_parse_json_integer,
             object_pairs_hook=_reject_duplicate_keys,
         )
     except BridgeProtocolError:
         raise
-    except (json.JSONDecodeError, RecursionError) as exc:
+    except (json.JSONDecodeError, RecursionError, ValueError, OverflowError) as exc:
         raise BridgeProtocolError("invalid_json", "Malformed bridge JSON") from exc
 
     if not isinstance(envelope, dict):
@@ -184,11 +252,12 @@ def decode_envelope(raw: str, *, expected_type: str | None = None) -> DecodedMes
             "invalid_envelope", "Bridge envelope has missing or unknown fields"
         )
 
-    version = envelope["schemaVersion"]
-    if type(version) is not int or version != BRIDGE_SCHEMA_VERSION:
+    raw_version = envelope["schemaVersion"]
+    version = normalize_integral_json_number(raw_version)
+    if version != BRIDGE_SCHEMA_VERSION:
         raise BridgeProtocolError(
             "unsupported_schema_version",
-            f"Expected bridge schema {BRIDGE_SCHEMA_VERSION}, received {version!r}",
+            f"Expected bridge schema {BRIDGE_SCHEMA_VERSION}, received {raw_version!r}",
         )
 
     message_type = envelope["type"]

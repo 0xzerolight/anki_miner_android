@@ -208,35 +208,42 @@ def test_generated_curation_request_and_omitted_sentence_id_validate(
             )
         )
 
-    thread = threading.Thread(target=wait_for_curation)
+    thread = threading.Thread(target=wait_for_curation, daemon=True)
     thread.start()
-    assert emitted.wait(1)
-    envelope_validator = Draft202012Validator(schemas["envelope"])
-    curation_validator = Draft202012Validator(schemas["curation"])
-    request_payload = _validated_payload(
-        request[0],
-        "curation.request",
-        envelope_validator=envelope_validator,
-        payload_validator=curation_validator,
-    )
-    response = encode_message(
-        "curation.response",
-        {
-            "runId": handle.run_id,
-            "requestId": request_payload["requestId"],
-            "selection": [
-                {"candidateId": request_payload["candidates"][0]["candidateId"]}
-            ],
-        },
-    )
-    _validated_payload(
-        response,
-        "curation.response",
-        envelope_validator=envelope_validator,
-        payload_validator=curation_validator,
-    )
-    registry.resolve_curation(response)
-    thread.join(1)
+    try:
+        assert emitted.wait(1)
+        envelope_validator = Draft202012Validator(schemas["envelope"])
+        curation_validator = Draft202012Validator(schemas["curation"])
+        request_payload = _validated_payload(
+            request[0],
+            "curation.request",
+            envelope_validator=envelope_validator,
+            payload_validator=curation_validator,
+        )
+        response = encode_message(
+            "curation.response",
+            {
+                "runId": handle.run_id,
+                "requestId": request_payload["requestId"],
+                "selection": [
+                    {"candidateId": request_payload["candidates"][0]["candidateId"]}
+                ],
+            },
+        )
+        _validated_payload(
+            response,
+            "curation.response",
+            envelope_validator=envelope_validator,
+            payload_validator=curation_validator,
+        )
+        registry.resolve_curation(response)
+        thread.join(1)
+    finally:
+        try:
+            if thread.is_alive():
+                registry.cancel(handle.run_id)
+        finally:
+            thread.join(1)
 
     assert not thread.is_alive()
     assert returned == [[word]]

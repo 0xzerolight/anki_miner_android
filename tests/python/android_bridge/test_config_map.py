@@ -182,6 +182,32 @@ def test_public_json_entry_point_requires_versioned_snapshot(tmp_path: Path) -> 
     assert mapped.android_tts_enabled is True
 
 
+def test_draft_integer_floats_normalize_for_schema_and_config_fields(
+    tmp_path: Path,
+) -> None:
+    paths = _paths(tmp_path)
+    raw = (
+        '{"schemaVersion":1.0,"type":"config.snapshot",'
+        '"payload":{"settings":{"audio_bitrate":128.0}}}'
+    )
+
+    mapped = map_config_json(
+        raw,
+        str(paths.files_dir),
+        str(paths.cache_dir),
+        str(paths.native_library_dir),
+    )
+
+    assert mapped.engine_config.audio_bitrate == 128
+    assert type(mapped.engine_config.audio_bitrate) is int
+
+
+def test_nonintegral_float_is_not_an_integer_config_field(tmp_path: Path) -> None:
+    with pytest.raises(BridgeProtocolError) as error:
+        map_config_settings({"audio_bitrate": 1.5}, _paths(tmp_path))
+    assert error.value.code == "invalid_config_field"
+
+
 def test_checked_in_schema_allowlist_matches_mapper() -> None:
     schema_path = (
         Path(__file__).resolve().parents[3]

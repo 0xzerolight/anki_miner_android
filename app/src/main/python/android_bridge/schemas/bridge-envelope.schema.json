@@ -2,6 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://anki-miner.app/schemas/android-bridge/v1/envelope.json",
   "title": "Anki Miner Android bridge envelope",
+  "$comment": "Before schema validation, protocol.decode_envelope restricts numbers to signed 64-bit integers and finite IEEE-754 doubles so Python and Kotlin observe the same wire domain.",
   "type": "object",
   "additionalProperties": false,
   "required": ["schemaVersion", "type", "payload"],

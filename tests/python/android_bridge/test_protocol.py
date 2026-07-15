@@ -9,6 +9,8 @@ import pytest
 
 from android_bridge.protocol import (
     BRIDGE_SCHEMA_VERSION,
+    JSON_INTEGER_MAX,
+    JSON_INTEGER_MIN,
     BridgeProtocolError,
     decode_message,
     encode_message,
@@ -115,6 +117,76 @@ def test_decoder_rejects_duplicate_object_keys() -> None:
     with pytest.raises(BridgeProtocolError) as error:
         decode_message(raw)
     assert error.value.code == "duplicate_json_key"
+
+
+@pytest.mark.parametrize("value", [JSON_INTEGER_MIN, JSON_INTEGER_MAX])
+def test_signed_64_bit_integer_boundaries_round_trip(value: int) -> None:
+    raw = encode_message("progress.update", {"value": value})
+
+    assert decode_message(raw)["value"] == value
+
+
+@pytest.mark.parametrize("value", [JSON_INTEGER_MIN - 1, JSON_INTEGER_MAX + 1])
+def test_encoder_rejects_integer_overflow(value: int) -> None:
+    with pytest.raises(BridgeProtocolError) as error:
+        encode_message("progress.update", {"nested": [{"value": value}]})
+    assert error.value.code == "integer_out_of_range"
+
+
+@pytest.mark.parametrize(
+    "literal",
+    [
+        str(JSON_INTEGER_MIN - 1),
+        str(JSON_INTEGER_MAX + 1),
+        "9" * 5000,
+    ],
+)
+def test_decoder_rejects_integer_overflow_without_raw_value_error(literal: str) -> None:
+    raw = (
+        '{"schemaVersion":1,"type":"progress.update",'
+        '"payload":{"nested":[{"value":' + literal + "}]}}"
+    )
+
+    with pytest.raises(BridgeProtocolError) as error:
+        decode_message(raw)
+    assert error.value.code == "integer_out_of_range"
+
+
+@pytest.mark.parametrize("literal", ["1e309", "-1e309"])
+def test_decoder_rejects_exponent_overflow_at_depth(literal: str) -> None:
+    nested = "[" * 64 + literal + "]" * 64
+    raw = (
+        '{"schemaVersion":1,"type":"progress.update","payload":{"nested":'
+        + nested
+        + "}}"
+    )
+
+    with pytest.raises(BridgeProtocolError) as error:
+        decode_message(raw)
+    assert error.value.code == "non_finite_number"
+
+
+def test_largest_finite_ieee_double_is_accepted() -> None:
+    raw = (
+        '{"schemaVersion":1,"type":"progress.update",'
+        '"payload":{"value":1.7976931348623157e308}}'
+    )
+
+    assert decode_message(raw)["value"] == float("1.7976931348623157e308")
+
+
+def test_integral_float_schema_version_is_normalized() -> None:
+    raw = '{"schemaVersion":1.0,"type":"progress.update","payload":{}}'
+
+    assert decode_message(raw) == {}
+
+
+def test_nonintegral_float_schema_version_is_rejected() -> None:
+    raw = '{"schemaVersion":1.5,"type":"progress.update","payload":{}}'
+
+    with pytest.raises(BridgeProtocolError) as error:
+        decode_message(raw)
+    assert error.value.code == "unsupported_schema_version"
 
 
 def test_checked_in_schema_matches_codec_version() -> None:

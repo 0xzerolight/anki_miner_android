@@ -10,7 +10,11 @@ from pathlib import Path
 from typing import cast
 
 from .bootstrap import require_initialized
-from .protocol import BridgeProtocolError, decode_message
+from .protocol import (
+    BridgeProtocolError,
+    decode_message,
+    normalize_integral_json_number,
+)
 
 _RESOURCE_ID_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,126}[A-Za-z0-9_-])?$")
 
@@ -166,14 +170,15 @@ def _float(
 def _integer(
     field_name: str, value: object, bounds: tuple[int | None, int | None]
 ) -> int:
-    if type(value) is not int:
+    converted = normalize_integral_json_number(value)
+    if converted is None:
         raise _invalid(field_name, "expected an integer")
     minimum, maximum = bounds
-    if minimum is not None and value < minimum:
+    if minimum is not None and converted < minimum:
         raise _invalid(field_name, f"must be at least {minimum}")
-    if maximum is not None and value > maximum:
+    if maximum is not None and converted > maximum:
         raise _invalid(field_name, f"must be at most {maximum}")
-    return value
+    return converted
 
 
 def _literal(field_name: str, value: object, allowed: frozenset[str]) -> str:
