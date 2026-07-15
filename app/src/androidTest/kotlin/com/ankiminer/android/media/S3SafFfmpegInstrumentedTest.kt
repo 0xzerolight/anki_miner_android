@@ -104,7 +104,10 @@ class S3SafFfmpegInstrumentedTest {
             if (!Python.isStarted()) {
                 Python.start(AndroidPlatform(context))
             }
-            Python.getInstance().getModule("s3_media_probe")
+            val runtime = Python.getInstance()
+            runtime.getModule("android_bridge.bootstrap")
+                .callAttr("initialize", context.filesDir.absolutePath)
+            runtime.getModule("s3_media_probe")
         }
 
     private fun nativeTool(name: String): File {
