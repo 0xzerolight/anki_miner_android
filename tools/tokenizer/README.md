@@ -82,3 +82,25 @@ non-option `argv[0]` program name and `-C`, matching fugashi's copied-node
 allocation mode. Passing `mecab_arguments` directly is invalid because MeCab
 does not parse `argv[0]` as an option. Neither backend may import Java, fugashi,
 or the engine from the shared contract modules.
+
+## M0 decision status
+
+No tokenizer candidate is selected yet. S1a has a copied-record Python backend,
+an offline native-wheel recipe, and property-gated x86_64/arm64 Android probes.
+Its decision remains provisional until both API-36 x86_64 page-size lanes and
+the explicit arm64 runtime lane pass against the seeded golden. Static wheel
+inspection, host parity, or x86_64 execution alone must not be recorded as an
+S1 winner. Record those runtime results here before making the M0 decision.
+
+| Gate | S1a result | Evidence |
+| --- | --- | --- |
+| Host contract and engine regression | pending final branch health | commit/test output |
+| x86_64, 4 KiB | pending licensed native build | emulator test output |
+| x86_64, 16 KiB | pending licensed native build | emulator test output |
+| arm64 runtime | pending supported target | explicit-serial test output |
+| M0 selection | not selected | requires all applicable runtime gates |
+
+After the licensed wheel build emits its manifest, run both owned x86_64 lanes
+with `scripts/run-s1a-emulator-tests.sh --manifest FILE --unidic-dir DIR`.
+Run the provisional arm64 gate only against an explicitly chosen target with
+`scripts/run-s1a-arm64-tests.sh --serial SERIAL --manifest FILE --unidic-dir DIR`.

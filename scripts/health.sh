@@ -7,6 +7,14 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 source "$SCRIPT_DIR/android-env.sh"
 
 CONNECTED_LANE=""
+staged_tokenizer_dictionary=false
+cleanup_tokenizer_dictionary() {
+    if [[ "$staged_tokenizer_dictionary" == true ]]; then
+        adb -s "$ANDROID_SERIAL" shell rm -f /data/local/tmp/anki-miner-tokenizer-unidic.zip \
+            >/dev/null 2>&1 || true
+    fi
+}
+trap cleanup_tokenizer_dictionary EXIT
 if [[ "${1:-}" == "--connected" ]]; then
     (($# >= 2)) || {
         echo "Usage: scripts/health.sh [--connected 4k|16k]" >&2
@@ -50,6 +58,8 @@ PYTHONDONTWRITEBYTECODE=1 "$host_test_python" -m pytest \
     -q "$REPO_ROOT/tests/python/android_bridge"
 PYTHONDONTWRITEBYTECODE=1 "$host_test_python" -m compileall \
     -q "$REPO_ROOT/app/src/main/python/android_bridge"
+PYTHONDONTWRITEBYTECODE=1 "$host_test_python" -m compileall \
+    -q "$REPO_ROOT/app/src/debug/python"
 
 [[ -x "$JAVA_HOME/bin/java" ]] || fail "JDK is missing; run scripts/provision-android.sh"
 [[ -x "$ANDROID_CMDLINE_TOOLS_HOME/bin/sdkmanager" ]] || fail "Android command-line tools are missing"
@@ -104,6 +114,13 @@ if [[ -n "$CONNECTED_LANE" ]]; then
     [[ "$actual_page_size" == "$expected_page_size" ]] \
         || fail "$expected_avd page size is ${actual_page_size:-unknown}, expected $expected_page_size"
     export ANDROID_SERIAL="$emulator_serial"
+    if [[ -n "${ORG_GRADLE_PROJECT_ankiMinerS1aManifest:-}" ]]; then
+        test_unidic="${ANKI_MINER_TEST_UNIDIC_DIR:-}"
+        [[ -n "$test_unidic" && -d "$test_unidic" ]] \
+            || fail "connected S1a tests require ANKI_MINER_TEST_UNIDIC_DIR"
+        staged_tokenizer_dictionary=true
+        "$SCRIPT_DIR/provision-tokenizer-test-unidic.sh" --dicdir "$test_unidic"
+    fi
     tasks+=(:app:connectedEmulatorDebugAndroidTest)
 fi
 
@@ -118,17 +135,30 @@ release_aab="$REPO_ROOT/app/build/outputs/bundle/deviceRelease/app-device-releas
 [[ -f "$release_apk" ]] || fail "device release APK was not produced"
 [[ -f "$release_aab" ]] || fail "device release AAB was not produced"
 
+s1a_artifact_args=()
+if [[ -n "${ORG_GRADLE_PROJECT_ankiMinerS1aManifest:-}" ]]; then
+    s1a_artifact_args=(--require-app-imy --require-s1a)
+fi
 "$SCRIPT_DIR/check-native-artifact.sh" \
     --artifact "$emulator_apk" \
-    --allow-abi x86_64
+    --allow-abi x86_64 \
+    "${s1a_artifact_args[@]}"
 "$SCRIPT_DIR/check-native-artifact.sh" \
     --artifact "$release_apk" \
     --allow-abi arm64-v8a \
-    --forbid-entry scaffold_probe
+    --forbid-entry scaffold_probe \
+    --forbid-entry tokenizer_s1a_instrumented \
+    --forbid-entry TokenizerS1aInstrumentedTest \
+    --forbid-entry engine-v1.json \
+    "${s1a_artifact_args[@]}"
 "$SCRIPT_DIR/check-native-artifact.sh" \
     --artifact "$release_aab" \
     --allow-abi arm64-v8a \
-    --forbid-entry scaffold_probe
+    --forbid-entry scaffold_probe \
+    --forbid-entry tokenizer_s1a_instrumented \
+    --forbid-entry TokenizerS1aInstrumentedTest \
+    --forbid-entry engine-v1.json \
+    "${s1a_artifact_args[@]}"
 
 release_manifest="$(apkanalyzer manifest print "$release_apk")"
 if grep -Eq 'ScaffoldProbeActivity|scaffold_probe' <<<"$release_manifest"; then

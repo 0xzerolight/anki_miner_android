@@ -219,6 +219,53 @@ touch "$FAKE_STATE/health-ran"
                 (state / "adb.log").read_text(encoding="utf-8").splitlines(),
             )
 
+    def test_s1a_runner_executes_both_page_size_lanes_by_default(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest = root / "manifest.json"
+            manifest.write_text("{}", encoding="utf-8")
+            dicdir = root / "dicdir"
+            dicdir.mkdir()
+            log = root / "runner.log"
+            runner = root / "runner.sh"
+            runner.write_text(
+                """#!/usr/bin/env bash
+set -euo pipefail
+printf '%s|%s|%s\n' "$*" "$ORG_GRADLE_PROJECT_ankiMinerS1aManifest" \
+    "$ANKI_MINER_TEST_UNIDIC_DIR" >>"$S1A_RUNNER_LOG"
+""",
+                encoding="utf-8",
+            )
+            runner.chmod(0o755)
+            environment = os.environ.copy()
+            environment.update(
+                {
+                    "ANKI_MINER_S1A_EMULATOR_RUNNER": str(runner),
+                    "S1A_RUNNER_LOG": str(log),
+                },
+            )
+            result = subprocess.run(
+                [
+                    str(SCRIPTS_DIR / "run-s1a-emulator-tests.sh"),
+                    "--manifest",
+                    str(manifest),
+                    "--unidic-dir",
+                    str(dicdir),
+                ],
+                check=False,
+                capture_output=True,
+                env=environment,
+                text=True,
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertEqual(
+                [
+                    f"--page-size 4k|{manifest}|{dicdir}",
+                    f"--page-size 16k|{manifest}|{dicdir}",
+                ],
+                log.read_text(encoding="utf-8").splitlines(),
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
