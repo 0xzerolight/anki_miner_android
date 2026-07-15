@@ -6,6 +6,8 @@ from pathlib import Path
 import tarfile
 import tempfile
 import unittest
+from unittest import mock
+import zipfile
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -17,6 +19,24 @@ SPEC.loader.exec_module(s1a_wheels)
 
 
 class S1aWheelToolTests(unittest.TestCase):
+    def _fake_wheel_set(self, dist: Path) -> list[Path]:
+        filenames = []
+        for platform in ("arm64_v8a", "x86_64"):
+            filenames.extend(
+                [
+                    f"chaquopy_libcxx-190000-0-py3-none-android_26_{platform}.whl",
+                    f"chaquopy_libmecab-0.996-0-py3-none-android_26_{platform}.whl",
+                    f"fugashi-1.5.2-0-cp313-cp313-android_26_{platform}.whl",
+                ],
+            )
+        paths = []
+        for filename in filenames:
+            path = dist / filename.split("-", 1)[0] / filename
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(filename.encode())
+            paths.append(path)
+        return paths
+
     def test_locks_are_exact_and_complete(self) -> None:
         sources = s1a_wheels.source_entries()
         self.assertEqual(
@@ -79,6 +99,73 @@ class S1aWheelToolTests(unittest.TestCase):
         self.assertIn("--no-index --only-binary=:all:", source)
         self.assertIn("locked NDK is missing", source)
         self.assertIn("yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager", source)
+
+    def test_wheel_identity_requires_exact_version_api_and_tags(self) -> None:
+        package, abi = s1a_wheels._wheel_identity(
+            Path("fugashi-1.5.2-0-cp313-cp313-android_26_arm64_v8a.whl"),
+        )
+        self.assertEqual(("fugashi", "arm64-v8a"), (package, abi))
+        for invalid in (
+            "fugashi-1.5.1-0-cp313-cp313-android_26_arm64_v8a.whl",
+            "fugashi-1.5.2-0-cp313-cp313-android_25_arm64_v8a.whl",
+            "fugashi-1.5.2-0-cp312-cp312-android_26_arm64_v8a.whl",
+        ):
+            with self.subTest(invalid=invalid), self.assertRaises(s1a_wheels.WheelError):
+                s1a_wheels._wheel_identity(Path(invalid))
+
+    def test_wheel_verifier_rejects_dictionary_before_native_inspection(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            wheel = (
+                Path(temporary)
+                / "fugashi-1.5.2-0-cp313-cp313-android_26_x86_64.whl"
+            )
+            with zipfile.ZipFile(wheel, "w") as archive:
+                archive.writestr("unidic_lite/dicdir/sys.dic", b"forbidden")
+            with self.assertRaisesRegex(s1a_wheels.WheelError, "dictionary"):
+                s1a_wheels.verify_s1a_wheel(wheel)
+
+    def test_publication_is_complete_hashed_and_immutable(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            wheels = self._fake_wheel_set(root / "dist")
+
+            def fake_verify(path: Path):
+                package, abi = s1a_wheels._wheel_identity(path)
+                return package, abi, {
+                    "filename": path.name,
+                    "sha256": s1a_wheels.digest(path),
+                    "size": path.stat().st_size,
+                    "licenses": [],
+                    "elf": {"abi": abi},
+                }
+
+            with mock.patch.object(s1a_wheels, "verify_s1a_wheel", side_effect=fake_verify):
+                manifest_path = s1a_wheels.publish(root / "dist", root / "published")
+            document = s1a_wheels.load_json(manifest_path)
+            self.assertEqual(s1a_wheels.recipe_key(), document["recipe_key"])
+            self.assertEqual({"arm64-v8a", "x86_64"}, set(document["wheels"]))
+            self.assertEqual(3, len(document["wheels"]["arm64-v8a"]))
+            self.assertEqual(3, len(document["wheels"]["x86_64"]))
+            self.assertEqual(
+                {path.name for path in wheels},
+                {path.name for path in manifest_path.parent.glob("*.whl")},
+            )
+            with mock.patch.object(s1a_wheels, "verify_s1a_wheel", side_effect=fake_verify):
+                with self.assertRaisesRegex(s1a_wheels.WheelError, "immutable"):
+                    s1a_wheels.publish(root / "dist", root / "published")
+
+    def test_failed_publication_leaves_no_partial_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self._fake_wheel_set(root / "dist")
+            with mock.patch.object(
+                s1a_wheels,
+                "verify_s1a_wheel",
+                side_effect=s1a_wheels.WheelError("inspection failed"),
+            ):
+                with self.assertRaisesRegex(s1a_wheels.WheelError, "inspection failed"):
+                    s1a_wheels.publish(root / "dist", root / "published")
+            self.assertFalse((root / "published").exists())
 
 
 if __name__ == "__main__":

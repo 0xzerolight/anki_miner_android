@@ -27,10 +27,37 @@ EXECUTABLE_NATIVE_NAMES = {"libffmpeg.so", "libffprobe.so"}
 ET_DYN = 3
 PT_INTERP = 3
 PT_LOAD = 1
+PT_DYNAMIC = 2
+DT_NULL = 0
+DT_NEEDED = 1
+DT_STRTAB = 5
+DT_STRSZ = 10
+DT_SONAME = 14
+DT_RPATH = 15
+DT_TEXTREL = 22
+DT_RUNPATH = 29
+DT_FLAGS = 30
+DF_TEXTREL = 0x4
+ANDROID_SYSTEM_LIBS = {
+    "libandroid.so",
+    "libc.so",
+    "libdl.so",
+    "liblog.so",
+    "libm.so",
+    "libz.so",
+}
 
 
 class ArtifactError(RuntimeError):
     pass
+
+
+@dataclass(frozen=True)
+class NativeMetadata:
+    abi: str
+    soname: str | None
+    needed: tuple[str, ...]
+    has_dynamic: bool
 
 
 @dataclass
@@ -43,6 +70,7 @@ class Inspection:
     requirement_imys: set[str] = field(default_factory=set)
     requirement_owners: dict[str, str] = field(default_factory=dict)
     s1a_payloads: set[str] = field(default_factory=set)
+    require_s1a: bool = False
 
 
 def safe_entry_name(name: str, archive_name: str) -> PurePosixPath:
@@ -58,7 +86,7 @@ def parse_elf(
     inspection: Inspection,
     *,
     require_pie_cli: bool = False,
-) -> None:
+) -> NativeMetadata:
     if len(data) < 52 or data[:4] != ELF_MAGIC:
         raise ArtifactError(f"{logical_name}: truncated ELF header")
     elf_class = data[4]
@@ -106,7 +134,8 @@ def parse_elf(
     if phoff + phentsize * phnum > len(data):
         raise ArtifactError(f"{logical_name}: truncated program-header table")
 
-    load_count = 0
+    loads: list[tuple[int, int, int]] = []
+    dynamic_segment: tuple[int, int] | None = None
     has_interpreter = False
     for index in range(phnum):
         fields = struct.unpack_from(ph_format, data, phoff + index * phentsize)
@@ -119,12 +148,30 @@ def parse_elf(
                 raise ArtifactError(f"{logical_name}: invalid PT_INTERP segment")
             has_interpreter = True
         if fields[0] != PT_LOAD:
+            if fields[0] == PT_DYNAMIC:
+                if elf_class == 1:
+                    dynamic_offset, dynamic_size = fields[1], fields[4]
+                else:
+                    dynamic_offset, dynamic_size = fields[2], fields[5]
+                if dynamic_segment is not None:
+                    raise ArtifactError(f"{logical_name}: multiple PT_DYNAMIC segments")
+                dynamic_segment = (dynamic_offset, dynamic_size)
             continue
-        load_count += 1
         if elf_class == 1:
-            offset, virtual_address, alignment = fields[1], fields[2], fields[7]
+            offset, virtual_address, file_size, alignment = (
+                fields[1],
+                fields[2],
+                fields[4],
+                fields[7],
+            )
         else:
-            offset, virtual_address, alignment = fields[2], fields[3], fields[7]
+            offset, virtual_address, file_size, alignment = (
+                fields[2],
+                fields[3],
+                fields[5],
+                fields[7],
+            )
+        loads.append((offset, virtual_address, file_size))
         if alignment < PAGE_SIZE:
             raise ArtifactError(
                 f"{logical_name}: PT_LOAD[{index}] alignment is {alignment}, "
@@ -134,7 +181,7 @@ def parse_elf(
             raise ArtifactError(
                 f"{logical_name}: PT_LOAD[{index}] offset and address are not 16 KiB congruent",
             )
-    if load_count == 0:
+    if not loads:
         raise ArtifactError(f"{logical_name}: ELF has no PT_LOAD segment")
     if require_pie_cli:
         if elf_type != ET_DYN:
@@ -157,6 +204,103 @@ def parse_elf(
 
     inspection.elf_count += 1
     inspection.found_abis.add(abi)
+    soname = None
+    needed: list[str] = []
+    if dynamic_segment is not None:
+        dynamic_offset, dynamic_size = dynamic_segment
+        entry_size = 8 if elf_class == 1 else 16
+        dynamic_format = f"{endian}iI" if elf_class == 1 else f"{endian}qQ"
+        if (
+            dynamic_size < entry_size
+            or dynamic_size % entry_size
+            or dynamic_offset + dynamic_size > len(data)
+        ):
+            raise ArtifactError(f"{logical_name}: invalid PT_DYNAMIC segment")
+        dynamic: list[tuple[int, int]] = []
+        terminated = False
+        for offset in range(dynamic_offset, dynamic_offset + dynamic_size, entry_size):
+            tag, value = struct.unpack_from(dynamic_format, data, offset)
+            if tag == DT_NULL:
+                terminated = True
+                break
+            dynamic.append((tag, value))
+        if not terminated:
+            raise ArtifactError(f"{logical_name}: unterminated PT_DYNAMIC segment")
+        if any(tag in {DT_RPATH, DT_RUNPATH, DT_TEXTREL} for tag, _ in dynamic):
+            raise ArtifactError(f"{logical_name}: forbidden RPATH or text relocation")
+        if any(tag == DT_FLAGS and value & DF_TEXTREL for tag, value in dynamic):
+            raise ArtifactError(f"{logical_name}: forbidden text relocation flag")
+        string_tables = [value for tag, value in dynamic if tag == DT_STRTAB]
+        string_sizes = [value for tag, value in dynamic if tag == DT_STRSZ]
+        string_offsets = [
+            value for tag, value in dynamic if tag in {DT_NEEDED, DT_SONAME}
+        ]
+        if string_offsets:
+            if len(string_tables) != 1 or len(string_sizes) != 1:
+                raise ArtifactError(f"{logical_name}: invalid dynamic string table")
+            table_address = string_tables[0]
+            table_size = string_sizes[0]
+            table_offset = None
+            for load_offset, load_address, load_size in loads:
+                if load_address <= table_address < load_address + load_size:
+                    table_offset = load_offset + table_address - load_address
+                    break
+            if (
+                table_offset is None
+                or table_size == 0
+                or table_offset + table_size > len(data)
+            ):
+                raise ArtifactError(f"{logical_name}: dynamic string table is out of bounds")
+
+            def dynamic_string(offset: int) -> str:
+                if offset >= table_size:
+                    raise ArtifactError(f"{logical_name}: dynamic string offset is invalid")
+                start = table_offset + offset
+                end = data.find(b"\0", start, table_offset + table_size)
+                if end < 0:
+                    raise ArtifactError(f"{logical_name}: unterminated dynamic string")
+                try:
+                    return data[start:end].decode("ascii")
+                except UnicodeDecodeError as error:
+                    raise ArtifactError(
+                        f"{logical_name}: non-ASCII dynamic dependency",
+                    ) from error
+
+            sonames = [dynamic_string(value) for tag, value in dynamic if tag == DT_SONAME]
+            if len(sonames) > 1:
+                raise ArtifactError(f"{logical_name}: multiple SONAME values")
+            soname = sonames[0] if sonames else None
+            needed = [dynamic_string(value) for tag, value in dynamic if tag == DT_NEEDED]
+    return NativeMetadata(abi, soname, tuple(sorted(needed)), dynamic_segment is not None)
+
+
+def validate_s1a_native(
+    basename: str,
+    logical_name: str,
+    metadata: NativeMetadata,
+) -> None:
+    if basename == "libc++_shared.so":
+        expected_soname = basename
+        required = set()
+    elif basename == "libmecab.so.2":
+        expected_soname = basename
+        required = {"libc++_shared.so"}
+    else:
+        expected_soname = None
+        required = {"libc++_shared.so", "libmecab.so.2", "libpython3.13.so"}
+    if not metadata.has_dynamic:
+        raise ArtifactError(f"{logical_name}: S1a native payload has no PT_DYNAMIC")
+    if metadata.soname != expected_soname:
+        raise ArtifactError(
+            f"{logical_name}: SONAME is {metadata.soname!r}, expected {expected_soname!r}",
+        )
+    needed = set(metadata.needed)
+    allowed = required | ANDROID_SYSTEM_LIBS
+    if not required.issubset(needed) or not needed.issubset(allowed):
+        raise ArtifactError(
+            f"{logical_name}: native dependencies are {sorted(needed)}, "
+            f"required {sorted(required)}",
+        )
 
 
 def inspect_zip(
@@ -233,12 +377,16 @@ def inspect_zip(
                 payload = prefix + stream.read()
 
             if is_elf:
-                parse_elf(
+                metadata = parse_elf(
                     payload,
                     entry_name,
                     inspection,
                     require_pie_cli=basename in EXECUTABLE_NATIVE_NAMES,
                 )
+                if inspection.require_s1a and requirement_owner:
+                    is_fugashi = "fugashi" in entry_path.parts and basename.endswith(".so")
+                    if basename in {"libmecab.so.2", "libc++_shared.so"} or is_fugashi:
+                        validate_s1a_native(basename, entry_name, metadata)
             else:
                 inspect_zip(BytesIO(payload), entry_name, inspection, depth + 1)
 
@@ -246,7 +394,11 @@ def inspect_zip(
 def inspect_artifact(args: argparse.Namespace) -> Inspection:
     if not args.artifact.is_file():
         raise ArtifactError(f"artifact not found: {args.artifact}")
-    inspection = Inspection(set(args.allow_abi), tuple(args.forbid_entry))
+    inspection = Inspection(
+        set(args.allow_abi),
+        tuple(args.forbid_entry),
+        require_s1a=args.require_s1a,
+    )
     inspect_zip(args.artifact, args.artifact.name, inspection)
     if inspection.elf_count == 0:
         raise ArtifactError(f"{args.artifact}: no ELF payloads found")

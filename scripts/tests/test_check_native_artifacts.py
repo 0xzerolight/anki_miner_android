@@ -73,6 +73,82 @@ def pie_cli() -> bytes:
     return elf64(entry_point=0x4000, interpreter=True)
 
 
+def dynamic_elf(
+    *,
+    machine: int = 62,
+    soname: str | None,
+    needed: tuple[str, ...],
+) -> bytes:
+    strings = bytearray(b"\0")
+    string_offsets: dict[str, int] = {}
+    for value in (*needed, *((soname,) if soname else ())):
+        if value not in string_offsets:
+            string_offsets[value] = len(strings)
+            strings.extend(value.encode("ascii") + b"\0")
+    dynamic_count = 3 + len(needed) + (1 if soname else 0)
+    dynamic_offset = 64 + 56 * 2
+    string_offset = dynamic_offset + dynamic_count * 16
+    base_address = 0x4000
+    data = bytearray(string_offset + len(strings))
+    data[:16] = b"\x7fELF\x02\x01\x01" + bytes(9)
+    struct.pack_into(
+        "<HHIQQQIHHHHHH",
+        data,
+        16,
+        3,
+        machine,
+        1,
+        0,
+        64,
+        0,
+        0,
+        64,
+        56,
+        2,
+        0,
+        0,
+        0,
+    )
+    struct.pack_into(
+        "<IIQQQQQQ",
+        data,
+        64,
+        1,
+        5,
+        0,
+        base_address,
+        0,
+        len(data),
+        len(data),
+        16 * 1024,
+    )
+    struct.pack_into(
+        "<IIQQQQQQ",
+        data,
+        120,
+        2,
+        4,
+        dynamic_offset,
+        base_address + dynamic_offset,
+        0,
+        dynamic_count * 16,
+        dynamic_count * 16,
+        8,
+    )
+    entries = [
+        (5, base_address + string_offset),
+        (10, len(strings)),
+        *((1, string_offsets[value]) for value in needed),
+    ]
+    if soname:
+        entries.append((14, string_offsets[soname]))
+    entries.append((0, 0))
+    for index, entry in enumerate(entries):
+        struct.pack_into("<qQ", data, dynamic_offset + index * 16, *entry)
+    data[string_offset:] = strings
+    return bytes(data)
+
+
 def archive(entries: dict[str, bytes]) -> bytes:
     output = BytesIO()
     with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as target:
@@ -88,8 +164,13 @@ class NativeArtifactTest(unittest.TestCase):
         *,
         allowed: set[str] | None = None,
         forbidden: tuple[str, ...] = (),
+        require_s1a: bool = False,
     ) -> Inspection:
-        inspection = Inspection(allowed or {"x86_64"}, forbidden)
+        inspection = Inspection(
+            allowed or {"x86_64"},
+            forbidden,
+            require_s1a=require_s1a,
+        )
         with tempfile.NamedTemporaryFile(suffix=".apk") as artifact:
             artifact.write(payload)
             artifact.flush()
@@ -153,6 +234,55 @@ class NativeArtifactTest(unittest.TestCase):
         executable = elf64(entry_point=0x4000)
         with self.assertRaisesRegex(ArtifactError, "no PT_INTERP"):
             self.inspect(archive({"lib/x86_64/libffprobe.so": executable}))
+
+    def test_s1a_payloads_revalidate_sonames_and_dependencies_in_imy(self) -> None:
+        common = archive(
+            {
+                "chaquopy/lib/libc++_shared.so": dynamic_elf(
+                    soname="libc++_shared.so",
+                    needed=("libc.so", "libdl.so"),
+                ),
+                "chaquopy/lib/libmecab.so.2": dynamic_elf(
+                    soname="libmecab.so.2",
+                    needed=("libc++_shared.so", "libc.so"),
+                ),
+                "fugashi/fugashi.so": dynamic_elf(
+                    soname=None,
+                    needed=(
+                        "libc++_shared.so",
+                        "libmecab.so.2",
+                        "libpython3.13.so",
+                        "libc.so",
+                    ),
+                ),
+            },
+        )
+        payload = archive(
+            {
+                "assets/chaquopy/requirements-common.imy": common,
+                "assets/chaquopy/requirements-x86_64.imy": archive({}),
+            },
+        )
+        result = self.inspect(payload, require_s1a=True)
+        self.assertEqual(
+            {"fugashi-extension", "libc++_shared.so", "libmecab.so.2"},
+            result.s1a_payloads,
+        )
+
+    def test_s1a_payload_rejects_wrong_soname_after_packaging(self) -> None:
+        common = archive(
+            {
+                "chaquopy/lib/libmecab.so.2": dynamic_elf(
+                    soname="libmecab-wrong.so",
+                    needed=("libc++_shared.so",),
+                ),
+            },
+        )
+        with self.assertRaisesRegex(ArtifactError, "SONAME"):
+            self.inspect(
+                archive({"assets/chaquopy/requirements-common.imy": common}),
+                require_s1a=True,
+            )
 
 
 if __name__ == "__main__":

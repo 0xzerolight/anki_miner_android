@@ -7,6 +7,10 @@ case "$HOST" in
     *) echo "unsupported S1a host: $HOST" >&2; exit 1 ;;
 esac
 
+# The upstream COPYING file only points at the actual license choices. Give the
+# selected BSD terms a license-prefixed name so build-wheel includes them too.
+cp BSD LICENSE.BSD
+
 ./configure \
     --build=x86_64-pc-linux-gnu \
     --host="$configure_host" \
