@@ -1590,10 +1590,16 @@ def test_duplicate_identity_uses_verified_model_first_field(
     required = {value for value in config.anki_fields.values() if value}
     kotlin = FakeKotlinAnki()
     kotlin.verify_fields = ["Sentence", *sorted(required - {"Sentence"})]
+    adapter = _adapter(config, kotlin)
+    assert adapter.get_existing_vocabulary() == set()
 
-    assert _adapter(config, kotlin).create_cards_batch([_card("猫")]) == 1
+    assert adapter.create_cards_batch([_card("猫")]) == 1
 
-    scan = kotlin.requests_for("ankiScanFirstFields")[0]["payload"]["scope"]
+    scan = next(
+        request["payload"]["scope"]
+        for request in kotlin.requests_for("ankiScanFirstFields")
+        if request["payload"]["scope"]["kind"] == "duplicates"
+    )
     create = kotlin.requests_for("ankiCreateNotes")[0]["payload"]
     assert scan["firstFieldName"] == "Sentence"
     assert scan["candidates"] == [{"key": "猫だ", "firstField": "猫だ"}]
@@ -1603,6 +1609,7 @@ def test_duplicate_identity_uses_verified_model_first_field(
         "firstField": "猫だ",
         "occurrence": 0,
     }
+    assert adapter.get_existing_vocabulary() == {"猫だ"}
 
 
 def test_missing_verified_model_first_field_fails_before_duplicate_probe(

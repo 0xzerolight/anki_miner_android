@@ -1791,7 +1791,7 @@ class AndroidAnkiAdapter:
         self.last_skipped_duplicates = 0
         self.last_media_store_failures = 0
         all_created_ids: list[int] = []
-        created_forms: list[str] = []
+        created_first_fields: list[str] = []
         skipped_duplicates = 0
         total_created = 0
         bold_used = 0
@@ -1859,8 +1859,8 @@ class AndroidAnkiAdapter:
                     all_created_ids.extend(
                         note_id for note_id in note_ids if note_id is not None
                     )
-                    created_forms.extend(
-                        pending.payload.word.mined_form
+                    created_first_fields.extend(
+                        pending.first_field
                         for pending, was_successful in zip(
                             submit_notes, successful, strict=True
                         )
@@ -1889,8 +1889,8 @@ class AndroidAnkiAdapter:
             self.last_created_note_ids = all_created_ids
             self.last_skipped_duplicates = skipped_duplicates
             if self._existing_vocab_cache is not None:
-                for form in created_forms:
-                    key = _strip_for_dedup(form)
+                for first_field in created_first_fields:
+                    key = _strip_for_dedup(first_field)
                     if key and _JAPANESE_RE.search(key):
                         self._existing_vocab_cache.add(key)
 
