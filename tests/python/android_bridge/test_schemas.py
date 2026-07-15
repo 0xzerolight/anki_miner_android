@@ -366,6 +366,7 @@ def test_unknown_curation_map_key_is_schema_invalid(
                 "cursor": None,
                 "limits": {
                     "maxScannedNotes": 256,
+                    "maxTotalScannedNotes": 100000,
                     "maxItems": 256,
                     "maxItemUtf8Bytes": 65536,
                     "maxTotalUtf8Bytes": 262144,

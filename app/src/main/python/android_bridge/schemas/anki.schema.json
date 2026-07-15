@@ -158,7 +158,7 @@
     "knownVocabularyScope": {
       "type": "object",
       "additionalProperties": false,
-      "$comment": "Kotlin scans at most maxScannedNotes notes in stable provider order. An excluded deck excludes the entire note when any of its cards is in that deck or a descendant; a parent exclusion therefore covers all subdecks. cursor is null on the first page and otherwise exactly the prior nextCursor. The token is opaque to Python; ordinal must advance by one per non-terminal page. Kotlin must fail rather than truncate or skip an oversized first field.",
+      "$comment": "Kotlin scans at most maxScannedNotes notes per page and maxTotalScannedNotes across the complete stable provider traversal. An excluded deck excludes the entire note when any of its cards is in that deck or a descendant; a parent exclusion therefore covers all subdecks. cursor is null on the first page and otherwise exactly the prior nextCursor. Kotlin retains the traversal snapshot and immutable run/scope/ordinal/total binding behind each opaque one-use token; tokens expire when consumed, on terminal completion, on error, or when the run is cancelled/terminated. A cursor from another run or scope, a replay, and continuation at the total ceiling fail closed. Kotlin must fail rather than truncate or skip an oversized first field.",
       "required": ["kind", "excludedDecks", "cursor", "limits"],
       "properties": {
         "kind": {"const": "knownVocabulary"},
@@ -176,9 +176,10 @@
         "limits": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["maxScannedNotes", "maxItems", "maxItemUtf8Bytes", "maxTotalUtf8Bytes"],
+          "required": ["maxScannedNotes", "maxTotalScannedNotes", "maxItems", "maxItemUtf8Bytes", "maxTotalUtf8Bytes"],
           "properties": {
             "maxScannedNotes": {"const": 256},
+            "maxTotalScannedNotes": {"const": 100000},
             "maxItems": {"const": 256},
             "maxItemUtf8Bytes": {"const": 65536},
             "maxTotalUtf8Bytes": {"const": 262144}
@@ -196,7 +197,7 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 1024,
-          "$comment": "Opaque provider continuation token. Runtime validation caps encoded UTF-8 length at 1024 bytes."
+          "$comment": "Opaque, one-use provider continuation capability bound to the originating run, immutable scan scope, next ordinal, retained stable traversal snapshot, and cumulative scanned-note count. Runtime validation caps encoded UTF-8 length at 1024 bytes."
         }
       }
     },

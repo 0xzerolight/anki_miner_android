@@ -44,6 +44,7 @@ _MAX_RAW_FIRST_FIELD_UTF8_BYTES = 64 * 1024
 _MAX_DUPLICATE_HITS_UTF8_BYTES = 1024 * 1024
 _KNOWN_VOCABULARY_PAGE_ITEMS = 256
 _KNOWN_VOCABULARY_PAGE_UTF8_BYTES = 256 * 1024
+_MAX_KNOWN_VOCABULARY_SCANNED_NOTES = 100_000
 _MAX_KNOWN_CURSOR_UTF8_BYTES = 1024
 _MAX_NOTE_FIELDS = 64
 _MAX_FIELD_NAME_UTF8_BYTES = 256
@@ -570,9 +571,10 @@ class AndroidAnkiAdapter:
 
     def _scan_known_vocabulary_page(
         self, cursor: dict[str, Any] | None
-    ) -> tuple[list[str], dict[str, Any] | None]:
+    ) -> tuple[list[str], int, dict[str, Any] | None]:
         limits = {
             "maxScannedNotes": _KNOWN_VOCABULARY_PAGE_ITEMS,
+            "maxTotalScannedNotes": _MAX_KNOWN_VOCABULARY_SCANNED_NOTES,
             "maxItems": _KNOWN_VOCABULARY_PAGE_ITEMS,
             "maxItemUtf8Bytes": _MAX_RAW_FIRST_FIELD_UTF8_BYTES,
             "maxTotalUtf8Bytes": _KNOWN_VOCABULARY_PAGE_UTF8_BYTES,
@@ -656,7 +658,7 @@ class AndroidAnkiAdapter:
                     "Known-vocabulary cursor did not advance monotonically",
                 )
             next_cursor = {"ordinal": ordinal, "token": token}
-        return raw_fields, next_cursor
+        return raw_fields, scanned_notes, next_cursor
 
     def get_existing_vocabulary(self) -> set[str]:
         """Return cached, desktop-normalized Japanese first fields."""
@@ -669,9 +671,26 @@ class AndroidAnkiAdapter:
         existing: set[str] = set()
         cursor: dict[str, Any] | None = None
         seen_cursor_tokens: set[str] = set()
+        total_scanned_notes = 0
         try:
             while True:
-                raw_fields, next_cursor = self._scan_known_vocabulary_page(cursor)
+                raw_fields, scanned_notes, next_cursor = (
+                    self._scan_known_vocabulary_page(cursor)
+                )
+                total_scanned_notes += scanned_notes
+                if total_scanned_notes > _MAX_KNOWN_VOCABULARY_SCANNED_NOTES:
+                    _protocol_error(
+                        "invalid_anki_response",
+                        "Known-vocabulary scan exceeds its total note ceiling",
+                    )
+                if (
+                    total_scanned_notes == _MAX_KNOWN_VOCABULARY_SCANNED_NOTES
+                    and next_cursor is not None
+                ):
+                    _protocol_error(
+                        "invalid_anki_response",
+                        "Known-vocabulary scan continued past its total note ceiling",
+                    )
                 for raw in raw_fields:
                     normalized = _strip_for_dedup(raw)
                     if normalized and _JAPANESE_RE.search(normalized):

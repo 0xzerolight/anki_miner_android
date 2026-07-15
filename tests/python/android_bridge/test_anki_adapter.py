@@ -22,6 +22,7 @@ from android_bridge.anki_adapter import (
     _MAX_CREATE_ENVELOPE_UTF8_BYTES,
     _MAX_FIELD_NAME_UTF8_BYTES,
     _MAX_FIELD_VALUE_UTF8_BYTES,
+    _MAX_KNOWN_VOCABULARY_SCANNED_NOTES,
     _MAX_MEDIA_ASSET_BYTES,
     _MAX_MEDIA_CALLBACK_BYTES,
     _MAX_NOTE_CONTENT_UTF8_BYTES,
@@ -62,6 +63,7 @@ _CREATE_LIMITS = {
 }
 _KNOWN_VOCABULARY_LIMITS = {
     "maxScannedNotes": 256,
+    "maxTotalScannedNotes": 100000,
     "maxItems": 256,
     "maxItemUtf8Bytes": 65536,
     "maxTotalUtf8Bytes": 262144,
@@ -152,6 +154,8 @@ class FakeKotlinAnki:
         self._baseline_counter = 0
         self._baseline_snapshots: dict[str, dict[str, Any]] = {}
         self._verified_first_fields: dict[str, str] = {}
+        self._known_cursor_counter = 0
+        self._known_cursors: dict[str, dict[str, Any]] = {}
 
     def _duplicate_records(self) -> list[tuple[int, str]]:
         return [
@@ -274,10 +278,16 @@ class FakeKotlinAnki:
             if cursor is None:
                 start = 0
                 next_ordinal = 1
+                scanned_before = 0
             else:
-                prefix, separator, raw_start = cursor["token"].partition(":")
-                assert prefix == "known" and separator == ":"
-                start = int(raw_start)
+                cursor_state = self._known_cursors.pop(cursor["token"])
+                assert cursor_state["runId"] == request["runId"]
+                assert cursor_state["excludedDecks"] == tuple(
+                    scope["excludedDecks"]
+                )
+                assert cursor_state["ordinal"] == cursor["ordinal"]
+                start = cursor_state["start"]
+                scanned_before = cursor_state["scannedNotes"]
                 next_ordinal = cursor["ordinal"] + 1
             limits = scope["limits"]
             excluded = scope["excludedDecks"]
@@ -286,7 +296,11 @@ class FakeKotlinAnki:
             scanned_notes = 0
             for index in range(
                 start,
-                min(start + limits["maxScannedNotes"], len(self.known_fields)),
+                min(
+                    start + limits["maxScannedNotes"],
+                    start + limits["maxTotalScannedNotes"] - scanned_before,
+                    len(self.known_fields),
+                ),
             ):
                 field = self.known_fields[index]
                 field_bytes = len(field.encode("utf-8"))
@@ -314,14 +328,35 @@ class FakeKotlinAnki:
                     page_fields.append(field)
                     page_utf8_bytes += field_bytes
             next_index = start + scanned_notes
-            next_cursor = (
-                {
+            total_scanned = scanned_before + scanned_notes
+            if (
+                next_index < len(self.known_fields)
+                and total_scanned >= limits["maxTotalScannedNotes"]
+            ):
+                return encode_message(
+                    "anki.error",
+                    {
+                        "runId": request["runId"],
+                        "requestId": request["requestId"],
+                        "operation": "scanFirstFields",
+                        "code": "query_failed",
+                        "message": "known-vocabulary total scan ceiling reached",
+                        "retryable": False,
+                    },
+                )
+            if next_index < len(self.known_fields):
+                token = f"known_cursor_{self._known_cursor_counter:032x}"
+                self._known_cursor_counter += 1
+                self._known_cursors[token] = {
+                    "runId": request["runId"],
+                    "excludedDecks": tuple(scope["excludedDecks"]),
                     "ordinal": next_ordinal,
-                    "token": f"known:{next_index}",
+                    "start": next_index,
+                    "scannedNotes": total_scanned,
                 }
-                if next_index < len(self.known_fields)
-                else None
-            )
+                next_cursor = {"ordinal": next_ordinal, "token": token}
+            else:
+                next_cursor = None
             return encode_message(
                 "anki.scanfirstfields.result",
                 {
@@ -797,12 +832,76 @@ def test_known_vocabulary_scan_uses_monotonic_bounded_pages(
         request["payload"]["scope"]
         for request in kotlin.requests_for("ankiScanFirstFields")
     ]
-    assert [scope["cursor"] for scope in scopes] == [
-        None,
-        {"ordinal": 1, "token": "known:256"},
-        {"ordinal": 2, "token": "known:512"},
-    ]
+    assert scopes[0]["cursor"] is None
+    assert [scope["cursor"]["ordinal"] for scope in scopes[1:]] == [1, 2]
+    cursor_tokens = [scope["cursor"]["token"] for scope in scopes[1:]]
+    assert len(set(cursor_tokens)) == 2
+    assert all(token.startswith("known_cursor_") for token in cursor_tokens)
+    assert kotlin._known_cursors == {}
     assert all(scope["limits"] == _KNOWN_VOCABULARY_LIMITS for scope in scopes)
+
+
+@pytest.mark.parametrize(
+    ("total_notes", "force_continuation", "expect_error"),
+    [
+        (_MAX_KNOWN_VOCABULARY_SCANNED_NOTES, False, False),
+        (_MAX_KNOWN_VOCABULARY_SCANNED_NOTES, True, True),
+        (_MAX_KNOWN_VOCABULARY_SCANNED_NOTES + 1, False, True),
+    ],
+    ids=["exact-terminal", "exact-with-cursor", "over-ceiling"],
+)
+def test_known_vocabulary_total_scan_ceiling_is_defensively_enforced(
+    total_notes: int,
+    force_continuation: bool,
+    expect_error: bool,
+    initialized_bridge_home: Path,
+) -> None:
+    class TotalScanKotlin(FakeKotlinAnki):
+        def __init__(self) -> None:
+            super().__init__()
+            self.scanned = 0
+            self.page = 0
+
+        def ankiScanFirstFields(self, raw: str) -> str:
+            request = self._request("ankiScanFirstFields", raw)
+            cursor = request["scope"]["cursor"]
+            assert cursor is None if self.page == 0 else cursor["ordinal"] == self.page
+            page_size = min(256, total_notes - self.scanned)
+            self.scanned += page_size
+            self.page += 1
+            has_more = self.scanned < total_notes or (
+                force_continuation
+                and self.scanned == _MAX_KNOWN_VOCABULARY_SCANNED_NOTES
+            )
+            next_cursor = (
+                {
+                    "ordinal": self.page,
+                    "token": f"total-page-{self.page}",
+                }
+                if has_more
+                else None
+            )
+            return encode_message(
+                "anki.scanfirstfields.result",
+                {
+                    "runId": request["runId"],
+                    "requestId": request["requestId"],
+                    "firstFields": [],
+                    "scannedNotes": page_size,
+                    "nextCursor": next_cursor,
+                },
+            )
+
+    kotlin = TotalScanKotlin()
+    adapter = _adapter(_config(initialized_bridge_home), kotlin)
+
+    if expect_error:
+        with pytest.raises(BridgeProtocolError) as exc_info:
+            adapter.get_existing_vocabulary()
+        assert exc_info.value.code == "invalid_anki_response"
+    else:
+        assert adapter.get_existing_vocabulary() == set()
+    assert kotlin.scanned >= _MAX_KNOWN_VOCABULARY_SCANNED_NOTES
 
 
 def test_known_vocabulary_excludes_parent_descendants_and_whole_mixed_note(
