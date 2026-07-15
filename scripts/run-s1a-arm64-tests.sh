@@ -6,42 +6,260 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # shellcheck source=android-env.sh
 source "$SCRIPT_DIR/android-env.sh"
 
-if (($# != 6)) || [[ "$1" != "--serial" || "$3" != "--manifest" || "$5" != "--unidic-dir" ]]; then
-    echo "Usage: scripts/run-s1a-arm64-tests.sh --serial SERIAL --manifest FILE --unidic-dir DIR" >&2
-    exit 2
-fi
-serial="$2"
-manifest="$(realpath "$4")"
-dicdir="$(realpath "$6")"
-[[ "$(adb -s "$serial" get-state)" == device ]]
-[[ "$(adb -s "$serial" shell getprop ro.product.cpu.abi | tr -d '\r')" == arm64-v8a ]]
-api="$(adb -s "$serial" shell getprop ro.build.version.sdk | tr -d '\r')"
-((api >= 26))
-page_size="$(adb -s "$serial" shell getconf PAGE_SIZE | tr -d '\r')"
-[[ "$page_size" == 4096 || "$page_size" == 16384 ]]
-export ANDROID_SERIAL="$serial"
-cleanup_dictionary() {
-    adb -s "$serial" shell rm -f /data/local/tmp/anki-miner-tokenizer-unidic.zip \
-        >/dev/null 2>&1 || true
+ADB_COMMAND="${ANKI_MINER_ADB_COMMAND:-adb}"
+GRADLEW_COMMAND="${ANKI_MINER_GRADLEW_COMMAND:-$REPO_ROOT/gradlew}"
+APKANALYZER_COMMAND="${ANKI_MINER_APKANALYZER_COMMAND:-apkanalyzer}"
+NATIVE_CHECKER="${ANKI_MINER_NATIVE_CHECKER:-$SCRIPT_DIR/check-native-artifact.sh}"
+PROVISIONER="${ANKI_MINER_S1A_PROVISIONER:-$SCRIPT_DIR/provision-tokenizer-test-unidic.sh}"
+WHEEL_TOOL="${ANKI_MINER_S1A_WHEEL_TOOL:-$REPO_ROOT/tools/wheels/s1a_wheels.py}"
+PYTHON_COMMAND="${ANKI_MINER_PYTHON_COMMAND:-python3.13}"
+APP_APK="${ANKI_MINER_S1A_APP_APK:-$REPO_ROOT/app/build/outputs/apk/device/debug/app-device-debug.apk}"
+TEST_APK="${ANKI_MINER_S1A_TEST_APK:-$REPO_ROOT/app/build/outputs/apk/androidTest/device/debug/\
+app-device-debug-androidTest.apk}"
+TEST_CLASS="com.ankiminer.android.TokenizerS1aInstrumentedTest"
+TEST_RUNNER="com.ankiminer.android.test/androidx.test.runner.AndroidJUnitRunner"
+TEST_UNIDIC_ARCHIVE="/data/local/tmp/anki-miner-tokenizer-unidic.zip"
+
+usage() {
+    cat <<'EOF'
+Usage: scripts/run-s1a-arm64-tests.sh \
+    --serial SERIAL \
+    --manifest FILE \
+    --unidic-dir DIR \
+    --page-size 4k|16k \
+    --image-fingerprint FINGERPRINT
+
+Runs the S1a Fugashi parity class on one explicitly named arm64 target.
+The runner never starts, stops, selects, or accepts an arbitrary device.
+EOF
 }
-trap cleanup_dictionary EXIT
-"$SCRIPT_DIR/provision-tokenizer-test-unidic.sh" --dicdir "$dicdir"
+
+fail() {
+    echo "S1a arm64 test: $*" >&2
+    exit 1
+}
+
+serial=""
+manifest=""
+dicdir=""
+page_lane=""
+expected_fingerprint=""
+seen_serial=false
+seen_manifest=false
+seen_dicdir=false
+seen_page=false
+seen_fingerprint=false
+
+if (($# == 1)) && [[ "$1" == "--help" || "$1" == "-h" ]]; then
+    usage
+    exit 0
+fi
+
+while (($#)); do
+    option="$1"
+    shift
+    case "$option" in
+        --serial)
+            [[ "$seen_serial" == false && $# -ge 1 ]] || { usage >&2; exit 2; }
+            serial="$1"
+            seen_serial=true
+            shift
+            ;;
+        --manifest)
+            [[ "$seen_manifest" == false && $# -ge 1 ]] || { usage >&2; exit 2; }
+            manifest="$1"
+            seen_manifest=true
+            shift
+            ;;
+        --unidic-dir)
+            [[ "$seen_dicdir" == false && $# -ge 1 ]] || { usage >&2; exit 2; }
+            dicdir="$1"
+            seen_dicdir=true
+            shift
+            ;;
+        --page-size)
+            [[ "$seen_page" == false && $# -ge 1 ]] || { usage >&2; exit 2; }
+            page_lane="$1"
+            seen_page=true
+            shift
+            ;;
+        --image-fingerprint)
+            [[ "$seen_fingerprint" == false && $# -ge 1 ]] || { usage >&2; exit 2; }
+            expected_fingerprint="$1"
+            seen_fingerprint=true
+            shift
+            ;;
+        *)
+            echo "Unknown argument: $option" >&2
+            usage >&2
+            exit 2
+            ;;
+    esac
+done
+
+[[ "$seen_serial" == true && "$seen_manifest" == true && "$seen_dicdir" == true \
+    && "$seen_page" == true && "$seen_fingerprint" == true ]] || {
+    usage >&2
+    exit 2
+}
+[[ "$serial" =~ ^[A-Za-z0-9][A-Za-z0-9._:-]*$ ]] || {
+    echo "Serial must be an explicit ADB serial without whitespace or options." >&2
+    exit 2
+}
+[[ -n "$expected_fingerprint" && "$expected_fingerprint" != *[[:space:]]* ]] || {
+    echo "Image fingerprint must be one non-whitespace value." >&2
+    exit 2
+}
+case "$page_lane" in
+    4k)
+        expected_page_size=4096
+        ;;
+    16k)
+        expected_page_size=16384
+        ;;
+    *)
+        echo "Page size must be 4k or 16k." >&2
+        exit 2
+        ;;
+esac
+[[ -f "$manifest" ]] || {
+    echo "A verified S1a wheel manifest is required." >&2
+    exit 2
+}
+[[ -d "$dicdir" ]] || {
+    echo "A golden-pinned UniDic directory is required." >&2
+    exit 2
+}
+manifest="$(realpath "$manifest")"
+dicdir="$(realpath "$dicdir")"
+
+resolve_command() {
+    local command_name="$1"
+    local label="$2"
+    local resolved
+    resolved="$(command -v "$command_name" 2>/dev/null)" || fail "$label is unavailable: $command_name"
+    [[ -x "$resolved" ]] || fail "$label is not executable: $resolved"
+    printf '%s\n' "$resolved"
+}
+
+ADB_COMMAND="$(resolve_command "$ADB_COMMAND" adb)"
+GRADLEW_COMMAND="$(resolve_command "$GRADLEW_COMMAND" Gradle)"
+APKANALYZER_COMMAND="$(resolve_command "$APKANALYZER_COMMAND" apkanalyzer)"
+NATIVE_CHECKER="$(resolve_command "$NATIVE_CHECKER" 'native artifact checker')"
+PROVISIONER="$(resolve_command "$PROVISIONER" 'S1a UniDic provisioner')"
+WHEEL_TOOL="$(resolve_command "$WHEEL_TOOL" 'S1a wheel tool')"
+PYTHON_COMMAND="$(resolve_command "$PYTHON_COMMAND" 'Python 3.13')"
+
+publication_json="$("$WHEEL_TOOL" verify-publication --manifest "$manifest")" \
+    || fail "S1a wheel publication is invalid or stale"
+publication_keys="$("$PYTHON_COMMAND" -c '
+import json
+import sys
+
+value = json.loads(sys.argv[1])
+if set(value) != {"schema", "recipe_key", "build_key"} or value["schema"] != 2:
+    raise SystemExit("unexpected S1a publication identity")
+print(value["recipe_key"])
+print(value["build_key"])
+' "$publication_json")" || fail "cannot parse the S1a publication identity"
+mapfile -t parsed_keys <<<"$publication_keys"
+[[ "${#parsed_keys[@]}" -eq 2 ]] || fail "S1a publication identity is incomplete"
+current_recipe_key="${parsed_keys[0]}"
+current_build_key="${parsed_keys[1]}"
+[[ "$current_recipe_key" =~ ^[0-9a-f]{64}$ && "$current_build_key" =~ ^[0-9a-f]{64}$ ]] \
+    || fail "S1a wheel tool returned an invalid publication identity"
+
+device_state="$("$ADB_COMMAND" -s "$serial" get-state 2>/dev/null)" \
+    || fail "cannot query target $serial"
+[[ "$device_state" == "device" ]] || fail "$serial is not an online device"
+
+read_property() {
+    local property_name="$1"
+    local value
+    value="$("$ADB_COMMAND" -s "$serial" shell getprop "$property_name" 2>/dev/null)" \
+        || fail "cannot read $property_name from $serial"
+    printf '%s' "$value" | tr -d '\r'
+}
+
+boot_complete="$(read_property sys.boot_completed)"
+[[ "$boot_complete" == "1" ]] || fail "$serial has not completed booting"
+actual_abi="$(read_property ro.product.cpu.abi)"
+[[ "$actual_abi" == "arm64-v8a" ]] \
+    || fail "$serial ABI is ${actual_abi:-unknown}, expected arm64-v8a"
+actual_api="$(read_property ro.build.version.sdk)"
+[[ "$actual_api" == "$ANDROID_API_LEVEL" ]] \
+    || fail "$serial API is ${actual_api:-unknown}, expected $ANDROID_API_LEVEL"
+actual_page_size="$("$ADB_COMMAND" -s "$serial" shell getconf PAGE_SIZE 2>/dev/null | tr -d '\r')" \
+    || fail "cannot read the page size from $serial"
+[[ "$actual_page_size" == "$expected_page_size" ]] \
+    || fail "$serial page size is ${actual_page_size:-unknown}, expected $expected_page_size"
+actual_fingerprint="$(read_property ro.build.fingerprint)"
+[[ "$actual_fingerprint" == "$expected_fingerprint" ]] \
+    || fail "$serial image fingerprint does not match the requested image"
+
 cd "$REPO_ROOT"
-./gradlew --no-daemon --stacktrace --dependency-verification strict \
+"$GRADLEW_COMMAND" \
+    --no-daemon \
+    --stacktrace \
+    --dependency-verification strict \
     -PankiMinerS1aManifest="$manifest" \
-    :app:assembleDeviceDebug :app:assembleDeviceDebugAndroidTest
-app_apk="app/build/outputs/apk/device/debug/app-device-debug.apk"
-test_apk="app/build/outputs/apk/androidTest/device/debug/app-device-debug-androidTest.apk"
-"$SCRIPT_DIR/check-native-artifact.sh" \
-    --artifact "$app_apk" \
+    -PankiMinerS1aRecipeKey="$current_recipe_key" \
+    -PankiMinerS1aBuildKey="$current_build_key" \
+    :app:assembleDeviceDebug \
+    :app:assembleDeviceDebugAndroidTest
+
+[[ -f "$APP_APK" ]] || fail "arm64 debug APK was not produced: $APP_APK"
+[[ -f "$TEST_APK" ]] || fail "arm64 instrumentation APK was not produced: $TEST_APK"
+"$NATIVE_CHECKER" \
+    --artifact "$APP_APK" \
     --allow-abi arm64-v8a \
     --require-app-imy \
     --require-s1a
-[[ "$(apkanalyzer manifest application-id "$app_apk")" == com.ankiminer.android ]]
-adb -s "$serial" install -r "$app_apk"
-adb -s "$serial" install -r "$test_apk"
-instrumentation_output="$(adb -s "$serial" shell am instrument -w \
-    -e class com.ankiminer.android.TokenizerS1aInstrumentedTest \
-    com.ankiminer.android.test/androidx.test.runner.AndroidJUnitRunner)"
+
+app_id="$("$APKANALYZER_COMMAND" manifest application-id "$APP_APK")" \
+    || fail "cannot inspect the arm64 debug APK identity"
+[[ "$app_id" == "com.ankiminer.android" ]] \
+    || fail "arm64 debug APK has unexpected application id $app_id"
+test_id="$("$APKANALYZER_COMMAND" manifest application-id "$TEST_APK")" \
+    || fail "cannot inspect the arm64 test APK identity"
+[[ "$test_id" == "com.ankiminer.android.test" ]] \
+    || fail "arm64 test APK has unexpected application id $test_id"
+test_manifest="$("$APKANALYZER_COMMAND" manifest print "$TEST_APK")" \
+    || fail "cannot inspect the arm64 test manifest"
+grep -E "android:targetPackage([^=]*)?=['\"]com\.ankiminer\.android['\"]" \
+    <<<"$test_manifest" >/dev/null \
+    || fail "arm64 test APK targets the wrong application"
+grep -E "android:name([^=]*)?=['\"]androidx\.test\.runner\.AndroidJUnitRunner['\"]" \
+    <<<"$test_manifest" >/dev/null \
+    || fail "arm64 test APK uses the wrong instrumentation runner"
+
+staged_dictionary=false
+cleanup_dictionary() {
+    if [[ "$staged_dictionary" == true ]]; then
+        "$ADB_COMMAND" -s "$serial" shell rm -f "$TEST_UNIDIC_ARCHIVE" \
+            >/dev/null 2>&1 || true
+    fi
+}
+trap cleanup_dictionary EXIT
+
+staged_dictionary=true
+ANKI_MINER_ADB_COMMAND="$ADB_COMMAND" \
+    ANKI_MINER_PYTHON_COMMAND="$PYTHON_COMMAND" \
+    ANDROID_SERIAL="$serial" \
+    "$PROVISIONER" --dicdir "$dicdir"
+"$ADB_COMMAND" -s "$serial" install -r -t "$APP_APK"
+"$ADB_COMMAND" -s "$serial" install -r -t "$TEST_APK"
+
+instrumentation_output="$(
+    "$ADB_COMMAND" -s "$serial" shell am instrument -w -r \
+        -e class "$TEST_CLASS" \
+        "$TEST_RUNNER" 2>&1
+)" || fail "S1a arm64 instrumentation command failed"
 printf '%s\n' "$instrumentation_output"
-grep -Fq 'OK (1 test)' <<<"$instrumentation_output"
+grep -E '^OK \(1 test\)\r?$' <<<"$instrumentation_output" >/dev/null \
+    || fail "S1a arm64 instrumentation did not pass its parity test"
+if grep -E 'FAILURES!!!|INSTRUMENTATION_FAILED|shortMsg=' <<<"$instrumentation_output" >/dev/null; then
+    fail "S1a arm64 instrumentation reported a failure"
+fi
+
+echo "S1a arm64 parity: OK ($serial, API $actual_api, ${actual_page_size}-byte pages)"

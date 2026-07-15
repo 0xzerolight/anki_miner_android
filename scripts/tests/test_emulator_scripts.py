@@ -227,11 +227,29 @@ touch "$FAKE_STATE/health-ran"
             dicdir = root / "dicdir"
             dicdir.mkdir()
             log = root / "runner.log"
+            wheel_log = root / "wheel.log"
+            recipe_key = "a" * 64
+            build_key = "b" * 64
+            wheel_tool = root / "wheel-tool.sh"
+            wheel_tool.write_text(
+                """#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\\n' "$*" >"$S1A_WHEEL_LOG"
+printf '{"schema":2,"recipe_key":"%s","build_key":"%s"}\\n' \
+    "$S1A_RECIPE_KEY" "$S1A_BUILD_KEY"
+""",
+                encoding="utf-8",
+            )
+            wheel_tool.chmod(0o755)
             runner = root / "runner.sh"
             runner.write_text(
                 """#!/usr/bin/env bash
 set -euo pipefail
-printf '%s|%s|%s\n' "$*" "$ORG_GRADLE_PROJECT_ankiMinerS1aManifest" \
+printf '%s|%s|%s|%s|%s\n' \
+    "$*" \
+    "$ORG_GRADLE_PROJECT_ankiMinerS1aManifest" \
+    "$ORG_GRADLE_PROJECT_ankiMinerS1aRecipeKey" \
+    "$ORG_GRADLE_PROJECT_ankiMinerS1aBuildKey" \
     "$ANKI_MINER_TEST_UNIDIC_DIR" >>"$S1A_RUNNER_LOG"
 """,
                 encoding="utf-8",
@@ -241,7 +259,11 @@ printf '%s|%s|%s\n' "$*" "$ORG_GRADLE_PROJECT_ankiMinerS1aManifest" \
             environment.update(
                 {
                     "ANKI_MINER_S1A_EMULATOR_RUNNER": str(runner),
+                    "ANKI_MINER_S1A_WHEEL_TOOL": str(wheel_tool),
                     "S1A_RUNNER_LOG": str(log),
+                    "S1A_WHEEL_LOG": str(wheel_log),
+                    "S1A_RECIPE_KEY": recipe_key,
+                    "S1A_BUILD_KEY": build_key,
                 },
             )
             result = subprocess.run(
@@ -260,10 +282,14 @@ printf '%s|%s|%s\n' "$*" "$ORG_GRADLE_PROJECT_ankiMinerS1aManifest" \
             self.assertEqual(0, result.returncode, result.stderr)
             self.assertEqual(
                 [
-                    f"--page-size 4k|{manifest}|{dicdir}",
-                    f"--page-size 16k|{manifest}|{dicdir}",
+                    f"--page-size 4k|{manifest}|{recipe_key}|{build_key}|{dicdir}",
+                    f"--page-size 16k|{manifest}|{recipe_key}|{build_key}|{dicdir}",
                 ],
                 log.read_text(encoding="utf-8").splitlines(),
+            )
+            self.assertEqual(
+                f"verify-publication --manifest {manifest}\n",
+                wheel_log.read_text(encoding="utf-8"),
             )
 
 

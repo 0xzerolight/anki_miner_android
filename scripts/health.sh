@@ -34,6 +34,43 @@ fail() {
 }
 
 command -v python3.13 >/dev/null || fail "host Python 3.13 is required by Chaquopy"
+if [[ -n "${ORG_GRADLE_PROJECT_ankiMinerS1aManifest:-}" ]]; then
+    s1a_manifest="$(realpath "$ORG_GRADLE_PROJECT_ankiMinerS1aManifest")"
+    s1a_wheel_tool="${ANKI_MINER_S1A_WHEEL_TOOL:-$REPO_ROOT/tools/wheels/s1a_wheels.py}"
+    [[ -x "$s1a_wheel_tool" ]] || fail "S1a wheel tool is unavailable: $s1a_wheel_tool"
+    s1a_publication_json="$(
+        "$s1a_wheel_tool" verify-publication --manifest "$s1a_manifest"
+    )" || fail "S1a wheel publication is invalid or stale"
+    s1a_publication_keys="$(python3.13 -c '
+import json
+import sys
+
+value = json.loads(sys.argv[1])
+if set(value) != {"schema", "recipe_key", "build_key"} or value["schema"] != 2:
+    raise SystemExit("unexpected S1a publication identity")
+print(value["recipe_key"])
+print(value["build_key"])
+' "$s1a_publication_json")" || fail "cannot parse the S1a publication identity"
+    mapfile -t s1a_parsed_keys <<<"$s1a_publication_keys"
+    [[ "${#s1a_parsed_keys[@]}" -eq 2 \
+        && "${s1a_parsed_keys[0]}" =~ ^[0-9a-f]{64}$ \
+        && "${s1a_parsed_keys[1]}" =~ ^[0-9a-f]{64}$ ]] \
+        || fail "S1a publication identity is invalid"
+    if [[ -n "${ORG_GRADLE_PROJECT_ankiMinerS1aRecipeKey:-}" \
+        && "$ORG_GRADLE_PROJECT_ankiMinerS1aRecipeKey" != "${s1a_parsed_keys[0]}" ]]; then
+        fail "configured S1a recipe key disagrees with the verified publication"
+    fi
+    if [[ -n "${ORG_GRADLE_PROJECT_ankiMinerS1aBuildKey:-}" \
+        && "$ORG_GRADLE_PROJECT_ankiMinerS1aBuildKey" != "${s1a_parsed_keys[1]}" ]]; then
+        fail "configured S1a build key disagrees with the verified publication"
+    fi
+    ORG_GRADLE_PROJECT_ankiMinerS1aManifest="$s1a_manifest"
+    ORG_GRADLE_PROJECT_ankiMinerS1aRecipeKey="${s1a_parsed_keys[0]}"
+    ORG_GRADLE_PROJECT_ankiMinerS1aBuildKey="${s1a_parsed_keys[1]}"
+    export ORG_GRADLE_PROJECT_ankiMinerS1aManifest
+    export ORG_GRADLE_PROJECT_ankiMinerS1aRecipeKey
+    export ORG_GRADLE_PROJECT_ankiMinerS1aBuildKey
+fi
 for script in "$SCRIPT_DIR"/*.sh; do
     bash -n "$script" || fail "shell syntax check failed: $script"
 done
