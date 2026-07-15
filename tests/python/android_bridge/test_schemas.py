@@ -376,6 +376,12 @@ def test_unknown_curation_map_key_is_schema_invalid(
                     {"key": "猫", "firstField": "猫"},
                     {"key": "犬", "firstField": "<b>犬</b>"},
                 ],
+                "limits": {
+                    "maxHitsPerCandidate": 100,
+                    "maxTotalHits": 1000,
+                    "maxItemUtf8Bytes": 65536,
+                    "maxTotalUtf8Bytes": 1048576,
+                },
             },
         },
         {
@@ -386,7 +392,10 @@ def test_unknown_curation_map_key_is_schema_invalid(
         {
             "runId": "run_" + "a" * 32,
             "requestId": "anki_" + "b" * 32,
-            "matches": [True, False],
+            "rawFirstFieldHits": [
+                [{"noteId": 10, "firstField": "<b>猫</b>"}],
+                [],
+            ],
         },
         {
             "runId": "run_" + "a" * 32,
@@ -427,11 +436,23 @@ def test_unknown_curation_map_key_is_schema_invalid(
             "requestId": "anki_" + "b" * 32,
             "deckName": "Japanese::Mining",
             "modelName": "Lapis",
+            "duplicateScope": {
+                "kind": "collection",
+                "limits": {
+                    "maxNoteIdsPerCandidate": 100,
+                    "maxTotalNoteIds": 1000,
+                },
+            },
             "notes": [
                 {
                     "clientNoteId": "note_" + "d" * 32,
                     "fields": {"Expression": "猫", "Sentence": "猫だ"},
                     "tags": ["auto-mined"],
+                    "duplicateCandidate": {
+                        "key": "猫",
+                        "firstField": "猫",
+                        "baselineNoteIds": [],
+                    },
                 }
             ],
         },

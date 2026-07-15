@@ -23,6 +23,16 @@ from android_bridge.callbacks import AndroidAnkiCallbacks
 from android_bridge.protocol import BridgeProtocolError, encode_message
 
 RUN_ID = "run_" + "a" * 32
+_DUPLICATE_LIMITS = {
+    "maxHitsPerCandidate": 100,
+    "maxTotalHits": 1000,
+    "maxItemUtf8Bytes": 65536,
+    "maxTotalUtf8Bytes": 1048576,
+}
+_CREATE_SNAPSHOT_LIMITS = {
+    "maxNoteIdsPerCandidate": 100,
+    "maxTotalNoteIds": 1000,
+}
 _ANKI_SCHEMA = json.loads(
     (
         Path(__file__).resolve().parents[3]
@@ -95,6 +105,7 @@ class FakeKotlinAnki:
         self.verify_fields: list[str] | None = None
         self.known_fields: list[str] = []
         self.duplicate_fields: list[str] = []
+        self.duplicate_note_ids: dict[int, int] = {}
         self.duplicate_decks: dict[str, set[str]] = {}
         self.errors: dict[str, tuple[str, str, bool]] = {}
         self.failed_media_names: set[str] = set()
@@ -104,6 +115,34 @@ class FakeKotlinAnki:
             tuple[list[str], dict[str, object] | None] | None
         ] = []
         self.next_note_id = 1000
+
+    def _duplicate_records(self) -> list[tuple[int, str]]:
+        return [
+            (self.duplicate_note_ids.get(index, 10_000 + index), first_field)
+            for index, first_field in enumerate(self.duplicate_fields)
+        ]
+
+    def _in_duplicate_scope(
+        self, note_id: int, first_field: str, scope: dict[str, Any]
+    ) -> bool:
+        del note_id
+        if scope["kind"] == "collection":
+            return True
+        return scope["deckName"] in self.duplicate_decks.get(first_field, set())
+
+    def _snapshot_candidate_ids(
+        self,
+        candidate: dict[str, Any],
+        scope: dict[str, Any],
+        records: list[tuple[int, str]],
+    ) -> set[int]:
+        checksum = _ankidroid_field_checksum(candidate["firstField"])
+        return {
+            note_id
+            for note_id, first_field in records
+            if _ankidroid_field_checksum(first_field) == checksum
+            and self._in_duplicate_scope(note_id, first_field, scope)
+        }
 
     def _request(self, method: str, raw: str) -> dict[str, Any]:
         envelope = json.loads(raw)
@@ -163,32 +202,27 @@ class FakeKotlinAnki:
                 },
             )
 
-        from anki_miner.services.anki_note_builder import _strip_for_dedup
-
         scope = request["scope"]
         deck_name = scope["deckName"]
-        matches = []
+        raw_hit_buckets = []
         for candidate in scope["candidates"]:
             candidate_checksum = _ankidroid_field_checksum(candidate["firstField"])
-            matching = False
-            for stored in self.duplicate_fields:
+            hits = []
+            for note_id, stored in self._duplicate_records():
                 if _ankidroid_field_checksum(stored) != candidate_checksum:
-                    continue
-                if _strip_for_dedup(stored) != candidate["key"]:
                     continue
                 if deck_name is not None and deck_name not in self.duplicate_decks.get(
                     stored, set()
                 ):
                     continue
-                matching = True
-                break
-            matches.append(matching)
+                hits.append({"noteId": note_id, "firstField": stored})
+            raw_hit_buckets.append(hits)
         return encode_message(
             "anki.scanfirstfields.result",
             {
                 "runId": request["runId"],
                 "requestId": request["requestId"],
-                "matches": matches,
+                "rawFirstFieldHits": raw_hit_buckets,
             },
         )
 
@@ -239,23 +273,55 @@ class FakeKotlinAnki:
         request = self._request("ankiCreateNotes", raw)
         if error := self._error(request, "createNotes"):
             return error
+        # The production callback must take one complete scoped snapshot before
+        # any insert. Comparing IDs with Python's probe baseline closes the
+        # preprobe/write race without moving normalization into Kotlin. Notes
+        # created below are deliberately absent from this immutable snapshot.
+        records_snapshot = self._duplicate_records()
         script = self.create_scripts.pop(0) if self.create_scripts else None
         statuses, partial_error = (
             script
             if script is not None
-            else (["created"] * len(request["notes"]), None)
+            else (
+                [
+                    (
+                        "duplicate"
+                        if self._snapshot_candidate_ids(
+                            note["duplicateCandidate"],
+                            request["duplicateScope"],
+                            records_snapshot,
+                        )
+                        - set(note["duplicateCandidate"]["baselineNoteIds"])
+                        else "created"
+                    )
+                    for note in request["notes"]
+                ],
+                None,
+            )
         )
         assert len(statuses) == len(request["notes"])
         results: list[dict[str, object]] = []
+        created_rows: list[tuple[int, str]] = []
         for note, status in zip(request["notes"], statuses, strict=True):
             result: dict[str, object] = {
                 "clientNoteId": note["clientNoteId"],
                 "status": status,
             }
             if status == "created":
-                result["noteId"] = self.next_note_id
+                note_id = self.next_note_id
+                result["noteId"] = note_id
                 self.next_note_id += 1
+                created_rows.append(
+                    (note_id, note["duplicateCandidate"]["firstField"])
+                )
             results.append(result)
+        for note_id, first_field in created_rows:
+            index = len(self.duplicate_fields)
+            self.duplicate_fields.append(first_field)
+            self.duplicate_note_ids[index] = note_id
+            self.duplicate_decks.setdefault(first_field, set()).add(
+                request["deckName"]
+            )
         return encode_message(
             "anki.createnotes.result",
             {
@@ -500,6 +566,15 @@ def test_note_building_dedup_and_first_occurrence_semantics_are_python_owned(
     assert create_payload["notes"][0]["fields"]["Expression"] == "猫"
     assert create_payload["notes"][0]["fields"]["Sentence"] == "猫だ"
     assert create_payload["notes"][0]["tags"] == ["mine", "mobile"]
+    assert create_payload["duplicateScope"] == {
+        "kind": "collection",
+        "limits": _CREATE_SNAPSHOT_LIMITS,
+    }
+    assert create_payload["notes"][0]["duplicateCandidate"] == {
+        "key": "猫",
+        "firstField": "猫",
+        "baselineNoteIds": [],
+    }
     duplicate_scope = kotlin.requests_for("ankiScanFirstFields")[0]["payload"]["scope"]
     assert duplicate_scope["candidates"][0] == {
         "key": "既存",
@@ -533,6 +608,151 @@ def test_duplicate_probe_sends_exact_markup_first_field_for_checksum(
     ]
 
 
+def test_python_normalizes_bounded_raw_duplicate_hits(
+    initialized_bridge_home: Path,
+) -> None:
+    class RawHitKotlin(FakeKotlinAnki):
+        def ankiScanFirstFields(self, raw: str) -> str:
+            request = self._request("ankiScanFirstFields", raw)
+            raw_values = [
+                "<b>猫</b>",
+                "[sound:clip.opus]  犬 ",
+                "&#38;狐",
+                "は\u3099",
+                "\t鳥  ",
+            ]
+            return encode_message(
+                "anki.scanfirstfields.result",
+                {
+                    "runId": request["runId"],
+                    "requestId": request["requestId"],
+                    "rawFirstFieldHits": [
+                        [{"noteId": 20_000 + index, "firstField": value}]
+                        for index, value in enumerate(raw_values)
+                    ],
+                },
+            )
+
+    kotlin = RawHitKotlin()
+    cards = [
+        _card("猫"),
+        _card("犬"),
+        _card("&狐"),
+        _card("は\u3099"),
+        _card("  鳥\n"),
+    ]
+    adapter = _adapter(_config(initialized_bridge_home), kotlin)
+
+    assert adapter.create_cards_batch(cards) == 0
+    assert adapter.last_skipped_duplicates == len(cards)
+    assert not kotlin.requests_for("ankiCreateNotes")
+
+
+@pytest.mark.parametrize(
+    "raw_hit_buckets",
+    [
+        [
+            [
+                {"noteId": 30_000 + index, "firstField": f"猫{index}"}
+                for index in range(101)
+            ]
+        ],
+        [[{"noteId": 40_000, "firstField": "界" * 21_846}]],
+    ],
+)
+def test_duplicate_raw_hit_response_enforces_item_and_utf8_limits(
+    initialized_bridge_home: Path,
+    raw_hit_buckets: list[list[dict[str, object]]],
+) -> None:
+    class OversizedRawHitKotlin(FakeKotlinAnki):
+        def ankiScanFirstFields(self, raw: str) -> str:
+            request = self._request("ankiScanFirstFields", raw)
+            return encode_message(
+                "anki.scanfirstfields.result",
+                {
+                    "runId": request["runId"],
+                    "requestId": request["requestId"],
+                    "rawFirstFieldHits": raw_hit_buckets,
+                },
+            )
+
+    kotlin = OversizedRawHitKotlin()
+    with pytest.raises(BridgeProtocolError) as exc_info:
+        _adapter(_config(initialized_bridge_home), kotlin).create_cards_batch(
+            [_card("猫")]
+        )
+
+    assert exc_info.value.code == "invalid_anki_response"
+    assert not kotlin.requests_for("ankiCreateNotes")
+
+
+def test_duplicate_raw_hit_response_enforces_aggregate_hit_limit(
+    initialized_bridge_home: Path,
+) -> None:
+    class TooManyRawHitsKotlin(FakeKotlinAnki):
+        def ankiScanFirstFields(self, raw: str) -> str:
+            request = self._request("ankiScanFirstFields", raw)
+            return encode_message(
+                "anki.scanfirstfields.result",
+                {
+                    "runId": request["runId"],
+                    "requestId": request["requestId"],
+                    "rawFirstFieldHits": [
+                        [
+                            {
+                                "noteId": 50_000 + bucket * 100 + index,
+                                "firstField": f"語{bucket}-{index}",
+                            }
+                            for index in range(100)
+                        ]
+                        for bucket in range(11)
+                    ],
+                },
+            )
+
+    kotlin = TooManyRawHitsKotlin()
+    with pytest.raises(BridgeProtocolError) as exc_info:
+        _adapter(_config(initialized_bridge_home), kotlin).create_cards_batch(
+            [_card(f"語{index}") for index in range(11)]
+        )
+
+    assert exc_info.value.code == "invalid_anki_response"
+    assert not kotlin.requests_for("ankiCreateNotes")
+
+
+def test_duplicate_raw_hit_response_enforces_aggregate_utf8_limit(
+    initialized_bridge_home: Path,
+) -> None:
+    class TooManyRawBytesKotlin(FakeKotlinAnki):
+        def ankiScanFirstFields(self, raw: str) -> str:
+            request = self._request("ankiScanFirstFields", raw)
+            return encode_message(
+                "anki.scanfirstfields.result",
+                {
+                    "runId": request["runId"],
+                    "requestId": request["requestId"],
+                    "rawFirstFieldHits": [
+                        [
+                            {
+                                "noteId": 60_000 + index,
+                                "firstField": f"{index}" + "界" * 21_840,
+                            }
+                            for index in range(17)
+                        ]
+                    ],
+                },
+            )
+
+    kotlin = TooManyRawBytesKotlin()
+    with pytest.raises(BridgeProtocolError) as exc_info:
+        _adapter(_config(initialized_bridge_home), kotlin).create_cards_batch(
+            [_card("猫")]
+        )
+
+    assert exc_info.value.code == "invalid_anki_response"
+    assert not kotlin.requests_for("ankiCreateNotes")
+
+
 def test_allow_duplicate_cards_scopes_probe_to_target_deck(
     initialized_bridge_home: Path,
 ) -> None:
@@ -547,7 +767,102 @@ def test_allow_duplicate_cards_scopes_probe_to_target_deck(
         "modelName": config.anki_note_type,
         "deckName": config.anki_deck_name,
         "candidates": [{"key": "猫", "firstField": "猫"}],
+        "limits": _DUPLICATE_LIMITS,
     }
+    create_payload = kotlin.requests_for("ankiCreateNotes")[0]["payload"]
+    assert create_payload["duplicateScope"] == {
+        "kind": "exactDeck",
+        "deckName": config.anki_deck_name,
+        "includeChildren": False,
+        "limits": _CREATE_SNAPSHOT_LIMITS,
+    }
+
+
+def test_create_race_baseline_preserves_preprobe_checksum_collision(
+    initialized_bridge_home: Path,
+) -> None:
+    kotlin = FakeKotlinAnki()
+    # AnkiDroid's checksum keeps an img src while Python strips the entire tag:
+    # same provider checksum, deliberately different Python duplicate identity.
+    kotlin.duplicate_fields = ['<img src="x">猫']
+    adapter = _adapter(_config(initialized_bridge_home), kotlin)
+
+    assert adapter.create_cards_batch([_card(" x 猫")]) == 1
+    create_note = kotlin.requests_for("ankiCreateNotes")[0]["payload"]["notes"][0]
+    assert create_note["duplicateCandidate"] == {
+        "key": "x 猫",
+        "firstField": " x 猫",
+        "baselineNoteIds": [10_000],
+    }
+
+
+def test_create_baseline_limit_counts_unique_ids_across_repeated_candidates(
+    initialized_bridge_home: Path,
+) -> None:
+    config = _config(initialized_bridge_home, allow_duplicate_cards=True)
+    kotlin = FakeKotlinAnki()
+    collision = '<img src="x">猫'
+    kotlin.duplicate_fields = [collision] * 100
+    kotlin.duplicate_decks = {collision: {config.anki_deck_name}}
+    adapter = _adapter(config, kotlin)
+
+    assert adapter.create_cards_batch([_card(" x 猫")] * 100) == 100
+    notes = kotlin.requests_for("ankiCreateNotes")[0]["payload"]["notes"]
+    assert len(notes) == 100
+    assert all(
+        note["duplicateCandidate"]["baselineNoteIds"] == list(range(10_000, 10_100))
+        for note in notes
+    )
+
+
+def test_empty_normalized_first_field_fails_before_provider_callbacks(
+    initialized_bridge_home: Path,
+) -> None:
+    kotlin = FakeKotlinAnki()
+
+    with pytest.raises(BridgeProtocolError) as exc_info:
+        _adapter(_config(initialized_bridge_home), kotlin).create_cards_batch(
+            [_card(" \t\n ")]
+        )
+
+    assert exc_info.value.code == "invalid_note"
+    assert not kotlin.requests_for("ankiScanFirstFields")
+    assert not kotlin.requests_for("ankiCreateNotes")
+
+
+@pytest.mark.parametrize(
+    ("allow_duplicate_cards", "external_deck", "expected_created"),
+    [
+        (False, "Japanese::Other", 0),
+        (True, "__target__", 0),
+        (True, "Japanese::Other", 1),
+    ],
+)
+def test_create_snapshot_rejects_only_new_ids_in_configured_scope(
+    initialized_bridge_home: Path,
+    allow_duplicate_cards: bool,
+    external_deck: str,
+    expected_created: int,
+) -> None:
+    class RacingKotlin(FakeKotlinAnki):
+        def ankiCreateNotes(self, raw: str) -> str:
+            self.duplicate_fields.append("<b>猫</b>")
+            self.duplicate_decks.setdefault("<b>猫</b>", set()).add(external_deck)
+            return super().ankiCreateNotes(raw)
+
+    config = _config(
+        initialized_bridge_home,
+        allow_duplicate_cards=allow_duplicate_cards,
+    )
+    if external_deck == "__target__":
+        external_deck = config.anki_deck_name
+    kotlin = RacingKotlin()
+    adapter = _adapter(config, kotlin)
+
+    assert adapter.create_cards_batch([_card("猫")]) == expected_created
+    assert adapter.last_skipped_duplicates == 1 - expected_created
+    request = kotlin.requests_for("ankiCreateNotes")[0]["payload"]
+    assert request["notes"][0]["duplicateCandidate"]["baselineNoteIds"] == []
 
 
 def test_allow_duplicate_cards_filters_checksum_hits_to_target_deck(
@@ -595,6 +910,10 @@ def test_repeated_expressions_in_one_batch_follow_desktop_duplicate_mode(
     assert scope["candidates"] == [{"key": "猫", "firstField": "猫"}]
     notes = kotlin.requests_for("ankiCreateNotes")[0]["payload"]["notes"]
     assert len(notes) == expected_created
+    if allow_duplicate_cards:
+        assert [
+            note["duplicateCandidate"]["baselineNoteIds"] for note in notes
+        ] == [[], [], []]
 
 
 def test_allow_duplicate_cards_fans_existing_target_hit_to_repeated_candidates(
@@ -742,7 +1061,7 @@ def test_duplicate_lookup_rejects_misaligned_sparse_array_semantics(
                 {
                     "runId": request["runId"],
                     "requestId": request["requestId"],
-                    "matches": [True, False],
+                    "rawFirstFieldHits": [[], []],
                 },
             )
 
@@ -778,23 +1097,8 @@ def test_first_occurrence_wins_across_batch_boundary_when_duplicates_disallowed(
 def test_target_probe_observes_prior_batch_when_duplicates_allowed(
     initialized_bridge_home: Path,
 ) -> None:
-    class CollectionTrackingKotlin(FakeKotlinAnki):
-        def ankiCreateNotes(self, raw: str) -> str:
-            response = super().ankiCreateNotes(raw)
-            request = self.requests_for("ankiCreateNotes")[-1]["payload"]
-            rows = json.loads(response)["payload"]["results"]
-            for note, row in zip(request["notes"], rows, strict=True):
-                if row["status"] != "created":
-                    continue
-                first_field = next(iter(note["fields"].values()), "")
-                self.duplicate_fields.append(first_field)
-                self.duplicate_decks.setdefault(first_field, set()).add(
-                    request["deckName"]
-                )
-            return response
-
     config = _config(initialized_bridge_home, allow_duplicate_cards=True)
-    kotlin = CollectionTrackingKotlin()
+    kotlin = FakeKotlinAnki()
     cards = [_card(f"語{index}") for index in range(100)] + [_card("語0")]
     adapter = _adapter(config, kotlin)
 

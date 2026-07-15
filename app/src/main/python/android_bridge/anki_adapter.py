@@ -32,6 +32,10 @@ _BATCH_SIZE = 100
 _MEDIA_BATCH_SIZE = 50
 _MAX_DUPLICATE_KEY_CHARS = 4096
 _MAX_DUPLICATE_FIRST_FIELD_CHARS = 16_384
+_MAX_DUPLICATE_HITS_PER_CANDIDATE = 100
+_MAX_DUPLICATE_TOTAL_HITS = 1000
+_MAX_RAW_FIRST_FIELD_UTF8_BYTES = 64 * 1024
+_MAX_DUPLICATE_HITS_UTF8_BYTES = 1024 * 1024
 
 _SETUP_ERROR_CODES = {
     "api_disabled",
@@ -110,6 +114,12 @@ class _CardMediaRef:
     media: Any
     filename_attr: str
     source_path: Path
+
+
+@dataclass(frozen=True)
+class _DuplicateProbeResult:
+    is_duplicate: bool
+    baseline_note_ids: tuple[int, ...]
 
 
 def _protocol_error(code: str, message: str) -> NoReturn:
@@ -787,7 +797,7 @@ class AndroidAnkiAdapter:
 
     def _duplicate_first_fields(
         self, candidates: Sequence[tuple[str, str]]
-    ) -> list[bool]:
+    ) -> list[_DuplicateProbeResult]:
         if not candidates:
             return []
         from anki_miner.services.anki_note_builder import _strip_for_dedup
@@ -827,6 +837,12 @@ class AndroidAnkiAdapter:
                 {"key": key, "firstField": first_field}
                 for key, first_field in unique_candidates
             ],
+            "limits": {
+                "maxHitsPerCandidate": _MAX_DUPLICATE_HITS_PER_CANDIDATE,
+                "maxTotalHits": _MAX_DUPLICATE_TOTAL_HITS,
+                "maxItemUtf8Bytes": _MAX_RAW_FIRST_FIELD_UTF8_BYTES,
+                "maxTotalUtf8Bytes": _MAX_DUPLICATE_HITS_UTF8_BYTES,
+            },
         }
         try:
             payload = self._callbacks.scan_first_fields({"scope": scope})
@@ -834,26 +850,83 @@ class AndroidAnkiAdapter:
             _raise_callback_error(error)
         result = _expect_exact_keys(
             payload,
-            {"runId", "requestId", "matches"},
+            {"runId", "requestId", "rawFirstFieldHits"},
             context="duplicate lookup result",
         )
-        matches = result["matches"]
-        if (
-            not isinstance(matches, list)
-            or len(matches) != len(unique_candidates)
-            or any(type(match) is not bool for match in matches)
+        raw_buckets = result["rawFirstFieldHits"]
+        if not isinstance(raw_buckets, list) or len(raw_buckets) != len(
+            unique_candidates
         ):
             _protocol_error(
                 "invalid_anki_response",
-                "Duplicate lookup matches must align with candidates",
+                "Duplicate lookup raw fields must align with candidates",
             )
-        matches_by_candidate = {
-            candidate: is_duplicate
-            for candidate, is_duplicate in zip(
-                unique_candidates, matches, strict=True
+        total_hits = 0
+        total_utf8_bytes = 0
+        probe_results: list[_DuplicateProbeResult] = []
+        for index, ((key, _), bucket) in enumerate(
+            zip(unique_candidates, raw_buckets, strict=True)
+        ):
+            if not isinstance(bucket, list) or len(bucket) > (
+                _MAX_DUPLICATE_HITS_PER_CANDIDATE
+            ):
+                _protocol_error(
+                    "invalid_anki_response",
+                    f"Duplicate lookup raw field bucket {index} is invalid",
+                )
+            total_hits += len(bucket)
+            if total_hits > _MAX_DUPLICATE_TOTAL_HITS:
+                _protocol_error(
+                    "invalid_anki_response",
+                    "Duplicate lookup returned too many raw fields",
+                )
+            normalized_match = False
+            note_ids: list[int] = []
+            for raw_index, raw_hit in enumerate(bucket):
+                row = _expect_exact_keys(
+                    raw_hit,
+                    {"noteId", "firstField"},
+                    context=f"duplicate raw field {index}:{raw_index}",
+                )
+                note_id = _expect_positive_int(
+                    row["noteId"], context=f"duplicate noteId {index}:{raw_index}"
+                )
+                if note_id in note_ids:
+                    _protocol_error(
+                        "invalid_anki_response",
+                        f"Duplicate raw field bucket {index} repeats a note ID",
+                    )
+                note_ids.append(note_id)
+                raw_value = row["firstField"]
+                if not isinstance(raw_value, str):
+                    _protocol_error(
+                        "invalid_anki_response",
+                        f"Duplicate raw field {index}:{raw_index} must be a string",
+                    )
+                raw_bytes = len(raw_value.encode("utf-8"))
+                if raw_bytes > _MAX_RAW_FIRST_FIELD_UTF8_BYTES:
+                    _protocol_error(
+                        "invalid_anki_response",
+                        f"Duplicate raw field {index}:{raw_index} is too large",
+                    )
+                total_utf8_bytes += raw_bytes
+                if total_utf8_bytes > _MAX_DUPLICATE_HITS_UTF8_BYTES:
+                    _protocol_error(
+                        "invalid_anki_response",
+                        "Duplicate lookup raw fields exceed the UTF-8 budget",
+                    )
+                if _strip_for_dedup(raw_value) == key:
+                    normalized_match = True
+            probe_results.append(
+                _DuplicateProbeResult(
+                    is_duplicate=normalized_match,
+                    baseline_note_ids=tuple(note_ids),
+                )
             )
-        }
-        return [matches_by_candidate[candidate] for candidate in candidate_list]
+        results_by_candidate = dict(
+            zip(unique_candidates, probe_results, strict=True)
+        )
+        return [results_by_candidate[candidate] for candidate in candidate_list]
 
     def _parse_create_notes_result(
         self, payload: dict[str, Any], client_ids: Sequence[str]
@@ -956,11 +1029,23 @@ class AndroidAnkiAdapter:
         return note_ids, duplicates, error
 
     def _create_note_batch(
-        self, notes: Sequence[Mapping[str, Any]]
+        self,
+        notes: Sequence[Mapping[str, Any]],
+        duplicate_candidates: Sequence[
+            tuple[str, str, _DuplicateProbeResult]
+        ],
     ) -> tuple[list[int | None], int, AnkiCallbackError | None]:
+        if len(notes) != len(duplicate_candidates):
+            _protocol_error(
+                "invalid_note",
+                "Create-note duplicate candidates must align with notes",
+            )
         client_ids: list[str] = []
         wire_notes: list[dict[str, Any]] = []
-        for note in notes:
+        baseline_note_ids_across_request: set[int] = set()
+        for note, (key, first_field, probe) in zip(
+            notes, duplicate_candidates, strict=True
+        ):
             client_id = f"note_{uuid4().hex}"
             client_ids.append(client_id)
             fields = note.get("fields")
@@ -979,15 +1064,69 @@ class AndroidAnkiAdapter:
                 isinstance(tag, str) and tag for tag in tags
             ):
                 _protocol_error("invalid_note", "Anki tags must be non-empty strings")
+            actual_first_field = next(iter(fields.values()))
+            if (
+                not key
+                or len(key) > _MAX_DUPLICATE_KEY_CHARS
+                or first_field != actual_first_field
+                or len(first_field) > _MAX_DUPLICATE_FIRST_FIELD_CHARS
+            ):
+                _protocol_error(
+                    "invalid_note",
+                    "Create-note duplicate identity is invalid",
+                )
+            baseline_note_ids = list(probe.baseline_note_ids)
+            if (
+                len(baseline_note_ids) > _MAX_DUPLICATE_HITS_PER_CANDIDATE
+                or len(set(baseline_note_ids)) != len(baseline_note_ids)
+                or any(note_id <= 0 for note_id in baseline_note_ids)
+            ):
+                _protocol_error(
+                    "invalid_note",
+                    "Create-note duplicate baseline is invalid",
+                )
+            baseline_note_ids_across_request.update(baseline_note_ids)
+            if len(baseline_note_ids_across_request) > _MAX_DUPLICATE_TOTAL_HITS:
+                _protocol_error(
+                    "invalid_note",
+                    "Create-note duplicate baselines exceed the request limit",
+                )
             wire_notes.append(
-                {"clientNoteId": client_id, "fields": dict(fields), "tags": list(tags)}
+                {
+                    "clientNoteId": client_id,
+                    "fields": dict(fields),
+                    "tags": list(tags),
+                    "duplicateCandidate": {
+                        "key": key,
+                        "firstField": first_field,
+                        "baselineNoteIds": baseline_note_ids,
+                    },
+                }
             )
 
+        duplicate_scope: dict[str, Any]
+        snapshot_limits = {
+            "maxNoteIdsPerCandidate": _MAX_DUPLICATE_HITS_PER_CANDIDATE,
+            "maxTotalNoteIds": _MAX_DUPLICATE_TOTAL_HITS,
+        }
+        if self.config.allow_duplicate_cards:
+            duplicate_scope = {
+                "kind": "exactDeck",
+                "deckName": self.config.anki_deck_name,
+                "includeChildren": False,
+                "limits": snapshot_limits,
+            }
+        else:
+            duplicate_scope = {
+                "kind": "collection",
+                "limits": snapshot_limits,
+            }
         try:
             payload = self._callbacks.create_notes(
                 {
                     "deckName": self.config.anki_deck_name,
                     "modelName": self.config.anki_note_type,
+                    "duplicateScope": duplicate_scope,
                     "notes": wire_notes,
                 }
             )
@@ -1048,27 +1187,33 @@ class AndroidAnkiAdapter:
                         seen_outgoing.add(key)
                     candidates.append((item, note, key, first_value))
 
-                duplicate_matches = iter(
+                duplicate_probes = iter(
                     self._duplicate_first_fields(
                         [
                             (key, first_value)
                             for _, _, key, first_value in candidates
-                            if key
                         ]
                     )
                 )
                 submit_notes: list[dict[str, Any]] = []
                 submit_payloads: list[Any] = []
-                for item, note, key, _ in candidates:
-                    if key and next(duplicate_matches):
+                submit_duplicate_candidates: list[
+                    tuple[str, str, _DuplicateProbeResult]
+                ] = []
+                for item, note, key, first_field in candidates:
+                    probe = next(duplicate_probes)
+                    if probe.is_duplicate:
                         skipped_duplicates += 1
                         continue
                     submit_notes.append(note)
                     submit_payloads.append(item)
+                    submit_duplicate_candidates.append((key, first_field, probe))
 
                 if submit_notes:
                     note_ids, residual_duplicates, partial_error = (
-                        self._create_note_batch(submit_notes)
+                        self._create_note_batch(
+                            submit_notes, submit_duplicate_candidates
+                        )
                     )
                 else:
                     note_ids, residual_duplicates, partial_error = [], 0, None
