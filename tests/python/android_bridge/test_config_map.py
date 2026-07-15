@@ -151,6 +151,23 @@ def test_conflicting_tts_aliases_are_rejected(tmp_path: Path) -> None:
         ({"blacklist_path": "relative.txt"}, "invalid_config_field"),
         ({"blacklist_path": ""}, "invalid_config_field"),
         ({"anki_fields": {"invented": "Field"}}, "invalid_config_field"),
+        ({"anki_deck_name": ""}, "invalid_config_field"),
+        ({"anki_note_type": " Lapis"}, "invalid_config_field"),
+        ({"anki_note_type": "Lapis\n"}, "invalid_config_field"),
+        ({"anki_note_type": "Lapis\u200e"}, "invalid_config_field"),
+        ({"anki_note_type": "Cafe\u0301"}, "invalid_config_field"),
+        ({"anki_fields": {"word": ""}}, "invalid_config_field"),
+        ({"anki_fields": {"glossary": " Glossary"}}, "invalid_config_field"),
+        (
+            {
+                "card_type": "click",
+                "card_type_marker_fields": {"click": ""},
+            },
+            "invalid_config_field",
+        ),
+        ({"excluded_decks": [""]}, "invalid_config_field"),
+        ({"excluded_decks": ["Known", "Known"]}, "invalid_config_field"),
+        ({"excluded_decks": ["Known "]}, "invalid_config_field"),
         ({"frequency_chain": [{"source_id": "../escape"}]}, "invalid_config_field"),
     ],
 )
@@ -241,3 +258,15 @@ def test_checked_in_schema_has_exact_mapping_keys_chain_shapes_and_absolute_path
     assert definitions["frequencySource"]["required"] == ["source_id"]
     assert definitions["audioPack"]["properties"]["kind"] == {"const": "pack"}
     assert definitions["absolutePathOrNull"]["oneOf"][1]["pattern"] == "^/"
+    assert definitions["settings"]["properties"]["excluded_decks"][
+        "uniqueItems"
+    ] is True
+    assert definitions["settings"]["properties"]["anki_deck_name"] == {
+        "$ref": "#/$defs/canonicalNonEmptyString"
+    }
+    assert definitions["ankiFields"]["properties"]["word"] == {
+        "$ref": "#/$defs/canonicalNonEmptyString"
+    }
+    assert definitions["ankiFields"]["properties"]["glossary"] == {
+        "$ref": "#/$defs/optionalMappedField"
+    }

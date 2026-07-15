@@ -11,12 +11,15 @@ from __future__ import annotations
 
 import logging
 import re
+import unicodedata
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, NoReturn
 from uuid import uuid4
 
 from .callbacks import AndroidAnkiCallbacks, AnkiCallbackError
+from .config_map import _REQUIRED_ANKI_FIELD_KEYS, validate_anki_request_config
 from .protocol import BridgeProtocolError, normalize_integral_json_number
 
 logger = logging.getLogger(__name__)
@@ -25,14 +28,16 @@ _JAPANESE_RE = re.compile(r"[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF\u3400-\u4DB
 _BATCH_SIZE = 100
 
 _SETUP_ERROR_CODES = {
+    "api_disabled",
+    "permission_required",
     "note_type_not_found",
+    "field_missing",
     "field_mapping_invalid",
     "target_invalid",
 }
 _PROTOCOL_ERROR_CODES = {"invalid_request", "unsupported_operation"}
 _CONNECTION_ERROR_CODES = {
     "provider_unavailable",
-    "permission_denied",
     "query_failed",
     "write_failed",
     "timeout",
@@ -41,6 +46,49 @@ _CONNECTION_ERROR_CODES = {
     "internal_error",
 }
 _ALL_ERROR_CODES = _SETUP_ERROR_CODES | _PROTOCOL_ERROR_CODES | _CONNECTION_ERROR_CODES
+_RECOVERABLE_MEDIA_ERROR_CODES = frozenset({"media_store_failed"})
+_FORBIDDEN_FILENAME_CHARACTERS = frozenset('/\\<>[]:"\'')
+
+
+class AnkiOperationCancelled(BaseException):
+    """A provider cancellation which must escape ``process_episode`` intact.
+
+    The desktop engine represents user cancellation as a result rather than an
+    exception and therefore has no reusable cancellation exception. This
+    bridge-only ``BaseException`` deliberately bypasses the engine's broad
+    ``except Exception`` failure conversion. The mining entrypoint translates
+    it to the job-cancelled terminal state.
+    """
+
+    code = "cancelled"
+
+    def __init__(self, operation: str, message: str, retryable: bool) -> None:
+        super().__init__(message)
+        self.operation = operation
+        self.message = message
+        self.retryable = retryable
+
+    def __str__(self) -> str:
+        return self.message
+
+
+@dataclass(frozen=True)
+class _MediaAsset:
+    asset_id: str
+    source_path: str
+    preferred_name: str
+    original_name: str
+    purpose: str
+    media_kind: str
+
+    def to_wire(self) -> dict[str, str]:
+        return {
+            "assetId": self.asset_id,
+            "sourcePath": self.source_path,
+            "preferredName": self.preferred_name,
+            "purpose": self.purpose,
+            "mediaKind": self.media_kind,
+        }
 
 
 def _protocol_error(code: str, message: str) -> NoReturn:
@@ -88,9 +136,54 @@ def _expect_positive_int(value: object, *, context: str) -> int:
 
 def _expect_filename(value: object, *, context: str) -> str:
     filename = _expect_string(value, context=context, nonempty=True)
-    if "/" in filename or "\\" in filename or filename in {".", ".."}:
+    if (
+        filename in {".", ".."}
+        or filename != filename.strip()
+        or filename != unicodedata.normalize("NFC", filename)
+        or any(character in _FORBIDDEN_FILENAME_CHARACTERS for character in filename)
+        or any(unicodedata.category(character).startswith("C") for character in filename)
+        or Path(filename).name != filename
+    ):
         _protocol_error("invalid_anki_response", f"{context} is not a filename")
     return filename
+
+
+def _validate_provider_filename(
+    actual: str, preferred: str, *, purpose: str, context: str
+) -> None:
+    """Constrain AnkiDroid's returned name to its documented insertion shape.
+
+    The v2.24 provider creates a temporary file from the preferred *stem* plus
+    ``_`` and a random suffix, then preserves that file's extension through
+    ``media.addFile``. A direct-name implementation may return the preferred
+    name unchanged. Kotlin must unwrap the provider URI/``[sound:]``/``<img>``
+    response before returning this raw basename.
+    """
+
+    preferred_path = Path(preferred)
+    actual_path = Path(actual)
+    if not preferred_path.suffix or not actual_path.suffix:
+        _protocol_error(
+            "unexpected_media_name", f"{context} must preserve a file extension"
+        )
+    if actual_path.suffix.casefold() != preferred_path.suffix.casefold():
+        _protocol_error(
+            "unexpected_media_name", f"{context} changed the requested extension"
+        )
+    if purpose == "dictionary":
+        if actual != preferred:
+            _protocol_error(
+                "unexpected_media_name",
+                "Dictionary media must be stored under its requested filename",
+            )
+        return
+    if actual != preferred and not actual_path.stem.startswith(
+        f"{preferred_path.stem}_"
+    ):
+        _protocol_error(
+            "unexpected_media_name",
+            f"{context} is unrelated to the requested media name",
+        )
 
 
 def _expect_error_detail(value: object, *, operation: str) -> AnkiCallbackError:
@@ -100,7 +193,9 @@ def _expect_error_detail(value: object, *, operation: str) -> AnkiCallbackError:
     code = _expect_string(detail["code"], context=f"{operation} error code")
     if code not in _ALL_ERROR_CODES:
         _protocol_error("invalid_anki_response", f"Unknown Anki error code: {code}")
-    message = _expect_string(detail["message"], context=f"{operation} error message")
+    message = _expect_string(
+        detail["message"], context=f"{operation} error message", nonempty=True
+    )
     retryable = detail["retryable"]
     if not isinstance(retryable, bool):
         _protocol_error(
@@ -116,6 +211,10 @@ def _raise_callback_error(error: AnkiCallbackError) -> NoReturn:
         ) from error
     if error.code in _PROTOCOL_ERROR_CODES:
         raise BridgeProtocolError(error.code, error.message) from error
+    if error.code == "cancelled":
+        raise AnkiOperationCancelled(
+            error.operation, error.message, error.retryable
+        ) from error
 
     # Function-local by design: bootstrap.py must set ANKI_MINER_HOME first.
     from anki_miner.exceptions import AnkiConnectionError, SetupError
@@ -132,11 +231,12 @@ class AndroidAnkiAdapter:
         # Function-local by design: importing the builder freezes config paths.
         from anki_miner.services.anki_note_builder import REQUIRED_FIELD_KEYS
 
-        missing = REQUIRED_FIELD_KEYS - set(config.anki_fields)
-        if missing:
-            raise ValueError(
-                f"Missing required anki_fields keys: {', '.join(sorted(missing))}"
+        if frozenset(REQUIRED_FIELD_KEYS) != _REQUIRED_ANKI_FIELD_KEYS:
+            raise BridgeProtocolError(
+                "engine_contract_drift",
+                "Desktop required Anki field keys changed; update the bridge contract",
             )
+        validate_anki_request_config(config)
         self.config = config
         self._callbacks = callbacks
         self.last_created_note_ids: list[int] = []
@@ -242,7 +342,7 @@ class AndroidAnkiAdapter:
         self._existing_vocab_cache = None
 
     def _parse_store_media_result(
-        self, payload: dict[str, Any], request_ids: Sequence[str]
+        self, payload: dict[str, Any], assets: Sequence[_MediaAsset]
     ) -> dict[str, str]:
         result = _expect_exact_keys(
             payload,
@@ -250,15 +350,21 @@ class AndroidAnkiAdapter:
             context="storeMedia result",
         )
         rows = result["results"]
-        if not isinstance(rows, list) or len(rows) != len(request_ids):
+        if not isinstance(rows, list) or len(rows) != len(assets):
             _protocol_error(
                 "invalid_anki_response",
                 "storeMedia results must align with requested assets",
             )
 
+        claims: dict[str, set[str]] = {}
+        for asset in assets:
+            for claimed_name in (asset.preferred_name, asset.original_name):
+                claims.setdefault(claimed_name, set()).add(asset.asset_id)
+
         stored: dict[str, str] = {}
-        for index, (row_value, expected_id) in enumerate(
-            zip(rows, request_ids, strict=True)
+        actual_names: set[str] = set()
+        for index, (row_value, asset) in enumerate(
+            zip(rows, assets, strict=True)
         ):
             if not isinstance(row_value, dict):
                 _protocol_error(
@@ -274,48 +380,97 @@ class AndroidAnkiAdapter:
                 actual = _expect_filename(
                     row["actualFilename"], context=f"storeMedia result {index} filename"
                 )
-                stored[expected_id] = actual
+                _validate_provider_filename(
+                    actual,
+                    asset.preferred_name,
+                    purpose=asset.purpose,
+                    context=f"storeMedia result {index} filename",
+                )
+                if actual in actual_names:
+                    _protocol_error(
+                        "media_name_collision",
+                        "storeMedia returned the same filename for multiple assets",
+                    )
+                other_claimants = claims.get(actual, set()) - {asset.asset_id}
+                if other_claimants:
+                    _protocol_error(
+                        "media_name_collision",
+                        "storeMedia filename collides with another requested media name",
+                    )
+                actual_names.add(actual)
+                stored[asset.asset_id] = actual
             elif status == "failed":
                 row = _expect_exact_keys(
                     row_value,
-                    {"assetId", "status", "errorCode"},
+                    {"assetId", "status", "error"},
                     context=f"storeMedia result {index}",
                 )
-                code = _expect_string(
-                    row["errorCode"], context=f"storeMedia result {index} errorCode"
+                error = _expect_error_detail(
+                    row["error"], operation="storeMedia"
                 )
-                if code not in _ALL_ERROR_CODES:
-                    _protocol_error(
-                        "invalid_anki_response", f"Unknown Anki error code: {code}"
-                    )
+                if error.code not in _RECOVERABLE_MEDIA_ERROR_CODES:
+                    _raise_callback_error(error)
+                logger.warning(
+                    "Failed to store media asset %s: %s", asset.original_name, error
+                )
             else:
                 _protocol_error(
                     "invalid_anki_response",
                     f"storeMedia result {index} status is invalid",
                 )
-            if row.get("assetId") != expected_id:
+            if row.get("assetId") != asset.asset_id:
                 _protocol_error(
                     "mismatched_callback_response",
                     "storeMedia results are not request-aligned",
                 )
         return stored
 
-    def _store_assets(self, assets: list[dict[str, Any]]) -> dict[str, str]:
+    def _store_assets(self, assets: list[_MediaAsset]) -> dict[str, str]:
         if not assets:
             return {}
-        request_ids = [asset["assetId"] for asset in assets]
+        asset_ids: set[str] = set()
+        preferred_names: set[str] = set()
+        requested_name_owners: dict[str, str] = {}
+        for index, asset in enumerate(assets):
+            if asset.asset_id in asset_ids:
+                _protocol_error("invalid_anki_request", "Media asset IDs must be unique")
+            asset_ids.add(asset.asset_id)
+            _expect_filename(
+                asset.preferred_name, context=f"storeMedia asset {index} preferredName"
+            )
+            _expect_filename(
+                asset.original_name, context=f"storeMedia asset {index} originalName"
+            )
+            if asset.preferred_name in preferred_names:
+                _protocol_error(
+                    "invalid_anki_request", "Media preferred names must be unique"
+                )
+            preferred_names.add(asset.preferred_name)
+            for claimed_name in {asset.preferred_name, asset.original_name}:
+                prior_owner = requested_name_owners.setdefault(
+                    claimed_name, asset.asset_id
+                )
+                if prior_owner != asset.asset_id:
+                    _protocol_error(
+                        "media_name_collision",
+                        "Requested media names collide before provider insertion",
+                    )
+            if not Path(asset.source_path).is_absolute():
+                _protocol_error(
+                    "invalid_anki_request", "Media source paths must be absolute"
+                )
+            if asset.purpose not in {"card", "dictionary"} or asset.media_kind not in {
+                "audio",
+                "image",
+            }:
+                _protocol_error("invalid_anki_request", "Media asset metadata is invalid")
         try:
-            payload = self._callbacks.store_media({"assets": assets})
+            payload = self._callbacks.store_media(
+                {"assets": [asset.to_wire() for asset in assets]}
+            )
         except AnkiCallbackError as error:
-            if (
-                error.code in _PROTOCOL_ERROR_CODES
-                or error.code in _SETUP_ERROR_CODES
-                or error.code not in _ALL_ERROR_CODES
-            ):
-                _raise_callback_error(error)
-            logger.warning("AnkiDroid media batch failed: %s", error)
-            return {}
-        return self._parse_store_media_result(payload, request_ids)
+            _raise_callback_error(error)
+        return self._parse_store_media_result(payload, assets)
 
     def _store_card_media(self, word_data_list: Sequence[Any]) -> set[str]:
         from anki_miner.services.anki_media_store import (
@@ -351,7 +506,7 @@ class AndroidAnkiAdapter:
                 if filename not in paths_by_filename:
                     paths_by_filename[filename] = path
 
-        assets: list[dict[str, Any]] = []
+        assets: list[_MediaAsset] = []
         originals_by_id: dict[str, str] = {}
         for filename, source_path in paths_by_filename.items():
             try:
@@ -362,13 +517,14 @@ class AndroidAnkiAdapter:
             asset_id = f"asset_{uuid4().hex}"
             originals_by_id[asset_id] = filename
             assets.append(
-                {
-                    "assetId": asset_id,
-                    "sourcePath": str(source_path.resolve()),
-                    "preferredName": _content_addressed_name(filename, content),
-                    "purpose": "card",
-                    "mediaKind": kinds[filename],
-                }
+                _MediaAsset(
+                    asset_id=asset_id,
+                    source_path=str(source_path.resolve()),
+                    preferred_name=_content_addressed_name(filename, content),
+                    original_name=filename,
+                    purpose="card",
+                    media_kind=kinds[filename],
+                )
             )
 
         stored_by_id = self._store_assets(assets)
@@ -406,7 +562,7 @@ class AndroidAnkiAdapter:
                         seen.add(source)
                         sources.append(source)
 
-        assets: list[dict[str, Any]] = []
+        assets: list[_MediaAsset] = []
         sources_by_id: dict[str, str] = {}
         for source in sources:
             path = _resolve_dict_media_path(source, self.config.dicts_root)
@@ -417,23 +573,21 @@ class AndroidAnkiAdapter:
             asset_id = f"asset_{uuid4().hex}"
             sources_by_id[asset_id] = source
             assets.append(
-                {
-                    "assetId": asset_id,
-                    "sourcePath": str(path.resolve()),
-                    "preferredName": source,
-                    "purpose": "dictionary",
-                    "mediaKind": "image",
-                }
+                _MediaAsset(
+                    asset_id=asset_id,
+                    source_path=str(path.resolve()),
+                    preferred_name=source,
+                    original_name=source,
+                    purpose="dictionary",
+                    media_kind="image",
+                )
             )
 
         stored_by_id = self._store_assets(assets)
         for asset_id, actual in stored_by_id.items():
             source = sources_by_id[asset_id]
-            if actual != source:
-                _protocol_error(
-                    "unexpected_media_name",
-                    "Dictionary media must be stored under its requested filename",
-                )
+            # Exact-name enforcement happens transactionally in the parser,
+            # before any success is cached or CardPayload is mutated.
             self._dict_media_uploaded.add(source)
 
     def _duplicate_first_fields(self) -> set[str]:
@@ -471,8 +625,10 @@ class AndroidAnkiAdapter:
             )
 
         note_ids: list[int | None] = []
-        rejected = 0
+        duplicates = 0
+        saw_failed = False
         saw_not_attempted = False
+        created_ids: set[int] = set()
         for index, (row_value, expected_id) in enumerate(
             zip(rows, client_ids, strict=True)
         ):
@@ -481,23 +637,43 @@ class AndroidAnkiAdapter:
                     "invalid_anki_response", f"createNotes result {index} is invalid"
                 )
             status = row_value.get("status")
+            if saw_not_attempted and status != "notAttempted":
+                _protocol_error(
+                    "invalid_anki_response",
+                    "notAttempted createNotes rows must form a strict suffix",
+                )
             if status == "created":
                 row = _expect_exact_keys(
                     row_value,
                     {"clientNoteId", "status", "noteId"},
                     context=f"createNotes result {index}",
                 )
-                note_ids.append(
-                    _expect_positive_int(row["noteId"], context=f"noteId {index}")
+                note_id = _expect_positive_int(
+                    row["noteId"], context=f"noteId {index}"
                 )
-            elif status == "rejected":
+                if note_id in created_ids:
+                    _protocol_error(
+                        "invalid_anki_response",
+                        "createNotes returned duplicate note IDs",
+                    )
+                created_ids.add(note_id)
+                note_ids.append(note_id)
+            elif status == "duplicate":
                 row = _expect_exact_keys(
                     row_value,
                     {"clientNoteId", "status"},
                     context=f"createNotes result {index}",
                 )
                 note_ids.append(None)
-                rejected += 1
+                duplicates += 1
+            elif status == "failed":
+                row = _expect_exact_keys(
+                    row_value,
+                    {"clientNoteId", "status"},
+                    context=f"createNotes result {index}",
+                )
+                note_ids.append(None)
+                saw_failed = True
             elif status == "notAttempted":
                 row = _expect_exact_keys(
                     row_value,
@@ -523,12 +699,17 @@ class AndroidAnkiAdapter:
             if raw_error is None
             else _expect_error_detail(raw_error, operation="createNotes")
         )
-        if saw_not_attempted and error is None:
+        if (saw_failed or saw_not_attempted) and error is None:
             _protocol_error(
                 "invalid_anki_response",
-                "notAttempted createNotes rows require a top-level error",
+                "failed/notAttempted createNotes rows require a top-level error",
             )
-        return note_ids, rejected, error
+        if error is not None and not (saw_failed or saw_not_attempted):
+            _protocol_error(
+                "invalid_anki_response",
+                "createNotes top-level error requires a failed or notAttempted row",
+            )
+        return note_ids, duplicates, error
 
     def _create_note_batch(
         self, notes: Sequence[Mapping[str, Any]]
@@ -588,6 +769,8 @@ class AndroidAnkiAdapter:
         created_forms: list[str] = []
         skipped_duplicates = 0
         total_created = 0
+        bold_used = 0
+        bold_fallback = 0
 
         if progress_callback:
             progress_callback.on_start(len(word_data_list), "Creating Anki cards")
@@ -601,9 +784,14 @@ class AndroidAnkiAdapter:
         try:
             for offset in range(0, len(word_data_list), _BATCH_SIZE):
                 batch = word_data_list[offset : offset + _BATCH_SIZE]
-                built_notes = [
-                    build_note(item, self.config, stored_files).note for item in batch
-                ]
+                built_notes: list[dict[str, Any]] = []
+                for item in batch:
+                    built = build_note(item, self.config, stored_files)
+                    if built.used_precomputed_bold:
+                        bold_used += 1
+                    if built.used_bold_fallback:
+                        bold_fallback += 1
+                    built_notes.append(built.note)
                 existing = self._duplicate_first_fields()
 
                 submit_notes: list[dict[str, Any]] = []
@@ -621,13 +809,21 @@ class AndroidAnkiAdapter:
                     submit_payloads.append(item)
 
                 if submit_notes:
-                    note_ids, residual_rejected, partial_error = (
+                    note_ids, residual_duplicates, partial_error = (
                         self._create_note_batch(submit_notes)
                     )
                 else:
-                    note_ids, residual_rejected, partial_error = [], 0, None
+                    note_ids, residual_duplicates, partial_error = [], 0, None
 
-                skipped_duplicates += residual_rejected
+                skipped_duplicates += residual_duplicates
+                repeated_created_ids = set(all_created_ids).intersection(
+                    note_id for note_id in note_ids if note_id is not None
+                )
+                if repeated_created_ids:
+                    _protocol_error(
+                        "invalid_anki_response",
+                        "createNotes reused a note ID from an earlier batch",
+                    )
                 created_in_batch = sum(note_id is not None for note_id in note_ids)
                 total_created += created_in_batch
                 all_created_ids.extend(
@@ -662,6 +858,13 @@ class AndroidAnkiAdapter:
             logger.info(
                 "%d note(s) were not created (likely already in your collection).",
                 skipped_duplicates,
+            )
+        if self.config.bold_target_in_sentence and word_data_list:
+            logger.info(
+                "bold_target_in_sentence=on: precomputed bold used on %d/%d cards (escape fallback: %d)",
+                bold_used,
+                len(word_data_list),
+                bold_fallback,
             )
         return total_created
 

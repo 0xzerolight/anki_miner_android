@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import re
+import unicodedata
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -17,6 +18,22 @@ from .protocol import (
 )
 
 _RESOURCE_ID_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,126}[A-Za-z0-9_-])?$")
+
+# Mirrored from ``anki_miner.services.anki_note_builder.REQUIRED_FIELD_KEYS``.
+# Keeping this bridge-side copy avoids importing the eager ``services`` package
+# before Android bootstrap. ``AndroidAnkiAdapter`` checks it against the engine
+# constant when the engine is first touched, so desktop drift fails closed.
+_REQUIRED_ANKI_FIELD_KEYS = frozenset(
+    {
+        "word",
+        "sentence",
+        "definition",
+        "picture",
+        "audio",
+        "expression_furigana",
+        "sentence_furigana",
+    }
+)
 
 _STRING_FIELDS = frozenset(
     {
@@ -145,6 +162,25 @@ def _string(field_name: str, value: object) -> str:
     return value
 
 
+def _canonical_nonempty_string(field_name: str, value: object) -> str:
+    """Require the exact user-visible name which will cross to AnkiDroid.
+
+    Trimming or Unicode-normalizing here would silently change a persisted
+    deck/model/field identity. Reject non-canonical input instead so Kotlin can
+    point the user at the setting which needs correction.
+    """
+
+    if not isinstance(value, str) or not value:
+        raise _invalid(field_name, "expected a non-empty string")
+    if value != value.strip():
+        raise _invalid(field_name, "must not have leading or trailing whitespace")
+    if value != unicodedata.normalize("NFC", value):
+        raise _invalid(field_name, "must use NFC Unicode normalization")
+    if any(unicodedata.category(character).startswith("C") for character in value):
+        raise _invalid(field_name, "must not contain control or format characters")
+    return value
+
+
 def _boolean(field_name: str, value: object) -> bool:
     if type(value) is not bool:
         raise _invalid(field_name, "expected a boolean")
@@ -195,6 +231,17 @@ def _string_tuple(field_name: str, value: object) -> tuple[str, ...]:
     return tuple(value)
 
 
+def _excluded_decks(value: object) -> tuple[str, ...]:
+    items = _string_tuple("excluded_decks", value)
+    canonical = tuple(
+        _canonical_nonempty_string(f"excluded_decks[{index}]", item)
+        for index, item in enumerate(items)
+    )
+    if len(set(canonical)) != len(canonical):
+        raise _invalid("excluded_decks", "deck names must be unique")
+    return canonical
+
+
 def _optional_path(field_name: str, value: object) -> Path | None:
     if value is None:
         return None
@@ -220,6 +267,67 @@ def _mapping_overlay(
     ):
         raise _invalid(field_name, "expected an object of string values")
     return {**dict(defaults), **dict(value)}
+
+
+def _anki_mapping_overlay(
+    field_name: str, value: object, defaults: Mapping[str, str]
+) -> dict[str, str]:
+    result = _mapping_overlay(field_name, value, defaults)
+    for key, mapped_name in result.items():
+        if mapped_name:
+            _canonical_nonempty_string(f"{field_name}.{key}", mapped_name)
+    return result
+
+
+def validate_anki_request_config(config: object) -> None:
+    """Validate every config value emitted by the Anki callback adapter."""
+
+    _canonical_nonempty_string(
+        "anki_deck_name", getattr(config, "anki_deck_name", None)
+    )
+    _canonical_nonempty_string(
+        "anki_note_type", getattr(config, "anki_note_type", None)
+    )
+
+    fields = getattr(config, "anki_fields", None)
+    if not isinstance(fields, Mapping) or any(
+        not isinstance(key, str) or not isinstance(value, str)
+        for key, value in fields.items()
+    ):
+        raise _invalid("anki_fields", "expected an object of string values")
+    missing = _REQUIRED_ANKI_FIELD_KEYS - set(fields)
+    if missing:
+        raise _invalid("anki_fields", f"missing required keys: {sorted(missing)!r}")
+    for key, mapped_name in fields.items():
+        if mapped_name:
+            _canonical_nonempty_string(f"anki_fields.{key}", mapped_name)
+    empty_required = sorted(key for key in _REQUIRED_ANKI_FIELD_KEYS if not fields[key])
+    if empty_required:
+        raise _invalid(
+            "anki_fields", f"required mappings are empty: {empty_required!r}"
+        )
+
+    marker_fields = getattr(config, "card_type_marker_fields", None)
+    if not isinstance(marker_fields, Mapping) or any(
+        not isinstance(key, str) or not isinstance(value, str)
+        for key, value in marker_fields.items()
+    ):
+        raise _invalid(
+            "card_type_marker_fields", "expected an object of string values"
+        )
+    for key, mapped_name in marker_fields.items():
+        if mapped_name:
+            _canonical_nonempty_string(
+                f"card_type_marker_fields.{key}", mapped_name
+            )
+    card_type = getattr(config, "card_type", "")
+    if card_type and not marker_fields.get(card_type):
+        raise _invalid(
+            "card_type_marker_fields", f"active card type {card_type!r} is unmapped"
+        )
+
+    excluded = getattr(config, "excluded_decks", None)
+    _excluded_decks(excluded)
 
 
 def _resource_id(field_name: str, value: object) -> str:
@@ -424,7 +532,11 @@ def map_config_settings(
         if field_name == _LEGACY_ANDROID_TTS_FIELD:
             continue
         if field_name in _STRING_FIELDS:
-            updates[field_name] = _string(field_name, value)
+            updates[field_name] = (
+                _canonical_nonempty_string(field_name, value)
+                if field_name in {"anki_deck_name", "anki_note_type"}
+                else _string(field_name, value)
+            )
         elif field_name in _BOOL_FIELDS:
             updates[field_name] = _boolean(field_name, value)
         elif field_name in _FLOAT_RANGES:
@@ -436,11 +548,15 @@ def map_config_settings(
                 field_name, value, _LITERAL_FIELDS[field_name]
             )
         elif field_name in _STRING_TUPLE_FIELDS:
-            updates[field_name] = _string_tuple(field_name, value)
+            updates[field_name] = (
+                _excluded_decks(value)
+                if field_name == "excluded_decks"
+                else _string_tuple(field_name, value)
+            )
         elif field_name in _OPTIONAL_PATH_FIELDS:
             updates[field_name] = _optional_path(field_name, value)
         elif field_name in _MAPPING_FIELDS:
-            updates[field_name] = _mapping_overlay(
+            updates[field_name] = _anki_mapping_overlay(
                 field_name, value, getattr(base, field_name)
             )
         elif field_name == "dictionary_chain":
@@ -462,10 +578,12 @@ def map_config_settings(
     updates["reading_tts_google_enabled"] = False
     updates["reading_tts_papago_enabled"] = False
 
+    engine_config = replace(base, **updates)  # type: ignore[arg-type]
+    validate_anki_request_config(engine_config)
     return AndroidConfigSnapshot(
         # ``updates`` is validated field-by-field above; mypy cannot preserve
         # those dependent key/value types through a heterogeneous dict.
-        engine_config=replace(base, **updates),  # type: ignore[arg-type]
+        engine_config=engine_config,
         android_tts_enabled=ephemeral_tts,
     )
 

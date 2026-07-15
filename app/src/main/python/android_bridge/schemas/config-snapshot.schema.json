@@ -14,6 +14,18 @@
       "type": "string",
       "pattern": "^(?!.*\\.\\.)[A-Za-z0-9](?:[A-Za-z0-9._-]{0,126}[A-Za-z0-9_-])?$"
     },
+    "canonicalNonEmptyString": {
+      "type": "string",
+      "minLength": 1,
+      "$comment": "Runtime validation additionally enforces NFC and rejects every Unicode category-C code point.",
+      "pattern": "^(?!\\s)(?!.*\\s$)(?!.*[\\u0000-\\u001f\\u007f-\\u009f\\u00ad\\u061c\\u200b-\\u200f\\u202a-\\u202e\\u2060-\\u206f\\ufeff]).+$"
+    },
+    "optionalMappedField": {
+      "oneOf": [
+        {"const": ""},
+        {"$ref": "#/$defs/canonicalNonEmptyString"}
+      ]
+    },
     "absolutePathOrNull": {
       "oneOf": [
         {"type": "null"},
@@ -24,34 +36,34 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "word": {"type": "string"},
-        "sentence": {"type": "string"},
-        "definition": {"type": "string"},
-        "glossary": {"type": "string"},
-        "picture": {"type": "string"},
-        "audio": {"type": "string"},
-        "expression_furigana": {"type": "string"},
-        "expression_reading": {"type": "string"},
-        "sentence_furigana": {"type": "string"},
-        "sentence_reading": {"type": "string"},
-        "pitch_position": {"type": "string"},
-        "pitch_category": {"type": "string"},
-        "pitch_graph": {"type": "string"},
-        "pitch_text": {"type": "string"},
-        "frequency": {"type": "string"},
-        "frequency_sort": {"type": "string"},
-        "source": {"type": "string"},
-        "expression_audio": {"type": "string"}
+        "word": {"$ref": "#/$defs/canonicalNonEmptyString"},
+        "sentence": {"$ref": "#/$defs/canonicalNonEmptyString"},
+        "definition": {"$ref": "#/$defs/canonicalNonEmptyString"},
+        "glossary": {"$ref": "#/$defs/optionalMappedField"},
+        "picture": {"$ref": "#/$defs/canonicalNonEmptyString"},
+        "audio": {"$ref": "#/$defs/canonicalNonEmptyString"},
+        "expression_furigana": {"$ref": "#/$defs/canonicalNonEmptyString"},
+        "expression_reading": {"$ref": "#/$defs/optionalMappedField"},
+        "sentence_furigana": {"$ref": "#/$defs/canonicalNonEmptyString"},
+        "sentence_reading": {"$ref": "#/$defs/optionalMappedField"},
+        "pitch_position": {"$ref": "#/$defs/optionalMappedField"},
+        "pitch_category": {"$ref": "#/$defs/optionalMappedField"},
+        "pitch_graph": {"$ref": "#/$defs/optionalMappedField"},
+        "pitch_text": {"$ref": "#/$defs/optionalMappedField"},
+        "frequency": {"$ref": "#/$defs/optionalMappedField"},
+        "frequency_sort": {"$ref": "#/$defs/optionalMappedField"},
+        "source": {"$ref": "#/$defs/optionalMappedField"},
+        "expression_audio": {"$ref": "#/$defs/optionalMappedField"}
       }
     },
     "cardTypeMarkerFields": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "word_and_sentence": {"type": "string"},
-        "click": {"type": "string"},
-        "sentence": {"type": "string"},
-        "audio": {"type": "string"}
+        "word_and_sentence": {"$ref": "#/$defs/optionalMappedField"},
+        "click": {"$ref": "#/$defs/optionalMappedField"},
+        "sentence": {"$ref": "#/$defs/optionalMappedField"},
+        "audio": {"$ref": "#/$defs/optionalMappedField"}
       }
     },
     "indexedDictionary": {
@@ -97,13 +109,17 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "anki_deck_name": {"type": "string"},
-        "anki_note_type": {"type": "string"},
+        "anki_deck_name": {"$ref": "#/$defs/canonicalNonEmptyString"},
+        "anki_note_type": {"$ref": "#/$defs/canonicalNonEmptyString"},
         "anki_fields": {"$ref": "#/$defs/ankiFields"},
         "card_type": {"enum": ["", "word_and_sentence", "click", "sentence", "audio"]},
         "card_type_marker_fields": {"$ref": "#/$defs/cardTypeMarkerFields"},
         "anki_tags": {"type": "string"},
-        "excluded_decks": {"type": "array", "items": {"type": "string"}},
+        "excluded_decks": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/canonicalNonEmptyString"}
+        },
         "audio_padding": {"type": "number", "minimum": 0},
         "screenshot_offset": {"type": "number", "minimum": 0},
         "audio_format": {"enum": ["mp3", "opus"]},

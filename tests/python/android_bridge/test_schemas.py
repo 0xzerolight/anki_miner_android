@@ -284,6 +284,13 @@ def test_null_or_empty_sentence_id_is_schema_invalid(
         },
         {"settings": {"blacklist_path": "relative/blacklist.txt"}},
         {"settings": {"whitelist_path": ""}},
+        {"settings": {"anki_deck_name": ""}},
+        {"settings": {"anki_note_type": " Lapis"}},
+        {"settings": {"anki_note_type": "Lapis\u200e"}},
+        {"settings": {"anki_fields": {"word": ""}}},
+        {"settings": {"anki_fields": {"glossary": " Glossary"}}},
+        {"settings": {"excluded_decks": [""]}},
+        {"settings": {"excluded_decks": ["Known", "Known"]}},
     ],
 )
 def test_invalid_config_shapes_are_rejected_by_schema(
@@ -377,7 +384,11 @@ def test_unknown_curation_map_key_is_schema_invalid(
                 {
                     "assetId": "asset_" + "d" * 32,
                     "status": "failed",
-                    "errorCode": "media_store_failed",
+                    "error": {
+                        "code": "media_store_failed",
+                        "message": "media insert failed",
+                        "retryable": True,
+                    },
                 },
             ],
         },
@@ -457,6 +468,46 @@ def test_representative_anki_callback_payloads_validate(
                 }
             ],
             "error": None,
+        },
+        {
+            "runId": "run_" + "a" * 32,
+            "requestId": "anki_" + "b" * 32,
+            "deckName": " Mining",
+            "modelName": "Lapis",
+            "requiredFields": ["Expression"],
+        },
+        {
+            "runId": "run_" + "a" * 32,
+            "requestId": "anki_" + "b" * 32,
+            "deckName": "Mining",
+            "modelName": "Lapis\u200e",
+            "requiredFields": ["Expression"],
+        },
+        {
+            "runId": "run_" + "a" * 32,
+            "requestId": "anki_" + "b" * 32,
+            "results": [
+                {
+                    "assetId": "asset_" + "c" * 32,
+                    "status": "stored",
+                    "actualFilename": "[sound:clip.opus]",
+                }
+            ],
+        },
+        {
+            "runId": "run_" + "a" * 32,
+            "requestId": "anki_" + "b" * 32,
+            "results": [
+                {
+                    "assetId": "asset_" + "c" * 32,
+                    "status": "failed",
+                    "error": {
+                        "code": "permission_required",
+                        "message": "grant permission",
+                        "retryable": False,
+                    },
+                }
+            ],
         },
     ],
 )

@@ -9,12 +9,23 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from jsonschema import Draft202012Validator
 
-from android_bridge.anki_adapter import AndroidAnkiAdapter
+from android_bridge.anki_adapter import (
+    AndroidAnkiAdapter,
+    AnkiOperationCancelled,
+)
 from android_bridge.callbacks import AndroidAnkiCallbacks
 from android_bridge.protocol import BridgeProtocolError, encode_message
 
 RUN_ID = "run_" + "a" * 32
+_ANKI_SCHEMA = json.loads(
+    (
+        Path(__file__).resolve().parents[3]
+        / "app/src/main/python/android_bridge/schemas/anki.schema.json"
+    ).read_text(encoding="utf-8")
+)
+_ANKI_VALIDATOR = Draft202012Validator(_ANKI_SCHEMA)
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -66,6 +77,7 @@ class FakeKotlinAnki:
         self.duplicate_fields: list[str] = []
         self.errors: dict[str, tuple[str, str, bool]] = {}
         self.failed_media_names: set[str] = set()
+        self.media_failure_errors: dict[str, tuple[str, str, bool]] = {}
         self.media_renames: dict[str, str] = {}
         self.create_scripts: list[
             tuple[list[str], dict[str, object] | None] | None
@@ -74,6 +86,7 @@ class FakeKotlinAnki:
 
     def _request(self, method: str, raw: str) -> dict[str, Any]:
         envelope = json.loads(raw)
+        _ANKI_VALIDATOR.validate(envelope["payload"])
         self.requests.append((method, envelope))
         return envelope["payload"]
 
@@ -137,11 +150,19 @@ class FakeKotlinAnki:
         for asset in request["assets"]:
             preferred = asset["preferredName"]
             if preferred in self.failed_media_names:
+                code, message, retryable = self.media_failure_errors.get(
+                    preferred,
+                    ("media_store_failed", "media insert failed", True),
+                )
                 results.append(
                     {
                         "assetId": asset["assetId"],
                         "status": "failed",
-                        "errorCode": "media_store_failed",
+                        "error": {
+                            "code": code,
+                            "message": message,
+                            "retryable": retryable,
+                        },
                     }
                 )
             else:
@@ -464,7 +485,8 @@ def test_card_media_is_content_addressed_deduped_and_actual_name_propagates(
     )
     preferred = _content_addressed_name("shot.webp", b"same image")
     kotlin = FakeKotlinAnki()
-    kotlin.media_renames[preferred] = "provider-shot.webp"
+    provider_name = f"{Path(preferred).stem}_provider.webp"
+    kotlin.media_renames[preferred] = provider_name
     adapter = _adapter(_config(initialized_bridge_home), kotlin)
 
     created = adapter.create_cards_batch(
@@ -473,15 +495,15 @@ def test_card_media_is_content_addressed_deduped_and_actual_name_propagates(
 
     assert created == 2
     assert adapter.last_media_store_failures == 1
-    assert media_a.screenshot_filename == "provider-shot.webp"
-    assert media_b.screenshot_filename == "provider-shot.webp"
+    assert media_a.screenshot_filename == provider_name
+    assert media_b.screenshot_filename == provider_name
     store_payload = kotlin.requests_for("ankiStoreMedia")[0]["payload"]
     assert len(store_payload["assets"]) == 1
     assert store_payload["assets"][0]["preferredName"] == preferred
     assert store_payload["assets"][0]["sourcePath"] == str(image.resolve())
     note_fields = kotlin.requests_for("ankiCreateNotes")[0]["payload"]["notes"]
     assert all(
-        note["fields"]["Picture"] == '<img src="provider-shot.webp">'
+        note["fields"]["Picture"] == f'<img src="{provider_name}">'
         for note in note_fields
     )
 
@@ -548,7 +570,7 @@ def test_partial_create_response_preserves_ids_counters_and_vocab_cache(
     kotlin.known_fields = ["既知"]
     kotlin.create_scripts = [
         (
-            ["created", "rejected", "notAttempted"],
+            ["created", "failed", "notAttempted"],
             {"code": "write_failed", "message": "mid-batch", "retryable": True},
         )
     ]
@@ -559,7 +581,7 @@ def test_partial_create_response_preserves_ids_counters_and_vocab_cache(
         adapter.create_cards_batch([_card("猫"), _card("犬"), _card("鳥")])
 
     assert adapter.last_created_note_ids == [1000]
-    assert adapter.last_skipped_duplicates == 1
+    assert adapter.last_skipped_duplicates == 0
     assert adapter.get_existing_vocabulary() == {"既知", "猫"}
 
 
@@ -603,3 +625,409 @@ def test_no_bridge_module_imports_engine_before_bootstrap() -> None:
         line.startswith(("import anki_miner", "from anki_miner"))
         for line in source_lines
     )
+
+
+@pytest.mark.parametrize(
+    "code", ["api_disabled", "permission_required", "field_missing"]
+)
+def test_user_action_and_field_errors_are_setup_failures(
+    code: str, initialized_bridge_home: Path
+) -> None:
+    from anki_miner.exceptions import SetupError
+
+    kotlin = FakeKotlinAnki()
+    kotlin.errors["verifyTarget"] = (code, f"setup: {code}", False)
+
+    with pytest.raises(SetupError, match=code):
+        _adapter(_config(initialized_bridge_home), kotlin).verify_card_target()
+
+
+@pytest.mark.parametrize(
+    "operation", ["verifyTarget", "scanFirstFields", "storeMedia", "createNotes"]
+)
+def test_cancelled_callbacks_escape_as_bridge_cancellation(
+    operation: str, initialized_bridge_home: Path, tmp_path: Path
+) -> None:
+    from anki_miner.models import MediaData
+
+    kotlin = FakeKotlinAnki()
+    kotlin.errors[operation] = ("cancelled", "cancelled by user", False)
+    adapter = _adapter(_config(initialized_bridge_home), kotlin)
+    audio = tmp_path / f"{operation}.opus"
+    audio.write_bytes(b"audio")
+
+    with pytest.raises(AnkiOperationCancelled) as exc_info:
+        if operation == "verifyTarget":
+            adapter.verify_card_target()
+        elif operation == "scanFirstFields":
+            adapter.get_existing_vocabulary()
+        else:
+            adapter.create_cards_batch(
+                [
+                    _card(
+                        "猫",
+                        media=(
+                            MediaData(audio_path=audio, audio_filename="clip.opus")
+                            if operation == "storeMedia"
+                            else None
+                        ),
+                    )
+                ]
+            )
+
+    assert exc_info.value.code == "cancelled"
+    assert exc_info.value.operation == operation
+    assert exc_info.value.retryable is False
+
+
+@pytest.mark.parametrize(
+    ("code", "expected"),
+    [
+        ("api_disabled", "SetupError"),
+        ("permission_required", "SetupError"),
+        ("provider_unavailable", "AnkiConnectionError"),
+        ("timeout", "AnkiConnectionError"),
+    ],
+)
+def test_callback_wide_media_failures_abort_without_mutating_payload(
+    code: str,
+    expected: str,
+    initialized_bridge_home: Path,
+    tmp_path: Path,
+) -> None:
+    from anki_miner.exceptions import AnkiConnectionError, SetupError
+    from anki_miner.models import MediaData
+
+    audio = tmp_path / "clip.opus"
+    audio.write_bytes(b"audio")
+    media = MediaData(audio_path=audio, audio_filename="clip.opus")
+    kotlin = FakeKotlinAnki()
+    kotlin.errors["storeMedia"] = (code, f"media: {code}", True)
+    error_type = SetupError if expected == "SetupError" else AnkiConnectionError
+
+    with pytest.raises(error_type, match=code):
+        _adapter(_config(initialized_bridge_home), kotlin).create_cards_batch(
+            [_card("猫", media=media)]
+        )
+
+    assert media.audio_filename == "clip.opus"
+    assert not kotlin.requests_for("ankiCreateNotes")
+
+
+@pytest.mark.parametrize(
+    ("code", "expected"),
+    [
+        ("permission_required", "SetupError"),
+        ("provider_unavailable", "AnkiConnectionError"),
+        ("cancelled", "AnkiOperationCancelled"),
+    ],
+)
+def test_only_explicit_per_media_store_failure_may_degrade(
+    code: str,
+    expected: str,
+    initialized_bridge_home: Path,
+    tmp_path: Path,
+) -> None:
+    from anki_miner.exceptions import AnkiConnectionError, SetupError
+    from anki_miner.models import MediaData
+    from anki_miner.services.anki_media_store import _content_addressed_name
+
+    audio = tmp_path / "clip.opus"
+    audio.write_bytes(b"audio")
+    preferred = _content_addressed_name("clip.opus", b"audio")
+    media = MediaData(audio_path=audio, audio_filename="clip.opus")
+    kotlin = FakeKotlinAnki()
+    kotlin.failed_media_names.add(preferred)
+    kotlin.media_failure_errors[preferred] = (code, f"row: {code}", False)
+    error_type: type[BaseException]
+    if expected == "SetupError":
+        error_type = SetupError
+    elif expected == "AnkiConnectionError":
+        error_type = AnkiConnectionError
+    else:
+        error_type = AnkiOperationCancelled
+
+    with pytest.raises(error_type, match=code):
+        _adapter(_config(initialized_bridge_home), kotlin).create_cards_batch(
+            [_card("猫", media=media)]
+        )
+
+    assert media.audio_filename == "clip.opus"
+    assert not kotlin.requests_for("ankiCreateNotes")
+
+
+@pytest.mark.parametrize(
+    "returned_name",
+    [
+        "[sound:clip.opus]",
+        '<img src="clip.opus">',
+        "clip\n.opus",
+        "clip\u200e.opus",
+        "../clip.opus",
+        "clip.mp3",
+        "unrelated.opus",
+    ],
+)
+def test_unsafe_or_unrelated_provider_names_are_rejected_before_mutation(
+    returned_name: str,
+    initialized_bridge_home: Path,
+    tmp_path: Path,
+) -> None:
+    from anki_miner.models import MediaData
+
+    class RenamingKotlin(FakeKotlinAnki):
+        def ankiStoreMedia(self, raw: str) -> str:
+            request = self._request("ankiStoreMedia", raw)
+            return encode_message(
+                "anki.storemedia.result",
+                {
+                    "runId": request["runId"],
+                    "requestId": request["requestId"],
+                    "results": [
+                        {
+                            "assetId": request["assets"][0]["assetId"],
+                            "status": "stored",
+                            "actualFilename": returned_name,
+                        }
+                    ],
+                },
+            )
+
+    audio = tmp_path / "clip.opus"
+    audio.write_bytes(b"audio")
+    media = MediaData(audio_path=audio, audio_filename="clip.opus")
+    kotlin = RenamingKotlin()
+
+    with pytest.raises(BridgeProtocolError):
+        _adapter(_config(initialized_bridge_home), kotlin).create_cards_batch(
+            [_card("猫", media=media)]
+        )
+
+    assert media.audio_filename == "clip.opus"
+    assert not kotlin.requests_for("ankiCreateNotes")
+
+
+@pytest.mark.parametrize("collision_kind", ["reserved", "duplicate_actual"])
+def test_provider_media_name_collisions_are_rejected_transactionally(
+    collision_kind: str,
+    initialized_bridge_home: Path,
+    tmp_path: Path,
+) -> None:
+    from anki_miner.models import MediaData
+    from anki_miner.services.anki_media_store import _content_addressed_name
+
+    first_path = tmp_path / "first.opus"
+    second_path = tmp_path / "second.opus"
+    first_path.write_bytes(b"first")
+    second_path.write_bytes(b"second")
+    first_preferred = _content_addressed_name("clip.opus", b"first")
+    second_original = f"{Path(first_preferred).stem}_extra.opus"
+    second_preferred = _content_addressed_name(second_original, b"second")
+
+    class CollidingKotlin(FakeKotlinAnki):
+        def ankiStoreMedia(self, raw: str) -> str:
+            request = self._request("ankiStoreMedia", raw)
+            actual = (
+                second_preferred
+                if collision_kind == "reserved"
+                else f"{Path(second_preferred).stem}_provider.opus"
+            )
+            return encode_message(
+                "anki.storemedia.result",
+                {
+                    "runId": request["runId"],
+                    "requestId": request["requestId"],
+                    "results": [
+                        {
+                            "assetId": asset["assetId"],
+                            "status": "stored",
+                            "actualFilename": actual,
+                        }
+                        for asset in request["assets"]
+                    ],
+                },
+            )
+
+    first_media = MediaData(audio_path=first_path, audio_filename="clip.opus")
+    second_media = MediaData(
+        audio_path=second_path, audio_filename=second_original
+    )
+
+    with pytest.raises(BridgeProtocolError) as exc_info:
+        _adapter(
+            _config(initialized_bridge_home), CollidingKotlin()
+        ).create_cards_batch(
+            [_card("猫", media=first_media), _card("犬", media=second_media)]
+        )
+
+    assert exc_info.value.code == "media_name_collision"
+    assert first_media.audio_filename == "clip.opus"
+    assert second_media.audio_filename == second_original
+
+
+def test_provider_duplicate_status_is_the_only_residual_duplicate_count(
+    initialized_bridge_home: Path,
+) -> None:
+    kotlin = FakeKotlinAnki()
+    kotlin.create_scripts = [(["created", "duplicate"], None)]
+    adapter = _adapter(_config(initialized_bridge_home), kotlin)
+
+    assert adapter.create_cards_batch([_card("猫"), _card("犬")]) == 1
+    assert adapter.last_created_note_ids == [1000]
+    assert adapter.last_skipped_duplicates == 1
+
+
+def test_provider_failed_status_propagates_and_is_never_counted_as_duplicate(
+    initialized_bridge_home: Path,
+) -> None:
+    from anki_miner.exceptions import AnkiConnectionError
+
+    kotlin = FakeKotlinAnki()
+    kotlin.create_scripts = [
+        (
+            ["created", "failed", "notAttempted"],
+            {"code": "write_failed", "message": "write exploded", "retryable": False},
+        )
+    ]
+    adapter = _adapter(_config(initialized_bridge_home), kotlin)
+
+    with pytest.raises(AnkiConnectionError, match="write exploded"):
+        adapter.create_cards_batch([_card("猫"), _card("犬"), _card("鳥")])
+
+    assert adapter.last_created_note_ids == [1000]
+    assert adapter.last_skipped_duplicates == 0
+
+
+@pytest.mark.parametrize(
+    ("statuses", "error"),
+    [
+        (
+            ["notAttempted", "created"],
+            {"code": "write_failed", "message": "bad suffix", "retryable": False},
+        ),
+        (["failed"], None),
+        (
+            ["created"],
+            {"code": "write_failed", "message": "orphan error", "retryable": False},
+        ),
+    ],
+)
+def test_create_result_failure_shape_is_strict(
+    statuses: list[str],
+    error: dict[str, object] | None,
+    initialized_bridge_home: Path,
+) -> None:
+    kotlin = FakeKotlinAnki()
+    kotlin.create_scripts = [(statuses, error)]
+
+    with pytest.raises(BridgeProtocolError) as exc_info:
+        _adapter(_config(initialized_bridge_home), kotlin).create_cards_batch(
+            [_card(f"語{index}") for index in range(len(statuses))]
+        )
+
+    assert exc_info.value.code == "invalid_anki_response"
+
+
+def test_duplicate_created_note_ids_are_rejected(
+    initialized_bridge_home: Path,
+) -> None:
+    class DuplicateIdKotlin(FakeKotlinAnki):
+        def ankiCreateNotes(self, raw: str) -> str:
+            request = self._request("ankiCreateNotes", raw)
+            return encode_message(
+                "anki.createnotes.result",
+                {
+                    "runId": request["runId"],
+                    "requestId": request["requestId"],
+                    "results": [
+                        {
+                            "clientNoteId": note["clientNoteId"],
+                            "status": "created",
+                            "noteId": 123,
+                        }
+                        for note in request["notes"]
+                    ],
+                    "error": None,
+                },
+            )
+
+    with pytest.raises(BridgeProtocolError, match="duplicate note IDs"):
+        _adapter(
+            _config(initialized_bridge_home), DuplicateIdKotlin()
+        ).create_cards_batch([_card("猫"), _card("犬")])
+
+
+def test_created_note_ids_must_remain_unique_across_batches(
+    initialized_bridge_home: Path,
+) -> None:
+    class ReusedIdKotlin(FakeKotlinAnki):
+        def __init__(self) -> None:
+            super().__init__()
+            self.batch = 0
+
+        def ankiCreateNotes(self, raw: str) -> str:
+            request = self._request("ankiCreateNotes", raw)
+            self.batch += 1
+            first_id = 1 if self.batch == 2 else 0
+            return encode_message(
+                "anki.createnotes.result",
+                {
+                    "runId": request["runId"],
+                    "requestId": request["requestId"],
+                    "results": [
+                        {
+                            "clientNoteId": note["clientNoteId"],
+                            "status": "created",
+                            "noteId": first_id + index + 1,
+                        }
+                        for index, note in enumerate(request["notes"])
+                    ],
+                    "error": None,
+                },
+            )
+
+    adapter = _adapter(_config(initialized_bridge_home), ReusedIdKotlin())
+    with pytest.raises(BridgeProtocolError, match="earlier batch"):
+        adapter.create_cards_batch([_card(f"語{index}") for index in range(101)])
+
+    assert adapter.last_created_note_ids == list(range(1, 101))
+
+
+def test_partial_create_cancellation_preserves_committed_ids_and_aborts(
+    initialized_bridge_home: Path,
+) -> None:
+    kotlin = FakeKotlinAnki()
+    kotlin.create_scripts = [
+        (
+            ["created", "notAttempted"],
+            {"code": "cancelled", "message": "user stopped", "retryable": False},
+        )
+    ]
+    adapter = _adapter(_config(initialized_bridge_home), kotlin)
+
+    with pytest.raises(AnkiOperationCancelled, match="user stopped"):
+        adapter.create_cards_batch([_card("猫"), _card("犬")])
+
+    assert adapter.last_created_note_ids == [1000]
+    assert adapter.last_skipped_duplicates == 0
+
+
+def test_bold_note_builder_diagnostics_match_desktop_behavior(
+    initialized_bridge_home: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    precomputed = _card("猫")
+    precomputed.word.sentence_bolded = "<b>猫</b>だ"
+    precomputed.word.sentence_furigana_bolded = "<b>猫[よみ]</b>だ"
+    fallback = _card("犬")
+
+    with caplog.at_level("INFO", logger="android_bridge.anki_adapter"):
+        _adapter(
+            _config(initialized_bridge_home, bold_target_in_sentence=True),
+            FakeKotlinAnki(),
+        ).create_cards_batch([precomputed, fallback])
+
+    assert (
+        "bold_target_in_sentence=on: precomputed bold used on 1/2 cards "
+        "(escape fallback: 1)"
+    ) in caplog.messages
