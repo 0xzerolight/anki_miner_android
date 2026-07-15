@@ -59,16 +59,25 @@
       "properties": {
         "tokenization": {
           "type": "array",
+          "minItems": 1,
           "items": {"$ref": "#/$defs/tokenization_case"}
         },
-        "morphology": {"$ref": "#/$defs/generic_cases"},
-        "filtering": {"$ref": "#/$defs/generic_cases"},
-        "deinflection": {"$ref": "#/$defs/generic_cases"},
-        "compounds": {"$ref": "#/$defs/generic_cases"},
-        "dictionaries": {"$ref": "#/$defs/generic_cases"},
-        "frequency": {"$ref": "#/$defs/generic_cases"},
-        "pitch": {"$ref": "#/$defs/generic_cases"},
-        "cards": {"$ref": "#/$defs/generic_cases"}
+        "morphology": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/morphology_case"}
+        },
+        "filtering": {"$ref": "#/$defs/inactive_cases"},
+        "deinflection": {"$ref": "#/$defs/inactive_cases"},
+        "compounds": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/compound_case"}
+        },
+        "dictionaries": {"$ref": "#/$defs/inactive_cases"},
+        "frequency": {"$ref": "#/$defs/inactive_cases"},
+        "pitch": {"$ref": "#/$defs/inactive_cases"},
+        "cards": {"$ref": "#/$defs/inactive_cases"}
       }
     }
   },
@@ -204,22 +213,102 @@
       "properties": {
         "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_-]*$"},
         "text": {"type": "string"},
-        "tokens": {"type": "array", "items": {"$ref": "#/$defs/token"}}
+        "tokens": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/token"}
+        }
       }
     },
-    "generic_case": {
+    "word": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "surface",
+        "lemma",
+        "orth_base",
+        "mined_form",
+        "reading",
+        "pos",
+        "surface_start",
+        "surface_end",
+        "highlight_end",
+        "sentence",
+        "expression_furigana",
+        "expression_reading",
+        "sentence_furigana",
+        "sentence_reading"
+      ],
+      "properties": {
+        "surface": {"type": "string"},
+        "lemma": {"type": "string"},
+        "orth_base": {"type": "string"},
+        "mined_form": {"type": "string"},
+        "reading": {"type": "string"},
+        "pos": {"type": "string"},
+        "surface_start": {"type": "integer", "minimum": 0},
+        "surface_end": {"type": "integer", "minimum": 0},
+        "highlight_end": {"type": "integer", "minimum": 0},
+        "sentence": {"type": "string"},
+        "expression_furigana": {"type": "string"},
+        "expression_reading": {"type": "string"},
+        "sentence_furigana": {"type": "string"},
+        "sentence_reading": {"type": "string"}
+      }
+    },
+    "word_output": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["words"],
+      "properties": {
+        "words": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/word"}
+        }
+      }
+    },
+    "morphology_case": {
       "type": "object",
       "additionalProperties": false,
       "required": ["id", "input", "output"],
       "properties": {
         "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_-]*$"},
-        "input": {"type": "object"},
-        "output": {"type": "object"}
+        "input": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["text"],
+          "properties": {"text": {"type": "string"}}
+        },
+        "output": {"$ref": "#/$defs/word_output"}
       }
     },
-    "generic_cases": {
+    "compound_case": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "input", "output"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_-]*$"},
+        "input": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["text", "dictionary_terms"],
+          "properties": {
+            "text": {"type": "string"},
+            "dictionary_terms": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {"type": "string", "minLength": 1}
+            }
+          }
+        },
+        "output": {"$ref": "#/$defs/word_output"}
+      }
+    },
+    "inactive_cases": {
       "type": "array",
-      "items": {"$ref": "#/$defs/generic_case"}
+      "maxItems": 0
     }
   }
 }

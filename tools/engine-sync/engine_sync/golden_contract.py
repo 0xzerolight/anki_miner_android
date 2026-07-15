@@ -9,6 +9,7 @@ import re
 import subprocess
 import sys
 import tempfile
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Sequence
@@ -54,6 +55,48 @@ CASE_SECTIONS = (
     "filtering",
     "deinflection",
     "compounds",
+    "dictionaries",
+    "frequency",
+    "pitch",
+    "cards",
+)
+RUNTIME_DISTRIBUTIONS = (
+    "fugashi",
+    "unidic-lite",
+    "pysubs2",
+    "requests",
+    "Pillow",
+    "lxml",
+    "charset-normalizer",
+)
+RESERVED_UNIDIC_ASSET = "unidic_dicdir"
+CASE_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
+CORPUS_EXPECTATION_FIELDS = {
+    "surface",
+    "lemma",
+    "orthBase",
+    "mining_base",
+    "is_unknown",
+}
+ACTIVE_WORD_FIELDS = {
+    "surface",
+    "lemma",
+    "orth_base",
+    "mined_form",
+    "reading",
+    "pos",
+    "surface_start",
+    "surface_end",
+    "highlight_end",
+    "sentence",
+    "expression_furigana",
+    "expression_reading",
+    "sentence_furigana",
+    "sentence_reading",
+}
+INACTIVE_CASE_SECTIONS = (
+    "filtering",
+    "deinflection",
     "dictionaries",
     "frequency",
     "pitch",
@@ -175,22 +218,124 @@ def _expect_sha256(value: Any, label: str) -> str:
     return value
 
 
+def _expect_non_empty_string(value: Any, label: str) -> str:
+    if not isinstance(value, str) or not value:
+        raise GoldenContractError(f"{label} must be a non-empty string")
+    return value
+
+
+def _load_corpus(path: Path) -> list[dict[str, Any]]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise GoldenContractError(f"invalid corpus {path}: {exc}") from exc
+    root = _expect_dict(payload, "corpus", {"schema_version", "cases"})
+    if root["schema_version"] != SCHEMA_VERSION:
+        raise GoldenContractError(f"corpus.schema_version must be {SCHEMA_VERSION}")
+    raw_cases = root["cases"]
+    if not isinstance(raw_cases, list) or not raw_cases:
+        raise GoldenContractError("corpus.cases must be a non-empty array")
+
+    cases: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for index, raw_case in enumerate(raw_cases):
+        label = f"corpus.cases[{index}]"
+        if not isinstance(raw_case, dict):
+            raise GoldenContractError(f"{label} must be an object")
+        required = {"id", "text", "coverage"}
+        allowed = required | {"expect", "dictionary_terms"}
+        if not required <= set(raw_case) or not set(raw_case) <= allowed:
+            raise GoldenContractError(
+                f"{label} must contain {sorted(required)} and only optional "
+                "expect/dictionary_terms"
+            )
+        case_id = _expect_non_empty_string(raw_case["id"], f"{label}.id")
+        if CASE_ID_RE.fullmatch(case_id) is None or case_id in seen:
+            raise GoldenContractError(
+                f"{label}.id must be a unique lowercase case identifier"
+            )
+        seen.add(case_id)
+        _expect_non_empty_string(raw_case["text"], f"{label}.text")
+
+        coverage = raw_case["coverage"]
+        if (
+            not isinstance(coverage, list)
+            or not coverage
+            or any(not isinstance(value, str) or not value for value in coverage)
+            or len(set(coverage)) != len(coverage)
+        ):
+            raise GoldenContractError(
+                f"{label}.coverage must contain unique non-empty strings"
+            )
+
+        expectation = raw_case.get("expect")
+        if expectation is not None:
+            if (
+                not isinstance(expectation, dict)
+                or "surface" not in expectation
+                or not set(expectation) <= CORPUS_EXPECTATION_FIELDS
+            ):
+                raise GoldenContractError(
+                    f"{label}.expect requires surface and only frozen expectation fields"
+                )
+            _expect_non_empty_string(expectation["surface"], f"{label}.expect.surface")
+            for field in ("lemma", "orthBase", "mining_base"):
+                value = expectation.get(field)
+                if (
+                    field in expectation
+                    and value is not None
+                    and not isinstance(value, str)
+                ):
+                    raise GoldenContractError(
+                        f"{label}.expect.{field} must be a string or null"
+                    )
+            if "is_unknown" in expectation and not isinstance(
+                expectation["is_unknown"], bool
+            ):
+                raise GoldenContractError(
+                    f"{label}.expect.is_unknown must be a boolean"
+                )
+
+        terms = raw_case.get("dictionary_terms")
+        if terms is not None and (
+            not isinstance(terms, list)
+            or not terms
+            or any(not isinstance(value, str) or not value for value in terms)
+            or len(set(terms)) != len(terms)
+        ):
+            raise GoldenContractError(
+                f"{label}.dictionary_terms must contain unique non-empty strings"
+            )
+        cases.append(raw_case)
+    return cases
+
+
 def _utf16_offset(text: str, codepoint_offset: int) -> int:
     return len(text[:codepoint_offset].encode("utf-16-le")) // 2
 
 
-def _validate_tokenization(cases: Any) -> None:
-    if not isinstance(cases, list):
-        raise GoldenContractError("cases.tokenization must be an array")
+def _validate_tokenization(cases: Any, corpus: Sequence[Mapping[str, Any]]) -> None:
+    if not isinstance(cases, list) or not cases:
+        raise GoldenContractError("cases.tokenization must be a non-empty array")
+    if len(cases) != len(corpus):
+        raise GoldenContractError(
+            "cases.tokenization must contain exactly one record per corpus case"
+        )
     seen: set[str] = set()
-    for case_index, raw_case in enumerate(cases):
+    for case_index, (raw_case, corpus_case) in enumerate(
+        zip(cases, corpus, strict=True)
+    ):
         label = f"cases.tokenization[{case_index}]"
         case = _expect_dict(raw_case, label, {"id", "text", "tokens"})
         case_id, text, tokens = case["id"], case["text"], case["tokens"]
         if not isinstance(case_id, str) or not case_id or case_id in seen:
             raise GoldenContractError(f"{label}.id must be a unique non-empty string")
         seen.add(case_id)
-        if not isinstance(text, str) or not isinstance(tokens, list):
+        if case_id != corpus_case["id"] or text != corpus_case["text"]:
+            raise GoldenContractError(
+                f"{label} id/text does not match the corpus record at this position"
+            )
+        if not isinstance(text, str) or not isinstance(tokens, list) or not tokens:
             raise GoldenContractError(f"{label} text/tokens have invalid types")
         previous_end = 0
         for token_index, raw_token in enumerate(tokens):
@@ -241,6 +386,147 @@ def _validate_tokenization(cases: Any) -> None:
                     f"{token_label}.features must normalize '*' to null"
                 )
 
+        expectation = corpus_case.get("expect")
+        if isinstance(expectation, Mapping):
+            matching = [
+                token for token in tokens if token["surface"] == expectation["surface"]
+            ]
+            if len(matching) != 1:
+                raise GoldenContractError(
+                    f"{label} must contain exactly one expected surface token"
+                )
+            token = matching[0]
+            comparisons = {
+                "lemma": token["features"]["lemma"],
+                "orthBase": token["features"]["orthBase"],
+                "is_unknown": token["is_unknown"],
+            }
+            for field, actual in comparisons.items():
+                if field in expectation and expectation[field] != actual:
+                    raise GoldenContractError(
+                        f"{label} expected {field} does not match the token"
+                    )
+
+
+def _validate_word(raw_word: Any, label: str) -> dict[str, Any]:
+    word = _expect_dict(raw_word, label, ACTIVE_WORD_FIELDS)
+    string_fields = ACTIVE_WORD_FIELDS - {
+        "surface_start",
+        "surface_end",
+        "highlight_end",
+    }
+    if any(not isinstance(word[field], str) for field in string_fields):
+        raise GoldenContractError(f"{label} word text fields must be strings")
+    word_sentence = word["sentence"]
+    if not word_sentence:
+        raise GoldenContractError(f"{label}.sentence must be non-empty")
+    positions = (
+        word["surface_start"],
+        word["surface_end"],
+        word["highlight_end"],
+    )
+    if (
+        any(
+            not isinstance(value, int) or isinstance(value, bool) for value in positions
+        )
+        or not 0 <= positions[0] <= positions[1] <= positions[2] <= len(word_sentence)
+        or word_sentence[positions[0] : positions[1]] != word["surface"]
+    ):
+        raise GoldenContractError(f"{label} has invalid surface/highlight offsets")
+    return word
+
+
+def _validate_active_case(
+    raw_case: Any,
+    label: str,
+    *,
+    expected_id: str,
+    expected_text: str,
+    dictionary_terms: Sequence[str] | None = None,
+) -> list[dict[str, Any]]:
+    case = _expect_dict(raw_case, label, {"id", "input", "output"})
+    if case["id"] != expected_id:
+        raise GoldenContractError(f"{label}.id does not match the corpus")
+    input_keys = {"text"} if dictionary_terms is None else {"text", "dictionary_terms"}
+    case_input = _expect_dict(case["input"], f"{label}.input", input_keys)
+    if case_input["text"] != expected_text:
+        raise GoldenContractError(f"{label}.input.text does not match the corpus")
+    if dictionary_terms is not None and case_input["dictionary_terms"] != sorted(
+        dictionary_terms
+    ):
+        raise GoldenContractError(
+            f"{label}.input.dictionary_terms does not match the corpus"
+        )
+    output = _expect_dict(case["output"], f"{label}.output", {"words"})
+    raw_words = output["words"]
+    if not isinstance(raw_words, list) or not raw_words:
+        raise GoldenContractError(f"{label}.output.words must be a non-empty array")
+    return [
+        _validate_word(word, f"{label}.output.words[{index}]")
+        for index, word in enumerate(raw_words)
+    ]
+
+
+def _validate_morphology(cases: Any, corpus: Sequence[Mapping[str, Any]]) -> None:
+    if not isinstance(cases, list) or not cases:
+        raise GoldenContractError("cases.morphology must be a non-empty array")
+    if len(cases) != len(corpus):
+        raise GoldenContractError(
+            "cases.morphology must contain exactly one record per corpus case"
+        )
+    for index, (raw_case, corpus_case) in enumerate(zip(cases, corpus, strict=True)):
+        label = f"cases.morphology[{index}]"
+        words = _validate_active_case(
+            raw_case,
+            label,
+            expected_id=corpus_case["id"],
+            expected_text=corpus_case["text"],
+        )
+        expectation = corpus_case.get("expect")
+        if not isinstance(expectation, Mapping):
+            continue
+        matching = [word for word in words if word["surface"] == expectation["surface"]]
+        if expectation.get("is_unknown") is True and not matching:
+            continue
+        if len(matching) != 1:
+            raise GoldenContractError(
+                f"{label} must contain exactly one expected surface word"
+            )
+        word = matching[0]
+        comparisons = {"lemma": word["lemma"], "mining_base": word["mined_form"]}
+        for field, actual in comparisons.items():
+            if field in expectation and expectation[field] != actual:
+                raise GoldenContractError(
+                    f"{label} expected {field} does not match the mined word"
+                )
+
+
+def _validate_compounds(cases: Any, corpus: Sequence[Mapping[str, Any]]) -> None:
+    compound_corpus = [case for case in corpus if "dictionary_terms" in case]
+    if not isinstance(cases, list) or not cases:
+        raise GoldenContractError("cases.compounds must be a non-empty array")
+    if len(cases) != len(compound_corpus):
+        raise GoldenContractError(
+            "cases.compounds must contain exactly the dictionary-term corpus cases"
+        )
+    for index, (raw_case, corpus_case) in enumerate(
+        zip(cases, compound_corpus, strict=True)
+    ):
+        label = f"cases.compounds[{index}]"
+        terms = corpus_case["dictionary_terms"]
+        words = _validate_active_case(
+            raw_case,
+            label,
+            expected_id=corpus_case["id"],
+            expected_text=corpus_case["text"],
+            dictionary_terms=terms,
+        )
+        for term in terms:
+            if not any(term in (word["lemma"], word["mined_form"]) for word in words):
+                raise GoldenContractError(
+                    f"{label} does not contain merged dictionary term {term!r}"
+                )
+
 
 def validate_fixture(
     payload: Any,
@@ -249,6 +535,7 @@ def validate_fixture(
     expected_revision: str,
     corpus_path: Path,
     exporter_path: Path,
+    expected_runtime: Mapping[str, Any],
     assets: Sequence[GoldenAsset] = (),
 ) -> None:
     root = _expect_dict(
@@ -315,6 +602,10 @@ def validate_fixture(
         canonical_json_bytes(runtime_without_hash)
     ):
         raise GoldenContractError("runtime canonical hash is invalid")
+    if runtime_without_hash != expected_runtime:
+        raise GoldenContractError(
+            "fixture runtime identity does not match the selected interpreter"
+        )
 
     data = _expect_dict(
         provenance["data"],
@@ -334,22 +625,16 @@ def validate_fixture(
     ):
         raise GoldenContractError("data canonical hash is invalid")
 
+    corpus = _load_corpus(corpus_path)
     cases = _expect_dict(root["cases"], "cases", set(CASE_SECTIONS))
-    _validate_tokenization(cases["tokenization"])
-    for section in CASE_SECTIONS[1:]:
-        records = cases[section]
-        if not isinstance(records, list):
-            raise GoldenContractError(f"cases.{section} must be an array")
-        for index, record in enumerate(records):
-            parsed = _expect_dict(
-                record, f"cases.{section}[{index}]", {"id", "input", "output"}
+    _validate_tokenization(cases["tokenization"], corpus)
+    _validate_morphology(cases["morphology"], corpus)
+    _validate_compounds(cases["compounds"], corpus)
+    for section in INACTIVE_CASE_SECTIONS:
+        if cases[section] != []:
+            raise GoldenContractError(
+                f"cases.{section} is staged but inactive in contract v1"
             )
-            if (
-                not isinstance(parsed["id"], str)
-                or not isinstance(parsed["input"], dict)
-                or not isinstance(parsed["output"], dict)
-            ):
-                raise GoldenContractError(f"cases.{section}[{index}] has invalid types")
 
 
 def parse_assets(values: Sequence[str]) -> tuple[GoldenAsset, ...]:
@@ -359,6 +644,10 @@ def parse_assets(values: Sequence[str]) -> tuple[GoldenAsset, ...]:
         name, separator, raw_path = value.partition("=")
         if not separator or not name or not raw_path:
             raise GoldenContractError("--asset must have the form NAME=PATH")
+        if name == RESERVED_UNIDIC_ASSET:
+            raise GoldenContractError(
+                f"asset name {RESERVED_UNIDIC_ASSET!r} is reserved for --dicdir"
+            )
         if name in seen:
             raise GoldenContractError(f"duplicate asset name: {name}")
         path = Path(raw_path).expanduser().resolve()
@@ -367,6 +656,117 @@ def parse_assets(values: Sequence[str]) -> tuple[GoldenAsset, ...]:
         seen.add(name)
         assets.append(GoldenAsset(name, path))
     return tuple(sorted(assets, key=lambda asset: asset.name))
+
+
+def _isolated_environment(*, python: Path, home: Path) -> dict[str, str]:
+    return {
+        "ANKI_MINER_HOME": os.fspath(home),
+        "HOME": os.fspath(home),
+        "LANG": "C.UTF-8",
+        "LC_ALL": "C.UTF-8",
+        "PATH": os.fspath(python.parent) + os.pathsep + os.defpath,
+        "PYTHONHASHSEED": "0",
+        "TZ": "UTC",
+    }
+
+
+def _run_checked_process(
+    command: Sequence[str],
+    *,
+    cwd: Path,
+    environment: Mapping[str, str],
+    timeout_seconds: int,
+    label: str,
+) -> subprocess.CompletedProcess[str]:
+    try:
+        result = subprocess.run(
+            command,
+            cwd=cwd,
+            env=environment,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=timeout_seconds,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise GoldenContractError(f"{label} could not run: {exc}") from exc
+    if result.returncode != 0:
+        detail = result.stderr.strip() or result.stdout.strip()
+        raise GoldenContractError(f"{label} exited {result.returncode}: {detail}")
+    return result
+
+
+def _probe_runtime(
+    *,
+    python: Path,
+    dicdir: Path | None,
+    runtime_distributions: Sequence[str],
+    cwd: Path,
+    environment: Mapping[str, str],
+    timeout_seconds: int,
+) -> tuple[dict[str, Any], Path]:
+    probe_path = Path(__file__).with_name("_runtime_probe.py")
+    command = [
+        os.fspath(python),
+        "-s",
+        "-P",
+        "-B",
+        os.fspath(probe_path),
+    ]
+    for distribution in runtime_distributions:
+        command.extend(("--distribution", distribution))
+    if dicdir is not None:
+        command.extend(("--dicdir", os.fspath(dicdir)))
+    result = _run_checked_process(
+        command,
+        cwd=cwd,
+        environment=environment,
+        timeout_seconds=timeout_seconds,
+        label="golden runtime probe",
+    )
+    try:
+        payload = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise GoldenContractError(
+            f"golden runtime probe did not produce valid JSON: {exc}"
+        ) from exc
+    root = _expect_dict(
+        payload, "runtime probe", {"runtime", "unidic_dicdir", "hash_probe"}
+    )
+    runtime = _expect_dict(
+        root["runtime"],
+        "runtime probe identity",
+        {"python_implementation", "python_version", "platform", "dependencies"},
+    )
+    if not all(
+        isinstance(runtime[key], str) and runtime[key]
+        for key in ("python_implementation", "python_version", "platform")
+    ):
+        raise GoldenContractError("runtime probe identity fields have invalid types")
+    dependencies = runtime["dependencies"]
+    if (
+        not isinstance(dependencies, dict)
+        or set(dependencies) != set(runtime_distributions)
+        or any(
+            not isinstance(name, str) or not isinstance(version, str) or not version
+            for name, version in dependencies.items()
+        )
+    ):
+        raise GoldenContractError(
+            "runtime probe dependencies do not match the required distributions"
+        )
+    if not isinstance(root["hash_probe"], int) or isinstance(root["hash_probe"], bool):
+        raise GoldenContractError("runtime probe hash result has an invalid type")
+    probed_dicdir = Path(
+        _expect_non_empty_string(root["unidic_dicdir"], "runtime probe dicdir")
+    )
+    if not probed_dicdir.is_absolute() or not (probed_dicdir / "sys.dic").is_file():
+        raise GoldenContractError("runtime probe returned an invalid UniDic directory")
+    if dicdir is not None and probed_dicdir != dicdir.resolve():
+        raise GoldenContractError(
+            "runtime probe did not use the requested UniDic directory"
+        )
+    return runtime, probed_dicdir
 
 
 def run_exporter(
@@ -381,6 +781,7 @@ def run_exporter(
     dicdir: Path | None = None,
     check: bool = False,
     timeout_seconds: int = 600,
+    runtime_distributions: Sequence[str] = RUNTIME_DISTRIBUTIONS,
 ) -> bool:
     python = python.expanduser().absolute()
     engine_root = engine_root.expanduser().resolve()
@@ -390,8 +791,19 @@ def run_exporter(
     verify_engine_root(engine_root, expected_revision)
     if not exporter_path.is_file() or not corpus_path.is_file():
         raise GoldenContractError("--exporter and --corpus must be files")
-    if dicdir is not None and not dicdir.is_dir():
-        raise GoldenContractError("--dicdir must be a directory")
+    if any(asset.name == RESERVED_UNIDIC_ASSET for asset in assets):
+        raise GoldenContractError(
+            f"asset name {RESERVED_UNIDIC_ASSET!r} is reserved for --dicdir"
+        )
+    if len({asset.name for asset in assets}) != len(assets):
+        raise GoldenContractError("duplicate asset names")
+    for asset in assets:
+        if not asset.path.exists():
+            raise GoldenContractError(f"asset does not exist: {asset.path}")
+    if dicdir is not None:
+        dicdir = dicdir.expanduser().resolve()
+        if not dicdir.is_dir():
+            raise GoldenContractError("--dicdir must be a directory")
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     bootstrap_path = Path(__file__).with_name("_golden_bootstrap.py")
@@ -400,9 +812,26 @@ def run_exporter(
         home = temp_root / "home"
         home.mkdir()
         temporary_output = temp_root / "fixture.json"
+        environment = _isolated_environment(python=python, home=home)
+        expected_runtime, effective_dicdir = _probe_runtime(
+            python=python,
+            dicdir=dicdir,
+            runtime_distributions=runtime_distributions,
+            cwd=temp_root,
+            environment=environment,
+            timeout_seconds=timeout_seconds,
+        )
+        effective_assets = tuple(
+            sorted(
+                (*assets, GoldenAsset(RESERVED_UNIDIC_ASSET, effective_dicdir)),
+                key=lambda asset: asset.name,
+            )
+        )
         command = [
             os.fspath(python),
-            "-I",
+            "-s",
+            "-P",
+            "-B",
             os.fspath(bootstrap_path),
             os.fspath(exporter_path),
             os.fspath(engine_root),
@@ -413,38 +842,18 @@ def run_exporter(
             "--output",
             os.fspath(temporary_output),
             "--compact",
+            "--dicdir",
+            os.fspath(effective_dicdir),
         ]
-        if dicdir is not None:
-            command.extend(("--dicdir", os.fspath(dicdir.resolve())))
         for asset in assets:
             command.extend(("--asset", f"{asset.name}={asset.path.resolve()}"))
-        executable_dir = os.fspath(python.parent)
-        environment = {
-            "ANKI_MINER_HOME": os.fspath(home),
-            "HOME": os.fspath(home),
-            "LANG": "C.UTF-8",
-            "LC_ALL": "C.UTF-8",
-            "PATH": executable_dir + os.pathsep + os.defpath,
-            "PYTHONHASHSEED": "0",
-            "TZ": "UTC",
-        }
-        try:
-            result = subprocess.run(
-                command,
-                cwd=temp_root,
-                env=environment,
-                check=False,
-                capture_output=True,
-                text=True,
-                timeout=timeout_seconds,
-            )
-        except (OSError, subprocess.TimeoutExpired) as exc:
-            raise GoldenContractError(f"golden exporter could not run: {exc}") from exc
-        if result.returncode != 0:
-            detail = result.stderr.strip() or result.stdout.strip()
-            raise GoldenContractError(
-                f"golden exporter exited {result.returncode}: {detail}"
-            )
+        _run_checked_process(
+            command,
+            cwd=temp_root,
+            environment=environment,
+            timeout_seconds=timeout_seconds,
+            label="golden exporter",
+        )
         try:
             payload = json.loads(temporary_output.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
@@ -457,7 +866,8 @@ def run_exporter(
             expected_revision=expected_revision,
             corpus_path=corpus_path,
             exporter_path=exporter_path,
-            assets=assets,
+            expected_runtime=expected_runtime,
+            assets=effective_assets,
         )
         rendered = canonical_json_bytes(payload) + b"\n"
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import runpy
 import sys
 from pathlib import Path
@@ -15,6 +16,15 @@ def _fail(message: str) -> int:
 def main() -> int:
     if len(sys.argv) < 3:
         return _fail("expected EXPORTER ENGINE_ROOT followed by exporter arguments")
+    if os.environ.get("PYTHONHASHSEED") != "0" or sys.flags.hash_randomization != 0:
+        return _fail("PYTHONHASHSEED=0 was not applied at interpreter startup")
+    if (
+        sys.flags.ignore_environment
+        or not sys.flags.no_user_site
+        or not sys.flags.safe_path
+        or not sys.dont_write_bytecode
+    ):
+        return _fail("interpreter isolation flags are incomplete")
     exporter = Path(sys.argv[1]).resolve()
     engine_root = Path(sys.argv[2]).resolve()
     engine_package = engine_root / "anki_miner"
