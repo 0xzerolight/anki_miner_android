@@ -6,6 +6,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/android-env.sh"
 
 BOOT_TIMEOUT_SECONDS="${EMULATOR_BOOT_TIMEOUT_SECONDS:-1200}"
+EMULATOR_LAUNCHER="${ANKI_MINER_EMULATOR_LAUNCHER:-$SCRIPT_DIR/emulator.sh}"
+HEALTH_SCRIPT="${ANKI_MINER_HEALTH_SCRIPT:-$SCRIPT_DIR/health.sh}"
 KEEP_EMULATOR=false
 PAGE_SIZE_LANE=4k
 EMULATOR_ARGS=()
@@ -90,8 +92,9 @@ if [[ "$emulator_state" != "device" ]]; then
         exit 1
     fi
     echo "Starting $AVD_NAME as $EMULATOR_SERIAL"
-    "$SCRIPT_DIR/emulator.sh" \
+    "$EMULATOR_LAUNCHER" \
         --headless \
+        --test-session \
         --page-size "$PAGE_SIZE_LANE" \
         "${EMULATOR_ARGS[@]}" \
         >"$ANKI_MINER_ANDROID_TOOLCHAIN_ROOT/emulator-$PAGE_SIZE_LANE.log" 2>&1 &
@@ -128,4 +131,4 @@ actual_page_size="$(adb -s "$EMULATOR_SERIAL" shell getconf PAGE_SIZE 2>/dev/nul
 }
 
 adb -s "$EMULATOR_SERIAL" shell input keyevent 82 >/dev/null 2>&1 || true
-"$SCRIPT_DIR/health.sh" --connected "$PAGE_SIZE_LANE"
+"$HEALTH_SCRIPT" --connected "$PAGE_SIZE_LANE"

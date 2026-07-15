@@ -24,6 +24,9 @@ MACHINE_ABIS = {
     183: "arm64-v8a",
 }
 EXECUTABLE_NATIVE_NAMES = {"libffmpeg.so", "libffprobe.so"}
+ET_DYN = 3
+PT_INTERP = 3
+PT_LOAD = 1
 
 
 class ArtifactError(RuntimeError):
@@ -46,7 +49,13 @@ def safe_entry_name(name: str, archive_name: str) -> PurePosixPath:
     return path
 
 
-def parse_elf(data: bytes, logical_name: str, inspection: Inspection) -> None:
+def parse_elf(
+    data: bytes,
+    logical_name: str,
+    inspection: Inspection,
+    *,
+    require_pie_cli: bool = False,
+) -> None:
     if len(data) < 52 or data[:4] != ELF_MAGIC:
         raise ArtifactError(f"{logical_name}: truncated ELF header")
     elf_class = data[4]
@@ -58,6 +67,7 @@ def parse_elf(data: bytes, logical_name: str, inspection: Inspection) -> None:
     else:
         raise ArtifactError(f"{logical_name}: unsupported ELF byte order {data_encoding}")
 
+    elf_type = struct.unpack_from(f"{endian}H", data, 16)[0]
     machine = struct.unpack_from(f"{endian}H", data, 18)[0]
     abi = MACHINE_ABIS.get(machine)
     if abi is None:
@@ -68,6 +78,7 @@ def parse_elf(data: bytes, logical_name: str, inspection: Inspection) -> None:
         )
 
     if elf_class == 1:
+        entry_point = struct.unpack_from(f"{endian}I", data, 24)[0]
         phoff = struct.unpack_from(f"{endian}I", data, 28)[0]
         phentsize = struct.unpack_from(f"{endian}H", data, 42)[0]
         phnum = struct.unpack_from(f"{endian}H", data, 44)[0]
@@ -76,6 +87,7 @@ def parse_elf(data: bytes, logical_name: str, inspection: Inspection) -> None:
     elif elf_class == 2:
         if len(data) < 64:
             raise ArtifactError(f"{logical_name}: truncated ELF64 header")
+        entry_point = struct.unpack_from(f"{endian}Q", data, 24)[0]
         phoff = struct.unpack_from(f"{endian}Q", data, 32)[0]
         phentsize = struct.unpack_from(f"{endian}H", data, 54)[0]
         phnum = struct.unpack_from(f"{endian}H", data, 56)[0]
@@ -92,9 +104,18 @@ def parse_elf(data: bytes, logical_name: str, inspection: Inspection) -> None:
         raise ArtifactError(f"{logical_name}: truncated program-header table")
 
     load_count = 0
+    has_interpreter = False
     for index in range(phnum):
         fields = struct.unpack_from(ph_format, data, phoff + index * phentsize)
-        if fields[0] != 1:  # PT_LOAD
+        if fields[0] == PT_INTERP:
+            if elf_class == 1:
+                interpreter_offset, interpreter_size = fields[1], fields[4]
+            else:
+                interpreter_offset, interpreter_size = fields[2], fields[5]
+            if interpreter_size == 0 or interpreter_offset + interpreter_size > len(data):
+                raise ArtifactError(f"{logical_name}: invalid PT_INTERP segment")
+            has_interpreter = True
+        if fields[0] != PT_LOAD:
             continue
         load_count += 1
         if elf_class == 1:
@@ -112,6 +133,15 @@ def parse_elf(data: bytes, logical_name: str, inspection: Inspection) -> None:
             )
     if load_count == 0:
         raise ArtifactError(f"{logical_name}: ELF has no PT_LOAD segment")
+    if require_pie_cli:
+        if elf_type != ET_DYN:
+            raise ArtifactError(
+                f"{logical_name}: executable must be PIE (ELF type ET_DYN), found {elf_type}",
+            )
+        if entry_point == 0:
+            raise ArtifactError(f"{logical_name}: executable has a zero entry point")
+        if not has_interpreter:
+            raise ArtifactError(f"{logical_name}: executable has no PT_INTERP segment")
 
     mentioned_abis: set[str] = set()
     for component in logical_name.replace("!", "/").split("/"):
@@ -175,7 +205,12 @@ def inspect_zip(
                 payload = prefix + stream.read()
 
             if is_elf:
-                parse_elf(payload, entry_name, inspection)
+                parse_elf(
+                    payload,
+                    entry_name,
+                    inspection,
+                    require_pie_cli=basename in EXECUTABLE_NATIVE_NAMES,
+                )
             else:
                 inspect_zip(BytesIO(payload), entry_name, inspection, depth + 1)
 

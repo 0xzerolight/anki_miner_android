@@ -19,12 +19,58 @@ from check_native_artifacts import (  # noqa: E402
 )
 
 
-def elf64(machine: int = 62, alignment: int = 16 * 1024) -> bytes:
-    data = bytearray(64 + 56)
+def elf64(
+    machine: int = 62,
+    alignment: int = 16 * 1024,
+    *,
+    elf_type: int = 3,
+    entry_point: int = 0,
+    interpreter: bool = False,
+) -> bytes:
+    interpreter_data = b"/system/bin/linker64\0" if interpreter else b""
+    program_header_count = 2 if interpreter else 1
+    headers_size = 64 + 56 * program_header_count
+    data = bytearray(headers_size + len(interpreter_data))
     data[:16] = b"\x7fELF\x02\x01\x01" + bytes(9)
-    struct.pack_into("<HHIQQQIHHHHHH", data, 16, 3, machine, 1, 0, 64, 0, 0, 64, 56, 1, 0, 0, 0)
+    struct.pack_into(
+        "<HHIQQQIHHHHHH",
+        data,
+        16,
+        elf_type,
+        machine,
+        1,
+        entry_point,
+        64,
+        0,
+        0,
+        64,
+        56,
+        program_header_count,
+        0,
+        0,
+        0,
+    )
     struct.pack_into("<IIQQQQQQ", data, 64, 1, 5, 0, 0, 0, len(data), len(data), alignment)
+    if interpreter:
+        struct.pack_into(
+            "<IIQQQQQQ",
+            data,
+            120,
+            3,
+            4,
+            headers_size,
+            0,
+            0,
+            len(interpreter_data),
+            len(interpreter_data),
+            1,
+        )
+        data[headers_size:] = interpreter_data
     return bytes(data)
+
+
+def pie_cli() -> bytes:
+    return elf64(entry_point=0x4000, interpreter=True)
 
 
 def archive(entries: dict[str, bytes]) -> bytes:
@@ -91,8 +137,22 @@ class NativeArtifactTest(unittest.TestCase):
             self.inspect(archive({"assets/chaquopy/app.imy": app_imy}))
 
     def test_direct_native_executable_is_accepted(self) -> None:
-        result = self.inspect(archive({"lib/x86_64/libffprobe.so": elf64()}))
+        result = self.inspect(archive({"lib/x86_64/libffprobe.so": pie_cli()}))
         self.assertEqual(1, result.elf_count)
+
+    def test_rejects_et_exec_native_tool(self) -> None:
+        executable = elf64(elf_type=2, entry_point=0x4000, interpreter=True)
+        with self.assertRaisesRegex(ArtifactError, "must be PIE"):
+            self.inspect(archive({"lib/x86_64/libffmpeg.so": executable}))
+
+    def test_rejects_shared_library_renamed_as_native_tool(self) -> None:
+        with self.assertRaisesRegex(ArtifactError, "zero entry point"):
+            self.inspect(archive({"lib/x86_64/libffmpeg.so": elf64()}))
+
+    def test_rejects_pie_native_tool_without_interpreter(self) -> None:
+        executable = elf64(entry_point=0x4000)
+        with self.assertRaisesRegex(ArtifactError, "no PT_INTERP"):
+            self.inspect(archive({"lib/x86_64/libffprobe.so": executable}))
 
 
 if __name__ == "__main__":
