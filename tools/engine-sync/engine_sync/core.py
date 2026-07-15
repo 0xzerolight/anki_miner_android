@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 import subprocess
+import symtable
 import tempfile
 import tomllib
 from dataclasses import dataclass
@@ -29,10 +30,17 @@ class TypeCheckingException:
 
 
 @dataclass(frozen=True)
+class AssetMapping:
+    source: str
+    destination: str
+
+
+@dataclass(frozen=True)
 class Composition:
     path: Path
     roots: tuple[str, ...]
-    assets: tuple[str, ...]
+    assets: tuple[AssetMapping, ...]
+    overlay_allowlist: frozenset[str]
     protected_verbatim: frozenset[str]
     allowed_external: frozenset[str]
     allowed_deferred_external: frozenset[str]
@@ -67,6 +75,7 @@ class SnapshotFile:
     path: str
     content: bytes
     origin: str
+    source_path: str
 
 
 @dataclass(frozen=True)
@@ -92,6 +101,7 @@ class EngineSnapshot:
             "files": {
                 path: {
                     "origin": item.origin,
+                    "source": item.source_path,
                     "sha256": _sha256(item.content),
                 }
                 for path, item in sorted(self.files.items())
@@ -127,6 +137,19 @@ def _require_string_list(data: Mapping[str, Any], key: str) -> tuple[str, ...]:
     return tuple(value)
 
 
+def _validate_relative_path(value: str, label: str) -> str:
+    pure = PurePosixPath(value)
+    if (
+        pure.is_absolute()
+        or not pure.parts
+        or any(part in {"", ".", ".."} for part in pure.parts)
+    ):
+        raise EngineSyncError(
+            f"{label} must be a normalized relative POSIX path: {value!r}"
+        )
+    return value
+
+
 def load_composition(path: Path) -> Composition:
     try:
         raw = path.read_bytes()
@@ -136,12 +159,41 @@ def load_composition(path: Path) -> Composition:
     if data.get("format_version") != 1:
         raise EngineSyncError("unsupported composition format_version")
     roots = _require_string_list(data, "roots")
-    assets = _require_string_list(data, "assets")
+    assets = [AssetMapping(path, path) for path in _require_string_list(data, "assets")]
+    mapped_assets = data.get("mapped_assets", [])
+    if not isinstance(mapped_assets, list):
+        raise EngineSyncError("mapped_assets must be an array of tables")
+    for index, entry in enumerate(mapped_assets):
+        if not isinstance(entry, dict) or set(entry) != {"source", "destination"}:
+            raise EngineSyncError(
+                f"mapped_assets[{index}] needs exactly source and destination"
+            )
+        source, destination = entry["source"], entry["destination"]
+        if not isinstance(source, str) or not isinstance(destination, str):
+            raise EngineSyncError(f"mapped_assets[{index}] paths must be strings")
+        assets.append(
+            AssetMapping(
+                _validate_relative_path(source, f"mapped_assets[{index}].source"),
+                _validate_relative_path(
+                    destination, f"mapped_assets[{index}].destination"
+                ),
+            )
+        )
+    destinations = [asset.destination for asset in assets]
+    if len(destinations) != len(set(destinations)):
+        raise EngineSyncError("asset destinations contain duplicates")
+    overlay_allowlist = frozenset(_require_string_list(data, "overlay_allowlist"))
+    for overlay in overlay_allowlist:
+        _validate_relative_path(overlay, "overlay_allowlist entry")
     protected = frozenset(_require_string_list(data, "protected_verbatim"))
     allowed_external = frozenset(_require_string_list(data, "allowed_external"))
     allowed_deferred = frozenset(
         _require_string_list(data, "allowed_deferred_external")
     )
+    if allowed_external & allowed_deferred:
+        raise EngineSyncError(
+            "allowed_external and allowed_deferred_external must be disjoint"
+        )
     allowed_stdlib = frozenset(_require_string_list(data, "allowed_stdlib"))
     local_only = frozenset(_require_string_list(data, "local_only_imports"))
     forbidden = _require_string_list(data, "forbidden_imports")
@@ -174,7 +226,8 @@ def load_composition(path: Path) -> Composition:
     return Composition(
         path=path,
         roots=roots,
-        assets=assets,
+        assets=tuple(assets),
+        overlay_allowlist=overlay_allowlist,
         protected_verbatim=protected,
         allowed_external=allowed_external,
         allowed_deferred_external=allowed_deferred,
@@ -196,6 +249,51 @@ def load_lock(path: Path) -> str:
             "engine.lock must contain exactly one lowercase 40-character Git SHA"
         )
     return revision
+
+
+def discover_source_repo(
+    project_root: Path, environ: Mapping[str, str] | None = None
+) -> Path:
+    """Locate the desktop checkout from main or an Android Git worktree."""
+
+    environment = os.environ if environ is None else environ
+    override = environment.get("ANKI_MINER_DESKTOP_REPO")
+    if override:
+        candidate = Path(override).expanduser().resolve()
+        if not candidate.is_dir():
+            raise EngineSyncError(
+                f"ANKI_MINER_DESKTOP_REPO is not a directory: {candidate}"
+            )
+        return candidate
+
+    project_root = project_root.resolve()
+    candidates = [project_root.parent / "anki_miner"]
+    try:
+        result = subprocess.run(
+            [
+                "git",
+                "-C",
+                os.fspath(project_root),
+                "rev-parse",
+                "--path-format=absolute",
+                "--git-common-dir",
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except (OSError, subprocess.CalledProcessError):
+        pass
+    else:
+        common_dir = Path(result.stdout.strip()).resolve()
+        checkout_root = common_dir.parent if common_dir.name == ".git" else common_dir
+        candidates.append(checkout_root.parent / "anki_miner")
+    for candidate in candidates:
+        if candidate.is_dir():
+            return candidate.resolve()
+    raise EngineSyncError(
+        "cannot locate the desktop checkout; pass --source-repo or set ANKI_MINER_DESKTOP_REPO"
+    )
 
 
 class GitTree:
@@ -233,9 +331,7 @@ class GitTree:
         return resolved
 
     def _list_paths(self) -> frozenset[str]:
-        raw = self._git(
-            "ls-tree", "-r", "--name-only", "-z", self.revision, "--", "anki_miner"
-        )
+        raw = self._git("ls-tree", "-r", "--name-only", "-z", self.revision)
         paths = frozenset(part.decode("utf-8") for part in raw.split(b"\0") if part)
         if "anki_miner/__init__.py" not in paths:
             raise EngineSyncError("pinned commit has no anki_miner package")
@@ -270,6 +366,9 @@ def _overlay_files(root: Path) -> dict[str, bytes]:
         if not path.is_file():
             continue
         rel = path.relative_to(root).as_posix()
+        pure = PurePosixPath(rel)
+        if "__pycache__" in pure.parts or pure.suffix in {".pyc", ".pyo"}:
+            continue
         if rel.startswith(".") or "/." in rel:
             raise EngineSyncError(f"hidden overlay files are not allowed: {rel}")
         result[rel] = path.read_bytes()
@@ -281,6 +380,8 @@ def _module_index(
 ) -> dict[str, ModuleFile]:
     index: dict[str, ModuleFile] = {}
     for path in sorted(tree.paths):
+        if not path.startswith("anki_miner/"):
+            continue
         info = _path_to_module(path)
         if info is None:
             continue
@@ -341,6 +442,18 @@ def _iter_imports(module: ModuleFile) -> Iterator[ImportRef]:
         tree = ast.parse(module.content, filename=module.path)
     except (SyntaxError, ValueError) as exc:
         raise EngineSyncError(f"cannot parse {module.path}: {exc}") from exc
+
+    importlib_module_aliases = {"importlib"}
+    import_module_aliases: set[str] = set()
+    for candidate in ast.walk(tree):
+        if isinstance(candidate, ast.Import):
+            for alias in candidate.names:
+                if alias.name == "importlib":
+                    importlib_module_aliases.add(alias.asname or alias.name)
+        elif isinstance(candidate, ast.ImportFrom) and candidate.module == "importlib":
+            for alias in candidate.names:
+                if alias.name == "import_module":
+                    import_module_aliases.add(alias.asname or alias.name)
 
     class Collector(ast.NodeVisitor):
         def __init__(self) -> None:
@@ -418,28 +531,50 @@ def _iter_imports(module: ModuleFile) -> Iterator[ImportRef]:
             self.deferred = previous
 
         def visit_Call(self, node: ast.Call) -> None:
-            name: str | None = None
-            if isinstance(node.func, ast.Name) and node.func.id in {
-                "__import__",
-                "import_module",
-            }:
-                name = node.func.id
+            is_dynamic_import = False
+            if isinstance(node.func, ast.Name) and (
+                node.func.id == "__import__" or node.func.id in import_module_aliases
+            ):
+                is_dynamic_import = True
             elif (
                 isinstance(node.func, ast.Attribute)
                 and isinstance(node.func.value, ast.Name)
-                and node.func.value.id == "importlib"
+                and node.func.value.id in importlib_module_aliases
                 and node.func.attr == "import_module"
             ):
-                name = node.func.attr
-            if name and node.args and isinstance(node.args[0], ast.Constant):
-                target = node.args[0].value
-                if isinstance(target, str) and target:
-                    self._append(_resolve_dynamic_target(module, target), node.lineno)
+                is_dynamic_import = True
+            if is_dynamic_import:
+                target = (
+                    node.args[0].value
+                    if node.args and isinstance(node.args[0], ast.Constant)
+                    else None
+                )
+                if not isinstance(target, str) or not target:
+                    raise EngineSyncError(
+                        f"{module.path}:{node.lineno}: dynamic import target must be a non-empty string literal"
+                    )
+                self._append(_resolve_dynamic_target(module, target), node.lineno)
             self.generic_visit(node)
 
     collector = Collector()
     collector.visit(tree)
     yield from collector.refs
+
+
+def _module_bound_symbols(module: ModuleFile) -> frozenset[str]:
+    try:
+        table = symtable.symtable(module.content.decode("utf-8"), module.path, "exec")
+    except (SyntaxError, UnicodeDecodeError) as exc:
+        raise EngineSyncError(
+            f"cannot inspect symbols in {module.path}: {exc}"
+        ) from exc
+    return frozenset(
+        name
+        for name in table.get_identifiers()
+        if (symbol := table.lookup(name)).is_assigned()
+        or symbol.is_imported()
+        or symbol.is_namespace()
+    )
 
 
 def _prefix_matches(target: str, prefix: str) -> bool:
@@ -466,6 +601,18 @@ def build_snapshot(
     revision = load_lock(lock_path)
     tree = GitTree(source_repo, revision)
     overlays = _overlay_files(overlays_path)
+    unexpected_overlays = set(overlays) - composition.overlay_allowlist
+    if unexpected_overlays:
+        raise EngineSyncError(
+            "overlay files are not allowlisted: "
+            + ", ".join(sorted(unexpected_overlays))
+        )
+    missing_overlays = composition.overlay_allowlist - set(overlays)
+    if missing_overlays:
+        raise EngineSyncError(
+            "allowlisted overlay files are missing: "
+            + ", ".join(sorted(missing_overlays))
+        )
     index = _module_index(tree, overlays)
 
     for protected in sorted(composition.protected_verbatim):
@@ -484,6 +631,7 @@ def build_snapshot(
     eager_external: set[str] = set()
     deferred_external: set[str] = set()
     used_exceptions: set[TypeCheckingException] = set()
+    bound_symbols: dict[str, frozenset[str]] = {}
 
     while pending:
         module_name = pending.pop()
@@ -528,6 +676,15 @@ def build_snapshot(
                 pending.append(ref.target)
                 continue
             if ref.member_candidate:
+                base, _, member = ref.target.rpartition(".")
+                if base in index:
+                    symbols = bound_symbols.setdefault(
+                        base, _module_bound_symbols(index[base])
+                    )
+                    if member not in symbols:
+                        raise EngineSyncError(
+                            f"{item.path}:{ref.line}: unresolved internal import member {ref.target}"
+                        )
                 continue
             top = ref.target.partition(".")[0]
             if top in composition.local_only_imports:
@@ -555,16 +712,32 @@ def build_snapshot(
         raise EngineSyncError(f"unused forbidden TYPE_CHECKING exceptions: {rendered}")
 
     files: dict[str, SnapshotFile] = {}
+    used_overlays: set[str] = set()
     for module_name in sorted(selected):
         item = index[module_name]
-        files[item.path] = SnapshotFile(item.path, item.content, item.origin)
+        files[item.path] = SnapshotFile(item.path, item.content, item.origin, item.path)
+        if item.origin == "overlay":
+            used_overlays.add(item.path)
     for asset in composition.assets:
-        content = overlays.get(asset)
+        content = overlays.get(asset.destination)
         origin = "overlay"
+        source_path = asset.destination
         if content is None:
-            content = tree.read(asset)
+            content = tree.read(asset.source)
             origin = "desktop"
-        files[asset] = SnapshotFile(asset, content, origin)
+            source_path = asset.source
+        else:
+            used_overlays.add(asset.destination)
+        files[asset.destination] = SnapshotFile(
+            asset.destination, content, origin, source_path
+        )
+
+    unused_overlays = composition.overlay_allowlist - used_overlays
+    if unused_overlays:
+        raise EngineSyncError(
+            "allowlisted overlays are unused by the selected closure: "
+            + ", ".join(sorted(unused_overlays))
+        )
 
     return EngineSnapshot(
         revision=tree.revision,
@@ -583,7 +756,21 @@ def _managed_roots(snapshot: EngineSnapshot) -> frozenset[str]:
     return frozenset(path.partition("/")[0] for path in snapshot.files)
 
 
+def _validate_destination(destination: Path) -> None:
+    if destination.is_symlink():
+        raise EngineSyncError(f"engine destination may not be a symlink: {destination}")
+    manifest = destination / MANIFEST_NAME
+    if manifest.is_symlink():
+        raise EngineSyncError(f"engine sync manifest may not be a symlink: {manifest}")
+
+
+def _is_bytecode_cache(path: Path, destination: Path) -> bool:
+    relative = path.relative_to(destination)
+    return "__pycache__" in relative.parts or path.suffix in {".pyc", ".pyo"}
+
+
 def _actual_managed_files(destination: Path, snapshot: EngineSnapshot) -> set[str]:
+    _validate_destination(destination)
     actual: set[str] = set()
     for root_name in _managed_roots(snapshot):
         root = destination / root_name
@@ -599,6 +786,8 @@ def _actual_managed_files(destination: Path, snapshot: EngineSnapshot) -> set[st
                     f"managed destination may not contain symlinks: {path}"
                 )
             if path.is_file():
+                if _is_bytecode_cache(path, destination):
+                    continue
                 actual.add(path.relative_to(destination).as_posix())
     if (destination / MANIFEST_NAME).is_file():
         actual.add(MANIFEST_NAME)
@@ -621,6 +810,7 @@ def check_destination(destination: Path, snapshot: EngineSnapshot) -> tuple[str,
 
 
 def sync_destination(destination: Path, snapshot: EngineSnapshot) -> None:
+    _validate_destination(destination)
     destination.mkdir(parents=True, exist_ok=True)
     expected = snapshot.expected_files()
     actual_paths = _actual_managed_files(destination, snapshot)

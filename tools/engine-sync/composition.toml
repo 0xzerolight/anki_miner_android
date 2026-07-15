@@ -6,11 +6,13 @@ format_version = 1
 roots = [
   "anki_miner.orchestration.episode_processor",
   "anki_miner.presenters.null_presenter",
+  "anki_miner.resources.wordsets",
   "anki_miner.services.audio_packs.importer",
   "anki_miner.services.audio_packs.registry",
   "anki_miner.services.dictionary.importers.jmdict_importer",
   "anki_miner.services.dictionary.importers.yomitan_importer",
   "anki_miner.services.dictionary.registry",
+  "anki_miner.services.dictionary.resources",
   "anki_miner.services.frequency.legacy_migration",
   "anki_miner.services.frequency.registry",
   "anki_miner.services.frequency.source_importer",
@@ -35,6 +37,13 @@ assets = [
   "anki_miner/resources/wordsets/place-names.txt",
   "anki_miner/resources/wordsets/surnames.txt",
   "anki_miner/services/dictionary/resources/glossary.css",
+]
+
+# Every overlay is a reviewed divergence. Extra files, misspellings, and
+# allowlisted overlays which the selected closure never consumes are errors.
+overlay_allowlist = [
+  "PyQt6/QtCore.py",
+  "PyQt6/__init__.py",
 ]
 
 # A protected module may be selected from the desktop Git object only. An
@@ -125,6 +134,10 @@ forbidden_imports = [
   "anki_miner.utils.mpv_loader",
   "anki_miner.utils.ytdlp_resolver",
 ]
+
+[[mapped_assets]]
+source = "LICENSE"
+destination = "anki_miner/LICENSE"
 
 # The orchestration file is byte-identical to desktop and retains a
 # TYPE_CHECKING-only YouTube service annotation. It cannot execute at runtime;

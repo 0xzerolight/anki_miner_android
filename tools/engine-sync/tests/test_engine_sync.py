@@ -11,6 +11,7 @@ from engine_sync.core import (
     EngineSyncError,
     build_snapshot,
     check_destination,
+    discover_source_repo,
     sync_destination,
 )
 
@@ -45,6 +46,7 @@ class EngineSyncTests(unittest.TestCase):
             encoding="utf-8",
         )
         (repo / "anki_miner/data.txt").write_text("asset\n", encoding="utf-8")
+        (repo / "LICENSE").write_text("license\n", encoding="utf-8")
         _run("git", "init", "-q", cwd=repo)
         _run("git", "config", "user.email", "tests@example.invalid", cwd=repo)
         _run("git", "config", "user.name", "Engine Sync Tests", cwd=repo)
@@ -72,6 +74,10 @@ allowed_deferred_external = []
 allowed_stdlib = ["typing"]
 local_only_imports = ["PyQt6"]
 forbidden_imports = ["gtts", "mpv", "yt_dlp", "anki_miner.services.youtube_fetcher"]
+overlay_allowlist = ["PyQt6/QtCore.py", "PyQt6/__init__.py"]
+[[mapped_assets]]
+source = "LICENSE"
+destination = "anki_miner/LICENSE"
 [[forbidden_type_checking_exceptions]]
 importer = "anki_miner.root"
 target = "anki_miner.services.youtube_fetcher"
@@ -93,6 +99,17 @@ target = "anki_miner.services.youtube_fetcher"
             overlays_path=fixture["overlays"],
         )
 
+    def _drop_type_checking_exception(self, fixture: dict[str, Path]) -> None:
+        composition = fixture["composition"]
+        composition.write_text(
+            composition.read_text(encoding="utf-8").replace(
+                '[[forbidden_type_checking_exceptions]]\nimporter = "anki_miner.root"\n'
+                'target = "anki_miner.services.youtube_fetcher"\n',
+                "",
+            ),
+            encoding="utf-8",
+        )
+
     def test_closure_uses_overlay_and_records_exact_origins(self) -> None:
         snapshot = self._snapshot(self._fixture())
 
@@ -108,6 +125,8 @@ target = "anki_miner.services.youtube_fetcher"
         )
         self.assertEqual(snapshot.files["PyQt6/QtCore.py"].origin, "overlay")
         self.assertEqual(snapshot.files["anki_miner/root.py"].origin, "desktop")
+        self.assertEqual(snapshot.files["anki_miner/LICENSE"].source_path, "LICENSE")
+        self.assertEqual(snapshot.files["anki_miner/LICENSE"].content, b"license\n")
         self.assertNotIn("anki_miner/services/youtube_fetcher.py", snapshot.files)
 
         manifest = json.loads(snapshot.manifest_bytes())
@@ -115,6 +134,10 @@ target = "anki_miner.services.youtube_fetcher"
         self.assertEqual(
             manifest["files"]["anki_miner/root.py"]["sha256"],
             hashlib.sha256(snapshot.files["anki_miner/root.py"].content).hexdigest(),
+        )
+        self.assertEqual(
+            manifest["files"]["anki_miner/root.py"]["source"],
+            "anki_miner/root.py",
         )
 
     def test_sync_check_detects_and_repairs_direct_edits(self) -> None:
@@ -125,6 +148,10 @@ target = "anki_miner.services.youtube_fetcher"
 
         (destination / "anki_miner/root.py").write_text("edited\n", encoding="utf-8")
         (destination / "anki_miner/unexpected.py").write_text("", encoding="utf-8")
+        (destination / "anki_miner/__pycache__").mkdir()
+        (destination / "anki_miner/__pycache__/root.cpython-313.pyc").write_bytes(
+            b"cache"
+        )
         (destination / "PyQt6/QtCore.py").unlink()
         self.assertEqual(
             check_destination(destination, snapshot),
@@ -168,11 +195,68 @@ target = "anki_miner.services.youtube_fetcher"
         ):
             self._snapshot(fixture)
 
+    def test_missing_from_import_member_is_rejected(self) -> None:
+        fixture = self._fixture("from anki_miner import missing\n")
+        with self.assertRaisesRegex(
+            EngineSyncError, r"unresolved internal import member anki_miner.missing"
+        ):
+            self._snapshot(fixture)
+
+    def test_defined_from_import_member_is_accepted(self) -> None:
+        fixture = self._fixture(
+            "from PyQt6.QtCore import QCoreApplication\n"
+            "from anki_miner.dep import VALUE\n"
+        )
+        self._drop_type_checking_exception(fixture)
+        snapshot = self._snapshot(fixture)
+        self.assertIn("anki_miner.dep", snapshot.modules)
+
+    def test_non_literal_dynamic_import_is_rejected(self) -> None:
+        fixture = self._fixture(
+            "from importlib import import_module as load\n\n"
+            "def dynamic(name):\n"
+            "    return load(name)\n"
+        )
+        fixture["composition"].write_text(
+            fixture["composition"]
+            .read_text(encoding="utf-8")
+            .replace(
+                'allowed_stdlib = ["typing"]',
+                'allowed_stdlib = ["importlib", "typing"]',
+            ),
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(EngineSyncError, "dynamic import target must be"):
+            self._snapshot(fixture)
+
+    def test_deferred_only_external_cannot_be_imported_eagerly(self) -> None:
+        fixture = self._fixture("import numpy\n")
+        fixture["composition"].write_text(
+            fixture["composition"]
+            .read_text(encoding="utf-8")
+            .replace(
+                "allowed_deferred_external = []",
+                'allowed_deferred_external = ["numpy"]',
+            ),
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(EngineSyncError, "unresolved import numpy"):
+            self._snapshot(fixture)
+
     def test_protected_module_cannot_be_overlaid(self) -> None:
         fixture = self._fixture()
         protected = fixture["overlays"] / "anki_miner/root.py"
         protected.parent.mkdir(parents=True)
         protected.write_text("VALUE = 'forked'\n", encoding="utf-8")
+        fixture["composition"].write_text(
+            fixture["composition"]
+            .read_text(encoding="utf-8")
+            .replace(
+                'overlay_allowlist = ["PyQt6/QtCore.py", "PyQt6/__init__.py"]',
+                'overlay_allowlist = ["PyQt6/QtCore.py", "PyQt6/__init__.py", "anki_miner/root.py"]',
+            ),
+            encoding="utf-8",
+        )
         with self.assertRaisesRegex(
             EngineSyncError, r"protected module cannot be overlaid"
         ):
@@ -183,9 +267,59 @@ target = "anki_miner.services.youtube_fetcher"
         (fixture["overlays"] / "PyQt6/QtCore.py").unlink()
         (fixture["overlays"] / "PyQt6/__init__.py").unlink()
         with self.assertRaisesRegex(
-            EngineSyncError, r"PyQt6 must resolve from an overlay"
+            EngineSyncError, r"allowlisted overlay files are missing"
         ):
             self._snapshot(fixture)
+
+    def test_unallowlisted_and_unused_overlays_are_rejected(self) -> None:
+        fixture = self._fixture()
+        extra = fixture["overlays"] / "anki_miner/typo.py"
+        extra.parent.mkdir(parents=True)
+        extra.write_text("", encoding="utf-8")
+        with self.assertRaisesRegex(
+            EngineSyncError, "overlay files are not allowlisted"
+        ):
+            self._snapshot(fixture)
+
+        extra.unlink()
+        (fixture["repo"] / "anki_miner/root.py").write_text(
+            "VALUE = 1\n", encoding="utf-8"
+        )
+        _run("git", "add", ".", cwd=fixture["repo"])
+        _run("git", "commit", "-qm", "drop overlay import", cwd=fixture["repo"])
+        fixture["lock"].write_text(
+            _run("git", "rev-parse", "HEAD", cwd=fixture["repo"]) + "\n",
+            encoding="ascii",
+        )
+        self._drop_type_checking_exception(fixture)
+        with self.assertRaisesRegex(EngineSyncError, "allowlisted overlays are unused"):
+            self._snapshot(fixture)
+
+    def test_destination_and_manifest_symlinks_are_rejected(self) -> None:
+        snapshot = self._snapshot(self._fixture())
+        real_destination = self.root / "real-vendor"
+        real_destination.mkdir()
+        linked_destination = self.root / "linked-vendor"
+        linked_destination.symlink_to(real_destination, target_is_directory=True)
+        with self.assertRaisesRegex(
+            EngineSyncError, "destination may not be a symlink"
+        ):
+            sync_destination(linked_destination, snapshot)
+
+        manifest_target = self.root / "manifest-target"
+        manifest_target.write_text("{}", encoding="utf-8")
+        (real_destination / ".engine-sync-manifest.json").symlink_to(manifest_target)
+        with self.assertRaisesRegex(EngineSyncError, "manifest may not be a symlink"):
+            check_destination(real_destination, snapshot)
+
+    def test_source_discovery_honors_environment_override(self) -> None:
+        fixture = self._fixture()
+        self.assertEqual(
+            discover_source_repo(
+                self.root, {"ANKI_MINER_DESKTOP_REPO": str(fixture["repo"])}
+            ),
+            fixture["repo"].resolve(),
+        )
 
     def test_manifest_is_byte_deterministic(self) -> None:
         fixture = self._fixture()

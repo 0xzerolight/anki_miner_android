@@ -6,14 +6,18 @@ import argparse
 import sys
 from pathlib import Path
 
-from .core import EngineSyncError, build_snapshot, check_destination, sync_destination
+from .core import (
+    EngineSyncError,
+    build_snapshot,
+    check_destination,
+    discover_source_repo,
+    sync_destination,
+)
 
 
 def _parser(script_root: Path, project_root: Path) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--source-repo", type=Path, default=project_root.parent / "anki_miner"
-    )
+    parser.add_argument("--source-repo", type=Path)
     parser.add_argument(
         "--destination", type=Path, default=project_root / "app/src/main/python"
     )
@@ -40,8 +44,13 @@ def main(argv: list[str] | None = None) -> int:
     project_root = script_root.parents[1]
     args = _parser(script_root, project_root).parse_args(argv)
     try:
+        source_repo = (
+            args.source_repo.resolve()
+            if args.source_repo is not None
+            else discover_source_repo(project_root)
+        )
         snapshot = build_snapshot(
-            source_repo=args.source_repo.resolve(),
+            source_repo=source_repo,
             lock_path=args.lock.resolve(),
             composition_path=args.composition.resolve(),
             overlays_path=args.overrides.resolve(),
@@ -51,7 +60,9 @@ def main(argv: list[str] | None = None) -> int:
                 print(path)
             return 0
         if args.check:
-            differences = check_destination(args.destination.resolve(), snapshot)
+            differences = check_destination(
+                args.destination.expanduser().absolute(), snapshot
+            )
             if differences:
                 print("engine vendor drift detected:", file=sys.stderr)
                 for difference in differences:
@@ -59,7 +70,7 @@ def main(argv: list[str] | None = None) -> int:
                 return 1
             print(f"engine vendor is synchronized at {snapshot.revision}")
             return 0
-        sync_destination(args.destination.resolve(), snapshot)
+        sync_destination(args.destination.expanduser().absolute(), snapshot)
         print(f"synchronized {len(snapshot.files)} files from {snapshot.revision}")
         return 0
     except EngineSyncError as exc:
