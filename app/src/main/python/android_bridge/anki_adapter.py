@@ -41,7 +41,11 @@ _MAX_DUPLICATE_HITS_UTF8_BYTES = 1024 * 1024
 _KNOWN_VOCABULARY_PAGE_ITEMS = 256
 _KNOWN_VOCABULARY_PAGE_UTF8_BYTES = 256 * 1024
 _MAX_KNOWN_CURSOR_UTF8_BYTES = 1024
-_MAX_CARD_MEDIA_BYTES = 64 * 1024 * 1024
+_MAX_MEDIA_ASSET_BYTES = 64 * 1024 * 1024
+_MAX_MEDIA_CALLBACK_BYTES = 64 * 1024 * 1024
+# Compatibility alias for callers/tests which imported the original card-only
+# constant. The limit now applies identically to card and dictionary assets.
+_MAX_CARD_MEDIA_BYTES = _MAX_MEDIA_ASSET_BYTES
 _MEDIA_HASH_CHUNK_BYTES = 128 * 1024
 
 _SETUP_ERROR_CODES = {
@@ -65,6 +69,7 @@ _CONNECTION_ERROR_CODES = {
 _ALL_ERROR_CODES = _SETUP_ERROR_CODES | _PROTOCOL_ERROR_CODES | _CONNECTION_ERROR_CODES
 _RECOVERABLE_MEDIA_ERROR_CODES = frozenset({"media_store_failed"})
 _FORBIDDEN_FILENAME_CHARACTERS = frozenset('/\\<>[]:"')
+_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
 class AnkiOperationCancelled(BaseException):
@@ -104,6 +109,8 @@ class _MediaAsset:
     original_name: str
     purpose: str
     media_kind: str
+    expected_size_bytes: int
+    expected_sha256: str
 
     def to_wire(self) -> dict[str, str]:
         return {
@@ -113,6 +120,8 @@ class _MediaAsset:
             "requestedFilename": self.requested_name,
             "purpose": self.purpose,
             "mediaKind": self.media_kind,
+            "expectedSizeBytes": self.expected_size_bytes,
+            "expectedSha256": self.expected_sha256,
         }
 
 
@@ -134,6 +143,12 @@ class _MediaDigest:
     size: int
     sha1_prefix: str
     sha256: str
+
+
+@dataclass(frozen=True)
+class _StoreAssetsOutcome:
+    stored: dict[str, str]
+    error: AnkiCallbackError | None = None
 
 
 def _protocol_error(code: str, message: str) -> NoReturn:
@@ -281,6 +296,32 @@ def _content_addressed_name_from_digest(filename: str, sha1_prefix: str) -> str:
     return f"{path.stem}_{sha1_prefix}{path.suffix}"
 
 
+def _chunk_media_assets(assets: Sequence[_MediaAsset]) -> list[list[_MediaAsset]]:
+    """Split assets by the exact provider callback count and byte ceilings."""
+
+    chunks: list[list[_MediaAsset]] = []
+    chunk: list[_MediaAsset] = []
+    chunk_bytes = 0
+    for asset in assets:
+        if not 0 <= asset.expected_size_bytes <= _MAX_MEDIA_ASSET_BYTES:
+            _protocol_error(
+                "media_too_large",
+                f"Media exceeds the {_MAX_MEDIA_ASSET_BYTES}-byte limit",
+            )
+        if chunk and (
+            len(chunk) >= _MEDIA_BATCH_SIZE
+            or chunk_bytes + asset.expected_size_bytes > _MAX_MEDIA_CALLBACK_BYTES
+        ):
+            chunks.append(chunk)
+            chunk = []
+            chunk_bytes = 0
+        chunk.append(asset)
+        chunk_bytes += asset.expected_size_bytes
+    if chunk:
+        chunks.append(chunk)
+    return chunks
+
+
 def _expect_error_detail(value: object, *, operation: str) -> AnkiCallbackError:
     detail = _expect_exact_keys(
         value, {"code", "message", "retryable"}, context=f"{operation} error"
@@ -358,17 +399,17 @@ class AndroidAnkiAdapter:
                 False,
             )
 
-    def _stream_card_media_digest(self, source_path: Path) -> _MediaDigest:
-        """Hash one bounded regular file without retaining its contents."""
+    def _stream_media_digest(self, source_path: Path) -> _MediaDigest:
+        """Hash one bounded regular media file without retaining its contents."""
 
         self._raise_if_cancelled("storeMedia")
         path_stat = source_path.stat()
         if not stat.S_ISREG(path_stat.st_mode):
             raise FileNotFoundError(source_path)
-        if path_stat.st_size > _MAX_CARD_MEDIA_BYTES:
+        if path_stat.st_size > _MAX_MEDIA_ASSET_BYTES:
             _protocol_error(
                 "media_too_large",
-                f"Card media exceeds the {_MAX_CARD_MEDIA_BYTES}-byte limit",
+                f"Media exceeds the {_MAX_MEDIA_ASSET_BYTES}-byte limit",
             )
 
         # SHA-1 is the existing desktop filename contract, not a security
@@ -396,10 +437,10 @@ class AndroidAnkiAdapter:
                     "media_changed",
                     "Card media changed before it could be hashed",
                 )
-            if opened_stat.st_size > _MAX_CARD_MEDIA_BYTES:
+            if opened_stat.st_size > _MAX_MEDIA_ASSET_BYTES:
                 _protocol_error(
                     "media_too_large",
-                    f"Card media exceeds the {_MAX_CARD_MEDIA_BYTES}-byte limit",
+                    f"Media exceeds the {_MAX_MEDIA_ASSET_BYTES}-byte limit",
                 )
             while True:
                 self._raise_if_cancelled("storeMedia")
@@ -407,10 +448,10 @@ class AndroidAnkiAdapter:
                 if not chunk:
                     break
                 bytes_read += len(chunk)
-                if bytes_read > _MAX_CARD_MEDIA_BYTES:
+                if bytes_read > _MAX_MEDIA_ASSET_BYTES:
                     _protocol_error(
                         "media_too_large",
-                        f"Card media exceeds the {_MAX_CARD_MEDIA_BYTES}-byte limit",
+                        f"Media exceeds the {_MAX_MEDIA_ASSET_BYTES}-byte limit",
                     )
                 sha1.update(chunk)
                 sha256.update(chunk)
@@ -628,10 +669,10 @@ class AndroidAnkiAdapter:
 
     def _parse_store_media_result(
         self, payload: dict[str, Any], assets: Sequence[_MediaAsset]
-    ) -> dict[str, str]:
+    ) -> _StoreAssetsOutcome:
         result = _expect_exact_keys(
             payload,
-            {"runId", "requestId", "results"},
+            {"runId", "requestId", "results", "error"},
             context="storeMedia result",
         )
         rows = result["results"]
@@ -649,12 +690,18 @@ class AndroidAnkiAdapter:
         stored: dict[str, str] = {}
         actual_names: set[str] = set()
         pending_name_owners: dict[str, str] = {}
+        saw_not_attempted = False
         for index, (row_value, asset) in enumerate(zip(rows, assets, strict=True)):
             if not isinstance(row_value, dict):
                 _protocol_error(
                     "invalid_anki_response", f"storeMedia result {index} is invalid"
                 )
             status = row_value.get("status")
+            if saw_not_attempted and status != "notAttempted":
+                _protocol_error(
+                    "invalid_anki_response",
+                    "notAttempted storeMedia rows must form a strict suffix",
+                )
             if status == "stored":
                 row = _expect_exact_keys(
                     row_value,
@@ -703,6 +750,13 @@ class AndroidAnkiAdapter:
                 logger.warning(
                     "Failed to store media asset %s: %s", asset.original_name, error
                 )
+            elif status == "notAttempted":
+                row = _expect_exact_keys(
+                    row_value,
+                    {"assetId", "status"},
+                    context=f"storeMedia result {index}",
+                )
+                saw_not_attempted = True
             else:
                 _protocol_error(
                     "invalid_anki_response",
@@ -713,12 +767,29 @@ class AndroidAnkiAdapter:
                     "mismatched_callback_response",
                     "storeMedia results are not request-aligned",
                 )
-        self._stored_media_name_owners.update(pending_name_owners)
-        return stored
 
-    def _store_assets(self, assets: list[_MediaAsset]) -> dict[str, str]:
+        raw_error = result["error"]
+        error = (
+            None
+            if raw_error is None
+            else _expect_error_detail(raw_error, operation="storeMedia")
+        )
+        if saw_not_attempted and error is None:
+            _protocol_error(
+                "invalid_anki_response",
+                "notAttempted storeMedia rows require a top-level error",
+            )
+        if error is not None and not saw_not_attempted:
+            _protocol_error(
+                "invalid_anki_response",
+                "storeMedia top-level errors require a notAttempted suffix",
+            )
+        self._stored_media_name_owners.update(pending_name_owners)
+        return _StoreAssetsOutcome(stored, error)
+
+    def _store_assets(self, assets: list[_MediaAsset]) -> _StoreAssetsOutcome:
         if not assets:
-            return {}
+            return _StoreAssetsOutcome({})
         asset_ids: set[str] = set()
         requested_name_owners: dict[str, str] = {}
         for index, asset in enumerate(assets):
@@ -777,25 +848,49 @@ class AndroidAnkiAdapter:
                 _protocol_error(
                     "invalid_anki_request", "Media source paths must be absolute"
                 )
+            if (
+                type(asset.expected_size_bytes) is not int
+                or not 0 <= asset.expected_size_bytes <= _MAX_MEDIA_ASSET_BYTES
+                or not _SHA256_RE.fullmatch(asset.expected_sha256)
+            ):
+                _protocol_error(
+                    "invalid_anki_request", "Media integrity metadata is invalid"
+                )
 
         stored: dict[str, str] = {}
-        for offset in range(0, len(assets), _MEDIA_BATCH_SIZE):
-            chunk = assets[offset : offset + _MEDIA_BATCH_SIZE]
-            self._raise_if_cancelled("storeMedia")
+        limits = {
+            "maxAssets": _MEDIA_BATCH_SIZE,
+            "maxAssetBytes": _MAX_MEDIA_ASSET_BYTES,
+            "maxTotalBytes": _MAX_MEDIA_CALLBACK_BYTES,
+        }
+        for chunk in _chunk_media_assets(assets):
             try:
+                self._raise_if_cancelled("storeMedia")
                 payload = self._callbacks.store_media(
-                    {"assets": [asset.to_wire() for asset in chunk]}
+                    {
+                        "assets": [asset.to_wire() for asset in chunk],
+                        "limits": limits,
+                    }
+                )
+            except AnkiOperationCancelled as error:
+                return _StoreAssetsOutcome(
+                    stored,
+                    AnkiCallbackError(
+                        "storeMedia", "cancelled", str(error), error.retryable
+                    ),
                 )
             except AnkiCallbackError as error:
-                _raise_callback_error(error)
-            chunk_stored = self._parse_store_media_result(payload, chunk)
-            if stored.keys() & chunk_stored.keys():
+                return _StoreAssetsOutcome(stored, error)
+            chunk_outcome = self._parse_store_media_result(payload, chunk)
+            if stored.keys() & chunk_outcome.stored.keys():
                 _protocol_error(
                     "mismatched_callback_response",
                     "storeMedia returned an asset more than once",
                 )
-            stored.update(chunk_stored)
-        return stored
+            stored.update(chunk_outcome.stored)
+            if chunk_outcome.error is not None:
+                return _StoreAssetsOutcome(stored, chunk_outcome.error)
+        return _StoreAssetsOutcome(stored)
 
     def _store_card_media(self, word_data_list: Sequence[Any]) -> set[str]:
         from anki_miner.services.anki_media_store import (
@@ -841,7 +936,7 @@ class AndroidAnkiAdapter:
             unreadable: list[tuple[Path, OSError]] = []
             for source_path in referenced_paths:
                 try:
-                    digest = self._stream_card_media_digest(source_path)
+                    digest = self._stream_media_digest(source_path)
                     readable.append((source_path, digest))
                 except OSError as error:
                     unreadable.append((source_path, error))
@@ -880,13 +975,15 @@ class AndroidAnkiAdapter:
                     original_name=filename,
                     purpose="card",
                     media_kind=next(iter(kinds[filename])),
+                    expected_size_bytes=digest.size,
+                    expected_sha256=digest.sha256,
                 )
             )
 
-        stored_by_id = self._store_assets(assets)
+        outcome = self._store_assets(assets)
         stored_names: set[str] = set()
         renamed_originals: set[str] = set()
-        for asset_id, actual in stored_by_id.items():
+        for asset_id, actual in outcome.stored.items():
             original = originals_by_id[asset_id]
             renamed_originals.add(original)
             stored_names.add(actual)
@@ -894,6 +991,8 @@ class AndroidAnkiAdapter:
                 setattr(ref.media, ref.filename_attr, actual)
 
         self.last_media_store_failures = len(refs) - len(renamed_originals)
+        if outcome.error is not None:
+            _raise_callback_error(outcome.error)
         return stored_names
 
     @staticmethod
@@ -986,6 +1085,11 @@ class AndroidAnkiAdapter:
                 logger.warning("Dict media file missing on disk: %s", source)
                 self._dict_media_uploaded.add(source)
                 continue
+            try:
+                digest = self._stream_media_digest(path.resolve())
+            except OSError as error:
+                logger.warning("Failed to read dict media file %s: %s", source, error)
+                continue
             asset_id = f"asset_{uuid4().hex}"
             sources_by_id[asset_id] = source
             assets.append(
@@ -997,16 +1101,21 @@ class AndroidAnkiAdapter:
                     original_name=source,
                     purpose="dictionary",
                     media_kind="image",
+                    expected_size_bytes=digest.size,
+                    expected_sha256=digest.sha256,
                 )
             )
 
-        stored_by_id = self._store_assets(assets)
-        for asset_id, actual in stored_by_id.items():
+        outcome = self._store_assets(assets)
+        for asset_id, actual in outcome.stored.items():
             source = sources_by_id[asset_id]
             self._dict_media_uploaded.add(source)
             self._dict_media_uploaded.add(actual)
             self._dict_media_actual_names[source] = actual
-        return self._rewrite_dictionary_payloads(word_data_list)
+        rewritten = self._rewrite_dictionary_payloads(word_data_list)
+        if outcome.error is not None:
+            _raise_callback_error(outcome.error)
+        return rewritten
 
     def _duplicate_first_fields(
         self, candidates: Sequence[tuple[str, str]]

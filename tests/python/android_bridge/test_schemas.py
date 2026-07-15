@@ -417,8 +417,15 @@ def test_unknown_curation_map_key_is_schema_invalid(
                     "requestedFilename": "猫_ab12cd34ef56.opus",
                     "purpose": "card",
                     "mediaKind": "audio",
+                    "expectedSizeBytes": 5,
+                    "expectedSha256": "0" * 64,
                 }
             ],
+            "limits": {
+                "maxAssets": 50,
+                "maxAssetBytes": 67108864,
+                "maxTotalBytes": 67108864,
+            },
         },
         {
             "runId": "run_" + "a" * 32,
@@ -439,6 +446,7 @@ def test_unknown_curation_map_key_is_schema_invalid(
                     },
                 },
             ],
+            "error": None,
         },
         {
             "runId": "run_" + "a" * 32,

@@ -18,7 +18,11 @@ from android_bridge.anki_adapter import (
     AndroidAnkiAdapter,
     AnkiOperationCancelled,
     _MAX_CARD_MEDIA_BYTES,
+    _MAX_MEDIA_ASSET_BYTES,
+    _MAX_MEDIA_CALLBACK_BYTES,
     _MEDIA_HASH_CHUNK_BYTES,
+    _MediaAsset,
+    _chunk_media_assets,
     _dictionary_provider_preferred_name,
 )
 from android_bridge.callbacks import AndroidAnkiCallbacks
@@ -294,8 +298,49 @@ class FakeKotlinAnki:
         request = self._request("ankiStoreMedia", raw)
         if error := self._error(request, "storeMedia"):
             return error
+        assert request["limits"] == {
+            "maxAssets": 50,
+            "maxAssetBytes": _MAX_MEDIA_ASSET_BYTES,
+            "maxTotalBytes": _MAX_MEDIA_CALLBACK_BYTES,
+        }
         results: list[dict[str, object]] = []
         for asset in request["assets"]:
+            actual_size = 0
+            actual_sha256 = hashlib.sha256()
+            try:
+                with Path(asset["sourcePath"]).open("rb") as source:
+                    while chunk := source.read(_MEDIA_HASH_CHUNK_BYTES):
+                        actual_size += len(chunk)
+                        if actual_size > request["limits"]["maxAssetBytes"]:
+                            raise ValueError("oversized media")
+                        actual_sha256.update(chunk)
+            except (OSError, ValueError):
+                return encode_message(
+                    "anki.error",
+                    {
+                        "runId": request["runId"],
+                        "requestId": request["requestId"],
+                        "operation": "storeMedia",
+                        "code": "invalid_request",
+                        "message": "media snapshot could not be verified",
+                        "retryable": False,
+                    },
+                )
+            if (
+                actual_size != asset["expectedSizeBytes"]
+                or actual_sha256.hexdigest() != asset["expectedSha256"]
+            ):
+                return encode_message(
+                    "anki.error",
+                    {
+                        "runId": request["runId"],
+                        "requestId": request["requestId"],
+                        "operation": "storeMedia",
+                        "code": "invalid_request",
+                        "message": "media changed before snapshot",
+                        "retryable": False,
+                    },
+                )
             preferred = asset["preferredName"]
             if preferred in self.failed_media_names:
                 code, message, retryable = self.media_failure_errors.get(
@@ -330,6 +375,7 @@ class FakeKotlinAnki:
                 "runId": request["runId"],
                 "requestId": request["requestId"],
                 "results": results,
+                "error": None,
             },
         )
 
@@ -1374,6 +1420,10 @@ def test_card_media_is_content_addressed_deduped_and_actual_name_propagates(
     assert store_payload["assets"][0]["preferredName"] == preferred
     assert store_payload["assets"][0]["requestedFilename"] == requested
     assert store_payload["assets"][0]["sourcePath"] == str(image.resolve())
+    assert store_payload["assets"][0]["expectedSizeBytes"] == len(b"same image")
+    assert store_payload["assets"][0]["expectedSha256"] == hashlib.sha256(
+        b"same image"
+    ).hexdigest()
     note_fields = kotlin.requests_for("ankiCreateNotes")[0]["payload"]["notes"]
     assert all(
         note["fields"]["Picture"] == f'<img src="{provider_name}">'
@@ -1516,6 +1566,103 @@ def test_card_media_hashing_cancellation_stops_before_kotlin_callback(
     assert not kotlin.requests_for("ankiCreateNotes")
 
 
+def test_media_callbacks_are_chunked_by_count_and_cumulative_bytes() -> None:
+    def asset(index: int, size: int) -> _MediaAsset:
+        return _MediaAsset(
+            asset_id=f"asset_{index:032x}",
+            source_path=f"/tmp/media-{index}.opus",
+            preferred_name=f"media_{index}",
+            requested_name=f"media_{index}.opus",
+            original_name=f"media_{index}.opus",
+            purpose="card",
+            media_kind="audio",
+            expected_size_bytes=size,
+            expected_sha256="0" * 64,
+        )
+
+    byte_chunks = _chunk_media_assets(
+        [
+            asset(1, 40 * 1024 * 1024),
+            asset(2, 24 * 1024 * 1024),
+            asset(3, 1),
+        ]
+    )
+    count_chunks = _chunk_media_assets([asset(index, 0) for index in range(51)])
+
+    assert [len(chunk) for chunk in byte_chunks] == [2, 1]
+    assert [sum(item.expected_size_bytes for item in chunk) for chunk in byte_chunks] == [
+        _MAX_MEDIA_CALLBACK_BYTES,
+        1,
+    ]
+    assert [len(chunk) for chunk in count_chunks] == [50, 1]
+
+
+def test_post_hash_media_mutation_is_rejected_by_snapshot_contract(
+    initialized_bridge_home: Path, tmp_path: Path
+) -> None:
+    from anki_miner.models import MediaData
+
+    class MutatingKotlin(FakeKotlinAnki):
+        def ankiStoreMedia(self, raw: str) -> str:
+            request = json.loads(raw)["payload"]
+            Path(request["assets"][0]["sourcePath"]).write_bytes(b"other")
+            return super().ankiStoreMedia(raw)
+
+    audio = tmp_path / "mutable.opus"
+    audio.write_bytes(b"audio")
+    media = MediaData(audio_path=audio, audio_filename="mutable.opus")
+    kotlin = MutatingKotlin()
+
+    with pytest.raises(BridgeProtocolError) as exc_info:
+        _adapter(_config(initialized_bridge_home), kotlin).create_cards_batch(
+            [_card("猫", media=media)]
+        )
+
+    assert exc_info.value.code == "invalid_request"
+    assert media.audio_filename == "mutable.opus"
+    assert not kotlin.requests_for("ankiCreateNotes")
+
+
+def test_oversized_dictionary_media_fails_before_callback(
+    initialized_bridge_home: Path,
+) -> None:
+    media_path = initialized_bridge_home / "dicts" / "dict" / "media" / "huge.png"
+    media_path.parent.mkdir(parents=True, exist_ok=True)
+    with media_path.open("wb") as output:
+        output.truncate(_MAX_MEDIA_ASSET_BYTES + 1)
+    definition = '<img class="anki-miner-dict-media" src="dict__huge.png">'
+    kotlin = FakeKotlinAnki()
+
+    with pytest.raises(BridgeProtocolError) as exc_info:
+        _adapter(_config(initialized_bridge_home), kotlin).create_cards_batch(
+            [_card("猫", definition=definition)]
+        )
+
+    assert exc_info.value.code == "media_too_large"
+    assert not kotlin.requests_for("ankiStoreMedia")
+    assert not kotlin.requests_for("ankiCreateNotes")
+
+
+def test_dictionary_media_hashing_honors_cancellation(
+    initialized_bridge_home: Path,
+) -> None:
+    media_path = initialized_bridge_home / "dicts" / "dict" / "media" / "stop.png"
+    media_path.parent.mkdir(parents=True, exist_ok=True)
+    media_path.write_bytes(b"png")
+    definition = '<img class="anki-miner-dict-media" src="dict__stop.png">'
+    kotlin = FakeKotlinAnki()
+
+    with pytest.raises(AnkiOperationCancelled):
+        _adapter(
+            _config(initialized_bridge_home),
+            kotlin,
+            cancellation_check=lambda: True,
+        ).create_cards_batch([_card("猫", definition=definition)])
+
+    assert not kotlin.requests_for("ankiStoreMedia")
+    assert not kotlin.requests_for("ankiCreateNotes")
+
+
 def test_same_logical_media_name_with_different_bytes_fails_before_provider(
     initialized_bridge_home: Path, tmp_path: Path
 ) -> None:
@@ -1622,7 +1769,7 @@ def test_media_store_is_bounded_to_fifty_assets_per_callback(
     assert all(media.audio_filename.endswith("_provider.opus") for media in media_rows)
 
 
-def test_second_media_chunk_cancellation_does_not_mutate_payloads(
+def test_second_media_chunk_cancellation_preserves_prior_successes(
     initialized_bridge_home: Path, tmp_path: Path
 ) -> None:
     from anki_miner.models import MediaData
@@ -1662,9 +1809,125 @@ def test_second_media_chunk_cancellation_does_not_mutate_payloads(
         for request in kotlin.requests_for("ankiStoreMedia")
     ] == [50, 1]
     assert all(
-        media.audio_filename == f"cancel-{index}.opus"
-        for index, media in enumerate(media_rows)
+        media.audio_filename.endswith("_provider.opus")
+        for media in media_rows[:50]
     )
+    assert media_rows[50].audio_filename == "cancel-50.opus"
+    assert not kotlin.requests_for("ankiCreateNotes")
+
+
+def test_partial_media_cancellation_preserves_aligned_successes(
+    initialized_bridge_home: Path, tmp_path: Path
+) -> None:
+    from anki_miner.models import MediaData
+
+    class PartialCancelKotlin(FakeKotlinAnki):
+        def ankiStoreMedia(self, raw: str) -> str:
+            request = self._request("ankiStoreMedia", raw)
+            first, second = request["assets"]
+            return encode_message(
+                "anki.storemedia.result",
+                {
+                    "runId": request["runId"],
+                    "requestId": request["requestId"],
+                    "results": [
+                        {
+                            "assetId": first["assetId"],
+                            "status": "stored",
+                            "actualFilename": (
+                                f"{first['preferredName']}_provider.opus"
+                            ),
+                        },
+                        {
+                            "assetId": second["assetId"],
+                            "status": "notAttempted",
+                        },
+                    ],
+                    "error": {
+                        "code": "cancelled",
+                        "message": "stopped after first snapshot",
+                        "retryable": False,
+                    },
+                },
+            )
+
+    paths = [tmp_path / "partial-a.opus", tmp_path / "partial-b.opus"]
+    for index, path in enumerate(paths):
+        path.write_bytes(f"audio-{index}".encode())
+    media = [
+        MediaData(audio_path=path, audio_filename=path.name) for path in paths
+    ]
+    kotlin = PartialCancelKotlin()
+
+    with pytest.raises(AnkiOperationCancelled):
+        _adapter(_config(initialized_bridge_home), kotlin).create_cards_batch(
+            [_card("猫", media=media[0]), _card("犬", media=media[1])]
+        )
+
+    assert media[0].audio_filename.endswith("_provider.opus")
+    assert media[1].audio_filename == "partial-b.opus"
+    assert not kotlin.requests_for("ankiCreateNotes")
+
+
+@pytest.mark.parametrize(
+    ("statuses", "error"),
+    [
+        (
+            ["notAttempted", "stored"],
+            {"code": "cancelled", "message": "bad", "retryable": False},
+        ),
+        (["stored", "notAttempted"], None),
+        (["stored", "stored"], {"code": "cancelled", "message": "orphan", "retryable": False}),
+    ],
+)
+def test_partial_media_result_shape_is_strict(
+    statuses: list[str],
+    error: dict[str, object] | None,
+    initialized_bridge_home: Path,
+    tmp_path: Path,
+) -> None:
+    from anki_miner.models import MediaData
+
+    class InvalidPartialKotlin(FakeKotlinAnki):
+        def ankiStoreMedia(self, raw: str) -> str:
+            request = self._request("ankiStoreMedia", raw)
+            rows: list[dict[str, object]] = []
+            for asset, status in zip(request["assets"], statuses, strict=True):
+                row: dict[str, object] = {
+                    "assetId": asset["assetId"],
+                    "status": status,
+                }
+                if status == "stored":
+                    row["actualFilename"] = (
+                        f"{asset['preferredName']}_provider.opus"
+                    )
+                rows.append(row)
+            return encode_message(
+                "anki.storemedia.result",
+                {
+                    "runId": request["runId"],
+                    "requestId": request["requestId"],
+                    "results": rows,
+                    "error": error,
+                },
+            )
+
+    paths = [tmp_path / "strict-a.opus", tmp_path / "strict-b.opus"]
+    for path in paths:
+        path.write_bytes(path.name.encode())
+    cards = [
+        _card(
+            f"語{index}",
+            media=MediaData(audio_path=path, audio_filename=path.name),
+        )
+        for index, path in enumerate(paths)
+    ]
+
+    kotlin = InvalidPartialKotlin()
+    with pytest.raises(BridgeProtocolError) as exc_info:
+        _adapter(_config(initialized_bridge_home), kotlin).create_cards_batch(cards)
+
+    assert exc_info.value.code == "invalid_anki_response"
     assert not kotlin.requests_for("ankiCreateNotes")
 
 
@@ -1692,6 +1955,7 @@ def test_second_media_chunk_misalignment_does_not_mutate_payloads(
                                 ),
                             }
                         ],
+                        "error": None,
                     },
                 )
             return super().ankiStoreMedia(raw)
@@ -1752,6 +2016,7 @@ def test_media_name_ownership_is_enforced_across_callback_chunks(
                     "runId": request["runId"],
                     "requestId": request["requestId"],
                     "results": results,
+                    "error": None,
                 },
             )
 
@@ -1853,6 +2118,7 @@ def test_dictionary_media_preserves_quote_filename_for_direct_fallback(
                         }
                         for asset in request["assets"]
                     ],
+                    "error": None,
                 },
             )
 
@@ -2191,6 +2457,7 @@ def test_unsafe_or_unrelated_provider_names_are_rejected_before_mutation(
                             "actualFilename": returned_name,
                         }
                     ],
+                    "error": None,
                 },
             )
 
@@ -2246,6 +2513,7 @@ def test_provider_media_name_collisions_are_rejected_transactionally(
                         }
                         for asset in request["assets"]
                     ],
+                    "error": None,
                 },
             )
 
