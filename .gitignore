@@ -11,6 +11,8 @@ sdd/
 .gradle/
 build/
 local.properties
+/.android-toolchain/
+/.worktrees/
 captures/
 *.apk
 *.aab
