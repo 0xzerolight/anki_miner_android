@@ -74,8 +74,11 @@ tree. After backend creation, pass its dictionary-info filenames to
 `validate_loaded_dictionary_filenames`; v1 permits exactly the registered
 `sys.dic` and no user dictionary.
 
-Both backends consume `RegisteredUniDic.mecab_arguments`, yielding explicit
-`-r <dicdir>/mecabrc -d <dicdir>` argv elements. S1a may format those elements
-for fugashi only inside its backend module. S1b passes them directly to
-`mecab_new`. Neither backend may import Java, fugashi, or the engine from the
-shared contract modules.
+`RegisteredUniDic.mecab_arguments` yields explicit
+`-r <dicdir>/mecabrc -d <dicdir>` option elements for S1a, which may format
+them for fugashi only inside its backend module. S1b must pass the complete
+`RegisteredUniDic.mecab_new_argv` to `mecab_new`: it prepends the required
+non-option `argv[0]` program name and `-C`, matching fugashi's copied-node
+allocation mode. Passing `mecab_arguments` directly is invalid because MeCab
+does not parse `argv[0]` as an option. Neither backend may import Java, fugashi,
+or the engine from the shared contract modules.

@@ -71,6 +71,14 @@ def test_registration_verifies_tree_and_freezes_explicit_mecab_paths(
         "-d",
         str(root),
     )
+    assert registered.mecab_new_argv == (
+        "anki_miner",
+        "-C",
+        "-r",
+        str(root / "mecabrc"),
+        "-d",
+        str(root),
+    )
 
 
 def test_identical_registration_is_idempotent_but_switching_is_forbidden(

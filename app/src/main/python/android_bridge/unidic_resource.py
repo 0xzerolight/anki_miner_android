@@ -45,9 +45,20 @@ class RegisteredUniDic:
 
     @property
     def mecab_arguments(self) -> tuple[str, str, str, str]:
-        """Return explicit argv elements shared by S1a and S1b."""
+        """Return explicit option elements for fugashi/S1a configuration."""
 
         return ("-r", os.fspath(self.mecabrc), "-d", os.fspath(self.dicdir))
+
+    @property
+    def mecab_new_argv(self) -> tuple[str, str, str, str, str, str]:
+        """Return a complete ``mecab_new`` argv for the native S1b backend.
+
+        libmecab treats element zero as the program name and starts parsing
+        options at element one. ``-C`` matches fugashi's copied-node allocation
+        mode; omitting either element makes the two candidate backends diverge.
+        """
+
+        return ("anki_miner", "-C", *self.mecab_arguments)
 
 
 @dataclass(frozen=True, slots=True)
