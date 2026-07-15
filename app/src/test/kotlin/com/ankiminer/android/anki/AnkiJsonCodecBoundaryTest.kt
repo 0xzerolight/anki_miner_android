@@ -911,6 +911,9 @@ class AnkiJsonCodecBoundaryTest {
 
     @Test
     fun `response collections enforce zero exact maximum and maximum plus one`() {
+        assertCategory("verify deckCreated true", AnkiProtocolCategory.INVALID_VALUE) {
+            encode(VerifyTargetResult(RUN_ID, REQUEST_ID, 1, 2, listOf("Expression"), true))
+        }
         assertCategory("verify zero fields", AnkiProtocolCategory.INVALID_VALUE) {
             encode(VerifyTargetResult(RUN_ID, REQUEST_ID, 1, 2, emptyList(), false))
         }

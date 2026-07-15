@@ -926,6 +926,11 @@ class AndroidAnkiAdapter:
                 _protocol_error(
                     "invalid_anki_response", "deckCreated must be boolean"
                 )
+            if result["deckCreated"]:
+                _protocol_error(
+                    "invalid_anki_response",
+                    "ContentProvider verifyTarget must report deckCreated=false",
+                )
 
             missing = required - set(fields)
             if missing:

@@ -174,7 +174,7 @@
     "verifyTargetResult": {
       "type": "object",
       "additionalProperties": false,
-      "$comment": "deckCreated is true only when this app's journal plus exact re-query proves its own deck insertion; an existing deck or same-name creation race is false. If a deck insert may have committed but no unique non-dynamic deck snapshot can be proven, verifyTarget is already representable as an anki.error with post_commit_uncertain and retryable=false; Kotlin must not admit a target snapshot or retry the insert blindly.",
+      "$comment": "ContentProvider verifyTarget may durably create or reconcile a missing deck within the callback, but always reports deckCreated=false because provider observations cannot prove creator ownership across same-name races. If entered creation cannot be conclusively reconciled to one non-dynamic target deck, it returns an anki.error with post_commit_uncertain and retryable=false rather than a result or blind retry.",
       "required": ["runId", "requestId", "deckId", "modelId", "fieldNames", "deckCreated"],
       "properties": {
         "runId": {"$ref": "#/$defs/runId"},
@@ -189,7 +189,7 @@
           "$comment": "Runtime aggregate maximum is 16384 UTF-8 bytes. Kotlin rejects a wider target before deck creation or any later provider operation.",
           "items": {"$ref": "#/$defs/fieldName"}
         },
-        "deckCreated": {"type": "boolean"}
+        "deckCreated": {"const": false}
       }
     },
     "knownVocabularyScope": {

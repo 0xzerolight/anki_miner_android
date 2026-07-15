@@ -127,6 +127,8 @@ def _schema_category(error: ValidationError) -> str:
         pending.extend(current.context)
         if current.validator == "const" and "limits" in current.absolute_path:
             return "limit_mismatch"
+        if current.validator == "const" and "deckCreated" in current.absolute_path:
+            return "invalid_value"
         if current.validator in {"pattern", "minimum", "maximum", "uniqueItems"}:
             return "invalid_value"
         if (
@@ -724,6 +726,7 @@ def test_corpus_constructions_and_rejection_categories_stay_covered() -> None:
         "reject_input_envelope_too_large",
         "reject_output_envelope_too_large",
         "reject_decoded_depth_limit",
+        "reject_verify_deck_created_true",
     }
     assert required_constructions <= by_id.keys()
     assert {

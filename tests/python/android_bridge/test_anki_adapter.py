@@ -1138,6 +1138,40 @@ def test_verify_target_deck_uncertainty_uses_existing_nonretryable_error_shape(
     assert not kotlin.requests_for("ankiScanFirstFields")
 
 
+def test_verify_target_rejects_content_provider_deck_created_true(
+    initialized_bridge_home: Path,
+) -> None:
+    class InvalidDeckCreatedKotlin(FakeKotlinAnki):
+        def ankiVerifyTarget(self, raw: str) -> str:
+            request = self._request("ankiVerifyTarget", raw)
+            return encode_message(
+                "anki.verifytarget.result",
+                {
+                    "runId": request["runId"],
+                    "requestId": request["requestId"],
+                    "deckId": 10,
+                    "modelId": 20,
+                    "fieldNames": ["Expression"],
+                    "deckCreated": True,
+                },
+            )
+
+    kotlin = InvalidDeckCreatedKotlin()
+    adapter = _adapter(
+        _config(initialized_bridge_home),
+        kotlin,
+        target_verified=False,
+    )
+
+    with pytest.raises(BridgeProtocolError) as error:
+        adapter.verify_card_target()
+    assert error.value.code == "invalid_anki_response"
+    assert "deckCreated=false" in str(error.value)
+
+    adapter.close()
+    assert kotlin.release_acknowledgements == [False]
+
+
 @pytest.mark.parametrize(
     ("config_attribute", "max_utf8_bytes"),
     [

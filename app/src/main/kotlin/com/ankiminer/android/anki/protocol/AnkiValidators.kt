@@ -332,6 +332,7 @@ internal object AnkiValidators {
     private fun validateVerifyTargetResult(result: VerifyTargetResult) {
         requirePositive(result.deckId, "deck ID")
         requirePositive(result.modelId, "model ID")
+        if (result.deckCreated) failValue("ContentProvider verifyTarget must report deckCreated=false")
         requireCountBetween(result.fieldNames.size, 1, AnkiLimitsV1.Names.TargetFields.MAX_ITEM_COUNT, "field names")
         requireUnique(result.fieldNames, "field names")
         var bytes = 0

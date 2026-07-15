@@ -1165,7 +1165,7 @@ def test_unknown_curation_map_key_is_schema_invalid(
             "deckId": 1,
             "modelId": 2,
             "fieldNames": ["Expression", "Sentence"],
-            "deckCreated": True,
+            "deckCreated": False,
         },
         {
             "runId": "run_" + "a" * 32,
@@ -1375,6 +1375,22 @@ def test_representative_anki_callback_payloads_validate(
     schemas: dict[str, dict[str, Any]], payload: dict[str, Any]
 ) -> None:
     Draft202012Validator(schemas["anki"]).validate(payload)
+
+
+def test_verify_target_result_rejects_deck_created_true(
+    schemas: dict[str, dict[str, Any]],
+) -> None:
+    payload = {
+        "runId": "run_" + "a" * 32,
+        "requestId": "anki_" + "b" * 32,
+        "deckId": 1,
+        "modelId": 2,
+        "fieldNames": ["Expression"],
+        "deckCreated": True,
+    }
+
+    with pytest.raises(ValidationError):
+        Draft202012Validator(schemas["anki"]).validate(payload)
 
 
 @pytest.mark.parametrize(
