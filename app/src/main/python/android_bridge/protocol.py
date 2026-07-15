@@ -13,7 +13,10 @@ from itertools import chain
 from pathlib import Path
 from typing import Any
 
+from .anki_limits import ANKI_LIMITS_V1
+
 BRIDGE_SCHEMA_VERSION = 1
+_MAX_JSON_NUMBER_TOKEN_CHARS = ANKI_LIMITS_V1["wire"]["numericTokenMaxChars"]
 
 # Kotlin decodes integer-valued fields as ``Long`` and floating-point fields as
 # ``Double``. Keep Python on that same deliberately narrow wire domain instead
@@ -278,6 +281,85 @@ def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     return result
 
 
+def _json_number_token_end(raw: str, start: int) -> int | None:
+    """Return the end of one valid JSON number token, or ``None``.
+
+    The caller invokes this only outside JSON strings. Keeping this lexical
+    pass separate from ``json.loads`` prevents Python's arbitrary-precision
+    integer parser from allocating for a token which Kotlin rejects while
+    streaming.
+    """
+
+    length = len(raw)
+    cursor = start
+    if raw[cursor] == "-":
+        cursor += 1
+        if cursor == length:
+            return None
+
+    if raw[cursor] == "0":
+        cursor += 1
+    elif "1" <= raw[cursor] <= "9":
+        cursor += 1
+        while cursor < length and "0" <= raw[cursor] <= "9":
+            cursor += 1
+    else:
+        return None
+
+    if cursor < length and raw[cursor] == ".":
+        fraction_start = cursor
+        cursor += 1
+        if cursor == length or not "0" <= raw[cursor] <= "9":
+            return fraction_start
+        while cursor < length and "0" <= raw[cursor] <= "9":
+            cursor += 1
+
+    if cursor < length and raw[cursor] in "eE":
+        exponent_start = cursor
+        cursor += 1
+        if cursor < length and raw[cursor] in "+-":
+            cursor += 1
+        if cursor == length or not "0" <= raw[cursor] <= "9":
+            return exponent_start
+        while cursor < length and "0" <= raw[cursor] <= "9":
+            cursor += 1
+    return cursor
+
+
+def _validate_json_number_token_lengths(raw: str) -> None:
+    """Reject overlong number tokens without inspecting quoted content."""
+
+    cursor = 0
+    in_string = False
+    while cursor < len(raw):
+        character = raw[cursor]
+        if in_string:
+            if character == "\\":
+                # The JSON decoder owns escape validity. Skipping the escaped
+                # code unit is enough to keep quotes and digit text opaque.
+                cursor += 2
+                continue
+            if character == '"':
+                in_string = False
+            cursor += 1
+            continue
+        if character == '"':
+            in_string = True
+            cursor += 1
+            continue
+        if character == "-" or "0" <= character <= "9":
+            token_end = _json_number_token_end(raw, cursor)
+            if token_end is not None:
+                if token_end - cursor > _MAX_JSON_NUMBER_TOKEN_CHARS:
+                    raise BridgeProtocolError(
+                        "json_number_too_long",
+                        "Bridge JSON number exceeds its lexical character limit",
+                    )
+                cursor = token_end
+                continue
+        cursor += 1
+
+
 def decode_envelope(raw: str, *, expected_type: str | None = None) -> DecodedMessage:
     """Decode a strict RFC JSON bridge envelope.
 
@@ -291,6 +373,11 @@ def decode_envelope(raw: str, *, expected_type: str | None = None) -> DecodedMes
         raise BridgeProtocolError(
             "invalid_json", "Bridge message must be a JSON string"
         )
+    if raw.startswith("\ufeff"):
+        raise BridgeProtocolError(
+            "invalid_json", "A leading Unicode BOM is not JSON whitespace"
+        )
+    _validate_json_number_token_lengths(raw)
     try:
         envelope = json.loads(
             raw,

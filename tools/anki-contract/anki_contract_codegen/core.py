@@ -91,6 +91,11 @@ _MANIFEST_FIELDS: tuple[FieldSpec, ...] = (
         ),
     ),
     _object(
+        "wire",
+        "Wire",
+        _integer("numericTokenMaxChars", "NUMERIC_TOKEN_MAX_CHARS"),
+    ),
+    _object(
         "names",
         "Names",
         _object(
@@ -129,6 +134,29 @@ _MANIFEST_FIELDS: tuple[FieldSpec, ...] = (
         "TargetModel",
         _integer("allowedType", "ALLOWED_TYPE_CODE"),
         _integer("maxTemplates", "MAX_TEMPLATE_COUNT"),
+        _integer("cssMaxUtf8Bytes", "CSS_MAX_UTF8_BYTES"),
+        _integer("latexPreMaxUtf8Bytes", "LATEX_PRE_MAX_UTF8_BYTES"),
+        _integer("latexPostMaxUtf8Bytes", "LATEX_POST_MAX_UTF8_BYTES"),
+        _integer(
+            "templateQuestionFormatMaxUtf8Bytes",
+            "TEMPLATE_QUESTION_FORMAT_MAX_UTF8_BYTES",
+        ),
+        _integer(
+            "templateAnswerFormatMaxUtf8Bytes",
+            "TEMPLATE_ANSWER_FORMAT_MAX_UTF8_BYTES",
+        ),
+        _integer(
+            "templateBrowserQuestionFormatMaxUtf8Bytes",
+            "TEMPLATE_BROWSER_QUESTION_FORMAT_MAX_UTF8_BYTES",
+        ),
+        _integer(
+            "templateBrowserAnswerFormatMaxUtf8Bytes",
+            "TEMPLATE_BROWSER_ANSWER_FORMAT_MAX_UTF8_BYTES",
+        ),
+        _integer(
+            "providerTextTotalMaxUtf8Bytes",
+            "PROVIDER_TEXT_TOTAL_MAX_UTF8_BYTES",
+        ),
     ),
     _object(
         "verifyTarget",
@@ -200,6 +228,14 @@ _MANIFEST_FIELDS: tuple[FieldSpec, ...] = (
         _integer("tagsPerNoteMaxUtf8Bytes", "TAGS_PER_NOTE_MAX_UTF8_BYTES"),
         _integer("noteContentMaxUtf8Bytes", "NOTE_CONTENT_MAX_UTF8_BYTES"),
         _integer("callbackContentMaxUtf8Bytes", "CALLBACK_CONTENT_MAX_UTF8_BYTES"),
+        _integer(
+            "maxMediaBindingsPerNote",
+            "MAX_MEDIA_BINDING_COUNT_PER_NOTE",
+        ),
+        _integer(
+            "maxMediaBindingsTotal",
+            "MAX_MEDIA_BINDING_TOTAL_COUNT",
+        ),
     ),
     _object(
         "releaseRunState",

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import json
 import os
 from dataclasses import fields, replace
@@ -298,3 +299,47 @@ def test_checked_in_schema_has_exact_mapping_keys_chain_shapes_and_absolute_path
     assert definitions["ankiFields"]["properties"]["glossary"] == {
         "$ref": "#/$defs/optionalMappedField"
     }
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "\u001cMining",
+        "Mining\u001c",
+        "\u1e0a\u0323",
+    ],
+    ids=["python-whitespace-leading", "python-whitespace-trailing", "nfc-trap"],
+)
+def test_canonical_names_follow_pinned_unicode_contract(
+    value: str, tmp_path: Path
+) -> None:
+    with pytest.raises(BridgeProtocolError) as error:
+        map_config_settings({"anki_deck_name": value}, _paths(tmp_path))
+    assert error.value.code == "invalid_config_field"
+
+
+def test_contract_validators_do_not_use_host_unicode_or_strip_tables() -> None:
+    source_root = Path(__file__).resolve().parents[3] / "app/src/main/python/android_bridge"
+    for filename in ("config_map.py", "anki_adapter.py"):
+        source = (source_root / filename).read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        imported_roots = {
+            alias.name.split(".", 1)[0]
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Import)
+            for alias in node.names
+        } | {
+            (node.module or "").split(".", 1)[0]
+            for node in ast.walk(tree)
+            if isinstance(node, ast.ImportFrom)
+        }
+        forbidden_calls = [
+            node.func.attr
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr in {"strip", "lstrip", "rstrip"}
+        ]
+
+        assert "unicodedata" not in imported_roots, filename
+        assert forbidden_calls == [], filename

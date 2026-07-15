@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 from uuid import uuid4
 
@@ -65,9 +65,32 @@ class AnkiCallbackError(Exception):
     code: str
     message: str
     retryable: bool
+    request_id: str | None = None
 
     def __str__(self) -> str:
         return self.message
+
+
+_ANKI_ERROR_CODES = frozenset(
+    {
+        "api_disabled",
+        "permission_required",
+        "note_type_not_found",
+        "field_missing",
+        "field_mapping_invalid",
+        "target_invalid",
+        "provider_unavailable",
+        "query_failed",
+        "write_failed",
+        "timeout",
+        "cancelled",
+        "media_store_failed",
+        "post_commit_uncertain",
+        "invalid_request",
+        "unsupported_operation",
+        "internal_error",
+    }
+)
 
 
 def _parse_anki_error(
@@ -89,28 +112,82 @@ def _parse_anki_error(
             "mismatched_callback_response",
             "Anki callback error names the wrong operation",
         )
-    if not isinstance(payload["code"], str) or not payload["code"]:
+    if (
+        not isinstance(payload["code"], str)
+        or payload["code"] not in _ANKI_ERROR_CODES
+    ):
         raise BridgeProtocolError("invalid_anki_error", "anki.error code is invalid")
-    if not isinstance(payload["message"], str):
+    if not isinstance(payload["message"], str) or not payload["message"]:
         raise BridgeProtocolError("invalid_anki_error", "anki.error message is invalid")
     if not isinstance(payload["retryable"], bool):
         raise BridgeProtocolError(
             "invalid_anki_error", "anki.error retryable flag is invalid"
+        )
+    if payload["code"] == "post_commit_uncertain" and payload["retryable"]:
+        raise BridgeProtocolError(
+            "invalid_anki_error",
+            "post-commit uncertainty cannot be retryable",
         )
     return AnkiCallbackError(
         operation=operation,
         code=payload["code"],
         message=payload["message"],
         retryable=payload["retryable"],
+        request_id=request_id,
     )
 
 
-@dataclass(frozen=True)
+_TERMINAL_MUTATION_OPERATIONS = frozenset(
+    {"verifyTarget", "storeMedia", "createNotes"}
+)
+_MAX_PENDING_TERMINAL_RECEIPTS = 8192
+
+
+@dataclass
 class AndroidAnkiCallbacks:
     """Synchronous JSON client for the Kotlin AnkiDroid operations."""
 
     callbacks: object
     run_id: str
+    _pending_terminal_receipts: set[str] = field(
+        default_factory=set, init=False, repr=False
+    )
+    _receipt_failure: bool = field(default=False, init=False, repr=False)
+
+    def _record_terminal_receipt(self, request_id: str) -> None:
+        if len(self._pending_terminal_receipts) >= _MAX_PENDING_TERMINAL_RECEIPTS:
+            self._receipt_failure = True
+            raise BridgeProtocolError(
+                "anki_receipt_limit_exceeded",
+                "Anki terminal-response receipt limit was exceeded",
+            )
+        self._pending_terminal_receipts.add(request_id)
+
+    def accept_terminal_response(self, request_id: str) -> None:
+        """Mark one operation response semantically accepted by the adapter."""
+
+        if request_id not in self._pending_terminal_receipts:
+            self._receipt_failure = True
+            raise BridgeProtocolError(
+                "invalid_anki_response",
+                "Anki terminal-response receipt is missing or already accepted",
+            )
+        self._pending_terminal_receipts.remove(request_id)
+
+    def reject_terminal_response(self, request_id: str) -> None:
+        """Make semantic rejection sticky and release its bounded receipt slot."""
+
+        self._receipt_failure = True
+        self._pending_terminal_receipts.discard(request_id)
+
+    def mark_response_failure(self) -> None:
+        """Make any callback decoding or semantic failure sticky for release."""
+
+        self._receipt_failure = True
+
+    @property
+    def can_acknowledge_terminal_responses(self) -> bool:
+        return not self._receipt_failure and not self._pending_terminal_receipts
 
     def _request(
         self,
@@ -128,31 +205,43 @@ class AndroidAnkiCallbacks:
             "requestId": request_id,
         }
         request_limit, result_limit = ANKI_ENVELOPE_LIMITS_V1[operation]
-        raw_request = encode_message(request_type, request_payload)
-        if _utf8_size(raw_request, context=f"{operation} request") > request_limit:
-            raise BridgeProtocolError(
-                "anki_request_too_large",
-                f"{operation} request exceeds its v1 UTF-8 envelope limit",
+        try:
+            raw_request = encode_message(request_type, request_payload)
+            if _utf8_size(raw_request, context=f"{operation} request") > request_limit:
+                raise BridgeProtocolError(
+                    "anki_request_too_large",
+                    f"{operation} request exceeds its v1 UTF-8 envelope limit",
+                )
+            raw_result = _invoke_result(
+                self.callbacks,
+                method_name,
+                raw_request,
             )
-        raw_result = _invoke_result(
-            self.callbacks,
-            method_name,
-            raw_request,
-        )
-        if _utf8_size(raw_result, context=f"{operation} response") > result_limit:
-            raise BridgeProtocolError(
-                "anki_response_too_large",
-                f"{operation} response exceeds its v1 UTF-8 envelope limit",
-            )
-        message = decode_envelope(raw_result)
+            if _utf8_size(raw_result, context=f"{operation} response") > result_limit:
+                raise BridgeProtocolError(
+                    "anki_response_too_large",
+                    f"{operation} response exceeds its v1 UTF-8 envelope limit",
+                )
+            message = decode_envelope(raw_result)
+        except Exception:
+            self._receipt_failure = True
+            raise
         if message.message_type == "anki.error":
-            raise _parse_anki_error(
-                message,
-                run_id=self.run_id,
-                request_id=request_id,
-                operation=operation,
-            )
+            try:
+                error = _parse_anki_error(
+                    message,
+                    run_id=self.run_id,
+                    request_id=request_id,
+                    operation=operation,
+                )
+            except Exception:
+                self._receipt_failure = True
+                raise
+            if operation in _TERMINAL_MUTATION_OPERATIONS:
+                self._record_terminal_receipt(request_id)
+            raise error
         if message.message_type != result_type:
+            self._receipt_failure = True
             raise BridgeProtocolError(
                 "unexpected_message_type",
                 f"Expected {result_type!r}, received {message.message_type!r}",
@@ -161,10 +250,13 @@ class AndroidAnkiCallbacks:
             message.payload.get("runId") != self.run_id
             or message.payload.get("requestId") != request_id
         ):
+            self._receipt_failure = True
             raise BridgeProtocolError(
                 "mismatched_callback_response",
                 "Anki callback response does not match its request",
             )
+        if operation in _TERMINAL_MUTATION_OPERATIONS:
+            self._record_terminal_receipt(request_id)
         return message.payload
 
     def verify_target(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -211,7 +303,11 @@ class AndroidAnkiCallbacks:
             operation="releaseRunState",
             request_type="anki.releaserunstate.request",
             result_type="anki.releaserunstate.result",
-            payload={},
+            payload={
+                "acknowledgeTerminalResponses": (
+                    self.can_acknowledge_terminal_responses
+                )
+            },
         )
 
 

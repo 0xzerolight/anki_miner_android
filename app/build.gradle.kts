@@ -203,6 +203,9 @@ android {
     sourceSets {
         getByName("main").java.srcDir("src/main/ankidroidApi/kotlin")
         getByName("androidTest").assets.srcDir(rootProject.file("golden"))
+        getByName("test").resources.srcDir(
+            rootProject.file("tools/anki-contract/unicode/15.1.0"),
+        )
     }
 }
 
@@ -252,6 +255,10 @@ chaquopy {
 }
 
 dependencies {
+    implementation(libs.androidx.core)
+    implementation(libs.jackson.core)
+    implementation(libs.kotlinx.coroutines.core)
+
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.test.core)
     androidTestImplementation(libs.androidx.test.ext.junit)

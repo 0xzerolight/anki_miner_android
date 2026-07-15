@@ -68,7 +68,7 @@ class AnkiLimitsCodegenTest(unittest.TestCase):
             numeric_leaves,
             {constant.source_path: constant.value for constant in constants},
         )
-        self.assertEqual(60, len(constants))
+        self.assertEqual(71, len(constants))
         self.assertEqual(
             len(constants),
             len({constant.kotlin_path for constant in constants}),
@@ -77,7 +77,15 @@ class AnkiLimitsCodegenTest(unittest.TestCase):
             self.assertTrue(
                 any(
                     unit in constant.kotlin_path[-1]
-                    for unit in ("VERSION", "CODE", "COUNT", "CODE_POINTS", "UTF8_BYTES", "BYTES")
+                    for unit in (
+                        "VERSION",
+                        "CODE",
+                        "COUNT",
+                        "CHARS",
+                        "CODE_POINTS",
+                        "UTF8_BYTES",
+                        "BYTES",
+                    )
                 ),
                 constant.kotlin_path,
             )
@@ -98,6 +106,38 @@ class AnkiLimitsCodegenTest(unittest.TestCase):
         self.assertEqual(
             ("AnkiLimitsV1", "CreateCall", "MEDIA_WORK_MAX_BYTES"),
             by_source[("createCall", "mediaWorkMaxBytes")].kotlin_path,
+        )
+        self.assertEqual(
+            ("AnkiLimitsV1", "Wire", "NUMERIC_TOKEN_MAX_CHARS"),
+            by_source[("wire", "numericTokenMaxChars")].kotlin_path,
+        )
+        self.assertEqual(
+            ("AnkiLimitsV1", "TargetModel", "CSS_MAX_UTF8_BYTES"),
+            by_source[("targetModel", "cssMaxUtf8Bytes")].kotlin_path,
+        )
+        self.assertEqual(
+            (
+                "AnkiLimitsV1",
+                "TargetModel",
+                "PROVIDER_TEXT_TOTAL_MAX_UTF8_BYTES",
+            ),
+            by_source[("targetModel", "providerTextTotalMaxUtf8Bytes")].kotlin_path,
+        )
+        self.assertEqual(
+            (
+                "AnkiLimitsV1",
+                "CreateNotes",
+                "MAX_MEDIA_BINDING_COUNT_PER_NOTE",
+            ),
+            by_source[("createNotes", "maxMediaBindingsPerNote")].kotlin_path,
+        )
+        self.assertEqual(
+            (
+                "AnkiLimitsV1",
+                "CreateNotes",
+                "MAX_MEDIA_BINDING_TOTAL_COUNT",
+            ),
+            by_source[("createNotes", "maxMediaBindingsTotal")].kotlin_path,
         )
 
         rendered = core.generate_kotlin(manifest).decode("utf-8")

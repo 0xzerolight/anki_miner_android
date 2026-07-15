@@ -8,6 +8,11 @@ internal object AnkiLimitsV1 {
     // Manifest: schemaVersion
     const val SCHEMA_VERSION: Int = 1
 
+    object Wire {
+        // Manifest: wire.numericTokenMaxChars
+        const val NUMERIC_TOKEN_MAX_CHARS: Int = 1000
+    }
+
     object Names {
         object Deck {
             // Manifest: names.deck.maxCodePoints
@@ -56,6 +61,30 @@ internal object AnkiLimitsV1 {
 
         // Manifest: targetModel.maxTemplates
         const val MAX_TEMPLATE_COUNT: Int = 64
+
+        // Manifest: targetModel.cssMaxUtf8Bytes
+        const val CSS_MAX_UTF8_BYTES: Int = 262144
+
+        // Manifest: targetModel.latexPreMaxUtf8Bytes
+        const val LATEX_PRE_MAX_UTF8_BYTES: Int = 262144
+
+        // Manifest: targetModel.latexPostMaxUtf8Bytes
+        const val LATEX_POST_MAX_UTF8_BYTES: Int = 262144
+
+        // Manifest: targetModel.templateQuestionFormatMaxUtf8Bytes
+        const val TEMPLATE_QUESTION_FORMAT_MAX_UTF8_BYTES: Int = 262144
+
+        // Manifest: targetModel.templateAnswerFormatMaxUtf8Bytes
+        const val TEMPLATE_ANSWER_FORMAT_MAX_UTF8_BYTES: Int = 262144
+
+        // Manifest: targetModel.templateBrowserQuestionFormatMaxUtf8Bytes
+        const val TEMPLATE_BROWSER_QUESTION_FORMAT_MAX_UTF8_BYTES: Int = 262144
+
+        // Manifest: targetModel.templateBrowserAnswerFormatMaxUtf8Bytes
+        const val TEMPLATE_BROWSER_ANSWER_FORMAT_MAX_UTF8_BYTES: Int = 262144
+
+        // Manifest: targetModel.providerTextTotalMaxUtf8Bytes
+        const val PROVIDER_TEXT_TOTAL_MAX_UTF8_BYTES: Int = 4194304
     }
 
     object VerifyTarget {
@@ -184,6 +213,12 @@ internal object AnkiLimitsV1 {
 
         // Manifest: createNotes.callbackContentMaxUtf8Bytes
         const val CALLBACK_CONTENT_MAX_UTF8_BYTES: Int = 393216
+
+        // Manifest: createNotes.maxMediaBindingsPerNote
+        const val MAX_MEDIA_BINDING_COUNT_PER_NOTE: Int = 8000
+
+        // Manifest: createNotes.maxMediaBindingsTotal
+        const val MAX_MEDIA_BINDING_TOTAL_COUNT: Int = 8000
     }
 
     object ReleaseRunState {

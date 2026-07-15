@@ -209,7 +209,6 @@ def test_encoder_rejects_integer_overflow(value: int) -> None:
     [
         str(JSON_INTEGER_MIN - 1),
         str(JSON_INTEGER_MAX + 1),
-        "9" * 5000,
     ],
 )
 def test_decoder_rejects_integer_overflow_without_raw_value_error(literal: str) -> None:
@@ -221,6 +220,66 @@ def test_decoder_rejects_integer_overflow_without_raw_value_error(literal: str) 
     with pytest.raises(BridgeProtocolError) as error:
         decode_message(raw)
     assert error.value.code == "integer_out_of_range"
+
+
+@pytest.mark.parametrize(
+    "literal",
+    [
+        "0." + "0" * 997 + "1",
+        "-0." + "0" * 996 + "1",
+    ],
+)
+def test_decoder_accepts_exact_lexical_number_token_limit(literal: str) -> None:
+    assert len(literal) == 1000
+    raw = (
+        '{"schemaVersion":1,"type":"progress.update","payload":{"value":'
+        + literal
+        + "}}"
+    )
+
+    assert decode_message(raw)["value"] == 0.0
+
+
+@pytest.mark.parametrize(
+    "literal",
+    [
+        "0." + "0" * 998 + "1",
+        "-0." + "0" * 997 + "1",
+    ],
+)
+def test_decoder_rejects_number_token_one_character_over_limit(literal: str) -> None:
+    assert len(literal) == 1001
+    raw = (
+        '{"schemaVersion":1,"type":"progress.update","payload":{"value":'
+        + literal
+        + "}}"
+    )
+
+    with pytest.raises(BridgeProtocolError) as error:
+        decode_message(raw)
+    assert error.value.code == "json_number_too_long"
+
+
+def test_number_guard_ignores_digit_text_and_escaped_quotes_inside_strings() -> None:
+    digit_text = "9" * 5000
+    raw = encode_message(
+        "progress.update",
+        {"quoted": f'escaped quote: "{digit_text}"', "number": 1},
+    )
+
+    assert decode_message(raw) == {
+        "quoted": f'escaped quote: "{digit_text}"',
+        "number": 1,
+    }
+
+
+def test_decoder_rejects_leading_unicode_bom_before_json_parse() -> None:
+    raw = "\ufeff" + encode_message("progress.update", {})
+
+    with pytest.raises(BridgeProtocolError) as error:
+        decode_message(raw)
+    assert error.value.code == "invalid_json"
+    assert str(error.value) == "A leading Unicode BOM is not JSON whitespace"
 
 
 @pytest.mark.parametrize("literal", ["1e309", "-1e309"])

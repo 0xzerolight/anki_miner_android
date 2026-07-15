@@ -5,6 +5,9 @@
     "items": "array entries",
     "utf8Bytes": "bytes after strict UTF-8 encoding of the decoded string or complete JSON envelope"
   },
+  "wire": {
+    "numericTokenMaxChars": 1000
+  },
   "names": {
     "deck": {"maxCodePoints": 1024, "maxUtf8Bytes": 1024},
     "model": {"maxCodePoints": 1024, "maxUtf8Bytes": 1024},
@@ -14,7 +17,15 @@
   },
   "targetModel": {
     "allowedType": 0,
-    "maxTemplates": 64
+    "maxTemplates": 64,
+    "cssMaxUtf8Bytes": 262144,
+    "latexPreMaxUtf8Bytes": 262144,
+    "latexPostMaxUtf8Bytes": 262144,
+    "templateQuestionFormatMaxUtf8Bytes": 262144,
+    "templateAnswerFormatMaxUtf8Bytes": 262144,
+    "templateBrowserQuestionFormatMaxUtf8Bytes": 262144,
+    "templateBrowserAnswerFormatMaxUtf8Bytes": 262144,
+    "providerTextTotalMaxUtf8Bytes": 4194304
   },
   "verifyTarget": {
     "requestEnvelopeMaxUtf8Bytes": 65536,
@@ -62,7 +73,9 @@
     "tagMaxUtf8Bytes": 256,
     "tagsPerNoteMaxUtf8Bytes": 8192,
     "noteContentMaxUtf8Bytes": 131072,
-    "callbackContentMaxUtf8Bytes": 393216
+    "callbackContentMaxUtf8Bytes": 393216,
+    "maxMediaBindingsPerNote": 8000,
+    "maxMediaBindingsTotal": 8000
   },
   "releaseRunState": {
     "requestEnvelopeMaxUtf8Bytes": 16384,

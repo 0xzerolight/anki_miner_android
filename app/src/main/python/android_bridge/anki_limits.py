@@ -13,6 +13,7 @@ def _load_v1_limits() -> dict[str, Any]:
     required = {
         "schemaVersion",
         "units",
+        "wire",
         "names",
         "targetModel",
         "verifyTarget",

@@ -169,6 +169,7 @@ def test_anki_limits_v1_manifest_freezes_exact_units_and_values() -> None:
                 "complete JSON envelope"
             ),
         },
+        "wire": {"numericTokenMaxChars": 1000},
         "names": {
             "deck": {"maxCodePoints": 1024, "maxUtf8Bytes": 1024},
             "model": {"maxCodePoints": 1024, "maxUtf8Bytes": 1024},
@@ -176,7 +177,18 @@ def test_anki_limits_v1_manifest_freezes_exact_units_and_values() -> None:
             "targetFields": {"maxItems": 64, "maxTotalUtf8Bytes": 16384},
             "excludedDecks": {"maxItems": 256, "maxTotalUtf8Bytes": 65536},
         },
-        "targetModel": {"allowedType": 0, "maxTemplates": 64},
+        "targetModel": {
+            "allowedType": 0,
+            "maxTemplates": 64,
+            "cssMaxUtf8Bytes": 262144,
+            "latexPreMaxUtf8Bytes": 262144,
+            "latexPostMaxUtf8Bytes": 262144,
+            "templateQuestionFormatMaxUtf8Bytes": 262144,
+            "templateAnswerFormatMaxUtf8Bytes": 262144,
+            "templateBrowserQuestionFormatMaxUtf8Bytes": 262144,
+            "templateBrowserAnswerFormatMaxUtf8Bytes": 262144,
+            "providerTextTotalMaxUtf8Bytes": 4194304,
+        },
         "verifyTarget": {
             "requestEnvelopeMaxUtf8Bytes": 65536,
             "resultEnvelopeMaxUtf8Bytes": 65536,
@@ -224,6 +236,8 @@ def test_anki_limits_v1_manifest_freezes_exact_units_and_values() -> None:
             "tagsPerNoteMaxUtf8Bytes": 8192,
             "noteContentMaxUtf8Bytes": 131072,
             "callbackContentMaxUtf8Bytes": 393216,
+            "maxMediaBindingsPerNote": 8000,
+            "maxMediaBindingsTotal": 8000,
         },
         "releaseRunState": {
             "requestEnvelopeMaxUtf8Bytes": 16384,
@@ -252,10 +266,11 @@ def test_anki_limits_v1_manifest_freezes_exact_units_and_values() -> None:
         ANKI_LIMITS_V1["names"]["field"]["maxUtf8Bytes"]
         == (ANKI_LIMITS_V1["createNotes"]["fieldNameMaxUtf8Bytes"])
     )
-    assert ANKI_LIMITS_V1["targetModel"] == {
-        "allowedType": 0,
-        "maxTemplates": ANKI_LIMITS_V1["createNotes"]["maxCardsPerNote"],
-    }
+    assert ANKI_LIMITS_V1["targetModel"]["allowedType"] == 0
+    assert (
+        ANKI_LIMITS_V1["targetModel"]["maxTemplates"]
+        == ANKI_LIMITS_V1["createNotes"]["maxCardsPerNote"]
+    )
 
 
 _SchemaPath = tuple[str | int, ...]
@@ -571,6 +586,11 @@ _ANKI_SCHEMA_LIMIT_BINDINGS: tuple[_LimitBinding, ...] = (
         0,
     ),
     (
+        ("createNotes", "maxMediaBindingsPerNote"),
+        ("$defs", "note", "properties", "mediaBindings", "maxItems"),
+        0,
+    ),
+    (
         ("createNotes", "tagMaxCodePoints"),
         ("$defs", "note", "properties", "tags", "items", "allOf", 1, "maxLength"),
         0,
@@ -639,6 +659,28 @@ _ANKI_SCHEMA_LIMIT_BINDINGS: tuple[_LimitBinding, ...] = (
             "createNotesLimits",
             "properties",
             "maxTotalContentUtf8Bytes",
+            "const",
+        ),
+        0,
+    ),
+    (
+        ("createNotes", "maxMediaBindingsPerNote"),
+        (
+            "$defs",
+            "createNotesLimits",
+            "properties",
+            "maxMediaBindingsPerNote",
+            "const",
+        ),
+        0,
+    ),
+    (
+        ("createNotes", "maxMediaBindingsTotal"),
+        (
+            "$defs",
+            "createNotesLimits",
+            "properties",
+            "maxMediaBindingsTotal",
             "const",
         ),
         0,
@@ -750,6 +792,8 @@ def test_create_notes_card_limit_is_required_and_exact(
         "maxTagsUtf8BytesPerNote": 8192,
         "maxNoteContentUtf8Bytes": 131072,
         "maxTotalContentUtf8Bytes": 393216,
+        "maxMediaBindingsPerNote": 8000,
+        "maxMediaBindingsTotal": 8000,
         "maxEnvelopeUtf8Bytes": 524288,
     }
     validator = Draft202012Validator(limits_schema)
@@ -763,6 +807,86 @@ def test_create_notes_card_limit_is_required_and_exact(
             candidate["maxCardsPerNote"] = invalid
         with pytest.raises(ValidationError):
             validator.validate(candidate)
+
+
+def test_provider_model_text_limits_are_explicit_local_constants() -> None:
+    target = ANKI_LIMITS_V1["targetModel"]
+    per_value_keys = {
+        "cssMaxUtf8Bytes",
+        "latexPreMaxUtf8Bytes",
+        "latexPostMaxUtf8Bytes",
+        "templateQuestionFormatMaxUtf8Bytes",
+        "templateAnswerFormatMaxUtf8Bytes",
+        "templateBrowserQuestionFormatMaxUtf8Bytes",
+        "templateBrowserAnswerFormatMaxUtf8Bytes",
+    }
+
+    assert {target[key] for key in per_value_keys} == {262144}
+    assert target["providerTextTotalMaxUtf8Bytes"] == 4194304
+
+
+def test_note_media_bindings_and_release_acknowledgement_are_strict(
+    schemas: dict[str, dict[str, Any]],
+) -> None:
+    note_validator = Draft202012Validator(
+        {
+            "$schema": schemas["anki"]["$schema"],
+            "$ref": "#/$defs/note",
+            "$defs": schemas["anki"]["$defs"],
+        }
+    )
+    note = {
+        "clientNoteId": "note_" + "d" * 32,
+        "fields": {"Expression": "猫"},
+        "tags": [],
+        "mediaBindings": [
+            {
+                "assetId": "asset_" + "c" * 32,
+                "actualFilename": "voice_provider.opus",
+            }
+        ],
+        "duplicateCandidate": {
+            "key": "猫",
+            "firstField": "猫",
+            "occurrence": 0,
+        },
+    }
+    note_validator.validate(note)
+
+    for mutation in ("missing", "unknown", "markup", "mixedCaseMarkup"):
+        invalid = deepcopy(note)
+        if mutation == "missing":
+            invalid.pop("mediaBindings")
+        elif mutation == "unknown":
+            invalid["mediaBindings"][0]["unexpected"] = True
+        elif mutation == "markup":
+            invalid["mediaBindings"][0]["actualFilename"] = "[sound:x.opus]"
+        else:
+            invalid["mediaBindings"][0]["actualFilename"] = "<ImG src=x>"
+        with pytest.raises(ValidationError):
+            note_validator.validate(invalid)
+
+    release_validator = Draft202012Validator(
+        {
+            "$schema": schemas["anki"]["$schema"],
+            "$ref": "#/$defs/releaseRunStateRequest",
+            "$defs": schemas["anki"]["$defs"],
+        }
+    )
+    release = {
+        "runId": "run_" + "a" * 32,
+        "requestId": "anki_" + "b" * 32,
+        "acknowledgeTerminalResponses": False,
+    }
+    release_validator.validate(release)
+    for invalid_value in (None, 0, "false"):
+        invalid = dict(release)
+        if invalid_value is None:
+            invalid.pop("acknowledgeTerminalResponses")
+        else:
+            invalid["acknowledgeTerminalResponses"] = invalid_value
+        with pytest.raises(ValidationError):
+            release_validator.validate(invalid)
 
 
 def test_schema_code_point_bound_is_distinct_from_runtime_utf8_bound(
@@ -1179,6 +1303,8 @@ def test_unknown_curation_map_key_is_schema_invalid(
                 "maxTagsUtf8BytesPerNote": 8192,
                 "maxNoteContentUtf8Bytes": 131072,
                 "maxTotalContentUtf8Bytes": 393216,
+                "maxMediaBindingsPerNote": 8000,
+                "maxMediaBindingsTotal": 8000,
                 "maxEnvelopeUtf8Bytes": 524288,
             },
             "notes": [
@@ -1186,6 +1312,7 @@ def test_unknown_curation_map_key_is_schema_invalid(
                     "clientNoteId": "note_" + "d" * 32,
                     "fields": {"Expression": "猫", "Sentence": "猫だ"},
                     "tags": ["auto-mined"],
+                    "mediaBindings": [],
                     "duplicateCandidate": {
                         "key": "猫",
                         "firstField": "猫",
@@ -1209,6 +1336,7 @@ def test_unknown_curation_map_key_is_schema_invalid(
         {
             "runId": "run_" + "a" * 32,
             "requestId": "anki_" + "b" * 32,
+            "acknowledgeTerminalResponses": True,
         },
         {
             "runId": "run_" + "a" * 32,

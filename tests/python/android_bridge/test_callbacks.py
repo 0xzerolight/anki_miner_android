@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 import pytest
 
+import android_bridge.callbacks as callbacks_module
 from android_bridge.anki_limits import ANKI_ENVELOPE_LIMITS_V1
 from android_bridge.callbacks import (
     AndroidAnkiCallbacks,
@@ -428,3 +429,192 @@ def test_anki_response_rejects_ascii_escaped_surrogate_after_json_decode() -> No
     assert str(exc_info.value) == (
         "Bridge JSON string contains an invalid Unicode scalar"
     )
+
+
+def test_terminal_mutation_receipt_requires_explicit_semantic_acceptance() -> None:
+    class MutationCallbacks:
+        def ankiVerifyTarget(self, raw: str) -> str:
+            request = json.loads(raw)["payload"]
+            return encode_message(
+                "anki.verifytarget.result",
+                {
+                    "runId": request["runId"],
+                    "requestId": request["requestId"],
+                    "deckId": 1,
+                    "modelId": 2,
+                    "fieldNames": ["Expression"],
+                    "deckCreated": False,
+                },
+            )
+
+    client = AndroidAnkiCallbacks(MutationCallbacks(), _RUN_ID)
+    payload = client.verify_target({})
+
+    assert client.can_acknowledge_terminal_responses is False
+    client.accept_terminal_response(payload["requestId"])
+    assert client.can_acknowledge_terminal_responses is True
+
+
+def test_terminal_receipt_double_accept_fails_sticky_closed() -> None:
+    class MutationCallbacks:
+        def ankiCreateNotes(self, raw: str) -> str:
+            request = json.loads(raw)["payload"]
+            return encode_message(
+                "anki.createnotes.result",
+                {
+                    "runId": request["runId"],
+                    "requestId": request["requestId"],
+                    "results": [],
+                    "error": None,
+                },
+            )
+
+    client = AndroidAnkiCallbacks(MutationCallbacks(), _RUN_ID)
+    payload = client.create_notes({})
+    client.accept_terminal_response(payload["requestId"])
+
+    with pytest.raises(BridgeProtocolError) as error:
+        client.accept_terminal_response(payload["requestId"])
+    assert error.value.code == "invalid_anki_response"
+    assert client.can_acknowledge_terminal_responses is False
+
+
+def test_terminal_receipt_tracking_is_bounded_and_fails_sticky_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class MutationCallbacks:
+        def ankiStoreMedia(self, raw: str) -> str:
+            request = json.loads(raw)["payload"]
+            return encode_message(
+                "anki.storemedia.result",
+                {
+                    "runId": request["runId"],
+                    "requestId": request["requestId"],
+                    "results": [],
+                    "error": None,
+                },
+            )
+
+    monkeypatch.setattr(callbacks_module, "_MAX_PENDING_TERMINAL_RECEIPTS", 1)
+    client = AndroidAnkiCallbacks(MutationCallbacks(), _RUN_ID)
+    client.store_media({})
+
+    with pytest.raises(BridgeProtocolError) as error:
+        client.store_media({})
+
+    assert error.value.code == "anki_receipt_limit_exceeded"
+    assert client.can_acknowledge_terminal_responses is False
+
+
+def test_release_sends_false_after_callback_transport_failure() -> None:
+    seen_release: list[dict[str, object]] = []
+
+    class FailureCallbacks:
+        def ankiStoreMedia(self, raw: str) -> object:
+            del raw
+            return None
+
+        def ankiReleaseRunState(self, raw: str) -> str:
+            request = json.loads(raw)["payload"]
+            seen_release.append(request)
+            return encode_message(
+                "anki.releaserunstate.result",
+                {
+                    "runId": request["runId"],
+                    "requestId": request["requestId"],
+                    "state": "absent",
+                },
+            )
+
+    client = AndroidAnkiCallbacks(FailureCallbacks(), _RUN_ID)
+    with pytest.raises(BridgeProtocolError):
+        client.store_media({})
+
+    client.release_run_state()
+    assert seen_release[0]["acknowledgeTerminalResponses"] is False
+
+
+@pytest.mark.parametrize(
+    ("code", "message", "retryable"),
+    [
+        ("target_invalid", "", False),
+        ("unknown_code", "unknown error", False),
+        ("post_commit_uncertain", "uncertain", True),
+    ],
+    ids=["empty-message", "unknown-code", "retryable-post-commit"],
+)
+def test_malformed_anki_error_makes_release_acknowledgement_false(
+    code: str,
+    message: str,
+    retryable: bool,
+) -> None:
+    seen_release: list[dict[str, object]] = []
+
+    class MalformedErrorCallbacks:
+        def ankiVerifyTarget(self, raw: str) -> str:
+            request = json.loads(raw)["payload"]
+            return encode_message(
+                "anki.error",
+                {
+                    "runId": request["runId"],
+                    "requestId": request["requestId"],
+                    "operation": "verifyTarget",
+                    "code": code,
+                    "message": message,
+                    "retryable": retryable,
+                },
+            )
+
+        def ankiReleaseRunState(self, raw: str) -> str:
+            request = json.loads(raw)["payload"]
+            seen_release.append(request)
+            return encode_message(
+                "anki.releaserunstate.result",
+                {
+                    "runId": request["runId"],
+                    "requestId": request["requestId"],
+                    "state": "absent",
+                },
+            )
+
+    client = AndroidAnkiCallbacks(MalformedErrorCallbacks(), _RUN_ID)
+    with pytest.raises(BridgeProtocolError) as error:
+        client.verify_target({})
+    assert error.value.code == "invalid_anki_error"
+
+    client.release_run_state()
+    assert seen_release[0]["acknowledgeTerminalResponses"] is False
+
+
+def test_release_sends_true_only_after_all_terminal_receipts_are_accepted() -> None:
+    seen_release: list[dict[str, object]] = []
+
+    class ReceiptCallbacks:
+        def ankiVerifyTarget(self, raw: str) -> str:
+            request = json.loads(raw)["payload"]
+            return encode_message(
+                "anki.verifytarget.result",
+                {
+                    "runId": request["runId"],
+                    "requestId": request["requestId"],
+                },
+            )
+
+        def ankiReleaseRunState(self, raw: str) -> str:
+            request = json.loads(raw)["payload"]
+            seen_release.append(request)
+            return encode_message(
+                "anki.releaserunstate.result",
+                {
+                    "runId": request["runId"],
+                    "requestId": request["requestId"],
+                    "state": "released",
+                },
+            )
+
+    client = AndroidAnkiCallbacks(ReceiptCallbacks(), _RUN_ID)
+    payload = client.verify_target({})
+    client.accept_terminal_response(payload["requestId"])
+    client.release_run_state()
+
+    assert seen_release[0]["acknowledgeTerminalResponses"] is True

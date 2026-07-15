@@ -69,6 +69,10 @@ PYTHONDONTWRITEBYTECODE=1 python3.13 -m unittest discover \
     -s "$REPO_ROOT/tools/anki-contract/tests" -v
 PYTHONDONTWRITEBYTECODE=1 python3.13 \
     "$REPO_ROOT/tools/anki-contract/generate_anki_limits.py" --check
+PYTHONDONTWRITEBYTECODE=1 python3.13 \
+    "$REPO_ROOT/tools/anki-contract/generate_unicode_contract.py" --check
+PYTHONDONTWRITEBYTECODE=1 python3.13 -m unittest discover \
+    -s "$REPO_ROOT/tools/dependencies/tests" -v
 
 host_test_python="$ANKI_MINER_ANDROID_TOOLCHAIN_ROOT/host-tests/bin/python"
 [[ -x "$host_test_python" ]] \

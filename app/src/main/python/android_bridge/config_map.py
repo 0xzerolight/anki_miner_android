@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import math
 import re
-import unicodedata
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -15,6 +14,11 @@ from .protocol import (
     BridgeProtocolError,
     decode_message,
     normalize_integral_json_number,
+)
+from .unicode_contract import (
+    has_leading_or_trailing_python_whitespace,
+    is_category_c,
+    is_nfc,
 )
 
 _RESOURCE_ID_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,126}[A-Za-z0-9_-])?$")
@@ -167,11 +171,11 @@ def _canonical_nonempty_string(field_name: str, value: object) -> str:
 
     if not isinstance(value, str) or not value:
         raise _invalid(field_name, "expected a non-empty string")
-    if value != value.strip():
+    if has_leading_or_trailing_python_whitespace(value):
         raise _invalid(field_name, "must not have leading or trailing whitespace")
-    if value != unicodedata.normalize("NFC", value):
+    if not is_nfc(value):
         raise _invalid(field_name, "must use NFC Unicode normalization")
-    if any(unicodedata.category(character).startswith("C") for character in value):
+    if any(is_category_c(ord(character)) for character in value):
         raise _invalid(field_name, "must not contain control or format characters")
     return value
 
