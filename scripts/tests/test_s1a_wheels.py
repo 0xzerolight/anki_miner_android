@@ -103,6 +103,7 @@ S1A_VALID_WHEEL_CASES = {
         "version": "190000",
         "tag": "py3-none-android_26_x86_64",
         "requirements": (),
+        "extras": (),
         "license": ("LICENSE.TXT", b"Apache License with LLVM Exceptions\n"),
         "native": (
             "chaquopy/lib/libc++_shared.so",
@@ -114,7 +115,8 @@ S1A_VALID_WHEEL_CASES = {
         "filename": "chaquopy_libmecab-0.996-0-py3-none-android_26_x86_64.whl",
         "version": "0.996",
         "tag": "py3-none-android_26_x86_64",
-        "requirements": ("chaquopy-libcxx",),
+        "requirements": ("chaquopy-libcxx (>=190000)",),
+        "extras": (),
         "license": ("BSD", b"Taku Kudo redistribution terms\n"),
         "native": (
             "chaquopy/lib/libmecab.so.2",
@@ -126,12 +128,17 @@ S1A_VALID_WHEEL_CASES = {
         "filename": "fugashi-1.5.2-0-cp313-cp313-android_26_x86_64.whl",
         "version": "1.5.2",
         "tag": "cp313-cp313-android_26_x86_64",
-        "requirements": ("chaquopy-libcxx", "chaquopy-libmecab"),
+        "requirements": (
+            'unidic; extra == "unidic"',
+            'unidic-lite; extra == "unidic-lite"',
+            "chaquopy-libmecab (>=0.996)",
+        ),
+        "extras": ("unidic", "unidic-lite"),
         "license": ("LICENSE", b"Permission is hereby granted to use Fugashi\n"),
         "native": (
             "fugashi/fugashi.so",
             None,
-            ("libc++_shared.so", "libmecab.so.2", "libpython3.13.so", "libc.so"),
+            ("libmecab.so.2", "libpython3.13.so", "libc.so"),
         ),
     },
 }
@@ -163,15 +170,20 @@ class S1aWheelToolTests(unittest.TestCase):
         package: str,
         *,
         native_path: str | None = None,
+        requirements: tuple[str, ...] | None = None,
+        extras: tuple[str, ...] | None = None,
     ) -> Path:
         case = S1A_VALID_WHEEL_CASES[package]
+        requirements = case["requirements"] if requirements is None else requirements
+        extras = case["extras"] if extras is None else extras
         wheel = root / case["filename"]
         dist_info = f"{package}-{case['version']}.dist-info"
         metadata = [
             "Metadata-Version: 2.1",
             f"Name: {package.replace('_', '-')}",
             f"Version: {case['version']}",
-            *(f"Requires-Dist: {value}" for value in case["requirements"]),
+            *(f"Provides-Extra: {value}" for value in extras),
+            *(f"Requires-Dist: {value}" for value in requirements),
             "",
         ]
         canonical_native_path, soname, needed = case["native"]
@@ -320,6 +332,9 @@ class S1aWheelToolTests(unittest.TestCase):
             'PYTHONPATH="$pip_wheel" "$builder_env/bin/python" -m pip install',
             build_script,
         )
+        self.assertIn("pip==25.1.1", build_script)
+        self.assertIn('PATH="$builder_env/bin:$patchelf_dir:$PATH"', build_script)
+        self.assertIn('ANKI_MINER_S1A_STAGE_ROOT="$stage"', build_script)
         self.assertNotIn('"$pip_wheel/pip"', build_script)
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -426,6 +441,12 @@ class S1aWheelToolTests(unittest.TestCase):
         )
         self.assertIn("make -C src", combined)
         self.assertIn("--enable-utf8-only", combined)
+        self.assertIn("-std=gnu++14", combined)
+        self.assertIn("-print-libgcc-file-name", combined)
+        self.assertIn("libclang_rt.builtins-aarch64-android.a", combined)
+        self.assertIn("libclang_rt.builtins-x86_64-android.a", combined)
+        self.assertIn("ac_cv_lib_stdcpp_main=no", combined)
+        self.assertIn("src/Makefile", combined)
         self.assertIn("chaquopy-libmecab 0.996", combined)
         self.assertNotIn("unidic-lite", combined.casefold())
         self.assertNotIn("mecab-ipadic", combined.casefold())
@@ -550,6 +571,77 @@ class S1aWheelToolTests(unittest.TestCase):
         self.assertIn("locked NDK is missing", source)
         self.assertIn("yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager", source)
 
+    def test_builder_patch_preserves_non_network_build_methods(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            chaquopy = Path(temporary) / "chaquopy"
+            builder = chaquopy / "server/pypi/build-wheel.py"
+            builder.parent.mkdir(parents=True)
+            builder.write_text(
+                """import os
+import pypi_simple
+
+class BuildWheel:
+    def configure(self):
+        os.environ["PIP_DISABLE_PIP_VERSION_CHECK"] = "1"
+        pip_version = "23.2.1"
+        run(f"{bootstrap_env}/bin/pip install pip=={pip_version}")
+        command = (f"install " + " ".join(shlex.quote(req) for req in requirements))
+
+    def download_git(self, source):
+        return "GIT_NETWORK_SENTINEL"
+
+    def download_pypi(self):
+        return "PYPI_NETWORK_SENTINEL"
+
+    def download_url(self, url):
+        return "URL_NETWORK_SENTINEL"
+
+    def apply_patches(self):
+        return "PATCH_SENTINEL"
+
+    def build_wheel(self):
+        return "BUILD_SENTINEL"
+
+    def create_host_env(self):
+        return "HOST_SENTINEL"
+""",
+                encoding="utf-8",
+            )
+            android_env = chaquopy / "target/android-env.sh"
+            android_env.parent.mkdir(parents=True)
+            android_env.write_text(
+                """ndk_version=27.3.13750724
+if ! [ -e $ndk ]; then
+    log "Installing NDK - this may take several minutes"
+    yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "ndk;$ndk_version"
+fi
+export CFLAGS="-D__BIONIC_NO_PAGE_SIZE_MACRO"
+""",
+                encoding="utf-8",
+            )
+            libcxx = (
+                chaquopy
+                / "server/pypi/packages/chaquopy-libcxx/meta.yaml"
+            )
+            libcxx.parent.mkdir(parents=True)
+            libcxx.write_text('version: "180000"\n', encoding="utf-8")
+
+            s1a_wheels.patch_builder(chaquopy, Path(temporary) / "wheelhouse")
+
+            patched = builder.read_text(encoding="utf-8")
+            compile(patched, str(builder), "exec")
+            self.assertEqual(3, patched.count("network source discovery is disabled"))
+            self.assertNotIn("GIT_NETWORK_SENTINEL", patched)
+            self.assertNotIn("PYPI_NETWORK_SENTINEL", patched)
+            self.assertNotIn("URL_NETWORK_SENTINEL", patched)
+            self.assertIn("PATCH_SENTINEL", patched)
+            self.assertIn("BUILD_SENTINEL", patched)
+            self.assertIn("HOST_SENTINEL", patched)
+            patched_android_env = android_env.read_text(encoding="utf-8")
+            self.assertIn("-ffile-prefix-map=", patched_android_env)
+            self.assertIn("-fdebug-prefix-map=", patched_android_env)
+            self.assertIn("-fmacro-prefix-map=", patched_android_env)
+
     def test_wheel_identity_requires_exact_version_api_and_tags(self) -> None:
         package, abi = s1a_wheels._wheel_identity(
             Path("fugashi-1.5.2-0-cp313-cp313-android_26_arm64_v8a.whl"),
@@ -587,6 +679,35 @@ class S1aWheelToolTests(unittest.TestCase):
                     verified_package, abi, entry = s1a_wheels.verify_s1a_wheel(wheel)
                     self.assertEqual((package, "x86_64"), (verified_package, abi))
                     self.assertEqual(f"{dist_info}/{license_name}", entry["licenses"][0]["path"])
+
+    def test_wheel_verifier_rejects_unconditional_or_unknown_optional_dependencies(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            unconditional = self._write_valid_s1a_wheel(
+                root,
+                "fugashi",
+                requirements=(
+                    "unidic",
+                    'unidic-lite; extra == "unidic-lite"',
+                    "chaquopy-libmecab (>=0.996)",
+                ),
+            )
+            with self.assertRaisesRegex(s1a_wheels.WheelError, "dependency set"):
+                s1a_wheels.verify_s1a_wheel(unconditional)
+
+            unknown_marker = self._write_valid_s1a_wheel(
+                root,
+                "fugashi",
+                requirements=(
+                    'unidic; python_version >= "3.13"',
+                    'unidic-lite; extra == "unidic-lite"',
+                    "chaquopy-libmecab (>=0.996)",
+                ),
+            )
+            with self.assertRaisesRegex(s1a_wheels.WheelError, "unsupported S1a requirement"):
+                s1a_wheels.verify_s1a_wheel(unknown_marker)
 
     def test_wheel_verifier_rejects_native_payloads_outside_exact_paths(self) -> None:
         wrong_paths = {

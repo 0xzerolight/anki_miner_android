@@ -293,18 +293,21 @@ def patch_builder(chaquopy: Path, wheelhouse: Path) -> None:
         '                f"--find-links={os.environ[\'ANKI_MINER_HOST_WHEELHOUSE\']} " +\n'
         '                " ".join(shlex.quote(req) for req in requirements))',
     )
-    start = builder.read_text(encoding="utf-8")
-    first = start.index("    def download_git(")
-    last = start.index("    def create_host_env(", first)
-    closed = (
-        "    def download_git(self, source):\n"
-        "        raise CommandError(\"network source discovery is disabled\")\n\n"
-        "    def download_pypi(self):\n"
-        "        raise CommandError(\"network source discovery is disabled\")\n\n"
-        "    def download_url(self, url):\n"
-        "        raise CommandError(\"network source discovery is disabled\")\n\n"
+    source = builder.read_text(encoding="utf-8")
+    network_methods = (
+        ("download_git", "download_pypi", "self, source"),
+        ("download_pypi", "download_url", "self"),
+        ("download_url", "apply_patches", "self, url"),
     )
-    builder.write_text(start[:first] + closed + start[last:], encoding="utf-8")
+    for method, next_method, parameters in network_methods:
+        first = source.index(f"    def {method}(")
+        last = source.index(f"    def {next_method}(", first)
+        closed = (
+            f"    def {method}({parameters}):\n"
+            '        raise CommandError("network source discovery is disabled")\n\n'
+        )
+        source = source[:first] + closed + source[last:]
+    builder.write_text(source, encoding="utf-8")
 
     android_env = chaquopy / "target/android-env.sh"
     _replace(android_env, "ndk_version=27.3.13750724", f"ndk_version={NDK_VERSION}")
@@ -312,6 +315,20 @@ def patch_builder(chaquopy: Path, wheelhouse: Path) -> None:
         android_env,
         'if ! [ -e $ndk ]; then\n    log "Installing NDK - this may take several minutes"\n    yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "ndk;$ndk_version"\nfi',
         'if ! [ -e "$ndk" ]; then\n    fail "locked NDK is missing: $ndk"\nfi',
+    )
+    _replace(
+        android_env,
+        'export CFLAGS="-D__BIONIC_NO_PAGE_SIZE_MACRO"',
+        'case "${ANKI_MINER_S1A_STAGE_ROOT:-}" in\n'
+        '    /*[[:space:]]*) fail "S1a stage root contains whitespace" ;;\n'
+        '    /*) ;;\n'
+        '    *) fail "S1a stage root is not absolute" ;;\n'
+        'esac\n'
+        's1a_source_prefix=/anki-miner-s1a\n'
+        'export CFLAGS="-D__BIONIC_NO_PAGE_SIZE_MACRO '
+        '-ffile-prefix-map=$ANKI_MINER_S1A_STAGE_ROOT=$s1a_source_prefix '
+        '-fdebug-prefix-map=$ANKI_MINER_S1A_STAGE_ROOT=$s1a_source_prefix '
+        '-fmacro-prefix-map=$ANKI_MINER_S1A_STAGE_ROOT=$s1a_source_prefix"',
     )
     libcxx = chaquopy / "server/pypi/packages/chaquopy-libcxx/meta.yaml"
     _replace(libcxx, 'version: "180000"', 'version: "190000"')
@@ -685,6 +702,24 @@ def _wheel_message(archive: zipfile.ZipFile, package: str, filename: str) -> obj
     return BytesParser(policy=compat32).parsebytes(archive.read(names[0]))
 
 
+_S1A_REQUIREMENT = re.compile(
+    r'^\s*(?P<name>[A-Za-z0-9][A-Za-z0-9._-]*)'
+    r'(?:\s*\(\s*>=\s*(?P<minimum>[A-Za-z0-9.]+)\s*\))?'
+    r'(?:\s*;\s*extra\s*==\s*"(?P<extra>[A-Za-z0-9._-]+)")?\s*$'
+)
+
+
+def _parse_s1a_requirement(value: str) -> tuple[str, str | None, str | None]:
+    match = _S1A_REQUIREMENT.fullmatch(value)
+    if match is None:
+        raise WheelError(f"unsupported S1a requirement: {value!r}")
+    name = match["name"].casefold().replace("_", "-")
+    extra = match["extra"]
+    if extra is not None:
+        extra = extra.casefold().replace("_", "-")
+    return name, match["minimum"], extra
+
+
 def _native_artifact_checker():
     module_name = "_anki_miner_native_artifact_checker"
     module = sys.modules.get(module_name)
@@ -789,20 +824,37 @@ def verify_s1a_wheel(path: Path) -> tuple[str, str, dict[str, object]]:
         metadata_name = str(message.get("Name", "")).casefold().replace("-", "_")
         if metadata_name != package or message.get("Version") != expected_version:
             raise WheelError(f"{path.name}: METADATA identity mismatch")
-        requirements = [str(value) for value in (message.get_all("Requires-Dist") or [])]
-        normalized_requirements = {
-            re.split(r"[ ;(<>=]", value.casefold().replace("_", "-"), maxsplit=1)[0]
-            for value in requirements
+        requirements = {
+            _parse_s1a_requirement(str(value))
+            for value in (message.get_all("Requires-Dist") or [])
         }
         expected_requirements = {
             "chaquopy_libcxx": set(),
-            "chaquopy_libmecab": {"chaquopy-libcxx"},
-            "fugashi": {"chaquopy-libcxx", "chaquopy-libmecab"},
+            "chaquopy_libmecab": {("chaquopy-libcxx", "190000", None)},
+            "fugashi": {
+                ("chaquopy-libmecab", "0.996", None),
+                ("unidic", None, "unidic"),
+                ("unidic-lite", None, "unidic-lite"),
+            },
         }[package]
-        if normalized_requirements != expected_requirements:
+        if requirements != expected_requirements:
             raise WheelError(
-                f"{path.name}: dependency set is {sorted(normalized_requirements)}, "
-                f"expected {sorted(expected_requirements)}",
+                f"{path.name}: dependency set is {sorted(requirements, key=repr)}, "
+                f"expected {sorted(expected_requirements, key=repr)}",
+            )
+        provided_extras = {
+            str(value).casefold().replace("_", "-")
+            for value in (message.get_all("Provides-Extra") or [])
+        }
+        expected_extras = {
+            "chaquopy_libcxx": set(),
+            "chaquopy_libmecab": set(),
+            "fugashi": {"unidic", "unidic-lite"},
+        }[package]
+        if provided_extras != expected_extras:
+            raise WheelError(
+                f"{path.name}: extras are {sorted(provided_extras)}, "
+                f"expected {sorted(expected_extras)}",
             )
         wheel_message = _wheel_message(archive, package, "WHEEL")
         python_tag, abi_tag = WHEEL_SPECS[package][1:]
@@ -859,7 +911,7 @@ def verify_s1a_wheel(path: Path) -> tuple[str, str, dict[str, object]]:
         required_needed = {
             "chaquopy_libcxx": set(),
             "chaquopy_libmecab": {"libc++_shared.so"},
-            "fugashi": {"libmecab.so.2", "libc++_shared.so", "libpython3.13.so"},
+            "fugashi": {"libmecab.so.2", "libpython3.13.so"},
         }[package]
         allowed_needed = required_needed | ANDROID_SYSTEM_LIBS
         if not required_needed.issubset(needed) or not needed.issubset(allowed_needed):

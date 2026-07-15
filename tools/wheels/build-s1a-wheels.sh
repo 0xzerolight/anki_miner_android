@@ -43,7 +43,7 @@ build_stage() {
     PYTHONPATH="$pip_wheel" "$builder_env/bin/python" -m pip install \
         --no-index --only-binary=:all: --find-links "$wheelhouse" \
         build==1.2.2.post1 Jinja2==3.1.6 jsonschema==4.23.0 pyelftools==0.32 \
-        PyYAML==6.0.2 setuptools==78.1.1 wheel==0.45.1
+        pip==25.1.1 PyYAML==6.0.2 setuptools==78.1.1 wheel==0.45.1
     "$builder_env/bin/python" -m pip check
     "$builder_env/bin/python" "$SCRIPT_DIR/s1a_wheels.py" validate-recipes \
         --chaquopy-root "$chaquopy"
@@ -51,7 +51,8 @@ build_stage() {
 
     (
         export ANDROID_HOME ANKI_MINER_HOST_WHEELHOUSE="$wheelhouse"
-        export PATH="$patchelf_dir:$PATH"
+        export ANKI_MINER_S1A_STAGE_ROOT="$stage"
+        export PATH="$builder_env/bin:$patchelf_dir:$PATH"
         cd "$chaquopy/server/pypi"
         for abi in arm64-v8a x86_64; do
             "$builder_env/bin/python" build-wheel.py --abi "$abi" --api-level 26 chaquopy-libcxx
