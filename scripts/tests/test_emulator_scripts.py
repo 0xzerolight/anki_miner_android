@@ -36,6 +36,8 @@ class EmulatorScriptTest(unittest.TestCase):
         self.assertNotIn("-wipe-data", command)
         self.assertNotIn("-no-snapshot-load", command)
         self.assertNotIn("-no-snapshot-save", command)
+        gpu_index = command.index("-gpu")
+        self.assertEqual("swiftshader", command[gpu_index + 1])
 
     def test_test_session_enforces_clean_snapshot_free_boot_last(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
