@@ -6,7 +6,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 PYTHON_ROOT = PROJECT_ROOT / "app" / "src" / "main" / "python"
 DESKTOP_ROOT = Path("/home/light/Projects/anki_miner")
@@ -82,6 +81,69 @@ except Exception as exc:
     assert "invalid_files_dir None" in result.stdout
 
 
+def test_require_initialized_fails_without_importing_engine(tmp_path: Path) -> None:
+    result = _run(
+        """
+import sys
+from android_bridge.bootstrap import require_initialized
+try:
+    require_initialized()
+except Exception as exc:
+    print(getattr(exc, "code", ""), any(name.startswith("anki_miner") for name in sys.modules))
+    raise
+""",
+        tmp_path,
+    )
+
+    assert result.returncode != 0
+    assert "bootstrap_required False" in result.stdout
+
+
+def test_require_initialized_uses_canonical_same_home_check(tmp_path: Path) -> None:
+    real_home = tmp_path / "real"
+    real_home.mkdir()
+    alias_home = tmp_path / "alias"
+    alias_home.symlink_to(real_home, target_is_directory=True)
+    other_home = tmp_path / "other"
+    result = _run(
+        f"""
+import sys
+from android_bridge.bootstrap import initialize, require_initialized
+initialize(sys.argv[1])
+print(require_initialized({str(alias_home)!r}))
+try:
+    require_initialized({str(other_home)!r})
+except Exception as exc:
+    print(getattr(exc, "code", ""))
+""",
+        real_home,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert str(real_home) in result.stdout
+    assert "home_mismatch" in result.stdout
+
+
+def test_require_initialized_detects_environment_mutation(tmp_path: Path) -> None:
+    result = _run(
+        """
+import os, sys
+from android_bridge.bootstrap import initialize, require_initialized
+initialize(sys.argv[1])
+os.environ["ANKI_MINER_HOME"] = "/different"
+try:
+    require_initialized()
+except Exception as exc:
+    print(getattr(exc, "code", ""))
+    raise
+""",
+        tmp_path,
+    )
+
+    assert result.returncode != 0
+    assert "home_mismatch" in result.stdout
+
+
 def test_bridge_modules_have_no_top_level_engine_imports() -> None:
     import ast
 
@@ -90,9 +152,13 @@ def test_bridge_modules_have_no_top_level_engine_imports() -> None:
     for path in bridge_root.glob("*.py"):
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         for node in tree.body:
-            if isinstance(node, ast.Import) and any(alias.name.startswith("anki_miner") for alias in node.names):
+            if isinstance(node, ast.Import) and any(
+                alias.name.startswith("anki_miner") for alias in node.names
+            ):
                 offenders.append(f"{path.name}:{node.lineno}")
-            elif isinstance(node, ast.ImportFrom) and (node.module or "").startswith("anki_miner"):
+            elif isinstance(node, ast.ImportFrom) and (node.module or "").startswith(
+                "anki_miner"
+            ):
                 offenders.append(f"{path.name}:{node.lineno}")
 
     assert offenders == []

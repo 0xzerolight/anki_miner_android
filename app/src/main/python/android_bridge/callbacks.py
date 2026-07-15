@@ -12,7 +12,9 @@ from .protocol import BridgeProtocolError, encode_message, to_json_value
 def _invoke(callbacks: object, method_name: str, message: str) -> None:
     method = getattr(callbacks, method_name, None)
     if not callable(method):
-        raise BridgeProtocolError("missing_callback", f"EngineCallbacks.{method_name} is required")
+        raise BridgeProtocolError(
+            "missing_callback", f"EngineCallbacks.{method_name} is required"
+        )
     method(message)
 
 
@@ -39,7 +41,11 @@ class AndroidProgressCallback:
             "onProgress",
             encode_message(
                 "progress.update",
-                {"runId": self.run_id, "current": current, "description": item_description},
+                {
+                    "runId": self.run_id,
+                    "current": current,
+                    "description": item_description,
+                },
             ),
         )
 
@@ -76,7 +82,9 @@ class AndroidPresenter:
         _invoke(
             self.callbacks,
             "onPresenterEvent",
-            encode_message("presenter.event", {"runId": self.run_id, "kind": kind, **payload}),
+            encode_message(
+                "presenter.event", {"runId": self.run_id, "kind": kind, **payload}
+            ),
         )
 
     def show_info(self, message: str) -> None:
@@ -101,7 +109,9 @@ class AndroidPresenter:
 class CallbackAdapters:
     """One coherent adapter set bound to a single live job."""
 
-    def __init__(self, callbacks: object, registry: JobRegistry, handle: JobHandle) -> None:
+    def __init__(
+        self, callbacks: object, registry: JobRegistry, handle: JobHandle
+    ) -> None:
         self._callbacks = callbacks
         self._registry = registry
         self._handle = handle

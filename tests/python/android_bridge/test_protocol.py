@@ -34,7 +34,10 @@ def test_round_trip_is_versioned_canonical_and_unicode_safe() -> None:
         '{"schemaVersion":1,"type":"mining.result",'
         '"payload":{"text":"日本語","count":2}}'
     )
-    assert decode_message(raw, expected_type="mining.result") == {"text": "日本語", "count": 2}
+    assert decode_message(raw, expected_type="mining.result") == {
+        "text": "日本語",
+        "count": 2,
+    }
 
 
 def test_structural_conversion_needs_no_engine_import() -> None:
@@ -51,8 +54,14 @@ def test_structural_conversion_needs_no_engine_import() -> None:
     ("raw", "code"),
     [
         ("[]", "invalid_envelope"),
-        ('{"schemaVersion":2,"type":"job.cancel","payload":{}}', "unsupported_schema_version"),
-        ('{"schemaVersion":1,"type":"job.cancel","payload":{},"extra":1}', "invalid_envelope"),
+        (
+            '{"schemaVersion":2,"type":"job.cancel","payload":{}}',
+            "unsupported_schema_version",
+        ),
+        (
+            '{"schemaVersion":1,"type":"job.cancel","payload":{},"extra":1}',
+            "invalid_envelope",
+        ),
         ('{"schemaVersion":1,"type":"JobCancel","payload":{}}', "invalid_message_type"),
         ('{"schemaVersion":1,"type":"job.cancel","payload":[]}', "invalid_payload"),
     ],
@@ -84,8 +93,35 @@ def test_non_finite_and_recursive_values_are_rejected() -> None:
     assert cycle.value.code == "recursive_value"
 
 
+@pytest.mark.parametrize("literal", ["NaN", "Infinity", "-Infinity"])
+def test_decoder_rejects_every_non_rfc_numeric_literal(literal: str) -> None:
+    raw = f'{{"schemaVersion":1,"type":"progress.update","payload":{{"nested":[{literal}]}}}}'
+
+    with pytest.raises(BridgeProtocolError) as error:
+        decode_message(raw)
+    assert error.value.code == "non_finite_number"
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+def test_encoder_rejects_every_non_finite_float_at_any_depth(value: float) -> None:
+    with pytest.raises(BridgeProtocolError) as error:
+        encode_message("progress.update", {"nested": [{"value": value}]})
+    assert error.value.code == "non_finite_number"
+
+
+def test_decoder_rejects_duplicate_object_keys() -> None:
+    raw = '{"schemaVersion":1,"type":"progress.update","payload":{"value":1,"value":2}}'
+
+    with pytest.raises(BridgeProtocolError) as error:
+        decode_message(raw)
+    assert error.value.code == "duplicate_json_key"
+
+
 def test_checked_in_schema_matches_codec_version() -> None:
-    schema_path = Path(__file__).resolve().parents[3] / "app/src/main/python/android_bridge/schemas/bridge-envelope.schema.json"
+    schema_path = (
+        Path(__file__).resolve().parents[3]
+        / "app/src/main/python/android_bridge/schemas/bridge-envelope.schema.json"
+    )
     schema = json.loads(schema_path.read_text(encoding="utf-8"))
 
     assert schema["properties"]["schemaVersion"]["const"] == BRIDGE_SCHEMA_VERSION

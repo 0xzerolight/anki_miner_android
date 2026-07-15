@@ -4,11 +4,17 @@ from __future__ import annotations
 
 import threading
 import uuid
+import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, cast
 
 from .protocol import BridgeProtocolError, decode_message, encode_message
+
+_RUN_ID_RE = re.compile(r"^run_[0-9a-f]{32}$")
+_REQUEST_ID_RE = re.compile(r"^curation_[0-9a-f]{32}$")
+_CANDIDATE_ID_RE = re.compile(r"^candidate_[0-9a-f]{32}$")
+_SENTENCE_ID_RE = re.compile(r"^sentence_[0-9a-f]{32}$")
 
 
 @dataclass(frozen=True)
@@ -58,10 +64,9 @@ def _as_number(value: object, *, fallback: int | float = 0) -> int | float:
 
 
 def _same_sentence(first: object, second: object) -> bool:
-    return (
-        getattr(first, "sentence", None) == getattr(second, "sentence", None)
-        and getattr(first, "start_time", None) == getattr(second, "start_time", None)
-    )
+    return getattr(first, "sentence", None) == getattr(
+        second, "sentence", None
+    ) and getattr(first, "start_time", None) == getattr(second, "start_time", None)
 
 
 def _sentence_payload(sentence_id: str, word: object) -> dict[str, Any]:
@@ -76,13 +81,17 @@ def _sentence_payload(sentence_id: str, word: object) -> dict[str, Any]:
     }
 
 
-def _candidate_payload(candidate_id: str, word: object) -> tuple[dict[str, Any], _CandidateRef]:
+def _candidate_payload(
+    candidate_id: str, word: object
+) -> tuple[dict[str, Any], _CandidateRef]:
     default_sentence_id = _opaque_id("sentence")
     sentence_objects: dict[str, object] = {default_sentence_id: word}
     sentence_payloads = [_sentence_payload(default_sentence_id, word)]
 
     alternatives = getattr(word, "sentence_candidates", ()) or ()
-    if isinstance(alternatives, Sequence) and not isinstance(alternatives, (str, bytes, bytearray)):
+    if isinstance(alternatives, Sequence) and not isinstance(
+        alternatives, (str, bytes, bytearray)
+    ):
         for alternative in alternatives:
             if alternative is word or _same_sentence(alternative, word):
                 continue
@@ -93,19 +102,27 @@ def _candidate_payload(candidate_id: str, word: object) -> tuple[dict[str, Any],
     mined_form = getattr(word, "mined_form", None)
     payload = {
         "candidateId": candidate_id,
-        "minedForm": _as_string(mined_form, fallback=_as_string(getattr(word, "lemma", ""))),
+        "minedForm": _as_string(
+            mined_form, fallback=_as_string(getattr(word, "lemma", ""))
+        ),
         "surface": _as_string(getattr(word, "surface", "")),
         "lemma": _as_string(getattr(word, "lemma", "")),
         "reading": _as_string(getattr(word, "reading", "")),
         "expressionReading": _as_string(getattr(word, "expression_reading", "")),
-        "partOfSpeech": getattr(word, "pos", None) if isinstance(getattr(word, "pos", None), str) else None,
+        "partOfSpeech": (
+            getattr(word, "pos", None)
+            if isinstance(getattr(word, "pos", None), str)
+            else None
+        ),
         "frequencyRank": (
             getattr(word, "frequency_rank", None)
             if type(getattr(word, "frequency_rank", None)) is int
             else None
         ),
         "occurrenceCount": (
-            getattr(word, "occurrence_count", 0) if type(getattr(word, "occurrence_count", 0)) is int else 0
+            getattr(word, "occurrence_count", 0)
+            if type(getattr(word, "occurrence_count", 0)) is int
+            else 0
         ),
         "defaultSentenceId": default_sentence_id,
         "sentences": sentence_payloads,
@@ -130,9 +147,13 @@ class JobRegistry:
 
         with self._lock:
             if self._shutdown:
-                raise BridgeProtocolError("registry_shutdown", "The job registry has shut down")
+                raise BridgeProtocolError(
+                    "registry_shutdown", "The job registry has shut down"
+                )
             if self._active is not None:
-                raise BridgeProtocolError("job_already_active", "Only one Python mining job may run at a time")
+                raise BridgeProtocolError(
+                    "job_already_active", "Only one Python mining job may run at a time"
+                )
             handle = JobHandle(run_id=_opaque_id("run"), cancel_event=threading.Event())
             self._active = _JobState(handle=handle)
             return handle
@@ -143,13 +164,19 @@ class JobRegistry:
             return self._active.handle.run_id if self._active is not None else None
 
     def _require_active(self, run_id: str) -> _JobState:
-        if not isinstance(run_id, str) or not run_id:
-            raise BridgeProtocolError("invalid_run_id", "runId must be a non-empty string")
+        if not isinstance(run_id, str) or not _RUN_ID_RE.fullmatch(run_id):
+            raise BridgeProtocolError(
+                "invalid_run_id", "runId is not a valid opaque run ID"
+            )
         state = self._active
         if state is None:
-            raise BridgeProtocolError("no_active_job", "There is no active Python mining job")
+            raise BridgeProtocolError(
+                "no_active_job", "There is no active Python mining job"
+            )
         if state.handle.run_id != run_id:
-            raise BridgeProtocolError("stale_run", "The response belongs to a stale mining run")
+            raise BridgeProtocolError(
+                "stale_run", "The response belongs to a stale mining run"
+            )
         return state
 
     def cancel(self, run_id: str) -> bool:
@@ -205,17 +232,25 @@ class JobRegistry:
         JSON.
         """
 
-        if not isinstance(candidates, Sequence) or isinstance(candidates, (str, bytes, bytearray)):
-            raise BridgeProtocolError("invalid_candidates", "Curation candidates must be a sequence")
+        if not isinstance(candidates, Sequence) or isinstance(
+            candidates, (str, bytes, bytearray)
+        ):
+            raise BridgeProtocolError(
+                "invalid_candidates", "Curation candidates must be a sequence"
+            )
         if not callable(emit_request):
-            raise BridgeProtocolError("invalid_callback", "emit_request must be callable")
+            raise BridgeProtocolError(
+                "invalid_callback", "emit_request must be callable"
+            )
 
         with self._lock:
             state = self._require_active(run_id)
             if state.handle.cancel_event.is_set():
                 return None
             if state.curation is not None:
-                raise BridgeProtocolError("curation_already_pending", "A curation request is already pending")
+                raise BridgeProtocolError(
+                    "curation_already_pending", "A curation request is already pending"
+                )
 
             request_id = _opaque_id("curation")
             refs: dict[str, _CandidateRef] = {}
@@ -229,7 +264,9 @@ class JobRegistry:
                 "curation.request",
                 {"runId": run_id, "requestId": request_id, "candidates": payloads},
             )
-            gate = _CurationGate(request_id=request_id, candidates=refs, request_json=request_json)
+            gate = _CurationGate(
+                request_id=request_id, candidates=refs, request_json=request_json
+            )
             state.curation = gate
 
         try:
@@ -260,23 +297,42 @@ class JobRegistry:
 
         payload = decode_message(raw_response, expected_type="curation.response")
         if set(payload) != {"runId", "requestId", "selection"}:
-            raise BridgeProtocolError("invalid_curation_response", "Curation response fields are invalid")
+            raise BridgeProtocolError(
+                "invalid_curation_response", "Curation response fields are invalid"
+            )
         run_id = payload["runId"]
         request_id = payload["requestId"]
-        if not isinstance(run_id, str) or not isinstance(request_id, str):
-            raise BridgeProtocolError("invalid_curation_response", "runId and requestId must be strings")
+        if not isinstance(run_id, str) or not _RUN_ID_RE.fullmatch(run_id):
+            raise BridgeProtocolError(
+                "invalid_curation_response", "runId is not a valid opaque run ID"
+            )
+        if not isinstance(request_id, str) or not _REQUEST_ID_RE.fullmatch(request_id):
+            raise BridgeProtocolError(
+                "invalid_curation_response",
+                "requestId is not a valid opaque request ID",
+            )
 
         with self._lock:
             state = self._require_active(run_id)
             gate = state.curation
             if gate is None:
                 if state.last_request_id == request_id:
-                    raise BridgeProtocolError("duplicate_curation_response", "Curation was already resolved")
-                raise BridgeProtocolError("stale_curation_request", "The curation request is no longer pending")
+                    raise BridgeProtocolError(
+                        "duplicate_curation_response", "Curation was already resolved"
+                    )
+                raise BridgeProtocolError(
+                    "stale_curation_request",
+                    "The curation request is no longer pending",
+                )
             if gate.request_id != request_id:
-                raise BridgeProtocolError("stale_curation_request", "The response belongs to a stale curation request")
+                raise BridgeProtocolError(
+                    "stale_curation_request",
+                    "The response belongs to a stale curation request",
+                )
             if gate.resolved:
-                raise BridgeProtocolError("duplicate_curation_response", "Curation was already resolved")
+                raise BridgeProtocolError(
+                    "duplicate_curation_response", "Curation was already resolved"
+                )
 
             selection = payload["selection"]
             if selection is None:
@@ -284,34 +340,68 @@ class JobRegistry:
             elif isinstance(selection, list):
                 resolved = self._resolve_selection(gate, selection)
             else:
-                raise BridgeProtocolError("invalid_curation_response", "selection must be null or an array")
+                raise BridgeProtocolError(
+                    "invalid_curation_response", "selection must be null or an array"
+                )
 
             gate.response = resolved
             gate.resolved = True
             gate.event.set()
 
     @staticmethod
-    def _resolve_selection(gate: _CurationGate, selection: list[object]) -> list[object]:
+    def _resolve_selection(
+        gate: _CurationGate, selection: list[object]
+    ) -> list[object]:
         resolved: list[object] = []
         seen_candidates: set[str] = set()
         for item in selection:
-            if not isinstance(item, dict) or not set(item).issubset({"candidateId", "sentenceId"}):
-                raise BridgeProtocolError("invalid_curation_response", "Each selection must identify a candidate")
+            if not isinstance(item, dict) or not set(item).issubset(
+                {"candidateId", "sentenceId"}
+            ):
+                raise BridgeProtocolError(
+                    "invalid_curation_response",
+                    "Each selection must identify a candidate",
+                )
             if "candidateId" not in item:
-                raise BridgeProtocolError("invalid_curation_response", "candidateId is required")
+                raise BridgeProtocolError(
+                    "invalid_curation_response", "candidateId is required"
+                )
             candidate_id = item["candidateId"]
+            if not isinstance(candidate_id, str) or not _CANDIDATE_ID_RE.fullmatch(
+                candidate_id
+            ):
+                raise BridgeProtocolError(
+                    "invalid_curation_response", "candidateId is not a valid opaque ID"
+                )
+            has_sentence_id = "sentenceId" in item
             sentence_id = item.get("sentenceId")
-            if not isinstance(candidate_id, str) or (sentence_id is not None and not isinstance(sentence_id, str)):
-                raise BridgeProtocolError("invalid_curation_response", "Curation IDs must be strings")
+            if has_sentence_id and (
+                not isinstance(sentence_id, str)
+                or not _SENTENCE_ID_RE.fullmatch(sentence_id)
+            ):
+                raise BridgeProtocolError(
+                    "invalid_curation_response",
+                    "sentenceId must be omitted or contain a valid opaque ID",
+                )
             if candidate_id in seen_candidates:
-                raise BridgeProtocolError("duplicate_candidate", "A candidate may only be selected once")
+                raise BridgeProtocolError(
+                    "duplicate_candidate", "A candidate may only be selected once"
+                )
             candidate = gate.candidates.get(candidate_id)
             if candidate is None:
-                raise BridgeProtocolError("unknown_candidate", "The selected candidate is unknown")
-            chosen_sentence_id = sentence_id or candidate.default_sentence_id
+                raise BridgeProtocolError(
+                    "unknown_candidate", "The selected candidate is unknown"
+                )
+            chosen_sentence_id = (
+                cast(str, sentence_id)
+                if has_sentence_id
+                else candidate.default_sentence_id
+            )
             chosen = candidate.sentences.get(chosen_sentence_id)
             if chosen is None:
-                raise BridgeProtocolError("unknown_sentence", "The sentence does not belong to this candidate")
+                raise BridgeProtocolError(
+                    "unknown_sentence", "The sentence does not belong to this candidate"
+                )
             seen_candidates.add(candidate_id)
             resolved.append(chosen)
         return resolved
@@ -333,9 +423,13 @@ def begin_job() -> JobHandle:
 def cancel_job(raw_request: str) -> str:
     payload = decode_message(raw_request, expected_type="job.cancel")
     if set(payload) != {"runId"} or not isinstance(payload.get("runId"), str):
-        raise BridgeProtocolError("invalid_cancel_request", "job.cancel requires exactly one string runId")
+        raise BridgeProtocolError(
+            "invalid_cancel_request", "job.cancel requires exactly one string runId"
+        )
     first = _REGISTRY.cancel(payload["runId"])
-    return encode_message("job.cancelled", {"runId": payload["runId"], "newlyCancelled": first})
+    return encode_message(
+        "job.cancelled", {"runId": payload["runId"], "newlyCancelled": first}
+    )
 
 
 def submit_curation(raw_response: str) -> str:

@@ -8,6 +8,8 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import cast
+
+from .bootstrap import require_initialized
 from .protocol import BridgeProtocolError, decode_message
 
 _RESOURCE_ID_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,126}[A-Za-z0-9_-])?$")
@@ -62,10 +64,14 @@ _LITERAL_FIELDS: Mapping[str, frozenset[str]] = {
     "screenshot_animated_format": frozenset({"avif", "webp"}),
     "pitch_category_format": frozenset({"jp", "romaji"}),
 }
-_STRING_TUPLE_FIELDS = frozenset({"excluded_decks", "allowed_pos", "excluded_subtypes", "excluded_wordsets"})
+_STRING_TUPLE_FIELDS = frozenset(
+    {"excluded_decks", "allowed_pos", "excluded_subtypes", "excluded_wordsets"}
+)
 _OPTIONAL_PATH_FIELDS = frozenset({"blacklist_path", "whitelist_path"})
 _MAPPING_FIELDS = frozenset({"anki_fields", "card_type_marker_fields"})
-_CHAIN_FIELDS = frozenset({"dictionary_chain", "frequency_chain", "expression_audio_chain"})
+_CHAIN_FIELDS = frozenset(
+    {"dictionary_chain", "frequency_chain", "expression_audio_chain"}
+)
 
 _EXPOSED_CONFIG_FIELDS = frozenset(
     _STRING_FIELDS
@@ -100,10 +106,14 @@ class AndroidPaths:
                 value = Path(value)
                 object.__setattr__(self, name, value)
             if not isinstance(value, Path) or not value.is_absolute():
-                raise BridgeProtocolError("invalid_android_path", f"{name} must be an absolute path")
+                raise BridgeProtocolError(
+                    "invalid_android_path", f"{name} must be an absolute path"
+                )
 
     @classmethod
-    def from_strings(cls, files_dir: str, cache_dir: str, native_library_dir: str) -> AndroidPaths:
+    def from_strings(
+        cls, files_dir: str, cache_dir: str, native_library_dir: str
+    ) -> AndroidPaths:
         return cls(Path(files_dir), Path(cache_dir), Path(native_library_dir))
 
 
@@ -137,7 +147,9 @@ def _boolean(field_name: str, value: object) -> bool:
     return value
 
 
-def _float(field_name: str, value: object, bounds: tuple[float | None, float | None]) -> float:
+def _float(
+    field_name: str, value: object, bounds: tuple[float | None, float | None]
+) -> float:
     if type(value) not in (int, float):
         raise _invalid(field_name, "expected a number")
     converted = float(cast(int | float, value))
@@ -151,7 +163,9 @@ def _float(field_name: str, value: object, bounds: tuple[float | None, float | N
     return converted
 
 
-def _integer(field_name: str, value: object, bounds: tuple[int | None, int | None]) -> int:
+def _integer(
+    field_name: str, value: object, bounds: tuple[int | None, int | None]
+) -> int:
     if type(value) is not int:
         raise _invalid(field_name, "expected an integer")
     minimum, maximum = bounds
@@ -177,7 +191,7 @@ def _string_tuple(field_name: str, value: object) -> tuple[str, ...]:
 
 
 def _optional_path(field_name: str, value: object) -> Path | None:
-    if value is None or value == "":
+    if value is None:
         return None
     if not isinstance(value, str):
         raise _invalid(field_name, "expected an absolute path or null")
@@ -187,19 +201,28 @@ def _optional_path(field_name: str, value: object) -> Path | None:
     return path
 
 
-def _mapping_overlay(field_name: str, value: object, defaults: Mapping[str, str]) -> dict[str, str]:
+def _mapping_overlay(
+    field_name: str, value: object, defaults: Mapping[str, str]
+) -> dict[str, str]:
     if not isinstance(value, Mapping):
         raise _invalid(field_name, "expected an object of string values")
     unknown = set(value) - set(defaults)
     if unknown:
         raise _invalid(field_name, f"unknown keys: {sorted(unknown)!r}")
-    if any(not isinstance(key, str) or not isinstance(item, str) for key, item in value.items()):
+    if any(
+        not isinstance(key, str) or not isinstance(item, str)
+        for key, item in value.items()
+    ):
         raise _invalid(field_name, "expected an object of string values")
     return {**dict(defaults), **dict(value)}
 
 
 def _resource_id(field_name: str, value: object) -> str:
-    if not isinstance(value, str) or not _RESOURCE_ID_RE.fullmatch(value) or ".." in value:
+    if (
+        not isinstance(value, str)
+        or not _RESOURCE_ID_RE.fullmatch(value)
+        or ".." in value
+    ):
         raise _invalid(field_name, "contains an unsafe resource ID")
     return value
 
@@ -210,7 +233,9 @@ def _chain_items(field_name: str, value: object) -> Sequence[object]:
     return value
 
 
-def _entry_mapping(field_name: str, item: object, allowed_keys: frozenset[str]) -> Mapping[str, object]:
+def _entry_mapping(
+    field_name: str, item: object, allowed_keys: frozenset[str]
+) -> Mapping[str, object]:
     if not isinstance(item, Mapping) or any(not isinstance(key, str) for key in item):
         raise _invalid(field_name, "chain entries must be objects")
     unknown = set(item) - allowed_keys
@@ -223,17 +248,25 @@ def _enabled(field_name: str, item: Mapping[str, object]) -> bool:
     return _boolean(field_name, item.get("enabled", True))
 
 
-def _dictionary_chain(value: object, constructor: Callable[..., object]) -> tuple[object, ...]:
+def _dictionary_chain(
+    value: object, constructor: Callable[..., object]
+) -> tuple[object, ...]:
     result: list[object] = []
     identities: set[tuple[str, str | None]] = set()
     for raw in _chain_items("dictionary_chain", value):
-        item = _entry_mapping("dictionary_chain", raw, frozenset({"kind", "dict_id", "enabled"}))
+        item = _entry_mapping(
+            "dictionary_chain", raw, frozenset({"kind", "dict_id", "enabled"})
+        )
         kind = item.get("kind")
         if kind == "indexed":
-            dict_id: str | None = _resource_id("dictionary_chain.dict_id", item.get("dict_id"))
+            dict_id: str | None = _resource_id(
+                "dictionary_chain.dict_id", item.get("dict_id")
+            )
         elif kind == "jisho":
             if item.get("dict_id") is not None:
-                raise _invalid("dictionary_chain.dict_id", "jisho entries must use null")
+                raise _invalid(
+                    "dictionary_chain.dict_id", "jisho entries must use null"
+                )
             dict_id = None
         else:
             raise _invalid("dictionary_chain.kind", "expected 'indexed' or 'jisho'")
@@ -241,28 +274,46 @@ def _dictionary_chain(value: object, constructor: Callable[..., object]) -> tupl
         if identity in identities:
             raise _invalid("dictionary_chain", "duplicate provider")
         identities.add(identity)
-        result.append(constructor(kind=kind, dict_id=dict_id, enabled=_enabled("dictionary_chain.enabled", item)))
+        result.append(
+            constructor(
+                kind=kind,
+                dict_id=dict_id,
+                enabled=_enabled("dictionary_chain.enabled", item),
+            )
+        )
     return tuple(result)
 
 
-def _frequency_chain(value: object, constructor: Callable[..., object]) -> tuple[object, ...]:
+def _frequency_chain(
+    value: object, constructor: Callable[..., object]
+) -> tuple[object, ...]:
     result: list[object] = []
     identities: set[str] = set()
     for raw in _chain_items("frequency_chain", value):
-        item = _entry_mapping("frequency_chain", raw, frozenset({"source_id", "enabled"}))
+        item = _entry_mapping(
+            "frequency_chain", raw, frozenset({"source_id", "enabled"})
+        )
         source_id = _resource_id("frequency_chain.source_id", item.get("source_id"))
         if source_id in identities:
             raise _invalid("frequency_chain", "duplicate source")
         identities.add(source_id)
-        result.append(constructor(source_id=source_id, enabled=_enabled("frequency_chain.enabled", item)))
+        result.append(
+            constructor(
+                source_id=source_id, enabled=_enabled("frequency_chain.enabled", item)
+            )
+        )
     return tuple(result)
 
 
-def _expression_audio_chain(value: object, constructor: Callable[..., object]) -> tuple[object, ...]:
+def _expression_audio_chain(
+    value: object, constructor: Callable[..., object]
+) -> tuple[object, ...]:
     result: list[object] = []
     identities: set[str] = set()
     for raw in _chain_items("expression_audio_chain", value):
-        item = _entry_mapping("expression_audio_chain", raw, frozenset({"kind", "pack_id", "enabled"}))
+        item = _entry_mapping(
+            "expression_audio_chain", raw, frozenset({"kind", "pack_id", "enabled"})
+        )
         if item.get("kind") != "pack":
             raise BridgeProtocolError(
                 "unsupported_audio_source",
@@ -318,25 +369,49 @@ def map_config_settings(
     default; Android-owned paths and cut network-audio seams are then forced.
     """
 
-    if not isinstance(settings, Mapping) or any(not isinstance(key, str) for key in settings):
-        raise BridgeProtocolError("invalid_config_snapshot", "settings must be a JSON object")
+    if not isinstance(settings, Mapping) or any(
+        not isinstance(key, str) for key in settings
+    ):
+        raise BridgeProtocolError(
+            "invalid_config_snapshot", "settings must be a JSON object"
+        )
     unknown = set(settings) - _EXPOSED_CONFIG_FIELDS - {_LEGACY_ANDROID_TTS_FIELD}
     if unknown:
-        raise BridgeProtocolError("unknown_config_field", f"Unknown or non-Android fields: {sorted(unknown)!r}")
+        raise BridgeProtocolError(
+            "unknown_config_field",
+            f"Unknown or non-Android fields: {sorted(unknown)!r}",
+        )
 
     legacy_tts: bool | None = None
     if _LEGACY_ANDROID_TTS_FIELD in settings:
-        legacy_tts = _boolean(_LEGACY_ANDROID_TTS_FIELD, settings[_LEGACY_ANDROID_TTS_FIELD])
+        legacy_tts = _boolean(
+            _LEGACY_ANDROID_TTS_FIELD, settings[_LEGACY_ANDROID_TTS_FIELD]
+        )
     if android_tts_enabled is not None and type(android_tts_enabled) is not bool:
         raise _invalid("androidTtsEnabled", "expected a boolean")
-    if android_tts_enabled is not None and legacy_tts is not None and android_tts_enabled != legacy_tts:
+    if (
+        android_tts_enabled is not None
+        and legacy_tts is not None
+        and android_tts_enabled != legacy_tts
+    ):
         raise BridgeProtocolError(
             "conflicting_android_tts_flags",
             "androidTtsEnabled conflicts with legacy reading_tts_enabled",
         )
-    ephemeral_tts = android_tts_enabled if android_tts_enabled is not None else (legacy_tts or False)
+    ephemeral_tts = (
+        android_tts_enabled
+        if android_tts_enabled is not None
+        else (legacy_tts or False)
+    )
 
-    from anki_miner.config import AnkiMinerConfig, AudioSourceEntry, ChainEntry, FreqEntry
+    require_initialized(paths.files_dir)
+
+    from anki_miner.config import (
+        AnkiMinerConfig,
+        AudioSourceEntry,
+        ChainEntry,
+        FreqEntry,
+    )
 
     base = AnkiMinerConfig()
     updates: dict[str, object] = {}
@@ -352,13 +427,17 @@ def map_config_settings(
         elif field_name in _INT_RANGES:
             updates[field_name] = _integer(field_name, value, _INT_RANGES[field_name])
         elif field_name in _LITERAL_FIELDS:
-            updates[field_name] = _literal(field_name, value, _LITERAL_FIELDS[field_name])
+            updates[field_name] = _literal(
+                field_name, value, _LITERAL_FIELDS[field_name]
+            )
         elif field_name in _STRING_TUPLE_FIELDS:
             updates[field_name] = _string_tuple(field_name, value)
         elif field_name in _OPTIONAL_PATH_FIELDS:
             updates[field_name] = _optional_path(field_name, value)
         elif field_name in _MAPPING_FIELDS:
-            updates[field_name] = _mapping_overlay(field_name, value, getattr(base, field_name))
+            updates[field_name] = _mapping_overlay(
+                field_name, value, getattr(base, field_name)
+            )
         elif field_name == "dictionary_chain":
             updates[field_name] = _dictionary_chain(value, ChainEntry)
         elif field_name == "frequency_chain":
@@ -396,10 +475,14 @@ def map_config_json(
 
     payload = decode_message(raw_snapshot, expected_type="config.snapshot")
     if not set(payload).issubset({"settings", "androidTtsEnabled"}):
-        raise BridgeProtocolError("invalid_config_snapshot", "Config snapshot fields are invalid")
+        raise BridgeProtocolError(
+            "invalid_config_snapshot", "Config snapshot fields are invalid"
+        )
     settings = payload.get("settings", {})
     if not isinstance(settings, dict):
-        raise BridgeProtocolError("invalid_config_snapshot", "settings must be a JSON object")
+        raise BridgeProtocolError(
+            "invalid_config_snapshot", "settings must be a JSON object"
+        )
     tts = payload.get("androidTtsEnabled")
     if "androidTtsEnabled" in payload and type(tts) is not bool:
         raise _invalid("androidTtsEnabled", "expected a boolean")
@@ -418,4 +501,6 @@ def engine_config_from_json(
 ) -> object:
     """Convenience entry point for callers which do not need Android options."""
 
-    return map_config_json(raw_snapshot, files_dir, cache_dir, native_library_dir).engine_config
+    return map_config_json(
+        raw_snapshot, files_dir, cache_dir, native_library_dir
+    ).engine_config

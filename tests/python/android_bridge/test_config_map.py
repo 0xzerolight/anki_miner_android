@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import fields, replace
 from pathlib import Path
 
@@ -16,7 +17,17 @@ from android_bridge.protocol import BridgeProtocolError, encode_message
 
 
 def _paths(tmp_path: Path) -> AndroidPaths:
-    return AndroidPaths(tmp_path / "files", tmp_path / "cache", tmp_path / "native")
+    return AndroidPaths(
+        Path(os.environ["ANKI_MINER_HOME"]), tmp_path / "cache", tmp_path / "native"
+    )
+
+
+@pytest.fixture(autouse=True)
+def _bootstrap_mapper(initialized_bridge_home: Path) -> None:
+    assert (
+        Path(os.environ["ANKI_MINER_HOME"]).resolve()
+        == initialized_bridge_home.resolve()
+    )
 
 
 def _path_overrides(paths: AndroidPaths) -> dict[str, Path]:
@@ -41,7 +52,9 @@ def _path_overrides(paths: AndroidPaths) -> dict[str, Path]:
     }
 
 
-def test_empty_snapshot_preserves_all_97_desktop_defaults_except_targeted_android_overrides(tmp_path: Path) -> None:
+def test_empty_snapshot_preserves_all_97_desktop_defaults_except_targeted_android_overrides(
+    tmp_path: Path,
+) -> None:
     from anki_miner.config import AnkiMinerConfig
 
     paths = _paths(tmp_path)
@@ -58,9 +71,10 @@ def test_empty_snapshot_preserves_all_97_desktop_defaults_except_targeted_androi
 
     desktop_fields = fields(AnkiMinerConfig)
     assert len(desktop_fields) == 97
-    assert {field.name: getattr(mapped.engine_config, field.name) for field in desktop_fields} == {
-        field.name: getattr(expected, field.name) for field in desktop_fields
-    }
+    assert {
+        field.name: getattr(mapped.engine_config, field.name)
+        for field in desktop_fields
+    } == {field.name: getattr(expected, field.name) for field in desktop_fields}
     assert mapped.android_tts_enabled is False
 
 
@@ -90,7 +104,9 @@ def test_typed_fields_and_entries_are_reconstructed(tmp_path: Path) -> None:
         ChainEntry(kind="jisho", dict_id=None, enabled=False),
     )
     assert config.frequency_chain == (FreqEntry(source_id="bccwj"),)
-    assert config.expression_audio_chain == (AudioSourceEntry(kind="pack", pack_id="my-pack"),)
+    assert config.expression_audio_chain == (
+        AudioSourceEntry(kind="pack", pack_id="my-pack"),
+    )
     assert config.anki_fields["expression_audio"] == "WordAudio"
     assert config.anki_fields["word"] == "Expression"
 
@@ -105,7 +121,9 @@ def test_network_expression_audio_kinds_are_rejected(kind: str, tmp_path: Path) 
     assert error.value.code == "unsupported_audio_source"
 
 
-def test_legacy_android_tts_flag_is_ephemeral_and_cannot_compose_fetchers(tmp_path: Path) -> None:
+def test_legacy_android_tts_flag_is_ephemeral_and_cannot_compose_fetchers(
+    tmp_path: Path,
+) -> None:
     mapped = map_config_settings({"reading_tts_enabled": True}, _paths(tmp_path))
 
     assert mapped.android_tts_enabled is True
@@ -131,6 +149,7 @@ def test_conflicting_tts_aliases_are_rejected(tmp_path: Path) -> None:
         ({"audio_bitrate": True}, "invalid_config_field"),
         ({"jisho_delay": 0.1}, "invalid_config_field"),
         ({"blacklist_path": "relative.txt"}, "invalid_config_field"),
+        ({"blacklist_path": ""}, "invalid_config_field"),
         ({"anki_fields": {"invented": "Field"}}, "invalid_config_field"),
         ({"frequency_chain": [{"source_id": "../escape"}]}, "invalid_config_field"),
     ],
@@ -164,8 +183,35 @@ def test_public_json_entry_point_requires_versioned_snapshot(tmp_path: Path) -> 
 
 
 def test_checked_in_schema_allowlist_matches_mapper() -> None:
-    schema_path = Path(__file__).resolve().parents[3] / "app/src/main/python/android_bridge/schemas/config-snapshot.schema.json"
+    schema_path = (
+        Path(__file__).resolve().parents[3]
+        / "app/src/main/python/android_bridge/schemas/config-snapshot.schema.json"
+    )
     schema = json.loads(schema_path.read_text(encoding="utf-8"))
-    schema_fields = set(schema["properties"]["settings"]["properties"])
+    schema_fields = set(schema["$defs"]["settings"]["properties"])
 
     assert schema_fields == set(exposed_config_fields()) | {"reading_tts_enabled"}
+
+
+def test_checked_in_schema_has_exact_mapping_keys_chain_shapes_and_absolute_paths() -> (
+    None
+):
+    from anki_miner.config import AnkiMinerConfig
+
+    schema_path = (
+        Path(__file__).resolve().parents[3]
+        / "app/src/main/python/android_bridge/schemas/config-snapshot.schema.json"
+    )
+    schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    definitions = schema["$defs"]
+    defaults = AnkiMinerConfig()
+
+    assert definitions["ankiFields"]["additionalProperties"] is False
+    assert set(definitions["ankiFields"]["properties"]) == set(defaults.anki_fields)
+    assert set(definitions["cardTypeMarkerFields"]["properties"]) == set(
+        defaults.card_type_marker_fields
+    )
+    assert definitions["indexedDictionary"]["required"] == ["kind", "dict_id"]
+    assert definitions["frequencySource"]["required"] == ["source_id"]
+    assert definitions["audioPack"]["properties"]["kind"] == {"const": "pack"}
+    assert definitions["absolutePathOrNull"]["oneOf"][1]["pattern"] == "^/"

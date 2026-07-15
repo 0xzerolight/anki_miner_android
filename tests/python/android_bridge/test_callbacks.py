@@ -68,7 +68,10 @@ def test_progress_and_presenter_methods_emit_versioned_events() -> None:
         "presenter.event",
         "presenter.event",
     ]
-    assert callbacks.calls[-1][1]["payload"]["result"] == {"cardsCreated": 2, "errors": []}
+    assert callbacks.calls[-1][1]["payload"]["result"] == {
+        "cardsCreated": 2,
+        "errors": [],
+    }
     assert all(call[1]["payload"]["runId"] == handle.run_id for call in callbacks.calls)
 
 

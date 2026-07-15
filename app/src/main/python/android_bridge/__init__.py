@@ -5,6 +5,7 @@ time.  ``android_bridge.bootstrap.initialize`` must establish the engine home
 before any engine module is loaded.
 """
 
-from .protocol import BRIDGE_SCHEMA_VERSION, BridgeProtocolError
+from .boundary import dispatch
+from .protocol import BRIDGE_SCHEMA_VERSION
 
-__all__ = ["BRIDGE_SCHEMA_VERSION", "BridgeProtocolError"]
+__all__ = ["BRIDGE_SCHEMA_VERSION", "dispatch"]

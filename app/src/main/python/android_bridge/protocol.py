@@ -7,6 +7,7 @@ import json
 import math
 import re
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -28,6 +29,14 @@ class BridgeProtocolError(ValueError):
         self.code = code
 
 
+@dataclass(frozen=True)
+class DecodedMessage:
+    """A fully validated bridge envelope."""
+
+    message_type: str
+    payload: dict[str, Any]
+
+
 def _camel_case(name: str) -> str:
     head, *tail = name.split("_")
     return head + "".join(part[:1].upper() + part[1:] for part in tail)
@@ -45,7 +54,9 @@ def to_json_value(value: Any, *, _seen: set[int] | None = None) -> Any:
         return value
     if isinstance(value, float):
         if not math.isfinite(value):
-            raise BridgeProtocolError("non_finite_number", "JSON messages cannot contain NaN or infinity")
+            raise BridgeProtocolError(
+                "non_finite_number", "JSON messages cannot contain NaN or infinity"
+            )
         return value
     if isinstance(value, Path):
         return str(value)
@@ -55,13 +66,17 @@ def to_json_value(value: Any, *, _seen: set[int] | None = None) -> Any:
     seen = _seen if _seen is not None else set()
     identity = id(value)
     if identity in seen:
-        raise BridgeProtocolError("recursive_value", "Recursive values cannot cross the bridge")
+        raise BridgeProtocolError(
+            "recursive_value", "Recursive values cannot cross the bridge"
+        )
 
     if dataclasses.is_dataclass(value) and not isinstance(value, type):
         seen.add(identity)
         try:
             return {
-                _camel_case(field.name): to_json_value(getattr(value, field.name), _seen=seen)
+                _camel_case(field.name): to_json_value(
+                    getattr(value, field.name), _seen=seen
+                )
                 for field in dataclasses.fields(value)
             }
         finally:
@@ -73,7 +88,9 @@ def to_json_value(value: Any, *, _seen: set[int] | None = None) -> Any:
             converted: dict[str, Any] = {}
             for key, item in value.items():
                 if not isinstance(key, str):
-                    raise BridgeProtocolError("non_string_key", "JSON object keys must be strings")
+                    raise BridgeProtocolError(
+                        "non_string_key", "JSON object keys must be strings"
+                    )
                 converted[key] = to_json_value(item, _seen=seen)
             return converted
         finally:
@@ -86,16 +103,24 @@ def to_json_value(value: Any, *, _seen: set[int] | None = None) -> Any:
         finally:
             seen.remove(identity)
 
-    raise BridgeProtocolError("unsupported_value", f"Unsupported bridge value: {type(value).__name__}")
+    raise BridgeProtocolError(
+        "unsupported_value", f"Unsupported bridge value: {type(value).__name__}"
+    )
 
 
 def encode_message(message_type: str, payload: Mapping[str, Any]) -> str:
     """Encode a canonical v1 bridge envelope."""
 
-    if not isinstance(message_type, str) or not _MESSAGE_TYPE_RE.fullmatch(message_type):
-        raise BridgeProtocolError("invalid_message_type", f"Invalid message type: {message_type!r}")
+    if not isinstance(message_type, str) or not _MESSAGE_TYPE_RE.fullmatch(
+        message_type
+    ):
+        raise BridgeProtocolError(
+            "invalid_message_type", f"Invalid message type: {message_type!r}"
+        )
     if not isinstance(payload, Mapping):
-        raise BridgeProtocolError("invalid_payload", "Bridge payload must be a JSON object")
+        raise BridgeProtocolError(
+            "invalid_payload", "Bridge payload must be a JSON object"
+        )
 
     envelope = {
         "schemaVersion": BRIDGE_SCHEMA_VERSION,
@@ -103,26 +128,61 @@ def encode_message(message_type: str, payload: Mapping[str, Any]) -> str:
         "payload": to_json_value(payload),
     }
     try:
-        return json.dumps(envelope, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
+        return json.dumps(
+            envelope, ensure_ascii=False, separators=(",", ":"), allow_nan=False
+        )
     except (TypeError, ValueError) as exc:
         raise BridgeProtocolError("invalid_payload", str(exc)) from exc
 
 
-def decode_message(raw: str, *, expected_type: str | None = None) -> dict[str, Any]:
-    """Decode and validate a bridge envelope, returning its payload."""
+def _reject_non_finite(literal: str) -> None:
+    raise BridgeProtocolError(
+        "non_finite_number", f"Non-finite JSON number is forbidden: {literal}"
+    )
+
+
+def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise BridgeProtocolError(
+                "duplicate_json_key", f"Duplicate JSON object key: {key}"
+            )
+        result[key] = value
+    return result
+
+
+def decode_envelope(raw: str, *, expected_type: str | None = None) -> DecodedMessage:
+    """Decode a strict RFC JSON bridge envelope.
+
+    Python otherwise accepts JavaScript ``NaN``/``Infinity`` tokens and keeps
+    the last duplicate object key. Neither behavior is allowed here.
+    """
 
     if not isinstance(raw, str):
-        raise BridgeProtocolError("invalid_json", "Bridge message must be a JSON string")
+        raise BridgeProtocolError(
+            "invalid_json", "Bridge message must be a JSON string"
+        )
     try:
-        envelope = json.loads(raw)
+        envelope = json.loads(
+            raw,
+            parse_constant=_reject_non_finite,
+            object_pairs_hook=_reject_duplicate_keys,
+        )
+    except BridgeProtocolError:
+        raise
     except (json.JSONDecodeError, RecursionError) as exc:
         raise BridgeProtocolError("invalid_json", "Malformed bridge JSON") from exc
 
     if not isinstance(envelope, dict):
-        raise BridgeProtocolError("invalid_envelope", "Bridge envelope must be a JSON object")
+        raise BridgeProtocolError(
+            "invalid_envelope", "Bridge envelope must be a JSON object"
+        )
     expected_keys = {"schemaVersion", "type", "payload"}
     if set(envelope) != expected_keys:
-        raise BridgeProtocolError("invalid_envelope", "Bridge envelope has missing or unknown fields")
+        raise BridgeProtocolError(
+            "invalid_envelope", "Bridge envelope has missing or unknown fields"
+        )
 
     version = envelope["schemaVersion"]
     if type(version) is not int or version != BRIDGE_SCHEMA_VERSION:
@@ -132,8 +192,12 @@ def decode_message(raw: str, *, expected_type: str | None = None) -> dict[str, A
         )
 
     message_type = envelope["type"]
-    if not isinstance(message_type, str) or not _MESSAGE_TYPE_RE.fullmatch(message_type):
-        raise BridgeProtocolError("invalid_message_type", "Bridge message type is invalid")
+    if not isinstance(message_type, str) or not _MESSAGE_TYPE_RE.fullmatch(
+        message_type
+    ):
+        raise BridgeProtocolError(
+            "invalid_message_type", "Bridge message type is invalid"
+        )
     if expected_type is not None and message_type != expected_type:
         raise BridgeProtocolError(
             "unexpected_message_type",
@@ -142,11 +206,21 @@ def decode_message(raw: str, *, expected_type: str | None = None) -> dict[str, A
 
     payload = envelope["payload"]
     if not isinstance(payload, dict):
-        raise BridgeProtocolError("invalid_payload", "Bridge payload must be a JSON object")
-    return payload
+        raise BridgeProtocolError(
+            "invalid_payload", "Bridge payload must be a JSON object"
+        )
+    return DecodedMessage(message_type=message_type, payload=payload)
 
 
-def encode_protocol_error(error: BridgeProtocolError, *, request_type: str | None = None) -> str:
+def decode_message(raw: str, *, expected_type: str | None = None) -> dict[str, Any]:
+    """Decode and validate a bridge envelope, returning its payload."""
+
+    return decode_envelope(raw, expected_type=expected_type).payload
+
+
+def encode_protocol_error(
+    error: BridgeProtocolError, *, request_type: str | None = None
+) -> str:
     """Encode a protocol failure without exposing Python exception details."""
 
     payload: dict[str, Any] = {"code": error.code, "message": str(error)}
