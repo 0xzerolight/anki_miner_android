@@ -1,0 +1,12 @@
+--- a/setup.py
++++ b/setup.py
+@@ -10,7 +10,11 @@ sys.path.append(str(pathlib.Path(__file__).parent))
+ from fugashi_util import check_libmecab
+ 
+ # get the build parameters
+-output, dll_files = check_libmecab()
++if os.environ.get("CHAQUOPY_ABI"):
++    # Chaquopy injects the staged headers and libraries through CFLAGS/LDFLAGS.
++    output, dll_files = (["", "", "mecab", "", ""], [])
++else:
++    output, dll_files = check_libmecab()

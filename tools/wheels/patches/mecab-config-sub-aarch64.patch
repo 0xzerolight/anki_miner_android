@@ -1,0 +1,12 @@
+--- a/config.sub
++++ b/config.sub
+@@ -248,3 +248,4 @@ case $basic_machine in
+ 	1750a | 580 \
+ 	| a29k \
++	| aarch64 \
+ 	| alpha | alphaev[4-8] | alphaev56 | alphaev6[78] | alphapca5[67] \
+@@ -352,3 +353,4 @@ case $basic_machine in
+ 	580-* \
+ 	| a29k-* \
++	| aarch64-* \
+ 	| alpha-* | alphaev[4-8]-* | alphaev56-* | alphaev6[78]-* \

@@ -40,6 +40,9 @@ class Inspection:
     elf_count: int = 0
     found_abis: set[str] = field(default_factory=set)
     app_imy_count: int = 0
+    requirement_imys: set[str] = field(default_factory=set)
+    requirement_owners: dict[str, str] = field(default_factory=dict)
+    s1a_payloads: set[str] = field(default_factory=set)
 
 
 def safe_entry_name(name: str, archive_name: str) -> PurePosixPath:
@@ -183,6 +186,31 @@ def inspect_zip(
             basename = entry_path.name
             if basename == "app.imy":
                 inspection.app_imy_count += 1
+            if basename.startswith("requirements-") and basename.endswith(".imy"):
+                inspection.requirement_imys.add(basename)
+            requirement_owner = next(
+                (
+                    component
+                    for component in logical_name.replace("!", "/").split("/")
+                    if component.startswith("requirements-") and component.endswith(".imy")
+                ),
+                None,
+            )
+            if requirement_owner:
+                payload_name = entry_path.as_posix()
+                previous_owner = inspection.requirement_owners.setdefault(
+                    payload_name,
+                    requirement_owner,
+                )
+                if previous_owner != requirement_owner:
+                    raise ArtifactError(
+                        f"{entry_name}: requirement payload is duplicated in "
+                        f"{previous_owner} and {requirement_owner}",
+                    )
+                if basename in {"libmecab.so.2", "libc++_shared.so"}:
+                    inspection.s1a_payloads.add(basename)
+                if "fugashi" in entry_path.parts and basename.endswith(".so"):
+                    inspection.s1a_payloads.add("fugashi-extension")
             if basename in EXECUTABLE_NATIVE_NAMES:
                 parts = entry_path.parts
                 direct_apk = len(parts) == 3 and parts[0] == "lib"
@@ -229,6 +257,21 @@ def inspect_artifact(args: argparse.Namespace) -> Inspection:
         )
     if args.require_app_imy and inspection.app_imy_count == 0:
         raise ArtifactError(f"{args.artifact}: Chaquopy app.imy was not recursively inspected")
+    if args.require_s1a:
+        expected_imys = {"requirements-common.imy"} | {
+            f"requirements-{abi}.imy" for abi in inspection.allowed_abis
+        }
+        if not expected_imys.issubset(inspection.requirement_imys):
+            raise ArtifactError(
+                f"{args.artifact}: missing S1a requirement IMYs "
+                f"{sorted(expected_imys - inspection.requirement_imys)}",
+            )
+        expected_payloads = {"fugashi-extension", "libmecab.so.2", "libc++_shared.so"}
+        if inspection.s1a_payloads != expected_payloads:
+            raise ArtifactError(
+                f"{args.artifact}: S1a payload set is {sorted(inspection.s1a_payloads)}, "
+                f"expected {sorted(expected_payloads)}",
+            )
     return inspection
 
 
@@ -243,6 +286,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--forbid-entry", action="append", default=[])
     parser.add_argument("--require-app-imy", action="store_true")
+    parser.add_argument("--require-s1a", action="store_true")
     return parser.parse_args()
 
 

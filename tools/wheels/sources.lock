@@ -1,0 +1,35 @@
+{
+  "schema": 1,
+  "sources": {
+    "chaquopy": {
+      "filename": "chaquopy-e01057c72fdd737f202bd1be1de85af51e06cad0.tar.gz",
+      "sha256": "b703cc3f4b4795f0ffde3a36dae5bf5401b1f733d3b71bfcc25c7fb2c4f39b56",
+      "url": "https://github.com/chaquo/chaquopy/archive/e01057c72fdd737f202bd1be1de85af51e06cad0.tar.gz"
+    },
+    "fugashi": {
+      "filename": "fugashi-1.5.2.tar.gz",
+      "sha256": "a7959eab95bb37a6a934fc2314d3ff888664d11b88d0e1c596260a5785d5880e",
+      "url": "https://files.pythonhosted.org/packages/source/f/fugashi/fugashi-1.5.2.tar.gz"
+    },
+    "mecab": {
+      "filename": "mecab-61b90ba6e669dc2d7d533d4a80d206f3b31d52b1.tar.gz",
+      "sha256": "7ad44f987ae0b7fd345c72a4b67e14dbe0f4bd1669d247a8aaeb0f15218a3fd1",
+      "url": "https://github.com/taku910/mecab/archive/61b90ba6e669dc2d7d533d4a80d206f3b31d52b1.tar.gz"
+    },
+    "patchelf": {
+      "filename": "patchelf-0.18.0-x86_64.tar.gz",
+      "sha256": "ce84f2447fb7a8679e58bc54a20dc2b01b37b5802e12c57eece772a6f14bf3f0",
+      "url": "https://github.com/NixOS/patchelf/releases/download/0.18.0/patchelf-0.18.0-x86_64.tar.gz"
+    },
+    "python-arm64-v8a": {
+      "filename": "target-3.13.9-0-arm64-v8a.zip",
+      "sha256": "c19f39fecada0b3932ab7a61b0f214c1212068cbbae0dc22c2afa38a4f354b8e",
+      "url": "https://repo.maven.apache.org/maven2/com/chaquo/python/target/3.13.9-0/target-3.13.9-0-arm64-v8a.zip"
+    },
+    "python-x86_64": {
+      "filename": "target-3.13.9-0-x86_64.zip",
+      "sha256": "f9f2e36b08e60e92bcdd201eea4aff5ba13681b7b425ce24e0a140eca626674d",
+      "url": "https://repo.maven.apache.org/maven2/com/chaquo/python/target/3.13.9-0/target-3.13.9-0-x86_64.zip"
+    }
+  }
+}

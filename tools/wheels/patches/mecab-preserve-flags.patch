@@ -1,0 +1,10 @@
+--- a/configure
++++ b/configure
+@@ -17990,5 +17990,5 @@ fi
+ 
+ if test -n "$GCC"; then
+-   CFLAGS="-O3 -Wall "
+-   CXXFLAGS="-O3 -Wall "
++   CFLAGS="$CFLAGS -O3 -Wall"
++   CXXFLAGS="$CXXFLAGS -O3 -Wall"
+ fi
