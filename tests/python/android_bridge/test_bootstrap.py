@@ -64,6 +64,24 @@ except Exception as exc:
     assert "engine_imported_before_bootstrap" in result.stdout
 
 
+def test_initialize_rejects_relative_home_without_mutating_environment() -> None:
+    result = _run(
+        """
+import os
+from android_bridge.bootstrap import initialize
+try:
+    initialize("relative/files")
+except Exception as exc:
+    print(getattr(exc, "code", ""), os.environ.get("ANKI_MINER_HOME"))
+    raise
+""",
+        Path("/unused"),
+    )
+
+    assert result.returncode != 0
+    assert "invalid_files_dir None" in result.stdout
+
+
 def test_bridge_modules_have_no_top_level_engine_imports() -> None:
     import ast
 
