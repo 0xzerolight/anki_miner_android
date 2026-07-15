@@ -36,22 +36,20 @@ done
 
 builder_archive="$(awk '$1 == "builder" { print $3 }' "$SCRIPT_DIR/sources.lock")"
 builder_dir_name="ffmpeg-android-maker-69bc3f2968e5335fff43123a2bef6c54428144ce"
-case "$BUILD_ROOT" in
-    "$ANKI_MINER_ANDROID_TOOLCHAIN_ROOT"/build/*) ;;
-    *)
-        echo "Refusing unsafe ffmpeg build root: $BUILD_ROOT" >&2
-        exit 2
-        ;;
-esac
-rm -rf "$BUILD_ROOT"
-mkdir -p "$BUILD_ROOT"
+BUILD_ROOT=$(python3.13 "$SCRIPT_DIR/prepare-build-root.py" \
+    --allowed-parent "$ANKI_MINER_ANDROID_TOOLCHAIN_ROOT/build" \
+    --build-root "$BUILD_ROOT")
 tar --extract --file "$CACHE_DIR/$builder_archive" --directory "$BUILD_ROOT" --no-same-owner
 BUILDER_ROOT="$BUILD_ROOT/$builder_dir_name"
 
 cp "$SCRIPT_DIR/overrides/ffmpeg-android-maker.sh" "$BUILDER_ROOT/ffmpeg-android-maker.sh"
 cp "$SCRIPT_DIR/overrides/common-functions.sh" "$BUILDER_ROOT/scripts/common-functions.sh"
 cp "$SCRIPT_DIR/overrides/ffmpeg-build.sh" "$BUILDER_ROOT/scripts/ffmpeg/build.sh"
-chmod +x "$BUILDER_ROOT/ffmpeg-android-maker.sh"
+cp "$SCRIPT_DIR/assert-ffmpeg-config.py" "$BUILDER_ROOT/scripts/assert-ffmpeg-config.py"
+cp "$SCRIPT_DIR/verify-elf-dynamic.sh" "$BUILDER_ROOT/scripts/verify-elf-dynamic.sh"
+chmod +x \
+    "$BUILDER_ROOT/ffmpeg-android-maker.sh" \
+    "$BUILDER_ROOT/scripts/verify-elf-dynamic.sh"
 
 export ANDROID_SDK_HOME="$ANDROID_HOME"
 export ANDROID_NDK_HOME="$NDK_ROOT"
@@ -73,23 +71,14 @@ for abi in arm64-v8a x86_64; do
     for executable in "$output_dir/libffmpeg.so" "$output_dir/libffprobe.so"; do
         python3.13 "$REPO_ROOT/scripts/check_native_elf.py" \
             --elf "$executable" --allow-abi "$abi" --require-pie-cli
-        while read -r dependency; do
-            case "$dependency" in
-                libc.so|libdl.so|liblog.so|libm.so|libz.so) ;;
-                *)
-                    echo "$executable has non-system dependency $dependency" >&2
-                    exit 1
-                    ;;
-            esac
-        done < <("$readelf" --dynamic "$executable" \
-            | sed -n 's/.*Shared library: \[\([^]]*\)\].*/\1/p')
+        "$SCRIPT_DIR/verify-elf-dynamic.sh" "$readelf" "$executable"
     done
-    if [[ "$INSTALL_OUTPUT" == true ]]; then
-        install_dir="$REPO_ROOT/app/src/main/jniLibs/$abi"
-        mkdir -p "$install_dir"
-        install -m 0755 "$output_dir/libffmpeg.so" "$install_dir/libffmpeg.so"
-        install -m 0755 "$output_dir/libffprobe.so" "$install_dir/libffprobe.so"
-    fi
 done
+
+if [[ "$INSTALL_OUTPUT" == true ]]; then
+    "$SCRIPT_DIR/install-outputs.sh" \
+        "$BUILDER_ROOT/output/bin" \
+        "$REPO_ROOT/app/src/main/jniLibs"
+fi
 
 echo "Standalone ffmpeg/ffprobe artifacts passed ELF and 16 KiB alignment checks"

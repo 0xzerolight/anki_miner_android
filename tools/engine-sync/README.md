@@ -24,14 +24,13 @@ Never edit generated files directly. Change a reviewed file under `overrides/`
 or update the pinned composition and rerun the sync. Unallowlisted, missing, or
 unused overlays fail the sync so a misspelled divergence cannot silently ship.
 
-The current `media_extractor.py` overlay is the pinned desktop file with only
-the deferred ASR `wav_to_float32`/NumPy helper removed and its direct doc
-reference adjusted. A reconstruction test pins that exact difference, and
-`overlay_base_blobs` binds the whole-file shadow to its upstream Git blob. An
-`engine.lock` bump which changes that blob fails before synchronization until
-the override is rebased and reviewed. The remaining media implementation is
-unchanged; SAF file-descriptor handling is deliberately deferred to the S3
-spike.
+The current `media_extractor.py` overlay is the pinned desktop file with the
+deferred ASR `wav_to_float32`/NumPy helper removed and Android SAF child-process
+inheritance added at the two native spawn seams. `audio_track_detector.py` uses
+the same per-child descriptor helper for ffprobe. Reconstruction tests pin
+those exact differences, and `overlay_base_blobs` binds each whole-file shadow
+to its upstream Git blob. An `engine.lock` bump which changes a bound blob fails
+before synchronization until the override is rebased and reviewed.
 
 ## Golden derivation
 

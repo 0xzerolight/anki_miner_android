@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import os
 import subprocess
 import tempfile
@@ -23,6 +24,20 @@ def _run_verify(lock: Path, cache: Path) -> subprocess.CompletedProcess[str]:
         text=True,
         check=False,
     )
+
+
+def _load_python_tool(filename: str):
+    path = FFMPEG_ROOT / filename
+    spec = importlib.util.spec_from_file_location(filename.replace("-", "_"), path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _write_executable(path: Path, content: str) -> None:
+    path.write_text(content, encoding="utf-8")
+    path.chmod(0o755)
 
 
 class FfmpegToolingTests(unittest.TestCase):
@@ -96,10 +111,260 @@ class FfmpegToolingTests(unittest.TestCase):
         self.assertIn("--enable-static", configure)
         self.assertIn("--disable-shared", configure)
         self.assertIn("--disable-network", configure)
+        self.assertIn("assert-ffmpeg-config.py", configure)
         self.assertGreaterEqual(configure.count("max-page-size=16384"), 2)
         self.assertIn("libffmpeg.so", maker)
         self.assertIn("libffprobe.so", maker)
+        self.assertIn("verify-elf-dynamic.sh", maker)
+        self.assertIn("prepare-build-root.py", build)
+        self.assertIn("install-outputs.sh", build)
+        self.assertLess(
+            build.index('for abi in arm64-v8a x86_64; do'),
+            build.index('if [[ "$INSTALL_OUTPUT" == true ]]'),
+        )
         self.assertNotIn("curl", common)
+
+    def test_build_root_guard_rejects_escape_and_symlink_without_deleting(self) -> None:
+        guard = FFMPEG_ROOT / "prepare-build-root.py"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            allowed = root / "toolchain" / "build"
+            outside = root / "outside"
+            outside.mkdir()
+            sentinel = outside / "keep"
+            sentinel.write_text("owned", encoding="utf-8")
+            allowed.mkdir(parents=True)
+
+            escaped = subprocess.run(
+                [
+                    str(guard),
+                    "--allowed-parent",
+                    str(allowed),
+                    "--build-root",
+                    str(allowed / ".." / ".." / "outside"),
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(2, escaped.returncode)
+            self.assertTrue(sentinel.is_file())
+
+            parent_itself = subprocess.run(
+                [
+                    str(guard),
+                    "--allowed-parent",
+                    str(allowed),
+                    "--build-root",
+                    str(allowed),
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(2, parent_itself.returncode)
+            self.assertTrue(allowed.is_dir())
+
+            link = allowed / "linked"
+            link.symlink_to(outside, target_is_directory=True)
+            symlinked = subprocess.run(
+                [
+                    str(guard),
+                    "--allowed-parent",
+                    str(allowed),
+                    "--build-root",
+                    str(link / "ffmpeg"),
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(2, symlinked.returncode)
+            self.assertIn("symlink", symlinked.stderr)
+            self.assertTrue(sentinel.is_file())
+
+    def test_build_root_guard_only_recreates_safe_child(self) -> None:
+        guard = FFMPEG_ROOT / "prepare-build-root.py"
+        with tempfile.TemporaryDirectory() as directory:
+            allowed = Path(directory) / "build"
+            target = allowed / "ffmpeg"
+            target.mkdir(parents=True)
+            (target / "stale").write_text("old", encoding="utf-8")
+
+            completed = subprocess.run(
+                [
+                    str(guard),
+                    "--allowed-parent",
+                    str(allowed),
+                    "--build-root",
+                    str(target),
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(0, completed.returncode, completed.stderr)
+            self.assertTrue(target.is_dir())
+            self.assertEqual([], list(target.iterdir()))
+
+    def test_generated_configuration_contract_covers_s3_and_policy(self) -> None:
+        config_tool = _load_python_tool("assert-ffmpeg-config.py")
+        enabled = config_tool.REQUIRED_ENABLED
+        disabled = config_tool.REQUIRED_DISABLED
+        self.assertTrue(
+            {
+                "CONFIG_MATROSKA_DEMUXER",
+                "CONFIG_MJPEG_ENCODER",
+                "CONFIG_IMAGE2_MUXER",
+                "CONFIG_LIBMP3LAME_ENCODER",
+                "CONFIG_LIBOPUS_ENCODER",
+                "CONFIG_FILE_PROTOCOL",
+                "CONFIG_PIPE_PROTOCOL",
+            }.issubset(enabled)
+        )
+        self.assertTrue(
+            {
+                "CONFIG_NETWORK",
+                "CONFIG_GPL",
+                "CONFIG_GPLV3",
+                "CONFIG_NONFREE",
+                "CONFIG_HTTP_PROTOCOL",
+                "CONFIG_TCP_PROTOCOL",
+            }.issubset(disabled)
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            config = Path(directory) / "config.h"
+            lines = [*(f"#define {key} 1" for key in enabled)]
+            lines.extend(f"#define {key} 0" for key in disabled)
+            config.write_text("\n".join(lines) + "\n", encoding="utf-8")
+            config_tool.assert_configuration(config)
+
+            config.write_text(
+                config.read_text(encoding="utf-8").replace(
+                    "#define CONFIG_MATROSKA_DEMUXER 1",
+                    "#define CONFIG_MATROSKA_DEMUXER 0",
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(
+                config_tool.ConfigurationError,
+                "CONFIG_MATROSKA_DEMUXER=1 required",
+            ):
+                config_tool.assert_configuration(config)
+
+    def test_dynamic_checker_fails_closed_on_readelf_error_textrel_and_dependency(self) -> None:
+        checker = FFMPEG_ROOT / "verify-elf-dynamic.sh"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            elf = root / "libffmpeg.so"
+            elf.write_bytes(b"ELF fixture")
+            fake = root / "llvm-readelf"
+
+            cases = (
+                ("#!/bin/sh\necho readelf-broke >&2\nexit 9\n", "llvm-readelf failed"),
+                (
+                    "#!/bin/sh\necho ' 0x0 (TEXTREL) 0x0'\n"
+                    "echo ' 0x1 (NEEDED) Shared library: [libc.so]'\n",
+                    "text relocations",
+                ),
+                (
+                    "#!/bin/sh\necho ' 0x1 (NEEDED) Shared library: [libevil.so]'\n",
+                    "non-system dependency",
+                ),
+            )
+            for body, message in cases:
+                with self.subTest(message=message):
+                    _write_executable(fake, body)
+                    completed = subprocess.run(
+                        [str(checker), str(fake), str(elf)],
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                    )
+                    self.assertNotEqual(0, completed.returncode)
+                    self.assertIn(message, completed.stderr)
+
+            _write_executable(
+                fake,
+                "#!/bin/sh\n"
+                "echo ' 0x1 (NEEDED) Shared library: [libc.so]'\n"
+                "echo ' 0x1 (NEEDED) Shared library: [libm.so]'\n",
+            )
+            accepted = subprocess.run(
+                [str(checker), str(fake), str(elf)],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(0, accepted.returncode, accepted.stderr)
+
+    def test_install_validates_all_four_before_transactional_directory_swap(self) -> None:
+        installer = FFMPEG_ROOT / "install-outputs.sh"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "output"
+            destination = root / "jniLibs"
+            (destination / "arm64-v8a").mkdir(parents=True)
+            preserved = destination / "arm64-v8a" / "libmecab.so"
+            preserved.write_bytes(b"mecab")
+            for abi in ("arm64-v8a", "x86_64"):
+                (source / abi).mkdir(parents=True)
+                for name in ("libffmpeg.so", "libffprobe.so"):
+                    artifact = source / abi / name
+                    artifact.write_bytes(f"{abi}:{name}".encode())
+                    artifact.chmod(0o755)
+
+            missing = source / "x86_64" / "libffprobe.so"
+            missing.unlink()
+            before = {
+                path.relative_to(destination): path.read_bytes()
+                for path in destination.rglob("*")
+                if path.is_file()
+            }
+            rejected = subprocess.run(
+                [str(installer), str(source), str(destination)],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            after = {
+                path.relative_to(destination): path.read_bytes()
+                for path in destination.rglob("*")
+                if path.is_file()
+            }
+            self.assertNotEqual(0, rejected.returncode)
+            self.assertEqual(before, after)
+
+            missing.write_bytes(b"x86_64:libffprobe.so")
+            missing.chmod(0o755)
+            abi_directory = destination / "x86_64"
+            abi_directory.symlink_to(root / "outside-abi", target_is_directory=True)
+            symlinked = subprocess.run(
+                [str(installer), str(source), str(destination)],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertNotEqual(0, symlinked.returncode)
+            self.assertIn("must not be a symlink", symlinked.stderr)
+            abi_directory.unlink()
+
+            accepted = subprocess.run(
+                [str(installer), str(source), str(destination)],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(0, accepted.returncode, accepted.stderr)
+            self.assertEqual(b"mecab", preserved.read_bytes())
+            for abi in ("arm64-v8a", "x86_64"):
+                for name in ("libffmpeg.so", "libffprobe.so"):
+                    self.assertEqual(
+                        f"{abi}:{name}".encode(),
+                        (destination / abi / name).read_bytes(),
+                    )
 
 
 if __name__ == "__main__":

@@ -6,7 +6,7 @@ case $ANDROID_ABI in
     ;;
   x86_64)
     # Emulator correctness matters more than SIMD. Avoid an undeclared host
-    # nasm/yasm dependency in the reproducible builder.
+    # nasm/yasm dependency in the controlled builder.
     EXTRA_BUILD_CONFIGURATION_FLAGS="$EXTRA_BUILD_CONFIGURATION_FLAGS --disable-x86asm"
     ;;
 esac
@@ -57,6 +57,8 @@ EXTRA_LDFLAGS="-Wl,-z,max-page-size=16384 $DEP_LD_FLAGS"
   --pkg-config-flags=--static \
   "${EXTRA_CONFIGURATION[@]}" \
   "${ADDITIONAL_COMPONENTS[@]}" || exit 1
+
+python3.13 "${SCRIPTS_DIR}/assert-ffmpeg-config.py" config.h || exit 1
 
 "${MAKE_EXECUTABLE}" clean
 "${MAKE_EXECUTABLE}" -j"${HOST_NPROC}"

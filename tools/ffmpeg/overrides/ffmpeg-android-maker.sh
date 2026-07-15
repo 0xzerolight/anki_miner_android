@@ -25,21 +25,15 @@ prepareOutput() {
     "$output_bin/libffprobe.so"
 }
 
-checkTextRelocations() {
-  local stats_file="${STATS_DIR}/text-relocations.txt"
+checkNativeDynamics() {
+  local stats_file="${STATS_DIR}/native-dynamics.txt"
   local executable
   for executable in \
     "${BUILD_DIR_FFMPEG}/${ANDROID_ABI}/bin/ffmpeg" \
     "${BUILD_DIR_FFMPEG}/${ANDROID_ABI}/bin/ffprobe"; do
-    echo "File: $executable" >> "$stats_file"
-    "${FAM_READELF}" --dynamic "$executable" \
-      | grep 'TEXTREL' >> "$stats_file" || true
+    "${SCRIPTS_DIR}/verify-elf-dynamic.sh" "${FAM_READELF}" "$executable" \
+      >> "$stats_file"
   done
-  if grep -q TEXTREL "$stats_file"; then
-    echo "There are text relocations in standalone binaries:" >&2
-    cat "$stats_file" >&2
-    exit 1
-  fi
 }
 
 rm -rf "$BUILD_DIR" "$STATS_DIR" "$OUTPUT_DIR"
@@ -78,6 +72,6 @@ for ABI in "${ABIS_TO_BUILD[@]}"; do
     source "${SCRIPTS_DIR}/${COMPONENT}/build.sh"
     cd "$BASE_DIR"
   done
-  checkTextRelocations
+  checkNativeDynamics
   prepareOutput
 done

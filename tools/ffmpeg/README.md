@@ -7,10 +7,15 @@ permission. The executables statically include FFmpeg's libraries, LAME, and
 Opus; they retain only Android system-library dependencies.
 
 All inputs are immutable in `sources.lock`. The wrapper verifies every archive
-before extracting it, patches the pinned ffmpeg-android-maker build in a fresh
-toolchain directory, disables network protocols and GPL libraries, and checks
-both ELF ABI and 16 KiB segment alignment. It never installs SDK components or
-accepts Android licenses.
+before extracting it, patches the pinned ffmpeg-android-maker build in a guarded
+fresh toolchain directory, disables network protocols and GPL libraries, and
+checks the generated feature configuration, dynamic dependencies, text
+relocations, ELF ABI, and 16 KiB segment alignment. It never installs SDK
+components or accepts Android licenses.
+
+The locked inputs make recipe changes auditable, but outputs are not claimed to
+be byte-reproducible across workspace locations: FFmpeg records absolute build,
+sysroot, and compiler paths in its configuration string.
 
 ```bash
 # Verify an already-populated cache without network access.
@@ -24,8 +29,13 @@ tools/ffmpeg/build.sh --install
 ```
 
 The pinned NDK must exist first. Until the SDK licenses have been accepted,
-the build exits with that single actionable prerequisite. `--install` mutates
-the application tree only after all four executables pass the native checks.
+the build exits with that single actionable prerequisite. `--install` validates
+all four executables before replacing the staged `jniLibs` tree, preserving any
+unrelated native libraries and rolling back a failed swap.
+
+Android v1 deliberately supports static JPEG screenshots only. The generated
+configuration gate proves the Matroska input, JPEG, MP3, Opus, WAV, and local
+file/pipe protocol surfaces used by the engine and the S3 instrumented test.
 
 The source set is LGPL-compatible: FFmpeg 7.1.5, LAME 3.100, Opus 1.5.2, and
 ffmpeg-android-maker v2.12 at commit
