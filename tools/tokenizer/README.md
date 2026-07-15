@@ -102,9 +102,9 @@ tools/tokenizer/test-s1b-native-host.sh /absolute/path/to/unidic/dicdir
 The supplied dictionary is accepted only when its canonical tree hash equals
 `golden/engine-v1.json`'s `provenance.data.assets_sha256.unidic_dicdir`.
 
-The Android success-path test uses the same external dictionary without adding
-it to either APK. After the user has accepted the Android SDK license and the
-locked emulator is installed, run:
+The Android x86_64 success-path test uses the same external dictionary without
+adding it to either APK. After the user has accepted the Android SDK license
+and the locked emulator is installed, run:
 
 ```bash
 scripts/run-emulator-tests.sh \
@@ -119,3 +119,23 @@ The instrumented test then traverses Chaquopy, the Python S1b adapter, Kotlin,
 JNI, and native MeCab for all seeded cases, including the astral OOV UTF-16
 span, and checks both dictionary mappings in the Android process. The temporary
 device ZIP is removed when the gate exits.
+
+S1b remains provisional until that same production-JNI class passes on an
+explicitly named arm64 target. Record the expected image fingerprint outside
+the target first, then run either page-size lane with:
+
+```bash
+scripts/run-s1b-arm64-tests.sh \
+    --serial ARM64_SERIAL \
+    --unidic-dir /absolute/path/to/the/golden-pinned/unidic/dicdir \
+    --page-size 16k \
+    --image-fingerprint EXPECTED_BUILD_FINGERPRINT
+```
+
+This opt-in gate enables only `deviceDebug`, checks the serial is an online
+API 36 `arm64-v8a` target with the requested actual page size and exact image
+fingerprint, inspects both APK identities and the production JNI artifact,
+provisions the golden-pinned external dictionary, and invokes only
+`MecabNativeTokenizerInstrumentedTest`. It never discovers, starts, stops, or
+chooses a target. Normal builds remain limited to `emulatorDebug` and
+`deviceRelease`.

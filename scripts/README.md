@@ -46,6 +46,20 @@ The AVDs have fixed identities and serials:
 | Normal | `anki_miner_api36` | `emulator-5554` | 4096 |
 | 16 KiB | `anki_miner_api36_ps16k` | `emulator-5556` | 16384 |
 
+The separate arm64 S1b gate requires an already-running, explicitly named
+target and a previously recorded image fingerprint:
+
+```bash
+scripts/run-s1b-arm64-tests.sh \
+    --serial ARM64_SERIAL \
+    --unidic-dir /absolute/path/to/golden-pinned/unidic/dicdir \
+    --page-size 4k \
+    --image-fingerprint EXPECTED_BUILD_FINGERPRINT
+```
+
+It temporarily enables the `deviceDebug` instrumentation variant and runs only
+the production-JNI S1b class. It does not manage or select a target.
+
 When KVM is unavailable, the launcher selects software CPU emulation and the
 Swangle renderer. A first boot can take several minutes. Use `--keep` with the
 test runner to leave an emulator running, or `scripts/emulator.sh --window` for
@@ -53,7 +67,7 @@ an interactive window. Test runs always wipe userdata and disable snapshot
 load/save; an interactive launch remains persistent unless `--wipe-data` is
 given explicitly.
 
-Chaquopy reads ABI filters from product flavors. The supported Gradle variants
+Chaquopy reads ABI filters from product flavors. The normal Gradle variants
 are therefore `emulatorDebug` (x86_64) and `deviceRelease` (arm64-v8a):
 
 ```bash

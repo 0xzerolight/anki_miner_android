@@ -7,6 +7,16 @@ plugins {
 }
 
 val pythonVersion = libs.versions.python.get()
+val s1bArm64TestsEnabled =
+    providers.gradleProperty("ankiMinerS1bArm64Tests")
+        .map { value ->
+            require(value == "true") {
+                "ankiMinerS1bArm64Tests must be exactly 'true' when supplied"
+            }
+            true
+        }
+        .orElse(false)
+        .get()
 
 android {
     namespace = "com.ankiminer.android"
@@ -93,10 +103,15 @@ androidComponents {
     beforeVariants(selector().all()) { variant ->
         val runtimeAbi =
             variant.productFlavors.single { (dimension, _) -> dimension == "runtimeAbi" }.second
+        val s1bArm64Debug =
+            s1bArm64TestsEnabled &&
+                runtimeAbi == "device" &&
+                variant.buildType == "debug"
         // Chaquopy resolves ABI filters from product flavors, not build types.
         variant.enable =
             (runtimeAbi == "emulator" && variant.buildType == "debug") ||
-            (runtimeAbi == "device" && variant.buildType == "release")
+            (runtimeAbi == "device" && variant.buildType == "release") ||
+            s1bArm64Debug
     }
 }
 
