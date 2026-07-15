@@ -14,6 +14,7 @@ import java.io.FileOutputStream
 import java.io.IOException
 
 /** A path whose backing resource is owned by a [SafJobFileOwner]. */
+@ConsistentCopyVisibility
 data class PythonMediaInput internal constructor(
     val path: String,
     val backing: Backing,

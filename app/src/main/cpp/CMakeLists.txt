@@ -41,6 +41,16 @@ set_target_properties(
         VISIBILITY_INLINES_HIDDEN ON
 )
 target_compile_features(mecab_runtime PRIVATE cxx_std_11)
+target_compile_options(
+    mecab_runtime
+    PRIVATE
+        # NDK Clang defaults to C++17, which removed constructs used by the
+        # pinned upstream MeCab sources. Keep this target on the same exact
+        # C++11 dialect exercised by the host parity build.
+        -std=c++11
+        -Wno-deprecated-declarations
+        -Wno-register
+)
 target_compile_definitions(
     mecab_runtime
     PRIVATE
