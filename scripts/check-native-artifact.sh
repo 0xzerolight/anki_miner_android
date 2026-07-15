@@ -15,6 +15,7 @@ Usage: scripts/check-native-artifact.sh --artifact FILE --allow-abi ABI [options
 Options:
   --allow-abi ABI       Allowed ABI; repeat only for a multi-ABI artifact.
   --forbid-entry TEXT   Reject this text in any recursively nested entry name.
+  --require-entry PATH  Require this exact direct archive entry.
 
 The gate inspects every ELF in APKs, AABs, nested ZIPs and Chaquopy IMYs.
 APKs additionally require 16 KiB zip alignment and extractNativeLibs=true.
@@ -28,7 +29,7 @@ while (($#)); do
             ARTIFACT="$2"
             shift
             ;;
-        --allow-abi|--forbid-entry)
+        --allow-abi|--forbid-entry|--require-entry)
             (($# >= 2)) || { usage >&2; exit 2; }
             PYTHON_ARGS+=("$1" "$2")
             shift

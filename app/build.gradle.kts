@@ -25,6 +25,11 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "PYTHON_VERSION", "\"$pythonVersion\"")
+        buildConfigField(
+            "String",
+            "S1B_TEST_UNIDIC_ARCHIVE",
+            "\"/data/local/tmp/anki-miner-s1b-unidic.zip\"",
+        )
     }
 
     productFlavors {
@@ -77,6 +82,10 @@ android {
 
     testOptions {
         animationsDisabled = true
+    }
+
+    sourceSets {
+        getByName("androidTest").assets.srcDir(rootProject.file("golden"))
     }
 }
 

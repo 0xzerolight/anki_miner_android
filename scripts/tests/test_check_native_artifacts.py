@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from argparse import Namespace
 from io import BytesIO
 from pathlib import Path
 import struct
@@ -8,13 +9,13 @@ import tempfile
 import unittest
 import zipfile
 
-
 SCRIPTS_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SCRIPTS_DIR))
 
 from check_native_artifacts import (  # noqa: E402
     ArtifactError,
     Inspection,
+    inspect_artifact,
     inspect_zip,
 )
 
@@ -50,7 +51,9 @@ def elf64(
         0,
         0,
     )
-    struct.pack_into("<IIQQQQQQ", data, 64, 1, 5, 0, 0, 0, len(data), len(data), alignment)
+    struct.pack_into(
+        "<IIQQQQQQ", data, 64, 1, 5, 0, 0, 0, len(data), len(data), alignment
+    )
     if interpreter:
         struct.pack_into(
             "<IIQQQQQQ",
@@ -95,6 +98,25 @@ class NativeArtifactTest(unittest.TestCase):
             artifact.flush()
             inspect_zip(Path(artifact.name), "fixture.apk", inspection)
         return inspection
+
+    def inspect_complete(
+        self,
+        payload: bytes,
+        *,
+        required: list[str],
+    ) -> Inspection:
+        with tempfile.NamedTemporaryFile(suffix=".apk") as artifact:
+            artifact.write(payload)
+            artifact.flush()
+            return inspect_artifact(
+                Namespace(
+                    artifact=Path(artifact.name),
+                    allow_abi=["x86_64"],
+                    forbid_entry=[],
+                    require_entry=required,
+                    require_app_imy=False,
+                )
+            )
 
     def test_recurses_into_app_imy_and_accepts_aligned_elf(self) -> None:
         app_imy = archive({"chaquopy/lib/x86_64/libpython.so": elf64()})
@@ -153,6 +175,22 @@ class NativeArtifactTest(unittest.TestCase):
         executable = elf64(entry_point=0x4000)
         with self.assertRaisesRegex(ArtifactError, "no PT_INTERP"):
             self.inspect(archive({"lib/x86_64/libffprobe.so": executable}))
+
+    def test_required_direct_entry_cannot_be_satisfied_by_unrelated_elf(self) -> None:
+        payload = archive({"lib/x86_64/libchaquopy.so": elf64()})
+        with self.assertRaisesRegex(ArtifactError, "missing required direct"):
+            self.inspect_complete(
+                payload,
+                required=["lib/x86_64/libanki_miner_mecab.so"],
+            )
+
+    def test_required_direct_entry_is_exact_and_case_sensitive(self) -> None:
+        expected = "lib/x86_64/libanki_miner_mecab.so"
+        result = self.inspect_complete(
+            archive({expected: elf64()}),
+            required=[expected],
+        )
+        self.assertEqual({expected}, result.found_required_entries)
 
 
 if __name__ == "__main__":

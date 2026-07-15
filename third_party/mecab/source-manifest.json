@@ -6,9 +6,29 @@
     "revision": "453d4deb7e3857f32c1ab6c1ced574d9f73a2233",
     "source_root": "ios/Classes"
   },
-  "license": {
-    "path": "LICENSE",
-    "sha256": "06a8d42f64731d4e96c1fc958c5194b49fe24a003b16f66c7d6800679a4cad0e"
+  "licenses": {
+    "mecab": {
+      "copyright": "Taku Kudo and Nippon Telegraph and Telephone Corporation",
+      "path": "LICENSE.mecab",
+      "sha256": "62f4b23450a9ad40e4db8063d45c1d13c78d07ca27c9ada62c4ca9c11c1f3e7b",
+      "source": {
+        "path": "mecab/BSD",
+        "repository": "https://github.com/taku910/mecab",
+        "revision": "61b90ba6e669dc2d7d533d4a80d206f3b31d52b1"
+      },
+      "spdx": "BSD-3-Clause"
+    },
+    "mecab_for_dart": {
+      "copyright": "2024 CaptainDario",
+      "path": "LICENSE.mecab_for_dart",
+      "sha256": "06a8d42f64731d4e96c1fc958c5194b49fe24a003b16f66c7d6800679a4cad0e",
+      "source": {
+        "path": "LICENSE",
+        "repository": "https://github.com/dariyooo/mecab_for_dart",
+        "revision": "453d4deb7e3857f32c1ab6c1ced574d9f73a2233"
+      },
+      "spdx": "BSD-3-Clause"
+    }
   },
   "files": {
     "char_property.cpp": "91fa21659c8b5ec74e13910e4aa455bc03ae4cbbfcbe4259f6866419398e0d9b",

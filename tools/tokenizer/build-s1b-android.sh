@@ -31,9 +31,11 @@ cd "$REPO_ROOT"
 
 "$REPO_ROOT/scripts/check-native-artifact.sh" \
     --artifact "$REPO_ROOT/app/build/outputs/apk/emulator/debug/app-emulator-debug.apk" \
-    --allow-abi x86_64
+    --allow-abi x86_64 \
+    --require-entry lib/x86_64/libanki_miner_mecab.so
 "$REPO_ROOT/scripts/check-native-artifact.sh" \
     --artifact "$REPO_ROOT/app/build/outputs/apk/device/release/app-device-release-unsigned.apk" \
-    --allow-abi arm64-v8a
+    --allow-abi arm64-v8a \
+    --require-entry lib/arm64-v8a/libanki_miner_mecab.so
 
 echo "S1b Android native builds: OK"

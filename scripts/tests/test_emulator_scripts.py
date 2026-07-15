@@ -7,7 +7,6 @@ import subprocess
 import tempfile
 import unittest
 
-
 SCRIPTS_DIR = Path(__file__).resolve().parents[1]
 
 
@@ -125,6 +124,7 @@ printf '%s\\n' "$@" >"$FAKE_STATE/health.args"
                     "ANKI_MINER_HEALTH_SCRIPT": str(health),
                     "EMULATOR_BOOT_TIMEOUT_SECONDS": "5",
                     "FAKE_STATE": str(state),
+                    "ANKI_MINER_TEST_UNIDIC_DIR": str(root),
                 },
             )
             result = subprocess.run(
@@ -137,9 +137,13 @@ printf '%s\\n' "$@" >"$FAKE_STATE/health.args"
             )
 
             self.assertEqual(0, result.returncode, result.stderr)
-            launcher_arguments = (state / "launcher.args").read_text(
-                encoding="utf-8",
-            ).splitlines()
+            launcher_arguments = (
+                (state / "launcher.args")
+                .read_text(
+                    encoding="utf-8",
+                )
+                .splitlines()
+            )
             self.assertIn("--test-session", launcher_arguments)
             self.assertEqual(
                 ["--connected", "4k"],

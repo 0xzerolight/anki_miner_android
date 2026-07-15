@@ -11,7 +11,6 @@ import struct
 import sys
 import zipfile
 
-
 PAGE_SIZE = 16 * 1024
 MAX_ARCHIVE_DEPTH = 12
 MAX_NESTED_ARCHIVE_SIZE = 1024 * 1024 * 1024
@@ -37,9 +36,11 @@ class ArtifactError(RuntimeError):
 class Inspection:
     allowed_abis: set[str]
     forbidden: tuple[str, ...]
+    required_direct_entries: set[str] = field(default_factory=set)
     elf_count: int = 0
     found_abis: set[str] = field(default_factory=set)
     app_imy_count: int = 0
+    found_required_entries: set[str] = field(default_factory=set)
 
 
 def safe_entry_name(name: str, archive_name: str) -> PurePosixPath:
@@ -65,7 +66,9 @@ def parse_elf(
     elif data_encoding == 2:
         endian = ">"
     else:
-        raise ArtifactError(f"{logical_name}: unsupported ELF byte order {data_encoding}")
+        raise ArtifactError(
+            f"{logical_name}: unsupported ELF byte order {data_encoding}"
+        )
 
     elf_type = struct.unpack_from(f"{endian}H", data, 16)[0]
     machine = struct.unpack_from(f"{endian}H", data, 18)[0]
@@ -112,7 +115,9 @@ def parse_elf(
                 interpreter_offset, interpreter_size = fields[1], fields[4]
             else:
                 interpreter_offset, interpreter_size = fields[2], fields[5]
-            if interpreter_size == 0 or interpreter_offset + interpreter_size > len(data):
+            if interpreter_size == 0 or interpreter_offset + interpreter_size > len(
+                data
+            ):
                 raise ArtifactError(f"{logical_name}: invalid PT_INTERP segment")
             has_interpreter = True
         if fields[0] != PT_LOAD:
@@ -163,7 +168,9 @@ def inspect_zip(
     depth: int = 0,
 ) -> None:
     if depth > MAX_ARCHIVE_DEPTH:
-        raise ArtifactError(f"{logical_name}: archive nesting exceeds {MAX_ARCHIVE_DEPTH}")
+        raise ArtifactError(
+            f"{logical_name}: archive nesting exceeds {MAX_ARCHIVE_DEPTH}"
+        )
     try:
         archive = zipfile.ZipFile(source)
     except zipfile.BadZipFile as error:
@@ -175,10 +182,17 @@ def inspect_zip(
                 continue
             entry_path = safe_entry_name(info.filename, logical_name)
             entry_name = f"{logical_name}!/{entry_path.as_posix()}"
+            if (
+                depth == 0
+                and entry_path.as_posix() in inspection.required_direct_entries
+            ):
+                inspection.found_required_entries.add(entry_path.as_posix())
             folded_name = entry_name.casefold()
             for forbidden in inspection.forbidden:
                 if forbidden.casefold() in folded_name:
-                    raise ArtifactError(f"{entry_name}: forbidden release entry {forbidden!r}")
+                    raise ArtifactError(
+                        f"{entry_name}: forbidden release entry {forbidden!r}"
+                    )
 
             basename = entry_path.name
             if basename == "app.imy":
@@ -218,7 +232,17 @@ def inspect_zip(
 def inspect_artifact(args: argparse.Namespace) -> Inspection:
     if not args.artifact.is_file():
         raise ArtifactError(f"artifact not found: {args.artifact}")
-    inspection = Inspection(set(args.allow_abi), tuple(args.forbid_entry))
+    required_entries: set[str] = set()
+    for name in args.require_entry:
+        normalized = safe_entry_name(name, str(args.artifact)).as_posix()
+        if normalized != name or name.endswith("/"):
+            raise ArtifactError(f"invalid required direct archive entry: {name!r}")
+        required_entries.add(name)
+    inspection = Inspection(
+        set(args.allow_abi),
+        tuple(args.forbid_entry),
+        required_entries,
+    )
     inspect_zip(args.artifact, args.artifact.name, inspection)
     if inspection.elf_count == 0:
         raise ArtifactError(f"{args.artifact}: no ELF payloads found")
@@ -228,7 +252,17 @@ def inspect_artifact(args: argparse.Namespace) -> Inspection:
             f"expected exactly {sorted(inspection.allowed_abis)}",
         )
     if args.require_app_imy and inspection.app_imy_count == 0:
-        raise ArtifactError(f"{args.artifact}: Chaquopy app.imy was not recursively inspected")
+        raise ArtifactError(
+            f"{args.artifact}: Chaquopy app.imy was not recursively inspected"
+        )
+    missing_entries = (
+        inspection.required_direct_entries - inspection.found_required_entries
+    )
+    if missing_entries:
+        raise ArtifactError(
+            f"{args.artifact}: missing required direct archive entries "
+            f"{sorted(missing_entries)!r}"
+        )
     return inspection
 
 
@@ -242,6 +276,7 @@ def parse_args() -> argparse.Namespace:
         choices=sorted(MACHINE_ABIS.values()),
     )
     parser.add_argument("--forbid-entry", action="append", default=[])
+    parser.add_argument("--require-entry", action="append", default=[])
     parser.add_argument("--require-app-imy", action="store_true")
     return parser.parse_args()
 

@@ -22,6 +22,8 @@ class VendorError(RuntimeError):
 
 
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+_GIT_REVISION_RE = re.compile(r"^[0-9a-f]{40}$")
+_LICENSE_NAMES = frozenset({"mecab", "mecab_for_dart"})
 
 
 def _display(path: Path) -> str:
@@ -61,14 +63,41 @@ def _files(manifest: dict[str, object]) -> dict[str, str]:
     return dict(sorted(value.items()))
 
 
+def _licenses(manifest: dict[str, object]) -> dict[str, dict[str, object]]:
+    value = manifest.get("licenses")
+    if not isinstance(value, dict) or set(value) != _LICENSE_NAMES:
+        raise VendorError("source manifest must pin both license domains")
+    output: dict[str, dict[str, object]] = {}
+    for name in sorted(value):
+        record = value[name]
+        if not isinstance(record, dict):
+            raise VendorError(f"source manifest license {name!r} is malformed")
+        path = record.get("path")
+        digest = record.get("sha256")
+        source = record.get("source")
+        if (
+            not isinstance(path, str)
+            or Path(path).name != path
+            or not isinstance(digest, str)
+            or _SHA256_RE.fullmatch(digest) is None
+            or record.get("spdx") != "BSD-3-Clause"
+            or not isinstance(record.get("copyright"), str)
+            or not isinstance(source, dict)
+            or set(source) != {"path", "repository", "revision"}
+            or not all(isinstance(source.get(key), str) for key in source)
+            or _GIT_REVISION_RE.fullmatch(str(source.get("revision"))) is None
+        ):
+            raise VendorError(f"source manifest license {name!r} is malformed")
+        output[name] = record
+    return output
+
+
 def _verify_file(path: Path, expected: str) -> None:
     if not path.is_file() or path.is_symlink():
         raise VendorError(f"missing regular file: {_display(path)}")
     actual = _sha256(path)
     if actual != expected:
-        raise VendorError(
-            f"hash mismatch for {_display(path)}: {actual} != {expected}"
-        )
+        raise VendorError(f"hash mismatch for {_display(path)}: {actual} != {expected}")
 
 
 def check_committed(manifest: dict[str, object]) -> None:
@@ -80,19 +109,11 @@ def check_committed(manifest: dict[str, object]) -> None:
     for name, digest in files.items():
         _verify_file(source_dir / name, digest)
 
-    license_value = manifest.get("license")
-    if not isinstance(license_value, dict):
-        raise VendorError("source manifest license is malformed")
-    path = license_value.get("path")
-    digest = license_value.get("sha256")
-    if (
-        not isinstance(path, str)
-        or Path(path).name != path
-        or not isinstance(digest, str)
-        or _SHA256_RE.fullmatch(digest) is None
-    ):
-        raise VendorError("source manifest license fields are malformed")
-    _verify_file(VENDOR_ROOT / path, digest)
+    for record in _licenses(manifest).values():
+        path = record["path"]
+        license_digest = record["sha256"]
+        assert isinstance(path, str) and isinstance(license_digest, str)
+        _verify_file(VENDOR_ROOT / path, license_digest)
 
 
 def _git_value(source: Path, *args: str) -> str:
@@ -106,14 +127,39 @@ def _git_value(source: Path, *args: str) -> str:
     return result.stdout.strip()
 
 
-def reproduce(source: Path, manifest: dict[str, object]) -> None:
+def _verify_license_source(
+    checkout: Path,
+    record: dict[str, object],
+) -> Path:
+    source = record["source"]
+    digest = record["sha256"]
+    assert isinstance(source, dict) and isinstance(digest, str)
+    revision = source["revision"]
+    relative = source["path"]
+    assert isinstance(revision, str) and isinstance(relative, str)
+    if _git_value(checkout, "rev-parse", "HEAD") != revision:
+        raise VendorError(f"license source checkout is not pinned revision {revision}")
+    path = checkout / relative
+    _verify_file(path, digest)
+    return path
+
+
+def reproduce(
+    source: Path,
+    mecab_source: Path,
+    manifest: dict[str, object],
+) -> None:
     upstream = manifest.get("upstream")
     if not isinstance(upstream, dict):
         raise VendorError("source manifest upstream is malformed")
     revision = upstream.get("revision")
     tag = upstream.get("tag")
     source_root = upstream.get("source_root")
-    if not all(isinstance(value, str) for value in (revision, tag, source_root)):
+    if (
+        not isinstance(revision, str)
+        or not isinstance(tag, str)
+        or not isinstance(source_root, str)
+    ):
         raise VendorError("source manifest upstream fields are malformed")
     if _git_value(source, "rev-parse", "HEAD") != revision:
         raise VendorError(f"source checkout is not pinned revision {revision}")
@@ -127,12 +173,19 @@ def reproduce(source: Path, manifest: dict[str, object]) -> None:
         _verify_file(candidate, digest)
         shutil.copyfile(candidate, VENDOR_ROOT / "src" / name)
 
-    license_value = manifest["license"]
-    assert isinstance(license_value, dict)
-    expected_license = license_value["sha256"]
-    assert isinstance(expected_license, str)
-    _verify_file(source / "LICENSE", expected_license)
-    shutil.copyfile(source / "LICENSE", VENDOR_ROOT / "LICENSE")
+    licenses = _licenses(manifest)
+    wrapper_license = _verify_license_source(
+        source,
+        licenses["mecab_for_dart"],
+    )
+    original_license = _verify_license_source(mecab_source, licenses["mecab"])
+    for source_path, record in (
+        (wrapper_license, licenses["mecab_for_dart"]),
+        (original_license, licenses["mecab"]),
+    ):
+        destination = record["path"]
+        assert isinstance(destination, str)
+        shutil.copyfile(source_path, VENDOR_ROOT / destination)
     check_committed(manifest)
 
 
@@ -140,17 +193,30 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--check", action="store_true")
     parser.add_argument("--source", type=Path)
+    parser.add_argument("--mecab-source", type=Path)
     args = parser.parse_args(argv)
-    if args.check == (args.source is not None):
-        parser.error("choose exactly one of --check or --source")
+    reproducing = args.source is not None or args.mecab_source is not None
+    if args.check == reproducing or (
+        reproducing and (args.source is None or args.mecab_source is None)
+    ):
+        parser.error("choose --check, or both --source and --mecab-source")
 
     try:
         manifest = _load_manifest()
         if args.check:
             check_committed(manifest)
         else:
-            reproduce(args.source.resolve(strict=True), manifest)
-    except (OSError, subprocess.CalledProcessError, VendorError, json.JSONDecodeError) as exc:
+            reproduce(
+                args.source.resolve(strict=True),
+                args.mecab_source.resolve(strict=True),
+                manifest,
+            )
+    except (
+        OSError,
+        subprocess.CalledProcessError,
+        VendorError,
+        json.JSONDecodeError,
+    ) as exc:
         print(f"vendor_s1b_mecab: {exc}", file=sys.stderr)
         return 1
     return 0

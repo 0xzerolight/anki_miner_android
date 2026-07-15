@@ -7,6 +7,14 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 source "$SCRIPT_DIR/android-env.sh"
 
 CONNECTED_LANE=""
+staged_s1b_dictionary=false
+cleanup_s1b_dictionary() {
+    if [[ "$staged_s1b_dictionary" == true ]]; then
+        adb -s "$ANDROID_SERIAL" shell rm -f "$ANDROID_S1B_TEST_UNIDIC_ARCHIVE" \
+            >/dev/null 2>&1 || true
+    fi
+}
+trap cleanup_s1b_dictionary EXIT
 if [[ "${1:-}" == "--connected" ]]; then
     (($# >= 2)) || {
         echo "Usage: scripts/health.sh [--connected 4k|16k]" >&2
@@ -50,6 +58,8 @@ PYTHONDONTWRITEBYTECODE=1 "$host_test_python" -m pytest \
     -q "$REPO_ROOT/tests/python/android_bridge"
 PYTHONDONTWRITEBYTECODE=1 "$host_test_python" -m compileall \
     -q "$REPO_ROOT/app/src/main/python/android_bridge"
+PYTHONDONTWRITEBYTECODE=1 "$host_test_python" -m compileall \
+    -q "$REPO_ROOT/app/src/debug/python"
 "$host_test_python" "$REPO_ROOT/tools/tokenizer/vendor_s1b_mecab.py" --check
 
 [[ -x "$JAVA_HOME/bin/java" ]] || fail "JDK is missing; run scripts/provision-android.sh"
@@ -106,6 +116,11 @@ if [[ -n "$CONNECTED_LANE" ]]; then
     [[ "$actual_page_size" == "$expected_page_size" ]] \
         || fail "$expected_avd page size is ${actual_page_size:-unknown}, expected $expected_page_size"
     export ANDROID_SERIAL="$emulator_serial"
+    test_unidic="${ANKI_MINER_TEST_UNIDIC_DIR:-}"
+    [[ -n "$test_unidic" && -d "$test_unidic" ]] \
+        || fail "connected S1b tests require ANKI_MINER_TEST_UNIDIC_DIR"
+    "$SCRIPT_DIR/provision-s1b-test-unidic.sh" --dicdir "$test_unidic"
+    staged_s1b_dictionary=true
     tasks+=(:app:connectedEmulatorDebugAndroidTest)
 fi
 
@@ -122,15 +137,20 @@ release_aab="$REPO_ROOT/app/build/outputs/bundle/deviceRelease/app-device-releas
 
 "$SCRIPT_DIR/check-native-artifact.sh" \
     --artifact "$emulator_apk" \
-    --allow-abi x86_64
+    --allow-abi x86_64 \
+    --require-entry lib/x86_64/libanki_miner_mecab.so
 "$SCRIPT_DIR/check-native-artifact.sh" \
     --artifact "$release_apk" \
     --allow-abi arm64-v8a \
-    --forbid-entry scaffold_probe
+    --require-entry lib/arm64-v8a/libanki_miner_mecab.so \
+    --forbid-entry scaffold_probe \
+    --forbid-entry tokenizer_s1b_instrumented
 "$SCRIPT_DIR/check-native-artifact.sh" \
     --artifact "$release_aab" \
     --allow-abi arm64-v8a \
-    --forbid-entry scaffold_probe
+    --require-entry base/lib/arm64-v8a/libanki_miner_mecab.so \
+    --forbid-entry scaffold_probe \
+    --forbid-entry tokenizer_s1b_instrumented
 
 release_manifest="$(apkanalyzer manifest print "$release_apk")"
 if grep -Eq 'ScaffoldProbeActivity|scaffold_probe' <<<"$release_manifest"; then

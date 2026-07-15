@@ -85,3 +85,34 @@ non-option `argv[0]` program name and `-C`, matching fugashi's copied-node
 allocation mode. Passing `mecab_arguments` directly is invalid because MeCab
 does not parse `argv[0]` as an option. Neither backend may import Java, fugashi,
 or the engine from the shared contract modules.
+
+## S1b verification
+
+The host-native gate compiles the pinned MeCab runtime, proves `sys.dic` and
+`matrix.bin` are present in `/proc/self/maps`, and compares every seeded case
+and all 26 fields against the committed desktop golden:
+
+```bash
+tools/tokenizer/test-s1b-native-host.sh /absolute/path/to/unidic/dicdir
+```
+
+The supplied dictionary is accepted only when its canonical tree hash equals
+`golden/engine-v1.json`'s `provenance.data.assets_sha256.unidic_dicdir`.
+
+The Android success-path test uses the same external dictionary without adding
+it to either APK. After the user has accepted the Android SDK license and the
+locked emulator is installed, run:
+
+```bash
+scripts/run-emulator-tests.sh \
+    --unidic-dir /absolute/path/to/the/golden-pinned/unidic/dicdir \
+    --page-size 4k
+```
+
+The connected gate verifies the dictionary on the host, writes a deterministic
+temporary ZIP to `/data/local/tmp`, and streams it into a versioned app-private
+test directory. Python verifies the extracted tree again before opening it.
+The instrumented test then traverses Chaquopy, the Python S1b adapter, Kotlin,
+JNI, and native MeCab for all seeded cases, including the astral OOV UTF-16
+span, and checks both dictionary mappings in the Android process. The temporary
+device ZIP is removed when the gate exits.
