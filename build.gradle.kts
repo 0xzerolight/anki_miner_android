@@ -3,3 +3,9 @@ plugins {
     alias(libs.plugins.chaquopy) apply false
     alias(libs.plugins.kotlin.android) apply false
 }
+
+allprojects {
+    dependencyLocking {
+        lockAllConfigurations()
+    }
+}

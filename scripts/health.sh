@@ -58,6 +58,7 @@ tasks=(
     :app:lintEmulatorDebug
     :app:lintDeviceRelease
     :app:assembleEmulatorDebug
+    :app:assembleEmulatorDebugAndroidTest
     :app:assembleDeviceRelease
     :app:bundleDeviceRelease
 )
@@ -90,12 +91,14 @@ if [[ -n "$CONNECTED_LANE" ]]; then
     tasks+=(:app:connectedEmulatorDebugAndroidTest)
 fi
 
-./gradlew --no-daemon --stacktrace "${tasks[@]}"
+./gradlew --no-daemon --stacktrace --dependency-verification strict "${tasks[@]}"
 
 emulator_apk="$REPO_ROOT/app/build/outputs/apk/emulator/debug/app-emulator-debug.apk"
+emulator_test_apk="$REPO_ROOT/app/build/outputs/apk/androidTest/emulator/debug/app-emulator-debug-androidTest.apk"
 release_apk="$REPO_ROOT/app/build/outputs/apk/device/release/app-device-release-unsigned.apk"
 release_aab="$REPO_ROOT/app/build/outputs/bundle/deviceRelease/app-device-release.aab"
 [[ -f "$emulator_apk" ]] || fail "emulator debug APK was not produced"
+[[ -f "$emulator_test_apk" ]] || fail "emulator debug AndroidTest APK was not produced"
 [[ -f "$release_apk" ]] || fail "device release APK was not produced"
 [[ -f "$release_aab" ]] || fail "device release AAB was not produced"
 
