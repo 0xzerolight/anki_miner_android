@@ -6,11 +6,12 @@ installation.
 
 ## Setup
 
-Run provisioning once to download the JDK and Android command-line tools. It
-will stop before installing SDK packages until the Android SDK license has
-already been accepted:
+Create the hash-locked host test environment, then run provisioning to download
+the JDK and Android command-line tools. Android provisioning stops before SDK
+packages until the Android SDK license has already been accepted:
 
 ```bash
+scripts/provision-host-tests.sh
 scripts/provision-android.sh
 scripts/android-licenses.sh review
 scripts/provision-android.sh

@@ -1,2 +1,3 @@
-# Draft 2020-12 validation for checked-in bridge schemas.
+# Host runner plus Draft 2020-12 validation for checked-in bridge schemas.
+pytest==9.0.3
 jsonschema==4.26.0

@@ -35,6 +35,22 @@ if command -v shellcheck >/dev/null; then
 fi
 python3.13 -m unittest discover -s "$SCRIPT_DIR/tests" -v
 
+host_test_python="$ANKI_MINER_ANDROID_TOOLCHAIN_ROOT/host-tests/bin/python"
+[[ -x "$host_test_python" ]] \
+    || fail "host test environment is missing; run scripts/provision-host-tests.sh"
+expected_host_lock="$(sha256sum "$REPO_ROOT/requirements-host-test.lock" | awk '{ print $1 }')"
+host_lock_marker="$ANKI_MINER_ANDROID_TOOLCHAIN_ROOT/host-tests/.anki-miner-lock-sha256"
+[[ -f "$host_lock_marker" && "$(<"$host_lock_marker")" == "$expected_host_lock" ]] \
+    || fail "host test environment is stale; run scripts/provision-host-tests.sh"
+PIP_NO_CACHE_DIR=1 "$host_test_python" -m pip check
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$REPO_ROOT/tools/engine-sync" \
+    "$host_test_python" -m unittest discover -s "$REPO_ROOT/tools/engine-sync/tests" -v
+"$host_test_python" "$REPO_ROOT/tools/engine-sync/sync_engine.py" --check
+PYTHONDONTWRITEBYTECODE=1 "$host_test_python" -m pytest \
+    -q "$REPO_ROOT/tests/python/android_bridge"
+PYTHONDONTWRITEBYTECODE=1 "$host_test_python" -m compileall \
+    -q "$REPO_ROOT/app/src/main/python/android_bridge"
+
 [[ -x "$JAVA_HOME/bin/java" ]] || fail "JDK is missing; run scripts/provision-android.sh"
 [[ -x "$ANDROID_CMDLINE_TOOLS_HOME/bin/sdkmanager" ]] || fail "Android command-line tools are missing"
 "$SCRIPT_DIR/android-licenses.sh" check || fail "Android SDK license state is incomplete"
