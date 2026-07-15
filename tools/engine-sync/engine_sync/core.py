@@ -41,6 +41,7 @@ class Composition:
     roots: tuple[str, ...]
     assets: tuple[AssetMapping, ...]
     overlay_allowlist: frozenset[str]
+    overlay_base_blobs: Mapping[str, str]
     protected_verbatim: frozenset[str]
     allowed_external: frozenset[str]
     allowed_stdlib: frozenset[str]
@@ -184,6 +185,25 @@ def load_composition(path: Path) -> Composition:
     overlay_allowlist = frozenset(_require_string_list(data, "overlay_allowlist"))
     for overlay in overlay_allowlist:
         _validate_relative_path(overlay, "overlay_allowlist entry")
+    raw_overlay_bases = data.get("overlay_base_blobs", {})
+    if not isinstance(raw_overlay_bases, dict):
+        raise EngineSyncError("overlay_base_blobs must be a table")
+    overlay_base_blobs: dict[str, str] = {}
+    for raw_path, raw_blob in raw_overlay_bases.items():
+        if not isinstance(raw_path, str) or not isinstance(raw_blob, str):
+            raise EngineSyncError("overlay_base_blobs paths and blobs must be strings")
+        overlay_path = _validate_relative_path(raw_path, "overlay_base_blobs entry")
+        if overlay_path not in overlay_allowlist:
+            raise EngineSyncError(
+                f"overlay base path is not allowlisted: {overlay_path}"
+            )
+        if len(raw_blob) != 40 or any(
+            character not in "0123456789abcdef" for character in raw_blob
+        ):
+            raise EngineSyncError(
+                f"overlay base blob must be a lowercase Git SHA-1: {overlay_path}"
+            )
+        overlay_base_blobs[overlay_path] = raw_blob
     protected = frozenset(_require_string_list(data, "protected_verbatim"))
     allowed_external = frozenset(_require_string_list(data, "allowed_external"))
     allowed_stdlib = frozenset(_require_string_list(data, "allowed_stdlib"))
@@ -220,6 +240,7 @@ def load_composition(path: Path) -> Composition:
         roots=roots,
         assets=tuple(assets),
         overlay_allowlist=overlay_allowlist,
+        overlay_base_blobs=dict(sorted(overlay_base_blobs.items())),
         protected_verbatim=protected,
         allowed_external=allowed_external,
         allowed_stdlib=allowed_stdlib,
@@ -334,6 +355,11 @@ class GitTree:
         if path not in self._cache:
             self._cache[path] = self._git("show", f"{self.revision}:{path}")
         return self._cache[path]
+
+    def blob_sha1(self, path: str) -> str:
+        content = self.read(path)
+        git_object = f"blob {len(content)}\0".encode() + content
+        return hashlib.sha1(git_object, usedforsecurity=False).hexdigest()
 
 
 def _path_to_module(path: str) -> tuple[str, bool] | None:
@@ -615,6 +641,29 @@ def build_snapshot(
         if item.content != tree.read(item.path):
             raise EngineSyncError(
                 f"protected module differs from the pinned desktop source: {protected}"
+            )
+
+    shadow_overlays = set(overlays) & tree.paths
+    declared_overlay_bases = set(composition.overlay_base_blobs)
+    missing_overlay_bases = shadow_overlays - declared_overlay_bases
+    if missing_overlay_bases:
+        raise EngineSyncError(
+            "desktop-shadowing overlays must declare their upstream base blob: "
+            + ", ".join(sorted(missing_overlay_bases))
+        )
+    nonshadowing_overlay_bases = declared_overlay_bases - shadow_overlays
+    if nonshadowing_overlay_bases:
+        raise EngineSyncError(
+            "declared overlay bases do not shadow pinned desktop files: "
+            + ", ".join(sorted(nonshadowing_overlay_bases))
+        )
+    for overlay_path, expected_blob in sorted(composition.overlay_base_blobs.items()):
+        actual_blob = tree.blob_sha1(overlay_path)
+        if actual_blob != expected_blob:
+            raise EngineSyncError(
+                f"overlay base changed for {overlay_path}: expected "
+                f"{expected_blob}, pinned engine has {actual_blob}; rebase and "
+                "review the override before updating its declaration"
             )
 
     selected: set[str] = set()

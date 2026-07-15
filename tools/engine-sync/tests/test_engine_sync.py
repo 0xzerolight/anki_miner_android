@@ -309,6 +309,68 @@ target = "anki_miner.services.youtube_fetcher"
         ):
             self._snapshot(fixture)
 
+    def test_shadow_overlay_is_bound_to_the_locked_upstream_blob(self) -> None:
+        fixture = self._fixture()
+        upstream_path = "anki_miner/dep.py"
+        overlay = fixture["overlays"] / upstream_path
+        overlay.parent.mkdir(parents=True, exist_ok=True)
+        overlay.write_text("VALUE = 2\n", encoding="utf-8")
+        revision = fixture["lock"].read_text(encoding="ascii").strip()
+        base_blob = _run(
+            "git",
+            "rev-parse",
+            f"{revision}:{upstream_path}",
+            cwd=fixture["repo"],
+        )
+        fixture["composition"].write_text(
+            fixture["composition"]
+            .read_text(encoding="utf-8")
+            .replace(
+                'overlay_allowlist = ["PyQt6/QtCore.py", "PyQt6/__init__.py"]',
+                'overlay_allowlist = ["PyQt6/QtCore.py", "PyQt6/__init__.py", '
+                f'"{upstream_path}"]\noverlay_base_blobs = {{ "{upstream_path}" = '
+                f'"{base_blob}" }}',
+            ),
+            encoding="utf-8",
+        )
+
+        snapshot = self._snapshot(fixture)
+        self.assertEqual(snapshot.files[upstream_path].content, b"VALUE = 2\n")
+
+        (fixture["repo"] / upstream_path).write_text("VALUE = 3\n", encoding="utf-8")
+        _run("git", "add", upstream_path, cwd=fixture["repo"])
+        _run(
+            "git", "commit", "-qm", "change upstream overlay base", cwd=fixture["repo"]
+        )
+        fixture["lock"].write_text(
+            _run("git", "rev-parse", "HEAD", cwd=fixture["repo"]) + "\n",
+            encoding="ascii",
+        )
+
+        with self.assertRaisesRegex(EngineSyncError, "overlay base changed"):
+            self._snapshot(fixture)
+
+    def test_shadow_overlay_requires_a_base_declaration(self) -> None:
+        fixture = self._fixture()
+        overlay = fixture["overlays"] / "anki_miner/dep.py"
+        overlay.parent.mkdir(parents=True, exist_ok=True)
+        overlay.write_text("VALUE = 2\n", encoding="utf-8")
+        fixture["composition"].write_text(
+            fixture["composition"]
+            .read_text(encoding="utf-8")
+            .replace(
+                'overlay_allowlist = ["PyQt6/QtCore.py", "PyQt6/__init__.py"]',
+                'overlay_allowlist = ["PyQt6/QtCore.py", "PyQt6/__init__.py", '
+                '"anki_miner/dep.py"]',
+            ),
+            encoding="utf-8",
+        )
+
+        with self.assertRaisesRegex(
+            EngineSyncError, "must declare their upstream base blob"
+        ):
+            self._snapshot(fixture)
+
     def test_pyqt_must_be_satisfied_by_the_overlay(self) -> None:
         fixture = self._fixture()
         (fixture["overlays"] / "PyQt6/QtCore.py").unlink()

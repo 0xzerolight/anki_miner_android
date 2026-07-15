@@ -47,6 +47,11 @@ overlay_allowlist = [
   "anki_miner/services/media_extractor.py",
 ]
 
+# Whole-file shadow overlays must name the exact upstream Git blob they were
+# reviewed against. An engine.lock bump stops here until the override is
+# consciously rebased over any upstream change.
+overlay_base_blobs = { "anki_miner/services/media_extractor.py" = "357dea44ae92b47ad06e19d8692a863438fa3d62" }
+
 # A protected module may be selected from the desktop Git object only. An
 # overlay at the same path is a hard error.
 protected_verbatim = [
