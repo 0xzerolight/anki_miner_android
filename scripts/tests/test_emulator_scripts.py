@@ -151,6 +151,74 @@ printf '%s\\n' "$@" >"$FAKE_STATE/health.args"
             )
             self.assertFalse((state / "running").exists())
 
+    def test_runner_refuses_an_already_online_target_without_cleanup(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            state = root / "state"
+            state.mkdir()
+            platform_tools = root / "sdk" / "platform-tools"
+            platform_tools.mkdir(parents=True)
+
+            adb = platform_tools / "adb"
+            adb.write_text(
+                """#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\\n' "$*" >>"$FAKE_STATE/adb.log"
+if [[ "${1:-}" == "devices" ]]; then
+    printf 'List of devices attached\\nemulator-5554\\tdevice\\n'
+    exit 0
+fi
+exit 99
+""",
+                encoding="utf-8",
+            )
+            adb.chmod(0o755)
+
+            launcher = root / "must-not-launch.sh"
+            launcher.write_text(
+                """#!/usr/bin/env bash
+touch "$FAKE_STATE/launcher-ran"
+""",
+                encoding="utf-8",
+            )
+            launcher.chmod(0o755)
+            health = root / "must-not-test.sh"
+            health.write_text(
+                """#!/usr/bin/env bash
+touch "$FAKE_STATE/health-ran"
+""",
+                encoding="utf-8",
+            )
+            health.chmod(0o755)
+
+            environment = os.environ.copy()
+            environment.update(
+                {
+                    "ANKI_MINER_ANDROID_TOOLCHAIN_ROOT": str(root),
+                    "ANKI_MINER_EMULATOR_LAUNCHER": str(launcher),
+                    "ANKI_MINER_HEALTH_SCRIPT": str(health),
+                    "FAKE_STATE": str(state),
+                },
+            )
+            result = subprocess.run(
+                [str(SCRIPTS_DIR / "run-emulator-tests.sh"), "--page-size", "4k"],
+                check=False,
+                capture_output=True,
+                env=environment,
+                text=True,
+                timeout=5,
+            )
+
+            self.assertNotEqual(0, result.returncode)
+            self.assertIn("already online", result.stderr)
+            self.assertIn("adb -s emulator-5554 emu kill", result.stderr)
+            self.assertFalse((state / "launcher-ran").exists())
+            self.assertFalse((state / "health-ran").exists())
+            self.assertEqual(
+                ["devices"],
+                (state / "adb.log").read_text(encoding="utf-8").splitlines(),
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

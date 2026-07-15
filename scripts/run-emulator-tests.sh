@@ -86,21 +86,24 @@ trap stop_emulator EXIT
 
 emulator_state="$(adb devices | awk -v serial="$EMULATOR_SERIAL" \
     '$1 == serial { print $2; exit }')"
-if [[ "$emulator_state" != "device" ]]; then
-    if [[ -n "$emulator_state" ]]; then
-        echo "$EMULATOR_SERIAL exists but is not ready; stop it before retrying." >&2
-        exit 1
+if [[ -n "$emulator_state" ]]; then
+    if [[ "$emulator_state" == "device" ]]; then
+        echo "$EMULATOR_SERIAL is already online; test runs require a newly wiped emulator." >&2
+    else
+        echo "$EMULATOR_SERIAL already exists in ADB state '$emulator_state'; test runs require a newly wiped emulator." >&2
     fi
-    echo "Starting $AVD_NAME as $EMULATOR_SERIAL"
-    "$EMULATOR_LAUNCHER" \
-        --headless \
-        --test-session \
-        --page-size "$PAGE_SIZE_LANE" \
-        "${EMULATOR_ARGS[@]}" \
-        >"$ANKI_MINER_ANDROID_TOOLCHAIN_ROOT/emulator-$PAGE_SIZE_LANE.log" 2>&1 &
-    emulator_pid="$!"
-    started_emulator=true
+    echo "Stop it first with: adb -s $EMULATOR_SERIAL emu kill" >&2
+    exit 1
 fi
+echo "Starting $AVD_NAME as $EMULATOR_SERIAL"
+"$EMULATOR_LAUNCHER" \
+    --headless \
+    --test-session \
+    --page-size "$PAGE_SIZE_LANE" \
+    "${EMULATOR_ARGS[@]}" \
+    >"$ANKI_MINER_ANDROID_TOOLCHAIN_ROOT/emulator-$PAGE_SIZE_LANE.log" 2>&1 &
+emulator_pid="$!"
+started_emulator=true
 
 deadline=$((SECONDS + BOOT_TIMEOUT_SECONDS))
 while ((SECONDS < deadline)); do
