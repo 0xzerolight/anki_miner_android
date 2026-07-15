@@ -4,9 +4,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
+from uuid import uuid4
 
 from .jobs import JobHandle, JobRegistry
-from .protocol import BridgeProtocolError, encode_message, to_json_value
+from .protocol import (
+    BridgeProtocolError,
+    DecodedMessage,
+    decode_envelope,
+    encode_message,
+    to_json_value,
+)
 
 
 def _invoke(callbacks: object, method_name: str, message: str) -> None:
@@ -16,6 +23,163 @@ def _invoke(callbacks: object, method_name: str, message: str) -> None:
             "missing_callback", f"EngineCallbacks.{method_name} is required"
         )
     method(message)
+
+
+def _invoke_result(callbacks: object, method_name: str, message: str) -> str:
+    """Invoke a synchronous Kotlin callback and require a JSON string result."""
+
+    method = getattr(callbacks, method_name, None)
+    if not callable(method):
+        raise BridgeProtocolError(
+            "missing_callback", f"EngineCallbacks.{method_name} is required"
+        )
+    try:
+        result = method(message)
+    except Exception as exc:
+        raise BridgeProtocolError(
+            "callback_failed", f"EngineCallbacks.{method_name} raised an exception"
+        ) from exc
+    if not isinstance(result, str):
+        raise BridgeProtocolError(
+            "invalid_callback_result",
+            f"EngineCallbacks.{method_name} must return a JSON string",
+        )
+    return result
+
+
+@dataclass(frozen=True)
+class AnkiCallbackError(Exception):
+    """A well-formed ``anki.error`` returned by the Kotlin provider seam."""
+
+    operation: str
+    code: str
+    message: str
+    retryable: bool
+
+    def __str__(self) -> str:
+        return self.message
+
+
+def _parse_anki_error(
+    message: DecodedMessage, *, run_id: str, request_id: str, operation: str
+) -> AnkiCallbackError:
+    payload = message.payload
+    required = {"runId", "requestId", "operation", "code", "message", "retryable"}
+    if set(payload) != required:
+        raise BridgeProtocolError(
+            "invalid_anki_error", "anki.error has missing or unknown fields"
+        )
+    if payload["runId"] != run_id or payload["requestId"] != request_id:
+        raise BridgeProtocolError(
+            "mismatched_callback_response",
+            "Anki callback response does not match its request",
+        )
+    if payload["operation"] != operation:
+        raise BridgeProtocolError(
+            "mismatched_callback_response",
+            "Anki callback error names the wrong operation",
+        )
+    if not isinstance(payload["code"], str) or not payload["code"]:
+        raise BridgeProtocolError("invalid_anki_error", "anki.error code is invalid")
+    if not isinstance(payload["message"], str):
+        raise BridgeProtocolError("invalid_anki_error", "anki.error message is invalid")
+    if not isinstance(payload["retryable"], bool):
+        raise BridgeProtocolError(
+            "invalid_anki_error", "anki.error retryable flag is invalid"
+        )
+    return AnkiCallbackError(
+        operation=operation,
+        code=payload["code"],
+        message=payload["message"],
+        retryable=payload["retryable"],
+    )
+
+
+@dataclass(frozen=True)
+class AndroidAnkiCallbacks:
+    """Synchronous JSON client for the four Kotlin AnkiDroid operations."""
+
+    callbacks: object
+    run_id: str
+
+    def _request(
+        self,
+        *,
+        method_name: str,
+        operation: str,
+        request_type: str,
+        result_type: str,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        request_id = f"anki_{uuid4().hex}"
+        request_payload = {
+            **payload,
+            "runId": self.run_id,
+            "requestId": request_id,
+        }
+        raw_result = _invoke_result(
+            self.callbacks,
+            method_name,
+            encode_message(request_type, request_payload),
+        )
+        message = decode_envelope(raw_result)
+        if message.message_type == "anki.error":
+            raise _parse_anki_error(
+                message,
+                run_id=self.run_id,
+                request_id=request_id,
+                operation=operation,
+            )
+        if message.message_type != result_type:
+            raise BridgeProtocolError(
+                "unexpected_message_type",
+                f"Expected {result_type!r}, received {message.message_type!r}",
+            )
+        if (
+            message.payload.get("runId") != self.run_id
+            or message.payload.get("requestId") != request_id
+        ):
+            raise BridgeProtocolError(
+                "mismatched_callback_response",
+                "Anki callback response does not match its request",
+            )
+        return message.payload
+
+    def verify_target(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._request(
+            method_name="ankiVerifyTarget",
+            operation="verifyTarget",
+            request_type="anki.verifytarget.request",
+            result_type="anki.verifytarget.result",
+            payload=payload,
+        )
+
+    def scan_first_fields(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._request(
+            method_name="ankiScanFirstFields",
+            operation="scanFirstFields",
+            request_type="anki.scanfirstfields.request",
+            result_type="anki.scanfirstfields.result",
+            payload=payload,
+        )
+
+    def store_media(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._request(
+            method_name="ankiStoreMedia",
+            operation="storeMedia",
+            request_type="anki.storemedia.request",
+            result_type="anki.storemedia.result",
+            payload=payload,
+        )
+
+    def create_notes(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._request(
+            method_name="ankiCreateNotes",
+            operation="createNotes",
+            request_type="anki.createnotes.request",
+            result_type="anki.createnotes.result",
+            payload=payload,
+        )
 
 
 @dataclass(frozen=True)
@@ -117,6 +281,7 @@ class CallbackAdapters:
         self._handle = handle
         self.progress = AndroidProgressCallback(callbacks, handle.run_id)
         self.presenter = AndroidPresenter(callbacks, handle.run_id)
+        self.anki = AndroidAnkiCallbacks(callbacks, handle.run_id)
 
     @property
     def run_id(self) -> str:

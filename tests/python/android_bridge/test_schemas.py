@@ -34,6 +34,7 @@ def schemas() -> dict[str, dict[str, Any]]:
         "envelope": _load_schema("bridge-envelope.schema.json"),
         "config": _load_schema("config-snapshot.schema.json"),
         "curation": _load_schema("curation.schema.json"),
+        "anki": _load_schema("anki.schema.json"),
     }
 
 
@@ -309,6 +310,161 @@ def test_unknown_curation_map_key_is_schema_invalid(
 
     with pytest.raises(ValidationError):
         Draft202012Validator(schemas["curation"]).validate(payload)
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {
+            "runId": "run_" + "a" * 32,
+            "requestId": "anki_" + "b" * 32,
+            "deckName": "Japanese::Mining",
+            "modelName": "Lapis",
+            "requiredFields": ["Expression", "Sentence"],
+        },
+        {
+            "runId": "run_" + "a" * 32,
+            "requestId": "anki_" + "b" * 32,
+            "deckId": 1,
+            "modelId": 2,
+            "fieldNames": ["Expression", "Sentence"],
+            "deckCreated": True,
+        },
+        {
+            "runId": "run_" + "a" * 32,
+            "requestId": "anki_" + "b" * 32,
+            "scope": {
+                "kind": "knownVocabulary",
+                "excludedDecks": ["Japanese::Known"],
+            },
+        },
+        {
+            "runId": "run_" + "a" * 32,
+            "requestId": "anki_" + "b" * 32,
+            "scope": {
+                "kind": "duplicates",
+                "modelName": "Lapis",
+                "deckName": None,
+            },
+        },
+        {
+            "runId": "run_" + "a" * 32,
+            "requestId": "anki_" + "b" * 32,
+            "firstFields": ["<b>猫</b>", "[sound:dog.mp3]犬"],
+        },
+        {
+            "runId": "run_" + "a" * 32,
+            "requestId": "anki_" + "b" * 32,
+            "assets": [
+                {
+                    "assetId": "asset_" + "c" * 32,
+                    "sourcePath": "/data/user/0/app/cache/audio.opus",
+                    "preferredName": "猫_ab12cd34ef56.opus",
+                    "purpose": "card",
+                    "mediaKind": "audio",
+                }
+            ],
+        },
+        {
+            "runId": "run_" + "a" * 32,
+            "requestId": "anki_" + "b" * 32,
+            "results": [
+                {
+                    "assetId": "asset_" + "c" * 32,
+                    "status": "stored",
+                    "actualFilename": "猫_ab12cd34ef56.opus",
+                },
+                {
+                    "assetId": "asset_" + "d" * 32,
+                    "status": "failed",
+                    "errorCode": "media_store_failed",
+                },
+            ],
+        },
+        {
+            "runId": "run_" + "a" * 32,
+            "requestId": "anki_" + "b" * 32,
+            "deckName": "Japanese::Mining",
+            "modelName": "Lapis",
+            "notes": [
+                {
+                    "clientNoteId": "note_" + "d" * 32,
+                    "fields": {"Expression": "猫", "Sentence": "猫だ"},
+                    "tags": ["auto-mined"],
+                }
+            ],
+        },
+        {
+            "runId": "run_" + "a" * 32,
+            "requestId": "anki_" + "b" * 32,
+            "results": [
+                {
+                    "clientNoteId": "note_" + "d" * 32,
+                    "status": "created",
+                    "noteId": 123,
+                }
+            ],
+            "error": None,
+        },
+        {
+            "runId": "run_" + "a" * 32,
+            "requestId": "anki_" + "b" * 32,
+            "operation": "createNotes",
+            "code": "write_failed",
+            "message": "provider write failed",
+            "retryable": True,
+        },
+    ],
+)
+def test_representative_anki_callback_payloads_validate(
+    schemas: dict[str, dict[str, Any]], payload: dict[str, Any]
+) -> None:
+    Draft202012Validator(schemas["anki"]).validate(payload)
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {
+            "runId": "run_" + "a" * 32,
+            "requestId": "anki_" + "b" * 32,
+            "deckName": "Mining",
+            "modelName": "Lapis",
+            "requiredFields": ["Expression"],
+            "unexpected": True,
+        },
+        {
+            "runId": "run_" + "a" * 32,
+            "requestId": "anki_" + "b" * 32,
+            "assets": [
+                {
+                    "assetId": "asset_" + "c" * 32,
+                    "sourcePath": "relative/file.mp3",
+                    "preferredName": "../file.mp3",
+                    "purpose": "card",
+                    "mediaKind": "audio",
+                }
+            ],
+        },
+        {
+            "runId": "run_" + "a" * 32,
+            "requestId": "anki_" + "b" * 32,
+            "results": [
+                {
+                    "clientNoteId": "note_" + "d" * 32,
+                    "status": "notAttempted",
+                    "noteId": 1,
+                }
+            ],
+            "error": None,
+        },
+    ],
+)
+def test_anki_callback_schema_is_closed(
+    schemas: dict[str, dict[str, Any]], payload: dict[str, Any]
+) -> None:
+    with pytest.raises(ValidationError):
+        Draft202012Validator(schemas["anki"]).validate(payload)
 
 
 @pytest.mark.parametrize("literal", ["NaN", "Infinity", "-Infinity"])

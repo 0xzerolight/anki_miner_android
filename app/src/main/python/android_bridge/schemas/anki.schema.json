@@ -1,0 +1,310 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://anki-miner.app/schemas/android-bridge/v1/anki.json",
+  "title": "Anki Miner Android AnkiDroid callback payloads",
+  "$comment": "Every callback is synchronous and returns an envelope. Responses repeat runId/requestId; media and note results are positionally aligned with requests. verifyTarget must validate model/fields before creating the deck. Dictionary media succeeds only when actualFilename equals preferredName.",
+  "oneOf": [
+    {"$ref": "#/$defs/verifyTargetRequest"},
+    {"$ref": "#/$defs/verifyTargetResult"},
+    {"$ref": "#/$defs/scanFirstFieldsRequest"},
+    {"$ref": "#/$defs/scanFirstFieldsResult"},
+    {"$ref": "#/$defs/storeMediaRequest"},
+    {"$ref": "#/$defs/storeMediaResult"},
+    {"$ref": "#/$defs/createNotesRequest"},
+    {"$ref": "#/$defs/createNotesResult"},
+    {"$ref": "#/$defs/error"}
+  ],
+  "$defs": {
+    "runId": {"type": "string", "pattern": "^run_[0-9a-f]{32}$"},
+    "requestId": {"type": "string", "pattern": "^anki_[0-9a-f]{32}$"},
+    "assetId": {"type": "string", "pattern": "^asset_[0-9a-f]{32}$"},
+    "clientNoteId": {"type": "string", "pattern": "^note_[0-9a-f]{32}$"},
+    "nonEmptyString": {"type": "string", "minLength": 1},
+    "filename": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[^/\\\\]+$"
+    },
+    "errorCode": {
+      "enum": [
+        "note_type_not_found",
+        "field_mapping_invalid",
+        "target_invalid",
+        "provider_unavailable",
+        "permission_denied",
+        "query_failed",
+        "write_failed",
+        "timeout",
+        "cancelled",
+        "media_store_failed",
+        "invalid_request",
+        "unsupported_operation",
+        "internal_error"
+      ]
+    },
+    "errorDetail": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message", "retryable"],
+      "properties": {
+        "code": {"$ref": "#/$defs/errorCode"},
+        "message": {"type": "string"},
+        "retryable": {"type": "boolean"}
+      }
+    },
+    "verifyTargetRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runId", "requestId", "deckName", "modelName", "requiredFields"],
+      "properties": {
+        "runId": {"$ref": "#/$defs/runId"},
+        "requestId": {"$ref": "#/$defs/requestId"},
+        "deckName": {"$ref": "#/$defs/nonEmptyString"},
+        "modelName": {"$ref": "#/$defs/nonEmptyString"},
+        "requiredFields": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/nonEmptyString"}
+        }
+      }
+    },
+    "verifyTargetResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runId", "requestId", "deckId", "modelId", "fieldNames", "deckCreated"],
+      "properties": {
+        "runId": {"$ref": "#/$defs/runId"},
+        "requestId": {"$ref": "#/$defs/requestId"},
+        "deckId": {"type": "integer", "minimum": 1},
+        "modelId": {"type": "integer", "minimum": 1},
+        "fieldNames": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/nonEmptyString"}
+        },
+        "deckCreated": {"type": "boolean"}
+      }
+    },
+    "knownVocabularyScope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "excludedDecks"],
+      "properties": {
+        "kind": {"const": "knownVocabulary"},
+        "excludedDecks": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/nonEmptyString"}
+        }
+      }
+    },
+    "duplicateScope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "modelName", "deckName"],
+      "properties": {
+        "kind": {"const": "duplicates"},
+        "modelName": {"$ref": "#/$defs/nonEmptyString"},
+        "deckName": {
+          "oneOf": [
+            {"type": "null"},
+            {"$ref": "#/$defs/nonEmptyString"}
+          ]
+        }
+      }
+    },
+    "scanFirstFieldsRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runId", "requestId", "scope"],
+      "properties": {
+        "runId": {"$ref": "#/$defs/runId"},
+        "requestId": {"$ref": "#/$defs/requestId"},
+        "scope": {
+          "oneOf": [
+            {"$ref": "#/$defs/knownVocabularyScope"},
+            {"$ref": "#/$defs/duplicateScope"}
+          ]
+        }
+      }
+    },
+    "scanFirstFieldsResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runId", "requestId", "firstFields"],
+      "properties": {
+        "runId": {"$ref": "#/$defs/runId"},
+        "requestId": {"$ref": "#/$defs/requestId"},
+        "firstFields": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "mediaAsset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["assetId", "sourcePath", "preferredName", "purpose", "mediaKind"],
+      "properties": {
+        "assetId": {"$ref": "#/$defs/assetId"},
+        "sourcePath": {"type": "string", "pattern": "^/"},
+        "preferredName": {"$ref": "#/$defs/filename"},
+        "purpose": {"enum": ["card", "dictionary"]},
+        "mediaKind": {"enum": ["audio", "image"]}
+      }
+    },
+    "storeMediaRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runId", "requestId", "assets"],
+      "properties": {
+        "runId": {"$ref": "#/$defs/runId"},
+        "requestId": {"$ref": "#/$defs/requestId"},
+        "assets": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/mediaAsset"}
+        }
+      }
+    },
+    "storedMedia": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["assetId", "status", "actualFilename"],
+      "properties": {
+        "assetId": {"$ref": "#/$defs/assetId"},
+        "status": {"const": "stored"},
+        "actualFilename": {"$ref": "#/$defs/filename"}
+      }
+    },
+    "failedMedia": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["assetId", "status", "errorCode"],
+      "properties": {
+        "assetId": {"$ref": "#/$defs/assetId"},
+        "status": {"const": "failed"},
+        "errorCode": {"$ref": "#/$defs/errorCode"}
+      }
+    },
+    "storeMediaResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runId", "requestId", "results"],
+      "properties": {
+        "runId": {"$ref": "#/$defs/runId"},
+        "requestId": {"$ref": "#/$defs/requestId"},
+        "results": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {"$ref": "#/$defs/storedMedia"},
+              {"$ref": "#/$defs/failedMedia"}
+            ]
+          }
+        }
+      }
+    },
+    "note": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["clientNoteId", "fields", "tags"],
+      "properties": {
+        "clientNoteId": {"$ref": "#/$defs/clientNoteId"},
+        "fields": {
+          "type": "object",
+          "minProperties": 1,
+          "propertyNames": {"minLength": 1},
+          "additionalProperties": {"type": "string"}
+        },
+        "tags": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/nonEmptyString"}
+        }
+      }
+    },
+    "createNotesRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runId", "requestId", "deckName", "modelName", "notes"],
+      "properties": {
+        "runId": {"$ref": "#/$defs/runId"},
+        "requestId": {"$ref": "#/$defs/requestId"},
+        "deckName": {"$ref": "#/$defs/nonEmptyString"},
+        "modelName": {"$ref": "#/$defs/nonEmptyString"},
+        "notes": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 100,
+          "items": {"$ref": "#/$defs/note"}
+        }
+      }
+    },
+    "createdNote": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["clientNoteId", "status", "noteId"],
+      "properties": {
+        "clientNoteId": {"$ref": "#/$defs/clientNoteId"},
+        "status": {"const": "created"},
+        "noteId": {"type": "integer", "minimum": 1}
+      }
+    },
+    "rejectedNote": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["clientNoteId", "status"],
+      "properties": {
+        "clientNoteId": {"$ref": "#/$defs/clientNoteId"},
+        "status": {"const": "rejected"}
+      }
+    },
+    "notAttemptedNote": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["clientNoteId", "status"],
+      "properties": {
+        "clientNoteId": {"$ref": "#/$defs/clientNoteId"},
+        "status": {"const": "notAttempted"}
+      }
+    },
+    "createNotesResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runId", "requestId", "results", "error"],
+      "properties": {
+        "runId": {"$ref": "#/$defs/runId"},
+        "requestId": {"$ref": "#/$defs/requestId"},
+        "results": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 100,
+          "items": {
+            "oneOf": [
+              {"$ref": "#/$defs/createdNote"},
+              {"$ref": "#/$defs/rejectedNote"},
+              {"$ref": "#/$defs/notAttemptedNote"}
+            ]
+          }
+        },
+        "error": {
+          "oneOf": [
+            {"type": "null"},
+            {"$ref": "#/$defs/errorDetail"}
+          ]
+        }
+      }
+    },
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runId", "requestId", "operation", "code", "message", "retryable"],
+      "properties": {
+        "runId": {"$ref": "#/$defs/runId"},
+        "requestId": {"$ref": "#/$defs/requestId"},
+        "operation": {"enum": ["verifyTarget", "scanFirstFields", "storeMedia", "createNotes"]},
+        "code": {"$ref": "#/$defs/errorCode"},
+        "message": {"type": "string"},
+        "retryable": {"type": "boolean"}
+      }
+    }
+  }
+}

@@ -3,8 +3,11 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 
-from android_bridge.callbacks import CallbackAdapters
+import pytest
+
+from android_bridge.callbacks import AnkiCallbackError, CallbackAdapters
 from android_bridge.jobs import JobRegistry
+from android_bridge.protocol import BridgeProtocolError, encode_message
 
 
 class RecordingCallbacks:
@@ -87,3 +90,113 @@ def test_terminal_notifications_are_distinct_from_stage_progress() -> None:
     assert callbacks.calls[0][1]["type"] == "mining.complete"
     assert callbacks.calls[1][1]["type"] == "mining.error"
     assert callbacks.calls[1][1]["payload"]["errorType"] == "RuntimeError"
+
+
+class AnkiCallbacks(RecordingCallbacks):
+    def _reply(self, method: str, raw: str, result_type: str) -> str:
+        self._record(method, raw)
+        request = json.loads(raw)["payload"]
+        return encode_message(
+            result_type,
+            {
+                "runId": request["runId"],
+                "requestId": request["requestId"],
+                "firstFields": ["<b>猫</b>"],
+            },
+        )
+
+    def ankiScanFirstFields(self, raw: str) -> str:
+        return self._reply("ankiScanFirstFields", raw, "anki.scanfirstfields.result")
+
+
+def test_synchronous_anki_callback_is_correlated_and_versioned() -> None:
+    registry = JobRegistry()
+    handle = registry.begin()
+    callbacks = AnkiCallbacks()
+    adapters = CallbackAdapters(callbacks, registry, handle)
+
+    result = adapters.anki.scan_first_fields(
+        {"scope": {"kind": "knownVocabulary", "excludedDecks": []}}
+    )
+
+    method, request = callbacks.calls[-1]
+    assert method == "ankiScanFirstFields"
+    assert request["type"] == "anki.scanfirstfields.request"
+    assert request["payload"]["runId"] == handle.run_id
+    assert request["payload"]["requestId"].startswith("anki_")
+    assert result["firstFields"] == ["<b>猫</b>"]
+
+
+def test_synchronous_anki_callback_maps_strict_error_envelope() -> None:
+    registry = JobRegistry()
+    handle = registry.begin()
+
+    class ErrorCallbacks:
+        def ankiVerifyTarget(self, raw: str) -> str:
+            request = json.loads(raw)["payload"]
+            return encode_message(
+                "anki.error",
+                {
+                    "runId": request["runId"],
+                    "requestId": request["requestId"],
+                    "operation": "verifyTarget",
+                    "code": "note_type_not_found",
+                    "message": "missing",
+                    "retryable": False,
+                },
+            )
+
+    adapters = CallbackAdapters(ErrorCallbacks(), registry, handle)
+
+    with pytest.raises(AnkiCallbackError) as exc_info:
+        adapters.anki.verify_target(
+            {
+                "deckName": "Mining",
+                "modelName": "Missing",
+                "requiredFields": ["Expression"],
+            }
+        )
+
+    assert exc_info.value.code == "note_type_not_found"
+    assert exc_info.value.retryable is False
+
+
+@pytest.mark.parametrize("result", [None, 3, {}])
+def test_synchronous_anki_callback_requires_json_string(result: object) -> None:
+    registry = JobRegistry()
+    handle = registry.begin()
+
+    class BadCallbacks:
+        def ankiScanFirstFields(self, raw: str) -> object:
+            return result
+
+    adapters = CallbackAdapters(BadCallbacks(), registry, handle)
+    with pytest.raises(BridgeProtocolError) as exc_info:
+        adapters.anki.scan_first_fields(
+            {"scope": {"kind": "knownVocabulary", "excludedDecks": []}}
+        )
+    assert exc_info.value.code == "invalid_callback_result"
+
+
+def test_synchronous_anki_callback_rejects_mismatched_request_id() -> None:
+    registry = JobRegistry()
+    handle = registry.begin()
+
+    class BadCallbacks:
+        def ankiScanFirstFields(self, raw: str) -> str:
+            request = json.loads(raw)["payload"]
+            return encode_message(
+                "anki.scanfirstfields.result",
+                {
+                    "runId": request["runId"],
+                    "requestId": "anki_" + "0" * 32,
+                    "firstFields": [],
+                },
+            )
+
+    adapters = CallbackAdapters(BadCallbacks(), registry, handle)
+    with pytest.raises(BridgeProtocolError) as exc_info:
+        adapters.anki.scan_first_fields(
+            {"scope": {"kind": "knownVocabulary", "excludedDecks": []}}
+        )
+    assert exc_info.value.code == "mismatched_callback_response"
