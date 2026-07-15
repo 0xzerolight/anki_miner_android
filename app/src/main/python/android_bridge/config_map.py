@@ -1,0 +1,421 @@
+"""Strict Android settings snapshot -> frozen desktop engine config mapping."""
+
+from __future__ import annotations
+
+import math
+import re
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass, replace
+from pathlib import Path
+from typing import cast
+from .protocol import BridgeProtocolError, decode_message
+
+_RESOURCE_ID_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,126}[A-Za-z0-9_-])?$")
+
+_STRING_FIELDS = frozenset(
+    {
+        "anki_deck_name",
+        "anki_note_type",
+        "anki_tags",
+        "subtitle_regex_filter",
+        "subtitle_regex_replacement",
+    }
+)
+_BOOL_FIELDS = frozenset(
+    {
+        "screenshot_animated",
+        "screenshot_animated_match_audio",
+        "use_known_words_db",
+        "exclude_hiragana_only_words",
+        "exclude_katakana_only_words",
+        "use_blacklist",
+        "use_whitelist",
+        "use_subtitle_regex_filter",
+        "bold_target_in_sentence",
+        "deduplicate_sentences",
+        "use_i_plus_one_filter",
+        "use_sentence_length_filter",
+    }
+)
+_FLOAT_RANGES: Mapping[str, tuple[float | None, float | None]] = {
+    "audio_padding": (0.0, None),
+    "screenshot_offset": (0.0, None),
+    "screenshot_animated_clip_duration": (0.0, None),
+    "subtitle_offset": (None, None),
+    # Desktop explicitly warns not to reduce this delay.
+    "jisho_delay": (0.5, None),
+    "max_sentence_duration_seconds": (0.0, None),
+}
+_INT_RANGES: Mapping[str, tuple[int | None, int | None]] = {
+    "audio_bitrate": (1, None),
+    "screenshot_animated_fps": (1, 120),
+    "screenshot_animated_height": (1, None),
+    "screenshot_animated_quality": (0, 100),
+    "max_frequency_rank": (0, None),
+    "max_sentence_chars": (0, None),
+    "reading_min_occurrence": (1, None),
+    "max_parallel_workers": (1, 32),
+}
+_LITERAL_FIELDS: Mapping[str, frozenset[str]] = {
+    "card_type": frozenset({"", "word_and_sentence", "click", "sentence", "audio"}),
+    "audio_format": frozenset({"mp3", "opus"}),
+    "screenshot_animated_format": frozenset({"avif", "webp"}),
+    "pitch_category_format": frozenset({"jp", "romaji"}),
+}
+_STRING_TUPLE_FIELDS = frozenset({"excluded_decks", "allowed_pos", "excluded_subtypes", "excluded_wordsets"})
+_OPTIONAL_PATH_FIELDS = frozenset({"blacklist_path", "whitelist_path"})
+_MAPPING_FIELDS = frozenset({"anki_fields", "card_type_marker_fields"})
+_CHAIN_FIELDS = frozenset({"dictionary_chain", "frequency_chain", "expression_audio_chain"})
+
+_EXPOSED_CONFIG_FIELDS = frozenset(
+    _STRING_FIELDS
+    | _BOOL_FIELDS
+    | set(_FLOAT_RANGES)
+    | set(_INT_RANGES)
+    | set(_LITERAL_FIELDS)
+    | _STRING_TUPLE_FIELDS
+    | _OPTIONAL_PATH_FIELDS
+    | _MAPPING_FIELDS
+    | _CHAIN_FIELDS
+)
+
+# Compatibility-only input.  It is captured into AndroidConfigSnapshot and is
+# never assigned to AnkiMinerConfig, because that would build the desktop
+# Google/Papago sentence-TTS chain.
+_LEGACY_ANDROID_TTS_FIELD = "reading_tts_enabled"
+
+
+@dataclass(frozen=True)
+class AndroidPaths:
+    """Process paths supplied by Android, never by the settings snapshot."""
+
+    files_dir: Path
+    cache_dir: Path
+    native_library_dir: Path
+
+    def __post_init__(self) -> None:
+        for name in ("files_dir", "cache_dir", "native_library_dir"):
+            value = getattr(self, name)
+            if isinstance(value, str):
+                value = Path(value)
+                object.__setattr__(self, name, value)
+            if not isinstance(value, Path) or not value.is_absolute():
+                raise BridgeProtocolError("invalid_android_path", f"{name} must be an absolute path")
+
+    @classmethod
+    def from_strings(cls, files_dir: str, cache_dir: str, native_library_dir: str) -> AndroidPaths:
+        return cls(Path(files_dir), Path(cache_dir), Path(native_library_dir))
+
+
+@dataclass(frozen=True)
+class AndroidConfigSnapshot:
+    """Engine config plus Android-only, non-engine execution options."""
+
+    engine_config: object
+    android_tts_enabled: bool
+
+
+def exposed_config_fields() -> frozenset[str]:
+    """Return the stable set Kotlin may place in ``settings``."""
+
+    return _EXPOSED_CONFIG_FIELDS
+
+
+def _invalid(field_name: str, detail: str) -> BridgeProtocolError:
+    return BridgeProtocolError("invalid_config_field", f"{field_name}: {detail}")
+
+
+def _string(field_name: str, value: object) -> str:
+    if not isinstance(value, str):
+        raise _invalid(field_name, "expected a string")
+    return value
+
+
+def _boolean(field_name: str, value: object) -> bool:
+    if type(value) is not bool:
+        raise _invalid(field_name, "expected a boolean")
+    return value
+
+
+def _float(field_name: str, value: object, bounds: tuple[float | None, float | None]) -> float:
+    if type(value) not in (int, float):
+        raise _invalid(field_name, "expected a number")
+    converted = float(cast(int | float, value))
+    if not math.isfinite(converted):
+        raise _invalid(field_name, "expected a finite number")
+    minimum, maximum = bounds
+    if minimum is not None and converted < minimum:
+        raise _invalid(field_name, f"must be at least {minimum}")
+    if maximum is not None and converted > maximum:
+        raise _invalid(field_name, f"must be at most {maximum}")
+    return converted
+
+
+def _integer(field_name: str, value: object, bounds: tuple[int | None, int | None]) -> int:
+    if type(value) is not int:
+        raise _invalid(field_name, "expected an integer")
+    minimum, maximum = bounds
+    if minimum is not None and value < minimum:
+        raise _invalid(field_name, f"must be at least {minimum}")
+    if maximum is not None and value > maximum:
+        raise _invalid(field_name, f"must be at most {maximum}")
+    return value
+
+
+def _literal(field_name: str, value: object, allowed: frozenset[str]) -> str:
+    if not isinstance(value, str) or value not in allowed:
+        raise _invalid(field_name, f"expected one of {sorted(allowed)!r}")
+    return value
+
+
+def _string_tuple(field_name: str, value: object) -> tuple[str, ...]:
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes, bytearray)):
+        raise _invalid(field_name, "expected an array of strings")
+    if any(not isinstance(item, str) for item in value):
+        raise _invalid(field_name, "expected an array of strings")
+    return tuple(value)
+
+
+def _optional_path(field_name: str, value: object) -> Path | None:
+    if value is None or value == "":
+        return None
+    if not isinstance(value, str):
+        raise _invalid(field_name, "expected an absolute path or null")
+    path = Path(value)
+    if not path.is_absolute():
+        raise _invalid(field_name, "expected an absolute path")
+    return path
+
+
+def _mapping_overlay(field_name: str, value: object, defaults: Mapping[str, str]) -> dict[str, str]:
+    if not isinstance(value, Mapping):
+        raise _invalid(field_name, "expected an object of string values")
+    unknown = set(value) - set(defaults)
+    if unknown:
+        raise _invalid(field_name, f"unknown keys: {sorted(unknown)!r}")
+    if any(not isinstance(key, str) or not isinstance(item, str) for key, item in value.items()):
+        raise _invalid(field_name, "expected an object of string values")
+    return {**dict(defaults), **dict(value)}
+
+
+def _resource_id(field_name: str, value: object) -> str:
+    if not isinstance(value, str) or not _RESOURCE_ID_RE.fullmatch(value) or ".." in value:
+        raise _invalid(field_name, "contains an unsafe resource ID")
+    return value
+
+
+def _chain_items(field_name: str, value: object) -> Sequence[object]:
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes, bytearray)):
+        raise _invalid(field_name, "expected an array")
+    return value
+
+
+def _entry_mapping(field_name: str, item: object, allowed_keys: frozenset[str]) -> Mapping[str, object]:
+    if not isinstance(item, Mapping) or any(not isinstance(key, str) for key in item):
+        raise _invalid(field_name, "chain entries must be objects")
+    unknown = set(item) - allowed_keys
+    if unknown:
+        raise _invalid(field_name, f"unknown entry keys: {sorted(unknown)!r}")
+    return item
+
+
+def _enabled(field_name: str, item: Mapping[str, object]) -> bool:
+    return _boolean(field_name, item.get("enabled", True))
+
+
+def _dictionary_chain(value: object, constructor: Callable[..., object]) -> tuple[object, ...]:
+    result: list[object] = []
+    identities: set[tuple[str, str | None]] = set()
+    for raw in _chain_items("dictionary_chain", value):
+        item = _entry_mapping("dictionary_chain", raw, frozenset({"kind", "dict_id", "enabled"}))
+        kind = item.get("kind")
+        if kind == "indexed":
+            dict_id: str | None = _resource_id("dictionary_chain.dict_id", item.get("dict_id"))
+        elif kind == "jisho":
+            if item.get("dict_id") is not None:
+                raise _invalid("dictionary_chain.dict_id", "jisho entries must use null")
+            dict_id = None
+        else:
+            raise _invalid("dictionary_chain.kind", "expected 'indexed' or 'jisho'")
+        identity = (kind, dict_id)
+        if identity in identities:
+            raise _invalid("dictionary_chain", "duplicate provider")
+        identities.add(identity)
+        result.append(constructor(kind=kind, dict_id=dict_id, enabled=_enabled("dictionary_chain.enabled", item)))
+    return tuple(result)
+
+
+def _frequency_chain(value: object, constructor: Callable[..., object]) -> tuple[object, ...]:
+    result: list[object] = []
+    identities: set[str] = set()
+    for raw in _chain_items("frequency_chain", value):
+        item = _entry_mapping("frequency_chain", raw, frozenset({"source_id", "enabled"}))
+        source_id = _resource_id("frequency_chain.source_id", item.get("source_id"))
+        if source_id in identities:
+            raise _invalid("frequency_chain", "duplicate source")
+        identities.add(source_id)
+        result.append(constructor(source_id=source_id, enabled=_enabled("frequency_chain.enabled", item)))
+    return tuple(result)
+
+
+def _expression_audio_chain(value: object, constructor: Callable[..., object]) -> tuple[object, ...]:
+    result: list[object] = []
+    identities: set[str] = set()
+    for raw in _chain_items("expression_audio_chain", value):
+        item = _entry_mapping("expression_audio_chain", raw, frozenset({"kind", "pack_id", "enabled"}))
+        if item.get("kind") != "pack":
+            raise BridgeProtocolError(
+                "unsupported_audio_source",
+                "Android expression audio supports local packs only",
+            )
+        pack_id = _resource_id("expression_audio_chain.pack_id", item.get("pack_id"))
+        if pack_id in identities:
+            raise _invalid("expression_audio_chain", "duplicate pack")
+        identities.add(pack_id)
+        result.append(
+            constructor(
+                kind="pack",
+                pack_id=pack_id,
+                url=None,
+                enabled=_enabled("expression_audio_chain.enabled", item),
+            )
+        )
+    return tuple(result)
+
+
+def _android_path_overrides(paths: AndroidPaths) -> dict[str, Path]:
+    home = paths.files_dir
+    return {
+        "media_temp_folder": paths.cache_dir / "anki_miner_temp",
+        "jmdict_path": home / "JMdict_e",
+        "dicts_root": home / "dicts",
+        "audio_packs_root": home / "audio_packs",
+        "pitch_accent_path": home / "pitch_accent.csv",
+        "freqs_root": home / "freqs",
+        "known_words_db_path": home / "known_words.db",
+        "stats_db_path": home / "stats.db",
+        "log_path": home / "anki_miner.log",
+        "ffmpeg_location": paths.native_library_dir / "libffmpeg.so",
+        "ffprobe_location": paths.native_library_dir / "libffprobe.so",
+        "asr_models_root": home / "asr_models",
+        "cuda_libs_root": home / "cuda_libs",
+        "onnx_pack_root": home / "onnx_pack",
+        "bin_root": home / "bin",
+        "themes_root": home / "themes",
+    }
+
+
+def map_config_settings(
+    settings: Mapping[str, object],
+    paths: AndroidPaths,
+    *,
+    android_tts_enabled: bool | None = None,
+) -> AndroidConfigSnapshot:
+    """Map an allowlisted settings object onto desktop defaults.
+
+    All engine imports are function-local so ``bootstrap.initialize`` remains
+    the only legal first engine touch.  Missing fields retain the exact desktop
+    default; Android-owned paths and cut network-audio seams are then forced.
+    """
+
+    if not isinstance(settings, Mapping) or any(not isinstance(key, str) for key in settings):
+        raise BridgeProtocolError("invalid_config_snapshot", "settings must be a JSON object")
+    unknown = set(settings) - _EXPOSED_CONFIG_FIELDS - {_LEGACY_ANDROID_TTS_FIELD}
+    if unknown:
+        raise BridgeProtocolError("unknown_config_field", f"Unknown or non-Android fields: {sorted(unknown)!r}")
+
+    legacy_tts: bool | None = None
+    if _LEGACY_ANDROID_TTS_FIELD in settings:
+        legacy_tts = _boolean(_LEGACY_ANDROID_TTS_FIELD, settings[_LEGACY_ANDROID_TTS_FIELD])
+    if android_tts_enabled is not None and type(android_tts_enabled) is not bool:
+        raise _invalid("androidTtsEnabled", "expected a boolean")
+    if android_tts_enabled is not None and legacy_tts is not None and android_tts_enabled != legacy_tts:
+        raise BridgeProtocolError(
+            "conflicting_android_tts_flags",
+            "androidTtsEnabled conflicts with legacy reading_tts_enabled",
+        )
+    ephemeral_tts = android_tts_enabled if android_tts_enabled is not None else (legacy_tts or False)
+
+    from anki_miner.config import AnkiMinerConfig, AudioSourceEntry, ChainEntry, FreqEntry
+
+    base = AnkiMinerConfig()
+    updates: dict[str, object] = {}
+    for field_name, value in settings.items():
+        if field_name == _LEGACY_ANDROID_TTS_FIELD:
+            continue
+        if field_name in _STRING_FIELDS:
+            updates[field_name] = _string(field_name, value)
+        elif field_name in _BOOL_FIELDS:
+            updates[field_name] = _boolean(field_name, value)
+        elif field_name in _FLOAT_RANGES:
+            updates[field_name] = _float(field_name, value, _FLOAT_RANGES[field_name])
+        elif field_name in _INT_RANGES:
+            updates[field_name] = _integer(field_name, value, _INT_RANGES[field_name])
+        elif field_name in _LITERAL_FIELDS:
+            updates[field_name] = _literal(field_name, value, _LITERAL_FIELDS[field_name])
+        elif field_name in _STRING_TUPLE_FIELDS:
+            updates[field_name] = _string_tuple(field_name, value)
+        elif field_name in _OPTIONAL_PATH_FIELDS:
+            updates[field_name] = _optional_path(field_name, value)
+        elif field_name in _MAPPING_FIELDS:
+            updates[field_name] = _mapping_overlay(field_name, value, getattr(base, field_name))
+        elif field_name == "dictionary_chain":
+            updates[field_name] = _dictionary_chain(value, ChainEntry)
+        elif field_name == "frequency_chain":
+            updates[field_name] = _frequency_chain(value, FreqEntry)
+        elif field_name == "expression_audio_chain":
+            updates[field_name] = _expression_audio_chain(value, AudioSourceEntry)
+        else:  # pragma: no cover - guarded by the allowlist union
+            raise BridgeProtocolError("unknown_config_field", field_name)
+
+    # These overrides are deliberately applied after user settings.
+    updates.update(_android_path_overrides(paths))
+    updates.setdefault("expression_audio_chain", ())
+    # The Android TTS preference is execution metadata for a Kotlin-injected
+    # synthesizer.  Keeping all desktop flags false mechanically prevents the
+    # Google/Papago sentence fetcher chain from being composed.
+    updates["reading_tts_enabled"] = False
+    updates["reading_tts_google_enabled"] = False
+    updates["reading_tts_papago_enabled"] = False
+
+    return AndroidConfigSnapshot(
+        # ``updates`` is validated field-by-field above; mypy cannot preserve
+        # those dependent key/value types through a heterogeneous dict.
+        engine_config=replace(base, **updates),  # type: ignore[arg-type]
+        android_tts_enabled=ephemeral_tts,
+    )
+
+
+def map_config_json(
+    raw_snapshot: str,
+    files_dir: str,
+    cache_dir: str,
+    native_library_dir: str,
+) -> AndroidConfigSnapshot:
+    """Decode a public ``config.snapshot`` message and map it."""
+
+    payload = decode_message(raw_snapshot, expected_type="config.snapshot")
+    if not set(payload).issubset({"settings", "androidTtsEnabled"}):
+        raise BridgeProtocolError("invalid_config_snapshot", "Config snapshot fields are invalid")
+    settings = payload.get("settings", {})
+    if not isinstance(settings, dict):
+        raise BridgeProtocolError("invalid_config_snapshot", "settings must be a JSON object")
+    tts = payload.get("androidTtsEnabled")
+    if "androidTtsEnabled" in payload and type(tts) is not bool:
+        raise _invalid("androidTtsEnabled", "expected a boolean")
+    return map_config_settings(
+        settings,
+        AndroidPaths.from_strings(files_dir, cache_dir, native_library_dir),
+        android_tts_enabled=tts,
+    )
+
+
+def engine_config_from_json(
+    raw_snapshot: str,
+    files_dir: str,
+    cache_dir: str,
+    native_library_dir: str,
+) -> object:
+    """Convenience entry point for callers which do not need Android options."""
+
+    return map_config_json(raw_snapshot, files_dir, cache_dir, native_library_dir).engine_config
