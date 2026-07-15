@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="scaffold_probe_label">Anki Miner technical probe</string>
+    <string name="scaffold_probe_body">Harness ready\nAPI %1$d\nABI %2$s\nPython %3$s</string>
+</resources>
