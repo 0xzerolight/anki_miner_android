@@ -1,0 +1,262 @@
+"""Desktop shortcut creation service.
+
+Cross-platform shortcut creation for Anki Miner GUI. Supports Linux (.desktop
+file), Windows (.lnk), and macOS (informational only). Replaces the previous
+CLI-driven `create-shortcut` command with a pure service the GUI can call.
+"""
+
+import contextlib
+import os
+import shutil
+import subprocess
+import sys
+from dataclasses import dataclass, field
+from pathlib import Path
+
+from anki_miner.utils.subprocess_utils import no_window_kwargs
+
+APP_NAME = "Anki Miner"
+APP_ID = "anki-miner"
+APP_COMMENT = "Japanese vocabulary mining from media"
+ICON_FILENAME = "anki_miner.svg"
+
+# These helpers run synchronously on the GUI thread; bound them so a hung
+# PowerShell / update-desktop-database can't freeze the whole app.
+_SUBPROCESS_TIMEOUT_SECONDS = 10
+
+
+@dataclass
+class ShortcutResult:
+    """Structured outcome of a shortcut creation attempt."""
+
+    success: bool = False
+    messages: list[str] = field(default_factory=list)
+    paths_created: list[Path] = field(default_factory=list)
+    error: str | None = None
+
+
+def _get_icon_source() -> Path:
+    """Resolve icon source, honoring PyInstaller frozen bundles."""
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        return Path(sys._MEIPASS) / "anki_miner" / "gui" / "resources" / "icons"
+    return Path(__file__).resolve().parent.parent / "gui" / "resources" / "icons"
+
+
+def _format_desktop_exec(exe_path: Path) -> str:
+    """Quote and escape *exe_path* for a freedesktop ``Exec=`` value.
+
+    Per the Desktop Entry spec, a value containing reserved characters (notably
+    spaces) must be double-quoted, with backslash escaping for the literal
+    ``"``, `` ` ``, ``$`` and ``\\`` inside the quotes. A literal ``%`` is a
+    field-code introducer and must be doubled to ``%%``.
+    """
+    escaped = str(exe_path).replace("\\", "\\\\")
+    for ch in ('"', "`", "$"):
+        escaped = escaped.replace(ch, "\\" + ch)
+    escaped = escaped.replace("%", "%%")
+    return f'"{escaped}"'
+
+
+class ShortcutService:
+    """Create and detect desktop shortcuts for the GUI app."""
+
+    @staticmethod
+    def _windows_desktop_dir() -> Path:
+        """Resolve where a Windows shortcut lives.
+
+        Falls back to ``Path.home()`` when ``~/Desktop`` is absent (e.g. a
+        OneDrive-redirected desktop). Shared by creation and existence checks so
+        they never diverge.
+        """
+        desktop = Path.home() / "Desktop"
+        return desktop if desktop.exists() else Path.home()
+
+    @staticmethod
+    def shortcut_exists() -> bool:
+        """Check whether a shortcut already exists for the current platform."""
+        if sys.platform == "linux":
+            return (Path.home() / ".local" / "share" / "applications" / f"{APP_ID}.desktop").exists()
+        if sys.platform == "win32":
+            return (ShortcutService._windows_desktop_dir() / f"{APP_NAME}.lnk").exists()
+        return False
+
+    @staticmethod
+    def _find_executable() -> Path | None:
+        """Locate the anki_miner_gui executable (or frozen binary)."""
+        # AppImage runtime sets APPIMAGE to the real .appimage path before Python
+        # starts. sys.executable inside an AppImage is the ephemeral /tmp/.mount_*
+        # FUSE path that vanishes when the app closes, so the APPIMAGE check MUST
+        # come before the sys.frozen branch — otherwise the desktop entry's Exec
+        # points at a mount that no longer exists on the next launch. Mirrors
+        # update_checker._detect_target().
+        appimage = os.environ.get("APPIMAGE")
+        if appimage:
+            return Path(appimage).resolve()
+        if getattr(sys, "frozen", False):
+            return Path(sys.executable).resolve()
+
+        exe = shutil.which("anki_miner_gui")
+        if exe:
+            return Path(exe).resolve()
+
+        venv_dir = Path(sys.prefix)
+        if sys.platform == "win32":
+            candidate = venv_dir / "Scripts" / "anki_miner_gui.exe"
+        else:
+            candidate = venv_dir / "bin" / "anki_miner_gui"
+
+        if candidate.exists():
+            return candidate.resolve()
+        return None
+
+    @classmethod
+    def create_shortcut(cls) -> ShortcutResult:
+        """Create a desktop shortcut on the current platform."""
+        result = ShortcutResult()
+
+        exe_path = cls._find_executable()
+        if exe_path is None:
+            result.error = (
+                "Could not find 'anki_miner_gui' executable. "
+                "Make sure Anki Miner is installed (pip install .) and try again."
+            )
+            return result
+
+        result.messages.append(f"Found executable: {exe_path}")
+
+        if sys.platform == "linux":
+            cls._create_linux_shortcut(exe_path, result)
+        elif sys.platform == "win32":
+            cls._create_windows_shortcut(exe_path, result)
+        elif sys.platform == "darwin":
+            result.success = True
+            result.messages.append(
+                f"Automatic shortcut creation is not supported on macOS. " f"To launch {APP_NAME}, run:\n  {exe_path}"
+            )
+        else:
+            result.error = f"Unsupported platform: {sys.platform}"
+
+        return result
+
+    @staticmethod
+    def _create_linux_shortcut(exe_path: Path, result: ShortcutResult) -> None:
+        icon_dest_dir = Path.home() / ".local" / "share" / "icons" / "hicolor" / "scalable" / "apps"
+        icon_dest_dir.mkdir(parents=True, exist_ok=True)
+
+        icon_source = _get_icon_source() / ICON_FILENAME
+        icon_dest = icon_dest_dir / f"{APP_ID}.svg"
+
+        if icon_source.exists():
+            shutil.copy2(icon_source, icon_dest)
+            result.messages.append(f"Icon installed: {icon_dest}")
+            result.paths_created.append(icon_dest)
+        else:
+            result.messages.append(f"Warning: icon not found at {icon_source}; using default icon.")
+
+        desktop_dir = Path.home() / ".local" / "share" / "applications"
+        desktop_dir.mkdir(parents=True, exist_ok=True)
+
+        desktop_file = desktop_dir / f"{APP_ID}.desktop"
+        desktop_content = f"""[Desktop Entry]
+Type=Application
+Name={APP_NAME}
+Comment={APP_COMMENT}
+Exec={_format_desktop_exec(exe_path)}
+Icon={APP_ID}
+Categories=Education;Languages;
+Terminal=false
+StartupWMClass=anki_miner
+"""
+        desktop_file.write_text(desktop_content)
+        desktop_file.chmod(0o755)
+        result.messages.append(f"Desktop file created: {desktop_file}")
+        result.paths_created.append(desktop_file)
+
+        with contextlib.suppress(FileNotFoundError, subprocess.TimeoutExpired):
+            subprocess.run(
+                ["update-desktop-database", str(desktop_dir)],
+                capture_output=True,
+                check=False,
+                timeout=_SUBPROCESS_TIMEOUT_SECONDS,
+                **no_window_kwargs(),  # hide the Windows cmd.exe flash (Issue #79)
+            )
+
+        result.success = True
+        result.messages.append(f"'{APP_NAME}' should now appear in your application menu.")
+
+    @staticmethod
+    def _ps_quote(value: str) -> str:
+        """Return *value* as a single-quoted PowerShell string literal.
+
+        Single-quoted PS literals don't expand ``$`` or backtick (both legal in
+        Windows paths, e.g. ``C:\\Users\\j$on``); an embedded single quote is
+        escaped by doubling it.
+        """
+        return "'" + value.replace("'", "''") + "'"
+
+    @staticmethod
+    def _create_windows_shortcut(exe_path: Path, result: ShortcutResult) -> None:
+        desktop = ShortcutService._windows_desktop_dir()
+        if desktop == Path.home():
+            result.messages.append(f"Desktop folder not found, using {desktop}")
+
+        shortcut_path = desktop / f"{APP_NAME}.lnk"
+
+        ps_script = (
+            "$ws = New-Object -ComObject WScript.Shell; "
+            f"$s = $ws.CreateShortcut({ShortcutService._ps_quote(str(shortcut_path))}); "
+            f"$s.TargetPath = {ShortcutService._ps_quote(str(exe_path))}; "
+            f"$s.WorkingDirectory = {ShortcutService._ps_quote(str(exe_path.parent))}; "
+            f"$s.IconLocation = {ShortcutService._ps_quote(f'{exe_path}, 0')}; "
+            f"$s.Description = {ShortcutService._ps_quote(APP_COMMENT)}; "
+            "$s.Save()"
+        )
+
+        try:
+            subprocess.run(
+                ["powershell", "-NoProfile", "-Command", ps_script],
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=_SUBPROCESS_TIMEOUT_SECONDS,
+                **no_window_kwargs(),  # hide the Windows cmd.exe flash (Issue #79)
+            )
+            result.messages.append(f"Desktop shortcut created: {shortcut_path}")
+            result.paths_created.append(shortcut_path)
+        except subprocess.CalledProcessError as exc:
+            result.error = f"Error creating shortcut: {exc.stderr}"
+            return
+        except subprocess.TimeoutExpired:
+            result.error = "PowerShell timed out while creating the shortcut."
+            return
+        except FileNotFoundError:
+            result.error = "PowerShell not found. Cannot create shortcut."
+            return
+
+        start_menu = Path.home() / "AppData" / "Roaming" / "Microsoft" / "Windows" / "Start Menu" / "Programs"
+        if start_menu.exists():
+            start_shortcut = start_menu / f"{APP_NAME}.lnk"
+            ps_script_start = (
+                "$ws = New-Object -ComObject WScript.Shell; "
+                f"$s = $ws.CreateShortcut({ShortcutService._ps_quote(str(start_shortcut))}); "
+                f"$s.TargetPath = {ShortcutService._ps_quote(str(exe_path))}; "
+                f"$s.WorkingDirectory = {ShortcutService._ps_quote(str(exe_path.parent))}; "
+                f"$s.IconLocation = {ShortcutService._ps_quote(f'{exe_path}, 0')}; "
+                f"$s.Description = {ShortcutService._ps_quote(APP_COMMENT)}; "
+                "$s.Save()"
+            )
+            try:
+                subprocess.run(
+                    ["powershell", "-NoProfile", "-Command", ps_script_start],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                    timeout=_SUBPROCESS_TIMEOUT_SECONDS,
+                    **no_window_kwargs(),  # hide the Windows cmd.exe flash (Issue #79)
+                )
+                result.messages.append(f"Start Menu shortcut created: {start_shortcut}")
+                result.paths_created.append(start_shortcut)
+            except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
+                pass  # optional
+
+        result.success = True
