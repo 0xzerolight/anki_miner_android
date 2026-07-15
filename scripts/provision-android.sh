@@ -116,22 +116,7 @@ if [[ ! -x "$ANDROID_CMDLINE_TOOLS_HOME/bin/sdkmanager" ]]; then
     rmdir "$tools_staging"
 fi
 
-"$SCRIPT_DIR/android-licenses.sh" check
-
-packages=(
-    "platform-tools"
-    "emulator"
-    "platforms;android-$ANDROID_API_LEVEL"
-    "build-tools;$ANDROID_BUILD_TOOLS_VERSION"
-    "ndk;$ANDROID_NDK_VERSION"
-    "$ANDROID_SYSTEM_IMAGE_4K"
-    "$ANDROID_SYSTEM_IMAGE_16K"
-)
-
-echo "Installing Android SDK packages"
-sdkmanager --sdk_root="$ANDROID_HOME" --channel=0 "${packages[@]}"
-sdkmanager --sdk_root="$ANDROID_HOME" --list_installed \
-    >"$ANKI_MINER_ANDROID_TOOLCHAIN_ROOT/installed-packages.txt"
+"$SCRIPT_DIR/install-android-sdk-packages.sh"
 
 create_avd() {
     local name="$1"

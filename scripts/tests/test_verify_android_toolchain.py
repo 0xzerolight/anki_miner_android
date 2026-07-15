@@ -53,7 +53,8 @@ class ToolchainVerificationTest(unittest.TestCase):
             "AvdId=fixture\n"
             "abi.type=x86_64\n"
             "image.sysdir.1=system-images/android-36/google_apis_ps16k/x86_64/\n"
-            "tag.id=google_apis_ps16k\n",
+            "tag.id=page_size_16kb\n"
+            "tag.ids=page_size_16kb,google_apis\n",
             encoding="utf-8",
         )
         return argparse.Namespace(
@@ -85,6 +86,34 @@ class ToolchainVerificationTest(unittest.TestCase):
                 encoding="utf-8",
             )
             with self.assertRaisesRegex(VerificationError, "path is"):
+                verify(arguments)
+
+    def test_rejects_wrong_ps16k_primary_tag(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            arguments = self.fixture(Path(directory))
+            config = arguments.avd_home / "fixture.avd" / "config.ini"
+            config.write_text(
+                config.read_text(encoding="utf-8").replace(
+                    "tag.id=page_size_16kb",
+                    "tag.id=google_apis",
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(VerificationError, "tag.id is"):
+                verify(arguments)
+
+    def test_rejects_missing_ps16k_secondary_tag(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            arguments = self.fixture(Path(directory))
+            config = arguments.avd_home / "fixture.avd" / "config.ini"
+            config.write_text(
+                config.read_text(encoding="utf-8").replace(
+                    "tag.ids=page_size_16kb,google_apis",
+                    "tag.ids=page_size_16kb",
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(VerificationError, "tag.ids is"):
                 verify(arguments)
 
 

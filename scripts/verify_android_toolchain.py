@@ -96,7 +96,13 @@ def verify_avd(avd_home: Path, specification: str) -> None:
     image_fields = image_package.split(";")
     if len(image_fields) != 4 or image_fields[0] != "system-images":
         raise VerificationError(f"malformed AVD image package: {image_package!r}")
-    _, platform, tag, abi = image_fields
+    _, platform, image_tag, abi = image_fields
+    if image_tag == "google_apis_ps16k":
+        primary_tag = "page_size_16kb"
+        required_tags = {"page_size_16kb", "google_apis"}
+    else:
+        primary_tag = image_tag
+        required_tags = None
 
     avd_dir = avd_home / f"{name}.avd"
     root_config = read_properties(avd_home / f"{name}.ini")
@@ -108,7 +114,7 @@ def verify_avd(avd_home: Path, specification: str) -> None:
         "AvdId": name,
         "abi.type": abi,
         "image.sysdir.1": expected_image_dir,
-        "tag.id": tag,
+        "tag.id": primary_tag,
     }
     actual_values = {
         "AvdId": config.get("AvdId"),
@@ -120,6 +126,18 @@ def verify_avd(avd_home: Path, specification: str) -> None:
         if actual_values[key] != expected:
             raise VerificationError(
                 f"{avd_dir}/config.ini: {key} is {actual_values[key]!r}, expected {expected!r}",
+            )
+
+    if required_tags is not None:
+        actual_tags = {
+            tag.strip()
+            for tag in config.get("tag.ids", "").split(",")
+            if tag.strip()
+        }
+        if actual_tags != required_tags:
+            raise VerificationError(
+                f"{avd_dir}/config.ini: tag.ids is {sorted(actual_tags)!r}, "
+                f"expected {sorted(required_tags)!r}",
             )
 
     if root_config.get("target") != platform:
