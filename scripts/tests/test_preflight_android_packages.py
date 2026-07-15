@@ -108,7 +108,7 @@ fi
             license_dir = root / "sdk" / "licenses"
             license_dir.mkdir(parents=True)
             (license_dir / "android-sdk-license").write_text(
-                "efa68a6b3c661d18699d5c026771d5911cdc2f83\n",
+                "24333f8a63b6825ea9c5514f83c2829b004d1fee\n",
                 encoding="utf-8",
             )
 
