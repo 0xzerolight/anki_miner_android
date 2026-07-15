@@ -104,8 +104,10 @@ class NativeArtifactTest(unittest.TestCase):
         payload: bytes,
         *,
         required: list[str],
+        reject_base_unidic: bool = False,
+        suffix: str = ".apk",
     ) -> Inspection:
-        with tempfile.NamedTemporaryFile(suffix=".apk") as artifact:
+        with tempfile.NamedTemporaryFile(suffix=suffix) as artifact:
             artifact.write(payload)
             artifact.flush()
             return inspect_artifact(
@@ -115,6 +117,7 @@ class NativeArtifactTest(unittest.TestCase):
                     forbid_entry=[],
                     require_entry=required,
                     require_app_imy=False,
+                    reject_base_unidic=reject_base_unidic,
                 )
             )
 
@@ -184,6 +187,25 @@ class NativeArtifactTest(unittest.TestCase):
                 required=["lib/x86_64/libanki_miner_mecab.so"],
             )
 
+    def test_required_entry_placeholder_cannot_be_satisfied_by_unrelated_elf(
+        self,
+    ) -> None:
+        expected = "lib/x86_64/libanki_miner_mecab.so"
+        payload = archive(
+            {
+                expected: b"not an ELF",
+                "lib/x86_64/libchaquopy.so": elf64(),
+            }
+        )
+        with self.assertRaisesRegex(ArtifactError, "missing required direct"):
+            self.inspect_complete(payload, required=[expected])
+
+    def test_required_shared_library_must_be_et_dyn(self) -> None:
+        expected = "lib/x86_64/libanki_miner_mecab.so"
+        payload = archive({expected: elf64(elf_type=2)})
+        with self.assertRaisesRegex(ArtifactError, "must be ET_DYN"):
+            self.inspect_complete(payload, required=[expected])
+
     def test_required_direct_entry_is_exact_and_case_sensitive(self) -> None:
         expected = "lib/x86_64/libanki_miner_mecab.so"
         result = self.inspect_complete(
@@ -191,6 +213,98 @@ class NativeArtifactTest(unittest.TestCase):
             required=[expected],
         )
         self.assertEqual({expected}, result.found_required_entries)
+
+    def test_rejects_unidic_payload_anywhere_in_apk_base(self) -> None:
+        payload = archive(
+            {
+                "lib/x86_64/libchaquopy.so": elf64(),
+                "assets/unrelated/matrix.bin": b"dictionary payload",
+            }
+        )
+        with self.assertRaisesRegex(ArtifactError, "UniDic payload"):
+            self.inspect_complete(
+                payload,
+                required=[],
+                reject_base_unidic=True,
+            )
+
+    def test_rejects_empty_unidic_dicdir_layout_in_apk_base(self) -> None:
+        payload = archive(
+            {
+                "lib/x86_64/libchaquopy.so": elf64(),
+                "assets/unidic_lite/dicdir/": b"",
+            }
+        )
+        with self.assertRaisesRegex(ArtifactError, "UniDic dicdir layout"):
+            self.inspect_complete(
+                payload,
+                required=[],
+                reject_base_unidic=True,
+            )
+
+    def test_rejects_unidic_layout_inside_nested_imy_archive(self) -> None:
+        nested_zip = archive(
+            {"python/unidic_lite/dicdir/sys.dic": b"dictionary payload"}
+        )
+        app_imy = archive({"chaquopy/assets/runtime.zip": nested_zip})
+        payload = archive(
+            {
+                "lib/x86_64/libchaquopy.so": elf64(),
+                "assets/chaquopy/app.imy": app_imy,
+            }
+        )
+        with self.assertRaisesRegex(ArtifactError, "UniDic"):
+            self.inspect_complete(
+                payload,
+                required=[],
+                reject_base_unidic=True,
+            )
+
+    def test_rejects_named_unidic_archive_without_opening_it(self) -> None:
+        payload = archive(
+            {
+                "lib/x86_64/libchaquopy.so": elf64(),
+                "assets/data/unidic-lite.tar.gz": b"opaque archive",
+            }
+        )
+        with self.assertRaisesRegex(ArtifactError, "UniDic archive"):
+            self.inspect_complete(
+                payload,
+                required=[],
+                reject_base_unidic=True,
+            )
+
+    def test_allows_unidic_in_separate_aab_asset_pack(self) -> None:
+        expected = "base/lib/x86_64/libanki_miner_mecab.so"
+        payload = archive(
+            {
+                expected: elf64(),
+                "unidic_pack/assets/unidic_lite/dicdir/sys.dic": b"asset pack",
+            }
+        )
+        result = self.inspect_complete(
+            payload,
+            required=[expected],
+            reject_base_unidic=True,
+            suffix=".aab",
+        )
+        self.assertEqual({expected}, result.found_required_entries)
+
+    def test_rejects_unidic_inside_aab_base_module(self) -> None:
+        expected = "base/lib/x86_64/libanki_miner_mecab.so"
+        payload = archive(
+            {
+                expected: elf64(),
+                "base/assets/unidic_lite/dicdir/matrix.bin": b"dictionary payload",
+            }
+        )
+        with self.assertRaisesRegex(ArtifactError, "UniDic"):
+            self.inspect_complete(
+                payload,
+                required=[expected],
+                reject_base_unidic=True,
+                suffix=".aab",
+            )
 
 
 if __name__ == "__main__":

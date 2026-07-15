@@ -6,7 +6,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/android-env.sh"
 
 ARTIFACT=""
-PYTHON_ARGS=(--require-app-imy)
+PYTHON_ARGS=(--require-app-imy --reject-base-unidic)
 
 usage() {
     cat <<'EOF'
@@ -18,6 +18,8 @@ Options:
   --require-entry PATH  Require this exact direct archive entry.
 
 The gate inspects every ELF in APKs, AABs, nested ZIPs and Chaquopy IMYs.
+It rejects UniDic payloads from the APK/AAB base module; a future separate
+Play Asset Delivery module remains outside that base-only policy.
 APKs additionally require 16 KiB zip alignment and extractNativeLibs=true.
 EOF
 }

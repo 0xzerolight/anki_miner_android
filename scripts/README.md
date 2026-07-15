@@ -65,7 +65,9 @@ are therefore `emulatorDebug` (x86_64) and `deviceRelease` (arm64-v8a):
 `scripts/check-native-artifact.sh` recursively opens APKs, AABs, ZIPs and
 Chaquopy `.imy` files. It rejects unexpected ABIs, 4 KiB-aligned ELF load
 segments, ffmpeg/ffprobe files which are not dynamically linked PIE command
-executables, debug probe leakage, invalid APK zip-alignment, and manifests
-which do not extract native executables. Gradle resolves with committed locks
-for every project configuration and strict SHA-256 dependency verification;
-plugin artifacts and their transitives are covered by the same metadata.
+executables, UniDic payloads or layouts in an APK/AAB base module, debug probe
+leakage, invalid APK zip-alignment, and manifests which do not extract native
+executables. A separate AAB asset-pack module is deliberately outside the
+UniDic base-module check. Gradle resolves with committed locks for every
+project configuration and strict SHA-256 dependency verification; plugin
+artifacts and their transitives are covered by the same metadata.
