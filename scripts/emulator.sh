@@ -8,6 +8,7 @@ source "$SCRIPT_DIR/android-env.sh"
 HEADLESS=auto
 SOFTWARE=auto
 WIPE_DATA=false
+PAGE_SIZE_LANE=4k
 EXTRA_ARGS=()
 
 usage() {
@@ -19,6 +20,7 @@ Options:
   --window         Require a graphical emulator window.
   --software       Disable KVM and use software CPU/GPU emulation.
   --hardware       Require hardware acceleration.
+  --page-size SIZE Select the 4k or 16k API 36 image (default: 4k).
   --wipe-data      Reset the AVD before booting.
 
 Headless mode is selected automatically without a display. Software mode is
@@ -44,6 +46,11 @@ while (($#)); do
         --wipe-data)
             WIPE_DATA=true
             ;;
+        --page-size)
+            (($# >= 2)) || { usage >&2; exit 2; }
+            PAGE_SIZE_LANE="$2"
+            shift
+            ;;
         -h|--help)
             usage
             exit 0
@@ -60,13 +67,44 @@ while (($#)); do
     shift
 done
 
+case "$PAGE_SIZE_LANE" in
+    4k)
+        AVD_NAME="$ANDROID_AVD_4K_NAME"
+        EMULATOR_PORT="$ANDROID_EMULATOR_4K_PORT"
+        EMULATOR_SERIAL="$ANDROID_EMULATOR_4K_SERIAL"
+        ;;
+    16k)
+        AVD_NAME="$ANDROID_AVD_16K_NAME"
+        EMULATOR_PORT="$ANDROID_EMULATOR_16K_PORT"
+        EMULATOR_SERIAL="$ANDROID_EMULATOR_16K_SERIAL"
+        ;;
+    *)
+        echo "Page size must be 4k or 16k." >&2
+        exit 2
+        ;;
+esac
+
 if [[ ! -x "$ANDROID_HOME/emulator/emulator" ]]; then
     echo "Android Emulator is not installed; run scripts/provision-android.sh first." >&2
     exit 1
 fi
-if ! emulator -list-avds | grep -Fxq "$ANDROID_AVD_NAME"; then
-    echo "AVD $ANDROID_AVD_NAME is missing; rerun provisioning without --no-avd." >&2
+"$SCRIPT_DIR/verify-android-toolchain.sh"
+if ! emulator -list-avds | grep -Fx "$AVD_NAME" >/dev/null; then
+    echo "AVD $AVD_NAME is missing; rerun provisioning." >&2
     exit 1
+fi
+if adb devices | awk -v serial="$EMULATOR_SERIAL" \
+    '$1 == serial { found = 1 } END { exit !found }'; then
+    echo "$EMULATOR_SERIAL is already reserved by a running or offline emulator." >&2
+    exit 1
+fi
+if command -v ss >/dev/null; then
+    adb_port=$((EMULATOR_PORT + 1))
+    if ss -H -ltn | awk -v console=":$EMULATOR_PORT" -v adb=":$adb_port" \
+        '$4 ~ console "$" || $4 ~ adb "$" { found = 1 } END { exit !found }'; then
+        echo "Emulator ports $EMULATOR_PORT/$adb_port are already in use." >&2
+        exit 1
+    fi
 fi
 
 if [[ "$HEADLESS" == auto ]]; then
@@ -84,9 +122,14 @@ if [[ "$SOFTWARE" == auto ]]; then
         SOFTWARE=true
     fi
 fi
+if [[ "$SOFTWARE" == false ]] && { [[ ! -r /dev/kvm ]] || [[ ! -w /dev/kvm ]]; }; then
+    echo "Hardware acceleration was requested, but /dev/kvm is unavailable." >&2
+    exit 1
+fi
 
 args=(
-    -avd "$ANDROID_AVD_NAME"
+    -avd "$AVD_NAME"
+    -port "$EMULATOR_PORT"
     -netdelay none
     -netspeed full
     -no-boot-anim

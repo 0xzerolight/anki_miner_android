@@ -26,10 +26,16 @@ export ANDROID_CMDLINE_TOOLS_HOME="$ANDROID_HOME/cmdline-tools/$ANDROID_CMDLINE_
 export ANDROID_API_LEVEL="36"
 export ANDROID_BUILD_TOOLS_VERSION="36.0.0"
 export ANDROID_NDK_VERSION="28.2.13676358"
-export ANDROID_SYSTEM_IMAGE="system-images;android-36;google_apis;x86_64"
-export ANDROID_AVD_NAME="anki_miner_api36"
+export ANDROID_SYSTEM_IMAGE_4K="system-images;android-36;google_apis;x86_64"
+export ANDROID_SYSTEM_IMAGE_16K="system-images;android-36;google_apis_ps16k;x86_64"
+export ANDROID_AVD_4K_NAME="anki_miner_api36"
+export ANDROID_AVD_16K_NAME="anki_miner_api36_ps16k"
+export ANDROID_EMULATOR_4K_PORT="5554"
+export ANDROID_EMULATOR_16K_PORT="5556"
+export ANDROID_EMULATOR_4K_SERIAL="emulator-$ANDROID_EMULATOR_4K_PORT"
+export ANDROID_EMULATOR_16K_SERIAL="emulator-$ANDROID_EMULATOR_16K_PORT"
 
-export PATH="$JAVA_HOME/bin:$ANDROID_CMDLINE_TOOLS_HOME/bin:$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator:$PATH"
+export PATH="$JAVA_HOME/bin:$ANDROID_CMDLINE_TOOLS_HOME/bin:$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator:$ANDROID_HOME/build-tools/$ANDROID_BUILD_TOOLS_VERSION:$PATH"
 
 unset _anki_miner_script_dir
 unset _anki_miner_checkout_root

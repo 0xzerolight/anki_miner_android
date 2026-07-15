@@ -11,7 +11,10 @@ val pythonVersion = libs.versions.python.get()
 android {
     namespace = "com.ankiminer.android"
     compileSdk = 36
+    buildToolsVersion = "36.0.0"
     ndkVersion = "28.2.13676358"
+
+    flavorDimensions += "runtimeAbi"
 
     defaultConfig {
         applicationId = "com.ankiminer.android"
@@ -22,9 +25,20 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "PYTHON_VERSION", "\"$pythonVersion\"")
-        ndk {
-            // Chaquopy requires filters at defaultConfig rather than build type.
-            abiFilters += listOf("arm64-v8a", "x86_64")
+    }
+
+    productFlavors {
+        create("device") {
+            dimension = "runtimeAbi"
+            ndk {
+                abiFilters += "arm64-v8a"
+            }
+        }
+        create("emulator") {
+            dimension = "runtimeAbi"
+            ndk {
+                abiFilters += "x86_64"
+            }
         }
     }
 
@@ -56,6 +70,17 @@ android {
 
     testOptions {
         animationsDisabled = true
+    }
+}
+
+androidComponents {
+    beforeVariants(selector().all()) { variant ->
+        val runtimeAbi =
+            variant.productFlavors.single { (dimension, _) -> dimension == "runtimeAbi" }.second
+        // Chaquopy resolves ABI filters from product flavors, not build types.
+        variant.enable =
+            (runtimeAbi == "emulator" && variant.buildType == "debug") ||
+            (runtimeAbi == "device" && variant.buildType == "release")
     }
 }
 

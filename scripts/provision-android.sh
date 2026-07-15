@@ -17,46 +17,32 @@ CMDLINE_TOOLS_SHA256="04453066b540409d975c676d781da1477479dde3761310f1a7eb92a1df
 # archive's SHA-1; verify both digests so the pinned download stays auditable.
 CMDLINE_TOOLS_SHA1="48833c34b761c10cb20bcd16582129395d121b27"
 
-ACCEPT_LICENSES=false
-CREATE_AVD=true
-
 usage() {
     cat <<'EOF'
-Usage: scripts/provision-android.sh [--accept-licenses] [--no-avd]
+Usage: scripts/provision-android.sh
 
-Installs a pinned JDK and a workspace-local Android SDK. SDK package licenses
-are not accepted unless --accept-licenses is passed. No system directories or
-shell profiles are changed.
+Installs a pinned JDK and a workspace-local Android SDK. This command never
+accepts license terms. Use scripts/android-licenses.sh review first. No system
+directories or shell profiles are changed.
 EOF
 }
 
-while (($#)); do
-    case "$1" in
-        --accept-licenses)
-            ACCEPT_LICENSES=true
-            ;;
-        --no-avd)
-            CREATE_AVD=false
-            ;;
-        -h|--help)
-            usage
-            exit 0
-            ;;
-        *)
-            echo "Unknown argument: $1" >&2
-            usage >&2
-            exit 2
-            ;;
-    esac
-    shift
-done
+if (($#)); then
+    if [[ "$#" -eq 1 && ( "$1" == "-h" || "$1" == "--help" ) ]]; then
+        usage
+        exit 0
+    fi
+    echo "Unknown argument: $1" >&2
+    usage >&2
+    exit 2
+fi
 
 if [[ "$(uname -s)" != "Linux" || "$(uname -m)" != "x86_64" ]]; then
     echo "This pinned bootstrap currently supports Linux x86_64 only." >&2
     exit 1
 fi
 
-for command_name in curl sha1sum sha256sum tar unzip; do
+for command_name in curl python3.13 sha1sum sha256sum tar unzip; do
     if ! command -v "$command_name" >/dev/null; then
         echo "Required command not found: $command_name" >&2
         exit 1
@@ -130,21 +116,7 @@ if [[ ! -x "$ANDROID_CMDLINE_TOOLS_HOME/bin/sdkmanager" ]]; then
     rmdir "$tools_staging"
 fi
 
-if [[ "$ACCEPT_LICENSES" != true ]]; then
-    echo "SDK package installation requires license acceptance." >&2
-    echo "Review the licenses, then rerun with --accept-licenses." >&2
-    exit 2
-fi
-
-echo "Accepting Android SDK package licenses"
-set +o pipefail
-yes | sdkmanager --sdk_root="$ANDROID_HOME" --licenses >/dev/null
-license_status="${PIPESTATUS[1]}"
-set -o pipefail
-if [[ "$license_status" -ne 0 ]]; then
-    echo "Android SDK license acceptance failed." >&2
-    exit "$license_status"
-fi
+"$SCRIPT_DIR/android-licenses.sh" check
 
 packages=(
     "platform-tools"
@@ -152,31 +124,40 @@ packages=(
     "platforms;android-$ANDROID_API_LEVEL"
     "build-tools;$ANDROID_BUILD_TOOLS_VERSION"
     "ndk;$ANDROID_NDK_VERSION"
+    "$ANDROID_SYSTEM_IMAGE_4K"
+    "$ANDROID_SYSTEM_IMAGE_16K"
 )
-if [[ "$CREATE_AVD" == true ]]; then
-    packages+=("$ANDROID_SYSTEM_IMAGE")
-fi
 
 echo "Installing Android SDK packages"
 sdkmanager --sdk_root="$ANDROID_HOME" --channel=0 "${packages[@]}"
 sdkmanager --sdk_root="$ANDROID_HOME" --list_installed \
     >"$ANKI_MINER_ANDROID_TOOLCHAIN_ROOT/installed-packages.txt"
 
-if [[ "$CREATE_AVD" == true ]] && ! emulator -list-avds | grep -Fxq "$ANDROID_AVD_NAME"; then
-    echo "Creating AVD $ANDROID_AVD_NAME"
+create_avd() {
+    local name="$1"
+    local image="$2"
+    if emulator -list-avds | grep -Fx "$name" >/dev/null; then
+        return
+    fi
+    echo "Creating AVD $name"
     printf 'no\n' | avdmanager create avd \
         --force \
-        --name "$ANDROID_AVD_NAME" \
-        --package "$ANDROID_SYSTEM_IMAGE" \
+        --name "$name" \
+        --package "$image" \
         --device "pixel_6"
-fi
+}
+
+create_avd "$ANDROID_AVD_4K_NAME" "$ANDROID_SYSTEM_IMAGE_4K"
+create_avd "$ANDROID_AVD_16K_NAME" "$ANDROID_SYSTEM_IMAGE_16K"
 
 printf 'sdk.dir=%s\n' "$ANDROID_HOME" >"$CHECKOUT_ROOT/local.properties"
+
+"$SCRIPT_DIR/verify-android-toolchain.sh"
 
 echo
 echo "Provisioned toolchain:"
 java -version
 adb version | head -n 1
 emulator -version | head -n 1
-echo "AVD: $ANDROID_AVD_NAME"
+echo "AVDs: $ANDROID_AVD_4K_NAME, $ANDROID_AVD_16K_NAME"
 echo "Environment: source scripts/android-env.sh"
