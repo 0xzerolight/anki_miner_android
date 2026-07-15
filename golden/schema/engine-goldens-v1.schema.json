@@ -1,0 +1,225 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://anki-miner.invalid/schemas/engine-goldens-v1.schema.json",
+  "title": "Anki Miner engine golden contract v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "provenance", "unidic_feature_fields", "cases"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "provenance": {"$ref": "#/$defs/provenance"},
+    "unidic_feature_fields": {
+      "type": "array",
+      "prefixItems": [
+        {"const": "pos1"},
+        {"const": "pos2"},
+        {"const": "pos3"},
+        {"const": "pos4"},
+        {"const": "cType"},
+        {"const": "cForm"},
+        {"const": "lForm"},
+        {"const": "lemma"},
+        {"const": "orth"},
+        {"const": "pron"},
+        {"const": "orthBase"},
+        {"const": "pronBase"},
+        {"const": "goshu"},
+        {"const": "iType"},
+        {"const": "iForm"},
+        {"const": "fType"},
+        {"const": "fForm"},
+        {"const": "kana"},
+        {"const": "kanaBase"},
+        {"const": "form"},
+        {"const": "formBase"},
+        {"const": "iConType"},
+        {"const": "fConType"},
+        {"const": "aType"},
+        {"const": "aConType"},
+        {"const": "aModeType"}
+      ],
+      "items": false,
+      "minItems": 26,
+      "maxItems": 26
+    },
+    "cases": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tokenization",
+        "morphology",
+        "filtering",
+        "deinflection",
+        "compounds",
+        "dictionaries",
+        "frequency",
+        "pitch",
+        "cards"
+      ],
+      "properties": {
+        "tokenization": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/tokenization_case"}
+        },
+        "morphology": {"$ref": "#/$defs/generic_cases"},
+        "filtering": {"$ref": "#/$defs/generic_cases"},
+        "deinflection": {"$ref": "#/$defs/generic_cases"},
+        "compounds": {"$ref": "#/$defs/generic_cases"},
+        "dictionaries": {"$ref": "#/$defs/generic_cases"},
+        "frequency": {"$ref": "#/$defs/generic_cases"},
+        "pitch": {"$ref": "#/$defs/generic_cases"},
+        "cards": {"$ref": "#/$defs/generic_cases"}
+      }
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["engine", "tool", "runtime", "data"],
+      "properties": {
+        "engine": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["revision", "tree_sha256"],
+          "properties": {
+            "revision": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+            "tree_sha256": {"$ref": "#/$defs/sha256"}
+          }
+        },
+        "tool": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name", "version", "sha256"],
+          "properties": {
+            "name": {"type": "string", "minLength": 1},
+            "version": {"type": "string", "minLength": 1},
+            "sha256": {"$ref": "#/$defs/sha256"}
+          }
+        },
+        "runtime": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "python_implementation",
+            "python_version",
+            "platform",
+            "dependencies",
+            "sha256"
+          ],
+          "properties": {
+            "python_implementation": {"type": "string", "minLength": 1},
+            "python_version": {"type": "string", "minLength": 1},
+            "platform": {"type": "string", "minLength": 1},
+            "dependencies": {
+              "type": "object",
+              "additionalProperties": {"type": "string"}
+            },
+            "sha256": {"$ref": "#/$defs/sha256"}
+          }
+        },
+        "data": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["corpus_sha256", "assets_sha256", "sha256"],
+          "properties": {
+            "corpus_sha256": {"$ref": "#/$defs/sha256"},
+            "assets_sha256": {
+              "type": "object",
+              "additionalProperties": {"$ref": "#/$defs/sha256"}
+            },
+            "sha256": {"$ref": "#/$defs/sha256"}
+          }
+        }
+      }
+    },
+    "features": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "pos1", "pos2", "pos3", "pos4", "cType", "cForm", "lForm",
+        "lemma", "orth", "pron", "orthBase", "pronBase", "goshu",
+        "iType", "iForm", "fType", "fForm", "kana", "kanaBase", "form",
+        "formBase", "iConType", "fConType", "aType", "aConType", "aModeType"
+      ],
+      "properties": {
+        "pos1": {"type": ["string", "null"]},
+        "pos2": {"type": ["string", "null"]},
+        "pos3": {"type": ["string", "null"]},
+        "pos4": {"type": ["string", "null"]},
+        "cType": {"type": ["string", "null"]},
+        "cForm": {"type": ["string", "null"]},
+        "lForm": {"type": ["string", "null"]},
+        "lemma": {"type": ["string", "null"]},
+        "orth": {"type": ["string", "null"]},
+        "pron": {"type": ["string", "null"]},
+        "orthBase": {"type": ["string", "null"]},
+        "pronBase": {"type": ["string", "null"]},
+        "goshu": {"type": ["string", "null"]},
+        "iType": {"type": ["string", "null"]},
+        "iForm": {"type": ["string", "null"]},
+        "fType": {"type": ["string", "null"]},
+        "fForm": {"type": ["string", "null"]},
+        "kana": {"type": ["string", "null"]},
+        "kanaBase": {"type": ["string", "null"]},
+        "form": {"type": ["string", "null"]},
+        "formBase": {"type": ["string", "null"]},
+        "iConType": {"type": ["string", "null"]},
+        "fConType": {"type": ["string", "null"]},
+        "aType": {"type": ["string", "null"]},
+        "aConType": {"type": ["string", "null"]},
+        "aModeType": {"type": ["string", "null"]}
+      }
+    },
+    "offsets": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["codepoint_start", "codepoint_end", "utf16_start", "utf16_end"],
+      "properties": {
+        "codepoint_start": {"type": "integer", "minimum": 0},
+        "codepoint_end": {"type": "integer", "minimum": 0},
+        "utf16_start": {"type": "integer", "minimum": 0},
+        "utf16_end": {"type": "integer", "minimum": 0}
+      }
+    },
+    "token": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["surface", "is_unknown", "offsets", "features"],
+      "properties": {
+        "surface": {"type": "string"},
+        "is_unknown": {"type": "boolean"},
+        "offsets": {"$ref": "#/$defs/offsets"},
+        "features": {"$ref": "#/$defs/features"}
+      }
+    },
+    "tokenization_case": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "text", "tokens"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_-]*$"},
+        "text": {"type": "string"},
+        "tokens": {"type": "array", "items": {"$ref": "#/$defs/token"}}
+      }
+    },
+    "generic_case": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "input", "output"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_-]*$"},
+        "input": {"type": "object"},
+        "output": {"type": "object"}
+      }
+    },
+    "generic_cases": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/generic_case"}
+    }
+  }
+}
