@@ -390,7 +390,9 @@ internal object AnkiValidators {
                 is FailedMedia -> {
                     if (terminalSeen) failValue("failed media cannot follow a terminal result")
                     validateError(row.error.code, row.error.message, row.error.retryable)
-                    if (row.error.code != AnkiErrorCode.MEDIA_STORE_FAILED) failValue("failed media has the wrong error code")
+                    if (row.error.code != AnkiErrorCode.MEDIA_STORE_FAILED) {
+                        failValue("failed media has the wrong error code")
+                    }
                 }
                 is UncertainMedia -> {
                     if (terminalSeen) failValue("uncertain media is not a strict terminal row")
@@ -399,7 +401,14 @@ internal object AnkiValidators {
                 is NotAttemptedMedia -> terminalSeen = true
             }
         }
-        validatePartialError(result.error, terminalSeen, storedSeen, result.results.any { it is UncertainMedia })
+        val uncertainSeen = result.results.any { it is UncertainMedia }
+        validatePartialError(
+            result.error,
+            terminalSeen,
+            storedSeen,
+            uncertainSeen,
+            postCommitCarrierSeen = uncertainSeen,
+        )
     }
 
     private fun validateCreateNotesResult(result: CreateNotesResult) {
@@ -407,6 +416,7 @@ internal object AnkiValidators {
         requireUnique(result.results.map { it.clientNoteId }, "note result client IDs")
         requireUnique(result.results.mapNotNull { (it as? CreatedNote)?.noteId ?: (it as? CommittedFailedNote)?.noteId }, "created note IDs")
         var terminalSeen = false
+        var terminalCarrierSeen = false
         var notAttemptedSeen = false
         var committedSeen = false
         var committedFailureSeen = false
@@ -423,6 +433,7 @@ internal object AnkiValidators {
                 is FailedNote -> {
                     if (terminalSeen) failValue("failed note is not the first terminal result")
                     terminalSeen = true
+                    terminalCarrierSeen = true
                 }
                 is CommittedFailedNote -> {
                     if (terminalSeen) failValue("committed-failed note is not the first terminal result")
@@ -430,11 +441,13 @@ internal object AnkiValidators {
                     committedSeen = true
                     committedFailureSeen = true
                     terminalSeen = true
+                    terminalCarrierSeen = true
                 }
                 is UncertainNote -> {
                     if (terminalSeen) failValue("uncertain note is not the first terminal result")
                     uncertainSeen = true
                     terminalSeen = true
+                    terminalCarrierSeen = true
                 }
                 is NotAttemptedNote -> {
                     terminalSeen = true
@@ -443,27 +456,41 @@ internal object AnkiValidators {
             }
             if (notAttemptedSeen && row !is NotAttemptedNote) failValue("not-attempted notes must form a strict suffix")
         }
-        validatePartialError(result.error, terminalSeen, committedSeen, uncertainSeen)
+        if (notAttemptedSeen && !terminalCarrierSeen) failValue("not-attempted notes require a preceding terminal carrier")
+        validatePartialError(
+            result.error,
+            terminalCarrierSeen,
+            committedSeen,
+            uncertainSeen,
+            postCommitCarrierSeen = uncertainSeen || committedFailureSeen,
+        )
         if (committedFailureSeen && result.error?.code == AnkiErrorCode.CANCELLED) {
             failValue("a known post-commit failure cannot be reported as clean cancellation")
         }
     }
 
-    private fun validatePartialError(error: AnkiErrorDetail?, terminalSeen: Boolean, knownWriteSeen: Boolean, uncertainSeen: Boolean) {
-        if (terminalSeen != (error != null)) failValue("top-level error does not match the aligned terminal results")
+    private fun validatePartialError(
+        error: AnkiErrorDetail?,
+        terminalErrorSeen: Boolean,
+        knownWriteSeen: Boolean,
+        uncertainSeen: Boolean,
+        postCommitCarrierSeen: Boolean,
+    ) {
+        if (terminalErrorSeen != (error != null)) failValue("top-level error does not match the aligned terminal results")
         error?.let { validateError(it.code, it.message, it.retryable) }
         if (knownWriteSeen && error?.retryable == true) failValue("a result after a known write cannot be retryable")
         if (uncertainSeen && (error?.code != AnkiErrorCode.POST_COMMIT_UNCERTAIN || error.retryable)) {
             failValue("an uncertain result requires a non-retryable post-commit error")
         }
-        if (error?.code == AnkiErrorCode.POST_COMMIT_UNCERTAIN && !uncertainSeen) {
-            failValue("a post-commit uncertainty error requires an uncertain row")
+        if (error?.code == AnkiErrorCode.POST_COMMIT_UNCERTAIN && !postCommitCarrierSeen) {
+            failValue("a post-commit uncertainty error requires a row-local carrier")
         }
     }
 
     private fun validateError(code: AnkiErrorCode, message: String, retryable: Boolean) {
         validatePlainString(message, "error message", allowEmpty = false)
         if (code == AnkiErrorCode.POST_COMMIT_UNCERTAIN && retryable) failValue("post-commit uncertainty cannot be retryable")
+        if (code == AnkiErrorCode.CANCELLED && retryable) failValue("cancellation cannot be retryable")
     }
 
     private fun validateKnownCursor(cursor: KnownVocabularyCursor) {

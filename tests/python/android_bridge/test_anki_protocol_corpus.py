@@ -267,6 +267,8 @@ def _validate_error_detail(error: dict[str, Any]) -> None:
     _plain_string(error["message"], allow_empty=False)
     if error["code"] == "post_commit_uncertain" and error["retryable"]:
         _reject("invalid_value")
+    if error["code"] == "cancelled" and error["retryable"]:
+        _reject("invalid_value")
 
 
 def _validate_scan_payload(payload: dict[str, Any], *, response: bool) -> None:
@@ -460,6 +462,8 @@ def _validate_store_payload(payload: dict[str, Any], *, response: bool) -> None:
             error["code"] != "post_commit_uncertain" or error["retryable"]
         ):
             _reject("invalid_value")
+        if error["code"] == "post_commit_uncertain" and not uncertain_seen:
+            _reject("invalid_value")
 
 
 def _validate_create_payload(payload: dict[str, Any], *, response: bool) -> None:
@@ -531,8 +535,11 @@ def _validate_create_payload(payload: dict[str, Any], *, response: bool) -> None
     client_ids: set[str] = set()
     note_ids: set[int] = set()
     terminal_seen = False
+    terminal_carrier_seen = False
+    not_attempted_seen = False
     known_write_seen = False
     uncertain_seen = False
+    committed_failure_seen = False
     for row in payload["results"]:
         if row["clientNoteId"] in client_ids:
             _reject("invalid_value")
@@ -548,11 +555,19 @@ def _validate_create_payload(payload: dict[str, Any], *, response: bool) -> None
             known_write_seen = True
         if status in {"failed", "committedFailed", "uncertain", "notAttempted"}:
             terminal_seen = True
+        if status in {"failed", "committedFailed", "uncertain"}:
+            terminal_carrier_seen = True
+        if status == "notAttempted":
+            not_attempted_seen = True
+        if status == "committedFailed":
+            committed_failure_seen = True
         if status == "uncertain":
             uncertain_seen = True
 
     error = payload["error"]
-    if terminal_seen != (error is not None):
+    if not_attempted_seen and not terminal_carrier_seen:
+        _reject("invalid_value")
+    if terminal_carrier_seen != (error is not None):
         _reject("invalid_value")
     if error is not None:
         _validate_error_detail(error)
@@ -561,6 +576,12 @@ def _validate_create_payload(payload: dict[str, Any], *, response: bool) -> None
         if uncertain_seen and (
             error["code"] != "post_commit_uncertain" or error["retryable"]
         ):
+            _reject("invalid_value")
+        if error["code"] == "post_commit_uncertain" and not (
+            uncertain_seen or committed_failure_seen
+        ):
+            _reject("invalid_value")
+        if committed_failure_seen and error["code"] == "cancelled":
             _reject("invalid_value")
 
 

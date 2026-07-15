@@ -56,7 +56,7 @@ from android_bridge.anki_adapter import (
     _expect_media_source_path,
     _strict_utf8_bytes,
 )
-from android_bridge.callbacks import AndroidAnkiCallbacks
+from android_bridge.callbacks import AndroidAnkiCallbacks, AnkiCallbackError
 from android_bridge.protocol import BridgeProtocolError, encode_message
 
 RUN_ID = "run_" + "a" * 32
@@ -5188,6 +5188,33 @@ def test_committed_routing_failure_retains_id_but_not_success_or_vocab_cache(
     assert kotlin.next_note_id == 1002
 
 
+def test_committed_routing_uncertainty_retains_row_id_and_classification(
+    initialized_bridge_home: Path,
+) -> None:
+    from anki_miner.exceptions import AnkiConnectionError
+
+    kotlin = FakeKotlinAnki()
+    kotlin.create_scripts = [
+        (
+            ["created", "committedFailed", "notAttempted"],
+            {
+                "code": "post_commit_uncertain",
+                "message": "card deck could not be read back",
+                "retryable": False,
+            },
+        )
+    ]
+    adapter = _adapter(_config(initialized_bridge_home), kotlin)
+
+    with pytest.raises(AnkiConnectionError, match="could not be read back") as exc_info:
+        adapter.create_cards_batch([_card("猫"), _card("犬"), _card("鳥")])
+
+    assert isinstance(exc_info.value.__cause__, AnkiCallbackError)
+    assert exc_info.value.__cause__.code == "post_commit_uncertain"
+    assert adapter.last_created_note_ids == [1000, 1001]
+    assert adapter.last_skipped_duplicates == 0
+
+
 def test_unknown_post_commit_state_never_invents_id_or_updates_vocab_cache(
     initialized_bridge_home: Path,
 ) -> None:
@@ -5621,6 +5648,22 @@ def test_provider_failed_status_propagates_and_is_never_counted_as_duplicate(
                 "retryable": False,
             },
         ),
+        (
+            ["created", "failed", "notAttempted"],
+            {
+                "code": "post_commit_uncertain",
+                "message": "earlier commit is not a carrier",
+                "retryable": False,
+            },
+        ),
+        (
+            ["committedFailed", "notAttempted"],
+            {"code": "cancelled", "message": "known commit", "retryable": False},
+        ),
+        (
+            ["failed", "notAttempted"],
+            {"code": "cancelled", "message": "unsafe retry", "retryable": True},
+        ),
     ],
 )
 def test_create_result_failure_shape_is_strict(
@@ -5709,13 +5752,13 @@ def test_created_note_ids_must_remain_unique_across_batches(
     assert kotlin.release_acknowledgements == [False]
 
 
-def test_partial_create_cancellation_becomes_nonretryable_post_commit_failure(
+def test_partial_create_cancellation_remains_row_local_nonretryable_cancellation(
     initialized_bridge_home: Path,
 ) -> None:
     kotlin = FakeKotlinAnki()
     kotlin.create_scripts = [
         (
-            ["created", "notAttempted"],
+            ["created", "failed", "notAttempted"],
             {"code": "cancelled", "message": "user stopped", "retryable": False},
         )
     ]
@@ -5723,9 +5766,12 @@ def test_partial_create_cancellation_becomes_nonretryable_post_commit_failure(
 
     from anki_miner.exceptions import AnkiConnectionError
 
-    with pytest.raises(AnkiConnectionError, match="user stopped"):
-        adapter.create_cards_batch([_card("猫"), _card("犬")])
+    with pytest.raises(AnkiConnectionError, match="user stopped") as exc_info:
+        adapter.create_cards_batch([_card("猫"), _card("犬"), _card("鳥")])
 
+    assert exc_info.value.code == "cancelled"  # type: ignore[attr-defined]
+    assert exc_info.value.retryable is False  # type: ignore[attr-defined]
+    assert isinstance(exc_info.value.__cause__, AnkiOperationCancelled)
     assert adapter.last_created_note_ids == [1000]
     assert adapter.last_skipped_duplicates == 0
 
@@ -5746,7 +5792,7 @@ def test_cancellation_between_create_callbacks_is_a_nonretryable_partial_error(
         adapter.create_cards_batch([_card(f"語{index}") for index in range(101)])
 
     assert exc_info.value.retryable is False  # type: ignore[attr-defined]
-    assert exc_info.value.code == "post_commit_uncertain"  # type: ignore[attr-defined]
+    assert exc_info.value.code == "cancelled"  # type: ignore[attr-defined]
     assert isinstance(exc_info.value.__cause__, AnkiOperationCancelled)
     assert adapter.last_created_note_ids == list(range(1000, 1100))
     assert len(kotlin.requests_for("ankiCreateNotes")) == 1

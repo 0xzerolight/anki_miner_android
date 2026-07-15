@@ -1090,6 +1090,8 @@ class AnkiJsonCodecBoundaryTest {
         val localFailure = AnkiErrorDetail(AnkiErrorCode.MEDIA_STORE_FAILED, "asset", true)
         val retryableStop = AnkiErrorDetail(AnkiErrorCode.QUERY_FAILED, "stop", true)
         val fatalStop = AnkiErrorDetail(AnkiErrorCode.WRITE_FAILED, "stop", false)
+        val cancellation = AnkiErrorDetail(AnkiErrorCode.CANCELLED, "cancelled", false)
+        val retryableCancellation = AnkiErrorDetail(AnkiErrorCode.CANCELLED, "cancelled", true)
         val uncertainty =
             AnkiErrorDetail(AnkiErrorCode.POST_COMMIT_UNCERTAIN, "uncertain", false)
         val valid =
@@ -1098,6 +1100,7 @@ class AnkiJsonCodecBoundaryTest {
                 MediaShape("local failed then stored", listOf(FailedMedia(ASSET_ID, localFailure), StoredMedia(ASSET_ID_2, "b.opus")), null),
                 MediaShape("retryable before write", listOf(NotAttemptedMedia(ASSET_ID)), retryableStop),
                 MediaShape("known write then stop", listOf(StoredMedia(ASSET_ID, "a.opus"), NotAttemptedMedia(ASSET_ID_2)), fatalStop),
+                MediaShape("known write then cancellation", listOf(StoredMedia(ASSET_ID, "a.opus"), NotAttemptedMedia(ASSET_ID_2)), cancellation),
                 MediaShape("uncertain suffix", listOf(UncertainMedia(ASSET_ID), NotAttemptedMedia(ASSET_ID_2)), uncertainty),
             )
         valid.forEach { shape ->
@@ -1116,6 +1119,7 @@ class AnkiJsonCodecBoundaryTest {
                 MediaShape("retryable after write", listOf(StoredMedia(ASSET_ID, "a.opus"), NotAttemptedMedia(ASSET_ID_2)), retryableStop),
                 MediaShape("uncertain wrong error", listOf(UncertainMedia(ASSET_ID)), fatalStop),
                 MediaShape("post-commit without uncertain", listOf(NotAttemptedMedia(ASSET_ID)), uncertainty),
+                MediaShape("retryable cancellation", listOf(NotAttemptedMedia(ASSET_ID)), retryableCancellation),
                 MediaShape("wrong local code", listOf(FailedMedia(ASSET_ID, fatalStop)), null),
             )
         invalid.forEach { shape ->
@@ -1132,6 +1136,7 @@ class AnkiJsonCodecBoundaryTest {
         val retryableStop = AnkiErrorDetail(AnkiErrorCode.QUERY_FAILED, "stop", true)
         val fatalStop = AnkiErrorDetail(AnkiErrorCode.WRITE_FAILED, "stop", false)
         val cancelled = AnkiErrorDetail(AnkiErrorCode.CANCELLED, "cancelled", false)
+        val retryableCancellation = AnkiErrorDetail(AnkiErrorCode.CANCELLED, "cancelled", true)
         val uncertainty =
             AnkiErrorDetail(AnkiErrorCode.POST_COMMIT_UNCERTAIN, "uncertain", false)
         val valid =
@@ -1140,6 +1145,8 @@ class AnkiJsonCodecBoundaryTest {
                 NoteShape("retryable before write", listOf(FailedNote(NOTE_ID), NotAttemptedNote(NOTE_ID_2)), retryableStop),
                 NoteShape("known write then stop", listOf(CreatedNote(NOTE_ID, 1), FailedNote(NOTE_ID_2)), fatalStop),
                 NoteShape("committed failure", listOf(CommittedFailedNote(NOTE_ID, 1), NotAttemptedNote(NOTE_ID_2)), fatalStop),
+                NoteShape("known write then cancellation before next entry", listOf(CreatedNote(NOTE_ID, 1), FailedNote(NOTE_ID_2), NotAttemptedNote(NOTE_ID_3)), cancelled),
+                NoteShape("committed uncertain failure", listOf(CommittedFailedNote(NOTE_ID, 1), NotAttemptedNote(NOTE_ID_2)), uncertainty),
                 NoteShape("uncertain suffix", listOf(UncertainNote(NOTE_ID), NotAttemptedNote(NOTE_ID_2)), uncertainty),
             )
         valid.forEach { shape ->
@@ -1156,7 +1163,9 @@ class AnkiJsonCodecBoundaryTest {
                 NoteShape("second terminal", listOf(UncertainNote(NOTE_ID), FailedNote(NOTE_ID_2)), uncertainty),
                 NoteShape("terminal without error", listOf(FailedNote(NOTE_ID)), null),
                 NoteShape("error without terminal", listOf(DuplicateNote(NOTE_ID)), fatalStop),
+                NoteShape("suffix without carrier", listOf(CreatedNote(NOTE_ID, 1), NotAttemptedNote(NOTE_ID_2)), cancelled),
                 NoteShape("retryable after create", listOf(CreatedNote(NOTE_ID, 1), FailedNote(NOTE_ID_2)), retryableStop),
+                NoteShape("retryable cancellation", listOf(FailedNote(NOTE_ID)), retryableCancellation),
                 NoteShape("uncertain wrong error", listOf(UncertainNote(NOTE_ID)), fatalStop),
                 NoteShape("post-commit without uncertain", listOf(FailedNote(NOTE_ID)), uncertainty),
                 NoteShape("committed cancellation", listOf(CommittedFailedNote(NOTE_ID, 1)), cancelled),
@@ -2599,6 +2608,7 @@ class AnkiJsonCodecBoundaryTest {
         const val ASSET_ID_2 = "asset_55555555555555555555555555555555"
         const val NOTE_ID = "note_66666666666666666666666666666666"
         const val NOTE_ID_2 = "note_77777777777777777777777777777777"
+        const val NOTE_ID_3 = "note_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
         const val BASELINE_TOKEN = "baseline_88888888888888888888888888888888"
 
         const val KNOWN_LIMITS =

@@ -611,6 +611,10 @@ def _expect_error_detail(value: object, *, operation: str) -> AnkiCallbackError:
         _protocol_error(
             "invalid_anki_response", f"{operation} retryable must be boolean"
         )
+    if code == "cancelled" and retryable:
+        _protocol_error(
+            "invalid_anki_response", f"{operation} cancellation cannot be retryable"
+        )
     return AnkiCallbackError(operation, code, message, retryable)
 
 
@@ -1205,11 +1209,13 @@ class AndroidAnkiAdapter:
                     {"assetId", "status", "error"},
                     context=f"storeMedia result {index}",
                 )
-                error = _expect_error_detail(row["error"], operation="storeMedia")
-                if error.code not in _RECOVERABLE_MEDIA_ERROR_CODES:
-                    _raise_callback_error(error)
+                row_error = _expect_error_detail(row["error"], operation="storeMedia")
+                if row_error.code not in _RECOVERABLE_MEDIA_ERROR_CODES:
+                    _raise_callback_error(row_error)
                 logger.warning(
-                    "Failed to store media asset %s: %s", asset.original_name, error
+                    "Failed to store media asset %s: %s",
+                    asset.original_name,
+                    row_error,
                 )
             elif status == "uncertain":
                 row = _expect_exact_keys(
@@ -2976,15 +2982,20 @@ class AndroidAnkiAdapter:
             if raw_error is None
             else _expect_error_detail(raw_error, operation="createNotes")
         )
-        if (saw_terminal_failure or saw_not_attempted) and error is None:
+        if saw_not_attempted and not saw_terminal_failure:
             _protocol_error(
                 "invalid_anki_response",
-                "failed/notAttempted createNotes rows require a top-level error",
+                "notAttempted createNotes rows require a preceding terminal carrier",
             )
-        if error is not None and not (saw_terminal_failure or saw_not_attempted):
+        if saw_terminal_failure and error is None:
             _protocol_error(
                 "invalid_anki_response",
-                "createNotes top-level error requires a failed or notAttempted row",
+                "terminal createNotes rows require a top-level error",
+            )
+        if error is not None and not saw_terminal_failure:
+            _protocol_error(
+                "invalid_anki_response",
+                "createNotes top-level error requires a row-local terminal carrier",
             )
         if error is not None:
             if saw_uncertain and (
@@ -2994,10 +3005,12 @@ class AndroidAnkiAdapter:
                     "invalid_anki_response",
                     "An uncertain write requires a non-retryable post-commit error",
                 )
-            if error.code == "post_commit_uncertain" and not saw_uncertain:
+            if error.code == "post_commit_uncertain" and not (
+                saw_uncertain or saw_committed_failure
+            ):
                 _protocol_error(
                     "invalid_anki_response",
-                    "A post-commit create error requires an uncertain row",
+                    "A post-commit create error requires a row-local carrier",
                 )
             if saw_committed_failure and (error.code == "cancelled" or error.retryable):
                 _protocol_error(
@@ -3008,10 +3021,6 @@ class AndroidAnkiAdapter:
                 _protocol_error(
                     "invalid_anki_response",
                     "A partial write cannot be declared safely retryable",
-                )
-            if created_ids and error.code == "cancelled":
-                error = AnkiCallbackError(
-                    "createNotes", "post_commit_uncertain", error.message, False
                 )
         return note_ids, successful, duplicates, error
 
@@ -3246,14 +3255,15 @@ class AndroidAnkiAdapter:
             # BaseException is intentional for a clean pre-write stop, but it
             # would bypass EpisodeProcessor's partial-ID harvest after an
             # earlier callback committed notes. Convert only that temporal
-            # state to the engine's catchable, explicitly non-retryable error.
+            # state to a catchable cancellation; prior commits alone do not
+            # make the active row's outcome uncertain.
             from anki_miner.exceptions import AnkiConnectionError
 
             partial_error = AnkiConnectionError(
                 "Anki card creation was cancelled after "
-                f"{len(all_created_ids)} note(s) were committed"
+                f"{len(all_created_ids)} note(s) were committed: {error}"
             )
-            partial_error.code = "post_commit_uncertain"  # type: ignore[attr-defined]
+            partial_error.code = "cancelled"  # type: ignore[attr-defined]
             partial_error.retryable = False  # type: ignore[attr-defined]
             raise partial_error from error
         finally:

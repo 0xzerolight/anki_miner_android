@@ -128,6 +128,11 @@ def _parse_anki_error(
             "invalid_anki_error",
             "post-commit uncertainty cannot be retryable",
         )
+    if payload["code"] == "cancelled" and payload["retryable"]:
+        raise BridgeProtocolError(
+            "invalid_anki_error",
+            "cancellation cannot be retryable",
+        )
     return AnkiCallbackError(
         operation=operation,
         code=payload["code"],

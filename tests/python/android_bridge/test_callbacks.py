@@ -540,8 +540,14 @@ def test_release_sends_false_after_callback_transport_failure() -> None:
         ("target_invalid", "", False),
         ("unknown_code", "unknown error", False),
         ("post_commit_uncertain", "uncertain", True),
+        ("cancelled", "cancelled", True),
     ],
-    ids=["empty-message", "unknown-code", "retryable-post-commit"],
+    ids=[
+        "empty-message",
+        "unknown-code",
+        "retryable-post-commit",
+        "retryable-cancellation",
+    ],
 )
 def test_malformed_anki_error_makes_release_acknowledgement_false(
     code: str,
