@@ -30,6 +30,7 @@ packages=(
     "emulator"
     "platforms;android-$ANDROID_API_LEVEL"
     "build-tools;$ANDROID_BUILD_TOOLS_VERSION"
+    "cmake;$ANDROID_CMAKE_VERSION"
     "ndk;$ANDROID_NDK_VERSION"
     "$ANDROID_SYSTEM_IMAGE_4K"
     "$ANDROID_SYSTEM_IMAGE_16K"

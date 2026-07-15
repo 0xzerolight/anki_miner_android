@@ -50,12 +50,14 @@ PYTHONDONTWRITEBYTECODE=1 "$host_test_python" -m pytest \
     -q "$REPO_ROOT/tests/python/android_bridge"
 PYTHONDONTWRITEBYTECODE=1 "$host_test_python" -m compileall \
     -q "$REPO_ROOT/app/src/main/python/android_bridge"
+"$host_test_python" "$REPO_ROOT/tools/tokenizer/vendor_s1b_mecab.py" --check
 
 [[ -x "$JAVA_HOME/bin/java" ]] || fail "JDK is missing; run scripts/provision-android.sh"
 [[ -x "$ANDROID_CMDLINE_TOOLS_HOME/bin/sdkmanager" ]] || fail "Android command-line tools are missing"
 "$SCRIPT_DIR/android-licenses.sh" check || fail "Android SDK license state is incomplete"
 [[ -d "$ANDROID_HOME/platforms/android-$ANDROID_API_LEVEL" ]] || fail "Android API $ANDROID_API_LEVEL is missing"
 [[ -d "$ANDROID_HOME/build-tools/$ANDROID_BUILD_TOOLS_VERSION" ]] || fail "Build Tools $ANDROID_BUILD_TOOLS_VERSION are missing"
+[[ -x "$ANDROID_CMAKE_HOME/bin/cmake" ]] || fail "CMake $ANDROID_CMAKE_VERSION is missing"
 [[ -d "$ANDROID_HOME/ndk/$ANDROID_NDK_VERSION" ]] || fail "NDK $ANDROID_NDK_VERSION is missing"
 [[ "$(java -version 2>&1 | head -n 1)" == *'17.0.19'* ]] || fail "expected pinned JDK 17.0.19"
 [[ "$(python3.13 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')" == "3.13" ]] \
