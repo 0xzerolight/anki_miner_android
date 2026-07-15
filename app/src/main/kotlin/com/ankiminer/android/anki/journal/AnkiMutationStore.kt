@@ -35,6 +35,19 @@ internal interface AnkiMutationStore : Closeable {
     /** Deck URI evidence remains PREPARED until exact deck/model reconciliation completes. */
     fun recordDeckReceipt(childId: Long, receipt: ProviderReceipt.Deck): ChildRecord
 
+    /** Exact target snapshot and the entered deck child's verified outcome are one transaction. */
+    fun completeVerifiedDeck(
+        childId: Long,
+        snapshot: DurableTargetSnapshot,
+        compactEvidence: String,
+    ): ParentRecord
+
+    /** Entered deck uncertainty and its remediation are one transaction. */
+    fun completeUncertainDeck(
+        childId: Long,
+        compactEvidence: String,
+    ): ParentRecord
+
     /** Safe media receipt + child + claim + stored aligned row are one transaction. */
     fun commitMediaReceipt(
         childId: Long,
@@ -171,6 +184,10 @@ internal enum class JournalCrashPoint {
     AFTER_PROVIDER_ENTRY_RECORDED,
     BEFORE_DECK_RECEIPT_RECORDED,
     AFTER_DECK_RECEIPT_RECORDED,
+    BEFORE_DECK_VERIFICATION_TRANSACTION,
+    AFTER_DECK_VERIFICATION_TRANSACTION,
+    BEFORE_DECK_UNCERTAINTY_TRANSACTION,
+    AFTER_DECK_UNCERTAINTY_TRANSACTION,
     BEFORE_MEDIA_RECEIPT_TRANSACTION,
     AFTER_MEDIA_RECEIPT_TRANSACTION,
     BEFORE_NOTE_RECEIPT_TRANSACTION,

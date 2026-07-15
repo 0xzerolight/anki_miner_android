@@ -218,27 +218,7 @@ internal class SqliteAnkiMutationStore(
     override fun storeTargetSnapshot(key: ParentKey, snapshot: DurableTargetSnapshot): ParentRecord =
         write { db ->
             val parent = requireMutableParent(db, key)
-            val expectation = targetExpectationByParent(db, parent.id)
-            if (expectation == null) {
-                insertTargetExpectation(db, parent, snapshot.expectation)
-            } else if (expectation != snapshot.expectation) {
-                throw JournalInvariantViolation("Verified target differs from frozen pre-target expectation")
-            }
-            targetSnapshotByParent(db, parent.id)?.let { existing ->
-                if (existing != snapshot) throw JournalInvariantViolation("Verified target deck is immutable")
-                return@write parentById(db, parent.id)
-            }
-            db.insertOrThrow(
-                "verified_target_decks",
-                null,
-                values(
-                    "parent_id" to parent.id,
-                    "deck_id" to snapshot.deck.id,
-                    "deck_name" to snapshot.deck.name,
-                    "deck_dynamic" to bool(snapshot.deck.dynamic),
-                ),
-            )
-            parentById(db, parent.id)
+            storeTargetSnapshotDb(db, parent, snapshot)
         }
 
     override fun targetSnapshot(key: ParentKey): DurableTargetSnapshot? =
@@ -409,6 +389,75 @@ internal class SqliteAnkiMutationStore(
             }
         crashHooks.hit(JournalCrashPoint.AFTER_DECK_RECEIPT_RECORDED)
         return child
+    }
+
+    override fun completeVerifiedDeck(
+        childId: Long,
+        snapshot: DurableTargetSnapshot,
+        compactEvidence: String,
+    ): ParentRecord {
+        requireCompactEvidence(compactEvidence)
+        crashHooks.hit(JournalCrashPoint.BEFORE_DECK_VERIFICATION_TRANSACTION)
+        val parent =
+            write { db ->
+                val child = childById(db, childId)
+                val command = child.command as? MutationCommand.CreateDeck
+                    ?: throw JournalInvariantViolation("Verified deck outcome has a non-deck command")
+                val expectation = targetExpectationByParent(db, child.parentId)
+                    ?: throw JournalInvariantViolation("Verified deck outcome lost its target expectation")
+                if (command.deckName != expectation.expectedDeckName || snapshot.expectation != expectation) {
+                    throw JournalInvariantViolation("Verified deck differs from its frozen command or model")
+                }
+                val receipt = child.receipt
+                if (receipt != null && (receipt !is ProviderReceipt.Deck || receipt.deckId != snapshot.deck.id)) {
+                    throw JournalInvariantViolation("Deck receipt conflicts with the exact reconciled deck")
+                }
+                JournalStateMachine.requireChildCompletion(child, ChildState.POSTCONDITION_VERIFIED)
+                val currentParent = parentById(db, child.parentId)
+                if (
+                    currentParent.state !in setOf(ParentState.PREPARED, ParentState.RUNNING) ||
+                        currentParent.operation != ParentOperation.VERIFY_TARGET
+                ) {
+                    throw JournalInvariantViolation("Verified deck parent is not mutable verifyTarget work")
+                }
+                storeTargetSnapshotDb(db, currentParent, snapshot)
+                updateChildTerminal(db, child, ChildState.POSTCONDITION_VERIFIED, compactEvidence)
+                parentById(db, child.parentId)
+            }
+        crashHooks.hit(JournalCrashPoint.AFTER_DECK_VERIFICATION_TRANSACTION)
+        return parent
+    }
+
+    override fun completeUncertainDeck(
+        childId: Long,
+        compactEvidence: String,
+    ): ParentRecord {
+        requireCompactEvidence(compactEvidence)
+        crashHooks.hit(JournalCrashPoint.BEFORE_DECK_UNCERTAINTY_TRANSACTION)
+        val parent =
+            write { db ->
+                val child = childById(db, childId)
+                if (child.command !is MutationCommand.CreateDeck) {
+                    throw JournalInvariantViolation("Uncertain deck outcome has a non-deck command")
+                }
+                if (targetSnapshotByParent(db, child.parentId) != null) {
+                    throw JournalInvariantViolation("An exact target cannot also be deck-commit uncertain")
+                }
+                JournalStateMachine.requireChildCompletion(child, ChildState.COMMIT_UNCERTAIN)
+                updateChildTerminal(db, child, ChildState.COMMIT_UNCERTAIN, compactEvidence)
+                ensureRemediationDb(
+                    db,
+                    RemediationDraft(
+                        parentId = child.parentId,
+                        kind = RemediationKind.DECK_COMMIT_UNCERTAIN,
+                        summary = "Deck creation could not be conclusively reconciled",
+                        compactEvidence = compactEvidence,
+                    ),
+                )
+                parentById(db, child.parentId)
+            }
+        crashHooks.hit(JournalCrashPoint.AFTER_DECK_UNCERTAINTY_TRANSACTION)
+        return parent
     }
 
     override fun commitMediaReceipt(
@@ -2227,18 +2276,32 @@ internal class SqliteAnkiMutationStore(
     }
 
     private fun ensureRemediationDb(db: SQLiteDatabase, draft: RemediationDraft): RemediationRecord {
+        val identityClauses = ArrayList<String>(4)
+        val identityArgs = ArrayList<String>(4)
+        fun exactNullableId(column: String, value: Long?) {
+            if (value == null) {
+                identityClauses += "$column IS NULL"
+            } else {
+                identityClauses += "$column = CAST(? AS INTEGER)"
+                identityArgs += value.toString()
+            }
+        }
+        exactNullableId("parent_id", draft.parentId)
+        exactNullableId("claim_id", draft.claimId)
+        if (draft.stagingId == null) {
+            identityClauses += "staging_id IS NULL AND staging_subject_id IS NULL"
+        } else {
+            identityClauses += "COALESCE(staging_id, staging_subject_id) = CAST(? AS INTEGER)"
+            identityArgs += draft.stagingId.toString()
+        }
+        identityClauses += "kind = ?"
+        identityArgs += draft.kind.name
         val existing =
             db.query(
                 "remediations",
                 null,
-                "COALESCE(parent_id, -1) = ? AND COALESCE(claim_id, -1) = ? AND " +
-                    "COALESCE(staging_id, staging_subject_id, -1) = ? AND kind = ?",
-                arrayOf(
-                    (draft.parentId ?: -1L).toString(),
-                    (draft.claimId ?: -1L).toString(),
-                    (draft.stagingId ?: -1L).toString(),
-                    draft.kind.name,
-                ),
+                identityClauses.joinToString(" AND "),
+                identityArgs.toTypedArray(),
                 null,
                 null,
                 null,
@@ -2453,6 +2516,34 @@ internal class SqliteAnkiMutationStore(
                 "request item",
             )
         }
+
+    private fun storeTargetSnapshotDb(
+        db: SQLiteDatabase,
+        parent: ParentRecord,
+        snapshot: DurableTargetSnapshot,
+    ): ParentRecord {
+        val expectation = targetExpectationByParent(db, parent.id)
+        if (expectation == null) {
+            insertTargetExpectation(db, parent, snapshot.expectation)
+        } else if (expectation != snapshot.expectation) {
+            throw JournalInvariantViolation("Verified target differs from frozen pre-target expectation")
+        }
+        targetSnapshotByParent(db, parent.id)?.let { existing ->
+            if (existing != snapshot) throw JournalInvariantViolation("Verified target deck is immutable")
+            return parentById(db, parent.id)
+        }
+        db.insertOrThrow(
+            "verified_target_decks",
+            null,
+            values(
+                "parent_id" to parent.id,
+                "deck_id" to snapshot.deck.id,
+                "deck_name" to snapshot.deck.name,
+                "deck_dynamic" to bool(snapshot.deck.dynamic),
+            ),
+        )
+        return parentById(db, parent.id)
+    }
 
     private fun insertTargetExpectation(
         db: SQLiteDatabase,

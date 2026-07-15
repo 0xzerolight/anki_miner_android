@@ -311,6 +311,9 @@ internal interface AnkiProviderGateway {
         cancellation: AnkiCancellation,
     ): ProviderCursor?
 
+    /** One sealed, synchronous provider insert. Cancellation is deliberately absent after entry. */
+    fun createDeck(command: AnkiProviderMutationCommand.CreateDeck): String?
+
     /** Exact pinned AnkiDroid v2 field-checksum implementation. */
     fun fieldChecksum(firstField: String): Long
 }

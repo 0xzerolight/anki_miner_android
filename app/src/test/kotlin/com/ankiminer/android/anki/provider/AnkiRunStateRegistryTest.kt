@@ -1,6 +1,7 @@
 package com.ankiminer.android.anki.provider
 
 import com.ankiminer.android.anki.protocol.ReleaseState
+import com.ankiminer.android.anki.protocol.VerifyTargetRequest
 import java.util.Collections
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -14,6 +15,130 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AnkiRunStateRegistryTest {
+    @Test
+    fun `closed startup admission rejects registration until recovery opens`() {
+        var open = false
+        val registry = AnkiRunStateRegistry(startupAdmission = AnkiStartupAdmission { open })
+
+        assertFalse(registry.register(RUN_ID, AnkiCancellation.NONE))
+        open = true
+        assertTrue(registry.register(RUN_ID, AnkiCancellation.NONE))
+    }
+
+    @Test
+    fun `one run-scoped target reservation excludes concurrent verification`() {
+        val registry = AnkiRunStateRegistry()
+        assertTrue(registry.register(RUN_ID, AnkiCancellation.NONE))
+        val reserved = CountDownLatch(1)
+        val finish = CountDownLatch(1)
+        val done = CountDownLatch(1)
+        val worker =
+            thread {
+                registry.withOwner(RUN_ID) { owner ->
+                    val reservation = registry.beginTargetVerification(owner, verifyRequest())
+                    reserved.countDown()
+                    check(finish.await(5, TimeUnit.SECONDS))
+                    registry.abortTargetVerification(owner, reservation)
+                }
+                done.countDown()
+            }
+        assertTrue(reserved.await(5, TimeUnit.SECONDS))
+
+        registry.withOwner(RUN_ID) { owner ->
+            assertThrows(TargetVerificationInProgressException::class.java) {
+                registry.beginTargetVerification(owner, verifyRequest(OTHER_REQUEST_ID))
+            }
+        }
+        finish.countDown()
+        assertTrue(done.await(5, TimeUnit.SECONDS))
+        worker.join(5_000)
+    }
+
+    @Test
+    fun `durable target and response id commit atomically then release exact evidence`() {
+        val cleanup = mutableListOf<Set<String>?>()
+        val registry = AnkiRunStateRegistry { _, ids -> cleanup += ids }
+        assertTrue(registry.register(RUN_ID, AnkiCancellation.NONE))
+        registry.withOwner(RUN_ID) { owner ->
+            val request = verifyRequest()
+            val reservation = registry.beginTargetVerification(owner, request)
+            registry.commitDurableTargetResponse(owner, reservation, request.requestId, target())
+
+            assertEquals(target(), registry.target(owner))
+        }
+
+        assertEquals(ReleaseState.RELEASED, registry.release(RUN_ID, true))
+        assertEquals(listOf(setOf(REQUEST_ID)), cleanup)
+    }
+
+    @Test
+    fun `failed durable target commit installs neither id nor target and is sticky`() {
+        val cleanup = mutableListOf<Set<String>?>()
+        val registry = AnkiRunStateRegistry { _, ids -> cleanup += ids }
+        assertTrue(registry.register(RUN_ID, AnkiCancellation.NONE))
+        registry.withOwner(RUN_ID) { owner ->
+            registry.retainDurableTerminalResponse(owner, REQUEST_ID)
+            val request = verifyRequest()
+            val reservation = registry.beginTargetVerification(owner, request)
+
+            assertThrows(RunStateConflictException::class.java) {
+                registry.commitDurableTargetResponse(owner, reservation, request.requestId, target())
+            }
+            assertNull(registry.target(owner))
+            registry.abortTargetVerification(owner, reservation)
+        }
+
+        assertEquals(ReleaseState.RELEASED, registry.release(RUN_ID, true))
+        assertEquals(listOf(null), cleanup)
+    }
+
+    @Test
+    fun `durable verify error atomically clears an installed target`() {
+        val registry = AnkiRunStateRegistry()
+        assertTrue(registry.register(RUN_ID, AnkiCancellation.NONE))
+        registry.withOwner(RUN_ID) { owner ->
+            val firstRequest = verifyRequest()
+            val first = registry.beginTargetVerification(owner, firstRequest)
+            registry.commitDurableTargetResponse(owner, first, firstRequest.requestId, target())
+            assertEquals(target(), registry.target(owner))
+
+            val errorRequest = verifyRequest(OTHER_REQUEST_ID)
+            val error = registry.beginTargetVerification(owner, errorRequest)
+            registry.commitDurableTargetResponse(owner, error, errorRequest.requestId, target = null)
+
+            assertNull(registry.target(owner))
+        }
+    }
+
+    @Test
+    fun `duplicate durable replay failure quarantines an installed target`() {
+        val cleanup = mutableListOf<Set<String>?>()
+        val registry = AnkiRunStateRegistry { _, ids -> cleanup += ids }
+        assertTrue(registry.register(RUN_ID, AnkiCancellation.NONE))
+        registry.withOwner(RUN_ID) { owner ->
+            val request = verifyRequest()
+            val first = registry.beginTargetVerification(owner, request)
+            registry.commitDurableTargetResponse(owner, first, request.requestId, target())
+            val replay = registry.beginTargetVerification(owner, request)
+
+            assertThrows(RunStateConflictException::class.java) {
+                registry.commitDurableTargetResponse(owner, replay, request.requestId, target())
+            }
+            assertNull(registry.target(owner))
+            registry.abortTargetVerification(owner, replay)
+            assertThrows(RunStateConflictException::class.java) {
+                registry.beginTargetVerification(owner, verifyRequest(OTHER_REQUEST_ID))
+            }
+        }
+
+        assertThrows(RunStateConflictException::class.java) {
+            registry.withOwner(RUN_ID) { }
+        }
+
+        assertEquals(ReleaseState.RELEASED, registry.release(RUN_ID, true))
+        assertEquals(listOf(null), cleanup)
+    }
+
     @Test
     fun `release is absent without a tombstone and registration stays single-run`() {
         val registry = AnkiRunStateRegistry()
@@ -328,4 +453,43 @@ class AnkiRunStateRegistryTest {
         const val ASSET_ID = "asset_11111111111111111111111111111111"
         const val OTHER_ASSET_ID = "asset_22222222222222222222222222222222"
     }
+
+    private fun verifyRequest(requestId: String = REQUEST_ID) =
+        VerifyTargetRequest(
+            runId = RUN_ID,
+            requestId = requestId,
+            deckName = "Mining",
+            modelName = "Mining",
+            requiredFields = listOf("Expression"),
+        )
+
+    private fun target() =
+        TargetSnapshot(
+            deck = DeckSnapshot(20L, "Mining", dynamic = false),
+            model =
+                ModelSnapshot(
+                    id = 10L,
+                    name = "Mining",
+                    type = 0,
+                    fieldNames = listOf("Expression"),
+                    cardCount = 1,
+                    sortFieldIndex = 0,
+                    effectiveDefaultDeckId = 1L,
+                    css = "css",
+                    latexPre = null,
+                    latexPost = null,
+                    templates =
+                        listOf(
+                            TemplateSnapshot(
+                                modelId = 10L,
+                                ordinal = 0,
+                                name = "Card 1",
+                                questionFormat = "{{Expression}}",
+                                answerFormat = "{{Expression}}",
+                                browserQuestionFormat = null,
+                                browserAnswerFormat = null,
+                            ),
+                        ),
+                ),
+        )
 }

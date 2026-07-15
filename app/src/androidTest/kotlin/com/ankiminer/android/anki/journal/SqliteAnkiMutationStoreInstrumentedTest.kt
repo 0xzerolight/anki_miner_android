@@ -860,6 +860,93 @@ class SqliteAnkiMutationStoreInstrumentedTest {
         }
 
     @Test
+    fun verifiedDeckTransactionNeverPersistsOnlyOneOfTargetAndChildOutcome() {
+        listOf(
+            JournalCrashPoint.BEFORE_DECK_VERIFICATION_TRANSACTION to false,
+            JournalCrashPoint.AFTER_DECK_VERIFICATION_TRANSACTION to true,
+        ).forEachIndexed { index, (point, committed) ->
+            val name = databaseName()
+            val request = verifyRequest(142 + index, 1)
+            val target = targetSnapshot()
+            val childId: Long
+            try {
+                SqliteAnkiMutationStore(context, name, enforceBackgroundThread = false).use { store ->
+                    store.createParent(request)
+                    store.beginParent(request.key)
+                    store.storeTargetExpectation(request.key, target.expectation)
+                    childId = store.prepareChild(request.key, MutationCommand.CreateDeck("Mining")).id
+                    store.recordProviderEntry(childId)
+                }
+                SqliteAnkiMutationStore(
+                    context,
+                    name,
+                    crashHooks = CrashAt(point),
+                    enforceBackgroundThread = false,
+                ).use { store ->
+                    assertThrows(SimulatedCrash::class.java) {
+                        store.completeVerifiedDeck(childId, target, "exact model and deck requery")
+                    }
+                }
+
+                SqliteAnkiMutationStore(context, name, enforceBackgroundThread = false).use { reopened ->
+                    assertEquals(if (committed) target else null, reopened.targetSnapshot(request.key))
+                    assertEquals(
+                        if (committed) ChildState.POSTCONDITION_VERIFIED else ChildState.PREPARED,
+                        childState(reopened.writableDatabase, childId),
+                    )
+                }
+            } finally {
+                context.deleteDatabase(name)
+            }
+        }
+    }
+
+    @Test
+    fun uncertainDeckTransactionNeverPersistsChildWithoutRemediation() {
+        listOf(
+            JournalCrashPoint.BEFORE_DECK_UNCERTAINTY_TRANSACTION to false,
+            JournalCrashPoint.AFTER_DECK_UNCERTAINTY_TRANSACTION to true,
+        ).forEachIndexed { index, (point, committed) ->
+            val name = databaseName()
+            val request = verifyRequest(144 + index, 1)
+            val childId: Long
+            try {
+                SqliteAnkiMutationStore(context, name, enforceBackgroundThread = false).use { store ->
+                    store.createParent(request)
+                    store.beginParent(request.key)
+                    store.storeTargetExpectation(request.key, targetSnapshot().expectation)
+                    childId = store.prepareChild(request.key, MutationCommand.CreateDeck("Mining")).id
+                    store.recordProviderEntry(childId)
+                }
+                SqliteAnkiMutationStore(
+                    context,
+                    name,
+                    crashHooks = CrashAt(point),
+                    enforceBackgroundThread = false,
+                ).use { store ->
+                    assertThrows(SimulatedCrash::class.java) {
+                        store.completeUncertainDeck(childId, "entered create could not be reconciled")
+                    }
+                }
+
+                SqliteAnkiMutationStore(context, name, enforceBackgroundThread = false).use { reopened ->
+                    assertNull(reopened.targetSnapshot(request.key))
+                    assertEquals(
+                        if (committed) ChildState.COMMIT_UNCERTAIN else ChildState.PREPARED,
+                        childState(reopened.writableDatabase, childId),
+                    )
+                    assertEquals(
+                        if (committed) listOf(RemediationKind.DECK_COMMIT_UNCERTAIN) else emptyList(),
+                        reopened.openRemediations().map { it.kind },
+                    )
+                }
+            } finally {
+                context.deleteDatabase(name)
+            }
+        }
+    }
+
+    @Test
     fun uncertainCardRoutingRequiresPostCommitUncertainRowAndParentError() =
         withStore { store ->
             val request = createRequest(43, 1, 1)
@@ -2453,6 +2540,15 @@ class SqliteAnkiMutationStoreInstrumentedTest {
         db.rawQuery("SELECT count(*) FROM $table", null).use { cursor ->
             assertTrue(cursor.moveToFirst())
             cursor.getLong(0)
+        }
+
+    private fun childState(db: SQLiteDatabase, childId: Long): ChildState =
+        db.rawQuery(
+            "SELECT state FROM mutation_children WHERE id = ?",
+            arrayOf(childId.toString()),
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            ChildState.valueOf(cursor.getString(0))
         }
 
     private fun auditCount(

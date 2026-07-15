@@ -2,6 +2,7 @@ package com.ankiminer.android.anki.provider
 
 import android.content.ComponentName
 import android.content.ContentResolver
+import android.content.ContentValues
 import android.content.Context
 import android.content.pm.PackageManager
 import android.database.Cursor
@@ -38,6 +39,13 @@ internal fun interface ProviderResolverQuery {
     ): Cursor?
 }
 
+internal fun interface ProviderResolverInsert {
+    fun insert(
+        uri: Uri,
+        values: ContentValues,
+    ): Uri?
+}
+
 internal object RealProviderDeadlineScheduler : ProviderDeadlineScheduler {
     private val executor =
         ScheduledThreadPoolExecutor(
@@ -72,6 +80,7 @@ internal class ContentResolverAnkiGateway(
     private val deadlineScheduler: ProviderDeadlineScheduler = RealProviderDeadlineScheduler,
     private val accessStatusOverride: (() -> ProviderAccessStatus)? = null,
     private val resolverQueryOverride: ProviderResolverQuery? = null,
+    private val resolverInsertOverride: ProviderResolverInsert? = null,
 ) : AnkiProviderGateway {
     private val context = context.applicationContext
     private val resolver: ContentResolver = this.context.contentResolver
@@ -192,6 +201,34 @@ internal class ContentResolverAnkiGateway(
         workerThreadGuard.checkWorkerThread()
         return Utils.fieldChecksum(firstField)
     }
+
+    override fun createDeck(command: AnkiProviderMutationCommand.CreateDeck): String? {
+        workerThreadGuard.checkWorkerThread()
+        val values = ContentValues(1).apply {
+            put(FlashCardsContract.Deck.DECK_NAME, command.deckName)
+        }
+        val returned =
+            try {
+                if (resolverInsertOverride != null) {
+                    resolverInsertOverride.insert(FlashCardsContract.Deck.CONTENT_ALL_URI, values)
+                } else {
+                    resolver.insert(FlashCardsContract.Deck.CONTENT_ALL_URI, values)
+                }
+            } catch (error: Exception) {
+                throw mapMutationFailure(error)
+            }
+        return returned?.toString()
+    }
+
+    private fun mapMutationFailure(error: Exception): ProviderGatewayException =
+        when (error) {
+            is ProviderGatewayException -> error
+            is SecurityException ->
+                ProviderGatewayException(ProviderFailureKind.PERMISSION_REQUIRED, error)
+            is DeadObjectException, is RemoteException ->
+                ProviderGatewayException(ProviderFailureKind.PROVIDER_UNAVAILABLE, error)
+            else -> ProviderGatewayException(ProviderFailureKind.QUERY_FAILED, error)
+        }
 
     private fun requireAvailableAccess() {
         when (accessStatus()) {

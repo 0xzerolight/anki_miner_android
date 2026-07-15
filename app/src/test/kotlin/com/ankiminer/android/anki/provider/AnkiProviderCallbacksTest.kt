@@ -1,15 +1,57 @@
 package com.ankiminer.android.anki.provider
 
 import com.ankiminer.android.anki.protocol.AnkiJsonCodec
+import com.ankiminer.android.anki.protocol.VerifyTargetResult
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.concurrent.thread
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AnkiProviderCallbacksTest {
+    @Test
+    fun `registration checks worker and closed recovery gate before registry admission`() {
+        var guardCalls = 0
+        var recoveryCalls = 0
+        var open = false
+        val gate =
+            object : AnkiStartupRecoveryGate {
+                override fun ensureRecovered() {
+                    recoveryCalls += 1
+                    open = true
+                }
+
+                override fun isOpen(): Boolean = open
+            }
+        val admitted =
+            harness(
+                register = false,
+                guard = WorkerThreadGuard { guardCalls += 1 },
+                startupRecoveryGate = gate,
+            )
+
+        assertTrue(admitted.callbacks.registerRun(RUN_ID))
+        assertEquals(1, guardCalls)
+        assertEquals(1, recoveryCalls)
+
+        val rejectedRegistry = AnkiRunStateRegistry()
+        val rejected =
+            harness(
+                register = false,
+                registry = rejectedRegistry,
+                guard = WorkerThreadGuard { error("main thread") },
+            )
+        assertFalse(rejected.callbacks.registerRun(RUN_ID))
+        assertEquals(
+            com.ankiminer.android.anki.protocol.ReleaseState.ABSENT,
+            rejectedRegistry.release(RUN_ID, true),
+        )
+    }
+
     @Test
     fun `dispatcher returns canonical correlated verify result`() {
         val harness = harness()
@@ -141,8 +183,12 @@ class AnkiProviderCallbacksTest {
     @Test
     fun `worker guard runs before decode for valid malformed wrong type BOM and oversized input`() {
         var guardCalls = 0
+        val registry = AnkiRunStateRegistry()
+        assertTrue(registry.register(RUN_ID, AnkiCancellation.NONE))
         val harness =
             harness(
+                register = false,
+                registry = registry,
                 guard =
                     WorkerThreadGuard {
                         guardCalls += 1
@@ -232,6 +278,98 @@ class AnkiProviderCallbacksTest {
     }
 
     @Test
+    fun `verify response encoding failure quarantines a previously installed target`() {
+        val cleanup = mutableListOf<Set<String>?>()
+        val registry = AnkiRunStateRegistry { _, ids -> cleanup += ids }
+        val encoder =
+            AnkiProviderResponseEncoder { response, request ->
+                if (request.requestId == SECOND_REQUEST_ID) error("injected verify encode failure")
+                AnkiJsonCodec.encodeResponse(response, request)
+            }
+        val harness = harness(registry = registry, encoder = encoder)
+        harness.gateway.queryHandler = targetQueryHandler()
+        assertTrue(harness.callbacks.ankiVerifyTarget(verifyEnvelope()).contains("\"deckId\":20"))
+        registry.withOwner(RUN_ID) { owner -> assertTrue(registry.target(owner) != null) }
+
+        val failed = harness.callbacks.ankiVerifyTarget(verifyEnvelope(SECOND_REQUEST_ID))
+
+        assertTrue(failed.contains("\"code\":\"internal_error\""))
+        val queryCount = harness.gateway.queries.size
+        val quarantined = harness.callbacks.ankiVerifyTarget(verifyEnvelope(THIRD_REQUEST_ID))
+        assertTrue(quarantined.contains("\"code\":\"invalid_request\""))
+        assertEquals(queryCount, harness.gateway.queries.size)
+        assertThrows(RunStateConflictException::class.java) {
+            registry.withOwner(RUN_ID) { }
+        }
+        assertEquals(
+            com.ankiminer.android.anki.protocol.ReleaseState.RELEASED,
+            registry.release(RUN_ID, true),
+        )
+        assertEquals(listOf(null), cleanup)
+    }
+
+    @Test
+    fun `release between target encoding and atomic admission installs neither target nor receipt`() {
+        val cleanup = mutableListOf<Set<String>?>()
+        val registry = AnkiRunStateRegistry { _, ids -> cleanup += ids }
+        val firstEncoding = CountDownLatch(1)
+        val allowFirstEncoding = CountDownLatch(1)
+        val fallbackEncoding = CountDownLatch(1)
+        val allowFallbackEncoding = CountDownLatch(1)
+        var encodingCalls = 0
+        val encoder =
+            AnkiProviderResponseEncoder { response, request ->
+                encodingCalls += 1
+                when (encodingCalls) {
+                    1 -> {
+                        firstEncoding.countDown()
+                        check(allowFirstEncoding.await(5, TimeUnit.SECONDS))
+                    }
+                    2 -> {
+                        fallbackEncoding.countDown()
+                        check(allowFallbackEncoding.await(5, TimeUnit.SECONDS))
+                    }
+                }
+                AnkiJsonCodec.encodeResponse(response, request)
+            }
+        val harness = harness(registry = registry, encoder = encoder)
+        harness.gateway.queryHandler = targetQueryHandler()
+        val observerOwner = AtomicReference<AnkiRunStateRegistry.RunOwner?>()
+        val observerReady = CountDownLatch(1)
+        val finishObserver = CountDownLatch(1)
+        val observer =
+            thread {
+                registry.withOwner(RUN_ID) { owner ->
+                    observerOwner.set(owner)
+                    observerReady.countDown()
+                    check(finishObserver.await(5, TimeUnit.SECONDS))
+                }
+            }
+        assertTrue(observerReady.await(5, TimeUnit.SECONDS))
+        var result = ""
+        val verify = thread { result = harness.callbacks.ankiVerifyTarget(verifyEnvelope()) }
+        assertTrue(firstEncoding.await(5, TimeUnit.SECONDS))
+
+        assertEquals(
+            com.ankiminer.android.anki.protocol.ReleaseState.DEFERRED,
+            registry.release(RUN_ID, true),
+        )
+        allowFirstEncoding.countDown()
+        assertTrue(fallbackEncoding.await(5, TimeUnit.SECONDS))
+        assertTrue(registry.target(requireNotNull(observerOwner.get())) == null)
+        allowFallbackEncoding.countDown()
+        verify.join(5_000)
+        assertFalse(verify.isAlive)
+        assertTrue(result.contains("\"code\":\"internal_error\""))
+
+        finishObserver.countDown()
+        observer.join(5_000)
+        assertFalse(observer.isAlive)
+        assertEquals(2, encodingCalls)
+        assertEquals(listOf(null), cleanup)
+    }
+
+    @Test
     fun `release during a provider read is deferred then cleans once and rejects admission`() {
         val cleanup = mutableListOf<Set<String>?>()
         val entered = CountDownLatch(1)
@@ -281,10 +419,37 @@ class AnkiProviderCallbacksTest {
         registry: AnkiRunStateRegistry = AnkiRunStateRegistry(),
         encoder: AnkiProviderResponseEncoder =
             AnkiProviderResponseEncoder(AnkiJsonCodec::encodeResponse),
+        startupRecoveryGate: AnkiStartupRecoveryGate = OpenAnkiStartupRecoveryGate,
     ): Harness {
         val gateway = FakeAnkiProviderGateway()
         val reads = AnkiProviderReadService(gateway, registry, OpaqueTokenFactory { prefix -> "$prefix${"a".repeat(32)}" })
-        val callbacks = AnkiProviderCallbacks(registry, reads, guard, encoder)
+        val targetVerifier =
+            AnkiTargetVerifier { owner, _, request ->
+                val target = reads.readExistingTarget(owner, request)
+                TargetVerificationOutcome(
+                    response =
+                        VerifyTargetResult(
+                            runId = request.runId,
+                            requestId = request.requestId,
+                            deckId = target.deck.id,
+                            modelId = target.model.id,
+                            fieldNames = target.model.fieldNames,
+                            deckCreated = false,
+                        ),
+                    durable = true,
+                    targetForAdmission = target,
+                    replayed = false,
+                )
+            }
+        val callbacks =
+            AnkiProviderCallbacks(
+                registry = registry,
+                reads = reads,
+                targetVerifier = targetVerifier,
+                workerThreadGuard = guard,
+                startupRecoveryGate = startupRecoveryGate,
+                responseEncoder = encoder,
+            )
         if (register) assertTrue(callbacks.registerRun(RUN_ID, cancellation))
         return Harness(gateway, callbacks)
     }
@@ -328,10 +493,10 @@ class AnkiProviderCallbacksTest {
             }
         }
 
-    private fun verifyEnvelope(): String =
+    private fun verifyEnvelope(requestId: String = REQUEST_ID): String =
         envelope(
             "anki.verifytarget.request",
-            """{"runId":"$RUN_ID","requestId":"$REQUEST_ID","deckName":"Mining","modelName":"Mining","requiredFields":["Expression"]}""",
+            """{"runId":"$RUN_ID","requestId":"$requestId","deckName":"Mining","modelName":"Mining","requiredFields":["Expression"]}""",
         )
 
     private fun knownEnvelope(requestId: String = REQUEST_ID): String =
@@ -365,5 +530,6 @@ class AnkiProviderCallbacksTest {
         const val RUN_ID = "run_11111111111111111111111111111111"
         const val REQUEST_ID = "anki_11111111111111111111111111111111"
         const val SECOND_REQUEST_ID = "anki_22222222222222222222222222222222"
+        const val THIRD_REQUEST_ID = "anki_33333333333333333333333333333333"
     }
 }

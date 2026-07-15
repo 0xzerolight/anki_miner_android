@@ -26,25 +26,53 @@ internal fun interface AnkiProviderResponseEncoder {
 internal class AnkiProviderCallbacks(
     private val registry: AnkiRunStateRegistry,
     private val reads: AnkiProviderReadService,
+    private val targetVerifier: AnkiTargetVerifier,
     private val workerThreadGuard: WorkerThreadGuard,
+    private val startupRecoveryGate: AnkiStartupRecoveryGate = OpenAnkiStartupRecoveryGate,
     private val responseEncoder: AnkiProviderResponseEncoder =
         AnkiProviderResponseEncoder(AnkiJsonCodec::encodeResponse),
 ) {
     fun registerRun(
         runId: String,
         cancellation: AnkiCancellation = AnkiCancellation.NONE,
-    ): Boolean = AnkiValidators.isValidRunId(runId) && registry.register(runId, cancellation)
+    ): Boolean {
+        if (!AnkiValidators.isValidRunId(runId)) return false
+        try {
+            workerThreadGuard.checkWorkerThread()
+            if (!startupRecoveryGate.isOpen()) {
+                startupRecoveryGate.ensureRecovered()
+            }
+        } catch (_: RuntimeException) {
+            return false
+        }
+        return registry.register(runId, cancellation)
+    }
 
     fun ankiVerifyTarget(rawRequest: String): String =
         dispatchOwned(AnkiOperation.VERIFY_TARGET, rawRequest) { request, owner ->
             val typed = request as VerifyTargetRequest
-            reads.verifyTarget(owner, typed)
+            val reservation = registry.beginTargetVerification(owner, typed)
+            try {
+                val outcome = targetVerifier.verify(owner, reservation, typed)
+                if (outcome.durable) {
+                    OwnedResponse(
+                        outcome.response,
+                        DurableTargetCommit(reservation, outcome.targetForAdmission),
+                    )
+                } else {
+                    registry.abortTargetVerification(owner, reservation)
+                    OwnedResponse(outcome.response)
+                }
+            } catch (error: RuntimeException) {
+                registry.abortTargetVerification(owner, reservation)
+                throw error
+            }
         }
 
     fun ankiScanFirstFields(rawRequest: String): String =
         dispatchOwned(AnkiOperation.SCAN_FIRST_FIELDS, rawRequest) { request, owner ->
             val typed = request as ScanFirstFieldsRequest
-            reads.scanFirstFields(owner, typed)
+            OwnedResponse(reads.scanFirstFields(owner, typed))
         }
 
     fun ankiStoreMedia(rawRequest: String): String =
@@ -83,7 +111,7 @@ internal class AnkiProviderCallbacks(
     private fun dispatchOwned(
         operation: AnkiOperation,
         rawRequest: String,
-        handler: (AnkiRequest, AnkiRunStateRegistry.RunOwner) -> AnkiResponse,
+        handler: (AnkiRequest, AnkiRunStateRegistry.RunOwner) -> OwnedResponse,
     ): String {
         guardFailure(operation)?.let { return it }
         val request =
@@ -94,8 +122,13 @@ internal class AnkiProviderCallbacks(
             }
         return try {
             registry.withOwner(request.runId) { owner ->
-                val response = responseFor(request) { handler(request, owner) }
-                encodeOwned(owner, request, response)
+                val handled =
+                    try {
+                        handler(request, owner)
+                    } catch (failure: RuntimeException) {
+                        OwnedResponse(failureResponse(request, failure))
+                    }
+                encodeOwned(owner, request, handled)
             }
         } catch (failure: RuntimeException) {
             encodeUnowned(request, failureResponse(request, failure))
@@ -199,6 +232,12 @@ internal class AnkiProviderCallbacks(
                     "The bounded Anki run state is full",
                     retryable = false,
                 )
+            is TargetVerificationInProgressException ->
+                request.error(
+                    AnkiErrorCode.INVALID_REQUEST,
+                    "Another Anki target verification is already active",
+                    retryable = false,
+                )
             else ->
                 request.error(
                     AnkiErrorCode.INTERNAL_ERROR,
@@ -210,21 +249,45 @@ internal class AnkiProviderCallbacks(
     private fun encodeOwned(
         owner: AnkiRunStateRegistry.RunOwner,
         request: AnkiRequest,
-        response: AnkiResponse,
-    ): String =
+        handled: OwnedResponse,
+    ): String {
+        val durableTarget = handled.durableTarget
+        val encoded =
+            try {
+                responseEncoder.encode(handled.response, request)
+            } catch (_: RuntimeException) {
+                registry.markTerminalResponseFailure(owner)
+                durableTarget?.let { registry.abortTargetVerification(owner, it.reservation) }
+                return encodeUnowned(
+                    request,
+                    request.error(
+                        AnkiErrorCode.INTERNAL_ERROR,
+                        "The Anki provider response failed validation",
+                        retryable = false,
+                    ),
+                )
+            }
+        if (durableTarget == null) return encoded
         try {
-            responseEncoder.encode(response, request)
+            registry.commitDurableTargetResponse(
+                owner = owner,
+                reservation = durableTarget.reservation,
+                requestId = request.requestId,
+                target = durableTarget.target,
+            )
         } catch (_: RuntimeException) {
-            registry.markTerminalResponseFailure(owner)
-            encodeUnowned(
+            registry.abortTargetVerification(owner, durableTarget.reservation)
+            return encodeUnowned(
                 request,
                 request.error(
                     AnkiErrorCode.INTERNAL_ERROR,
-                    "The Anki provider response failed validation",
+                    "The durable Anki response could not be admitted",
                     retryable = false,
                 ),
             )
         }
+        return encoded
+    }
 
     private fun encodeUnowned(
         request: AnkiRequest,
@@ -277,4 +340,14 @@ internal class AnkiProviderCallbacks(
         const val PLACEHOLDER_RUN_ID = "run_00000000000000000000000000000000"
         const val PLACEHOLDER_REQUEST_ID = "anki_00000000000000000000000000000000"
     }
+
+    private data class DurableTargetCommit(
+        val reservation: TargetVerificationReservation,
+        val target: TargetSnapshot?,
+    )
+
+    private data class OwnedResponse(
+        val response: AnkiResponse,
+        val durableTarget: DurableTargetCommit? = null,
+    )
 }

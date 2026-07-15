@@ -9,7 +9,9 @@ internal class FakeAnkiProviderGateway : AnkiProviderGateway {
         FakeProviderCursor(query.projection, emptyList())
     }
     var checksum: (String) -> Long = { value -> value.hashCode().toLong() and 0xffff_ffffL }
+    var createDeckHandler: (AnkiProviderMutationCommand.CreateDeck) -> String? = { null }
     val queries = mutableListOf<ProviderQuery>()
+    val deckCommands = mutableListOf<AnkiProviderMutationCommand.CreateDeck>()
     var accessChecks = 0
 
     override fun accessStatus(): ProviderAccessStatus {
@@ -26,6 +28,11 @@ internal class FakeAnkiProviderGateway : AnkiProviderGateway {
     }
 
     override fun fieldChecksum(firstField: String): Long = checksum(firstField)
+
+    override fun createDeck(command: AnkiProviderMutationCommand.CreateDeck): String? {
+        deckCommands += command
+        return createDeckHandler(command)
+    }
 }
 
 internal class FakeProviderCursor(

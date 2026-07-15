@@ -5,6 +5,7 @@ import com.ankiminer.android.anki.protocol.AnkiValidators
 import com.ankiminer.android.anki.protocol.DuplicateCandidate
 import com.ankiminer.android.anki.protocol.KnownVocabularyCursor
 import com.ankiminer.android.anki.protocol.ReleaseState
+import com.ankiminer.android.anki.protocol.VerifyTargetRequest
 import java.security.SecureRandom
 import java.util.Collections
 import java.util.concurrent.atomic.AtomicBoolean
@@ -39,6 +40,14 @@ internal fun interface AnkiRunCleanup {
         runId: String,
         durableResponseIds: Set<String>?,
     )
+}
+
+internal fun interface AnkiStartupAdmission {
+    fun isOpen(): Boolean
+
+    companion object {
+        val OPEN = AnkiStartupAdmission { true }
+    }
 }
 
 internal data class MediaAcknowledgement(
@@ -80,7 +89,26 @@ internal data class BaselineProbe(
     internal val generation: Long,
 )
 
+internal class TargetVerificationReservation internal constructor(
+    internal val runId: String,
+    internal val ownerId: Long,
+    internal val generation: Long,
+    internal val request: VerifyTargetRequest,
+    val installedTarget: TargetSnapshot?,
+) {
+    internal val completed = AtomicBoolean(false)
+    internal val providerEntryAuthorized = AtomicBoolean(false)
+}
+
+internal enum class TargetProviderEntryAuthorization {
+    AUTHORIZED,
+    QUARANTINED,
+    RELEASING,
+    CANCELLED,
+}
+
 internal class AnkiRunStateRegistry(
+    private val startupAdmission: AnkiStartupAdmission = AnkiStartupAdmission.OPEN,
     private val cleanup: AnkiRunCleanup = AnkiRunCleanup { _, _ -> },
 ) {
     private val lock = Any()
@@ -94,6 +122,7 @@ internal class AnkiRunStateRegistry(
         cancellation: AnkiCancellation,
     ): Boolean =
         synchronized(lock) {
+            if (!startupAdmission.isOpen()) return@synchronized false
             if (states.isNotEmpty() || states.containsKey(runId)) return@synchronized false
             states[runId] = RunState(runId, cancellation)
             true
@@ -132,7 +161,7 @@ internal class AnkiRunStateRegistry(
                         ?: acknowledgeTerminalResponses
             }
             if (!acknowledgeTerminalResponses) {
-                state.terminalReceiptFailure = true
+                markTerminalFailureLocked(state)
             }
             cleanupAction = if (state.owners.isEmpty()) beginCleanupLocked(state) else null
             result = if (cleanupAction == null) ReleaseState.DEFERRED else ReleaseState.RELEASED
@@ -147,17 +176,125 @@ internal class AnkiRunStateRegistry(
     fun target(owner: RunOwner): TargetSnapshot? =
         synchronized(lock) { requireOwnerLocked(owner).target }
 
-    fun installTarget(
+    fun beginTargetVerification(
         owner: RunOwner,
-        target: TargetSnapshot,
+        request: VerifyTargetRequest,
+    ): TargetVerificationReservation =
+        synchronized(lock) {
+            val state = requireOwnerLocked(owner)
+            if (state.terminalReceiptFailure) throw RunStateConflictException()
+            if (state.releaseRequested) throw RunReleasingException()
+            if (state.targetVerification != null) throw TargetVerificationInProgressException()
+            val reservation =
+                TargetVerificationReservation(
+                    runId = state.runId,
+                    ownerId = owner.ownerId,
+                    generation = nextGeneration++,
+                    request = request,
+                    installedTarget = state.target,
+                )
+            state.targetVerification = reservation
+            reservation
+        }
+
+    /**
+     * Commits one canonically encoded durable response. All validation precedes both the ID insert
+     * and target admission, so release/duplicate/conflict failure installs neither new value.
+     */
+    fun commitDurableTargetResponse(
+        owner: RunOwner,
+        reservation: TargetVerificationReservation,
+        requestId: String,
+        target: TargetSnapshot?,
     ) {
         synchronized(lock) {
             val state = requireOwnerLocked(owner)
-            val prior = state.target
-            if (prior != null && prior != target) throw RunStateConflictException()
+            fun fail(error: RuntimeException): Nothing {
+                markTerminalFailureLocked(state)
+                throw error
+            }
+            if (state.terminalReceiptFailure) fail(RunStateConflictException())
+            if (state.releaseRequested) fail(RunReleasingException())
+            if (
+                reservation.completed.get() ||
+                    reservation.runId != state.runId ||
+                    reservation.ownerId != owner.ownerId ||
+                    state.targetVerification !== reservation
+            ) {
+                fail(InvalidCapabilityException())
+            }
+            if (!AnkiValidators.isValidRequestId(requestId)) fail(RunStateConflictException())
+            if (requestId != reservation.request.requestId) fail(RunStateConflictException())
+            if (requestId in state.durableResponseIds) fail(RunStateConflictException())
+            if (state.durableResponseIds.size >= MAX_TERMINAL_RESPONSE_RECEIPTS) {
+                fail(RunStateCapacityException())
+            }
+            if (state.target != reservation.installedTarget) fail(RunStateConflictException())
+            if (target != null) {
+                try {
+                    ProviderSnapshotValidation.validateModel(target.model)
+                    ProviderSnapshotValidation.validateDeck(target.deck)
+                } catch (_: InvalidTargetSnapshotException) {
+                    fail(RunStateConflictException())
+                }
+                if (
+                    target.deck.name != reservation.request.deckName ||
+                        target.model.name != reservation.request.modelName ||
+                        !target.model.fieldNames.containsAll(reservation.request.requiredFields) ||
+                        (state.target != null && state.target != target)
+                ) {
+                    fail(RunStateConflictException())
+                }
+            }
+
+            state.durableResponseIds += requestId
+            // A durable verify error quarantines any prior target in the same atomic admission.
             state.target = target
+            state.targetVerification = null
+            reservation.completed.set(true)
         }
     }
+
+    fun abortTargetVerification(
+        owner: RunOwner,
+        reservation: TargetVerificationReservation,
+    ) {
+        if (reservation.completed.get()) return
+        synchronized(lock) {
+            if (reservation.completed.get()) return@synchronized
+            val state = requireOwnerLocked(owner)
+            if (state.targetVerification !== reservation) throw InvalidCapabilityException()
+            state.targetVerification = null
+            reservation.completed.set(true)
+        }
+    }
+
+    /** Linearization point separating cancellable pre-entry work from mandatory reconciliation. */
+    fun authorizeTargetProviderEntry(
+        owner: RunOwner,
+        reservation: TargetVerificationReservation,
+    ): TargetProviderEntryAuthorization =
+        synchronized(lock) {
+            val state = requireOwnerLocked(owner)
+            if (
+                reservation.completed.get() ||
+                    reservation.runId != state.runId ||
+                    reservation.ownerId != owner.ownerId ||
+                    state.targetVerification !== reservation ||
+                    reservation.providerEntryAuthorized.get()
+            ) {
+                throw InvalidCapabilityException()
+            }
+            if (state.terminalReceiptFailure) {
+                return@synchronized TargetProviderEntryAuthorization.QUARANTINED
+            }
+            if (state.releaseRequested) return@synchronized TargetProviderEntryAuthorization.RELEASING
+            if (state.cancellation.isCancelled()) {
+                return@synchronized TargetProviderEntryAuthorization.CANCELLED
+            }
+            reservation.providerEntryAuthorized.set(true)
+            TargetProviderEntryAuthorization.AUTHORIZED
+        }
 
     fun beginKnownTraversal(
         owner: RunOwner,
@@ -339,32 +476,38 @@ internal class AnkiRunStateRegistry(
         synchronized(lock) {
             val state = requireOwnerLocked(owner)
             if (!AnkiValidators.isValidRequestId(requestId)) {
-                state.terminalReceiptFailure = true
+                markTerminalFailureLocked(state)
                 throw RunStateConflictException()
             }
             if (state.releaseRequested) {
-                state.terminalReceiptFailure = true
+                markTerminalFailureLocked(state)
                 throw RunStateConflictException()
             }
             if (!state.durableResponseIds.add(requestId)) {
-                state.terminalReceiptFailure = true
+                markTerminalFailureLocked(state)
                 throw RunStateConflictException()
             }
             if (state.durableResponseIds.size > MAX_TERMINAL_RESPONSE_RECEIPTS) {
                 state.durableResponseIds.remove(requestId)
-                state.terminalReceiptFailure = true
+                markTerminalFailureLocked(state)
                 throw RunStateCapacityException()
             }
         }
     }
 
     fun markTerminalResponseFailure(owner: RunOwner) {
-        synchronized(lock) { requireOwnerLocked(owner).terminalReceiptFailure = true }
+        synchronized(lock) { markTerminalFailureLocked(requireOwnerLocked(owner)) }
+    }
+
+    private fun markTerminalFailureLocked(state: RunState) {
+        state.terminalReceiptFailure = true
+        state.target = null
     }
 
     private fun admit(runId: String): RunOwner =
         synchronized(lock) {
             val state = states[runId] ?: throw RunNotRegisteredException()
+            if (state.terminalReceiptFailure) throw RunStateConflictException()
             if (state.releaseRequested) throw RunReleasingException()
             if (state.cancellation.isCancelled()) throw RunCancelledException()
             val ownerId = nextOwnerId++
@@ -522,6 +665,7 @@ internal class AnkiRunStateRegistry(
     ) {
         val owners = HashSet<Long>()
         var target: TargetSnapshot? = null
+        var targetVerification: TargetVerificationReservation? = null
         var knownInitialization: Long? = null
         var knownTraversal: KnownTraversal? = null
         var duplicateBaseline: DuplicateBaseline? = null
@@ -551,3 +695,5 @@ internal class InvalidCapabilityException : RuntimeException()
 internal class RunStateConflictException : RuntimeException()
 
 internal class RunStateCapacityException : RuntimeException()
+
+internal class TargetVerificationInProgressException : RuntimeException()

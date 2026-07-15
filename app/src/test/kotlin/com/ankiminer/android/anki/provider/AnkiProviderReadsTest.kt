@@ -22,12 +22,11 @@ class AnkiProviderReadsTest {
         val fixture = fixture()
         fixture.gateway.queryHandler = targetQueryHandler()
 
-        val result = fixture.withOwner { owner -> fixture.reads.verifyTarget(owner, verifyRequest()) }
+        val result = fixture.withOwner { owner -> fixture.verifyExistingTarget(owner, verifyRequest()) }
 
-        assertEquals(20L, result.deckId)
-        assertEquals(10L, result.modelId)
-        assertEquals(listOf("Expression", "Meaning"), result.fieldNames)
-        assertFalse(result.deckCreated)
+        assertEquals(20L, result.deck.id)
+        assertEquals(10L, result.model.id)
+        assertEquals(listOf("Expression", "Meaning"), result.model.fieldNames)
         assertEquals(
             listOf(
                 ProviderEndpoint.MODELS,
@@ -65,7 +64,7 @@ class AnkiProviderReadsTest {
             val fixture = fixture()
             fixture.gateway.queryHandler = handler
             return assertThrows(AnkiReadFailure::class.java) {
-                fixture.withOwner { owner -> fixture.reads.verifyTarget(owner, request) }
+                fixture.withOwner { owner -> fixture.verifyExistingTarget(owner, request) }
             }
         }
 
@@ -97,12 +96,12 @@ class AnkiProviderReadsTest {
             )
         val result =
             exact.withOwner { owner ->
-                exact.reads.verifyTarget(
+                exact.verifyExistingTarget(
                     owner,
                     verifyRequest(required = listOf("Field63")),
                 )
             }
-        assertEquals(64, result.fieldNames.size)
+        assertEquals(64, result.model.fieldNames.size)
 
         val oversized = fixture()
         val modelCursor =
@@ -121,7 +120,7 @@ class AnkiProviderReadsTest {
         val failure =
             assertThrows(AnkiReadFailure::class.java) {
                 oversized.withOwner { owner ->
-                    oversized.reads.verifyTarget(owner, verifyRequest())
+                    oversized.verifyExistingTarget(owner, verifyRequest())
                 }
             }
         assertEquals(AnkiErrorCode.TARGET_INVALID, failure.code)
@@ -147,7 +146,7 @@ class AnkiProviderReadsTest {
 
         val failure =
             assertThrows(AnkiReadFailure::class.java) {
-                fixture.withOwner { owner -> fixture.reads.verifyTarget(owner, verifyRequest()) }
+                fixture.withOwner { owner -> fixture.verifyExistingTarget(owner, verifyRequest()) }
             }
         assertEquals(AnkiErrorCode.TARGET_INVALID, failure.code)
         assertEquals(1, modelCursor.closeCount)
@@ -179,7 +178,7 @@ class AnkiProviderReadsTest {
 
             val failure =
                 assertThrows(AnkiReadFailure::class.java) {
-                    fixture.withOwner { owner -> fixture.reads.verifyTarget(owner, verifyRequest()) }
+                    fixture.withOwner { owner -> fixture.verifyExistingTarget(owner, verifyRequest()) }
                 }
             assertEquals(AnkiErrorCode.TARGET_INVALID, failure.code)
             assertEquals(1, templateCursor.closeCount)
@@ -216,8 +215,8 @@ class AnkiProviderReadsTest {
                 templates = templates,
             )
         val exactResult =
-            exact.withOwner { owner -> exact.reads.verifyTarget(owner, verifyRequest()) }
-        assertEquals(10L, exactResult.modelId)
+            exact.withOwner { owner -> exact.verifyExistingTarget(owner, verifyRequest()) }
+        assertEquals(10L, exactResult.model.id)
 
         val oversized = fixture()
         val templateCursor =
@@ -242,7 +241,7 @@ class AnkiProviderReadsTest {
         }
         val failure =
             assertThrows(AnkiReadFailure::class.java) {
-                oversized.withOwner { owner -> oversized.reads.verifyTarget(owner, verifyRequest()) }
+                oversized.withOwner { owner -> oversized.verifyExistingTarget(owner, verifyRequest()) }
             }
         assertEquals(AnkiErrorCode.TARGET_INVALID, failure.code)
         assertEquals(1, templateCursor.closeCount)
@@ -295,9 +294,9 @@ class AnkiProviderReadsTest {
                 )
             val acceptedResult =
                 accepted.withOwner { owner ->
-                    accepted.reads.verifyTarget(owner, verifyRequest())
+                    accepted.verifyExistingTarget(owner, verifyRequest())
                 }
-            assertEquals(case.name, 10L, acceptedResult.modelId)
+            assertEquals(case.name, 10L, acceptedResult.model.id)
 
             val rejected = fixture()
             rejected.gateway.queryHandler =
@@ -308,7 +307,7 @@ class AnkiProviderReadsTest {
             val failure =
                 assertThrows(case.name, AnkiReadFailure::class.java) {
                     rejected.withOwner { owner ->
-                        rejected.reads.verifyTarget(owner, verifyRequest())
+                        rejected.verifyExistingTarget(owner, verifyRequest())
                     }
                 }
             assertEquals(case.name, AnkiErrorCode.TARGET_INVALID, failure.code)
@@ -325,8 +324,8 @@ class AnkiProviderReadsTest {
         assertEquals(
             10L,
             accepted.withOwner { owner ->
-                accepted.reads.verifyTarget(owner, verifyRequest())
-            }.modelId,
+                accepted.verifyExistingTarget(owner, verifyRequest())
+            }.model.id,
         )
 
         val rejected = fixture()
@@ -338,7 +337,7 @@ class AnkiProviderReadsTest {
             AnkiErrorCode.TARGET_INVALID,
             assertThrows(AnkiReadFailure::class.java) {
                 rejected.withOwner { owner ->
-                    rejected.reads.verifyTarget(owner, verifyRequest())
+                    rejected.verifyExistingTarget(owner, verifyRequest())
                 }
             }.code,
         )
@@ -358,7 +357,7 @@ class AnkiProviderReadsTest {
                 )
             return runCatching {
                 fixture.withOwner { owner ->
-                    fixture.reads.verifyTarget(owner, verifyRequest())
+                    fixture.verifyExistingTarget(owner, verifyRequest())
                     verifyRequest()
                 }
             }
@@ -397,13 +396,13 @@ class AnkiProviderReadsTest {
     }
 
     @Test
-    fun `verify target classifies absent model missing deck null and malformed cursors`() {
+    fun `verify target classifies absent model missing deck and malformed cursors`() {
         val absent = fixture()
         absent.gateway.queryHandler = targetQueryHandler(models = emptyList())
         assertEquals(
             AnkiErrorCode.NOTE_TYPE_NOT_FOUND,
             assertThrows(AnkiReadFailure::class.java) {
-                absent.withOwner { owner -> absent.reads.verifyTarget(owner, verifyRequest()) }
+                absent.withOwner { owner -> absent.verifyExistingTarget(owner, verifyRequest()) }
             }.code,
         )
 
@@ -412,7 +411,7 @@ class AnkiProviderReadsTest {
         assertEquals(
             AnkiErrorCode.UNSUPPORTED_OPERATION,
             assertThrows(AnkiReadFailure::class.java) {
-                missingDeck.withOwner { owner -> missingDeck.reads.verifyTarget(owner, verifyRequest()) }
+                missingDeck.withOwner { owner -> missingDeck.verifyExistingTarget(owner, verifyRequest()) }
             }.code,
         )
 
@@ -423,7 +422,7 @@ class AnkiProviderReadsTest {
         assertEquals(
             AnkiErrorCode.QUERY_FAILED,
             assertThrows(AnkiReadFailure::class.java) {
-                nullCursor.withOwner { owner -> nullCursor.reads.verifyTarget(owner, verifyRequest()) }
+                nullCursor.withOwner { owner -> nullCursor.verifyExistingTarget(owner, verifyRequest()) }
             }.code,
         )
 
@@ -432,21 +431,18 @@ class AnkiProviderReadsTest {
             FakeProviderCursor(listOf(ProviderColumn.MODEL_ID), listOf(mapOf(ProviderColumn.MODEL_ID to integer(10))))
         malformed.gateway.queryHandler = { _, _ -> wrongProjectionCursor }
         assertThrows(AnkiReadFailure::class.java) {
-            malformed.withOwner { owner -> malformed.reads.verifyTarget(owner, verifyRequest()) }
+            malformed.withOwner { owner -> malformed.verifyExistingTarget(owner, verifyRequest()) }
         }
         assertEquals(1, wrongProjectionCursor.closeCount)
 
         val nullEffectiveDefault = fixture()
         nullEffectiveDefault.gateway.queryHandler =
             targetQueryHandler(model = modelRow(defaultDeckId = nullCell()))
-        assertEquals(
-            AnkiErrorCode.QUERY_FAILED,
-            assertThrows(AnkiReadFailure::class.java) {
-                nullEffectiveDefault.withOwner { owner ->
-                    nullEffectiveDefault.reads.verifyTarget(owner, verifyRequest())
-                }
-            }.code,
-        )
+        val target =
+            nullEffectiveDefault.withOwner { owner ->
+                nullEffectiveDefault.verifyExistingTarget(owner, verifyRequest())
+            }
+        assertEquals(1L, target.model.effectiveDefaultDeckId)
     }
 
     @Test
@@ -550,7 +546,7 @@ class AnkiProviderReadsTest {
             fixture.gateway.queryHandler = targetQueryHandler()
             val expected =
                 fixture.withOwner { owner ->
-                    fixture.reads.verifyTarget(owner, verifyRequest())
+                    fixture.verifyExistingTarget(owner, verifyRequest())
                     requireNotNull(fixture.registry.target(owner))
                 }
             fixture.gateway.queries.clear()
@@ -579,7 +575,7 @@ class AnkiProviderReadsTest {
             fixture.gateway.queryHandler = targetQueryHandler()
             val expected =
                 fixture.withOwner { owner ->
-                    fixture.reads.verifyTarget(owner, verifyRequest())
+                    fixture.verifyExistingTarget(owner, verifyRequest())
                     requireNotNull(fixture.registry.target(owner))
                 }
             fixture.gateway.queries.clear()
@@ -608,7 +604,7 @@ class AnkiProviderReadsTest {
         fixture.gateway.queryHandler = targetQueryHandler()
         val expected =
             fixture.withOwner { owner ->
-                fixture.reads.verifyTarget(owner, verifyRequest())
+                fixture.verifyExistingTarget(owner, verifyRequest())
                 requireNotNull(fixture.registry.target(owner))
             }
         fixture.gateway.queries.clear()
@@ -1092,7 +1088,7 @@ class AnkiProviderReadsTest {
             )
         fixture.gateway.checksum = { 42L }
         fixture.gateway.queryHandler = targetThenDuplicateHandler()
-        fixture.withOwner { owner -> fixture.reads.verifyTarget(owner, verifyRequest()) }
+        fixture.withOwner { owner -> fixture.verifyExistingTarget(owner, verifyRequest()) }
         val scope =
             DuplicateScanScope(
                 modelName = "Mining",
@@ -1140,7 +1136,7 @@ class AnkiProviderReadsTest {
         val fixture = fixture(tokens = listOf(firstToken, secondToken))
         fixture.gateway.checksum = { 42L }
         fixture.gateway.queryHandler = targetThenDuplicateHandler()
-        fixture.withOwner { owner -> fixture.reads.verifyTarget(owner, verifyRequest()) }
+        fixture.withOwner { owner -> fixture.verifyExistingTarget(owner, verifyRequest()) }
         val initialScope =
             DuplicateScanScope(
                 modelName = "Mining",
@@ -1225,7 +1221,7 @@ class AnkiProviderReadsTest {
                     else -> error("unexpected query $query")
                 }
             }
-            fixture.withOwner { owner -> fixture.reads.verifyTarget(owner, verifyRequest()) }
+            fixture.withOwner { owner -> fixture.verifyExistingTarget(owner, verifyRequest()) }
             val scope =
                 DuplicateScanScope(
                     modelName = "Mining",
@@ -1269,7 +1265,7 @@ class AnkiProviderReadsTest {
         val fixture = fixture(tokens = listOf("baseline_${"c".repeat(32)}"))
         fixture.gateway.checksum = { 42L }
         fixture.gateway.queryHandler = targetThenDuplicateHandler(exactDeck = true)
-        fixture.withOwner { owner -> fixture.reads.verifyTarget(owner, verifyRequest()) }
+        fixture.withOwner { owner -> fixture.verifyExistingTarget(owner, verifyRequest()) }
         val result =
             fixture.withOwner { owner ->
                 fixture.reads.scanFirstFields(
@@ -1302,7 +1298,7 @@ class AnkiProviderReadsTest {
         val fixture = fixture(tokens = listOf("baseline_${"d".repeat(32)}"))
         fixture.gateway.checksum = { 42L }
         fixture.gateway.queryHandler = targetThenDuplicateHandler(exactDeck = true, malformedCardCount = true)
-        fixture.withOwner { owner -> fixture.reads.verifyTarget(owner, verifyRequest()) }
+        fixture.withOwner { owner -> fixture.verifyExistingTarget(owner, verifyRequest()) }
         val failure =
             assertThrows(AnkiReadFailure::class.java) {
                 fixture.withOwner { owner ->
@@ -1409,7 +1405,7 @@ class AnkiProviderReadsTest {
                     else -> error("unexpected query $query")
                 }
             }
-            fixture.withOwner { owner -> fixture.reads.verifyTarget(owner, verifyRequest()) }
+            fixture.withOwner { owner -> fixture.verifyExistingTarget(owner, verifyRequest()) }
             val failure =
                 assertThrows(case.name, AnkiReadFailure::class.java) {
                     fixture.withOwner { owner ->
@@ -1555,6 +1551,21 @@ class AnkiProviderReadsTest {
     ) {
         fun <T> withOwner(block: (AnkiRunStateRegistry.RunOwner) -> T): T =
             registry.withOwner(RUN_ID, block)
+
+        fun verifyExistingTarget(
+            owner: AnkiRunStateRegistry.RunOwner,
+            request: VerifyTargetRequest,
+        ): TargetSnapshot {
+            val reservation = registry.beginTargetVerification(owner, request)
+            return try {
+                val target = reads.readExistingTarget(owner, request)
+                registry.commitDurableTargetResponse(owner, reservation, request.requestId, target)
+                target
+            } catch (error: Throwable) {
+                registry.abortTargetVerification(owner, reservation)
+                throw error
+            }
+        }
     }
 
     private fun verifyRequest(required: List<String> = listOf("Expression")) =

@@ -10,7 +10,6 @@ import com.ankiminer.android.anki.protocol.KnownVocabularyScope
 import com.ankiminer.android.anki.protocol.RawFirstFieldHit
 import com.ankiminer.android.anki.protocol.ScanFirstFieldsRequest
 import com.ankiminer.android.anki.protocol.VerifyTargetRequest
-import com.ankiminer.android.anki.protocol.VerifyTargetResult
 
 internal class AnkiReadFailure(
     val code: AnkiErrorCode,
@@ -27,10 +26,11 @@ internal class AnkiProviderReadService(
     private val targets = TargetSnapshotReader(provider)
     private val cards = GlobalCardReader(provider)
 
-    fun verifyTarget(
+    /** Read-only existing-target probe. Durable admission is owned exclusively by DurableTargetVerifier. */
+    fun readExistingTarget(
         owner: AnkiRunStateRegistry.RunOwner,
         request: VerifyTargetRequest,
-    ): VerifyTargetResult {
+    ): TargetSnapshot {
         val cancellation = registry.cancellation(owner)
         ensureActive(cancellation)
         val model = targets.readModelByName(request.modelName, cancellation)
@@ -49,20 +49,7 @@ internal class AnkiProviderReadService(
                     retryable = false,
                     stableMessage = "Creating a missing Anki deck is not available in the read-only provider phase",
                 )
-        val target = TargetSnapshot(deck, model)
-        val prior = registry.target(owner)
-        if (prior != null && prior != target) {
-            throw targetInvalid("The verified Anki target changed during this run")
-        }
-        registry.installTarget(owner, target)
-        return VerifyTargetResult(
-            runId = request.runId,
-            requestId = request.requestId,
-            deckId = deck.id,
-            modelId = model.id,
-            fieldNames = model.fieldNames,
-            deckCreated = false,
-        )
+        return TargetSnapshot(deck, model)
     }
 
     fun readTargetById(
@@ -601,7 +588,7 @@ internal class TargetSnapshotReader(private val provider: CheckedProvider) {
         val rawFieldNames = text(ProviderColumn.MODEL_FIELD_NAMES)
         val cardCount = exactInt(ProviderColumn.MODEL_CARD_COUNT)
         val css = text(ProviderColumn.MODEL_CSS)
-        val effectiveDefaultDeckId = positiveLong(ProviderColumn.MODEL_DEFAULT_DECK_ID)
+        val effectiveDefaultDeckId = effectiveDefaultDeckId()
         val sortFieldIndex = exactInt(ProviderColumn.MODEL_SORT_FIELD_INDEX)
         val type = exactInt(ProviderColumn.MODEL_TYPE)
         val latexPost = nullableText(ProviderColumn.MODEL_LATEX_POST)
@@ -739,6 +726,12 @@ internal class GlobalCardReader(private val provider: CheckedProvider) {
 }
 
 internal class CheckedProvider(private val gateway: AnkiProviderGateway) {
+    fun preflightMutation(cancellation: AnkiCancellation) {
+        ensureActive(cancellation)
+        requireAvailableAccess()
+        ensureActive(cancellation)
+    }
+
     fun queryRequired(
         query: ProviderQuery,
         cancellation: AnkiCancellation,
@@ -748,7 +741,17 @@ internal class CheckedProvider(private val gateway: AnkiProviderGateway) {
         query: ProviderQuery,
         cancellation: AnkiCancellation,
     ): ProviderCursor? {
-        ensureActive(cancellation)
+        preflightMutation(cancellation)
+        val cursor =
+            try {
+                gateway.query(query, cancellation)
+            } catch (error: ProviderGatewayException) {
+                throw error.toReadFailure()
+            }
+        return cursor?.let(::CheckedProviderCursor)
+    }
+
+    private fun requireAvailableAccess() {
         when (val status = gateway.accessStatus()) {
             is ProviderAccessStatus.Available -> Unit
             ProviderAccessStatus.Absent ->
@@ -776,13 +779,6 @@ internal class CheckedProvider(private val gateway: AnkiProviderGateway) {
                     stableMessage = "AnkiDroid permission is required",
                 )
         }
-        val cursor =
-            try {
-                gateway.query(query, cancellation)
-            } catch (error: ProviderGatewayException) {
-                throw error.toReadFailure()
-            }
-        return cursor?.let(::CheckedProviderCursor)
     }
 
     private class CheckedProviderCursor(
@@ -882,6 +878,14 @@ private fun ProviderCursor.positiveLong(column: ProviderColumn): Long =
     when (val value = cell(column)) {
         is ProviderCell.Integer -> value.value.takeIf { it > 0L } ?: throw queryFailed()
         ProviderCell.Null, is ProviderCell.Text -> throw queryFailed()
+    }
+
+/** AnkiDroid v2.24 exposes an unset model deck as null, which means the built-in deck ID 1. */
+private fun ProviderCursor.effectiveDefaultDeckId(): Long =
+    when (val value = cell(ProviderColumn.MODEL_DEFAULT_DECK_ID)) {
+        ProviderCell.Null -> 1L
+        is ProviderCell.Integer -> value.value.takeIf { it > 0L } ?: throw queryFailed()
+        is ProviderCell.Text -> throw queryFailed()
     }
 
 private fun ProviderCursor.nonNegativeLong(column: ProviderColumn): Long =

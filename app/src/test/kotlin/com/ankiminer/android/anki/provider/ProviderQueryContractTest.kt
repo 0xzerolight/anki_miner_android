@@ -294,7 +294,7 @@ class ProviderQueryContractTest {
     }
 
     @Test
-    fun `production provider package contains no mutation or note-card discovery API`() {
+    fun `production provider package exposes only the sealed deck insert mutation`() {
         val sourceRoot =
             File(projectRoot(), "app/src/main/kotlin/com/ankiminer/android/anki/provider")
         assertTrue(sourceRoot.isDirectory)
@@ -305,7 +305,10 @@ class ProviderQueryContractTest {
                 .joinToString("\n") { it.readText() }
 
         assertFalse(source.contains("AddContentApi"))
-        assertFalse(Regex("resolver\\.(insert|update|delete)\\s*\\(").containsMatchIn(source))
+        assertEquals(1, Regex("resolver\\.insert\\s*\\(").findAll(source).count())
+        assertFalse(Regex("resolver\\.(update|delete)\\s*\\(").containsMatchIn(source))
+        assertTrue(source.contains("AnkiProviderMutationCommand.CreateDeck"))
+        assertTrue(source.contains("FlashCardsContract.Deck.CONTENT_ALL_URI"))
         assertFalse(source.contains("appendPath(\"cards\")"))
         assertFalse(source.contains("notes/{"))
     }
