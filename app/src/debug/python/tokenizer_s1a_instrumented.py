@@ -53,17 +53,25 @@ def run(golden_json: str, dicdir: str, native_library_dir: str) -> str:
     tagger = create_s1a_tagger(registration)
     unknown_count = 0
     astral = None
+    raw_astral_oov = None
     for case in document["cases"]["tokenization"]:
-        actual = [_serialized(token) for token in tagger(case["text"])]
+        raw_tokens = list(tagger(case["text"]))
+        actual = [_serialized(token) for token in raw_tokens]
         if actual != case["tokens"]:
             raise AssertionError(f"S1a parity mismatch in {case['id']}")
-        for token in actual:
+        for raw_token, token in zip(raw_tokens, actual, strict=True):
             if token["is_unknown"]:
                 unknown_count += 1
                 if case["id"] == "astral-oov-offsets":
                     astral = (token["offsets"]["utf16_start"], token["offsets"]["utf16_end"])
+                    feature = getattr(raw_token, "feature")
+                    raw_astral_oov = (feature.pos3, feature.lForm)
     if astral != (1, 7):
         raise AssertionError(f"astral OOV UTF-16 span is {astral!r}")
+    if raw_astral_oov != ("*", None):
+        raise AssertionError(
+            "astral OOV must preserve literal pos3 '*' separately from absent lForm"
+        )
     maps = Path("/proc/self/maps").read_text(encoding="utf-8")
     for path in (registration.sys_dic, registration.dicdir / "matrix.bin"):
         if not _mapped(path, maps):
@@ -76,6 +84,8 @@ def run(golden_json: str, dicdir: str, native_library_dir: str) -> str:
             "dictionary_sha256": registration.tree_sha256,
             "feature_field_count": len(UNIDIC_FEATURE_FIELDS),
             "unknown_count": unknown_count,
+            "raw_oov_lform_is_none": raw_astral_oov[1] is None,
+            "raw_oov_pos3": raw_astral_oov[0],
         },
         sort_keys=True,
     )

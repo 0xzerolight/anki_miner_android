@@ -100,6 +100,27 @@ def test_backend_copies_nodes_and_preserves_literal_sentinels(tmp_path: Path) ->
     assert tokens[0].feature.aModeType == "*"
 
 
+def test_short_oov_row_distinguishes_literal_stars_from_absent_fields(
+    tmp_path: Path,
+) -> None:
+    registration = _registration(tmp_path)
+    node = _node("𠮟𠮟𠮟", 12)
+    node.feature_raw = "補助記号,一般,*,*,*,*"
+    node.stat = 1
+    tagger = create_s1a_tagger(
+        registration,
+        tagger_factory=lambda _args: FakeTagger(registration.sys_dic, [node]),
+    )
+
+    token = tagger("𠮟𠮟𠮟")[0]
+
+    assert token.is_unk is True
+    assert token.feature.pos3 == "*"
+    assert token.feature.cForm == "*"
+    assert token.feature.lForm is None
+    assert token.feature.orthBase is None
+
+
 def test_surface_association_is_mandatory(tmp_path: Path) -> None:
     registration = _registration(tmp_path)
     node = _node("犬", 3, pos1="名詞")

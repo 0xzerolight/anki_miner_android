@@ -98,5 +98,7 @@ class TokenizerS1aInstrumentedTest {
         assertEquals(expectedHash, result.getString("dictionary_sha256"))
         assertTrue(result.getInt("case_count") > 0)
         assertTrue(result.getInt("unknown_count") > 0)
+        assertEquals("*", result.getString("raw_oov_pos3"))
+        assertTrue(result.getBoolean("raw_oov_lform_is_none"))
     }
 }
