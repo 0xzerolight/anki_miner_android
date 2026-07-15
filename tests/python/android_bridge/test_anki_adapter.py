@@ -17,6 +17,8 @@ from jsonschema import Draft202012Validator
 from android_bridge.anki_adapter import (
     AndroidAnkiAdapter,
     AnkiOperationCancelled,
+    _MAX_CARD_MEDIA_BYTES,
+    _MEDIA_HASH_CHUNK_BYTES,
     _dictionary_provider_preferred_name,
 )
 from android_bridge.callbacks import AndroidAnkiCallbacks
@@ -405,8 +407,16 @@ def _config(home: Path, **changes: object) -> Any:
     return replace(base, **changes)
 
 
-def _adapter(config: Any, kotlin: FakeKotlinAnki) -> AndroidAnkiAdapter:
-    return AndroidAnkiAdapter(config, AndroidAnkiCallbacks(kotlin, RUN_ID))
+def _adapter(
+    config: Any,
+    kotlin: FakeKotlinAnki,
+    cancellation_check: Any = None,
+) -> AndroidAnkiAdapter:
+    return AndroidAnkiAdapter(
+        config,
+        AndroidAnkiCallbacks(kotlin, RUN_ID),
+        cancellation_check=cancellation_check,
+    )
 
 
 def _card(surface: str, *, definition: str = "definition", media: Any = None) -> Any:
@@ -1371,6 +1381,141 @@ def test_card_media_is_content_addressed_deduped_and_actual_name_propagates(
     )
 
 
+def test_card_media_hashing_never_uses_unbounded_read_bytes(
+    initialized_bridge_home: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from anki_miner.models import MediaData
+
+    audio = tmp_path / "streamed.opus"
+    content = b"audio" * (_MEDIA_HASH_CHUNK_BYTES // 5 + 3)
+    audio.write_bytes(content)
+
+    def forbid_read_bytes(_path: Path) -> bytes:
+        raise AssertionError("card media must be streamed")
+
+    monkeypatch.setattr(Path, "read_bytes", forbid_read_bytes)
+    kotlin = FakeKotlinAnki()
+
+    assert (
+        _adapter(_config(initialized_bridge_home), kotlin).create_cards_batch(
+            [
+                _card(
+                    "猫",
+                    media=MediaData(
+                        audio_path=audio,
+                        audio_filename="streamed.opus",
+                    ),
+                )
+            ]
+        )
+        == 1
+    )
+    requested = kotlin.requests_for("ankiStoreMedia")[0]["payload"]["assets"][0][
+        "requestedFilename"
+    ]
+    expected_digest = hashlib.sha1(content).hexdigest()[:12]
+    assert requested == f"streamed_{expected_digest}.opus"
+
+
+def test_oversized_card_media_fails_from_stat_before_open_or_callback(
+    initialized_bridge_home: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from anki_miner.models import MediaData
+
+    audio = tmp_path / "oversized.opus"
+    with audio.open("wb") as output:
+        output.truncate(_MAX_CARD_MEDIA_BYTES + 1)
+    real_open = Path.open
+
+    def guarded_open(path: Path, *args: object, **kwargs: object) -> Any:
+        if path == audio and args and args[0] == "rb":
+            raise AssertionError("oversized media must be rejected before reading")
+        return real_open(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", guarded_open)
+    kotlin = FakeKotlinAnki()
+
+    with pytest.raises(BridgeProtocolError) as exc_info:
+        _adapter(_config(initialized_bridge_home), kotlin).create_cards_batch(
+            [
+                _card(
+                    "猫",
+                    media=MediaData(
+                        audio_path=audio,
+                        audio_filename="oversized.opus",
+                    ),
+                )
+            ]
+        )
+
+    assert exc_info.value.code == "media_too_large"
+    assert not kotlin.requests_for("ankiStoreMedia")
+    assert not kotlin.requests_for("ankiCreateNotes")
+
+
+def test_card_media_hashing_cancellation_stops_before_kotlin_callback(
+    initialized_bridge_home: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from anki_miner.models import MediaData
+
+    audio = tmp_path / "cancel-hash.opus"
+    content = b"x" * (_MEDIA_HASH_CHUNK_BYTES * 3)
+    audio.write_bytes(content)
+    real_open = Path.open
+    bytes_read = 0
+
+    class TrackingReader:
+        def __init__(self, wrapped: Any) -> None:
+            self._wrapped = wrapped
+
+        def __enter__(self) -> TrackingReader:
+            self._wrapped.__enter__()
+            return self
+
+        def __exit__(self, *args: object) -> object:
+            return self._wrapped.__exit__(*args)
+
+        def fileno(self) -> int:
+            return self._wrapped.fileno()
+
+        def read(self, size: int = -1) -> bytes:
+            nonlocal bytes_read
+            chunk = self._wrapped.read(size)
+            bytes_read += len(chunk)
+            return chunk
+
+    def tracking_open(path: Path, *args: object, **kwargs: object) -> Any:
+        opened = real_open(path, *args, **kwargs)
+        if path == audio and args and args[0] == "rb":
+            return TrackingReader(opened)
+        return opened
+
+    monkeypatch.setattr(Path, "open", tracking_open)
+    kotlin = FakeKotlinAnki()
+    media = MediaData(audio_path=audio, audio_filename="cancel-hash.opus")
+    adapter = _adapter(
+        _config(initialized_bridge_home),
+        kotlin,
+        cancellation_check=lambda: bytes_read >= _MEDIA_HASH_CHUNK_BYTES,
+    )
+
+    with pytest.raises(AnkiOperationCancelled) as exc_info:
+        adapter.create_cards_batch([_card("猫", media=media)])
+
+    assert exc_info.value.operation == "storeMedia"
+    assert bytes_read == _MEDIA_HASH_CHUNK_BYTES
+    assert bytes_read < len(content)
+    assert media.audio_filename == "cancel-hash.opus"
+    assert not kotlin.requests_for("ankiStoreMedia")
+    assert not kotlin.requests_for("ankiCreateNotes")
+
+
 def test_same_logical_media_name_with_different_bytes_fails_before_provider(
     initialized_bridge_home: Path, tmp_path: Path
 ) -> None:
@@ -1575,13 +1720,13 @@ def test_second_media_chunk_misalignment_does_not_mutate_payloads(
 def test_media_name_ownership_is_enforced_across_callback_chunks(
     initialized_bridge_home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    from android_bridge import anki_adapter as anki_adapter_module
     from anki_miner.models import MediaData
-    from anki_miner.services import anki_media_store
 
     monkeypatch.setattr(
-        anki_media_store,
-        "_content_addressed_name",
-        lambda filename, _content: filename,
+        anki_adapter_module,
+        "_content_addressed_name_from_digest",
+        lambda filename, _digest: filename,
     )
 
     class CollideAcrossChunks(FakeKotlinAnki):

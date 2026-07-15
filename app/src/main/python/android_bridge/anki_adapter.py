@@ -11,9 +11,11 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import os
 import re
+import stat
 import unicodedata
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from html import escape as html_escape
 from html import unescape as html_unescape
@@ -39,6 +41,8 @@ _MAX_DUPLICATE_HITS_UTF8_BYTES = 1024 * 1024
 _KNOWN_VOCABULARY_PAGE_ITEMS = 256
 _KNOWN_VOCABULARY_PAGE_UTF8_BYTES = 256 * 1024
 _MAX_KNOWN_CURSOR_UTF8_BYTES = 1024
+_MAX_CARD_MEDIA_BYTES = 64 * 1024 * 1024
+_MEDIA_HASH_CHUNK_BYTES = 128 * 1024
 
 _SETUP_ERROR_CODES = {
     "api_disabled",
@@ -123,6 +127,13 @@ class _CardMediaRef:
 class _DuplicateProbeResult:
     is_duplicate: bool
     baseline_note_ids: tuple[int, ...]
+
+
+@dataclass(frozen=True)
+class _MediaDigest:
+    size: int
+    sha1_prefix: str
+    sha256: str
 
 
 def _protocol_error(code: str, message: str) -> NoReturn:
@@ -263,6 +274,13 @@ def _dictionary_provider_preferred_name(logical_filename: str) -> str:
     return f"anki_miner_dict_{digest}"
 
 
+def _content_addressed_name_from_digest(filename: str, sha1_prefix: str) -> str:
+    """Match the desktop ``{stem}_{sha1[:12]}{suffix}`` media name."""
+
+    path = Path(filename)
+    return f"{path.stem}_{sha1_prefix}{path.suffix}"
+
+
 def _expect_error_detail(value: object, *, operation: str) -> AnkiCallbackError:
     detail = _expect_exact_keys(
         value, {"code", "message", "retryable"}, context=f"{operation} error"
@@ -304,7 +322,12 @@ def _raise_callback_error(error: AnkiCallbackError) -> NoReturn:
 class AndroidAnkiAdapter:
     """Duck-typed replacement for the desktop ``AnkiService`` on Android."""
 
-    def __init__(self, config: Any, callbacks: AndroidAnkiCallbacks) -> None:
+    def __init__(
+        self,
+        config: Any,
+        callbacks: AndroidAnkiCallbacks,
+        cancellation_check: Callable[[], bool] | None = None,
+    ) -> None:
         # Function-local by design: importing the builder freezes config paths.
         from anki_miner.services.anki_note_builder import REQUIRED_FIELD_KEYS
 
@@ -316,6 +339,9 @@ class AndroidAnkiAdapter:
         validate_anki_request_config(config)
         self.config = config
         self._callbacks = callbacks
+        # The M0 seam can run standalone; the mining composition layer supplies
+        # JobHandle.cancel_event.is_set once it owns adapter construction.
+        self._cancellation_check = cancellation_check or (lambda: False)
         self.last_created_note_ids: list[int] = []
         self.last_skipped_duplicates = 0
         self.last_media_store_failures = 0
@@ -323,6 +349,100 @@ class AndroidAnkiAdapter:
         self._dict_media_uploaded: set[str] = set()
         self._dict_media_actual_names: dict[str, str] = {}
         self._stored_media_name_owners: dict[str, str] = {}
+
+    def _raise_if_cancelled(self, operation: str) -> None:
+        if self._cancellation_check():
+            raise AnkiOperationCancelled(
+                operation,
+                "Anki media preparation was cancelled",
+                False,
+            )
+
+    def _stream_card_media_digest(self, source_path: Path) -> _MediaDigest:
+        """Hash one bounded regular file without retaining its contents."""
+
+        self._raise_if_cancelled("storeMedia")
+        path_stat = source_path.stat()
+        if not stat.S_ISREG(path_stat.st_mode):
+            raise FileNotFoundError(source_path)
+        if path_stat.st_size > _MAX_CARD_MEDIA_BYTES:
+            _protocol_error(
+                "media_too_large",
+                f"Card media exceeds the {_MAX_CARD_MEDIA_BYTES}-byte limit",
+            )
+
+        # SHA-1 is the existing desktop filename contract, not a security
+        # decision. SHA-256 independently guards same-name collision checks.
+        sha1 = hashlib.sha1()  # noqa: S324
+        sha256 = hashlib.sha256()
+        bytes_read = 0
+        self._raise_if_cancelled("storeMedia")
+        with source_path.open("rb") as source:
+            opened_stat = os.fstat(source.fileno())
+            if not stat.S_ISREG(opened_stat.st_mode):
+                raise FileNotFoundError(source_path)
+            if (
+                opened_stat.st_dev,
+                opened_stat.st_ino,
+                opened_stat.st_size,
+                opened_stat.st_mtime_ns,
+            ) != (
+                path_stat.st_dev,
+                path_stat.st_ino,
+                path_stat.st_size,
+                path_stat.st_mtime_ns,
+            ):
+                _protocol_error(
+                    "media_changed",
+                    "Card media changed before it could be hashed",
+                )
+            if opened_stat.st_size > _MAX_CARD_MEDIA_BYTES:
+                _protocol_error(
+                    "media_too_large",
+                    f"Card media exceeds the {_MAX_CARD_MEDIA_BYTES}-byte limit",
+                )
+            while True:
+                self._raise_if_cancelled("storeMedia")
+                chunk = source.read(_MEDIA_HASH_CHUNK_BYTES)
+                if not chunk:
+                    break
+                bytes_read += len(chunk)
+                if bytes_read > _MAX_CARD_MEDIA_BYTES:
+                    _protocol_error(
+                        "media_too_large",
+                        f"Card media exceeds the {_MAX_CARD_MEDIA_BYTES}-byte limit",
+                    )
+                sha1.update(chunk)
+                sha256.update(chunk)
+            final_stat = os.fstat(source.fileno())
+        self._raise_if_cancelled("storeMedia")
+        current_path_stat = source_path.stat()
+        if (
+            bytes_read != opened_stat.st_size
+            or final_stat.st_size != opened_stat.st_size
+            or final_stat.st_mtime_ns != opened_stat.st_mtime_ns
+            or (
+                current_path_stat.st_dev,
+                current_path_stat.st_ino,
+                current_path_stat.st_size,
+                current_path_stat.st_mtime_ns,
+            )
+            != (
+                opened_stat.st_dev,
+                opened_stat.st_ino,
+                opened_stat.st_size,
+                opened_stat.st_mtime_ns,
+            )
+        ):
+            _protocol_error(
+                "media_changed",
+                "Card media changed while it was being hashed",
+            )
+        return _MediaDigest(
+            size=bytes_read,
+            sha1_prefix=sha1.hexdigest()[:12],
+            sha256=sha256.hexdigest(),
+        )
 
     def verify_card_target(self) -> None:
         """Validate model/fields and create the target deck only after checks."""
@@ -661,6 +781,7 @@ class AndroidAnkiAdapter:
         stored: dict[str, str] = {}
         for offset in range(0, len(assets), _MEDIA_BATCH_SIZE):
             chunk = assets[offset : offset + _MEDIA_BATCH_SIZE]
+            self._raise_if_cancelled("storeMedia")
             try:
                 payload = self._callbacks.store_media(
                     {"assets": [asset.to_wire() for asset in chunk]}
@@ -679,7 +800,6 @@ class AndroidAnkiAdapter:
     def _store_card_media(self, word_data_list: Sequence[Any]) -> set[str]:
         from anki_miner.services.anki_media_store import (
             _MEDIA_FIELD_ATTRS,
-            _content_addressed_name,
         )
 
         paths_by_filename: dict[str, list[Path]] = {}
@@ -717,13 +837,12 @@ class AndroidAnkiAdapter:
                     f"Media filename {filename!r} is used as both audio and image",
                 )
 
-            readable: list[tuple[Path, bytes]] = []
+            readable: list[tuple[Path, _MediaDigest]] = []
             unreadable: list[tuple[Path, OSError]] = []
             for source_path in referenced_paths:
                 try:
-                    if not source_path.is_file():
-                        raise FileNotFoundError(source_path)
-                    readable.append((source_path, source_path.read_bytes()))
+                    digest = self._stream_card_media_digest(source_path)
+                    readable.append((source_path, digest))
                 except OSError as error:
                     unreadable.append((source_path, error))
             if len(referenced_paths) > 1 and unreadable:
@@ -737,14 +856,19 @@ class AndroidAnkiAdapter:
                         "Failed to read media file %s: %s", filename, unreadable[0][1]
                     )
                 continue
-            source_path, content = readable[0]
-            if any(candidate != content for _, candidate in readable[1:]):
+            source_path, digest = readable[0]
+            if any(
+                (candidate.size, candidate.sha256) != (digest.size, digest.sha256)
+                for _, candidate in readable[1:]
+            ):
                 _protocol_error(
                     "media_content_collision",
                     f"Media filename {filename!r} refers to different file contents",
                 )
 
-            requested_name = _content_addressed_name(filename, content)
+            requested_name = _content_addressed_name_from_digest(
+                filename, digest.sha1_prefix
+            )
             asset_id = f"asset_{uuid4().hex}"
             originals_by_id[asset_id] = filename
             assets.append(
