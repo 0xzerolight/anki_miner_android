@@ -102,6 +102,8 @@ class AnkiCallbacks(RecordingCallbacks):
                 "runId": request["runId"],
                 "requestId": request["requestId"],
                 "firstFields": ["<b>猫</b>"],
+                "scannedNotes": 1,
+                "nextCursor": None,
             },
         )
 
@@ -116,7 +118,19 @@ def test_synchronous_anki_callback_is_correlated_and_versioned() -> None:
     adapters = CallbackAdapters(callbacks, registry, handle)
 
     result = adapters.anki.scan_first_fields(
-        {"scope": {"kind": "knownVocabulary", "excludedDecks": []}}
+        {
+            "scope": {
+                "kind": "knownVocabulary",
+                "excludedDecks": [],
+                "cursor": None,
+                "limits": {
+                    "maxScannedNotes": 256,
+                    "maxItems": 256,
+                    "maxItemUtf8Bytes": 65536,
+                    "maxTotalUtf8Bytes": 262144,
+                },
+            }
+        }
     )
 
     method, request = callbacks.calls[-1]
@@ -173,7 +187,19 @@ def test_synchronous_anki_callback_requires_json_string(result: object) -> None:
     adapters = CallbackAdapters(BadCallbacks(), registry, handle)
     with pytest.raises(BridgeProtocolError) as exc_info:
         adapters.anki.scan_first_fields(
-            {"scope": {"kind": "knownVocabulary", "excludedDecks": []}}
+            {
+                "scope": {
+                    "kind": "knownVocabulary",
+                    "excludedDecks": [],
+                    "cursor": None,
+                    "limits": {
+                        "maxScannedNotes": 256,
+                        "maxItems": 256,
+                        "maxItemUtf8Bytes": 65536,
+                        "maxTotalUtf8Bytes": 262144,
+                    },
+                }
+            }
         )
     assert exc_info.value.code == "invalid_callback_result"
 
@@ -191,12 +217,26 @@ def test_synchronous_anki_callback_rejects_mismatched_request_id() -> None:
                     "runId": request["runId"],
                     "requestId": "anki_" + "0" * 32,
                     "firstFields": [],
+                    "scannedNotes": 0,
+                    "nextCursor": None,
                 },
             )
 
     adapters = CallbackAdapters(BadCallbacks(), registry, handle)
     with pytest.raises(BridgeProtocolError) as exc_info:
         adapters.anki.scan_first_fields(
-            {"scope": {"kind": "knownVocabulary", "excludedDecks": []}}
+            {
+                "scope": {
+                    "kind": "knownVocabulary",
+                    "excludedDecks": [],
+                    "cursor": None,
+                    "limits": {
+                        "maxScannedNotes": 256,
+                        "maxItems": 256,
+                        "maxItemUtf8Bytes": 65536,
+                        "maxTotalUtf8Bytes": 262144,
+                    },
+                }
+            }
         )
     assert exc_info.value.code == "mismatched_callback_response"

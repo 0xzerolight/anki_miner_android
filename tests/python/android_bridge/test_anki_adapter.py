@@ -33,6 +33,12 @@ _CREATE_SNAPSHOT_LIMITS = {
     "maxNoteIdsPerCandidate": 100,
     "maxTotalNoteIds": 1000,
 }
+_KNOWN_VOCABULARY_LIMITS = {
+    "maxScannedNotes": 256,
+    "maxItems": 256,
+    "maxItemUtf8Bytes": 65536,
+    "maxTotalUtf8Bytes": 262144,
+}
 _ANKI_SCHEMA = json.loads(
     (
         Path(__file__).resolve().parents[3]
@@ -104,6 +110,7 @@ class FakeKotlinAnki:
         self.requests: list[tuple[str, dict[str, Any]]] = []
         self.verify_fields: list[str] | None = None
         self.known_fields: list[str] = []
+        self.known_note_decks: list[set[str]] = []
         self.duplicate_fields: list[str] = []
         self.duplicate_note_ids: dict[int, int] = {}
         self.duplicate_decks: dict[str, set[str]] = {}
@@ -193,12 +200,67 @@ class FakeKotlinAnki:
         if error := self._error(request, "scanFirstFields"):
             return error
         if request["scope"]["kind"] == "knownVocabulary":
+            scope = request["scope"]
+            cursor = scope["cursor"]
+            if cursor is None:
+                start = 0
+                next_ordinal = 1
+            else:
+                prefix, separator, raw_start = cursor["token"].partition(":")
+                assert prefix == "known" and separator == ":"
+                start = int(raw_start)
+                next_ordinal = cursor["ordinal"] + 1
+            limits = scope["limits"]
+            excluded = scope["excludedDecks"]
+            page_fields: list[str] = []
+            page_utf8_bytes = 0
+            scanned_notes = 0
+            for index in range(
+                start,
+                min(start + limits["maxScannedNotes"], len(self.known_fields)),
+            ):
+                field = self.known_fields[index]
+                field_bytes = len(field.encode("utf-8"))
+                assert field_bytes <= limits["maxItemUtf8Bytes"]
+                decks = (
+                    self.known_note_decks[index]
+                    if index < len(self.known_note_decks)
+                    else set()
+                )
+                note_is_excluded = any(
+                    deck == excluded_deck
+                    or deck.startswith(f"{excluded_deck}::")
+                    for deck in decks
+                    for excluded_deck in excluded
+                )
+                if (
+                    not note_is_excluded
+                    and page_fields
+                    and page_utf8_bytes + field_bytes
+                    > limits["maxTotalUtf8Bytes"]
+                ):
+                    break
+                scanned_notes += 1
+                if not note_is_excluded:
+                    page_fields.append(field)
+                    page_utf8_bytes += field_bytes
+            next_index = start + scanned_notes
+            next_cursor = (
+                {
+                    "ordinal": next_ordinal,
+                    "token": f"known:{next_index}",
+                }
+                if next_index < len(self.known_fields)
+                else None
+            )
             return encode_message(
                 "anki.scanfirstfields.result",
                 {
                     "runId": request["runId"],
                     "requestId": request["requestId"],
-                    "firstFields": self.known_fields,
+                    "firstFields": page_fields,
+                    "scannedNotes": scanned_notes,
+                    "nextCursor": next_cursor,
                 },
             )
 
@@ -521,7 +583,159 @@ def test_known_vocabulary_is_normalized_filtered_and_cached(
     assert requests[0]["payload"]["scope"] == {
         "kind": "knownVocabulary",
         "excludedDecks": ["Ignored", "Ignored::Child"],
+        "cursor": None,
+        "limits": _KNOWN_VOCABULARY_LIMITS,
     }
+
+
+def test_known_vocabulary_scan_uses_monotonic_bounded_pages(
+    initialized_bridge_home: Path,
+) -> None:
+    kotlin = FakeKotlinAnki()
+    kotlin.known_fields = [f"語{index}" for index in range(513)]
+    adapter = _adapter(_config(initialized_bridge_home), kotlin)
+
+    assert adapter.get_existing_vocabulary() == set(kotlin.known_fields)
+
+    scopes = [
+        request["payload"]["scope"]
+        for request in kotlin.requests_for("ankiScanFirstFields")
+    ]
+    assert [scope["cursor"] for scope in scopes] == [
+        None,
+        {"ordinal": 1, "token": "known:256"},
+        {"ordinal": 2, "token": "known:512"},
+    ]
+    assert all(scope["limits"] == _KNOWN_VOCABULARY_LIMITS for scope in scopes)
+
+
+def test_known_vocabulary_excludes_parent_descendants_and_whole_mixed_note(
+    initialized_bridge_home: Path,
+) -> None:
+    kotlin = FakeKotlinAnki()
+    kotlin.known_fields = ["親", "子", "混在", "採用"]
+    kotlin.known_note_decks = [
+        {"Ignored"},
+        {"Ignored::Child"},
+        {"Included", "Ignored::Grandchild"},
+        {"Included"},
+    ]
+    adapter = _adapter(
+        _config(initialized_bridge_home, excluded_decks=("Ignored",)), kotlin
+    )
+
+    assert adapter.get_existing_vocabulary() == {"採用"}
+
+
+def test_known_vocabulary_later_page_timeout_discards_partial_scan_and_retries(
+    initialized_bridge_home: Path,
+) -> None:
+    class TimeoutSecondPage(FakeKotlinAnki):
+        def ankiScanFirstFields(self, raw: str) -> str:
+            request = self._request("ankiScanFirstFields", raw)
+            cursor = request["scope"]["cursor"]
+            if cursor is not None:
+                return encode_message(
+                    "anki.error",
+                    {
+                        "runId": request["runId"],
+                        "requestId": request["requestId"],
+                        "operation": "scanFirstFields",
+                        "code": "timeout",
+                        "message": "slow second page",
+                        "retryable": True,
+                    },
+                )
+            return encode_message(
+                "anki.scanfirstfields.result",
+                {
+                    "runId": request["runId"],
+                    "requestId": request["requestId"],
+                    "firstFields": ["猫"],
+                    "scannedNotes": 1,
+                    "nextCursor": {"ordinal": 1, "token": "page-2"},
+                },
+            )
+
+    kotlin = TimeoutSecondPage()
+    adapter = _adapter(_config(initialized_bridge_home), kotlin)
+
+    assert adapter.get_existing_vocabulary() == set()
+    assert adapter.get_existing_vocabulary() == set()
+    assert len(kotlin.requests_for("ankiScanFirstFields")) == 4
+
+
+@pytest.mark.parametrize(
+    ("first_fields", "scanned_notes", "next_cursor"),
+    [
+        (["猫"] * 257, 256, None),
+        (["界" * 21_846], 1, None),
+        (["猫" * 20_000] * 5, 5, None),
+        (["猫"], 0, None),
+        (["猫"], 1, {"ordinal": 2, "token": "skipped-page"}),
+        (["猫"], 1, {"ordinal": 1, "token": "界" * 342}),
+    ],
+    ids=[
+        "item-count",
+        "item-utf8",
+        "page-utf8",
+        "scanned-count",
+        "cursor-ordinal",
+        "cursor-utf8",
+    ],
+)
+def test_known_vocabulary_response_enforces_page_and_cursor_bounds(
+    initialized_bridge_home: Path,
+    first_fields: list[str],
+    scanned_notes: int,
+    next_cursor: dict[str, object] | None,
+) -> None:
+    class InvalidPageKotlin(FakeKotlinAnki):
+        def ankiScanFirstFields(self, raw: str) -> str:
+            request = self._request("ankiScanFirstFields", raw)
+            return encode_message(
+                "anki.scanfirstfields.result",
+                {
+                    "runId": request["runId"],
+                    "requestId": request["requestId"],
+                    "firstFields": first_fields,
+                    "scannedNotes": scanned_notes,
+                    "nextCursor": next_cursor,
+                },
+            )
+
+    kotlin = InvalidPageKotlin()
+    with pytest.raises(BridgeProtocolError) as exc_info:
+        _adapter(_config(initialized_bridge_home), kotlin).get_existing_vocabulary()
+
+    assert exc_info.value.code == "invalid_anki_response"
+
+
+def test_known_vocabulary_response_rejects_reused_opaque_cursor_token(
+    initialized_bridge_home: Path,
+) -> None:
+    class ReusedCursorKotlin(FakeKotlinAnki):
+        def ankiScanFirstFields(self, raw: str) -> str:
+            request = self._request("ankiScanFirstFields", raw)
+            cursor = request["scope"]["cursor"]
+            ordinal = 1 if cursor is None else cursor["ordinal"] + 1
+            return encode_message(
+                "anki.scanfirstfields.result",
+                {
+                    "runId": request["runId"],
+                    "requestId": request["requestId"],
+                    "firstFields": ["猫"],
+                    "scannedNotes": 1,
+                    "nextCursor": {"ordinal": ordinal, "token": "same-token"},
+                },
+            )
+
+    with pytest.raises(BridgeProtocolError) as exc_info:
+        _adapter(
+            _config(initialized_bridge_home), ReusedCursorKotlin()
+        ).get_existing_vocabulary()
+
+    assert exc_info.value.code == "invalid_anki_response"
 
 
 def test_retryable_vocab_timeout_degrades_without_poisoning_cache(

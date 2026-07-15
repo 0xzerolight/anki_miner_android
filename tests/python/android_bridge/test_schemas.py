@@ -363,6 +363,13 @@ def test_unknown_curation_map_key_is_schema_invalid(
             "scope": {
                 "kind": "knownVocabulary",
                 "excludedDecks": ["Japanese::Known"],
+                "cursor": None,
+                "limits": {
+                    "maxScannedNotes": 256,
+                    "maxItems": 256,
+                    "maxItemUtf8Bytes": 65536,
+                    "maxTotalUtf8Bytes": 262144,
+                },
             },
         },
         {
@@ -388,6 +395,8 @@ def test_unknown_curation_map_key_is_schema_invalid(
             "runId": "run_" + "a" * 32,
             "requestId": "anki_" + "b" * 32,
             "firstFields": ["<b>猫</b>", "[sound:dog.mp3]犬"],
+            "scannedNotes": 2,
+            "nextCursor": {"ordinal": 1, "token": "opaque-page-token"},
         },
         {
             "runId": "run_" + "a" * 32,

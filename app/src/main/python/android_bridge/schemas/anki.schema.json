@@ -157,13 +157,45 @@
     "knownVocabularyScope": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["kind", "excludedDecks"],
+      "$comment": "Kotlin scans at most maxScannedNotes notes in stable provider order. An excluded deck excludes the entire note when any of its cards is in that deck or a descendant; a parent exclusion therefore covers all subdecks. cursor is null on the first page and otherwise exactly the prior nextCursor. The token is opaque to Python; ordinal must advance by one per non-terminal page. Kotlin must fail rather than truncate or skip an oversized first field.",
+      "required": ["kind", "excludedDecks", "cursor", "limits"],
       "properties": {
         "kind": {"const": "knownVocabulary"},
         "excludedDecks": {
           "type": "array",
           "uniqueItems": true,
           "items": {"$ref": "#/$defs/canonicalNonEmptyString"}
+        },
+        "cursor": {
+          "oneOf": [
+            {"type": "null"},
+            {"$ref": "#/$defs/knownVocabularyCursor"}
+          ]
+        },
+        "limits": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["maxScannedNotes", "maxItems", "maxItemUtf8Bytes", "maxTotalUtf8Bytes"],
+          "properties": {
+            "maxScannedNotes": {"const": 256},
+            "maxItems": {"const": 256},
+            "maxItemUtf8Bytes": {"const": 65536},
+            "maxTotalUtf8Bytes": {"const": 262144}
+          }
+        }
+      }
+    },
+    "knownVocabularyCursor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ordinal", "token"],
+      "properties": {
+        "ordinal": {"type": "integer", "minimum": 1},
+        "token": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "$comment": "Opaque provider continuation token. Runtime validation caps encoded UTF-8 length at 1024 bytes."
         }
       }
     },
@@ -218,11 +250,22 @@
     "scanFirstFieldsResult": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["runId", "requestId", "firstFields"],
+      "required": ["runId", "requestId", "firstFields", "scannedNotes", "nextCursor"],
       "properties": {
         "runId": {"$ref": "#/$defs/runId"},
         "requestId": {"$ref": "#/$defs/requestId"},
-        "firstFields": {"type": "array", "items": {"type": "string"}}
+        "firstFields": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {"type": "string", "maxLength": 65536}
+        },
+        "scannedNotes": {"type": "integer", "minimum": 0, "maximum": 256},
+        "nextCursor": {
+          "oneOf": [
+            {"type": "null"},
+            {"$ref": "#/$defs/knownVocabularyCursor"}
+          ]
+        }
       }
     },
     "duplicateLookupResult": {

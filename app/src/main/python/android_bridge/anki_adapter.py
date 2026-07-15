@@ -36,6 +36,9 @@ _MAX_DUPLICATE_HITS_PER_CANDIDATE = 100
 _MAX_DUPLICATE_TOTAL_HITS = 1000
 _MAX_RAW_FIRST_FIELD_UTF8_BYTES = 64 * 1024
 _MAX_DUPLICATE_HITS_UTF8_BYTES = 1024 * 1024
+_KNOWN_VOCABULARY_PAGE_ITEMS = 256
+_KNOWN_VOCABULARY_PAGE_UTF8_BYTES = 256 * 1024
+_MAX_KNOWN_CURSOR_UTF8_BYTES = 1024
 
 _SETUP_ERROR_CODES = {
     "api_disabled",
@@ -370,17 +373,95 @@ class AndroidAnkiAdapter:
                 "Check Settings → Anki field mapping."
             )
 
-    def _scan_first_fields(self, scope: dict[str, Any]) -> list[str]:
+    def _scan_known_vocabulary_page(
+        self, cursor: dict[str, Any] | None
+    ) -> tuple[list[str], dict[str, Any] | None]:
+        limits = {
+            "maxScannedNotes": _KNOWN_VOCABULARY_PAGE_ITEMS,
+            "maxItems": _KNOWN_VOCABULARY_PAGE_ITEMS,
+            "maxItemUtf8Bytes": _MAX_RAW_FIRST_FIELD_UTF8_BYTES,
+            "maxTotalUtf8Bytes": _KNOWN_VOCABULARY_PAGE_UTF8_BYTES,
+        }
         try:
-            payload = self._callbacks.scan_first_fields({"scope": scope})
+            payload = self._callbacks.scan_first_fields(
+                {
+                    "scope": {
+                        "kind": "knownVocabulary",
+                        "excludedDecks": list(self.config.excluded_decks),
+                        "cursor": cursor,
+                        "limits": limits,
+                    }
+                }
+            )
         except AnkiCallbackError:
             raise
         result = _expect_exact_keys(
             payload,
-            {"runId", "requestId", "firstFields"},
-            context="scanFirstFields result",
+            {"runId", "requestId", "firstFields", "scannedNotes", "nextCursor"},
+            context="known-vocabulary page result",
         )
-        return _expect_string_list(result["firstFields"], context="firstFields")
+        raw_fields = _expect_string_list(
+            result["firstFields"], context="firstFields"
+        )
+        if len(raw_fields) > _KNOWN_VOCABULARY_PAGE_ITEMS:
+            _protocol_error(
+                "invalid_anki_response",
+                "Known-vocabulary page contains too many fields",
+            )
+        total_utf8_bytes = 0
+        for index, raw_field in enumerate(raw_fields):
+            raw_bytes = len(raw_field.encode("utf-8"))
+            if raw_bytes > _MAX_RAW_FIRST_FIELD_UTF8_BYTES:
+                _protocol_error(
+                    "invalid_anki_response",
+                    f"Known-vocabulary first field {index} is too large",
+                )
+            total_utf8_bytes += raw_bytes
+            if total_utf8_bytes > _KNOWN_VOCABULARY_PAGE_UTF8_BYTES:
+                _protocol_error(
+                    "invalid_anki_response",
+                    "Known-vocabulary page exceeds the UTF-8 budget",
+                )
+
+        scanned_notes = normalize_integral_json_number(result["scannedNotes"])
+        if (
+            scanned_notes is None
+            or scanned_notes < len(raw_fields)
+            or scanned_notes > _KNOWN_VOCABULARY_PAGE_ITEMS
+        ):
+            _protocol_error(
+                "invalid_anki_response",
+                "Known-vocabulary scanned-note count is invalid",
+            )
+
+        raw_next_cursor = result["nextCursor"]
+        if raw_next_cursor is None:
+            next_cursor = None
+        else:
+            next_cursor = _expect_exact_keys(
+                raw_next_cursor,
+                {"ordinal", "token"},
+                context="known-vocabulary nextCursor",
+            )
+            token = _expect_string(
+                next_cursor["token"],
+                context="known-vocabulary cursor token",
+                nonempty=True,
+            )
+            if len(token.encode("utf-8")) > _MAX_KNOWN_CURSOR_UTF8_BYTES:
+                _protocol_error(
+                    "invalid_anki_response",
+                    "Known-vocabulary cursor token is too large",
+                )
+            ordinal = normalize_integral_json_number(next_cursor["ordinal"])
+            expected_ordinal = 1 if cursor is None else cursor["ordinal"] + 1
+            if ordinal != expected_ordinal or scanned_notes == 0:
+                _protocol_error(
+                    "invalid_anki_response",
+                    "Known-vocabulary cursor did not advance monotonically",
+                )
+            next_cursor = {"ordinal": ordinal, "token": token}
+        return raw_fields, next_cursor
 
     def get_existing_vocabulary(self) -> set[str]:
         """Return cached, desktop-normalized Japanese first fields."""
@@ -388,13 +469,28 @@ class AndroidAnkiAdapter:
         if self._existing_vocab_cache is not None:
             return self._existing_vocab_cache
 
+        from anki_miner.services.anki_note_builder import _strip_for_dedup
+
+        existing: set[str] = set()
+        cursor: dict[str, Any] | None = None
+        seen_cursor_tokens: set[str] = set()
         try:
-            raw_fields = self._scan_first_fields(
-                {
-                    "kind": "knownVocabulary",
-                    "excludedDecks": list(self.config.excluded_decks),
-                }
-            )
+            while True:
+                raw_fields, next_cursor = self._scan_known_vocabulary_page(cursor)
+                for raw in raw_fields:
+                    normalized = _strip_for_dedup(raw)
+                    if normalized and _JAPANESE_RE.search(normalized):
+                        existing.add(normalized)
+                if next_cursor is None:
+                    break
+                token = next_cursor["token"]
+                if token in seen_cursor_tokens:
+                    _protocol_error(
+                        "invalid_anki_response",
+                        "Known-vocabulary cursor token was reused",
+                    )
+                seen_cursor_tokens.add(token)
+                cursor = next_cursor
         except AnkiCallbackError as error:
             if error.code == "timeout" and error.retryable:
                 logger.warning(
@@ -404,13 +500,6 @@ class AndroidAnkiAdapter:
                 return set()
             _raise_callback_error(error)
 
-        from anki_miner.services.anki_note_builder import _strip_for_dedup
-
-        existing = {
-            normalized
-            for raw in raw_fields
-            if (normalized := _strip_for_dedup(raw)) and _JAPANESE_RE.search(normalized)
-        }
         self._existing_vocab_cache = existing
         return existing
 
