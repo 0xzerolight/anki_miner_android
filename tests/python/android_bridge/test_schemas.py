@@ -372,7 +372,10 @@ def test_unknown_curation_map_key_is_schema_invalid(
                 "kind": "duplicates",
                 "modelName": "Lapis",
                 "deckName": None,
-                "candidateKeys": ["猫", "犬"],
+                "candidates": [
+                    {"key": "猫", "firstField": "猫"},
+                    {"key": "犬", "firstField": "<b>犬</b>"},
+                ],
             },
         },
         {

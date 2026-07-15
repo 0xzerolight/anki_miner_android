@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import hashlib
+import html
 import json
+import re
 import sys
 import types
 from collections.abc import Iterator
@@ -27,6 +30,22 @@ _ANKI_SCHEMA = json.loads(
     ).read_text(encoding="utf-8")
 )
 _ANKI_VALIDATOR = Draft202012Validator(_ANKI_SCHEMA)
+
+_ANKIDROID_STYLE_RE = re.compile(r"<style.*?>.*?</style>", re.DOTALL)
+_ANKIDROID_SCRIPT_RE = re.compile(r"<script.*?>.*?</script>", re.DOTALL)
+_ANKIDROID_TAG_RE = re.compile(r"<.*?>")
+_ANKIDROID_IMG_RE = re.compile(r"""<img src=["']?([^"'>]+)["']? ?/?>""")
+
+
+def _ankidroid_field_checksum(value: str) -> int:
+    """Mirror the pinned AnkiDroid v2.24 ``Utils.fieldChecksum`` probe."""
+
+    stripped = _ANKIDROID_IMG_RE.sub(lambda match: f" {match.group(1)} ", value)
+    stripped = _ANKIDROID_STYLE_RE.sub("", stripped)
+    stripped = _ANKIDROID_SCRIPT_RE.sub("", stripped)
+    stripped = _ANKIDROID_TAG_RE.sub("", stripped)
+    stripped = html.unescape(stripped.replace("&nbsp;", " "))
+    return int.from_bytes(hashlib.sha1(stripped.encode()).digest()[:4], "big")
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -76,6 +95,7 @@ class FakeKotlinAnki:
         self.verify_fields: list[str] | None = None
         self.known_fields: list[str] = []
         self.duplicate_fields: list[str] = []
+        self.duplicate_decks: dict[str, set[str]] = {}
         self.errors: dict[str, tuple[str, str, bool]] = {}
         self.failed_media_names: set[str] = set()
         self.media_failure_errors: dict[str, tuple[str, str, bool]] = {}
@@ -145,16 +165,30 @@ class FakeKotlinAnki:
 
         from anki_miner.services.anki_note_builder import _strip_for_dedup
 
-        duplicates = {_strip_for_dedup(field) for field in self.duplicate_fields}
+        scope = request["scope"]
+        deck_name = scope["deckName"]
+        matches = []
+        for candidate in scope["candidates"]:
+            candidate_checksum = _ankidroid_field_checksum(candidate["firstField"])
+            matching = False
+            for stored in self.duplicate_fields:
+                if _ankidroid_field_checksum(stored) != candidate_checksum:
+                    continue
+                if _strip_for_dedup(stored) != candidate["key"]:
+                    continue
+                if deck_name is not None and deck_name not in self.duplicate_decks.get(
+                    stored, set()
+                ):
+                    continue
+                matching = True
+                break
+            matches.append(matching)
         return encode_message(
             "anki.scanfirstfields.result",
             {
                 "runId": request["runId"],
                 "requestId": request["requestId"],
-                "matches": [
-                    candidate in duplicates
-                    for candidate in request["scope"]["candidateKeys"]
-                ],
+                "matches": matches,
             },
         )
 
@@ -374,10 +408,8 @@ def test_blank_required_and_active_marker_mappings_match_desktop_builder(
     assert created["fields"] == desktop_built["fields"]
     assert "Expression" not in created["fields"]
     assert "IsClickCard" not in created["fields"]
-    duplicate_scope = kotlin.requests_for("ankiScanFirstFields")[0]["payload"][
-        "scope"
-    ]
-    assert duplicate_scope["candidateKeys"] == ["猫だ"]
+    duplicate_scope = kotlin.requests_for("ankiScanFirstFields")[0]["payload"]["scope"]
+    assert duplicate_scope["candidates"] == [{"key": "猫だ", "firstField": "猫だ"}]
 
 
 def test_all_blank_mappings_are_valid_for_target_preflight(
@@ -394,9 +426,7 @@ def test_all_blank_mappings_are_valid_for_target_preflight(
 
     _adapter(config, kotlin).verify_card_target()
 
-    assert kotlin.requests_for("ankiVerifyTarget")[0]["payload"][
-        "requiredFields"
-    ] == []
+    assert kotlin.requests_for("ankiVerifyTarget")[0]["payload"]["requiredFields"] == []
 
 
 def test_known_vocabulary_is_normalized_filtered_and_cached(
@@ -470,6 +500,37 @@ def test_note_building_dedup_and_first_occurrence_semantics_are_python_owned(
     assert create_payload["notes"][0]["fields"]["Expression"] == "猫"
     assert create_payload["notes"][0]["fields"]["Sentence"] == "猫だ"
     assert create_payload["notes"][0]["tags"] == ["mine", "mobile"]
+    duplicate_scope = kotlin.requests_for("ankiScanFirstFields")[0]["payload"]["scope"]
+    assert duplicate_scope["candidates"][0] == {
+        "key": "既存",
+        "firstField": "既存",
+    }
+
+
+def test_duplicate_fake_requires_pinned_checksum_match_before_normalized_match(
+    initialized_bridge_home: Path,
+) -> None:
+    kotlin = FakeKotlinAnki()
+    kotlin.duplicate_fields = [" 猫 "]
+    adapter = _adapter(_config(initialized_bridge_home), kotlin)
+
+    assert adapter.create_cards_batch([_card("猫")]) == 1
+    assert adapter.last_skipped_duplicates == 0
+
+
+def test_duplicate_probe_sends_exact_markup_first_field_for_checksum(
+    initialized_bridge_home: Path,
+) -> None:
+    kotlin = FakeKotlinAnki()
+    kotlin.duplicate_fields = ["&lt;b&gt;猫&lt;/b&gt;"]
+    adapter = _adapter(_config(initialized_bridge_home), kotlin)
+
+    created = adapter.create_cards_batch([_card("<b>猫</b>")])
+    scope = kotlin.requests_for("ankiScanFirstFields")[0]["payload"]["scope"]
+    assert created == 0
+    assert scope["candidates"] == [
+        {"key": "<b>猫</b>", "firstField": "&lt;b&gt;猫&lt;/b&gt;"}
+    ]
 
 
 def test_allow_duplicate_cards_scopes_probe_to_target_deck(
@@ -485,8 +546,28 @@ def test_allow_duplicate_cards_scopes_probe_to_target_deck(
         "kind": "duplicates",
         "modelName": config.anki_note_type,
         "deckName": config.anki_deck_name,
-        "candidateKeys": ["猫"],
+        "candidates": [{"key": "猫", "firstField": "猫"}],
     }
+
+
+def test_allow_duplicate_cards_filters_checksum_hits_to_target_deck(
+    initialized_bridge_home: Path,
+) -> None:
+    config = _config(initialized_bridge_home, allow_duplicate_cards=True)
+    kotlin = FakeKotlinAnki()
+    other_deck_note = "<b>猫</b>"
+    target_deck_note = "<b>犬</b>"
+    kotlin.duplicate_fields = [other_deck_note, target_deck_note]
+    kotlin.duplicate_decks = {
+        other_deck_note: {"Japanese::Other"},
+        target_deck_note: {config.anki_deck_name},
+    }
+    adapter = _adapter(config, kotlin)
+
+    assert adapter.create_cards_batch([_card("猫"), _card("犬")]) == 1
+    assert adapter.last_skipped_duplicates == 1
+    notes = kotlin.requests_for("ankiCreateNotes")[0]["payload"]["notes"]
+    assert [note["fields"]["Expression"] for note in notes] == ["猫"]
 
 
 def test_create_notes_batches_at_100_and_reports_cumulative_progress(
@@ -522,11 +603,13 @@ def test_create_notes_batches_at_100_and_reports_cumulative_progress(
         request["payload"]["scope"]
         for request in kotlin.requests_for("ankiScanFirstFields")
     ]
-    assert [len(scope["candidateKeys"]) for scope in duplicate_scopes] == [100, 1]
-    assert duplicate_scopes[0]["candidateKeys"] == [
-        f"語{index}" for index in range(100)
+    assert [len(scope["candidates"]) for scope in duplicate_scopes] == [100, 1]
+    assert duplicate_scopes[0]["candidates"] == [
+        {"key": f"語{index}", "firstField": f"語{index}"} for index in range(100)
     ]
-    assert duplicate_scopes[1]["candidateKeys"] == ["語100"]
+    assert duplicate_scopes[1]["candidates"] == [
+        {"key": "語100", "firstField": "語100"}
+    ]
     assert progress.events == [
         ("start", 101, "Creating Anki cards"),
         ("progress", 100, "Cards created: 100/101"),
@@ -540,9 +623,7 @@ def test_duplicate_lookup_is_candidate_bounded_across_large_batches(
 ) -> None:
     kotlin = FakeKotlinAnki()
     kotlin.duplicate_fields = ["<b>語0</b>", "語100", "語204"]
-    cards = [
-        _card(f"語{index}", definition="x" * 20_000) for index in range(205)
-    ]
+    cards = [_card(f"語{index}", definition="x" * 20_000) for index in range(205)]
     adapter = _adapter(_config(initialized_bridge_home), kotlin)
 
     assert adapter.create_cards_batch(cards) == 202
@@ -552,13 +633,17 @@ def test_duplicate_lookup_is_candidate_bounded_across_large_batches(
         request["payload"]["scope"]
         for request in kotlin.requests_for("ankiScanFirstFields")
     ]
-    assert [len(scope["candidateKeys"]) for scope in scopes] == [100, 100, 5]
-    assert [
-        scope["candidateKeys"] for scope in scopes
-    ] == [
-        [f"語{index}" for index in range(0, 100)],
-        [f"語{index}" for index in range(100, 200)],
-        [f"語{index}" for index in range(200, 205)],
+    assert [len(scope["candidates"]) for scope in scopes] == [100, 100, 5]
+    assert [scope["candidates"] for scope in scopes] == [
+        [{"key": f"語{index}", "firstField": f"語{index}"} for index in range(0, 100)],
+        [
+            {"key": f"語{index}", "firstField": f"語{index}"}
+            for index in range(100, 200)
+        ],
+        [
+            {"key": f"語{index}", "firstField": f"語{index}"}
+            for index in range(200, 205)
+        ],
     ]
     assert all("definition" not in scope for scope in scopes)
     assert [
@@ -757,7 +842,10 @@ def test_media_store_is_bounded_to_fifty_assets_per_callback(
         cards.append(_card(f"語{index}", media=media))
     kotlin = FakeKotlinAnki()
 
-    assert _adapter(_config(initialized_bridge_home), kotlin).create_cards_batch(cards) == 51
+    assert (
+        _adapter(_config(initialized_bridge_home), kotlin).create_cards_batch(cards)
+        == 51
+    )
 
     requests = kotlin.requests_for("ankiStoreMedia")
     assert [len(request["payload"]["assets"]) for request in requests] == [50, 1]
@@ -835,7 +923,7 @@ def test_second_media_chunk_misalignment_does_not_mutate_payloads(
                                 "assetId": "asset_" + "f" * 32,
                                 "status": "stored",
                                 "actualFilename": (
-                                    f'{asset["preferredName"]}_provider.opus'
+                                    f"{asset['preferredName']}_provider.opus"
                                 ),
                             }
                         ],
@@ -884,7 +972,7 @@ def test_media_name_ownership_is_enforced_across_callback_chunks(
                 actual = (
                     "ab_x_provider.opus"
                     if asset["requestedFilename"] in {"ab.opus", "ab_x.opus"}
-                    else f'{asset["preferredName"]}_provider.opus'
+                    else f"{asset['preferredName']}_provider.opus"
                 )
                 results.append(
                     {
@@ -1007,9 +1095,7 @@ def test_dictionary_media_preserves_quote_filename_for_direct_fallback(
     media_path = initialized_bridge_home / "dicts" / "dict" / "media" / 'a";b.svg'
     media_path.parent.mkdir(parents=True, exist_ok=True)
     media_path.write_bytes(b"svg")
-    definition = (
-        '<img class="anki-miner-dict-media" src="dict__a&quot;;b.svg">'
-    )
+    definition = '<img class="anki-miner-dict-media" src="dict__a&quot;;b.svg">'
     kotlin = DirectNameMediaKotlin()
 
     assert (
@@ -1042,15 +1128,16 @@ def test_dictionary_media_random_names_rewrite_only_marked_html_safely(
         '<img src="dict__other.svg" class="anki-miner-dict-media">'
     )
     glossary = (
-        '<span><img class="anki-miner-dict-media" '
-        'src="dict__pic&amp;one.png"></span>'
+        '<span><img class="anki-miner-dict-media" src="dict__pic&amp;one.png"></span>'
     )
     base = _config(initialized_bridge_home)
     config = replace(
         base,
         anki_fields={**base.anki_fields, "glossary": "Glossary"},
     )
-    first_card = replace(_card("猫", definition=definition), extra_fields={"glossary": glossary})
+    first_card = replace(
+        _card("猫", definition=definition), extra_fields={"glossary": glossary}
+    )
     kotlin = FakeKotlinAnki()
     first_preferred = _dictionary_provider_preferred_name("dict__pic&one.png")
     second_preferred = _dictionary_provider_preferred_name("dict__other.svg")
@@ -1061,9 +1148,17 @@ def test_dictionary_media_random_names_rewrite_only_marked_html_safely(
     adapter = _adapter(config, kotlin)
 
     assert adapter.create_cards_batch([first_card]) == 1
-    assert adapter.create_cards_batch(
-        [replace(_card("犬", definition=definition), extra_fields={"glossary": glossary})]
-    ) == 1
+    assert (
+        adapter.create_cards_batch(
+            [
+                replace(
+                    _card("犬", definition=definition),
+                    extra_fields={"glossary": glossary},
+                )
+            ]
+        )
+        == 1
+    )
 
     dictionary_requests = [
         request
@@ -1390,9 +1485,7 @@ def test_provider_media_name_collisions_are_rejected_transactionally(
             )
 
     first_media = MediaData(audio_path=first_path, audio_filename="clip.opus")
-    second_media = MediaData(
-        audio_path=second_path, audio_filename=second_original
-    )
+    second_media = MediaData(audio_path=second_path, audio_filename=second_original)
 
     with pytest.raises(BridgeProtocolError) as exc_info:
         _adapter(

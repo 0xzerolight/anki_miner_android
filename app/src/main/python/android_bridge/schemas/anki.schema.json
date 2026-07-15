@@ -53,6 +53,20 @@
       "minLength": 1,
       "maxLength": 4096
     },
+    "duplicateCandidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "firstField"],
+      "properties": {
+        "key": {"$ref": "#/$defs/duplicateKey"},
+        "firstField": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16384,
+          "$comment": "Exact built first-field value. Kotlin computes AnkiDroid's field checksum from this value, then compares returned notes against key using bridge-equivalent normalization."
+        }
+      }
+    },
     "errorCode": {
       "enum": [
         "api_disabled",
@@ -132,7 +146,7 @@
     "duplicateScope": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["kind", "modelName", "deckName", "candidateKeys"],
+      "required": ["kind", "modelName", "deckName", "candidates"],
       "properties": {
         "kind": {"const": "duplicates"},
         "modelName": {"$ref": "#/$defs/canonicalNonEmptyString"},
@@ -142,12 +156,12 @@
             {"$ref": "#/$defs/canonicalNonEmptyString"}
           ]
         },
-        "candidateKeys": {
+        "candidates": {
           "type": "array",
           "minItems": 1,
           "maxItems": 100,
           "uniqueItems": true,
-          "items": {"$ref": "#/$defs/duplicateKey"}
+          "items": {"$ref": "#/$defs/duplicateCandidate"}
         }
       }
     },
@@ -184,7 +198,7 @@
         "runId": {"$ref": "#/$defs/runId"},
         "requestId": {"$ref": "#/$defs/requestId"},
         "matches": {
-          "$comment": "Positionally aligned with duplicateScope.candidateKeys; Kotlin maps AnkiDroid's SparseArray result indices to these booleans.",
+          "$comment": "Positionally aligned with duplicateScope.candidates. Kotlin queries Note.CONTENT_URI_V2 by the checksum of each exact firstField, normalizes returned first fields for key comparison, and, when deckName is non-null, retains only notes with a card in that deck.",
           "type": "array",
           "minItems": 1,
           "maxItems": 100,

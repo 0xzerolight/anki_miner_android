@@ -31,6 +31,7 @@ _JAPANESE_RE = re.compile(r"[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF\u3400-\u4DB
 _BATCH_SIZE = 100
 _MEDIA_BATCH_SIZE = 50
 _MAX_DUPLICATE_KEY_CHARS = 4096
+_MAX_DUPLICATE_FIRST_FIELD_CHARS = 16_384
 
 _SETUP_ERROR_CODES = {
     "api_disabled",
@@ -164,7 +165,9 @@ def _expect_media_basename(
         filename in {".", ".."}
         or "/" in filename
         or "\\" in filename
-        or any(unicodedata.category(character).startswith("C") for character in filename)
+        or any(
+            unicodedata.category(character).startswith("C") for character in filename
+        )
         or Path(filename).name != filename
     ):
         _protocol_error(code, f"{context} is not a media basename")
@@ -427,9 +430,7 @@ class AndroidAnkiAdapter:
         stored: dict[str, str] = {}
         actual_names: set[str] = set()
         pending_name_owners: dict[str, str] = {}
-        for index, (row_value, asset) in enumerate(
-            zip(rows, assets, strict=True)
-        ):
+        for index, (row_value, asset) in enumerate(zip(rows, assets, strict=True)):
             if not isinstance(row_value, dict):
                 _protocol_error(
                     "invalid_anki_response", f"storeMedia result {index} is invalid"
@@ -477,9 +478,7 @@ class AndroidAnkiAdapter:
                     {"assetId", "status", "error"},
                     context=f"storeMedia result {index}",
                 )
-                error = _expect_error_detail(
-                    row["error"], operation="storeMedia"
-                )
+                error = _expect_error_detail(row["error"], operation="storeMedia")
                 if error.code not in _RECOVERABLE_MEDIA_ERROR_CODES:
                     _raise_callback_error(error)
                 logger.warning(
@@ -505,13 +504,17 @@ class AndroidAnkiAdapter:
         requested_name_owners: dict[str, str] = {}
         for index, asset in enumerate(assets):
             if asset.asset_id in asset_ids:
-                _protocol_error("invalid_anki_request", "Media asset IDs must be unique")
+                _protocol_error(
+                    "invalid_anki_request", "Media asset IDs must be unique"
+                )
             asset_ids.add(asset.asset_id)
             if asset.purpose not in {"card", "dictionary"} or asset.media_kind not in {
                 "audio",
                 "image",
             }:
-                _protocol_error("invalid_anki_request", "Media asset metadata is invalid")
+                _protocol_error(
+                    "invalid_anki_request", "Media asset metadata is invalid"
+                )
             _expect_filename(
                 asset.preferred_name,
                 context=f"storeMedia asset {index} preferredName",
@@ -671,9 +674,7 @@ class AndroidAnkiAdapter:
         return stored_names
 
     @staticmethod
-    def _rewrite_dictionary_html(
-        value: str, actual_names: Mapping[str, str]
-    ) -> str:
+    def _rewrite_dictionary_html(value: str, actual_names: Mapping[str, str]) -> str:
         """Rewrite only renderer-marked dictionary image ``src`` attributes."""
 
         from anki_miner.services.anki_media_store import (
@@ -691,17 +692,11 @@ class AndroidAnkiAdapter:
             if actual is None or actual == original:
                 return tag
             escaped_actual = html_escape(actual, quote=True)
-            return (
-                tag[: src_match.start(1)]
-                + escaped_actual
-                + tag[src_match.end(1) :]
-            )
+            return tag[: src_match.start(1)] + escaped_actual + tag[src_match.end(1) :]
 
         return _DICT_MEDIA_IMG_RE.sub(rewrite_tag, value)
 
-    def _rewrite_dictionary_payloads(
-        self, word_data_list: Sequence[Any]
-    ) -> list[Any]:
+    def _rewrite_dictionary_payloads(self, word_data_list: Sequence[Any]) -> list[Any]:
         from dataclasses import replace
 
         rewrite_names = {
@@ -740,9 +735,7 @@ class AndroidAnkiAdapter:
             rewritten_payloads.append(item)
         return rewritten_payloads
 
-    def _store_dictionary_media(
-        self, word_data_list: Sequence[Any]
-    ) -> list[Any]:
+    def _store_dictionary_media(self, word_data_list: Sequence[Any]) -> list[Any]:
         from anki_miner.services.anki_media_store import (
             _extract_dict_media_srcs,
             _resolve_dict_media_path,
@@ -758,10 +751,7 @@ class AndroidAnkiAdapter:
                 if not isinstance(html_field, str):
                     continue
                 for source in _extract_dict_media_srcs(html_field):
-                    if (
-                        source not in self._dict_media_uploaded
-                        and source not in seen
-                    ):
+                    if source not in self._dict_media_uploaded and source not in seen:
                         seen.add(source)
                         sources.append(source)
 
@@ -795,20 +785,30 @@ class AndroidAnkiAdapter:
             self._dict_media_actual_names[source] = actual
         return self._rewrite_dictionary_payloads(word_data_list)
 
-    def _duplicate_first_fields(self, candidate_keys: Sequence[str]) -> set[str]:
-        if not candidate_keys:
+    def _duplicate_first_fields(
+        self, candidates: Sequence[tuple[str, str]]
+    ) -> set[str]:
+        if not candidates:
             return set()
+        from anki_miner.services.anki_note_builder import _strip_for_dedup
+
+        candidate_keys = [key for key, _ in candidates]
         if (
-            len(candidate_keys) > _BATCH_SIZE
+            len(candidates) > _BATCH_SIZE
             or len(set(candidate_keys)) != len(candidate_keys)
             or any(
-                not key or len(key) > _MAX_DUPLICATE_KEY_CHARS
-                for key in candidate_keys
+                not key or len(key) > _MAX_DUPLICATE_KEY_CHARS for key in candidate_keys
+            )
+            or any(
+                not isinstance(first_field, str)
+                or len(first_field) > _MAX_DUPLICATE_FIRST_FIELD_CHARS
+                or _strip_for_dedup(first_field) != key
+                for key, first_field in candidates
             )
         ):
             _protocol_error(
                 "invalid_note",
-                "Duplicate candidate keys must be unique, non-empty, and bounded",
+                "Duplicate candidates must be normalized, unique, non-empty, and bounded",
             )
         scope = {
             "kind": "duplicates",
@@ -818,7 +818,10 @@ class AndroidAnkiAdapter:
                 if self.config.allow_duplicate_cards
                 else None
             ),
-            "candidateKeys": list(candidate_keys),
+            "candidates": [
+                {"key": key, "firstField": first_field}
+                for key, first_field in candidates
+            ],
         }
         try:
             payload = self._callbacks.scan_first_fields({"scope": scope})
@@ -837,7 +840,7 @@ class AndroidAnkiAdapter:
         ):
             _protocol_error(
                 "invalid_anki_response",
-                "Duplicate lookup matches must align with candidateKeys",
+                "Duplicate lookup matches must align with candidates",
             )
         return {
             key
@@ -884,9 +887,7 @@ class AndroidAnkiAdapter:
                     {"clientNoteId", "status", "noteId"},
                     context=f"createNotes result {index}",
                 )
-                note_id = _expect_positive_int(
-                    row["noteId"], context=f"noteId {index}"
-                )
+                note_id = _expect_positive_int(row["noteId"], context=f"noteId {index}")
                 if note_id in created_ids:
                     _protocol_error(
                         "invalid_anki_response",
@@ -1028,7 +1029,7 @@ class AndroidAnkiAdapter:
                     if built.used_bold_fallback:
                         bold_fallback += 1
                     built_notes.append(built.note)
-                candidates: list[tuple[Any, dict[str, Any], str]] = []
+                candidates: list[tuple[Any, dict[str, Any], str, str]] = []
                 for item, note in zip(batch, built_notes, strict=True):
                     fields = note.get("fields") or {}
                     first_value = next(iter(fields.values()), "")
@@ -1037,14 +1038,14 @@ class AndroidAnkiAdapter:
                         skipped_duplicates += 1
                         continue
                     seen_outgoing.add(key)
-                    candidates.append((item, note, key))
+                    candidates.append((item, note, key, first_value))
 
                 existing = self._duplicate_first_fields(
-                    [key for _, _, key in candidates if key]
+                    [(key, first_value) for _, _, key, first_value in candidates if key]
                 )
                 submit_notes: list[dict[str, Any]] = []
                 submit_payloads: list[Any] = []
-                for item, note, key in candidates:
+                for item, note, key, _ in candidates:
                     if key and key in existing:
                         skipped_duplicates += 1
                         continue
