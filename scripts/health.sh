@@ -34,6 +34,19 @@ if command -v shellcheck >/dev/null; then
         || fail "ShellCheck failed"
 fi
 python3.13 -m unittest discover -s "$SCRIPT_DIR/tests" -v
+PYTHONDONTWRITEBYTECODE=1 python3.13 -m unittest discover \
+    -s "$REPO_ROOT/tools/ankidroid-api/tests" -v
+PYTHONDONTWRITEBYTECODE=1 python3.13 \
+    "$REPO_ROOT/tools/ankidroid-api/sync_ankidroid_api.py" --check
+if [[ -n "${ANKIDROID_API_UPSTREAM_CHECKOUT:-}" ]]; then
+    PYTHONDONTWRITEBYTECODE=1 python3.13 \
+        "$REPO_ROOT/tools/ankidroid-api/sync_ankidroid_api.py" \
+        --check-upstream --source "$ANKIDROID_API_UPSTREAM_CHECKOUT"
+fi
+PYTHONDONTWRITEBYTECODE=1 python3.13 -m unittest discover \
+    -s "$REPO_ROOT/tools/anki-contract/tests" -v
+PYTHONDONTWRITEBYTECODE=1 python3.13 \
+    "$REPO_ROOT/tools/anki-contract/generate_anki_limits.py" --check
 
 host_test_python="$ANKI_MINER_ANDROID_TOOLCHAIN_ROOT/host-tests/bin/python"
 [[ -x "$host_test_python" ]] \

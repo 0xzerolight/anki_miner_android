@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 from uuid import uuid4
 
+from .anki_limits import ANKI_ENVELOPE_LIMITS_V1
 from .jobs import JobHandle, JobRegistry
 from .protocol import (
     BridgeProtocolError,
@@ -45,6 +46,15 @@ def _invoke_result(callbacks: object, method_name: str, message: str) -> str:
             f"EngineCallbacks.{method_name} must return a JSON string",
         )
     return result
+
+
+def _utf8_size(raw: str, *, context: str) -> int:
+    try:
+        return len(raw.encode("utf-8"))
+    except UnicodeEncodeError as exc:
+        raise BridgeProtocolError(
+            "invalid_utf8", f"{context} contains an invalid Unicode scalar"
+        ) from exc
 
 
 @dataclass(frozen=True)
@@ -97,7 +107,7 @@ def _parse_anki_error(
 
 @dataclass(frozen=True)
 class AndroidAnkiCallbacks:
-    """Synchronous JSON client for the four Kotlin AnkiDroid operations."""
+    """Synchronous JSON client for the Kotlin AnkiDroid operations."""
 
     callbacks: object
     run_id: str
@@ -117,11 +127,23 @@ class AndroidAnkiCallbacks:
             "runId": self.run_id,
             "requestId": request_id,
         }
+        request_limit, result_limit = ANKI_ENVELOPE_LIMITS_V1[operation]
+        raw_request = encode_message(request_type, request_payload)
+        if _utf8_size(raw_request, context=f"{operation} request") > request_limit:
+            raise BridgeProtocolError(
+                "anki_request_too_large",
+                f"{operation} request exceeds its v1 UTF-8 envelope limit",
+            )
         raw_result = _invoke_result(
             self.callbacks,
             method_name,
-            encode_message(request_type, request_payload),
+            raw_request,
         )
+        if _utf8_size(raw_result, context=f"{operation} response") > result_limit:
+            raise BridgeProtocolError(
+                "anki_response_too_large",
+                f"{operation} response exceeds its v1 UTF-8 envelope limit",
+            )
         message = decode_envelope(raw_result)
         if message.message_type == "anki.error":
             raise _parse_anki_error(
@@ -179,6 +201,17 @@ class AndroidAnkiCallbacks:
             request_type="anki.createnotes.request",
             result_type="anki.createnotes.result",
             payload=payload,
+        )
+
+    def release_run_state(self) -> dict[str, Any]:
+        """Release every Kotlin-side capability retained for this run."""
+
+        return self._request(
+            method_name="ankiReleaseRunState",
+            operation="releaseRunState",
+            request_type="anki.releaserunstate.request",
+            result_type="anki.releaserunstate.result",
+            payload={},
         )
 
 

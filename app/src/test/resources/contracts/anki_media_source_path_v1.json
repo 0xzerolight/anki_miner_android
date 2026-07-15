@@ -1,0 +1,65 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "absolute-ascii",
+      "path": "/data/user/0/com.ankiminer.android/cache/audio.opus",
+      "schemaValid": true,
+      "semanticValid": true
+    },
+    {
+      "id": "relative",
+      "path": "cache/audio.opus",
+      "schemaValid": false,
+      "semanticValid": false
+    },
+    {
+      "id": "embedded-nul",
+      "path": "/data/user/0/cache/\u0000audio.opus",
+      "schemaValid": false,
+      "semanticValid": false
+    },
+    {
+      "id": "escaped-high-surrogate",
+      "path": "/data/user/0/cache/\ud800audio.opus",
+      "schemaValid": false,
+      "semanticValid": false
+    },
+    {
+      "id": "escaped-low-surrogate",
+      "path": "/data/user/0/cache/\udfffaudio.opus",
+      "schemaValid": false,
+      "semanticValid": false
+    },
+    {
+      "id": "valid-astral-scalar",
+      "path": "/data/user/0/cache/😀audio.opus",
+      "schemaValid": true,
+      "semanticValid": true
+    },
+    {
+      "id": "exact-ascii-limit",
+      "pathRecipe": {"prefix": "/", "unit": "x", "repeat": 4095},
+      "schemaValid": true,
+      "semanticValid": true
+    },
+    {
+      "id": "over-code-point-limit",
+      "pathRecipe": {"prefix": "/", "unit": "x", "repeat": 4096},
+      "schemaValid": false,
+      "semanticValid": false
+    },
+    {
+      "id": "exact-multibyte-limit",
+      "pathRecipe": {"prefix": "/", "unit": "界", "repeat": 1365},
+      "schemaValid": true,
+      "semanticValid": true
+    },
+    {
+      "id": "over-utf8-limit-only",
+      "pathRecipe": {"prefix": "/", "unit": "界", "repeat": 1366},
+      "schemaValid": true,
+      "semanticValid": false
+    }
+  ]
+}

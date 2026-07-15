@@ -7,6 +7,8 @@ from pathlib import Path
 
 import pytest
 
+import android_bridge.protocol as protocol
+
 from android_bridge.protocol import (
     BRIDGE_SCHEMA_VERSION,
     JSON_INTEGER_MAX,
@@ -93,6 +95,75 @@ def test_non_finite_and_recursive_values_are_rejected() -> None:
     with pytest.raises(BridgeProtocolError) as cycle:
         encode_message("progress.update", {"value": recursive})
     assert cycle.value.code == "recursive_value"
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        r'{"sourcePath":"/cache/\ud800.opus"}',
+        r'{"firstFields":["\udfff"]}',
+        r'{"\ud800":"value"}',
+    ],
+    ids=["source-path-value", "other-callback-value", "object-key"],
+)
+def test_decoder_rejects_ascii_escaped_surrogates_in_keys_and_values(
+    payload: str,
+) -> None:
+    raw = (
+        '{"schemaVersion":1,"type":"anki.storemedia.result","payload":' + payload + "}"
+    )
+
+    assert raw.isascii()
+    with pytest.raises(BridgeProtocolError) as error:
+        decode_message(raw)
+    assert error.value.code == "invalid_utf8"
+    assert str(error.value) == "Bridge JSON string contains an invalid Unicode scalar"
+
+
+def test_decoder_accepts_an_ascii_escaped_valid_surrogate_pair() -> None:
+    raw = (
+        r'{"schemaVersion":1,"type":"progress.update",'
+        r'"payload":{"message":"\ud83d\ude00"}}'
+    )
+
+    assert raw.isascii()
+    assert decode_message(raw) == {"message": "😀"}
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["\ud800", {"\udfff": "value"}, Path("/cache/\ud800.opus")],
+    ids=["value", "object-key", "path"],
+)
+def test_encoder_rejects_non_scalar_unicode(value: object) -> None:
+    with pytest.raises(BridgeProtocolError) as error:
+        encode_message("progress.update", {"value": value})
+    assert error.value.code == "invalid_utf8"
+
+
+def test_decoded_json_depth_limit_has_a_stable_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(protocol, "_MAX_DECODED_JSON_DEPTH", 2)
+    raw = '{"schemaVersion":1,"type":"progress.update","payload":{"nested":[[]]}}'
+
+    with pytest.raises(BridgeProtocolError) as error:
+        decode_message(raw)
+    assert error.value.code == "invalid_json"
+    assert str(error.value) == "Bridge JSON exceeds its decoded depth limit"
+
+
+def test_decoded_json_node_limit_has_a_stable_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The empty envelope is seven decoded nodes when object keys are counted.
+    monkeypatch.setattr(protocol, "_MAX_DECODED_JSON_NODES", 7)
+    raw = '{"schemaVersion":1,"type":"progress.update","payload":{"extra":0}}'
+
+    with pytest.raises(BridgeProtocolError) as error:
+        decode_message(raw)
+    assert error.value.code == "invalid_json"
+    assert str(error.value) == "Bridge JSON exceeds its decoded node limit"
 
 
 @pytest.mark.parametrize("literal", ["NaN", "Infinity", "-Infinity"])

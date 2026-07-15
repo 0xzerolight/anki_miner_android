@@ -6,9 +6,10 @@ import dataclasses
 import json
 import math
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from enum import Enum
+from itertools import chain
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +20,14 @@ BRIDGE_SCHEMA_VERSION = 1
 # of accepting its arbitrary-precision ints or non-finite IEEE values.
 JSON_INTEGER_MIN = -(1 << 63)
 JSON_INTEGER_MAX = (1 << 63) - 1
+
+# ``json.loads`` accepts escaped lone UTF-16 surrogates and returns them in a
+# Python ``str``. They cannot be encoded as strict UTF-8, so validate every
+# decoded key and value before any operation-specific parser sees the payload.
+# Explicit structural ceilings keep this generic boundary independent of the
+# tighter per-operation byte and item limits enforced by its callers.
+_MAX_DECODED_JSON_DEPTH = 128
+_MAX_DECODED_JSON_NODES = 1_000_000
 
 _MESSAGE_TYPE_RE = re.compile(r"^[a-z][a-z0-9]*(?:\.[a-z][a-z0-9]*)+$")
 
@@ -46,6 +55,54 @@ class DecodedMessage:
 def _camel_case(name: str) -> str:
     head, *tail = name.split("_")
     return head + "".join(part[:1].upper() + part[1:] for part in tail)
+
+
+def _require_unicode_scalar_string(value: str, *, context: str) -> None:
+    try:
+        value.encode("utf-8")
+    except UnicodeEncodeError as exc:
+        raise BridgeProtocolError(
+            "invalid_utf8", f"{context} contains an invalid Unicode scalar"
+        ) from exc
+
+
+def _validate_decoded_json(value: Any) -> None:
+    """Validate decoded strings with bounded, non-recursive traversal."""
+
+    frames: list[tuple[Iterator[Any], int]] = [(iter((value,)), 0)]
+    visited_nodes = 0
+    while frames:
+        iterator, depth = frames[-1]
+        try:
+            current = next(iterator)
+        except StopIteration:
+            frames.pop()
+            continue
+
+        visited_nodes += 1
+        if visited_nodes > _MAX_DECODED_JSON_NODES:
+            raise BridgeProtocolError(
+                "invalid_json", "Bridge JSON exceeds its decoded node limit"
+            )
+
+        if isinstance(current, str):
+            _require_unicode_scalar_string(current, context="Bridge JSON string")
+            continue
+
+        if isinstance(current, dict):
+            children: Iterator[Any] = chain.from_iterable(current.items())
+        elif isinstance(current, list):
+            children = iter(current)
+        else:
+            continue
+
+        if not current:
+            continue
+        if depth >= _MAX_DECODED_JSON_DEPTH:
+            raise BridgeProtocolError(
+                "invalid_json", "Bridge JSON exceeds its decoded depth limit"
+            )
+        frames.append((children, depth + 1))
 
 
 def normalize_integral_json_number(value: object) -> int | None:
@@ -76,7 +133,10 @@ def to_json_value(value: Any, *, _seen: set[int] | None = None) -> Any:
     graphs are rejected instead of being silently truncated.
     """
 
-    if value is None or isinstance(value, (str, bool)):
+    if isinstance(value, str):
+        _require_unicode_scalar_string(value, context="Bridge string")
+        return value
+    if value is None or isinstance(value, bool):
         return value
     if isinstance(value, int):
         if normalize_integral_json_number(value) is None:
@@ -92,7 +152,7 @@ def to_json_value(value: Any, *, _seen: set[int] | None = None) -> Any:
             )
         return value
     if isinstance(value, Path):
-        return str(value)
+        return to_json_value(str(value), _seen=_seen)
     if isinstance(value, Enum):
         return to_json_value(value.value, _seen=_seen)
 
@@ -124,6 +184,7 @@ def to_json_value(value: Any, *, _seen: set[int] | None = None) -> Any:
                     raise BridgeProtocolError(
                         "non_string_key", "JSON object keys must be strings"
                     )
+                _require_unicode_scalar_string(key, context="Bridge object key")
                 converted[key] = to_json_value(item, _seen=seen)
             return converted
         finally:
@@ -208,6 +269,7 @@ def _parse_json_float(literal: str) -> float:
 def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     result: dict[str, Any] = {}
     for key, value in pairs:
+        _require_unicode_scalar_string(key, context="Bridge JSON string")
         if key in result:
             raise BridgeProtocolError(
                 "duplicate_json_key", f"Duplicate JSON object key: {key}"
@@ -241,6 +303,8 @@ def decode_envelope(raw: str, *, expected_type: str | None = None) -> DecodedMes
         raise
     except (json.JSONDecodeError, RecursionError, ValueError, OverflowError) as exc:
         raise BridgeProtocolError("invalid_json", "Malformed bridge JSON") from exc
+
+    _validate_decoded_json(envelope)
 
     if not isinstance(envelope, dict):
         raise BridgeProtocolError(

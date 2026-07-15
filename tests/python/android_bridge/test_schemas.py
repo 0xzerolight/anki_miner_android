@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import threading
+from copy import deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -10,6 +11,10 @@ import pytest
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import ValidationError
 
+from android_bridge.anki_limits import (
+    ANKI_ENVELOPE_LIMITS_V1,
+    ANKI_LIMITS_V1,
+)
 from android_bridge.config_map import (
     AndroidPaths,
     exposed_config_fields,
@@ -22,10 +27,27 @@ from android_bridge.protocol import BridgeProtocolError, decode_envelope, encode
 SCHEMA_ROOT = (
     Path(__file__).resolve().parents[3] / "app/src/main/python/android_bridge/schemas"
 )
+SOURCE_PATH_CORPUS = (
+    Path(__file__).resolve().parents[3]
+    / "app/src/test/resources/contracts/anki_media_source_path_v1.json"
+)
 
 
 def _load_schema(name: str) -> dict[str, Any]:
     return json.loads((SCHEMA_ROOT / name).read_text(encoding="utf-8"))
+
+
+def _source_path_cases() -> list[dict[str, Any]]:
+    corpus = json.loads(SOURCE_PATH_CORPUS.read_text(encoding="utf-8"))
+    assert corpus["version"] == 1
+    cases: list[dict[str, Any]] = []
+    for raw_case in corpus["cases"]:
+        case = dict(raw_case)
+        recipe = case.pop("pathRecipe", None)
+        if recipe is not None:
+            case["path"] = recipe["prefix"] + recipe["unit"] * recipe["repeat"]
+        cases.append(case)
+    return cases
 
 
 @pytest.fixture(scope="module")
@@ -140,6 +162,665 @@ def test_all_checked_in_schemas_self_validate_as_draft_2020_12(
     for schema in schemas.values():
         assert schema["$schema"] == "https://json-schema.org/draft/2020-12/schema"
         Draft202012Validator.check_schema(schema)
+
+
+def test_anki_limits_v1_manifest_freezes_exact_units_and_values() -> None:
+    assert ANKI_LIMITS_V1 == {
+        "schemaVersion": 1,
+        "units": {
+            "codePoints": "Unicode scalar values counted by JSON Schema maxLength",
+            "items": "array entries",
+            "utf8Bytes": (
+                "bytes after strict UTF-8 encoding of the decoded string or "
+                "complete JSON envelope"
+            ),
+        },
+        "names": {
+            "deck": {"maxCodePoints": 1024, "maxUtf8Bytes": 1024},
+            "model": {"maxCodePoints": 1024, "maxUtf8Bytes": 1024},
+            "field": {"maxCodePoints": 256, "maxUtf8Bytes": 256},
+            "targetFields": {"maxItems": 64, "maxTotalUtf8Bytes": 16384},
+            "excludedDecks": {"maxItems": 256, "maxTotalUtf8Bytes": 65536},
+        },
+        "targetModel": {"allowedType": 0, "maxTemplates": 64},
+        "verifyTarget": {
+            "requestEnvelopeMaxUtf8Bytes": 65536,
+            "resultEnvelopeMaxUtf8Bytes": 65536,
+        },
+        "scanFirstFields": {
+            "requestEnvelopeMaxUtf8Bytes": 16777216,
+            "resultEnvelopeMaxUtf8Bytes": 2097152,
+            "duplicateKeyMaxCodePoints": 4096,
+            "duplicateFirstFieldMaxCodePoints": 16384,
+            "duplicateCandidatesMaxItems": 100,
+            "duplicateHitsPerCandidateMaxItems": 100,
+            "duplicateHitsTotalMaxItems": 1000,
+            "firstFieldMaxCodePoints": 65536,
+            "firstFieldMaxUtf8Bytes": 65536,
+            "duplicateHitsTotalMaxUtf8Bytes": 1048576,
+            "knownPageMaxItems": 256,
+            "knownPageMaxUtf8Bytes": 262144,
+            "knownTotalScannedNotes": 100000,
+            "knownCursorMaxCodePoints": 1024,
+            "knownCursorMaxUtf8Bytes": 1024,
+        },
+        "storeMedia": {
+            "requestEnvelopeMaxUtf8Bytes": 2097152,
+            "resultEnvelopeMaxUtf8Bytes": 524288,
+            "maxAssets": 50,
+            "maxAssetBytes": 67108864,
+            "maxTotalBytes": 67108864,
+            "filenameMaxCodePoints": 1024,
+            "filenameMaxUtf8Bytes": 1024,
+            "sourcePathMaxCodePoints": 4096,
+            "sourcePathMaxUtf8Bytes": 4096,
+        },
+        "createNotes": {
+            "requestEnvelopeMaxUtf8Bytes": 524288,
+            "resultEnvelopeMaxUtf8Bytes": 524288,
+            "maxNotes": 100,
+            "maxFieldsPerNote": 64,
+            "maxCardsPerNote": 64,
+            "fieldNameMaxUtf8Bytes": 256,
+            "fieldValueMaxCodePoints": 98304,
+            "fieldValueMaxUtf8Bytes": 98304,
+            "maxTagsPerNote": 64,
+            "tagMaxCodePoints": 256,
+            "tagMaxUtf8Bytes": 256,
+            "tagsPerNoteMaxUtf8Bytes": 8192,
+            "noteContentMaxUtf8Bytes": 131072,
+            "callbackContentMaxUtf8Bytes": 393216,
+        },
+        "releaseRunState": {
+            "requestEnvelopeMaxUtf8Bytes": 16384,
+            "resultEnvelopeMaxUtf8Bytes": 16384,
+        },
+        "createCall": {
+            "maxSourceItems": 2000,
+            "sourceMaxUtf8Bytes": 16777216,
+            "builtNotesMaxUtf8Bytes": 16777216,
+            "maxMediaReferences": 8000,
+            "mediaWorkMaxBytes": 536870912,
+        },
+    }
+    assert ANKI_ENVELOPE_LIMITS_V1 == {
+        "verifyTarget": (65536, 65536),
+        "scanFirstFields": (16777216, 2097152),
+        "storeMedia": (2097152, 524288),
+        "createNotes": (524288, 524288),
+        "releaseRunState": (16384, 16384),
+    }
+    assert (
+        ANKI_LIMITS_V1["names"]["targetFields"]["maxItems"]
+        == (ANKI_LIMITS_V1["createNotes"]["maxFieldsPerNote"])
+    )
+    assert (
+        ANKI_LIMITS_V1["names"]["field"]["maxUtf8Bytes"]
+        == (ANKI_LIMITS_V1["createNotes"]["fieldNameMaxUtf8Bytes"])
+    )
+    assert ANKI_LIMITS_V1["targetModel"] == {
+        "allowedType": 0,
+        "maxTemplates": ANKI_LIMITS_V1["createNotes"]["maxCardsPerNote"],
+    }
+
+
+_SchemaPath = tuple[str | int, ...]
+_ManifestPath = tuple[str, ...]
+_LimitBinding = tuple[_ManifestPath, _SchemaPath, int]
+
+
+# Every numeric upper bound or numeric wire constant in anki.schema.json is
+# listed exactly once. The final integer is an explicit derivation offset;
+# occurrence indexes are the only derived values (maxItems - 1).
+_ANKI_SCHEMA_LIMIT_BINDINGS: tuple[_LimitBinding, ...] = (
+    (
+        ("names", "deck", "maxCodePoints"),
+        ("$defs", "deckName", "allOf", 1, "maxLength"),
+        0,
+    ),
+    (
+        ("names", "model", "maxCodePoints"),
+        ("$defs", "modelName", "allOf", 1, "maxLength"),
+        0,
+    ),
+    (
+        ("names", "field", "maxCodePoints"),
+        ("$defs", "fieldName", "allOf", 1, "maxLength"),
+        0,
+    ),
+    (("storeMedia", "filenameMaxCodePoints"), ("$defs", "filename", "maxLength"), 0),
+    (
+        ("storeMedia", "filenameMaxCodePoints"),
+        ("$defs", "mediaBasename", "maxLength"),
+        0,
+    ),
+    (
+        ("scanFirstFields", "duplicateKeyMaxCodePoints"),
+        ("$defs", "duplicateKey", "maxLength"),
+        0,
+    ),
+    (
+        ("scanFirstFields", "duplicateFirstFieldMaxCodePoints"),
+        ("$defs", "duplicateCandidate", "properties", "firstField", "maxLength"),
+        0,
+    ),
+    (
+        ("scanFirstFields", "duplicateFirstFieldMaxCodePoints"),
+        ("$defs", "createDuplicateCandidate", "properties", "firstField", "maxLength"),
+        0,
+    ),
+    (
+        ("createNotes", "maxNotes"),
+        ("$defs", "createDuplicateCandidate", "properties", "occurrence", "maximum"),
+        -1,
+    ),
+    (
+        ("names", "targetFields", "maxItems"),
+        ("$defs", "verifyTargetRequest", "properties", "requiredFields", "maxItems"),
+        0,
+    ),
+    (
+        ("names", "targetFields", "maxItems"),
+        ("$defs", "verifyTargetResult", "properties", "fieldNames", "maxItems"),
+        0,
+    ),
+    (
+        ("names", "excludedDecks", "maxItems"),
+        ("$defs", "knownVocabularyScope", "properties", "excludedDecks", "maxItems"),
+        0,
+    ),
+    (
+        ("scanFirstFields", "knownPageMaxItems"),
+        (
+            "$defs",
+            "knownVocabularyScope",
+            "properties",
+            "limits",
+            "properties",
+            "maxScannedNotes",
+            "const",
+        ),
+        0,
+    ),
+    (
+        ("scanFirstFields", "knownTotalScannedNotes"),
+        (
+            "$defs",
+            "knownVocabularyScope",
+            "properties",
+            "limits",
+            "properties",
+            "maxTotalScannedNotes",
+            "const",
+        ),
+        0,
+    ),
+    (
+        ("scanFirstFields", "knownPageMaxItems"),
+        (
+            "$defs",
+            "knownVocabularyScope",
+            "properties",
+            "limits",
+            "properties",
+            "maxItems",
+            "const",
+        ),
+        0,
+    ),
+    (
+        ("scanFirstFields", "firstFieldMaxUtf8Bytes"),
+        (
+            "$defs",
+            "knownVocabularyScope",
+            "properties",
+            "limits",
+            "properties",
+            "maxItemUtf8Bytes",
+            "const",
+        ),
+        0,
+    ),
+    (
+        ("scanFirstFields", "knownPageMaxUtf8Bytes"),
+        (
+            "$defs",
+            "knownVocabularyScope",
+            "properties",
+            "limits",
+            "properties",
+            "maxTotalUtf8Bytes",
+            "const",
+        ),
+        0,
+    ),
+    (
+        ("scanFirstFields", "knownCursorMaxCodePoints"),
+        ("$defs", "knownVocabularyCursor", "properties", "token", "maxLength"),
+        0,
+    ),
+    (
+        ("scanFirstFields", "duplicateCandidatesMaxItems"),
+        ("$defs", "duplicateScope", "properties", "candidates", "maxItems"),
+        0,
+    ),
+    (
+        ("scanFirstFields", "duplicateCandidatesMaxItems"),
+        ("$defs", "duplicateScope", "properties", "occurrences", "maxItems"),
+        0,
+    ),
+    (
+        ("scanFirstFields", "duplicateCandidatesMaxItems"),
+        ("$defs", "duplicateScope", "properties", "occurrences", "items", "maximum"),
+        -1,
+    ),
+    (
+        ("scanFirstFields", "duplicateHitsPerCandidateMaxItems"),
+        (
+            "$defs",
+            "duplicateScope",
+            "properties",
+            "limits",
+            "properties",
+            "maxHitsPerCandidate",
+            "const",
+        ),
+        0,
+    ),
+    (
+        ("scanFirstFields", "duplicateHitsTotalMaxItems"),
+        (
+            "$defs",
+            "duplicateScope",
+            "properties",
+            "limits",
+            "properties",
+            "maxTotalHits",
+            "const",
+        ),
+        0,
+    ),
+    (
+        ("scanFirstFields", "firstFieldMaxUtf8Bytes"),
+        (
+            "$defs",
+            "duplicateScope",
+            "properties",
+            "limits",
+            "properties",
+            "maxItemUtf8Bytes",
+            "const",
+        ),
+        0,
+    ),
+    (
+        ("scanFirstFields", "duplicateHitsTotalMaxUtf8Bytes"),
+        (
+            "$defs",
+            "duplicateScope",
+            "properties",
+            "limits",
+            "properties",
+            "maxTotalUtf8Bytes",
+            "const",
+        ),
+        0,
+    ),
+    (
+        ("scanFirstFields", "knownPageMaxItems"),
+        ("$defs", "scanFirstFieldsResult", "properties", "firstFields", "maxItems"),
+        0,
+    ),
+    (
+        ("scanFirstFields", "firstFieldMaxCodePoints"),
+        (
+            "$defs",
+            "scanFirstFieldsResult",
+            "properties",
+            "firstFields",
+            "items",
+            "maxLength",
+        ),
+        0,
+    ),
+    (
+        ("scanFirstFields", "knownPageMaxItems"),
+        ("$defs", "scanFirstFieldsResult", "properties", "scannedNotes", "maximum"),
+        0,
+    ),
+    (
+        ("scanFirstFields", "duplicateCandidatesMaxItems"),
+        (
+            "$defs",
+            "duplicateLookupResult",
+            "properties",
+            "rawFirstFieldHits",
+            "maxItems",
+        ),
+        0,
+    ),
+    (
+        ("scanFirstFields", "duplicateHitsPerCandidateMaxItems"),
+        (
+            "$defs",
+            "duplicateLookupResult",
+            "properties",
+            "rawFirstFieldHits",
+            "items",
+            "maxItems",
+        ),
+        0,
+    ),
+    (
+        ("scanFirstFields", "firstFieldMaxCodePoints"),
+        (
+            "$defs",
+            "duplicateLookupResult",
+            "properties",
+            "rawFirstFieldHits",
+            "items",
+            "items",
+            "properties",
+            "firstField",
+            "maxLength",
+        ),
+        0,
+    ),
+    (
+        ("storeMedia", "sourcePathMaxCodePoints"),
+        ("$defs", "mediaAsset", "properties", "sourcePath", "maxLength"),
+        0,
+    ),
+    (
+        ("storeMedia", "maxAssetBytes"),
+        ("$defs", "mediaAsset", "properties", "expectedSizeBytes", "maximum"),
+        0,
+    ),
+    (
+        ("storeMedia", "maxAssets"),
+        ("$defs", "storeMediaLimits", "properties", "maxAssets", "const"),
+        0,
+    ),
+    (
+        ("storeMedia", "maxAssetBytes"),
+        ("$defs", "storeMediaLimits", "properties", "maxAssetBytes", "const"),
+        0,
+    ),
+    (
+        ("storeMedia", "maxTotalBytes"),
+        ("$defs", "storeMediaLimits", "properties", "maxTotalBytes", "const"),
+        0,
+    ),
+    (
+        ("storeMedia", "maxAssets"),
+        ("$defs", "storeMediaRequest", "properties", "assets", "maxItems"),
+        0,
+    ),
+    (
+        ("storeMedia", "maxAssets"),
+        ("$defs", "storeMediaResult", "properties", "results", "maxItems"),
+        0,
+    ),
+    (
+        ("createNotes", "maxFieldsPerNote"),
+        ("$defs", "note", "properties", "fields", "maxProperties"),
+        0,
+    ),
+    (
+        ("createNotes", "fieldValueMaxCodePoints"),
+        ("$defs", "note", "properties", "fields", "additionalProperties", "maxLength"),
+        0,
+    ),
+    (
+        ("createNotes", "maxTagsPerNote"),
+        ("$defs", "note", "properties", "tags", "maxItems"),
+        0,
+    ),
+    (
+        ("createNotes", "tagMaxCodePoints"),
+        ("$defs", "note", "properties", "tags", "items", "allOf", 1, "maxLength"),
+        0,
+    ),
+    (
+        ("createNotes", "maxNotes"),
+        ("$defs", "createNotesLimits", "properties", "maxNotes", "const"),
+        0,
+    ),
+    (
+        ("createNotes", "maxFieldsPerNote"),
+        ("$defs", "createNotesLimits", "properties", "maxFieldsPerNote", "const"),
+        0,
+    ),
+    (
+        ("createNotes", "maxCardsPerNote"),
+        ("$defs", "createNotesLimits", "properties", "maxCardsPerNote", "const"),
+        0,
+    ),
+    (
+        ("createNotes", "fieldNameMaxUtf8Bytes"),
+        ("$defs", "createNotesLimits", "properties", "maxFieldNameUtf8Bytes", "const"),
+        0,
+    ),
+    (
+        ("createNotes", "fieldValueMaxUtf8Bytes"),
+        ("$defs", "createNotesLimits", "properties", "maxFieldValueUtf8Bytes", "const"),
+        0,
+    ),
+    (
+        ("createNotes", "maxTagsPerNote"),
+        ("$defs", "createNotesLimits", "properties", "maxTagsPerNote", "const"),
+        0,
+    ),
+    (
+        ("createNotes", "tagMaxUtf8Bytes"),
+        ("$defs", "createNotesLimits", "properties", "maxTagUtf8Bytes", "const"),
+        0,
+    ),
+    (
+        ("createNotes", "tagsPerNoteMaxUtf8Bytes"),
+        (
+            "$defs",
+            "createNotesLimits",
+            "properties",
+            "maxTagsUtf8BytesPerNote",
+            "const",
+        ),
+        0,
+    ),
+    (
+        ("createNotes", "noteContentMaxUtf8Bytes"),
+        (
+            "$defs",
+            "createNotesLimits",
+            "properties",
+            "maxNoteContentUtf8Bytes",
+            "const",
+        ),
+        0,
+    ),
+    (
+        ("createNotes", "callbackContentMaxUtf8Bytes"),
+        (
+            "$defs",
+            "createNotesLimits",
+            "properties",
+            "maxTotalContentUtf8Bytes",
+            "const",
+        ),
+        0,
+    ),
+    (
+        ("createNotes", "requestEnvelopeMaxUtf8Bytes"),
+        ("$defs", "createNotesLimits", "properties", "maxEnvelopeUtf8Bytes", "const"),
+        0,
+    ),
+    (
+        ("scanFirstFields", "duplicateHitsPerCandidateMaxItems"),
+        (
+            "$defs",
+            "createSnapshotLimits",
+            "properties",
+            "maxNoteIdsPerCandidate",
+            "const",
+        ),
+        0,
+    ),
+    (
+        ("scanFirstFields", "duplicateHitsTotalMaxItems"),
+        ("$defs", "createSnapshotLimits", "properties", "maxTotalNoteIds", "const"),
+        0,
+    ),
+    (
+        ("createNotes", "maxNotes"),
+        ("$defs", "createNotesRequest", "properties", "notes", "maxItems"),
+        0,
+    ),
+    (
+        ("createNotes", "maxNotes"),
+        ("$defs", "createNotesResult", "properties", "results", "maxItems"),
+        0,
+    ),
+)
+
+
+def _path_value(root: Any, path: tuple[str | int, ...]) -> Any:
+    value = root
+    for component in path:
+        value = value[component]
+    return value
+
+
+def _numeric_schema_bound_paths(value: Any, path: _SchemaPath = ()) -> set[_SchemaPath]:
+    result: set[_SchemaPath] = set()
+    if isinstance(value, dict):
+        for key, child in value.items():
+            child_path = (*path, key)
+            if (
+                key in {"maxLength", "maxItems", "maxProperties", "maximum", "const"}
+                and type(child) is int
+            ):
+                result.add(child_path)
+            result.update(_numeric_schema_bound_paths(child, child_path))
+    elif isinstance(value, list):
+        for index, child in enumerate(value):
+            result.update(_numeric_schema_bound_paths(child, (*path, index)))
+    return result
+
+
+def _schema_limit_mismatches(schema: dict[str, Any]) -> list[str]:
+    mismatches: list[str] = []
+    for manifest_path, schema_path, offset in _ANKI_SCHEMA_LIMIT_BINDINGS:
+        expected = _path_value(ANKI_LIMITS_V1, manifest_path) + offset
+        actual = _path_value(schema, schema_path)
+        if actual != expected:
+            mismatches.append(
+                f"{'/'.join(map(str, schema_path))}: {actual} != {expected} "
+                f"from {'/'.join(manifest_path)}"
+            )
+    return mismatches
+
+
+def test_every_anki_schema_numeric_bound_is_mapped_to_limits_manifest(
+    schemas: dict[str, dict[str, Any]],
+) -> None:
+    schema_paths = [binding[1] for binding in _ANKI_SCHEMA_LIMIT_BINDINGS]
+    assert len(schema_paths) == len(set(schema_paths))
+    assert set(schema_paths) == _numeric_schema_bound_paths(schemas["anki"])
+    assert _schema_limit_mismatches(schemas["anki"]) == []
+
+
+def test_anki_schema_limit_drift_is_reported_at_the_exact_path(
+    schemas: dict[str, dict[str, Any]],
+) -> None:
+    drifted = deepcopy(schemas["anki"])
+    drifted["$defs"]["knownVocabularyCursor"]["properties"]["token"]["maxLength"] += 1
+
+    assert _schema_limit_mismatches(drifted) == [
+        "$defs/knownVocabularyCursor/properties/token/maxLength: 1025 != 1024 "
+        "from scanFirstFields/knownCursorMaxCodePoints"
+    ]
+
+
+def test_create_notes_card_limit_is_required_and_exact(
+    schemas: dict[str, dict[str, Any]],
+) -> None:
+    limits_schema = schemas["anki"]["$defs"]["createNotesLimits"]
+    limits = {
+        "maxNotes": 100,
+        "maxFieldsPerNote": 64,
+        "maxCardsPerNote": 64,
+        "maxFieldNameUtf8Bytes": 256,
+        "maxFieldValueUtf8Bytes": 98304,
+        "maxTagsPerNote": 64,
+        "maxTagUtf8Bytes": 256,
+        "maxTagsUtf8BytesPerNote": 8192,
+        "maxNoteContentUtf8Bytes": 131072,
+        "maxTotalContentUtf8Bytes": 393216,
+        "maxEnvelopeUtf8Bytes": 524288,
+    }
+    validator = Draft202012Validator(limits_schema)
+    validator.validate(limits)
+
+    for invalid in (63, 65, None):
+        candidate = dict(limits)
+        if invalid is None:
+            candidate.pop("maxCardsPerNote")
+        else:
+            candidate["maxCardsPerNote"] = invalid
+        with pytest.raises(ValidationError):
+            validator.validate(candidate)
+
+
+def test_schema_code_point_bound_is_distinct_from_runtime_utf8_bound(
+    schemas: dict[str, dict[str, Any]],
+) -> None:
+    path_limit = ANKI_LIMITS_V1["storeMedia"]["sourcePathMaxUtf8Bytes"]
+    multibyte_path = "/" + "界" * (path_limit // 3 + 1)
+    payload = {
+        "runId": "run_" + "a" * 32,
+        "requestId": "anki_" + "b" * 32,
+        "assets": [
+            {
+                "assetId": "asset_" + "c" * 32,
+                "sourcePath": multibyte_path,
+                "preferredName": "media",
+                "requestedFilename": "media.opus",
+                "purpose": "card",
+                "mediaKind": "audio",
+                "expectedSizeBytes": 0,
+                "expectedSha256": "0" * 64,
+            }
+        ],
+        "limits": {
+            "maxAssets": 50,
+            "maxAssetBytes": 67108864,
+            "maxTotalBytes": 67108864,
+        },
+    }
+
+    assert len(multibyte_path) < path_limit
+    assert len(multibyte_path.encode("utf-8")) > path_limit
+    Draft202012Validator(schemas["anki"]).validate(payload)
+
+    payload["assets"][0]["sourcePath"] = "/" + "x" * path_limit
+    with pytest.raises(ValidationError):
+        Draft202012Validator(schemas["anki"]).validate(payload)
+
+
+@pytest.mark.parametrize(
+    "case",
+    _source_path_cases(),
+    ids=lambda case: case["id"],
+)
+def test_media_source_path_schema_matches_shared_contract_corpus(
+    case: dict[str, Any], schemas: dict[str, dict[str, Any]]
+) -> None:
+    source_path_schema = schemas["anki"]["$defs"]["mediaAsset"]["properties"][
+        "sourcePath"
+    ]
+    errors = list(Draft202012Validator(source_path_schema).iter_errors(case["path"]))
+
+    assert (not errors) is case["schemaValid"]
 
 
 def test_representative_full_config_message_validates_and_maps(
@@ -386,6 +1067,7 @@ def test_unknown_curation_map_key_is_schema_invalid(
                     {"key": "犬", "firstField": "<b>犬</b>"},
                 ],
                 "occurrences": [0, 1],
+                "invalidateBaselineToken": None,
                 "limits": {
                     "maxHitsPerCandidate": 100,
                     "maxTotalHits": 1000,
@@ -455,6 +1137,21 @@ def test_unknown_curation_map_key_is_schema_invalid(
         {
             "runId": "run_" + "a" * 32,
             "requestId": "anki_" + "b" * 32,
+            "results": [
+                {
+                    "assetId": "asset_" + "c" * 32,
+                    "status": "uncertain",
+                }
+            ],
+            "error": {
+                "code": "post_commit_uncertain",
+                "message": "media insert outcome is unknown",
+                "retryable": False,
+            },
+        },
+        {
+            "runId": "run_" + "a" * 32,
+            "requestId": "anki_" + "b" * 32,
             "deckName": "Japanese::Mining",
             "modelName": "Lapis",
             "firstFieldName": "Expression",
@@ -469,6 +1166,7 @@ def test_unknown_curation_map_key_is_schema_invalid(
             "limits": {
                 "maxNotes": 100,
                 "maxFieldsPerNote": 64,
+                "maxCardsPerNote": 64,
                 "maxFieldNameUtf8Bytes": 256,
                 "maxFieldValueUtf8Bytes": 98304,
                 "maxTagsPerNote": 64,
@@ -506,10 +1204,37 @@ def test_unknown_curation_map_key_is_schema_invalid(
         {
             "runId": "run_" + "a" * 32,
             "requestId": "anki_" + "b" * 32,
-            "operation": "createNotes",
-            "code": "write_failed",
-            "message": "provider write failed",
-            "retryable": True,
+        },
+        {
+            "runId": "run_" + "a" * 32,
+            "requestId": "anki_" + "b" * 32,
+            "state": "released",
+        },
+        {
+            "runId": "run_" + "a" * 32,
+            "requestId": "anki_" + "b" * 32,
+            "state": "deferred",
+        },
+        {
+            "runId": "run_" + "a" * 32,
+            "requestId": "anki_" + "b" * 32,
+            "state": "absent",
+        },
+        {
+            "runId": "run_" + "a" * 32,
+            "requestId": "anki_" + "b" * 32,
+            "operation": "releaseRunState",
+            "code": "internal_error",
+            "message": "registry cleanup callback failed",
+            "retryable": False,
+        },
+        {
+            "runId": "run_" + "a" * 32,
+            "requestId": "anki_" + "b" * 32,
+            "operation": "verifyTarget",
+            "code": "post_commit_uncertain",
+            "message": "deck creation outcome could not be proven",
+            "retryable": False,
         },
     ],
 )
@@ -552,6 +1277,22 @@ def test_representative_anki_callback_payloads_validate(
                     "mediaKind": "audio",
                 }
             ],
+        },
+        {
+            "runId": "run_" + "a" * 32,
+            "requestId": "anki_" + "b" * 32,
+            "results": [
+                {
+                    "assetId": "asset_" + "c" * 32,
+                    "status": "uncertain",
+                    "actualFilename": "must-not-be-known.opus",
+                }
+            ],
+            "error": {
+                "code": "post_commit_uncertain",
+                "message": "unknown outcome",
+                "retryable": False,
+            },
         },
         {
             "runId": "run_" + "a" * 32,
@@ -604,6 +1345,16 @@ def test_representative_anki_callback_payloads_validate(
                     },
                 }
             ],
+        },
+        {
+            "runId": "run_" + "a" * 32,
+            "requestId": "anki_" + "b" * 32,
+            "released": True,
+        },
+        {
+            "runId": "run_" + "a" * 32,
+            "requestId": "anki_" + "b" * 32,
+            "state": "pending",
         },
     ],
 )

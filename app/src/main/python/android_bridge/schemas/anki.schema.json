@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://anki-miner.app/schemas/android-bridge/v1/anki.json",
   "title": "Anki Miner Android AnkiDroid callback payloads",
-  "$comment": "Every callback is synchronous and returns an envelope. Responses repeat runId/requestId; media and note results are positionally aligned with requests. verifyTarget validates model/fields before creating the deck and its ordered fieldNames[0] is the duplicate identity for the run. Duplicate scans are bounded candidate-key lookups, never full-model scans. Kotlin returns raw provider first fields and Python alone applies the desktop duplicate normalizer. Duplicate baselines and known-vocabulary cursors are opaque, run-bound Kotlin state, not client-echoed provider IDs. Every card and dictionary asset is Python-stat-gated at 64 MiB and streamed through cancellable SHA-1/SHA-256 hashing; each media callback is bounded to 50 assets and 64 MiB total. Kotlin must stream sourcePath into a private bounded snapshot, reject unless its byte count and SHA-256 exactly match the expected values, then expose only that snapshot to AnkiDroid. A stored result means the provider-returned filename has a safely proven postcondition; blind retry after an uncertain insert is forbidden. preferredName is the safe extensionless prefix required by AnkiDroid addMediaFromUri; requestedFilename preserves the exact direct-fallback basename; actualFilename is a raw basename, never [sound:] or <img> markup, and Python rewrites marked dictionary HTML to the provider-returned name. Runtime validation additionally enforces aggregate duplicate-hit and note UTF-8/item/envelope budgets, provider-name relationships and collisions, unique positive note IDs, and strict notAttempted suffixes with top-level errors.",
+  "$comment": "Every callback is synchronous and returns an envelope. anki_limits_v1.json is the exact cross-language resource manifest: JSON Schema maxLength counts Unicode scalar values, while Python and Kotlin independently enforce its UTF-8 byte and complete-envelope byte ceilings before provider access or JSON decoding. Responses repeat runId/requestId; media and note results are positionally aligned with requests. EpisodeProcessor verifies the target before mining; create_cards_batch then uses that cached ordered field model to preflight the complete create call before progress, media hashing, or any create-phase provider callback at 2000 source items, 16 MiB source UTF-8, 16 MiB built-note UTF-8 including worst-case provider filename rewrites, 8000 media references, and 512 MiB of actual streamed media work shared by every card and dictionary digest. verifyTarget validates bounded model/deck names, standard model type 0, 1 through 64 templates/cards per note, and at most 64 bounded model fields before deck creation; its ordered fieldNames[0] is the duplicate identity for the run. Duplicate scans are bounded candidate-key lookups, never full-model scans. Kotlin returns raw provider first fields and Python alone applies the desktop duplicate normalizer. Duplicate baselines, known-vocabulary cursors, media acknowledgements, provider staging, and reconciliation metadata are bounded, opaque, run-scoped Kotlin state. Under one registry lock, releaseRunState sets sticky releaseRequested and rejects new operations. Live reads, staging jobs, or writes keep the entire run quarantined and return deferred. Each task reconciles and releases resources outside the lock while still registered; before the last task deregisters, it registers exactly one cleanup task. Cleanup runs outside the lock and only then atomically removes and unquarantines the run. A no-owner release completes the same registered-cleanup sequence synchronously. Missing or already-finalized state is absent, with no Anki-registry tombstone and no lazy run recreation. The Kotlin coordinator invokes this same request-release transition in finally as a callback-independent fallback, never unconditional deletion. AndroidAnkiAdapter.close accepts every terminal disposition and suppresses cleanup failures. Release itself performs no provider mutation. Every card and dictionary asset is Python-stat-gated at 64 MiB and streamed through cancellable SHA-1/SHA-256 hashing before provider mutation; sourcePath is absolute, NUL-free, and at most 4096 UTF-8 bytes; each media callback is bounded to 50 assets and 64 MiB total. Kotlin must stream sourcePath into a private bounded snapshot, reject unless its byte count and SHA-256 exactly match the expected values, then expose only that snapshot to AnkiDroid. A stored result means the provider-returned filename has a safely proven postcondition; uncertain means the insert may have committed without a proven filename and forbids blind retry. preferredName is the safe extensionless prefix required by AnkiDroid addMediaFromUri; requestedFilename preserves the exact direct-fallback basename; actualFilename is a raw basename, never [sound:] or <img> markup, and Python rewrites marked dictionary HTML to the provider-returned name. Runtime validation additionally enforces encoded UTF-8 filename limits, aggregate duplicate-hit and note UTF-8/item/envelope budgets, provider-name relationships and collisions, unique positive note IDs, and strict terminal-failure/notAttempted ordering with top-level errors.",
   "oneOf": [
     {"$ref": "#/$defs/verifyTargetRequest"},
     {"$ref": "#/$defs/verifyTargetResult"},
@@ -13,6 +13,8 @@
     {"$ref": "#/$defs/storeMediaResult"},
     {"$ref": "#/$defs/createNotesRequest"},
     {"$ref": "#/$defs/createNotesResult"},
+    {"$ref": "#/$defs/releaseRunStateRequest"},
+    {"$ref": "#/$defs/releaseRunStateResult"},
     {"$ref": "#/$defs/error"}
   ],
   "$defs": {
@@ -28,16 +30,36 @@
       "$comment": "Runtime validation additionally enforces NFC and rejects every Unicode category-C code point.",
       "pattern": "^(?!\\s)(?!.*\\s$)(?!.*[\\u0000-\\u001f\\u007f-\\u009f\\u00ad\\u061c\\u200b-\\u200f\\u202a-\\u202e\\u2060-\\u206f\\ufeff]).+$"
     },
+    "deckName": {
+      "allOf": [
+        {"$ref": "#/$defs/canonicalNonEmptyString"},
+        {"maxLength": 1024, "$comment": "Runtime maximum is 1024 UTF-8 bytes."}
+      ]
+    },
+    "modelName": {
+      "allOf": [
+        {"$ref": "#/$defs/canonicalNonEmptyString"},
+        {"maxLength": 1024, "$comment": "Runtime maximum is 1024 UTF-8 bytes."}
+      ]
+    },
+    "fieldName": {
+      "allOf": [
+        {"$ref": "#/$defs/canonicalNonEmptyString"},
+        {"maxLength": 256, "$comment": "Runtime maximum is 256 UTF-8 bytes."}
+      ]
+    },
     "filename": {
       "type": "string",
       "minLength": 1,
-      "$comment": "Runtime validation additionally enforces NFC, bare-basename semantics, and rejects every Unicode category-C code point.",
+      "maxLength": 1024,
+      "$comment": "Runtime validation additionally caps encoded UTF-8 length at 1024 bytes, enforces NFC and bare-basename semantics, and rejects every Unicode category-C code point.",
       "pattern": "^(?![.]{1,2}$)(?!\\s)(?!.*\\s$)(?!.*[/\\\\<>\\[\\]:\"\\u0000-\\u001f\\u007f-\\u009f\\u00ad\\u061c\\u200b-\\u200f\\u202a-\\u202e\\u2060-\\u206f\\ufeff]).+$"
     },
     "mediaBasename": {
       "type": "string",
       "minLength": 1,
-      "$comment": "Exact media basename used by the direct-name fallback. Runtime validation rejects slash, backslash, dot-segments, and every Unicode category-C code point; valid Yomitan names may contain quotes, brackets, spaces, and non-NFC text.",
+      "maxLength": 1024,
+      "$comment": "Exact media basename used by the direct-name fallback. Runtime validation caps encoded UTF-8 length at 1024 bytes and rejects slash, backslash, dot-segments, and every Unicode category-C code point; valid Yomitan names may contain quotes, brackets, spaces, and non-NFC text.",
       "pattern": "^(?![.]{1,2}$)(?!.*[/\\\\\\u0000-\\u001f\\u007f-\\u009f\\u00ad\\u061c\\u200b-\\u200f\\u202a-\\u202e\\u2060-\\u206f\\ufeff]).+$"
     },
     "actualMediaBasename": {
@@ -128,18 +150,21 @@
       "properties": {
         "runId": {"$ref": "#/$defs/runId"},
         "requestId": {"$ref": "#/$defs/requestId"},
-        "deckName": {"$ref": "#/$defs/canonicalNonEmptyString"},
-        "modelName": {"$ref": "#/$defs/canonicalNonEmptyString"},
+        "deckName": {"$ref": "#/$defs/deckName"},
+        "modelName": {"$ref": "#/$defs/modelName"},
         "requiredFields": {
           "type": "array",
+          "maxItems": 64,
           "uniqueItems": true,
-          "items": {"$ref": "#/$defs/canonicalNonEmptyString"}
+          "$comment": "Runtime aggregate maximum is 16384 UTF-8 bytes.",
+          "items": {"$ref": "#/$defs/fieldName"}
         }
       }
     },
     "verifyTargetResult": {
       "type": "object",
       "additionalProperties": false,
+      "$comment": "deckCreated is true only when this app's journal plus exact re-query proves its own deck insertion; an existing deck or same-name creation race is false. If a deck insert may have committed but no unique non-dynamic deck snapshot can be proven, verifyTarget is already representable as an anki.error with post_commit_uncertain and retryable=false; Kotlin must not admit a target snapshot or retry the insert blindly.",
       "required": ["runId", "requestId", "deckId", "modelId", "fieldNames", "deckCreated"],
       "properties": {
         "runId": {"$ref": "#/$defs/runId"},
@@ -149,8 +174,10 @@
         "fieldNames": {
           "type": "array",
           "minItems": 1,
+          "maxItems": 64,
           "uniqueItems": true,
-          "items": {"$ref": "#/$defs/canonicalNonEmptyString"}
+          "$comment": "Runtime aggregate maximum is 16384 UTF-8 bytes. Kotlin rejects a wider target before deck creation or any later provider operation.",
+          "items": {"$ref": "#/$defs/fieldName"}
         },
         "deckCreated": {"type": "boolean"}
       }
@@ -164,8 +191,10 @@
         "kind": {"const": "knownVocabulary"},
         "excludedDecks": {
           "type": "array",
+          "maxItems": 256,
           "uniqueItems": true,
-          "items": {"$ref": "#/$defs/canonicalNonEmptyString"}
+          "$comment": "Runtime aggregate maximum is 65536 UTF-8 bytes.",
+          "items": {"$ref": "#/$defs/deckName"}
         },
         "cursor": {
           "oneOf": [
@@ -204,16 +233,16 @@
     "duplicateScope": {
       "type": "object",
       "additionalProperties": false,
-      "$comment": "firstFieldName must exactly equal fieldNames[0] from this run's verified model snapshot. Kotlin retains the complete scoped candidate-ID baseline behind a fresh opaque baselineToken; the token and its candidate/scope/model binding expire when consumed, when the run terminates or is cancelled, or when bounded provider state is evicted by rejecting the request.",
-      "required": ["kind", "modelName", "firstFieldName", "deckName", "candidates", "occurrences", "limits"],
+      "$comment": "firstFieldName must exactly equal fieldNames[0] from this run's verified model snapshot. Kotlin atomically invalidates invalidateBaselineToken, if non-null and owned by this run, before retaining the fresh replacement baselineToken. At most one unconsumed duplicate baseline may exist per run: createNotes consumes it once, the next sequential duplicate probe invalidates an abandoned all-duplicate token, and run cancellation/termination performs final cleanup. A mismatched invalidation token fails closed.",
+      "required": ["kind", "modelName", "firstFieldName", "deckName", "candidates", "occurrences", "invalidateBaselineToken", "limits"],
       "properties": {
         "kind": {"const": "duplicates"},
-        "modelName": {"$ref": "#/$defs/canonicalNonEmptyString"},
-        "firstFieldName": {"$ref": "#/$defs/canonicalNonEmptyString"},
+        "modelName": {"$ref": "#/$defs/modelName"},
+        "firstFieldName": {"$ref": "#/$defs/fieldName"},
         "deckName": {
           "oneOf": [
             {"type": "null"},
-            {"$ref": "#/$defs/canonicalNonEmptyString"}
+            {"$ref": "#/$defs/deckName"}
           ]
         },
         "candidates": {
@@ -229,6 +258,13 @@
           "minItems": 1,
           "maxItems": 100,
           "items": {"type": "integer", "minimum": 0, "maximum": 99}
+        },
+        "invalidateBaselineToken": {
+          "$comment": "Null on the first probe or immediately after a consumed createNotes token; otherwise exactly the run's sole outstanding token from the preceding all-duplicate probe.",
+          "oneOf": [
+            {"type": "null"},
+            {"$ref": "#/$defs/baselineToken"}
+          ]
         },
         "limits": {
           "type": "object",
@@ -317,7 +353,12 @@
       "required": ["assetId", "sourcePath", "preferredName", "requestedFilename", "purpose", "mediaKind", "expectedSizeBytes", "expectedSha256"],
       "properties": {
         "assetId": {"$ref": "#/$defs/assetId"},
-        "sourcePath": {"type": "string", "pattern": "^/"},
+        "sourcePath": {
+          "type": "string",
+          "maxLength": 4096,
+          "$comment": "Absolute POSIX path. NUL and UTF-16 surrogate code points are forbidden; the runtime maximum is 4096 UTF-8 bytes.",
+          "pattern": "^/[^\\u0000\\uD800-\\uDFFF]*$"
+        },
         "preferredName": {
           "$comment": "Safe extensionless addMediaFromUri prefix; dictionary media uses a deterministic digest alias.",
           "$ref": "#/$defs/filename"
@@ -386,6 +427,16 @@
         }
       }
     },
+    "uncertainMedia": {
+      "type": "object",
+      "additionalProperties": false,
+      "$comment": "The provider mutation may have committed but no safe actual filename/postcondition can be proven. The top-level error code is post_commit_uncertain with retryable=false and every later row is notAttempted.",
+      "required": ["assetId", "status"],
+      "properties": {
+        "assetId": {"$ref": "#/$defs/assetId"},
+        "status": {"const": "uncertain"}
+      }
+    },
     "notAttemptedMedia": {
       "type": "object",
       "additionalProperties": false,
@@ -398,7 +449,7 @@
     "storeMediaResult": {
       "type": "object",
       "additionalProperties": false,
-      "$comment": "notAttempted rows form a strict suffix and require a top-level error. Callback-wide anki.error is valid only before this callback mutates provider state. A provider-wide stop after any attempted mutation must use this aligned result shape so Python retains every known stored filename. Retry is allowed only when Kotlin proves no provider mutation occurred or verifies the desired postcondition; an uncertain insert is non-retryable.",
+      "$comment": "Rows are request-aligned. uncertain ends provider attempts, requires post_commit_uncertain with retryable=false, and may be the only or final row; every later row is notAttempted. notAttempted forms a strict suffix and requires a top-level error. Callback-wide anki.error is valid only before this callback's first possible provider mutation. A provider-wide stop after a possible mutation must use this aligned result shape so Python retains every known stored filename and explicit uncertainty. If any row is stored and a top-level error is present, retryable must be false. Row-local failed semantics are unchanged and remain degradable only for media_store_failed. Retry is allowed only when Kotlin proves no provider mutation occurred or verifies the desired postcondition.",
       "required": ["runId", "requestId", "results", "error"],
       "properties": {
         "runId": {"$ref": "#/$defs/runId"},
@@ -411,6 +462,7 @@
             "oneOf": [
               {"$ref": "#/$defs/storedMedia"},
               {"$ref": "#/$defs/failedMedia"},
+              {"$ref": "#/$defs/uncertainMedia"},
               {"$ref": "#/$defs/notAttemptedMedia"}
             ]
           }
@@ -433,12 +485,7 @@
           "type": "object",
           "minProperties": 1,
           "maxProperties": 64,
-          "propertyNames": {
-            "allOf": [
-              {"$ref": "#/$defs/canonicalNonEmptyString"},
-              {"maxLength": 256}
-            ]
-          },
+          "propertyNames": {"$ref": "#/$defs/fieldName"},
           "additionalProperties": {"type": "string", "maxLength": 98304}
         },
         "tags": {
@@ -458,10 +505,11 @@
       "type": "object",
       "additionalProperties": false,
       "$comment": "All byte limits are exact encoded UTF-8 counts. note content is the sum of field-name, field-value and tag bytes. envelope is the complete canonical bridge JSON envelope. Kotlin validates every declared constant before parsing provider-bound values and rejects rather than truncating.",
-      "required": ["maxNotes", "maxFieldsPerNote", "maxFieldNameUtf8Bytes", "maxFieldValueUtf8Bytes", "maxTagsPerNote", "maxTagUtf8Bytes", "maxTagsUtf8BytesPerNote", "maxNoteContentUtf8Bytes", "maxTotalContentUtf8Bytes", "maxEnvelopeUtf8Bytes"],
+      "required": ["maxNotes", "maxFieldsPerNote", "maxCardsPerNote", "maxFieldNameUtf8Bytes", "maxFieldValueUtf8Bytes", "maxTagsPerNote", "maxTagUtf8Bytes", "maxTagsUtf8BytesPerNote", "maxNoteContentUtf8Bytes", "maxTotalContentUtf8Bytes", "maxEnvelopeUtf8Bytes"],
       "properties": {
         "maxNotes": {"const": 100},
         "maxFieldsPerNote": {"const": 64},
+        "maxCardsPerNote": {"const": 64},
         "maxFieldNameUtf8Bytes": {"const": 256},
         "maxFieldValueUtf8Bytes": {"const": 98304},
         "maxTagsPerNote": {"const": 64},
@@ -487,7 +535,7 @@
       "required": ["kind", "deckName", "includeChildren", "limits"],
       "properties": {
         "kind": {"const": "exactDeck"},
-        "deckName": {"$ref": "#/$defs/canonicalNonEmptyString"},
+        "deckName": {"$ref": "#/$defs/deckName"},
         "includeChildren": {"const": false},
         "limits": {"$ref": "#/$defs/createSnapshotLimits"}
       }
@@ -509,9 +557,9 @@
       "properties": {
         "runId": {"$ref": "#/$defs/runId"},
         "requestId": {"$ref": "#/$defs/requestId"},
-        "deckName": {"$ref": "#/$defs/canonicalNonEmptyString"},
-        "modelName": {"$ref": "#/$defs/canonicalNonEmptyString"},
-        "firstFieldName": {"$ref": "#/$defs/canonicalNonEmptyString"},
+        "deckName": {"$ref": "#/$defs/deckName"},
+        "modelName": {"$ref": "#/$defs/modelName"},
+        "firstFieldName": {"$ref": "#/$defs/fieldName"},
         "baselineToken": {"$ref": "#/$defs/baselineToken"},
         "duplicateScope": {
           "oneOf": [
@@ -618,6 +666,27 @@
         }
       }
     },
+    "releaseRunStateRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "$comment": "Idempotent run-finalization command. Coordinator admission is separate from the Anki state registry: handlers never lazily create an unknown/finalized run. Under the registry lock this command sets sticky releaseRequested on a live run, so every new operation fails closed. All registered reads, local-staging jobs, and writes remain owners until they reconcile, close cursors, revoke URI grants, and delete task staging outside the registry lock. If an owner remains, the complete run state stays quarantined and the command returns deferred. Before the last owner deregisters under the lock, it registers one cleanup task; that task releases remaining resources outside the lock, then atomically removes the run and unquarantines it. With no owner, this command follows the same registered-cleanup sequence synchronously. Cleanup is exactly once, finalized run objects are removed, and later release returns absent without retaining an Anki-registry tombstone or permitting run recreation. The coordinator's finally block invokes the same transition directly if this callback fails. The transition itself performs no ContentProvider mutation.",
+      "required": ["runId", "requestId"],
+      "properties": {
+        "runId": {"$ref": "#/$defs/runId"},
+        "requestId": {"$ref": "#/$defs/requestId"}
+      }
+    },
+    "releaseRunStateResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "$comment": "released means this request atomically finalized retained state. deferred means releaseRequested is sticky but at least one provider task still owns quarantined state; repeated release remains deferred until exactly-once task finalization. absent means no state exists or deferred cleanup already finalized. Every state is a successful, idempotent acknowledgement.",
+      "required": ["runId", "requestId", "state"],
+      "properties": {
+        "runId": {"$ref": "#/$defs/runId"},
+        "requestId": {"$ref": "#/$defs/requestId"},
+        "state": {"enum": ["released", "deferred", "absent"]}
+      }
+    },
     "error": {
       "type": "object",
       "additionalProperties": false,
@@ -625,7 +694,7 @@
       "properties": {
         "runId": {"$ref": "#/$defs/runId"},
         "requestId": {"$ref": "#/$defs/requestId"},
-        "operation": {"enum": ["verifyTarget", "scanFirstFields", "storeMedia", "createNotes"]},
+        "operation": {"enum": ["verifyTarget", "scanFirstFields", "storeMedia", "createNotes", "releaseRunState"]},
         "code": {"$ref": "#/$defs/errorCode"},
         "message": {"$ref": "#/$defs/nonEmptyString"},
         "retryable": {"type": "boolean"}

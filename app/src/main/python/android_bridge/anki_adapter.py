@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any, NoReturn
 from uuid import uuid4
 
+from .anki_limits import ANKI_LIMITS_V1
 from .callbacks import AndroidAnkiCallbacks, AnkiCallbackError
 from .config_map import _REQUIRED_ANKI_FIELD_KEYS, validate_anki_request_config
 from .protocol import (
@@ -34,29 +35,58 @@ from .protocol import (
 logger = logging.getLogger(__name__)
 
 _JAPANESE_RE = re.compile(r"[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF\u3400-\u4DBF]")
-_BATCH_SIZE = 100
-_MEDIA_BATCH_SIZE = 50
-_MAX_DUPLICATE_KEY_CHARS = 4096
-_MAX_DUPLICATE_FIRST_FIELD_CHARS = 16_384
-_MAX_DUPLICATE_HITS_PER_CANDIDATE = 100
-_MAX_DUPLICATE_TOTAL_HITS = 1000
-_MAX_RAW_FIRST_FIELD_UTF8_BYTES = 64 * 1024
-_MAX_DUPLICATE_HITS_UTF8_BYTES = 1024 * 1024
-_KNOWN_VOCABULARY_PAGE_ITEMS = 256
-_KNOWN_VOCABULARY_PAGE_UTF8_BYTES = 256 * 1024
-_MAX_KNOWN_VOCABULARY_SCANNED_NOTES = 100_000
-_MAX_KNOWN_CURSOR_UTF8_BYTES = 1024
-_MAX_NOTE_FIELDS = 64
-_MAX_FIELD_NAME_UTF8_BYTES = 256
-_MAX_FIELD_VALUE_UTF8_BYTES = 96 * 1024
-_MAX_NOTE_TAGS = 64
-_MAX_TAG_UTF8_BYTES = 256
-_MAX_NOTE_TAGS_UTF8_BYTES = 8 * 1024
-_MAX_NOTE_CONTENT_UTF8_BYTES = 128 * 1024
-_MAX_CREATE_CONTENT_UTF8_BYTES = 384 * 1024
-_MAX_CREATE_ENVELOPE_UTF8_BYTES = 512 * 1024
-_MAX_MEDIA_ASSET_BYTES = 64 * 1024 * 1024
-_MAX_MEDIA_CALLBACK_BYTES = 64 * 1024 * 1024
+_NAME_LIMITS = ANKI_LIMITS_V1["names"]
+_SCAN_LIMITS = ANKI_LIMITS_V1["scanFirstFields"]
+_MEDIA_LIMITS = ANKI_LIMITS_V1["storeMedia"]
+_NOTE_LIMITS = ANKI_LIMITS_V1["createNotes"]
+_CREATE_CALL_LIMITS = ANKI_LIMITS_V1["createCall"]
+
+_MAX_DECK_NAME_UTF8_BYTES = _NAME_LIMITS["deck"]["maxUtf8Bytes"]
+_MAX_MODEL_NAME_UTF8_BYTES = _NAME_LIMITS["model"]["maxUtf8Bytes"]
+_MAX_FIELD_NAME_UTF8_BYTES = _NAME_LIMITS["field"]["maxUtf8Bytes"]
+_MAX_TARGET_FIELDS = _NAME_LIMITS["targetFields"]["maxItems"]
+_MAX_TARGET_FIELDS_UTF8_BYTES = _NAME_LIMITS["targetFields"]["maxTotalUtf8Bytes"]
+_MAX_EXCLUDED_DECKS = _NAME_LIMITS["excludedDecks"]["maxItems"]
+_MAX_EXCLUDED_DECKS_UTF8_BYTES = _NAME_LIMITS["excludedDecks"]["maxTotalUtf8Bytes"]
+
+_BATCH_SIZE = _NOTE_LIMITS["maxNotes"]
+_MEDIA_BATCH_SIZE = _MEDIA_LIMITS["maxAssets"]
+_MAX_DUPLICATE_KEY_CHARS = _SCAN_LIMITS["duplicateKeyMaxCodePoints"]
+_MAX_DUPLICATE_FIRST_FIELD_CHARS = _SCAN_LIMITS["duplicateFirstFieldMaxCodePoints"]
+_MAX_DUPLICATE_HITS_PER_CANDIDATE = _SCAN_LIMITS["duplicateHitsPerCandidateMaxItems"]
+_MAX_DUPLICATE_TOTAL_HITS = _SCAN_LIMITS["duplicateHitsTotalMaxItems"]
+_MAX_RAW_FIRST_FIELD_UTF8_BYTES = _SCAN_LIMITS["firstFieldMaxUtf8Bytes"]
+_MAX_DUPLICATE_HITS_UTF8_BYTES = _SCAN_LIMITS["duplicateHitsTotalMaxUtf8Bytes"]
+_KNOWN_VOCABULARY_PAGE_ITEMS = _SCAN_LIMITS["knownPageMaxItems"]
+_KNOWN_VOCABULARY_PAGE_UTF8_BYTES = _SCAN_LIMITS["knownPageMaxUtf8Bytes"]
+_MAX_KNOWN_VOCABULARY_SCANNED_NOTES = _SCAN_LIMITS["knownTotalScannedNotes"]
+_MAX_KNOWN_CURSOR_UTF8_BYTES = _SCAN_LIMITS["knownCursorMaxUtf8Bytes"]
+_MAX_NOTE_FIELDS = _NOTE_LIMITS["maxFieldsPerNote"]
+_MAX_CARDS_PER_NOTE = _NOTE_LIMITS["maxCardsPerNote"]
+_MAX_FIELD_VALUE_UTF8_BYTES = _NOTE_LIMITS["fieldValueMaxUtf8Bytes"]
+_MAX_NOTE_TAGS = _NOTE_LIMITS["maxTagsPerNote"]
+_MAX_TAG_UTF8_BYTES = _NOTE_LIMITS["tagMaxUtf8Bytes"]
+_MAX_NOTE_TAGS_UTF8_BYTES = _NOTE_LIMITS["tagsPerNoteMaxUtf8Bytes"]
+_MAX_NOTE_CONTENT_UTF8_BYTES = _NOTE_LIMITS["noteContentMaxUtf8Bytes"]
+_MAX_CREATE_CONTENT_UTF8_BYTES = _NOTE_LIMITS["callbackContentMaxUtf8Bytes"]
+_MAX_CREATE_ENVELOPE_UTF8_BYTES = _NOTE_LIMITS["requestEnvelopeMaxUtf8Bytes"]
+# One engine create call is preflighted after the pipeline's cached target
+# verification and before progress, hashing, or a create-phase provider
+# callback. These ceilings keep the retained Python
+# note graph in the low tens of MiB on a phone while still allowing twenty
+# maximum-size provider note batches. Media is streamed, but bounding its
+# complete workload prevents a single curation confirmation from scheduling
+# unbounded file I/O and private-snapshot storage. These constants are the
+# source for the planned generated cross-language limits manifest.
+_MAX_CREATE_CALL_SOURCE_ITEMS = _CREATE_CALL_LIMITS["maxSourceItems"]
+_MAX_CREATE_CALL_SOURCE_UTF8_BYTES = _CREATE_CALL_LIMITS["sourceMaxUtf8Bytes"]
+_MAX_CREATE_CALL_NOTE_UTF8_BYTES = _CREATE_CALL_LIMITS["builtNotesMaxUtf8Bytes"]
+_MAX_CREATE_CALL_MEDIA_REFS = _CREATE_CALL_LIMITS["maxMediaReferences"]
+_MAX_CREATE_CALL_MEDIA_BYTES = _CREATE_CALL_LIMITS["mediaWorkMaxBytes"]
+_MAX_MEDIA_ASSET_BYTES = _MEDIA_LIMITS["maxAssetBytes"]
+_MAX_MEDIA_CALLBACK_BYTES = _MEDIA_LIMITS["maxTotalBytes"]
+_MAX_MEDIA_FILENAME_UTF8_BYTES = _MEDIA_LIMITS["filenameMaxUtf8Bytes"]
+_MAX_MEDIA_SOURCE_PATH_UTF8_BYTES = _MEDIA_LIMITS["sourcePathMaxUtf8Bytes"]
 # Compatibility alias for callers/tests which imported the original card-only
 # constant. The limit now applies identically to card and dictionary assets.
 _MAX_CARD_MEDIA_BYTES = _MAX_MEDIA_ASSET_BYTES
@@ -164,6 +194,54 @@ class _PendingNote:
     first_field: str
     content_utf8_bytes: int
     source_index: int
+    # Preflight can carry an exact worst-case wire representation while the
+    # logical identity above remains the one produced by the unmutated card.
+    # Provider filename rewrites need their longest valid representation for
+    # envelope sizing. Their equality relation is modeled independently below.
+    wire_key: str | None = None
+    wire_first_field: str | None = None
+    # Preflight may need to model equality after a successful dictionary-media
+    # rewrite. This is deliberately separate from the runtime candidate above:
+    # provider duplicate semantics remain (normalized key, exact first field).
+    preflight_block_identity: tuple[str, tuple[tuple[str, str], ...]] | None = None
+
+
+@dataclass(frozen=True)
+class _CreatePreflightPlan:
+    """Filesystem snapshot needed to preserve preflight rewrite assumptions."""
+
+    dictionary_media_paths: dict[str, Path]
+    dictionary_media_sources: tuple[str, ...]
+    pending_media_name_reservations: dict[str, tuple[str, str]]
+
+
+@dataclass
+class _MediaWorkBudget:
+    """Actual bytes read while preparing all media for one create call."""
+
+    consumed_bytes: int = 0
+
+    def consume(self, byte_count: int) -> None:
+        self.consumed_bytes += byte_count
+        if self.consumed_bytes > _MAX_CREATE_CALL_MEDIA_BYTES:
+            _protocol_error(
+                "create_call_too_large",
+                "The create call exceeds its runtime media-work limit",
+            )
+
+
+@dataclass(frozen=True)
+class _PreparedCardMedia:
+    assets: tuple[_MediaAsset, ...]
+    originals_by_id: dict[str, str]
+    refs: dict[str, list[_CardMediaRef]]
+
+
+@dataclass(frozen=True)
+class _PreparedDictionaryMedia:
+    assets: tuple[_MediaAsset, ...]
+    sources_by_id: dict[str, str]
+    confirmed_missing_sources: frozenset[str]
 
 
 @dataclass(frozen=True)
@@ -181,6 +259,17 @@ class _StoreAssetsOutcome:
 
 def _protocol_error(code: str, message: str) -> NoReturn:
     raise BridgeProtocolError(code, message)
+
+
+def _strict_utf8_bytes(value: str, *, context: str, code: str) -> bytes:
+    """Encode one caller-owned string without leaking Python codec failures."""
+
+    try:
+        return value.encode("utf-8")
+    except UnicodeEncodeError as exc:
+        raise BridgeProtocolError(
+            code, f"{context} contains an invalid Unicode scalar"
+        ) from exc
 
 
 def _expect_exact_keys(
@@ -213,6 +302,99 @@ def _expect_string_list(
     return result
 
 
+def _expect_bounded_utf8(
+    value: object,
+    *,
+    context: str,
+    max_bytes: int,
+    code: str,
+    nonempty: bool = True,
+) -> str:
+    if not isinstance(value, str) or (nonempty and not value):
+        _protocol_error(code, f"{context} must be a string")
+    encoded = _strict_utf8_bytes(value, context=context, code=code)
+    if len(encoded) > max_bytes:
+        _protocol_error(code, f"{context} exceeds its UTF-8 byte limit")
+    return value
+
+
+def _expect_media_source_path(
+    value: object,
+    *,
+    context: str,
+    code: str,
+) -> str:
+    """Validate the POSIX path contract before any ``Path`` operation."""
+
+    source_path = _expect_bounded_utf8(
+        value,
+        context=context,
+        max_bytes=_MAX_MEDIA_SOURCE_PATH_UTF8_BYTES,
+        code=code,
+    )
+    if "\0" in source_path or not Path(source_path).is_absolute():
+        _protocol_error(code, f"{context} must be an absolute NUL-free path")
+    return source_path
+
+
+def _expect_bounded_canonical_name(
+    value: object,
+    *,
+    context: str,
+    max_bytes: int,
+    code: str,
+) -> str:
+    name = _expect_bounded_utf8(
+        value,
+        context=context,
+        max_bytes=max_bytes,
+        code=code,
+    )
+    if (
+        name != name.strip()
+        or name != unicodedata.normalize("NFC", name)
+        or any(unicodedata.category(character).startswith("C") for character in name)
+    ):
+        _protocol_error(code, f"{context} is not canonical")
+    return name
+
+
+def _expect_bounded_string_list(
+    value: object,
+    *,
+    context: str,
+    max_items: int,
+    max_item_bytes: int,
+    max_total_bytes: int,
+    code: str,
+    unique: bool = True,
+) -> list[str]:
+    if not isinstance(value, list) or len(value) > max_items:
+        _protocol_error(code, f"{context} exceeds its item limit")
+    result: list[str] = []
+    total_bytes = 0
+    for index, item in enumerate(value):
+        bounded = _expect_bounded_canonical_name(
+            item,
+            context=f"{context}[{index}]",
+            max_bytes=max_item_bytes,
+            code=code,
+        )
+        total_bytes += len(
+            _strict_utf8_bytes(
+                bounded,
+                context=f"{context}[{index}]",
+                code=code,
+            )
+        )
+        if total_bytes > max_total_bytes:
+            _protocol_error(code, f"{context} exceeds its total UTF-8 byte limit")
+        result.append(bounded)
+    if unique and len(set(result)) != len(result):
+        _protocol_error(code, f"{context} must be unique")
+    return result
+
+
 def _expect_positive_int(value: object, *, context: str) -> int:
     converted = normalize_integral_json_number(value)
     if converted is None or converted <= 0:
@@ -229,7 +411,9 @@ def _expect_media_basename(
         _protocol_error(code, f"{context} must be a non-empty string")
     filename = value
     if (
-        filename in {".", ".."}
+        len(_strict_utf8_bytes(filename, context=context, code=code))
+        > _MAX_MEDIA_FILENAME_UTF8_BYTES
+        or filename in {".", ".."}
         or "/" in filename
         or "\\" in filename
         or any(
@@ -310,11 +494,38 @@ def _provider_preferred_name(filename: str) -> str:
     return preferred if len(preferred) >= 2 else f"{preferred}_"
 
 
-def _dictionary_provider_preferred_name(logical_filename: str) -> str:
+def _dictionary_provider_preferred_name(
+    logical_filename: str,
+    *,
+    context: str = "dictionary media filename",
+    code: str = "invalid_note",
+) -> str:
     """Return a safe deterministic prefix for an arbitrary Yomitan basename."""
 
-    digest = hashlib.sha256(logical_filename.encode("utf-8")).hexdigest()
+    digest = hashlib.sha256(
+        _strict_utf8_bytes(logical_filename, context=context, code=code)
+    ).hexdigest()
     return f"anki_miner_dict_{digest}"
+
+
+def _provider_rename_candidate_stem(filename: str) -> str | None:
+    try:
+        _expect_filename(
+            filename,
+            context="reserved dictionary media filename",
+            code="invalid_note",
+        )
+    except BridgeProtocolError:
+        return None
+    path = Path(filename)
+    return path.stem if path.suffix else None
+
+
+def _is_possible_provider_rename(filename: str, preferred: str) -> bool:
+    """Whether ``filename`` is inside one provider prefix's accepted namespace."""
+
+    stem = _provider_rename_candidate_stem(filename)
+    return stem is not None and stem.startswith(f"{preferred}_")
 
 
 def _content_addressed_name_from_digest(filename: str, sha1_prefix: str) -> str:
@@ -415,12 +626,62 @@ class AndroidAnkiAdapter:
         self.last_skipped_duplicates = 0
         self.last_media_store_failures = 0
         self._verified_field_names: tuple[str, ...] | None = None
-        self._issued_baseline_tokens: set[str] = set()
-        self._consumed_baseline_tokens: set[str] = set()
+        self._outstanding_baseline_token: str | None = None
         self._existing_vocab_cache: set[str] | None = None
         self._dict_media_uploaded: set[str] = set()
         self._dict_media_actual_names: dict[str, str] = {}
-        self._stored_media_name_owners: dict[str, str] = {}
+        self._stored_media_name_owners: dict[str, tuple[str, str]] = {}
+        self._reserved_media_name_owners: dict[str, tuple[str, str]] = {}
+        self._closed = False
+
+    def __enter__(self) -> AndroidAnkiAdapter:
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        self.close()
+
+    def close(self) -> None:
+        """Best-effort, idempotent release of all state scoped to this run.
+
+        The composition layer registers the adapter with its ``ExitStack``.
+        Cleanup deliberately cannot replace a successful mining result or the
+        primary mining exception. Kotlin's coordinator also releases its run
+        registry directly in ``finally`` in case this callback cannot arrive.
+        """
+
+        if self._closed:
+            return
+        self._closed = True
+        try:
+            payload = self._callbacks.release_run_state()
+            result = _expect_exact_keys(
+                payload,
+                {"runId", "requestId", "state"},
+                context="releaseRunState result",
+            )
+            if not isinstance(result["state"], str) or result["state"] not in {
+                "released",
+                "deferred",
+                "absent",
+            }:
+                _protocol_error(
+                    "invalid_anki_response",
+                    "releaseRunState state is invalid",
+                )
+        except BaseException:
+            # This is an unusually intentional BaseException boundary: even a
+            # malformed cancellation response during teardown must not mask
+            # the already-determined mining result. The coordinator's direct
+            # registry release is the authoritative fallback.
+            logger.exception("Failed to release Kotlin Anki run state")
+        finally:
+            self._verified_field_names = None
+            self._outstanding_baseline_token = None
+            self._existing_vocab_cache = None
+            self._dict_media_uploaded.clear()
+            self._dict_media_actual_names.clear()
+            self._stored_media_name_owners.clear()
+            self._reserved_media_name_owners.clear()
 
     def _raise_if_cancelled(self, operation: str) -> None:
         if self._cancellation_check():
@@ -430,10 +691,17 @@ class AndroidAnkiAdapter:
                 False,
             )
 
-    def _stream_media_digest(self, source_path: Path) -> _MediaDigest:
+    def _stream_media_digest(
+        self, source_path: Path, work_budget: _MediaWorkBudget
+    ) -> _MediaDigest:
         """Hash one bounded regular media file without retaining its contents."""
 
         self._raise_if_cancelled("storeMedia")
+        _expect_media_source_path(
+            str(source_path),
+            context="storeMedia sourcePath",
+            code="invalid_anki_request",
+        )
         path_stat = source_path.stat()
         if not stat.S_ISREG(path_stat.st_mode):
             raise FileNotFoundError(source_path)
@@ -484,6 +752,7 @@ class AndroidAnkiAdapter:
                         "media_too_large",
                         f"Media exceeds the {_MAX_MEDIA_ASSET_BYTES}-byte limit",
                     )
+                work_budget.consume(len(chunk))
                 sha1.update(chunk)
                 sha256.update(chunk)
             final_stat = os.fstat(source.fileno())
@@ -527,12 +796,32 @@ class AndroidAnkiAdapter:
             marker = self.config.card_type_marker_fields.get(self.config.card_type, "")
             if marker:
                 required.add(marker)
+        deck_name = _expect_bounded_canonical_name(
+            self.config.anki_deck_name,
+            context="verifyTarget deckName",
+            max_bytes=_MAX_DECK_NAME_UTF8_BYTES,
+            code="invalid_anki_request",
+        )
+        model_name = _expect_bounded_canonical_name(
+            self.config.anki_note_type,
+            context="verifyTarget modelName",
+            max_bytes=_MAX_MODEL_NAME_UTF8_BYTES,
+            code="invalid_anki_request",
+        )
+        required_fields = _expect_bounded_string_list(
+            sorted(required),
+            context="verifyTarget requiredFields",
+            max_items=_MAX_TARGET_FIELDS,
+            max_item_bytes=_MAX_FIELD_NAME_UTF8_BYTES,
+            max_total_bytes=_MAX_TARGET_FIELDS_UTF8_BYTES,
+            code="invalid_anki_request",
+        )
         try:
             payload = self._callbacks.verify_target(
                 {
-                    "deckName": self.config.anki_deck_name,
-                    "modelName": self.config.anki_note_type,
-                    "requiredFields": sorted(required),
+                    "deckName": deck_name,
+                    "modelName": model_name,
+                    "requiredFields": required_fields,
                 }
             )
         except AnkiCallbackError as error:
@@ -545,11 +834,14 @@ class AndroidAnkiAdapter:
         )
         _expect_positive_int(result["deckId"], context="deckId")
         _expect_positive_int(result["modelId"], context="modelId")
-        fields = _expect_string_list(
+        fields = _expect_bounded_string_list(
             result["fieldNames"],
             context="fieldNames",
+            max_items=_MAX_TARGET_FIELDS,
+            max_item_bytes=_MAX_FIELD_NAME_UTF8_BYTES,
+            max_total_bytes=_MAX_TARGET_FIELDS_UTF8_BYTES,
+            code="invalid_anki_response",
             unique=True,
-            nonempty=True,
         )
         if not fields:
             _protocol_error("invalid_anki_response", "fieldNames must not be empty")
@@ -572,6 +864,14 @@ class AndroidAnkiAdapter:
     def _scan_known_vocabulary_page(
         self, cursor: dict[str, Any] | None
     ) -> tuple[list[str], int, dict[str, Any] | None]:
+        excluded_decks = _expect_bounded_string_list(
+            list(self.config.excluded_decks),
+            context="scanFirstFields excludedDecks",
+            max_items=_MAX_EXCLUDED_DECKS,
+            max_item_bytes=_MAX_DECK_NAME_UTF8_BYTES,
+            max_total_bytes=_MAX_EXCLUDED_DECKS_UTF8_BYTES,
+            code="invalid_anki_request",
+        )
         limits = {
             "maxScannedNotes": _KNOWN_VOCABULARY_PAGE_ITEMS,
             "maxTotalScannedNotes": _MAX_KNOWN_VOCABULARY_SCANNED_NOTES,
@@ -584,7 +884,7 @@ class AndroidAnkiAdapter:
                 {
                     "scope": {
                         "kind": "knownVocabulary",
-                        "excludedDecks": list(self.config.excluded_decks),
+                        "excludedDecks": excluded_decks,
                         "cursor": cursor,
                         "limits": limits,
                     }
@@ -597,9 +897,7 @@ class AndroidAnkiAdapter:
             {"runId", "requestId", "firstFields", "scannedNotes", "nextCursor"},
             context="known-vocabulary page result",
         )
-        raw_fields = _expect_string_list(
-            result["firstFields"], context="firstFields"
-        )
+        raw_fields = _expect_string_list(result["firstFields"], context="firstFields")
         if len(raw_fields) > _KNOWN_VOCABULARY_PAGE_ITEMS:
             _protocol_error(
                 "invalid_anki_response",
@@ -607,7 +905,13 @@ class AndroidAnkiAdapter:
             )
         total_utf8_bytes = 0
         for index, raw_field in enumerate(raw_fields):
-            raw_bytes = len(raw_field.encode("utf-8"))
+            raw_bytes = len(
+                _strict_utf8_bytes(
+                    raw_field,
+                    context=f"Known-vocabulary first field {index}",
+                    code="invalid_anki_response",
+                )
+            )
             if raw_bytes > _MAX_RAW_FIRST_FIELD_UTF8_BYTES:
                 _protocol_error(
                     "invalid_anki_response",
@@ -645,7 +949,16 @@ class AndroidAnkiAdapter:
                 context="known-vocabulary cursor token",
                 nonempty=True,
             )
-            if len(token.encode("utf-8")) > _MAX_KNOWN_CURSOR_UTF8_BYTES:
+            if (
+                len(
+                    _strict_utf8_bytes(
+                        token,
+                        context="Known-vocabulary cursor token",
+                        code="invalid_anki_response",
+                    )
+                )
+                > _MAX_KNOWN_CURSOR_UTF8_BYTES
+            ):
                 _protocol_error(
                     "invalid_anki_response",
                     "Known-vocabulary cursor token is too large",
@@ -742,8 +1055,9 @@ class AndroidAnkiAdapter:
 
         stored: dict[str, str] = {}
         actual_names: set[str] = set()
-        pending_name_owners: dict[str, str] = {}
+        pending_name_owners: dict[str, tuple[str, str]] = {}
         saw_not_attempted = False
+        saw_uncertain = False
         for index, (row_value, asset) in enumerate(zip(rows, assets, strict=True)):
             if not isinstance(row_value, dict):
                 _protocol_error(
@@ -754,6 +1068,11 @@ class AndroidAnkiAdapter:
                 _protocol_error(
                     "invalid_anki_response",
                     "notAttempted storeMedia rows must form a strict suffix",
+                )
+            if saw_uncertain and status != "notAttempted":
+                _protocol_error(
+                    "invalid_anki_response",
+                    "An uncertain storeMedia row must end provider attempts",
                 )
             if status == "stored":
                 row = _expect_exact_keys(
@@ -782,14 +1101,21 @@ class AndroidAnkiAdapter:
                         "media_name_collision",
                         "storeMedia filename collides with another requested media name",
                     )
+                owner = (asset.purpose, asset.original_name)
+                reserved_owner = self._reserved_media_name_owners.get(actual)
+                if reserved_owner is not None and reserved_owner != owner:
+                    _protocol_error(
+                        "media_name_collision",
+                        "storeMedia filename collides with reserved dictionary media",
+                    )
                 prior_owner = self._stored_media_name_owners.get(actual)
-                if prior_owner is not None and prior_owner != asset.original_name:
+                if prior_owner is not None and prior_owner != owner:
                     _protocol_error(
                         "media_name_collision",
                         "storeMedia filename was already assigned to different media",
                     )
                 actual_names.add(actual)
-                pending_name_owners[actual] = asset.original_name
+                pending_name_owners[actual] = owner
                 stored[asset.asset_id] = actual
             elif status == "failed":
                 row = _expect_exact_keys(
@@ -803,6 +1129,13 @@ class AndroidAnkiAdapter:
                 logger.warning(
                     "Failed to store media asset %s: %s", asset.original_name, error
                 )
+            elif status == "uncertain":
+                row = _expect_exact_keys(
+                    row_value,
+                    {"assetId", "status"},
+                    context=f"storeMedia result {index}",
+                )
+                saw_uncertain = True
             elif status == "notAttempted":
                 row = _expect_exact_keys(
                     row_value,
@@ -827,18 +1160,127 @@ class AndroidAnkiAdapter:
             if raw_error is None
             else _expect_error_detail(raw_error, operation="storeMedia")
         )
-        if saw_not_attempted and error is None:
+        if (saw_uncertain or saw_not_attempted) and error is None:
             _protocol_error(
                 "invalid_anki_response",
-                "notAttempted storeMedia rows require a top-level error",
+                "uncertain/notAttempted storeMedia rows require a top-level error",
             )
-        if error is not None and not saw_not_attempted:
+        if error is not None and not (saw_uncertain or saw_not_attempted):
             _protocol_error(
                 "invalid_anki_response",
-                "storeMedia top-level errors require a notAttempted suffix",
+                "storeMedia top-level errors require an uncertain row or notAttempted suffix",
             )
+        if error is not None:
+            if saw_uncertain and (
+                error.code != "post_commit_uncertain" or error.retryable
+            ):
+                _protocol_error(
+                    "invalid_anki_response",
+                    "Uncertain media requires a non-retryable post-commit error",
+                )
+            if error.code == "post_commit_uncertain" and not saw_uncertain:
+                _protocol_error(
+                    "invalid_anki_response",
+                    "A post-commit media error requires an uncertain row",
+                )
+            if stored and error.retryable:
+                _protocol_error(
+                    "invalid_anki_response",
+                    "A partial media write cannot be declared safely retryable",
+                )
         self._stored_media_name_owners.update(pending_name_owners)
         return _StoreAssetsOutcome(stored, error)
+
+    def _validate_asset_provider_namespaces(
+        self,
+        assets: Sequence[_MediaAsset],
+        *,
+        additional_reservations: Mapping[str, tuple[str, str]] | None = None,
+    ) -> None:
+        """Prove all accepted provider results are owner-disjoint pre-callback."""
+
+        claim_owners: dict[str, set[tuple[str, str]]] = {}
+
+        def add_claim(name: str, owner: tuple[str, str]) -> None:
+            claim_owners.setdefault(name, set()).add(owner)
+
+        for name, owner in self._reserved_media_name_owners.items():
+            add_claim(name, owner)
+        for name, owner in (additional_reservations or {}).items():
+            add_claim(name, owner)
+        for name, owner in self._stored_media_name_owners.items():
+            add_claim(name, owner)
+        asset_owners: list[tuple[str, str]] = []
+        for asset in assets:
+            owner = (asset.purpose, asset.original_name)
+            asset_owners.append(owner)
+            add_claim(asset.requested_name, owner)
+            add_claim(asset.original_name, owner)
+
+        namespace_events: list[
+            tuple[
+                str,
+                int,
+                tuple[str, str] | set[tuple[str, str]],
+            ]
+        ] = [
+            (f"{asset.preferred_name}_", 0, owner)
+            for asset, owner in zip(assets, asset_owners, strict=True)
+        ]
+        for claimed_name, owners in claim_owners.items():
+            stem = _provider_rename_candidate_stem(claimed_name)
+            if stem is not None:
+                namespace_events.append((stem, 1, owners))
+
+        # A lexical sweep models a compact prefix trie without allocating one
+        # dictionary node per filename character. Namespace events sort before
+        # equal concrete claims and remain on the stack for every descendant.
+        active_prefixes: list[tuple[str, tuple[str, str]]] = []
+        for value, kind, event_owners in sorted(
+            namespace_events,
+            key=lambda event: (event[0], event[1]),
+        ):
+            while active_prefixes and not value.startswith(active_prefixes[-1][0]):
+                active_prefixes.pop()
+            if kind == 0:
+                owner = event_owners
+                if not isinstance(owner, tuple):
+                    _protocol_error(
+                        "invalid_anki_request",
+                        "Media provider namespace owner is invalid",
+                    )
+                if any(active_owner != owner for _, active_owner in active_prefixes):
+                    _protocol_error(
+                        "media_name_collision",
+                        "Media provider rename namespaces overlap",
+                    )
+                active_prefixes.append((value, owner))
+            else:
+                owners = event_owners
+                if not isinstance(owners, set):
+                    _protocol_error(
+                        "invalid_anki_request",
+                        "Media provider claim owners are invalid",
+                    )
+                if any(
+                    claimed_owner != active_owner
+                    for _, active_owner in active_prefixes
+                    for claimed_owner in owners
+                ):
+                    _protocol_error(
+                        "media_name_collision",
+                        "Media provider namespace contains differently-owned media",
+                    )
+
+        for asset, owner in zip(assets, asset_owners, strict=True):
+            if any(
+                claimed_owner != owner
+                for claimed_owner in claim_owners.get(asset.requested_name, ())
+            ):
+                _protocol_error(
+                    "media_name_collision",
+                    "Media direct-name fallback collides with differently-owned media",
+                )
 
     def _store_assets(self, assets: list[_MediaAsset]) -> _StoreAssetsOutcome:
         if not assets:
@@ -879,7 +1321,11 @@ class AndroidAnkiAdapter:
                 code="invalid_anki_request",
             )
             expected_preferred = (
-                _dictionary_provider_preferred_name(asset.original_name)
+                _dictionary_provider_preferred_name(
+                    asset.original_name,
+                    context=f"storeMedia asset {index} originalName",
+                    code="invalid_anki_request",
+                )
                 if asset.purpose == "dictionary"
                 else _provider_preferred_name(asset.requested_name)
             )
@@ -897,10 +1343,11 @@ class AndroidAnkiAdapter:
                         "media_name_collision",
                         "Requested media names collide before provider insertion",
                     )
-            if not Path(asset.source_path).is_absolute():
-                _protocol_error(
-                    "invalid_anki_request", "Media source paths must be absolute"
-                )
+            _expect_media_source_path(
+                asset.source_path,
+                context=f"storeMedia asset {index} sourcePath",
+                code="invalid_anki_request",
+            )
             if (
                 type(asset.expected_size_bytes) is not int
                 or not 0 <= asset.expected_size_bytes <= _MAX_MEDIA_ASSET_BYTES
@@ -909,6 +1356,8 @@ class AndroidAnkiAdapter:
                 _protocol_error(
                     "invalid_anki_request", "Media integrity metadata is invalid"
                 )
+
+        self._validate_asset_provider_namespaces(assets)
 
         stored: dict[str, str] = {}
         limits = {
@@ -933,6 +1382,11 @@ class AndroidAnkiAdapter:
                     ),
                 )
             except AnkiCallbackError as error:
+                if error.code == "post_commit_uncertain":
+                    _protocol_error(
+                        "invalid_anki_response",
+                        "Post-commit uncertainty requires an aligned storeMedia result",
+                    )
                 return _StoreAssetsOutcome(stored, error)
             chunk_outcome = self._parse_store_media_result(payload, chunk)
             if stored.keys() & chunk_outcome.stored.keys():
@@ -945,7 +1399,13 @@ class AndroidAnkiAdapter:
                 return _StoreAssetsOutcome(stored, chunk_outcome.error)
         return _StoreAssetsOutcome(stored)
 
-    def _store_card_media(self, word_data_list: Sequence[Any]) -> set[str]:
+    def _prepare_card_media(
+        self,
+        word_data_list: Sequence[Any],
+        work_budget: _MediaWorkBudget,
+    ) -> _PreparedCardMedia:
+        """Hash and validate every card asset without provider side effects."""
+
         from anki_miner.services.anki_media_store import (
             _MEDIA_FIELD_ATTRS,
         )
@@ -961,6 +1421,11 @@ class AndroidAnkiAdapter:
                 source_path = getattr(media, path_attr)
                 if not filename or not source_path:
                     continue
+                _expect_media_source_path(
+                    str(source_path),
+                    context="create-call card media source path",
+                    code="invalid_note",
+                )
                 path = Path(source_path)
                 try:
                     resolved_path = path.resolve()
@@ -989,7 +1454,7 @@ class AndroidAnkiAdapter:
             unreadable: list[tuple[Path, OSError]] = []
             for source_path in referenced_paths:
                 try:
-                    digest = self._stream_media_digest(source_path)
+                    digest = self._stream_media_digest(source_path, work_budget)
                     readable.append((source_path, digest))
                 except OSError as error:
                     unreadable.append((source_path, error))
@@ -1033,17 +1498,22 @@ class AndroidAnkiAdapter:
                 )
             )
 
-        outcome = self._store_assets(assets)
+        return _PreparedCardMedia(tuple(assets), originals_by_id, refs)
+
+    def _store_prepared_card_media(self, prepared: _PreparedCardMedia) -> set[str]:
+        """Store a fully prepared card-media plan and apply acknowledgements."""
+
+        outcome = self._store_assets(list(prepared.assets))
         stored_names: set[str] = set()
         renamed_originals: set[str] = set()
         for asset_id, actual in outcome.stored.items():
-            original = originals_by_id[asset_id]
+            original = prepared.originals_by_id[asset_id]
             renamed_originals.add(original)
             stored_names.add(actual)
-            for ref in refs.get(original, []):
+            for ref in prepared.refs.get(original, []):
                 setattr(ref.media, ref.filename_attr, actual)
 
-        self.last_media_store_failures = len(refs) - len(renamed_originals)
+        self.last_media_store_failures = len(prepared.refs) - len(renamed_originals)
         if outcome.error is not None:
             _raise_callback_error(outcome.error)
         return stored_names
@@ -1070,6 +1540,102 @@ class AndroidAnkiAdapter:
             return tag[: src_match.start(1)] + escaped_actual + tag[src_match.end(1) :]
 
         return _DICT_MEDIA_IMG_RE.sub(rewrite_tag, value)
+
+    @staticmethod
+    def _canonical_dictionary_first_field_identity(
+        value: str, canonical_sources: set[str]
+    ) -> tuple[tuple[str, str], ...] | None:
+        """Model exact first-field equality after source-specific rewrites.
+
+        Literal HTML remains byte-exact. Only the encoded contents of a marked
+        ``src`` which can be rewritten become a structural source token. Thus
+        ``dict__a.png`` and ``dict__&#97;.png`` group together for the same
+        upload, while distinct logical sources remain distinct regardless of
+        the synthetic longest filename used for callback byte sizing.
+        """
+
+        if not canonical_sources:
+            return None
+        from anki_miner.services.anki_media_store import (
+            _DICT_MEDIA_IMG_RE,
+            _IMG_SRC_RE,
+        )
+
+        pieces: list[tuple[str, str]] = []
+        cursor = 0
+        replaced = False
+        for tag_match in _DICT_MEDIA_IMG_RE.finditer(value):
+            tag = tag_match.group(0)
+            src_match = _IMG_SRC_RE.search(tag)
+            if src_match is None:
+                continue
+            source = html_unescape(src_match.group(1))
+            if source not in canonical_sources:
+                continue
+            source_start = tag_match.start() + src_match.start(1)
+            source_end = tag_match.start() + src_match.end(1)
+            pieces.append(("literal", value[cursor:source_start]))
+            pieces.append(("dictionarySource", source))
+            cursor = source_end
+            replaced = True
+        if not replaced:
+            return None
+        pieces.append(("literal", value[cursor:]))
+        return tuple(pieces)
+
+    def _pending_dictionary_media_reservations(
+        self,
+        sources: Sequence[str],
+        upload_sources: set[str],
+    ) -> dict[str, tuple[str, str]]:
+        """Validate and stage dictionary basenames without mutating run state."""
+
+        pending: dict[str, tuple[str, str]] = {}
+        for source in sources:
+            owner = ("dictionary", source)
+            reserved_owner = self._reserved_media_name_owners.get(source)
+            if reserved_owner is not None and reserved_owner != owner:
+                _protocol_error(
+                    "media_name_collision",
+                    "Dictionary media filename is reserved by different media",
+                )
+            stored_owner = self._stored_media_name_owners.get(source)
+            if stored_owner is not None and stored_owner != owner:
+                _protocol_error(
+                    "media_name_collision",
+                    "Dictionary media filename aliases provider-stored media",
+                )
+            pending[source] = owner
+
+        reservations = {**self._reserved_media_name_owners, **pending}
+        preferred_owners: dict[str, tuple[str, str]] = {}
+        for source in upload_sources:
+            preferred = _dictionary_provider_preferred_name(source)
+            owner = ("dictionary", source)
+            prior_owner = preferred_owners.setdefault(preferred, owner)
+            if prior_owner != owner:
+                _protocol_error(
+                    "media_name_collision",
+                    "Dictionary media provider prefixes collide",
+                )
+
+        # Every dictionary provider prefix has the same fixed length. Indexing
+        # by that prefix avoids an O(sources^2) scan at the 8,000-reference cap.
+        preferred_length = len(_dictionary_provider_preferred_name(""))
+        for reserved_name, reserved_owner in reservations.items():
+            stem = Path(reserved_name).stem
+            preferred = stem[:preferred_length]
+            upload_owner = preferred_owners.get(preferred)
+            if (
+                upload_owner is not None
+                and upload_owner != reserved_owner
+                and _is_possible_provider_rename(reserved_name, preferred)
+            ):
+                _protocol_error(
+                    "media_name_collision",
+                    "Dictionary media filename overlaps a provider rename namespace",
+                )
+        return pending
 
     def _rewrite_dictionary_payloads(self, word_data_list: Sequence[Any]) -> list[Any]:
         from dataclasses import replace
@@ -1110,45 +1676,52 @@ class AndroidAnkiAdapter:
             rewritten_payloads.append(item)
         return rewritten_payloads
 
-    def _store_dictionary_media(self, word_data_list: Sequence[Any]) -> list[Any]:
+    def _prepare_dictionary_media(
+        self,
+        preflight_plan: _CreatePreflightPlan,
+        work_budget: _MediaWorkBudget,
+    ) -> _PreparedDictionaryMedia:
+        """Hash the complete dictionary-media plan before provider mutation."""
+
         from anki_miner.services.anki_media_store import (
-            _extract_dict_media_srcs,
             _resolve_dict_media_path,
         )
 
-        seen: set[str] = set()
-        sources: list[str] = []
-        for item in word_data_list:
-            for html_field in (
-                item.definition,
-                item.extra_fields.get("glossary") if item.extra_fields else None,
-            ):
-                if not isinstance(html_field, str):
-                    continue
-                for source in _extract_dict_media_srcs(html_field):
-                    if source not in self._dict_media_uploaded and source not in seen:
-                        seen.add(source)
-                        sources.append(source)
-
         assets: list[_MediaAsset] = []
         sources_by_id: dict[str, str] = {}
-        for source in sources:
-            path = _resolve_dict_media_path(source, self.config.dicts_root)
-            if path is None:
-                logger.warning("Dict media file missing on disk: %s", source)
-                self._dict_media_uploaded.add(source)
+        confirmed_missing_sources: set[str] = set()
+        for source in preflight_plan.dictionary_media_sources:
+            if source in self._dict_media_uploaded:
+                continue
+            planned_path = preflight_plan.dictionary_media_paths.get(source)
+            runtime_path = _resolve_dict_media_path(source, self.config.dicts_root)
+            if runtime_path is None:
+                if planned_path is None:
+                    confirmed_missing_sources.add(source)
+                else:
+                    logger.warning("Dict media file disappeared from disk: %s", source)
                 continue
             try:
-                digest = self._stream_media_digest(path.resolve())
+                resolved_path = runtime_path.resolve()
+                digest = self._stream_media_digest(resolved_path, work_budget)
             except OSError as error:
                 logger.warning("Failed to read dict media file %s: %s", source, error)
                 continue
+            if planned_path is None or resolved_path != planned_path:
+                # The bytes were deliberately charged to the runtime work
+                # budget first. Rewriting a source which was absent (or pointed
+                # elsewhere) during structural preflight would invalidate the
+                # proven first-field grouping, so fail the whole call instead.
+                _protocol_error(
+                    "media_changed",
+                    "Dictionary media changed after create preflight",
+                )
             asset_id = f"asset_{uuid4().hex}"
             sources_by_id[asset_id] = source
             assets.append(
                 _MediaAsset(
                     asset_id=asset_id,
-                    source_path=str(path.resolve()),
+                    source_path=str(resolved_path),
                     preferred_name=_dictionary_provider_preferred_name(source),
                     requested_name=source,
                     original_name=source,
@@ -1159,9 +1732,27 @@ class AndroidAnkiAdapter:
                 )
             )
 
-        outcome = self._store_assets(assets)
+        return _PreparedDictionaryMedia(
+            tuple(assets),
+            sources_by_id,
+            frozenset(confirmed_missing_sources),
+        )
+
+    def _store_prepared_dictionary_media(
+        self,
+        word_data_list: Sequence[Any],
+        prepared: _PreparedDictionaryMedia,
+    ) -> list[Any]:
+        """Store prepared dictionary assets and rewrite acknowledged HTML."""
+
+        for source in prepared.confirmed_missing_sources:
+            if source not in self._dict_media_uploaded:
+                logger.warning("Dict media file missing on disk: %s", source)
+                self._dict_media_uploaded.add(source)
+
+        outcome = self._store_assets(list(prepared.assets))
         for asset_id, actual in outcome.stored.items():
-            source = sources_by_id[asset_id]
+            source = prepared.sources_by_id[asset_id]
             self._dict_media_uploaded.add(source)
             self._dict_media_uploaded.add(actual)
             self._dict_media_actual_names[source] = actual
@@ -1170,14 +1761,48 @@ class AndroidAnkiAdapter:
             _raise_callback_error(outcome.error)
         return rewritten
 
-    def _prepare_note(
-        self, payload: Any, note: Mapping[str, Any], source_index: int
-    ) -> _PendingNote:
-        """Validate one built note before any duplicate/provider side effect."""
+    @staticmethod
+    def _relevant_source_utf8_bytes(payload: Any) -> int:
+        """Count strings retained or rendered by one card payload.
 
-        if self._verified_field_names is None:
-            _protocol_error("invalid_note", "The Anki target must be verified first")
-        first_field_name = self._verified_field_names[0]
+        Sentence-candidate alternatives are deliberately excluded: phase 5 has
+        already selected one sentence, and the note builder never traverses the
+        alternatives. Definition/glossary/optional HTML, every direct word
+        string, media names, and source paths are included.
+        """
+
+        values: list[object] = [payload.definition]
+        values.extend(vars(payload.word).values())
+        values.extend(vars(payload.media).values())
+        if payload.extra_fields:
+            for key, value in payload.extra_fields.items():
+                values.extend((key, value))
+        total = 0
+        for value in values:
+            if isinstance(value, str):
+                total += len(
+                    _strict_utf8_bytes(
+                        value,
+                        context="create-call source value",
+                        code="invalid_note",
+                    )
+                )
+            elif isinstance(value, Path):
+                total += len(
+                    _strict_utf8_bytes(
+                        str(value),
+                        context="create-call source path",
+                        code="invalid_note",
+                    )
+                )
+        return total
+
+    @staticmethod
+    def _validated_note_content(
+        note: Mapping[str, Any],
+    ) -> tuple[dict[str, str], list[str], int]:
+        """Validate per-note wire limits without requiring target field order."""
+
         fields = note.get("fields")
         tags = note.get("tags")
         if not isinstance(fields, dict) or not fields:
@@ -1193,8 +1818,20 @@ class AndroidAnkiAdapter:
                 )
             if not isinstance(value, str):
                 _protocol_error("invalid_note", "Anki field values must be strings")
-            name_bytes = len(field_name.encode("utf-8"))
-            value_bytes = len(value.encode("utf-8"))
+            name_bytes = len(
+                _strict_utf8_bytes(
+                    field_name,
+                    context="Anki field name",
+                    code="invalid_note",
+                )
+            )
+            value_bytes = len(
+                _strict_utf8_bytes(
+                    value,
+                    context=f"Anki field {field_name!r} value",
+                    code="invalid_note",
+                )
+            )
             if name_bytes > _MAX_FIELD_NAME_UTF8_BYTES:
                 _protocol_error("note_too_large", "An Anki field name is too large")
             if value_bytes > _MAX_FIELD_VALUE_UTF8_BYTES:
@@ -1209,7 +1846,13 @@ class AndroidAnkiAdapter:
             _protocol_error("note_too_large", "A note contains too many Anki tags")
         tags_utf8_bytes = 0
         for tag in tags:
-            tag_bytes = len(tag.encode("utf-8"))
+            tag_bytes = len(
+                _strict_utf8_bytes(
+                    tag,
+                    context="Anki tag",
+                    code="invalid_note",
+                )
+            )
             if tag_bytes > _MAX_TAG_UTF8_BYTES:
                 _protocol_error("note_too_large", "An Anki tag is too large")
             tags_utf8_bytes += tag_bytes
@@ -1218,6 +1861,339 @@ class AndroidAnkiAdapter:
         content_utf8_bytes += tags_utf8_bytes
         if content_utf8_bytes > _MAX_NOTE_CONTENT_UTF8_BYTES:
             _protocol_error("note_too_large", "An Anki note exceeds the byte limit")
+        return dict(fields), list(tags), content_utf8_bytes
+
+    def _preflight_create_call(
+        self, word_data_list: Sequence[Any]
+    ) -> _CreatePreflightPlan:
+        """Prove the complete create plan before progress, hashing, or callbacks.
+
+        ``EpisodeProcessor._run_pipeline`` verifies the target before any
+        mining phase.  That ordering is an adapter invariant: the provider's
+        ordered first field is needed to prove duplicate identities and
+        inseparable callback blocks without making a speculative provider
+        call here.
+        """
+
+        if self._verified_field_names is None:
+            _protocol_error(
+                "invalid_note",
+                "The Anki target must be verified before create preflight",
+            )
+
+        if len(word_data_list) > _MAX_CREATE_CALL_SOURCE_ITEMS:
+            _protocol_error(
+                "create_call_too_large",
+                "The create call contains too many source cards",
+            )
+
+        source_utf8_bytes = 0
+        for payload in word_data_list:
+            source_utf8_bytes += self._relevant_source_utf8_bytes(payload)
+            if source_utf8_bytes > _MAX_CREATE_CALL_SOURCE_UTF8_BYTES:
+                _protocol_error(
+                    "create_call_too_large",
+                    "The create call exceeds its source UTF-8 limit",
+                )
+
+        from anki_miner.services.anki_media_store import (
+            _MEDIA_FIELD_ATTRS,
+            _extract_dict_media_srcs,
+            _resolve_dict_media_path,
+        )
+
+        intended_stored_files: set[str] = set()
+        card_media_paths: list[tuple[str, Path]] = []
+        card_note_refs: list[list[tuple[str, str]]] = [[] for _ in word_data_list]
+        dictionary_sources: list[str] = []
+        dictionary_source_paths: dict[str, Path | None] = {}
+        media_refs = 0
+        media_bytes = 0
+        counted_files: set[tuple[str, str, str]] = set()
+
+        def account_path(path: Path, *, purpose: str, logical_name: str) -> None:
+            nonlocal media_bytes
+            _expect_media_source_path(
+                str(path),
+                context="create-call media source path",
+                code="invalid_note",
+            )
+            try:
+                metadata = path.stat()
+            except OSError:
+                return
+            if not stat.S_ISREG(metadata.st_mode):
+                return
+            if metadata.st_size > _MAX_MEDIA_ASSET_BYTES:
+                _protocol_error(
+                    "media_too_large",
+                    f"Media exceeds the {_MAX_MEDIA_ASSET_BYTES}-byte limit",
+                )
+            try:
+                resolved_path = path.resolve()
+            except OSError:
+                resolved_path = path.absolute()
+            # Match the real read/upload work: card media is deduplicated by
+            # logical filename plus resolved path, while dictionary media is
+            # deduplicated by its marked source name. Aliases under different
+            # logical names are separate hashes and provider snapshots.
+            identity = (purpose, logical_name, str(resolved_path))
+            if identity in counted_files:
+                return
+            counted_files.add(identity)
+            media_bytes += metadata.st_size
+            if media_bytes > _MAX_CREATE_CALL_MEDIA_BYTES:
+                _protocol_error(
+                    "create_call_too_large",
+                    "The create call exceeds its total media-byte limit",
+                )
+
+        note_key_by_filename_attr = {
+            "screenshot_filename": "picture",
+            "audio_filename": "audio",
+            "expression_audio_filename": "expression_audio",
+        }
+        for payload_index, payload in enumerate(word_data_list):
+            for filename_attr, path_attr in _MEDIA_FIELD_ATTRS:
+                filename = getattr(payload.media, filename_attr)
+                source_path = getattr(payload.media, path_attr)
+                if not filename or not source_path:
+                    continue
+                _expect_filename(
+                    filename,
+                    context="create-call card media filename",
+                    code="invalid_note",
+                )
+                _expect_filename(
+                    _content_addressed_name_from_digest(filename, "0" * 12),
+                    context="create-call content-addressed media filename",
+                    code="invalid_note",
+                )
+                _expect_media_source_path(
+                    str(source_path),
+                    context="create-call card media source path",
+                    code="invalid_note",
+                )
+                media_refs += 1
+                if media_refs > _MAX_CREATE_CALL_MEDIA_REFS:
+                    _protocol_error(
+                        "create_call_too_large",
+                        "The create call contains too many media references",
+                    )
+                intended_stored_files.add(filename)
+                card_media_paths.append((filename, Path(source_path)))
+                card_note_refs[payload_index].append(
+                    (note_key_by_filename_attr[filename_attr], filename)
+                )
+
+        # Validate the exact current note graph before running a regex over
+        # marked dictionary HTML or touching media on disk. This makes a
+        # single oversized definition/glossary fail without a scan or upload.
+        from anki_miner.services.anki_note_builder import build_note
+
+        built_notes: list[dict[str, Any]] = []
+        built_fields: list[dict[str, str]] = []
+        note_utf8_bytes = 0
+        for payload in word_data_list:
+            built = build_note(payload, self.config, intended_stored_files)
+            fields, tags, content_bytes = self._validated_note_content(built.note)
+            built_notes.append({"fields": fields, "tags": tags})
+            built_fields.append(fields)
+            note_utf8_bytes += content_bytes
+            if note_utf8_bytes > _MAX_CREATE_CALL_NOTE_UTF8_BYTES:
+                _protocol_error(
+                    "create_call_too_large",
+                    "The create call exceeds its built-note UTF-8 limit",
+                )
+
+        # Materialize the exact longest valid field representation, rather
+        # than estimating from content bytes. This preserves JSON escaping in
+        # the original content (notably NUL, quote, and backslash) and lets the
+        # canonical envelope encoder prove the real callback ceiling. A valid
+        # 1024-byte filename can consist entirely of apostrophes; html.escape
+        # expands each to the six-byte ``&#x27;`` entity, which is the maximum
+        # permitted expansion under the filename validator.
+        longest_provider_filename = "'" * _MAX_MEDIA_FILENAME_UTF8_BYTES
+        longest_escaped_filename = html_escape(longest_provider_filename, quote=True)
+        longest_picture_field = f'<img src="{longest_escaped_filename}">'
+        longest_sound_field = f"[sound:{'x' * _MAX_MEDIA_FILENAME_UTF8_BYTES}]"
+        worst_fields = [dict(fields) for fields in built_fields]
+        for payload_index, refs in enumerate(card_note_refs):
+            fields = built_fields[payload_index]
+            worst = worst_fields[payload_index]
+            for note_key, filename in refs:
+                field_name = self.config.anki_fields.get(note_key, "")
+                if not field_name:
+                    continue
+                if note_key == "picture":
+                    current_value = f'<img src="{html_escape(filename)}">'
+                    worst_value = longest_picture_field
+                else:
+                    current_value = f"[sound:{filename}]"
+                    worst_value = longest_sound_field
+                if fields.get(field_name) == current_value:
+                    worst[field_name] = worst_value
+
+        # Dictionary media discovery scans definition and glossary even when a
+        # particular field is not mapped into this note type. Bound each raw
+        # HTML input before regex work or filesystem access as well.
+        for payload in word_data_list:
+            for html_field in (
+                payload.definition,
+                payload.extra_fields.get("glossary") if payload.extra_fields else None,
+            ):
+                if (
+                    isinstance(html_field, str)
+                    and len(
+                        _strict_utf8_bytes(
+                            html_field,
+                            context="Marked dictionary HTML",
+                            code="invalid_note",
+                        )
+                    )
+                    > _MAX_FIELD_VALUE_UTF8_BYTES
+                ):
+                    _protocol_error(
+                        "note_too_large",
+                        "Marked dictionary HTML exceeds the byte limit",
+                    )
+
+        for payload_index, payload in enumerate(word_data_list):
+            html_fields = (
+                ("definition", payload.definition),
+                (
+                    "glossary",
+                    payload.extra_fields.get("glossary")
+                    if payload.extra_fields
+                    else None,
+                ),
+            )
+            for note_key, html_field in html_fields:
+                if not isinstance(html_field, str):
+                    continue
+                for source in _extract_dict_media_srcs(html_field):
+                    _expect_media_basename(
+                        source,
+                        context="create-call dictionary media filename",
+                        code="invalid_note",
+                    )
+                    media_refs += 1
+                    if media_refs > _MAX_CREATE_CALL_MEDIA_REFS:
+                        _protocol_error(
+                            "create_call_too_large",
+                            "The create call contains too many media references",
+                        )
+                    if source not in dictionary_source_paths:
+                        dictionary_sources.append(source)
+                        dictionary_source_paths[source] = (
+                            None
+                            if source in self._dict_media_uploaded
+                            else _resolve_dict_media_path(
+                                source, self.config.dicts_root
+                            )
+                        )
+
+                field_name = self.config.anki_fields.get(note_key, "")
+                if (
+                    field_name
+                    and built_fields[payload_index].get(field_name) == html_field
+                ):
+                    sources = _extract_dict_media_srcs(html_field)
+                    rewritable_sources = {
+                        source
+                        for source in sources
+                        if dictionary_source_paths[source] is not None
+                        or source in self._dict_media_actual_names
+                    }
+                    if rewritable_sources:
+                        worst_fields[payload_index][field_name] = (
+                            self._rewrite_dictionary_html(
+                                html_field,
+                                {
+                                    source: longest_provider_filename
+                                    for source in rewritable_sources
+                                },
+                            )
+                        )
+
+        planned_dictionary_paths = {
+            source: path
+            for source, path in dictionary_source_paths.items()
+            if path is not None and source not in self._dict_media_uploaded
+        }
+        canonical_dictionary_sources = set(planned_dictionary_paths) | (
+            set(dictionary_sources) & self._dict_media_actual_names.keys()
+        )
+        pending_reservations = self._pending_dictionary_media_reservations(
+            dictionary_sources,
+            set(planned_dictionary_paths),
+        )
+
+        worst_note_utf8_bytes = 0
+        pending_notes: list[_PendingNote] = []
+        seen_outgoing: set[str] = set()
+        for source_index, (payload, built_note, fields) in enumerate(
+            zip(
+                word_data_list,
+                built_notes,
+                worst_fields,
+                strict=True,
+            )
+        ):
+            worst_note = {
+                "fields": fields,
+                "tags": list(built_note["tags"]),
+            }
+            first_field = built_note["fields"].get(self._verified_field_names[0])
+            _, _, worst_content_bytes = self._validated_note_content(worst_note)
+            worst_note_utf8_bytes += worst_content_bytes
+            if worst_note_utf8_bytes > _MAX_CREATE_CALL_NOTE_UTF8_BYTES:
+                _protocol_error(
+                    "create_call_too_large",
+                    "The create call may exceed its built-note UTF-8 limit after media storage",
+                )
+            pending = self._prepare_note(
+                payload,
+                built_note,
+                source_index,
+                wire_note=worst_note,
+                canonical_first_field=(
+                    self._canonical_dictionary_first_field_identity(
+                        first_field,
+                        canonical_dictionary_sources,
+                    )
+                    if isinstance(first_field, str)
+                    else None
+                ),
+            )
+            if not self.config.allow_duplicate_cards:
+                if pending.key in seen_outgoing:
+                    continue
+                seen_outgoing.add(pending.key)
+            pending_notes.append(pending)
+
+        # This is the same block planner used for provider submission. Byte
+        # sizing uses exact worst-case wire notes; block identity additionally
+        # canonicalizes HTML-equivalent spellings of one rewritable dictionary
+        # source without merging distinct exact provider candidates.
+        self._chunk_pending_notes(pending_notes)
+
+        for logical_name, path in card_media_paths:
+            account_path(path, purpose="card", logical_name=logical_name)
+        for logical_name, path in planned_dictionary_paths.items():
+            account_path(path, purpose="dictionary", logical_name=logical_name)
+
+        return _CreatePreflightPlan(
+            planned_dictionary_paths,
+            tuple(dictionary_sources),
+            pending_reservations,
+        )
+
+    @staticmethod
+    def _duplicate_identity(
+        fields: Mapping[str, str], first_field_name: str
+    ) -> tuple[str, str]:
+        """Return one validated desktop-normalized duplicate identity."""
 
         first_field = fields.get(first_field_name)
         if not isinstance(first_field, str):
@@ -1225,7 +2201,13 @@ class AndroidAnkiAdapter:
                 "invalid_note",
                 f"The verified first field {first_field_name!r} is missing",
             )
-        first_field_bytes = len(first_field.encode("utf-8"))
+        first_field_bytes = len(
+            _strict_utf8_bytes(
+                first_field,
+                context="Verified Anki first field",
+                code="invalid_note",
+            )
+        )
         from anki_miner.services.anki_note_builder import _strip_for_dedup
 
         key = _strip_for_dedup(first_field)
@@ -1239,13 +2221,47 @@ class AndroidAnkiAdapter:
                 "invalid_note",
                 "The verified Anki first field has an invalid duplicate identity",
             )
+        return key, first_field
+
+    def _prepare_note(
+        self,
+        payload: Any,
+        note: Mapping[str, Any],
+        source_index: int,
+        *,
+        wire_note: Mapping[str, Any] | None = None,
+        canonical_first_field: tuple[tuple[str, str], ...] | None = None,
+    ) -> _PendingNote:
+        """Validate one built note before any duplicate/provider side effect."""
+
+        if self._verified_field_names is None:
+            _protocol_error("invalid_note", "The Anki target must be verified first")
+        first_field_name = self._verified_field_names[0]
+        fields, tags, content_utf8_bytes = self._validated_note_content(note)
+        key, first_field = self._duplicate_identity(fields, first_field_name)
+
+        wire_key: str | None = None
+        wire_first_field: str | None = None
+        if wire_note is not None:
+            fields, tags, content_utf8_bytes = self._validated_note_content(wire_note)
+            wire_key, wire_first_field = self._duplicate_identity(
+                fields, first_field_name
+            )
+        preflight_block_identity = (
+            (wire_key if wire_key is not None else key, canonical_first_field)
+            if canonical_first_field is not None
+            else None
+        )
         return _PendingNote(
             payload=payload,
-            note={"fields": dict(fields), "tags": list(tags)},
+            note={"fields": fields, "tags": tags},
             key=key,
             first_field=first_field,
             content_utf8_bytes=content_utf8_bytes,
             source_index=source_index,
+            wire_key=wire_key,
+            wire_first_field=wire_first_field,
+            preflight_block_identity=preflight_block_identity,
         )
 
     @staticmethod
@@ -1253,6 +2269,7 @@ class AndroidAnkiAdapter:
         return {
             "maxNotes": _BATCH_SIZE,
             "maxFieldsPerNote": _MAX_NOTE_FIELDS,
+            "maxCardsPerNote": _MAX_CARDS_PER_NOTE,
             "maxFieldNameUtf8Bytes": _MAX_FIELD_NAME_UTF8_BYTES,
             "maxFieldValueUtf8Bytes": _MAX_FIELD_VALUE_UTF8_BYTES,
             "maxTagsPerNote": _MAX_NOTE_TAGS,
@@ -1286,8 +2303,8 @@ class AndroidAnkiAdapter:
             "fields": dict(pending.note["fields"]),
             "tags": list(pending.note["tags"]),
             "duplicateCandidate": {
-                "key": pending.key,
-                "firstField": pending.first_field,
+                "key": pending.wire_key or pending.key,
+                "firstField": pending.wire_first_field or pending.first_field,
                 "occurrence": occurrence,
             },
         }
@@ -1318,11 +2335,16 @@ class AndroidAnkiAdapter:
 
     def _create_envelope_utf8_bytes(self, notes: Sequence[_PendingNote]) -> int:
         client_ids = [f"note_{index:032x}" for index in range(len(notes))]
+        # A create submission may be any increasing subset of the 0..99 probe
+        # occurrences. The largest values maximize canonical JSON digit count;
+        # sizing with them is therefore the exact worst envelope for this note
+        # count, including sparse duplicate-filtered submissions.
+        occurrences = list(range(_BATCH_SIZE - len(notes), _BATCH_SIZE))
         payload = self._create_request_payload(
             notes,
             _PLACEHOLDER_BASELINE_TOKEN,
             client_ids,
-            list(range(len(notes))),
+            occurrences,
         )
         envelope = encode_message(
             "anki.createnotes.request",
@@ -1332,7 +2354,13 @@ class AndroidAnkiAdapter:
                 "requestId": _PLACEHOLDER_REQUEST_ID,
             },
         )
-        return len(envelope.encode("utf-8"))
+        return len(
+            _strict_utf8_bytes(
+                envelope,
+                context="createNotes request envelope",
+                code="invalid_note",
+            )
+        )
 
     def _create_batch_fits(self, notes: Sequence[_PendingNote]) -> bool:
         return bool(notes) and (
@@ -1350,17 +2378,18 @@ class AndroidAnkiAdapter:
 
         if not notes:
             return []
-        last_occurrence = {
-            (note.key, note.first_field): index for index, note in enumerate(notes)
-        }
+        identities = [
+            note.preflight_block_identity or (note.key, note.first_field)
+            for note in notes
+        ]
+        last_occurrence = {identity: index for index, identity in enumerate(identities)}
         blocks: list[list[_PendingNote]] = []
         start = 0
         while start < len(notes):
-            end = last_occurrence[(notes[start].key, notes[start].first_field)]
+            end = last_occurrence[identities[start]]
             cursor = start
             while cursor <= end:
-                identity = (notes[cursor].key, notes[cursor].first_field)
-                end = max(end, last_occurrence[identity])
+                end = max(end, last_occurrence[identities[cursor]])
                 cursor += 1
             blocks.append(list(notes[start : end + 1]))
             start = end + 1
@@ -1418,6 +2447,7 @@ class AndroidAnkiAdapter:
         candidate_indexes = {
             candidate: index for index, candidate in enumerate(unique_candidates)
         }
+        invalidated_token = self._outstanding_baseline_token
         scope = {
             "kind": "duplicates",
             "modelName": self.config.anki_note_type,
@@ -1434,6 +2464,10 @@ class AndroidAnkiAdapter:
             "occurrences": [
                 candidate_indexes[candidate] for candidate in candidate_list
             ],
+            # Kotlin atomically discards this abandoned all-duplicate
+            # snapshot before retaining the replacement. A run therefore has
+            # at most one outstanding baseline even across repeated calls.
+            "invalidateBaselineToken": invalidated_token,
             "limits": {
                 "maxHitsPerCandidate": _MAX_DUPLICATE_HITS_PER_CANDIDATE,
                 "maxTotalHits": _MAX_DUPLICATE_TOTAL_HITS,
@@ -1457,14 +2491,12 @@ class AndroidAnkiAdapter:
         )
         if (
             _BASELINE_TOKEN_RE.fullmatch(baseline_token) is None
-            or baseline_token in self._issued_baseline_tokens
-            or baseline_token in self._consumed_baseline_tokens
+            or baseline_token == invalidated_token
         ):
             _protocol_error(
                 "invalid_anki_response",
                 "Duplicate lookup baselineToken is malformed or reused",
             )
-        self._issued_baseline_tokens.add(baseline_token)
         raw_buckets = result["rawFirstFieldHits"]
         if not isinstance(raw_buckets, list) or len(raw_buckets) != len(
             unique_candidates
@@ -1515,7 +2547,13 @@ class AndroidAnkiAdapter:
                         "invalid_anki_response",
                         f"Duplicate raw field {index}:{raw_index} must be a string",
                     )
-                raw_bytes = len(raw_value.encode("utf-8"))
+                raw_bytes = len(
+                    _strict_utf8_bytes(
+                        raw_value,
+                        context=f"Duplicate raw field {index}:{raw_index}",
+                        code="invalid_anki_response",
+                    )
+                )
                 if raw_bytes > _MAX_RAW_FIRST_FIELD_UTF8_BYTES:
                     _protocol_error(
                         "invalid_anki_response",
@@ -1532,9 +2570,8 @@ class AndroidAnkiAdapter:
             probe_results.append(
                 _DuplicateProbeResult(is_duplicate=normalized_match, occurrence=-1)
             )
-        results_by_candidate = dict(
-            zip(unique_candidates, probe_results, strict=True)
-        )
+        results_by_candidate = dict(zip(unique_candidates, probe_results, strict=True))
+        self._outstanding_baseline_token = baseline_token
         return (
             [
                 _DuplicateProbeResult(
@@ -1691,9 +2728,7 @@ class AndroidAnkiAdapter:
                     "invalid_anki_response",
                     "An uncertain write requires a non-retryable post-commit error",
                 )
-            if saw_committed_failure and (
-                error.code == "cancelled" or error.retryable
-            ):
+            if saw_committed_failure and (error.code == "cancelled" or error.retryable):
                 _protocol_error(
                     "invalid_anki_response",
                     "A known post-commit failure must be non-retryable",
@@ -1722,8 +2757,7 @@ class AndroidAnkiAdapter:
             )
         if (
             _BASELINE_TOKEN_RE.fullmatch(baseline_token) is None
-            or baseline_token not in self._issued_baseline_tokens
-            or baseline_token in self._consumed_baseline_tokens
+            or baseline_token != self._outstanding_baseline_token
         ):
             _protocol_error(
                 "invalid_note", "Create-note duplicate baseline token is invalid"
@@ -1744,22 +2778,29 @@ class AndroidAnkiAdapter:
         request_payload = self._create_request_payload(
             notes, baseline_token, client_ids, occurrences
         )
+        actual_envelope = encode_message(
+            "anki.createnotes.request",
+            {
+                **request_payload,
+                "runId": self._callbacks.run_id,
+                "requestId": _PLACEHOLDER_REQUEST_ID,
+            },
+        )
         actual_envelope_bytes = len(
-            encode_message(
-                "anki.createnotes.request",
-                {
-                    **request_payload,
-                    "runId": self._callbacks.run_id,
-                    "requestId": _PLACEHOLDER_REQUEST_ID,
-                },
-            ).encode("utf-8")
+            _strict_utf8_bytes(
+                actual_envelope,
+                context="createNotes request envelope",
+                code="invalid_note",
+            )
         )
         if actual_envelope_bytes > _MAX_CREATE_ENVELOPE_UTF8_BYTES:
             _protocol_error(
                 "note_batch_too_large", "Create-note callback exceeds its byte limit"
             )
         self._raise_if_cancelled("createNotes")
-        self._consumed_baseline_tokens.add(baseline_token)
+        # Initiating createNotes consumes the sole outstanding capability.
+        # Kotlin enforces the same one-use transition before any insert.
+        self._outstanding_baseline_token = None
         try:
             payload = self._callbacks.create_notes(request_payload)
         except AnkiCallbackError as error:
@@ -1782,14 +2823,33 @@ class AndroidAnkiAdapter:
             self.last_media_store_failures = 0
             return 0
 
-        # Duplicate identity is the model's first field, not Python dict order.
-        # Verify once before media or note-write side effects and retain the
-        # provider-reported field order for the whole adapter run.
-        self.verify_card_target()
-
         self.last_created_note_ids = []
         self.last_skipped_duplicates = 0
         self.last_media_store_failures = 0
+        preflight_plan = self._preflight_create_call(word_data_list)
+        media_work_budget = _MediaWorkBudget()
+        prepared_card_media = self._prepare_card_media(
+            word_data_list, media_work_budget
+        )
+        prepared_dictionary_media = self._prepare_dictionary_media(
+            preflight_plan, media_work_budget
+        )
+        all_prepared_assets = [
+            *prepared_card_media.assets,
+            *prepared_dictionary_media.assets,
+        ]
+        self._validate_asset_provider_namespaces(
+            all_prepared_assets,
+            additional_reservations=(preflight_plan.pending_media_name_reservations),
+        )
+        self._raise_if_cancelled("createNotes")
+        # Commit reservations only after every digest and the combined card /
+        # dictionary namespace proof has succeeded. A rejected call therefore
+        # produces neither provider mutation nor poisoned adapter state.
+        self._reserved_media_name_owners.update(
+            preflight_plan.pending_media_name_reservations
+        )
+
         all_created_ids: list[int] = []
         created_first_fields: list[str] = []
         skipped_duplicates = 0
@@ -1800,8 +2860,10 @@ class AndroidAnkiAdapter:
         if progress_callback:
             progress_callback.on_start(len(word_data_list), "Creating Anki cards")
 
-        stored_files = self._store_card_media(word_data_list)
-        word_data_list = self._store_dictionary_media(word_data_list)
+        stored_files = self._store_prepared_card_media(prepared_card_media)
+        word_data_list = self._store_prepared_dictionary_media(
+            word_data_list, prepared_dictionary_media
+        )
 
         from anki_miner.services.anki_note_builder import _strip_for_dedup, build_note
 
@@ -1824,11 +2886,9 @@ class AndroidAnkiAdapter:
 
             progress_reported = 0
             for callback_batch in self._chunk_pending_notes(pending_notes):
+                self._raise_if_cancelled("createNotes")
                 duplicate_probes, baseline_token = self._duplicate_first_fields(
-                    [
-                        (pending.key, pending.first_field)
-                        for pending in callback_batch
-                    ]
+                    [(pending.key, pending.first_field) for pending in callback_batch]
                 )
                 submissions = [
                     (pending, probe.occurrence)
@@ -1885,6 +2945,24 @@ class AndroidAnkiAdapter:
                     len(word_data_list),
                     f"Cards created: {total_created}/{len(word_data_list)}",
                 )
+            if progress_callback:
+                progress_callback.on_complete()
+        except AnkiOperationCancelled as error:
+            if not all_created_ids:
+                raise
+            # BaseException is intentional for a clean pre-write stop, but it
+            # would bypass EpisodeProcessor's partial-ID harvest after an
+            # earlier callback committed notes. Convert only that temporal
+            # state to the engine's catchable, explicitly non-retryable error.
+            from anki_miner.exceptions import AnkiConnectionError
+
+            partial_error = AnkiConnectionError(
+                "Anki card creation was cancelled after "
+                f"{len(all_created_ids)} note(s) were committed"
+            )
+            partial_error.code = "post_commit_uncertain"  # type: ignore[attr-defined]
+            partial_error.retryable = False  # type: ignore[attr-defined]
+            raise partial_error from error
         finally:
             self.last_created_note_ids = all_created_ids
             self.last_skipped_duplicates = skipped_duplicates
@@ -1894,8 +2972,6 @@ class AndroidAnkiAdapter:
                     if key and _JAPANESE_RE.search(key):
                         self._existing_vocab_cache.add(key)
 
-        if progress_callback:
-            progress_callback.on_complete()
         if skipped_duplicates:
             logger.info(
                 "%d note(s) were not created (likely already in your collection).",
