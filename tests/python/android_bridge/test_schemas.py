@@ -393,6 +393,7 @@ def test_unknown_curation_map_key_is_schema_invalid(
                     "assetId": "asset_" + "c" * 32,
                     "sourcePath": "/data/user/0/app/cache/audio.opus",
                     "preferredName": "猫_ab12cd34ef56",
+                    "requestedFilename": "猫_ab12cd34ef56.opus",
                     "purpose": "card",
                     "mediaKind": "audio",
                 }
@@ -487,6 +488,7 @@ def test_representative_anki_callback_payloads_validate(
                     "assetId": "asset_" + "c" * 32,
                     "sourcePath": "relative/file.mp3",
                     "preferredName": "../file.mp3",
+                    "requestedFilename": "file.mp3",
                     "purpose": "card",
                     "mediaKind": "audio",
                 }

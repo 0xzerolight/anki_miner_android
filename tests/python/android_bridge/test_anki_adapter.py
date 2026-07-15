@@ -14,6 +14,7 @@ from jsonschema import Draft202012Validator
 from android_bridge.anki_adapter import (
     AndroidAnkiAdapter,
     AnkiOperationCancelled,
+    _dictionary_provider_preferred_name,
 )
 from android_bridge.callbacks import AndroidAnkiCallbacks
 from android_bridge.protocol import BridgeProtocolError, encode_message
@@ -656,6 +657,7 @@ def test_card_media_is_content_addressed_deduped_and_actual_name_propagates(
     store_payload = kotlin.requests_for("ankiStoreMedia")[0]["payload"]
     assert len(store_payload["assets"]) == 1
     assert store_payload["assets"][0]["preferredName"] == preferred
+    assert store_payload["assets"][0]["requestedFilename"] == requested
     assert store_payload["assets"][0]["sourcePath"] == str(image.resolve())
     note_fields = kotlin.requests_for("ankiCreateNotes")[0]["payload"]["notes"]
     assert all(
@@ -689,6 +691,30 @@ def test_same_logical_media_name_with_different_bytes_fails_before_provider(
     assert second_media.audio_filename == "shared.opus"
 
 
+def test_same_logical_media_name_with_live_and_missing_paths_fails_closed(
+    initialized_bridge_home: Path, tmp_path: Path
+) -> None:
+    from anki_miner.models import MediaData
+
+    live = tmp_path / "live.opus"
+    live.write_bytes(b"audio")
+    missing = tmp_path / "missing.opus"
+    live_media = MediaData(audio_path=live, audio_filename="shared.opus")
+    missing_media = MediaData(audio_path=missing, audio_filename="shared.opus")
+    kotlin = FakeKotlinAnki()
+
+    with pytest.raises(BridgeProtocolError) as exc_info:
+        _adapter(_config(initialized_bridge_home), kotlin).create_cards_batch(
+            [_card("猫", media=live_media), _card("犬", media=missing_media)]
+        )
+
+    assert exc_info.value.code == "media_content_collision"
+    assert not kotlin.requests_for("ankiStoreMedia")
+    assert not kotlin.requests_for("ankiCreateNotes")
+    assert live_media.audio_filename == "shared.opus"
+    assert missing_media.audio_filename == "shared.opus"
+
+
 def test_same_logical_media_name_with_identical_bytes_dedupes_across_paths(
     initialized_bridge_home: Path, tmp_path: Path
 ) -> None:
@@ -714,6 +740,189 @@ def test_same_logical_media_name_with_identical_bytes_dedupes_across_paths(
     assert assets[0]["sourcePath"] == str(first.resolve())
     assert Path(assets[0]["preferredName"]).suffix == ""
     assert first_media.audio_filename == second_media.audio_filename
+
+
+def test_media_store_is_bounded_to_fifty_assets_per_callback(
+    initialized_bridge_home: Path, tmp_path: Path
+) -> None:
+    from anki_miner.models import MediaData
+
+    cards = []
+    media_rows = []
+    for index in range(51):
+        path = tmp_path / f"clip-{index}.opus"
+        path.write_bytes(f"audio-{index}".encode())
+        media = MediaData(audio_path=path, audio_filename=f"clip-{index}.opus")
+        media_rows.append(media)
+        cards.append(_card(f"語{index}", media=media))
+    kotlin = FakeKotlinAnki()
+
+    assert _adapter(_config(initialized_bridge_home), kotlin).create_cards_batch(cards) == 51
+
+    requests = kotlin.requests_for("ankiStoreMedia")
+    assert [len(request["payload"]["assets"]) for request in requests] == [50, 1]
+    assert all(
+        "requestedFilename" in asset
+        for request in requests
+        for asset in request["payload"]["assets"]
+    )
+    assert all(media.audio_filename.endswith("_provider.opus") for media in media_rows)
+
+
+def test_second_media_chunk_cancellation_does_not_mutate_payloads(
+    initialized_bridge_home: Path, tmp_path: Path
+) -> None:
+    from anki_miner.models import MediaData
+
+    class CancelSecondMediaChunk(FakeKotlinAnki):
+        def ankiStoreMedia(self, raw: str) -> str:
+            if len(self.requests_for("ankiStoreMedia")) == 1:
+                request = self._request("ankiStoreMedia", raw)
+                return encode_message(
+                    "anki.error",
+                    {
+                        "runId": request["runId"],
+                        "requestId": request["requestId"],
+                        "operation": "storeMedia",
+                        "code": "cancelled",
+                        "message": "cancelled",
+                        "retryable": False,
+                    },
+                )
+            return super().ankiStoreMedia(raw)
+
+    cards = []
+    media_rows = []
+    for index in range(51):
+        path = tmp_path / f"cancel-{index}.opus"
+        path.write_bytes(f"audio-{index}".encode())
+        media = MediaData(audio_path=path, audio_filename=f"cancel-{index}.opus")
+        media_rows.append(media)
+        cards.append(_card(f"語{index}", media=media))
+    kotlin = CancelSecondMediaChunk()
+
+    with pytest.raises(AnkiOperationCancelled):
+        _adapter(_config(initialized_bridge_home), kotlin).create_cards_batch(cards)
+
+    assert [
+        len(request["payload"]["assets"])
+        for request in kotlin.requests_for("ankiStoreMedia")
+    ] == [50, 1]
+    assert all(
+        media.audio_filename == f"cancel-{index}.opus"
+        for index, media in enumerate(media_rows)
+    )
+    assert not kotlin.requests_for("ankiCreateNotes")
+
+
+def test_second_media_chunk_misalignment_does_not_mutate_payloads(
+    initialized_bridge_home: Path, tmp_path: Path
+) -> None:
+    from anki_miner.models import MediaData
+
+    class MisalignSecondMediaChunk(FakeKotlinAnki):
+        def ankiStoreMedia(self, raw: str) -> str:
+            if len(self.requests_for("ankiStoreMedia")) == 1:
+                request = self._request("ankiStoreMedia", raw)
+                asset = request["assets"][0]
+                return encode_message(
+                    "anki.storemedia.result",
+                    {
+                        "runId": request["runId"],
+                        "requestId": request["requestId"],
+                        "results": [
+                            {
+                                "assetId": "asset_" + "f" * 32,
+                                "status": "stored",
+                                "actualFilename": (
+                                    f'{asset["preferredName"]}_provider.opus'
+                                ),
+                            }
+                        ],
+                    },
+                )
+            return super().ankiStoreMedia(raw)
+
+    cards = []
+    media_rows = []
+    for index in range(51):
+        path = tmp_path / f"align-{index}.opus"
+        path.write_bytes(f"audio-{index}".encode())
+        media = MediaData(audio_path=path, audio_filename=f"align-{index}.opus")
+        media_rows.append(media)
+        cards.append(_card(f"語{index}", media=media))
+    kotlin = MisalignSecondMediaChunk()
+
+    with pytest.raises(BridgeProtocolError) as exc_info:
+        _adapter(_config(initialized_bridge_home), kotlin).create_cards_batch(cards)
+
+    assert exc_info.value.code == "mismatched_callback_response"
+    assert all(
+        media.audio_filename == f"align-{index}.opus"
+        for index, media in enumerate(media_rows)
+    )
+    assert not kotlin.requests_for("ankiCreateNotes")
+
+
+def test_media_name_ownership_is_enforced_across_callback_chunks(
+    initialized_bridge_home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from anki_miner.models import MediaData
+    from anki_miner.services import anki_media_store
+
+    monkeypatch.setattr(
+        anki_media_store,
+        "_content_addressed_name",
+        lambda filename, _content: filename,
+    )
+
+    class CollideAcrossChunks(FakeKotlinAnki):
+        def ankiStoreMedia(self, raw: str) -> str:
+            request = self._request("ankiStoreMedia", raw)
+            results = []
+            for asset in request["assets"]:
+                actual = (
+                    "ab_x_provider.opus"
+                    if asset["requestedFilename"] in {"ab.opus", "ab_x.opus"}
+                    else f'{asset["preferredName"]}_provider.opus'
+                )
+                results.append(
+                    {
+                        "assetId": asset["assetId"],
+                        "status": "stored",
+                        "actualFilename": actual,
+                    }
+                )
+            return encode_message(
+                "anki.storemedia.result",
+                {
+                    "runId": request["runId"],
+                    "requestId": request["requestId"],
+                    "results": results,
+                },
+            )
+
+    names = ["ab.opus", *[f"middle-{index}.opus" for index in range(49)], "ab_x.opus"]
+    cards = []
+    media_rows = []
+    for index, name in enumerate(names):
+        path = tmp_path / name
+        path.write_bytes(f"audio-{index}".encode())
+        media = MediaData(audio_path=path, audio_filename=name)
+        media_rows.append(media)
+        cards.append(_card(f"語{index}", media=media))
+    kotlin = CollideAcrossChunks()
+
+    with pytest.raises(BridgeProtocolError) as exc_info:
+        _adapter(_config(initialized_bridge_home), kotlin).create_cards_batch(cards)
+
+    assert exc_info.value.code == "media_name_collision"
+    assert [
+        len(request["payload"]["assets"])
+        for request in kotlin.requests_for("ankiStoreMedia")
+    ] == [50, 1]
+    assert all(media.audio_filename == name for media, name in zip(media_rows, names))
+    assert not kotlin.requests_for("ankiCreateNotes")
 
 
 def test_declared_media_failure_is_nonfatal_and_omits_reference(
@@ -749,7 +958,7 @@ def test_dictionary_media_uses_source_name_and_success_cache(
     initialized_bridge_home: Path,
 ) -> None:
     media_path = initialized_bridge_home / "dicts" / "dict" / "media" / "pic.png"
-    media_path.parent.mkdir(parents=True)
+    media_path.parent.mkdir(parents=True, exist_ok=True)
     media_path.write_bytes(b"png")
     definition = '<img class="anki-miner-dict-media" src="dict__pic.png">'
     kotlin = FakeKotlinAnki()
@@ -765,8 +974,56 @@ def test_dictionary_media_uses_source_name_and_success_cache(
     ]
     assert len(dictionary_requests) == 1
     asset = dictionary_requests[0]["payload"]["assets"][0]
-    assert asset["preferredName"] == "dict__pic"
+    assert asset["preferredName"] == _dictionary_provider_preferred_name(
+        "dict__pic.png"
+    )
+    assert asset["requestedFilename"] == "dict__pic.png"
     assert asset["sourcePath"] == str(media_path.resolve())
+
+
+def test_dictionary_media_preserves_quote_filename_for_direct_fallback(
+    initialized_bridge_home: Path,
+) -> None:
+    class DirectNameMediaKotlin(FakeKotlinAnki):
+        def ankiStoreMedia(self, raw: str) -> str:
+            request = self._request("ankiStoreMedia", raw)
+            return encode_message(
+                "anki.storemedia.result",
+                {
+                    "runId": request["runId"],
+                    "requestId": request["requestId"],
+                    "results": [
+                        {
+                            "assetId": asset["assetId"],
+                            "status": "stored",
+                            "actualFilename": asset["requestedFilename"],
+                        }
+                        for asset in request["assets"]
+                    ],
+                },
+            )
+
+    filename = 'dict__a";b.svg'
+    media_path = initialized_bridge_home / "dicts" / "dict" / "media" / 'a";b.svg'
+    media_path.parent.mkdir(parents=True, exist_ok=True)
+    media_path.write_bytes(b"svg")
+    definition = (
+        '<img class="anki-miner-dict-media" src="dict__a&quot;;b.svg">'
+    )
+    kotlin = DirectNameMediaKotlin()
+
+    assert (
+        _adapter(_config(initialized_bridge_home), kotlin).create_cards_batch(
+            [_card("猫", definition=definition)]
+        )
+        == 1
+    )
+
+    asset = kotlin.requests_for("ankiStoreMedia")[0]["payload"]["assets"][0]
+    assert asset["preferredName"] == _dictionary_provider_preferred_name(filename)
+    assert asset["requestedFilename"] == filename
+    fields = kotlin.requests_for("ankiCreateNotes")[0]["payload"]["notes"][0]["fields"]
+    assert fields["MainDefinition"] == definition
 
 
 def test_dictionary_media_random_names_rewrite_only_marked_html_safely(
@@ -795,9 +1052,11 @@ def test_dictionary_media_random_names_rewrite_only_marked_html_safely(
     )
     first_card = replace(_card("猫", definition=definition), extra_fields={"glossary": glossary})
     kotlin = FakeKotlinAnki()
+    first_preferred = _dictionary_provider_preferred_name("dict__pic&one.png")
+    second_preferred = _dictionary_provider_preferred_name("dict__other.svg")
     kotlin.media_renames = {
-        "dict__pic&one": "dict__pic&one_random.jpeg",
-        "dict__other": "dict__other_random.webp",
+        first_preferred: f"{first_preferred}_random.jpeg",
+        second_preferred: f"{second_preferred}_random.webp",
     }
     adapter = _adapter(config, kotlin)
 
@@ -814,22 +1073,26 @@ def test_dictionary_media_random_names_rewrite_only_marked_html_safely(
     assert len(dictionary_requests) == 1
     assets = dictionary_requests[0]["payload"]["assets"]
     assert [asset["preferredName"] for asset in assets] == [
-        "dict__pic&one",
-        "dict__other",
+        first_preferred,
+        second_preferred,
+    ]
+    assert [asset["requestedFilename"] for asset in assets] == [
+        "dict__pic&one.png",
+        "dict__other.svg",
     ]
     assert all(Path(asset["preferredName"]).suffix == "" for asset in assets)
 
     expected_definition = (
         '<img class="anki-miner-dict-media" '
-        'src="dict__pic&amp;one_random.jpeg">'
+        f'src="{first_preferred}_random.jpeg">'
         '<img class="anki-miner-dict-media" '
-        'src="dict__pic&amp;one_random.jpeg">'
+        f'src="{first_preferred}_random.jpeg">'
         '<img class="ordinary" src="dict__pic&amp;one.png">'
-        '<img src="dict__other_random.webp" class="anki-miner-dict-media">'
+        f'<img src="{second_preferred}_random.webp" class="anki-miner-dict-media">'
     )
     expected_glossary = (
         '<span><img class="anki-miner-dict-media" '
-        'src="dict__pic&amp;one_random.jpeg"></span>'
+        f'src="{first_preferred}_random.jpeg"></span>'
     )
     for request in kotlin.requests_for("ankiCreateNotes"):
         fields = request["payload"]["notes"][0]["fields"]

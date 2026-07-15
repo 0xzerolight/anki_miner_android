@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://anki-miner.app/schemas/android-bridge/v1/anki.json",
   "title": "Anki Miner Android AnkiDroid callback payloads",
-  "$comment": "Every callback is synchronous and returns an envelope. Responses repeat runId/requestId; media and note results are positionally aligned with requests. verifyTarget validates model/fields before creating the deck. Duplicate scans are bounded candidate-key lookups, never full-model scans. preferredName is the extensionless prefix required by AnkiDroid addMediaFromUri; actualFilename is a raw basename, never [sound:] or <img> markup, and Python rewrites marked dictionary HTML to the provider-returned name. Runtime validation additionally enforces provider-name relationships and collisions, unique positive note IDs, and a strict notAttempted suffix with a top-level error.",
+  "$comment": "Every callback is synchronous and returns an envelope. Responses repeat runId/requestId; media and note results are positionally aligned with requests. verifyTarget validates model/fields before creating the deck. Duplicate scans are bounded candidate-key lookups, never full-model scans. Media calls are bounded to 50 assets. preferredName is the safe extensionless prefix required by AnkiDroid addMediaFromUri; requestedFilename preserves the exact direct-fallback basename; actualFilename is a raw basename, never [sound:] or <img> markup, and Python rewrites marked dictionary HTML to the provider-returned name. Runtime validation additionally enforces provider-name relationships and collisions, unique positive note IDs, and a strict notAttempted suffix with a top-level error.",
   "oneOf": [
     {"$ref": "#/$defs/verifyTargetRequest"},
     {"$ref": "#/$defs/verifyTargetResult"},
@@ -31,7 +31,22 @@
       "type": "string",
       "minLength": 1,
       "$comment": "Runtime validation additionally enforces NFC, bare-basename semantics, and rejects every Unicode category-C code point.",
-      "pattern": "^(?![.]{1,2}$)(?!\\s)(?!.*\\s$)(?!.*[/\\\\<>\\[\\]:\"'\\u0000-\\u001f\\u007f-\\u009f\\u00ad\\u061c\\u200b-\\u200f\\u202a-\\u202e\\u2060-\\u206f\\ufeff]).+$"
+      "pattern": "^(?![.]{1,2}$)(?!\\s)(?!.*\\s$)(?!.*[/\\\\<>\\[\\]:\"\\u0000-\\u001f\\u007f-\\u009f\\u00ad\\u061c\\u200b-\\u200f\\u202a-\\u202e\\u2060-\\u206f\\ufeff]).+$"
+    },
+    "mediaBasename": {
+      "type": "string",
+      "minLength": 1,
+      "$comment": "Exact media basename used by the direct-name fallback. Runtime validation rejects slash, backslash, dot-segments, and every Unicode category-C code point; valid Yomitan names may contain quotes, brackets, spaces, and non-NFC text.",
+      "pattern": "^(?![.]{1,2}$)(?!.*[/\\\\\\u0000-\\u001f\\u007f-\\u009f\\u00ad\\u061c\\u200b-\\u200f\\u202a-\\u202e\\u2060-\\u206f\\ufeff]).+$"
+    },
+    "actualMediaBasename": {
+      "allOf": [
+        {"$ref": "#/$defs/mediaBasename"},
+        {
+          "$comment": "A callback returns the raw filename, never Anki field markup.",
+          "pattern": "^(?!\\[sound:)(?!<img).+$"
+        }
+      ]
     },
     "duplicateKey": {
       "type": "string",
@@ -180,13 +195,17 @@
     "mediaAsset": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["assetId", "sourcePath", "preferredName", "purpose", "mediaKind"],
+      "required": ["assetId", "sourcePath", "preferredName", "requestedFilename", "purpose", "mediaKind"],
       "properties": {
         "assetId": {"$ref": "#/$defs/assetId"},
         "sourcePath": {"type": "string", "pattern": "^/"},
         "preferredName": {
-          "$comment": "Extensionless addMediaFromUri prefix; Python verifies it against the internal requested filename.",
+          "$comment": "Safe extensionless addMediaFromUri prefix; dictionary media uses a deterministic digest alias.",
           "$ref": "#/$defs/filename"
+        },
+        "requestedFilename": {
+          "$comment": "Exact full basename required by a direct-name media fallback. Card assets use safe content-addressed names; dictionary assets preserve valid Yomitan basenames.",
+          "$ref": "#/$defs/mediaBasename"
         },
         "purpose": {"enum": ["card", "dictionary"]},
         "mediaKind": {"enum": ["audio", "image"]}
@@ -201,6 +220,8 @@
         "requestId": {"$ref": "#/$defs/requestId"},
         "assets": {
           "type": "array",
+          "minItems": 1,
+          "maxItems": 50,
           "items": {"$ref": "#/$defs/mediaAsset"}
         }
       }
@@ -212,7 +233,7 @@
       "properties": {
         "assetId": {"$ref": "#/$defs/assetId"},
         "status": {"const": "stored"},
-        "actualFilename": {"$ref": "#/$defs/filename"}
+        "actualFilename": {"$ref": "#/$defs/actualMediaBasename"}
       }
     },
     "failedMedia": {
@@ -242,6 +263,8 @@
         "requestId": {"$ref": "#/$defs/requestId"},
         "results": {
           "type": "array",
+          "minItems": 1,
+          "maxItems": 50,
           "items": {
             "oneOf": [
               {"$ref": "#/$defs/storedMedia"},

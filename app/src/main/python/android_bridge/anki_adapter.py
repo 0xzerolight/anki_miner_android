@@ -9,6 +9,7 @@ set ``ANKI_MINER_HOME`` before any ``anki_miner`` module is imported.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import re
 import unicodedata
@@ -28,6 +29,7 @@ logger = logging.getLogger(__name__)
 
 _JAPANESE_RE = re.compile(r"[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF\u3400-\u4DBF]")
 _BATCH_SIZE = 100
+_MEDIA_BATCH_SIZE = 50
 _MAX_DUPLICATE_KEY_CHARS = 4096
 
 _SETUP_ERROR_CODES = {
@@ -50,7 +52,7 @@ _CONNECTION_ERROR_CODES = {
 }
 _ALL_ERROR_CODES = _SETUP_ERROR_CODES | _PROTOCOL_ERROR_CODES | _CONNECTION_ERROR_CODES
 _RECOVERABLE_MEDIA_ERROR_CODES = frozenset({"media_store_failed"})
-_FORBIDDEN_FILENAME_CHARACTERS = frozenset('/\\<>[]:"\'')
+_FORBIDDEN_FILENAME_CHARACTERS = frozenset('/\\<>[]:"')
 
 
 class AnkiOperationCancelled(BaseException):
@@ -96,9 +98,17 @@ class _MediaAsset:
             "assetId": self.asset_id,
             "sourcePath": self.source_path,
             "preferredName": self.preferred_name,
+            "requestedFilename": self.requested_name,
             "purpose": self.purpose,
             "mediaKind": self.media_kind,
         }
+
+
+@dataclass(frozen=True)
+class _CardMediaRef:
+    media: Any
+    filename_attr: str
+    source_path: Path
 
 
 def _protocol_error(code: str, message: str) -> NoReturn:
@@ -144,17 +154,43 @@ def _expect_positive_int(value: object, *, context: str) -> int:
     return converted
 
 
-def _expect_filename(value: object, *, context: str) -> str:
-    filename = _expect_string(value, context=context, nonempty=True)
+def _expect_media_basename(
+    value: object, *, context: str, code: str = "invalid_anki_response"
+) -> str:
+    if not isinstance(value, str) or not value:
+        _protocol_error(code, f"{context} must be a non-empty string")
+    filename = value
     if (
         filename in {".", ".."}
-        or filename != filename.strip()
-        or filename != unicodedata.normalize("NFC", filename)
-        or any(character in _FORBIDDEN_FILENAME_CHARACTERS for character in filename)
+        or "/" in filename
+        or "\\" in filename
         or any(unicodedata.category(character).startswith("C") for character in filename)
         or Path(filename).name != filename
     ):
-        _protocol_error("invalid_anki_response", f"{context} is not a filename")
+        _protocol_error(code, f"{context} is not a media basename")
+    return filename
+
+
+def _expect_filename(
+    value: object, *, context: str, code: str = "invalid_anki_response"
+) -> str:
+    filename = _expect_media_basename(value, context=context, code=code)
+    if (
+        filename != filename.strip()
+        or filename != unicodedata.normalize("NFC", filename)
+        or any(character in _FORBIDDEN_FILENAME_CHARACTERS for character in filename)
+    ):
+        _protocol_error(code, f"{context} is not a safe provider filename")
+    return filename
+
+
+def _expect_actual_media_basename(value: object, *, context: str) -> str:
+    filename = _expect_media_basename(value, context=context)
+    lowered = filename.lower()
+    if lowered.startswith("[sound:") or lowered.startswith("<img"):
+        _protocol_error(
+            "invalid_anki_response", f"{context} must be a raw media basename"
+        )
     return filename
 
 
@@ -163,6 +199,7 @@ def _validate_provider_filename(
     preferred: str,
     *,
     requested: str,
+    purpose: str,
     context: str,
 ) -> None:
     """Constrain AnkiDroid's returned name to its documented insertion shape.
@@ -174,9 +211,14 @@ def _validate_provider_filename(
     ``[sound:]``/``<img>`` response before returning this raw basename.
     """
 
-    actual_path = Path(actual)
     if actual == requested:
+        if purpose == "dictionary":
+            _expect_media_basename(actual, context=context)
+        else:
+            _expect_filename(actual, context=context)
         return
+    _expect_filename(actual, context=context)
+    actual_path = Path(actual)
     if not actual_path.suffix:
         _protocol_error(
             "unexpected_media_name", f"{context} must include a provider extension"
@@ -196,6 +238,13 @@ def _provider_preferred_name(filename: str) -> str:
     # CardContentProvider appends ``_`` and passes the result to Java's
     # createTempFile, whose prefix must be at least three characters.
     return preferred if len(preferred) >= 2 else f"{preferred}_"
+
+
+def _dictionary_provider_preferred_name(logical_filename: str) -> str:
+    """Return a safe deterministic prefix for an arbitrary Yomitan basename."""
+
+    digest = hashlib.sha256(logical_filename.encode("utf-8")).hexdigest()
+    return f"anki_miner_dict_{digest}"
 
 
 def _expect_error_detail(value: object, *, operation: str) -> AnkiCallbackError:
@@ -392,13 +441,14 @@ class AndroidAnkiAdapter:
                     {"assetId", "status", "actualFilename"},
                     context=f"storeMedia result {index}",
                 )
-                actual = _expect_filename(
+                actual = _expect_actual_media_basename(
                     row["actualFilename"], context=f"storeMedia result {index} filename"
                 )
                 _validate_provider_filename(
                     actual,
                     asset.preferred_name,
                     requested=asset.requested_name,
+                    purpose=asset.purpose,
                     context=f"storeMedia result {index} filename",
                 )
                 if actual in actual_names:
@@ -457,19 +507,40 @@ class AndroidAnkiAdapter:
             if asset.asset_id in asset_ids:
                 _protocol_error("invalid_anki_request", "Media asset IDs must be unique")
             asset_ids.add(asset.asset_id)
+            if asset.purpose not in {"card", "dictionary"} or asset.media_kind not in {
+                "audio",
+                "image",
+            }:
+                _protocol_error("invalid_anki_request", "Media asset metadata is invalid")
             _expect_filename(
-                asset.preferred_name, context=f"storeMedia asset {index} preferredName"
+                asset.preferred_name,
+                context=f"storeMedia asset {index} preferredName",
+                code="invalid_anki_request",
             )
-            _expect_filename(
-                asset.requested_name, context=f"storeMedia asset {index} requestedName"
+            name_validator = (
+                _expect_media_basename
+                if asset.purpose == "dictionary"
+                else _expect_filename
             )
-            _expect_filename(
-                asset.original_name, context=f"storeMedia asset {index} originalName"
+            name_validator(
+                asset.requested_name,
+                context=f"storeMedia asset {index} requestedFilename",
+                code="invalid_anki_request",
             )
-            if asset.preferred_name != _provider_preferred_name(asset.requested_name):
+            name_validator(
+                asset.original_name,
+                context=f"storeMedia asset {index} originalName",
+                code="invalid_anki_request",
+            )
+            expected_preferred = (
+                _dictionary_provider_preferred_name(asset.original_name)
+                if asset.purpose == "dictionary"
+                else _provider_preferred_name(asset.requested_name)
+            )
+            if asset.preferred_name != expected_preferred:
                 _protocol_error(
                     "invalid_anki_request",
-                    "Media preferredName must omit the requested file extension",
+                    "Media preferredName is inconsistent with the requested media",
                 )
             for claimed_name in {asset.requested_name, asset.original_name}:
                 prior_owner = requested_name_owners.setdefault(
@@ -484,18 +555,24 @@ class AndroidAnkiAdapter:
                 _protocol_error(
                     "invalid_anki_request", "Media source paths must be absolute"
                 )
-            if asset.purpose not in {"card", "dictionary"} or asset.media_kind not in {
-                "audio",
-                "image",
-            }:
-                _protocol_error("invalid_anki_request", "Media asset metadata is invalid")
-        try:
-            payload = self._callbacks.store_media(
-                {"assets": [asset.to_wire() for asset in assets]}
-            )
-        except AnkiCallbackError as error:
-            _raise_callback_error(error)
-        return self._parse_store_media_result(payload, assets)
+
+        stored: dict[str, str] = {}
+        for offset in range(0, len(assets), _MEDIA_BATCH_SIZE):
+            chunk = assets[offset : offset + _MEDIA_BATCH_SIZE]
+            try:
+                payload = self._callbacks.store_media(
+                    {"assets": [asset.to_wire() for asset in chunk]}
+                )
+            except AnkiCallbackError as error:
+                _raise_callback_error(error)
+            chunk_stored = self._parse_store_media_result(payload, chunk)
+            if stored.keys() & chunk_stored.keys():
+                _protocol_error(
+                    "mismatched_callback_response",
+                    "storeMedia returned an asset more than once",
+                )
+            stored.update(chunk_stored)
+        return stored
 
     def _store_card_media(self, word_data_list: Sequence[Any]) -> set[str]:
         from anki_miner.services.anki_media_store import (
@@ -504,7 +581,7 @@ class AndroidAnkiAdapter:
         )
 
         paths_by_filename: dict[str, list[Path]] = {}
-        refs: dict[str, list[tuple[Any, str]]] = {}
+        refs: dict[str, list[_CardMediaRef]] = {}
         kinds: dict[str, set[str]] = {}
 
         for item in word_data_list:
@@ -514,15 +591,18 @@ class AndroidAnkiAdapter:
                 source_path = getattr(media, path_attr)
                 if not filename or not source_path:
                     continue
-                refs.setdefault(filename, []).append((media, filename_attr))
+                path = Path(source_path)
+                try:
+                    resolved_path = path.resolve()
+                except OSError:
+                    resolved_path = path.absolute()
+                refs.setdefault(filename, []).append(
+                    _CardMediaRef(media, filename_attr, resolved_path)
+                )
                 kinds.setdefault(filename, set()).add(
                     "image" if filename_attr == "screenshot_filename" else "audio"
                 )
-                path = Path(source_path)
-                if not path.exists():
-                    continue
                 paths = paths_by_filename.setdefault(filename, [])
-                resolved_path = path.resolve()
                 if resolved_path not in paths:
                     paths.append(resolved_path)
 
@@ -539,6 +619,8 @@ class AndroidAnkiAdapter:
             unreadable: list[tuple[Path, OSError]] = []
             for source_path in referenced_paths:
                 try:
+                    if not source_path.is_file():
+                        raise FileNotFoundError(source_path)
                     readable.append((source_path, source_path.read_bytes()))
                 except OSError as error:
                     unreadable.append((source_path, error))
@@ -575,9 +657,6 @@ class AndroidAnkiAdapter:
                 )
             )
 
-        for filename in refs.keys() - paths_by_filename.keys():
-            logger.warning("Media source file vanished before upload: %s", filename)
-
         stored_by_id = self._store_assets(assets)
         stored_names: set[str] = set()
         renamed_originals: set[str] = set()
@@ -585,8 +664,8 @@ class AndroidAnkiAdapter:
             original = originals_by_id[asset_id]
             renamed_originals.add(original)
             stored_names.add(actual)
-            for media, filename_attr in refs.get(original, []):
-                setattr(media, filename_attr, actual)
+            for ref in refs.get(original, []):
+                setattr(ref.media, ref.filename_attr, actual)
 
         self.last_media_store_failures = len(refs) - len(renamed_originals)
         return stored_names
@@ -700,7 +779,7 @@ class AndroidAnkiAdapter:
                 _MediaAsset(
                     asset_id=asset_id,
                     source_path=str(path.resolve()),
-                    preferred_name=_provider_preferred_name(source),
+                    preferred_name=_dictionary_provider_preferred_name(source),
                     requested_name=source,
                     original_name=source,
                     purpose="dictionary",
