@@ -46,11 +46,11 @@ class ToolchainVerificationTest(unittest.TestCase):
         avd_dir = avd_home / "fixture.avd"
         avd_dir.mkdir(parents=True)
         (avd_home / "fixture.ini").write_text(
-            f"path={avd_dir}\ntarget=android-36\n",
+            f"path={avd_dir}\npath.rel=avd/fixture.avd\ntarget=android-36\n",
             encoding="utf-8",
         )
         (avd_dir / "config.ini").write_text(
-            "AvdId=fixture\n"
+            "avd.id=<build>\n"
             "abi.type=x86_64\n"
             "image.sysdir.1=system-images/android-36/google_apis_ps16k/x86_64/\n"
             "tag.id=page_size_16kb\n"
@@ -114,6 +114,31 @@ class ToolchainVerificationTest(unittest.TestCase):
                 encoding="utf-8",
             )
             with self.assertRaisesRegex(VerificationError, "tag.ids is"):
+                verify(arguments)
+
+    def test_rejects_relative_avd_identity_drift(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            arguments = self.fixture(Path(directory))
+            root_config = arguments.avd_home / "fixture.ini"
+            root_config.write_text(
+                root_config.read_text(encoding="utf-8").replace(
+                    "path.rel=avd/fixture.avd",
+                    "path.rel=avd/other.avd",
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(VerificationError, "path.rel is"):
+                verify(arguments)
+
+    def test_rejects_mismatched_legacy_avd_id_when_present(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            arguments = self.fixture(Path(directory))
+            config = arguments.avd_home / "fixture.avd" / "config.ini"
+            config.write_text(
+                f"AvdId=other\n{config.read_text(encoding='utf-8')}",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(VerificationError, "AvdId is"):
                 verify(arguments)
 
 

@@ -10,8 +10,11 @@ engine sees it. No native node pointer may escape the backend call.
 `UNIDIC_FEATURE_FIELDS` freezes the 26-field UniDic 2.1.2 binary schema in the
 same order as fugashi 1.5.2 and the desktop golden fixture. CSV decoding follows
 fugashi's observable behavior: quoted commas are decoded, explicit empty fields
-and literal `*` values survive, and only absent trailing fields become `None`.
-Rows longer than 26 fields fail instead of being silently truncated.
+and literal `*` values survive through the raw `TokenRecord` and the
+engine-facing `SimpleNamespace`, and only absent trailing fields become `None`.
+Rows longer than 26 fields fail instead of being silently truncated. The
+canonical JSON golden format alone collapses `*` to `null`; that serialization
+rule must never change the object seen by the engine.
 
 The adapter builds a mutable `SimpleNamespace` for features and a fugashi-shaped
 token namespace. It also records UTF-8 byte, Python code-point, and JVM UTF-16
@@ -94,13 +97,68 @@ S1 winner. Record those runtime results here before making the M0 decision.
 
 | Gate | S1a result | Evidence |
 | --- | --- | --- |
-| Host contract and engine regression | pending final branch health | commit/test output |
-| x86_64, 4 KiB | pending licensed native build | emulator test output |
-| x86_64, 16 KiB | pending licensed native build | emulator test output |
-| arm64 runtime | pending supported target | explicit-serial test output |
+| Host contract and engine regression | pass | `scripts/health.sh` with S1a publication `95f6024a…`: health OK |
+| x86_64, 4 KiB | pass | API 36 `anki_miner_api36`: 6 connected tests passed |
+| x86_64, 16 KiB | pass | API 36 `anki_miner_api36_ps16k`: 6 connected tests passed |
+| arm64 build/package/static ELF | pass | reproducible wheel, APK and AAB artifact gates |
+| arm64 runtime | pending supported target | no arm64 runtime is available on this x86_64 host |
 | M0 selection | not selected | requires all applicable runtime gates |
 
 After the licensed wheel build emits its manifest, run both owned x86_64 lanes
 with `scripts/run-s1a-emulator-tests.sh --manifest FILE --unidic-dir DIR`.
 Run the provisional arm64 gate only against an explicitly chosen target with
 `scripts/run-s1a-arm64-tests.sh --serial SERIAL --manifest FILE --unidic-dir DIR`.
+
+## S1b verification
+
+The host-native gate compiles the pinned MeCab runtime, proves `sys.dic` and
+`matrix.bin` are present in `/proc/self/maps`, and compares every seeded case
+and all 26 fields against the committed desktop golden. It separately proves
+that explicit `*` and actually absent fields remain distinct at the engine
+boundary, then drives the seeded `走り出した` case through native MeCab, the
+S1b tagger adapter, and the vendored compound pipeline:
+
+```bash
+tools/tokenizer/test-s1b-native-host.sh /absolute/path/to/unidic/dicdir
+```
+
+The supplied dictionary is accepted only when its canonical tree hash equals
+`golden/engine-v1.json`'s `provenance.data.assets_sha256.unidic_dicdir`.
+
+The Android x86_64 success-path test uses the same external dictionary without
+adding it to either APK. After the user has accepted the Android SDK license
+and the locked emulator is installed, run:
+
+```bash
+scripts/run-emulator-tests.sh \
+    --unidic-dir /absolute/path/to/the/golden-pinned/unidic/dicdir \
+    --page-size 4k
+```
+
+The connected gate verifies the dictionary on the host, writes a deterministic
+temporary ZIP to `/data/local/tmp`, and streams it into a versioned app-private
+test directory. Python verifies the extracted tree again before opening it.
+The instrumented test then traverses Chaquopy, the Python S1b adapter, Kotlin,
+JNI, and native MeCab for all seeded cases, including the astral OOV UTF-16
+span, and checks both dictionary mappings in the Android process. The temporary
+device ZIP is removed when the gate exits.
+
+S1b remains provisional until that same production-JNI class passes on an
+explicitly named arm64 target. Record the expected image fingerprint outside
+the target first, then run either page-size lane with:
+
+```bash
+scripts/run-s1b-arm64-tests.sh \
+    --serial ARM64_SERIAL \
+    --unidic-dir /absolute/path/to/the/golden-pinned/unidic/dicdir \
+    --page-size 16k \
+    --image-fingerprint EXPECTED_BUILD_FINGERPRINT
+```
+
+This opt-in gate enables only `deviceDebug`, checks the serial is an online
+API 36 `arm64-v8a` target with the requested actual page size and exact image
+fingerprint, inspects both APK identities and the production JNI artifact,
+provisions the golden-pinned external dictionary, and invokes only
+`MecabNativeTokenizerInstrumentedTest`. It never discovers, starts, stops, or
+chooses a target. Normal builds remain limited to `emulatorDebug` and
+`deviceRelease`.

@@ -7,7 +7,6 @@ import subprocess
 import tempfile
 import unittest
 
-
 SCRIPTS_DIR = Path(__file__).resolve().parents[1]
 
 
@@ -37,6 +36,8 @@ class EmulatorScriptTest(unittest.TestCase):
         self.assertNotIn("-wipe-data", command)
         self.assertNotIn("-no-snapshot-load", command)
         self.assertNotIn("-no-snapshot-save", command)
+        gpu_index = command.index("-gpu")
+        self.assertEqual("swiftshader", command[gpu_index + 1])
 
     def test_test_session_enforces_clean_snapshot_free_boot_last(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -125,6 +126,7 @@ printf '%s\\n' "$@" >"$FAKE_STATE/health.args"
                     "ANKI_MINER_HEALTH_SCRIPT": str(health),
                     "EMULATOR_BOOT_TIMEOUT_SECONDS": "5",
                     "FAKE_STATE": str(state),
+                    "ANKI_MINER_TEST_UNIDIC_DIR": str(root),
                 },
             )
             result = subprocess.run(
@@ -137,9 +139,13 @@ printf '%s\\n' "$@" >"$FAKE_STATE/health.args"
             )
 
             self.assertEqual(0, result.returncode, result.stderr)
-            launcher_arguments = (state / "launcher.args").read_text(
-                encoding="utf-8",
-            ).splitlines()
+            launcher_arguments = (
+                (state / "launcher.args")
+                .read_text(
+                    encoding="utf-8",
+                )
+                .splitlines()
+            )
             self.assertIn("--test-session", launcher_arguments)
             self.assertEqual(
                 ["--connected", "4k"],

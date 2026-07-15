@@ -107,6 +107,16 @@ fun loadS1aWheels(): S1aWheels {
 }
 
 val s1aWheels = if (s1aEnabled) loadS1aWheels() else null
+val s1bArm64TestsEnabled =
+    providers.gradleProperty("ankiMinerS1bArm64Tests")
+        .map { value ->
+            require(value == "true") {
+                "ankiMinerS1bArm64Tests must be exactly 'true' when supplied"
+            }
+            true
+        }
+        .orElse(false)
+        .get()
 
 android {
     namespace = "com.ankiminer.android"
@@ -130,6 +140,11 @@ android {
             "String",
             "TOKENIZER_TEST_UNIDIC_ARCHIVE",
             "\"/data/local/tmp/anki-miner-tokenizer-unidic.zip\"",
+        )
+        buildConfigField(
+            "String",
+            "S1B_TEST_UNIDIC_ARCHIVE",
+            "\"/data/local/tmp/anki-miner-s1b-unidic.zip\"",
         )
     }
 
@@ -167,6 +182,13 @@ android {
         buildConfig = true
     }
 
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
+        }
+    }
+
     packaging {
         jniLibs {
             // Future ffmpeg/ffprobe PIE executables must be extracted to real paths.
@@ -187,11 +209,16 @@ androidComponents {
     beforeVariants(selector().all()) { variant ->
         val runtimeAbi =
             variant.productFlavors.single { (dimension, _) -> dimension == "runtimeAbi" }.second
+        val s1bArm64Debug =
+            s1bArm64TestsEnabled &&
+                runtimeAbi == "device" &&
+                variant.buildType == "debug"
         // Chaquopy resolves ABI filters from product flavors, not build types.
         variant.enable =
             (runtimeAbi == "emulator" && variant.buildType == "debug") ||
             (runtimeAbi == "device" && variant.buildType == "release") ||
-            (s1aEnabled && runtimeAbi == "device" && variant.buildType == "debug")
+            (s1aEnabled && runtimeAbi == "device" && variant.buildType == "debug") ||
+            s1bArm64Debug
     }
 }
 

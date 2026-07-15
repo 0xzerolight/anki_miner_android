@@ -1,0 +1,166 @@
+package com.ankiminer.android.media
+
+import java.io.File
+import java.io.IOException
+import java.nio.file.Files
+import java.util.ArrayDeque
+import org.junit.Assert.assertArrayEquals
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class SafJobFileOwnerTest {
+    @Test
+    fun seekableDescriptorStaysOwnedUntilWholeJobCloses() {
+        val descriptor = FakeDescriptor(rawFd = 41, seekable = true, content = byteArrayOf(1))
+        val owner = ownerWith(descriptor)
+
+        val input = owner.openUri("content://test/seekable")
+
+        assertEquals("/proc/self/fd/41", input.path)
+        assertEquals(PythonMediaInput.Backing.SEEKABLE_DESCRIPTOR, input.backing)
+        assertFalse(descriptor.closed)
+        assertEquals(0, descriptor.copyCount)
+
+        owner.close()
+
+        assertTrue(descriptor.closed)
+        owner.close()
+        assertTrue(descriptor.closed)
+    }
+
+    @Test
+    fun nonSeekableDescriptorCopiesOnceAndBothResourcesLiveForJob() {
+        val directory = Files.createTempDirectory("saf-owner-test").toFile()
+        try {
+            val descriptor =
+                FakeDescriptor(rawFd = 42, seekable = false, content = "mkv".toByteArray())
+            val cache = File(directory, "copy.media")
+            val owner = ownerWith(descriptor, cache)
+
+            val input = owner.openUri("content://test/pipe")
+
+            assertEquals(cache.absolutePath, input.path)
+            assertEquals(PythonMediaInput.Backing.CACHE_COPY, input.backing)
+            assertArrayEquals("mkv".toByteArray(), cache.readBytes())
+            assertFalse(descriptor.closed)
+            assertTrue(cache.exists())
+
+            owner.close()
+
+            assertTrue(descriptor.closed)
+            assertFalse(cache.exists())
+        } finally {
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun failedCopyClosesDescriptorAndDeletesPartialFile() {
+        val directory = Files.createTempDirectory("saf-owner-failure").toFile()
+        try {
+            val descriptor =
+                FakeDescriptor(
+                    rawFd = 43,
+                    seekable = false,
+                    content = byteArrayOf(1),
+                    copyFailure = IOException("provider failed"),
+                )
+            val cache = File(directory, "partial.media")
+            val owner = ownerWith(descriptor, cache)
+
+            val error =
+                assertThrows(IOException::class.java) {
+                    owner.openUri("content://test/broken")
+                }
+
+            assertEquals("provider failed", error.message)
+            assertTrue(descriptor.closed)
+            assertFalse(cache.exists())
+            owner.close()
+        } finally {
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun openAfterCloseFailsBeforeDocumentsProviderIsTouched() {
+        var opens = 0
+        val owner =
+            SafJobFileOwner(
+                DescriptorOpener {
+                    opens += 1
+                    FakeDescriptor(44, true, byteArrayOf())
+                },
+                CacheFileFactory { error("cache not expected") },
+            )
+        owner.close()
+
+        assertThrows(IllegalStateException::class.java) {
+            owner.openUri("content://test/late")
+        }
+        assertEquals(0, opens)
+    }
+
+    @Test
+    fun closeAttemptsEveryDescriptorAndReportsAllFailures() {
+        val first = FakeDescriptor(45, true, byteArrayOf(), closeFailure = IOException("first"))
+        val second = FakeDescriptor(46, true, byteArrayOf(), closeFailure = IOException("second"))
+        val descriptors = ArrayDeque(listOf(first, second))
+        val owner =
+            SafJobFileOwner(
+                DescriptorOpener { descriptors.removeFirst() },
+                CacheFileFactory { error("cache not expected") },
+            )
+        owner.openUri("content://test/one")
+        owner.openUri("content://test/two")
+
+        val error = assertThrows(IOException::class.java) { owner.close() }
+
+        assertEquals("second", error.message)
+        assertEquals(listOf("first"), error.suppressed.map { it.message })
+        assertTrue(first.closed)
+        assertTrue(second.closed)
+    }
+
+    private fun ownerWith(
+        descriptor: FakeDescriptor,
+        cache: File = File("unused"),
+    ): SafJobFileOwner =
+        SafJobFileOwner(
+            DescriptorOpener { descriptor },
+            CacheFileFactory { cache.apply { createNewFile() } },
+        )
+
+    private class FakeDescriptor(
+        override val rawFd: Int,
+        private val seekable: Boolean,
+        private val content: ByteArray,
+        private val copyFailure: IOException? = null,
+        private val closeFailure: IOException? = null,
+    ) : OwnedDescriptor {
+        var closed = false
+            private set
+        var copyCount = 0
+            private set
+
+        override fun isSeekable(): Boolean {
+            check(!closed)
+            return seekable
+        }
+
+        override fun copyTo(target: File) {
+            check(!closed)
+            copyCount += 1
+            target.writeBytes(content)
+            copyFailure?.let { throw it }
+        }
+
+        override fun close() {
+            closed = true
+            closeFailure?.let { throw it }
+        }
+    }
+}

@@ -174,8 +174,22 @@ def test_wire_decoder_and_adapter_cover_astral_unknown_node() -> None:
     assert (tokens[1].byte_start, tokens[1].byte_end) == (3, 15)
     assert (tokens[1].codepoint_start, tokens[1].codepoint_end) == (1, 4)
     assert (tokens[1].utf16_start, tokens[1].utf16_end) == (1, 7)
+    assert records[1].features[2] == "*"
     assert tokens[1].feature.pos3 == "*"
     assert tokens[1].feature.lForm is None
+
+
+def test_adapter_distinguishes_explicit_stars_from_absent_trailing_fields() -> None:
+    features = ("名詞", "", "*", *(None for _ in range(23)))
+    records = (_record(0, 3, features=features),)
+
+    token = adapt_tokens("猫", records)[0]
+
+    assert records[0].features[:3] == ("名詞", "", "*")
+    assert token.feature.pos1 == "名詞"
+    assert token.feature.pos2 == ""
+    assert token.feature.pos3 == "*"
+    assert token.feature.pos4 is None
 
 
 def test_adapter_recreates_fugashi_whitespace_and_mutable_feature_shape() -> None:

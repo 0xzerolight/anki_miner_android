@@ -127,7 +127,7 @@ if [[ "$HEADLESS" == true ]]; then
 fi
 if [[ "$SOFTWARE" == true ]]; then
     echo "KVM is unavailable or software mode was requested; boot may take several minutes." >&2
-    args+=(-accel off -gpu swangle)
+    args+=(-accel off -gpu swiftshader)
 else
     args+=(-accel auto -gpu auto)
 fi

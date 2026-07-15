@@ -18,6 +18,7 @@ from engine_sync.core import (
 
 
 PINNED_MEDIA_EXTRACTOR_BLOB = "357dea44ae92b47ad06e19d8692a863438fa3d62"
+PINNED_AUDIO_TRACK_DETECTOR_BLOB = "f785f5b8706e1073f076149dbfb873472446d414"
 REMOVED_WAV_TO_FLOAT32 = '''def wav_to_float32(path: Path) -> "tuple[Any, int, float]":
     """Read a mono 16-bit PCM WAV and return (samples, sample_rate, duration_s).
 
@@ -69,6 +70,57 @@ PINNED_WAVE_DOC = """Python's stdlib ``wave`` module (which both the zero-frame 
         and :func:`wav_to_float32` rely on) cannot read tag-3 float WAVs and"""
 ANDROID_WAVE_DOC = """Python's stdlib ``wave`` module (which the zero-frame guard below relies
         on) cannot read tag-3 float WAVs and"""
+ANDROID_FD_IMPORT = "from anki_miner.utils.android_fd import inherited_fd_command\n"
+ANDROID_FFMPEG_SPAWN = '''            with inherited_fd_command(cmd) as (child_cmd, pass_fds):
+                proc = subprocess.Popen(
+                    child_cmd,
+                    stdin=subprocess.DEVNULL,  # detach from the TTY: a backgrounded ffmpeg reading
+                    # the controlling terminal gets SIGTTIN-stopped and the extraction times out.
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    pass_fds=pass_fds,
+                    **no_window_kwargs(),  # hide the Windows cmd.exe flash (Issue #79)
+                )
+'''
+DESKTOP_FFMPEG_SPAWN = '''            proc = subprocess.Popen(
+                cmd,
+                stdin=subprocess.DEVNULL,  # detach from the TTY: a backgrounded ffmpeg reading
+                # the controlling terminal gets SIGTTIN-stopped and the extraction times out.
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                **no_window_kwargs(),  # hide the Windows cmd.exe flash (Issue #79)
+            )
+'''
+ANDROID_FFPROBE_DOC = """    Android SAF procfs inputs are duplicated per child and explicitly inherited.
+"""
+ANDROID_FFPROBE_SPAWN = '''        with inherited_fd_command(cmd) as (child_cmd, pass_fds):
+            proc = subprocess.run(
+                child_cmd,
+                capture_output=True,
+                timeout=30,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                pass_fds=pass_fds,
+                **no_window_kwargs(),  # hide the Windows cmd.exe flash (Issue #79)
+            )
+'''
+DESKTOP_FFPROBE_SPAWN = '''        proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            timeout=30,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            **no_window_kwargs(),  # hide the Windows cmd.exe flash (Issue #79)
+        )
+'''
 
 
 def _run(*args: str, cwd: Path) -> str:
@@ -437,7 +489,7 @@ target = "anki_miner.services.youtube_fetcher"
         self.assertEqual(first.manifest_bytes(), second.manifest_bytes())
         self.assertEqual(first.files, second.files)
 
-    def test_media_extractor_override_only_removes_cut_numpy_helper(self) -> None:
+    def test_media_extractor_override_has_only_reviewed_android_changes(self) -> None:
         project_root = Path(__file__).resolve().parents[3]
         override = (
             project_root
@@ -465,7 +517,13 @@ target = "anki_miner.services.youtube_fetcher"
         self.assertIn("extract_full_audio", functions)
         self.assertEqual(override.count(ANDROID_WAVE_DOC), 1)
 
-        reconstructed = override.replace(ANDROID_WAVE_DOC, PINNED_WAVE_DOC)
+        self.assertEqual(override.count(ANDROID_FD_IMPORT), 1)
+        self.assertEqual(override.count(ANDROID_FFMPEG_SPAWN), 1)
+        reconstructed = override.replace(ANDROID_FD_IMPORT, "")
+        reconstructed = reconstructed.replace(
+            ANDROID_FFMPEG_SPAWN, DESKTOP_FFMPEG_SPAWN
+        )
+        reconstructed = reconstructed.replace(ANDROID_WAVE_DOC, PINNED_WAVE_DOC)
         marker = 'def _kill_quietly(proc: "subprocess.Popen[str]") -> None:'
         self.assertEqual(reconstructed.count(marker), 1)
         reconstructed = reconstructed.replace(
@@ -475,6 +533,27 @@ target = "anki_miner.services.youtube_fetcher"
         self.assertEqual(
             hashlib.sha1(git_object, usedforsecurity=False).hexdigest(),
             PINNED_MEDIA_EXTRACTOR_BLOB,
+        )
+
+    def test_audio_detector_override_has_only_fd_inheritance_change(self) -> None:
+        project_root = Path(__file__).resolve().parents[3]
+        override = (
+            project_root
+            / "tools/engine-sync/overrides/anki_miner/utils/audio_track_detector.py"
+        ).read_text(encoding="utf-8")
+        self.assertEqual(override.count(ANDROID_FD_IMPORT), 1)
+        self.assertEqual(override.count(ANDROID_FFPROBE_DOC), 1)
+        self.assertEqual(override.count(ANDROID_FFPROBE_SPAWN), 1)
+
+        reconstructed = override.replace(ANDROID_FD_IMPORT, "")
+        reconstructed = reconstructed.replace(ANDROID_FFPROBE_DOC, "")
+        reconstructed = reconstructed.replace(
+            ANDROID_FFPROBE_SPAWN, DESKTOP_FFPROBE_SPAWN
+        ).encode("utf-8")
+        git_object = f"blob {len(reconstructed)}\0".encode() + reconstructed
+        self.assertEqual(
+            hashlib.sha1(git_object, usedforsecurity=False).hexdigest(),
+            PINNED_AUDIO_TRACK_DETECTOR_BLOB,
         )
 
 

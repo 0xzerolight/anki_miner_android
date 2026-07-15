@@ -20,6 +20,7 @@ LOCKED_PACKAGES = {
     "emulator": "36.6.11",
     "platforms;android-36": "2",
     "build-tools;36.0.0": "36.0.0",
+    "cmake;3.22.1": "3.22.1",
     "ndk;28.2.13676358": "28.2.13676358",
     "system-images;android-36;google_apis;x86_64": "7",
     "system-images;android-36;google_apis_ps16k;x86_64": "7",

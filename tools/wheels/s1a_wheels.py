@@ -751,6 +751,7 @@ def _inspect_elf(data: bytes, logical_name: str, abi: str) -> dict[str, object]:
             logical_name,
             inspection,
             require_et_dyn=True,
+            inspect_dynamic=True,
         )
     except checker.ArtifactError as error:
         raise WheelError(str(error)) from error

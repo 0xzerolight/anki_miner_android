@@ -1,0 +1,74 @@
+{
+  "schema_version": 1,
+  "upstream": {
+    "repository": "https://github.com/dariyooo/mecab_for_dart",
+    "tag": "d2.0.0",
+    "revision": "453d4deb7e3857f32c1ab6c1ced574d9f73a2233",
+    "source_root": "ios/Classes"
+  },
+  "licenses": {
+    "mecab": {
+      "copyright": "Taku Kudo and Nippon Telegraph and Telephone Corporation",
+      "path": "LICENSE.mecab",
+      "sha256": "62f4b23450a9ad40e4db8063d45c1d13c78d07ca27c9ada62c4ca9c11c1f3e7b",
+      "source": {
+        "path": "mecab/BSD",
+        "repository": "https://github.com/taku910/mecab",
+        "revision": "61b90ba6e669dc2d7d533d4a80d206f3b31d52b1"
+      },
+      "spdx": "BSD-3-Clause"
+    },
+    "mecab_for_dart": {
+      "copyright": "2024 CaptainDario",
+      "path": "LICENSE.mecab_for_dart",
+      "sha256": "06a8d42f64731d4e96c1fc958c5194b49fe24a003b16f66c7d6800679a4cad0e",
+      "source": {
+        "path": "LICENSE",
+        "repository": "https://github.com/dariyooo/mecab_for_dart",
+        "revision": "453d4deb7e3857f32c1ab6c1ced574d9f73a2233"
+      },
+      "spdx": "BSD-3-Clause"
+    }
+  },
+  "files": {
+    "char_property.cpp": "91fa21659c8b5ec74e13910e4aa455bc03ae4cbbfcbe4259f6866419398e0d9b",
+    "char_property.h": "b170d81acaa64c134343e7a17f49d632e4ff90c2df348352cbeda4651d20f01e",
+    "common.h": "c31a4c903a39a42524e75d0a8e74a1f537f25d4b0491978be5a151479ec6524e",
+    "config.h": "2d30daedbc6196203eed5b149de40dc030ddd0a6678b9c4ba620d2673a114f41",
+    "connector.cpp": "b6dea51f56dffac05ef1727ee6171ea2b7c04e30c8af4a520340b539c5562ece",
+    "connector.h": "415673d9274273eac0d94876beeab678d05cd6f6cdaace666d8c3b9dddad6f78",
+    "context_id.cpp": "57929b4520c0f8ce69d46bbb87f34effe20732c1dc46aed5bbbb771a0277644f",
+    "context_id.h": "e63f52cb265bf51596a4e72f62942b669a781e17991a2bbe21d073c8c43f9a6e",
+    "darts.h": "9b52266b42ea62267e22ff804e50b91a244cc0908b70045c91dbbee130b69ef8",
+    "dictionary.cpp": "8b3b85a63161a3d3c9c911ec02aa72a928bbbdcddef38b0486f1c7a4b86da708",
+    "dictionary.h": "37dc77bad2bb170d8e385f429f1c6b91a84c798039482db545acbad49ef4a80c",
+    "eval.cpp": "2c2ff6a0f448399e1fd01cd82cb43e13cad486feb85ba7720c213030310cb54d",
+    "freelist.h": "180f1b99fec264e2c445e0eac431e450701f07cacfa20deda9c763f4d7efd18e",
+    "iconv_utils.cpp": "77af380ed3d3c0046fd29f18f1d36f7d743c16f2e17cdf28fbe29299a2b9c9a9",
+    "iconv_utils.h": "aeffc77ac03cecb03f70f8e862939a6ef7f3a61d6497eb468e6fcbfc09e1bcb6",
+    "learner_node.h": "3556a91a165667d876738d0f4f92068bfcc2dd9bf3563c56e61e5e7e6b03551d",
+    "libmecab.cpp": "c5c5ccf0541d96937f0c3e44bb596afd570656772bf799a73d936879147fa2c3",
+    "mecab.h": "394e73a9061e5d023d3de138d00a6a03e6e667ad1616ef01c4a0e06386977a1a",
+    "mmap.h": "91b67216d13965ef15b7f53a160652bac76637ddba0a930d3b35e6dfd03b8f4c",
+    "nbest_generator.cpp": "80391bfe34c4b1eed6f29be0e38e58f3120ff1f577ea2fc8d68798472ae022db",
+    "nbest_generator.h": "77477c4614dee15f7e09b825981ccad7ae9f20dad96ca4eeefe8a4aec51e25c5",
+    "param.cpp": "7e18ce8895acc8e4718857a41807c5a1b07ed4dd2a755e530eb590a6b5a1001f",
+    "param.h": "8339cebafded83d9b716dbb79a68ae4a45aa022f7e58f5483fbe5731836fea1f",
+    "scoped_ptr.h": "131c2951aec74d79bef84b7b95459b33bbc7148c16ee60d7b0452f7a463e5cb2",
+    "stream_wrapper.h": "9e62c601ed795446b6ab7cdd23565b031d3d5e0bf54d38f0c466a021091afb64",
+    "string_buffer.cpp": "c4e4339e386d14b52254e911d76a2317dcd5e8f198c7477410f36e7806d74b4f",
+    "string_buffer.h": "4f1c5c1f1cce6edb70926889370bebf74d2a132c800582d5a8184f91786aa95b",
+    "tagger.cpp": "740cbd5190111fe16941dc4cf48e43fd02d07919bb0d30fcf9786fd0c63cd255",
+    "thread.h": "13fe47641520acbd5818f08ca950366d84d6f573b2c22e74cde166a4c7537502",
+    "tokenizer.cpp": "5322a33ddfb9f92037f8bbc56915e338e794a68cf93f1711c1b97fb249915007",
+    "tokenizer.h": "a5f47ff64305f432851d0159d36fa09c972cc5a29f82a6a4605ac5aed748592d",
+    "ucs.h": "588d06c56df7423636a946216178ebc1ac2aba112da8d611648baac4b0e40af2",
+    "ucstable.h": "efb46f8a9b369f477543d2dcb892846e77bdecc6c87f68d8f4558dae41a3afb5",
+    "utils.cpp": "347b526d0019f088ee9f74ddd0ebb6624bb5706e48f598ecb7d595034ec0b190",
+    "utils.h": "5ea36638cb445161ad905de292979a0aa659a68986578b655c3470a12ebd0ce5",
+    "viterbi.cpp": "0ffcbd222e54de22cb4bb193c9f8c3d354b21b254d651e432000a6721aa71eaa",
+    "viterbi.h": "b4b2ea648b67af2b766c7288580274664298d9b57c56ae6fc695e61a4503f74b",
+    "writer.cpp": "893085ded0b564d001ba6ce6939d9dcb710c431d2fdd5ec26db30c7d4800df52",
+    "writer.h": "ded7ebf22d624d07435098274d6777151b77ce68aeee56ff44a018ff852b0a72"
+  }
+}

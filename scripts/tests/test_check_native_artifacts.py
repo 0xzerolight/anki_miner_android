@@ -14,7 +14,6 @@ import unittest
 import warnings
 import zipfile
 
-
 SCRIPTS_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SCRIPTS_DIR))
 
@@ -58,7 +57,9 @@ def elf64(
         0,
         0,
     )
-    struct.pack_into("<IIQQQQQQ", data, 64, 1, 5, 0, 0, 0, len(data), len(data), alignment)
+    struct.pack_into(
+        "<IIQQQQQQ", data, 64, 1, 5, 0, 0, 0, len(data), len(data), alignment
+    )
     if interpreter:
         struct.pack_into(
             "<IIQQQQQQ",
@@ -118,14 +119,15 @@ def dynamic_elf(
     machine: int = 62,
     soname: str | None,
     needed: tuple[str, ...],
+    rpath: str | None = None,
 ) -> bytes:
     strings = bytearray(b"\0")
     string_offsets: dict[str, int] = {}
-    for value in (*needed, *((soname,) if soname else ())):
+    for value in (*needed, *((soname,) if soname else ()), *((rpath,) if rpath else ())):
         if value not in string_offsets:
             string_offsets[value] = len(strings)
             strings.extend(value.encode("ascii") + b"\0")
-    dynamic_count = 3 + len(needed) + (1 if soname else 0)
+    dynamic_count = 3 + len(needed) + (1 if soname else 0) + (1 if rpath else 0)
     dynamic_offset = 64 + 56 * 2
     string_offset = dynamic_offset + dynamic_count * 16
     base_address = 0x4000
@@ -182,6 +184,8 @@ def dynamic_elf(
     ]
     if soname:
         entries.append((14, string_offsets[soname]))
+    if rpath:
+        entries.append((15, string_offsets[rpath]))
     entries.append((0, 0))
     for index, entry in enumerate(entries):
         struct.pack_into("<qQ", data, dynamic_offset + index * 16, *entry)
@@ -649,6 +653,32 @@ class NativeArtifactTest(unittest.TestCase):
             result.s1a_payloads,
         )
 
+    def test_non_s1a_dynamic_policy_does_not_reject_unrelated_runtime_elf(self) -> None:
+        unrelated = dynamic_elf(
+            soname="libsqlite3_python.so",
+            needed=("libc.so",),
+            rpath="$ORIGIN",
+        )
+        result = self.inspect(
+            archive({"lib/x86_64/libsqlite3_python.so": unrelated}),
+            require_s1a=True,
+        )
+        self.assertEqual(1, result.elf_count)
+
+    def test_s1a_dynamic_policy_still_rejects_rpath(self) -> None:
+        natives = self.valid_s1a_native_entries()
+        natives["chaquopy/lib/libmecab.so.2"] = dynamic_elf(
+            soname="libmecab.so.2",
+            needed=("libc++_shared.so", "libc.so"),
+            rpath="$ORIGIN",
+        )
+        with self.assertRaisesRegex(ArtifactError, "forbidden RPATH"):
+            self.inspect_complete(
+                self.valid_s1a_artifact(native_entries=natives),
+                required=[],
+                require_s1a=True,
+            )
+
     @staticmethod
     def valid_s1a_native_entries(abi: str = "x86_64") -> dict[str, bytes]:
         machine = 62 if abi == "x86_64" else 183
@@ -667,7 +697,6 @@ class NativeArtifactTest(unittest.TestCase):
                 machine=machine,
                 soname=None,
                 needed=(
-                    "libc++_shared.so",
                     "libmecab.so.2",
                     "libpython3.13.so",
                     "libc.so",
@@ -1165,7 +1194,6 @@ class NativeArtifactTest(unittest.TestCase):
             self.assertIn("--require-s1a", forwarded)
             self.assertIn("--s1a-manifest", forwarded)
             self.assertIn(str(root / "manifest.json"), forwarded)
-
 
 if __name__ == "__main__":
     unittest.main()

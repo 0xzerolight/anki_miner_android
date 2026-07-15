@@ -14,7 +14,6 @@ import struct
 import sys
 import zipfile
 
-
 PAGE_SIZE = 16 * 1024
 MAX_ARCHIVE_DEPTH = 12
 MAX_NESTED_ARCHIVE_SIZE = 1024 * 1024 * 1024
@@ -335,6 +334,7 @@ def parse_elf(
     *,
     require_pie_cli: bool = False,
     require_et_dyn: bool = False,
+    inspect_dynamic: bool = False,
 ) -> NativeMetadata:
     if len(data) < 52 or data[:4] != ELF_MAGIC:
         raise ArtifactError(f"{logical_name}: truncated ELF header")
@@ -399,7 +399,9 @@ def parse_elf(
                 interpreter_offset, interpreter_size = fields[1], fields[4]
             else:
                 interpreter_offset, interpreter_size = fields[2], fields[5]
-            if interpreter_size == 0 or interpreter_offset + interpreter_size > len(data):
+            if interpreter_size == 0 or interpreter_offset + interpreter_size > len(
+                data
+            ):
                 raise ArtifactError(f"{logical_name}: invalid PT_INTERP segment")
             has_interpreter = True
         if fields[0] != PT_LOAD:
@@ -465,7 +467,7 @@ def parse_elf(
     inspection.found_abis.add(abi)
     soname = None
     needed: list[str] = []
-    if dynamic_segment is not None:
+    if dynamic_segment is not None and inspect_dynamic:
         dynamic_offset, dynamic_size = dynamic_segment
         entry_size = 8 if elf_class == 1 else 16
         dynamic_format = f"{endian}iI" if elf_class == 1 else f"{endian}qQ"
@@ -546,7 +548,7 @@ def validate_s1a_native(
         required = {"libc++_shared.so"}
     else:
         expected_soname = None
-        required = {"libc++_shared.so", "libmecab.so.2", "libpython3.13.so"}
+        required = {"libmecab.so.2", "libpython3.13.so"}
     if not metadata.has_dynamic:
         raise ArtifactError(f"{logical_name}: S1a native payload has no PT_DYNAMIC")
     if metadata.soname != expected_soname:
@@ -563,7 +565,7 @@ def validate_s1a_native(
 
 
 def reject_base_unidic_entry(path: PurePosixPath, logical_name: str) -> None:
-    normalized = path.as_posix().casefold()
+    normalized = path.as_posix().replace("\\", "/").casefold()
     components = tuple(part for part in normalized.split("/") if part)
     basename = components[-1] if components else ""
     if basename in UNIDIC_PAYLOAD_NAMES:
@@ -590,7 +592,9 @@ def inspect_zip(
     requirement_depth: int = 0,
 ) -> None:
     if depth > MAX_ARCHIVE_DEPTH:
-        raise ArtifactError(f"{logical_name}: archive nesting exceeds {MAX_ARCHIVE_DEPTH}")
+        raise ArtifactError(
+            f"{logical_name}: archive nesting exceeds {MAX_ARCHIVE_DEPTH}"
+        )
     try:
         archive = zipfile.ZipFile(source)
     except zipfile.BadZipFile as error:
@@ -631,7 +635,9 @@ def inspect_zip(
             folded_name = entry_name.casefold()
             for forbidden in inspection.forbidden:
                 if forbidden.casefold() in folded_name:
-                    raise ArtifactError(f"{entry_name}: forbidden release entry {forbidden!r}")
+                    raise ArtifactError(
+                        f"{entry_name}: forbidden release entry {forbidden!r}"
+                    )
 
             basename = entry_path.name
             is_app_imy = basename == "app.imy"
@@ -754,16 +760,19 @@ def inspect_zip(
                 continue
 
             if is_elf:
+                native_package = s1a_native_package(entry_path)
                 metadata = parse_elf(
                     payload,
                     entry_name,
                     inspection,
                     require_pie_cli=basename in EXECUTABLE_NATIVE_NAMES,
                     require_et_dyn=required_direct,
+                    inspect_dynamic=(
+                        inspection.require_s1a and native_package is not None
+                    ),
                 )
                 if required_direct:
                     inspection.found_required_entries.add(direct_path)
-                native_package = s1a_native_package(entry_path)
                 if inspection.require_s1a and native_package is not None:
                     if expected_native is None or requirement_depth != 0:
                         raise ArtifactError(
@@ -854,7 +863,9 @@ def inspect_artifact(args: argparse.Namespace) -> Inspection:
             f"expected exactly {sorted(inspection.allowed_abis)}",
         )
     if args.require_app_imy and inspection.app_imy_count == 0:
-        raise ArtifactError(f"{args.artifact}: Chaquopy app.imy was not recursively inspected")
+        raise ArtifactError(
+            f"{args.artifact}: Chaquopy app.imy was not recursively inspected"
+        )
     missing_entries = (
         inspection.required_direct_entries - inspection.found_required_entries
     )
