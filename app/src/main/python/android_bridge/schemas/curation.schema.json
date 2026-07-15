@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://anki-miner.app/schemas/android-bridge/v1/curation.json",
+  "title": "Anki Miner Android curation request or response payload",
+  "oneOf": [
+    {"$ref": "#/$defs/request"},
+    {"$ref": "#/$defs/response"}
+  ],
+  "$defs": {
+    "runId": {"type": "string", "pattern": "^run_[0-9a-f]{32}$"},
+    "requestId": {"type": "string", "pattern": "^curation_[0-9a-f]{32}$"},
+    "candidateId": {"type": "string", "pattern": "^candidate_[0-9a-f]{32}$"},
+    "sentenceId": {"type": "string", "pattern": "^sentence_[0-9a-f]{32}$"},
+    "sentence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sentenceId", "sentence", "sentenceFurigana", "sentenceReading", "startTime", "endTime", "duration"],
+      "properties": {
+        "sentenceId": {"$ref": "#/$defs/sentenceId"},
+        "sentence": {"type": "string"},
+        "sentenceFurigana": {"type": "string"},
+        "sentenceReading": {"type": "string"},
+        "startTime": {"type": "number"},
+        "endTime": {"type": "number"},
+        "duration": {"type": "number"}
+      }
+    },
+    "selection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["candidateId"],
+      "properties": {
+        "candidateId": {"$ref": "#/$defs/candidateId"},
+        "sentenceId": {"$ref": "#/$defs/sentenceId"}
+      }
+    },
+    "candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "candidateId", "minedForm", "surface", "lemma", "reading",
+        "expressionReading", "partOfSpeech", "frequencyRank", "occurrenceCount",
+        "defaultSentenceId", "sentences"
+      ],
+      "properties": {
+        "candidateId": {"$ref": "#/$defs/candidateId"},
+        "minedForm": {"type": "string"},
+        "surface": {"type": "string"},
+        "lemma": {"type": "string"},
+        "reading": {"type": "string"},
+        "expressionReading": {"type": "string"},
+        "partOfSpeech": {"type": ["string", "null"]},
+        "frequencyRank": {"type": ["integer", "null"]},
+        "occurrenceCount": {"type": "integer"},
+        "defaultSentenceId": {"$ref": "#/$defs/sentenceId"},
+        "sentences": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/sentence"}}
+      }
+    },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runId", "requestId", "candidates"],
+      "properties": {
+        "runId": {"$ref": "#/$defs/runId"},
+        "requestId": {"$ref": "#/$defs/requestId"},
+        "candidates": {"type": "array", "items": {"$ref": "#/$defs/candidate"}}
+      }
+    },
+    "response": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runId", "requestId", "selection"],
+      "properties": {
+        "runId": {"$ref": "#/$defs/runId"},
+        "requestId": {"$ref": "#/$defs/requestId"},
+        "selection": {
+          "oneOf": [
+            {"type": "null"},
+            {"type": "array", "items": {"$ref": "#/$defs/selection"}}
+          ]
+        }
+      }
+    }
+  }
+}

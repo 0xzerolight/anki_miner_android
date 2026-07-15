@@ -1,0 +1,2 @@
+# Draft 2020-12 validation for checked-in bridge schemas.
+jsonschema==4.26.0

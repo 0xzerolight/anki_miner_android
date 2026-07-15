@@ -1,0 +1,165 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://anki-miner.app/schemas/android-bridge/v1/config-snapshot.json",
+  "title": "Anki Miner Android config.snapshot payload",
+  "$comment": "Provider identity uniqueness is a runtime semantic refinement: uniqueItems rejects identical objects, while config_map also rejects the same dict_id, source_id, or pack_id with different enabled values.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "androidTtsEnabled": {"type": "boolean"},
+    "settings": {"$ref": "#/$defs/settings"}
+  },
+  "$defs": {
+    "resourceId": {
+      "type": "string",
+      "pattern": "^(?!.*\\.\\.)[A-Za-z0-9](?:[A-Za-z0-9._-]{0,126}[A-Za-z0-9_-])?$"
+    },
+    "absolutePathOrNull": {
+      "oneOf": [
+        {"type": "null"},
+        {"type": "string", "pattern": "^/"}
+      ]
+    },
+    "ankiFields": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "word": {"type": "string"},
+        "sentence": {"type": "string"},
+        "definition": {"type": "string"},
+        "glossary": {"type": "string"},
+        "picture": {"type": "string"},
+        "audio": {"type": "string"},
+        "expression_furigana": {"type": "string"},
+        "expression_reading": {"type": "string"},
+        "sentence_furigana": {"type": "string"},
+        "sentence_reading": {"type": "string"},
+        "pitch_position": {"type": "string"},
+        "pitch_category": {"type": "string"},
+        "pitch_graph": {"type": "string"},
+        "pitch_text": {"type": "string"},
+        "frequency": {"type": "string"},
+        "frequency_sort": {"type": "string"},
+        "source": {"type": "string"},
+        "expression_audio": {"type": "string"}
+      }
+    },
+    "cardTypeMarkerFields": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "word_and_sentence": {"type": "string"},
+        "click": {"type": "string"},
+        "sentence": {"type": "string"},
+        "audio": {"type": "string"}
+      }
+    },
+    "indexedDictionary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "dict_id"],
+      "properties": {
+        "kind": {"const": "indexed"},
+        "dict_id": {"$ref": "#/$defs/resourceId"},
+        "enabled": {"type": "boolean"}
+      }
+    },
+    "jishoDictionary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": {"const": "jisho"},
+        "dict_id": {"type": "null"},
+        "enabled": {"type": "boolean"}
+      }
+    },
+    "frequencySource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_id"],
+      "properties": {
+        "source_id": {"$ref": "#/$defs/resourceId"},
+        "enabled": {"type": "boolean"}
+      }
+    },
+    "audioPack": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "pack_id"],
+      "properties": {
+        "kind": {"const": "pack"},
+        "pack_id": {"$ref": "#/$defs/resourceId"},
+        "enabled": {"type": "boolean"}
+      }
+    },
+    "settings": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "anki_deck_name": {"type": "string"},
+        "anki_note_type": {"type": "string"},
+        "anki_fields": {"$ref": "#/$defs/ankiFields"},
+        "card_type": {"enum": ["", "word_and_sentence", "click", "sentence", "audio"]},
+        "card_type_marker_fields": {"$ref": "#/$defs/cardTypeMarkerFields"},
+        "anki_tags": {"type": "string"},
+        "excluded_decks": {"type": "array", "items": {"type": "string"}},
+        "audio_padding": {"type": "number", "minimum": 0},
+        "screenshot_offset": {"type": "number", "minimum": 0},
+        "audio_format": {"enum": ["mp3", "opus"]},
+        "audio_bitrate": {"type": "integer", "minimum": 1},
+        "screenshot_animated": {"type": "boolean"},
+        "screenshot_animated_format": {"enum": ["avif", "webp"]},
+        "screenshot_animated_clip_duration": {"type": "number", "minimum": 0},
+        "screenshot_animated_match_audio": {"type": "boolean"},
+        "screenshot_animated_fps": {"type": "integer", "minimum": 1, "maximum": 120},
+        "screenshot_animated_height": {"type": "integer", "minimum": 1},
+        "screenshot_animated_quality": {"type": "integer", "minimum": 0, "maximum": 100},
+        "subtitle_offset": {"type": "number"},
+        "allowed_pos": {"type": "array", "items": {"type": "string"}},
+        "excluded_subtypes": {"type": "array", "items": {"type": "string"}},
+        "excluded_wordsets": {"type": "array", "items": {"type": "string"}},
+        "dictionary_chain": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"oneOf": [{"$ref": "#/$defs/indexedDictionary"}, {"$ref": "#/$defs/jishoDictionary"}]}
+        },
+        "jisho_delay": {"type": "number", "minimum": 0.5},
+        "expression_audio_chain": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/audioPack"}
+        },
+        "reading_tts_enabled": {
+          "type": "boolean",
+          "description": "Legacy Android-only alias; never assigned to the engine config"
+        },
+        "pitch_category_format": {"enum": ["jp", "romaji"]},
+        "max_frequency_rank": {"type": "integer", "minimum": 0},
+        "frequency_chain": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/frequencySource"}
+        },
+        "use_known_words_db": {"type": "boolean"},
+        "exclude_hiragana_only_words": {"type": "boolean"},
+        "exclude_katakana_only_words": {"type": "boolean"},
+        "blacklist_path": {"$ref": "#/$defs/absolutePathOrNull"},
+        "whitelist_path": {"$ref": "#/$defs/absolutePathOrNull"},
+        "use_blacklist": {"type": "boolean"},
+        "use_whitelist": {"type": "boolean"},
+        "subtitle_regex_filter": {"type": "string"},
+        "subtitle_regex_replacement": {"type": "string"},
+        "use_subtitle_regex_filter": {"type": "boolean"},
+        "bold_target_in_sentence": {"type": "boolean"},
+        "deduplicate_sentences": {"type": "boolean"},
+        "use_i_plus_one_filter": {"type": "boolean"},
+        "use_sentence_length_filter": {"type": "boolean"},
+        "max_sentence_duration_seconds": {"type": "number", "minimum": 0},
+        "max_sentence_chars": {"type": "integer", "minimum": 0},
+        "reading_min_occurrence": {"type": "integer", "minimum": 1},
+        "max_parallel_workers": {"type": "integer", "minimum": 1, "maximum": 32}
+      }
+    }
+  }
+}
