@@ -5,6 +5,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # shellcheck source=android-env.sh
 source "$SCRIPT_DIR/android-env.sh"
+# shellcheck source=emulator-lanes.sh
+source "$SCRIPT_DIR/emulator-lanes.sh"
 
 CONNECTED_LANE=""
 staged_s1a_dictionary=false
@@ -22,14 +24,14 @@ cleanup_tokenizer_dictionaries() {
 trap cleanup_tokenizer_dictionaries EXIT
 if [[ "${1:-}" == "--connected" ]]; then
     (($# >= 2)) || {
-        echo "Usage: scripts/health.sh [--connected 4k|16k]" >&2
+        echo "Usage: scripts/health.sh [--connected api26|4k|16k]" >&2
         exit 2
     }
     CONNECTED_LANE="$2"
     shift 2
 fi
 if (($#)); then
-    echo "Usage: scripts/health.sh [--connected 4k|16k]" >&2
+    echo "Usage: scripts/health.sh [--connected api26|4k|16k]" >&2
     exit 2
 fi
 
@@ -37,6 +39,14 @@ fail() {
     echo "health: $*" >&2
     exit 1
 }
+
+if [[ -n "$CONNECTED_LANE" ]]; then
+    resolve_android_emulator_lane "$CONNECTED_LANE" \
+        || fail "connected lane must be api26, 4k, or 16k"
+    export ANDROID_SERIAL="$ANDROID_LANE_EMULATOR_SERIAL"
+    "$SCRIPT_DIR/verify-emulator-runtime.sh" --lane "$CONNECTED_LANE" \
+        || fail "connected emulator identity mismatch"
+fi
 
 command -v python3.13 >/dev/null || fail "host Python 3.13 is required by Chaquopy"
 if [[ -n "${ORG_GRADLE_PROJECT_ankiMinerS1aManifest:-}" ]]; then
@@ -122,31 +132,6 @@ tasks=(
     :app:bundleDeviceRelease
 )
 if [[ -n "$CONNECTED_LANE" ]]; then
-    case "$CONNECTED_LANE" in
-        4k)
-            expected_avd="$ANDROID_AVD_4K_NAME"
-            emulator_serial="$ANDROID_EMULATOR_4K_SERIAL"
-            expected_page_size=4096
-            ;;
-        16k)
-            expected_avd="$ANDROID_AVD_16K_NAME"
-            emulator_serial="$ANDROID_EMULATOR_16K_SERIAL"
-            expected_page_size=16384
-            ;;
-        *)
-            fail "connected lane must be 4k or 16k"
-            ;;
-    esac
-    mapfile -t connected_devices < <(adb devices | awk 'NR > 1 && $2 == "device" { print $1 }')
-    [[ "${#connected_devices[@]}" -eq 1 && "${connected_devices[0]}" == "$emulator_serial" ]] \
-        || fail "connected tests require only $emulator_serial to be online"
-    actual_avd="$(adb -s "$emulator_serial" emu avd name 2>/dev/null | tr -d '\r' | sed '/^OK$/d' | sed -n '1p')"
-    [[ "$actual_avd" == "$expected_avd" ]] \
-        || fail "$emulator_serial is ${actual_avd:-unknown}, expected $expected_avd"
-    actual_page_size="$(adb -s "$emulator_serial" shell getconf PAGE_SIZE 2>/dev/null | tr -d '\r')"
-    [[ "$actual_page_size" == "$expected_page_size" ]] \
-        || fail "$expected_avd page size is ${actual_page_size:-unknown}, expected $expected_page_size"
-    export ANDROID_SERIAL="$emulator_serial"
     test_unidic="${ANKI_MINER_TEST_UNIDIC_DIR:-}"
     [[ -n "$test_unidic" && -d "$test_unidic" ]] \
         || fail "connected tokenizer tests require ANKI_MINER_TEST_UNIDIC_DIR"

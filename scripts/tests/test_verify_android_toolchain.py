@@ -52,9 +52,12 @@ class ToolchainVerificationTest(unittest.TestCase):
         (avd_dir / "config.ini").write_text(
             "avd.id=<build>\n"
             "abi.type=x86_64\n"
+            "hw.device.manufacturer=Google\n"
+            "hw.device.name=pixel_6\n"
             "image.sysdir.1=system-images/android-36/google_apis_ps16k/x86_64/\n"
             "tag.id=page_size_16kb\n"
-            "tag.ids=page_size_16kb,google_apis\n",
+            "tag.ids=page_size_16kb,google_apis\n"
+            "target=android-36\n",
             encoding="utf-8",
         )
         return argparse.Namespace(
@@ -62,7 +65,10 @@ class ToolchainVerificationTest(unittest.TestCase):
             installed_list=installed,
             lock=lock,
             avd_home=avd_home,
-            avd=["fixture|system-images;android-36;google_apis_ps16k;x86_64"],
+            avd=[
+                "fixture|system-images;android-36;google_apis_ps16k;x86_64"
+                "|pixel_6|Google",
+            ],
         )
 
     def test_accepts_exact_package_and_avd_lock(self) -> None:
@@ -128,6 +134,48 @@ class ToolchainVerificationTest(unittest.TestCase):
                 encoding="utf-8",
             )
             with self.assertRaisesRegex(VerificationError, "path.rel is"):
+                verify(arguments)
+
+    def test_rejects_device_profile_drift(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            arguments = self.fixture(Path(directory))
+            config = arguments.avd_home / "fixture.avd" / "config.ini"
+            config.write_text(
+                config.read_text(encoding="utf-8").replace(
+                    "hw.device.name=pixel_6",
+                    "hw.device.name=pixel_2",
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(VerificationError, "hw.device.name"):
+                verify(arguments)
+
+    def test_rejects_device_manufacturer_drift(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            arguments = self.fixture(Path(directory))
+            config = arguments.avd_home / "fixture.avd" / "config.ini"
+            config.write_text(
+                config.read_text(encoding="utf-8").replace(
+                    "hw.device.manufacturer=Google",
+                    "hw.device.manufacturer=AOSP",
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(VerificationError, "hw.device.manufacturer"):
+                verify(arguments)
+
+    def test_rejects_embedded_target_drift(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            arguments = self.fixture(Path(directory))
+            config = arguments.avd_home / "fixture.avd" / "config.ini"
+            config.write_text(
+                config.read_text(encoding="utf-8").replace(
+                    "target=android-36",
+                    "target=android-35",
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(VerificationError, "target is"):
                 verify(arguments)
 
     def test_rejects_mismatched_legacy_avd_id_when_present(self) -> None:

@@ -132,6 +132,7 @@ create_avd() {
         --device "pixel_6"
 }
 
+create_avd "$ANDROID_AVD_API26_NAME" "$ANDROID_SYSTEM_IMAGE_API26"
 create_avd "$ANDROID_AVD_4K_NAME" "$ANDROID_SYSTEM_IMAGE_4K"
 create_avd "$ANDROID_AVD_16K_NAME" "$ANDROID_SYSTEM_IMAGE_16K"
 
@@ -144,5 +145,5 @@ echo "Provisioned toolchain:"
 java -version
 adb version | head -n 1
 emulator -version | head -n 1
-echo "AVDs: $ANDROID_AVD_4K_NAME, $ANDROID_AVD_16K_NAME"
+echo "AVDs: $ANDROID_AVD_API26_NAME, $ANDROID_AVD_4K_NAME, $ANDROID_AVD_16K_NAME"
 echo "Environment: source scripts/android-env.sh"

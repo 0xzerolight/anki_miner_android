@@ -12,7 +12,7 @@ SCRIPTS_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SCRIPTS_DIR))
 
 from preflight_android_packages import preflight  # noqa: E402
-from verify_android_toolchain import VerificationError  # noqa: E402
+from verify_android_toolchain import VerificationError, read_lock  # noqa: E402
 
 
 LOCKED_PACKAGES = {
@@ -22,6 +22,7 @@ LOCKED_PACKAGES = {
     "build-tools;36.0.0": "36.0.0",
     "cmake;3.22.1": "3.22.1",
     "ndk;28.2.13676358": "28.2.13676358",
+    "system-images;android-26;google_apis;x86_64": "16",
     "system-images;android-36;google_apis;x86_64": "7",
     "system-images;android-36;google_apis_ps16k;x86_64": "7",
 }
@@ -40,6 +41,18 @@ def write_listing(path: Path, revisions: dict[str, str]) -> None:
 
 
 class PackagePreflightTest(unittest.TestCase):
+    def test_api26_image_revision_is_locked_to_16(self) -> None:
+        revisions = {
+            package: revision
+            for package, revision, _ in read_lock(
+                SCRIPTS_DIR / "android-sdk-packages.lock",
+            )
+        }
+        self.assertEqual(
+            "16",
+            revisions["system-images;android-26;google_apis;x86_64"],
+        )
+
     def test_accepts_exact_stable_channel_revisions(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             listing = Path(directory) / "sdkmanager-list.txt"
@@ -53,6 +66,18 @@ class PackagePreflightTest(unittest.TestCase):
             revisions["emulator"] = "99.0.0"
             write_listing(listing, revisions)
             with self.assertRaisesRegex(VerificationError, "stable-channel revision"):
+                preflight(SCRIPTS_DIR / "android-sdk-packages.lock", listing)
+
+    def test_rejects_api26_image_remote_revision_drift(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            listing = Path(directory) / "sdkmanager-list.txt"
+            revisions = dict(LOCKED_PACKAGES)
+            revisions["system-images;android-26;google_apis;x86_64"] = "17"
+            write_listing(listing, revisions)
+            with self.assertRaisesRegex(
+                VerificationError,
+                "system-images;android-26;google_apis;x86_64.*stable-channel revision",
+            ):
                 preflight(SCRIPTS_DIR / "android-sdk-packages.lock", listing)
 
     def test_rejects_update_beyond_lock_from_exact_install(self) -> None:

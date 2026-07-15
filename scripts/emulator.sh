@@ -4,13 +4,16 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=android-env.sh
 source "$SCRIPT_DIR/android-env.sh"
+# shellcheck source=emulator-lanes.sh
+source "$SCRIPT_DIR/emulator-lanes.sh"
 
 HEADLESS=auto
 SOFTWARE=auto
 WIPE_DATA=false
 TEST_SESSION=false
 PRINT_COMMAND=false
-PAGE_SIZE_LANE=4k
+EMULATOR_LANE=4k
+LANE_SELECTOR=""
 EXTRA_ARGS=()
 
 usage() {
@@ -22,7 +25,8 @@ Options:
   --window         Require a graphical emulator window.
   --software       Disable KVM and use software CPU/GPU emulation.
   --hardware       Require hardware acceleration.
-  --page-size SIZE Select the 4k or 16k API 36 image (default: 4k).
+  --lane LANE      Select api26, 4k, or 16k (default: 4k).
+  --page-size SIZE Backward-compatible alias for --lane 4k|16k.
   --wipe-data      Reset the AVD before booting.
   --test-session   Reset data and disable snapshot load/save for a test run.
   --print-command  Print the resolved emulator command without running it.
@@ -56,10 +60,36 @@ while (($#)); do
         --print-command)
             PRINT_COMMAND=true
             ;;
+        --lane)
+            (($# >= 2)) || { usage >&2; exit 2; }
+            if [[ -n "$LANE_SELECTOR" ]]; then
+                echo "Use exactly one --lane or --page-size selector." >&2
+                exit 2
+            fi
+            LANE_SELECTOR=lane
+            EMULATOR_LANE="$2"
+            shift
+            ;;
         --page-size)
             (($# >= 2)) || { usage >&2; exit 2; }
-            PAGE_SIZE_LANE="$2"
+            if [[ -n "$LANE_SELECTOR" ]]; then
+                echo "Use exactly one --lane or --page-size selector." >&2
+                exit 2
+            fi
+            case "$2" in
+                4k|16k) ;;
+                *)
+                    echo "--page-size accepts only 4k or 16k." >&2
+                    exit 2
+                    ;;
+            esac
+            LANE_SELECTOR=page-size
+            EMULATOR_LANE="$2"
             shift
+            ;;
+        --lane=*|--page-size=*)
+            echo "Lane selectors require a separate value argument." >&2
+            exit 2
             ;;
         -h|--help)
             usage
@@ -77,22 +107,19 @@ while (($#)); do
     shift
 done
 
-case "$PAGE_SIZE_LANE" in
-    4k)
-        AVD_NAME="$ANDROID_AVD_4K_NAME"
-        EMULATOR_PORT="$ANDROID_EMULATOR_4K_PORT"
-        EMULATOR_SERIAL="$ANDROID_EMULATOR_4K_SERIAL"
-        ;;
-    16k)
-        AVD_NAME="$ANDROID_AVD_16K_NAME"
-        EMULATOR_PORT="$ANDROID_EMULATOR_16K_PORT"
-        EMULATOR_SERIAL="$ANDROID_EMULATOR_16K_SERIAL"
-        ;;
-    *)
-        echo "Page size must be 4k or 16k." >&2
-        exit 2
-        ;;
-esac
+for passthrough_argument in "${EXTRA_ARGS[@]}"; do
+    case "$passthrough_argument" in
+        @*|-avd*|--avd*|-port*|--port*)
+            echo "The AVD and emulator ports are fixed by --lane and cannot be overridden." >&2
+            exit 2
+            ;;
+    esac
+done
+
+resolve_android_emulator_lane "$EMULATOR_LANE"
+AVD_NAME="$ANDROID_LANE_AVD_NAME"
+EMULATOR_PORT="$ANDROID_LANE_EMULATOR_PORT"
+EMULATOR_SERIAL="$ANDROID_LANE_EMULATOR_SERIAL"
 
 if [[ "$HEADLESS" == auto ]]; then
     if [[ -z "${DISPLAY:-}" && -z "${WAYLAND_DISPLAY:-}" ]]; then

@@ -90,9 +90,9 @@ def read_properties(path: Path) -> dict[str, str]:
 
 def verify_avd(avd_home: Path, specification: str) -> None:
     fields = specification.split("|")
-    if len(fields) != 2:
+    if len(fields) != 4 or not all(fields):
         raise VerificationError(f"malformed AVD specification: {specification!r}")
-    name, image_package = fields
+    name, image_package, device_profile, manufacturer = fields
     image_fields = image_package.split(";")
     if len(image_fields) != 4 or image_fields[0] != "system-images":
         raise VerificationError(f"malformed AVD image package: {image_package!r}")
@@ -112,13 +112,19 @@ def verify_avd(avd_home: Path, specification: str) -> None:
 
     expected_values = {
         "abi.type": abi,
+        "hw.device.manufacturer": manufacturer,
+        "hw.device.name": device_profile,
         "image.sysdir.1": expected_image_dir,
         "tag.id": primary_tag,
+        "target": platform,
     }
     actual_values = {
         "abi.type": config.get("abi.type"),
+        "hw.device.manufacturer": config.get("hw.device.manufacturer"),
+        "hw.device.name": config.get("hw.device.name"),
         "image.sysdir.1": actual_image_dir,
         "tag.id": config.get("tag.id"),
+        "target": config.get("target"),
     }
     for key, expected in expected_values.items():
         if actual_values[key] != expected:

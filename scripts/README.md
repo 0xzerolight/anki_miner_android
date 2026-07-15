@@ -22,7 +22,7 @@ The license review is interactive. The script displays Google's text and
 prompts without supplying answers. Provisioning then verifies the recorded
 license hash, checks stable-channel revisions against the package lock before
 allowing sdkmanager to install or upgrade anything, and then verifies each
-installed package and both AVD configurations.
+installed package and all three AVD configurations.
 
 ## Checks
 
@@ -32,19 +32,25 @@ Run all build-time checks without an emulator:
 scripts/health.sh
 ```
 
-Run the connected suite on each page-size lane:
+Run the connected suite on the compatibility and page-size lanes:
 
 ```bash
-scripts/run-emulator-tests.sh --page-size 4k
-scripts/run-emulator-tests.sh --page-size 16k
+UNIDIC_DIR=/absolute/path/to/the/golden-pinned/unidic/dicdir
+scripts/run-emulator-tests.sh --lane api26 --unidic-dir "$UNIDIC_DIR"
+scripts/run-emulator-tests.sh --lane 4k --unidic-dir "$UNIDIC_DIR"
+scripts/run-emulator-tests.sh --lane 16k --unidic-dir "$UNIDIC_DIR"
 ```
 
-The AVDs have fixed identities and serials:
+`--page-size 4k|16k` remains an exact backward-compatible alias for the two
+API 36 lanes. The AVDs have fixed identities and serials. Each connected run
+also checks the runtime API level and page size; the API 26 lane additionally
+checks its exact build fingerprint.
 
-| Lane | AVD | Serial | Expected page size |
-| --- | --- | --- | --- |
-| Normal | `anki_miner_api36` | `emulator-5554` | 4096 |
-| 16 KiB | `anki_miner_api36_ps16k` | `emulator-5556` | 16384 |
+| Lane | AVD | Serial | API | Page size |
+| --- | --- | --- | --- | --- |
+| `api26` | `anki_miner_api26` | `emulator-5558` | 26 | 4096 |
+| `4k` | `anki_miner_api36` | `emulator-5554` | 36 | 4096 |
+| `16k` | `anki_miner_api36_ps16k` | `emulator-5556` | 36 | 16384 |
 
 The separate arm64 S1b gate requires an already-running, explicitly named
 target and a previously recorded image fingerprint:
