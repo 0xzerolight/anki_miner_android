@@ -10,8 +10,11 @@ engine sees it. No native node pointer may escape the backend call.
 `UNIDIC_FEATURE_FIELDS` freezes the 26-field UniDic 2.1.2 binary schema in the
 same order as fugashi 1.5.2 and the desktop golden fixture. CSV decoding follows
 fugashi's observable behavior: quoted commas are decoded, explicit empty fields
-and literal `*` values survive, and only absent trailing fields become `None`.
-Rows longer than 26 fields fail instead of being silently truncated.
+and literal `*` values survive in the raw `TokenRecord`, and only absent trailing
+fields become `None`. Rows longer than 26 fields fail instead of being silently
+truncated. At the final engine-facing `SimpleNamespace` boundary, literal `*` is
+normalized to `None` to match fugashi's UniDic feature wrapper; explicit empty
+strings remain empty.
 
 The adapter builds a mutable `SimpleNamespace` for features and a fugashi-shaped
 token namespace. It also records UTF-8 byte, Python code-point, and JVM UTF-16

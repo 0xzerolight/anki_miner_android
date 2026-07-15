@@ -410,8 +410,15 @@ def adapt_tokens(text: str, records: Sequence[TokenRecord]) -> list[SimpleNamesp
     for record in records:
         codepoint_start, utf16_start = offsets.resolve(record.byte_start)
         codepoint_end, utf16_end = offsets.resolve(record.byte_end)
+        # TokenRecord deliberately preserves MeCab's raw CSV. Fugashi's UniDic
+        # wrapper exposes its `*` missing-value sentinel as None, so normalize
+        # only at the engine-facing object boundary while retaining explicit
+        # empty strings.
+        engine_features = tuple(
+            None if value == "*" else value for value in record.features
+        )
         feature = SimpleNamespace(
-            **dict(zip(UNIDIC_FEATURE_FIELDS, record.features, strict=True))
+            **dict(zip(UNIDIC_FEATURE_FIELDS, engine_features, strict=True))
         )
         output.append(
             SimpleNamespace(
