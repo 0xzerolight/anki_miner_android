@@ -26,6 +26,9 @@ DISTRIBUTION_IMPORTS: Mapping[str, tuple[str, ...]] = {
     "certifi": ("certifi",),
     "idna": ("idna",),
     "urllib3": ("urllib3",),
+    "PyQt6": ("PyQt6.QtCore",),
+    "PyQt6-Qt6": (),
+    "PyQt6-sip": ("PyQt6.sip",),
 }
 MUTABLE_DISTRIBUTION_METADATA = frozenset(
     {"INSTALLER", "RECORD", "REQUESTED", "direct_url.json"}

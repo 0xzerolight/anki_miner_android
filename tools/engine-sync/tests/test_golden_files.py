@@ -131,7 +131,7 @@ class GoldenFilesTests(unittest.TestCase):
         jsonschema.Draft202012Validator(schema).validate(fixture)
         self.assertEqual(
             hashlib.sha256(fixture_bytes).hexdigest(),
-            "8c3051100e2f2d7702c8e3ba84e4dc3cb9ab197331f7aed7af96cd41dd44f9c9",
+            "19021b2d6b68164be7ab2b6653892d45ef1823c1709222e485420d89069d686e",
         )
         self.assertEqual(
             fixture["provenance"]["data"]["corpus_sha256"],

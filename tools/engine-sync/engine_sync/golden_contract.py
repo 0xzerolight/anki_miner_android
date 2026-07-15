@@ -73,6 +73,9 @@ RUNTIME_DISTRIBUTIONS = (
     "certifi",
     "idna",
     "urllib3",
+    "PyQt6",
+    "PyQt6-Qt6",
+    "PyQt6-sip",
 )
 RESERVED_UNIDIC_ASSET = "unidic_dicdir"
 CASE_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
