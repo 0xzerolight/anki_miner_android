@@ -1,0 +1,83 @@
+{
+  "component": {
+    "commit": "ebcf8e0e34921628b9b8a496c66ffd4adbb3705f",
+    "name": "AnkiDroid API",
+    "repository": "https://github.com/ankidroid/Anki-Android.git",
+    "tag": "v2.24.0"
+  },
+  "files": [
+    {
+      "byteCount": 62183,
+      "destinationPath": "app/src/main/ankidroidApi/kotlin/com/ichi2/anki/FlashCardsContract.kt",
+      "kind": "kotlin-source",
+      "sha256": "b9e1f9ca9eaff7287359b26ca4a2f0387c000e381a45263df06af093226e8fa6",
+      "sourcePath": "api/src/main/java/com/ichi2/anki/FlashCardsContract.kt",
+      "spdxLicense": "LicenseRef-AnkiDroid-FlashCardsContract-Permissive"
+    },
+    {
+      "byteCount": 34336,
+      "destinationPath": "app/src/main/ankidroidApi/kotlin/com/ichi2/anki/api/AddContentApi.kt",
+      "kind": "kotlin-source",
+      "sha256": "7eef9ffee3b51b4cbc40f4673d56b84e8ad1ccae69ad64be5526504f23d09ee4",
+      "sourcePath": "api/src/main/java/com/ichi2/anki/api/AddContentApi.kt",
+      "spdxLicense": "LGPL-3.0-or-later"
+    },
+    {
+      "byteCount": 868,
+      "destinationPath": "app/src/main/ankidroidApi/kotlin/com/ichi2/anki/api/Basic2Model.kt",
+      "kind": "kotlin-source",
+      "sha256": "054a7b78c8fe042014df18ee624ffd0e93655105fc5f760261d3b783bb31a72d",
+      "sourcePath": "api/src/main/java/com/ichi2/anki/api/Basic2Model.kt",
+      "spdxLicense": "LGPL-3.0-only"
+    },
+    {
+      "byteCount": 841,
+      "destinationPath": "app/src/main/ankidroidApi/kotlin/com/ichi2/anki/api/BasicModel.kt",
+      "kind": "kotlin-source",
+      "sha256": "9dff5f305bac63ad584b1606a35256fbe4ecd7c843c8b27fba0c01058cfdffd1",
+      "sourcePath": "api/src/main/java/com/ichi2/anki/api/BasicModel.kt",
+      "spdxLicense": "LGPL-3.0-only"
+    },
+    {
+      "byteCount": 1098,
+      "destinationPath": "app/src/main/ankidroidApi/kotlin/com/ichi2/anki/api/Ease.kt",
+      "kind": "kotlin-source",
+      "sha256": "4244851a1eeede928ccd541b2543ef7482bc443ffbde9cbc69a3fc141651639b",
+      "sourcePath": "api/src/main/java/com/ichi2/anki/api/Ease.kt",
+      "spdxLicense": "LGPL-3.0-or-later"
+    },
+    {
+      "byteCount": 2748,
+      "destinationPath": "app/src/main/ankidroidApi/kotlin/com/ichi2/anki/api/NoteInfo.kt",
+      "kind": "kotlin-source",
+      "sha256": "a63f2e3b410916f59b285b3df128893f45fcae101f3bf309499329a3b313328e",
+      "sourcePath": "api/src/main/java/com/ichi2/anki/api/NoteInfo.kt",
+      "spdxLicense": "LGPL-3.0-or-later"
+    },
+    {
+      "byteCount": 4735,
+      "destinationPath": "app/src/main/ankidroidApi/kotlin/com/ichi2/anki/api/Utils.kt",
+      "kind": "kotlin-source",
+      "sha256": "7c8726dd1496f1893f0d7dce0a36d56991cf9bd178fb37bc8df83f5376e130c7",
+      "sourcePath": "api/src/main/java/com/ichi2/anki/api/Utils.kt",
+      "spdxLicense": "LGPL-3.0-or-later"
+    },
+    {
+      "byteCount": 7650,
+      "destinationPath": "third_party/ankidroid-api/upstream/api/COPYING.LESSER",
+      "kind": "license-text",
+      "sha256": "ea8af5e789cb2d4e9b10bce3874982ade163b749b6bfbdb32e2df21c4d106de1",
+      "sourcePath": "api/COPYING.LESSER",
+      "spdxLicense": "LGPL-3.0-only"
+    },
+    {
+      "byteCount": 35068,
+      "destinationPath": "third_party/ankidroid-api/upstream/COPYING",
+      "kind": "license-text",
+      "sha256": "fc82ca8b6fdb18d4e3e85cfd8ab58d1bcd3f1b29abe782895abd91d64763f8e7",
+      "sourcePath": "COPYING",
+      "spdxLicense": "GPL-3.0-only"
+    }
+  ],
+  "formatVersion": 1
+}

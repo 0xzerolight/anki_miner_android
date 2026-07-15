@@ -71,6 +71,10 @@ android {
     testOptions {
         animationsDisabled = true
     }
+
+    sourceSets {
+        getByName("main").java.srcDir("src/main/ankidroidApi/kotlin")
+    }
 }
 
 androidComponents {
