@@ -25,7 +25,11 @@ from uuid import uuid4
 
 from .callbacks import AndroidAnkiCallbacks, AnkiCallbackError
 from .config_map import _REQUIRED_ANKI_FIELD_KEYS, validate_anki_request_config
-from .protocol import BridgeProtocolError, normalize_integral_json_number
+from .protocol import (
+    BridgeProtocolError,
+    encode_message,
+    normalize_integral_json_number,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +45,15 @@ _MAX_DUPLICATE_HITS_UTF8_BYTES = 1024 * 1024
 _KNOWN_VOCABULARY_PAGE_ITEMS = 256
 _KNOWN_VOCABULARY_PAGE_UTF8_BYTES = 256 * 1024
 _MAX_KNOWN_CURSOR_UTF8_BYTES = 1024
+_MAX_NOTE_FIELDS = 64
+_MAX_FIELD_NAME_UTF8_BYTES = 256
+_MAX_FIELD_VALUE_UTF8_BYTES = 96 * 1024
+_MAX_NOTE_TAGS = 64
+_MAX_TAG_UTF8_BYTES = 256
+_MAX_NOTE_TAGS_UTF8_BYTES = 8 * 1024
+_MAX_NOTE_CONTENT_UTF8_BYTES = 128 * 1024
+_MAX_CREATE_CONTENT_UTF8_BYTES = 384 * 1024
+_MAX_CREATE_ENVELOPE_UTF8_BYTES = 512 * 1024
 _MAX_MEDIA_ASSET_BYTES = 64 * 1024 * 1024
 _MAX_MEDIA_CALLBACK_BYTES = 64 * 1024 * 1024
 # Compatibility alias for callers/tests which imported the original card-only
@@ -64,12 +77,16 @@ _CONNECTION_ERROR_CODES = {
     "timeout",
     "cancelled",
     "media_store_failed",
+    "post_commit_uncertain",
     "internal_error",
 }
 _ALL_ERROR_CODES = _SETUP_ERROR_CODES | _PROTOCOL_ERROR_CODES | _CONNECTION_ERROR_CODES
 _RECOVERABLE_MEDIA_ERROR_CODES = frozenset({"media_store_failed"})
 _FORBIDDEN_FILENAME_CHARACTERS = frozenset('/\\<>[]:"')
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+_BASELINE_TOKEN_RE = re.compile(r"^baseline_[0-9a-f]{32}$")
+_PLACEHOLDER_REQUEST_ID = "anki_" + "0" * 32
+_PLACEHOLDER_BASELINE_TOKEN = "baseline_" + "0" * 32
 
 
 class AnkiOperationCancelled(BaseException):
@@ -135,7 +152,17 @@ class _CardMediaRef:
 @dataclass(frozen=True)
 class _DuplicateProbeResult:
     is_duplicate: bool
-    baseline_note_ids: tuple[int, ...]
+    occurrence: int
+
+
+@dataclass(frozen=True)
+class _PendingNote:
+    payload: Any
+    note: dict[str, Any]
+    key: str
+    first_field: str
+    content_utf8_bytes: int
+    source_index: int
 
 
 @dataclass(frozen=True)
@@ -386,6 +413,9 @@ class AndroidAnkiAdapter:
         self.last_created_note_ids: list[int] = []
         self.last_skipped_duplicates = 0
         self.last_media_store_failures = 0
+        self._verified_field_names: tuple[str, ...] | None = None
+        self._issued_baseline_tokens: set[str] = set()
+        self._consumed_baseline_tokens: set[str] = set()
         self._existing_vocab_cache: set[str] | None = None
         self._dict_media_uploaded: set[str] = set()
         self._dict_media_actual_names: dict[str, str] = {}
@@ -395,7 +425,7 @@ class AndroidAnkiAdapter:
         if self._cancellation_check():
             raise AnkiOperationCancelled(
                 operation,
-                "Anki media preparation was cancelled",
+                f"Anki {operation} preparation was cancelled",
                 False,
             )
 
@@ -488,6 +518,9 @@ class AndroidAnkiAdapter:
     def verify_card_target(self) -> None:
         """Validate model/fields and create the target deck only after checks."""
 
+        if self._verified_field_names is not None:
+            return
+
         required = {value for value in self.config.anki_fields.values() if value}
         if self.config.card_type:
             marker = self.config.card_type_marker_fields.get(self.config.card_type, "")
@@ -533,6 +566,7 @@ class AndroidAnkiAdapter:
                 f"'{self.config.anki_note_type}'. Available: {available}{more}. "
                 "Check Settings → Anki field mapping."
             )
+        self._verified_field_names = tuple(fields)
 
     def _scan_known_vocabulary_page(
         self, cursor: dict[str, Any] | None
@@ -1117,11 +1151,226 @@ class AndroidAnkiAdapter:
             _raise_callback_error(outcome.error)
         return rewritten
 
+    def _prepare_note(
+        self, payload: Any, note: Mapping[str, Any], source_index: int
+    ) -> _PendingNote:
+        """Validate one built note before any duplicate/provider side effect."""
+
+        if self._verified_field_names is None:
+            _protocol_error("invalid_note", "The Anki target must be verified first")
+        first_field_name = self._verified_field_names[0]
+        fields = note.get("fields")
+        tags = note.get("tags")
+        if not isinstance(fields, dict) or not fields:
+            _protocol_error("invalid_note", "A note must contain at least one field")
+        if len(fields) > _MAX_NOTE_FIELDS:
+            _protocol_error("note_too_large", "A note contains too many fields")
+
+        content_utf8_bytes = 0
+        for field_name, value in fields.items():
+            if not isinstance(field_name, str) or not field_name:
+                _protocol_error(
+                    "invalid_note", "Anki field names must be non-empty strings"
+                )
+            if not isinstance(value, str):
+                _protocol_error("invalid_note", "Anki field values must be strings")
+            name_bytes = len(field_name.encode("utf-8"))
+            value_bytes = len(value.encode("utf-8"))
+            if name_bytes > _MAX_FIELD_NAME_UTF8_BYTES:
+                _protocol_error("note_too_large", "An Anki field name is too large")
+            if value_bytes > _MAX_FIELD_VALUE_UTF8_BYTES:
+                _protocol_error("note_too_large", "An Anki field value is too large")
+            content_utf8_bytes += name_bytes + value_bytes
+
+        if not isinstance(tags, list) or not all(
+            isinstance(tag, str) and tag for tag in tags
+        ):
+            _protocol_error("invalid_note", "Anki tags must be non-empty strings")
+        if len(tags) > _MAX_NOTE_TAGS:
+            _protocol_error("note_too_large", "A note contains too many Anki tags")
+        tags_utf8_bytes = 0
+        for tag in tags:
+            tag_bytes = len(tag.encode("utf-8"))
+            if tag_bytes > _MAX_TAG_UTF8_BYTES:
+                _protocol_error("note_too_large", "An Anki tag is too large")
+            tags_utf8_bytes += tag_bytes
+        if tags_utf8_bytes > _MAX_NOTE_TAGS_UTF8_BYTES:
+            _protocol_error("note_too_large", "Anki tags exceed the note byte limit")
+        content_utf8_bytes += tags_utf8_bytes
+        if content_utf8_bytes > _MAX_NOTE_CONTENT_UTF8_BYTES:
+            _protocol_error("note_too_large", "An Anki note exceeds the byte limit")
+
+        first_field = fields.get(first_field_name)
+        if not isinstance(first_field, str):
+            _protocol_error(
+                "invalid_note",
+                f"The verified first field {first_field_name!r} is missing",
+            )
+        first_field_bytes = len(first_field.encode("utf-8"))
+        from anki_miner.services.anki_note_builder import _strip_for_dedup
+
+        key = _strip_for_dedup(first_field)
+        if (
+            not key
+            or len(key) > _MAX_DUPLICATE_KEY_CHARS
+            or len(first_field) > _MAX_DUPLICATE_FIRST_FIELD_CHARS
+            or first_field_bytes > _MAX_RAW_FIRST_FIELD_UTF8_BYTES
+        ):
+            _protocol_error(
+                "invalid_note",
+                "The verified Anki first field has an invalid duplicate identity",
+            )
+        return _PendingNote(
+            payload=payload,
+            note={"fields": dict(fields), "tags": list(tags)},
+            key=key,
+            first_field=first_field,
+            content_utf8_bytes=content_utf8_bytes,
+            source_index=source_index,
+        )
+
+    @staticmethod
+    def _create_limits() -> dict[str, int]:
+        return {
+            "maxNotes": _BATCH_SIZE,
+            "maxFieldsPerNote": _MAX_NOTE_FIELDS,
+            "maxFieldNameUtf8Bytes": _MAX_FIELD_NAME_UTF8_BYTES,
+            "maxFieldValueUtf8Bytes": _MAX_FIELD_VALUE_UTF8_BYTES,
+            "maxTagsPerNote": _MAX_NOTE_TAGS,
+            "maxTagUtf8Bytes": _MAX_TAG_UTF8_BYTES,
+            "maxTagsUtf8BytesPerNote": _MAX_NOTE_TAGS_UTF8_BYTES,
+            "maxNoteContentUtf8Bytes": _MAX_NOTE_CONTENT_UTF8_BYTES,
+            "maxTotalContentUtf8Bytes": _MAX_CREATE_CONTENT_UTF8_BYTES,
+            "maxEnvelopeUtf8Bytes": _MAX_CREATE_ENVELOPE_UTF8_BYTES,
+        }
+
+    def _create_duplicate_scope(self) -> dict[str, Any]:
+        snapshot_limits = {
+            "maxNoteIdsPerCandidate": _MAX_DUPLICATE_HITS_PER_CANDIDATE,
+            "maxTotalNoteIds": _MAX_DUPLICATE_TOTAL_HITS,
+        }
+        if self.config.allow_duplicate_cards:
+            return {
+                "kind": "exactDeck",
+                "deckName": self.config.anki_deck_name,
+                "includeChildren": False,
+                "limits": snapshot_limits,
+            }
+        return {"kind": "collection", "limits": snapshot_limits}
+
+    @staticmethod
+    def _wire_note(
+        pending: _PendingNote, client_id: str, occurrence: int
+    ) -> dict[str, Any]:
+        return {
+            "clientNoteId": client_id,
+            "fields": dict(pending.note["fields"]),
+            "tags": list(pending.note["tags"]),
+            "duplicateCandidate": {
+                "key": pending.key,
+                "firstField": pending.first_field,
+                "occurrence": occurrence,
+            },
+        }
+
+    def _create_request_payload(
+        self,
+        notes: Sequence[_PendingNote],
+        baseline_token: str,
+        client_ids: Sequence[str],
+        occurrences: Sequence[int],
+    ) -> dict[str, Any]:
+        if self._verified_field_names is None:
+            _protocol_error("invalid_note", "The Anki target must be verified first")
+        return {
+            "deckName": self.config.anki_deck_name,
+            "modelName": self.config.anki_note_type,
+            "firstFieldName": self._verified_field_names[0],
+            "baselineToken": baseline_token,
+            "duplicateScope": self._create_duplicate_scope(),
+            "limits": self._create_limits(),
+            "notes": [
+                self._wire_note(note, client_id, occurrence)
+                for note, client_id, occurrence in zip(
+                    notes, client_ids, occurrences, strict=True
+                )
+            ],
+        }
+
+    def _create_envelope_utf8_bytes(self, notes: Sequence[_PendingNote]) -> int:
+        client_ids = [f"note_{index:032x}" for index in range(len(notes))]
+        payload = self._create_request_payload(
+            notes,
+            _PLACEHOLDER_BASELINE_TOKEN,
+            client_ids,
+            list(range(len(notes))),
+        )
+        envelope = encode_message(
+            "anki.createnotes.request",
+            {
+                **payload,
+                "runId": self._callbacks.run_id,
+                "requestId": _PLACEHOLDER_REQUEST_ID,
+            },
+        )
+        return len(envelope.encode("utf-8"))
+
+    def _create_batch_fits(self, notes: Sequence[_PendingNote]) -> bool:
+        return bool(notes) and (
+            len(notes) <= _BATCH_SIZE
+            and sum(note.content_utf8_bytes for note in notes)
+            <= _MAX_CREATE_CONTENT_UTF8_BYTES
+            and self._create_envelope_utf8_bytes(notes)
+            <= _MAX_CREATE_ENVELOPE_UTF8_BYTES
+        )
+
+    def _chunk_pending_notes(
+        self, notes: Sequence[_PendingNote]
+    ) -> list[list[_PendingNote]]:
+        """Pack exact-size callbacks without splitting repeated identities."""
+
+        if not notes:
+            return []
+        last_occurrence = {
+            (note.key, note.first_field): index for index, note in enumerate(notes)
+        }
+        blocks: list[list[_PendingNote]] = []
+        start = 0
+        while start < len(notes):
+            end = last_occurrence[(notes[start].key, notes[start].first_field)]
+            cursor = start
+            while cursor <= end:
+                identity = (notes[cursor].key, notes[cursor].first_field)
+                end = max(end, last_occurrence[identity])
+                cursor += 1
+            blocks.append(list(notes[start : end + 1]))
+            start = end + 1
+
+        chunks: list[list[_PendingNote]] = []
+        current: list[_PendingNote] = []
+        for block in blocks:
+            if not self._create_batch_fits(block):
+                _protocol_error(
+                    "note_batch_too_large",
+                    "Repeated duplicate candidates cannot fit one safe callback",
+                )
+            candidate = [*current, *block]
+            if current and not self._create_batch_fits(candidate):
+                chunks.append(current)
+                current = block
+            else:
+                current = candidate
+        if current:
+            chunks.append(current)
+        return chunks
+
     def _duplicate_first_fields(
         self, candidates: Sequence[tuple[str, str]]
-    ) -> list[_DuplicateProbeResult]:
+    ) -> tuple[list[_DuplicateProbeResult], str]:
         if not candidates:
-            return []
+            _protocol_error("invalid_note", "Duplicate candidates must not be empty")
+        if self._verified_field_names is None:
+            _protocol_error("invalid_note", "The Anki target must be verified first")
         from anki_miner.services.anki_note_builder import _strip_for_dedup
 
         candidate_list = list(candidates)
@@ -1147,9 +1396,13 @@ class AndroidAnkiAdapter:
         # Provider identity includes the exact first-field checksum. Collapse only
         # identical wire probes, then restore their position-aligned decisions.
         unique_candidates = list(dict.fromkeys(candidate_list))
+        candidate_indexes = {
+            candidate: index for index, candidate in enumerate(unique_candidates)
+        }
         scope = {
             "kind": "duplicates",
             "modelName": self.config.anki_note_type,
+            "firstFieldName": self._verified_field_names[0],
             "deckName": (
                 self.config.anki_deck_name
                 if self.config.allow_duplicate_cards
@@ -1158,6 +1411,9 @@ class AndroidAnkiAdapter:
             "candidates": [
                 {"key": key, "firstField": first_field}
                 for key, first_field in unique_candidates
+            ],
+            "occurrences": [
+                candidate_indexes[candidate] for candidate in candidate_list
             ],
             "limits": {
                 "maxHitsPerCandidate": _MAX_DUPLICATE_HITS_PER_CANDIDATE,
@@ -1172,9 +1428,24 @@ class AndroidAnkiAdapter:
             _raise_callback_error(error)
         result = _expect_exact_keys(
             payload,
-            {"runId", "requestId", "rawFirstFieldHits"},
+            {"runId", "requestId", "rawFirstFieldHits", "baselineToken"},
             context="duplicate lookup result",
         )
+        baseline_token = _expect_string(
+            result["baselineToken"],
+            context="duplicate lookup baselineToken",
+            nonempty=True,
+        )
+        if (
+            _BASELINE_TOKEN_RE.fullmatch(baseline_token) is None
+            or baseline_token in self._issued_baseline_tokens
+            or baseline_token in self._consumed_baseline_tokens
+        ):
+            _protocol_error(
+                "invalid_anki_response",
+                "Duplicate lookup baselineToken is malformed or reused",
+            )
+        self._issued_baseline_tokens.add(baseline_token)
         raw_buckets = result["rawFirstFieldHits"]
         if not isinstance(raw_buckets, list) or len(raw_buckets) != len(
             unique_candidates
@@ -1203,7 +1474,7 @@ class AndroidAnkiAdapter:
                     "Duplicate lookup returned too many raw fields",
                 )
             normalized_match = False
-            note_ids: list[int] = []
+            note_ids: set[int] = set()
             for raw_index, raw_hit in enumerate(bucket):
                 row = _expect_exact_keys(
                     raw_hit,
@@ -1218,7 +1489,7 @@ class AndroidAnkiAdapter:
                         "invalid_anki_response",
                         f"Duplicate raw field bucket {index} repeats a note ID",
                     )
-                note_ids.append(note_id)
+                note_ids.add(note_id)
                 raw_value = row["firstField"]
                 if not isinstance(raw_value, str):
                     _protocol_error(
@@ -1240,19 +1511,25 @@ class AndroidAnkiAdapter:
                 if _strip_for_dedup(raw_value) == key:
                     normalized_match = True
             probe_results.append(
-                _DuplicateProbeResult(
-                    is_duplicate=normalized_match,
-                    baseline_note_ids=tuple(note_ids),
-                )
+                _DuplicateProbeResult(is_duplicate=normalized_match, occurrence=-1)
             )
         results_by_candidate = dict(
             zip(unique_candidates, probe_results, strict=True)
         )
-        return [results_by_candidate[candidate] for candidate in candidate_list]
+        return (
+            [
+                _DuplicateProbeResult(
+                    is_duplicate=results_by_candidate[candidate].is_duplicate,
+                    occurrence=occurrence,
+                )
+                for occurrence, candidate in enumerate(candidate_list)
+            ],
+            baseline_token,
+        )
 
     def _parse_create_notes_result(
         self, payload: dict[str, Any], client_ids: Sequence[str]
-    ) -> tuple[list[int | None], int, AnkiCallbackError | None]:
+    ) -> tuple[list[int | None], list[bool], int, AnkiCallbackError | None]:
         result = _expect_exact_keys(
             payload,
             {"runId", "requestId", "results", "error"},
@@ -1266,9 +1543,12 @@ class AndroidAnkiAdapter:
             )
 
         note_ids: list[int | None] = []
+        successful: list[bool] = []
         duplicates = 0
-        saw_failed = False
+        saw_terminal_failure = False
         saw_not_attempted = False
+        saw_uncertain = False
+        saw_committed_failure = False
         created_ids: set[int] = set()
         for index, (row_value, expected_id) in enumerate(
             zip(rows, client_ids, strict=True)
@@ -1282,6 +1562,11 @@ class AndroidAnkiAdapter:
                 _protocol_error(
                     "invalid_anki_response",
                     "notAttempted createNotes rows must form a strict suffix",
+                )
+            if saw_terminal_failure and status != "notAttempted":
+                _protocol_error(
+                    "invalid_anki_response",
+                    "A failed createNotes row must end provider attempts",
                 )
             if status == "created":
                 row = _expect_exact_keys(
@@ -1297,6 +1582,7 @@ class AndroidAnkiAdapter:
                     )
                 created_ids.add(note_id)
                 note_ids.append(note_id)
+                successful.append(True)
             elif status == "duplicate":
                 row = _expect_exact_keys(
                     row_value,
@@ -1304,6 +1590,7 @@ class AndroidAnkiAdapter:
                     context=f"createNotes result {index}",
                 )
                 note_ids.append(None)
+                successful.append(False)
                 duplicates += 1
             elif status == "failed":
                 row = _expect_exact_keys(
@@ -1312,7 +1599,35 @@ class AndroidAnkiAdapter:
                     context=f"createNotes result {index}",
                 )
                 note_ids.append(None)
-                saw_failed = True
+                successful.append(False)
+                saw_terminal_failure = True
+            elif status == "committedFailed":
+                row = _expect_exact_keys(
+                    row_value,
+                    {"clientNoteId", "status", "noteId"},
+                    context=f"createNotes result {index}",
+                )
+                note_id = _expect_positive_int(row["noteId"], context=f"noteId {index}")
+                if note_id in created_ids:
+                    _protocol_error(
+                        "invalid_anki_response",
+                        "createNotes returned duplicate note IDs",
+                    )
+                created_ids.add(note_id)
+                note_ids.append(note_id)
+                successful.append(False)
+                saw_terminal_failure = True
+                saw_committed_failure = True
+            elif status == "uncertain":
+                row = _expect_exact_keys(
+                    row_value,
+                    {"clientNoteId", "status"},
+                    context=f"createNotes result {index}",
+                )
+                note_ids.append(None)
+                successful.append(False)
+                saw_terminal_failure = True
+                saw_uncertain = True
             elif status == "notAttempted":
                 row = _expect_exact_keys(
                     row_value,
@@ -1320,6 +1635,7 @@ class AndroidAnkiAdapter:
                     context=f"createNotes result {index}",
                 )
                 note_ids.append(None)
+                successful.append(False)
                 saw_not_attempted = True
             else:
                 _protocol_error(
@@ -1338,121 +1654,101 @@ class AndroidAnkiAdapter:
             if raw_error is None
             else _expect_error_detail(raw_error, operation="createNotes")
         )
-        if (saw_failed or saw_not_attempted) and error is None:
+        if (saw_terminal_failure or saw_not_attempted) and error is None:
             _protocol_error(
                 "invalid_anki_response",
                 "failed/notAttempted createNotes rows require a top-level error",
             )
-        if error is not None and not (saw_failed or saw_not_attempted):
+        if error is not None and not (saw_terminal_failure or saw_not_attempted):
             _protocol_error(
                 "invalid_anki_response",
                 "createNotes top-level error requires a failed or notAttempted row",
             )
-        return note_ids, duplicates, error
+        if error is not None:
+            if saw_uncertain and (
+                error.code != "post_commit_uncertain" or error.retryable
+            ):
+                _protocol_error(
+                    "invalid_anki_response",
+                    "An uncertain write requires a non-retryable post-commit error",
+                )
+            if saw_committed_failure and (
+                error.code == "cancelled" or error.retryable
+            ):
+                _protocol_error(
+                    "invalid_anki_response",
+                    "A known post-commit failure must be non-retryable",
+                )
+            if created_ids and error.retryable:
+                _protocol_error(
+                    "invalid_anki_response",
+                    "A partial write cannot be declared safely retryable",
+                )
+            if created_ids and error.code == "cancelled":
+                error = AnkiCallbackError(
+                    "createNotes", "post_commit_uncertain", error.message, False
+                )
+        return note_ids, successful, duplicates, error
 
     def _create_note_batch(
         self,
-        notes: Sequence[Mapping[str, Any]],
-        duplicate_candidates: Sequence[
-            tuple[str, str, _DuplicateProbeResult]
-        ],
-    ) -> tuple[list[int | None], int, AnkiCallbackError | None]:
-        if len(notes) != len(duplicate_candidates):
+        notes: Sequence[_PendingNote],
+        baseline_token: str,
+        occurrences: Sequence[int],
+    ) -> tuple[list[int | None], list[bool], int, AnkiCallbackError | None]:
+        if not notes or len(notes) > _BATCH_SIZE:
             _protocol_error(
                 "invalid_note",
-                "Create-note duplicate candidates must align with notes",
+                "Create-note batches must contain between 1 and 100 notes",
             )
-        client_ids: list[str] = []
-        wire_notes: list[dict[str, Any]] = []
-        baseline_note_ids_across_request: set[int] = set()
-        for note, (key, first_field, probe) in zip(
-            notes, duplicate_candidates, strict=True
+        if (
+            _BASELINE_TOKEN_RE.fullmatch(baseline_token) is None
+            or baseline_token not in self._issued_baseline_tokens
+            or baseline_token in self._consumed_baseline_tokens
         ):
-            client_id = f"note_{uuid4().hex}"
-            client_ids.append(client_id)
-            fields = note.get("fields")
-            tags = note.get("tags")
-            if not isinstance(fields, dict) or not fields:
-                _protocol_error(
-                    "invalid_note", "A note must contain at least one field"
-                )
-            if not all(isinstance(key, str) and key for key in fields):
-                _protocol_error(
-                    "invalid_note", "Anki field names must be non-empty strings"
-                )
-            if not all(isinstance(value, str) for value in fields.values()):
-                _protocol_error("invalid_note", "Anki field values must be strings")
-            if not isinstance(tags, list) or not all(
-                isinstance(tag, str) and tag for tag in tags
-            ):
-                _protocol_error("invalid_note", "Anki tags must be non-empty strings")
-            actual_first_field = next(iter(fields.values()))
-            if (
-                not key
-                or len(key) > _MAX_DUPLICATE_KEY_CHARS
-                or first_field != actual_first_field
-                or len(first_field) > _MAX_DUPLICATE_FIRST_FIELD_CHARS
-            ):
-                _protocol_error(
-                    "invalid_note",
-                    "Create-note duplicate identity is invalid",
-                )
-            baseline_note_ids = list(probe.baseline_note_ids)
-            if (
-                len(baseline_note_ids) > _MAX_DUPLICATE_HITS_PER_CANDIDATE
-                or len(set(baseline_note_ids)) != len(baseline_note_ids)
-                or any(note_id <= 0 for note_id in baseline_note_ids)
-            ):
-                _protocol_error(
-                    "invalid_note",
-                    "Create-note duplicate baseline is invalid",
-                )
-            baseline_note_ids_across_request.update(baseline_note_ids)
-            if len(baseline_note_ids_across_request) > _MAX_DUPLICATE_TOTAL_HITS:
-                _protocol_error(
-                    "invalid_note",
-                    "Create-note duplicate baselines exceed the request limit",
-                )
-            wire_notes.append(
-                {
-                    "clientNoteId": client_id,
-                    "fields": dict(fields),
-                    "tags": list(tags),
-                    "duplicateCandidate": {
-                        "key": key,
-                        "firstField": first_field,
-                        "baselineNoteIds": baseline_note_ids,
-                    },
-                }
+            _protocol_error(
+                "invalid_note", "Create-note duplicate baseline token is invalid"
             )
-
-        duplicate_scope: dict[str, Any]
-        snapshot_limits = {
-            "maxNoteIdsPerCandidate": _MAX_DUPLICATE_HITS_PER_CANDIDATE,
-            "maxTotalNoteIds": _MAX_DUPLICATE_TOTAL_HITS,
-        }
-        if self.config.allow_duplicate_cards:
-            duplicate_scope = {
-                "kind": "exactDeck",
-                "deckName": self.config.anki_deck_name,
-                "includeChildren": False,
-                "limits": snapshot_limits,
-            }
-        else:
-            duplicate_scope = {
-                "kind": "collection",
-                "limits": snapshot_limits,
-            }
+        if (
+            len(occurrences) != len(notes)
+            or any(type(value) is not int or value < 0 for value in occurrences)
+            or list(occurrences) != sorted(set(occurrences))
+        ):
+            _protocol_error(
+                "invalid_note", "Create-note duplicate occurrences are invalid"
+            )
+        if not self._create_batch_fits(notes):
+            _protocol_error(
+                "note_batch_too_large", "Create-note callback exceeds its byte limit"
+            )
+        client_ids = [f"note_{uuid4().hex}" for _ in notes]
+        request_payload = self._create_request_payload(
+            notes, baseline_token, client_ids, occurrences
+        )
+        actual_envelope_bytes = len(
+            encode_message(
+                "anki.createnotes.request",
+                {
+                    **request_payload,
+                    "runId": self._callbacks.run_id,
+                    "requestId": _PLACEHOLDER_REQUEST_ID,
+                },
+            ).encode("utf-8")
+        )
+        if actual_envelope_bytes > _MAX_CREATE_ENVELOPE_UTF8_BYTES:
+            _protocol_error(
+                "note_batch_too_large", "Create-note callback exceeds its byte limit"
+            )
+        self._raise_if_cancelled("createNotes")
+        self._consumed_baseline_tokens.add(baseline_token)
         try:
-            payload = self._callbacks.create_notes(
-                {
-                    "deckName": self.config.anki_deck_name,
-                    "modelName": self.config.anki_note_type,
-                    "duplicateScope": duplicate_scope,
-                    "notes": wire_notes,
-                }
-            )
+            payload = self._callbacks.create_notes(request_payload)
         except AnkiCallbackError as error:
+            if error.code == "post_commit_uncertain":
+                _protocol_error(
+                    "invalid_anki_response",
+                    "Post-commit uncertainty requires an aligned createNotes result",
+                )
             _raise_callback_error(error)
         return self._parse_create_notes_result(payload, client_ids)
 
@@ -1466,6 +1762,11 @@ class AndroidAnkiAdapter:
             self.last_skipped_duplicates = 0
             self.last_media_store_failures = 0
             return 0
+
+        # Duplicate identity is the model's first field, not Python dict order.
+        # Verify once before media or note-write side effects and retain the
+        # provider-reported field order for the whole adapter run.
+        self.verify_card_target()
 
         self.last_created_note_ids = []
         self.last_skipped_duplicates = 0
@@ -1487,87 +1788,84 @@ class AndroidAnkiAdapter:
 
         seen_outgoing: set[str] = set()
         try:
-            for offset in range(0, len(word_data_list), _BATCH_SIZE):
-                batch = word_data_list[offset : offset + _BATCH_SIZE]
-                built_notes: list[dict[str, Any]] = []
-                for item in batch:
-                    built = build_note(item, self.config, stored_files)
-                    if built.used_precomputed_bold:
-                        bold_used += 1
-                    if built.used_bold_fallback:
-                        bold_fallback += 1
-                    built_notes.append(built.note)
-                candidates: list[tuple[Any, dict[str, Any], str, str]] = []
-                for item, note in zip(batch, built_notes, strict=True):
-                    fields = note.get("fields") or {}
-                    first_value = next(iter(fields.values()), "")
-                    key = _strip_for_dedup(first_value)
-                    if not self.config.allow_duplicate_cards:
-                        if key in seen_outgoing:
-                            skipped_duplicates += 1
-                            continue
-                        seen_outgoing.add(key)
-                    candidates.append((item, note, key, first_value))
-
-                duplicate_probes = iter(
-                    self._duplicate_first_fields(
-                        [
-                            (key, first_value)
-                            for _, _, key, first_value in candidates
-                        ]
-                    )
-                )
-                submit_notes: list[dict[str, Any]] = []
-                submit_payloads: list[Any] = []
-                submit_duplicate_candidates: list[
-                    tuple[str, str, _DuplicateProbeResult]
-                ] = []
-                for item, note, key, first_field in candidates:
-                    probe = next(duplicate_probes)
-                    if probe.is_duplicate:
+            pending_notes: list[_PendingNote] = []
+            for source_index, item in enumerate(word_data_list):
+                built = build_note(item, self.config, stored_files)
+                if built.used_precomputed_bold:
+                    bold_used += 1
+                if built.used_bold_fallback:
+                    bold_fallback += 1
+                pending = self._prepare_note(item, built.note, source_index)
+                if not self.config.allow_duplicate_cards:
+                    if pending.key in seen_outgoing:
                         skipped_duplicates += 1
                         continue
-                    submit_notes.append(note)
-                    submit_payloads.append(item)
-                    submit_duplicate_candidates.append((key, first_field, probe))
+                    seen_outgoing.add(pending.key)
+                pending_notes.append(pending)
 
-                if submit_notes:
-                    note_ids, residual_duplicates, partial_error = (
+            progress_reported = 0
+            for callback_batch in self._chunk_pending_notes(pending_notes):
+                duplicate_probes, baseline_token = self._duplicate_first_fields(
+                    [
+                        (pending.key, pending.first_field)
+                        for pending in callback_batch
+                    ]
+                )
+                submissions = [
+                    (pending, probe.occurrence)
+                    for pending, probe in zip(
+                        callback_batch, duplicate_probes, strict=True
+                    )
+                    if not probe.is_duplicate
+                ]
+                skipped_duplicates += len(callback_batch) - len(submissions)
+                if submissions:
+                    submit_notes = [pending for pending, _ in submissions]
+                    occurrences = [occurrence for _, occurrence in submissions]
+                    note_ids, successful, residual_duplicates, partial_error = (
                         self._create_note_batch(
-                            submit_notes, submit_duplicate_candidates
+                            submit_notes, baseline_token, occurrences
                         )
                     )
-                else:
-                    note_ids, residual_duplicates, partial_error = [], 0, None
-
-                skipped_duplicates += residual_duplicates
-                repeated_created_ids = set(all_created_ids).intersection(
-                    note_id for note_id in note_ids if note_id is not None
-                )
-                if repeated_created_ids:
-                    _protocol_error(
-                        "invalid_anki_response",
-                        "createNotes reused a note ID from an earlier batch",
+                    skipped_duplicates += residual_duplicates
+                    repeated_created_ids = set(all_created_ids).intersection(
+                        note_id for note_id in note_ids if note_id is not None
                     )
-                created_in_batch = sum(note_id is not None for note_id in note_ids)
-                total_created += created_in_batch
-                all_created_ids.extend(
-                    note_id for note_id in note_ids if note_id is not None
-                )
-                created_forms.extend(
-                    item.word.mined_form
-                    for item, note_id in zip(submit_payloads, note_ids, strict=True)
-                    if note_id is not None
-                )
+                    if repeated_created_ids:
+                        _protocol_error(
+                            "invalid_anki_response",
+                            "createNotes reused a note ID from an earlier batch",
+                        )
+                    total_created += sum(successful)
+                    all_created_ids.extend(
+                        note_id for note_id in note_ids if note_id is not None
+                    )
+                    created_forms.extend(
+                        pending.payload.word.mined_form
+                        for pending, was_successful in zip(
+                            submit_notes, successful, strict=True
+                        )
+                        if was_successful
+                    )
+                    if partial_error is not None:
+                        _raise_callback_error(partial_error)
 
-                if partial_error is not None:
-                    _raise_callback_error(partial_error)
-
-                if progress_callback:
+                processed_through = callback_batch[-1].source_index + 1
+                while (
+                    progress_callback
+                    and progress_reported + _BATCH_SIZE <= processed_through
+                ):
+                    progress_reported += _BATCH_SIZE
                     progress_callback.on_progress(
-                        min(offset + _BATCH_SIZE, len(word_data_list)),
+                        progress_reported,
                         f"Cards created: {total_created}/{len(word_data_list)}",
                     )
+
+            if progress_callback and progress_reported < len(word_data_list):
+                progress_callback.on_progress(
+                    len(word_data_list),
+                    f"Cards created: {total_created}/{len(word_data_list)}",
+                )
         finally:
             self.last_created_note_ids = all_created_ids
             self.last_skipped_duplicates = skipped_duplicates

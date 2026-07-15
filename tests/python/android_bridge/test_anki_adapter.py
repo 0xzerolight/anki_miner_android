@@ -18,8 +18,17 @@ from android_bridge.anki_adapter import (
     AndroidAnkiAdapter,
     AnkiOperationCancelled,
     _MAX_CARD_MEDIA_BYTES,
+    _MAX_CREATE_CONTENT_UTF8_BYTES,
+    _MAX_CREATE_ENVELOPE_UTF8_BYTES,
+    _MAX_FIELD_NAME_UTF8_BYTES,
+    _MAX_FIELD_VALUE_UTF8_BYTES,
     _MAX_MEDIA_ASSET_BYTES,
     _MAX_MEDIA_CALLBACK_BYTES,
+    _MAX_NOTE_CONTENT_UTF8_BYTES,
+    _MAX_NOTE_FIELDS,
+    _MAX_NOTE_TAGS,
+    _MAX_NOTE_TAGS_UTF8_BYTES,
+    _MAX_TAG_UTF8_BYTES,
     _MEDIA_HASH_CHUNK_BYTES,
     _MediaAsset,
     _chunk_media_assets,
@@ -38,6 +47,18 @@ _DUPLICATE_LIMITS = {
 _CREATE_SNAPSHOT_LIMITS = {
     "maxNoteIdsPerCandidate": 100,
     "maxTotalNoteIds": 1000,
+}
+_CREATE_LIMITS = {
+    "maxNotes": 100,
+    "maxFieldsPerNote": _MAX_NOTE_FIELDS,
+    "maxFieldNameUtf8Bytes": _MAX_FIELD_NAME_UTF8_BYTES,
+    "maxFieldValueUtf8Bytes": _MAX_FIELD_VALUE_UTF8_BYTES,
+    "maxTagsPerNote": _MAX_NOTE_TAGS,
+    "maxTagUtf8Bytes": _MAX_TAG_UTF8_BYTES,
+    "maxTagsUtf8BytesPerNote": _MAX_NOTE_TAGS_UTF8_BYTES,
+    "maxNoteContentUtf8Bytes": _MAX_NOTE_CONTENT_UTF8_BYTES,
+    "maxTotalContentUtf8Bytes": _MAX_CREATE_CONTENT_UTF8_BYTES,
+    "maxEnvelopeUtf8Bytes": _MAX_CREATE_ENVELOPE_UTF8_BYTES,
 }
 _KNOWN_VOCABULARY_LIMITS = {
     "maxScannedNotes": 256,
@@ -128,6 +149,9 @@ class FakeKotlinAnki:
             tuple[list[str], dict[str, object] | None] | None
         ] = []
         self.next_note_id = 1000
+        self._baseline_counter = 0
+        self._baseline_snapshots: dict[str, dict[str, Any]] = {}
+        self._verified_first_fields: dict[str, str] = {}
 
     def _duplicate_records(self) -> list[tuple[int, str]]:
         return [
@@ -156,6 +180,35 @@ class FakeKotlinAnki:
             if _ankidroid_field_checksum(first_field) == checksum
             and self._in_duplicate_scope(note_id, first_field, scope)
         }
+
+    def _retain_duplicate_baseline(
+        self,
+        request: dict[str, Any],
+        raw_hit_buckets: list[list[dict[str, object]]],
+    ) -> str:
+        scope = request["scope"]
+        token = f"baseline_{self._baseline_counter:032x}"
+        self._baseline_counter += 1
+        self._baseline_snapshots[token] = {
+            "runId": request["runId"],
+            "modelName": scope["modelName"],
+            "firstFieldName": scope["firstFieldName"],
+            "deckName": scope["deckName"],
+            "candidates": [
+                (candidate["key"], candidate["firstField"])
+                for candidate in scope["candidates"]
+            ],
+            "occurrences": list(scope["occurrences"]),
+            "ids": {
+                (candidate["key"], candidate["firstField"]): frozenset(
+                    int(hit["noteId"]) for hit in hits
+                )
+                for candidate, hits in zip(
+                    scope["candidates"], raw_hit_buckets, strict=True
+                )
+            },
+        }
+        return token
 
     def _request(self, method: str, raw: str) -> dict[str, Any]:
         envelope = json.loads(raw)
@@ -187,8 +240,18 @@ class FakeKotlinAnki:
         fields = (
             self.verify_fields
             if self.verify_fields is not None
-            else (request["requiredFields"] or ["Expression"])
+            else (
+                ["Expression"]
+                + sorted(
+                    field
+                    for field in request["requiredFields"]
+                    if field != "Expression"
+                )
+                if "Expression" in request["requiredFields"]
+                else (request["requiredFields"] or ["Expression"])
+            )
         )
+        self._verified_first_fields[request["modelName"]] = fields[0]
         return encode_message(
             "anki.verifytarget.result",
             {
@@ -271,12 +334,22 @@ class FakeKotlinAnki:
             )
 
         scope = request["scope"]
+        assert (
+            scope["firstFieldName"]
+            == self._verified_first_fields[scope["modelName"]]
+        )
         deck_name = scope["deckName"]
+        assert len(scope["occurrences"]) <= 100
+        assert all(
+            0 <= occurrence < len(scope["candidates"])
+            for occurrence in scope["occurrences"]
+        )
         raw_hit_buckets = []
+        records = self._duplicate_records()
         for candidate in scope["candidates"]:
             candidate_checksum = _ankidroid_field_checksum(candidate["firstField"])
             hits = []
-            for note_id, stored in self._duplicate_records():
+            for note_id, stored in records:
                 if _ankidroid_field_checksum(stored) != candidate_checksum:
                     continue
                 if deck_name is not None and deck_name not in self.duplicate_decks.get(
@@ -285,12 +358,14 @@ class FakeKotlinAnki:
                     continue
                 hits.append({"noteId": note_id, "firstField": stored})
             raw_hit_buckets.append(hits)
+        baseline_token = self._retain_duplicate_baseline(request, raw_hit_buckets)
         return encode_message(
             "anki.scanfirstfields.result",
             {
                 "runId": request["runId"],
                 "requestId": request["requestId"],
                 "rawFirstFieldHits": raw_hit_buckets,
+                "baselineToken": baseline_token,
             },
         )
 
@@ -383,6 +458,60 @@ class FakeKotlinAnki:
         request = self._request("ankiCreateNotes", raw)
         if error := self._error(request, "createNotes"):
             return error
+        assert len(raw.encode("utf-8")) <= request["limits"]["maxEnvelopeUtf8Bytes"]
+        assert request["limits"] == _CREATE_LIMITS
+        total_content_bytes = 0
+        for note in request["notes"]:
+            assert len(note["fields"]) <= request["limits"]["maxFieldsPerNote"]
+            note_content_bytes = 0
+            for field_name, value in note["fields"].items():
+                assert len(field_name.encode("utf-8")) <= request["limits"][
+                    "maxFieldNameUtf8Bytes"
+                ]
+                assert len(value.encode("utf-8")) <= request["limits"][
+                    "maxFieldValueUtf8Bytes"
+                ]
+                note_content_bytes += len(field_name.encode("utf-8")) + len(
+                    value.encode("utf-8")
+                )
+            assert len(note["tags"]) <= request["limits"]["maxTagsPerNote"]
+            tag_bytes = sum(len(tag.encode("utf-8")) for tag in note["tags"])
+            assert all(
+                len(tag.encode("utf-8")) <= request["limits"]["maxTagUtf8Bytes"]
+                for tag in note["tags"]
+            )
+            assert tag_bytes <= request["limits"]["maxTagsUtf8BytesPerNote"]
+            note_content_bytes += tag_bytes
+            assert note_content_bytes <= request["limits"][
+                "maxNoteContentUtf8Bytes"
+            ]
+            total_content_bytes += note_content_bytes
+        assert total_content_bytes <= request["limits"]["maxTotalContentUtf8Bytes"]
+
+        baseline = self._baseline_snapshots.pop(request["baselineToken"])
+        assert baseline["runId"] == request["runId"]
+        assert baseline["modelName"] == request["modelName"]
+        assert baseline["firstFieldName"] == request["firstFieldName"]
+        assert request["firstFieldName"] == self._verified_first_fields[
+            request["modelName"]
+        ]
+        expected_deck_name = (
+            request["duplicateScope"].get("deckName")
+            if request["duplicateScope"]["kind"] == "exactDeck"
+            else None
+        )
+        assert baseline["deckName"] == expected_deck_name
+        previous_occurrence = -1
+        for note in request["notes"]:
+            candidate = note["duplicateCandidate"]
+            occurrence = candidate["occurrence"]
+            assert occurrence > previous_occurrence
+            previous_occurrence = occurrence
+            candidate_index = baseline["occurrences"][occurrence]
+            assert baseline["candidates"][candidate_index] == (
+                candidate["key"],
+                candidate["firstField"],
+            )
         # The production callback must take one complete scoped snapshot before
         # any insert. Comparing IDs with Python's probe baseline closes the
         # preprobe/write race without moving normalization into Kotlin. Notes
@@ -401,7 +530,12 @@ class FakeKotlinAnki:
                             request["duplicateScope"],
                             records_snapshot,
                         )
-                        - set(note["duplicateCandidate"]["baselineNoteIds"])
+                        - baseline["ids"][
+                            (
+                                note["duplicateCandidate"]["key"],
+                                note["duplicateCandidate"]["firstField"],
+                            )
+                        ]
                         else "created"
                     )
                     for note in request["notes"]
@@ -417,9 +551,10 @@ class FakeKotlinAnki:
                 "clientNoteId": note["clientNoteId"],
                 "status": status,
             }
-            if status == "created":
+            if status in {"created", "committedFailed", "uncertain"}:
                 note_id = self.next_note_id
-                result["noteId"] = note_id
+                if status != "uncertain":
+                    result["noteId"] = note_id
                 self.next_note_id += 1
                 created_rows.append(
                     (note_id, note["duplicateCandidate"]["firstField"])
@@ -579,6 +714,11 @@ def test_blank_required_and_active_marker_mappings_match_desktop_builder(
     )
     card = _card("猫")
     kotlin = FakeKotlinAnki()
+    required_fields = {value for value in config.anki_fields.values() if value}
+    kotlin.verify_fields = [
+        "Sentence",
+        *sorted(required_fields - {"Sentence"}),
+    ]
     adapter = _adapter(config, kotlin)
 
     adapter.verify_card_target()
@@ -843,8 +983,9 @@ def test_note_building_dedup_and_first_occurrence_semantics_are_python_owned(
     assert create_payload["notes"][0]["duplicateCandidate"] == {
         "key": "猫",
         "firstField": "猫",
-        "baselineNoteIds": [],
+        "occurrence": 1,
     }
+    assert create_payload["baselineToken"].startswith("baseline_")
     duplicate_scope = kotlin.requests_for("ankiScanFirstFields")[0]["payload"]["scope"]
     assert duplicate_scope["candidates"][0] == {
         "key": "既存",
@@ -900,6 +1041,7 @@ def test_python_normalizes_bounded_raw_duplicate_hits(
                         [{"noteId": 20_000 + index, "firstField": value}]
                         for index, value in enumerate(raw_values)
                     ],
+                    "baselineToken": "baseline_" + "f" * 32,
                 },
             )
 
@@ -943,6 +1085,7 @@ def test_duplicate_raw_hit_response_enforces_item_and_utf8_limits(
                     "runId": request["runId"],
                     "requestId": request["requestId"],
                     "rawFirstFieldHits": raw_hit_buckets,
+                    "baselineToken": "baseline_" + "f" * 32,
                 },
             )
 
@@ -977,6 +1120,7 @@ def test_duplicate_raw_hit_response_enforces_aggregate_hit_limit(
                         ]
                         for bucket in range(11)
                     ],
+                    "baselineToken": "baseline_" + "f" * 32,
                 },
             )
 
@@ -1010,6 +1154,7 @@ def test_duplicate_raw_hit_response_enforces_aggregate_utf8_limit(
                             for index in range(17)
                         ]
                     ],
+                    "baselineToken": "baseline_" + "f" * 32,
                 },
             )
 
@@ -1035,8 +1180,10 @@ def test_allow_duplicate_cards_scopes_probe_to_target_deck(
     assert scope == {
         "kind": "duplicates",
         "modelName": config.anki_note_type,
+        "firstFieldName": "Expression",
         "deckName": config.anki_deck_name,
         "candidates": [{"key": "猫", "firstField": "猫"}],
+        "occurrences": [0],
         "limits": _DUPLICATE_LIMITS,
     }
     create_payload = kotlin.requests_for("ankiCreateNotes")[0]["payload"]
@@ -1062,8 +1209,9 @@ def test_create_race_baseline_preserves_preprobe_checksum_collision(
     assert create_note["duplicateCandidate"] == {
         "key": "x 猫",
         "firstField": " x 猫",
-        "baselineNoteIds": [10_000],
+        "occurrence": 0,
     }
+    assert "baselineNoteIds" not in create_note["duplicateCandidate"]
 
 
 def test_create_baseline_limit_counts_unique_ids_across_repeated_candidates(
@@ -1079,10 +1227,12 @@ def test_create_baseline_limit_counts_unique_ids_across_repeated_candidates(
     assert adapter.create_cards_batch([_card(" x 猫")] * 100) == 100
     notes = kotlin.requests_for("ankiCreateNotes")[0]["payload"]["notes"]
     assert len(notes) == 100
-    assert all(
-        note["duplicateCandidate"]["baselineNoteIds"] == list(range(10_000, 10_100))
-        for note in notes
+    assert [note["duplicateCandidate"]["occurrence"] for note in notes] == list(
+        range(100)
     )
+    assert all("baselineNoteIds" not in note["duplicateCandidate"] for note in notes)
+    scan_scope = kotlin.requests_for("ankiScanFirstFields")[0]["payload"]["scope"]
+    assert scan_scope["occurrences"] == [0] * 100
 
 
 def test_empty_normalized_first_field_fails_before_provider_callbacks(
@@ -1132,7 +1282,8 @@ def test_create_snapshot_rejects_only_new_ids_in_configured_scope(
     assert adapter.create_cards_batch([_card("猫")]) == expected_created
     assert adapter.last_skipped_duplicates == 1 - expected_created
     request = kotlin.requests_for("ankiCreateNotes")[0]["payload"]
-    assert request["notes"][0]["duplicateCandidate"]["baselineNoteIds"] == []
+    assert request["notes"][0]["duplicateCandidate"]["occurrence"] == 0
+    assert request["baselineToken"].startswith("baseline_")
 
 
 def test_allow_duplicate_cards_filters_checksum_hits_to_target_deck(
@@ -1181,9 +1332,12 @@ def test_repeated_expressions_in_one_batch_follow_desktop_duplicate_mode(
     notes = kotlin.requests_for("ankiCreateNotes")[0]["payload"]["notes"]
     assert len(notes) == expected_created
     if allow_duplicate_cards:
-        assert [
-            note["duplicateCandidate"]["baselineNoteIds"] for note in notes
-        ] == [[], [], []]
+        assert [note["duplicateCandidate"]["occurrence"] for note in notes] == [
+            0,
+            1,
+            2,
+        ]
+        assert scope["occurrences"] == [0, 0, 0]
 
 
 def test_allow_duplicate_cards_fans_existing_target_hit_to_repeated_candidates(
@@ -1200,6 +1354,66 @@ def test_allow_duplicate_cards_fans_existing_target_hit_to_repeated_candidates(
     scope = kotlin.requests_for("ankiScanFirstFields")[0]["payload"]["scope"]
     assert scope["candidates"] == [{"key": "猫", "firstField": "猫"}]
     assert not kotlin.requests_for("ankiCreateNotes")
+
+
+@pytest.mark.parametrize("allow_duplicate_cards", [False, True])
+def test_baseline_token_binds_ordered_occurrences_in_both_duplicate_scopes(
+    allow_duplicate_cards: bool,
+    initialized_bridge_home: Path,
+) -> None:
+    config = _config(
+        initialized_bridge_home, allow_duplicate_cards=allow_duplicate_cards
+    )
+    kotlin = FakeKotlinAnki()
+
+    assert _adapter(config, kotlin).create_cards_batch([_card("猫"), _card("犬")]) == 2
+
+    scan = kotlin.requests_for("ankiScanFirstFields")[0]["payload"]["scope"]
+    create = kotlin.requests_for("ankiCreateNotes")[0]["payload"]
+    assert scan["occurrences"] == [0, 1]
+    assert [
+        note["duplicateCandidate"]["occurrence"] for note in create["notes"]
+    ] == [0, 1]
+    assert create["baselineToken"].startswith("baseline_")
+    assert create["baselineToken"] not in kotlin._baseline_snapshots
+    assert scan["deckName"] == (
+        config.anki_deck_name if allow_duplicate_cards else None
+    )
+
+
+@pytest.mark.parametrize("allow_duplicate_cards", [False, True])
+def test_reused_provider_baseline_token_is_rejected_before_second_write(
+    allow_duplicate_cards: bool,
+    initialized_bridge_home: Path,
+) -> None:
+    class ReusedTokenKotlin(FakeKotlinAnki):
+        def __init__(self) -> None:
+            super().__init__()
+            self.first_token: str | None = None
+
+        def ankiScanFirstFields(self, raw: str) -> str:
+            response = super().ankiScanFirstFields(raw)
+            envelope = json.loads(response)
+            payload = envelope["payload"]
+            token = payload["baselineToken"]
+            if self.first_token is None:
+                self.first_token = token
+            else:
+                payload["baselineToken"] = self.first_token
+            return encode_message(envelope["type"], payload)
+
+    config = _config(
+        initialized_bridge_home, allow_duplicate_cards=allow_duplicate_cards
+    )
+    kotlin = ReusedTokenKotlin()
+
+    with pytest.raises(BridgeProtocolError) as exc_info:
+        _adapter(config, kotlin).create_cards_batch(
+            [_card(f"語{index}") for index in range(101)]
+        )
+
+    assert exc_info.value.code == "invalid_anki_response"
+    assert len(kotlin.requests_for("ankiCreateNotes")) == 1
 
 
 def test_duplicate_probe_fans_matches_by_exact_first_field_candidate(
@@ -1270,6 +1484,168 @@ def test_create_notes_batches_at_100_and_reports_cumulative_progress(
     ]
 
 
+def test_duplicate_identity_uses_verified_model_first_field(
+    initialized_bridge_home: Path,
+) -> None:
+    config = _config(initialized_bridge_home)
+    required = {value for value in config.anki_fields.values() if value}
+    kotlin = FakeKotlinAnki()
+    kotlin.verify_fields = ["Sentence", *sorted(required - {"Sentence"})]
+
+    assert _adapter(config, kotlin).create_cards_batch([_card("猫")]) == 1
+
+    scan = kotlin.requests_for("ankiScanFirstFields")[0]["payload"]["scope"]
+    create = kotlin.requests_for("ankiCreateNotes")[0]["payload"]
+    assert scan["firstFieldName"] == "Sentence"
+    assert scan["candidates"] == [{"key": "猫だ", "firstField": "猫だ"}]
+    assert create["firstFieldName"] == "Sentence"
+    assert create["notes"][0]["duplicateCandidate"] == {
+        "key": "猫だ",
+        "firstField": "猫だ",
+        "occurrence": 0,
+    }
+
+
+def test_missing_verified_model_first_field_fails_before_duplicate_probe(
+    initialized_bridge_home: Path,
+) -> None:
+    base = _config(initialized_bridge_home)
+    config = replace(base, anki_fields={**base.anki_fields, "word": ""})
+    required = {value for value in config.anki_fields.values() if value}
+    kotlin = FakeKotlinAnki()
+    kotlin.verify_fields = ["Expression", *sorted(required)]
+
+    with pytest.raises(BridgeProtocolError) as exc_info:
+        _adapter(config, kotlin).create_cards_batch([_card("猫")])
+
+    assert exc_info.value.code == "invalid_note"
+    assert not kotlin.requests_for("ankiScanFirstFields")
+    assert not kotlin.requests_for("ankiCreateNotes")
+
+
+@pytest.mark.parametrize(
+    ("exact", "oversized"),
+    [
+        ("x" * _MAX_FIELD_VALUE_UTF8_BYTES, "x" * (_MAX_FIELD_VALUE_UTF8_BYTES + 1)),
+        (
+            "界" * (_MAX_FIELD_VALUE_UTF8_BYTES // 3),
+            "界" * (_MAX_FIELD_VALUE_UTF8_BYTES // 3 + 1),
+        ),
+    ],
+    ids=["ascii", "multibyte"],
+)
+def test_note_field_value_limit_uses_exact_utf8_bytes(
+    exact: str,
+    oversized: str,
+    initialized_bridge_home: Path,
+) -> None:
+    exact_kotlin = FakeKotlinAnki()
+    assert (
+        _adapter(_config(initialized_bridge_home), exact_kotlin).create_cards_batch(
+            [_card("猫", definition=exact)]
+        )
+        == 1
+    )
+
+    oversized_kotlin = FakeKotlinAnki()
+    with pytest.raises(BridgeProtocolError) as exc_info:
+        _adapter(
+            _config(initialized_bridge_home), oversized_kotlin
+        ).create_cards_batch([_card("猫", definition=oversized)])
+
+    assert exc_info.value.code == "note_too_large"
+    assert not oversized_kotlin.requests_for("ankiScanFirstFields")
+    assert not oversized_kotlin.requests_for("ankiCreateNotes")
+
+
+@pytest.mark.parametrize(
+    "tags",
+    [
+        ["x" * (_MAX_TAG_UTF8_BYTES + 1)],
+        [f"t{index}" for index in range(_MAX_NOTE_TAGS + 1)],
+        ["x" * 129 for _ in range(_MAX_NOTE_TAGS)],
+    ],
+    ids=["single-tag", "tag-count", "tag-total-bytes"],
+)
+def test_note_tag_limits_fail_before_duplicate_probe(
+    tags: list[str], initialized_bridge_home: Path
+) -> None:
+    kotlin = FakeKotlinAnki()
+    config = _config(initialized_bridge_home, anki_tags=" ".join(tags))
+
+    with pytest.raises(BridgeProtocolError) as exc_info:
+        _adapter(config, kotlin).create_cards_batch([_card("猫")])
+
+    assert exc_info.value.code == "note_too_large"
+    assert not kotlin.requests_for("ankiScanFirstFields")
+    assert not kotlin.requests_for("ankiCreateNotes")
+
+
+def test_exact_tag_count_and_aggregate_utf8_boundary_is_accepted(
+    initialized_bridge_home: Path,
+) -> None:
+    tags = ["x" * 128 for _ in range(_MAX_NOTE_TAGS)]
+    kotlin = FakeKotlinAnki()
+    config = _config(initialized_bridge_home, anki_tags=" ".join(tags))
+
+    assert _adapter(config, kotlin).create_cards_batch([_card("猫")]) == 1
+    request_tags = kotlin.requests_for("ankiCreateNotes")[0]["payload"]["notes"][0][
+        "tags"
+    ]
+    assert len(request_tags) == _MAX_NOTE_TAGS
+    assert sum(len(tag.encode("utf-8")) for tag in request_tags) == (
+        _MAX_NOTE_TAGS_UTF8_BYTES
+    )
+
+
+def test_json_escaping_drives_exact_envelope_batching(
+    initialized_bridge_home: Path,
+) -> None:
+    cards = [
+        _card(f"語{index}", definition="\\" * 50_000) for index in range(6)
+    ]
+    kotlin = FakeKotlinAnki()
+
+    assert _adapter(_config(initialized_bridge_home), kotlin).create_cards_batch(cards) == 6
+
+    requests = kotlin.requests_for("ankiCreateNotes")
+    assert len(requests) > 1
+    assert all(
+        len(encode_message(request["type"], request["payload"]).encode("utf-8"))
+        <= _MAX_CREATE_ENVELOPE_UTF8_BYTES
+        for request in requests
+    )
+
+
+def test_multibyte_content_drives_aggregate_batching(
+    initialized_bridge_home: Path,
+) -> None:
+    cards = [_card(f"語{index}", definition="界" * 20_000) for index in range(7)]
+    kotlin = FakeKotlinAnki()
+
+    assert _adapter(_config(initialized_bridge_home), kotlin).create_cards_batch(cards) == 7
+    assert [
+        len(request["payload"]["notes"])
+        for request in kotlin.requests_for("ankiCreateNotes")
+    ] == [6, 1]
+
+
+def test_repeated_identity_group_that_exceeds_byte_budget_fails_atomically(
+    initialized_bridge_home: Path,
+) -> None:
+    config = _config(initialized_bridge_home, allow_duplicate_cards=True)
+    kotlin = FakeKotlinAnki()
+
+    with pytest.raises(BridgeProtocolError) as exc_info:
+        _adapter(config, kotlin).create_cards_batch(
+            [_card("猫", definition="\\" * 50_000) for _ in range(10)]
+        )
+
+    assert exc_info.value.code == "note_batch_too_large"
+    assert not kotlin.requests_for("ankiScanFirstFields")
+    assert not kotlin.requests_for("ankiCreateNotes")
+
+
 def test_duplicate_lookup_is_candidate_bounded_across_large_batches(
     initialized_bridge_home: Path,
 ) -> None:
@@ -1285,23 +1661,19 @@ def test_duplicate_lookup_is_candidate_bounded_across_large_batches(
         request["payload"]["scope"]
         for request in kotlin.requests_for("ankiScanFirstFields")
     ]
-    assert [len(scope["candidates"]) for scope in scopes] == [100, 100, 5]
-    assert [scope["candidates"] for scope in scopes] == [
-        [{"key": f"語{index}", "firstField": f"語{index}"} for index in range(0, 100)],
-        [
-            {"key": f"語{index}", "firstField": f"語{index}"}
-            for index in range(100, 200)
-        ],
-        [
-            {"key": f"語{index}", "firstField": f"語{index}"}
-            for index in range(200, 205)
-        ],
+    assert all(len(scope["candidates"]) <= 100 for scope in scopes)
+    assert [candidate for scope in scopes for candidate in scope["candidates"]] == [
+        {"key": f"語{index}", "firstField": f"語{index}"}
+        for index in range(205)
     ]
     assert all("definition" not in scope for scope in scopes)
-    assert [
-        len(request["payload"]["notes"])
-        for request in kotlin.requests_for("ankiCreateNotes")
-    ] == [99, 99, 4]
+    create_requests = kotlin.requests_for("ankiCreateNotes")
+    assert sum(len(request["payload"]["notes"]) for request in create_requests) == 202
+    assert all(
+        len(json.dumps(request, ensure_ascii=False).encode("utf-8"))
+        <= _MAX_CREATE_ENVELOPE_UTF8_BYTES
+        for request in create_requests
+    )
 
 
 def test_duplicate_candidate_key_size_is_bounded_before_callback(
@@ -1332,6 +1704,7 @@ def test_duplicate_lookup_rejects_misaligned_sparse_array_semantics(
                     "runId": request["runId"],
                     "requestId": request["requestId"],
                     "rawFirstFieldHits": [[], []],
+                    "baselineToken": "baseline_" + "f" * 32,
                 },
             )
 
@@ -1364,7 +1737,7 @@ def test_first_occurrence_wins_across_batch_boundary_when_duplicates_disallowed(
     ] == [100]
 
 
-def test_target_probe_observes_prior_batch_when_duplicates_allowed(
+def test_repeated_identity_spanning_hard_batch_boundary_fails_before_probe(
     initialized_bridge_home: Path,
 ) -> None:
     config = _config(initialized_bridge_home, allow_duplicate_cards=True)
@@ -1372,16 +1745,12 @@ def test_target_probe_observes_prior_batch_when_duplicates_allowed(
     cards = [_card(f"語{index}") for index in range(100)] + [_card("語0")]
     adapter = _adapter(config, kotlin)
 
-    assert adapter.create_cards_batch(cards) == 100
-    assert adapter.last_skipped_duplicates == 1
-    assert [
-        len(request["payload"]["scope"]["candidates"])
-        for request in kotlin.requests_for("ankiScanFirstFields")
-    ] == [100, 1]
-    assert [
-        len(request["payload"]["notes"])
-        for request in kotlin.requests_for("ankiCreateNotes")
-    ] == [100]
+    with pytest.raises(BridgeProtocolError) as exc_info:
+        adapter.create_cards_batch(cards)
+
+    assert exc_info.value.code == "note_batch_too_large"
+    assert not kotlin.requests_for("ankiScanFirstFields")
+    assert not kotlin.requests_for("ankiCreateNotes")
 
 
 def test_card_media_is_content_addressed_deduped_and_actual_name_propagates(
@@ -2238,7 +2607,7 @@ def test_partial_create_response_preserves_ids_counters_and_vocab_cache(
     kotlin.create_scripts = [
         (
             ["created", "failed", "notAttempted"],
-            {"code": "write_failed", "message": "mid-batch", "retryable": True},
+            {"code": "write_failed", "message": "mid-batch", "retryable": False},
         )
     ]
     adapter = _adapter(_config(initialized_bridge_home), kotlin)
@@ -2250,6 +2619,83 @@ def test_partial_create_response_preserves_ids_counters_and_vocab_cache(
     assert adapter.last_created_note_ids == [1000]
     assert adapter.last_skipped_duplicates == 0
     assert adapter.get_existing_vocabulary() == {"既知", "猫"}
+
+
+def test_committed_routing_failure_retains_id_but_not_success_or_vocab_cache(
+    initialized_bridge_home: Path,
+) -> None:
+    from anki_miner.exceptions import AnkiConnectionError
+
+    kotlin = FakeKotlinAnki()
+    kotlin.known_fields = ["既知"]
+    kotlin.create_scripts = [
+        (
+            ["created", "committedFailed", "notAttempted"],
+            {
+                "code": "write_failed",
+                "message": "deck routing failed after insert",
+                "retryable": False,
+            },
+        )
+    ]
+    adapter = _adapter(_config(initialized_bridge_home), kotlin)
+    assert adapter.get_existing_vocabulary() == {"既知"}
+
+    with pytest.raises(AnkiConnectionError, match="routing failed"):
+        adapter.create_cards_batch([_card("猫"), _card("犬"), _card("鳥")])
+
+    assert adapter.last_created_note_ids == [1000, 1001]
+    assert adapter.last_skipped_duplicates == 0
+    assert adapter.get_existing_vocabulary() == {"既知", "猫"}
+    assert kotlin.next_note_id == 1002
+
+
+def test_unknown_post_commit_state_never_invents_id_or_updates_vocab_cache(
+    initialized_bridge_home: Path,
+) -> None:
+    from anki_miner.exceptions import AnkiConnectionError
+
+    kotlin = FakeKotlinAnki()
+    kotlin.known_fields = ["既知"]
+    kotlin.create_scripts = [
+        (
+            ["uncertain", "notAttempted"],
+            {
+                "code": "post_commit_uncertain",
+                "message": "provider query failed after insert",
+                "retryable": False,
+            },
+        )
+    ]
+    adapter = _adapter(_config(initialized_bridge_home), kotlin)
+    assert adapter.get_existing_vocabulary() == {"既知"}
+
+    with pytest.raises(AnkiConnectionError, match="query failed"):
+        adapter.create_cards_batch([_card("猫"), _card("犬")])
+
+    assert adapter.last_created_note_ids == []
+    assert adapter.last_skipped_duplicates == 0
+    assert adapter.get_existing_vocabulary() == {"既知"}
+    assert kotlin.next_note_id == 1001
+
+
+def test_callback_wide_post_commit_error_is_rejected_as_temporally_invalid(
+    initialized_bridge_home: Path,
+) -> None:
+    kotlin = FakeKotlinAnki()
+    kotlin.errors["createNotes"] = (
+        "post_commit_uncertain",
+        "cannot use callback-wide error after commit",
+        False,
+    )
+
+    with pytest.raises(BridgeProtocolError) as exc_info:
+        _adapter(_config(initialized_bridge_home), kotlin).create_cards_batch(
+            [_card("猫")]
+        )
+
+    assert exc_info.value.code == "invalid_anki_response"
+    assert kotlin.next_note_id == 1000
 
 
 def test_misaligned_create_results_are_protocol_errors(
@@ -2577,6 +3023,14 @@ def test_provider_failed_status_propagates_and_is_never_counted_as_duplicate(
             ["created"],
             {"code": "write_failed", "message": "orphan error", "retryable": False},
         ),
+        (
+            ["created", "failed"],
+            {"code": "write_failed", "message": "unsafe retry", "retryable": True},
+        ),
+        (
+            ["uncertain"],
+            {"code": "write_failed", "message": "wrong temporal code", "retryable": False},
+        ),
     ],
 )
 def test_create_result_failure_shape_is_strict(
@@ -2660,7 +3114,7 @@ def test_created_note_ids_must_remain_unique_across_batches(
     assert adapter.last_created_note_ids == list(range(1, 101))
 
 
-def test_partial_create_cancellation_preserves_committed_ids_and_aborts(
+def test_partial_create_cancellation_becomes_nonretryable_post_commit_failure(
     initialized_bridge_home: Path,
 ) -> None:
     kotlin = FakeKotlinAnki()
@@ -2672,7 +3126,9 @@ def test_partial_create_cancellation_preserves_committed_ids_and_aborts(
     ]
     adapter = _adapter(_config(initialized_bridge_home), kotlin)
 
-    with pytest.raises(AnkiOperationCancelled, match="user stopped"):
+    from anki_miner.exceptions import AnkiConnectionError
+
+    with pytest.raises(AnkiConnectionError, match="user stopped"):
         adapter.create_cards_batch([_card("猫"), _card("犬")])
 
     assert adapter.last_created_note_ids == [1000]

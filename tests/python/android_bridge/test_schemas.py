@@ -378,11 +378,13 @@ def test_unknown_curation_map_key_is_schema_invalid(
             "scope": {
                 "kind": "duplicates",
                 "modelName": "Lapis",
+                "firstFieldName": "Expression",
                 "deckName": None,
                 "candidates": [
                     {"key": "猫", "firstField": "猫"},
                     {"key": "犬", "firstField": "<b>犬</b>"},
                 ],
+                "occurrences": [0, 1],
                 "limits": {
                     "maxHitsPerCandidate": 100,
                     "maxTotalHits": 1000,
@@ -405,6 +407,7 @@ def test_unknown_curation_map_key_is_schema_invalid(
                 [{"noteId": 10, "firstField": "<b>猫</b>"}],
                 [],
             ],
+            "baselineToken": "baseline_" + "e" * 32,
         },
         {
             "runId": "run_" + "a" * 32,
@@ -453,12 +456,26 @@ def test_unknown_curation_map_key_is_schema_invalid(
             "requestId": "anki_" + "b" * 32,
             "deckName": "Japanese::Mining",
             "modelName": "Lapis",
+            "firstFieldName": "Expression",
+            "baselineToken": "baseline_" + "e" * 32,
             "duplicateScope": {
                 "kind": "collection",
                 "limits": {
                     "maxNoteIdsPerCandidate": 100,
                     "maxTotalNoteIds": 1000,
                 },
+            },
+            "limits": {
+                "maxNotes": 100,
+                "maxFieldsPerNote": 64,
+                "maxFieldNameUtf8Bytes": 256,
+                "maxFieldValueUtf8Bytes": 98304,
+                "maxTagsPerNote": 64,
+                "maxTagUtf8Bytes": 256,
+                "maxTagsUtf8BytesPerNote": 8192,
+                "maxNoteContentUtf8Bytes": 131072,
+                "maxTotalContentUtf8Bytes": 393216,
+                "maxEnvelopeUtf8Bytes": 524288,
             },
             "notes": [
                 {
@@ -468,7 +485,7 @@ def test_unknown_curation_map_key_is_schema_invalid(
                     "duplicateCandidate": {
                         "key": "猫",
                         "firstField": "猫",
-                        "baselineNoteIds": [],
+                        "occurrence": 0,
                     },
                 }
             ],
