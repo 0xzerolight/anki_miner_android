@@ -1,0 +1,134 @@
+format_version = 1
+
+# These are composition seams used by the Android bridge and setup flows. The
+# sync tool computes their transitive local-import closure; this is not a list
+# of files to copy by hand.
+roots = [
+  "anki_miner.orchestration.episode_processor",
+  "anki_miner.presenters.null_presenter",
+  "anki_miner.services.audio_packs.importer",
+  "anki_miner.services.audio_packs.registry",
+  "anki_miner.services.dictionary.importers.jmdict_importer",
+  "anki_miner.services.dictionary.importers.yomitan_importer",
+  "anki_miner.services.dictionary.registry",
+  "anki_miner.services.frequency.legacy_migration",
+  "anki_miner.services.frequency.registry",
+  "anki_miner.services.frequency.source_importer",
+  "anki_miner.services.known_word_db",
+  "anki_miner.services.pitch_accent.yomitan_pitch_importer",
+  "anki_miner.services.pitch_accent_service",
+  "anki_miner.services.reading.aozora_source",
+  "anki_miner.services.reading.detector",
+  "anki_miner.services.reading.epub_source",
+  "anki_miner.services.reading.mokuro_source",
+  "anki_miner.services.reading.subtitle_source",
+  "anki_miner.services.stats_service",
+  "anki_miner.services.tagger",
+  "anki_miner.services.word_list_service",
+  "anki_miner.services.wordset_service",
+]
+
+assets = [
+  "anki_miner/resources/wordsets/LICENSE.txt",
+  "anki_miner/resources/wordsets/given-names.txt",
+  "anki_miner/resources/wordsets/org-product.txt",
+  "anki_miner/resources/wordsets/place-names.txt",
+  "anki_miner/resources/wordsets/surnames.txt",
+  "anki_miner/services/dictionary/resources/glossary.css",
+]
+
+# A protected module may be selected from the desktop Git object only. An
+# overlay at the same path is a hard error.
+protected_verbatim = [
+  "anki_miner.orchestration.episode_processor",
+]
+
+# Android packages only these third-party import roots. PyQt6 is intentionally
+# absent: its tiny QCoreApplication compatibility module is an overlay and is
+# therefore resolved as local source.
+allowed_external = [
+  "PIL",
+  "charset_normalizer",
+  "fugashi",
+  "lxml",
+  "pysubs2",
+  "requests",
+]
+
+# Function-local optional imports do not execute when a module is imported.
+# numpy is confined to the desktop ASR helper on MediaExtractorService; ASR is
+# outside Android v1 and numpy is not packaged.
+allowed_deferred_external = ["numpy"]
+
+# Imports under these names must resolve from the overlay. They must never be
+# satisfied by a host/Chaquopy distribution.
+local_only_imports = ["PyQt6"]
+
+# Explicit rather than host-derived: an engine resync which adds a stdlib
+# dependency requires a reviewed composition change and behaves identically on
+# every supported Python host.
+allowed_stdlib = [
+  "__future__",
+  "abc",
+  "base64",
+  "bisect",
+  "collections",
+  "concurrent",
+  "contextlib",
+  "csv",
+  "dataclasses",
+  "datetime",
+  "enum",
+  "fractions",
+  "functools",
+  "hashlib",
+  "heapq",
+  "html",
+  "importlib",
+  "io",
+  "itertools",
+  "json",
+  "logging",
+  "math",
+  "os",
+  "pathlib",
+  "posixpath",
+  "re",
+  "shutil",
+  "sqlite3",
+  "subprocess",
+  "sys",
+  "tempfile",
+  "threading",
+  "time",
+  "types",
+  "typing",
+  "unicodedata",
+  "urllib",
+  "uuid",
+  "warnings",
+  "wave",
+  "xml",
+  "zipfile",
+]
+
+# These modules and distributions are cut from Android. Prefix matching is
+# segment-aware ("mpv" rejects mpv and mpv.foo, not an unrelated name).
+forbidden_imports = [
+  "gtts",
+  "mpv",
+  "yt_dlp",
+  "anki_miner.services.google_translate_audio_fetcher",
+  "anki_miner.services.sentence_tts_fetcher",
+  "anki_miner.services.youtube_fetcher",
+  "anki_miner.services.ytdlp_updater",
+  "anki_miner.utils.mpv_loader",
+  "anki_miner.utils.ytdlp_resolver",
+]
+
+# The orchestration file is byte-identical to desktop and retains a
+# TYPE_CHECKING-only YouTube service annotation. It cannot execute at runtime;
+# no other forbidden import receives an exception.
+[[forbidden_type_checking_exceptions]]
+importer = "anki_miner.orchestration.episode_processor"
+target = "anki_miner.services.youtube_fetcher"
