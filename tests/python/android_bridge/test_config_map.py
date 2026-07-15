@@ -156,15 +156,7 @@ def test_conflicting_tts_aliases_are_rejected(tmp_path: Path) -> None:
         ({"anki_note_type": "Lapis\n"}, "invalid_config_field"),
         ({"anki_note_type": "Lapis\u200e"}, "invalid_config_field"),
         ({"anki_note_type": "Cafe\u0301"}, "invalid_config_field"),
-        ({"anki_fields": {"word": ""}}, "invalid_config_field"),
         ({"anki_fields": {"glossary": " Glossary"}}, "invalid_config_field"),
-        (
-            {
-                "card_type": "click",
-                "card_type_marker_fields": {"click": ""},
-            },
-            "invalid_config_field",
-        ),
         ({"excluded_decks": [""]}, "invalid_config_field"),
         ({"excluded_decks": ["Known", "Known"]}, "invalid_config_field"),
         ({"excluded_decks": ["Known "]}, "invalid_config_field"),
@@ -219,6 +211,22 @@ def test_draft_integer_floats_normalize_for_schema_and_config_fields(
     assert type(mapped.engine_config.audio_bitrate) is int
 
 
+def test_blank_field_and_active_marker_mappings_are_preserved(tmp_path: Path) -> None:
+    mapped = map_config_settings(
+        {
+            "anki_fields": {"word": "", "sentence": ""},
+            "card_type": "click",
+            "card_type_marker_fields": {"click": ""},
+        },
+        _paths(tmp_path),
+    )
+    config = mapped.engine_config
+
+    assert config.anki_fields["word"] == ""
+    assert config.anki_fields["sentence"] == ""
+    assert config.card_type_marker_fields["click"] == ""
+
+
 def test_nonintegral_float_is_not_an_integer_config_field(tmp_path: Path) -> None:
     with pytest.raises(BridgeProtocolError) as error:
         map_config_settings({"audio_bitrate": 1.5}, _paths(tmp_path))
@@ -265,7 +273,7 @@ def test_checked_in_schema_has_exact_mapping_keys_chain_shapes_and_absolute_path
         "$ref": "#/$defs/canonicalNonEmptyString"
     }
     assert definitions["ankiFields"]["properties"]["word"] == {
-        "$ref": "#/$defs/canonicalNonEmptyString"
+        "$ref": "#/$defs/optionalMappedField"
     }
     assert definitions["ankiFields"]["properties"]["glossary"] == {
         "$ref": "#/$defs/optionalMappedField"

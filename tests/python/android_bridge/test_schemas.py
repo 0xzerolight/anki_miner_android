@@ -168,6 +168,20 @@ def test_representative_full_config_message_validates_and_maps(
     assert mapped.android_tts_enabled is True
 
 
+def test_config_schema_accepts_blank_desktop_field_mappings(
+    schemas: dict[str, dict[str, Any]],
+) -> None:
+    Draft202012Validator(schemas["config"]).validate(
+        {
+            "settings": {
+                "anki_fields": {"word": "", "sentence": ""},
+                "card_type": "click",
+                "card_type_marker_fields": {"click": ""},
+            }
+        }
+    )
+
+
 @dataclass
 class _FakeWord:
     surface: str = "猫"
@@ -287,7 +301,6 @@ def test_null_or_empty_sentence_id_is_schema_invalid(
         {"settings": {"anki_deck_name": ""}},
         {"settings": {"anki_note_type": " Lapis"}},
         {"settings": {"anki_note_type": "Lapis\u200e"}},
-        {"settings": {"anki_fields": {"word": ""}}},
         {"settings": {"anki_fields": {"glossary": " Glossary"}}},
         {"settings": {"excluded_decks": [""]}},
         {"settings": {"excluded_decks": ["Known", "Known"]}},
@@ -332,6 +345,13 @@ def test_unknown_curation_map_key_is_schema_invalid(
         {
             "runId": "run_" + "a" * 32,
             "requestId": "anki_" + "b" * 32,
+            "deckName": "Japanese::Mining",
+            "modelName": "Lapis",
+            "requiredFields": [],
+        },
+        {
+            "runId": "run_" + "a" * 32,
+            "requestId": "anki_" + "b" * 32,
             "deckId": 1,
             "modelId": 2,
             "fieldNames": ["Expression", "Sentence"],
@@ -352,6 +372,7 @@ def test_unknown_curation_map_key_is_schema_invalid(
                 "kind": "duplicates",
                 "modelName": "Lapis",
                 "deckName": None,
+                "candidateKeys": ["猫", "犬"],
             },
         },
         {
@@ -362,11 +383,16 @@ def test_unknown_curation_map_key_is_schema_invalid(
         {
             "runId": "run_" + "a" * 32,
             "requestId": "anki_" + "b" * 32,
+            "matches": [True, False],
+        },
+        {
+            "runId": "run_" + "a" * 32,
+            "requestId": "anki_" + "b" * 32,
             "assets": [
                 {
                     "assetId": "asset_" + "c" * 32,
                     "sourcePath": "/data/user/0/app/cache/audio.opus",
-                    "preferredName": "猫_ab12cd34ef56.opus",
+                    "preferredName": "猫_ab12cd34ef56",
                     "purpose": "card",
                     "mediaKind": "audio",
                 }
@@ -379,7 +405,7 @@ def test_unknown_curation_map_key_is_schema_invalid(
                 {
                     "assetId": "asset_" + "c" * 32,
                     "status": "stored",
-                    "actualFilename": "猫_ab12cd34ef56.opus",
+                    "actualFilename": "猫_ab12cd34ef56_provider.opus",
                 },
                 {
                     "assetId": "asset_" + "d" * 32,
@@ -443,6 +469,15 @@ def test_representative_anki_callback_payloads_validate(
             "modelName": "Lapis",
             "requiredFields": ["Expression"],
             "unexpected": True,
+        },
+        {
+            "runId": "run_" + "a" * 32,
+            "requestId": "anki_" + "b" * 32,
+            "scope": {
+                "kind": "duplicates",
+                "modelName": "Lapis",
+                "deckName": None,
+            },
         },
         {
             "runId": "run_" + "a" * 32,

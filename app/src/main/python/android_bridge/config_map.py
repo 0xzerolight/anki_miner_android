@@ -301,11 +301,6 @@ def validate_anki_request_config(config: object) -> None:
     for key, mapped_name in fields.items():
         if mapped_name:
             _canonical_nonempty_string(f"anki_fields.{key}", mapped_name)
-    empty_required = sorted(key for key in _REQUIRED_ANKI_FIELD_KEYS if not fields[key])
-    if empty_required:
-        raise _invalid(
-            "anki_fields", f"required mappings are empty: {empty_required!r}"
-        )
 
     marker_fields = getattr(config, "card_type_marker_fields", None)
     if not isinstance(marker_fields, Mapping) or any(
@@ -320,12 +315,6 @@ def validate_anki_request_config(config: object) -> None:
             _canonical_nonempty_string(
                 f"card_type_marker_fields.{key}", mapped_name
             )
-    card_type = getattr(config, "card_type", "")
-    if card_type and not marker_fields.get(card_type):
-        raise _invalid(
-            "card_type_marker_fields", f"active card type {card_type!r} is unmapped"
-        )
-
     excluded = getattr(config, "excluded_decks", None)
     _excluded_decks(excluded)
 

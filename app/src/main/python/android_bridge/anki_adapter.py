@@ -14,6 +14,8 @@ import re
 import unicodedata
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from html import escape as html_escape
+from html import unescape as html_unescape
 from pathlib import Path
 from typing import Any, NoReturn
 from uuid import uuid4
@@ -26,6 +28,7 @@ logger = logging.getLogger(__name__)
 
 _JAPANESE_RE = re.compile(r"[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF\u3400-\u4DBF]")
 _BATCH_SIZE = 100
+_MAX_DUPLICATE_KEY_CHARS = 4096
 
 _SETUP_ERROR_CODES = {
     "api_disabled",
@@ -76,7 +79,14 @@ class AnkiOperationCancelled(BaseException):
 class _MediaAsset:
     asset_id: str
     source_path: str
+    # AnkiDroid's addMediaFromUri contract explicitly requires this prefix to
+    # omit the file extension. The provider appends a random suffix and the
+    # MIME-derived extension.
     preferred_name: str
+    # Full filename we would use with a direct-name media API. Kept internal so
+    # response validation can support both the ContentProvider and a fallback.
+    requested_name: str
+    # Filename currently referenced by CardPayload/marked dictionary HTML.
     original_name: str
     purpose: str
     media_kind: str
@@ -149,41 +159,43 @@ def _expect_filename(value: object, *, context: str) -> str:
 
 
 def _validate_provider_filename(
-    actual: str, preferred: str, *, purpose: str, context: str
+    actual: str,
+    preferred: str,
+    *,
+    requested: str,
+    context: str,
 ) -> None:
     """Constrain AnkiDroid's returned name to its documented insertion shape.
 
-    The v2.24 provider creates a temporary file from the preferred *stem* plus
-    ``_`` and a random suffix, then preserves that file's extension through
-    ``media.addFile``. A direct-name implementation may return the preferred
-    name unchanged. Kotlin must unwrap the provider URI/``[sound:]``/``<img>``
-    response before returning this raw basename.
+    The v2.24 API requires an extensionless ``preferredName``. Its provider
+    creates ``preferredName + '_' + random + MIME-extension`` before calling
+    ``media.addFile``. A direct-name fallback may instead return the full
+    requested filename unchanged. Kotlin must unwrap the provider URI/
+    ``[sound:]``/``<img>`` response before returning this raw basename.
     """
 
-    preferred_path = Path(preferred)
     actual_path = Path(actual)
-    if not preferred_path.suffix or not actual_path.suffix:
-        _protocol_error(
-            "unexpected_media_name", f"{context} must preserve a file extension"
-        )
-    if actual_path.suffix.casefold() != preferred_path.suffix.casefold():
-        _protocol_error(
-            "unexpected_media_name", f"{context} changed the requested extension"
-        )
-    if purpose == "dictionary":
-        if actual != preferred:
-            _protocol_error(
-                "unexpected_media_name",
-                "Dictionary media must be stored under its requested filename",
-            )
+    if actual == requested:
         return
-    if actual != preferred and not actual_path.stem.startswith(
-        f"{preferred_path.stem}_"
-    ):
+    if not actual_path.suffix:
+        _protocol_error(
+            "unexpected_media_name", f"{context} must include a provider extension"
+        )
+    if not actual_path.stem.startswith(f"{preferred}_"):
         _protocol_error(
             "unexpected_media_name",
             f"{context} is unrelated to the requested media name",
         )
+
+
+def _provider_preferred_name(filename: str) -> str:
+    """Return the extensionless prefix required by ``addMediaFromUri``."""
+
+    path = Path(filename)
+    preferred = (path.stem if path.suffix else filename).replace(" ", "_")
+    # CardContentProvider appends ``_`` and passes the result to Java's
+    # createTempFile, whose prefix must be at least three characters.
+    return preferred if len(preferred) >= 2 else f"{preferred}_"
 
 
 def _expect_error_detail(value: object, *, operation: str) -> AnkiCallbackError:
@@ -244,6 +256,8 @@ class AndroidAnkiAdapter:
         self.last_media_store_failures = 0
         self._existing_vocab_cache: set[str] | None = None
         self._dict_media_uploaded: set[str] = set()
+        self._dict_media_actual_names: dict[str, str] = {}
+        self._stored_media_name_owners: dict[str, str] = {}
 
     def verify_card_target(self) -> None:
         """Validate model/fields and create the target deck only after checks."""
@@ -358,11 +372,12 @@ class AndroidAnkiAdapter:
 
         claims: dict[str, set[str]] = {}
         for asset in assets:
-            for claimed_name in (asset.preferred_name, asset.original_name):
+            for claimed_name in (asset.requested_name, asset.original_name):
                 claims.setdefault(claimed_name, set()).add(asset.asset_id)
 
         stored: dict[str, str] = {}
         actual_names: set[str] = set()
+        pending_name_owners: dict[str, str] = {}
         for index, (row_value, asset) in enumerate(
             zip(rows, assets, strict=True)
         ):
@@ -383,7 +398,7 @@ class AndroidAnkiAdapter:
                 _validate_provider_filename(
                     actual,
                     asset.preferred_name,
-                    purpose=asset.purpose,
+                    requested=asset.requested_name,
                     context=f"storeMedia result {index} filename",
                 )
                 if actual in actual_names:
@@ -397,7 +412,14 @@ class AndroidAnkiAdapter:
                         "media_name_collision",
                         "storeMedia filename collides with another requested media name",
                     )
+                prior_owner = self._stored_media_name_owners.get(actual)
+                if prior_owner is not None and prior_owner != asset.original_name:
+                    _protocol_error(
+                        "media_name_collision",
+                        "storeMedia filename was already assigned to different media",
+                    )
                 actual_names.add(actual)
+                pending_name_owners[actual] = asset.original_name
                 stored[asset.asset_id] = actual
             elif status == "failed":
                 row = _expect_exact_keys(
@@ -423,13 +445,13 @@ class AndroidAnkiAdapter:
                     "mismatched_callback_response",
                     "storeMedia results are not request-aligned",
                 )
+        self._stored_media_name_owners.update(pending_name_owners)
         return stored
 
     def _store_assets(self, assets: list[_MediaAsset]) -> dict[str, str]:
         if not assets:
             return {}
         asset_ids: set[str] = set()
-        preferred_names: set[str] = set()
         requested_name_owners: dict[str, str] = {}
         for index, asset in enumerate(assets):
             if asset.asset_id in asset_ids:
@@ -439,14 +461,17 @@ class AndroidAnkiAdapter:
                 asset.preferred_name, context=f"storeMedia asset {index} preferredName"
             )
             _expect_filename(
+                asset.requested_name, context=f"storeMedia asset {index} requestedName"
+            )
+            _expect_filename(
                 asset.original_name, context=f"storeMedia asset {index} originalName"
             )
-            if asset.preferred_name in preferred_names:
+            if asset.preferred_name != _provider_preferred_name(asset.requested_name):
                 _protocol_error(
-                    "invalid_anki_request", "Media preferred names must be unique"
+                    "invalid_anki_request",
+                    "Media preferredName must omit the requested file extension",
                 )
-            preferred_names.add(asset.preferred_name)
-            for claimed_name in {asset.preferred_name, asset.original_name}:
+            for claimed_name in {asset.requested_name, asset.original_name}:
                 prior_owner = requested_name_owners.setdefault(
                     claimed_name, asset.asset_id
                 )
@@ -478,10 +503,9 @@ class AndroidAnkiAdapter:
             _content_addressed_name,
         )
 
-        paths_by_filename: dict[str, Path] = {}
-        vanished: set[str] = set()
+        paths_by_filename: dict[str, list[Path]] = {}
         refs: dict[str, list[tuple[Any, str]]] = {}
-        kinds: dict[str, str] = {}
+        kinds: dict[str, set[str]] = {}
 
         for item in word_data_list:
             media = item.media
@@ -491,41 +515,68 @@ class AndroidAnkiAdapter:
                 if not filename or not source_path:
                     continue
                 refs.setdefault(filename, []).append((media, filename_attr))
-                kinds.setdefault(
-                    filename,
-                    "image" if filename_attr == "screenshot_filename" else "audio",
+                kinds.setdefault(filename, set()).add(
+                    "image" if filename_attr == "screenshot_filename" else "audio"
                 )
                 path = Path(source_path)
                 if not path.exists():
-                    if filename not in paths_by_filename and filename not in vanished:
-                        logger.warning(
-                            "Media source file vanished before upload: %s", filename
-                        )
-                        vanished.add(filename)
                     continue
-                if filename not in paths_by_filename:
-                    paths_by_filename[filename] = path
+                paths = paths_by_filename.setdefault(filename, [])
+                resolved_path = path.resolve()
+                if resolved_path not in paths:
+                    paths.append(resolved_path)
 
         assets: list[_MediaAsset] = []
         originals_by_id: dict[str, str] = {}
-        for filename, source_path in paths_by_filename.items():
-            try:
-                content = source_path.read_bytes()
-            except OSError as error:
-                logger.warning("Failed to read media file %s: %s", filename, error)
+        for filename, referenced_paths in paths_by_filename.items():
+            if len(kinds[filename]) != 1:
+                _protocol_error(
+                    "media_content_collision",
+                    f"Media filename {filename!r} is used as both audio and image",
+                )
+
+            readable: list[tuple[Path, bytes]] = []
+            unreadable: list[tuple[Path, OSError]] = []
+            for source_path in referenced_paths:
+                try:
+                    readable.append((source_path, source_path.read_bytes()))
+                except OSError as error:
+                    unreadable.append((source_path, error))
+            if len(referenced_paths) > 1 and unreadable:
+                _protocol_error(
+                    "media_content_collision",
+                    f"Cannot verify colliding media filename {filename!r} across all paths",
+                )
+            if not readable:
+                if unreadable:
+                    logger.warning(
+                        "Failed to read media file %s: %s", filename, unreadable[0][1]
+                    )
                 continue
+            source_path, content = readable[0]
+            if any(candidate != content for _, candidate in readable[1:]):
+                _protocol_error(
+                    "media_content_collision",
+                    f"Media filename {filename!r} refers to different file contents",
+                )
+
+            requested_name = _content_addressed_name(filename, content)
             asset_id = f"asset_{uuid4().hex}"
             originals_by_id[asset_id] = filename
             assets.append(
                 _MediaAsset(
                     asset_id=asset_id,
-                    source_path=str(source_path.resolve()),
-                    preferred_name=_content_addressed_name(filename, content),
+                    source_path=str(source_path),
+                    preferred_name=_provider_preferred_name(requested_name),
+                    requested_name=requested_name,
                     original_name=filename,
                     purpose="card",
-                    media_kind=kinds[filename],
+                    media_kind=next(iter(kinds[filename])),
                 )
             )
+
+        for filename in refs.keys() - paths_by_filename.keys():
+            logger.warning("Media source file vanished before upload: %s", filename)
 
         stored_by_id = self._store_assets(assets)
         stored_names: set[str] = set()
@@ -537,12 +588,82 @@ class AndroidAnkiAdapter:
             for media, filename_attr in refs.get(original, []):
                 setattr(media, filename_attr, actual)
 
-        self.last_media_store_failures = (
-            len(paths_by_filename) - len(renamed_originals) + len(vanished)
-        )
+        self.last_media_store_failures = len(refs) - len(renamed_originals)
         return stored_names
 
-    def _store_dictionary_media(self, word_data_list: Sequence[Any]) -> None:
+    @staticmethod
+    def _rewrite_dictionary_html(
+        value: str, actual_names: Mapping[str, str]
+    ) -> str:
+        """Rewrite only renderer-marked dictionary image ``src`` attributes."""
+
+        from anki_miner.services.anki_media_store import (
+            _DICT_MEDIA_IMG_RE,
+            _IMG_SRC_RE,
+        )
+
+        def rewrite_tag(match: re.Match[str]) -> str:
+            tag = match.group(0)
+            src_match = _IMG_SRC_RE.search(tag)
+            if src_match is None:
+                return tag
+            original = html_unescape(src_match.group(1))
+            actual = actual_names.get(original)
+            if actual is None or actual == original:
+                return tag
+            escaped_actual = html_escape(actual, quote=True)
+            return (
+                tag[: src_match.start(1)]
+                + escaped_actual
+                + tag[src_match.end(1) :]
+            )
+
+        return _DICT_MEDIA_IMG_RE.sub(rewrite_tag, value)
+
+    def _rewrite_dictionary_payloads(
+        self, word_data_list: Sequence[Any]
+    ) -> list[Any]:
+        from dataclasses import replace
+
+        rewrite_names = {
+            **self._dict_media_actual_names,
+            **{actual: actual for actual in self._dict_media_actual_names.values()},
+        }
+        if not rewrite_names:
+            return list(word_data_list)
+
+        rewritten_payloads: list[Any] = []
+        for item in word_data_list:
+            definition = item.definition
+            rewritten_definition = (
+                self._rewrite_dictionary_html(definition, rewrite_names)
+                if isinstance(definition, str)
+                else definition
+            )
+            extra_fields = item.extra_fields
+            rewritten_extra = extra_fields
+            if extra_fields and isinstance(extra_fields.get("glossary"), str):
+                glossary = extra_fields["glossary"]
+                rewritten_glossary = self._rewrite_dictionary_html(
+                    glossary, rewrite_names
+                )
+                if rewritten_glossary != glossary:
+                    rewritten_extra = {**extra_fields, "glossary": rewritten_glossary}
+            if (
+                rewritten_definition != definition
+                or rewritten_extra is not extra_fields
+            ):
+                item = replace(
+                    item,
+                    definition=rewritten_definition,
+                    extra_fields=rewritten_extra,
+                )
+            rewritten_payloads.append(item)
+        return rewritten_payloads
+
+    def _store_dictionary_media(
+        self, word_data_list: Sequence[Any]
+    ) -> list[Any]:
         from anki_miner.services.anki_media_store import (
             _extract_dict_media_srcs,
             _resolve_dict_media_path,
@@ -558,7 +679,10 @@ class AndroidAnkiAdapter:
                 if not isinstance(html_field, str):
                     continue
                 for source in _extract_dict_media_srcs(html_field):
-                    if source not in self._dict_media_uploaded and source not in seen:
+                    if (
+                        source not in self._dict_media_uploaded
+                        and source not in seen
+                    ):
                         seen.add(source)
                         sources.append(source)
 
@@ -576,7 +700,8 @@ class AndroidAnkiAdapter:
                 _MediaAsset(
                     asset_id=asset_id,
                     source_path=str(path.resolve()),
-                    preferred_name=source,
+                    preferred_name=_provider_preferred_name(source),
+                    requested_name=source,
                     original_name=source,
                     purpose="dictionary",
                     media_kind="image",
@@ -586,11 +711,26 @@ class AndroidAnkiAdapter:
         stored_by_id = self._store_assets(assets)
         for asset_id, actual in stored_by_id.items():
             source = sources_by_id[asset_id]
-            # Exact-name enforcement happens transactionally in the parser,
-            # before any success is cached or CardPayload is mutated.
             self._dict_media_uploaded.add(source)
+            self._dict_media_uploaded.add(actual)
+            self._dict_media_actual_names[source] = actual
+        return self._rewrite_dictionary_payloads(word_data_list)
 
-    def _duplicate_first_fields(self) -> set[str]:
+    def _duplicate_first_fields(self, candidate_keys: Sequence[str]) -> set[str]:
+        if not candidate_keys:
+            return set()
+        if (
+            len(candidate_keys) > _BATCH_SIZE
+            or len(set(candidate_keys)) != len(candidate_keys)
+            or any(
+                not key or len(key) > _MAX_DUPLICATE_KEY_CHARS
+                for key in candidate_keys
+            )
+        ):
+            _protocol_error(
+                "invalid_note",
+                "Duplicate candidate keys must be unique, non-empty, and bounded",
+            )
         scope = {
             "kind": "duplicates",
             "modelName": self.config.anki_note_type,
@@ -599,15 +739,32 @@ class AndroidAnkiAdapter:
                 if self.config.allow_duplicate_cards
                 else None
             ),
+            "candidateKeys": list(candidate_keys),
         }
         try:
-            raw_fields = self._scan_first_fields(scope)
+            payload = self._callbacks.scan_first_fields({"scope": scope})
         except AnkiCallbackError as error:
             _raise_callback_error(error)
-
-        from anki_miner.services.anki_note_builder import _strip_for_dedup
-
-        return {key for raw in raw_fields if (key := _strip_for_dedup(raw))}
+        result = _expect_exact_keys(
+            payload,
+            {"runId", "requestId", "matches"},
+            context="duplicate lookup result",
+        )
+        matches = result["matches"]
+        if (
+            not isinstance(matches, list)
+            or len(matches) != len(candidate_keys)
+            or any(type(match) is not bool for match in matches)
+        ):
+            _protocol_error(
+                "invalid_anki_response",
+                "Duplicate lookup matches must align with candidateKeys",
+            )
+        return {
+            key
+            for key, is_duplicate in zip(candidate_keys, matches, strict=True)
+            if is_duplicate
+        }
 
     def _parse_create_notes_result(
         self, payload: dict[str, Any], client_ids: Sequence[str]
@@ -776,7 +933,7 @@ class AndroidAnkiAdapter:
             progress_callback.on_start(len(word_data_list), "Creating Anki cards")
 
         stored_files = self._store_card_media(word_data_list)
-        self._store_dictionary_media(word_data_list)
+        word_data_list = self._store_dictionary_media(word_data_list)
 
         from anki_miner.services.anki_note_builder import _strip_for_dedup, build_note
 
@@ -792,19 +949,26 @@ class AndroidAnkiAdapter:
                     if built.used_bold_fallback:
                         bold_fallback += 1
                     built_notes.append(built.note)
-                existing = self._duplicate_first_fields()
-
-                submit_notes: list[dict[str, Any]] = []
-                submit_payloads: list[Any] = []
+                candidates: list[tuple[Any, dict[str, Any], str]] = []
                 for item, note in zip(batch, built_notes, strict=True):
                     fields = note.get("fields") or {}
                     first_value = next(iter(fields.values()), "")
                     key = _strip_for_dedup(first_value)
-                    duplicate = key in existing or key in seen_outgoing
-                    if duplicate:
+                    if key in seen_outgoing:
                         skipped_duplicates += 1
                         continue
                     seen_outgoing.add(key)
+                    candidates.append((item, note, key))
+
+                existing = self._duplicate_first_fields(
+                    [key for _, _, key in candidates if key]
+                )
+                submit_notes: list[dict[str, Any]] = []
+                submit_payloads: list[Any] = []
+                for item, note, key in candidates:
+                    if key and key in existing:
+                        skipped_duplicates += 1
+                        continue
                     submit_notes.append(note)
                     submit_payloads.append(item)
 

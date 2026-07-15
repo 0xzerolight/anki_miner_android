@@ -2,12 +2,13 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://anki-miner.app/schemas/android-bridge/v1/anki.json",
   "title": "Anki Miner Android AnkiDroid callback payloads",
-  "$comment": "Every callback is synchronous and returns an envelope. Responses repeat runId/requestId; media and note results are positionally aligned with requests. verifyTarget validates model/fields before creating the deck. actualFilename is a raw basename, never [sound:] or <img> markup: card media is either unchanged or has the AnkiDroid provider's preferred-stem_random-suffix shape with the same extension; dictionary media must be unchanged. Runtime validation additionally enforces cross-row filename collisions, unique positive note IDs, and a strict notAttempted suffix with a top-level error.",
+  "$comment": "Every callback is synchronous and returns an envelope. Responses repeat runId/requestId; media and note results are positionally aligned with requests. verifyTarget validates model/fields before creating the deck. Duplicate scans are bounded candidate-key lookups, never full-model scans. preferredName is the extensionless prefix required by AnkiDroid addMediaFromUri; actualFilename is a raw basename, never [sound:] or <img> markup, and Python rewrites marked dictionary HTML to the provider-returned name. Runtime validation additionally enforces provider-name relationships and collisions, unique positive note IDs, and a strict notAttempted suffix with a top-level error.",
   "oneOf": [
     {"$ref": "#/$defs/verifyTargetRequest"},
     {"$ref": "#/$defs/verifyTargetResult"},
     {"$ref": "#/$defs/scanFirstFieldsRequest"},
     {"$ref": "#/$defs/scanFirstFieldsResult"},
+    {"$ref": "#/$defs/duplicateLookupResult"},
     {"$ref": "#/$defs/storeMediaRequest"},
     {"$ref": "#/$defs/storeMediaResult"},
     {"$ref": "#/$defs/createNotesRequest"},
@@ -31,6 +32,11 @@
       "minLength": 1,
       "$comment": "Runtime validation additionally enforces NFC, bare-basename semantics, and rejects every Unicode category-C code point.",
       "pattern": "^(?![.]{1,2}$)(?!\\s)(?!.*\\s$)(?!.*[/\\\\<>\\[\\]:\"'\\u0000-\\u001f\\u007f-\\u009f\\u00ad\\u061c\\u200b-\\u200f\\u202a-\\u202e\\u2060-\\u206f\\ufeff]).+$"
+    },
+    "duplicateKey": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
     },
     "errorCode": {
       "enum": [
@@ -72,7 +78,6 @@
         "modelName": {"$ref": "#/$defs/canonicalNonEmptyString"},
         "requiredFields": {
           "type": "array",
-          "minItems": 1,
           "uniqueItems": true,
           "items": {"$ref": "#/$defs/canonicalNonEmptyString"}
         }
@@ -112,7 +117,7 @@
     "duplicateScope": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["kind", "modelName", "deckName"],
+      "required": ["kind", "modelName", "deckName", "candidateKeys"],
       "properties": {
         "kind": {"const": "duplicates"},
         "modelName": {"$ref": "#/$defs/canonicalNonEmptyString"},
@@ -121,6 +126,13 @@
             {"type": "null"},
             {"$ref": "#/$defs/canonicalNonEmptyString"}
           ]
+        },
+        "candidateKeys": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 100,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/duplicateKey"}
         }
       }
     },
@@ -149,6 +161,22 @@
         "firstFields": {"type": "array", "items": {"type": "string"}}
       }
     },
+    "duplicateLookupResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runId", "requestId", "matches"],
+      "properties": {
+        "runId": {"$ref": "#/$defs/runId"},
+        "requestId": {"$ref": "#/$defs/requestId"},
+        "matches": {
+          "$comment": "Positionally aligned with duplicateScope.candidateKeys; Kotlin maps AnkiDroid's SparseArray result indices to these booleans.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 100,
+          "items": {"type": "boolean"}
+        }
+      }
+    },
     "mediaAsset": {
       "type": "object",
       "additionalProperties": false,
@@ -156,7 +184,10 @@
       "properties": {
         "assetId": {"$ref": "#/$defs/assetId"},
         "sourcePath": {"type": "string", "pattern": "^/"},
-        "preferredName": {"$ref": "#/$defs/filename"},
+        "preferredName": {
+          "$comment": "Extensionless addMediaFromUri prefix; Python verifies it against the internal requested filename.",
+          "$ref": "#/$defs/filename"
+        },
         "purpose": {"enum": ["card", "dictionary"]},
         "mediaKind": {"enum": ["audio", "image"]}
       }
