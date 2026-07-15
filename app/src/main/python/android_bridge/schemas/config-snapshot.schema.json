@@ -2,6 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://anki-miner.app/schemas/android-bridge/v1/config-snapshot.json",
   "title": "Anki Miner Android config.snapshot payload",
+  "$comment": "Provider identity uniqueness is a runtime semantic refinement: uniqueItems rejects identical objects, while config_map also rejects the same dict_id, source_id, or pack_id with different enabled values.",
   "type": "object",
   "additionalProperties": false,
   "properties": {
