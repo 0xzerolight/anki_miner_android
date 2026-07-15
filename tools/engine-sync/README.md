@@ -36,8 +36,9 @@ spike.
 ## Golden derivation
 
 `run_goldens.py` launches the desktop exporter under the explicitly selected
-Python interpreter, independently probes that interpreter's dependency
-versions, and compares the probe with the fixture provenance. It resolves
+Python interpreter, independently hashes that interpreter's complete stable
+distribution contents (including native wheel files), and compares the probe
+with the fixture provenance. It resolves
 UniDic from `unidic-lite` unless `--dicdir` is supplied, always passes the
 resolved directory to the exporter, and records it under the reserved
 `unidic_dicdir` asset name.

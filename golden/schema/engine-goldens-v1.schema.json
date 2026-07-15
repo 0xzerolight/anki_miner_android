@@ -4,7 +4,7 @@
   "title": "Anki Miner engine golden contract v1",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "provenance", "unidic_feature_fields", "cases"],
+  "required": ["schema_version", "provenance", "unidic_feature_fields", "section_status", "cases"],
   "properties": {
     "schema_version": {"const": 1},
     "provenance": {"$ref": "#/$defs/provenance"},
@@ -42,6 +42,7 @@
       "minItems": 26,
       "maxItems": 26
     },
+    "section_status": {"$ref": "#/$defs/section_status"},
     "cases": {
       "type": "object",
       "additionalProperties": false,
@@ -126,7 +127,7 @@
             "platform": {"type": "string", "minLength": 1},
             "dependencies": {
               "type": "object",
-              "additionalProperties": {"type": "string"}
+              "additionalProperties": {"$ref": "#/$defs/runtime_dependency"}
             },
             "sha256": {"$ref": "#/$defs/sha256"}
           }
@@ -144,6 +145,56 @@
             "sha256": {"$ref": "#/$defs/sha256"}
           }
         }
+      }
+    },
+    "runtime_dependency": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "content_sha256"],
+      "properties": {
+        "version": {"type": "string", "minLength": 1},
+        "content_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "implemented_status": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state"],
+      "properties": {"state": {"const": "implemented"}}
+    },
+    "pending_status": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "reason"],
+      "properties": {
+        "state": {"const": "pending"},
+        "reason": {"type": "string", "minLength": 1, "pattern": "\\S"}
+      }
+    },
+    "section_status": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tokenization",
+        "morphology",
+        "filtering",
+        "deinflection",
+        "compounds",
+        "dictionaries",
+        "frequency",
+        "pitch",
+        "cards"
+      ],
+      "properties": {
+        "tokenization": {"$ref": "#/$defs/implemented_status"},
+        "morphology": {"$ref": "#/$defs/implemented_status"},
+        "filtering": {"$ref": "#/$defs/pending_status"},
+        "deinflection": {"$ref": "#/$defs/pending_status"},
+        "compounds": {"$ref": "#/$defs/implemented_status"},
+        "dictionaries": {"$ref": "#/$defs/pending_status"},
+        "frequency": {"$ref": "#/$defs/pending_status"},
+        "pitch": {"$ref": "#/$defs/pending_status"},
+        "cards": {"$ref": "#/$defs/pending_status"}
       }
     },
     "features": {
