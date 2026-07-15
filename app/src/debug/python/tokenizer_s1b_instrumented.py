@@ -11,11 +11,20 @@ from android_bridge.tokenizer_s1b import create_s1b_tagger
 from android_bridge.unidic_resource import register_unidic
 
 
+def _golden_feature(value: Any) -> Any:
+    """Canonical goldens collapse MeCab's explicit missing sentinel to null."""
+
+    return None if value == "*" else value
+
+
 def _actual_token(token: object) -> dict[str, Any]:
     feature = getattr(token, "feature")
     return {
         "surface": getattr(token, "surface"),
-        "features": {name: getattr(feature, name) for name in UNIDIC_FEATURE_FIELDS},
+        "features": {
+            name: _golden_feature(getattr(feature, name))
+            for name in UNIDIC_FEATURE_FIELDS
+        },
         "is_unknown": getattr(token, "is_unk"),
         "offsets": {
             "codepoint_start": getattr(token, "codepoint_start"),
@@ -60,7 +69,21 @@ def run(golden_json: str, dicdir: str) -> str:
     if tuple(document["unidic_feature_fields"]) != UNIDIC_FEATURE_FIELDS:
         raise AssertionError("golden UniDic field order differs from the bridge")
     for case in cases:
-        actual = [_actual_token(token) for token in tagger(case["text"])]
+        engine_tokens = tagger(case["text"])
+        if case["id"] == "astral-oov-offsets":
+            unknown_tokens = [
+                token for token in engine_tokens if getattr(token, "is_unk")
+            ]
+            if len(unknown_tokens) != 1:
+                raise AssertionError(
+                    "astral-oov-offsets must contain exactly one unknown token"
+                )
+            oov = unknown_tokens[0]
+            if oov.feature.pos3 != "*" or oov.feature.lForm is not None:
+                raise AssertionError(
+                    "S1b collapsed an explicit UniDic star or invented an absent field"
+                )
+        actual = [_actual_token(token) for token in engine_tokens]
         expected = case["tokens"]
         if actual != expected:
             raise AssertionError(

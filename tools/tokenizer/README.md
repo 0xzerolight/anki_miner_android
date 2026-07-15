@@ -10,11 +10,11 @@ engine sees it. No native node pointer may escape the backend call.
 `UNIDIC_FEATURE_FIELDS` freezes the 26-field UniDic 2.1.2 binary schema in the
 same order as fugashi 1.5.2 and the desktop golden fixture. CSV decoding follows
 fugashi's observable behavior: quoted commas are decoded, explicit empty fields
-and literal `*` values survive in the raw `TokenRecord`, and only absent trailing
-fields become `None`. Rows longer than 26 fields fail instead of being silently
-truncated. At the final engine-facing `SimpleNamespace` boundary, literal `*` is
-normalized to `None` to match fugashi's UniDic feature wrapper; explicit empty
-strings remain empty.
+and literal `*` values survive through the raw `TokenRecord` and the
+engine-facing `SimpleNamespace`, and only absent trailing fields become `None`.
+Rows longer than 26 fields fail instead of being silently truncated. The
+canonical JSON golden format alone collapses `*` to `null`; that serialization
+rule must never change the object seen by the engine.
 
 The adapter builds a mutable `SimpleNamespace` for features and a fugashi-shaped
 token namespace. It also records UTF-8 byte, Python code-point, and JVM UTF-16
@@ -90,7 +90,10 @@ or the engine from the shared contract modules.
 
 The host-native gate compiles the pinned MeCab runtime, proves `sys.dic` and
 `matrix.bin` are present in `/proc/self/maps`, and compares every seeded case
-and all 26 fields against the committed desktop golden:
+and all 26 fields against the committed desktop golden. It separately proves
+that explicit `*` and actually absent fields remain distinct at the engine
+boundary, then drives the seeded `走り出した` case through native MeCab, the
+S1b tagger adapter, and the vendored compound pipeline:
 
 ```bash
 tools/tokenizer/test-s1b-native-host.sh /absolute/path/to/unidic/dicdir

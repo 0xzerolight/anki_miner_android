@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import sys
+from types import SimpleNamespace
 import zipfile
 
 import pytest
@@ -13,8 +14,12 @@ sys.path.insert(0, str(PROJECT_ROOT / "tools/engine-sync"))
 
 from engine_sync.golden_contract import sha256_tree  # noqa: E402
 from package_s1b_test_unidic import package_dictionary  # noqa: E402
-from verify_s1b_host_parity import verify_dictionary_provenance  # noqa: E402
+from verify_s1b_host_parity import (  # noqa: E402
+    _actual_token,
+    verify_dictionary_provenance,
+)
 
+from android_bridge.tokenizer_contract import UNIDIC_FEATURE_FIELDS  # noqa: E402
 from android_bridge.unidic_resource import UNIDIC_REQUIRED_FILES  # noqa: E402
 
 
@@ -90,6 +95,27 @@ def test_external_dictionary_zip_is_deterministic_and_never_bundled(
         )
     asset_files = list((PROJECT_ROOT / "app/src").glob("**/assets/**/*"))
     assert not any(path.name in UNIDIC_REQUIRED_FILES for path in asset_files)
+
+
+def test_golden_serialization_does_not_mutate_engine_star_semantics() -> None:
+    feature_values = {name: None for name in UNIDIC_FEATURE_FIELDS}
+    feature_values["pos1"] = "*"
+    token = SimpleNamespace(
+        surface="猫",
+        feature=SimpleNamespace(**feature_values),
+        is_unk=False,
+        codepoint_start=0,
+        codepoint_end=1,
+        utf16_start=0,
+        utf16_end=1,
+    )
+
+    serialized = _actual_token(token)
+
+    assert serialized["features"]["pos1"] is None
+    assert serialized["features"]["pos2"] is None
+    assert token.feature.pos1 == "*"
+    assert token.feature.pos2 is None
 
 
 def test_android_harness_crosses_all_layers_with_external_provisioning() -> None:
