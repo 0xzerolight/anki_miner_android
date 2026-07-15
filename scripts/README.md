@@ -69,3 +69,11 @@ executables, debug probe leakage, invalid APK zip-alignment, and manifests
 which do not extract native executables. Gradle resolves with committed locks
 for every project configuration and strict SHA-256 dependency verification;
 plugin artifacts and their transitives are covered by the same metadata.
+
+S1a wheel publications are builder-identity scoped. `verify-publication`
+recomputes the current source recipe, CPython binary, host runtime and tool
+versions, then reopens every wheel and compares its full license and ELF
+inventory with the manifest. Gradle runs that verifier itself whenever
+`ankiMinerS1aManifest` is set, so no caller-supplied recipe or build key can
+bypass the gate. A publication built on a different host identity must be
+rebuilt locally instead of being treated as a portable cache entry.

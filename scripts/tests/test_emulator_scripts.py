@@ -245,11 +245,9 @@ printf '{"schema":2,"recipe_key":"%s","build_key":"%s"}\\n' \
             runner.write_text(
                 """#!/usr/bin/env bash
 set -euo pipefail
-printf '%s|%s|%s|%s|%s\n' \
+printf '%s|%s|%s\n' \
     "$*" \
     "$ORG_GRADLE_PROJECT_ankiMinerS1aManifest" \
-    "$ORG_GRADLE_PROJECT_ankiMinerS1aRecipeKey" \
-    "$ORG_GRADLE_PROJECT_ankiMinerS1aBuildKey" \
     "$ANKI_MINER_TEST_UNIDIC_DIR" >>"$S1A_RUNNER_LOG"
 """,
                 encoding="utf-8",
@@ -282,8 +280,8 @@ printf '%s|%s|%s|%s|%s\n' \
             self.assertEqual(0, result.returncode, result.stderr)
             self.assertEqual(
                 [
-                    f"--page-size 4k|{manifest}|{recipe_key}|{build_key}|{dicdir}",
-                    f"--page-size 16k|{manifest}|{recipe_key}|{build_key}|{dicdir}",
+                    f"--page-size 4k|{manifest}|{dicdir}",
+                    f"--page-size 16k|{manifest}|{dicdir}",
                 ],
                 log.read_text(encoding="utf-8").splitlines(),
             )

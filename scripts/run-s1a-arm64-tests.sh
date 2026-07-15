@@ -150,24 +150,8 @@ PROVISIONER="$(resolve_command "$PROVISIONER" 'S1a UniDic provisioner')"
 WHEEL_TOOL="$(resolve_command "$WHEEL_TOOL" 'S1a wheel tool')"
 PYTHON_COMMAND="$(resolve_command "$PYTHON_COMMAND" 'Python 3.13')"
 
-publication_json="$("$WHEEL_TOOL" verify-publication --manifest "$manifest")" \
-    || fail "S1a wheel publication is invalid or stale"
-publication_keys="$("$PYTHON_COMMAND" -c '
-import json
-import sys
-
-value = json.loads(sys.argv[1])
-if set(value) != {"schema", "recipe_key", "build_key"} or value["schema"] != 2:
-    raise SystemExit("unexpected S1a publication identity")
-print(value["recipe_key"])
-print(value["build_key"])
-' "$publication_json")" || fail "cannot parse the S1a publication identity"
-mapfile -t parsed_keys <<<"$publication_keys"
-[[ "${#parsed_keys[@]}" -eq 2 ]] || fail "S1a publication identity is incomplete"
-current_recipe_key="${parsed_keys[0]}"
-current_build_key="${parsed_keys[1]}"
-[[ "$current_recipe_key" =~ ^[0-9a-f]{64}$ && "$current_build_key" =~ ^[0-9a-f]{64}$ ]] \
-    || fail "S1a wheel tool returned an invalid publication identity"
+"$WHEEL_TOOL" verify-publication --manifest "$manifest" >/dev/null \
+    || fail "S1a wheel publication is invalid or stale for the active builder"
 
 device_state="$("$ADB_COMMAND" -s "$serial" get-state 2>/dev/null)" \
     || fail "cannot query target $serial"
@@ -203,8 +187,6 @@ cd "$REPO_ROOT"
     --stacktrace \
     --dependency-verification strict \
     -PankiMinerS1aManifest="$manifest" \
-    -PankiMinerS1aRecipeKey="$current_recipe_key" \
-    -PankiMinerS1aBuildKey="$current_build_key" \
     :app:assembleDeviceDebug \
     :app:assembleDeviceDebugAndroidTest
 
@@ -214,7 +196,8 @@ cd "$REPO_ROOT"
     --artifact "$APP_APK" \
     --allow-abi arm64-v8a \
     --require-app-imy \
-    --require-s1a
+    --require-s1a \
+    --s1a-manifest "$manifest"
 
 app_id="$("$APKANALYZER_COMMAND" manifest application-id "$APP_APK")" \
     || fail "cannot inspect the arm64 debug APK identity"

@@ -229,14 +229,15 @@ class S1aArm64RunnerTest(unittest.TestCase):
             )
             gradle = (fixture.state / "gradle.log").read_text(encoding="utf-8")
             self.assertIn(f"-PankiMinerS1aManifest={fixture.manifest}", gradle)
-            self.assertIn(f"-PankiMinerS1aRecipeKey={RECIPE_KEY}", gradle)
-            self.assertIn(f"-PankiMinerS1aBuildKey={BUILD_KEY}", gradle)
+            self.assertNotIn("ankiMinerS1aRecipeKey", gradle)
+            self.assertNotIn("ankiMinerS1aBuildKey", gradle)
             self.assertIn(":app:assembleDeviceDebug", gradle)
             self.assertIn(":app:assembleDeviceDebugAndroidTest", gradle)
             checker = (fixture.state / "checker.log").read_text(encoding="utf-8")
             self.assertIn("--allow-abi arm64-v8a", checker)
             self.assertIn("--require-app-imy", checker)
             self.assertIn("--require-s1a", checker)
+            self.assertIn(f"--s1a-manifest {fixture.manifest}", checker)
             self.assertEqual(
                 f"{SERIAL}|--dicdir {fixture.dicdir}\n",
                 (fixture.state / "provision.log").read_text(encoding="utf-8"),
@@ -365,17 +366,18 @@ class S1aArm64RunnerTest(unittest.TestCase):
             self.assertFalse((fixture.state / "adb.log").exists())
             self.assertFalse((fixture.state / "gradle.log").exists())
 
-    def test_invalid_publication_identity_fails_before_target_queries(self) -> None:
+    def test_verifier_output_cannot_inject_gradle_identity(self) -> None:
         with _fixture() as fixture:
             environment = fixture.environment.copy()
             environment["FAKE_RECIPE_KEY"] = "not-a-hash"
 
             result = fixture.run(environment=environment)
 
-            self.assertEqual(1, result.returncode, result.stderr)
-            self.assertIn("invalid publication identity", result.stderr)
-            self.assertFalse((fixture.state / "adb.log").exists())
-            self.assertFalse((fixture.state / "gradle.log").exists())
+            self.assertEqual(0, result.returncode, result.stderr)
+            gradle = (fixture.state / "gradle.log").read_text(encoding="utf-8")
+            self.assertNotIn("not-a-hash", gradle)
+            self.assertNotIn("ankiMinerS1aRecipeKey", gradle)
+            self.assertNotIn("ankiMinerS1aBuildKey", gradle)
 
     def test_target_identity_mismatches_fail_before_build_or_provision(self) -> None:
         cases = {

@@ -19,6 +19,7 @@ Options:
   --require-app-imy     Require recursive inspection of Chaquopy app.imy.
   --reject-base-unidic  Reject UniDic payloads in the APK/AAB base module.
   --require-s1a         Require and validate the complete S1a wheel payload.
+  --s1a-manifest FILE   Require exact package attributions from this publication.
 
 The gate inspects every ELF in APKs, AABs, nested ZIPs and Chaquopy IMYs.
 It rejects UniDic payloads from the APK/AAB base module; a future separate
@@ -34,7 +35,7 @@ while (($#)); do
             ARTIFACT="$2"
             shift
             ;;
-        --allow-abi|--forbid-entry|--require-entry)
+        --allow-abi|--forbid-entry|--require-entry|--s1a-manifest)
             (($# >= 2)) || { usage >&2; exit 2; }
             PYTHON_ARGS+=("$1" "$2")
             shift

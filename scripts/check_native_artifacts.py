@@ -5,8 +5,11 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass, field
+import hashlib
 from io import BytesIO
+import json
 from pathlib import Path, PurePosixPath
+import re
 import struct
 import sys
 import zipfile
@@ -15,6 +18,7 @@ import zipfile
 PAGE_SIZE = 16 * 1024
 MAX_ARCHIVE_DEPTH = 12
 MAX_NESTED_ARCHIVE_SIZE = 1024 * 1024 * 1024
+MAX_ATTRIBUTION_SIZE = 1024 * 1024
 ELF_MAGIC = b"\x7fELF"
 ZIP_MAGICS = (b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08")
 MACHINE_ABIS = {
@@ -76,6 +80,21 @@ ANDROID_SYSTEM_LIBS = {
     "libm.so",
     "libz.so",
 }
+S1A_PACKAGE_VERSIONS = {
+    "chaquopy_libcxx": "190000",
+    "chaquopy_libmecab": "0.996",
+    "fugashi": "1.5.2",
+}
+S1A_NATIVE_PATHS = {
+    "chaquopy_libcxx": "chaquopy/lib/libc++_shared.so",
+    "chaquopy_libmecab": "chaquopy/lib/libmecab.so.2",
+    "fugashi": "fugashi/fugashi.so",
+}
+S1A_LICENSE_MARKERS = {
+    "chaquopy_libcxx": (b"apache license", b"llvm exceptions"),
+    "chaquopy_libmecab": (b"taku kudo", b"redistribution"),
+    "fugashi": (b"permission is hereby granted",),
+}
 
 
 class ArtifactError(RuntimeError):
@@ -90,6 +109,20 @@ class NativeMetadata:
     has_dynamic: bool
 
 
+@dataclass(frozen=True)
+class S1aAttribution:
+    package: str
+    sha256: str
+
+
+@dataclass(frozen=True)
+class S1aNativePayload:
+    package: str
+    abi: str
+    path: str
+    sha256: str
+
+
 @dataclass
 class Inspection:
     allowed_abis: set[str]
@@ -101,9 +134,183 @@ class Inspection:
     app_imy_count: int = 0
     found_required_entries: set[str] = field(default_factory=set)
     requirement_imys: set[str] = field(default_factory=set)
-    requirement_owners: dict[str, str] = field(default_factory=dict)
+    requirement_member_counts: dict[str, int] = field(default_factory=dict)
+    requirement_owners: dict[str, set[str]] = field(default_factory=dict)
     s1a_payloads: set[str] = field(default_factory=set)
     require_s1a: bool = False
+    expected_attributions: dict[str, S1aAttribution] = field(default_factory=dict)
+    found_attributions: set[str] = field(default_factory=set)
+    attribution_text: dict[str, list[bytes]] = field(default_factory=dict)
+    expected_natives: dict[tuple[str, str], S1aNativePayload] = field(
+        default_factory=dict
+    )
+    found_natives: dict[tuple[str, str], int] = field(default_factory=dict)
+
+
+def _s1a_package_from_wheel(filename: str) -> str:
+    matches = [
+        package
+        for package, version in S1A_PACKAGE_VERSIONS.items()
+        if filename.startswith(f"{package}-{version}-0-") and filename.endswith(".whl")
+    ]
+    if len(matches) != 1:
+        raise ArtifactError(f"S1a manifest has an unexpected wheel filename: {filename!r}")
+    return matches[0]
+
+
+def s1a_native_package(path: PurePosixPath) -> str | None:
+    basename = path.name
+    if basename == "libc++_shared.so":
+        return "chaquopy_libcxx"
+    if basename == "libmecab.so.2":
+        return "chaquopy_libmecab"
+    if (
+        bool(path.parts)
+        and path.parts[0] == "fugashi"
+        and basename.startswith("fugashi.")
+        and basename.endswith(".so")
+    ):
+        return "fugashi"
+    return None
+
+
+def s1a_requirement_imys(allowed_abis: set[str]) -> set[str]:
+    return {"requirements-common.imy"} | {
+        f"requirements-{abi}.imy" for abi in allowed_abis
+    }
+
+
+def s1a_native_owner(abi: str, allowed_abis: set[str]) -> str:
+    if len(allowed_abis) == 1:
+        return "requirements-common.imy"
+    return f"requirements-{abi}.imy"
+
+
+def load_s1a_inventory(
+    manifest: Path,
+    allowed_abis: set[str],
+) -> tuple[
+    dict[str, S1aAttribution],
+    dict[tuple[str, str], S1aNativePayload],
+]:
+    if not manifest.is_file():
+        raise ArtifactError(f"S1a publication manifest not found: {manifest}")
+    try:
+        document = json.loads(manifest.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError) as error:
+        raise ArtifactError(f"invalid S1a publication manifest: {manifest}") from error
+    if not isinstance(document, dict) or document.get("schema") != 2:
+        raise ArtifactError("unsupported S1a publication manifest schema")
+    wheels = document.get("wheels")
+    expected_abis = {"arm64-v8a", "x86_64"}
+    if not isinstance(wheels, dict) or set(wheels) != expected_abis:
+        raise ArtifactError("S1a publication manifest ABI set is invalid")
+    if not allowed_abis or not allowed_abis.issubset(expected_abis):
+        raise ArtifactError(
+            f"S1a packaging supports only {sorted(expected_abis)}, "
+            f"found {sorted(allowed_abis)}"
+        )
+
+    by_abi: dict[str, dict[str, dict[str, str]]] = {}
+    expected_natives: dict[tuple[str, str], S1aNativePayload] = {}
+    for abi in sorted(expected_abis):
+        entries = wheels[abi]
+        if not isinstance(entries, list) or len(entries) != len(S1A_PACKAGE_VERSIONS):
+            raise ArtifactError(f"S1a publication {abi} wheel set is incomplete")
+        package_entries: dict[str, dict[str, str]] = {}
+        for raw_entry in entries:
+            if not isinstance(raw_entry, dict):
+                raise ArtifactError("S1a publication wheel entry is invalid")
+            filename = raw_entry.get("filename")
+            licenses = raw_entry.get("licenses")
+            elf = raw_entry.get("elf")
+            if (
+                not isinstance(filename, str)
+                or not isinstance(licenses, list)
+                or not licenses
+                or not isinstance(elf, dict)
+            ):
+                raise ArtifactError("S1a publication license inventory is incomplete")
+            if not filename.endswith(f"android_26_{abi.replace('-', '_')}.whl"):
+                raise ArtifactError(f"S1a publication wheel ABI mismatch: {filename!r}")
+            package = _s1a_package_from_wheel(filename)
+            if package in package_entries:
+                raise ArtifactError(f"duplicate S1a publication wheel for {package}/{abi}")
+            native_path = elf.get("path")
+            native_hash = elf.get("sha256")
+            native_abi = elf.get("abi")
+            if not isinstance(native_path, str) or not isinstance(native_hash, str):
+                raise ArtifactError("S1a publication native path/hash is invalid")
+            normalized_native = safe_entry_name(native_path, str(manifest)).as_posix()
+            if (
+                normalized_native != native_path
+                or not re.fullmatch(r"[0-9a-f]{64}", native_hash)
+                or native_abi != abi
+            ):
+                raise ArtifactError("S1a publication native path/hash/ABI is invalid")
+            if native_path != S1A_NATIVE_PATHS[package]:
+                raise ArtifactError(
+                    f"S1a {package} manifest native path is unexpected: {native_path}"
+                )
+            if abi in allowed_abis:
+                native_key = (s1a_native_owner(abi, allowed_abis), native_path)
+                if native_key in expected_natives:
+                    raise ArtifactError(
+                        f"duplicate S1a publication native path for "
+                        f"{native_key[0]}: {native_path}"
+                    )
+                expected_natives[native_key] = S1aNativePayload(
+                    package,
+                    abi,
+                    native_path,
+                    native_hash,
+                )
+            expected_dist_info = (
+                f"{package}-{S1A_PACKAGE_VERSIONS[package]}.dist-info"
+            ).casefold()
+            package_licenses: dict[str, str] = {}
+            for raw_license in licenses:
+                if not isinstance(raw_license, dict):
+                    raise ArtifactError("S1a publication license entry is invalid")
+                path = raw_license.get("path")
+                sha256 = raw_license.get("sha256")
+                if not isinstance(path, str) or not isinstance(sha256, str):
+                    raise ArtifactError("S1a publication license path/hash is invalid")
+                normalized = safe_entry_name(path, str(manifest)).as_posix()
+                if normalized != path or not re.fullmatch(r"[0-9a-f]{64}", sha256):
+                    raise ArtifactError("S1a publication license path/hash is invalid")
+                parts = tuple(part.casefold() for part in PurePosixPath(path).parts)
+                if parts.count(expected_dist_info) != 1:
+                    raise ArtifactError(
+                        f"S1a {package} attribution is outside its dist-info directory: {path}"
+                    )
+                basename = PurePosixPath(path).name.upper()
+                expected_name = basename.startswith(
+                    ("LICENSE", "COPYING", "COPYRIGHT", "NOTICE")
+                ) or (package == "chaquopy_libmecab" and basename == "BSD")
+                if not expected_name:
+                    raise ArtifactError(f"S1a attribution has an unexpected name: {path}")
+                if path in package_licenses:
+                    raise ArtifactError(f"duplicate S1a attribution path: {path}")
+                package_licenses[path] = sha256
+            package_entries[package] = package_licenses
+        if set(package_entries) != set(S1A_PACKAGE_VERSIONS):
+            raise ArtifactError(f"S1a publication {abi} package set is incomplete")
+        by_abi[abi] = package_entries
+
+    reference = by_abi["arm64-v8a"]
+    if by_abi["x86_64"] != reference:
+        raise ArtifactError("S1a attribution inventory differs across ABI wheels")
+    result: dict[str, S1aAttribution] = {}
+    for package, licenses in reference.items():
+        for path, sha256 in licenses.items():
+            if path in result:
+                raise ArtifactError(f"S1a attribution path has duplicate package owners: {path}")
+            result[path] = S1aAttribution(package, sha256)
+    expected_native_count = len(allowed_abis) * len(S1A_PACKAGE_VERSIONS)
+    if len(expected_natives) != expected_native_count:
+        raise ArtifactError("S1a publication native inventory is incomplete")
+    return result, expected_natives
 
 
 def safe_entry_name(name: str, archive_name: str) -> PurePosixPath:
@@ -379,6 +586,8 @@ def inspect_zip(
     inspection: Inspection,
     depth: int = 0,
     inside_base_module: bool | None = None,
+    requirement_owner: str | None = None,
+    requirement_depth: int = 0,
 ) -> None:
     if depth > MAX_ARCHIVE_DEPTH:
         raise ArtifactError(f"{logical_name}: archive nesting exceeds {MAX_ARCHIVE_DEPTH}")
@@ -388,8 +597,15 @@ def inspect_zip(
         raise ArtifactError(f"{logical_name}: invalid ZIP/IMY archive") from error
 
     with archive:
+        members = archive.infolist()
+        if requirement_owner is not None and requirement_depth == 0:
+            if requirement_owner in inspection.requirement_member_counts:
+                raise ArtifactError(
+                    f"{logical_name}: requirement IMY owner was inspected more than once"
+                )
+            inspection.requirement_member_counts[requirement_owner] = len(members)
         seen_entries: set[str] = set()
-        for info in archive.infolist():
+        for info in members:
             entry_path = safe_entry_name(info.filename, logical_name)
             entry_name = f"{logical_name}!/{entry_path.as_posix()}"
             direct_path = entry_path.as_posix()
@@ -418,33 +634,59 @@ def inspect_zip(
                     raise ArtifactError(f"{entry_name}: forbidden release entry {forbidden!r}")
 
             basename = entry_path.name
-            if basename == "app.imy":
-                inspection.app_imy_count += 1
-            if basename.startswith("requirements-") and basename.endswith(".imy"):
-                inspection.requirement_imys.add(basename)
-            requirement_owner = next(
-                (
-                    component
-                    for component in logical_name.replace("!", "/").split("/")
-                    if component.startswith("requirements-") and component.endswith(".imy")
-                ),
-                None,
+            is_app_imy = basename == "app.imy"
+            is_requirement_imy = (
+                basename.startswith("requirements-") and basename.endswith(".imy")
             )
+            if is_app_imy or is_requirement_imy:
+                if depth != 0:
+                    raise ArtifactError(
+                        f"{entry_name}: Chaquopy IMY must be a direct outer artifact entry"
+                    )
+                is_aab = logical_name.casefold().endswith(".aab")
+                prefix = "base/assets/chaquopy" if is_aab else "assets/chaquopy"
+                canonical_path = f"{prefix}/{basename}"
+                if direct_path != canonical_path:
+                    raise ArtifactError(
+                        f"{entry_name}: Chaquopy IMY path is not canonical; "
+                        f"expected {canonical_path!r}"
+                    )
+                if is_requirement_imy:
+                    expected_requirement_imys = {"requirements-common.imy"} | {
+                            f"requirements-{abi}.imy"
+                            for abi in inspection.allowed_abis
+                    }
+                    if inspection.require_s1a:
+                        expected_requirement_imys = s1a_requirement_imys(
+                            inspection.allowed_abis
+                        )
+                    if basename not in expected_requirement_imys:
+                        raise ArtifactError(
+                            f"{entry_name}: unexpected requirement IMY for artifact ABI set"
+                        )
+            if is_app_imy:
+                inspection.app_imy_count += 1
+            if is_requirement_imy:
+                inspection.requirement_imys.add(basename)
             if requirement_owner:
                 payload_name = entry_path.as_posix()
-                previous_owner = inspection.requirement_owners.setdefault(
-                    payload_name,
-                    requirement_owner,
+                previous_owners = inspection.requirement_owners.setdefault(
+                    payload_name, set()
                 )
-                if previous_owner != requirement_owner:
+                candidate_owners = previous_owners | {requirement_owner}
+                distinct_owner = bool(previous_owners) and (
+                    requirement_owner not in previous_owners
+                )
+                owners_are_manifest_natives = all(
+                    (owner, payload_name) in inspection.expected_natives
+                    for owner in candidate_owners
+                )
+                if distinct_owner and not owners_are_manifest_natives:
                     raise ArtifactError(
                         f"{entry_name}: requirement payload is duplicated in "
-                        f"{previous_owner} and {requirement_owner}",
+                        f"{sorted(previous_owners)} and {requirement_owner}",
                     )
-                if basename in {"libmecab.so.2", "libc++_shared.so"}:
-                    inspection.s1a_payloads.add(basename)
-                if "fugashi" in entry_path.parts and basename.endswith(".so"):
-                    inspection.s1a_payloads.add("fugashi-extension")
+                previous_owners.add(requirement_owner)
             if basename in EXECUTABLE_NATIVE_NAMES:
                 parts = entry_path.parts
                 direct_apk = len(parts) == 3 and parts[0] == "lib"
@@ -458,13 +700,58 @@ def inspect_zip(
                 prefix = stream.read(4)
                 is_elf = prefix == ELF_MAGIC
                 is_archive = prefix in ZIP_MAGICS or basename.endswith(".imy")
-                if not (is_elf or is_archive):
-                    continue
-                if info.file_size > MAX_NESTED_ARCHIVE_SIZE:
+                payload_name = entry_path.as_posix()
+                attribution = inspection.expected_attributions.get(payload_name)
+                expected_native = inspection.expected_natives.get(
+                    (requirement_owner or "", payload_name)
+                )
+                manifest_native_path = any(
+                    path == payload_name
+                    for _, path in inspection.expected_natives
+                )
+                if attribution is not None and (
+                    requirement_owner != "requirements-common.imy"
+                    or requirement_depth != 0
+                ):
                     raise ArtifactError(
-                        f"{entry_name}: native/archive entry exceeds {MAX_NESTED_ARCHIVE_SIZE} bytes",
+                        f"{entry_name}: S1a attribution must be a direct member of "
+                        "requirements-common.imy"
+                    )
+                if manifest_native_path and (
+                    expected_native is None or requirement_depth != 0
+                ):
+                    raise ArtifactError(
+                        f"{entry_name}: S1a native payload must be a direct member of its "
+                        "manifest-selected requirements IMY"
+                    )
+                if expected_native is not None and not is_elf:
+                    raise ArtifactError(
+                        f"{entry_name}: manifest S1a native payload is not an ELF"
+                    )
+                if not (is_elf or is_archive or attribution is not None):
+                    continue
+                size_limit = (
+                    MAX_ATTRIBUTION_SIZE
+                    if attribution is not None
+                    else MAX_NESTED_ARCHIVE_SIZE
+                )
+                if info.file_size > size_limit:
+                    raise ArtifactError(
+                        f"{entry_name}: inspected entry exceeds {size_limit} bytes",
                     )
                 payload = prefix + stream.read()
+
+            if attribution is not None:
+                actual_hash = hashlib.sha256(payload).hexdigest()
+                if actual_hash != attribution.sha256:
+                    raise ArtifactError(
+                        f"{entry_name}: S1a attribution hash differs from the wheel manifest"
+                    )
+                inspection.found_attributions.add(entry_path.as_posix())
+                inspection.attribution_text.setdefault(attribution.package, []).append(
+                    payload.lower()
+                )
+                continue
 
             if is_elf:
                 metadata = parse_elf(
@@ -476,17 +763,55 @@ def inspect_zip(
                 )
                 if required_direct:
                     inspection.found_required_entries.add(direct_path)
-                if inspection.require_s1a and requirement_owner:
-                    is_fugashi = "fugashi" in entry_path.parts and basename.endswith(".so")
-                    if basename in {"libmecab.so.2", "libc++_shared.so"} or is_fugashi:
-                        validate_s1a_native(basename, entry_name, metadata)
+                native_package = s1a_native_package(entry_path)
+                if inspection.require_s1a and native_package is not None:
+                    if expected_native is None or requirement_depth != 0:
+                        raise ArtifactError(
+                            f"{entry_name}: unexpected S1a native payload location"
+                        )
+                    if native_package != expected_native.package:
+                        raise ArtifactError(
+                            f"{entry_name}: S1a native payload package mismatch"
+                        )
+                    if metadata.abi != expected_native.abi:
+                        raise ArtifactError(
+                            f"{entry_name}: S1a native ABI is {metadata.abi}, "
+                            f"expected {expected_native.abi}"
+                        )
+                    validate_s1a_native(basename, entry_name, metadata)
+                    if hashlib.sha256(payload).hexdigest() != expected_native.sha256:
+                        raise ArtifactError(
+                            f"{entry_name}: S1a native hash differs from the wheel manifest"
+                        )
+                    native_key = (requirement_owner or "", expected_native.path)
+                    inspection.found_natives[native_key] = (
+                        inspection.found_natives.get(native_key, 0) + 1
+                    )
+                    if inspection.found_natives[native_key] != 1:
+                        raise ArtifactError(
+                            f"{entry_name}: S1a native payload appears more than once"
+                        )
+                    inspection.s1a_payloads.add(
+                        "fugashi-extension"
+                        if native_package == "fugashi"
+                        else basename
+                    )
             else:
+                child_owner = requirement_owner
+                child_requirement_depth = requirement_depth + 1 if child_owner else 0
+                if basename.startswith("requirements-") and basename.endswith(".imy"):
+                    if requirement_owner is not None and inspection.require_s1a:
+                        raise ArtifactError(f"{entry_name}: nested requirement IMY is forbidden")
+                    child_owner = basename
+                    child_requirement_depth = 0
                 inspect_zip(
                     BytesIO(payload),
                     entry_name,
                     inspection,
                     depth + 1,
                     entry_in_base,
+                    child_owner,
+                    child_requirement_depth,
                 )
 
 
@@ -499,12 +824,26 @@ def inspect_artifact(args: argparse.Namespace) -> Inspection:
         if normalized != name or name.endswith("/"):
             raise ArtifactError(f"invalid required direct archive entry: {name!r}")
         required_entries.add(name)
+    if args.require_s1a and args.s1a_manifest is None:
+        raise ArtifactError("--require-s1a requires --s1a-manifest")
+    if args.s1a_manifest is not None and not args.require_s1a:
+        raise ArtifactError("--s1a-manifest requires --require-s1a")
+    allowed_abis = set(args.allow_abi)
+    if args.s1a_manifest is not None:
+        expected_attributions, expected_natives = load_s1a_inventory(
+            args.s1a_manifest,
+            allowed_abis,
+        )
+    else:
+        expected_attributions, expected_natives = {}, {}
     inspection = Inspection(
-        allowed_abis=set(args.allow_abi),
+        allowed_abis=allowed_abis,
         forbidden=tuple(args.forbid_entry),
         required_direct_entries=required_entries,
         reject_base_unidic=args.reject_base_unidic,
         require_s1a=args.require_s1a,
+        expected_attributions=expected_attributions,
+        expected_natives=expected_natives,
     )
     inspect_zip(args.artifact, args.artifact.name, inspection)
     if inspection.elf_count == 0:
@@ -525,13 +864,31 @@ def inspect_artifact(args: argparse.Namespace) -> Inspection:
             f"{sorted(missing_entries)!r}"
         )
     if args.require_s1a:
-        expected_imys = {"requirements-common.imy"} | {
-            f"requirements-{abi}.imy" for abi in inspection.allowed_abis
-        }
-        if not expected_imys.issubset(inspection.requirement_imys):
+        expected_imys = s1a_requirement_imys(inspection.allowed_abis)
+        if expected_imys != inspection.requirement_imys:
+            missing_imys = sorted(expected_imys - inspection.requirement_imys)
+            unexpected_imys = sorted(inspection.requirement_imys - expected_imys)
             raise ArtifactError(
-                f"{args.artifact}: missing S1a requirement IMYs "
-                f"{sorted(expected_imys - inspection.requirement_imys)}",
+                f"{args.artifact}: S1a requirement IMY layout differs; "
+                f"missing={missing_imys}, unexpected={unexpected_imys}",
+            )
+        if len(inspection.allowed_abis) == 1:
+            abi = next(iter(inspection.allowed_abis))
+            abi_imy = f"requirements-{abi}.imy"
+            abi_member_count = inspection.requirement_member_counts.get(abi_imy)
+            if abi_member_count != 0:
+                raise ArtifactError(
+                    f"{args.artifact}: single-ABI {abi_imy} must be empty, "
+                    f"found {abi_member_count} members"
+                )
+        expected_native_keys = set(inspection.expected_natives)
+        if (
+            set(inspection.found_natives) != expected_native_keys
+            or any(count != 1 for count in inspection.found_natives.values())
+        ):
+            missing = sorted(expected_native_keys - set(inspection.found_natives))
+            raise ArtifactError(
+                f"{args.artifact}: missing exact S1a native payloads {missing}"
             )
         expected_payloads = {"fugashi-extension", "libmecab.so.2", "libc++_shared.so"}
         if inspection.s1a_payloads != expected_payloads:
@@ -539,6 +896,18 @@ def inspect_artifact(args: argparse.Namespace) -> Inspection:
                 f"{args.artifact}: S1a payload set is {sorted(inspection.s1a_payloads)}, "
                 f"expected {sorted(expected_payloads)}",
             )
+        expected_paths = set(inspection.expected_attributions)
+        if inspection.found_attributions != expected_paths:
+            raise ArtifactError(
+                f"{args.artifact}: missing S1a package attributions "
+                f"{sorted(expected_paths - inspection.found_attributions)}"
+            )
+        for package, markers in S1A_LICENSE_MARKERS.items():
+            text = b"\n".join(inspection.attribution_text.get(package, []))
+            if not all(marker in text for marker in markers):
+                raise ArtifactError(
+                    f"{args.artifact}: {package} attribution markers are missing"
+                )
     return inspection
 
 
@@ -556,6 +925,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--require-app-imy", action="store_true")
     parser.add_argument("--reject-base-unidic", action="store_true")
     parser.add_argument("--require-s1a", action="store_true")
+    parser.add_argument("--s1a-manifest", type=Path)
     return parser.parse_args()
 
 

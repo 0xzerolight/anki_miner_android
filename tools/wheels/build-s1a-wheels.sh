@@ -40,7 +40,7 @@ build_stage() {
     builder_env="$stage/builder-env"
     python3.13 -m venv --without-pip "$builder_env"
     pip_wheel="$(find "$wheelhouse" -maxdepth 1 -name 'pip-25.1.1-*.whl' -print -quit)"
-    "$builder_env/bin/python" "$pip_wheel/pip" install \
+    PYTHONPATH="$pip_wheel" "$builder_env/bin/python" -m pip install \
         --no-index --only-binary=:all: --find-links "$wheelhouse" \
         build==1.2.2.post1 Jinja2==3.1.6 jsonschema==4.23.0 pyelftools==0.32 \
         PyYAML==6.0.2 setuptools==78.1.1 wheel==0.45.1
@@ -69,4 +69,3 @@ manifest="$("$stage_a/builder-env/bin/python" "$SCRIPT_DIR/s1a_wheels.py" publis
     --expected-recipe-key "$recipe_key" --expected-build-key "$build_key")"
 "$SCRIPT_DIR/s1a_wheels.py" verify-publication --manifest "$manifest"
 echo "Verified S1a wheel manifest: $manifest"
-echo "Gradle keys: -PankiMinerS1aRecipeKey=$recipe_key -PankiMinerS1aBuildKey=$build_key"

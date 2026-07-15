@@ -7,7 +7,7 @@ import argparse
 from email.parser import BytesParser
 from email.policy import compat32
 import hashlib
-from io import BytesIO
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -48,7 +48,11 @@ RECIPE_FILES = (
     "sources.lock",
 )
 RECIPE_TREES = ("patches", "recipes")
-RECIPE_REPO_FILES = ("scripts/android-env.sh", "scripts/android-licenses.sh")
+RECIPE_REPO_FILES = (
+    "scripts/android-env.sh",
+    "scripts/android-licenses.sh",
+    "scripts/check_native_artifacts.py",
+)
 KEY_PATTERN = re.compile(r"[0-9a-f]{64}")
 STAGE_ID_PATTERN = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?")
 WHEEL_SPECS = {
@@ -56,13 +60,17 @@ WHEEL_SPECS = {
     "chaquopy_libmecab": ("0.996", "py3", "none"),
     "fugashi": ("1.5.2", "cp313", "cp313"),
 }
+S1A_NATIVE_PATHS = {
+    "chaquopy_libcxx": "chaquopy/lib/libc++_shared.so",
+    "chaquopy_libmecab": "chaquopy/lib/libmecab.so.2",
+    "fugashi": "fugashi/fugashi.so",
+}
 WHEEL_NAME = re.compile(
     r"^(?P<package>[a-zA-Z0-9_.]+)-(?P<version>[^-]+)-0-"
     r"(?P<python>[^-]+)-(?P<abi_tag>[^-]+)-android_26_"
     r"(?P<platform>arm64_v8a|x86_64)\.whl$",
 )
 PLATFORM_ABI = {"arm64_v8a": "arm64-v8a", "x86_64": "x86_64"}
-ELF_MACHINE_ABI = {"EM_AARCH64": "arm64-v8a", "EM_X86_64": "x86_64"}
 ANDROID_SYSTEM_LIBS = {
     "libandroid.so",
     "libc.so",
@@ -669,61 +677,98 @@ def _wheel_identity(path: Path) -> tuple[str, str]:
 
 
 def _wheel_message(archive: zipfile.ZipFile, package: str, filename: str) -> object:
-    names = [name for name in archive.namelist() if name.endswith(f".dist-info/{filename}")]
+    dist_info = f"{package}-{WHEEL_SPECS[package][0]}.dist-info"
+    expected = f"{dist_info}/{filename}"
+    names = [name for name in archive.namelist() if name == expected]
     if len(names) != 1:
         raise WheelError(f"{package}: expected one {filename} file")
     return BytesParser(policy=compat32).parsebytes(archive.read(names[0]))
+
+
+def _native_artifact_checker():
+    module_name = "_anki_miner_native_artifact_checker"
+    module = sys.modules.get(module_name)
+    if module is not None:
+        return module
+    checker_path = ROOT / "scripts/check_native_artifacts.py"
+    spec = importlib.util.spec_from_file_location(module_name, checker_path)
+    if spec is None or spec.loader is None:
+        raise WheelError(f"cannot load native artifact checker: {checker_path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    try:
+        spec.loader.exec_module(module)
+    except Exception:
+        sys.modules.pop(module_name, None)
+        raise
+    return module
 
 
 def _inspect_elf(data: bytes, logical_name: str, abi: str) -> dict[str, object]:
     for marker in (b"/home/", b"/tmp/", b"/Users/", b"C:\\"):
         if marker in data:
             raise WheelError(f"{logical_name}: absolute build path leaked into ELF")
+    checker = _native_artifact_checker()
     try:
-        from elftools.elf.elffile import ELFFile
-    except ImportError as error:
-        raise WheelError("pyelftools is required to publish S1a wheels") from error
-    try:
-        elf = ELFFile(BytesIO(data))
-        header = elf.header
-        actual_abi = ELF_MACHINE_ABI.get(header["e_machine"])
-        if actual_abi != abi:
-            raise WheelError(f"{logical_name}: ELF ABI is {actual_abi}, expected {abi}")
-        if header["e_type"] != "ET_DYN":
-            raise WheelError(f"{logical_name}: native payload is not ET_DYN")
-        loads = [segment for segment in elf.iter_segments() if segment["p_type"] == "PT_LOAD"]
-        if not loads:
-            raise WheelError(f"{logical_name}: ELF has no LOAD segments")
-        for index, segment in enumerate(loads):
-            alignment = int(segment["p_align"])
-            offset = int(segment["p_offset"])
-            address = int(segment["p_vaddr"])
-            if alignment < 16 * 1024 or (address - offset) % (16 * 1024):
-                raise WheelError(f"{logical_name}: LOAD[{index}] is not 16 KiB compatible")
-        dynamic = elf.get_section_by_name(".dynamic")
-        if dynamic is None:
-            raise WheelError(f"{logical_name}: ELF has no dynamic section")
-        needed: list[str] = []
-        soname = None
-        for tag in dynamic.iter_tags():
-            kind = tag.entry.d_tag
-            if kind == "DT_NEEDED":
-                needed.append(tag.needed)
-            elif kind == "DT_SONAME":
-                soname = tag.soname
-            elif kind in {"DT_RPATH", "DT_RUNPATH", "DT_TEXTREL"}:
-                raise WheelError(f"{logical_name}: forbidden {kind}")
-    except WheelError:
-        raise
+        inspection = checker.Inspection({abi}, ())
+        metadata = checker.parse_elf(
+            data,
+            logical_name,
+            inspection,
+            require_et_dyn=True,
+        )
+    except checker.ArtifactError as error:
+        raise WheelError(str(error)) from error
     except Exception as error:
         raise WheelError(f"{logical_name}: invalid ELF: {error}") from error
     return {
         "path": logical_name,
         "sha256": hashlib.sha256(data).hexdigest(),
         "abi": abi,
-        "soname": soname,
-        "needed": sorted(needed),
+        "soname": metadata.soname,
+        "needed": list(metadata.needed),
     }
+
+
+def _validated_wheel_members(
+    archive: zipfile.ZipFile,
+    wheel_name: str,
+) -> list[zipfile.ZipInfo]:
+    members: list[zipfile.ZipInfo] = []
+    seen: dict[str, bool] = {}
+    for info in archive.infolist():
+        name = info.filename
+        if not name or "\x00" in name or "\\" in name:
+            raise WheelError(f"{wheel_name}: unsafe wheel entry {name!r}")
+        normalized = name[:-1] if name.endswith("/") else name
+        components = normalized.split("/")
+        if (
+            not normalized
+            or normalized.startswith("/")
+            or any(component in {"", ".", ".."} for component in components)
+        ):
+            raise WheelError(f"{wheel_name}: unsafe wheel entry {name!r}")
+        is_directory = info.is_dir()
+        if normalized in seen:
+            kind = "directory/file ambiguity" if seen[normalized] != is_directory else "duplicate"
+            raise WheelError(f"{wheel_name}: {kind} wheel entry {normalized!r}")
+        ancestors = [
+            "/".join(components[:index])
+            for index in range(1, len(components))
+        ]
+        if any(seen.get(ancestor) is False for ancestor in ancestors):
+            raise WheelError(
+                f"{wheel_name}: file/descendant ambiguity at {normalized!r}"
+            )
+        if not is_directory and any(
+            existing.startswith(f"{normalized}/") for existing in seen
+        ):
+            raise WheelError(
+                f"{wheel_name}: file/descendant ambiguity at {normalized!r}"
+            )
+        seen[normalized] = is_directory
+        members.append(info)
+    return members
 
 
 def verify_s1a_wheel(path: Path) -> tuple[str, str, dict[str, object]]:
@@ -733,14 +778,12 @@ def verify_s1a_wheel(path: Path) -> tuple[str, str, dict[str, object]]:
     except zipfile.BadZipFile as error:
         raise WheelError(f"invalid wheel: {path}") from error
     with archive:
-        names = [info.filename for info in archive.infolist() if not info.is_dir()]
+        members = _validated_wheel_members(archive, path.name)
+        names = [info.filename for info in members if not info.is_dir()]
         folded = "\n".join(names).casefold()
         for forbidden in ("sys.dic", "matrix.bin", "unidic_lite", "unidic-lite", "dicdir"):
             if forbidden in folded:
                 raise WheelError(f"{path.name}: bundled dictionary payload {forbidden}")
-        if len(names) != len(set(names)):
-            raise WheelError(f"{path.name}: duplicate archive entries")
-
         message = _wheel_message(archive, package, "METADATA")
         expected_version = WHEEL_SPECS[package][0]
         metadata_name = str(message.get("Name", "")).casefold().replace("-", "_")
@@ -771,8 +814,13 @@ def verify_s1a_wheel(path: Path) -> tuple[str, str, dict[str, object]]:
         license_names = [
             name
             for name in names
-            if ".dist-info/" in name
-            and Path(name).name.upper().startswith(("LICENSE", "COPYING", "COPYRIGHT"))
+            if f"{package}-{expected_version}.dist-info" in Path(name).parts
+            and (
+                Path(name).name.upper().startswith(
+                    ("LICENSE", "COPYING", "COPYRIGHT", "NOTICE")
+                )
+                or (package == "chaquopy_libmecab" and Path(name).name == "BSD")
+            )
         ]
         if not license_names:
             raise WheelError(f"{path.name}: license attribution is missing")
@@ -780,7 +828,7 @@ def verify_s1a_wheel(path: Path) -> tuple[str, str, dict[str, object]]:
             {"path": name, "sha256": hashlib.sha256(archive.read(name)).hexdigest()}
             for name in sorted(license_names)
         ]
-        license_text = b"\n".join(archive.read(name) for name in license_names).casefold()
+        license_text = b"\n".join(archive.read(name) for name in license_names).lower()
         markers = {
             "chaquopy_libcxx": (b"apache license", b"llvm exceptions"),
             "chaquopy_libmecab": (b"taku kudo", b"redistribution"),
@@ -792,18 +840,18 @@ def verify_s1a_wheel(path: Path) -> tuple[str, str, dict[str, object]]:
         elf_names = [name for name in names if ".so" in Path(name).name]
         if len(elf_names) != 1:
             raise WheelError(f"{path.name}: expected one native payload, found {len(elf_names)}")
+        expected_native_path = S1A_NATIVE_PATHS[package]
+        if elf_names[0] != expected_native_path:
+            raise WheelError(
+                f"{path.name}: native payload path is {elf_names[0]!r}, "
+                f"expected {expected_native_path!r}"
+            )
         elf_entry = _inspect_elf(archive.read(elf_names[0]), elf_names[0], abi)
         native_name = Path(elf_names[0]).name
         expected_native = {
             "chaquopy_libcxx": "libc++_shared.so",
             "chaquopy_libmecab": "libmecab.so.2",
         }.get(package)
-        if expected_native is not None and native_name != expected_native:
-            raise WheelError(f"{path.name}: expected {expected_native}, found {native_name}")
-        if package == "fugashi" and not (
-            elf_names[0].startswith("fugashi/") and native_name.startswith("fugashi.")
-        ):
-            raise WheelError(f"{path.name}: Fugashi extension path is unexpected")
         expected_soname = expected_native if package != "fugashi" else None
         if elf_entry["soname"] != expected_soname:
             raise WheelError(f"{path.name}: SONAME is {elf_entry['soname']!r}")
@@ -918,10 +966,18 @@ def _validate_publication_document(
         raise WheelError("publication builder identity hash mismatch")
     if build_key(recipe, identity) != build:
         raise WheelError("publication build key does not match its canonical builder identity")
-    if require_current_recipe and recipe != source_recipe_key():
-        raise WheelError(f"obsolete S1a publication recipe key: {recipe}")
-    if require_current_recipe and document.get("recipe_inventory") != recipe_inventory():
-        raise WheelError("publication recipe inventory differs from current inputs")
+    if require_current_recipe:
+        current_identity = builder_identity()
+        if identity != current_identity:
+            raise WheelError("publication builder identity differs from the active builder")
+        current_recipe = source_recipe_key()
+        if recipe != current_recipe:
+            raise WheelError(f"obsolete S1a publication recipe key: {recipe}")
+        current_build = build_key(current_recipe, current_identity)
+        if build != current_build:
+            raise WheelError(f"obsolete S1a publication build key: {build}")
+        if document.get("recipe_inventory") != recipe_inventory():
+            raise WheelError("publication recipe inventory differs from current inputs")
     if manifest.name != "manifest.json" or manifest.parent.name != f"s1a-wheels-{build}":
         raise WheelError("publication parent directory does not match its build key")
     if document.get("api_level") != API_LEVEL:
@@ -955,9 +1011,11 @@ def _validate_publication_document(
             if wheel.parent != manifest.parent.resolve() or not wheel.is_file():
                 raise WheelError(f"publication wheel path is invalid: {filename}")
             verify_file(wheel, expected_hash)
-            elf = raw_entry.get("elf")
-            if not isinstance(elf, dict) or elf.get("abi") != abi:
-                raise WheelError(f"publication ELF ABI mismatch: {filename}")
+            inspected_package, inspected_abi, inspected_entry = verify_s1a_wheel(wheel)
+            if inspected_package != package or inspected_abi != abi:
+                raise WheelError(f"publication wheel identity mismatch: {filename}")
+            if inspected_entry != raw_entry:
+                raise WheelError(f"publication wheel inventory mismatch: {filename}")
             if package not in {name.replace("-", "_") for name in PACKAGES}:
                 raise WheelError(f"unexpected publication package: {package}")
     actual_names = {path.name for path in manifest.parent.glob("*.whl")}

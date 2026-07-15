@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import struct
 import sys
 import tarfile
 import tempfile
@@ -23,6 +24,117 @@ SPEC = importlib.util.spec_from_file_location("s1a_wheels", MODULE_PATH)
 assert SPEC is not None and SPEC.loader is not None
 s1a_wheels = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(s1a_wheels)
+
+
+def dynamic_elf(*, soname: str | None, needed: tuple[str, ...]) -> bytes:
+    strings = bytearray(b"\0")
+    offsets: dict[str, int] = {}
+    for value in (*needed, *((soname,) if soname else ())):
+        if value not in offsets:
+            offsets[value] = len(strings)
+            strings.extend(value.encode("ascii") + b"\0")
+    dynamic_count = 3 + len(needed) + (1 if soname else 0)
+    dynamic_offset = 64 + 56 * 2
+    string_offset = dynamic_offset + dynamic_count * 16
+    base_address = 0x4000
+    data = bytearray(string_offset + len(strings))
+    data[:16] = b"\x7fELF\x02\x01\x01" + bytes(9)
+    struct.pack_into(
+        "<HHIQQQIHHHHHH",
+        data,
+        16,
+        3,
+        62,
+        1,
+        0,
+        64,
+        0,
+        0,
+        64,
+        56,
+        2,
+        0,
+        0,
+        0,
+    )
+    struct.pack_into(
+        "<IIQQQQQQ",
+        data,
+        64,
+        1,
+        5,
+        0,
+        base_address,
+        0,
+        len(data),
+        len(data),
+        16 * 1024,
+    )
+    struct.pack_into(
+        "<IIQQQQQQ",
+        data,
+        120,
+        2,
+        4,
+        dynamic_offset,
+        base_address + dynamic_offset,
+        0,
+        dynamic_count * 16,
+        dynamic_count * 16,
+        8,
+    )
+    entries = [
+        (5, base_address + string_offset),
+        (10, len(strings)),
+        *((1, offsets[value]) for value in needed),
+    ]
+    if soname:
+        entries.append((14, offsets[soname]))
+    entries.append((0, 0))
+    for index, entry in enumerate(entries):
+        struct.pack_into("<qQ", data, dynamic_offset + index * 16, *entry)
+    data[string_offset:] = strings
+    return bytes(data)
+
+
+S1A_VALID_WHEEL_CASES = {
+    "chaquopy_libcxx": {
+        "filename": "chaquopy_libcxx-190000-0-py3-none-android_26_x86_64.whl",
+        "version": "190000",
+        "tag": "py3-none-android_26_x86_64",
+        "requirements": (),
+        "license": ("LICENSE.TXT", b"Apache License with LLVM Exceptions\n"),
+        "native": (
+            "chaquopy/lib/libc++_shared.so",
+            "libc++_shared.so",
+            ("libc.so",),
+        ),
+    },
+    "chaquopy_libmecab": {
+        "filename": "chaquopy_libmecab-0.996-0-py3-none-android_26_x86_64.whl",
+        "version": "0.996",
+        "tag": "py3-none-android_26_x86_64",
+        "requirements": ("chaquopy-libcxx",),
+        "license": ("BSD", b"Taku Kudo redistribution terms\n"),
+        "native": (
+            "chaquopy/lib/libmecab.so.2",
+            "libmecab.so.2",
+            ("libc++_shared.so", "libc.so"),
+        ),
+    },
+    "fugashi": {
+        "filename": "fugashi-1.5.2-0-cp313-cp313-android_26_x86_64.whl",
+        "version": "1.5.2",
+        "tag": "cp313-cp313-android_26_x86_64",
+        "requirements": ("chaquopy-libcxx", "chaquopy-libmecab"),
+        "license": ("LICENSE", b"Permission is hereby granted to use Fugashi\n"),
+        "native": (
+            "fugashi/fugashi.so",
+            None,
+            ("libc++_shared.so", "libmecab.so.2", "libpython3.13.so", "libc.so"),
+        ),
+    },
+}
 
 
 class S1aWheelToolTests(unittest.TestCase):
@@ -44,6 +156,38 @@ class S1aWheelToolTests(unittest.TestCase):
     def tearDown(self) -> None:
         os.umask(self.previous_umask)
         self.environment.stop()
+
+    @staticmethod
+    def _write_valid_s1a_wheel(
+        root: Path,
+        package: str,
+        *,
+        native_path: str | None = None,
+    ) -> Path:
+        case = S1A_VALID_WHEEL_CASES[package]
+        wheel = root / case["filename"]
+        dist_info = f"{package}-{case['version']}.dist-info"
+        metadata = [
+            "Metadata-Version: 2.1",
+            f"Name: {package.replace('_', '-')}",
+            f"Version: {case['version']}",
+            *(f"Requires-Dist: {value}" for value in case["requirements"]),
+            "",
+        ]
+        canonical_native_path, soname, needed = case["native"]
+        license_name, license_text = case["license"]
+        with zipfile.ZipFile(wheel, "w") as archive:
+            archive.writestr(f"{dist_info}/METADATA", "\n".join(metadata))
+            archive.writestr(
+                f"{dist_info}/WHEEL",
+                f"Wheel-Version: 1.0\nTag: {case['tag']}\n",
+            )
+            archive.writestr(f"{dist_info}/{license_name}", license_text)
+            archive.writestr(
+                native_path or canonical_native_path,
+                dynamic_elf(soname=soname, needed=needed),
+            )
+        return wheel
 
     def _fake_wheel_set(self, dist: Path, payload_suffix: bytes = b"") -> list[Path]:
         filenames = []
@@ -167,6 +311,47 @@ class S1aWheelToolTests(unittest.TestCase):
             text=True,
         )
         self.assertEqual(self.recipe, result.stdout.strip())
+
+    def test_locked_pip_wheel_bootstraps_a_clean_pipless_venv(self) -> None:
+        build_script = (ROOT / "tools/wheels/build-s1a-wheels.sh").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn(
+            'PYTHONPATH="$pip_wheel" "$builder_env/bin/python" -m pip install',
+            build_script,
+        )
+        self.assertNotIn('"$pip_wheel/pip"', build_script)
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            environment = root / "builder-env"
+            subprocess.run(
+                ["python3.13", "-m", "venv", "--without-pip", str(environment)],
+                check=True,
+            )
+            python = environment / "bin/python"
+            missing = subprocess.run(
+                [str(python), "-m", "pip", "--version"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertNotEqual(0, missing.returncode)
+            pip_wheel = root / "pip-25.1.1-py3-none-any.whl"
+            with zipfile.ZipFile(pip_wheel, "w") as archive:
+                archive.writestr("pip/__init__.py", '__version__ = "25.1.1"\n')
+                archive.writestr(
+                    "pip/__main__.py",
+                    "from pip import __version__\nprint(__version__)\n",
+                )
+            bootstrapped = subprocess.run(
+                [str(python), "-m", "pip", "--version"],
+                env={**os.environ, "PYTHONPATH": str(pip_wheel)},
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(0, bootstrapped.returncode, bootstrapped.stderr)
+            self.assertEqual("25.1.1", bootstrapped.stdout.strip())
 
     def test_builder_identity_and_build_key_cover_required_host_tools(self) -> None:
         self.assertEqual("cpython", self.identity["python"]["implementation"])
@@ -389,6 +574,120 @@ class S1aWheelToolTests(unittest.TestCase):
             with self.assertRaisesRegex(s1a_wheels.WheelError, "dictionary"):
                 s1a_wheels.verify_s1a_wheel(wheel)
 
+    def test_wheel_verifier_accepts_exact_package_attributions_and_native_payloads(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for package, case in S1A_VALID_WHEEL_CASES.items():
+                with self.subTest(package=package):
+                    wheel = self._write_valid_s1a_wheel(root, package)
+                    dist_info = f"{package}-{case['version']}.dist-info"
+                    license_name, _ = case["license"]
+                    verified_package, abi, entry = s1a_wheels.verify_s1a_wheel(wheel)
+                    self.assertEqual((package, "x86_64"), (verified_package, abi))
+                    self.assertEqual(f"{dist_info}/{license_name}", entry["licenses"][0]["path"])
+
+    def test_wheel_verifier_rejects_native_payloads_outside_exact_paths(self) -> None:
+        wrong_paths = {
+            "chaquopy_libcxx": "deeper/chaquopy/lib/libc++_shared.so",
+            "chaquopy_libmecab": "chaquopy/lib/deeper/libmecab.so.2",
+            "fugashi": "fugashi/deeper/fugashi.so",
+        }
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for package, native_path in wrong_paths.items():
+                with self.subTest(package=package, native_path=native_path):
+                    wheel = self._write_valid_s1a_wheel(
+                        root,
+                        package,
+                        native_path=native_path,
+                    )
+                    with self.assertRaisesRegex(
+                        s1a_wheels.WheelError,
+                        "native payload path",
+                    ):
+                        s1a_wheels.verify_s1a_wheel(wheel)
+
+    def test_wheel_members_reject_unsafe_and_ambiguous_paths(self) -> None:
+        class FakeInfo:
+            def __init__(self, filename: str, directory: bool = False):
+                self.filename = filename
+                self._directory = directory
+
+            def is_dir(self) -> bool:
+                return self._directory
+
+        class FakeArchive:
+            def __init__(self, entries):
+                self.entries = entries
+
+            def infolist(self):
+                return self.entries
+
+        for unsafe in ("", "../escape", "a/../escape", "a\\b", "/absolute", "a//b", "a/./b"):
+            with self.subTest(unsafe=unsafe), self.assertRaisesRegex(
+                s1a_wheels.WheelError, "unsafe wheel entry"
+            ):
+                s1a_wheels._validated_wheel_members(
+                    FakeArchive([FakeInfo(unsafe)]),
+                    "fixture.whl",
+                )
+        with self.assertRaisesRegex(s1a_wheels.WheelError, "ambiguity"):
+            s1a_wheels._validated_wheel_members(
+                FakeArchive([FakeInfo("same"), FakeInfo("same/", True)]),
+                "fixture.whl",
+            )
+        for entries in (
+            [FakeInfo("fugashi"), FakeInfo("fugashi/fugashi.so")],
+            [FakeInfo("fugashi/fugashi.so"), FakeInfo("fugashi")],
+        ):
+            with self.subTest(order=[entry.filename for entry in entries]):
+                with self.assertRaisesRegex(
+                    s1a_wheels.WheelError,
+                    "file/descendant ambiguity",
+                ):
+                    s1a_wheels._validated_wheel_members(
+                        FakeArchive(entries),
+                        "fixture.whl",
+                    )
+
+    def test_wheel_elf_inspection_rejects_wrong_class_and_endianness(self) -> None:
+        def elf64(*, elf_class: int = 2, data_encoding: int = 1) -> bytes:
+            data = bytearray(64 + 56)
+            data[:16] = b"\x7fELF" + bytes((elf_class, data_encoding, 1)) + bytes(9)
+            struct.pack_into(
+                "<HHIQQQIHHHHHH",
+                data,
+                16,
+                3,
+                62,
+                1,
+                0,
+                64,
+                0,
+                0,
+                64,
+                56,
+                1,
+                0,
+                0,
+                0,
+            )
+            struct.pack_into(
+                "<IIQQQQQQ", data, 64, 1, 5, 0, 0, 0, len(data), len(data), 16384
+            )
+            return bytes(data)
+
+        with self.assertRaisesRegex(s1a_wheels.WheelError, "requires ELF class"):
+            s1a_wheels._inspect_elf(elf64(elf_class=1), "wrong-class.so", "x86_64")
+        with self.assertRaisesRegex(s1a_wheels.WheelError, "little-endian"):
+            s1a_wheels._inspect_elf(
+                elf64(data_encoding=2),
+                "big-endian.so",
+                "x86_64",
+            )
+
     def test_publication_requires_two_identical_validated_stages(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -414,11 +713,25 @@ class S1aWheelToolTests(unittest.TestCase):
                 {path.name for path in wheels},
                 {path.name for path in manifest_path.parent.glob("*.whl")},
             )
-            keys = s1a_wheels.verify_publication(manifest_path)
+            with mock.patch.object(
+                s1a_wheels, "verify_s1a_wheel", side_effect=self._fake_verify
+            ):
+                keys = s1a_wheels.verify_publication(manifest_path)
             self.assertEqual(
                 {"schema": 2, "recipe_key": self.recipe, "build_key": self.build},
                 keys,
             )
+            with self.assertRaisesRegex(s1a_wheels.WheelError, "invalid wheel"):
+                s1a_wheels.verify_publication(manifest_path)
+            document["wheels"]["x86_64"][0]["size"] += 1
+            manifest_path.write_text(json.dumps(document), encoding="utf-8")
+            with (
+                mock.patch.object(
+                    s1a_wheels, "verify_s1a_wheel", side_effect=self._fake_verify
+                ),
+                self.assertRaisesRegex(s1a_wheels.WheelError, "inventory mismatch"),
+            ):
+                s1a_wheels.verify_publication(manifest_path)
             with (
                 mock.patch.object(s1a_wheels, "builder_identity", return_value=self.identity),
                 mock.patch.object(s1a_wheels, "verify_s1a_wheel", side_effect=self._fake_verify),
@@ -485,6 +798,40 @@ class S1aWheelToolTests(unittest.TestCase):
             with self.assertRaisesRegex(s1a_wheels.WheelError, "parent directory"):
                 s1a_wheels.verify_publication(moved / "manifest.json")
 
+    def test_self_consistent_foreign_builder_publication_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            stage_a, _ = self._fake_stage(root, "clean-a")
+            stage_b, _ = self._fake_stage(root, "clean-b")
+            with (
+                mock.patch.object(s1a_wheels, "builder_identity", return_value=self.identity),
+                mock.patch.object(
+                    s1a_wheels, "verify_s1a_wheel", side_effect=self._fake_verify
+                ),
+            ):
+                manifest = s1a_wheels.publish(
+                    stage_a,
+                    stage_b,
+                    root / "published",
+                    self.recipe,
+                    self.build,
+                )
+            document = json.loads(manifest.read_text(encoding="utf-8"))
+            foreign = json.loads(json.dumps(self.identity))
+            foreign["tools"]["bash"] += " foreign"
+            foreign_build = s1a_wheels.build_key(self.recipe, foreign)
+            document["builder_identity"] = foreign
+            document["builder_identity_sha256"] = hashlib.sha256(
+                s1a_wheels._canonical_json(foreign)
+            ).hexdigest()
+            document["build_key"] = foreign_build
+            foreign_parent = manifest.parent.with_name(f"s1a-wheels-{foreign_build}")
+            manifest.parent.rename(foreign_parent)
+            foreign_manifest = foreign_parent / "manifest.json"
+            foreign_manifest.write_text(json.dumps(document), encoding="utf-8")
+            with self.assertRaisesRegex(s1a_wheels.WheelError, "active builder"):
+                s1a_wheels.verify_publication(foreign_manifest)
+
     def test_failed_publication_leaves_no_partial_directory(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -508,14 +855,16 @@ class S1aWheelToolTests(unittest.TestCase):
                 )
             self.assertFalse((root / "published").exists())
 
-    def test_gradle_requires_manifest_recipe_and_build_keys(self) -> None:
+    def test_gradle_recomputes_publication_identity_without_caller_keys(self) -> None:
         gradle = (ROOT / "app/build.gradle.kts").read_text(encoding="utf-8")
         self.assertIn('gradleProperty("ankiMinerS1aManifest")', gradle)
-        self.assertIn('gradleProperty("ankiMinerS1aRecipeKey")', gradle)
-        self.assertIn('gradleProperty("ankiMinerS1aBuildKey")', gradle)
+        self.assertNotIn('gradleProperty("ankiMinerS1aRecipeKey")', gradle)
+        self.assertNotIn('gradleProperty("ankiMinerS1aBuildKey")', gradle)
+        self.assertIn('"verify-publication"', gradle)
+        self.assertIn("providers.exec", gradle)
         self.assertIn('document["schema"] == 2', gradle)
-        self.assertIn('recipeKey == s1aRecipeKeyProperty.get()', gradle)
-        self.assertIn('buildKey == s1aBuildKeyProperty.get()', gradle)
+        self.assertIn('recipeKey == verification["recipe_key"]', gradle)
+        self.assertIn('buildKey == verification["build_key"]', gradle)
         self.assertIn('"s1a-wheels-$buildKey"', gradle)
 
 

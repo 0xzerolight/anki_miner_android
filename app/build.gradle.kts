@@ -12,18 +12,7 @@ val pythonVersion = libs.versions.python.get()
 val pythonTargetVersion = "3.13.9-0"
 val androidNdkVersion = "28.2.13676358"
 val s1aManifestProperty = providers.gradleProperty("ankiMinerS1aManifest")
-val s1aRecipeKeyProperty = providers.gradleProperty("ankiMinerS1aRecipeKey")
-val s1aBuildKeyProperty = providers.gradleProperty("ankiMinerS1aBuildKey")
-val s1aPropertyPresence =
-    listOf(
-        s1aManifestProperty.isPresent,
-        s1aRecipeKeyProperty.isPresent,
-        s1aBuildKeyProperty.isPresent,
-    )
-require(s1aPropertyPresence.all { it == s1aPropertyPresence.first() }) {
-    "S1a requires ankiMinerS1aManifest, ankiMinerS1aRecipeKey, and ankiMinerS1aBuildKey together"
-}
-val s1aEnabled = s1aPropertyPresence.first()
+val s1aEnabled = s1aManifestProperty.isPresent
 
 data class S1aWheels(val byAbi: Map<String, List<File>>)
 
@@ -44,14 +33,31 @@ fun loadS1aWheels(): S1aWheels {
     val manifest = file(s1aManifestProperty.get()).canonicalFile
     require(manifest.isFile) { "S1a wheel manifest not found: $manifest" }
     require(manifest.name == "manifest.json") { "S1a wheel manifest filename must be manifest.json" }
+    // Publications are intentionally portable only across byte-identical active builder identities.
+    // Recompute that identity here so direct Gradle invocation cannot bypass the publication gate.
+    val verificationOutput =
+        providers.exec {
+            commandLine(
+                "python3.13",
+                rootProject.file("tools/wheels/s1a_wheels.py").absolutePath,
+                "verify-publication",
+                "--manifest",
+                manifest.absolutePath,
+            )
+        }.standardOutput.asText.get().trim()
+    val verification = JsonSlurper().parseText(verificationOutput) as Map<*, *>
+    require(verification.keys == setOf("schema", "recipe_key", "build_key")) {
+        "Unexpected S1a publication verification result"
+    }
+    require(verification["schema"] == 2) { "Unsupported verified S1a wheel manifest schema" }
     val document = JsonSlurper().parse(manifest) as Map<*, *>
     require(document["schema"] == 2) { "Unsupported S1a wheel manifest schema" }
     val recipeKey = document["recipe_key"] as? String ?: error("S1a recipe key missing")
     val buildKey = document["build_key"] as? String ?: error("S1a build key missing")
     require(recipeKey.matches(Regex("[0-9a-f]{64}"))) { "Invalid S1a recipe key" }
     require(buildKey.matches(Regex("[0-9a-f]{64}"))) { "Invalid S1a build key" }
-    require(recipeKey == s1aRecipeKeyProperty.get()) { "S1a manifest recipe key is stale" }
-    require(buildKey == s1aBuildKeyProperty.get()) { "S1a manifest build key is stale" }
+    require(recipeKey == verification["recipe_key"]) { "S1a manifest recipe key is stale" }
+    require(buildKey == verification["build_key"]) { "S1a manifest build key is stale" }
     require(manifest.parentFile.name == "s1a-wheels-$buildKey") {
         "S1a manifest is not in its immutable build-key directory"
     }
