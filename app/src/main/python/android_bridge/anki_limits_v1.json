@@ -1,0 +1,78 @@
+{
+  "schemaVersion": 1,
+  "units": {
+    "codePoints": "Unicode scalar values counted by JSON Schema maxLength",
+    "items": "array entries",
+    "utf8Bytes": "bytes after strict UTF-8 encoding of the decoded string or complete JSON envelope"
+  },
+  "names": {
+    "deck": {"maxCodePoints": 1024, "maxUtf8Bytes": 1024},
+    "model": {"maxCodePoints": 1024, "maxUtf8Bytes": 1024},
+    "field": {"maxCodePoints": 256, "maxUtf8Bytes": 256},
+    "targetFields": {"maxItems": 64, "maxTotalUtf8Bytes": 16384},
+    "excludedDecks": {"maxItems": 256, "maxTotalUtf8Bytes": 65536}
+  },
+  "targetModel": {
+    "allowedType": 0,
+    "maxTemplates": 64
+  },
+  "verifyTarget": {
+    "requestEnvelopeMaxUtf8Bytes": 65536,
+    "resultEnvelopeMaxUtf8Bytes": 65536
+  },
+  "scanFirstFields": {
+    "requestEnvelopeMaxUtf8Bytes": 16777216,
+    "resultEnvelopeMaxUtf8Bytes": 2097152,
+    "duplicateKeyMaxCodePoints": 4096,
+    "duplicateFirstFieldMaxCodePoints": 16384,
+    "duplicateCandidatesMaxItems": 100,
+    "duplicateHitsPerCandidateMaxItems": 100,
+    "duplicateHitsTotalMaxItems": 1000,
+    "firstFieldMaxCodePoints": 65536,
+    "firstFieldMaxUtf8Bytes": 65536,
+    "duplicateHitsTotalMaxUtf8Bytes": 1048576,
+    "knownPageMaxItems": 256,
+    "knownPageMaxUtf8Bytes": 262144,
+    "knownTotalScannedNotes": 100000,
+    "knownCursorMaxCodePoints": 1024,
+    "knownCursorMaxUtf8Bytes": 1024
+  },
+  "storeMedia": {
+    "requestEnvelopeMaxUtf8Bytes": 2097152,
+    "resultEnvelopeMaxUtf8Bytes": 524288,
+    "maxAssets": 50,
+    "maxAssetBytes": 67108864,
+    "maxTotalBytes": 67108864,
+    "filenameMaxCodePoints": 1024,
+    "filenameMaxUtf8Bytes": 1024,
+    "sourcePathMaxCodePoints": 4096,
+    "sourcePathMaxUtf8Bytes": 4096
+  },
+  "createNotes": {
+    "requestEnvelopeMaxUtf8Bytes": 524288,
+    "resultEnvelopeMaxUtf8Bytes": 524288,
+    "maxNotes": 100,
+    "maxFieldsPerNote": 64,
+    "maxCardsPerNote": 64,
+    "fieldNameMaxUtf8Bytes": 256,
+    "fieldValueMaxCodePoints": 98304,
+    "fieldValueMaxUtf8Bytes": 98304,
+    "maxTagsPerNote": 64,
+    "tagMaxCodePoints": 256,
+    "tagMaxUtf8Bytes": 256,
+    "tagsPerNoteMaxUtf8Bytes": 8192,
+    "noteContentMaxUtf8Bytes": 131072,
+    "callbackContentMaxUtf8Bytes": 393216
+  },
+  "releaseRunState": {
+    "requestEnvelopeMaxUtf8Bytes": 16384,
+    "resultEnvelopeMaxUtf8Bytes": 16384
+  },
+  "createCall": {
+    "maxSourceItems": 2000,
+    "sourceMaxUtf8Bytes": 16777216,
+    "builtNotesMaxUtf8Bytes": 16777216,
+    "maxMediaReferences": 8000,
+    "mediaWorkMaxBytes": 536870912
+  }
+}
