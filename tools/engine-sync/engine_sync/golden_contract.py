@@ -10,7 +10,7 @@ import stat
 import subprocess
 import sys
 import tempfile
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Sequence
@@ -22,6 +22,7 @@ SCHEMA_VERSION = 1
 TOOL_NAME = "anki-miner-engine-golden-dumper"
 TOOL_VERSION = "1"
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+ASSET_NAME_RE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 UNIDIC_FEATURE_FIELDS = (
     "pos1",
     "pos2",
@@ -69,15 +70,25 @@ RUNTIME_DISTRIBUTIONS = (
     "Pillow",
     "lxml",
     "charset-normalizer",
+    "certifi",
+    "idna",
+    "urllib3",
+    "PyQt6",
+    "PyQt6-Qt6",
+    "PyQt6-sip",
 )
 RESERVED_UNIDIC_ASSET = "unidic_dicdir"
 CASE_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
-CORPUS_EXPECTATION_FIELDS = {
+CORPUS_EXPECTATION_FIELDS = {"token", "word"}
+TOKEN_EXPECTATION_FIELDS = {"surface", "lemma", "orthBase", "is_unknown"}
+WORD_EXPECTATION_FIELDS = {
     "surface",
     "lemma",
-    "orthBase",
-    "mining_base",
-    "is_unknown",
+    "orth_base",
+    "mined_form",
+    "surface_start",
+    "surface_end",
+    "highlight_end",
 }
 ACTIVE_WORD_FIELDS = {
     "surface",
@@ -103,6 +114,7 @@ INACTIVE_CASE_SECTIONS = (
     "pitch",
     "cards",
 )
+ACTIVE_CASE_SECTIONS = ("tokenization", "morphology", "compounds")
 
 
 class GoldenContractError(EngineSyncError):
@@ -126,6 +138,14 @@ def sha256_bytes(value: bytes) -> str:
 
 
 def sha256_file(path: Path) -> str:
+    try:
+        file_stat = path.lstat()
+    except OSError as exc:
+        raise GoldenContractError(f"cannot inspect file {path}: {exc}") from exc
+    if stat.S_ISLNK(file_stat.st_mode):
+        raise GoldenContractError(f"golden inputs may not contain symlinks: {path}")
+    if not stat.S_ISREG(file_stat.st_mode):
+        raise GoldenContractError(f"golden input is not a regular file: {path}")
     digest = hashlib.sha256()
     try:
         with path.open("rb") as stream:
@@ -136,20 +156,47 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _tree_files(root: Path) -> list[Path]:
-    if not root.is_dir():
+def _tree_files(root: Path) -> Iterable[Path]:
+    try:
+        root_stat = root.lstat()
+    except OSError as exc:
+        raise GoldenContractError(f"cannot inspect tree {root}: {exc}") from exc
+    if stat.S_ISLNK(root_stat.st_mode):
+        raise GoldenContractError(f"golden inputs may not contain symlinks: {root}")
+    if not stat.S_ISDIR(root_stat.st_mode):
         raise GoldenContractError(f"tree does not exist: {root}")
-    files: list[Path] = []
-    for path in sorted(root.rglob("*")):
-        if path.is_symlink():
-            raise GoldenContractError(f"golden inputs may not contain symlinks: {path}")
-        if (
-            path.is_file()
-            and "__pycache__" not in path.parts
-            and not path.name.endswith((".pyc", ".pyo"))
-        ):
-            files.append(path)
-    return files
+
+    for current, directory_names, file_names in os.walk(root, followlinks=False):
+        current_path = Path(current)
+        kept_directories: list[str] = []
+        for name in sorted(directory_names):
+            path = current_path / name
+            entry_stat = path.lstat()
+            if stat.S_ISLNK(entry_stat.st_mode):
+                raise GoldenContractError(
+                    f"golden inputs may not contain symlinks: {path}"
+                )
+            if not stat.S_ISDIR(entry_stat.st_mode):
+                raise GoldenContractError(
+                    f"golden tree entry is not a directory: {path}"
+                )
+            if name != "__pycache__":
+                kept_directories.append(name)
+        directory_names[:] = kept_directories
+
+        for name in sorted(file_names):
+            path = current_path / name
+            entry_stat = path.lstat()
+            if stat.S_ISLNK(entry_stat.st_mode):
+                raise GoldenContractError(
+                    f"golden inputs may not contain symlinks: {path}"
+                )
+            if not stat.S_ISREG(entry_stat.st_mode):
+                raise GoldenContractError(
+                    f"golden tree entry is not a regular file: {path}"
+                )
+            if not name.endswith((".pyc", ".pyo")):
+                yield path
 
 
 def sha256_tree(root: Path) -> str:
@@ -158,7 +205,21 @@ def sha256_tree(root: Path) -> str:
     digest = hashlib.sha256()
     for path in _tree_files(root):
         relative = path.relative_to(root).as_posix().encode("utf-8")
-        content = path.read_bytes()
+        try:
+            entry_stat = path.lstat()
+            if stat.S_ISLNK(entry_stat.st_mode):
+                raise GoldenContractError(
+                    f"golden inputs may not contain symlinks: {path}"
+                )
+            if not stat.S_ISREG(entry_stat.st_mode):
+                raise GoldenContractError(
+                    f"golden tree entry is not a regular file: {path}"
+                )
+            content = path.read_bytes()
+        except GoldenContractError:
+            raise
+        except OSError as exc:
+            raise GoldenContractError(f"cannot hash {path}: {exc}") from exc
         digest.update(len(relative).to_bytes(8, "big"))
         digest.update(relative)
         digest.update(len(content).to_bytes(8, "big"))
@@ -167,9 +228,58 @@ def sha256_tree(root: Path) -> str:
 
 
 def sha256_path(path: Path) -> str:
-    if path.is_file():
+    try:
+        path_stat = path.lstat()
+    except OSError as exc:
+        raise GoldenContractError(f"cannot inspect golden input {path}: {exc}") from exc
+    if stat.S_ISLNK(path_stat.st_mode):
+        raise GoldenContractError(f"golden inputs may not contain symlinks: {path}")
+    if stat.S_ISREG(path_stat.st_mode):
         return sha256_file(path)
-    return sha256_tree(path)
+    if stat.S_ISDIR(path_stat.st_mode):
+        return sha256_tree(path)
+    raise GoldenContractError(f"golden input has unsupported type: {path}")
+
+
+def _normalize_existing_path(path: Path, *, label: str, kind: str) -> Path:
+    unresolved = path.expanduser().absolute()
+    try:
+        path_stat = unresolved.lstat()
+    except OSError as exc:
+        raise GoldenContractError(f"{label} does not exist: {unresolved}") from exc
+    if stat.S_ISLNK(path_stat.st_mode):
+        raise GoldenContractError(f"{label} must not be a symlink: {unresolved}")
+    valid = {
+        "file": stat.S_ISREG(path_stat.st_mode),
+        "directory": stat.S_ISDIR(path_stat.st_mode),
+        "asset": stat.S_ISREG(path_stat.st_mode) or stat.S_ISDIR(path_stat.st_mode),
+    }
+    if kind not in valid:
+        raise AssertionError(f"unsupported path kind: {kind}")
+    if not valid[kind]:
+        expected = "a regular file or directory" if kind == "asset" else f"a {kind}"
+        raise GoldenContractError(f"{label} must be {expected}: {unresolved}")
+    try:
+        return unresolved.resolve(strict=True)
+    except OSError as exc:
+        raise GoldenContractError(f"cannot resolve {label}: {unresolved}") from exc
+
+
+def _normalize_output_path(path: Path) -> Path:
+    unresolved = path.expanduser().absolute()
+    try:
+        output_stat = unresolved.lstat()
+    except FileNotFoundError:
+        return unresolved
+    except OSError as exc:
+        raise GoldenContractError(
+            f"cannot inspect --output {unresolved}: {exc}"
+        ) from exc
+    if stat.S_ISLNK(output_stat.st_mode):
+        raise GoldenContractError(f"--output must not be a symlink: {unresolved}")
+    if not stat.S_ISREG(output_stat.st_mode):
+        raise GoldenContractError(f"--output must be a regular file: {unresolved}")
+    return unresolved
 
 
 def _git(root: Path, *args: str) -> str:
@@ -302,18 +412,10 @@ def _working_package_entries(
     return files, directories
 
 
-def _canonical_tree_hash(files: Mapping[str, bytes]) -> str:
-    digest = hashlib.sha256()
-    for relative, content in sorted(files.items()):
-        encoded = relative.encode("utf-8")
-        digest.update(len(encoded).to_bytes(8, "big"))
-        digest.update(encoded)
-        digest.update(len(content).to_bytes(8, "big"))
-        digest.update(content)
-    return digest.hexdigest()
-
-
 def verify_engine_root(engine_root: Path, expected_revision: str) -> str:
+    engine_root = _normalize_existing_path(
+        engine_root, label="--engine-root", kind="directory"
+    )
     package = engine_root / "anki_miner"
     revision = _git(engine_root, "rev-parse", "HEAD")
     if revision != expected_revision:
@@ -335,7 +437,7 @@ def verify_engine_root(engine_root: Path, expected_revision: str) -> str:
     if any(
         (missing_files, unexpected_files, missing_directories, unexpected_directories)
     ):
-        changes = []
+        changes: list[str] = []
         for label, paths in (
             ("missing file", missing_files),
             ("unexpected file", unexpected_files),
@@ -357,7 +459,7 @@ def verify_engine_root(engine_root: Path, expected_revision: str) -> str:
             "engine checkout content differs from pinned Git tree: "
             + ", ".join(f"anki_miner/{path}" for path in sorted(modified))
         )
-    return _canonical_tree_hash(actual_files)
+    return sha256_tree(package)
 
 
 def _expect_dict(value: Any, label: str, keys: set[str]) -> dict[str, Any]:
@@ -396,12 +498,12 @@ def _load_corpus(path: Path) -> list[dict[str, Any]]:
         label = f"corpus.cases[{index}]"
         if not isinstance(raw_case, dict):
             raise GoldenContractError(f"{label} must be an object")
-        required = {"id", "text", "coverage"}
-        allowed = required | {"expect", "dictionary_terms"}
+        required = {"id", "text", "coverage", "expect"}
+        allowed = required | {"dictionary_terms"}
         if not required <= set(raw_case) or not set(raw_case) <= allowed:
             raise GoldenContractError(
                 f"{label} must contain {sorted(required)} and only optional "
-                "expect/dictionary_terms"
+                "dictionary_terms"
             )
         case_id = _expect_non_empty_string(raw_case["id"], f"{label}.id")
         if CASE_ID_RE.fullmatch(case_id) is None or case_id in seen:
@@ -422,33 +524,72 @@ def _load_corpus(path: Path) -> list[dict[str, Any]]:
                 f"{label}.coverage must contain unique non-empty strings"
             )
 
-        expectation = raw_case.get("expect")
-        if expectation is not None:
+        expectation = raw_case["expect"]
+        if (
+            not isinstance(expectation, dict)
+            or not expectation
+            or not set(expectation) <= CORPUS_EXPECTATION_FIELDS
+        ):
+            raise GoldenContractError(
+                f"{label}.expect must define only frozen token/word expectations"
+            )
+
+        token_expectation = expectation.get("token")
+        if "token" in expectation:
             if (
-                not isinstance(expectation, dict)
-                or "surface" not in expectation
-                or not set(expectation) <= CORPUS_EXPECTATION_FIELDS
+                not isinstance(token_expectation, dict)
+                or "surface" not in token_expectation
+                or not set(token_expectation) <= TOKEN_EXPECTATION_FIELDS
             ):
                 raise GoldenContractError(
-                    f"{label}.expect requires surface and only frozen expectation fields"
+                    f"{label}.expect.token requires surface and only frozen fields"
                 )
-            _expect_non_empty_string(expectation["surface"], f"{label}.expect.surface")
-            for field in ("lemma", "orthBase", "mining_base"):
-                value = expectation.get(field)
+            _expect_non_empty_string(
+                token_expectation["surface"], f"{label}.expect.token.surface"
+            )
+            for field in ("lemma", "orthBase"):
+                value = token_expectation.get(field)
                 if (
-                    field in expectation
+                    field in token_expectation
                     and value is not None
                     and not isinstance(value, str)
                 ):
                     raise GoldenContractError(
-                        f"{label}.expect.{field} must be a string or null"
+                        f"{label}.expect.token.{field} must be a string or null"
                     )
-            if "is_unknown" in expectation and not isinstance(
-                expectation["is_unknown"], bool
+            if "is_unknown" in token_expectation and not isinstance(
+                token_expectation["is_unknown"], bool
             ):
                 raise GoldenContractError(
-                    f"{label}.expect.is_unknown must be a boolean"
+                    f"{label}.expect.token.is_unknown must be a boolean"
                 )
+
+        word_expectation = expectation.get("word")
+        if "word" in expectation:
+            if (
+                not isinstance(word_expectation, dict)
+                or "surface" not in word_expectation
+                or not set(word_expectation) <= WORD_EXPECTATION_FIELDS
+            ):
+                raise GoldenContractError(
+                    f"{label}.expect.word requires surface and only frozen fields"
+                )
+            for field in ("surface", "lemma", "orth_base", "mined_form"):
+                if field in word_expectation:
+                    _expect_non_empty_string(
+                        word_expectation[field], f"{label}.expect.word.{field}"
+                    )
+            for field in ("surface_start", "surface_end", "highlight_end"):
+                if field in word_expectation:
+                    value = word_expectation[field]
+                    if (
+                        not isinstance(value, int)
+                        or isinstance(value, bool)
+                        or value < 0
+                    ):
+                        raise GoldenContractError(
+                            f"{label}.expect.word.{field} must be a non-negative integer"
+                        )
 
         terms = raw_case.get("dictionary_terms")
         if terms is not None and (
@@ -482,8 +623,14 @@ def _validate_tokenization(cases: Any, corpus: Sequence[Mapping[str, Any]]) -> N
         label = f"cases.tokenization[{case_index}]"
         case = _expect_dict(raw_case, label, {"id", "text", "tokens"})
         case_id, text, tokens = case["id"], case["text"], case["tokens"]
-        if not isinstance(case_id, str) or not case_id or case_id in seen:
-            raise GoldenContractError(f"{label}.id must be a unique non-empty string")
+        if (
+            not isinstance(case_id, str)
+            or CASE_ID_RE.fullmatch(case_id) is None
+            or case_id in seen
+        ):
+            raise GoldenContractError(
+                f"{label}.id must be a unique lowercase case identifier"
+            )
         seen.add(case_id)
         if case_id != corpus_case["id"] or text != corpus_case["text"]:
             raise GoldenContractError(
@@ -500,8 +647,10 @@ def _validate_tokenization(cases: Any, corpus: Sequence[Mapping[str, Any]]) -> N
                 {"surface", "is_unknown", "offsets", "features"},
             )
             surface = token["surface"]
-            if not isinstance(surface, str) or not isinstance(
-                token["is_unknown"], bool
+            if (
+                not isinstance(surface, str)
+                or not surface
+                or not isinstance(token["is_unknown"], bool)
             ):
                 raise GoldenContractError(
                     f"{token_label} surface/is_unknown have invalid types"
@@ -512,15 +661,22 @@ def _validate_tokenization(cases: Any, corpus: Sequence[Mapping[str, Any]]) -> N
                 {"codepoint_start", "codepoint_end", "utf16_start", "utf16_end"},
             )
             if not all(
-                isinstance(value, int) and value >= 0 for value in offsets.values()
+                isinstance(value, int) and not isinstance(value, bool) and value >= 0
+                for value in offsets.values()
             ):
                 raise GoldenContractError(
                     f"{token_label}.offsets must be non-negative integers"
                 )
             start, end = offsets["codepoint_start"], offsets["codepoint_end"]
-            if start < previous_end or end < start or text[start:end] != surface:
+            if start < previous_end or end <= start or text[start:end] != surface:
                 raise GoldenContractError(
                     f"{token_label} has invalid code-point offsets"
+                )
+            gap = text[previous_end:start]
+            if gap and not gap.isspace():
+                raise GoldenContractError(
+                    f"{token_label} omitted non-whitespace text {gap!r} "
+                    f"at offset {previous_end}"
                 )
             if offsets["utf16_start"] != _utf16_offset(text, start) or offsets[
                 "utf16_end"
@@ -540,7 +696,14 @@ def _validate_tokenization(cases: Any, corpus: Sequence[Mapping[str, Any]]) -> N
                     f"{token_label}.features must normalize '*' to null"
                 )
 
-        expectation = corpus_case.get("expect")
+        trailing = text[previous_end:]
+        if trailing and not trailing.isspace():
+            raise GoldenContractError(
+                f"{label} omitted trailing non-whitespace text {trailing!r} "
+                f"at offset {previous_end}"
+            )
+
+        expectation = corpus_case["expect"].get("token")
         if isinstance(expectation, Mapping):
             matching = [
                 token for token in tokens if token["surface"] == expectation["surface"]
@@ -621,6 +784,27 @@ def _validate_active_case(
     ]
 
 
+def _assert_word_expectation(
+    words: Sequence[Mapping[str, Any]],
+    corpus_case: Mapping[str, Any],
+    label: str,
+) -> None:
+    expectation = corpus_case["expect"].get("word")
+    if not isinstance(expectation, Mapping):
+        return
+    matching = [word for word in words if word["surface"] == expectation["surface"]]
+    if len(matching) != 1:
+        raise GoldenContractError(
+            f"{label} must contain exactly one expected surface word"
+        )
+    word = matching[0]
+    for field, expected in expectation.items():
+        if word[field] != expected:
+            raise GoldenContractError(
+                f"{label} expected {field} does not match the mined word"
+            )
+
+
 def _validate_morphology(cases: Any, corpus: Sequence[Mapping[str, Any]]) -> None:
     if not isinstance(cases, list) or not cases:
         raise GoldenContractError("cases.morphology must be a non-empty array")
@@ -636,23 +820,7 @@ def _validate_morphology(cases: Any, corpus: Sequence[Mapping[str, Any]]) -> Non
             expected_id=corpus_case["id"],
             expected_text=corpus_case["text"],
         )
-        expectation = corpus_case.get("expect")
-        if not isinstance(expectation, Mapping):
-            continue
-        matching = [word for word in words if word["surface"] == expectation["surface"]]
-        if expectation.get("is_unknown") is True and not matching:
-            continue
-        if len(matching) != 1:
-            raise GoldenContractError(
-                f"{label} must contain exactly one expected surface word"
-            )
-        word = matching[0]
-        comparisons = {"lemma": word["lemma"], "mining_base": word["mined_form"]}
-        for field, actual in comparisons.items():
-            if field in expectation and expectation[field] != actual:
-                raise GoldenContractError(
-                    f"{label} expected {field} does not match the mined word"
-                )
+        _assert_word_expectation(words, corpus_case, label)
 
 
 def _validate_compounds(cases: Any, corpus: Sequence[Mapping[str, Any]]) -> None:
@@ -680,6 +848,7 @@ def _validate_compounds(cases: Any, corpus: Sequence[Mapping[str, Any]]) -> None
                 raise GoldenContractError(
                     f"{label} does not contain merged dictionary term {term!r}"
                 )
+        _assert_word_expectation(words, corpus_case, label)
 
 
 def validate_fixture(
@@ -695,7 +864,13 @@ def validate_fixture(
     root = _expect_dict(
         payload,
         "fixture",
-        {"schema_version", "provenance", "unidic_feature_fields", "cases"},
+        {
+            "schema_version",
+            "provenance",
+            "unidic_feature_fields",
+            "section_status",
+            "cases",
+        },
     )
     if root["schema_version"] != SCHEMA_VERSION:
         raise GoldenContractError(f"schema_version must be {SCHEMA_VERSION}")
@@ -744,11 +919,21 @@ def validate_fixture(
         for key in ("python_implementation", "python_version", "platform")
     ) or not isinstance(runtime["dependencies"], dict):
         raise GoldenContractError("runtime identity fields have invalid types")
-    if not all(
-        isinstance(key, str) and isinstance(value, str)
-        for key, value in runtime["dependencies"].items()
-    ):
-        raise GoldenContractError("runtime dependencies must map names to versions")
+    for dependency_name, raw_dependency in runtime["dependencies"].items():
+        if not isinstance(dependency_name, str):
+            raise GoldenContractError("runtime dependency names must be strings")
+        dependency = _expect_dict(
+            raw_dependency,
+            f"runtime dependency {dependency_name!r}",
+            {"version", "content_sha256"},
+        )
+        _expect_non_empty_string(
+            dependency["version"], f"runtime dependency {dependency_name!r} version"
+        )
+        _expect_sha256(
+            dependency["content_sha256"],
+            f"runtime dependency {dependency_name!r} content_sha256",
+        )
     runtime_without_hash = {
         key: value for key, value in runtime.items() if key != "sha256"
     }
@@ -766,6 +951,13 @@ def validate_fixture(
         "provenance.data",
         {"corpus_sha256", "assets_sha256", "sha256"},
     )
+    asset_names = [asset.name for asset in assets]
+    if len(set(asset_names)) != len(asset_names):
+        raise GoldenContractError("fixture validation received duplicate asset names")
+    if any(ASSET_NAME_RE.fullmatch(name) is None for name in asset_names):
+        raise GoldenContractError(
+            "fixture validation received an invalid asset identifier"
+        )
     expected_assets = {asset.name: sha256_path(asset.path) for asset in assets}
     if _expect_sha256(data["corpus_sha256"], "data.corpus_sha256") != sha256_file(
         corpus_path
@@ -781,6 +973,29 @@ def validate_fixture(
 
     corpus = _load_corpus(corpus_path)
     cases = _expect_dict(root["cases"], "cases", set(CASE_SECTIONS))
+    section_status = _expect_dict(
+        root["section_status"], "section_status", set(CASE_SECTIONS)
+    )
+    for section in ACTIVE_CASE_SECTIONS:
+        status = _expect_dict(
+            section_status[section], f"section_status.{section}", {"state"}
+        )
+        if status["state"] != "implemented":
+            raise GoldenContractError(
+                f"section_status.{section} must be implemented"
+            )
+    for section in INACTIVE_CASE_SECTIONS:
+        status = _expect_dict(
+            section_status[section],
+            f"section_status.{section}",
+            {"state", "reason"},
+        )
+        if status["state"] != "pending" or not isinstance(
+            status["reason"], str
+        ) or not status["reason"].strip():
+            raise GoldenContractError(
+                f"section_status.{section} must be pending with a reason"
+            )
     _validate_tokenization(cases["tokenization"], corpus)
     _validate_morphology(cases["morphology"], corpus)
     _validate_compounds(cases["compounds"], corpus)
@@ -798,15 +1013,19 @@ def parse_assets(values: Sequence[str]) -> tuple[GoldenAsset, ...]:
         name, separator, raw_path = value.partition("=")
         if not separator or not name or not raw_path:
             raise GoldenContractError("--asset must have the form NAME=PATH")
+        if ASSET_NAME_RE.fullmatch(name) is None:
+            raise GoldenContractError(
+                f"asset name must be a stable lowercase identifier: {name!r}"
+            )
         if name == RESERVED_UNIDIC_ASSET:
             raise GoldenContractError(
                 f"asset name {RESERVED_UNIDIC_ASSET!r} is reserved for --dicdir"
             )
         if name in seen:
             raise GoldenContractError(f"duplicate asset name: {name}")
-        path = Path(raw_path).expanduser().resolve()
-        if not path.exists():
-            raise GoldenContractError(f"asset does not exist: {path}")
+        path = _normalize_existing_path(
+            Path(raw_path), label=f"asset {name!r}", kind="asset"
+        )
         seen.add(name)
         assets.append(GoldenAsset(name, path))
     return tuple(sorted(assets, key=lambda asset: asset.name))
@@ -901,13 +1120,25 @@ def _probe_runtime(
     if (
         not isinstance(dependencies, dict)
         or set(dependencies) != set(runtime_distributions)
-        or any(
-            not isinstance(name, str) or not isinstance(version, str) or not version
-            for name, version in dependencies.items()
-        )
     ):
         raise GoldenContractError(
             "runtime probe dependencies do not match the required distributions"
+        )
+    for dependency_name, raw_dependency in dependencies.items():
+        if not isinstance(dependency_name, str):
+            raise GoldenContractError("runtime probe dependency names must be strings")
+        dependency = _expect_dict(
+            raw_dependency,
+            f"runtime probe dependency {dependency_name!r}",
+            {"version", "content_sha256"},
+        )
+        _expect_non_empty_string(
+            dependency["version"],
+            f"runtime probe dependency {dependency_name!r} version",
+        )
+        _expect_sha256(
+            dependency["content_sha256"],
+            f"runtime probe dependency {dependency_name!r} content_sha256",
         )
     if not isinstance(root["hash_probe"], int) or isinstance(root["hash_probe"], bool):
         raise GoldenContractError("runtime probe hash result has an invalid type")
@@ -938,26 +1169,38 @@ def run_exporter(
     runtime_distributions: Sequence[str] = RUNTIME_DISTRIBUTIONS,
 ) -> bool:
     python = python.expanduser().absolute()
-    engine_root = engine_root.expanduser().resolve()
-    exporter_path = exporter_path.expanduser().resolve()
-    corpus_path = corpus_path.expanduser().resolve()
-    output_path = output_path.expanduser().resolve()
+    engine_root = _normalize_existing_path(
+        engine_root, label="--engine-root", kind="directory"
+    )
+    exporter_path = _normalize_existing_path(
+        exporter_path, label="--exporter", kind="file"
+    )
+    corpus_path = _normalize_existing_path(corpus_path, label="--corpus", kind="file")
+    output_path = _normalize_output_path(output_path)
     verify_engine_root(engine_root, expected_revision)
-    if not exporter_path.is_file() or not corpus_path.is_file():
-        raise GoldenContractError("--exporter and --corpus must be files")
     if any(asset.name == RESERVED_UNIDIC_ASSET for asset in assets):
         raise GoldenContractError(
             f"asset name {RESERVED_UNIDIC_ASSET!r} is reserved for --dicdir"
         )
     if len({asset.name for asset in assets}) != len(assets):
         raise GoldenContractError("duplicate asset names")
+    normalized_assets: list[GoldenAsset] = []
     for asset in assets:
-        if not asset.path.exists():
-            raise GoldenContractError(f"asset does not exist: {asset.path}")
+        if ASSET_NAME_RE.fullmatch(asset.name) is None:
+            raise GoldenContractError(
+                f"asset name must be a stable lowercase identifier: {asset.name!r}"
+            )
+        normalized_assets.append(
+            GoldenAsset(
+                asset.name,
+                _normalize_existing_path(
+                    asset.path, label=f"asset {asset.name!r}", kind="asset"
+                ),
+            )
+        )
+    assets = tuple(sorted(normalized_assets, key=lambda asset: asset.name))
     if dicdir is not None:
-        dicdir = dicdir.expanduser().resolve()
-        if not dicdir.is_dir():
-            raise GoldenContractError("--dicdir must be a directory")
+        dicdir = _normalize_existing_path(dicdir, label="--dicdir", kind="directory")
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     bootstrap_path = Path(__file__).with_name("_golden_bootstrap.py")
@@ -1000,7 +1243,7 @@ def run_exporter(
             os.fspath(effective_dicdir),
         ]
         for asset in assets:
-            command.extend(("--asset", f"{asset.name}={asset.path.resolve()}"))
+            command.extend(("--asset", f"{asset.name}={asset.path}"))
         _run_checked_process(
             command,
             cwd=temp_root,

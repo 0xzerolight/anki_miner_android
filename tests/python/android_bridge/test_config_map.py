@@ -121,6 +121,26 @@ def test_network_expression_audio_kinds_are_rejected(kind: str, tmp_path: Path) 
     assert error.value.code == "unsupported_audio_source"
 
 
+def test_animated_screenshots_are_rejected_in_favor_of_static_jpeg(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(BridgeProtocolError) as error:
+        map_config_settings({"screenshot_animated": True}, _paths(tmp_path))
+
+    assert error.value.code == "unsupported_android_feature"
+    assert "static JPEG" in str(error.value)
+
+
+def test_desktop_animated_screenshot_tuning_is_not_exposed(tmp_path: Path) -> None:
+    with pytest.raises(BridgeProtocolError) as error:
+        map_config_settings(
+            {"screenshot_animated_format": "webp"},
+            _paths(tmp_path),
+        )
+
+    assert error.value.code == "unknown_config_field"
+
+
 def test_legacy_android_tts_flag_is_ephemeral_and_cannot_compose_fetchers(
     tmp_path: Path,
 ) -> None:

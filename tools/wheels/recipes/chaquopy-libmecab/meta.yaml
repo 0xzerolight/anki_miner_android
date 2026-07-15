@@ -1,0 +1,16 @@
+package:
+  name: chaquopy-libmecab
+  version: "0.996"
+
+source:
+  path: ../../sources/mecab
+
+build:
+  number: 0
+
+requirements:
+  build: []
+  host: []
+
+about:
+  license_file: BSD

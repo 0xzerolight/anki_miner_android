@@ -20,6 +20,7 @@ LOCKED_PACKAGES = {
     "emulator": "36.6.11",
     "platforms;android-36": "2",
     "build-tools;36.0.0": "36.0.0",
+    "cmake;3.22.1": "3.22.1",
     "ndk;28.2.13676358": "28.2.13676358",
     "system-images;android-36;google_apis;x86_64": "7",
     "system-images;android-36;google_apis_ps16k;x86_64": "7",
@@ -107,7 +108,7 @@ fi
             license_dir = root / "sdk" / "licenses"
             license_dir.mkdir(parents=True)
             (license_dir / "android-sdk-license").write_text(
-                "efa68a6b3c661d18699d5c026771d5911cdc2f83\n",
+                "24333f8a63b6825ea9c5514f83c2829b004d1fee\n",
                 encoding="utf-8",
             )
 

@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "requirements": [
+    ["attrs==26.1.0", "attrs-26.1.0-py3-none-any.whl", "c647aa4a12dfbad9333ca4e71fe62ddc36f4e63b2d260a37a8b83d2f043ac309"],
+    ["build==1.2.2.post1", "build-1.2.2.post1-py3-none-any.whl", "1d61c0887fa860c01971625baae8bdd338e517b836a2f70dd1f7aa3a6b2fc5b5"],
+    ["Cython==3.1.5", "cython-3.1.5-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", "b92ed80e3be2b35f594587389d9f7399860c8f17d9e4f23b7046f022f254b10b"],
+    ["Jinja2==3.1.6", "jinja2-3.1.6-py3-none-any.whl", "85ece4451f492d0c13c5dd7c13a64681a86afae63a5f347908daf103ce6d2f67"],
+    ["jsonschema==4.23.0", "jsonschema-4.23.0-py3-none-any.whl", "fbadb6f8b144a8f8cf9f0b89ba94501d143e50411a1278633f56a7acf7fd5566"],
+    ["jsonschema-specifications==2025.9.1", "jsonschema_specifications-2025.9.1-py3-none-any.whl", "98802fee3a11ee76ecaca44429fda8a41bff98b00a0f2838151b113f210cc6fe"],
+    ["MarkupSafe==3.0.3", "markupsafe-3.0.3-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", "ccfcd093f13f0f0b7fdd0f198b90053bf7b2f02a3927a30e63f3ccc9df56b676"],
+    ["packaging==26.2", "packaging-26.2-py3-none-any.whl", "5fc45236b9446107ff2415ce77c807cee2862cb6fac22b8a73826d0693b0980e"],
+    ["pip==25.1.1", "pip-25.1.1-py3-none-any.whl", "2913a38a2abf4ea6b64ab507bd9e967f3b53dc1ede74b01b0931e1ce548751af"],
+    ["pyelftools==0.32", "pyelftools-0.32-py3-none-any.whl", "013df952a006db5e138b1edf6d8a68ecc50630adbd0d83a2d41e7f846163d738"],
+    ["pyproject-hooks==1.2.0", "pyproject_hooks-1.2.0-py3-none-any.whl", "9e5c6bfa8dcc30091c74b0cf803c81fdd29d94f01992a7707bc97babb1141913"],
+    ["PyYAML==6.0.2", "PyYAML-6.0.2-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", "70b189594dbe54f75ab3a1acec5f1e3faa7e8cf2f1e08d9b561cb41b845f69d5"],
+    ["referencing==0.37.0", "referencing-0.37.0-py3-none-any.whl", "381329a9f99628c9069361716891d34ad94af76e461dcb0335825aecc7692231"],
+    ["rpds-py==2026.6.3", "rpds_py-2026.6.3-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", "acac386b453c2516111b50985d60ce46e7fadb5ea71ae7b25f4c946935bf27cf"],
+    ["setuptools==78.1.1", "setuptools-78.1.1-py3-none-any.whl", "c3a9c4211ff4c309edb8b8c4f1cbfa7ae324c4ba9f91ff254e3d305b9fd54561"],
+    ["setuptools-scm==9.2.0", "setuptools_scm-9.2.0-py3-none-any.whl", "c551ef54e2270727ee17067881c9687ca2aedf179fa5b8f3fab9e8d73bdc421f"],
+    ["wheel==0.45.1", "wheel-0.45.1-py3-none-any.whl", "708e7481cc80179af0e556bbf0cc00b8444c7321e2700b8d8580231d13017248"]
+  ]
+}

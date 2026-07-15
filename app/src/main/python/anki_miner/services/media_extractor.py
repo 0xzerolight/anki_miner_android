@@ -24,6 +24,7 @@ from anki_miner.utils import (
     list_audio_streams,
     safe_filename,
 )
+from anki_miner.utils.android_fd import inherited_fd_command
 from anki_miner.utils.audio_track_detector import JAPANESE_LANGUAGE_CODES
 from anki_miner.utils.ffmpeg_resolver import resolve_ffmpeg, resolve_ffprobe
 from anki_miner.utils.i18n import tr_format
@@ -634,17 +635,19 @@ class MediaExtractorService:
             # locale codec: ffmpeg echoes the (often non-ASCII Japanese) input
             # filename + stream titles to stderr, which on Windows (cp932/cp1252)
             # raises UnicodeDecodeError. Mirrors audio_track_detector._run_ffprobe_json.
-            proc = subprocess.Popen(
-                cmd,
-                stdin=subprocess.DEVNULL,  # detach from the TTY: a backgrounded ffmpeg reading
-                # the controlling terminal gets SIGTTIN-stopped and the extraction times out.
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                **no_window_kwargs(),  # hide the Windows cmd.exe flash (Issue #79)
-            )
+            with inherited_fd_command(cmd) as (child_cmd, pass_fds):
+                proc = subprocess.Popen(
+                    child_cmd,
+                    stdin=subprocess.DEVNULL,  # detach from the TTY: a backgrounded ffmpeg reading
+                    # the controlling terminal gets SIGTTIN-stopped and the extraction times out.
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    pass_fds=pass_fds,
+                    **no_window_kwargs(),  # hide the Windows cmd.exe flash (Issue #79)
+                )
         except (subprocess.SubprocessError, OSError) as e:
             logger.warning("%s error%s: %s", op_name, suffix, e)
             return False

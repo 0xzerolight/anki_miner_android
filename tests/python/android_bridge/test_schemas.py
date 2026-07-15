@@ -110,13 +110,7 @@ def _full_config_payload(home: Path) -> dict[str, Any]:
         "screenshot_offset": 1.2,
         "audio_format": "opus",
         "audio_bitrate": 128,
-        "screenshot_animated": True,
-        "screenshot_animated_format": "webp",
-        "screenshot_animated_clip_duration": 1.5,
-        "screenshot_animated_match_audio": False,
-        "screenshot_animated_fps": 24,
-        "screenshot_animated_height": 720,
-        "screenshot_animated_quality": 80,
+        "screenshot_animated": False,
         "subtitle_offset": -0.2,
         "allowed_pos": ["名詞", "動詞"],
         "excluded_subtypes": ["数詞"],
@@ -861,6 +855,17 @@ def test_config_schema_accepts_blank_desktop_field_mappings(
             }
         }
     )
+
+
+def test_config_schema_rejects_animated_screenshots(
+    schemas: dict[str, dict[str, Any]],
+    initialized_bridge_home: Path,
+) -> None:
+    payload = _full_config_payload(initialized_bridge_home)
+    payload["settings"]["screenshot_animated"] = True
+
+    with pytest.raises(ValidationError):
+        Draft202012Validator(schemas["config"]).validate(payload)
 
 
 @dataclass

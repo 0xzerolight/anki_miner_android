@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<lint>
+    <!-- This byte-pinned upstream snapshot is verified by tools/ankidroid-api. -->
+    <issue id="all">
+        <ignore path="src/main/ankidroidApi/kotlin/" />
+    </issue>
+</lint>

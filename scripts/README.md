@@ -46,6 +46,20 @@ The AVDs have fixed identities and serials:
 | Normal | `anki_miner_api36` | `emulator-5554` | 4096 |
 | 16 KiB | `anki_miner_api36_ps16k` | `emulator-5556` | 16384 |
 
+The separate arm64 S1b gate requires an already-running, explicitly named
+target and a previously recorded image fingerprint:
+
+```bash
+scripts/run-s1b-arm64-tests.sh \
+    --serial ARM64_SERIAL \
+    --unidic-dir /absolute/path/to/golden-pinned/unidic/dicdir \
+    --page-size 4k \
+    --image-fingerprint EXPECTED_BUILD_FINGERPRINT
+```
+
+It temporarily enables the `deviceDebug` instrumentation variant and runs only
+the production-JNI S1b class. It does not manage or select a target.
+
 When KVM is unavailable, the launcher selects software CPU emulation and the
 Swangle renderer. A first boot can take several minutes. Use `--keep` with the
 test runner to leave an emulator running, or `scripts/emulator.sh --window` for
@@ -53,7 +67,7 @@ an interactive window. Test runs always wipe userdata and disable snapshot
 load/save; an interactive launch remains persistent unless `--wipe-data` is
 given explicitly.
 
-Chaquopy reads ABI filters from product flavors. The supported Gradle variants
+Chaquopy reads ABI filters from product flavors. The normal Gradle variants
 are therefore `emulatorDebug` (x86_64) and `deviceRelease` (arm64-v8a):
 
 ```bash
@@ -65,7 +79,17 @@ are therefore `emulatorDebug` (x86_64) and `deviceRelease` (arm64-v8a):
 `scripts/check-native-artifact.sh` recursively opens APKs, AABs, ZIPs and
 Chaquopy `.imy` files. It rejects unexpected ABIs, 4 KiB-aligned ELF load
 segments, ffmpeg/ffprobe files which are not dynamically linked PIE command
-executables, debug probe leakage, invalid APK zip-alignment, and manifests
-which do not extract native executables. Gradle resolves with committed locks
+executables, UniDic payloads or layouts in an APK/AAB base module, debug probe
+leakage, invalid APK zip-alignment, and manifests which do not extract native
+executables. A separate AAB asset-pack module is deliberately outside the
+UniDic base-module check. Gradle resolves with committed locks
 for every project configuration and strict SHA-256 dependency verification;
 plugin artifacts and their transitives are covered by the same metadata.
+
+S1a wheel publications are builder-identity scoped. `verify-publication`
+recomputes the current source recipe, CPython binary, host runtime and tool
+versions, then reopens every wheel and compares its full license and ELF
+inventory with the manifest. Gradle runs that verifier itself whenever
+`ankiMinerS1aManifest` is set, so no caller-supplied recipe or build key can
+bypass the gate. A publication built on a different host identity must be
+rebuilt locally instead of being treated as a portable cache entry.

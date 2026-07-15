@@ -1,0 +1,22 @@
+package:
+  name: fugashi
+  version: "1.5.2"
+
+source:
+  path: ../../sources/fugashi
+
+build:
+  number: 0
+
+requirements:
+  build:
+    - Cython 3.1.5
+    - setuptools 78.1.1
+    - setuptools-scm 9.2.0
+    - wheel 0.45.1
+  host:
+    - python
+    - chaquopy-libmecab 0.996
+
+about:
+  license_file: LICENSE

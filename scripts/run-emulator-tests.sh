@@ -10,14 +10,18 @@ EMULATOR_LAUNCHER="${ANKI_MINER_EMULATOR_LAUNCHER:-$SCRIPT_DIR/emulator.sh}"
 HEALTH_SCRIPT="${ANKI_MINER_HEALTH_SCRIPT:-$SCRIPT_DIR/health.sh}"
 KEEP_EMULATOR=false
 PAGE_SIZE_LANE=4k
+TEST_UNIDIC_DIR="${ANKI_MINER_TEST_UNIDIC_DIR:-}"
 EMULATOR_ARGS=()
 
 usage() {
     cat <<'EOF'
-Usage: scripts/run-emulator-tests.sh [--page-size 4k|16k] [--keep] [emulator options]
+Usage: scripts/run-emulator-tests.sh --unidic-dir DIR [--page-size 4k|16k]
+                                     [--keep] [emulator options]
 
 Starts one deterministic headless emulator, verifies its AVD identity and page
-size, runs the connected health gate, then stops only the emulator it started.
+size, provisions the golden-pinned external UniDic, runs the connected health
+gate, then stops only the emulator it started. ANKI_MINER_TEST_UNIDIC_DIR may
+be used instead of --unidic-dir.
 EOF
 }
 
@@ -29,6 +33,11 @@ while (($#)); do
         --page-size)
             (($# >= 2)) || { usage >&2; exit 2; }
             PAGE_SIZE_LANE="$2"
+            shift
+            ;;
+        --unidic-dir)
+            (($# >= 2)) || { usage >&2; exit 2; }
+            TEST_UNIDIC_DIR="$2"
             shift
             ;;
         -h|--help)
@@ -95,6 +104,12 @@ if [[ -n "$emulator_state" ]]; then
     echo "Stop it first with: adb -s $EMULATOR_SERIAL emu kill" >&2
     exit 1
 fi
+[[ -n "$TEST_UNIDIC_DIR" && -d "$TEST_UNIDIC_DIR" ]] || {
+    echo "A golden-pinned UniDic directory is required via --unidic-dir." >&2
+    exit 2
+}
+ANKI_MINER_TEST_UNIDIC_DIR="$(realpath "$TEST_UNIDIC_DIR")"
+export ANKI_MINER_TEST_UNIDIC_DIR
 echo "Starting $AVD_NAME as $EMULATOR_SERIAL"
 "$EMULATOR_LAUNCHER" \
     --headless \

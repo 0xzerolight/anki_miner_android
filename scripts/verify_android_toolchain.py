@@ -111,13 +111,11 @@ def verify_avd(avd_home: Path, specification: str) -> None:
     actual_image_dir = config.get("image.sysdir.1", "").rstrip("/")
 
     expected_values = {
-        "AvdId": name,
         "abi.type": abi,
         "image.sysdir.1": expected_image_dir,
         "tag.id": primary_tag,
     }
     actual_values = {
-        "AvdId": config.get("AvdId"),
         "abi.type": config.get("abi.type"),
         "image.sysdir.1": actual_image_dir,
         "tag.id": config.get("tag.id"),
@@ -127,6 +125,16 @@ def verify_avd(avd_home: Path, specification: str) -> None:
             raise VerificationError(
                 f"{avd_dir}/config.ini: {key} is {actual_values[key]!r}, expected {expected!r}",
             )
+
+    # Older avdmanager versions wrote a capitalized AvdId. Current tools use
+    # lowercase template metadata such as ``avd.id=<build>`` instead, so the
+    # stable identity is the root INI filename plus its absolute and relative
+    # directory bindings. Keep validating a legacy ID whenever it is present.
+    legacy_avd_id = config.get("AvdId")
+    if legacy_avd_id is not None and legacy_avd_id != name:
+        raise VerificationError(
+            f"{avd_dir}/config.ini: AvdId is {legacy_avd_id!r}, expected {name!r}",
+        )
 
     if required_tags is not None:
         actual_tags = {
@@ -148,6 +156,12 @@ def verify_avd(avd_home: Path, specification: str) -> None:
     if configured_path is None or Path(configured_path).resolve() != avd_dir.resolve():
         raise VerificationError(
             f"{avd_home}/{name}.ini: path does not resolve to {avd_dir}",
+        )
+    expected_relative_path = f"avd/{name}.avd"
+    if root_config.get("path.rel") != expected_relative_path:
+        raise VerificationError(
+            f"{avd_home}/{name}.ini: path.rel is {root_config.get('path.rel')!r}, "
+            f"expected {expected_relative_path!r}",
         )
 
 

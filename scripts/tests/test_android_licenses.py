@@ -8,7 +8,7 @@ import unittest
 
 
 SCRIPTS_DIR = Path(__file__).resolve().parents[1]
-LICENSE_HASH = "efa68a6b3c661d18699d5c026771d5911cdc2f83"
+LICENSE_HASH = "24333f8a63b6825ea9c5514f83c2829b004d1fee"
 
 
 class AndroidLicenseTest(unittest.TestCase):

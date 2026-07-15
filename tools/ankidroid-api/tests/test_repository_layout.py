@@ -77,6 +77,25 @@ internal object BuildConfig {
             app_gradle,
         )
 
+    def test_lint_excludes_only_the_generated_api_boundary_globally(self) -> None:
+        lint = ET.parse(REPO_ROOT / "app/lint.xml").getroot()
+        issues = lint.findall("issue")
+        expected_path = GENERATED_SOURCE_ROOT.relative_to("app").as_posix() + "/"
+
+        self.assertEqual("lint", lint.tag)
+        self.assertEqual({}, lint.attrib)
+        self.assertEqual(1, len(issues))
+        self.assertEqual({"id": "all"}, issues[0].attrib)
+        self.assertEqual(
+            [{"path": expected_path}],
+            [ignore.attrib for ignore in issues[0].findall("ignore")],
+        )
+        self.assertEqual(1, len(issues[0]))
+        self.assertEqual(
+            REPO_ROOT / GENERATED_SOURCE_ROOT,
+            REPO_ROOT / "app" / expected_path,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

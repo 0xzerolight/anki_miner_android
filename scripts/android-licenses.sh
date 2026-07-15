@@ -7,7 +7,7 @@ source "$SCRIPT_DIR/android-env.sh"
 
 # SHA-1 of the current android-sdk-license text in Google's stable repository
 # metadata. sdkmanager writes this value only after the user accepts the terms.
-ANDROID_SDK_LICENSE_HASH="efa68a6b3c661d18699d5c026771d5911cdc2f83"
+ANDROID_SDK_LICENSE_HASH="24333f8a63b6825ea9c5514f83c2829b004d1fee"
 ANDROID_SDK_LICENSE_FILE="$ANDROID_HOME/licenses/android-sdk-license"
 
 usage() {

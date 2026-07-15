@@ -46,8 +46,6 @@ _STRING_FIELDS = frozenset(
 )
 _BOOL_FIELDS = frozenset(
     {
-        "screenshot_animated",
-        "screenshot_animated_match_audio",
         "use_known_words_db",
         "exclude_hiragana_only_words",
         "exclude_katakana_only_words",
@@ -63,7 +61,6 @@ _BOOL_FIELDS = frozenset(
 _FLOAT_RANGES: Mapping[str, tuple[float | None, float | None]] = {
     "audio_padding": (0.0, None),
     "screenshot_offset": (0.0, None),
-    "screenshot_animated_clip_duration": (0.0, None),
     "subtitle_offset": (None, None),
     # Desktop explicitly warns not to reduce this delay.
     "jisho_delay": (0.5, None),
@@ -71,9 +68,6 @@ _FLOAT_RANGES: Mapping[str, tuple[float | None, float | None]] = {
 }
 _INT_RANGES: Mapping[str, tuple[int | None, int | None]] = {
     "audio_bitrate": (1, None),
-    "screenshot_animated_fps": (1, 120),
-    "screenshot_animated_height": (1, None),
-    "screenshot_animated_quality": (0, 100),
     "max_frequency_rank": (0, None),
     "max_sentence_chars": (0, None),
     "reading_min_occurrence": (1, None),
@@ -82,7 +76,6 @@ _INT_RANGES: Mapping[str, tuple[int | None, int | None]] = {
 _LITERAL_FIELDS: Mapping[str, frozenset[str]] = {
     "card_type": frozenset({"", "word_and_sentence", "click", "sentence", "audio"}),
     "audio_format": frozenset({"mp3", "opus"}),
-    "screenshot_animated_format": frozenset({"avif", "webp"}),
     "pitch_category_format": frozenset({"jp", "romaji"}),
 }
 _STRING_TUPLE_FIELDS = frozenset(
@@ -93,6 +86,7 @@ _MAPPING_FIELDS = frozenset({"anki_fields", "card_type_marker_fields"})
 _CHAIN_FIELDS = frozenset(
     {"dictionary_chain", "frequency_chain", "expression_audio_chain"}
 )
+_STATIC_SCREENSHOT_FIELD = "screenshot_animated"
 
 _EXPOSED_CONFIG_FIELDS = frozenset(
     _STRING_FIELDS
@@ -104,6 +98,7 @@ _EXPOSED_CONFIG_FIELDS = frozenset(
     | _OPTIONAL_PATH_FIELDS
     | _MAPPING_FIELDS
     | _CHAIN_FIELDS
+    | {_STATIC_SCREENSHOT_FIELD}
 )
 
 # Compatibility-only input.  It is captured into AndroidConfigSnapshot and is
@@ -520,7 +515,14 @@ def map_config_settings(
     for field_name, value in settings.items():
         if field_name == _LEGACY_ANDROID_TTS_FIELD:
             continue
-        if field_name in _STRING_FIELDS:
+        if field_name == _STATIC_SCREENSHOT_FIELD:
+            if _boolean(field_name, value):
+                raise BridgeProtocolError(
+                    "unsupported_android_feature",
+                    "Android v1 supports static JPEG screenshots only",
+                )
+            updates[field_name] = False
+        elif field_name in _STRING_FIELDS:
             updates[field_name] = (
                 _canonical_nonempty_string(field_name, value)
                 if field_name in {"anki_deck_name", "anki_note_type"}
@@ -560,6 +562,9 @@ def map_config_settings(
     # These overrides are deliberately applied after user settings.
     updates.update(_android_path_overrides(paths))
     updates.setdefault("expression_audio_chain", ())
+    # The compact native recipe intentionally contains the static JPEG path,
+    # not the desktop-only AVIF/WebP encoders.
+    updates["screenshot_animated"] = False
     # The Android TTS preference is execution metadata for a Kotlin-injected
     # synthesizer.  Keeping all desktop flags false mechanically prevents the
     # Google/Papago sentence fetcher chain from being composed.

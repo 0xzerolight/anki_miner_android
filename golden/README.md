@@ -13,7 +13,8 @@ Fixture provenance separates four independently meaningful identities:
 
 - `engine`: pinned Git revision and the hash of the exact engine files used;
 - `tool`: exporter name/version and exporter-source hash;
-- `runtime`: Python/platform/dependency identity and its canonical hash;
+- `runtime`: Python/platform identity plus hashes of every stable installed
+  dependency file (including sibling native libraries), and its canonical hash;
 - `data`: corpus plus tokenizer/dictionary asset hashes and their canonical hash.
 
 The exporter must run against an explicit, clean `--engine-root`. Its isolated
@@ -33,5 +34,7 @@ python tools/engine-sync/run_goldens.py \
 
 Use `--check` in CI to derive into a temporary file, validate every provenance
 domain and token offset, and byte-compare canonical JSON with the committed
-fixture. The committed fixture is generated only after the exporter revision is
-final; schema and seed corpus changes remain separate from generated output.
+`engine-v1.json`. Its `section_status` object makes staged coverage explicit:
+tokenization, morphology, and compounds are implemented in the M0 fixture;
+filtering, deinflection, dictionaries, frequency, pitch, and cards remain
+machine-visible pending sections rather than ambiguous empty arrays.

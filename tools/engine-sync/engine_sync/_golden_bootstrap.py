@@ -3,14 +3,73 @@
 from __future__ import annotations
 
 import os
+import importlib.abc
+import importlib.machinery
+import importlib.util
 import runpy
 import sys
+from collections.abc import Sequence
 from pathlib import Path
+from types import ModuleType
 
 
 def _fail(message: str) -> int:
     print(f"golden bootstrap error: {message}", file=sys.stderr)
     return 97
+
+
+class _RecordingLoader(importlib.abc.Loader):
+    def __init__(
+        self,
+        loader: importlib.abc.Loader,
+        engine_package: Path,
+        loaded_names: set[str],
+    ) -> None:
+        self._loader = loader
+        self._engine_package = engine_package
+        self._loaded_names = loaded_names
+
+    def create_module(
+        self, spec: importlib.machinery.ModuleSpec
+    ) -> ModuleType | None:
+        create_module = getattr(self._loader, "create_module", None)
+        return None if create_module is None else create_module(spec)
+
+    def exec_module(self, module: ModuleType) -> None:
+        self._loader.exec_module(module)
+        module_file = getattr(module, "__file__", None)
+        if module_file is None:
+            raise ImportError(f"{module.__name__} has no verifiable import origin")
+        resolved = Path(module_file).resolve()
+        if not resolved.is_relative_to(self._engine_package):
+            raise ImportError(
+                f"{module.__name__} loaded outside --engine-root: {resolved}"
+            )
+        self._loaded_names.add(module.__name__)
+
+
+class _RecordingFinder(importlib.abc.MetaPathFinder):
+    def __init__(self, engine_package: Path, loaded_names: set[str]) -> None:
+        self._engine_package = engine_package
+        self._loaded_names = loaded_names
+
+    def find_spec(
+        self,
+        fullname: str,
+        path: Sequence[str] | None = None,
+        target: ModuleType | None = None,
+    ) -> importlib.machinery.ModuleSpec | None:
+        if fullname != "anki_miner" and not fullname.startswith("anki_miner."):
+            return None
+        spec = importlib.machinery.PathFinder.find_spec(fullname, path, target)
+        if spec is None or spec.loader is None:
+            return spec
+        if not isinstance(spec.loader, importlib.abc.Loader):
+            raise ImportError(f"{fullname} has an unsupported loader")
+        spec.loader = _RecordingLoader(
+            spec.loader, self._engine_package, self._loaded_names
+        )
+        return spec
 
 
 def main() -> int:
@@ -31,10 +90,19 @@ def main() -> int:
     if not exporter.is_file() or not (engine_package / "__init__.py").is_file():
         return _fail("exporter or engine package is missing")
 
-    for name in tuple(sys.modules):
-        if name == "anki_miner" or name.startswith("anki_miner."):
-            del sys.modules[name]
-    sys.path.insert(0, str(engine_root))
+    preloaded_engine_modules = sorted(
+        name
+        for name in sys.modules
+        if name == "anki_miner" or name.startswith("anki_miner.")
+    )
+    if preloaded_engine_modules:
+        return _fail(
+            "engine modules were loaded before golden bootstrap: "
+            + ", ".join(preloaded_engine_modules)
+        )
+    loaded_names: set[str] = set()
+    recording_finder = _RecordingFinder(engine_package, loaded_names)
+    sys.meta_path.insert(0, recording_finder)
     sys.argv = [str(exporter), *sys.argv[3:]]
     exit_code = 0
     try:
@@ -50,18 +118,7 @@ def main() -> int:
     if exit_code != 0:
         return exit_code
 
-    imported = False
-    for name, module in tuple(sys.modules.items()):
-        if name != "anki_miner" and not name.startswith("anki_miner."):
-            continue
-        module_file = getattr(module, "__file__", None)
-        if module_file is None:
-            continue
-        imported = True
-        resolved = Path(module_file).resolve()
-        if not resolved.is_relative_to(engine_package):
-            return _fail(f"{name} loaded outside --engine-root: {resolved}")
-    if not imported:
+    if not loaded_names:
         return _fail("exporter succeeded without importing the engine")
     return 0
 
