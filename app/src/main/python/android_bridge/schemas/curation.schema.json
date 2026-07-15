@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://anki-miner.app/schemas/android-bridge/v1/curation.json",
+  "title": "Anki Miner Android curation payloads",
+  "$defs": {
+    "opaqueId": {"type": "string", "minLength": 8},
+    "sentence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sentenceId", "sentence", "sentenceFurigana", "sentenceReading", "startTime", "endTime", "duration"],
+      "properties": {
+        "sentenceId": {"$ref": "#/$defs/opaqueId"},
+        "sentence": {"type": "string"},
+        "sentenceFurigana": {"type": "string"},
+        "sentenceReading": {"type": "string"},
+        "startTime": {"type": "number"},
+        "endTime": {"type": "number"},
+        "duration": {"type": "number"}
+      }
+    },
+    "selection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["candidateId"],
+      "properties": {
+        "candidateId": {"$ref": "#/$defs/opaqueId"},
+        "sentenceId": {"$ref": "#/$defs/opaqueId"}
+      }
+    }
+  }
+}
