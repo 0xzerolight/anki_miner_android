@@ -1,0 +1,1584 @@
+package com.ankiminer.android.anki.provider
+
+import com.ankiminer.android.anki.protocol.AnkiErrorCode
+import com.ankiminer.android.anki.protocol.DuplicateCandidate
+import com.ankiminer.android.anki.protocol.DuplicateLookupResult
+import com.ankiminer.android.anki.protocol.DuplicateScanScope
+import com.ankiminer.android.anki.protocol.KnownVocabularyResult
+import com.ankiminer.android.anki.protocol.KnownVocabularyScope
+import com.ankiminer.android.anki.protocol.ScanFirstFieldsRequest
+import com.ankiminer.android.anki.protocol.VerifyTargetRequest
+import java.util.ArrayDeque
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class AnkiProviderReadsTest {
+    @Test
+    fun `verify target snapshots every insertion-relevant model template and deck field`() {
+        val fixture = fixture()
+        fixture.gateway.queryHandler = targetQueryHandler()
+
+        val result = fixture.withOwner { owner -> fixture.reads.verifyTarget(owner, verifyRequest()) }
+
+        assertEquals(20L, result.deckId)
+        assertEquals(10L, result.modelId)
+        assertEquals(listOf("Expression", "Meaning"), result.fieldNames)
+        assertFalse(result.deckCreated)
+        assertEquals(
+            listOf(
+                ProviderEndpoint.MODELS,
+                ProviderEndpoint.MODEL_TEMPLATES,
+                ProviderEndpoint.DECKS,
+            ),
+            fixture.gateway.queries.map { it.endpoint },
+        )
+        assertEquals(
+            listOf(
+                ProviderColumn.TEMPLATE_MODEL_ID,
+                ProviderColumn.TEMPLATE_ORDINAL,
+                ProviderColumn.TEMPLATE_NAME,
+                ProviderColumn.TEMPLATE_QUESTION_FORMAT,
+                ProviderColumn.TEMPLATE_ANSWER_FORMAT,
+                ProviderColumn.TEMPLATE_BROWSER_QUESTION_FORMAT,
+                ProviderColumn.TEMPLATE_BROWSER_ANSWER_FORMAT,
+            ),
+            fixture.gateway.queries[1].projection,
+        )
+        fixture.withOwner { owner ->
+            val target = requireNotNull(fixture.registry.target(owner))
+            assertNull(target.model.templates.single().browserQuestionFormat)
+            assertEquals("pre", target.model.latexPre)
+            assertEquals(1L, target.model.effectiveDefaultDeckId)
+        }
+    }
+
+    @Test
+    fun `verify target rejects missing fields cloze filtered and oversized provider text`() {
+        fun failureFor(
+            request: VerifyTargetRequest = verifyRequest(),
+            handler: (ProviderQuery, AnkiCancellation) -> ProviderCursor?,
+        ): AnkiReadFailure {
+            val fixture = fixture()
+            fixture.gateway.queryHandler = handler
+            return assertThrows(AnkiReadFailure::class.java) {
+                fixture.withOwner { owner -> fixture.reads.verifyTarget(owner, request) }
+            }
+        }
+
+        assertEquals(
+            AnkiErrorCode.FIELD_MISSING,
+            failureFor(verifyRequest(required = listOf("Missing")), targetQueryHandler()).code,
+        )
+        assertEquals(
+            AnkiErrorCode.TARGET_INVALID,
+            failureFor(handler = targetQueryHandler(model = modelRow(type = 1L))).code,
+        )
+        assertEquals(
+            AnkiErrorCode.TARGET_INVALID,
+            failureFor(handler = targetQueryHandler(deck = deckRow(dynamic = 1L))).code,
+        )
+        assertEquals(
+            AnkiErrorCode.TARGET_INVALID,
+            failureFor(handler = targetQueryHandler(model = modelRow(css = "x".repeat(262_145)))).code,
+        )
+    }
+
+    @Test
+    fun `model fields stop at the 65th field before any template query`() {
+        val exactFields = (0 until 64).joinToString("\u001f") { "Field$it" }
+        val exact = fixture()
+        exact.gateway.queryHandler =
+            targetQueryHandler(
+                model = modelRow(fields = exactFields, sortField = 63L),
+            )
+        val result =
+            exact.withOwner { owner ->
+                exact.reads.verifyTarget(
+                    owner,
+                    verifyRequest(required = listOf("Field63")),
+                )
+            }
+        assertEquals(64, result.fieldNames.size)
+
+        val oversized = fixture()
+        val modelCursor =
+            FakeProviderCursor(
+                ProviderQueryShapes.MODEL_PROJECTION,
+                listOf(modelRow(fields = "$exactFields\u001fField64")),
+            )
+        oversized.gateway.queryHandler = { query, _ ->
+            when (query.endpoint) {
+                ProviderEndpoint.MODELS -> modelCursor
+                ProviderEndpoint.MODEL_TEMPLATES -> error("template query must not run")
+                else -> error("unexpected query $query")
+            }
+        }
+
+        val failure =
+            assertThrows(AnkiReadFailure::class.java) {
+                oversized.withOwner { owner ->
+                    oversized.reads.verifyTarget(owner, verifyRequest())
+                }
+            }
+        assertEquals(AnkiErrorCode.TARGET_INVALID, failure.code)
+        assertEquals(1, modelCursor.closeCount)
+        assertEquals(listOf(ProviderEndpoint.MODELS), oversized.gateway.queries.map { it.endpoint })
+    }
+
+    @Test
+    fun `invalid model unicode fails after closing the model cursor and before templates`() {
+        val fixture = fixture()
+        val modelCursor =
+            FakeProviderCursor(
+                ProviderQueryShapes.MODEL_PROJECTION,
+                listOf(modelRow(css = "\uD800")),
+            )
+        fixture.gateway.queryHandler = { query, _ ->
+            when (query.endpoint) {
+                ProviderEndpoint.MODELS -> modelCursor
+                ProviderEndpoint.MODEL_TEMPLATES -> error("template query must not run")
+                else -> error("unexpected query $query")
+            }
+        }
+
+        val failure =
+            assertThrows(AnkiReadFailure::class.java) {
+                fixture.withOwner { owner -> fixture.reads.verifyTarget(owner, verifyRequest()) }
+            }
+        assertEquals(AnkiErrorCode.TARGET_INVALID, failure.code)
+        assertEquals(1, modelCursor.closeCount)
+        assertEquals(listOf(ProviderEndpoint.MODELS), fixture.gateway.queries.map { it.endpoint })
+    }
+
+    @Test
+    fun `every template text form rejects invalid unicode and closes immediately`() {
+        val invalidRows =
+            listOf(
+                templateRow(name = "\uD800"),
+                templateRow(question = "\uD800"),
+                templateRow(answer = "\uD800"),
+                templateRow(browserQuestion = text("\uD800")),
+                templateRow(browserAnswer = text("\uD800")),
+            )
+        for (invalidRow in invalidRows) {
+            val fixture = fixture()
+            val templateCursor =
+                FakeProviderCursor(ProviderQueryShapes.TEMPLATE_PROJECTION, listOf(invalidRow))
+            fixture.gateway.queryHandler = { query, _ ->
+                when (query.endpoint) {
+                    ProviderEndpoint.MODELS ->
+                        FakeProviderCursor(query.projection, listOf(modelRow()))
+                    ProviderEndpoint.MODEL_TEMPLATES -> templateCursor
+                    else -> error("unexpected query $query")
+                }
+            }
+
+            val failure =
+                assertThrows(AnkiReadFailure::class.java) {
+                    fixture.withOwner { owner -> fixture.reads.verifyTarget(owner, verifyRequest()) }
+                }
+            assertEquals(AnkiErrorCode.TARGET_INVALID, failure.code)
+            assertEquals(1, templateCursor.closeCount)
+            assertEquals(
+                listOf(ProviderEndpoint.MODELS, ProviderEndpoint.MODEL_TEMPLATES),
+                fixture.gateway.queries.map { it.endpoint },
+            )
+        }
+    }
+
+    @Test
+    fun `template provider text accepts the exact aggregate boundary and rejects one byte more`() {
+        val textChunk = "x".repeat(65_536)
+        val templates =
+            (0 until 16).map { ordinal ->
+                templateRow(
+                    ordinal = ordinal.toLong(),
+                    question = textChunk,
+                    answer = textChunk,
+                    browserQuestion = text(textChunk),
+                    browserAnswer = text(textChunk),
+                )
+            }
+        val exact = fixture()
+        exact.gateway.queryHandler =
+            targetQueryHandler(
+                model =
+                    modelRow(
+                        cards = 16L,
+                        css = "",
+                        latexPre = nullCell(),
+                        latexPost = nullCell(),
+                    ),
+                templates = templates,
+            )
+        val exactResult =
+            exact.withOwner { owner -> exact.reads.verifyTarget(owner, verifyRequest()) }
+        assertEquals(10L, exactResult.modelId)
+
+        val oversized = fixture()
+        val templateCursor =
+            FakeProviderCursor(ProviderQueryShapes.TEMPLATE_PROJECTION, templates)
+        oversized.gateway.queryHandler = { query, _ ->
+            when (query.endpoint) {
+                ProviderEndpoint.MODELS ->
+                    FakeProviderCursor(
+                        query.projection,
+                        listOf(
+                            modelRow(
+                                cards = 16L,
+                                css = "x",
+                                latexPre = nullCell(),
+                                latexPost = nullCell(),
+                            ),
+                        ),
+                    )
+                ProviderEndpoint.MODEL_TEMPLATES -> templateCursor
+                else -> error("unexpected query $query")
+            }
+        }
+        val failure =
+            assertThrows(AnkiReadFailure::class.java) {
+                oversized.withOwner { owner -> oversized.reads.verifyTarget(owner, verifyRequest()) }
+            }
+        assertEquals(AnkiErrorCode.TARGET_INVALID, failure.code)
+        assertEquals(1, templateCursor.closeCount)
+    }
+
+    @Test
+    fun `each provider model text field enforces its exact N and N plus one boundary`() {
+        data class TextCase(
+            val name: String,
+            val model: (String) -> Map<ProviderColumn, ProviderCell> = { modelRow() },
+            val template: (String) -> Map<ProviderColumn, ProviderCell> = { templateRow() },
+        )
+
+        val cases =
+            listOf(
+                TextCase("CSS", model = { value -> modelRow(css = value) }),
+                TextCase(
+                    "LaTeX pre",
+                    model = { value -> modelRow(latexPre = text(value)) },
+                ),
+                TextCase(
+                    "LaTeX post",
+                    model = { value -> modelRow(latexPost = text(value)) },
+                ),
+                TextCase(
+                    "question",
+                    template = { value -> templateRow(question = value) },
+                ),
+                TextCase(
+                    "answer",
+                    template = { value -> templateRow(answer = value) },
+                ),
+                TextCase(
+                    "browser question",
+                    template = { value -> templateRow(browserQuestion = text(value)) },
+                ),
+                TextCase(
+                    "browser answer",
+                    template = { value -> templateRow(browserAnswer = text(value)) },
+                ),
+            )
+        val exact = "x".repeat(262_144)
+        val oversized = "$exact+"
+        for (case in cases) {
+            val accepted = fixture()
+            accepted.gateway.queryHandler =
+                targetQueryHandler(
+                    model = case.model(exact),
+                    templates = listOf(case.template(exact)),
+                )
+            val acceptedResult =
+                accepted.withOwner { owner ->
+                    accepted.reads.verifyTarget(owner, verifyRequest())
+                }
+            assertEquals(case.name, 10L, acceptedResult.modelId)
+
+            val rejected = fixture()
+            rejected.gateway.queryHandler =
+                targetQueryHandler(
+                    model = case.model(oversized),
+                    templates = listOf(case.template(oversized)),
+                )
+            val failure =
+                assertThrows(case.name, AnkiReadFailure::class.java) {
+                    rejected.withOwner { owner ->
+                        rejected.reads.verifyTarget(owner, verifyRequest())
+                    }
+                }
+            assertEquals(case.name, AnkiErrorCode.TARGET_INVALID, failure.code)
+        }
+    }
+
+    @Test
+    fun `template name accepts 256 bytes and rejects 257`() {
+        val accepted = fixture()
+        accepted.gateway.queryHandler =
+            targetQueryHandler(
+                templates = listOf(templateRow(name = "x".repeat(256))),
+            )
+        assertEquals(
+            10L,
+            accepted.withOwner { owner ->
+                accepted.reads.verifyTarget(owner, verifyRequest())
+            }.modelId,
+        )
+
+        val rejected = fixture()
+        rejected.gateway.queryHandler =
+            targetQueryHandler(
+                templates = listOf(templateRow(name = "x".repeat(257))),
+            )
+        assertEquals(
+            AnkiErrorCode.TARGET_INVALID,
+            assertThrows(AnkiReadFailure::class.java) {
+                rejected.withOwner { owner ->
+                    rejected.reads.verifyTarget(owner, verifyRequest())
+                }
+            }.code,
+        )
+    }
+
+    @Test
+    fun `template cardinality accepts one and 64 while rejecting zero 65 duplicate and gapped ordinals`() {
+        fun resultFor(
+            cardCount: Long,
+            templates: List<Map<ProviderColumn, ProviderCell>>,
+        ): Result<VerifyTargetRequest> {
+            val fixture = fixture()
+            fixture.gateway.queryHandler =
+                targetQueryHandler(
+                    model = modelRow(cards = cardCount),
+                    templates = templates,
+                )
+            return runCatching {
+                fixture.withOwner { owner ->
+                    fixture.reads.verifyTarget(owner, verifyRequest())
+                    verifyRequest()
+                }
+            }
+        }
+
+        assertTrue(resultFor(1L, listOf(templateRow())).isSuccess)
+        assertTrue(
+            resultFor(
+                64L,
+                (0 until 64).map { ordinal -> templateRow(ordinal = ordinal.toLong()) },
+            ).isSuccess,
+        )
+
+        val invalid =
+            listOf(
+                resultFor(1L, emptyList()),
+                resultFor(
+                    64L,
+                    (0..64).map { ordinal -> templateRow(ordinal = ordinal.toLong()) },
+                ),
+                resultFor(
+                    2L,
+                    listOf(templateRow(ordinal = 0L), templateRow(ordinal = 0L)),
+                ),
+                resultFor(
+                    2L,
+                    listOf(templateRow(ordinal = 0L), templateRow(ordinal = 2L)),
+                ),
+            )
+        assertTrue(invalid.all { result -> result.exceptionOrNull() is AnkiReadFailure })
+        assertTrue(
+            invalid.all { result ->
+                (result.exceptionOrNull() as AnkiReadFailure).code == AnkiErrorCode.TARGET_INVALID
+            },
+        )
+    }
+
+    @Test
+    fun `verify target classifies absent model missing deck null and malformed cursors`() {
+        val absent = fixture()
+        absent.gateway.queryHandler = targetQueryHandler(models = emptyList())
+        assertEquals(
+            AnkiErrorCode.NOTE_TYPE_NOT_FOUND,
+            assertThrows(AnkiReadFailure::class.java) {
+                absent.withOwner { owner -> absent.reads.verifyTarget(owner, verifyRequest()) }
+            }.code,
+        )
+
+        val missingDeck = fixture()
+        missingDeck.gateway.queryHandler = targetQueryHandler(decks = emptyList())
+        assertEquals(
+            AnkiErrorCode.UNSUPPORTED_OPERATION,
+            assertThrows(AnkiReadFailure::class.java) {
+                missingDeck.withOwner { owner -> missingDeck.reads.verifyTarget(owner, verifyRequest()) }
+            }.code,
+        )
+
+        val nullCursor = fixture()
+        nullCursor.gateway.queryHandler = { query, _ ->
+            if (query.endpoint == ProviderEndpoint.MODELS) null else error("unexpected")
+        }
+        assertEquals(
+            AnkiErrorCode.QUERY_FAILED,
+            assertThrows(AnkiReadFailure::class.java) {
+                nullCursor.withOwner { owner -> nullCursor.reads.verifyTarget(owner, verifyRequest()) }
+            }.code,
+        )
+
+        val malformed = fixture()
+        val wrongProjectionCursor =
+            FakeProviderCursor(listOf(ProviderColumn.MODEL_ID), listOf(mapOf(ProviderColumn.MODEL_ID to integer(10))))
+        malformed.gateway.queryHandler = { _, _ -> wrongProjectionCursor }
+        assertThrows(AnkiReadFailure::class.java) {
+            malformed.withOwner { owner -> malformed.reads.verifyTarget(owner, verifyRequest()) }
+        }
+        assertEquals(1, wrongProjectionCursor.closeCount)
+
+        val nullEffectiveDefault = fixture()
+        nullEffectiveDefault.gateway.queryHandler =
+            targetQueryHandler(model = modelRow(defaultDeckId = nullCell()))
+        assertEquals(
+            AnkiErrorCode.QUERY_FAILED,
+            assertThrows(AnkiReadFailure::class.java) {
+                nullEffectiveDefault.withOwner { owner ->
+                    nullEffectiveDefault.reads.verifyTarget(owner, verifyRequest())
+                }
+            }.code,
+        )
+    }
+
+    @Test
+    fun `target revalidation reads full model before deck and rejects leaf drift deletion and dynamic replacement`() {
+        data class DriftCase(
+            val name: String,
+            val handler: (ProviderQuery, AnkiCancellation) -> ProviderCursor?,
+            val expectedTrace: List<ProviderEndpoint>,
+        )
+
+        fun directHandler(
+            itemModels: List<Map<ProviderColumn, ProviderCell>> = listOf(modelRow()),
+            itemQueryFails: Boolean = false,
+            fallbackModels: List<Map<ProviderColumn, ProviderCell>> = emptyList(),
+            templates: List<Map<ProviderColumn, ProviderCell>> = listOf(templateRow()),
+            decks: List<Map<ProviderColumn, ProviderCell>> = listOf(deckRow()),
+        ): (ProviderQuery, AnkiCancellation) -> ProviderCursor? = { query, _ ->
+            when (query.endpoint) {
+                ProviderEndpoint.MODEL_BY_ID -> {
+                    if (itemQueryFails) {
+                        throw ProviderGatewayException(ProviderFailureKind.QUERY_FAILED)
+                    }
+                    FakeProviderCursor(query.projection, itemModels)
+                }
+                ProviderEndpoint.MODELS ->
+                    FakeProviderCursor(query.projection, fallbackModels)
+                ProviderEndpoint.MODEL_TEMPLATES -> FakeProviderCursor(query.projection, templates)
+                ProviderEndpoint.DECK_BY_ID -> FakeProviderCursor(query.projection, decks)
+                else -> error("unexpected query $query")
+            }
+        }
+
+        val cases =
+            listOf(
+                DriftCase(
+                    "model leaf drift",
+                    directHandler(itemModels = listOf(modelRow(css = "changed"))),
+                    listOf(
+                        ProviderEndpoint.MODEL_BY_ID,
+                        ProviderEndpoint.MODEL_TEMPLATES,
+                        ProviderEndpoint.DECK_BY_ID,
+                    ),
+                ),
+                DriftCase(
+                    "template leaf drift",
+                    directHandler(templates = listOf(templateRow(answer = "changed"))),
+                    listOf(
+                        ProviderEndpoint.MODEL_BY_ID,
+                        ProviderEndpoint.MODEL_TEMPLATES,
+                        ProviderEndpoint.DECK_BY_ID,
+                    ),
+                ),
+                DriftCase(
+                    "model deletion",
+                    directHandler(itemQueryFails = true, fallbackModels = emptyList()),
+                    listOf(ProviderEndpoint.MODEL_BY_ID, ProviderEndpoint.MODELS),
+                ),
+                DriftCase(
+                    "model replacement after item failure",
+                    directHandler(
+                        itemQueryFails = true,
+                        fallbackModels = listOf(modelRow(name = "Replacement")),
+                    ),
+                    listOf(
+                        ProviderEndpoint.MODEL_BY_ID,
+                        ProviderEndpoint.MODELS,
+                        ProviderEndpoint.MODEL_TEMPLATES,
+                        ProviderEndpoint.DECK_BY_ID,
+                    ),
+                ),
+                DriftCase(
+                    "ambiguous model ID after item failure",
+                    directHandler(
+                        itemQueryFails = true,
+                        fallbackModels = listOf(modelRow(), modelRow()),
+                    ),
+                    listOf(ProviderEndpoint.MODEL_BY_ID, ProviderEndpoint.MODELS),
+                ),
+                DriftCase(
+                    "deck deletion",
+                    directHandler(decks = emptyList()),
+                    listOf(
+                        ProviderEndpoint.MODEL_BY_ID,
+                        ProviderEndpoint.MODEL_TEMPLATES,
+                        ProviderEndpoint.DECK_BY_ID,
+                    ),
+                ),
+                DriftCase(
+                    "dynamic replacement",
+                    directHandler(decks = listOf(deckRow(dynamic = 1L))),
+                    listOf(
+                        ProviderEndpoint.MODEL_BY_ID,
+                        ProviderEndpoint.MODEL_TEMPLATES,
+                        ProviderEndpoint.DECK_BY_ID,
+                    ),
+                ),
+            )
+
+        for (case in cases) {
+            val fixture = fixture()
+            fixture.gateway.queryHandler = targetQueryHandler()
+            val expected =
+                fixture.withOwner { owner ->
+                    fixture.reads.verifyTarget(owner, verifyRequest())
+                    requireNotNull(fixture.registry.target(owner))
+                }
+            fixture.gateway.queries.clear()
+            fixture.gateway.queryHandler = case.handler
+
+            val failure =
+                assertThrows("case ${case.name}", AnkiReadFailure::class.java) {
+                    fixture.withOwner { owner -> fixture.reads.readTargetById(owner, expected) }
+                }
+            assertEquals(case.name, AnkiErrorCode.TARGET_INVALID, failure.code)
+            assertEquals(case.name, case.expectedTrace, fixture.gateway.queries.map { it.endpoint })
+        }
+    }
+
+    @Test
+    fun `model item fallback does not swallow timeout access or permission loss`() {
+        val failures =
+            listOf(
+                ProviderFailureKind.TIMEOUT to AnkiErrorCode.TIMEOUT,
+                ProviderFailureKind.PROVIDER_UNAVAILABLE to AnkiErrorCode.PROVIDER_UNAVAILABLE,
+                ProviderFailureKind.API_DISABLED to AnkiErrorCode.API_DISABLED,
+                ProviderFailureKind.PERMISSION_REQUIRED to AnkiErrorCode.PERMISSION_REQUIRED,
+            )
+        for ((kind, expectedCode) in failures) {
+            val fixture = fixture()
+            fixture.gateway.queryHandler = targetQueryHandler()
+            val expected =
+                fixture.withOwner { owner ->
+                    fixture.reads.verifyTarget(owner, verifyRequest())
+                    requireNotNull(fixture.registry.target(owner))
+                }
+            fixture.gateway.queries.clear()
+            fixture.gateway.queryHandler = { query, _ ->
+                if (query.endpoint != ProviderEndpoint.MODEL_BY_ID) {
+                    error("fallback must not run for $kind")
+                }
+                throw ProviderGatewayException(kind)
+            }
+
+            val failure =
+                assertThrows(AnkiReadFailure::class.java) {
+                    fixture.withOwner { owner -> fixture.reads.readTargetById(owner, expected) }
+                }
+            assertEquals(expectedCode, failure.code)
+            assertEquals(
+                listOf(ProviderEndpoint.MODEL_BY_ID),
+                fixture.gateway.queries.map { it.endpoint },
+            )
+        }
+    }
+
+    @Test
+    fun `model item fallback closes and fails at all-model row 100001`() {
+        val fixture = fixture()
+        fixture.gateway.queryHandler = targetQueryHandler()
+        val expected =
+            fixture.withOwner { owner ->
+                fixture.reads.verifyTarget(owner, verifyRequest())
+                requireNotNull(fixture.registry.target(owner))
+            }
+        fixture.gateway.queries.clear()
+        val fallback =
+            GeneratedFakeProviderCursor(
+                ProviderQueryShapes.MODEL_PROJECTION,
+                rowCount = 100_001,
+                rowAt = { index ->
+                    mapOf(ProviderColumn.MODEL_ID to integer(index + 1_000L))
+                },
+            )
+        fixture.gateway.queryHandler = { query, _ ->
+            when (query.endpoint) {
+                ProviderEndpoint.MODEL_BY_ID ->
+                    throw ProviderGatewayException(ProviderFailureKind.QUERY_FAILED)
+                ProviderEndpoint.MODELS -> fallback
+                else -> error("unexpected query $query")
+            }
+        }
+
+        val failure =
+            assertThrows(AnkiReadFailure::class.java) {
+                fixture.withOwner { owner -> fixture.reads.readTargetById(owner, expected) }
+            }
+        assertEquals(AnkiErrorCode.QUERY_FAILED, failure.code)
+        assertEquals(1, fallback.closeCount)
+    }
+
+    @Test
+    fun `known vocabulary pages deterministic v2 snapshot and consumes each cursor once`() {
+        val fixture = fixture(tokens = listOf("cursor_${"a".repeat(32)}"))
+        fixture.gateway.queryHandler = { query, _ ->
+            when {
+                query.endpoint == ProviderEndpoint.NOTES_V2 && query.selection == null ->
+                    FakeProviderCursor(
+                        query.projection,
+                        (1L..257L).map { id -> mapOf(ProviderColumn.NOTE_ID to integer(id)) },
+                    )
+                query.selection is ProviderSelection.NoteIds -> {
+                    val ids = (query.selection as ProviderSelection.NoteIds).ids
+                    FakeProviderCursor(
+                        query.projection,
+                        ids.map { id ->
+                            mapOf(
+                                ProviderColumn.NOTE_ID to integer(id),
+                                ProviderColumn.NOTE_FIELDS to text("word-$id\u001fmeaning"),
+                            )
+                        },
+                    )
+                }
+                else -> error("unexpected query $query")
+            }
+        }
+        val firstRequest = knownRequest()
+        val first =
+            fixture.withOwner { owner -> fixture.reads.scanFirstFields(owner, firstRequest) }
+                as KnownVocabularyResult
+        assertEquals(256, first.firstFields.size)
+        assertEquals(256, first.scannedNotes)
+        assertEquals(1L, first.nextCursor?.ordinal)
+        val secondRequest = knownRequest(cursor = first.nextCursor, requestId = SECOND_REQUEST_ID)
+        val second =
+            fixture.withOwner { owner -> fixture.reads.scanFirstFields(owner, secondRequest) }
+                as KnownVocabularyResult
+        assertEquals(listOf("word-257"), second.firstFields)
+        assertEquals(1, second.scannedNotes)
+        assertNull(second.nextCursor)
+        assertThrows(InvalidCapabilityException::class.java) {
+            fixture.withOwner { owner -> fixture.reads.scanFirstFields(owner, secondRequest) }
+        }
+        assertEquals(ProviderOrder.NOTE_ID_ASCENDING, fixture.gateway.queries.first().sortOrder)
+        val pageQueries = fixture.gateway.queries.filter { it.selection is ProviderSelection.NoteIds }
+        assertEquals((1L..256L).toList(), (pageQueries[0].selection as ProviderSelection.NoteIds).ids)
+    }
+
+    @Test
+    fun `known continuation failure is nonretryable after consuming its cursor`() {
+        val fixture = fixture(tokens = listOf("cursor_${"a".repeat(32)}"))
+        fixture.gateway.queryHandler = { query, _ ->
+            when {
+                query.endpoint == ProviderEndpoint.NOTES_V2 && query.selection == null ->
+                    FakeProviderCursor(
+                        query.projection,
+                        (1L..257L).map { id -> mapOf(ProviderColumn.NOTE_ID to integer(id)) },
+                    )
+                query.selection is ProviderSelection.NoteIds -> {
+                    val ids = (query.selection as ProviderSelection.NoteIds).ids
+                    FakeProviderCursor(
+                        query.projection,
+                        ids.map { id ->
+                            mapOf(
+                                ProviderColumn.NOTE_ID to integer(id),
+                                ProviderColumn.NOTE_FIELDS to text("word-$id"),
+                            )
+                        },
+                    )
+                }
+                else -> error("unexpected query $query")
+            }
+        }
+        val first =
+            fixture.withOwner { owner -> fixture.reads.scanFirstFields(owner, knownRequest()) }
+                as KnownVocabularyResult
+        val continuation = knownRequest(cursor = requireNotNull(first.nextCursor), requestId = SECOND_REQUEST_ID)
+        fixture.gateway.queryHandler = { _, _ ->
+            throw ProviderGatewayException(ProviderFailureKind.TIMEOUT)
+        }
+
+        val failure =
+            assertThrows(AnkiReadFailure::class.java) {
+                fixture.withOwner { owner -> fixture.reads.scanFirstFields(owner, continuation) }
+            }
+        assertEquals(AnkiErrorCode.TIMEOUT, failure.code)
+        assertFalse(failure.retryable)
+        assertThrows(InvalidCapabilityException::class.java) {
+            fixture.withOwner { owner -> fixture.reads.scanFirstFields(owner, continuation) }
+        }
+    }
+
+    @Test
+    fun `known vocabulary excludes parent scope once and preserves mixed snapshot order`() {
+        val fixture = fixture()
+        fixture.gateway.queryHandler = { query, _ ->
+            when (query.endpoint) {
+                ProviderEndpoint.NOTES_V2 -> {
+                    if (query.selection == null) {
+                        FakeProviderCursor(
+                            query.projection,
+                            listOf(1L, 2L, 3L).map { id -> mapOf(ProviderColumn.NOTE_ID to integer(id)) },
+                        )
+                    } else {
+                        FakeProviderCursor(
+                            query.projection,
+                            listOf(
+                                mapOf(
+                                    ProviderColumn.NOTE_ID to integer(3L),
+                                    ProviderColumn.NOTE_FIELDS to text("three\u001f"),
+                                ),
+                                mapOf(
+                                    ProviderColumn.NOTE_ID to integer(1L),
+                                    ProviderColumn.NOTE_FIELDS to text("one\u001f"),
+                                ),
+                            ),
+                        )
+                    }
+                }
+                ProviderEndpoint.DECKS ->
+                    FakeProviderCursor(
+                        query.projection,
+                        listOf(
+                            deckRow(20, "Parent"),
+                            deckRow(21, "Parent::Child"),
+                            deckRow(22, "Quote \\\" deck"),
+                        ),
+                    )
+                ProviderEndpoint.NOTES_BROWSER ->
+                    FakeProviderCursor(
+                        query.projection,
+                        listOf(mapOf(ProviderColumn.NOTE_ID to integer(2L))),
+                    )
+                else -> error("unexpected query $query")
+            }
+        }
+        val result =
+            fixture.withOwner { owner ->
+                fixture.reads.scanFirstFields(
+                    owner,
+                    knownRequest(excluded = listOf("Parent::Child", "Parent")),
+                )
+            } as KnownVocabularyResult
+
+        assertEquals(listOf("one", "three"), result.firstFields)
+        val browserQueries = fixture.gateway.queries.filter { it.endpoint == ProviderEndpoint.NOTES_BROWSER }
+        assertEquals(1, browserQueries.size)
+        assertEquals(ProviderSelection.ExcludedDeck("Parent"), browserQueries.single().selection)
+    }
+
+    @Test
+    fun `known vocabulary counts missing notes and closes every cursor on failure`() {
+        val fixture = fixture()
+        val snapshotCursor =
+            FakeProviderCursor(
+                listOf(ProviderColumn.NOTE_ID),
+                listOf(
+                    mapOf(ProviderColumn.NOTE_ID to integer(1L)),
+                    mapOf(ProviderColumn.NOTE_ID to integer(2L)),
+                ),
+            )
+        val pageCursor =
+            FakeProviderCursor(
+                listOf(ProviderColumn.NOTE_ID, ProviderColumn.NOTE_FIELDS),
+                listOf(
+                    mapOf(
+                        ProviderColumn.NOTE_ID to integer(2L),
+                        ProviderColumn.NOTE_FIELDS to text("two"),
+                    ),
+                ),
+            )
+        fixture.gateway.queryHandler = { query, _ ->
+            if (query.selection == null) snapshotCursor else pageCursor
+        }
+        val result =
+            fixture.withOwner { owner -> fixture.reads.scanFirstFields(owner, knownRequest()) }
+                as KnownVocabularyResult
+        assertEquals(listOf("two"), result.firstFields)
+        assertEquals(2, result.scannedNotes)
+        assertEquals(1, snapshotCursor.closeCount)
+        assertEquals(1, pageCursor.closeCount)
+
+        val malformed = fixture()
+        val bad =
+            FakeProviderCursor(
+                listOf(ProviderColumn.NOTE_ID),
+                listOf(
+                    mapOf(ProviderColumn.NOTE_ID to integer(2L)),
+                    mapOf(ProviderColumn.NOTE_ID to integer(1L)),
+                ),
+            )
+        malformed.gateway.queryHandler = { _, _ -> bad }
+        assertThrows(AnkiReadFailure::class.java) {
+            malformed.withOwner { owner -> malformed.reads.scanFirstFields(owner, knownRequest()) }
+        }
+        assertEquals(1, bad.closeCount)
+    }
+
+    @Test
+    fun `known vocabulary closes immediately at the 100001st note`() {
+        val fixture = fixture()
+        val cursor =
+            GeneratedFakeProviderCursor(
+                listOf(ProviderColumn.NOTE_ID),
+                rowCount = 100_001,
+                rowAt = { index ->
+                    mapOf(ProviderColumn.NOTE_ID to integer(index + 1L))
+                },
+            )
+        fixture.gateway.queryHandler = { _, _ -> cursor }
+
+        val failure = assertThrows(AnkiReadFailure::class.java) {
+            fixture.withOwner { owner -> fixture.reads.scanFirstFields(owner, knownRequest()) }
+        }
+        assertEquals(AnkiErrorCode.QUERY_FAILED, failure.code)
+        assertEquals(1, cursor.closeCount)
+    }
+
+    @Test
+    fun `known vocabulary distinguishes null empty and exact 100000 note snapshots`() {
+        val nullFixture = fixture()
+        nullFixture.gateway.queryHandler = { _, _ -> null }
+        assertEquals(
+            AnkiErrorCode.QUERY_FAILED,
+            assertThrows(AnkiReadFailure::class.java) {
+                nullFixture.withOwner { owner ->
+                    nullFixture.reads.scanFirstFields(owner, knownRequest())
+                }
+            }.code,
+        )
+
+        val emptyFixture = fixture()
+        emptyFixture.gateway.queryHandler = { query, _ ->
+            FakeProviderCursor(query.projection, emptyList())
+        }
+        val empty =
+            emptyFixture.withOwner { owner ->
+                emptyFixture.reads.scanFirstFields(owner, knownRequest())
+            } as KnownVocabularyResult
+        assertEquals(emptyList<String>(), empty.firstFields)
+        assertEquals(0, empty.scannedNotes)
+        assertNull(empty.nextCursor)
+
+        val boundaryFixture = fixture(tokens = listOf("cursor_${"9".repeat(32)}"))
+        val snapshot =
+            GeneratedFakeProviderCursor(
+                ProviderQueryShapes.NOTE_ID_PROJECTION,
+                rowCount = 100_000,
+                rowAt = { index ->
+                    mapOf(ProviderColumn.NOTE_ID to integer(index + 1L))
+                },
+            )
+        boundaryFixture.gateway.queryHandler = { query, _ ->
+            when {
+                query.selection == null -> snapshot
+                query.selection is ProviderSelection.NoteIds ->
+                    FakeProviderCursor(query.projection, emptyList())
+                else -> error("unexpected query $query")
+            }
+        }
+        val boundary =
+            boundaryFixture.withOwner { owner ->
+                boundaryFixture.reads.scanFirstFields(owner, knownRequest())
+            } as KnownVocabularyResult
+        assertEquals(256, boundary.scannedNotes)
+        assertEquals(emptyList<String>(), boundary.firstFields)
+        assertEquals(1L, boundary.nextCursor?.ordinal)
+        assertEquals(1, snapshot.closeCount)
+    }
+
+    @Test
+    fun `known vocabulary rejects snapshot page and continuation cursor corruption`() {
+        fun pageFailure(rows: List<Map<ProviderColumn, ProviderCell>>): AnkiReadFailure {
+            val fixture = fixture(tokens = listOf("cursor_${"8".repeat(32)}"))
+            fixture.gateway.queryHandler = { query, _ ->
+                when {
+                    query.selection == null ->
+                        FakeProviderCursor(
+                            query.projection,
+                            listOf(
+                                mapOf(ProviderColumn.NOTE_ID to integer(1L)),
+                                mapOf(ProviderColumn.NOTE_ID to integer(2L)),
+                            ),
+                        )
+                    query.selection is ProviderSelection.NoteIds ->
+                        FakeProviderCursor(query.projection, rows)
+                    else -> error("unexpected query $query")
+                }
+            }
+            return assertThrows(AnkiReadFailure::class.java) {
+                fixture.withOwner { owner ->
+                    fixture.reads.scanFirstFields(owner, knownRequest())
+                }
+            }
+        }
+
+        assertEquals(
+            AnkiErrorCode.QUERY_FAILED,
+            pageFailure(
+                listOf(
+                    mapOf(
+                        ProviderColumn.NOTE_ID to integer(3L),
+                        ProviderColumn.NOTE_FIELDS to text("unexpected"),
+                    ),
+                ),
+            ).code,
+        )
+        assertEquals(
+            AnkiErrorCode.QUERY_FAILED,
+            pageFailure(
+                listOf(
+                    mapOf(
+                        ProviderColumn.NOTE_ID to integer(1L),
+                        ProviderColumn.NOTE_FIELDS to text("one"),
+                    ),
+                    mapOf(
+                        ProviderColumn.NOTE_ID to integer(1L),
+                        ProviderColumn.NOTE_FIELDS to text("duplicate"),
+                    ),
+                ),
+            ).code,
+        )
+
+        val continuationFixture = fixture(tokens = listOf("cursor_${"7".repeat(32)}"))
+        continuationFixture.gateway.queryHandler = { query, _ ->
+            when {
+                query.selection == null ->
+                    GeneratedFakeProviderCursor(
+                        query.projection,
+                        rowCount = 257,
+                        rowAt = { index ->
+                            mapOf(ProviderColumn.NOTE_ID to integer(index + 1L))
+                        },
+                    )
+                query.selection is ProviderSelection.NoteIds ->
+                    FakeProviderCursor(query.projection, emptyList())
+                else -> error("unexpected query $query")
+            }
+        }
+        val first =
+            continuationFixture.withOwner { owner ->
+                continuationFixture.reads.scanFirstFields(owner, knownRequest())
+            } as KnownVocabularyResult
+        val corrupt =
+            requireNotNull(first.nextCursor).copy(
+                token = "cursor_${"6".repeat(32)}",
+            )
+        assertThrows(InvalidCapabilityException::class.java) {
+            continuationFixture.withOwner { owner ->
+                continuationFixture.reads.scanFirstFields(
+                    owner,
+                    knownRequest(cursor = corrupt, requestId = SECOND_REQUEST_ID),
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `excluded deck browser scan closes at row 100001 before reading its cells`() {
+        val fixture = fixture()
+        var browserCellReads = 0
+        val browserCursor =
+            GeneratedFakeProviderCursor(
+                listOf(ProviderColumn.NOTE_ID),
+                rowCount = 100_001,
+                rowAt = { index ->
+                    mapOf(ProviderColumn.NOTE_ID to integer(index + 1L))
+                },
+                beforeCell = { browserCellReads += 1 },
+            )
+        fixture.gateway.queryHandler = { query, _ ->
+            when (query.endpoint) {
+                ProviderEndpoint.NOTES_V2 ->
+                    FakeProviderCursor(
+                        query.projection,
+                        listOf(mapOf(ProviderColumn.NOTE_ID to integer(1L))),
+                    )
+                ProviderEndpoint.DECKS ->
+                    FakeProviderCursor(query.projection, listOf(deckRow(name = "Excluded")))
+                ProviderEndpoint.NOTES_BROWSER -> browserCursor
+                else -> error("unexpected query $query")
+            }
+        }
+
+        val failure =
+            assertThrows(AnkiReadFailure::class.java) {
+                fixture.withOwner { owner ->
+                    fixture.reads.scanFirstFields(
+                        owner,
+                        knownRequest(excluded = listOf("Excluded")),
+                    )
+                }
+            }
+        assertEquals(AnkiErrorCode.QUERY_FAILED, failure.code)
+        assertEquals(100_000, browserCellReads)
+        assertEquals(1, browserCursor.closeCount)
+    }
+
+    @Test
+    fun `known initial and continuation pages preflight escape-expanded responses`() {
+        val fixture = fixture(tokens = listOf("cursor_${"e".repeat(32)}"))
+        val escapeHeavy = "\u0001".repeat(1024)
+        fixture.gateway.queryHandler = { query, _ ->
+            when {
+                query.endpoint == ProviderEndpoint.NOTES_V2 && query.selection == null ->
+                    FakeProviderCursor(
+                        query.projection,
+                        (1L..257L).map { id -> mapOf(ProviderColumn.NOTE_ID to integer(id)) },
+                    )
+                query.selection is ProviderSelection.NoteIds -> {
+                    val ids = (query.selection as ProviderSelection.NoteIds).ids
+                    FakeProviderCursor(
+                        query.projection,
+                        ids.map { id ->
+                            mapOf(
+                                ProviderColumn.NOTE_ID to integer(id),
+                                ProviderColumn.NOTE_FIELDS to text(escapeHeavy),
+                            )
+                        },
+                    )
+                }
+                else -> error("unexpected query $query")
+            }
+        }
+
+        val first =
+            fixture.withOwner { owner -> fixture.reads.scanFirstFields(owner, knownRequest()) }
+                as KnownVocabularyResult
+        assertEquals(256, first.firstFields.size)
+        assertTrue(first.firstFields.all { it == escapeHeavy })
+        val continuation =
+            fixture.withOwner { owner ->
+                fixture.reads.scanFirstFields(
+                    owner,
+                    knownRequest(
+                        cursor = requireNotNull(first.nextCursor),
+                        requestId = SECOND_REQUEST_ID,
+                    ),
+                )
+            } as KnownVocabularyResult
+        assertEquals(listOf(escapeHeavy), continuation.firstFields)
+        assertNull(continuation.nextCursor)
+    }
+
+    @Test
+    fun `duplicate snapshot preserves checksum collisions and atomically replaces baseline`() {
+        val fixture =
+            fixture(
+                tokens =
+                    listOf(
+                        "baseline_${"a".repeat(32)}",
+                        "baseline_${"b".repeat(32)}",
+                    ),
+            )
+        fixture.gateway.checksum = { 42L }
+        fixture.gateway.queryHandler = targetThenDuplicateHandler()
+        fixture.withOwner { owner -> fixture.reads.verifyTarget(owner, verifyRequest()) }
+        val scope =
+            DuplicateScanScope(
+                modelName = "Mining",
+                firstFieldName = "Expression",
+                deckName = null,
+                candidates =
+                    listOf(
+                        DuplicateCandidate("cat", "<b>cat</b>"),
+                        DuplicateCandidate("dog", "dog"),
+                    ),
+                occurrences = listOf(0, 1),
+                invalidateBaselineToken = null,
+            )
+        val first =
+            fixture.withOwner { owner ->
+                fixture.reads.scanFirstFields(owner, duplicateRequest(scope))
+            } as DuplicateLookupResult
+        assertEquals(listOf(31L, 32L), first.rawFirstFieldHits[0].map { it.noteId })
+        assertEquals(listOf(31L, 32L), first.rawFirstFieldHits[1].map { it.noteId })
+        val selection =
+            fixture.gateway.queries.last { it.selection is ProviderSelection.DuplicateChecksums }.selection
+        assertEquals(
+            ProviderSelection.DuplicateChecksums(10L, listOf(42L)),
+            selection,
+        )
+
+        val replacementScope = scope.copy(invalidateBaselineToken = first.baselineToken)
+        val second =
+            fixture.withOwner { owner ->
+                fixture.reads.scanFirstFields(
+                    owner,
+                    duplicateRequest(replacementScope, SECOND_REQUEST_ID),
+                )
+            } as DuplicateLookupResult
+        assertEquals("baseline_${"b".repeat(32)}", second.baselineToken)
+        assertThrows(InvalidCapabilityException::class.java) {
+            fixture.withOwner { owner -> fixture.registry.consumeBaseline(owner, first.baselineToken) }
+        }
+    }
+
+    @Test
+    fun `duplicate baseline is consumed only after the exact response can be encoded`() {
+        val firstToken = "baseline_${"a".repeat(32)}"
+        val secondToken = "baseline_${"b".repeat(32)}"
+        val fixture = fixture(tokens = listOf(firstToken, secondToken))
+        fixture.gateway.checksum = { 42L }
+        fixture.gateway.queryHandler = targetThenDuplicateHandler()
+        fixture.withOwner { owner -> fixture.reads.verifyTarget(owner, verifyRequest()) }
+        val initialScope =
+            DuplicateScanScope(
+                modelName = "Mining",
+                firstFieldName = "Expression",
+                deckName = null,
+                candidates = listOf(DuplicateCandidate("control", "control")),
+                occurrences = listOf(0),
+                invalidateBaselineToken = null,
+            )
+        val initial =
+            fixture.withOwner { owner ->
+                fixture.reads.scanFirstFields(owner, duplicateRequest(initialScope))
+            } as DuplicateLookupResult
+        assertEquals(firstToken, initial.baselineToken)
+
+        val escapeHeavyField = "\u0001".repeat(65_536)
+        fixture.gateway.queryHandler = { query, _ ->
+            check(query.endpoint == ProviderEndpoint.NOTES_V2)
+            FakeProviderCursor(
+                query.projection,
+                (1L..6L).map { id ->
+                    mapOf(
+                        ProviderColumn.NOTE_ID to integer(id),
+                        ProviderColumn.NOTE_FIELDS to text(escapeHeavyField),
+                        ProviderColumn.NOTE_CHECKSUM to integer(42L),
+                    )
+                },
+            )
+        }
+        val failure =
+            assertThrows(AnkiReadFailure::class.java) {
+                fixture.withOwner { owner ->
+                    fixture.reads.scanFirstFields(
+                        owner,
+                        duplicateRequest(
+                            initialScope.copy(invalidateBaselineToken = firstToken),
+                            SECOND_REQUEST_ID,
+                        ),
+                    )
+                }
+            }
+        assertEquals(AnkiErrorCode.QUERY_FAILED, failure.code)
+        assertFalse(failure.retryable)
+        fixture.withOwner { owner ->
+            assertThrows(InvalidCapabilityException::class.java) {
+                fixture.registry.consumeBaseline(owner, firstToken)
+            }
+            assertThrows(InvalidCapabilityException::class.java) {
+                fixture.registry.consumeBaseline(owner, secondToken)
+            }
+        }
+    }
+
+    @Test
+    fun `duplicate hit bounds accept 100 per candidate and 1000 total then reject N plus one`() {
+        fun resultFor(
+            candidateCount: Int,
+            providerRows: Int,
+        ): Result<DuplicateLookupResult> {
+            val fixture = fixture(tokens = listOf("baseline_${"4".repeat(32)}"))
+            fixture.gateway.checksum = { 42L }
+            fixture.gateway.queryHandler = { query, _ ->
+                when (query.endpoint) {
+                    ProviderEndpoint.MODELS ->
+                        FakeProviderCursor(query.projection, listOf(modelRow()))
+                    ProviderEndpoint.MODEL_TEMPLATES ->
+                        FakeProviderCursor(query.projection, listOf(templateRow()))
+                    ProviderEndpoint.DECKS ->
+                        FakeProviderCursor(query.projection, listOf(deckRow()))
+                    ProviderEndpoint.NOTES_V2 ->
+                        GeneratedFakeProviderCursor(
+                            query.projection,
+                            rowCount = providerRows,
+                            rowAt = { index ->
+                                mapOf(
+                                    ProviderColumn.NOTE_ID to integer(index + 1L),
+                                    ProviderColumn.NOTE_FIELDS to text("cat"),
+                                    ProviderColumn.NOTE_CHECKSUM to integer(42L),
+                                )
+                            },
+                        )
+                    else -> error("unexpected query $query")
+                }
+            }
+            fixture.withOwner { owner -> fixture.reads.verifyTarget(owner, verifyRequest()) }
+            val scope =
+                DuplicateScanScope(
+                    modelName = "Mining",
+                    firstFieldName = "Expression",
+                    deckName = null,
+                    candidates =
+                        (0 until candidateCount).map { index ->
+                            DuplicateCandidate("key-$index", "cat")
+                        },
+                    occurrences = (0 until candidateCount).toList(),
+                    invalidateBaselineToken = null,
+                )
+            return runCatching {
+                fixture.withOwner { owner ->
+                    fixture.reads.scanFirstFields(owner, duplicateRequest(scope))
+                        as DuplicateLookupResult
+                }
+            }
+        }
+
+        val perCandidateBoundary = resultFor(candidateCount = 1, providerRows = 100)
+        assertEquals(100, perCandidateBoundary.getOrThrow().rawFirstFieldHits.single().size)
+        assertEquals(
+            AnkiErrorCode.QUERY_FAILED,
+            (resultFor(candidateCount = 1, providerRows = 101).exceptionOrNull() as AnkiReadFailure).code,
+        )
+
+        val totalBoundary = resultFor(candidateCount = 10, providerRows = 100)
+        assertEquals(
+            1000,
+            totalBoundary.getOrThrow().rawFirstFieldHits.sumOf { hits -> hits.size },
+        )
+        assertEquals(
+            AnkiErrorCode.QUERY_FAILED,
+            (resultFor(candidateCount = 11, providerRows = 91).exceptionOrNull() as AnkiReadFailure).code,
+        )
+    }
+
+    @Test
+    fun `exact-deck duplicate filter uses global card ID discovery and four-column readback`() {
+        val fixture = fixture(tokens = listOf("baseline_${"c".repeat(32)}"))
+        fixture.gateway.checksum = { 42L }
+        fixture.gateway.queryHandler = targetThenDuplicateHandler(exactDeck = true)
+        fixture.withOwner { owner -> fixture.reads.verifyTarget(owner, verifyRequest()) }
+        val result =
+            fixture.withOwner { owner ->
+                fixture.reads.scanFirstFields(
+                    owner,
+                    duplicateRequest(
+                        DuplicateScanScope(
+                            "Mining",
+                            "Expression",
+                            "Mining",
+                            listOf(DuplicateCandidate("cat", "cat")),
+                            listOf(0),
+                            null,
+                        ),
+                    ),
+                )
+            } as DuplicateLookupResult
+        assertEquals(listOf(31L), result.rawFirstFieldHits.single().map { it.noteId })
+        val cardDiscovery = fixture.gateway.queries.filter { it.endpoint == ProviderEndpoint.CARDS }
+        assertEquals(
+            listOf(ProviderSelection.CardsForNote(31L), ProviderSelection.CardsForNote(32L)),
+            cardDiscovery.map { it.selection },
+        )
+        val directReads = fixture.gateway.queries.filter { it.endpoint == ProviderEndpoint.CARD_BY_ID }
+        assertTrue(directReads.all { it.projection.size == 4 })
+        assertTrue(fixture.gateway.queries.none { it.endpoint.name.contains("NOTE_CARD") })
+    }
+
+    @Test
+    fun `exact-deck duplicate rejects more cards than the verified template count`() {
+        val fixture = fixture(tokens = listOf("baseline_${"d".repeat(32)}"))
+        fixture.gateway.checksum = { 42L }
+        fixture.gateway.queryHandler = targetThenDuplicateHandler(exactDeck = true, malformedCardCount = true)
+        fixture.withOwner { owner -> fixture.reads.verifyTarget(owner, verifyRequest()) }
+        val failure =
+            assertThrows(AnkiReadFailure::class.java) {
+                fixture.withOwner { owner ->
+                    fixture.reads.scanFirstFields(
+                        owner,
+                        duplicateRequest(
+                            DuplicateScanScope(
+                                "Mining",
+                                "Expression",
+                                "Mining",
+                                listOf(DuplicateCandidate("cat", "cat")),
+                                listOf(0),
+                                null,
+                            ),
+                        ),
+                    )
+                }
+            }
+        assertEquals(AnkiErrorCode.QUERY_FAILED, failure.code)
+    }
+
+    @Test
+    fun `global card readback rejects malformed ids note ids ordinals decks and duplicate ordinals`() {
+        data class CardCase(
+            val name: String,
+            val cardCount: Int = 1,
+            val discoveredIds: List<Long>,
+            val row: (Long) -> Map<ProviderColumn, ProviderCell>,
+        )
+
+        val cases =
+            listOf(
+                CardCase("missing card ID", discoveredIds = emptyList()) { id ->
+                    cardRow(id, 31L, 0L, 20L)
+                },
+                CardCase("non-positive discovery ID", discoveredIds = listOf(0L)) { id ->
+                    cardRow(id, 31L, 0L, 20L)
+                },
+                CardCase("duplicate discovery ID", discoveredIds = listOf(131L, 131L)) { id ->
+                    cardRow(id, 31L, 0L, 20L)
+                },
+                CardCase("returned card ID", discoveredIds = listOf(131L)) {
+                    cardRow(999L, 31L, 0L, 20L)
+                },
+                CardCase("returned note ID", discoveredIds = listOf(131L)) { id ->
+                    cardRow(id, 32L, 0L, 20L)
+                },
+                CardCase("returned ordinal", discoveredIds = listOf(131L)) { id ->
+                    cardRow(id, 31L, 1L, 20L)
+                },
+                CardCase("returned deck", discoveredIds = listOf(131L)) { id ->
+                    cardRow(id, 31L, 0L, 0L)
+                },
+                CardCase(
+                    "duplicate ordinal",
+                    cardCount = 2,
+                    discoveredIds = listOf(131L, 132L),
+                ) { id ->
+                    cardRow(id, 31L, 0L, 20L)
+                },
+            )
+        for (case in cases) {
+            val fixture = fixture(tokens = listOf("baseline_${"f".repeat(32)}"))
+            fixture.gateway.checksum = { 42L }
+            fixture.gateway.queryHandler = { query, _ ->
+                when (query.endpoint) {
+                    ProviderEndpoint.MODELS ->
+                        FakeProviderCursor(
+                            query.projection,
+                            listOf(modelRow(cards = case.cardCount.toLong())),
+                        )
+                    ProviderEndpoint.MODEL_TEMPLATES ->
+                        FakeProviderCursor(
+                            query.projection,
+                            (0 until case.cardCount).map { ordinal ->
+                                templateRow(ordinal = ordinal.toLong())
+                            },
+                        )
+                    ProviderEndpoint.DECKS ->
+                        FakeProviderCursor(query.projection, listOf(deckRow()))
+                    ProviderEndpoint.NOTES_V2 ->
+                        FakeProviderCursor(
+                            query.projection,
+                            listOf(
+                                mapOf(
+                                    ProviderColumn.NOTE_ID to integer(31L),
+                                    ProviderColumn.NOTE_FIELDS to text("cat"),
+                                    ProviderColumn.NOTE_CHECKSUM to integer(42L),
+                                ),
+                            ),
+                        )
+                    ProviderEndpoint.CARDS ->
+                        FakeProviderCursor(
+                            query.projection,
+                            case.discoveredIds.map { id ->
+                                mapOf(ProviderColumn.CARD_ID to integer(id))
+                            },
+                        )
+                    ProviderEndpoint.CARD_BY_ID ->
+                        FakeProviderCursor(
+                            query.projection,
+                            listOf(case.row(requireNotNull(query.endpointId))),
+                        )
+                    else -> error("unexpected query $query")
+                }
+            }
+            fixture.withOwner { owner -> fixture.reads.verifyTarget(owner, verifyRequest()) }
+            val failure =
+                assertThrows(case.name, AnkiReadFailure::class.java) {
+                    fixture.withOwner { owner ->
+                        fixture.reads.scanFirstFields(
+                            owner,
+                            duplicateRequest(
+                                DuplicateScanScope(
+                                    modelName = "Mining",
+                                    firstFieldName = "Expression",
+                                    deckName = "Mining",
+                                    candidates = listOf(DuplicateCandidate("cat", "cat")),
+                                    occurrences = listOf(0),
+                                    invalidateBaselineToken = null,
+                                ),
+                            ),
+                        )
+                    }
+                }
+            assertEquals(case.name, AnkiErrorCode.QUERY_FAILED, failure.code)
+        }
+    }
+
+    @Test
+    fun `provider availability and cancellation map deterministically before query`() {
+        val statuses =
+            listOf(
+                ProviderAccessStatus.Absent to AnkiErrorCode.PROVIDER_UNAVAILABLE,
+                ProviderAccessStatus.ApiDisabled to AnkiErrorCode.API_DISABLED,
+                ProviderAccessStatus.Incompatible(1) to AnkiErrorCode.API_DISABLED,
+                ProviderAccessStatus.PermissionRequired to AnkiErrorCode.PERMISSION_REQUIRED,
+            )
+        for ((status, code) in statuses) {
+            val fixture = fixture()
+            fixture.gateway.status = status
+            val failure = assertThrows(AnkiReadFailure::class.java) {
+                fixture.withOwner { owner -> fixture.reads.scanFirstFields(owner, knownRequest()) }
+            }
+            assertEquals(code, failure.code)
+            assertTrue(fixture.gateway.queries.isEmpty())
+        }
+
+        val cancellation = MutableAnkiCancellation().also(MutableAnkiCancellation::cancel)
+        val fixture = fixture(cancellation = cancellation)
+        assertThrows(RunCancelledException::class.java) {
+            fixture.withOwner { owner -> fixture.reads.scanFirstFields(owner, knownRequest()) }
+        }
+        assertTrue(fixture.gateway.queries.isEmpty())
+    }
+
+    @Test
+    fun `field splitter preserves empty and exact space values`() {
+        assertEquals(
+            listOf("", " ", "", ""),
+            ProviderSnapshotValidation.splitFieldsPreservingTrailing("\u001f \u001f\u001f"),
+        )
+    }
+
+    private fun targetThenDuplicateHandler(
+        exactDeck: Boolean = false,
+        malformedCardCount: Boolean = false,
+    ): (ProviderQuery, AnkiCancellation) -> ProviderCursor? =
+        { query, _ ->
+            when (query.endpoint) {
+                ProviderEndpoint.MODELS -> FakeProviderCursor(query.projection, listOf(modelRow()))
+                ProviderEndpoint.MODEL_TEMPLATES -> FakeProviderCursor(query.projection, listOf(templateRow()))
+                ProviderEndpoint.DECKS -> FakeProviderCursor(query.projection, listOf(deckRow()))
+                ProviderEndpoint.NOTES_V2 ->
+                    FakeProviderCursor(
+                        query.projection,
+                        listOf(
+                            mapOf(
+                                ProviderColumn.NOTE_ID to integer(31L),
+                                ProviderColumn.NOTE_FIELDS to text("<b>cat</b>\u001fmeaning"),
+                                ProviderColumn.NOTE_CHECKSUM to integer(42L),
+                            ),
+                            mapOf(
+                                ProviderColumn.NOTE_ID to integer(32L),
+                                ProviderColumn.NOTE_FIELDS to text("dog\u001fmeaning"),
+                                ProviderColumn.NOTE_CHECKSUM to integer(42L),
+                            ),
+                        ),
+                    )
+                ProviderEndpoint.CARDS -> {
+                    check(exactDeck)
+                    val noteId = (query.selection as ProviderSelection.CardsForNote).noteId
+                    FakeProviderCursor(
+                        query.projection,
+                        buildList {
+                            add(mapOf(ProviderColumn.CARD_ID to integer(noteId + 100L)))
+                            if (malformedCardCount) {
+                                add(mapOf(ProviderColumn.CARD_ID to integer(noteId + 200L)))
+                            }
+                        },
+                    )
+                }
+                ProviderEndpoint.CARD_BY_ID -> {
+                    check(exactDeck)
+                    val cardId = requireNotNull(query.endpointId)
+                    val noteId = cardId - 100L
+                    FakeProviderCursor(
+                        query.projection,
+                        listOf(cardRow(cardId, noteId, 0L, if (noteId == 31L) 20L else 99L)),
+                    )
+                }
+                else -> error("unexpected query $query")
+            }
+        }
+
+    private fun targetQueryHandler(
+        model: Map<ProviderColumn, ProviderCell> = modelRow(),
+        deck: Map<ProviderColumn, ProviderCell> = deckRow(),
+        models: List<Map<ProviderColumn, ProviderCell>> = listOf(model),
+        decks: List<Map<ProviderColumn, ProviderCell>> = listOf(deck),
+        templates: List<Map<ProviderColumn, ProviderCell>> = listOf(templateRow()),
+    ): (ProviderQuery, AnkiCancellation) -> ProviderCursor? =
+        { query, _ ->
+            when (query.endpoint) {
+                ProviderEndpoint.MODELS -> FakeProviderCursor(query.projection, models)
+                ProviderEndpoint.MODEL_TEMPLATES -> FakeProviderCursor(query.projection, templates)
+                ProviderEndpoint.DECKS -> FakeProviderCursor(query.projection, decks)
+                else -> error("unexpected query $query")
+            }
+        }
+
+    private fun fixture(
+        tokens: List<String> = emptyList(),
+        cancellation: AnkiCancellation = AnkiCancellation.NONE,
+    ): Fixture {
+        val gateway = FakeAnkiProviderGateway()
+        val registry = AnkiRunStateRegistry()
+        assertTrue(registry.register(RUN_ID, cancellation))
+        val queue = ArrayDeque(tokens)
+        val tokenFactory = OpaqueTokenFactory { prefix ->
+            if (queue.isEmpty()) "$prefix${"0".repeat(32)}" else queue.removeFirst()
+        }
+        return Fixture(gateway, registry, AnkiProviderReadService(gateway, registry, tokenFactory))
+    }
+
+    private data class Fixture(
+        val gateway: FakeAnkiProviderGateway,
+        val registry: AnkiRunStateRegistry,
+        val reads: AnkiProviderReadService,
+    ) {
+        fun <T> withOwner(block: (AnkiRunStateRegistry.RunOwner) -> T): T =
+            registry.withOwner(RUN_ID, block)
+    }
+
+    private fun verifyRequest(required: List<String> = listOf("Expression")) =
+        VerifyTargetRequest(RUN_ID, REQUEST_ID, "Mining", "Mining", required)
+
+    private fun knownRequest(
+        excluded: List<String> = emptyList(),
+        cursor: com.ankiminer.android.anki.protocol.KnownVocabularyCursor? = null,
+        requestId: String = REQUEST_ID,
+    ) =
+        ScanFirstFieldsRequest(
+            RUN_ID,
+            requestId,
+            KnownVocabularyScope(excluded, cursor),
+        )
+
+    private fun duplicateRequest(
+        scope: DuplicateScanScope,
+        requestId: String = REQUEST_ID,
+    ) = ScanFirstFieldsRequest(RUN_ID, requestId, scope)
+
+    private companion object {
+        const val RUN_ID = "run_11111111111111111111111111111111"
+        const val REQUEST_ID = "anki_11111111111111111111111111111111"
+        const val SECOND_REQUEST_ID = "anki_22222222222222222222222222222222"
+    }
+}
