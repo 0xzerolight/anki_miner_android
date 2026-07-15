@@ -570,6 +570,69 @@ def test_allow_duplicate_cards_filters_checksum_hits_to_target_deck(
     assert [note["fields"]["Expression"] for note in notes] == ["猫"]
 
 
+@pytest.mark.parametrize(
+    ("allow_duplicate_cards", "expected_created", "expected_skipped"),
+    [(False, 1, 2), (True, 3, 0)],
+)
+def test_repeated_expressions_in_one_batch_follow_desktop_duplicate_mode(
+    initialized_bridge_home: Path,
+    allow_duplicate_cards: bool,
+    expected_created: int,
+    expected_skipped: int,
+) -> None:
+    config = _config(
+        initialized_bridge_home,
+        allow_duplicate_cards=allow_duplicate_cards,
+    )
+    kotlin = FakeKotlinAnki()
+    adapter = _adapter(config, kotlin)
+
+    created = adapter.create_cards_batch([_card("猫"), _card("猫"), _card("猫")])
+
+    assert created == expected_created
+    assert adapter.last_skipped_duplicates == expected_skipped
+    scope = kotlin.requests_for("ankiScanFirstFields")[0]["payload"]["scope"]
+    assert scope["candidates"] == [{"key": "猫", "firstField": "猫"}]
+    notes = kotlin.requests_for("ankiCreateNotes")[0]["payload"]["notes"]
+    assert len(notes) == expected_created
+
+
+def test_allow_duplicate_cards_fans_existing_target_hit_to_repeated_candidates(
+    initialized_bridge_home: Path,
+) -> None:
+    config = _config(initialized_bridge_home, allow_duplicate_cards=True)
+    kotlin = FakeKotlinAnki()
+    kotlin.duplicate_fields = ["猫"]
+    kotlin.duplicate_decks = {"猫": {config.anki_deck_name}}
+    adapter = _adapter(config, kotlin)
+
+    assert adapter.create_cards_batch([_card("猫"), _card("猫")]) == 0
+    assert adapter.last_skipped_duplicates == 2
+    scope = kotlin.requests_for("ankiScanFirstFields")[0]["payload"]["scope"]
+    assert scope["candidates"] == [{"key": "猫", "firstField": "猫"}]
+    assert not kotlin.requests_for("ankiCreateNotes")
+
+
+def test_duplicate_probe_fans_matches_by_exact_first_field_candidate(
+    initialized_bridge_home: Path,
+) -> None:
+    config = _config(initialized_bridge_home, allow_duplicate_cards=True)
+    kotlin = FakeKotlinAnki()
+    kotlin.duplicate_fields = [" 猫 "]
+    kotlin.duplicate_decks = {" 猫 ": {config.anki_deck_name}}
+    adapter = _adapter(config, kotlin)
+
+    assert adapter.create_cards_batch([_card("猫"), _card(" 猫 "), _card("猫")]) == 2
+    assert adapter.last_skipped_duplicates == 1
+    scope = kotlin.requests_for("ankiScanFirstFields")[0]["payload"]["scope"]
+    assert scope["candidates"] == [
+        {"key": "猫", "firstField": "猫"},
+        {"key": "猫", "firstField": " 猫 "},
+    ]
+    notes = kotlin.requests_for("ankiCreateNotes")[0]["payload"]["notes"]
+    assert [note["fields"]["Expression"] for note in notes] == ["猫", "猫"]
+
+
 def test_create_notes_batches_at_100_and_reports_cumulative_progress(
     initialized_bridge_home: Path,
 ) -> None:
@@ -693,7 +756,7 @@ def test_duplicate_lookup_rejects_misaligned_sparse_array_semantics(
     assert not kotlin.requests_for("ankiCreateNotes")
 
 
-def test_first_occurrence_wins_across_batch_boundary(
+def test_first_occurrence_wins_across_batch_boundary_when_duplicates_disallowed(
     initialized_bridge_home: Path,
 ) -> None:
     kotlin = FakeKotlinAnki()
@@ -702,6 +765,45 @@ def test_first_occurrence_wins_across_batch_boundary(
 
     assert adapter.create_cards_batch(cards) == 100
     assert adapter.last_skipped_duplicates == 1
+    assert [
+        len(request["payload"]["notes"])
+        for request in kotlin.requests_for("ankiCreateNotes")
+    ] == [100]
+    assert [
+        len(request["payload"]["scope"]["candidates"])
+        for request in kotlin.requests_for("ankiScanFirstFields")
+    ] == [100]
+
+
+def test_target_probe_observes_prior_batch_when_duplicates_allowed(
+    initialized_bridge_home: Path,
+) -> None:
+    class CollectionTrackingKotlin(FakeKotlinAnki):
+        def ankiCreateNotes(self, raw: str) -> str:
+            response = super().ankiCreateNotes(raw)
+            request = self.requests_for("ankiCreateNotes")[-1]["payload"]
+            rows = json.loads(response)["payload"]["results"]
+            for note, row in zip(request["notes"], rows, strict=True):
+                if row["status"] != "created":
+                    continue
+                first_field = next(iter(note["fields"].values()), "")
+                self.duplicate_fields.append(first_field)
+                self.duplicate_decks.setdefault(first_field, set()).add(
+                    request["deckName"]
+                )
+            return response
+
+    config = _config(initialized_bridge_home, allow_duplicate_cards=True)
+    kotlin = CollectionTrackingKotlin()
+    cards = [_card(f"語{index}") for index in range(100)] + [_card("語0")]
+    adapter = _adapter(config, kotlin)
+
+    assert adapter.create_cards_batch(cards) == 100
+    assert adapter.last_skipped_duplicates == 1
+    assert [
+        len(request["payload"]["scope"]["candidates"])
+        for request in kotlin.requests_for("ankiScanFirstFields")
+    ] == [100, 1]
     assert [
         len(request["payload"]["notes"])
         for request in kotlin.requests_for("ankiCreateNotes")

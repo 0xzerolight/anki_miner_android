@@ -787,29 +787,34 @@ class AndroidAnkiAdapter:
 
     def _duplicate_first_fields(
         self, candidates: Sequence[tuple[str, str]]
-    ) -> set[str]:
+    ) -> list[bool]:
         if not candidates:
-            return set()
+            return []
         from anki_miner.services.anki_note_builder import _strip_for_dedup
 
-        candidate_keys = [key for key, _ in candidates]
+        candidate_list = list(candidates)
         if (
-            len(candidates) > _BATCH_SIZE
-            or len(set(candidate_keys)) != len(candidate_keys)
+            len(candidate_list) > _BATCH_SIZE
             or any(
-                not key or len(key) > _MAX_DUPLICATE_KEY_CHARS for key in candidate_keys
+                not isinstance(key, str)
+                or not key
+                or len(key) > _MAX_DUPLICATE_KEY_CHARS
+                for key, _ in candidate_list
             )
             or any(
                 not isinstance(first_field, str)
                 or len(first_field) > _MAX_DUPLICATE_FIRST_FIELD_CHARS
                 or _strip_for_dedup(first_field) != key
-                for key, first_field in candidates
+                for key, first_field in candidate_list
             )
         ):
             _protocol_error(
                 "invalid_note",
-                "Duplicate candidates must be normalized, unique, non-empty, and bounded",
+                "Duplicate candidates must be normalized, non-empty, and bounded",
             )
+        # Provider identity includes the exact first-field checksum. Collapse only
+        # identical wire probes, then restore their position-aligned decisions.
+        unique_candidates = list(dict.fromkeys(candidate_list))
         scope = {
             "kind": "duplicates",
             "modelName": self.config.anki_note_type,
@@ -820,7 +825,7 @@ class AndroidAnkiAdapter:
             ),
             "candidates": [
                 {"key": key, "firstField": first_field}
-                for key, first_field in candidates
+                for key, first_field in unique_candidates
             ],
         }
         try:
@@ -835,18 +840,20 @@ class AndroidAnkiAdapter:
         matches = result["matches"]
         if (
             not isinstance(matches, list)
-            or len(matches) != len(candidate_keys)
+            or len(matches) != len(unique_candidates)
             or any(type(match) is not bool for match in matches)
         ):
             _protocol_error(
                 "invalid_anki_response",
                 "Duplicate lookup matches must align with candidates",
             )
-        return {
-            key
-            for key, is_duplicate in zip(candidate_keys, matches, strict=True)
-            if is_duplicate
+        matches_by_candidate = {
+            candidate: is_duplicate
+            for candidate, is_duplicate in zip(
+                unique_candidates, matches, strict=True
+            )
         }
+        return [matches_by_candidate[candidate] for candidate in candidate_list]
 
     def _parse_create_notes_result(
         self, payload: dict[str, Any], client_ids: Sequence[str]
@@ -1034,19 +1041,26 @@ class AndroidAnkiAdapter:
                     fields = note.get("fields") or {}
                     first_value = next(iter(fields.values()), "")
                     key = _strip_for_dedup(first_value)
-                    if key in seen_outgoing:
-                        skipped_duplicates += 1
-                        continue
-                    seen_outgoing.add(key)
+                    if not self.config.allow_duplicate_cards:
+                        if key in seen_outgoing:
+                            skipped_duplicates += 1
+                            continue
+                        seen_outgoing.add(key)
                     candidates.append((item, note, key, first_value))
 
-                existing = self._duplicate_first_fields(
-                    [(key, first_value) for _, _, key, first_value in candidates if key]
+                duplicate_matches = iter(
+                    self._duplicate_first_fields(
+                        [
+                            (key, first_value)
+                            for _, _, key, first_value in candidates
+                            if key
+                        ]
+                    )
                 )
                 submit_notes: list[dict[str, Any]] = []
                 submit_payloads: list[Any] = []
                 for item, note, key, _ in candidates:
-                    if key and key in existing:
+                    if key and next(duplicate_matches):
                         skipped_duplicates += 1
                         continue
                     submit_notes.append(note)
