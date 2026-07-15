@@ -110,6 +110,8 @@ class FfmpegToolingTests(unittest.TestCase):
         self.assertNotIn("--enable-gpl", build)
         self.assertIn("--enable-static", configure)
         self.assertIn("--disable-shared", configure)
+        self.assertIn("--disable-devices", configure)
+        self.assertIn("--enable-indev=lavfi", configure)
         self.assertIn("--disable-network", configure)
         self.assertIn("assert-ffmpeg-config.py", configure)
         self.assertGreaterEqual(configure.count("max-page-size=16384"), 2)
@@ -231,28 +233,95 @@ class FfmpegToolingTests(unittest.TestCase):
                 "CONFIG_NONFREE",
                 "CONFIG_HTTP_PROTOCOL",
                 "CONFIG_TCP_PROTOCOL",
+                "CONFIG_ANDROID_CAMERA_INDEV",
+                "CONFIG_FBDEV_INDEV",
+                "CONFIG_FBDEV_OUTDEV",
+                "CONFIG_V4L2_INDEV",
+                "CONFIG_V4L2_OUTDEV",
             }.issubset(disabled)
         )
 
         with tempfile.TemporaryDirectory() as directory:
             config = Path(directory) / "config.h"
+            components = Path(directory) / "config_components.h"
             lines = [*(f"#define {key} 1" for key in enabled)]
             lines.extend(f"#define {key} 0" for key in disabled)
             config.write_text("\n".join(lines) + "\n", encoding="utf-8")
-            config_tool.assert_configuration(config)
+            components.write_text("", encoding="utf-8")
+            config_tool.assert_configuration(config, components)
+
+            components.unlink()
+            with self.assertRaisesRegex(
+                config_tool.ConfigurationError,
+                "generated config is missing",
+            ):
+                config_tool.assert_configuration(config, components)
+            components.write_text("", encoding="utf-8")
 
             config.write_text(
-                config.read_text(encoding="utf-8").replace(
+                "\n".join(
+                    line
+                    for line in lines
+                    if line != "#define CONFIG_PIPE_PROTOCOL 1"
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(
+                config_tool.ConfigurationError,
+                "CONFIG_PIPE_PROTOCOL=1 required, found None",
+            ):
+                config_tool.assert_configuration(config, components)
+            config.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+            for device in ("CONFIG_ALSA_INDEV", "CONFIG_PULSE_OUTDEV"):
+                with self.subTest(unexpected_device=device):
+                    components.write_text(
+                        f"#define {device} 1\n",
+                        encoding="utf-8",
+                    )
+                    with self.assertRaisesRegex(
+                        config_tool.ConfigurationError,
+                        f"unexpected enabled devices: {device}",
+                    ):
+                        config_tool.assert_configuration(config, components)
+            components.write_text("", encoding="utf-8")
+
+            # FFmpeg 7.1.5 emits some identical component/library defines more
+            # than once (for example CONFIG_LIBSMBCLIENT). Identical C macro
+            # redefinitions are valid; only a disagreement is ambiguous.
+            config.write_text(
+                config.read_text(encoding="utf-8")
+                + "#define CONFIG_LIBSMBCLIENT 0\n"
+                + "#define CONFIG_LIBSMBCLIENT 0\n",
+                encoding="utf-8",
+            )
+            config_tool.assert_configuration(config, components)
+
+            components.write_text(
+                "#define CONFIG_LIBSMBCLIENT 1\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(
+                config_tool.ConfigurationError,
+                "conflicting duplicate CONFIG_LIBSMBCLIENT",
+            ):
+                config_tool.assert_configuration(config, components)
+
+            components.write_text("", encoding="utf-8")
+            config.write_text(
+                "\n".join(lines).replace(
                     "#define CONFIG_MATROSKA_DEMUXER 1",
                     "#define CONFIG_MATROSKA_DEMUXER 0",
-                ),
+                )
+                + "\n",
                 encoding="utf-8",
             )
             with self.assertRaisesRegex(
                 config_tool.ConfigurationError,
                 "CONFIG_MATROSKA_DEMUXER=1 required",
             ):
-                config_tool.assert_configuration(config)
+                config_tool.assert_configuration(config, components)
 
     def test_dynamic_checker_fails_closed_on_readelf_error_textrel_and_dependency(self) -> None:
         checker = FFMPEG_ROOT / "verify-elf-dynamic.sh"

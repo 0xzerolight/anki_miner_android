@@ -50,6 +50,8 @@ EXTRA_LDFLAGS="-Wl,-z,max-page-size=16384 $DEP_LD_FLAGS"
   --disable-debug \
   --disable-doc \
   --disable-ffplay \
+  --disable-devices \
+  --enable-indev=lavfi \
   --disable-network \
   --disable-vulkan \
   --enable-zlib \
@@ -58,7 +60,8 @@ EXTRA_LDFLAGS="-Wl,-z,max-page-size=16384 $DEP_LD_FLAGS"
   "${EXTRA_CONFIGURATION[@]}" \
   "${ADDITIONAL_COMPONENTS[@]}" || exit 1
 
-python3.13 "${SCRIPTS_DIR}/assert-ffmpeg-config.py" config.h || exit 1
+python3.13 "${SCRIPTS_DIR}/assert-ffmpeg-config.py" \
+  config.h config_components.h || exit 1
 
 "${MAKE_EXECUTABLE}" clean
 "${MAKE_EXECUTABLE}" -j"${HOST_NPROC}"

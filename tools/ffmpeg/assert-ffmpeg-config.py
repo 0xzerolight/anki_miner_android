@@ -53,35 +53,68 @@ REQUIRED_DISABLED = frozenset(
         "CONFIG_TCP_PROTOCOL",
         "CONFIG_TLS_PROTOCOL",
         "CONFIG_UDP_PROTOCOL",
+        # The app only reads user-selected files. Device capture is outside
+        # the v1 surface and would add camera/media NDK dependencies.
+        "CONFIG_ANDROID_CAMERA_INDEV",
+        "CONFIG_FBDEV_INDEV",
+        "CONFIG_FBDEV_OUTDEV",
+        "CONFIG_V4L2_INDEV",
+        "CONFIG_V4L2_OUTDEV",
     }
 )
+ALLOWED_ENABLED_DEVICES = frozenset({"CONFIG_LAVFI_INDEV"})
 
 
 class ConfigurationError(ValueError):
     pass
 
 
-def read_configuration(path: Path) -> dict[str, int]:
-    if not path.is_file():
-        raise ConfigurationError(f"generated config is missing: {path}")
+def read_configuration(paths: tuple[Path, ...]) -> dict[str, int]:
     values: dict[str, int] = {}
-    for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
-        match = _DEFINE_RE.fullmatch(line)
-        if match is None:
-            continue
-        key, raw_value = match.groups()
-        if key in values:
-            raise ConfigurationError(f"duplicate {key} at line {line_number}")
-        values[key] = int(raw_value)
+    for path in paths:
+        if not path.is_file():
+            raise ConfigurationError(f"generated config is missing: {path}")
+        for line_number, line in enumerate(
+            path.read_text(encoding="utf-8").splitlines(), 1
+        ):
+            match = _DEFINE_RE.fullmatch(line)
+            if match is None:
+                continue
+            key, raw_value = match.groups()
+            value = int(raw_value)
+            if key in values and values[key] != value:
+                raise ConfigurationError(
+                    f"conflicting duplicate {key} at {path.name}:{line_number}"
+                )
+            values[key] = value
     return values
 
 
-def assert_configuration(path: Path) -> None:
-    values = read_configuration(path)
+def assert_configuration(config_h: Path, components_h: Path) -> None:
+    values = read_configuration((config_h, components_h))
     failures = [
-        *(f"{key}=1 required, found {values.get(key)!r}" for key in sorted(REQUIRED_ENABLED) if values.get(key) != 1),
-        *(f"{key}=0 required, found {values.get(key)!r}" for key in sorted(REQUIRED_DISABLED) if values.get(key) != 0),
+        *(
+            f"{key}=1 required, found {values.get(key)!r}"
+            for key in sorted(REQUIRED_ENABLED)
+            if values.get(key) != 1
+        ),
+        *(
+            f"{key}=0 required, found {values.get(key)!r}"
+            for key in sorted(REQUIRED_DISABLED)
+            if values.get(key) != 0
+        ),
     ]
+    unexpected_devices = sorted(
+        key
+        for key, value in values.items()
+        if value == 1
+        and key.endswith(("_INDEV", "_OUTDEV"))
+        and key not in ALLOWED_ENABLED_DEVICES
+    )
+    if unexpected_devices:
+        failures.append(
+            "unexpected enabled devices: " + ", ".join(unexpected_devices)
+        )
     if failures:
         raise ConfigurationError("; ".join(failures))
 
@@ -89,13 +122,14 @@ def assert_configuration(path: Path) -> None:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("config_h", type=Path)
+    parser.add_argument("config_components_h", type=Path)
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
     try:
-        assert_configuration(args.config_h)
+        assert_configuration(args.config_h, args.config_components_h)
     except (ConfigurationError, OSError, UnicodeError) as error:
         print(f"FFmpeg configuration check failed: {error}", file=sys.stderr)
         return 1
