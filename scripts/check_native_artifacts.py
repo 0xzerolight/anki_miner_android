@@ -23,7 +23,37 @@ MACHINE_ABIS = {
     62: "x86_64",
     183: "arm64-v8a",
 }
+ABI_ELF_CLASSES = {
+    "x86": 1,
+    "armeabi-v7a": 1,
+    "x86_64": 2,
+    "arm64-v8a": 2,
+}
 EXECUTABLE_NATIVE_NAMES = {"libffmpeg.so", "libffprobe.so"}
+UNIDIC_PAYLOAD_NAMES = {
+    "char.bin",
+    "dicrc",
+    "matrix.bin",
+    "mecabrc",
+    "sys.dic",
+    "unk.dic",
+}
+UNIDIC_ARCHIVE_SUFFIXES = (
+    ".7z",
+    ".bz2",
+    ".gz",
+    ".imy",
+    ".tar",
+    ".tar.gz",
+    ".tar.zst",
+    ".tar.zstd",
+    ".tgz",
+    ".whl",
+    ".xz",
+    ".zip",
+    ".zst",
+    ".zstd",
+)
 ET_DYN = 3
 PT_INTERP = 3
 PT_LOAD = 1
@@ -64,9 +94,12 @@ class NativeMetadata:
 class Inspection:
     allowed_abis: set[str]
     forbidden: tuple[str, ...]
+    required_direct_entries: set[str] = field(default_factory=set)
+    reject_base_unidic: bool = False
     elf_count: int = 0
     found_abis: set[str] = field(default_factory=set)
     app_imy_count: int = 0
+    found_required_entries: set[str] = field(default_factory=set)
     requirement_imys: set[str] = field(default_factory=set)
     requirement_owners: dict[str, str] = field(default_factory=dict)
     s1a_payloads: set[str] = field(default_factory=set)
@@ -74,8 +107,16 @@ class Inspection:
 
 
 def safe_entry_name(name: str, archive_name: str) -> PurePosixPath:
-    path = PurePosixPath(name)
-    if path.is_absolute() or ".." in path.parts:
+    if not name or "\x00" in name or "\\" in name:
+        raise ArtifactError(f"{archive_name}: unsafe archive entry {name!r}")
+    without_directory_marker = name[:-1] if name.endswith("/") else name
+    components = without_directory_marker.split("/")
+    if not without_directory_marker or any(
+        component in {"", ".", ".."} for component in components
+    ):
+        raise ArtifactError(f"{archive_name}: unsafe archive entry {name!r}")
+    path = PurePosixPath(without_directory_marker)
+    if path.is_absolute():
         raise ArtifactError(f"{archive_name}: unsafe archive entry {name!r}")
     return path
 
@@ -86,23 +127,30 @@ def parse_elf(
     inspection: Inspection,
     *,
     require_pie_cli: bool = False,
+    require_et_dyn: bool = False,
 ) -> NativeMetadata:
     if len(data) < 52 or data[:4] != ELF_MAGIC:
         raise ArtifactError(f"{logical_name}: truncated ELF header")
     elf_class = data[4]
     data_encoding = data[5]
-    if data_encoding == 1:
-        endian = "<"
-    elif data_encoding == 2:
-        endian = ">"
-    else:
-        raise ArtifactError(f"{logical_name}: unsupported ELF byte order {data_encoding}")
+    if data_encoding != 1:
+        raise ArtifactError(
+            f"{logical_name}: Android ELF must be little-endian, found encoding "
+            f"{data_encoding}"
+        )
+    endian = "<"
 
     elf_type = struct.unpack_from(f"{endian}H", data, 16)[0]
     machine = struct.unpack_from(f"{endian}H", data, 18)[0]
     abi = MACHINE_ABIS.get(machine)
     if abi is None:
         raise ArtifactError(f"{logical_name}: unsupported ELF machine {machine}")
+    expected_class = ABI_ELF_CLASSES[abi]
+    if elf_class != expected_class:
+        raise ArtifactError(
+            f"{logical_name}: ABI {abi} requires ELF class {expected_class}, "
+            f"found {elf_class}"
+        )
     if abi not in inspection.allowed_abis:
         raise ArtifactError(
             f"{logical_name}: contains ABI {abi}, allowed: {sorted(inspection.allowed_abis)}",
@@ -183,6 +231,10 @@ def parse_elf(
             )
     if not loads:
         raise ArtifactError(f"{logical_name}: ELF has no PT_LOAD segment")
+    if require_et_dyn and elf_type != ET_DYN:
+        raise ArtifactError(
+            f"{logical_name}: required shared library must be ET_DYN, found {elf_type}"
+        )
     if require_pie_cli:
         if elf_type != ET_DYN:
             raise ArtifactError(
@@ -303,11 +355,30 @@ def validate_s1a_native(
         )
 
 
+def reject_base_unidic_entry(path: PurePosixPath, logical_name: str) -> None:
+    normalized = path.as_posix().casefold()
+    components = tuple(part for part in normalized.split("/") if part)
+    basename = components[-1] if components else ""
+    if basename in UNIDIC_PAYLOAD_NAMES:
+        raise ArtifactError(f"{logical_name}: UniDic payload is forbidden in base")
+    for index in range(len(components) - 1):
+        if (
+            components[index] in {"unidic_lite", "unidic-lite"}
+            and components[index + 1] == "dicdir"
+        ):
+            raise ArtifactError(
+                f"{logical_name}: UniDic dicdir layout is forbidden in base"
+            )
+    if "unidic" in normalized and basename.endswith(UNIDIC_ARCHIVE_SUFFIXES):
+        raise ArtifactError(f"{logical_name}: UniDic archive is forbidden in base")
+
+
 def inspect_zip(
     source: Path | BytesIO,
     logical_name: str,
     inspection: Inspection,
     depth: int = 0,
+    inside_base_module: bool | None = None,
 ) -> None:
     if depth > MAX_ARCHIVE_DEPTH:
         raise ArtifactError(f"{logical_name}: archive nesting exceeds {MAX_ARCHIVE_DEPTH}")
@@ -317,11 +388,30 @@ def inspect_zip(
         raise ArtifactError(f"{logical_name}: invalid ZIP/IMY archive") from error
 
     with archive:
+        seen_entries: set[str] = set()
         for info in archive.infolist():
-            if info.is_dir():
-                continue
             entry_path = safe_entry_name(info.filename, logical_name)
             entry_name = f"{logical_name}!/{entry_path.as_posix()}"
+            direct_path = entry_path.as_posix()
+            if direct_path in seen_entries:
+                raise ArtifactError(
+                    f"{logical_name}: duplicate archive entry {direct_path!r}"
+                )
+            seen_entries.add(direct_path)
+            required_direct = (
+                depth == 0 and direct_path in inspection.required_direct_entries
+            )
+            if depth == 0:
+                is_aab = logical_name.casefold().endswith(".aab")
+                entry_in_base = not is_aab or (
+                    bool(entry_path.parts) and entry_path.parts[0].casefold() == "base"
+                )
+            else:
+                entry_in_base = bool(inside_base_module)
+            if inspection.reject_base_unidic and entry_in_base:
+                reject_base_unidic_entry(entry_path, entry_name)
+            if info.is_dir():
+                continue
             folded_name = entry_name.casefold()
             for forbidden in inspection.forbidden:
                 if forbidden.casefold() in folded_name:
@@ -382,21 +472,38 @@ def inspect_zip(
                     entry_name,
                     inspection,
                     require_pie_cli=basename in EXECUTABLE_NATIVE_NAMES,
+                    require_et_dyn=required_direct,
                 )
+                if required_direct:
+                    inspection.found_required_entries.add(direct_path)
                 if inspection.require_s1a and requirement_owner:
                     is_fugashi = "fugashi" in entry_path.parts and basename.endswith(".so")
                     if basename in {"libmecab.so.2", "libc++_shared.so"} or is_fugashi:
                         validate_s1a_native(basename, entry_name, metadata)
             else:
-                inspect_zip(BytesIO(payload), entry_name, inspection, depth + 1)
+                inspect_zip(
+                    BytesIO(payload),
+                    entry_name,
+                    inspection,
+                    depth + 1,
+                    entry_in_base,
+                )
 
 
 def inspect_artifact(args: argparse.Namespace) -> Inspection:
     if not args.artifact.is_file():
         raise ArtifactError(f"artifact not found: {args.artifact}")
+    required_entries: set[str] = set()
+    for name in args.require_entry:
+        normalized = safe_entry_name(name, str(args.artifact)).as_posix()
+        if normalized != name or name.endswith("/"):
+            raise ArtifactError(f"invalid required direct archive entry: {name!r}")
+        required_entries.add(name)
     inspection = Inspection(
-        set(args.allow_abi),
-        tuple(args.forbid_entry),
+        allowed_abis=set(args.allow_abi),
+        forbidden=tuple(args.forbid_entry),
+        required_direct_entries=required_entries,
+        reject_base_unidic=args.reject_base_unidic,
         require_s1a=args.require_s1a,
     )
     inspect_zip(args.artifact, args.artifact.name, inspection)
@@ -409,6 +516,14 @@ def inspect_artifact(args: argparse.Namespace) -> Inspection:
         )
     if args.require_app_imy and inspection.app_imy_count == 0:
         raise ArtifactError(f"{args.artifact}: Chaquopy app.imy was not recursively inspected")
+    missing_entries = (
+        inspection.required_direct_entries - inspection.found_required_entries
+    )
+    if missing_entries:
+        raise ArtifactError(
+            f"{args.artifact}: missing required direct archive entries "
+            f"{sorted(missing_entries)!r}"
+        )
     if args.require_s1a:
         expected_imys = {"requirements-common.imy"} | {
             f"requirements-{abi}.imy" for abi in inspection.allowed_abis
@@ -437,7 +552,9 @@ def parse_args() -> argparse.Namespace:
         choices=sorted(MACHINE_ABIS.values()),
     )
     parser.add_argument("--forbid-entry", action="append", default=[])
+    parser.add_argument("--require-entry", action="append", default=[])
     parser.add_argument("--require-app-imy", action="store_true")
+    parser.add_argument("--reject-base-unidic", action="store_true")
     parser.add_argument("--require-s1a", action="store_true")
     return parser.parse_args()
 

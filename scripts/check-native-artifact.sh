@@ -6,7 +6,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/android-env.sh"
 
 ARTIFACT=""
-PYTHON_ARGS=(--require-app-imy)
+PYTHON_ARGS=(--require-app-imy --reject-base-unidic)
 
 usage() {
     cat <<'EOF'
@@ -15,8 +15,14 @@ Usage: scripts/check-native-artifact.sh --artifact FILE --allow-abi ABI [options
 Options:
   --allow-abi ABI       Allowed ABI; repeat only for a multi-ABI artifact.
   --forbid-entry TEXT   Reject this text in any recursively nested entry name.
+  --require-entry PATH  Require this exact direct archive entry.
+  --require-app-imy     Require recursive inspection of Chaquopy app.imy.
+  --reject-base-unidic  Reject UniDic payloads in the APK/AAB base module.
+  --require-s1a         Require and validate the complete S1a wheel payload.
 
 The gate inspects every ELF in APKs, AABs, nested ZIPs and Chaquopy IMYs.
+It rejects UniDic payloads from the APK/AAB base module; a future separate
+Play Asset Delivery module remains outside that base-only policy.
 APKs additionally require 16 KiB zip alignment and extractNativeLibs=true.
 EOF
 }
@@ -28,10 +34,13 @@ while (($#)); do
             ARTIFACT="$2"
             shift
             ;;
-        --allow-abi|--forbid-entry)
+        --allow-abi|--forbid-entry|--require-entry)
             (($# >= 2)) || { usage >&2; exit 2; }
             PYTHON_ARGS+=("$1" "$2")
             shift
+            ;;
+        --require-app-imy|--reject-base-unidic|--require-s1a)
+            PYTHON_ARGS+=("$1")
             ;;
         -h|--help)
             usage
