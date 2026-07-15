@@ -24,6 +24,7 @@ from engine_sync.golden_contract import (
     sha256_path,
     sha256_tree,
     validate_fixture,
+    verify_engine_root,
 )
 
 
@@ -298,6 +299,29 @@ class GoldenContractTests(unittest.TestCase):
 
     def test_valid_fixture_has_separate_verified_provenance_hashes(self) -> None:
         self._validate(self._payload())
+
+    def test_clean_engine_root_matches_pinned_tree(self) -> None:
+        self.assertEqual(
+            verify_engine_root(self.engine, self.revision),
+            sha256_tree(self.engine / "anki_miner"),
+        )
+
+    def test_skip_worktree_modified_engine_file_is_rejected(self) -> None:
+        tracked = self.engine / "anki_miner/__init__.py"
+        _run(
+            "git",
+            "update-index",
+            "--skip-worktree",
+            "anki_miner/__init__.py",
+            cwd=self.engine,
+        )
+        tracked.write_text("HIDDEN = 'modified'\n", encoding="utf-8")
+        self.assertEqual(
+            _run("git", "status", "--porcelain", "--", "anki_miner", cwd=self.engine),
+            "",
+        )
+        with self.assertRaisesRegex(GoldenContractError, "content differs"):
+            verify_engine_root(self.engine, self.revision)
 
     def test_runtime_hash_cannot_be_relabelled(self) -> None:
         payload = self._payload()

@@ -24,6 +24,12 @@ Never edit generated files directly. Change a reviewed file under `overrides/`
 or update the pinned composition and rerun the sync. Unallowlisted, missing, or
 unused overlays fail the sync so a misspelled divergence cannot silently ship.
 
+The current `media_extractor.py` overlay is the pinned desktop file with only
+the deferred ASR `wav_to_float32`/NumPy helper removed and its direct doc
+reference adjusted. A reconstruction test pins that exact difference. The
+remaining media implementation is unchanged; SAF file-descriptor handling is
+deliberately deferred to the S3 spike.
+
 ## Golden derivation
 
 `run_goldens.py` launches the desktop exporter under the explicitly selected

@@ -44,6 +44,7 @@ assets = [
 overlay_allowlist = [
   "PyQt6/QtCore.py",
   "PyQt6/__init__.py",
+  "anki_miner/services/media_extractor.py",
 ]
 
 # A protected module may be selected from the desktop Git object only. An
@@ -63,11 +64,6 @@ allowed_external = [
   "pysubs2",
   "requests",
 ]
-
-# Function-local optional imports do not execute when a module is imported.
-# numpy is confined to the desktop ASR helper on MediaExtractorService; ASR is
-# outside Android v1 and numpy is not packaged.
-allowed_deferred_external = ["numpy"]
 
 # Imports under these names must resolve from the overlay. They must never be
 # satisfied by a host/Chaquopy distribution.

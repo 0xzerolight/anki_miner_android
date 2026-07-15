@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import re
+import stat
 import subprocess
 import sys
 import tempfile
@@ -189,21 +190,174 @@ def _git(root: Path, *args: str) -> str:
     return result.stdout.strip()
 
 
+def _git_bytes(root: Path, *args: str) -> bytes:
+    try:
+        result = subprocess.run(
+            ["git", "-C", os.fspath(root), *args],
+            check=True,
+            capture_output=True,
+        )
+    except (OSError, subprocess.CalledProcessError) as exc:
+        detail = (
+            exc.stderr.decode("utf-8", "replace").strip()
+            if isinstance(exc, subprocess.CalledProcessError) and exc.stderr
+            else str(exc)
+        )
+        raise GoldenContractError(f"git {' '.join(args)} failed: {detail}") from exc
+    return result.stdout
+
+
+def _pinned_package_files(
+    engine_root: Path, expected_revision: str
+) -> dict[str, bytes]:
+    raw = _git_bytes(
+        engine_root,
+        "ls-tree",
+        "-r",
+        "-z",
+        expected_revision,
+        "--",
+        "anki_miner",
+    )
+    files: dict[str, bytes] = {}
+    for record in raw.split(b"\0"):
+        if not record:
+            continue
+        try:
+            metadata, raw_path = record.split(b"\t", 1)
+            mode, object_type, object_id = metadata.split(b" ")
+            full_path = raw_path.decode("utf-8")
+        except (UnicodeDecodeError, ValueError) as exc:
+            raise GoldenContractError("pinned anki_miner tree is malformed") from exc
+        if object_type != b"blob":
+            raise GoldenContractError(
+                f"pinned anki_miner path is not a file: {full_path}"
+            )
+        if mode == b"120000":
+            raise GoldenContractError(
+                f"pinned anki_miner tree contains a symlink: {full_path}"
+            )
+        relative = full_path.removeprefix("anki_miner/")
+        if not relative or relative == full_path:
+            raise GoldenContractError(
+                f"pinned package path is outside anki_miner: {full_path}"
+            )
+        files[relative] = _git_bytes(
+            engine_root, "cat-file", "blob", object_id.decode("ascii")
+        )
+    if "__init__.py" not in files:
+        raise GoldenContractError("pinned commit has no anki_miner package")
+    return files
+
+
+def _working_package_entries(
+    package: Path,
+) -> tuple[dict[str, bytes], set[str]]:
+    if package.is_symlink() or not package.is_dir():
+        raise GoldenContractError(
+            f"--engine-root has no real anki_miner directory: {package}"
+        )
+    files: dict[str, bytes] = {}
+    directories: set[str] = set()
+
+    def visit(directory: Path, relative_directory: str) -> None:
+        try:
+            entries = sorted(os.scandir(directory), key=lambda entry: entry.name)
+        except OSError as exc:
+            raise GoldenContractError(
+                f"cannot inspect engine path {directory}: {exc}"
+            ) from exc
+        for entry in entries:
+            relative = (
+                f"{relative_directory}/{entry.name}"
+                if relative_directory
+                else entry.name
+            )
+            try:
+                mode = entry.stat(follow_symlinks=False).st_mode
+            except OSError as exc:
+                raise GoldenContractError(
+                    f"cannot inspect engine path {entry.path}: {exc}"
+                ) from exc
+            if stat.S_ISLNK(mode):
+                raise GoldenContractError(
+                    f"engine package may not contain symlinks: anki_miner/{relative}"
+                )
+            if stat.S_ISDIR(mode):
+                directories.add(relative)
+                visit(Path(entry.path), relative)
+                continue
+            if not stat.S_ISREG(mode):
+                raise GoldenContractError(
+                    f"engine package path has unsupported type: anki_miner/{relative}"
+                )
+            try:
+                files[relative] = Path(entry.path).read_bytes()
+            except OSError as exc:
+                raise GoldenContractError(
+                    f"cannot read engine path {entry.path}: {exc}"
+                ) from exc
+
+    visit(package, "")
+    return files, directories
+
+
+def _canonical_tree_hash(files: Mapping[str, bytes]) -> str:
+    digest = hashlib.sha256()
+    for relative, content in sorted(files.items()):
+        encoded = relative.encode("utf-8")
+        digest.update(len(encoded).to_bytes(8, "big"))
+        digest.update(encoded)
+        digest.update(len(content).to_bytes(8, "big"))
+        digest.update(content)
+    return digest.hexdigest()
+
+
 def verify_engine_root(engine_root: Path, expected_revision: str) -> str:
     package = engine_root / "anki_miner"
-    if not (package / "__init__.py").is_file():
-        raise GoldenContractError(
-            f"--engine-root does not contain anki_miner: {engine_root}"
-        )
     revision = _git(engine_root, "rev-parse", "HEAD")
     if revision != expected_revision:
         raise GoldenContractError(
             f"engine checkout is {revision}, expected pinned {expected_revision}"
         )
-    dirty = _git(engine_root, "status", "--porcelain", "--", "anki_miner")
-    if dirty:
-        raise GoldenContractError("engine checkout has changes under anki_miner")
-    return sha256_tree(package)
+    expected_files = _pinned_package_files(engine_root, expected_revision)
+    actual_files, actual_directories = _working_package_entries(package)
+    expected_directories = {
+        parent.as_posix()
+        for relative in expected_files
+        for parent in Path(relative).parents
+        if parent != Path(".")
+    }
+    missing_files = set(expected_files) - set(actual_files)
+    unexpected_files = set(actual_files) - set(expected_files)
+    missing_directories = expected_directories - actual_directories
+    unexpected_directories = actual_directories - expected_directories
+    if any(
+        (missing_files, unexpected_files, missing_directories, unexpected_directories)
+    ):
+        changes = []
+        for label, paths in (
+            ("missing file", missing_files),
+            ("unexpected file", unexpected_files),
+            ("missing directory", missing_directories),
+            ("unexpected directory", unexpected_directories),
+        ):
+            changes.extend(f"{label} anki_miner/{path}" for path in sorted(paths))
+        raise GoldenContractError(
+            "engine checkout path/type set differs from pinned Git tree: "
+            + "; ".join(changes)
+        )
+    modified = [
+        relative
+        for relative, expected in expected_files.items()
+        if actual_files[relative] != expected
+    ]
+    if modified:
+        raise GoldenContractError(
+            "engine checkout content differs from pinned Git tree: "
+            + ", ".join(f"anki_miner/{path}" for path in sorted(modified))
+        )
+    return _canonical_tree_hash(actual_files)
 
 
 def _expect_dict(value: Any, label: str, keys: set[str]) -> dict[str, Any]:

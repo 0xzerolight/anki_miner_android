@@ -43,7 +43,6 @@ class Composition:
     overlay_allowlist: frozenset[str]
     protected_verbatim: frozenset[str]
     allowed_external: frozenset[str]
-    allowed_deferred_external: frozenset[str]
     allowed_stdlib: frozenset[str]
     local_only_imports: frozenset[str]
     forbidden_imports: tuple[str, ...]
@@ -187,13 +186,6 @@ def load_composition(path: Path) -> Composition:
         _validate_relative_path(overlay, "overlay_allowlist entry")
     protected = frozenset(_require_string_list(data, "protected_verbatim"))
     allowed_external = frozenset(_require_string_list(data, "allowed_external"))
-    allowed_deferred = frozenset(
-        _require_string_list(data, "allowed_deferred_external")
-    )
-    if allowed_external & allowed_deferred:
-        raise EngineSyncError(
-            "allowed_external and allowed_deferred_external must be disjoint"
-        )
     allowed_stdlib = frozenset(_require_string_list(data, "allowed_stdlib"))
     local_only = frozenset(_require_string_list(data, "local_only_imports"))
     forbidden = _require_string_list(data, "forbidden_imports")
@@ -230,7 +222,6 @@ def load_composition(path: Path) -> Composition:
         overlay_allowlist=overlay_allowlist,
         protected_verbatim=protected,
         allowed_external=allowed_external,
-        allowed_deferred_external=allowed_deferred,
         allowed_stdlib=allowed_stdlib,
         local_only_imports=local_only,
         forbidden_imports=forbidden,
@@ -695,9 +686,6 @@ def build_snapshot(
                 continue
             if top in composition.allowed_external:
                 (deferred_external if ref.deferred else eager_external).add(top)
-                continue
-            if ref.deferred and top in composition.allowed_deferred_external:
-                deferred_external.add(top)
                 continue
             raise EngineSyncError(
                 f"{item.path}:{ref.line}: unresolved {'deferred ' if ref.deferred else ''}import {ref.target}"

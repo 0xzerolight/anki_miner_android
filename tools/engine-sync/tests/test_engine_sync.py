@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import hashlib
 import json
 import subprocess
@@ -14,6 +15,60 @@ from engine_sync.core import (
     discover_source_repo,
     sync_destination,
 )
+
+
+PINNED_MEDIA_EXTRACTOR_BLOB = "357dea44ae92b47ad06e19d8692a863438fa3d62"
+REMOVED_WAV_TO_FLOAT32 = '''def wav_to_float32(path: Path) -> "tuple[Any, int, float]":
+    """Read a mono 16-bit PCM WAV and return (samples, sample_rate, duration_s).
+
+    The WAV produced by :meth:`MediaExtractorService.extract_full_audio` is
+    always 16 kHz mono ``pcm_s16le`` (WAVE format tag 1), the only family
+    Python's stdlib ``wave`` module can read. The int16 samples are scaled to
+    float32 in ``[-1.0, 1.0]`` — Whisper's expected input — by dividing by
+    32768.
+
+    Memory note: the whole track is loaded at once (~115 MB/hour at 16 kHz
+    float32). Fine for episodes; a multi-hour film loads ~0.5 GB. If that
+    becomes a problem, pass the WAV path straight to ``WhisperModel.transcribe``
+    (it decodes internally) instead of materializing the float32 array here.
+
+    Args:
+        path: Path to the WAV file written by ``extract_full_audio``.
+
+    Returns:
+        A 3-tuple of:
+        - ``samples``: 1-D float32 numpy array in ``[-1.0, 1.0]``.
+        - ``sample_rate``: Frame rate in Hz (typically 16 000).
+        - ``duration_s``: Duration in seconds (``nframes / framerate``).
+    """
+    import numpy as np  # noqa: PLC0415  (intentional function-local import — numpy is an [asr] extra)
+
+    with wave.open(str(path), "rb") as wf:
+        # Fail loudly on an unexpected layout rather than silently reinterpreting
+        # float/stereo bytes as garbage int16. extract_full_audio always writes
+        # mono pcm_s16le; a mismatch means a stale or foreign WAV reached us.
+        if wf.getnchannels() != 1 or wf.getsampwidth() != 2 or wf.getcomptype() != "NONE":
+            raise ValueError(
+                "wav_to_float32 expects mono pcm_s16le; got "
+                f"channels={wf.getnchannels()} sampwidth={wf.getsampwidth()} comptype={wf.getcomptype()}"
+            )
+        sample_rate = wf.getframerate()
+        n_frames = wf.getnframes()
+        raw = wf.readframes(n_frames)
+
+    # int16 → float32 in [-1.0, 1.0]. astype already yields a writable, owned
+    # array (np.frombuffer over immutable bytes is read-only), which
+    # faster-whisper/ctranslate2 may require — no separate .copy() needed.
+    samples = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
+    duration = n_frames / sample_rate
+    return samples, sample_rate, duration
+
+
+'''
+PINNED_WAVE_DOC = """Python's stdlib ``wave`` module (which both the zero-frame guard below
+        and :func:`wav_to_float32` rely on) cannot read tag-3 float WAVs and"""
+ANDROID_WAVE_DOC = """Python's stdlib ``wave`` module (which the zero-frame guard below relies
+        on) cannot read tag-3 float WAVs and"""
 
 
 def _run(*args: str, cwd: Path) -> str:
@@ -70,7 +125,6 @@ roots = ["anki_miner.root"]
 assets = ["anki_miner/data.txt"]
 protected_verbatim = ["anki_miner.root"]
 allowed_external = []
-allowed_deferred_external = []
 allowed_stdlib = ["typing"]
 local_only_imports = ["PyQt6"]
 forbidden_imports = ["gtts", "mpv", "yt_dlp", "anki_miner.services.youtube_fetcher"]
@@ -229,18 +283,11 @@ target = "anki_miner.services.youtube_fetcher"
         with self.assertRaisesRegex(EngineSyncError, "dynamic import target must be"):
             self._snapshot(fixture)
 
-    def test_deferred_only_external_cannot_be_imported_eagerly(self) -> None:
-        fixture = self._fixture("import numpy\n")
-        fixture["composition"].write_text(
-            fixture["composition"]
-            .read_text(encoding="utf-8")
-            .replace(
-                "allowed_deferred_external = []",
-                'allowed_deferred_external = ["numpy"]',
-            ),
-            encoding="utf-8",
-        )
-        with self.assertRaisesRegex(EngineSyncError, "unresolved import numpy"):
+    def test_unlisted_deferred_external_import_is_rejected(self) -> None:
+        fixture = self._fixture("def load():\n    import numpy\n")
+        with self.assertRaisesRegex(
+            EngineSyncError, "unresolved deferred import numpy"
+        ):
             self._snapshot(fixture)
 
     def test_protected_module_cannot_be_overlaid(self) -> None:
@@ -327,6 +374,46 @@ target = "anki_miner.services.youtube_fetcher"
         second = self._snapshot(fixture)
         self.assertEqual(first.manifest_bytes(), second.manifest_bytes())
         self.assertEqual(first.files, second.files)
+
+    def test_media_extractor_override_only_removes_cut_numpy_helper(self) -> None:
+        project_root = Path(__file__).resolve().parents[3]
+        override = (
+            project_root
+            / "tools/engine-sync/overrides/anki_miner/services/media_extractor.py"
+        ).read_text(encoding="utf-8")
+        parsed = ast.parse(override)
+        imported_roots = {
+            alias.name.partition(".")[0]
+            for node in ast.walk(parsed)
+            if isinstance(node, ast.Import)
+            for alias in node.names
+        } | {
+            (node.module or "").partition(".")[0]
+            for node in ast.walk(parsed)
+            if isinstance(node, ast.ImportFrom)
+        }
+        functions = {
+            node.name
+            for node in ast.walk(parsed)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        self.assertNotIn("numpy", imported_roots)
+        self.assertNotIn("wav_to_float32", functions)
+        self.assertIn("wave", imported_roots)
+        self.assertIn("extract_full_audio", functions)
+        self.assertEqual(override.count(ANDROID_WAVE_DOC), 1)
+
+        reconstructed = override.replace(ANDROID_WAVE_DOC, PINNED_WAVE_DOC)
+        marker = 'def _kill_quietly(proc: "subprocess.Popen[str]") -> None:'
+        self.assertEqual(reconstructed.count(marker), 1)
+        reconstructed = reconstructed.replace(
+            marker, REMOVED_WAV_TO_FLOAT32 + marker
+        ).encode("utf-8")
+        git_object = f"blob {len(reconstructed)}\0".encode() + reconstructed
+        self.assertEqual(
+            hashlib.sha1(git_object, usedforsecurity=False).hexdigest(),
+            PINNED_MEDIA_EXTRACTOR_BLOB,
+        )
 
 
 if __name__ == "__main__":
