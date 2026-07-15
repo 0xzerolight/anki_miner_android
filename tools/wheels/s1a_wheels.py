@@ -30,9 +30,12 @@ HOST_LOCK = TOOL_ROOT / "host-wheels.lock"
 ABIS = ("arm64-v8a", "x86_64")
 PACKAGES = ("chaquopy-libcxx", "chaquopy-libmecab", "fugashi")
 NDK_VERSION = "28.2.13676358"
-PYTHON_TARGET = "3.13.9-0"
+PYTHON_TARGET = "3.12.12-0"
+TARGET_BUILD_PYTHON_VERSION = "3.12.13"
+TARGET_BUILD_PYTHON_ENV = "ANKI_MINER_CHAQUOPY_BUILD_PYTHON"
 API_LEVEL = 26
 MANIFEST_SCHEMA = 2
+HOST_LOCK_SCHEMA = 2
 SOURCE_DATE_EPOCH = "1704067200"
 REPRODUCIBLE_ENV = {
     "SOURCE_DATE_EPOCH": SOURCE_DATE_EPOCH,
@@ -58,7 +61,7 @@ STAGE_ID_PATTERN = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?")
 WHEEL_SPECS = {
     "chaquopy_libcxx": ("190000", "py3", "none"),
     "chaquopy_libmecab": ("0.996", "py3", "none"),
-    "fugashi": ("1.5.2", "cp313", "cp313"),
+    "fugashi": ("1.5.2", "cp312", "cp312"),
 }
 S1A_NATIVE_PATHS = {
     "chaquopy_libcxx": "chaquopy/lib/libc++_shared.so",
@@ -117,24 +120,48 @@ def source_entries() -> dict[str, dict[str, str]]:
     return entries
 
 
-def host_entries() -> list[tuple[str, str, str]]:
-    raw = load_json(HOST_LOCK).get("requirements")
+def _require_exact_keys(value: object, expected: set[str], label: str) -> dict[str, object]:
+    if not isinstance(value, dict) or set(value) != expected:
+        raise WheelError(f"{label} must contain exactly {sorted(expected)}")
+    return value
+
+
+def host_entries() -> list[tuple[str, str, str, str]]:
+    document = load_json(HOST_LOCK, HOST_LOCK_SCHEMA)
+    _require_exact_keys(document, {"schema", "requirements"}, "host wheel lock")
+    raw = document.get("requirements")
     if not isinstance(raw, list) or not raw:
         raise WheelError("host wheel lock has no requirements")
-    result: list[tuple[str, str, str]] = []
+    result: list[tuple[str, str, str, str]] = []
     for value in raw:
-        if (
-            not isinstance(value, list)
-            or len(value) != 3
-            or not all(isinstance(item, str) and item for item in value)
+        entry = _require_exact_keys(
+            value,
+            {"interpreter", "requirement", "filename", "sha256"},
+            "host wheel lock entry",
+        )
+        interpreter = entry["interpreter"]
+        requirement = entry["requirement"]
+        filename = entry["filename"]
+        sha256 = entry["sha256"]
+        if not all(
+            isinstance(item, str) and item
+            for item in (interpreter, requirement, filename, sha256)
         ):
             raise WheelError("invalid host wheel lock entry")
-        requirement, filename, sha256 = value
+        if interpreter not in {"outer", "target"}:
+            raise WheelError(f"invalid host wheel interpreter: {interpreter}")
         if "==" not in requirement or not filename.endswith(".whl") or len(sha256) != 64:
             raise WheelError(f"unsafe host wheel entry: {requirement}")
-        result.append((requirement, filename, sha256))
-    if len({filename for _, filename, _ in result}) != len(result):
+        if KEY_PATTERN.fullmatch(sha256) is None:
+            raise WheelError(f"unsafe host wheel hash: {requirement}")
+        result.append((interpreter, requirement, filename, sha256))
+    if len({filename for _, _, filename, _ in result}) != len(result):
         raise WheelError("duplicate host wheel filename")
+    target_entries = [entry for entry in result if entry[0] == "target"]
+    if len(target_entries) != 1 or target_entries[0][1] != "Cython==3.1.5":
+        raise WheelError("target wheel lock must contain exactly Cython==3.1.5")
+    if "cp312-cp312" not in target_entries[0][2] or "cp313" in target_entries[0][2]:
+        raise WheelError("target Cython wheel must use the cp312 ABI")
     return result
 
 
@@ -157,35 +184,48 @@ def fetch_sources(downloads: Path) -> None:
                 shutil.copyfileobj(response, output)
         verify_file(temporary, entry["sha256"])
         os.replace(temporary, target)
+    verify_locked_sources(downloads)
 
 
 def fetch_host_wheels(wheelhouse: Path) -> None:
     wheelhouse.mkdir(parents=True, exist_ok=True)
-    requirements = [requirement for requirement, _, _ in host_entries()]
     with tempfile.TemporaryDirectory(dir=wheelhouse.parent) as temporary:
-        subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "pip",
-                "download",
-                "--only-binary=:all:",
-                "--no-deps",
-                "--dest",
-                temporary,
-                *requirements,
-            ],
-            check=True,
-        )
+        for interpreter in ("outer", "target"):
+            requirements = [
+                requirement
+                for role, requirement, _, _ in host_entries()
+                if role == interpreter
+            ]
+            if not requirements:
+                continue
+            executable = (
+                sys.executable
+                if interpreter == "outer"
+                else target_python_executable()
+            )
+            subprocess.run(
+                [
+                    executable,
+                    "-m",
+                    "pip",
+                    "download",
+                    "--only-binary=:all:",
+                    "--no-deps",
+                    "--dest",
+                    temporary,
+                    *requirements,
+                ],
+                check=True,
+            )
         staged = Path(temporary)
-        for _, filename, sha256 in host_entries():
+        for _, _, filename, sha256 in host_entries():
             verify_file(staged / filename, sha256)
             shutil.copy2(staged / filename, wheelhouse / filename)
     verify_host_wheels(wheelhouse)
 
 
 def verify_host_wheels(wheelhouse: Path) -> None:
-    expected = {filename: sha256 for _, filename, sha256 in host_entries()}
+    expected = {filename: sha256 for _, _, filename, sha256 in host_entries()}
     actual = {path.name for path in wheelhouse.glob("*.whl")}
     if actual != set(expected):
         raise WheelError(f"host wheel set differs: expected={sorted(expected)}, actual={sorted(actual)}")
@@ -292,6 +332,20 @@ def patch_builder(chaquopy: Path, wheelhouse: Path) -> None:
         'f"install --no-index --only-binary=:all: "\n'
         '                f"--find-links={os.environ[\'ANKI_MINER_HOST_WHEELHOUSE\']} " +\n'
         '                " ".join(shlex.quote(req) for req in requirements))',
+    )
+    _replace(
+        builder,
+        'run(f"python{python_ver} -m venv --without-pip {self.build_env}")',
+        'build_python = (os.environ["ANKI_MINER_CHAQUOPY_BUILD_PYTHON"]\n'
+        '                        if python_ver == "3.12" else f"python{python_ver}")\n'
+        '        run(f"{shlex.quote(build_python)} -m venv --without-pip {self.build_env}")',
+    )
+    _replace(
+        builder,
+        'run(f"python{python_ver} -m venv {bootstrap_env}")',
+        'build_python = (os.environ["ANKI_MINER_CHAQUOPY_BUILD_PYTHON"]\n'
+        '                        if python_ver == "3.12" else f"python{python_ver}")\n'
+        '        run(f"{shlex.quote(build_python)} -m venv {bootstrap_env}")',
     )
     source = builder.read_text(encoding="utf-8")
     network_methods = (
@@ -475,26 +529,117 @@ def _tool_version(name: str, command: list[str], marker: str) -> str:
     return lines[0]
 
 
+def target_python_executable() -> str:
+    value = os.environ.get(TARGET_BUILD_PYTHON_ENV)
+    if not value or value != value.strip():
+        raise WheelError(f"{TARGET_BUILD_PYTHON_ENV} must name an absolute executable")
+    path = Path(value)
+    if not path.is_absolute() or not path.is_file() or not os.access(path, os.X_OK):
+        raise WheelError(f"{TARGET_BUILD_PYTHON_ENV} must name an absolute executable")
+    return value
+
+
+def _outer_python_identity() -> dict[str, str]:
+    executable = Path(sys.executable).resolve(strict=True)
+    return {
+        "implementation": platform.python_implementation().casefold(),
+        "version": platform.python_version(),
+        "executable_sha256": digest(executable),
+    }
+
+
+def _target_python_identity() -> dict[str, object]:
+    executable = target_python_executable()
+    probe = subprocess.run(
+        [
+            executable,
+            "-c",
+            (
+                "import json, platform; "
+                "print(json.dumps({'implementation': platform.python_implementation().casefold(), "
+                "'version': platform.python_version()}, sort_keys=True))"
+            ),
+        ],
+        check=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        env={**os.environ, "LC_ALL": "C", "LANG": "C", "TZ": "UTC"},
+    )
+    try:
+        details = json.loads(probe.stdout)
+    except json.JSONDecodeError as error:
+        raise WheelError("cannot identify target build interpreter") from error
+    details = _require_exact_keys(
+        details,
+        {"implementation", "version"},
+        "target interpreter probe",
+    )
+    return {
+        "implementation": details.get("implementation"),
+        "version": details.get("version"),
+        "executable_sha256": digest(Path(executable)),
+    }
+
+
+def _validate_interpreter_identity(
+    value: object,
+    *,
+    label: str,
+    version_pattern: str,
+) -> dict[str, object]:
+    identity = _require_exact_keys(
+        value,
+        {"implementation", "version", "executable_sha256"},
+        f"{label} interpreter identity",
+    )
+    if identity.get("implementation") != "cpython":
+        raise WheelError(f"S1a {label} interpreter must be CPython")
+    version = identity.get("version")
+    if not isinstance(version, str) or re.fullmatch(version_pattern, version) is None:
+        raise WheelError(f"S1a {label} interpreter has the wrong version")
+    executable_sha256 = identity.get("executable_sha256")
+    if (
+        not isinstance(executable_sha256, str)
+        or KEY_PATTERN.fullmatch(executable_sha256) is None
+    ):
+        raise WheelError(f"invalid {label} interpreter hash")
+    return identity
+
+
 def _validate_builder_identity(identity: object) -> dict[str, object]:
-    if not isinstance(identity, dict) or identity.get("schema") != 1:
+    if not isinstance(identity, dict) or identity.get("schema") != 2:
         raise WheelError("invalid builder identity schema")
-    python = identity.get("python")
+    _require_exact_keys(identity, {"schema", "interpreters", "host", "tools"}, "builder identity")
+    interpreters = identity.get("interpreters")
     host = identity.get("host")
     tools = identity.get("tools")
-    if not isinstance(python, dict) or not isinstance(host, dict) or not isinstance(tools, dict):
+    if (
+        not isinstance(interpreters, dict)
+        or not isinstance(host, dict)
+        or not isinstance(tools, dict)
+    ):
         raise WheelError("incomplete builder identity")
-    if python.get("implementation") != "cpython":
-        raise WheelError("S1a wheels require CPython")
-    version = python.get("version")
-    executable_sha256 = python.get("executable_sha256")
-    if not isinstance(version, str) or not version.startswith("3.13."):
-        raise WheelError("S1a wheel builder requires CPython 3.13")
-    if not isinstance(executable_sha256, str) or KEY_PATTERN.fullmatch(executable_sha256) is None:
-        raise WheelError("invalid builder interpreter hash")
+    _require_exact_keys(interpreters, {"outer", "target"}, "builder interpreters")
+    _validate_interpreter_identity(
+        interpreters.get("outer"),
+        label="outer",
+        version_pattern=r"3\.13\.\d+",
+    )
+    _validate_interpreter_identity(
+        interpreters.get("target"),
+        label="target",
+        version_pattern=re.escape(TARGET_BUILD_PYTHON_VERSION),
+    )
+    _require_exact_keys(host, {"os", "machine", "libc", "zlib"}, "builder host")
     if host.get("os") != "linux" or host.get("machine") != "x86_64":
         raise WheelError("S1a wheel builder requires Linux x86_64")
     libc = host.get("libc")
     zlib_identity = host.get("zlib")
+    if isinstance(libc, dict):
+        _require_exact_keys(libc, {"name", "version"}, "builder libc")
+    if isinstance(zlib_identity, dict):
+        _require_exact_keys(zlib_identity, {"compiled", "runtime"}, "builder zlib")
     if (
         not isinstance(libc, dict)
         or libc.get("name") != "glibc"
@@ -528,14 +673,12 @@ def _validate_builder_identity(identity: object) -> dict[str, object]:
 
 
 def builder_identity() -> dict[str, object]:
-    executable = Path(sys.executable).resolve(strict=True)
     libc_name, libc_version = platform.libc_ver()
     identity: dict[str, object] = {
-        "schema": 1,
-        "python": {
-            "implementation": platform.python_implementation().casefold(),
-            "version": platform.python_version(),
-            "executable_sha256": digest(executable),
+        "schema": 2,
+        "interpreters": {
+            "outer": _outer_python_identity(),
+            "target": _target_python_identity(),
         },
         "host": {
             "os": platform.system().strip().casefold(),
@@ -660,7 +803,7 @@ def validate_recipes(chaquopy_root: Path) -> list[str]:
             rendered = Template(
                 meta_path.read_text(encoding="utf-8"),
                 undefined=StrictUndefined,
-            ).render(PY_VER="3.13")
+            ).render(PY_VER="3.12")
             meta = yaml.safe_load(rendered)
             with_defaults(validator_cls)(schema).validate(meta)
         except (
@@ -739,10 +882,18 @@ def _native_artifact_checker():
     return module
 
 
-def _inspect_elf(data: bytes, logical_name: str, abi: str) -> dict[str, object]:
-    for marker in (b"/home/", b"/tmp/", b"/Users/", b"C:\\"):
-        if marker in data:
-            raise WheelError(f"{logical_name}: absolute build path leaked into ELF")
+def _inspect_elf(
+    data: bytes,
+    logical_name: str,
+    abi: str,
+    *,
+    reject_build_paths: bool = True,
+    inspect_dynamic: bool = True,
+) -> dict[str, object]:
+    if reject_build_paths:
+        for marker in (b"/home/", b"/tmp/", b"/Users/", b"C:\\"):
+            if marker in data:
+                raise WheelError(f"{logical_name}: absolute build path leaked into ELF")
     checker = _native_artifact_checker()
     try:
         inspection = checker.Inspection({abi}, ())
@@ -751,7 +902,7 @@ def _inspect_elf(data: bytes, logical_name: str, abi: str) -> dict[str, object]:
             logical_name,
             inspection,
             require_et_dyn=True,
-            inspect_dynamic=True,
+            inspect_dynamic=inspect_dynamic,
         )
     except checker.ArtifactError as error:
         raise WheelError(str(error)) from error
@@ -766,16 +917,17 @@ def _inspect_elf(data: bytes, logical_name: str, abi: str) -> dict[str, object]:
     }
 
 
-def _validated_wheel_members(
+def _validated_zip_members(
     archive: zipfile.ZipFile,
-    wheel_name: str,
+    archive_name: str,
+    kind: str,
 ) -> list[zipfile.ZipInfo]:
     members: list[zipfile.ZipInfo] = []
     seen: dict[str, bool] = {}
     for info in archive.infolist():
         name = info.filename
         if not name or "\x00" in name or "\\" in name:
-            raise WheelError(f"{wheel_name}: unsafe wheel entry {name!r}")
+            raise WheelError(f"{archive_name}: unsafe {kind} entry {name!r}")
         normalized = name[:-1] if name.endswith("/") else name
         components = normalized.split("/")
         if (
@@ -783,28 +935,124 @@ def _validated_wheel_members(
             or normalized.startswith("/")
             or any(component in {"", ".", ".."} for component in components)
         ):
-            raise WheelError(f"{wheel_name}: unsafe wheel entry {name!r}")
+            raise WheelError(f"{archive_name}: unsafe {kind} entry {name!r}")
+        mode = getattr(info, "external_attr", 0) >> 16
+        if stat.S_ISLNK(mode):
+            raise WheelError(f"{archive_name}: symlink {kind} entry {name!r}")
         is_directory = info.is_dir()
         if normalized in seen:
-            kind = "directory/file ambiguity" if seen[normalized] != is_directory else "duplicate"
-            raise WheelError(f"{wheel_name}: {kind} wheel entry {normalized!r}")
+            duplicate_kind = (
+                "directory/file ambiguity"
+                if seen[normalized] != is_directory
+                else "duplicate"
+            )
+            raise WheelError(f"{archive_name}: {duplicate_kind} entry {normalized!r}")
         ancestors = [
             "/".join(components[:index])
             for index in range(1, len(components))
         ]
         if any(seen.get(ancestor) is False for ancestor in ancestors):
             raise WheelError(
-                f"{wheel_name}: file/descendant ambiguity at {normalized!r}"
+                f"{archive_name}: file/descendant ambiguity at {normalized!r}"
             )
         if not is_directory and any(
             existing.startswith(f"{normalized}/") for existing in seen
         ):
             raise WheelError(
-                f"{wheel_name}: file/descendant ambiguity at {normalized!r}"
+                f"{archive_name}: file/descendant ambiguity at {normalized!r}"
             )
         seen[normalized] = is_directory
         members.append(info)
     return members
+
+
+def _validated_wheel_members(
+    archive: zipfile.ZipFile,
+    wheel_name: str,
+) -> list[zipfile.ZipInfo]:
+    return _validated_zip_members(archive, wheel_name, "wheel")
+
+
+def verify_python_target_archive(
+    path: Path,
+    abi: str,
+    expected_sha256: str,
+) -> dict[str, object]:
+    if abi not in ABIS:
+        raise WheelError(f"unsupported Python target ABI: {abi}")
+    verify_file(path, expected_sha256)
+    try:
+        archive = zipfile.ZipFile(path)
+    except zipfile.BadZipFile as error:
+        raise WheelError(f"invalid Python target archive: {path}") from error
+    with archive:
+        members = _validated_zip_members(archive, path.name, "target archive")
+        native_members = [
+            info
+            for info in members
+            if not info.is_dir() and ".so" in Path(info.filename).name
+        ]
+        if not native_members:
+            raise WheelError(f"{path.name}: Python target contains no native payloads")
+        libpython_path = f"jniLibs/{abi}/libpython3.12.so"
+        if [info.filename for info in native_members].count(libpython_path) != 1:
+            raise WheelError(
+                f"{path.name}: expected exactly one {libpython_path} native payload"
+            )
+        inspected: list[dict[str, object]] = []
+        forbidden_signatures = (
+            (b"mimalloc", "mimalloc"),
+            (b"/proc/sys/vm/overcommit_memory", "/proc/sys/vm/overcommit_memory"),
+        )
+        for info in native_members:
+            if abi not in Path(info.filename).parts:
+                raise WheelError(
+                    f"{path.name}: native payload is outside the locked ABI: {info.filename}"
+                )
+            data = archive.read(info)
+            for signature, label in forbidden_signatures:
+                if signature in data:
+                    raise WheelError(
+                        f"{path.name}: forbidden {label} signature in {info.filename}"
+                    )
+            entry = _inspect_elf(
+                data,
+                info.filename,
+                abi,
+                reject_build_paths=False,
+                inspect_dynamic=info.filename == libpython_path,
+            )
+            if info.filename == libpython_path:
+                expected_needed = {"libc.so", "libdl.so", "libm.so"}
+                if set(entry["needed"]) != expected_needed:
+                    raise WheelError(
+                        f"{path.name}: libpython dependencies are "
+                        f"{sorted(entry['needed'])}, expected {sorted(expected_needed)}"
+                    )
+            inspected.append(entry)
+    return {
+        "filename": path.name,
+        "sha256": expected_sha256,
+        "abi": abi,
+        "native_count": len(inspected),
+        "libpython": next(
+            entry for entry in inspected if entry["path"] == libpython_path
+        ),
+    }
+
+
+def verify_locked_sources(downloads: Path) -> dict[str, dict[str, object]]:
+    entries = source_entries()
+    for entry in entries.values():
+        verify_file(downloads / entry["filename"], entry["sha256"])
+    return {
+        abi: verify_python_target_archive(
+            downloads / entries[f"python-{abi}"]["filename"],
+            abi,
+            entries[f"python-{abi}"]["sha256"],
+        )
+        for abi in ABIS
+    }
 
 
 def verify_s1a_wheel(path: Path) -> tuple[str, str, dict[str, object]]:
@@ -912,7 +1160,7 @@ def verify_s1a_wheel(path: Path) -> tuple[str, str, dict[str, object]]:
         required_needed = {
             "chaquopy_libcxx": set(),
             "chaquopy_libmecab": {"libc++_shared.so"},
-            "fugashi": {"libmecab.so.2", "libpython3.13.so"},
+            "fugashi": {"libmecab.so.2", "libpython3.12.so"},
         }[package]
         allowed_needed = required_needed | ANDROID_SYSTEM_LIBS
         if not required_needed.issubset(needed) or not needed.issubset(allowed_needed):
@@ -965,7 +1213,7 @@ def validate_stage(
     }:
         raise WheelError("S1a stage source lock differs from current inputs")
     if document.get("host_wheels") != {
-        filename: sha256 for _, filename, sha256 in host_entries()
+        filename: sha256 for _, _, filename, sha256 in host_entries()
     }:
         raise WheelError("S1a stage host-wheel lock differs from current inputs")
     chaquopy_root = stage_root / "chaquopy"
@@ -1221,8 +1469,7 @@ def stage(
     recipe, build, identity = _validate_expected_keys(expected_recipe, expected_build)
     verify_host_wheels(wheelhouse)
     entries = source_entries()
-    for entry in entries.values():
-        verify_file(downloads / entry["filename"], entry["sha256"])
+    verify_locked_sources(downloads)
     target = build_root / f"s1a-{build}-{stage_id}"
     if target.exists():
         raise WheelError(f"immutable staging directory already exists: {target}")
@@ -1257,7 +1504,9 @@ def stage(
         "ndk": NDK_VERSION,
         "python_target": PYTHON_TARGET,
         "source_hashes": {name: entry["sha256"] for name, entry in entries.items()},
-        "host_wheels": {filename: sha256 for _, filename, sha256 in host_entries()},
+        "host_wheels": {
+            filename: sha256 for _, _, filename, sha256 in host_entries()
+        },
     }
     (temporary / "manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     os.replace(temporary, target)
@@ -1310,8 +1559,7 @@ def main() -> int:
             source_entries()
             host_entries()
             if args.downloads:
-                for entry in source_entries().values():
-                    verify_file(args.downloads / entry["filename"], entry["sha256"])
+                verify_locked_sources(args.downloads)
             if args.wheelhouse:
                 verify_host_wheels(args.wheelhouse)
         elif args.command == "fetch":

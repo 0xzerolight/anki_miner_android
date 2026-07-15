@@ -1,0 +1,11 @@
+# CPython 3.12 bridge test runner and exact tokenizer-neutral Android pip set.
+pytest==9.0.3
+jsonschema==4.26.0
+requests==2.34.2
+pysubs2==1.8.1
+pillow==12.2.0
+lxml==6.1.1
+charset-normalizer==3.4.7
+urllib3==2.7.0
+idna==3.18
+certifi==2026.6.17

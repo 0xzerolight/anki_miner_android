@@ -64,15 +64,26 @@ actual_api="$(adb -s "$ANDROID_LANE_EMULATOR_SERIAL" shell getprop ro.build.vers
 [[ "$actual_api" == "$ANDROID_LANE_EXPECTED_API_LEVEL" ]] \
     || fail "$ANDROID_LANE_AVD_NAME API level is ${actual_api:-unknown}, expected $ANDROID_LANE_EXPECTED_API_LEVEL"
 
-smaps="$(adb -s "$ANDROID_LANE_EMULATOR_SERIAL" shell cat /proc/self/smaps 2>/dev/null)" \
-    || fail "$ANDROID_LANE_AVD_NAME process page metadata could not be read"
-page_size_kib="$(
-    awk '$1 == "KernelPageSize:" && $2 ~ /^[0-9]+$/ && $3 == "kB" { print $2; exit }' \
-        <<<"${smaps//$'\r'/}"
-)"
-[[ "$page_size_kib" =~ ^[1-9][0-9]*$ ]] \
-    || fail "$ANDROID_LANE_AVD_NAME process page metadata is missing or malformed"
-actual_page_size=$((page_size_kib * 1024))
+if [[ "$LANE" == api26 ]]; then
+    # Android 8's pinned toybox has no getconf applet. Its only supported page
+    # size is 4 KiB, so the first process mapping is an exact fallback there.
+    smaps="$(adb -s "$ANDROID_LANE_EMULATOR_SERIAL" shell cat /proc/self/smaps 2>/dev/null)" \
+        || fail "$ANDROID_LANE_AVD_NAME process page metadata could not be read"
+    page_size_kib="$(
+        awk '$1 == "KernelPageSize:" && $2 ~ /^[0-9]+$/ && $3 == "kB" { print $2; exit }' \
+            <<<"${smaps//$'\r'/}"
+    )"
+    [[ "$page_size_kib" =~ ^[1-9][0-9]*$ ]] \
+        || fail "$ANDROID_LANE_AVD_NAME process page metadata is missing or malformed"
+    actual_page_size=$((page_size_kib * 1024))
+else
+    actual_page_size="$(
+        adb -s "$ANDROID_LANE_EMULATOR_SERIAL" shell getconf PAGE_SIZE 2>/dev/null \
+            | tr -d '\r'
+    )" || fail "$ANDROID_LANE_AVD_NAME process page size could not be read"
+    [[ "$actual_page_size" =~ ^[1-9][0-9]*$ ]] \
+        || fail "$ANDROID_LANE_AVD_NAME process page size is missing or malformed"
+fi
 [[ "$actual_page_size" == "$ANDROID_LANE_EXPECTED_PAGE_SIZE" ]] \
     || fail "$ANDROID_LANE_AVD_NAME page size is ${actual_page_size:-unknown}, expected $ANDROID_LANE_EXPECTED_PAGE_SIZE"
 

@@ -9,7 +9,7 @@ jackson = "2.21.5"
 junit = "4.13.2"
 kotlin = "2.2.21"
 kotlinx-coroutines = "1.11.0"
-python = "3.13"
+python = "3.12"
 
 [libraries]
 androidx-core = { module = "androidx.core:core", version.ref = "androidx-core" }

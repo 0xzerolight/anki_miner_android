@@ -126,6 +126,9 @@ def test_android_harness_crosses_all_layers_with_external_provisioning() -> None
     python = (
         PROJECT_ROOT / "app/src/debug/python/tokenizer_s1b_instrumented.py"
     ).read_text(encoding="utf-8")
+    selection = (
+        PROJECT_ROOT / "app/src/debug/python/tokenizer_instrumented_selection.py"
+    ).read_text(encoding="utf-8")
     gradle = (PROJECT_ROOT / "app/build.gradle.kts").read_text(encoding="utf-8")
     environment = (PROJECT_ROOT / "scripts/android-env.sh").read_text(encoding="utf-8")
     provision = (PROJECT_ROOT / "scripts/provision-s1b-test-unidic.sh").read_text(
@@ -136,7 +139,14 @@ def test_android_harness_crosses_all_layers_with_external_provisioning() -> None
     assert "BuildConfig.S1B_TEST_UNIDIC_ARCHIVE" in kotlin
     assert 'getModule("tokenizer_s1b_instrumented")' in kotlin
     assert "ZipInputStream" in kotlin
-    assert "create_s1b_tagger(registration)" in python
+    compact_python = " ".join(python.split())
+    assert (
+        'acquire_tagger_for_instrumentation( "s1b", registration )'
+        in compact_python
+    )
+    assert "configure_tokenizer_backend(backend)" in selection
+    assert "get_shared_tagger()" in selection
+    assert "debug_direct_fallback_after_" in selection
     assert 'Path("/proc/self/maps")' in python
     assert 'registration.dicdir / "matrix.bin"' in python
     assert '"unidic_feature_fields"' in python

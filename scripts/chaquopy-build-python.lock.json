@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "implementation": "CPython",
+  "version": "3.12.13",
+  "archive": {
+    "filename": "cpython-3.12.13+20260623-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz",
+    "sha256": "10a452caac7041357805f0c19a60576df53f1ab06d1abfc9200f1f0157cb3bd1",
+    "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20260623/cpython-3.12.13%2B20260623-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz"
+  },
+  "installation": {
+    "directory": "chaquopy-build-python",
+    "executable": "bin/python3.12",
+    "executable_sha256": "9544d2a29138833e6177d45dbc57468d37710b5080c901fbb579d53f251cdd6f",
+    "marker": ".anki-miner-chaquopy-build-python-lock.json",
+    "payload_sha256": "e4a2fa2c2f4c4a3e9318990ac7edc94991f9b516c9453d9037a4bc2ee685f312"
+  }
+}

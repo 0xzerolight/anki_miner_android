@@ -7,8 +7,8 @@ from pathlib import Path
 from typing import Any
 
 from android_bridge.tokenizer_contract import UNIDIC_FEATURE_FIELDS
-from android_bridge.tokenizer_s1a import create_s1a_tagger
 from android_bridge.unidic_resource import register_unidic
+from tokenizer_instrumented_selection import acquire_tagger_for_instrumentation
 
 
 def _serialized(token: object) -> dict[str, Any]:
@@ -50,7 +50,9 @@ def run(golden_json: str, dicdir: str, native_library_dir: str) -> str:
         resource_id=f"golden-unidic-{expected_hash[:16]}",
         expected_tree_sha256=expected_hash,
     )
-    tagger = create_s1a_tagger(registration)
+    tagger, tagger_path, selected_backend = acquire_tagger_for_instrumentation(
+        "s1a", registration
+    )
     unknown_count = 0
     astral = None
     raw_astral_oov = None
@@ -86,6 +88,8 @@ def run(golden_json: str, dicdir: str, native_library_dir: str) -> str:
             "unknown_count": unknown_count,
             "raw_oov_lform_is_none": raw_astral_oov[1] is None,
             "raw_oov_pos3": raw_astral_oov[0],
+            "selected_backend": selected_backend,
+            "tagger_path": tagger_path,
         },
         sort_keys=True,
     )

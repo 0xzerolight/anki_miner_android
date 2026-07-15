@@ -1,0 +1,12 @@
+package:
+  name: chaquopy-libjpeg
+  version: "1.5.3"
+
+build:
+  number: 3
+
+source:
+  path: ../../sources/libjpeg
+
+about:
+  license_file: LICENSE.md

@@ -1,0 +1,124 @@
+{
+  "schema": 2,
+  "wheels": [
+    {
+      "filename": "attrs-26.1.0-py3-none-any.whl",
+      "requirement": "attrs==26.1.0",
+      "roles": ["outer"],
+      "sha256": "c647aa4a12dfbad9333ca4e71fe62ddc36f4e63b2d260a37a8b83d2f043ac309",
+      "url": "https://files.pythonhosted.org/packages/64/b4/17d4b0b2a2dc85a6df63d1157e028ed19f90d4cd97c36717afef2bc2f395/attrs-26.1.0-py3-none-any.whl"
+    },
+    {
+      "filename": "build-1.2.2.post1-py3-none-any.whl",
+      "requirement": "build==1.2.2.post1",
+      "roles": ["outer"],
+      "sha256": "1d61c0887fa860c01971625baae8bdd338e517b836a2f70dd1f7aa3a6b2fc5b5",
+      "url": "https://files.pythonhosted.org/packages/84/c2/80633736cd183ee4a62107413def345f7e6e3c01563dbca1417363cf957e/build-1.2.2.post1-py3-none-any.whl"
+    },
+    {
+      "filename": "cython-3.2.4-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
+      "requirement": "Cython==3.2.4",
+      "roles": ["target"],
+      "sha256": "55b6c44cd30821f0b25220ceba6fe636ede48981d2a41b9bbfe3c7902ce44ea7",
+      "url": "https://files.pythonhosted.org/packages/12/33/3298a44d201c45bcf0d769659725ae70e9c6c42adf8032f6d89c8241098d/cython-3.2.4-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl"
+    },
+    {
+      "filename": "jinja2-3.1.6-py3-none-any.whl",
+      "requirement": "Jinja2==3.1.6",
+      "roles": ["outer"],
+      "sha256": "85ece4451f492d0c13c5dd7c13a64681a86afae63a5f347908daf103ce6d2f67",
+      "url": "https://files.pythonhosted.org/packages/62/a1/3d680cbfd5f4b8f15abc1d571870c5fc3e594bb582bc3b64ea099db13e56/jinja2-3.1.6-py3-none-any.whl"
+    },
+    {
+      "filename": "jsonschema-4.23.0-py3-none-any.whl",
+      "requirement": "jsonschema==4.23.0",
+      "roles": ["outer"],
+      "sha256": "fbadb6f8b144a8f8cf9f0b89ba94501d143e50411a1278633f56a7acf7fd5566",
+      "url": "https://files.pythonhosted.org/packages/69/4a/4f9dbeb84e8850557c02365a0eee0649abe5eb1d84af92a25731c6c0f922/jsonschema-4.23.0-py3-none-any.whl"
+    },
+    {
+      "filename": "jsonschema_specifications-2025.9.1-py3-none-any.whl",
+      "requirement": "jsonschema-specifications==2025.9.1",
+      "roles": ["outer"],
+      "sha256": "98802fee3a11ee76ecaca44429fda8a41bff98b00a0f2838151b113f210cc6fe",
+      "url": "https://files.pythonhosted.org/packages/41/45/1a4ed80516f02155c51f51e8cedb3c1902296743db0bbc66608a0db2814f/jsonschema_specifications-2025.9.1-py3-none-any.whl"
+    },
+    {
+      "filename": "markupsafe-3.0.3-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
+      "requirement": "MarkupSafe==3.0.3",
+      "roles": ["outer"],
+      "sha256": "ccfcd093f13f0f0b7fdd0f198b90053bf7b2f02a3927a30e63f3ccc9df56b676",
+      "url": "https://files.pythonhosted.org/packages/a9/21/9b05698b46f218fc0e118e1f8168395c65c8a2c750ae2bab54fc4bd4e0e8/markupsafe-3.0.3-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl"
+    },
+    {
+      "filename": "packaging-26.2-py3-none-any.whl",
+      "requirement": "packaging==26.2",
+      "roles": ["outer"],
+      "sha256": "5fc45236b9446107ff2415ce77c807cee2862cb6fac22b8a73826d0693b0980e",
+      "url": "https://files.pythonhosted.org/packages/df/b2/87e62e8c3e2f4b32e5fe99e0b86d576da1312593b39f47d8ceef365e95ed/packaging-26.2-py3-none-any.whl"
+    },
+    {
+      "filename": "pip-25.1.1-py3-none-any.whl",
+      "requirement": "pip==25.1.1",
+      "roles": ["outer", "target"],
+      "sha256": "2913a38a2abf4ea6b64ab507bd9e967f3b53dc1ede74b01b0931e1ce548751af",
+      "url": "https://files.pythonhosted.org/packages/29/a2/d40fb2460e883eca5199c62cfc2463fd261f760556ae6290f88488c362c0/pip-25.1.1-py3-none-any.whl"
+    },
+    {
+      "filename": "pybind11-3.0.1-py3-none-any.whl",
+      "requirement": "pybind11==3.0.1",
+      "roles": ["target"],
+      "sha256": "aa8f0aa6e0a94d3b64adfc38f560f33f15e589be2175e103c0a33c6bce55ee89",
+      "url": "https://files.pythonhosted.org/packages/cd/8a/37362fc2b949d5f733a8b0f2ff51ba423914cabefe69f1d1b6aab710f5fe/pybind11-3.0.1-py3-none-any.whl"
+    },
+    {
+      "filename": "pyelftools-0.32-py3-none-any.whl",
+      "requirement": "pyelftools==0.32",
+      "roles": ["outer"],
+      "sha256": "013df952a006db5e138b1edf6d8a68ecc50630adbd0d83a2d41e7f846163d738",
+      "url": "https://files.pythonhosted.org/packages/af/43/700932c4f0638c3421177144a2e86448c0d75dbaee2c7936bda3f9fd0878/pyelftools-0.32-py3-none-any.whl"
+    },
+    {
+      "filename": "pyproject_hooks-1.2.0-py3-none-any.whl",
+      "requirement": "pyproject-hooks==1.2.0",
+      "roles": ["outer"],
+      "sha256": "9e5c6bfa8dcc30091c74b0cf803c81fdd29d94f01992a7707bc97babb1141913",
+      "url": "https://files.pythonhosted.org/packages/bd/24/12818598c362d7f300f18e74db45963dbcb85150324092410c8b49405e42/pyproject_hooks-1.2.0-py3-none-any.whl"
+    },
+    {
+      "filename": "PyYAML-6.0.2-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+      "requirement": "PyYAML==6.0.2",
+      "roles": ["outer"],
+      "sha256": "70b189594dbe54f75ab3a1acec5f1e3faa7e8cf2f1e08d9b561cb41b845f69d5",
+      "url": "https://files.pythonhosted.org/packages/04/24/b7721e4845c2f162d26f50521b825fb061bc0a5afcf9a386840f23ea19fa/PyYAML-6.0.2-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl"
+    },
+    {
+      "filename": "referencing-0.37.0-py3-none-any.whl",
+      "requirement": "referencing==0.37.0",
+      "roles": ["outer"],
+      "sha256": "381329a9f99628c9069361716891d34ad94af76e461dcb0335825aecc7692231",
+      "url": "https://files.pythonhosted.org/packages/2c/58/ca301544e1fa93ed4f80d724bf5b194f6e4b945841c5bfd555878eea9fcb/referencing-0.37.0-py3-none-any.whl"
+    },
+    {
+      "filename": "rpds_py-2026.6.3-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+      "requirement": "rpds-py==2026.6.3",
+      "roles": ["outer"],
+      "sha256": "acac386b453c2516111b50985d60ce46e7fadb5ea71ae7b25f4c946935bf27cf",
+      "url": "https://files.pythonhosted.org/packages/57/d7/fe978efc2ae50abe48eb7464668ea99f53c010c60aeebb7b35ad27f23661/rpds_py-2026.6.3-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl"
+    },
+    {
+      "filename": "setuptools-78.1.1-py3-none-any.whl",
+      "requirement": "setuptools==78.1.1",
+      "roles": ["outer", "target"],
+      "sha256": "c3a9c4211ff4c309edb8b8c4f1cbfa7ae324c4ba9f91ff254e3d305b9fd54561",
+      "url": "https://files.pythonhosted.org/packages/90/99/158ad0609729111163fc1f674a5a42f2605371a4cf036d0441070e2f7455/setuptools-78.1.1-py3-none-any.whl"
+    },
+    {
+      "filename": "wheel-0.45.1-py3-none-any.whl",
+      "requirement": "wheel==0.45.1",
+      "roles": ["outer", "target"],
+      "sha256": "708e7481cc80179af0e556bbf0cc00b8444c7321e2700b8d8580231d13017248",
+      "url": "https://files.pythonhosted.org/packages/0b/2c/87f3254fd8ffd29e4c02732eee68a83a1d3c346ae39bc6822dcbcb697f2b/wheel-0.45.1-py3-none-any.whl"
+    }
+  ]
+}

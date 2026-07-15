@@ -1,0 +1,23 @@
+package:
+  name: pillow
+  version: "12.2.0"
+
+build:
+  number: 0
+
+source:
+  path: ../../sources/pillow
+
+requirements:
+  build:
+    - pybind11 3.0.1
+    - setuptools 78.1.1
+    - wheel 0.45.1
+  host:
+    - python
+    - chaquopy-libjpeg 1.5.3
+    - chaquopy-freetype 2.14.1
+    - chaquopy-libwebp 1.6.0
+
+about:
+  license_file: LICENSE

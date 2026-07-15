@@ -53,9 +53,11 @@ elif [[ "${1:-}" == shell && "${2:-}" == getconf && "${3:-}" == PAGE_SIZE ]]; th
     printf '%s\n' "$FAKE_PAGE_SIZE"
 elif [[ "${1:-}" == install ]]; then
     :
+elif [[ "${1:-}" == shell && "${2:-}" == am && "${3:-}" == force-stop ]]; then
+    :
 elif [[ "${1:-}" == shell && "${2:-}" == am && "${3:-}" == instrument ]]; then
     if [[ "$FAKE_INSTRUMENT_RESULT" == pass ]]; then
-        printf 'Time: 0.1\n\nOK (2 tests)\n'
+        printf 'Time: 0.1\n\nOK (2 tests)\n\nINSTRUMENTATION_CODE: -1\n'
     else
         printf 'FAILURES!!!\nTests run: 2, Failures: 1\n'
     fi
@@ -239,6 +241,14 @@ class S1bArm64RunnerTest(unittest.TestCase):
                 "-e class com.ankiminer.android.tokenizer."
                 "MecabNativeTokenizerInstrumentedTest",
                 adb_log,
+            )
+            self.assertIn(
+                "-e ankiMinerExpectedTokenizerPath engine_shared_tagger",
+                adb_log,
+            )
+            self.assertLess(
+                adb_log.index("shell am force-stop com.ankiminer.android"),
+                adb_log.index("shell am instrument"),
             )
             self.assertIn(
                 "com.ankiminer.android.test/androidx.test.runner.AndroidJUnitRunner",

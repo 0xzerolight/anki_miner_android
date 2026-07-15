@@ -1,0 +1,12 @@
+package:
+  name: chaquopy-freetype
+  version: "2.14.1"
+
+build:
+  number: 0
+
+source:
+  path: ../../sources/freetype
+
+about:
+  license_file: docs/FTL.TXT

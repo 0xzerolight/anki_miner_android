@@ -7,16 +7,39 @@ installation.
 ## Setup
 
 Create the hash-locked host test environment, then run provisioning to download
-the JDK and Android command-line tools. Android provisioning stops before SDK
-packages until the Android SDK license has already been accepted:
+the dedicated CPython 3.12 Chaquopy build interpreter, JDK and Android
+command-line tools. Android provisioning stops before SDK packages until the
+Android SDK license has already been accepted:
 
 ```bash
 scripts/provision-host-tests.sh
+scripts/provision-runtime-host-tests.sh
 scripts/provision-android.sh
 scripts/android-licenses.sh review
 scripts/provision-android.sh
 source scripts/android-env.sh
 ```
+
+The build interpreter is a hash-pinned python-build-standalone installation at
+`.android-toolchain/chaquopy-build-python`. It is selected explicitly through
+`ANKI_MINER_CHAQUOPY_BUILD_PYTHON` and is never added to `PATH`; repository
+tools, host tests, Unicode generation and desktop goldens remain on Python
+3.13. Its lock attests the complete extracted payload as well as the executable.
+Generated `__pycache__` files are excluded from the tree digest but must compile
+exactly from their separately attested source files. The interpreter can be
+installed or repaired independently with:
+
+```bash
+scripts/provision-chaquopy-build-python.sh
+```
+
+`provision-runtime-host-tests.sh` creates a second hash-locked environment on
+that interpreter, provisioning or repairing the interpreter first when needed.
+Health uses it to run the bridge suite and complete engine import smoke under
+CPython 3.12 with the tokenizer-neutral Android dependency set; fugashi and
+UniDic remain absent from this common lane. Both shared installations use
+inter-process locks, so provisioning commands from concurrent Git worktrees are
+serialized safely.
 
 The license review is interactive. The script displays Google's text and
 prompts without supplying answers. Provisioning then verifies the recorded

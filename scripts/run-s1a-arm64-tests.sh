@@ -5,6 +5,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # shellcheck source=android-env.sh
 source "$SCRIPT_DIR/android-env.sh"
+# shellcheck source=instrumentation-result.sh
+source "$SCRIPT_DIR/instrumentation-result.sh"
 
 ADB_COMMAND="${ANKI_MINER_ADB_COMMAND:-adb}"
 GRADLEW_COMMAND="${ANKI_MINER_GRADLEW_COMMAND:-$REPO_ROOT/gradlew}"
@@ -232,17 +234,17 @@ ANKI_MINER_ADB_COMMAND="$ADB_COMMAND" \
     "$PROVISIONER" --dicdir "$dicdir"
 "$ADB_COMMAND" -s "$serial" install -r -t "$APP_APK"
 "$ADB_COMMAND" -s "$serial" install -r -t "$TEST_APK"
+"$ADB_COMMAND" -s "$serial" shell am force-stop "$app_id" \
+    || fail "cannot stop $app_id before isolated S1a instrumentation"
 
 instrumentation_output="$(
     "$ADB_COMMAND" -s "$serial" shell am instrument -w -r \
+        -e ankiMinerExpectedTokenizerPath engine_shared_tagger \
         -e class "$TEST_CLASS" \
         "$TEST_RUNNER" 2>&1
 )" || fail "S1a arm64 instrumentation command failed"
 printf '%s\n' "$instrumentation_output"
-grep -E '^OK \(1 test\)\r?$' <<<"$instrumentation_output" >/dev/null \
+android_instrumentation_output_passed "$instrumentation_output" 1 \
     || fail "S1a arm64 instrumentation did not pass its parity test"
-if grep -E 'FAILURES!!!|INSTRUMENTATION_FAILED|shortMsg=' <<<"$instrumentation_output" >/dev/null; then
-    fail "S1a arm64 instrumentation reported a failure"
-fi
 
 echo "S1a arm64 parity: OK ($serial, API $actual_api, ${actual_page_size}-byte pages)"

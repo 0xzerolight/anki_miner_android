@@ -125,7 +125,7 @@ def test_native_api_keeps_complete_argv_and_copies_frozen_wire_fields() -> None:
     assert "nativeDictionaryFilename" in jni
 
 
-def test_gradle_wires_locked_cmake_without_selecting_s1b_for_engine() -> None:
+def test_gradle_wires_locked_cmake_and_s1b_uses_engine_tagger_seam() -> None:
     gradle = (PROJECT_ROOT / "app/build.gradle.kts").read_text(encoding="utf-8")
     adapter = (
         PROJECT_ROOT / "app/src/main/python/android_bridge/tokenizer_s1b.py"
@@ -133,11 +133,29 @@ def test_gradle_wires_locked_cmake_without_selecting_s1b_for_engine() -> None:
     vendored_tagger = (
         PROJECT_ROOT / "app/src/main/python/anki_miner/services/tagger.py"
     ).read_text(encoding="utf-8")
+    selection = (
+        PROJECT_ROOT / "app/src/main/python/android_bridge/tokenizer_selection.py"
+    ).read_text(encoding="utf-8")
+    harness = (
+        PROJECT_ROOT / "app/src/debug/python/tokenizer_s1b_instrumented.py"
+    ).read_text(encoding="utf-8")
+    instrumentation_selection = (
+        PROJECT_ROOT / "app/src/debug/python/tokenizer_instrumented_selection.py"
+    ).read_text(encoding="utf-8")
 
     assert 'path = file("src/main/cpp/CMakeLists.txt")' in gradle
     assert 'version = "3.22.1"' in gradle
     assert "create_s1b_tagger" in adapter
-    assert "android_bridge.tokenizer_s1b" not in vendored_tagger
+    assert "import fugashi" not in vendored_tagger
+    assert "configure_tagger_factory" in vendored_tagger
+    assert "create_s1b_tagger" in selection
+    compact_harness = " ".join(harness.split())
+    assert (
+        'acquire_tagger_for_instrumentation( "s1b", registration )'
+        in compact_harness
+    )
+    assert "configure_tokenizer_backend(backend)" in instrumentation_selection
+    assert "get_shared_tagger()" in instrumentation_selection
 
 
 def test_android_build_gate_requires_the_exact_s1b_library_for_both_abis() -> None:

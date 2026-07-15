@@ -58,11 +58,13 @@ elif [[ "${1:-}" == shell && "${2:-}" == getconf && "${3:-}" == PAGE_SIZE ]]; th
     printf '%s\n' "$FAKE_PAGE_SIZE"
 elif [[ "${1:-}" == install ]]; then
     :
+elif [[ "${1:-}" == shell && "${2:-}" == am && "${3:-}" == force-stop ]]; then
+    :
 elif [[ "${1:-}" == shell && "${2:-}" == am && "${3:-}" == instrument ]]; then
     case "$FAKE_INSTRUMENT_RESULT" in
-        pass) printf 'Time: 0.1\n\nOK (1 test)\n' ;;
-        mixed) printf 'OK (1 test)\nINSTRUMENTATION_FAILED: crash\n' ;;
-        wrong-count) printf 'OK (2 tests)\n' ;;
+        pass) printf 'Time: 0.1\n\nOK (1 test)\n\nINSTRUMENTATION_CODE: -1\n' ;;
+        mixed) printf 'OK (1 test)\nINSTRUMENTATION_FAILED: crash\nINSTRUMENTATION_CODE: -1\n' ;;
+        wrong-count) printf 'OK (2 tests)\nINSTRUMENTATION_CODE: -1\n' ;;
         *) printf 'FAILURES!!!\nTests run: 1, Failures: 1\n' ;;
     esac
 elif [[ "${1:-}" == shell && "${2:-}" == rm ]]; then
@@ -256,6 +258,14 @@ class S1aArm64RunnerTest(unittest.TestCase):
             self.assertIn(
                 "-e class com.ankiminer.android.TokenizerS1aInstrumentedTest",
                 adb_log,
+            )
+            self.assertIn(
+                "-e ankiMinerExpectedTokenizerPath engine_shared_tagger",
+                adb_log,
+            )
+            self.assertLess(
+                adb_log.index("shell am force-stop com.ankiminer.android"),
+                adb_log.index("shell am instrument"),
             )
             self.assertIn(
                 "com.ankiminer.android.test/androidx.test.runner.AndroidJUnitRunner",

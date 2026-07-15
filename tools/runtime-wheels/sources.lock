@@ -1,0 +1,218 @@
+{
+  "schema": 1,
+  "sources": {
+    "certifi": {
+      "filename": "certifi-2026.6.17-py3-none-any.whl",
+      "kind": "prebuilt-wheel",
+      "license": {
+        "expression": "MPL-2.0",
+        "members": {
+          "certifi-2026.6.17.dist-info/licenses/LICENSE": "e93716da6b9c0d5a4a1df60fe695b370f0695603d21f6f83f053e42cfc10caf7"
+        }
+      },
+      "package": "certifi",
+      "sha256": "2227dcbaafe0d2f59279d1762ddddc37783ed4354594f194ffc31d20f41fc3db",
+      "url": "https://files.pythonhosted.org/packages/ef/2f/c5464532e965badff2f4c4c1a3a83f5697f0d7c407ed0cda44aaa99bb451/certifi-2026.6.17-py3-none-any.whl",
+      "version": "2026.6.17"
+    },
+    "chaquopy": {
+      "filename": "chaquopy-e01057c72fdd737f202bd1be1de85af51e06cad0.tar.gz",
+      "kind": "build-tool-source",
+      "license": {
+        "expression": "MIT",
+        "members": {
+          "chaquopy-e01057c72fdd737f202bd1be1de85af51e06cad0/LICENSE.txt": "345a9fdfeed355d37b18569ef277ba56eb0ab7c0b17a08a90163ce8d33d2b862"
+        }
+      },
+      "sha256": "b703cc3f4b4795f0ffde3a36dae5bf5401b1f733d3b71bfcc25c7fb2c4f39b56",
+      "url": "https://github.com/chaquo/chaquopy/archive/e01057c72fdd737f202bd1be1de85af51e06cad0.tar.gz"
+    },
+    "charset-normalizer": {
+      "filename": "charset_normalizer-3.4.7-py3-none-any.whl",
+      "kind": "prebuilt-wheel",
+      "license": {
+        "expression": "MIT",
+        "members": {
+          "charset_normalizer-3.4.7.dist-info/licenses/LICENSE": "6d0d41bfe170ac6c7dc248c9a63e254d0fb45a60d50a8257d0af92c6e249b887"
+        }
+      },
+      "package": "charset-normalizer",
+      "sha256": "3dce51d0f5e7951f8bb4900c257dad282f49190fdbebecd4ba99bcc41fef404d",
+      "url": "https://files.pythonhosted.org/packages/db/8f/61959034484a4a7c527811f4721e75d02d653a35afb0b6054474d8185d4c/charset_normalizer-3.4.7-py3-none-any.whl",
+      "version": "3.4.7"
+    },
+    "freetype": {
+      "filename": "freetype-2.14.1.tar.xz",
+      "kind": "runtime-source",
+      "license": {
+        "expression": "FTL",
+        "members": {
+          "freetype-2.14.1/docs/FTL.TXT": "5a5ee54c5001bbad1cdc1a57cc3dd4c42199b2da09d39c7ee41fab002d02967f"
+        }
+      },
+      "package": "chaquopy-freetype",
+      "sha256": "32427e8c471ac095853212a37aef816c60b42052d4d9e48230bab3bdf2936ccc",
+      "url": "https://download.savannah.gnu.org/releases/freetype/freetype-2.14.1.tar.xz",
+      "version": "2.14.1"
+    },
+    "idna": {
+      "filename": "idna-3.18-py3-none-any.whl",
+      "kind": "prebuilt-wheel",
+      "license": {
+        "expression": "BSD-3-Clause",
+        "members": {
+          "idna-3.18.dist-info/licenses/LICENSE.md": "1a9a4f0e3d479a27240ddd59a9137a66ab4a0f9dfdc8ca6188cc0bfd85187f04"
+        }
+      },
+      "package": "idna",
+      "sha256": "7f952cbe720b688055e3f87de14f5c3e5fdaa8bc3928985c4077ca689de849a2",
+      "url": "https://files.pythonhosted.org/packages/1e/5e/d4e9f1a599fb8e573b7b87160658329fbf28d19eac2718f51fc3def3aa5a/idna-3.18-py3-none-any.whl",
+      "version": "3.18"
+    },
+    "libjpeg": {
+      "filename": "libjpeg-turbo-1.5.3.tar.gz",
+      "kind": "runtime-source",
+      "license": {
+        "expression": "BSD-3-Clause AND IJG AND Zlib",
+        "members": {
+          "libjpeg-turbo-1.5.3/LICENSE.md": "5c08657eda60b7946a913ee22ac73603335a468a6aa95204506a1586a8d677ee"
+        }
+      },
+      "package": "chaquopy-libjpeg",
+      "sha256": "b24890e2bb46e12e72a79f7e965f409f4e16466d00e1dd15d93d73ee6b592523",
+      "url": "https://downloads.sourceforge.net/project/libjpeg-turbo/1.5.3/libjpeg-turbo-1.5.3.tar.gz",
+      "version": "1.5.3"
+    },
+    "libwebp": {
+      "filename": "libwebp-1.6.0.tar.gz",
+      "kind": "runtime-source",
+      "license": {
+        "expression": "BSD-3-Clause",
+        "members": {
+          "libwebp-1.6.0/COPYING": "5aec868f669e384a22372a4e8a1a6cd7d44c64cd451f960ca69cc170d1e13acf"
+        }
+      },
+      "package": "chaquopy-libwebp",
+      "sha256": "e4ab7009bf0629fd11982d4c2aa83964cf244cffba7347ecd39019a9e38c4564",
+      "url": "https://storage.googleapis.com/downloads.webmproject.org/releases/webp/libwebp-1.6.0.tar.gz",
+      "version": "1.6.0"
+    },
+    "libxml2": {
+      "filename": "libxml2-2.14.6.tar.xz",
+      "kind": "runtime-source",
+      "license": {
+        "expression": "MIT",
+        "members": {
+          "libxml2-2.14.6/Copyright": "5d4873884a890122a4b9b20ad56ac6f7da1d796a5bfcf04a427970ac96217626"
+        }
+      },
+      "package": "chaquopy-libxml2",
+      "sha256": "7ce458a0affeb83f0b55f1f4f9e0e55735dbfc1a9de124ee86fb4a66b597203a",
+      "url": "https://download.gnome.org/sources/libxml2/2.14/libxml2-2.14.6.tar.xz",
+      "version": "2.14.6"
+    },
+    "libxslt": {
+      "filename": "libxslt-1.1.43.tar.xz",
+      "kind": "runtime-source",
+      "license": {
+        "expression": "MIT",
+        "members": {
+          "libxslt-1.1.43/Copyright": "7e48e290b6bfccc2ec1b297023a1d77f2fd87417f71fbb9f50aabef40a851819"
+        }
+      },
+      "package": "chaquopy-libxslt",
+      "sha256": "5a3d6b383ca5afc235b171118e90f5ff6aa27e9fea3303065231a6d403f0183a",
+      "url": "https://download.gnome.org/sources/libxslt/1.1/libxslt-1.1.43.tar.xz",
+      "version": "1.1.43"
+    },
+    "lxml": {
+      "filename": "lxml-6.1.1.tar.gz",
+      "kind": "runtime-source",
+      "license": {
+        "expression": "BSD-3-Clause",
+        "members": {
+          "lxml-6.1.1/LICENSE.txt": "8fc2b568133516e46845d2147917adeee1648e70ae9ab5ed6c5417afef4ce855"
+        }
+      },
+      "package": "lxml",
+      "sha256": "ba96ae44888e0185281e937633a743ea90d5a196c6000f82565ebb0580012d40",
+      "url": "https://files.pythonhosted.org/packages/05/3b/aab6728cae887456f409b4d75e8a01856e4f04bd510de38052a47768b680/lxml-6.1.1.tar.gz",
+      "version": "6.1.1"
+    },
+    "patchelf": {
+      "filename": "patchelf-0.18.0-x86_64.tar.gz",
+      "kind": "build-tool-binary",
+      "sha256": "ce84f2447fb7a8679e58bc54a20dc2b01b37b5802e12c57eece772a6f14bf3f0",
+      "url": "https://github.com/NixOS/patchelf/releases/download/0.18.0/patchelf-0.18.0-x86_64.tar.gz"
+    },
+    "pillow": {
+      "filename": "pillow-12.2.0.tar.gz",
+      "kind": "runtime-source",
+      "license": {
+        "expression": "MIT-CMU",
+        "members": {
+          "pillow-12.2.0/LICENSE": "15181e7363dca9aed78b79bebebc7fde7f1814b8bd311ea3b87ae8ccadfc185b"
+        }
+      },
+      "package": "pillow",
+      "sha256": "a830b1a40919539d07806aa58e1b114df53ddd43213d9c8b75847eee6c0182b5",
+      "url": "https://files.pythonhosted.org/packages/8c/21/c2bcdd5906101a30244eaffc1b6e6ce71a31bd0742a01eb89e660ebfac2d/pillow-12.2.0.tar.gz",
+      "version": "12.2.0"
+    },
+    "pysubs2": {
+      "filename": "pysubs2-1.8.1-py3-none-any.whl",
+      "kind": "prebuilt-wheel",
+      "license": {
+        "expression": "MIT",
+        "members": {
+          "pysubs2-1.8.1.dist-info/licenses/LICENSE.txt": "4400f489ca1551877fff8a7a83af5d0424becf471eedd75a4de5465c1ebf7f5f"
+        }
+      },
+      "package": "pysubs2",
+      "sha256": "eb5d8872b7f87208070dd6f0d85fc110b7ad6cc2a7ec422f5b12363e9194e4e4",
+      "url": "https://files.pythonhosted.org/packages/0b/bb/0dc8b9a38609701ca3f107dc516300b317641bed9b2ef1c964a9ad37ae9e/pysubs2-1.8.1-py3-none-any.whl",
+      "version": "1.8.1"
+    },
+    "python-arm64-v8a": {
+      "filename": "target-3.12.12-0-arm64-v8a.zip",
+      "kind": "python-target",
+      "sha256": "7a4a278ec1fed0e0d0359fbec71d6d481d79a7efbc8e2090267a91046417027a",
+      "url": "https://repo.maven.apache.org/maven2/com/chaquo/python/target/3.12.12-0/target-3.12.12-0-arm64-v8a.zip"
+    },
+    "python-x86_64": {
+      "filename": "target-3.12.12-0-x86_64.zip",
+      "kind": "python-target",
+      "sha256": "d4140d76c0a3c73bbbb89a7139e9bcc3080b37f210f2c343acfdea8b21113aad",
+      "url": "https://repo.maven.apache.org/maven2/com/chaquo/python/target/3.12.12-0/target-3.12.12-0-x86_64.zip"
+    },
+    "requests": {
+      "filename": "requests-2.34.2-py3-none-any.whl",
+      "kind": "prebuilt-wheel",
+      "license": {
+        "expression": "Apache-2.0",
+        "members": {
+          "requests-2.34.2.dist-info/licenses/LICENSE": "09e8a9bcec8067104652c168685ab0931e7868f9c8284b66f5ae6edae5f1130b",
+          "requests-2.34.2.dist-info/licenses/NOTICE": "f5110972dedad2b4e9d314518daf3b7d72d6e02e499acd802181de6f74571dcc"
+        }
+      },
+      "package": "requests",
+      "sha256": "2a0d60c172f83ac6ab31e4554906c0f3b3588d37b5cb939b1c061f4907e278e0",
+      "url": "https://files.pythonhosted.org/packages/a0/f4/c67b0b3f1b9245e8d266f0f112c500d50e5b4e83cb6f3b71b6528104182a/requests-2.34.2-py3-none-any.whl",
+      "version": "2.34.2"
+    },
+    "urllib3": {
+      "filename": "urllib3-2.7.0-py3-none-any.whl",
+      "kind": "prebuilt-wheel",
+      "license": {
+        "expression": "MIT",
+        "members": {
+          "urllib3-2.7.0.dist-info/licenses/LICENSE.txt": "130e3a64d5fdd5d096a752694634a7d9df284469de86e5732100268041e3d686"
+        }
+      },
+      "package": "urllib3",
+      "sha256": "9fb4c81ebbb1ce9531cce37674bbc6f1360472bc18ca9a553ede278ef7276897",
+      "url": "https://files.pythonhosted.org/packages/7f/3e/5db95bcf282c52709639744ca2a8b149baccf648e39c8cc87553df9eae0c/urllib3-2.7.0-py3-none-any.whl",
+      "version": "2.7.0"
+    }
+  }
+}

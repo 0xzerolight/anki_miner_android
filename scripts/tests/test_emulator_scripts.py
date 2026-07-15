@@ -80,6 +80,9 @@ elif [[ "${1:-}" == "shell" && "${2:-}" == "getprop" ]]; then
         ro.build.fingerprint) echo "$FAKE_FINGERPRINT" ;;
         *) exit 1 ;;
     esac
+elif [[ "${1:-}" == "shell" && "${2:-}" == "getconf" && "${3:-}" == "PAGE_SIZE" ]]; then
+    [[ "$FAKE_API" != 26 ]] || exit 127
+    echo "$FAKE_PAGE_SIZE"
 elif [[ "${1:-}" == "shell" && "${2:-}" == "cat" && "${3:-}" == "/proc/self/smaps" ]]; then
     printf 'KernelPageSize: %s kB\n' "$((FAKE_PAGE_SIZE / 1024))"
 else
@@ -223,6 +226,15 @@ fi
                 result = self.verify_runtime(lane)
                 self.assertEqual(0, result.returncode, result.stderr)
 
+    def test_runtime_identity_uses_getconf_with_the_api26_fallback(self) -> None:
+        verifier = (SCRIPTS_DIR / "verify-emulator-runtime.sh").read_text(
+            encoding="utf-8",
+        )
+
+        self.assertIn("shell getconf PAGE_SIZE", verifier)
+        self.assertIn('[[ "$LANE" == api26 ]]', verifier)
+        self.assertIn("/proc/self/smaps", verifier)
+
     def test_runtime_identity_rejects_each_pinned_field_mismatch(self) -> None:
         cases = (
             ({"avd": "wrong_avd"}, "running AVD"),
@@ -267,6 +279,42 @@ fi
         self.assertEqual(1, result.returncode)
         self.assertIn("build fingerprint", result.stderr)
         self.assertIn("connected emulator identity mismatch", result.stderr)
+
+    def test_health_requires_fresh_engine_selector_paths_after_combined_tests(
+        self,
+    ) -> None:
+        health = (SCRIPTS_DIR / "health.sh").read_text(encoding="utf-8")
+
+        self.assertIn("run_isolated_tokenizer_instrumentation", health)
+        self.assertIn(
+            "-e ankiMinerExpectedTokenizerPath engine_shared_tagger",
+            health,
+        )
+        self.assertIn(
+            "com.ankiminer.android.tokenizer.MecabNativeTokenizerInstrumentedTest",
+            health,
+        )
+        self.assertIn(
+            "com.ankiminer.android.TokenizerS1aInstrumentedTest",
+            health,
+        )
+        self.assertNotIn("InstrumentedTest#", health)
+        self.assertIn(
+            'install_isolated_instrumentation_artifacts "$emulator_apk" '
+            '"$emulator_test_apk"',
+            health,
+        )
+        gradle_index = health.index("./gradlew --no-daemon")
+        reinstall_index = health.index(
+            'install_isolated_instrumentation_artifacts "$emulator_apk" '
+            '"$emulator_test_apk"',
+        )
+        isolated_index = health.index("run_isolated_tokenizer_instrumentation \\\n")
+        self.assertLess(
+            gradle_index,
+            reinstall_index,
+        )
+        self.assertLess(reinstall_index, isolated_index)
 
     def test_runner_rejects_selector_conflicts_duplicates_and_invalid_values(
         self,
@@ -330,6 +378,9 @@ if [[ "${1:-}" == "shell" && "${2:-}" == "getprop" ]]; then
     esac
 elif [[ "${1:-}" == "emu" && "${2:-}" == "avd" ]]; then
     printf '%s\\nOK\\n' "$FAKE_AVD"
+elif [[ "${1:-}" == "shell" && "${2:-}" == "getconf" && "${3:-}" == "PAGE_SIZE" ]]; then
+    [[ "$FAKE_API" != 26 ]] || exit 127
+    echo "$FAKE_PAGE_SIZE"
 elif [[ "${1:-}" == "shell" && "${2:-}" == "cat" && "${3:-}" == "/proc/self/smaps" ]]; then
     printf 'KernelPageSize: %s kB\n' "$((FAKE_PAGE_SIZE / 1024))"
 elif [[ "${1:-}" == "emu" && "${2:-}" == "kill" ]]; then

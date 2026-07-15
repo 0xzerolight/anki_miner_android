@@ -1,0 +1,12 @@
+package:
+  name: chaquopy-libwebp
+  version: "1.6.0"
+
+build:
+  number: 0
+
+source:
+  path: ../../sources/libwebp
+
+about:
+  license_file: COPYING

@@ -1,0 +1,12 @@
+package:
+  name: chaquopy-libxml2
+  version: "2.14.6"
+
+build:
+  number: 0
+
+source:
+  path: ../../sources/libxml2
+
+about:
+  license_file: Copyright

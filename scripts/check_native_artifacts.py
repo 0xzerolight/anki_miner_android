@@ -548,7 +548,7 @@ def validate_s1a_native(
         required = {"libc++_shared.so"}
     else:
         expected_soname = None
-        required = {"libmecab.so.2", "libpython3.13.so"}
+        required = {"libmecab.so.2", "libpython3.12.so"}
     if not metadata.has_dynamic:
         raise ArtifactError(f"{logical_name}: S1a native payload has no PT_DYNAMIC")
     if metadata.soname != expected_soname:

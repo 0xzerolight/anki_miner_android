@@ -1,0 +1,22 @@
+package:
+  name: lxml
+  version: "6.1.1"
+
+build:
+  number: 0
+
+source:
+  path: ../../sources/lxml
+
+requirements:
+  build:
+    - cython 3.2.4
+    - setuptools 78.1.1
+    - wheel 0.45.1
+  host:
+    - python
+    - chaquopy-libxml2 2.14.6
+    - chaquopy-libxslt 1.1.43
+
+about:
+  license_file: LICENSE.txt

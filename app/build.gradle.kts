@@ -9,10 +9,66 @@ plugins {
 }
 
 val pythonVersion = libs.versions.python.get()
-val pythonTargetVersion = "3.13.9-0"
+val pythonTargetVersion = "3.12.12-0"
 val androidNdkVersion = "28.2.13676358"
+val runtimeManifestProperty = providers.gradleProperty("ankiMinerRuntimeManifest")
 val s1aManifestProperty = providers.gradleProperty("ankiMinerS1aManifest")
 val s1aEnabled = s1aManifestProperty.isPresent
+val chaquopyBuildPython =
+    providers.environmentVariable("ANKI_MINER_CHAQUOPY_BUILD_PYTHON").orNull
+        ?: throw GradleException(
+            "ANKI_MINER_CHAQUOPY_BUILD_PYTHON is unset; source scripts/android-env.sh",
+        )
+val androidToolchainRoot =
+    providers.environmentVariable("ANKI_MINER_ANDROID_TOOLCHAIN_ROOT").orNull
+        ?: throw GradleException(
+            "ANKI_MINER_ANDROID_TOOLCHAIN_ROOT is unset; source scripts/android-env.sh",
+        )
+require(File(chaquopyBuildPython).isAbsolute) {
+    "ANKI_MINER_CHAQUOPY_BUILD_PYTHON must be absolute"
+}
+val buildPythonVerificationOutput =
+    providers.exec {
+        commandLine(
+            "python3.13",
+            rootProject.file("scripts/verify_chaquopy_build_python.py").absolutePath,
+            "verify",
+            "--toolchain-root",
+            androidToolchainRoot,
+            "--python",
+            chaquopyBuildPython,
+        )
+    }.standardOutput.asText.get().trim()
+val buildPythonVerification =
+    JsonSlurper().parseText(buildPythonVerificationOutput) as Map<*, *>
+require(
+    buildPythonVerification.keys ==
+        setOf(
+            "schema",
+            "implementation",
+            "version",
+            "executable",
+            "executable_sha256",
+            "archive_sha256",
+        ),
+) {
+    "Unexpected Chaquopy build Python verification result"
+}
+require(buildPythonVerification["schema"] == 1) {
+    "Unsupported Chaquopy build Python verification schema"
+}
+require(buildPythonVerification["implementation"] == "CPython") {
+    "Chaquopy build Python must be CPython"
+}
+require(buildPythonVerification["version"] == "3.12.13") {
+    "Chaquopy build Python version mismatch"
+}
+
+data class RuntimeWheels(
+    val buildKey: String,
+    val common: List<File>,
+    val byAbi: Map<String, List<File>>,
+)
 
 data class S1aWheels(val byAbi: Map<String, List<File>>)
 
@@ -29,8 +85,117 @@ fun sha256(file: File): String {
     return digest.digest().joinToString("") { "%02x".format(it) }
 }
 
+fun resolveManifest(configured: String): File {
+    require(configured.isNotBlank()) { "Manifest path must not be blank" }
+    val candidate = File(configured)
+    return if (candidate.isAbsolute) {
+        candidate.canonicalFile
+    } else {
+        rootProject.file(configured).canonicalFile
+    }
+}
+
+fun loadRuntimeWheels(): RuntimeWheels {
+    val manifest =
+        runtimeManifestProperty.orNull?.let(::resolveManifest)
+            ?: rootProject.file("tools/runtime-wheels/out/current/manifest.json").canonicalFile
+    require(manifest.isFile) {
+        "Android runtime wheel manifest not found: $manifest. " +
+            "Run tools/runtime-wheels/build-runtime-wheels.sh first."
+    }
+    val verificationOutput =
+        providers.exec {
+            commandLine(
+                "python3.13",
+                rootProject.file("tools/runtime-wheels/runtime_wheels.py").absolutePath,
+                "verify-publication",
+                "--manifest",
+                manifest.absolutePath,
+            )
+        }.standardOutput.asText.get().trim()
+    val verification = JsonSlurper().parseText(verificationOutput) as Map<*, *>
+    require(
+        verification.keys ==
+            setOf(
+                "schema",
+                "recipe_key",
+                "build_key",
+                "api_level",
+                "ndk",
+                "python_target",
+                "groups",
+            ),
+    ) {
+        "Unexpected runtime wheel publication verification result"
+    }
+    require(verification["schema"] == 1) {
+        "Unsupported verified runtime wheel publication schema"
+    }
+    require(verification["api_level"] == 26) { "Runtime wheel API level mismatch" }
+    require(verification["ndk"] == androidNdkVersion) { "Runtime wheel NDK mismatch" }
+    require(verification["python_target"] == pythonTargetVersion) {
+        "Runtime wheel Python target mismatch"
+    }
+    val recipeKey = verification["recipe_key"] as? String
+        ?: error("Verified runtime wheel recipe key is missing")
+    val buildKey = verification["build_key"] as? String
+        ?: error("Verified runtime wheel build key is missing")
+    require(recipeKey.matches(Regex("[0-9a-f]{64}"))) {
+        "Verified runtime wheel recipe key is invalid"
+    }
+    require(buildKey.matches(Regex("[0-9a-f]{64}"))) {
+        "Verified runtime wheel build key is invalid"
+    }
+    require(manifest.name == "manifest.json" && manifest.parentFile.name == "runtime-wheels-$buildKey") {
+        "Runtime wheel manifest is not in its immutable build-key directory"
+    }
+
+    val rawGroups = verification["groups"] as? Map<*, *>
+        ?: error("Verified runtime wheel groups are missing")
+    require(rawGroups.keys == setOf("common", "arm64-v8a", "x86_64")) {
+        "Verified runtime wheel group set is invalid"
+    }
+    val allFilenames = mutableSetOf<String>()
+    fun filesFor(group: String, expectedCount: Int): List<File> {
+        val filenames = rawGroups[group] as? List<*>
+            ?: error("Verified runtime wheel group is missing: $group")
+        require(filenames.size == expectedCount) {
+            "Verified runtime wheel group $group has the wrong size"
+        }
+        return filenames.map { rawFilename ->
+            val filename = rawFilename as? String
+                ?: error("Verified runtime wheel filename is invalid")
+            require(
+                filename == File(filename).name &&
+                    filename.endsWith(".whl") &&
+                    allFilenames.add(filename),
+            ) {
+                "Verified runtime wheel filename is unsafe or duplicated: $filename"
+            }
+            if (group == "common") {
+                require(filename.endsWith("-py3-none-any.whl")) {
+                    "Runtime common wheel has an unexpected tag: $filename"
+                }
+            } else {
+                require(filename.endsWith("android_26_${group.replace('-', '_')}.whl")) {
+                    "Runtime wheel ABI differs from its verified group: $filename"
+                }
+            }
+            File(manifest.parentFile, filename).canonicalFile.also { wheel ->
+                require(wheel.parentFile == manifest.parentFile && wheel.isFile) {
+                    "Verified runtime wheel is missing or escapes its publication: $filename"
+                }
+            }
+        }
+    }
+    val common = filesFor("common", 6)
+    val byAbi =
+        setOf("arm64-v8a", "x86_64").associateWith { abi -> filesFor(abi, 7) }
+    return RuntimeWheels(buildKey, common, byAbi)
+}
+
 fun loadS1aWheels(): S1aWheels {
-    val manifest = file(s1aManifestProperty.get()).canonicalFile
+    val manifest = resolveManifest(s1aManifestProperty.get())
     require(manifest.isFile) { "S1a wheel manifest not found: $manifest" }
     require(manifest.name == "manifest.json") { "S1a wheel manifest filename must be manifest.json" }
     // Publications are intentionally portable only across byte-identical active builder identities.
@@ -75,7 +240,7 @@ fun loadS1aWheels(): S1aWheels {
             setOf(
                 "chaquopy_libcxx-190000-0-py3-none-android_26_",
                 "chaquopy_libmecab-0.996-0-py3-none-android_26_",
-                "fugashi-1.5.2-0-cp313-cp313-android_26_",
+                "fugashi-1.5.2-0-cp312-cp312-android_26_",
             )
         val foundPrefixes = mutableSetOf<String>()
         val files = entries.map { raw ->
@@ -106,6 +271,7 @@ fun loadS1aWheels(): S1aWheels {
     return S1aWheels(byAbi)
 }
 
+val runtimeWheels = loadRuntimeWheels()
 val s1aWheels = if (s1aEnabled) loadS1aWheels() else null
 val s1bArm64TestsEnabled =
     providers.gradleProperty("ankiMinerS1bArm64Tests")
@@ -135,6 +301,12 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "PYTHON_VERSION", "\"$pythonVersion\"")
+        buildConfigField("String", "PYTHON_TARGET_VERSION", "\"$pythonTargetVersion\"")
+        buildConfigField(
+            "String",
+            "RUNTIME_WHEEL_BUILD_KEY",
+            "\"${runtimeWheels.buildKey}\"",
+        )
         buildConfigField("boolean", "S1A_SPIKE_ENABLED", s1aEnabled.toString())
         buildConfigField(
             "String",
@@ -234,21 +406,30 @@ kotlin {
 
 chaquopy {
     defaultConfig {
+        buildPython(chaquopyBuildPython)
         version = pythonVersion
     }
-    if (s1aWheels != null) {
-        productFlavors {
-            getByName("emulator") {
-                pip {
-                    s1aWheels.byAbi.getValue("x86_64").forEach { install(it.absolutePath) }
-                    options("--no-index")
-                }
+    productFlavors {
+        getByName("emulator") {
+            pip {
+                val selected =
+                    runtimeWheels.common +
+                        runtimeWheels.byAbi.getValue("x86_64") +
+                        (s1aWheels?.byAbi?.getValue("x86_64") ?: emptyList<File>())
+                selected.forEach { install(it.absolutePath) }
+                options("--no-index")
+                options("--no-deps")
             }
-            getByName("device") {
-                pip {
-                    s1aWheels.byAbi.getValue("arm64-v8a").forEach { install(it.absolutePath) }
-                    options("--no-index")
-                }
+        }
+        getByName("device") {
+            pip {
+                val selected =
+                    runtimeWheels.common +
+                        runtimeWheels.byAbi.getValue("arm64-v8a") +
+                        (s1aWheels?.byAbi?.getValue("arm64-v8a") ?: emptyList<File>())
+                selected.forEach { install(it.absolutePath) }
+                options("--no-index")
+                options("--no-deps")
             }
         }
     }

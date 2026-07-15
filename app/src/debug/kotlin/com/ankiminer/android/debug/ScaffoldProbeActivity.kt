@@ -20,7 +20,7 @@ class ScaffoldProbeActivity : Activity() {
                     R.string.scaffold_probe_body,
                     Build.VERSION.SDK_INT,
                     Build.SUPPORTED_ABIS.joinToString(),
-                    BuildConfig.PYTHON_VERSION,
+                    BuildConfig.PYTHON_TARGET_VERSION,
                 )
             },
         )

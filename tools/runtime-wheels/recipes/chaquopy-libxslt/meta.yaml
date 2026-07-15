@@ -1,0 +1,16 @@
+package:
+  name: chaquopy-libxslt
+  version: "1.1.43"
+
+build:
+  number: 0
+
+source:
+  path: ../../sources/libxslt
+
+requirements:
+  host:
+    - chaquopy-libxml2 2.14.6
+
+about:
+  license_file: Copyright

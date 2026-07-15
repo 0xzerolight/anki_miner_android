@@ -18,6 +18,9 @@ class ScaffoldInstrumentedTest {
         if (!Python.isStarted()) {
             Python.start(AndroidPlatform(context))
         }
+        Python.getInstance()
+            .getModule("android_bridge.bootstrap")
+            .callAttr("initialize", context.filesDir.absolutePath)
 
         val snapshot =
             JSONObject(
@@ -26,11 +29,16 @@ class ScaffoldInstrumentedTest {
                     .callAttr("snapshot")
                     .toString(),
             )
-        val expectedVersion = BuildConfig.PYTHON_VERSION.split('.').map(String::toInt)
+        val expectedVersion =
+            BuildConfig.PYTHON_TARGET_VERSION
+                .substringBefore('-')
+                .split('.')
+                .map(String::toInt)
 
         assertEquals("CPython", snapshot.getString("implementation"))
         assertEquals(expectedVersion[0], snapshot.getInt("major"))
         assertEquals(expectedVersion[1], snapshot.getInt("minor"))
+        assertEquals(expectedVersion[2], snapshot.getInt("micro"))
         assertTrue(context.applicationInfo.nativeLibraryDir.isNotBlank())
     }
 }

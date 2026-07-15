@@ -225,12 +225,12 @@ S1A_FILENAMES = {
     "arm64-v8a": {
         "chaquopy_libcxx": "chaquopy_libcxx-190000-0-py3-none-android_26_arm64_v8a.whl",
         "chaquopy_libmecab": "chaquopy_libmecab-0.996-0-py3-none-android_26_arm64_v8a.whl",
-        "fugashi": "fugashi-1.5.2-0-cp313-cp313-android_26_arm64_v8a.whl",
+        "fugashi": "fugashi-1.5.2-0-cp312-cp312-android_26_arm64_v8a.whl",
     },
     "x86_64": {
         "chaquopy_libcxx": "chaquopy_libcxx-190000-0-py3-none-android_26_x86_64.whl",
         "chaquopy_libmecab": "chaquopy_libmecab-0.996-0-py3-none-android_26_x86_64.whl",
-        "fugashi": "fugashi-1.5.2-0-cp313-cp313-android_26_x86_64.whl",
+        "fugashi": "fugashi-1.5.2-0-cp312-cp312-android_26_x86_64.whl",
     },
 }
 S1A_NATIVE_PATHS = {
@@ -698,7 +698,7 @@ class NativeArtifactTest(unittest.TestCase):
                 soname=None,
                 needed=(
                     "libmecab.so.2",
-                    "libpython3.13.so",
+                    "libpython3.12.so",
                     "libc.so",
                 ),
             ),

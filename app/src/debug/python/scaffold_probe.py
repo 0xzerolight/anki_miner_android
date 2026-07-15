@@ -11,6 +11,7 @@ def snapshot() -> str:
             "implementation": platform.python_implementation(),
             "major": sys.version_info.major,
             "minor": sys.version_info.minor,
+            "micro": sys.version_info.micro,
         },
         sort_keys=True,
     )

@@ -18,6 +18,9 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 
+private const val EXPECTED_TAGGER_PATH_ARGUMENT = "ankiMinerExpectedTokenizerPath"
+private const val ENGINE_SHARED_TAGGER = "engine_shared_tagger"
+
 @RunWith(AndroidJUnit4::class)
 class MecabNativeTokenizerInstrumentedTest {
     private val context: Context
@@ -30,6 +33,22 @@ class MecabNativeTokenizerInstrumentedTest {
             .open("engine-v1.json")
             .bufferedReader(Charsets.UTF_8)
             .use { it.readText() }
+
+    private fun assertTaggerPath(result: JSONObject) {
+        val taggerPath = result.getString("tagger_path")
+        val fallbackPath = "debug_direct_fallback_after_s1a"
+        assertTrue(
+            "unexpected S1b instrumentation path: $taggerPath",
+            taggerPath == ENGINE_SHARED_TAGGER || taggerPath == fallbackPath,
+        )
+        assertEquals(
+            if (taggerPath == ENGINE_SHARED_TAGGER) "s1b" else "s1a",
+            result.getString("selected_backend"),
+        )
+        InstrumentationRegistry.getArguments()
+            .getString(EXPECTED_TAGGER_PATH_ARGUMENT)
+            ?.let { expected -> assertEquals(expected, taggerPath) }
+    }
 
     private fun stageExternalDictionary(expectedHash: String): File {
         val parent = File(context.filesDir, "test-assets").apply { mkdirs() }
@@ -119,6 +138,9 @@ class MecabNativeTokenizerInstrumentedTest {
         if (!Python.isStarted()) {
             Python.start(AndroidPlatform(context))
         }
+        Python.getInstance()
+            .getModule("android_bridge.bootstrap")
+            .callAttr("initialize", context.filesDir.absolutePath)
 
         val result =
             JSONObject(
@@ -143,5 +165,6 @@ class MecabNativeTokenizerInstrumentedTest {
         assertEquals(7, result.getInt("oov_utf16_end"))
         assertTrue(result.getBoolean("sys_dic_mapped"))
         assertTrue(result.getBoolean("matrix_mapped"))
+        assertTaggerPath(result)
     }
 }

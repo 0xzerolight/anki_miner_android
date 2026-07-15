@@ -21,9 +21,10 @@ usage() {
     cat <<'EOF'
 Usage: scripts/provision-android.sh
 
-Installs a pinned JDK and a workspace-local Android SDK. This command never
-accepts license terms. Use scripts/android-licenses.sh review first. No system
-directories or shell profiles are changed.
+Installs the pinned Chaquopy build Python, JDK, workspace-local Android SDK,
+emulators, and the verified Android Python runtime wheel publication.
+This command never accepts license terms. Use scripts/android-licenses.sh
+review first. No system directories or shell profiles are changed.
 EOF
 }
 
@@ -55,6 +56,8 @@ mkdir -p \
     "$ANDROID_USER_HOME" \
     "$ANDROID_AVD_HOME" \
     "$GRADLE_USER_HOME"
+
+"$SCRIPT_DIR/provision-chaquopy-build-python.sh"
 
 download_verified() {
     local url="$1"
@@ -139,6 +142,7 @@ create_avd "$ANDROID_AVD_16K_NAME" "$ANDROID_SYSTEM_IMAGE_16K"
 printf 'sdk.dir=%s\n' "$ANDROID_HOME" >"$CHECKOUT_ROOT/local.properties"
 
 "$SCRIPT_DIR/verify-android-toolchain.sh"
+"$CHECKOUT_ROOT/tools/runtime-wheels/build-runtime-wheels.sh"
 
 echo
 echo "Provisioned toolchain:"

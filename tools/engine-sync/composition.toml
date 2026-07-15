@@ -45,6 +45,7 @@ overlay_allowlist = [
   "PyQt6/QtCore.py",
   "PyQt6/__init__.py",
   "anki_miner/services/media_extractor.py",
+  "anki_miner/services/tagger.py",
   "anki_miner/utils/android_fd.py",
   "anki_miner/utils/audio_track_detector.py",
 ]
@@ -52,7 +53,7 @@ overlay_allowlist = [
 # Whole-file shadow overlays must name the exact upstream Git blob they were
 # reviewed against. An engine.lock bump stops here until the override is
 # consciously rebased over any upstream change.
-overlay_base_blobs = { "anki_miner/services/media_extractor.py" = "357dea44ae92b47ad06e19d8692a863438fa3d62", "anki_miner/utils/audio_track_detector.py" = "f785f5b8706e1073f076149dbfb873472446d414" }
+overlay_base_blobs = { "anki_miner/services/media_extractor.py" = "357dea44ae92b47ad06e19d8692a863438fa3d62", "anki_miner/services/tagger.py" = "e94a7a4933f2f4df289c53cd91e21158eb7f5602", "anki_miner/utils/audio_track_detector.py" = "f785f5b8706e1073f076149dbfb873472446d414" }
 
 # A protected module may be selected from the desktop Git object only. An
 # overlay at the same path is a hard error.
@@ -66,7 +67,6 @@ protected_verbatim = [
 allowed_external = [
   "PIL",
   "charset_normalizer",
-  "fugashi",
   "lxml",
   "pysubs2",
   "requests",

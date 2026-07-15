@@ -11,6 +11,16 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 # shellcheck source=scripts/android-env.sh
 source "$REPO_ROOT/scripts/android-env.sh"
+: "${ANKI_MINER_CHAQUOPY_BUILD_PYTHON:?android-env.sh did not select the Chaquopy build Python}"
+[[ "$ANKI_MINER_CHAQUOPY_BUILD_PYTHON" == /* ]] || {
+    echo "Chaquopy build Python must be an absolute path." >&2
+    exit 1
+}
+[[ -x "$ANKI_MINER_CHAQUOPY_BUILD_PYTHON" ]] || {
+    echo "Chaquopy build Python is not executable: $ANKI_MINER_CHAQUOPY_BUILD_PYTHON" >&2
+    exit 1
+}
+export ANKI_MINER_CHAQUOPY_BUILD_PYTHON
 
 downloads="${ANKI_MINER_S1A_DOWNLOADS:-$ANKI_MINER_ANDROID_TOOLCHAIN_ROOT/downloads}"
 wheelhouse="${ANKI_MINER_S1A_HOST_WHEELHOUSE:-$ANKI_MINER_ANDROID_TOOLCHAIN_ROOT/wheels/host}"
@@ -57,7 +67,7 @@ build_stage() {
         for abi in arm64-v8a x86_64; do
             "$builder_env/bin/python" build-wheel.py --abi "$abi" --api-level 26 chaquopy-libcxx
             "$builder_env/bin/python" build-wheel.py --abi "$abi" --api-level 26 chaquopy-libmecab
-            "$builder_env/bin/python" build-wheel.py --python 3.13 --abi "$abi" --api-level 26 fugashi
+            "$builder_env/bin/python" build-wheel.py --python 3.12 --abi "$abi" --api-level 26 fugashi
         done
     )
 }

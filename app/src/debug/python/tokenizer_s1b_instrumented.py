@@ -7,8 +7,8 @@ from pathlib import Path
 from typing import Any
 
 from android_bridge.tokenizer_contract import UNIDIC_FEATURE_FIELDS
-from android_bridge.tokenizer_s1b import create_s1b_tagger
 from android_bridge.unidic_resource import register_unidic
+from tokenizer_instrumented_selection import acquire_tagger_for_instrumentation
 
 
 def _golden_feature(value: Any) -> Any:
@@ -61,7 +61,9 @@ def run(golden_json: str, dicdir: str) -> str:
         resource_id=f"golden-unidic-{expected_hash[:16]}",
         expected_tree_sha256=expected_hash,
     )
-    tagger = create_s1b_tagger(registration)
+    tagger, tagger_path, selected_backend = acquire_tagger_for_instrumentation(
+        "s1b", registration
+    )
     cases = document["cases"]["tokenization"]
     unknown_count = 0
     astral_utf16: tuple[int, int] | None = None
@@ -119,7 +121,9 @@ def run(golden_json: str, dicdir: str) -> str:
             "matrix_mapped": matrix_mapped,
             "oov_utf16_end": astral_utf16[1],
             "oov_utf16_start": astral_utf16[0],
+            "selected_backend": selected_backend,
             "sys_dic_mapped": sys_dic_mapped,
+            "tagger_path": tagger_path,
             "unknown_count": unknown_count,
         },
         sort_keys=True,

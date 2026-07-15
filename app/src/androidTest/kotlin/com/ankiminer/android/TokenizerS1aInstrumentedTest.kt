@@ -17,6 +17,9 @@ import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 
+private const val EXPECTED_TAGGER_PATH_ARGUMENT = "ankiMinerExpectedTokenizerPath"
+private const val ENGINE_SHARED_TAGGER = "engine_shared_tagger"
+
 @RunWith(AndroidJUnit4::class)
 class TokenizerS1aInstrumentedTest {
     private val context: Context
@@ -25,6 +28,22 @@ class TokenizerS1aInstrumentedTest {
     private fun golden(): String =
         InstrumentationRegistry.getInstrumentation().context.assets.open("engine-v1.json")
             .bufferedReader(Charsets.UTF_8).use { it.readText() }
+
+    private fun assertTaggerPath(result: JSONObject) {
+        val taggerPath = result.getString("tagger_path")
+        val fallbackPath = "debug_direct_fallback_after_s1b"
+        assertTrue(
+            "unexpected S1a instrumentation path: $taggerPath",
+            taggerPath == ENGINE_SHARED_TAGGER || taggerPath == fallbackPath,
+        )
+        assertEquals(
+            if (taggerPath == ENGINE_SHARED_TAGGER) "s1a" else "s1b",
+            result.getString("selected_backend"),
+        )
+        InstrumentationRegistry.getArguments()
+            .getString(EXPECTED_TAGGER_PATH_ARGUMENT)
+            ?.let { expected -> assertEquals(expected, taggerPath) }
+    }
 
     private fun stageDictionary(expectedHash: String): File {
         val parent = File(context.filesDir, "test-assets").apply { mkdirs() }
@@ -100,5 +119,6 @@ class TokenizerS1aInstrumentedTest {
         assertTrue(result.getInt("unknown_count") > 0)
         assertEquals("*", result.getString("raw_oov_pos3"))
         assertTrue(result.getBoolean("raw_oov_lform_is_none"))
+        assertTaggerPath(result)
     }
 }

@@ -22,14 +22,14 @@
       "url": "https://github.com/NixOS/patchelf/releases/download/0.18.0/patchelf-0.18.0-x86_64.tar.gz"
     },
     "python-arm64-v8a": {
-      "filename": "target-3.13.9-0-arm64-v8a.zip",
-      "sha256": "c19f39fecada0b3932ab7a61b0f214c1212068cbbae0dc22c2afa38a4f354b8e",
-      "url": "https://repo.maven.apache.org/maven2/com/chaquo/python/target/3.13.9-0/target-3.13.9-0-arm64-v8a.zip"
+      "filename": "target-3.12.12-0-arm64-v8a.zip",
+      "sha256": "7a4a278ec1fed0e0d0359fbec71d6d481d79a7efbc8e2090267a91046417027a",
+      "url": "https://repo.maven.apache.org/maven2/com/chaquo/python/target/3.12.12-0/target-3.12.12-0-arm64-v8a.zip"
     },
     "python-x86_64": {
-      "filename": "target-3.13.9-0-x86_64.zip",
-      "sha256": "f9f2e36b08e60e92bcdd201eea4aff5ba13681b7b425ce24e0a140eca626674d",
-      "url": "https://repo.maven.apache.org/maven2/com/chaquo/python/target/3.13.9-0/target-3.13.9-0-x86_64.zip"
+      "filename": "target-3.12.12-0-x86_64.zip",
+      "sha256": "d4140d76c0a3c73bbbb89a7139e9bcc3080b37f210f2c343acfdea8b21113aad",
+      "url": "https://repo.maven.apache.org/maven2/com/chaquo/python/target/3.12.12-0/target-3.12.12-0-x86_64.zip"
     }
   }
 }

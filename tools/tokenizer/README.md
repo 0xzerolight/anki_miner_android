@@ -88,12 +88,16 @@ or the engine from the shared contract modules.
 
 ## M0 decision status
 
-No tokenizer candidate is selected yet. S1a has a copied-record Python backend,
-an offline native-wheel recipe, and property-gated x86_64/arm64 Android probes.
-Its decision remains provisional until both API-36 x86_64 page-size lanes and
-the explicit arm64 runtime lane pass against the seeded golden. Static wheel
-inspection, host parity, or x86_64 execution alone must not be recorded as an
-S1 winner. Record those runtime results here before making the M0 decision.
+No tokenizer candidate has won yet. The Android engine overlay exposes one
+process-immutable shared-tagger factory, and
+`android_bridge.tokenizer_selection` can bind it to either registered backend.
+That selector is infrastructure for testing both production seams, not an M0
+choice. S1a has a copied-record Python backend, an offline native-wheel recipe,
+and property-gated x86_64/arm64 Android probes. Its decision remains provisional
+until both API-36 x86_64 page-size lanes and the explicit arm64 runtime lane
+pass against the seeded golden. Static wheel inspection, host parity, or
+x86_64 execution alone must not be recorded as an S1 winner. Record those
+runtime results here before making the M0 decision.
 
 | Gate | S1a result | Evidence |
 | --- | --- | --- |
@@ -138,10 +142,11 @@ scripts/run-emulator-tests.sh \
 The connected gate verifies the dictionary on the host, writes a deterministic
 temporary ZIP to `/data/local/tmp`, and streams it into a versioned app-private
 test directory. Python verifies the extracted tree again before opening it.
-The instrumented test then traverses Chaquopy, the Python S1b adapter, Kotlin,
-JNI, and native MeCab for all seeded cases, including the astral OOV UTF-16
-span, and checks both dictionary mappings in the Android process. The temporary
-device ZIP is removed when the gate exits.
+The instrumented test then traverses Chaquopy, the real vendored-engine shared
+tagger seam, the Python S1b adapter, Kotlin, JNI, and native MeCab for all
+seeded cases, including the astral OOV UTF-16 span, and checks both dictionary
+mappings in the Android process. The temporary device ZIP is removed when the
+gate exits.
 
 S1b remains provisional until that same production-JNI class passes on an
 explicitly named arm64 target. Record the expected image fingerprint outside

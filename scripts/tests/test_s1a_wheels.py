@@ -26,7 +26,13 @@ s1a_wheels = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(s1a_wheels)
 
 
-def dynamic_elf(*, soname: str | None, needed: tuple[str, ...]) -> bytes:
+def dynamic_elf(
+    *,
+    soname: str | None,
+    needed: tuple[str, ...],
+    machine: int = 62,
+    alignment: int = 16 * 1024,
+) -> bytes:
     strings = bytearray(b"\0")
     offsets: dict[str, int] = {}
     for value in (*needed, *((soname,) if soname else ())):
@@ -44,7 +50,7 @@ def dynamic_elf(*, soname: str | None, needed: tuple[str, ...]) -> bytes:
         data,
         16,
         3,
-        62,
+        machine,
         1,
         0,
         64,
@@ -68,7 +74,7 @@ def dynamic_elf(*, soname: str | None, needed: tuple[str, ...]) -> bytes:
         0,
         len(data),
         len(data),
-        16 * 1024,
+        alignment,
     )
     struct.pack_into(
         "<IIQQQQQQ",
@@ -125,9 +131,9 @@ S1A_VALID_WHEEL_CASES = {
         ),
     },
     "fugashi": {
-        "filename": "fugashi-1.5.2-0-cp313-cp313-android_26_x86_64.whl",
+        "filename": "fugashi-1.5.2-0-cp312-cp312-android_26_x86_64.whl",
         "version": "1.5.2",
-        "tag": "cp313-cp313-android_26_x86_64",
+        "tag": "cp312-cp312-android_26_x86_64",
         "requirements": (
             'unidic; extra == "unidic"',
             'unidic-lite; extra == "unidic-lite"',
@@ -138,7 +144,7 @@ S1A_VALID_WHEEL_CASES = {
         "native": (
             "fugashi/fugashi.so",
             None,
-            ("libmecab.so.2", "libpython3.13.so", "libc.so"),
+            ("libmecab.so.2", "libpython3.12.so", "libc.so"),
         ),
     },
 }
@@ -208,7 +214,7 @@ class S1aWheelToolTests(unittest.TestCase):
                 [
                     f"chaquopy_libcxx-190000-0-py3-none-android_26_{platform}.whl",
                     f"chaquopy_libmecab-0.996-0-py3-none-android_26_{platform}.whl",
-                    f"fugashi-1.5.2-0-cp313-cp313-android_26_{platform}.whl",
+                    f"fugashi-1.5.2-0-cp312-cp312-android_26_{platform}.whl",
                 ],
             )
         paths = []
@@ -239,7 +245,7 @@ class S1aWheelToolTests(unittest.TestCase):
             },
             "host_wheels": {
                 filename: sha256
-                for _, filename, sha256 in s1a_wheels.host_entries()
+                for _, _, filename, sha256 in s1a_wheels.host_entries()
             },
         }
         (stage / "manifest.json").write_text(
@@ -259,6 +265,45 @@ class S1aWheelToolTests(unittest.TestCase):
             "elf": {"abi": abi},
         }
 
+    @staticmethod
+    def _write_target_archive(
+        root: Path,
+        abi: str,
+        *,
+        needed: tuple[str, ...] = ("libc.so", "libdl.so", "libm.so"),
+        alignment: int = 16 * 1024,
+        suffix: bytes = b"",
+        libpython_version: str = "3.12",
+        machine_override: int | None = None,
+    ) -> Path:
+        machine = (
+            machine_override
+            if machine_override is not None
+            else (183 if abi == "arm64-v8a" else 62)
+        )
+        archive_path = root / f"target-3.12.12-0-{abi}.zip"
+        with zipfile.ZipFile(archive_path, "w") as archive:
+            archive.writestr(
+                f"jniLibs/{abi}/libpython{libpython_version}.so",
+                dynamic_elf(
+                    soname=None,
+                    needed=needed,
+                    machine=machine,
+                    alignment=alignment,
+                )
+                + suffix,
+            )
+            archive.writestr(
+                f"lib-dynload/{abi}/_json.cpython-312.so",
+                dynamic_elf(
+                    soname=None,
+                    needed=("libc.so",),
+                    machine=machine,
+                    alignment=alignment,
+                ),
+            )
+        return archive_path
+
     def test_locks_are_exact_and_complete(self) -> None:
         sources = s1a_wheels.source_entries()
         self.assertEqual(
@@ -272,10 +317,104 @@ class S1aWheelToolTests(unittest.TestCase):
             },
             set(sources),
         )
+        self.assertEqual("3.12.12-0", s1a_wheels.PYTHON_TARGET)
+        for abi in s1a_wheels.ABIS:
+            target = sources[f"python-{abi}"]
+            self.assertEqual(
+                f"target-3.12.12-0-{abi}.zip",
+                target["filename"],
+            )
+            self.assertIn("/3.12.12-0/", target["url"])
         requirements = s1a_wheels.host_entries()
-        self.assertIn("pip==25.1.1", {requirement for requirement, _, _ in requirements})
-        self.assertIn("Cython==3.1.5", {requirement for requirement, _, _ in requirements})
-        self.assertEqual(len(requirements), len({filename for _, filename, _ in requirements}))
+        self.assertIn(
+            ("outer", "pip==25.1.1"),
+            {(role, requirement) for role, requirement, _, _ in requirements},
+        )
+        target = [entry for entry in requirements if entry[0] == "target"]
+        self.assertEqual(1, len(target))
+        self.assertEqual("Cython==3.1.5", target[0][1])
+        self.assertIn("cp312-cp312", target[0][2])
+        self.assertNotIn("cp313", target[0][2])
+        self.assertEqual(
+            len(requirements),
+            len({filename for _, _, filename, _ in requirements}),
+        )
+
+    def test_host_lock_rejects_schema_one_extra_keys_and_cp313_target(self) -> None:
+        valid = json.loads(s1a_wheels.HOST_LOCK.read_text(encoding="utf-8"))
+        invalid_documents = []
+        schema_one = json.loads(json.dumps(valid))
+        schema_one["schema"] = 1
+        invalid_documents.append(schema_one)
+        extra_key = json.loads(json.dumps(valid))
+        extra_key["unexpected"] = True
+        invalid_documents.append(extra_key)
+        extra_entry_key = json.loads(json.dumps(valid))
+        extra_entry_key["requirements"][0]["unexpected"] = True
+        invalid_documents.append(extra_entry_key)
+        cp313_target = json.loads(json.dumps(valid))
+        target = next(
+            entry
+            for entry in cp313_target["requirements"]
+            if entry["interpreter"] == "target"
+        )
+        target["filename"] = target["filename"].replace("cp312", "cp313")
+        invalid_documents.append(cp313_target)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            lock = Path(temporary) / "host-wheels.lock"
+            for document in invalid_documents:
+                with self.subTest(document=document):
+                    lock.write_text(json.dumps(document), encoding="utf-8")
+                    with (
+                        mock.patch.object(s1a_wheels, "HOST_LOCK", lock),
+                        self.assertRaises(s1a_wheels.WheelError),
+                    ):
+                        s1a_wheels.host_entries()
+
+    def test_host_wheel_fetch_uses_exact_interpreter_for_target_cython(self) -> None:
+        payloads = {
+            "outer.whl": b"outer",
+            "target.whl": b"target",
+        }
+        entries = [
+            (
+                "outer",
+                "outer-package==1",
+                "outer.whl",
+                hashlib.sha256(payloads["outer.whl"]).hexdigest(),
+            ),
+            (
+                "target",
+                "Cython==3.1.5",
+                "target.whl",
+                hashlib.sha256(payloads["target.whl"]).hexdigest(),
+            ),
+        ]
+        commands: list[list[str]] = []
+
+        def fake_run(command, **kwargs):
+            commands.append(command)
+            destination = Path(command[command.index("--dest") + 1])
+            filename = "outer.whl" if command[0] == sys.executable else "target.whl"
+            (destination / filename).write_bytes(payloads[filename])
+            return subprocess.CompletedProcess(command, 0)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            wheelhouse = Path(temporary) / "wheelhouse"
+            with (
+                mock.patch.object(s1a_wheels, "host_entries", return_value=entries),
+                mock.patch.object(
+                    s1a_wheels,
+                    "target_python_executable",
+                    return_value="/locked/python3.12",
+                ),
+                mock.patch.object(s1a_wheels.subprocess, "run", side_effect=fake_run),
+            ):
+                s1a_wheels.fetch_host_wheels(wheelhouse)
+        self.assertEqual(sys.executable, commands[0][0])
+        self.assertEqual("/locked/python3.12", commands[1][0])
+        self.assertIn("Cython==3.1.5", commands[1])
 
     def test_recipe_key_uses_explicit_paths_modes_and_bytes_but_not_outputs(self) -> None:
         self.assertRegex(self.recipe, r"^[0-9a-f]{64}$")
@@ -335,6 +474,9 @@ class S1aWheelToolTests(unittest.TestCase):
         self.assertIn("pip==25.1.1", build_script)
         self.assertIn('PATH="$builder_env/bin:$patchelf_dir:$PATH"', build_script)
         self.assertIn('ANKI_MINER_S1A_STAGE_ROOT="$stage"', build_script)
+        self.assertIn('build-wheel.py --python 3.12', build_script)
+        self.assertIn('export ANKI_MINER_CHAQUOPY_BUILD_PYTHON', build_script)
+        self.assertNotIn('build-wheel.py --python 3.13', build_script)
         self.assertNotIn('"$pip_wheel/pip"', build_script)
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -369,8 +511,15 @@ class S1aWheelToolTests(unittest.TestCase):
             self.assertEqual("25.1.1", bootstrapped.stdout.strip())
 
     def test_builder_identity_and_build_key_cover_required_host_tools(self) -> None:
-        self.assertEqual("cpython", self.identity["python"]["implementation"])
-        self.assertRegex(self.identity["python"]["executable_sha256"], r"^[0-9a-f]{64}$")
+        self.assertEqual(2, self.identity["schema"])
+        outer = self.identity["interpreters"]["outer"]
+        target = self.identity["interpreters"]["target"]
+        self.assertEqual("cpython", outer["implementation"])
+        self.assertRegex(outer["version"], r"^3\.13\.\d+$")
+        self.assertRegex(outer["executable_sha256"], r"^[0-9a-f]{64}$")
+        self.assertEqual("cpython", target["implementation"])
+        self.assertEqual("3.12.13", target["version"])
+        self.assertRegex(target["executable_sha256"], r"^[0-9a-f]{64}$")
         self.assertEqual("linux", self.identity["host"]["os"])
         self.assertEqual("x86_64", self.identity["host"]["machine"])
         self.assertEqual(
@@ -393,6 +542,29 @@ class S1aWheelToolTests(unittest.TestCase):
             + s1a_wheels._canonical_json(self.identity),
         ).hexdigest()
         self.assertEqual(expected, self.build)
+        for interpreter in ("outer", "target"):
+            changed = json.loads(json.dumps(self.identity))
+            changed["interpreters"][interpreter]["executable_sha256"] = "f" * 64
+            self.assertNotEqual(
+                self.build,
+                s1a_wheels.build_key(self.recipe, changed),
+            )
+
+    def test_builder_identity_rejects_schema_one_extra_keys_and_cp313_target(self) -> None:
+        invalid = json.loads(json.dumps(self.identity))
+        invalid["schema"] = 1
+        with self.assertRaisesRegex(s1a_wheels.WheelError, "schema"):
+            s1a_wheels._validate_builder_identity(invalid)
+
+        invalid = json.loads(json.dumps(self.identity))
+        invalid["unexpected"] = True
+        with self.assertRaisesRegex(s1a_wheels.WheelError, "exactly"):
+            s1a_wheels._validate_builder_identity(invalid)
+
+        invalid = json.loads(json.dumps(self.identity))
+        invalid["interpreters"]["target"]["version"] = "3.13.7"
+        with self.assertRaisesRegex(s1a_wheels.WheelError, "wrong version"):
+            s1a_wheels._validate_builder_identity(invalid)
 
     def test_reproducible_environment_and_expected_keys_are_enforced(self) -> None:
         s1a_wheels.enforce_reproducible_environment()
@@ -424,6 +596,97 @@ class S1aWheelToolTests(unittest.TestCase):
                 archive.addfile(info)
             with self.assertRaises(s1a_wheels.WheelError):
                 s1a_wheels.safe_extract(linked, root / "out-linked")
+
+    def test_python_target_archive_audit_covers_both_abis(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for abi in s1a_wheels.ABIS:
+                with self.subTest(abi=abi):
+                    archive = self._write_target_archive(root, abi)
+                    result = s1a_wheels.verify_python_target_archive(
+                        archive,
+                        abi,
+                        s1a_wheels.digest(archive),
+                    )
+                    self.assertEqual(abi, result["abi"])
+                    self.assertEqual(2, result["native_count"])
+                    self.assertEqual(
+                        ["libc.so", "libdl.so", "libm.so"],
+                        result["libpython"]["needed"],
+                    )
+
+    def test_python_target_archive_audit_rejects_hash_abi_deps_alignment_and_signatures(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            archive = self._write_target_archive(root, "x86_64")
+            with self.assertRaisesRegex(s1a_wheels.WheelError, "hash-mismatched"):
+                s1a_wheels.verify_python_target_archive(
+                    archive,
+                    "x86_64",
+                    "0" * 64,
+                )
+
+            wrong_abi = self._write_target_archive(
+                root,
+                "arm64-v8a",
+                machine_override=62,
+            )
+            with self.assertRaisesRegex(s1a_wheels.WheelError, "contains ABI"):
+                s1a_wheels.verify_python_target_archive(
+                    wrong_abi,
+                    "arm64-v8a",
+                    s1a_wheels.digest(wrong_abi),
+                )
+
+            wrong_deps = self._write_target_archive(
+                root,
+                "x86_64",
+                needed=("libc.so", "libdl.so"),
+            )
+            with self.assertRaisesRegex(s1a_wheels.WheelError, "dependencies"):
+                s1a_wheels.verify_python_target_archive(
+                    wrong_deps,
+                    "x86_64",
+                    s1a_wheels.digest(wrong_deps),
+                )
+
+            misaligned = self._write_target_archive(
+                root,
+                "x86_64",
+                alignment=4096,
+            )
+            with self.assertRaisesRegex(s1a_wheels.WheelError, "alignment"):
+                s1a_wheels.verify_python_target_archive(
+                    misaligned,
+                    "x86_64",
+                    s1a_wheels.digest(misaligned),
+                )
+
+            for signature in (b"mimalloc", b"/proc/sys/vm/overcommit_memory"):
+                signed = self._write_target_archive(root, "x86_64", suffix=signature)
+                with (
+                    self.subTest(signature=signature),
+                    self.assertRaisesRegex(s1a_wheels.WheelError, "forbidden"),
+                ):
+                    s1a_wheels.verify_python_target_archive(
+                        signed,
+                        "x86_64",
+                        s1a_wheels.digest(signed),
+                    )
+
+            cp313 = self._write_target_archive(
+                root,
+                "x86_64",
+                libpython_version="3.13",
+            )
+            with self.assertRaisesRegex(s1a_wheels.WheelError, "libpython3.12"):
+                s1a_wheels.verify_python_target_archive(
+                    cp313,
+                    "x86_64",
+                    s1a_wheels.digest(cp313),
+                )
 
     def test_recipes_match_pinned_chaquopy_schema_layout(self) -> None:
         recipe_root = ROOT / "tools/wheels/recipes"
@@ -587,6 +850,12 @@ class BuildWheel:
         run(f"{bootstrap_env}/bin/pip install pip=={pip_version}")
         command = (f"install " + " ".join(shlex.quote(req) for req in requirements))
 
+    def create_build_env(self):
+        run(f"python{python_ver} -m venv --without-pip {self.build_env}")
+
+    def get_bootstrap_env(self):
+        run(f"python{python_ver} -m venv {bootstrap_env}")
+
     def download_git(self, source):
         return "GIT_NETWORK_SENTINEL"
 
@@ -637,6 +906,8 @@ export CFLAGS="-D__BIONIC_NO_PAGE_SIZE_MACRO"
             self.assertIn("PATCH_SENTINEL", patched)
             self.assertIn("BUILD_SENTINEL", patched)
             self.assertIn("HOST_SENTINEL", patched)
+            self.assertEqual(2, patched.count("ANKI_MINER_CHAQUOPY_BUILD_PYTHON"))
+            self.assertNotIn('run(f"python{python_ver} -m venv', patched)
             patched_android_env = android_env.read_text(encoding="utf-8")
             self.assertIn("-ffile-prefix-map=", patched_android_env)
             self.assertIn("-fdebug-prefix-map=", patched_android_env)
@@ -644,13 +915,13 @@ export CFLAGS="-D__BIONIC_NO_PAGE_SIZE_MACRO"
 
     def test_wheel_identity_requires_exact_version_api_and_tags(self) -> None:
         package, abi = s1a_wheels._wheel_identity(
-            Path("fugashi-1.5.2-0-cp313-cp313-android_26_arm64_v8a.whl"),
+            Path("fugashi-1.5.2-0-cp312-cp312-android_26_arm64_v8a.whl"),
         )
         self.assertEqual(("fugashi", "arm64-v8a"), (package, abi))
         for invalid in (
-            "fugashi-1.5.1-0-cp313-cp313-android_26_arm64_v8a.whl",
-            "fugashi-1.5.2-0-cp313-cp313-android_25_arm64_v8a.whl",
-            "fugashi-1.5.2-0-cp312-cp312-android_26_arm64_v8a.whl",
+            "fugashi-1.5.1-0-cp312-cp312-android_26_arm64_v8a.whl",
+            "fugashi-1.5.2-0-cp312-cp312-android_25_arm64_v8a.whl",
+            "fugashi-1.5.2-0-cp313-cp313-android_26_arm64_v8a.whl",
         ):
             with self.subTest(invalid=invalid), self.assertRaises(s1a_wheels.WheelError):
                 s1a_wheels._wheel_identity(Path(invalid))
@@ -659,7 +930,7 @@ export CFLAGS="-D__BIONIC_NO_PAGE_SIZE_MACRO"
         with tempfile.TemporaryDirectory() as temporary:
             wheel = (
                 Path(temporary)
-                / "fugashi-1.5.2-0-cp313-cp313-android_26_x86_64.whl"
+                / "fugashi-1.5.2-0-cp312-cp312-android_26_x86_64.whl"
             )
             with zipfile.ZipFile(wheel, "w") as archive:
                 archive.writestr("unidic_lite/dicdir/sys.dic", b"forbidden")
