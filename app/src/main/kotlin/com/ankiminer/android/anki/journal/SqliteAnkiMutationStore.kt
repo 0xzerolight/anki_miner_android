@@ -1299,6 +1299,23 @@ internal class SqliteAnkiMutationStore(
         }
     }
 
+    override fun mediaClaim(key: ParentKey, assetId: String): MediaClaimRecord? {
+        require(assetId.isNotBlank()) { "assetId must not be blank" }
+        return read { db ->
+            db.query(
+                "media_claims",
+                null,
+                "run_id = ? AND asset_id = ?",
+                arrayOf(key.runId, assetId),
+                null,
+                null,
+                null,
+            ).use { cursor ->
+                cursor.singleOrNull(::claimFromCursor, "media claim run/asset identity")
+            }?.takeIf { claim -> claim.requestId == key.requestId }
+        }
+    }
+
     override fun unresolvedClaims(): List<MediaClaimRecord> = read(::unresolvedClaimsDb)
 
     override fun releaseMediaLease(runId: String): MediaLeaseRecord? =

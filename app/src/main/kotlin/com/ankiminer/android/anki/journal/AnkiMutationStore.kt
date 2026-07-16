@@ -147,6 +147,9 @@ internal interface AnkiMutationStore : Closeable {
         compactEvidence: String? = null,
     ): MediaClaimRecord
 
+    /** Exact durable identity lookup across both unresolved and resolved claim states. */
+    fun mediaClaim(key: ParentKey, assetId: String): MediaClaimRecord?
+
     fun unresolvedClaims(): List<MediaClaimRecord>
     fun releaseMediaLease(runId: String): MediaLeaseRecord?
 

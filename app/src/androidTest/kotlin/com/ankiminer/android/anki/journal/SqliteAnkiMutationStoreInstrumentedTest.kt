@@ -231,6 +231,50 @@ class SqliteAnkiMutationStoreInstrumentedTest {
         }
 
     @Test
+    fun mediaClaimLookupUsesExactIdentityAndPersistsResolvedClaimsAcrossReopen() {
+        val name = databaseName()
+        val key = ParentKey(runId(51), requestId(1))
+        lateinit var expected: MediaClaimRecord
+        try {
+            SqliteAnkiMutationStore(context, name, enforceBackgroundThread = false).use { store ->
+                assertNull(store.mediaClaim(key, assetId(1)))
+                val promoted = prepareMedia(store, 51, 1, 1)
+                expected = promoted.claim
+
+                assertEquals(expected, store.mediaClaim(key, assetId(1)))
+                assertNull(store.mediaClaim(ParentKey(key.runId, requestId(2)), assetId(1)))
+                assertNull(store.mediaClaim(ParentKey(runId(52), key.requestId), assetId(1)))
+                assertNull(store.mediaClaim(key, assetId(2)))
+
+                store.completeMediaFailure(
+                    childId = promoted.child.id,
+                    claimId = expected.id,
+                    childOutcome = ChildState.PROVEN_NOT_COMMITTED,
+                    claimState = MediaClaimState.CLEANED_VERIFIED,
+                    result =
+                        AlignedResult.MediaFailed(
+                            0,
+                            expected.assetId,
+                            JournalError(JournalErrorCode.MEDIA_STORE_FAILED, "provider was never entered", false),
+                            "provider was never entered",
+                        ),
+                    compactEvidence = "provider was never entered",
+                )
+                expected = requireNotNull(store.mediaClaim(key, assetId(1)))
+                assertEquals(MediaClaimState.CLEANED_VERIFIED, expected.state)
+                assertTrue(store.unresolvedClaims().isEmpty())
+            }
+
+            SqliteAnkiMutationStore(context, name, enforceBackgroundThread = false).use { reopened ->
+                assertEquals(expected, reopened.mediaClaim(key, assetId(1)))
+                assertEquals(MediaClaimState.CLEANED_VERIFIED, reopened.mediaClaim(key, assetId(1))?.state)
+            }
+        } finally {
+            context.deleteDatabase(name)
+        }
+    }
+
+    @Test
     fun mediaReceiptBoundarySurvivesCrashAsOneCommittedTransaction() {
         val name = databaseName()
         try {
@@ -645,6 +689,10 @@ class SqliteAnkiMutationStoreInstrumentedTest {
 
             assertTrue(store.alignedResults(request.key).single() is AlignedResult.NoteCreated)
             assertEquals(MediaClaimState.ATTACHED_VERIFIED.name, claimState(store.writableDatabase, promoted.claim.id))
+            assertEquals(
+                MediaClaimState.ATTACHED_VERIFIED,
+                store.mediaClaim(ParentKey(promoted.claim.runId, promoted.claim.requestId), promoted.claim.assetId)?.state,
+            )
             assertNull(store.activeNote(request.key))
         }
 
