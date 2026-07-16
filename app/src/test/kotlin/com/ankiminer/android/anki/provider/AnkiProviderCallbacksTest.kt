@@ -127,6 +127,7 @@ class AnkiProviderCallbacksTest {
                 ProviderFailureKind.PERMISSION_REQUIRED to "permission_required",
                 ProviderFailureKind.PROVIDER_UNAVAILABLE to "provider_unavailable",
                 ProviderFailureKind.QUERY_FAILED to "query_failed",
+                ProviderFailureKind.MUTATION_FAILED to "write_failed",
                 ProviderFailureKind.TIMEOUT to "timeout",
                 ProviderFailureKind.CANCELLED to "cancelled",
             )

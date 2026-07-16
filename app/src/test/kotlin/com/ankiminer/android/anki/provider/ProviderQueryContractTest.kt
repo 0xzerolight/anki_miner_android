@@ -133,6 +133,11 @@ class ProviderQueryContractTest {
                     sortOrder = ProviderOrder.NOTE_ID_ASCENDING,
                 ),
                 ProviderQuery(
+                    ProviderEndpoint.NOTE_BY_ID,
+                    endpointId = 7L,
+                    projection = ProviderQueryShapes.NOTE_SNAPSHOT_PROJECTION,
+                ),
+                ProviderQuery(
                     ProviderEndpoint.NOTES_V2,
                     projection = ProviderQueryShapes.NOTE_PAGE_PROJECTION,
                     selection = ProviderSelection.NoteIds(listOf(1L, 2L)),
@@ -176,9 +181,14 @@ class ProviderQueryContractTest {
                     endpointId = 40L,
                     projection = ProviderQueryShapes.CARD_IDENTITY_PROJECTION,
                 ),
+                ProviderQuery(
+                    ProviderEndpoint.CARDS_FOR_NOTE,
+                    endpointId = 30L,
+                    projection = ProviderQueryShapes.CARD_IDENTITY_PROJECTION,
+                ),
             )
 
-        assertEquals(11, legal.size)
+        assertEquals(13, legal.size)
         assertTrue(legal.all(ProviderQueryShapes::isAllowed))
     }
 
@@ -243,6 +253,19 @@ class ProviderQueryContractTest {
                 },
                 {
                     ProviderQuery(
+                        ProviderEndpoint.NOTE_BY_ID,
+                        endpointId = 1L,
+                        projection = ProviderQueryShapes.NOTE_PAGE_PROJECTION,
+                    )
+                },
+                {
+                    ProviderQuery(
+                        ProviderEndpoint.CARDS_FOR_NOTE,
+                        projection = ProviderQueryShapes.CARD_IDENTITY_PROJECTION,
+                    )
+                },
+                {
+                    ProviderQuery(
                         ProviderEndpoint.MODELS,
                         endpointId = 1L,
                         projection = ProviderQueryShapes.MODEL_PROJECTION,
@@ -294,7 +317,7 @@ class ProviderQueryContractTest {
     }
 
     @Test
-    fun `production provider package exposes only the sealed deck insert mutation`() {
+    fun `production provider package exposes only sealed pinned mutations`() {
         val sourceRoot =
             File(projectRoot(), "app/src/main/kotlin/com/ankiminer/android/anki/provider")
         assertTrue(sourceRoot.isDirectory)
@@ -304,13 +327,18 @@ class ProviderQueryContractTest {
                 .filter { it.isFile && it.extension == "kt" }
                 .joinToString("\n") { it.readText() }
 
-        assertFalse(source.contains("AddContentApi"))
-        assertEquals(1, Regex("resolver\\.insert\\s*\\(").findAll(source).count())
-        assertFalse(Regex("resolver\\.(update|delete)\\s*\\(").containsMatchIn(source))
+        assertFalse(source.contains("com.ichi2.anki.api.AddContentApi"))
+        assertEquals(2, Regex("resolver\\.insert\\s*\\(").findAll(source).count())
+        assertEquals(1, Regex("resolver\\.update\\s*\\(").findAll(source).count())
+        assertFalse(Regex("resolver\\.delete\\s*\\(").containsMatchIn(source))
         assertTrue(source.contains("AnkiProviderMutationCommand.CreateDeck"))
+        assertTrue(source.contains("AnkiProviderMutationCommand.StoreMedia"))
+        assertTrue(source.contains("AnkiProviderMutationCommand.InsertNote"))
+        assertTrue(source.contains("AnkiProviderMutationCommand.RouteCard"))
         assertTrue(source.contains("FlashCardsContract.Deck.CONTENT_ALL_URI"))
-        assertFalse(source.contains("appendPath(\"cards\")"))
-        assertFalse(source.contains("notes/{"))
+        assertTrue(source.contains("FlashCardsContract.AnkiMedia.CONTENT_URI"))
+        assertTrue(source.contains("FlashCardsContract.Note.CONTENT_URI"))
+        assertTrue(source.contains("Uri.withAppendedPath(cardsUri, command.ordinal.toString())"))
     }
 
     private fun projectRoot(): File {

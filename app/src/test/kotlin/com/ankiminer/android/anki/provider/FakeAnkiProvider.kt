@@ -10,8 +10,14 @@ internal class FakeAnkiProviderGateway : AnkiProviderGateway {
     }
     var checksum: (String) -> Long = { value -> value.hashCode().toLong() and 0xffff_ffffL }
     var createDeckHandler: (AnkiProviderMutationCommand.CreateDeck) -> String? = { null }
+    var storeMediaHandler: (AnkiProviderMutationCommand.StoreMedia) -> String? = { null }
+    var insertNoteHandler: (AnkiProviderMutationCommand.InsertNote) -> String? = { null }
+    var routeCardHandler: (AnkiProviderMutationCommand.RouteCard) -> Int = { 0 }
     val queries = mutableListOf<ProviderQuery>()
     val deckCommands = mutableListOf<AnkiProviderMutationCommand.CreateDeck>()
+    val mediaCommands = mutableListOf<AnkiProviderMutationCommand.StoreMedia>()
+    val noteCommands = mutableListOf<AnkiProviderMutationCommand.InsertNote>()
+    val cardCommands = mutableListOf<AnkiProviderMutationCommand.RouteCard>()
     var accessChecks = 0
 
     override fun accessStatus(): ProviderAccessStatus {
@@ -32,6 +38,21 @@ internal class FakeAnkiProviderGateway : AnkiProviderGateway {
     override fun createDeck(command: AnkiProviderMutationCommand.CreateDeck): String? {
         deckCommands += command
         return createDeckHandler(command)
+    }
+
+    override fun storeMedia(command: AnkiProviderMutationCommand.StoreMedia): String? {
+        mediaCommands += command
+        return storeMediaHandler(command)
+    }
+
+    override fun insertNote(command: AnkiProviderMutationCommand.InsertNote): String? {
+        noteCommands += command
+        return insertNoteHandler(command)
+    }
+
+    override fun routeCard(command: AnkiProviderMutationCommand.RouteCard): Int {
+        cardCommands += command
+        return routeCardHandler(command)
     }
 }
 
@@ -190,4 +211,17 @@ internal fun cardRow(
         ProviderColumn.CARD_NOTE_ID to integer(noteId),
         ProviderColumn.CARD_ORDINAL to integer(ordinal),
         ProviderColumn.CARD_DECK_ID to integer(deckId),
+    )
+
+internal fun noteRow(
+    id: Long,
+    modelId: Long,
+    joinedFields: String,
+    providerTagsWire: String,
+): Map<ProviderColumn, ProviderCell> =
+    mapOf(
+        ProviderColumn.NOTE_ID to integer(id),
+        ProviderColumn.NOTE_MODEL_ID to integer(modelId),
+        ProviderColumn.NOTE_FIELDS to text(joinedFields),
+        ProviderColumn.NOTE_TAGS to text(providerTagsWire),
     )

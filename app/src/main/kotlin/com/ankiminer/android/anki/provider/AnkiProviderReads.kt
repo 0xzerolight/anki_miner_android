@@ -832,6 +832,12 @@ private fun ProviderGatewayException.toReadFailure(): AnkiReadFailure =
                 stableMessage = "AnkiDroid became unavailable",
             )
         ProviderFailureKind.QUERY_FAILED -> queryFailed()
+        ProviderFailureKind.MUTATION_FAILED ->
+            AnkiReadFailure(
+                AnkiErrorCode.WRITE_FAILED,
+                retryable = false,
+                stableMessage = "The AnkiDroid write failed",
+            )
         ProviderFailureKind.TIMEOUT ->
             AnkiReadFailure(
                 AnkiErrorCode.TIMEOUT,

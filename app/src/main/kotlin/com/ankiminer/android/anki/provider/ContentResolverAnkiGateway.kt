@@ -46,6 +46,15 @@ internal fun interface ProviderResolverInsert {
     ): Uri?
 }
 
+internal fun interface ProviderResolverUpdate {
+    fun update(
+        uri: Uri,
+        values: ContentValues,
+        selection: String?,
+        selectionArgs: Array<String>?,
+    ): Int
+}
+
 internal object RealProviderDeadlineScheduler : ProviderDeadlineScheduler {
     private val executor =
         ScheduledThreadPoolExecutor(
@@ -72,7 +81,7 @@ internal object AndroidWorkerThreadGuard : WorkerThreadGuard {
     }
 }
 
-/** The only production class which translates project-owned reads into Android provider calls. */
+/** The only production class which translates project-owned operations into Android provider calls. */
 internal class ContentResolverAnkiGateway(
     context: Context,
     private val workerThreadGuard: WorkerThreadGuard = AndroidWorkerThreadGuard,
@@ -81,6 +90,7 @@ internal class ContentResolverAnkiGateway(
     private val accessStatusOverride: (() -> ProviderAccessStatus)? = null,
     private val resolverQueryOverride: ProviderResolverQuery? = null,
     private val resolverInsertOverride: ProviderResolverInsert? = null,
+    private val resolverUpdateOverride: ProviderResolverUpdate? = null,
 ) : AnkiProviderGateway {
     private val context = context.applicationContext
     private val resolver: ContentResolver = this.context.contentResolver
@@ -204,6 +214,7 @@ internal class ContentResolverAnkiGateway(
 
     override fun createDeck(command: AnkiProviderMutationCommand.CreateDeck): String? {
         workerThreadGuard.checkWorkerThread()
+        requireAvailableAccess()
         val values = ContentValues(1).apply {
             put(FlashCardsContract.Deck.DECK_NAME, command.deckName)
         }
@@ -220,14 +231,81 @@ internal class ContentResolverAnkiGateway(
         return returned?.toString()
     }
 
+    override fun storeMedia(command: AnkiProviderMutationCommand.StoreMedia): String? {
+        workerThreadGuard.checkWorkerThread()
+        requireAvailableAccess()
+        val values =
+            ContentValues(2).apply {
+                put(FlashCardsContract.AnkiMedia.FILE_URI, command.fileUri)
+                put(FlashCardsContract.AnkiMedia.PREFERRED_NAME, command.preferredName)
+            }
+        val returned = insert(FlashCardsContract.AnkiMedia.CONTENT_URI, values)
+        return returned?.toString()
+    }
+
+    override fun insertNote(command: AnkiProviderMutationCommand.InsertNote): String? {
+        workerThreadGuard.checkWorkerThread()
+        requireAvailableAccess()
+        val values =
+            ContentValues(3).apply {
+                put(FlashCardsContract.Note.MID, command.modelId)
+                put(FlashCardsContract.Note.FLDS, command.joinedFields)
+                put(FlashCardsContract.Note.TAGS, command.providerTagsWire)
+            }
+        val returned = insert(FlashCardsContract.Note.CONTENT_URI, values)
+        return returned?.toString()
+    }
+
+    override fun routeCard(command: AnkiProviderMutationCommand.RouteCard): Int {
+        workerThreadGuard.checkWorkerThread()
+        requireAvailableAccess()
+        val noteUri =
+            Uri.withAppendedPath(
+                FlashCardsContract.Note.CONTENT_URI,
+                command.noteId.toString(),
+            )
+        val cardsUri = Uri.withAppendedPath(noteUri, "cards")
+        val cardUri = Uri.withAppendedPath(cardsUri, command.ordinal.toString())
+        val values =
+            ContentValues(1).apply {
+                put(FlashCardsContract.Card.DECK_ID, command.targetDeckId)
+            }
+        return try {
+            if (resolverUpdateOverride != null) {
+                resolverUpdateOverride.update(cardUri, values, null, null)
+            } else {
+                resolver.update(cardUri, values, null, null)
+            }
+        } catch (error: Exception) {
+            throw mapMutationFailure(error)
+        }
+    }
+
+    private fun insert(
+        uri: Uri,
+        values: ContentValues,
+    ): Uri? =
+        try {
+            if (resolverInsertOverride != null) {
+                resolverInsertOverride.insert(uri, values)
+            } else {
+                resolver.insert(uri, values)
+            }
+        } catch (error: Exception) {
+            throw mapMutationFailure(error)
+        }
+
     private fun mapMutationFailure(error: Exception): ProviderGatewayException =
         when (error) {
-            is ProviderGatewayException -> error
+            is ProviderGatewayException -> {
+                val normalized = error.kind.normalizedForMutationBoundary()
+                if (normalized == error.kind) error else ProviderGatewayException(normalized, error)
+            }
             is SecurityException ->
                 ProviderGatewayException(ProviderFailureKind.PERMISSION_REQUIRED, error)
             is DeadObjectException, is RemoteException ->
                 ProviderGatewayException(ProviderFailureKind.PROVIDER_UNAVAILABLE, error)
-            else -> ProviderGatewayException(ProviderFailureKind.QUERY_FAILED, error)
+            else -> ProviderGatewayException(ProviderFailureKind.MUTATION_FAILED, error)
         }
 
     private fun requireAvailableAccess() {
@@ -309,6 +387,7 @@ internal class ContentResolverAnkiGateway(
             when (endpoint) {
                 ProviderEndpoint.NOTES_BROWSER -> FlashCardsContract.Note.CONTENT_URI
                 ProviderEndpoint.NOTES_V2 -> FlashCardsContract.Note.CONTENT_URI_V2
+                ProviderEndpoint.NOTE_BY_ID -> appendId(FlashCardsContract.Note.CONTENT_URI)
                 ProviderEndpoint.MODELS -> FlashCardsContract.Model.CONTENT_URI
                 ProviderEndpoint.MODEL_BY_ID -> appendId(FlashCardsContract.Model.CONTENT_URI)
                 ProviderEndpoint.MODEL_TEMPLATES ->
@@ -317,6 +396,11 @@ internal class ContentResolverAnkiGateway(
                 ProviderEndpoint.DECK_BY_ID -> appendId(FlashCardsContract.Deck.CONTENT_ALL_URI)
                 ProviderEndpoint.CARDS -> FlashCardsContract.Card.CONTENT_URI
                 ProviderEndpoint.CARD_BY_ID -> appendId(FlashCardsContract.Card.CONTENT_URI)
+                ProviderEndpoint.CARDS_FOR_NOTE ->
+                    Uri.withAppendedPath(
+                        appendId(FlashCardsContract.Note.CONTENT_URI),
+                        "cards",
+                    )
             }
         val compiledSelection =
             compileProviderSelection(
@@ -347,6 +431,7 @@ internal class ContentResolverAnkiGateway(
                 ProviderColumn.NOTE_ID -> FlashCardsContract.Note._ID
                 ProviderColumn.NOTE_MODEL_ID -> FlashCardsContract.Note.MID
                 ProviderColumn.NOTE_FIELDS -> FlashCardsContract.Note.FLDS
+                ProviderColumn.NOTE_TAGS -> FlashCardsContract.Note.TAGS
                 ProviderColumn.NOTE_CHECKSUM -> FlashCardsContract.Note.CSUM
                 ProviderColumn.MODEL_ID -> FlashCardsContract.Model._ID
                 ProviderColumn.MODEL_NAME -> FlashCardsContract.Model.NAME

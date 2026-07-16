@@ -19,6 +19,7 @@ class ContentResolverDeckMutationInstrumentedTest {
             ContentResolverAnkiGateway(
                 context = ApplicationProvider.getApplicationContext(),
                 workerThreadGuard = WorkerThreadGuard { },
+                accessStatusOverride = { AVAILABLE },
                 resolverInsertOverride =
                     ProviderResolverInsert { uri, values ->
                         calls += 1
@@ -45,6 +46,7 @@ class ContentResolverDeckMutationInstrumentedTest {
             ContentResolverAnkiGateway(
                 context = ApplicationProvider.getApplicationContext(),
                 workerThreadGuard = WorkerThreadGuard { },
+                accessStatusOverride = { AVAILABLE },
                 resolverInsertOverride =
                     ProviderResolverInsert { _, _ ->
                         calls += 1
@@ -62,6 +64,7 @@ class ContentResolverDeckMutationInstrumentedTest {
             ContentResolverAnkiGateway(
                 context = ApplicationProvider.getApplicationContext(),
                 workerThreadGuard = WorkerThreadGuard { },
+                accessStatusOverride = { AVAILABLE },
                 resolverInsertOverride =
                     ProviderResolverInsert { _, _ -> throw SecurityException("denied") },
             )
@@ -72,5 +75,9 @@ class ContentResolverDeckMutationInstrumentedTest {
                 gateway.createDeck(AnkiProviderMutationCommand.CreateDeck("Mining"))
             }.kind,
         )
+    }
+
+    private companion object {
+        val AVAILABLE = ProviderAccessStatus.Available("com.ichi2.anki", 2, 1L)
     }
 }
