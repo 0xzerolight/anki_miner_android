@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import io
 import json
 import stat
@@ -344,6 +345,10 @@ def _yomitan_zip(path: Path, *, term: str, meaning: str, revision: str) -> Path:
     return path
 
 
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="the lean host lane intentionally excludes runtime engine dependencies",
+)
 def test_yomitan_import_list_lookup_and_stable_overwrite(
     tmp_path: Path,
     initialized_bridge_home: Path,
@@ -402,6 +407,39 @@ def test_yomitan_import_list_lookup_and_stable_overwrite(
     )
     assert "dog" in dog.payload["html"]
     assert not any((home / "resource-work" / "dictionary-backups").iterdir())
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="the lean host lane intentionally excludes runtime engine dependencies",
+)
+def test_yomitan_setup_error_and_cancellation_use_stable_bridge_codes(
+    tmp_path: Path,
+    initialized_bridge_home: Path,
+) -> None:
+    invalid = tmp_path / "invalid.zip"
+    with zipfile.ZipFile(invalid, "w") as archive:
+        archive.writestr(
+            "index.json",
+            json.dumps({"title": "Old fixture", "revision": "1", "format": 2}),
+        )
+        archive.writestr("term_bank_1.json", "[]")
+    request = {
+        "operationId": "invalid-import",
+        "sourcePath": str(invalid),
+        "slotId": "invalid",
+        "overwrite": False,
+        "catalogResourceId": None,
+    }
+    with pytest.raises(BridgeProtocolError) as failed:
+        resources.import_dictionary(request)
+    assert failed.value.code == "dictionary_import_failed"
+
+    operation = resources._Operation("cancel-import")
+    operation.cancelled.set()
+    with pytest.raises(BridgeProtocolError) as cancelled:
+        operation.check()
+    assert cancelled.value.code == "resource_operation_cancelled"
 
 
 def test_streamed_zip_validation_rejects_links_duplicates_and_cancel(
@@ -474,6 +512,21 @@ def test_cleanup_restores_crash_backup_and_removes_operation_leftovers(
     ).read_bytes() == b"sqlite fixture"
     assert not leftover.exists()
     assert not backup.exists()
+
+
+def test_cleanup_refuses_to_race_active_resource_work(
+    initialized_bridge_home: Path,
+) -> None:
+    with resources._OPERATIONS.begin("still-running"):
+        with pytest.raises(BridgeProtocolError) as failure:
+            resources.cleanup_resources({})
+        assert failure.value.code == "resource_operation_active"
+
+    with resources._OPERATIONS.exclusive_cleanup():
+        with pytest.raises(BridgeProtocolError) as failure:
+            with resources._OPERATIONS.begin("started-too-late"):
+                raise AssertionError("operation should not start during cleanup")
+        assert failure.value.code == "resource_cleanup_active"
 
 
 def test_boundary_routes_strict_resource_catalog_and_operation_cancel(

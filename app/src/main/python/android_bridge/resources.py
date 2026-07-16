@@ -113,11 +113,17 @@ class _OperationRegistry:
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._active: dict[str, _Operation] = {}
+        self._cleanup_active = False
 
     @contextlib.contextmanager
     def begin(self, operation_id: str) -> Iterator[_Operation]:
         operation = _Operation(operation_id)
         with self._lock:
+            if self._cleanup_active:
+                raise _fail(
+                    "resource_cleanup_active",
+                    "Resource cleanup is currently active",
+                )
             if operation_id in self._active:
                 raise _fail(
                     "resource_operation_exists",
@@ -130,6 +136,26 @@ class _OperationRegistry:
             with self._lock:
                 if self._active.get(operation_id) is operation:
                     del self._active[operation_id]
+
+    @contextlib.contextmanager
+    def exclusive_cleanup(self) -> Iterator[None]:
+        with self._lock:
+            if self._cleanup_active:
+                raise _fail(
+                    "resource_cleanup_active",
+                    "Resource cleanup is already active",
+                )
+            if self._active:
+                raise _fail(
+                    "resource_operation_active",
+                    "Finish or cancel active resource work before cleanup",
+                )
+            self._cleanup_active = True
+        try:
+            yield
+        finally:
+            with self._lock:
+                self._cleanup_active = False
 
     def cancel(self, operation_id: str) -> bool:
         with self._lock:
@@ -1028,13 +1054,24 @@ def import_dictionary(payload: Mapping[str, object]) -> str:
                 import_yomitan_zip,
             )
 
-            result = import_yomitan_zip(
-                copied.path,
-                import_root,
-                overwrite=False,
-                cancel_check=operation.cancelled.is_set,
-                dict_id=slot_id,
-            )
+            try:
+                result = import_yomitan_zip(
+                    copied.path,
+                    import_root,
+                    overwrite=False,
+                    cancel_check=operation.cancelled.is_set,
+                    dict_id=slot_id,
+                )
+            except Exception as exc:
+                operation.check()
+                from anki_miner.exceptions import SetupError
+
+                if isinstance(exc, SetupError):
+                    raise _fail(
+                        "dictionary_import_failed",
+                        "The selected dictionary could not be imported",
+                    ) from exc
+                raise
             operation.check()
             if catalog_resource and (
                 result.source_name != catalog_resource.dictionary.title
@@ -1212,7 +1249,9 @@ def cancel_operation(payload: Mapping[str, object]) -> str:
 def cleanup_resources(payload: Mapping[str, object]) -> str:
     _exact(payload, set(), code="invalid_resource_request")
     home = Path(require_initialized())
-    with _PROMOTION_LOCK:
+    # Excluding new operations for the full cleanup window prevents the
+    # control executor from deleting a live copy, extraction, or import tree.
+    with _OPERATIONS.exclusive_cleanup(), _PROMOTION_LOCK:
         _recover_dictionary_backups(home)
         operations = _resource_work_root(home) / "operations"
         if operations.exists():
