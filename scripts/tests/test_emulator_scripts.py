@@ -316,6 +316,24 @@ fi
         )
         self.assertLess(reinstall_index, isolated_index)
 
+    def test_health_runs_s4_in_a_fresh_process_from_reinstalled_artifacts(self) -> None:
+        health = (SCRIPTS_DIR / "health.sh").read_text(encoding="utf-8")
+
+        self.assertIn("run_isolated_s4_instrumentation", health)
+        self.assertIn("-e ankiMinerRunS4 true", health)
+        self.assertIn("-e ankiMinerExpectedFreshProcess true", health)
+        self.assertIn(
+            "-e class com.ankiminer.android.S4EngineSmokeInstrumentedTest",
+            health,
+        )
+        self.assertIn("S4_EMULATOR_METRICS ", health)
+        reinstall_index = health.index(
+            'install_isolated_instrumentation_artifacts "$emulator_apk" '
+            '"$emulator_test_apk"',
+        )
+        s4_index = health.index("        run_isolated_s4_instrumentation")
+        self.assertLess(reinstall_index, s4_index)
+
     def test_runner_rejects_selector_conflicts_duplicates_and_invalid_values(
         self,
     ) -> None:

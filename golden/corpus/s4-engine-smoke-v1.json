@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "srt": "1\n00:00:01,250 --> 00:00:03,750\n奴を殺る。\n",
+  "known_vocabulary": [
+    "奴"
+  ],
+  "dictionary": {
+    "dict_id": "s4-smoke",
+    "display_name": "S4 Smoke Dictionary",
+    "term": "殺る",
+    "reading": "やる",
+    "glossary": [
+      "to do & kill <colloquial>"
+    ],
+    "tags": "v5r transitive",
+    "rules": "v5",
+    "score": 100,
+    "sequence": 31415
+  }
+}

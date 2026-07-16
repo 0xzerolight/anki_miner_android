@@ -64,6 +64,35 @@ run_isolated_tokenizer_instrumentation() {
     fi
 }
 
+run_isolated_s4_instrumentation() {
+    local output metrics
+    adb -s "$ANDROID_SERIAL" shell am force-stop com.ankiminer.android \
+        || fail "cannot stop the app before isolated S4 instrumentation"
+    adb -s "$ANDROID_SERIAL" logcat -c \
+        || fail "cannot clear logcat before isolated S4 instrumentation"
+    output="$(
+        adb -s "$ANDROID_SERIAL" shell am instrument -w -r \
+            -e ankiMinerRunS4 true \
+            -e ankiMinerExpectedFreshProcess true \
+            -e class com.ankiminer.android.S4EngineSmokeInstrumentedTest \
+            com.ankiminer.android.test/androidx.test.runner.AndroidJUnitRunner 2>&1
+    )" || {
+        printf '%s\n' "$output" >&2
+        fail "isolated S4 instrumentation command failed"
+    }
+    if ! android_instrumentation_output_passed "$output" 1; then
+        printf '%s\n' "$output" >&2
+        fail "isolated S4 instrumentation did not pass exactly 1 test"
+    fi
+    metrics="$(
+        adb -s "$ANDROID_SERIAL" logcat -d -s 'AnkiMinerS4:I' '*:S' \
+            | grep -F 'S4_EMULATOR_METRICS ' \
+            | tail -n 1
+    )"
+    [[ -n "$metrics" ]] || fail "isolated S4 instrumentation emitted no metrics"
+    printf '%s\n' "$metrics"
+}
+
 install_isolated_instrumentation_artifacts() {
     local app_apk="$1"
     local test_apk="$2"
@@ -233,6 +262,9 @@ if [[ -n "$CONNECTED_LANE" ]]; then
     # connectedAndroidTest removes its installed APKs when it completes. Reinstall
     # the exact artifacts before the selector-isolation reruns below.
     install_isolated_instrumentation_artifacts "$emulator_apk" "$emulator_test_apk"
+    if [[ -n "${ORG_GRADLE_PROJECT_ankiMinerS1aManifest:-}" ]]; then
+        run_isolated_s4_instrumentation
+    fi
     run_isolated_tokenizer_instrumentation \
         'com.ankiminer.android.tokenizer.MecabNativeTokenizerInstrumentedTest' \
         2 \
@@ -272,6 +304,8 @@ fi
     --forbid-entry tokenizer_s1a_instrumented \
     --forbid-entry TokenizerS1aInstrumentedTest \
     --forbid-entry tokenizer_s1b_instrumented \
+    --forbid-entry s4_engine_smoke \
+    --forbid-entry s4-engine-smoke-v1.json \
     --forbid-entry engine-v1.json \
     "${s1a_artifact_args[@]}"
 "$SCRIPT_DIR/check-native-artifact.sh" \
@@ -285,6 +319,8 @@ fi
     --forbid-entry tokenizer_s1a_instrumented \
     --forbid-entry TokenizerS1aInstrumentedTest \
     --forbid-entry tokenizer_s1b_instrumented \
+    --forbid-entry s4_engine_smoke \
+    --forbid-entry s4-engine-smoke-v1.json \
     --forbid-entry engine-v1.json \
     "${s1a_artifact_args[@]}"
 
