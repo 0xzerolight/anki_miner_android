@@ -1365,13 +1365,72 @@ internal class SqliteAnkiMutationStore(
             db.query(
                 "staging_artifacts",
                 null,
-                "state != ?",
-                arrayOf(StagingState.CLEANED.name),
+                null,
+                null,
                 null,
                 null,
                 "created_at_ms, id",
             ).use { it.mapRows(::stagingFromCursor) }
         }
+
+    override fun completeStagingCleanup(stagingId: Long, compactEvidence: String) {
+        requireCompactEvidence(compactEvidence)
+        write { db ->
+            val staging = stagingById(db, stagingId)
+            if (staging.state != StagingState.CLEANED) {
+                JournalStateMachine.requireStagingTransition(staging.state, StagingState.CLEANED)
+                db.updateOrThrow(
+                    "staging_artifacts",
+                    values(
+                        "state" to StagingState.CLEANED.name,
+                        "compact_evidence" to compactEvidence,
+                        "updated_at_ms" to nextTimestamp(staging.updatedAtMs),
+                    ),
+                    "id = ?",
+                    arrayOf(stagingId.toString()),
+                )
+            }
+
+            val attachedRemediations =
+                db.query(
+                    "remediations",
+                    null,
+                    "staging_id = ?",
+                    arrayOf(stagingId.toString()),
+                    null,
+                    null,
+                    "id",
+                ).use { it.mapRows(::remediationFromCursor) }
+            attachedRemediations.filter { it.state == RemediationState.OPEN }.forEach { remediation ->
+                db.updateOrThrow(
+                    "remediations",
+                    values(
+                        "state" to RemediationState.RESOLVED.name,
+                        "compact_evidence" to compactEvidence,
+                        "updated_at_ms" to nextTimestamp(remediation.updatedAtMs),
+                    ),
+                    "id = ?",
+                    arrayOf(remediation.id.toString()),
+                )
+            }
+            attachedRemediations.forEach { remediation ->
+                val resolved = remediationById(db, remediation.id)
+                if (resolved.state != RemediationState.RESOLVED) {
+                    throw JournalInvariantViolation("Attached staging remediation did not resolve")
+                }
+                db.updateOrThrow(
+                    "remediations",
+                    values(
+                        "staging_id" to null,
+                        "updated_at_ms" to nextTimestamp(resolved.updatedAtMs),
+                    ),
+                    "id = ?",
+                    arrayOf(resolved.id.toString()),
+                )
+            }
+            db.delete("staging_artifacts", "id = ?", arrayOf(stagingId.toString())).requireOne("staging artifact delete")
+        }
+    }
 
     override fun removeCleanedStaging(stagingId: Long) {
         write { db ->

@@ -158,6 +158,10 @@ internal interface AnkiMutationStore : Closeable {
     ): StagingRecord
 
     fun stagingForRecovery(): List<StagingRecord>
+
+    /** Cleans, resolves attached remediation, detaches its retained subject, and deletes atomically. */
+    fun completeStagingCleanup(stagingId: Long, compactEvidence: String)
+
     fun removeCleanedStaging(stagingId: Long)
 
     fun addRemediation(draft: RemediationDraft): RemediationRecord

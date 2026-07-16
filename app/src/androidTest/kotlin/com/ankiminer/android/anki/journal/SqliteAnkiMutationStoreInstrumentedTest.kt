@@ -2204,10 +2204,12 @@ class SqliteAnkiMutationStoreInstrumentedTest {
     }
 
     @Test
-    fun resolvedCleanedStagingDetachesAndRetainsItsCompactSubjectAcrossReopen() {
+    fun completeStagingCleanupResolvesDetachesDeletesAndPersistsAcrossReopen() {
         val name = databaseName()
         val stagingId: Long
         val remediationId: Long
+        val secondRemediationId: Long
+        val cleanupEvidence = "quarantined staging was removed safely"
         try {
             SqliteAnkiMutationStore(context, name, enforceBackgroundThread = false).use { store ->
                 val staging =
@@ -2233,15 +2235,96 @@ class SqliteAnkiMutationStoreInstrumentedTest {
                             summary = "Manual staging cleanup required",
                         ),
                     ).id
+                secondRemediationId =
+                    store.addRemediation(
+                        RemediationDraft(
+                            stagingId = quarantined.id,
+                            kind = RemediationKind.CAPACITY_EXHAUSTED,
+                            summary = "Second attached remediation",
+                        ),
+                    ).id
             }
             SqliteAnkiMutationStore(context, name, enforceBackgroundThread = false).use { store ->
                 assertEquals(stagingId, store.stagingForRecovery().single().id)
-                assertEquals(remediationId, store.openRemediations().single().id)
-                store.transitionStaging(stagingId, StagingState.CLEANED, "quarantined staging was removed safely")
-                assertThrows(SQLiteConstraintException::class.java) { store.removeCleanedStaging(stagingId) }
-                assertEquals(RemediationState.RESOLVED, store.resolveRemediation(remediationId, "user resolved").state)
-                store.removeCleanedStaging(stagingId)
+                assertEquals(setOf(remediationId, secondRemediationId), store.openRemediations().map { it.id }.toSet())
+                store.completeStagingCleanup(stagingId, cleanupEvidence)
                 assertTrue(store.stagingForRecovery().isEmpty())
+                assertTrue(store.openRemediations().isEmpty())
+            }
+            SqliteAnkiMutationStore(context, name, enforceBackgroundThread = false).use { reopened ->
+                reopened.writableDatabase.rawQuery(
+                    """SELECT state, staging_id, staging_subject_id, compact_evidence,
+                              created_at_ms, updated_at_ms
+                       FROM remediations WHERE id = ?""".trimIndent(),
+                    arrayOf(remediationId.toString()),
+                ).use { cursor ->
+                    assertTrue(cursor.moveToFirst())
+                    assertEquals(RemediationState.RESOLVED.name, cursor.getString(0))
+                    assertTrue(cursor.isNull(1))
+                    assertEquals(stagingId, cursor.getLong(2))
+                    assertEquals(cleanupEvidence, cursor.getString(3))
+                    assertTrue(cursor.getLong(5) > cursor.getLong(4))
+                }
+                reopened.writableDatabase.rawQuery(
+                    """SELECT count(*) FROM remediations
+                       WHERE id IN (?, ?) AND state = 'RESOLVED' AND staging_id IS NULL AND
+                             staging_subject_id = ? AND compact_evidence = ?""".trimIndent(),
+                    arrayOf(
+                        remediationId.toString(),
+                        secondRemediationId.toString(),
+                        stagingId.toString(),
+                        cleanupEvidence,
+                    ),
+                ).use { cursor ->
+                    assertTrue(cursor.moveToFirst())
+                    assertEquals(2L, cursor.getLong(0))
+                }
+                assertEquals(0L, count(reopened.writableDatabase, "staging_artifacts"))
+            }
+        } finally {
+            context.deleteDatabase(name)
+        }
+    }
+
+    @Test
+    fun completeStagingCleanupFinalizesAnInterruptedAlreadyCleanedRow() {
+        val name = databaseName()
+        val stagingId: Long
+        val remediationId: Long
+        val cleanupEvidence = "recovered interrupted staging cleanup"
+        try {
+            SqliteAnkiMutationStore(context, name, enforceBackgroundThread = false).use { store ->
+                val staging =
+                    store.recordStaging(
+                        StagingDraft(
+                            runId(16),
+                            requestId(1),
+                            assetId(1),
+                            "run/interrupted.bin",
+                            "content://com.ankiminer.files/run/interrupted.bin",
+                            "com.ichi2.anki",
+                            3,
+                            SHA,
+                        ),
+                    )
+                stagingId = staging.id
+                val quarantined = store.transitionStaging(staging.id, StagingState.QUARANTINED, "cleanup failed")
+                remediationId =
+                    store.addRemediation(
+                        RemediationDraft(
+                            stagingId = quarantined.id,
+                            kind = RemediationKind.STAGING_QUARANTINED,
+                            summary = "Manual staging cleanup required",
+                        ),
+                    ).id
+                store.transitionStaging(staging.id, StagingState.CLEANED, "artifact deleted before journal finalization")
+            }
+            SqliteAnkiMutationStore(context, name, enforceBackgroundThread = false).use { recovered ->
+                assertEquals(StagingState.CLEANED, recovered.stagingForRecovery().single().state)
+                assertEquals(remediationId, recovered.openRemediations().single().id)
+                recovered.completeStagingCleanup(stagingId, cleanupEvidence)
+                assertTrue(recovered.stagingForRecovery().isEmpty())
+                assertTrue(recovered.openRemediations().isEmpty())
             }
             SqliteAnkiMutationStore(context, name, enforceBackgroundThread = false).use { reopened ->
                 reopened.writableDatabase.rawQuery(
@@ -2253,8 +2336,9 @@ class SqliteAnkiMutationStoreInstrumentedTest {
                     assertEquals(RemediationState.RESOLVED.name, cursor.getString(0))
                     assertTrue(cursor.isNull(1))
                     assertEquals(stagingId, cursor.getLong(2))
-                    assertEquals("user resolved", cursor.getString(3))
+                    assertEquals(cleanupEvidence, cursor.getString(3))
                 }
+                assertEquals(0L, count(reopened.writableDatabase, "staging_artifacts"))
             }
         } finally {
             context.deleteDatabase(name)
