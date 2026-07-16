@@ -9,6 +9,7 @@ import com.ankiminer.android.media.SafBroker
 import com.ankiminer.android.media.SafJobFileOwner
 import java.io.File
 import java.nio.file.Files
+import java.security.SecureRandom
 import java.util.concurrent.Executor
 
 internal data class InstalledTokenizerResource(
@@ -120,6 +121,29 @@ internal class AndroidMiningInputOwnerFactory(context: Context) : MiningInputOwn
 
 internal fun interface MiningTaskExecutor {
     fun execute(task: () -> Unit)
+}
+
+internal fun interface MiningCancellationTokenFactory {
+    fun next(): MiningCancellationToken
+}
+
+internal class SecureMiningCancellationTokenFactory : MiningCancellationTokenFactory {
+    private val random = SecureRandom()
+
+    override fun next(): MiningCancellationToken {
+        val bytes = ByteArray(16)
+        random.nextBytes(bytes)
+        return MiningCancellationToken(
+            buildString(39) {
+                append("cancel_")
+                bytes.forEach { byte -> append(HEX[byte.toInt() and 0xff]) }
+            },
+        )
+    }
+
+    private companion object {
+        val HEX = Array(256) { value -> "%02x".format(value) }
+    }
 }
 
 internal fun Executor.asMiningTaskExecutor(): MiningTaskExecutor =

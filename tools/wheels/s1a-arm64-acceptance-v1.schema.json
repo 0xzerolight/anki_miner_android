@@ -1,0 +1,142 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ankiminer.app/schema/s1a-arm64-acceptance-v1.json",
+  "title": "Anki Miner S1a physical ARM64 acceptance",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "source",
+    "publication",
+    "artifact",
+    "device",
+    "measurements",
+    "tokenizer_parity",
+    "novel_throughput",
+    "thresholds",
+    "payload_sha256"
+  ],
+  "properties": {
+    "schema": {"const": "anki-miner-s1a-arm64-acceptance-v1"},
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["commit", "tree"],
+      "properties": {
+        "commit": {"$ref": "#/$defs/gitId"},
+        "tree": {"$ref": "#/$defs/gitId"}
+      }
+    },
+    "publication": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["manifest_path", "manifest_sha256", "recipe_key", "build_key"],
+      "properties": {
+        "manifest_path": {"type": "string", "minLength": 1},
+        "manifest_sha256": {"$ref": "#/$defs/sha256"},
+        "recipe_key": {"$ref": "#/$defs/sha256"},
+        "build_key": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "size_bytes", "application_id", "variant", "abi"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "size_bytes": {"type": "integer", "minimum": 1},
+        "application_id": {"const": "com.ankiminer.android"},
+        "variant": {"const": "deviceDebug"},
+        "abi": {"const": "arm64-v8a"}
+      }
+    },
+    "device": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "serial",
+        "manufacturer",
+        "model",
+        "build_fingerprint",
+        "api_level",
+        "abi",
+        "page_size_bytes",
+        "total_memory_bytes"
+      ],
+      "properties": {
+        "serial": {"type": "string", "minLength": 1},
+        "manufacturer": {"type": "string", "minLength": 1},
+        "model": {"type": "string", "minLength": 1},
+        "build_fingerprint": {"type": "string", "minLength": 1},
+        "api_level": {"type": "integer", "minimum": 26},
+        "abi": {"const": "arm64-v8a"},
+        "page_size_bytes": {"enum": [4096, 16384]},
+        "total_memory_bytes": {
+          "type": "integer",
+          "minimum": 3221225472,
+          "maximum": 5368709120
+        }
+      }
+    },
+    "measurements": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cold_init_ms", "peak_rss_bytes"],
+      "properties": {
+        "cold_init_ms": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": {"type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 4000}
+        },
+        "peak_rss_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 402653184
+        }
+      }
+    },
+    "tokenizer_parity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["passed", "test_class", "corpus_sha256", "assertion_count"],
+      "properties": {
+        "passed": {"const": true},
+        "test_class": {"const": "com.ankiminer.android.TokenizerS1aInstrumentedTest"},
+        "corpus_sha256": {"$ref": "#/$defs/sha256"},
+        "assertion_count": {"type": "integer", "minimum": 1}
+      }
+    },
+    "novel_throughput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "corpus_sha256",
+        "japanese_character_count",
+        "elapsed_ms",
+        "characters_per_second"
+      ],
+      "properties": {
+        "corpus_sha256": {"$ref": "#/$defs/sha256"},
+        "japanese_character_count": {"type": "integer", "minimum": 1},
+        "elapsed_ms": {"type": "number", "exclusiveMinimum": 0},
+        "characters_per_second": {"type": "number", "exclusiveMinimum": 0}
+      }
+    },
+    "thresholds": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cold_init_max_ms_exclusive", "peak_rss_max_bytes_inclusive"],
+      "properties": {
+        "cold_init_max_ms_exclusive": {"const": 4000.0},
+        "peak_rss_max_bytes_inclusive": {"const": 402653184}
+      }
+    },
+    "payload_sha256": {"$ref": "#/$defs/sha256"}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "gitId": {"type": "string", "pattern": "^[0-9a-f]{40}$"}
+  }
+}

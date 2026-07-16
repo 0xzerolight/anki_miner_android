@@ -15,6 +15,8 @@ val androidNdkVersion = "28.2.13676358"
 val runtimeManifestProperty = providers.gradleProperty("ankiMinerRuntimeManifest")
 val s1aManifestProperty = providers.gradleProperty("ankiMinerS1aManifest")
 val s1aEnabled = s1aManifestProperty.isPresent
+val s1aArm64AcceptanceReceiptProperty =
+    providers.gradleProperty("ankiMinerS1aArm64AcceptanceReceipt")
 val chaquopyBuildPython =
     providers.environmentVariable("ANKI_MINER_CHAQUOPY_BUILD_PYTHON").orNull
         ?: throw GradleException(
@@ -71,7 +73,12 @@ data class RuntimeWheels(
     val byAbi: Map<String, List<File>>,
 )
 
-data class S1aWheels(val byAbi: Map<String, List<File>>)
+data class S1aWheels(
+    val recipeKey: String,
+    val buildKey: String,
+    val manifest: File,
+    val byAbi: Map<String, List<File>>,
+)
 
 fun sha256(file: File): String {
     val digest = MessageDigest.getInstance("SHA-256")
@@ -269,11 +276,56 @@ fun loadS1aWheels(): S1aWheels {
         ?.mapTo(mutableSetOf()) { it.name } == allFilenames) {
         "S1a publication directory contains an unmanifested or missing wheel"
     }
-    return S1aWheels(byAbi)
+    return S1aWheels(recipeKey, buildKey, manifest, byAbi)
 }
 
 val runtimeWheels = loadRuntimeWheels()
 val s1aWheels = if (s1aEnabled) loadS1aWheels() else null
+val s1aPublicationVerified = s1aWheels != null
+val s1aArm64Acceptance =
+    s1aArm64AcceptanceReceiptProperty.orNull?.let { configuredReceipt ->
+        val publication =
+            requireNotNull(s1aWheels) {
+                "ARM64 S1a acceptance requires an exact verified S1a publication"
+            }
+        val receipt = resolveManifest(configuredReceipt)
+        require(receipt.isFile) { "S1a ARM64 acceptance receipt not found: $receipt" }
+        val verificationOutput =
+            providers.exec {
+                commandLine(
+                    "python3.13",
+                    rootProject.file("tools/wheels/s1a_acceptance.py").absolutePath,
+                    "verify",
+                    "--receipt",
+                    receipt.absolutePath,
+                    "--manifest",
+                    publication.manifest.absolutePath,
+                    "--repo-root",
+                    rootProject.projectDir.absolutePath,
+                    "--golden",
+                    rootProject.file("golden/engine-v1.json").absolutePath,
+                )
+            }.standardOutput.asText.get().trim()
+        val verification = JsonSlurper().parseText(verificationOutput) as Map<*, *>
+        require(
+            verification.keys ==
+                setOf(
+                    "schema",
+                    "source_commit",
+                    "publication_build_key",
+                    "device_api_level",
+                    "device_fingerprint",
+                ),
+        ) {
+            "Unexpected S1a ARM64 acceptance verification result"
+        }
+        require(verification["schema"] == 1) { "Unsupported S1a ARM64 acceptance result" }
+        require(verification["publication_build_key"] == publication.buildKey) {
+            "S1a ARM64 acceptance belongs to another wheel publication"
+        }
+        verification
+    }
+val s1aArm64Accepted = s1aArm64Acceptance != null
 val s1bArm64TestsEnabled =
     providers.gradleProperty("ankiMinerS1bArm64Tests")
         .map { value ->
@@ -308,7 +360,14 @@ android {
             "RUNTIME_WHEEL_BUILD_KEY",
             "\"${runtimeWheels.buildKey}\"",
         )
-        buildConfigField("boolean", "S1A_SPIKE_ENABLED", s1aEnabled.toString())
+        buildConfigField("boolean", "S1A_SPIKE_ENABLED", s1aPublicationVerified.toString())
+        buildConfigField("boolean", "S1A_PUBLICATION_VERIFIED", s1aPublicationVerified.toString())
+        buildConfigField("boolean", "S1A_ARM64_ACCEPTED", s1aArm64Accepted.toString())
+        buildConfigField(
+            "String",
+            "S1A_PUBLICATION_BUILD_KEY",
+            "\"${s1aWheels?.buildKey.orEmpty()}\"",
+        )
         buildConfigField(
             "String",
             "TOKENIZER_TEST_UNIDIC_ARCHIVE",
@@ -394,8 +453,8 @@ androidComponents {
         // Chaquopy resolves ABI filters from product flavors, not build types.
         variant.enable =
             (runtimeAbi == "emulator" && variant.buildType == "debug") ||
-            (runtimeAbi == "device" && variant.buildType == "release") ||
-            (s1aEnabled && runtimeAbi == "device" && variant.buildType == "debug") ||
+            (s1aArm64Accepted && runtimeAbi == "device" && variant.buildType == "release") ||
+            (s1aPublicationVerified && runtimeAbi == "device" && variant.buildType == "debug") ||
             s1bArm64Debug
     }
 }

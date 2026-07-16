@@ -37,6 +37,11 @@ interface MiningRepository {
     /** Cancel the whole run, including a worker parked for curation. */
     suspend fun cancel(runId: String)
 
+    /** Cancel an accepted run before Python has assigned its run ID. */
+    suspend fun cancel(token: MiningCancellationToken) {
+        throw MiningCommandException("The mining run cannot be cancelled before registration")
+    }
+
     /** Clear a terminal state before starting another run. */
     suspend fun reset()
 }

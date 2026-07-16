@@ -120,7 +120,7 @@ fun VideoMiningScreen(
                     progressItems(
                         title = R.string.starting_title,
                         progress = runState.progress,
-                        canCancel = runState.runId != null,
+                        canCancel = runState.cancellationToken != null || runState.runId != null,
                         cancelPending = state.cancelPending,
                         onCancel = onCancel,
                     )

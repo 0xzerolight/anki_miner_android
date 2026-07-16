@@ -195,11 +195,61 @@ class BridgeMiningRepositoryTest {
         assertEquals(0, harness.inputOwner.closeCount.get())
     }
 
+    @Test
+    fun `opaque token cancels accepted work before any expensive preparation`() {
+        val queuedRun = AtomicReference<(() -> Unit)?>()
+        val controlExecutor = Executors.newSingleThreadExecutor().also(executors::add)
+        val bridge = FakePyBridge(mismatchedTerminal = false)
+        val inputOwner = FakeInputOwner()
+        val repository =
+            BridgeMiningRepository(
+                pyBridge = bridge,
+                anki = FakeAnkiCallbacks(ReleaseState.ABSENT),
+                inputOwnerFactory = MiningInputOwnerFactory { inputOwner },
+                tokenizerResourceProvider = InstalledTokenizerResourceProvider { error("must not inspect") },
+                runtimePaths = MiningRuntimePaths(File("/tmp/cache"), File("/tmp/native")),
+                sourceGrantReleaser = SourceGrantReleaser { },
+                foregroundStarter = FakeForegroundStarter(fail = false),
+                runExecutor = MiningTaskExecutor { task -> queuedRun.set(task) },
+                controlExecutor = controlExecutor.asMiningTaskExecutor(),
+            )
+
+        runBlocking { repository.startVideo(INPUT) }
+        val starting = repository.state.value as MiningRunState.Starting
+        val token = requireNotNull(starting.cancellationToken)
+        runBlocking { repository.cancel(token) }
+        requireNotNull(queuedRun.get()).invoke()
+
+        val cancelled = repository.state.value as MiningRunState.Cancelled
+        assertNull(cancelled.runId)
+        assertEquals(0, bridge.videoRuns.get())
+        assertEquals(0, inputOwner.closeCount.get())
+    }
+
+    @Test
+    fun `token cancellation racing Python registration is forwarded by run identity`() {
+        val harness = harness(blockRegistration = true)
+
+        runBlocking { harness.repository.startVideo(INPUT) }
+        assertTrue(harness.bridge.registrationReached.await(2, TimeUnit.SECONDS))
+        val token =
+            requireNotNull((harness.repository.state.value as MiningRunState.Starting).cancellationToken)
+        runBlocking { harness.repository.cancel(token) }
+        harness.bridge.allowRegistration.countDown()
+
+        assertTrue(harness.bridge.cancellationSubmitted.await(2, TimeUnit.SECONDS))
+        assertTrue(harness.anki.cancellation?.isCancelled() == true)
+        harness.bridge.allowTerminal.countDown()
+        val cancelled = awaitState(harness.repository, MiningRunState::isTerminal) as MiningRunState.Cancelled
+        assertEquals(RUN_ID, cancelled.runId)
+    }
+
     private fun harness(
         foregroundFailure: Boolean = false,
         mismatchedTerminal: Boolean = false,
         fallbackState: ReleaseState = ReleaseState.ABSENT,
         releases: MutableList<String> = Collections.synchronizedList(mutableListOf()),
+        blockRegistration: Boolean = false,
         tokenizerResourceProvider: InstalledTokenizerResourceProvider =
             InstalledTokenizerResourceProvider {
                 InstalledTokenizerResource(
@@ -211,7 +261,7 @@ class BridgeMiningRepositoryTest {
     ): Harness {
         val runExecutor = Executors.newSingleThreadExecutor().also(executors::add)
         val controlExecutor = Executors.newSingleThreadExecutor().also(executors::add)
-        val bridge = FakePyBridge(mismatchedTerminal)
+        val bridge = FakePyBridge(mismatchedTerminal, blockRegistration)
         val anki = FakeAnkiCallbacks(fallbackState)
         val inputOwner = FakeInputOwner()
         val foreground = FakeForegroundStarter(foregroundFailure)
@@ -337,11 +387,14 @@ class BridgeMiningRepositoryTest {
 
     private class FakePyBridge(
         private val mismatchedTerminal: Boolean,
+        blockRegistration: Boolean = false,
     ) : PyBridge {
         val videoRuns = AtomicInteger()
         val curationSubmitted = CountDownLatch(1)
         val cancellationSubmitted = CountDownLatch(1)
         val allowTerminal = CountDownLatch(1)
+        val registrationReached = CountDownLatch(1)
+        val allowRegistration = CountDownLatch(if (blockRegistration) 1 else 0)
         private val cancelled = AtomicBoolean()
         @Volatile
         var selection: List<CurationSelection>? = null
@@ -378,6 +431,8 @@ class BridgeMiningRepositoryTest {
 
         private fun runVideo(callbacks: EngineCallbacks): String {
             videoRuns.incrementAndGet()
+            registrationReached.countDown()
+            check(allowRegistration.await(3, TimeUnit.SECONDS))
             BridgeJsonCodec.decode(callbacks.registerJob(JOB_REGISTRATION), expectedRunId = RUN_ID)
             callbacks.onStart(PROGRESS_START)
             callbacks.onCurationNeeded(CURATION_REQUEST)

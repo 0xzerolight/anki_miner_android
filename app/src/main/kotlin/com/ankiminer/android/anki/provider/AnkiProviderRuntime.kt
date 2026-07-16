@@ -43,6 +43,26 @@ internal class AnkiProviderRuntime(
             journal = AnkiMutationTargetVerificationJournal(store),
         )
 
+    private val readiness =
+        AnkiProviderReadinessProbe(
+            workerThreadGuard = workerThreadGuard,
+            accessStatus = gateway::accessStatus,
+            proveCollectionOperational = { cancellation ->
+                val cursor =
+                    gateway.query(
+                        ProviderQuery(
+                            endpoint = ProviderEndpoint.DECKS,
+                            projection = ProviderQueryShapes.DECK_PROJECTION,
+                        ),
+                        cancellation,
+                    ) ?: throw ProviderGatewayException(ProviderFailureKind.PROVIDER_UNAVAILABLE)
+                cursor.close()
+            },
+            recoverLocalState = {
+                if (!recoveryGate.isOpen()) recoveryGate.ensureRecovered()
+            },
+        )
+
     val callbacks =
         AnkiProviderCallbacks(
             registry = registry,
@@ -52,6 +72,9 @@ internal class AnkiProviderRuntime(
             workerThreadGuard = workerThreadGuard,
             startupRecoveryGate = recoveryGate,
         )
+
+    fun probeReadiness(cancellation: AnkiCancellation): AnkiProviderReadiness =
+        readiness.probe(cancellation)
 
     override fun close() {
         store.close()

@@ -46,6 +46,9 @@ internal class BridgeMiningRepository(
     private val foregroundStarter: MiningForegroundStarter,
     private val runExecutor: MiningTaskExecutor,
     private val controlExecutor: MiningTaskExecutor,
+    private val admissionGate: MiningRunAdmissionGate = AlwaysReadyMiningRunAdmissionGate,
+    private val cancellationTokenFactory: MiningCancellationTokenFactory =
+        SecureMiningCancellationTokenFactory(),
     private val foregroundStartTimeoutSeconds: Long = 15,
 ) : MiningRepository {
     private enum class Phase {
@@ -66,6 +69,7 @@ internal class BridgeMiningRepository(
     private class ActiveRun(
         val generation: Long,
         val input: VideoMiningInput,
+        val cancellationToken: MiningCancellationToken,
         val cancellation: CoordinatorAnkiCancellation = CoordinatorAnkiCancellation(),
     ) {
         var phase = Phase.PREPARING
@@ -84,6 +88,7 @@ internal class BridgeMiningRepository(
     private val monitor = Any()
     private val mutableState = MutableStateFlow<MiningRunState>(MiningRunState.Idle)
     override val state: StateFlow<MiningRunState> = mutableState.asStateFlow()
+    internal val admissionState: StateFlow<MiningRunAdmissionState> = admissionGate.state
     private var active: ActiveRun? = null
     private var nextGeneration = 1L
     private var restartRequired: ProtocolFault? = null
@@ -104,6 +109,7 @@ internal class BridgeMiningRepository(
 
     override suspend fun startVideo(input: VideoMiningInput) {
         val generation: Long
+        val cancellationToken = cancellationTokenFactory.next()
         synchronized(monitor) {
             if (active != null || mutableState.value != MiningRunState.Idle) {
                 throw MiningCommandException("A mining run is already active")
@@ -113,11 +119,12 @@ internal class BridgeMiningRepository(
                 return
             }
             generation = nextGeneration++
-            active = ActiveRun(generation, input)
+            active = ActiveRun(generation, input, cancellationToken)
             mutableState.value =
                 MiningRunState.Starting(
                     runId = null,
                     progress = MiningProgress(0, 0, "Preparing selected media"),
+                    cancellationToken = cancellationToken,
                 )
         }
         try {
@@ -180,6 +187,20 @@ internal class BridgeMiningRepository(
         executeControl(cancellation.first) { sendCancellation(cancellation.first) }
     }
 
+    override suspend fun cancel(token: MiningCancellationToken) {
+        val cancellation =
+            synchronized(monitor) {
+                val run = active ?: throw MiningCommandException("The mining run cannot be cancelled")
+                if (run.cancellationToken != token || run.phase == Phase.FINALIZING) {
+                    throw MiningCommandException("The mining run cannot be cancelled")
+                }
+                markCancellationLocked(run)
+                run.generation to run.cancellation
+            }
+        cancellation.second.cancel()
+        executeControl(cancellation.first) { sendCancellation(cancellation.first) }
+    }
+
     override suspend fun reset() {
         synchronized(monitor) {
             if (active != null || !mutableState.value.isTerminal) {
@@ -194,6 +215,21 @@ internal class BridgeMiningRepository(
         var terminal: BridgeMessage.Terminal? = null
         try {
             val run = requireActive(generation)
+            if (run.cancellation.isCancelled()) return
+            val admission =
+                try {
+                    admissionGate.evaluate(run.cancellation)
+                } catch (_: RuntimeException) {
+                    if (run.cancellation.isCancelled()) return
+                    recordFault(generation, "Could not verify AnkiDroid readiness")
+                    return
+                }
+            if (run.cancellation.isCancelled()) return
+            if (!admission.isReady) {
+                val failure = requireNotNull(admission.stableFailure)
+                recordFault(generation, failure.message, failure.retryable)
+                return
+            }
             val tokenizer =
                 try {
                     tokenizerResourceProvider.installedResource()
@@ -209,19 +245,23 @@ internal class BridgeMiningRepository(
                 )
                 return
             }
+            if (run.cancellation.isCancelled()) return
             configureTokenizer(run, tokenizer)
+            if (run.cancellation.isCancelled()) return
             val videoPath: String
             val subtitlePath: String
             try {
                 inputOwner = inputOwnerFactory.create()
+                if (run.cancellation.isCancelled()) return
                 videoPath = inputOwner.openVideo(run.input.video)
+                if (run.cancellation.isCancelled()) return
                 subtitlePath = inputOwner.materializeSubtitle(run.input.subtitle)
             } catch (failure: Exception) {
                 recordFault(generation, "Could not prepare the selected media")
                 throw failure
             }
             if (run.cancellation.isCancelled()) {
-                recordFault(generation, "Mining was cancelled before Python job registration", retryable = true)
+                return
             }
             val labels = labelsFor(run.input.video.displayName)
             val rawResult =
@@ -243,7 +283,9 @@ internal class BridgeMiningRepository(
                 )
             terminal = reconcileTerminal(generation, rawResult)
         } catch (_: Exception) {
-            recordFault(generation, "Embedded mining stopped unexpectedly")
+            if (!isCancellationRequested(generation)) {
+                recordFault(generation, "Embedded mining stopped unexpectedly")
+            }
         } finally {
             finishRun(generation, terminal, inputOwner)
         }
@@ -345,6 +387,7 @@ internal class BridgeMiningRepository(
     ) {
         val runId: String?
         val lease: MiningForegroundLease?
+        val cancelled: Boolean
         var terminalForState = terminal
         synchronized(monitor) {
             val run = activeFor(generation) ?: return
@@ -352,6 +395,7 @@ internal class BridgeMiningRepository(
             run.foregroundClosingExpected = true
             runId = run.runId
             lease = run.foregroundLease
+            cancelled = run.cancelRequested || run.cancellation.isCancelled()
             if (terminalForState == null) terminalForState = run.terminalCallback
         }
 
@@ -383,7 +427,13 @@ internal class BridgeMiningRepository(
         }
 
         synchronized(monitor) {
-            mutableState.value = terminalState(runId, terminalForState, runFault ?: detachedCleanupFault)
+            mutableState.value =
+                terminalState(
+                    runId = runId,
+                    terminal = terminalForState,
+                    fault = runFault ?: detachedCleanupFault,
+                    cancelled = cancelled,
+                )
         }
     }
 
@@ -417,8 +467,10 @@ internal class BridgeMiningRepository(
         runId: String?,
         terminal: BridgeMessage.Terminal?,
         fault: ProtocolFault?,
+        cancelled: Boolean,
     ): MiningRunState {
         if (fault != null) return fault.toFailed(runId, terminal?.result)
+        if (terminal == null && cancelled) return MiningRunState.Cancelled(runId, null)
         if (terminal == null) {
             return ProtocolFault("Mining ended without a valid result").toFailed(runId, null)
         }
@@ -587,7 +639,12 @@ internal class BridgeMiningRepository(
             run.progress = progress
             when (run.phase) {
                 Phase.PREPARING, Phase.REGISTERED ->
-                    mutableState.value = MiningRunState.Starting(run.runId, progress)
+                    mutableState.value =
+                        MiningRunState.Starting(
+                            runId = run.runId,
+                            progress = progress,
+                            cancellationToken = run.cancellationToken,
+                        )
                 Phase.PROMOTING, Phase.RUNNING, Phase.CANCELLING ->
                     run.runId?.let { mutableState.value = MiningRunState.Running(it, progress) }
                 Phase.CURATING, Phase.FINALIZING -> Unit
@@ -630,7 +687,9 @@ internal class BridgeMiningRepository(
         val cancellation: CoordinatorAnkiCancellation
         synchronized(monitor) {
             val run = activeFor(generation) ?: throw IllegalStateException("Mining registration is stale")
-            if (run.phase != Phase.PREPARING || run.runId != null) {
+            val cancellableRegistrationRace =
+                run.phase == Phase.CANCELLING && run.cancelRequested
+            if ((run.phase != Phase.PREPARING && !cancellableRegistrationRace) || run.runId != null) {
                 throw IllegalStateException("Mining registration is duplicated")
             }
             run.runId = request.runId
@@ -641,11 +700,18 @@ internal class BridgeMiningRepository(
             recordFaultAndCancel(generation, "Anki is not ready for this mining run")
             throw IllegalStateException("Anki run registration was rejected")
         }
-        synchronized(monitor) {
+        val forwardCancellation = synchronized(monitor) {
             val run = activeFor(generation) ?: throw IllegalStateException("Mining registration is stale")
             run.phase = if (run.cancelRequested) Phase.CANCELLING else Phase.REGISTERED
-            mutableState.value = MiningRunState.Starting(run.runId, run.progress)
+            mutableState.value =
+                MiningRunState.Starting(
+                    runId = run.runId,
+                    progress = run.progress,
+                    cancellationToken = run.cancellationToken,
+                )
+            run.cancelRequested
         }
+        if (forwardCancellation) executeControl(generation) { sendCancellation(generation) }
         return BridgeJsonCodec.encodeRegistrationAccepted(request.runId)
     }
 
@@ -840,6 +906,11 @@ internal class BridgeMiningRepository(
     private fun requireActive(generation: Long): ActiveRun =
         synchronized(monitor) {
             activeFor(generation) ?: throw IllegalStateException("Mining run is stale")
+        }
+
+    private fun isCancellationRequested(generation: Long): Boolean =
+        synchronized(monitor) {
+            activeFor(generation)?.let { it.cancelRequested || it.cancellation.isCancelled() } == true
         }
 
     private fun activeFor(generation: Long): ActiveRun? =
