@@ -244,7 +244,11 @@ def calculate_unidic_tree_sha256(dicdir: str | os.PathLike[str]) -> str:
     return _tree_identity(_canonical_root(dicdir)).sha256
 
 
-def _validate_identity_inputs(resource_id: object, expected_tree_sha256: object) -> None:
+def validate_unidic_identity_inputs(
+    resource_id: object, expected_tree_sha256: object
+) -> None:
+    """Validate the cheap catalog identity fields without touching process state."""
+
     if not isinstance(resource_id, str) or not _RESOURCE_ID_RE.fullmatch(resource_id):
         raise _invalid("invalid_unidic_identity", "Invalid UniDic resource id")
     if not isinstance(expected_tree_sha256, str) or not _SHA256_RE.fullmatch(
@@ -285,7 +289,7 @@ def register_unidic(
     """
 
     global _registration
-    _validate_identity_inputs(resource_id, expected_tree_sha256)
+    validate_unidic_identity_inputs(resource_id, expected_tree_sha256)
     root = _canonical_root(dicdir)
 
     with _LOCK:

@@ -48,6 +48,7 @@ def _dispatch_validated(
         "curation.response",
         "bridge.shutdown.request",
         "mining.video.run",
+        "tokenizer.configure",
     }
     if request_type not in supported_after_bootstrap:
         raise BridgeProtocolError(
@@ -57,6 +58,16 @@ def _dispatch_validated(
     from .bootstrap import require_initialized
 
     require_initialized()
+
+    if request_type == "tokenizer.configure":
+        _exact_payload(
+            payload,
+            {"dicDir", "resourceId", "treeSha256", "backend"},
+            error_code="invalid_tokenizer_request",
+        )
+        from .tokenizer_runtime import configure_tokenizer
+
+        return configure_tokenizer(payload)
 
     if request_type == "mining.video.run":
         if callbacks is None:

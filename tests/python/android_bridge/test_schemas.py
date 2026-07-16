@@ -41,6 +41,10 @@ ENGINE_EVENTS_CORPUS = (
     Path(__file__).resolve().parents[3]
     / "app/src/test/resources/contracts/engine_events_v1.json"
 )
+TOKENIZER_PROTOCOL_CORPUS = (
+    Path(__file__).resolve().parents[3]
+    / "app/src/test/resources/contracts/tokenizer_protocol_v1.json"
+)
 
 
 def _load_schema(name: str) -> dict[str, Any]:
@@ -69,6 +73,7 @@ def schemas() -> dict[str, dict[str, Any]]:
         "anki": _load_schema("anki.schema.json"),
         "mining": _load_schema("mining.schema.json"),
         "engine_events": _load_schema("engine-events.schema.json"),
+        "tokenizer": _load_schema("tokenizer.schema.json"),
     }
 
 
@@ -195,7 +200,7 @@ def test_kotlin_facing_config_mining_and_event_integers_have_explicit_bounds(
                 found.extend(integer_nodes(child))
         return found
 
-    for schema_name in ("config", "mining", "engine_events"):
+    for schema_name in ("config", "mining", "engine_events", "tokenizer"):
         nodes = integer_nodes(schemas[schema_name])
         assert nodes, schema_name
         for node in nodes:
@@ -228,6 +233,28 @@ def test_mining_protocol_valid_and_rejected_corpora_freeze_complete_messages(
         "job.registration.accepted",
         "mining.terminal",
     }
+    for case in corpus["invalid"]:
+        assert list(validator.iter_errors(case["message"])), case["name"]
+
+
+def test_tokenizer_protocol_corpus_freezes_complete_messages(
+    schemas: dict[str, dict[str, Any]],
+) -> None:
+    corpus = json.loads(TOKENIZER_PROTOCOL_CORPUS.read_text(encoding="utf-8"))
+    assert corpus["version"] == 1
+    validator = Draft202012Validator(schemas["tokenizer"])
+
+    valid_types: set[str] = set()
+    for case in corpus["valid"]:
+        message = case["message"]
+        errors = list(validator.iter_errors(message))
+        assert errors == [], f"{case['name']}: {errors}"
+        raw = json.dumps(message, ensure_ascii=False, separators=(",", ":"))
+        decoded = decode_envelope(raw, expected_type=message["type"])
+        assert decoded.payload == message["payload"]
+        valid_types.add(message["type"])
+
+    assert valid_types == {"tokenizer.configure", "tokenizer.ready"}
     for case in corpus["invalid"]:
         assert list(validator.iter_errors(case["message"])), case["name"]
 
