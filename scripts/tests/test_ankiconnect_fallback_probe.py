@@ -49,20 +49,58 @@ class ProbeResponseTest(unittest.TestCase):
         path.write_text(json.dumps(value), encoding="utf-8")
         return path
 
-    def test_accepts_exact_version_and_nonempty_decks(self) -> None:
+    def test_accepts_exact_version_decks_and_media_readback(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             version = self.write(root, "version.json", {"result": 6, "error": None})
             decks = self.write(root, "decks.json", {"result": ["Default"], "error": None})
-            RESPONSES.validate(version, decks)
+            stored = self.write(
+                root,
+                "store.json",
+                {"result": "anki_miner_fallback_probe_random-A9.png", "error": None},
+            )
+            readback = root / "readback.png"
+            readback.write_bytes(
+                bytes.fromhex(
+                    "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489"
+                    "0000000d49444154789c63000100000005000159c8e1740000000049454e44ae426082"
+                )
+            )
+            self.assertEqual(
+                "anki_miner_fallback_probe_random-A9.png",
+                RESPONSES.validate(version, decks, stored, readback),
+            )
+            self.assertEqual(
+                "anki_miner_fallback_probe_random-A9.png",
+                RESPONSES.stored_filename(stored),
+            )
 
     def test_rejects_boolean_version_and_duplicate_decks(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             version = self.write(root, "version.json", {"result": True, "error": None})
             decks = self.write(root, "decks.json", {"result": ["Default", "Default"], "error": None})
+            stored = self.write(
+                root,
+                "store.json",
+                {"result": "../escape.png", "error": None},
+            )
+            readback = root / "readback.png"
+            readback.write_bytes(b"wrong")
             with self.assertRaises(RESPONSES.ResponseError):
-                RESPONSES.validate(version, decks)
+                RESPONSES.validate(version, decks, stored, readback)
+
+    def test_rejects_untrusted_media_name_and_changed_readback(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            version = self.write(root, "version.json", {"result": 6, "error": None})
+            decks = self.write(root, "decks.json", {"result": ["Default"], "error": None})
+            readback = root / "readback.png"
+            readback.write_bytes(b"changed")
+            for name in ("anki_miner_fallback_probe.png", "../probe_1.png", "probe_1.png"):
+                stored = self.write(root, "store.json", {"result": name, "error": None})
+                with self.subTest(name=name), self.assertRaises(RESPONSES.ResponseError):
+                    RESPONSES.validate(version, decks, stored, readback)
 
 
 class ProbeRunnerSourceTest(unittest.TestCase):
@@ -77,9 +115,10 @@ class ProbeRunnerSourceTest(unittest.TestCase):
         self.assertIn("'Start Service'", source)
         self.assertIn("{\"action\":\"version\",\"version\":6}", source)
         self.assertIn("{\"action\":\"deckNames\",\"version\":6}", source)
+        self.assertIn("{\"action\":\"storeMediaFile\",\"version\":6", source)
+        self.assertIn("collection.media/$media_filename", source)
         self.assertNotIn("gradlew", source)
         self.assertNotIn("addNote", source)
-        self.assertNotIn("storeMediaFile", source)
 
 
 if __name__ == "__main__":

@@ -123,6 +123,10 @@ def test_android_harness_crosses_all_layers_with_external_provisioning() -> None
         PROJECT_ROOT / "app/src/androidTest/kotlin/com/ankiminer/android/tokenizer/"
         "MecabNativeTokenizerInstrumentedTest.kt"
     ).read_text(encoding="utf-8")
+    shared_runtime = (
+        PROJECT_ROOT
+        / "app/src/androidTest/kotlin/com/ankiminer/android/PythonInstrumentationRuntime.kt"
+    ).read_text(encoding="utf-8")
     python = (
         PROJECT_ROOT / "app/src/debug/python/tokenizer_s1b_instrumented.py"
     ).read_text(encoding="utf-8")
@@ -138,7 +142,8 @@ def test_android_harness_crosses_all_layers_with_external_provisioning() -> None
     assert 'assets.srcDir(rootProject.file("golden"))' in gradle
     assert "BuildConfig.S1B_TEST_UNIDIC_ARCHIVE" in kotlin
     assert 'getModule("tokenizer_s1b_instrumented")' in kotlin
-    assert "ZipInputStream" in kotlin
+    assert "PythonInstrumentationRuntime.stageExternalUniDic" in kotlin
+    assert "ZipInputStream" in shared_runtime
     compact_python = " ".join(python.split())
     assert (
         'acquire_tagger_for_instrumentation( "s1b", registration )'

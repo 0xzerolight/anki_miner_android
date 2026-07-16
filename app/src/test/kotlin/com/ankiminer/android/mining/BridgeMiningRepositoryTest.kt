@@ -2,9 +2,11 @@ package com.ankiminer.android.mining
 
 import com.ankiminer.android.anki.protocol.ReleaseState
 import com.ankiminer.android.anki.provider.AnkiCancellation
+import com.ankiminer.android.data.RuntimeWorkCoordinator
 import com.ankiminer.android.engine.BridgeJsonCodec
 import com.ankiminer.android.engine.BridgeMessage
 import com.ankiminer.android.engine.EngineCallbacks
+import com.ankiminer.android.engine.MiningConfigSnapshot
 import com.ankiminer.android.engine.PyBridge
 import com.ankiminer.android.engine.TokenizerIdentity
 import com.ankiminer.android.service.MiningForegroundLease
@@ -196,6 +198,36 @@ class BridgeMiningRepositoryTest {
     }
 
     @Test
+    fun `settings snapshot is captured only after mining excludes resource publication`() {
+        val coordinator = RuntimeWorkCoordinator()
+        val resolverReached = CountDownLatch(1)
+        val allowResolver = CountDownLatch(1)
+        val harness =
+            harness(
+                runtimeWorkCoordinator = coordinator,
+                configSnapshotResolver =
+                    MiningConfigSnapshotResolver {
+                        resolverReached.countDown()
+                        check(allowResolver.await(2, TimeUnit.SECONDS))
+                        MiningConfigSnapshot(emptyMap(), false)
+                    },
+            )
+
+        runBlocking { harness.repository.startVideo(INPUT) }
+        assertTrue(resolverReached.await(2, TimeUnit.SECONDS))
+        assertNull(coordinator.tryAcquire(RuntimeWorkCoordinator.Kind.RESOURCE))
+        allowResolver.countDown()
+        val curating = awaitState(harness.repository) { it is MiningRunState.Curating } as MiningRunState.Curating
+        runBlocking { harness.repository.cancel(curating.request.runId) }
+        harness.bridge.allowTerminal.countDown()
+        awaitState(harness.repository, MiningRunState::isTerminal)
+
+        val resourceLease = coordinator.tryAcquire(RuntimeWorkCoordinator.Kind.RESOURCE)
+        assertNotNull(resourceLease)
+        requireNotNull(resourceLease).close()
+    }
+
+    @Test
     fun `opaque token cancels accepted work before any expensive preparation`() {
         val queuedRun = AtomicReference<(() -> Unit)?>()
         val controlExecutor = Executors.newSingleThreadExecutor().also(executors::add)
@@ -258,6 +290,9 @@ class BridgeMiningRepositoryTest {
                     TOKENIZER_SHA,
                 )
             },
+        runtimeWorkCoordinator: RuntimeWorkCoordinator = RuntimeWorkCoordinator(),
+        configSnapshotResolver: MiningConfigSnapshotResolver =
+            MiningConfigSnapshotResolver { MiningConfigSnapshot(emptyMap(), false) },
     ): Harness {
         val runExecutor = Executors.newSingleThreadExecutor().also(executors::add)
         val controlExecutor = Executors.newSingleThreadExecutor().also(executors::add)
@@ -276,6 +311,8 @@ class BridgeMiningRepositoryTest {
                 foregroundStarter = foreground,
                 runExecutor = runExecutor.asMiningTaskExecutor(),
                 controlExecutor = controlExecutor.asMiningTaskExecutor(),
+                runtimeWorkCoordinator = runtimeWorkCoordinator,
+                configSnapshotResolver = configSnapshotResolver,
                 foregroundStartTimeoutSeconds = 2,
             )
         return Harness(repository, bridge, anki, inputOwner, foreground)

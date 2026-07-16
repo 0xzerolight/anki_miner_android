@@ -18,6 +18,7 @@ import stat
 import tarfile
 import threading
 import zipfile
+from collections import OrderedDict
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
@@ -44,6 +45,7 @@ _CUSTOM_ZIP_TOTAL_LIMIT = 1024 * 1024 * 1024
 _CUSTOM_ZIP_FILE_LIMIT = 16 * 1024 * 1024
 _MAX_LOOKUP_HTML_BYTES = 2 * 1024 * 1024
 _FREE_SPACE_RESERVE_BYTES = 32 * 1024 * 1024
+_MAX_PENDING_RESOURCE_CANCELLATIONS = 256
 _OPERATION_ID_RE = re.compile(r"[a-z0-9](?:[a-z0-9_-]{0,62}[a-z0-9])?")
 _SLOT_ID_RE = re.compile(
     r"(?!.*(?:\.\.|--))[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?"
@@ -116,6 +118,7 @@ class _OperationRegistry:
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._active: dict[str, _Operation] = {}
+        self._pending_cancellations: OrderedDict[str, None] = OrderedDict()
         self._cleanup_active = False
 
     @contextlib.contextmanager
@@ -132,6 +135,9 @@ class _OperationRegistry:
                     "resource_operation_exists",
                     "A resource operation with this id is already active",
                 )
+            if operation_id in self._pending_cancellations:
+                del self._pending_cancellations[operation_id]
+                operation.cancelled.set()
             self._active[operation_id] = operation
         try:
             yield operation
@@ -163,9 +169,19 @@ class _OperationRegistry:
     def cancel(self, operation_id: str) -> bool:
         with self._lock:
             operation = self._active.get(operation_id)
-            if operation is None:
-                return False
-            operation.cancelled.set()
+            if operation is not None:
+                operation.cancelled.set()
+                return True
+            # Cancellation is sticky across the control/worker registration race.
+            # Opaque IDs are single-use; the bounded FIFO prevents hostile callers
+            # from growing process memory with never-started operations.
+            self._pending_cancellations[operation_id] = None
+            self._pending_cancellations.move_to_end(operation_id)
+            while (
+                len(self._pending_cancellations)
+                > _MAX_PENDING_RESOURCE_CANCELLATIONS
+            ):
+                self._pending_cancellations.popitem(last=False)
             return True
 
 
@@ -681,6 +697,7 @@ def install_unidic(payload: Mapping[str, object]) -> str:
     final = _unidic_root(home, resource)
     parent = final.parent
     with _OPERATIONS.begin(operation_id) as operation:
+        operation.check()
         with _PROMOTION_LOCK:
             _recover_unidic(parent, final, resource)
             if _valid_unidic_install(final, resource):
@@ -997,6 +1014,7 @@ def import_dictionary(payload: Mapping[str, object]) -> str:
         )
     operation_root = _resource_work_root(home) / "operations" / operation_id
     with _OPERATIONS.begin(operation_id) as operation:
+        operation.check()
         _safe_rmtree(operation_root)
         operation_root.mkdir(parents=True)
         try:

@@ -20,9 +20,11 @@ class MiningForegroundService : Service() {
     private val registry = ProcessMiningForegroundSessions.registry
     private val serviceToken = UUID.randomUUID().toString()
     private var sessionIdentity: MiningForegroundSessionIdentity? = null
+    private lateinit var cpuWakeLease: MiningCpuWakeLease
 
     override fun onCreate() {
         super.onCreate()
+        cpuWakeLease = MiningCpuWakeLease(AndroidMiningCpuWakeLock.create(this))
         val manager = getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(
             NotificationChannel(
@@ -64,9 +66,16 @@ class MiningForegroundService : Service() {
     }
 
     override fun onDestroy() {
-        registry.serviceDestroyed(sessionIdentity, serviceToken)
-        sessionIdentity = null
-        super.onDestroy()
+        try {
+            cpuWakeLease.close()
+        } finally {
+            try {
+                registry.serviceDestroyed(sessionIdentity, serviceToken)
+                sessionIdentity = null
+            } finally {
+                super.onDestroy()
+            }
+        }
     }
 
     private fun handleStart(intent: Intent) {
@@ -92,6 +101,8 @@ class MiningForegroundService : Service() {
 
         try {
             startForegroundTyped(buildNotification(identity, MiningForegroundProgress()))
+            // Curation remains parked until this foreground + CPU-wake handshake completes.
+            cpuWakeLease.acquire()
         } catch (cause: RuntimeException) {
             registry.failBeforeForeground(identity, cause)
             stopImmediately()
@@ -178,6 +189,7 @@ class MiningForegroundService : Service() {
     }
 
     private fun stopImmediately() {
+        cpuWakeLease.close()
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
     }

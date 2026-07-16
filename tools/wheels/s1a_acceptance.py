@@ -17,6 +17,7 @@ SCHEMA = "anki-miner-s1a-arm64-acceptance-v1"
 SCHEMA_PATH = Path(__file__).with_name("s1a-arm64-acceptance-v1.schema.json")
 COLD_INIT_LIMIT_MS = 4_000.0
 PEAK_RSS_LIMIT_BYTES = 384 * 1024 * 1024
+MIN_NOVEL_JAPANESE_CHARACTERS = 50_000
 EXPECTED_TEST_CLASS = "com.ankiminer.android.TokenizerS1aInstrumentedTest"
 SHA256 = re.compile(r"[0-9a-f]{64}")
 GIT_ID = re.compile(r"[0-9a-f]{40}")
@@ -229,7 +230,7 @@ def validate(
         not isinstance(throughput["corpus_sha256"], str)
         or SHA256.fullmatch(throughput["corpus_sha256"]) is None
         or type(throughput["japanese_character_count"]) is not int
-        or throughput["japanese_character_count"] <= 0
+        or throughput["japanese_character_count"] < MIN_NOVEL_JAPANESE_CHARACTERS
     ):
         raise AcceptanceError("novel throughput corpus identity is invalid")
     elapsed = _positive_number(throughput["elapsed_ms"], "novel elapsed time")

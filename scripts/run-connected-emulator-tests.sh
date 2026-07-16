@@ -208,6 +208,12 @@ if [[ -n "$s1a_manifest" ]]; then
     )"
     [[ -n "$metrics" ]] || fail "isolated S4 instrumentation emitted no metrics"
     printf '%s\n' "$metrics"
+
+    adb -s "$ANDROID_SERIAL" shell am force-stop com.ankiminer.android \
+        || fail "cannot stop app before complete golden v2 instrumentation"
+    run_instrumentation_exact golden-v2 1 \
+        -e ankiMinerRunGoldenV2 true \
+        -e class com.ankiminer.android.EngineGoldenV2InstrumentedTest
 fi
 
 adb -s "$ANDROID_SERIAL" shell am force-stop com.ankiminer.android \

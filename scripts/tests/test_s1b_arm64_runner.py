@@ -201,7 +201,7 @@ class S1bArm64RunnerTest(unittest.TestCase):
             gradle,
         )
         self.assertIn(
-            '(runtimeAbi == "device" && variant.buildType == "release")',
+            '(s1aArm64Accepted && runtimeAbi == "device" && variant.buildType == "release")',
             gradle,
         )
         self.assertIn(

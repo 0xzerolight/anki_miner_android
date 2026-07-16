@@ -82,12 +82,37 @@ internal class DurableMediaAdmission private constructor(
     }
 }
 
+/** Frozen createNotes result admitted only after exact request validation and canonical encoding. */
+internal class DurableNoteAdmission private constructor(
+    val exactResult: com.ankiminer.android.anki.protocol.CreateNotesResult,
+) {
+    fun validateAfterEncoding(request: AnkiRequest, response: AnkiResponse) {
+        if (response !== exactResult) throw IllegalStateException("The encoded durable note result changed identity")
+        AnkiValidators.validateResponseForRequest(exactResult, request)
+    }
+
+    companion object {
+        fun freeze(result: com.ankiminer.android.anki.protocol.CreateNotesResult) =
+            DurableNoteAdmission(
+                result.copy(results = Collections.unmodifiableList(ArrayList(result.results))),
+            )
+    }
+}
+
 /** Synchronous EngineCallbacks-facing dispatcher. Every method is called by the parked Python worker. */
 internal class AnkiProviderCallbacks(
     private val registry: AnkiRunStateRegistry,
     private val reads: AnkiProviderReadService,
     private val targetVerifier: AnkiTargetVerifier,
     private val mediaMutations: MediaMutationService,
+    private val noteMutations: NoteMutationService =
+        NoteMutationService { _, _ ->
+            throw AnkiReadFailure(
+                AnkiErrorCode.UNSUPPORTED_OPERATION,
+                retryable = false,
+                stableMessage = "Anki note mutation is not configured",
+            )
+        },
     private val workerThreadGuard: WorkerThreadGuard,
     private val startupRecoveryGate: AnkiStartupRecoveryGate = OpenAnkiStartupRecoveryGate,
     private val responseEncoder: AnkiProviderResponseEncoder =
@@ -148,12 +173,12 @@ internal class AnkiProviderCallbacks(
         }
 
     fun ankiCreateNotes(rawRequest: String): String =
-        dispatchOwned(AnkiOperation.CREATE_NOTES, rawRequest) { request, _ ->
-            request as CreateNotesRequest
-            throw AnkiReadFailure(
-                AnkiErrorCode.UNSUPPORTED_OPERATION,
-                retryable = false,
-                stableMessage = "Anki note mutation is not available in the read-only provider phase",
+        dispatchOwned(AnkiOperation.CREATE_NOTES, rawRequest) { request, owner ->
+            val outcome = noteMutations.create(owner, request as CreateNotesRequest)
+            val admission = DurableNoteAdmission.freeze(outcome.result)
+            OwnedResponse(
+                response = admission.exactResult,
+                durableNote = admission,
             )
         }
 
@@ -315,6 +340,7 @@ internal class AnkiProviderCallbacks(
     ): String {
         val durableTarget = handled.durableTarget
         val durableMedia = handled.durableMedia
+        val durableNote = handled.durableNote
         val encoded =
             try {
                 responseEncoder.encode(handled.response, request)
@@ -330,7 +356,7 @@ internal class AnkiProviderCallbacks(
                     ),
                 )
             }
-        if (durableTarget == null && durableMedia == null) return encoded
+        if (durableTarget == null && durableMedia == null && durableNote == null) return encoded
         try {
             if (durableTarget != null) {
                 registry.commitDurableTargetResponse(
@@ -339,14 +365,17 @@ internal class AnkiProviderCallbacks(
                     requestId = request.requestId,
                     target = durableTarget.target,
                 )
-            } else {
+            } else if (durableMedia != null) {
                 val acknowledgements =
-                    checkNotNull(durableMedia).validateAfterEncoding(request, handled.response)
+                    durableMedia.validateAfterEncoding(request, handled.response)
                 registry.commitDurableMutationResponse(
                     owner = owner,
                     requestId = request.requestId,
                     mediaAcknowledgements = acknowledgements,
                 )
+            } else {
+                checkNotNull(durableNote).validateAfterEncoding(request, handled.response)
+                registry.retainDurableTerminalResponse(owner, request.requestId)
             }
         } catch (_: RuntimeException) {
             if (durableTarget != null) {
@@ -431,10 +460,11 @@ internal class AnkiProviderCallbacks(
         val response: AnkiResponse,
         val durableTarget: DurableTargetCommit? = null,
         val durableMedia: DurableMediaAdmission? = null,
+        val durableNote: DurableNoteAdmission? = null,
     ) {
         init {
-            require(durableTarget == null || durableMedia == null) {
-                "One response cannot carry two durable admissions"
+            require(listOfNotNull(durableTarget, durableMedia, durableNote).size <= 1) {
+                "One response cannot carry multiple durable admissions"
             }
         }
     }

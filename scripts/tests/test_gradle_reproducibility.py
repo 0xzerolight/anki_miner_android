@@ -169,7 +169,21 @@ class GradleReproducibilityTest(unittest.TestCase):
             health.index('"$SCRIPT_DIR/verify-android-toolchain.sh"'),
             health.index('runtime_wheels.py" verify-publication'),
         )
-        self.assertEqual(3, health.count('check_runtime_artifact.py"'))
+        self.assertEqual(2, health.count('check_runtime_artifact.py"'))
+        self.assertIn("--release-acceptance-receipt", health)
+        self.assertIn("s1a_acceptance.py\" verify", health)
+        emulator_tasks = health.split("tasks=(", 1)[1].split(")", 1)[0]
+        self.assertNotIn("DeviceRelease", emulator_tasks)
+        self.assertIn('if [[ -n "$RELEASE_ACCEPTANCE_RECEIPT" ]]', health)
+
+    def test_health_checks_runtime_pinned_html_entities(self) -> None:
+        health = (REPO_ROOT / "scripts" / "health.sh").read_text(encoding="utf-8")
+
+        self.assertIn(
+            '"$ANKI_MINER_CHAQUOPY_BUILD_PYTHON" \\\n'
+            '    "$REPO_ROOT/tools/anki-contract/generate_html5_entities.py" --check',
+            health,
+        )
 
     def test_complete_lockfiles_are_committed(self) -> None:
         app_lock = (REPO_ROOT / "app" / "gradle.lockfile").read_text(encoding="utf-8")
@@ -226,6 +240,54 @@ class GradleReproducibilityTest(unittest.TestCase):
                 source = path.read_text(encoding="utf-8")
                 self.assertIn("anki_miner_run_gradle", source)
                 self.assertNotIn('\n"$GRADLEW_COMMAND" \\\n', source)
+
+    def test_ci_serializes_build_and_emulators_and_runs_complete_parity(self) -> None:
+        ci = (REPO_ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+        nightly = (REPO_ROOT / ".github/workflows/parity-nightly.yml").read_text(
+            encoding="utf-8",
+        )
+        emulator_runner = (REPO_ROOT / "scripts/run-emulator-tests.sh").read_text(
+            encoding="utf-8",
+        )
+
+        self.assertIn("group: anki-miner-android-hardware-ci", ci)
+        self.assertIn("runs-on: [self-hosted, Linux, X64, anki-miner-android]", ci)
+        self.assertEqual(1, ci.count("scripts/health.sh"))
+        for lane in ("api26", "4k", "16k"):
+            self.assertIn(f"--lane {lane}", ci)
+        self.assertIn("run_goldens_v2.py", ci)
+        self.assertIn(
+            'Path("tools/engine-sync/engine.lock").read_text(encoding="utf-8").strip()',
+            ci,
+        )
+        self.assertNotIn('json.loads(Path("tools/engine-sync/engine.lock")', ci)
+        self.assertIn("--s2-fallback", ci)
+        self.assertIn("run-s5-video-acceptance.sh", ci)
+        self.assertIn("ANKI_MINER_S5_ALLOW_COLLECTION_RESET", ci)
+        self.assertLess(
+            ci.index("scripts/run-emulator-tests.sh --s2-fallback"),
+            ci.index("scripts/run-s5-video-acceptance.sh"),
+        )
+        self.assertIn("S2_FALLBACK_CONNECTED_RUNNER", emulator_runner)
+        self.assertIn("desktop/scripts/dump_engine_goldens.py", nightly)
+        self.assertIn(
+            'Path("android/tools/engine-sync/engine.lock").read_text(encoding="utf-8").strip()',
+            nightly,
+        )
+        self.assertNotIn(
+            'json.loads(Path("android/tools/engine-sync/engine.lock")',
+            nightly,
+        )
+        self.assertIn("semantic_drift", nightly)
+        self.assertNotRegex(ci + nightly, r"actions/[a-z-]+@v[0-9]")
+
+        prerelease = (
+            REPO_ROOT / ".github/workflows/ankidroid-prerelease-canary.yml"
+        ).read_text(encoding="utf-8")
+        self.assertIn("group: anki-miner-android-hardware-ci", prerelease)
+        self.assertIn("resolve_ankidroid_canary.py resolve", prerelease)
+        self.assertIn("run-s2-ankidroid-prerelease-canary.sh", prerelease)
+        self.assertIn("--receipt-ankidroid-apk", prerelease)
 
 if __name__ == "__main__":
     unittest.main()

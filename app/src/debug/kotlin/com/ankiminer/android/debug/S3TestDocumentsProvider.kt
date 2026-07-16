@@ -9,7 +9,7 @@ import java.io.File
 import java.io.FileNotFoundException
 import kotlin.concurrent.thread
 
-/** Debug-only provider exposing the same MKV as a seekable file and a non-seekable pipe. */
+/** Debug-only provider exposing deterministic SAF fixtures without filesystem-path shortcuts. */
 class S3TestDocumentsProvider : ContentProvider() {
     override fun onCreate(): Boolean = true
 
@@ -20,14 +20,23 @@ class S3TestDocumentsProvider : ContentProvider() {
         if (mode != "r") {
             throw FileNotFoundException("S3 fixture is read-only")
         }
-        val fixture = File(requireNotNull(context).cacheDir, FIXTURE_NAME)
+        val fixtureName =
+            when (uri.path) {
+                "/seekable", "/pipe" -> FIXTURE_NAME
+                "/s5/video" -> S5_VIDEO_FIXTURE_NAME
+                "/s5/subtitle" -> S5_SUBTITLE_FIXTURE_NAME
+                else -> throw FileNotFoundException("Unknown test fixture URI: $uri")
+            }
+        val fixture = File(requireNotNull(context).cacheDir, fixtureName)
         if (!fixture.isFile) {
             throw FileNotFoundException("S3 fixture has not been generated")
         }
         return when (uri.path) {
             "/seekable" -> ParcelFileDescriptor.open(fixture, ParcelFileDescriptor.MODE_READ_ONLY)
             "/pipe" -> pipeFrom(fixture)
-            else -> throw FileNotFoundException("Unknown S3 fixture URI: $uri")
+            "/s5/video", "/s5/subtitle" ->
+                ParcelFileDescriptor.open(fixture, ParcelFileDescriptor.MODE_READ_ONLY)
+            else -> throw FileNotFoundException("Unknown test fixture URI: $uri")
         }
     }
 
@@ -47,7 +56,11 @@ class S3TestDocumentsProvider : ContentProvider() {
         return readSide
     }
 
-    override fun getType(uri: Uri): String = "video/x-matroska"
+    override fun getType(uri: Uri): String =
+        when (uri.path) {
+            "/s5/subtitle" -> "application/x-subrip"
+            else -> "video/x-matroska"
+        }
 
     override fun query(
         uri: Uri,
@@ -77,5 +90,7 @@ class S3TestDocumentsProvider : ContentProvider() {
 
     companion object {
         const val FIXTURE_NAME = "s3-saf-fixture.mkv"
+        const val S5_VIDEO_FIXTURE_NAME = "s5-saf-fixture.mkv"
+        const val S5_SUBTITLE_FIXTURE_NAME = "s5-saf-fixture.srt"
     }
 }

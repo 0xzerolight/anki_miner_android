@@ -6,6 +6,8 @@ import com.ankiminer.android.anki.journal.AnkiMutationStore
 import com.ankiminer.android.anki.journal.ChildOperation
 import com.ankiminer.android.anki.journal.ChildRecord
 import com.ankiminer.android.anki.journal.ChildState
+import com.ankiminer.android.anki.journal.CardRecoveryObservation
+import com.ankiminer.android.anki.journal.CardRecoveryDisposition
 import com.ankiminer.android.anki.journal.JournalCorruptionException
 import com.ankiminer.android.anki.journal.MediaClaimRecord
 import com.ankiminer.android.anki.journal.MediaClaimState
@@ -16,6 +18,7 @@ import com.ankiminer.android.anki.journal.ParentRecord
 import com.ankiminer.android.anki.journal.PreparedMutationRecovery
 import com.ankiminer.android.anki.journal.RecoveryInventory
 import com.ankiminer.android.anki.journal.RemediationKind
+import com.ankiminer.android.anki.journal.RoutingIntentState
 import com.ankiminer.android.anki.journal.StagingState
 import com.ankiminer.android.anki.protocol.AnkiProtocolException
 import com.ankiminer.android.anki.protocol.AnkiValidators
@@ -67,7 +70,10 @@ internal class JournalBackedTargetRecoveryGate(
 ) : AnkiStartupRecoveryGate {
     private val gateLock = Any()
     private val open = AtomicBoolean(false)
-    private val snapshots = TargetSnapshotReader(CheckedProvider(gateway))
+    private val gateway = gateway
+    private val checked = CheckedProvider(gateway)
+    private val snapshots = TargetSnapshotReader(checked)
+    private val cards = GlobalCardReader(checked)
 
     override fun isOpen(): Boolean = open.get()
 
@@ -83,10 +89,9 @@ internal class JournalBackedTargetRecoveryGate(
                 is PreparedMutationRecovery.ReconcileDeck -> recoverEnteredDeck(action)
                 is PreparedMutationRecovery.FinalizeMediaReceipt -> recoverMediaReceipt(action)
                 is PreparedMutationRecovery.MarkMediaUncertain -> recoverMediaUncertain(action)
-                is PreparedMutationRecovery.PromoteNoteReceipt,
-                is PreparedMutationRecovery.MarkNoteUncertain,
-                is PreparedMutationRecovery.InspectCardRouting,
-                -> throw PendingNonTargetMutationRecoveryException()
+                is PreparedMutationRecovery.PromoteNoteReceipt -> recoverNoteReceipt(action)
+                is PreparedMutationRecovery.MarkNoteUncertain -> recoverNoteUncertain(action)
+                is PreparedMutationRecovery.InspectCardRouting -> recoverCardRouting(action)
             }
 
             store.abandonOwnerless(emptySet())
@@ -111,11 +116,176 @@ internal class JournalBackedTargetRecoveryGate(
         when (action.child.command.operation) {
             ChildOperation.DECK_CREATE -> recoverPreEntryDeck(action)
             ChildOperation.MEDIA_INSERT -> recoverPreEntryMedia(action)
-            ChildOperation.NOTE_INSERT,
-            ChildOperation.CARD_DECK_UPDATE,
-            -> throw PendingNonTargetMutationRecoveryException()
+            ChildOperation.NOTE_INSERT ->
+                store.completeChild(
+                    action.child.id,
+                    ChildState.PROVEN_NOT_COMMITTED,
+                    nonTargetRecoveryEvidence(action.parent, "note", providerEntered = false),
+                )
+            ChildOperation.CARD_DECK_UPDATE ->
+                store.completeRoutingChild(
+                    action.child.id,
+                    ChildState.PROVEN_NOT_COMMITTED,
+                    RoutingIntentState.FAILED,
+                    nonTargetRecoveryEvidence(action.parent, "card", providerEntered = false),
+                )
         }
     }
+
+    private fun recoverNoteReceipt(action: PreparedMutationRecovery.PromoteNoteReceipt) {
+        val command = action.child.command as? MutationCommand.InsertNote
+            ?: throw JournalCorruptionException("Prepared note receipt lacks its insert command")
+        val active = store.activeNote(action.parent.key)
+            ?: throw JournalCorruptionException("Prepared note receipt lacks its active materialization")
+        val validated = NoteInsertReceiptValidator.validate(action.receipt.contentUri)
+            ?: throw JournalCorruptionException("Persisted note receipt URI is invalid")
+        if (
+            validated.noteId != action.receipt.noteId ||
+            action.child.parentId != action.parent.id ||
+            command.requestIndexValue != action.parent.activeRequestIndex ||
+            active.materialization.requestIndex != command.requestIndexValue ||
+            active.materialization.clientNoteId != command.clientNoteId ||
+            active.itemSha256 != action.child.itemSha256
+        ) {
+            throw JournalCorruptionException("Persisted note receipt differs from its durable command")
+        }
+        store.commitNoteReceipt(
+            action.child.id,
+            action.receipt,
+            nonTargetRecoveryEvidence(action.parent, "note", providerEntered = true),
+        )
+    }
+
+    private fun recoverNoteUncertain(action: PreparedMutationRecovery.MarkNoteUncertain) {
+        store.completeChild(
+            action.child.id,
+            ChildState.COMMIT_UNCERTAIN,
+            nonTargetRecoveryEvidence(action.parent, "note", providerEntered = true),
+        )
+    }
+
+    private fun recoverCardRouting(action: PreparedMutationRecovery.InspectCardRouting) {
+        val initial = observeCard(action)
+        if (initial.observation == CardRecoveryObservation.DESIRED_DECK) {
+            if (action.hasAffectedCountReceipt) {
+                completeRecoveredCard(action, verified = true, uncertain = false, suffix = "desired")
+            } else {
+                // Exact target state without a count-one receipt cannot be attributed to this child.
+                completeRecoveredCard(action, verified = false, uncertain = true, suffix = "desired-no-receipt")
+            }
+            return
+        }
+
+        when (
+            AnkiMutationRecovery.decideCardRecovery(
+                initial.observation,
+                action.hasAffectedCountReceipt,
+                action.child.attemptCount,
+            )
+        ) {
+            CardRecoveryDisposition.VERIFY_POSTCONDITION ->
+                throw JournalCorruptionException("Unreachable card recovery disposition")
+            CardRecoveryDisposition.COMMITTED_FAILED_EXTERNAL_DRIFT ->
+                completeRecoveredCard(action, verified = false, uncertain = false, suffix = "external-drift")
+            CardRecoveryDisposition.COMMITTED_FAILED_UNCERTAIN ->
+                completeRecoveredCard(action, verified = false, uncertain = true, suffix = "uncertain")
+            CardRecoveryDisposition.REISSUE_ONCE_THEN_REQUERY -> recoverCardByOneReissue(action)
+        }
+    }
+
+    private fun recoverCardByOneReissue(action: PreparedMutationRecovery.InspectCardRouting) {
+        val command = action.child.command as? MutationCommand.RouteCard
+            ?: throw JournalCorruptionException("Prepared card recovery lacks its route command")
+        // Do not consume the sole recovery attempt while provider access is unavailable.
+        checked.preflightMutation(AnkiCancellation.NONE)
+        store.recordProviderEntry(action.child.id, recoveryReissue = true)
+        val affected =
+            try {
+                gateway.routeCard(
+                    AnkiProviderMutationCommand.RouteCard(
+                        expectedCardId = command.cardId,
+                        noteId = command.noteId,
+                        ordinal = command.ordinal,
+                        targetDeckId = command.targetDeckId,
+                    ),
+                )
+            } catch (_: RuntimeException) {
+                null
+            }
+        if (affected == 1) store.recordCardReceipt(action.child.id)
+        val refreshed =
+            AnkiMutationRecovery.plan(store.recoveryInventory()).preparedMutation
+                as? PreparedMutationRecovery.InspectCardRouting
+                ?: throw JournalCorruptionException("Reissued card mutation is no longer recoverable")
+        if (refreshed.child.id != action.child.id || refreshed.child.attemptCount != 2) {
+            throw JournalCorruptionException("Reissued card mutation changed durable identity or attempt history")
+        }
+        val observation = observeCard(refreshed).observation
+        when {
+            observation == CardRecoveryObservation.DESIRED_DECK && refreshed.hasAffectedCountReceipt ->
+                completeRecoveredCard(refreshed, verified = true, uncertain = false, suffix = "reissued-desired")
+            observation == CardRecoveryObservation.THIRD_DECK ->
+                completeRecoveredCard(refreshed, verified = false, uncertain = false, suffix = "reissued-drift")
+            else ->
+                completeRecoveredCard(refreshed, verified = false, uncertain = true, suffix = "reissued-uncertain")
+        }
+    }
+
+    private fun observeCard(action: PreparedMutationRecovery.InspectCardRouting): ObservedCardRecovery {
+        val command = action.child.command as? MutationCommand.RouteCard
+            ?: throw JournalCorruptionException("Prepared card recovery lacks its route command")
+        val card =
+            try {
+                cards.readById(command.cardId, AnkiCancellation.NONE)
+            } catch (_: RuntimeException) {
+                return ObservedCardRecovery(CardRecoveryObservation.UNVERIFIABLE_IDENTITY_OR_DECK)
+            }
+        if (card.id != command.cardId || card.noteId != command.noteId || card.ordinal != command.ordinal) {
+            return ObservedCardRecovery(CardRecoveryObservation.UNVERIFIABLE_IDENTITY_OR_DECK)
+        }
+        return ObservedCardRecovery(
+            when (card.deckId) {
+                command.targetDeckId -> CardRecoveryObservation.DESIRED_DECK
+                command.preUpdateDeckId -> CardRecoveryObservation.PRE_UPDATE_DECK
+                else -> CardRecoveryObservation.THIRD_DECK
+            },
+        )
+    }
+
+    private fun completeRecoveredCard(
+        action: PreparedMutationRecovery.InspectCardRouting,
+        verified: Boolean,
+        uncertain: Boolean,
+        suffix: String,
+    ) {
+        val childState =
+            when {
+                verified -> ChildState.POSTCONDITION_VERIFIED
+                uncertain -> ChildState.COMMIT_UNCERTAIN
+                else -> ChildState.POSTCONDITION_FAILED
+            }
+        val intentState =
+            when {
+                verified -> RoutingIntentState.VERIFIED
+                uncertain -> RoutingIntentState.COMMIT_UNCERTAIN
+                else -> RoutingIntentState.FAILED
+            }
+        store.completeRoutingChild(
+            action.child.id,
+            childState,
+            intentState,
+            nonTargetRecoveryEvidence(action.parent, "card-$suffix", providerEntered = true),
+        )
+    }
+
+    private fun nonTargetRecoveryEvidence(
+        parent: ParentRecord,
+        kind: String,
+        providerEntered: Boolean,
+    ): String =
+        "startupRecovery=$kind;providerEntry=$providerEntered;requestSha256=${parent.requestSha256}"
+
+    private data class ObservedCardRecovery(val observation: CardRecoveryObservation)
 
     private fun recoverPreEntryDeck(action: PreparedMutationRecovery.ProveNotCommitted) {
         store.completeChild(

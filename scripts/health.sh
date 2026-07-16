@@ -11,14 +11,17 @@ source "$SCRIPT_DIR/android-test-resources.sh"
 RECEIPT_PATH=""
 RECEIPT_ANKIDROID_APK=""
 RECEIPT_S2_RESET_OPT_IN=false
+RELEASE_ACCEPTANCE_RECEIPT=""
 
 usage() {
     cat <<'EOF' >&2
 Usage: scripts/health.sh [--write-receipt FILE]
                          [--receipt-ankidroid-apk FILE --receipt-s2-reset-opt-in]
+                         [--release-acceptance-receipt FILE]
 
 Runs the complete host-only health gate. Connected tests are intentionally a
-separate, receipt-validated phase and never start Gradle.
+separate, receipt-validated phase and never start Gradle. ARM64 release
+artifacts are built only with an exact physical-device S1a acceptance receipt.
 EOF
 }
 
@@ -36,6 +39,11 @@ while (($#)); do
             ;;
         --receipt-s2-reset-opt-in)
             RECEIPT_S2_RESET_OPT_IN=true
+            ;;
+        --release-acceptance-receipt)
+            (($# >= 2)) || { usage; exit 2; }
+            RELEASE_ACCEPTANCE_RECEIPT="$2"
+            shift
             ;;
         -h|--help)
             usage
@@ -95,6 +103,21 @@ if [[ -n "${ORG_GRADLE_PROJECT_ankiMinerS1aManifest:-}" ]]; then
     ORG_GRADLE_PROJECT_ankiMinerS1aManifest="$s1a_manifest"
     export ORG_GRADLE_PROJECT_ankiMinerS1aManifest
 fi
+if [[ -n "$RELEASE_ACCEPTANCE_RECEIPT" ]]; then
+    [[ -n "${ORG_GRADLE_PROJECT_ankiMinerS1aManifest:-}" ]] \
+        || fail "release acceptance requires an exact S1a wheel publication"
+    [[ -f "$RELEASE_ACCEPTANCE_RECEIPT" ]] \
+        || fail "release acceptance receipt is missing: $RELEASE_ACCEPTANCE_RECEIPT"
+    RELEASE_ACCEPTANCE_RECEIPT="$(realpath "$RELEASE_ACCEPTANCE_RECEIPT")"
+    python3.13 "$REPO_ROOT/tools/wheels/s1a_acceptance.py" verify \
+        --receipt "$RELEASE_ACCEPTANCE_RECEIPT" \
+        --manifest "$s1a_manifest" \
+        --repo-root "$REPO_ROOT" \
+        --golden "$REPO_ROOT/golden/engine-v1.json" >/dev/null \
+        || fail "physical ARM64 S1a acceptance receipt is invalid or stale"
+    ORG_GRADLE_PROJECT_ankiMinerS1aArm64AcceptanceReceipt="$RELEASE_ACCEPTANCE_RECEIPT"
+    export ORG_GRADLE_PROJECT_ankiMinerS1aArm64AcceptanceReceipt
+fi
 for script in "$SCRIPT_DIR"/*.sh; do
     bash -n "$script" || fail "shell syntax check failed: $script"
 done
@@ -118,6 +141,8 @@ PYTHONDONTWRITEBYTECODE=1 python3.13 \
     "$REPO_ROOT/tools/anki-contract/generate_anki_limits.py" --check
 PYTHONDONTWRITEBYTECODE=1 python3.13 \
     "$REPO_ROOT/tools/anki-contract/generate_unicode_contract.py" --check
+PYTHONDONTWRITEBYTECODE=1 "$ANKI_MINER_CHAQUOPY_BUILD_PYTHON" \
+    "$REPO_ROOT/tools/anki-contract/generate_html5_entities.py" --check
 PYTHONDONTWRITEBYTECODE=1 python3.13 -m unittest discover \
     -s "$REPO_ROOT/tools/dependencies/tests" -v
 
@@ -170,22 +195,22 @@ cd "$REPO_ROOT"
 tasks=(
     :app:testEmulatorDebugUnitTest
     :app:lintEmulatorDebug
-    :app:lintDeviceRelease
     :app:assembleEmulatorDebug
     :app:assembleEmulatorDebugAndroidTest
-    :app:assembleDeviceRelease
-    :app:bundleDeviceRelease
 )
+if [[ -n "$RELEASE_ACCEPTANCE_RECEIPT" ]]; then
+    tasks+=(
+        :app:lintDeviceRelease
+        :app:assembleDeviceRelease
+        :app:bundleDeviceRelease
+    )
+fi
 anki_miner_run_gradle ./gradlew "${tasks[@]}"
 
 emulator_apk="$REPO_ROOT/app/build/outputs/apk/emulator/debug/app-emulator-debug.apk"
 emulator_test_apk="$REPO_ROOT/app/build/outputs/apk/androidTest/emulator/debug/app-emulator-debug-androidTest.apk"
-release_apk="$REPO_ROOT/app/build/outputs/apk/device/release/app-device-release-unsigned.apk"
-release_aab="$REPO_ROOT/app/build/outputs/bundle/deviceRelease/app-device-release.aab"
 [[ -f "$emulator_apk" ]] || fail "emulator debug APK was not produced"
 [[ -f "$emulator_test_apk" ]] || fail "emulator debug AndroidTest APK was not produced"
-[[ -f "$release_apk" ]] || fail "device release APK was not produced"
-[[ -f "$release_aab" ]] || fail "device release AAB was not produced"
 
 s1a_artifact_args=()
 runtime_s1a_artifact_args=()
@@ -203,56 +228,48 @@ fi
     --reject-base-unidic \
     --require-entry lib/x86_64/libanki_miner_mecab.so \
     "${s1a_artifact_args[@]}"
-"$SCRIPT_DIR/check-native-artifact.sh" \
-    --artifact "$release_apk" \
-    --allow-abi arm64-v8a \
-    --require-app-imy \
-    --reject-base-unidic \
-    --require-entry lib/arm64-v8a/libanki_miner_mecab.so \
-    --forbid-entry scaffold_probe \
-    --forbid-entry runtime_dependencies_probe \
-    --forbid-entry tokenizer_s1a_instrumented \
-    --forbid-entry TokenizerS1aInstrumentedTest \
-    --forbid-entry tokenizer_s1b_instrumented \
-    --forbid-entry s4_engine_smoke \
-    --forbid-entry s4-engine-smoke-v1.json \
-    --forbid-entry engine-v1.json \
-    "${s1a_artifact_args[@]}"
-"$SCRIPT_DIR/check-native-artifact.sh" \
-    --artifact "$release_aab" \
-    --allow-abi arm64-v8a \
-    --require-app-imy \
-    --reject-base-unidic \
-    --require-entry base/lib/arm64-v8a/libanki_miner_mecab.so \
-    --forbid-entry scaffold_probe \
-    --forbid-entry runtime_dependencies_probe \
-    --forbid-entry tokenizer_s1a_instrumented \
-    --forbid-entry TokenizerS1aInstrumentedTest \
-    --forbid-entry tokenizer_s1b_instrumented \
-    --forbid-entry s4_engine_smoke \
-    --forbid-entry s4-engine-smoke-v1.json \
-    --forbid-entry engine-v1.json \
-    "${s1a_artifact_args[@]}"
-
 python3.13 "$SCRIPT_DIR/check_runtime_artifact.py" \
     --artifact "$emulator_apk" \
     --runtime-manifest "$runtime_manifest" \
     --allow-abi x86_64 \
     "${runtime_s1a_artifact_args[@]}"
-python3.13 "$SCRIPT_DIR/check_runtime_artifact.py" \
-    --artifact "$release_apk" \
-    --runtime-manifest "$runtime_manifest" \
-    --allow-abi arm64-v8a \
-    "${runtime_s1a_artifact_args[@]}"
-python3.13 "$SCRIPT_DIR/check_runtime_artifact.py" \
-    --artifact "$release_aab" \
-    --runtime-manifest "$runtime_manifest" \
-    --allow-abi arm64-v8a \
-    "${runtime_s1a_artifact_args[@]}"
-
-release_manifest="$(apkanalyzer manifest print "$release_apk")"
-if grep -Eq 'ScaffoldProbeActivity|scaffold_probe' <<<"$release_manifest"; then
-    fail "debug probe component leaked into the release manifest"
+if [[ -n "$RELEASE_ACCEPTANCE_RECEIPT" ]]; then
+    release_apk="$REPO_ROOT/app/build/outputs/apk/device/release/app-device-release-unsigned.apk"
+    release_aab="$REPO_ROOT/app/build/outputs/bundle/deviceRelease/app-device-release.aab"
+    [[ -f "$release_apk" ]] || fail "device release APK was not produced"
+    [[ -f "$release_aab" ]] || fail "device release AAB was not produced"
+    for release_artifact in "$release_apk" "$release_aab"; do
+        release_entry="lib/arm64-v8a/libanki_miner_mecab.so"
+        [[ "$release_artifact" == *.aab ]] \
+            && release_entry="base/lib/arm64-v8a/libanki_miner_mecab.so"
+        "$SCRIPT_DIR/check-native-artifact.sh" \
+            --artifact "$release_artifact" \
+            --allow-abi arm64-v8a \
+            --require-app-imy \
+            --reject-base-unidic \
+            --require-entry "$release_entry" \
+            --forbid-entry scaffold_probe \
+            --forbid-entry runtime_dependencies_probe \
+            --forbid-entry tokenizer_s1a_instrumented \
+            --forbid-entry TokenizerS1aInstrumentedTest \
+            --forbid-entry tokenizer_s1b_instrumented \
+            --forbid-entry s4_engine_smoke \
+            --forbid-entry engine_golden_v2_instrumented \
+            --forbid-entry EngineGoldenV2InstrumentedTest \
+            --forbid-entry s4-engine-smoke-v1.json \
+            --forbid-entry engine-v1.json \
+            --forbid-entry engine-v2.json \
+            "${s1a_artifact_args[@]}"
+        python3.13 "$SCRIPT_DIR/check_runtime_artifact.py" \
+            --artifact "$release_artifact" \
+            --runtime-manifest "$runtime_manifest" \
+            --allow-abi arm64-v8a \
+            "${runtime_s1a_artifact_args[@]}"
+    done
+    release_manifest="$(apkanalyzer manifest print "$release_apk")"
+    if grep -Eq 'ScaffoldProbeActivity|scaffold_probe' <<<"$release_manifest"; then
+        fail "debug probe component leaked into the release manifest"
+    fi
 fi
 
 if [[ -n "$RECEIPT_PATH" ]]; then
@@ -263,8 +280,6 @@ if [[ -n "$RECEIPT_PATH" ]]; then
         --runtime-manifest "$runtime_manifest"
         --artifact "app_emulator_debug=$emulator_apk"
         --artifact "test_emulator_debug=$emulator_test_apk"
-        --artifact "app_device_release=$release_apk"
-        --artifact "bundle_device_release=$release_aab"
     )
     for task in "${tasks[@]}"; do
         receipt_args+=(--task "$task")

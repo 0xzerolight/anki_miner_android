@@ -135,6 +135,15 @@ class S1aAcceptanceTest(unittest.TestCase):
         with self.assertRaisesRegex(acceptance.AcceptanceError, "parity"):
             self._validate()
 
+        document = self._document()
+        document["novel_throughput"]["japanese_character_count"] = 49_999  # type: ignore[index]
+        document["payload_sha256"] = hashlib.sha256(
+            acceptance._canonical_payload(document)
+        ).hexdigest()
+        self._write(document)
+        with self.assertRaisesRegex(acceptance.AcceptanceError, "corpus identity"):
+            self._validate()
+
     def test_artifact_publication_and_payload_are_immutable(self) -> None:
         document = self._document()
         self._write(document)

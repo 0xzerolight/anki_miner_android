@@ -1,0 +1,146 @@
+name: Android CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: anki-miner-android-hardware-ci
+  cancel-in-progress: false
+
+env:
+  LANG: C.UTF-8
+  LC_ALL: C.UTF-8
+  PYTHONDONTWRITEBYTECODE: "1"
+  PYTHONHASHSEED: "0"
+  PYTHONIOENCODING: utf-8
+  PYTHONUTF8: "1"
+  SOURCE_DATE_EPOCH: "315532800"
+  TZ: UTC
+  ANKI_MINER_ANDROID_TOOLCHAIN_ROOT: ${{ vars.ANKI_MINER_ANDROID_TOOLCHAIN_ROOT }}
+  ANKI_MINER_DESKTOP_REPO: ${{ vars.ANKI_MINER_DESKTOP_REPO }}
+  ANKI_MINER_TEST_UNIDIC_DIR: ${{ vars.ANKI_MINER_TEST_UNIDIC_DIR }}
+  ANKI_MINER_ANKIDROID_APK: ${{ vars.ANKI_MINER_ANKIDROID_APK }}
+  ANKI_MINER_ANKICONNECT_FALLBACK_APK: ${{ vars.ANKI_MINER_ANKICONNECT_FALLBACK_APK }}
+  ORG_GRADLE_PROJECT_ankiMinerRuntimeManifest: ${{ vars.ANKI_MINER_RUNTIME_MANIFEST }}
+  ORG_GRADLE_PROJECT_ankiMinerS1aManifest: ${{ vars.ANKI_MINER_S1A_MANIFEST }}
+
+jobs:
+  complete-gates:
+    name: Host, native, parity, and emulator gates
+    runs-on: [self-hosted, Linux, X64, anki-miner-android]
+    timeout-minutes: 240
+    steps:
+      - name: Checkout Android source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Verify provisioned runner inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          for variable in \
+              ANKI_MINER_ANDROID_TOOLCHAIN_ROOT \
+              ANKI_MINER_DESKTOP_REPO \
+              ANKI_MINER_TEST_UNIDIC_DIR \
+              ANKI_MINER_ANKIDROID_APK \
+              ANKI_MINER_ANKICONNECT_FALLBACK_APK \
+              ORG_GRADLE_PROJECT_ankiMinerRuntimeManifest \
+              ORG_GRADLE_PROJECT_ankiMinerS1aManifest; do
+            test -n "${!variable}" || {
+              echo "Required self-hosted runner variable is empty: $variable" >&2
+              exit 1
+            }
+          done
+          test -d "$ANKI_MINER_DESKTOP_REPO/.git"
+          test -d "$ANKI_MINER_TEST_UNIDIC_DIR"
+          test -f "$ANKI_MINER_ANKIDROID_APK"
+          test -f "$ANKI_MINER_ANKICONNECT_FALLBACK_APK"
+
+      - name: Re-derive the complete pinned v2 golden
+        shell: bash
+        run: |
+          set -euo pipefail
+          revision="$(python3.13 - <<'PY'
+          from pathlib import Path
+          print(Path("tools/engine-sync/engine.lock").read_text(encoding="utf-8").strip())
+          PY
+          )"
+          engine_root="$(mktemp -d /tmp/anki-miner-ci-engine.XXXXXX)"
+          rmdir "$engine_root"
+          cleanup() {
+            git -C "$ANKI_MINER_DESKTOP_REPO" worktree remove --force "$engine_root" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+          git -C "$ANKI_MINER_DESKTOP_REPO" worktree add --detach "$engine_root" "$revision"
+          PYTHONPATH=tools/engine-sync \
+            "$ANKI_MINER_ANDROID_TOOLCHAIN_ROOT/host-tests/bin/python" \
+            tools/engine-sync/run_goldens_v2.py \
+              --python "$ANKI_MINER_DESKTOP_REPO/.venv/bin/python" \
+              --exporter "$ANKI_MINER_DESKTOP_REPO/scripts/dump_engine_goldens.py" \
+              --engine-root "$engine_root" \
+              --dicdir "$ANKI_MINER_TEST_UNIDIC_DIR"
+
+      - name: Build and run the host gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          source scripts/android-env.sh
+          receipt="$RUNNER_TEMP/android-connected-receipt.json"
+          scripts/health.sh \
+            --write-receipt "$receipt" \
+            --receipt-ankidroid-apk "$ANKI_MINER_ANKIDROID_APK" \
+            --receipt-s2-reset-opt-in
+
+      - name: Run emulator compatibility and page-size lanes
+        shell: bash
+        run: |
+          set -euo pipefail
+          source scripts/android-env.sh
+          receipt="$RUNNER_TEMP/android-connected-receipt.json"
+          scripts/run-emulator-tests.sh \
+            --receipt "$receipt" --lane api26 --unidic-dir "$ANKI_MINER_TEST_UNIDIC_DIR"
+          scripts/run-emulator-tests.sh \
+            --receipt "$receipt" --lane 4k --unidic-dir "$ANKI_MINER_TEST_UNIDIC_DIR"
+          scripts/run-emulator-tests.sh \
+            --receipt "$receipt" --lane 16k --unidic-dir "$ANKI_MINER_TEST_UNIDIC_DIR"
+
+      - name: Run pinned AnkiDroid provider and fallback canaries
+        shell: bash
+        env:
+          ANKI_MINER_S2_ALLOW_COLLECTION_RESET: "true"
+        run: |
+          set -euo pipefail
+          source scripts/android-env.sh
+          receipt="$RUNNER_TEMP/android-connected-receipt.json"
+          scripts/run-emulator-tests.sh --s2 --receipt "$receipt"
+          scripts/run-emulator-tests.sh --s2-fallback --receipt "$receipt"
+
+      - name: Run production S5 video-mining acceptance
+        shell: bash
+        env:
+          ANKI_MINER_S5_ALLOW_COLLECTION_RESET: "true"
+        run: |
+          set -euo pipefail
+          source scripts/android-env.sh
+          receipt="$RUNNER_TEMP/android-connected-receipt.json"
+          scripts/run-s5-video-acceptance.sh \
+            --receipt "$receipt" \
+            --unidic-dir "$ANKI_MINER_TEST_UNIDIC_DIR"
+
+      - name: Upload receipts and diagnostic logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: android-ci-evidence-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/android-connected-receipt.json
+            ${{ vars.ANKI_MINER_ANDROID_TOOLCHAIN_ROOT }}/emulator-*.log*
+            ${{ vars.ANKI_MINER_ANDROID_TOOLCHAIN_ROOT }}/ankiconnect-fallback-probe/
+          if-no-files-found: warn
+          retention-days: 14

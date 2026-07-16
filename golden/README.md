@@ -1,5 +1,34 @@
 # Engine golden contract
 
+`engine-v2.json` plus `schema/engine-goldens-v2.schema.json` is the current,
+complete Android engine contract. All nine sections are implemented and
+non-empty: tokenization, morphology, filtering, deinflection, compounds,
+dictionaries, frequency, pitch, and cards. `corpus/engine-v2-input.json` holds
+the reviewed synthetic dictionary, frequency, pitch, card, and media inputs;
+`corpus/tokenizer-v1.json` remains the reviewed tokenizer input shared by both
+contract generations.
+
+The v2 verifier rejects anything other than the exact committed fixture and
+then independently checks its schema, section coverage, engine lock/tree,
+desktop exporter source hashes, runtime/data aggregate provenance, and UniDic
+tree identity. Re-derive it by executing the desktop exporter against a clean
+checkout at the revision in `tools/engine-sync/engine.lock`:
+
+```bash
+PYTHONPATH=tools/engine-sync python tools/engine-sync/run_goldens_v2.py \
+  --python /path/to/desktop/.venv/bin/python \
+  --exporter /path/to/desktop/scripts/dump_engine_goldens.py \
+  --engine-root /path/to/clean/pinned-desktop-checkout \
+  --dicdir /path/to/unidic_lite/dicdir
+```
+
+The debug instrumentation APK packages the exact v2 fixture and replays every
+section through the vendored Android engine in one fresh process. The connected
+runner selects `EngineGoldenV2InstrumentedTest` explicitly after the bounded S4
+smoke whenever an S1a publication is present.
+
+## Historical v1 and bounded S4 fixtures
+
 `schema/engine-goldens-v1.schema.json` is the compatibility boundary between
 the pinned desktop exporter and Android parity tests. A schema change requires a
 new numbered schema; existing committed fixtures remain readable as v1.
@@ -106,9 +135,7 @@ physical-device run:
   elapsed phase-1 time, and fugashi characters per second. The one-line SRT
   smoke is not a substitute for this measurement.
 
-Use `--check` in CI to derive into a temporary file, validate every provenance
-domain and token offset, and byte-compare canonical JSON with the committed
-`engine-v1.json`. Its `section_status` object makes staged coverage explicit:
-tokenization, morphology, and compounds are implemented in the M0 fixture;
-filtering, deinflection, dictionaries, frequency, pitch, and cards remain
-machine-visible pending sections rather than ambiguous empty arrays.
+The v1 `section_status` remains intentionally staged for historical M0
+compatibility. It is no longer the complete parity claim; v2 is. Use the v1
+runner only for the tokenizer/S4 contracts which still cite its corpus and
+provenance.

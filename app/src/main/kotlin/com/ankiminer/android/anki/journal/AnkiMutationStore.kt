@@ -86,8 +86,11 @@ internal interface AnkiMutationStore : Closeable {
 
     fun prepareRoutingChild(intentId: Long): ChildRecord
 
-    /** Verifies an already-targeted card without inventing a provider mutation child. */
-    fun verifyRoutingIntentWithoutMutation(intentId: Long, compactEvidence: String): RoutingIntentRecord
+    /** Freezes a fresh exact readback without inventing a provider mutation child. */
+    fun completeChildlessRoutingIntent(
+        intentId: Long,
+        outcome: ChildlessRoutingOutcome,
+    ): RoutingIntentRecord
 
     fun completeRoutingChild(
         childId: Long,
@@ -106,6 +109,9 @@ internal interface AnkiMutationStore : Closeable {
         noteId: Long,
         compactEvidence: String,
     ): ParentRecord
+
+    /** Atomically stops the current note while preserving all mutation and routing evidence. */
+    fun terminateActiveNote(key: ParentKey, termination: ActiveNoteTermination): ParentRecord
 
     /** Adds only the next exact request-aligned row and never overwrites mutation evidence. */
     fun appendAlignedResult(key: ParentKey, result: AlignedResult): ParentRecord

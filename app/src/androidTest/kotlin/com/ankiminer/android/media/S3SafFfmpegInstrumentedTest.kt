@@ -5,9 +5,8 @@ import android.net.Uri
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.ankiminer.android.BuildConfig
+import com.ankiminer.android.PythonInstrumentationRuntime
 import com.ankiminer.android.debug.S3TestDocumentsProvider
-import com.chaquo.python.Python
-import com.chaquo.python.android.AndroidPlatform
 import java.io.File
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
@@ -100,14 +99,8 @@ class S3SafFfmpegInstrumentedTest {
         )
 
     private fun pythonModule() =
-        synchronized(Python::class.java) {
-            if (!Python.isStarted()) {
-                Python.start(AndroidPlatform(context))
-            }
-            val runtime = Python.getInstance()
-            runtime.getModule("android_bridge.bootstrap")
-                .callAttr("initialize", context.filesDir.absolutePath)
-            runtime.getModule("s3_media_probe")
+        synchronized(PythonInstrumentationRuntime::class.java) {
+            PythonInstrumentationRuntime.awaitReady().getModule("s3_media_probe")
         }
 
     private fun nativeTool(name: String): File {

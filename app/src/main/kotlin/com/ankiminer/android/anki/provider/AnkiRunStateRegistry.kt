@@ -1,6 +1,7 @@
 package com.ankiminer.android.anki.provider
 
 import com.ankiminer.android.anki.generated.AnkiLimitsV1
+import com.ankiminer.android.anki.protocol.AnkiProtocolException
 import com.ankiminer.android.anki.protocol.AnkiValidators
 import com.ankiminer.android.anki.protocol.CreateNotesResult
 import com.ankiminer.android.anki.protocol.CreatedNote
@@ -106,6 +107,7 @@ internal data class DuplicateBaseline(
     val candidates: List<DuplicateCandidate>,
     val occurrences: List<Int>,
     val providerNoteIds: List<Set<Long>>,
+    val normalizedMatchingNoteIds: List<Set<Long>>,
 )
 
 internal data class KnownTraversalInitialization(
@@ -436,6 +438,40 @@ internal class AnkiRunStateRegistry(
         }
     }
 
+    /**
+     * Authorizes card routing needed to reconcile a note whose insert receipt is already durable.
+     * User cancellation cannot revoke that post-commit obligation, but release and quarantine
+     * still fail closed. This seam is deliberately unavailable to initial note/media inserts.
+     */
+    fun authorizeMandatoryReconciliationEntry(
+        owner: RunOwner,
+        capability: ProviderEntryCapability,
+        scope: ProviderMutationScope,
+    ): ProviderEntryAuthorization =
+        synchronized(lock) {
+            if (scope.operation != ProviderMutationOperation.CARD_ROUTING) {
+                throw InvalidCapabilityException()
+            }
+            val state = requireProviderEntryLocked(owner, capability, scope)
+            if (capability.lifecycle != ProviderEntryLifecycle.REGISTERED) {
+                throw InvalidCapabilityException()
+            }
+            when {
+                state.terminalReceiptFailure -> {
+                    capability.lifecycle = ProviderEntryLifecycle.DENIED
+                    ProviderEntryAuthorization.QUARANTINED
+                }
+                state.releaseRequested -> {
+                    capability.lifecycle = ProviderEntryLifecycle.DENIED
+                    ProviderEntryAuthorization.RELEASING
+                }
+                else -> {
+                    capability.lifecycle = ProviderEntryLifecycle.AUTHORIZED
+                    ProviderEntryAuthorization.AUTHORIZED
+                }
+            }
+        }
+
     fun abortProviderEntry(
         owner: RunOwner,
         capability: ProviderEntryCapability,
@@ -578,12 +614,13 @@ internal class AnkiRunStateRegistry(
         probe: BaselineProbe,
         baseline: DuplicateBaseline,
     ) {
+        val frozen = freezeDuplicateBaseline(baseline)
         synchronized(lock) {
             val state = requireOwnerLocked(owner)
             requireBaselineProbe(state, owner, probe)
-            if (state.target != baseline.target) throw RunStateConflictException()
+            if (state.target != frozen.target) throw RunStateConflictException()
             state.baselineProbe = null
-            state.duplicateBaseline = baseline
+            state.duplicateBaseline = frozen
         }
     }
 
@@ -968,6 +1005,112 @@ internal class AnkiRunStateRegistry(
         var pageInFlight = false
     }
 
+    private fun freezeDuplicateBaseline(baseline: DuplicateBaseline): DuplicateBaseline {
+        val count = baseline.candidates.size
+        val occurrenceCount = baseline.occurrences.size
+        if (
+            count > AnkiLimitsV1.ScanFirstFields.DUPLICATE_CANDIDATE_MAX_ITEM_COUNT ||
+                occurrenceCount > AnkiLimitsV1.ScanFirstFields.DUPLICATE_CANDIDATE_MAX_ITEM_COUNT ||
+                baseline.providerNoteIds.any {
+                    it.size > AnkiLimitsV1.ScanFirstFields.DUPLICATE_HIT_PER_CANDIDATE_MAX_ITEM_COUNT
+                } ||
+                baseline.normalizedMatchingNoteIds.any {
+                    it.size > AnkiLimitsV1.ScanFirstFields.DUPLICATE_HIT_PER_CANDIDATE_MAX_ITEM_COUNT
+                }
+        ) {
+            throw RunStateCapacityException()
+        }
+        if (
+            count == 0 ||
+                occurrenceCount == 0 ||
+                baseline.providerNoteIds.size != count ||
+                baseline.normalizedMatchingNoteIds.size != count ||
+                baseline.candidates.distinct().size != count ||
+                baseline.occurrences.any { it !in baseline.candidates.indices } ||
+                baseline.occurrences.toSet() != baseline.candidates.indices.toSet() ||
+                !BASELINE_TOKEN_PATTERN.matches(baseline.token) ||
+                baseline.firstFieldName != baseline.target.model.fieldNames.firstOrNull() ||
+                (baseline.scopeDeckId != null && baseline.scopeDeckId != baseline.target.deck.id)
+        ) {
+            throw RunStateConflictException()
+        }
+        try {
+            ProviderSnapshotValidation.validateModel(baseline.target.model)
+            ProviderSnapshotValidation.validateDeck(baseline.target.deck)
+        } catch (_: InvalidTargetSnapshotException) {
+            throw RunStateConflictException()
+        }
+
+        var rawTotal = 0
+        var matchingTotal = 0
+        for (index in baseline.candidates.indices) {
+            val candidate = baseline.candidates[index]
+            val normalized =
+                try {
+                    val keyStats = AnkiValidators.strictStats(candidate.key, "duplicate key")
+                    val fieldStats =
+                        AnkiValidators.strictStats(candidate.firstField, "duplicate first field")
+                    if (
+                        candidate.key.isEmpty() ||
+                            candidate.firstField.isEmpty() ||
+                            keyStats.scalarCount >
+                            AnkiLimitsV1.ScanFirstFields.DUPLICATE_KEY_MAX_CODE_POINTS ||
+                            fieldStats.scalarCount >
+                            AnkiLimitsV1.ScanFirstFields.DUPLICATE_FIRST_FIELD_MAX_CODE_POINTS
+                    ) {
+                        throw RunStateConflictException()
+                    }
+                    DuplicateFirstFieldNormalizer.normalize(candidate.firstField)
+                } catch (_: AnkiProtocolException) {
+                    throw RunStateConflictException()
+                } catch (_: IllegalArgumentException) {
+                    throw RunStateConflictException()
+                }
+            if (normalized != candidate.key) throw RunStateConflictException()
+
+            val raw = baseline.providerNoteIds[index]
+            val matching = baseline.normalizedMatchingNoteIds[index]
+            if (raw.any { it <= 0L } || matching.any { it <= 0L } || !raw.containsAll(matching)) {
+                throw RunStateConflictException()
+            }
+            rawTotal = addBaselineCount(rawTotal, raw.size)
+            matchingTotal = addBaselineCount(matchingTotal, matching.size)
+        }
+        if (
+            rawTotal > AnkiLimitsV1.ScanFirstFields.DUPLICATE_HIT_TOTAL_MAX_ITEM_COUNT ||
+                matchingTotal > AnkiLimitsV1.ScanFirstFields.DUPLICATE_HIT_TOTAL_MAX_ITEM_COUNT
+        ) {
+            throw RunStateCapacityException()
+        }
+
+        return baseline.copy(
+            candidates = Collections.unmodifiableList(baseline.candidates.toList()),
+            occurrences = Collections.unmodifiableList(baseline.occurrences.toList()),
+            providerNoteIds =
+                Collections.unmodifiableList(
+                    baseline.providerNoteIds.map { ids ->
+                        Collections.unmodifiableSet(LinkedHashSet(ids))
+                    },
+                ),
+            normalizedMatchingNoteIds =
+                Collections.unmodifiableList(
+                    baseline.normalizedMatchingNoteIds.map { ids ->
+                        Collections.unmodifiableSet(LinkedHashSet(ids))
+                    },
+                ),
+        )
+    }
+
+    private fun addBaselineCount(
+        current: Int,
+        increment: Int,
+    ): Int =
+        try {
+            Math.addExact(current, increment)
+        } catch (_: ArithmeticException) {
+            throw RunStateCapacityException()
+        }
+
     private class RunState(
         val runId: String,
         val cancellation: AnkiCancellation,
@@ -991,6 +1134,7 @@ internal class AnkiRunStateRegistry(
 
     private companion object {
         const val MAX_TERMINAL_RESPONSE_RECEIPTS = 8192
+        val BASELINE_TOKEN_PATTERN = Regex("baseline_[0-9a-f]{32}")
     }
 }
 

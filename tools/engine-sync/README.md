@@ -34,6 +34,27 @@ before synchronization until the override is rebased and reviewed.
 
 ## Golden derivation
 
+The current complete contract is v2. `run_goldens_v2.py` first verifies the
+exact committed fixture and every provenance input, executes the desktop v2
+exporter in a scrubbed process, and byte-compares the result. It requires an
+explicit clean engine checkout at `engine.lock` and the exact external UniDic
+tree recorded by the fixture:
+
+```bash
+PYTHONPATH=tools/engine-sync python tools/engine-sync/run_goldens_v2.py \
+  --python /path/to/desktop/.venv/bin/python \
+  --exporter /path/to/desktop/scripts/dump_engine_goldens.py \
+  --engine-root /path/to/clean/pinned/desktop/checkout \
+  --dicdir /path/to/unidic_lite/dicdir
+```
+
+The exporter source is independently pinned by file hash, so pointing this
+command at a newer desktop exporter fails rather than silently changing the
+contract. `.github/workflows/parity-nightly.yml` separately derives desktop
+HEAD and reports semantic case drift as an early warning artifact.
+
+### Historical v1 derivation
+
 `run_goldens.py` launches the desktop exporter under the explicitly selected
 Python interpreter, independently hashes that interpreter's complete stable
 distribution contents (including native wheel files), and compares the probe

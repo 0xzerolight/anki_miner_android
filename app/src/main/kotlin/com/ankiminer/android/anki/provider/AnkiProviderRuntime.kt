@@ -36,6 +36,13 @@ internal class AnkiProviderRuntime(
             staging = PrivateMediaMutationStaging(mediaStaging),
             provider = CheckedMediaMutationProvider(gateway),
         )
+    private val noteMutations =
+        JournalBackedNoteMutationService(
+            registry = registry,
+            journal = AnkiMutationNoteJournal(store),
+            reads = ExactNoteMutationReads(gateway, reads),
+            provider = CheckedNoteMutationProvider(gateway),
+        )
     private val verifier =
         DurableTargetVerifier(
             gateway = gateway,
@@ -69,6 +76,7 @@ internal class AnkiProviderRuntime(
             reads = reads,
             targetVerifier = verifier,
             mediaMutations = mediaMutations,
+            noteMutations = noteMutations,
             workerThreadGuard = workerThreadGuard,
             startupRecoveryGate = recoveryGate,
         )

@@ -11,6 +11,11 @@ import com.ankiminer.android.anki.protocol.RawFirstFieldHit
 import com.ankiminer.android.anki.protocol.ScanFirstFieldsRequest
 import com.ankiminer.android.anki.protocol.VerifyTargetRequest
 
+internal data class DuplicateRawSnapshot(
+    val rawFirstFieldHits: List<List<RawFirstFieldHit>>,
+    val normalizedMatchingNoteIds: List<Set<Long>>,
+)
+
 internal class AnkiReadFailure(
     val code: AnkiErrorCode,
     val retryable: Boolean,
@@ -24,6 +29,7 @@ internal class AnkiProviderReadService(
 ) {
     private val provider = CheckedProvider(gateway)
     private val targets = TargetSnapshotReader(provider)
+    private val notes = NoteSnapshotReader(provider)
     private val cards = GlobalCardReader(provider)
 
     /** Read-only existing-target probe. Durable admission is owned exclusively by DurableTargetVerifier. */
@@ -64,6 +70,69 @@ internal class AnkiProviderReadService(
             )
         if (actual != expected) throw targetInvalid("The verified Anki target changed during this run")
         return actual
+    }
+
+    fun readNoteById(
+        owner: AnkiRunStateRegistry.RunOwner,
+        noteId: Long,
+    ): NoteSnapshot = notes.readById(noteId, registry.cancellation(owner))
+
+    fun readCardById(
+        owner: AnkiRunStateRegistry.RunOwner,
+        cardId: Long,
+    ): CardIdentity = cards.readById(cardId, registry.cancellation(owner))
+
+    /**
+     * Reusable exact duplicate snapshot for baseline admission and pre-insert reconciliation.
+     * A null deck ID means collection scope; the only accepted exact scope is the target deck.
+     */
+    fun readDuplicateSnapshot(
+        owner: AnkiRunStateRegistry.RunOwner,
+        target: TargetSnapshot,
+        candidates: List<com.ankiminer.android.anki.protocol.DuplicateCandidate>,
+        scopeDeckId: Long?,
+    ): DuplicateRawSnapshot {
+        if (registry.target(owner) != target) {
+            throw invalidRequest("The duplicate lookup target is not active")
+        }
+        if (scopeDeckId != null && scopeDeckId != target.deck.id) {
+            throw invalidRequest("The duplicate lookup deck scope is not active")
+        }
+        if (
+            candidates.size !in
+                1..AnkiLimitsV1.ScanFirstFields.DUPLICATE_CANDIDATE_MAX_ITEM_COUNT ||
+                candidates.distinct().size != candidates.size
+        ) {
+            throw invalidRequest("The duplicate candidate table is invalid")
+        }
+        val cancellation = registry.cancellation(owner)
+        ensureActive(cancellation)
+        val checksums = candidates.map { gateway.fieldChecksum(it.firstField) }
+        if (checksums.any { it !in 0L..MAX_FIELD_CHECKSUM }) throw queryFailed()
+        val hits =
+            readDuplicateHits(
+                target = target,
+                checksums = checksums,
+                exactDeck = scopeDeckId != null,
+                cancellation = cancellation,
+            )
+        val matches =
+            candidates.indices.map { index ->
+                hits[index]
+                    .asSequence()
+                    .filter { hit ->
+                        try {
+                            DuplicateFirstFieldNormalizer.normalize(hit.firstField) ==
+                                candidates[index].key
+                        } catch (_: IllegalArgumentException) {
+                            throw queryFailed()
+                        }
+                    }.mapTo(linkedSetOf(), RawFirstFieldHit::noteId)
+            }
+        return DuplicateRawSnapshot(
+            rawFirstFieldHits = hits.map { bucket -> bucket.toList() },
+            normalizedMatchingNoteIds = matches,
+        )
     }
 
     fun scanFirstFields(
@@ -231,16 +300,12 @@ internal class AnkiProviderReadService(
         }
         val probe = registry.beginBaselineProbe(owner, scope.invalidateBaselineToken)
         try {
-            val cancellation = registry.cancellation(owner)
-            ensureActive(cancellation)
-            val checksums = scope.candidates.map { gateway.fieldChecksum(it.firstField) }
-            if (checksums.any { it !in 0L..MAX_FIELD_CHECKSUM }) throw queryFailed()
-            val hits =
-                readDuplicateHits(
+            val snapshot =
+                readDuplicateSnapshot(
+                    owner = owner,
                     target = target,
-                    checksums = checksums,
-                    exactDeck = scope.deckName != null,
-                    cancellation = cancellation,
+                    candidates = scope.candidates,
+                    scopeDeckId = if (scope.deckName == null) null else target.deck.id,
                 )
             val token = tokenFactory.nextToken(BASELINE_PREFIX)
             val baseline =
@@ -251,13 +316,17 @@ internal class AnkiProviderReadService(
                     scopeDeckId = if (scope.deckName == null) null else target.deck.id,
                     candidates = scope.candidates,
                     occurrences = scope.occurrences,
-                    providerNoteIds = hits.map { bucket -> bucket.mapTo(linkedSetOf()) { it.noteId } },
+                    providerNoteIds =
+                        snapshot.rawFirstFieldHits.map { bucket ->
+                            bucket.mapTo(linkedSetOf(), RawFirstFieldHit::noteId)
+                        },
+                    normalizedMatchingNoteIds = snapshot.normalizedMatchingNoteIds,
                 )
             val response =
                 DuplicateLookupResult(
                     runId = request.runId,
                     requestId = request.requestId,
-                    rawFirstFieldHits = hits,
+                    rawFirstFieldHits = snapshot.rawFirstFieldHits,
                     baselineToken = token,
                 )
             preflightCanonicalResponse(request, response)
@@ -661,7 +730,109 @@ internal class TargetSnapshotReader(private val provider: CheckedProvider) {
     }
 }
 
+internal class NoteSnapshotReader(private val provider: CheckedProvider) {
+    fun readById(
+        noteId: Long,
+        cancellation: AnkiCancellation,
+    ): NoteSnapshot {
+        if (noteId <= 0L) throw queryFailed()
+        val query =
+            ProviderQuery(
+                endpoint = ProviderEndpoint.NOTE_BY_ID,
+                endpointId = noteId,
+                projection = ProviderQueryShapes.NOTE_SNAPSHOT_PROJECTION,
+            )
+        return provider.queryRequired(query, cancellation).use { cursor ->
+            requireProjection(cursor, query)
+            ensureActive(cancellation)
+            if (!cursor.moveToNext()) throw queryFailed()
+            ensureActive(cancellation)
+            val snapshot =
+                NoteSnapshot(
+                    id = cursor.positiveLong(ProviderColumn.NOTE_ID),
+                    modelId = cursor.positiveLong(ProviderColumn.NOTE_MODEL_ID),
+                    joinedFields = cursor.text(ProviderColumn.NOTE_FIELDS),
+                    providerTagsWire = cursor.text(ProviderColumn.NOTE_TAGS),
+                )
+            validateNoteSnapshot(snapshot, noteId)
+            ensureActive(cancellation)
+            if (cursor.moveToNext()) throw queryFailed()
+            snapshot
+        }
+    }
+
+    private fun validateNoteSnapshot(
+        snapshot: NoteSnapshot,
+        expectedId: Long,
+    ) {
+        if (snapshot.id != expectedId) throw queryFailed()
+        val fieldBytes = strictProviderBytes(snapshot.joinedFields)
+        if (
+            fieldBytes > AnkiLimitsV1.CreateNotes.NOTE_CONTENT_MAX_UTF8_BYTES ||
+                snapshot.joinedFields.count { it == FIELD_SEPARATOR } >=
+                AnkiLimitsV1.CreateNotes.MAX_FIELD_COUNT_PER_NOTE
+        ) {
+            throw queryFailed()
+        }
+        val tagBytes = strictProviderBytes(snapshot.providerTagsWire)
+        if (
+            tagBytes > AnkiLimitsV1.CreateNotes.TAGS_PER_NOTE_MAX_UTF8_BYTES ||
+                FIELD_SEPARATOR in snapshot.providerTagsWire
+        ) {
+            throw queryFailed()
+        }
+    }
+
+    private fun strictProviderBytes(value: String): Int =
+        try {
+            com.ankiminer.android.anki.protocol.AnkiValidators
+                .strictStats(value, "provider note snapshot")
+                .utf8Bytes
+        } catch (_: com.ankiminer.android.anki.protocol.AnkiProtocolException) {
+            throw queryFailed()
+        }
+
+    private companion object {
+        const val FIELD_SEPARATOR = '\u001f'
+    }
+}
+
 internal class GlobalCardReader(private val provider: CheckedProvider) {
+    fun readById(
+        cardId: Long,
+        cancellation: AnkiCancellation,
+    ): CardIdentity {
+        if (cardId <= 0L) throw queryFailed()
+        val query =
+            ProviderQuery(
+                endpoint = ProviderEndpoint.CARD_BY_ID,
+                endpointId = cardId,
+                projection = ProviderQueryShapes.CARD_IDENTITY_PROJECTION,
+            )
+        return provider.queryRequired(query, cancellation).use { cursor ->
+            requireProjection(cursor, query)
+            ensureActive(cancellation)
+            if (!cursor.moveToNext()) throw queryFailed()
+            ensureActive(cancellation)
+            val result =
+                CardIdentity(
+                    id = cursor.positiveLong(ProviderColumn.CARD_ID),
+                    noteId = cursor.positiveLong(ProviderColumn.CARD_NOTE_ID),
+                    ordinal = cursor.exactInt(ProviderColumn.CARD_ORDINAL),
+                    deckId = cursor.positiveLong(ProviderColumn.CARD_DECK_ID),
+                )
+            if (
+                result.id != cardId ||
+                    result.ordinal !in 0 until AnkiLimitsV1.CreateNotes.MAX_CARD_COUNT_PER_NOTE
+            ) {
+                throw queryFailed()
+            }
+            ensureActive(cancellation)
+            if (cursor.moveToNext()) throw queryFailed()
+            result
+        }
+    }
+
     fun readForNote(
         noteId: Long,
         templateCount: Int,
@@ -691,25 +862,7 @@ internal class GlobalCardReader(private val provider: CheckedProvider) {
         val cards = ArrayList<CardIdentity>(ids.size)
         for (id in ids.sorted()) {
             ensureActive(cancellation)
-            val query =
-                ProviderQuery(
-                    endpoint = ProviderEndpoint.CARD_BY_ID,
-                    endpointId = id,
-                    projection = ProviderQueryShapes.CARD_IDENTITY_PROJECTION,
-                )
-            val card = provider.queryRequired(query, cancellation).use { cursor ->
-                requireProjection(cursor, query)
-                if (!cursor.moveToNext()) throw queryFailed()
-                val result =
-                    CardIdentity(
-                        id = cursor.positiveLong(ProviderColumn.CARD_ID),
-                        noteId = cursor.positiveLong(ProviderColumn.CARD_NOTE_ID),
-                        ordinal = cursor.exactInt(ProviderColumn.CARD_ORDINAL),
-                        deckId = cursor.positiveLong(ProviderColumn.CARD_DECK_ID),
-                    )
-                if (cursor.moveToNext()) throw queryFailed()
-                result
-            }
+            val card = readById(id, cancellation)
             if (
                 card.id != id ||
                     card.noteId != noteId ||

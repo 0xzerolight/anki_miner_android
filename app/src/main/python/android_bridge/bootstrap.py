@@ -10,6 +10,17 @@ from .protocol import BridgeProtocolError, encode_message
 
 _LOCK = threading.Lock()
 _initialized_home: str | None = None
+_engine_modules_before_initialize: tuple[str, ...] | None = None
+
+
+def _loaded_engine_modules() -> tuple[str, ...]:
+    return tuple(
+        sorted(
+            name
+            for name in sys.modules
+            if name == "anki_miner" or name.startswith("anki_miner.")
+        )
+    )
 
 
 def initialize(files_dir: str) -> str:
@@ -29,13 +40,14 @@ def initialize(files_dir: str) -> str:
         raise BridgeProtocolError("invalid_files_dir", "files_dir must be absolute")
     requested = os.path.realpath(files_dir)
 
-    global _initialized_home
+    global _engine_modules_before_initialize, _initialized_home
     with _LOCK:
         if _initialized_home is not None and _initialized_home != requested:
             raise BridgeProtocolError(
                 "already_initialized", "The Python engine home cannot change in-process"
             )
 
+        engine_modules_before = _loaded_engine_modules()
         already_loaded = sys.modules.get("anki_miner.config.paths")
         if already_loaded is not None:
             frozen_home = os.path.realpath(os.fspath(already_loaded.ANKI_MINER_HOME))
@@ -56,6 +68,7 @@ def initialize(files_dir: str) -> str:
                 "home_mismatch",
                 f"Engine home mismatch: requested {requested!r}, observed {observed!r}",
             )
+        _engine_modules_before_initialize = engine_modules_before
         _initialized_home = requested
 
     return encode_message("bootstrap.ready", {"home": requested})
@@ -66,6 +79,17 @@ def initialized_home() -> str | None:
 
     with _LOCK:
         return _initialized_home
+
+
+def engine_modules_before_initialize() -> tuple[str, ...] | None:
+    """Return the engine-module inventory captured before bootstrap imported paths.
+
+    This is a diagnostic seam for the packaged startup acceptance test. ``None``
+    means bootstrap has not completed in this process.
+    """
+
+    with _LOCK:
+        return _engine_modules_before_initialize
 
 
 def require_initialized(expected_home: str | os.PathLike[str] | None = None) -> str:

@@ -67,6 +67,131 @@ class SqliteAnkiMutationStoreInstrumentedTest {
     }
 
     @Test
+    fun versionOneAndTwoUpgradeLosslesslyBackfillsChildlessRoutingObservations() {
+        listOf(1, 2).forEach { oldVersion ->
+            val name = databaseName()
+            val request = createRequest(200 + oldVersion, 1, 1)
+            val providerNoteId = 20_000L + oldVersion
+            var legacyStoredMedia: Pair<JournalRequest, MediaPromotion>? = null
+            try {
+                SqliteAnkiMutationStore(context, name, enforceBackgroundThread = false).use { store ->
+                    prepareCommittedNote(store, request, providerNoteId)
+                    store.advanceNotePhase(request.key, 0, NoteRoutingPhase.NOTE_READBACK_VERIFIED)
+                    store.advanceNotePhase(request.key, 0, NoteRoutingPhase.CARDS_DISCOVERED)
+                    val intent =
+                        store.createRoutingIntents(
+                            request.key,
+                            0,
+                            listOf(
+                                RoutingIntentDraft(
+                                    0,
+                                    providerNoteId + 1,
+                                    providerNoteId,
+                                    0,
+                                    targetDeckId = 2,
+                                    preUpdateDeckId = 2,
+                                ),
+                            ),
+                        ).single()
+                    store.completeChildlessRoutingIntent(
+                        intent.id,
+                        ChildlessRoutingOutcome.Verified(
+                            RoutingCardObservation(
+                                intent.cardId,
+                                intent.noteId,
+                                intent.ordinal,
+                                intent.targetDeckId,
+                            ),
+                            "legacy exact-target childless routing proof",
+                        ),
+                    )
+                    assertEquals(NoteRoutingPhase.ROUTED, store.parent(request.key)?.routingPhase)
+                    if (oldVersion == 1) {
+                        legacyStoredMedia = readyStoredMedia(store, 300 + oldVersion, 1, 1)
+                        val (mediaRequest, _) = requireNotNull(legacyStoredMedia)
+                        assertTrue(
+                            store.cleanupRun(
+                                mediaRequest.key.runId,
+                                acknowledgeAuthorized = true,
+                                frozenDurableRequestIds = listOf(mediaRequest.key.requestId),
+                            ).evidenceAccepted,
+                        )
+                    }
+                }
+
+                SQLiteDatabase.openDatabase(
+                    context.getDatabasePath(name).path,
+                    null,
+                    SQLiteDatabase.OPEN_READWRITE,
+                ).use { db ->
+                    // v1/v2 stored direct VERIFIED routing in routing_intents. Remove only the v3
+                    // normalized observation surface and retain all note/receipt/intent evidence.
+                    db.execSQL("DROP TRIGGER routing_observations_delete_guard")
+                    db.execSQL("DROP TRIGGER routing_observation_insert_guard")
+                    db.execSQL("DROP TRIGGER routing_observation_update_forbidden")
+                    db.execSQL("DROP TABLE routing_observations")
+                    if (oldVersion == 1) {
+                        // v1 allowed a finalized stored claim without the v2 remediation guards.
+                        db.execSQL("DROP TRIGGER remediation_delete_forbidden")
+                        assertEquals(
+                            1,
+                            db.delete(
+                                "remediations",
+                                "kind = ?",
+                                arrayOf(RemediationKind.MEDIA_STORED_UNATTACHED.name),
+                            ),
+                        )
+                        db.execSQL("DROP INDEX one_stored_unattached_remediation_per_claim")
+                        db.execSQL("DROP TRIGGER stored_unattached_remediation_insert_guard")
+                        db.execSQL("DROP TRIGGER stored_unattached_remediation_resolution_guard")
+                        db.execSQL("DROP TRIGGER stored_unattached_claim_guard")
+                        db.execSQL("DROP TRIGGER stored_unattached_claim_resolution")
+                    }
+                    db.execSQL("PRAGMA user_version = $oldVersion")
+                }
+
+                SqliteAnkiMutationStore(context, name, enforceBackgroundThread = false).use { reopened ->
+                    assertEquals(JournalSchema.VERSION.toString(), pragma(reopened.writableDatabase, "user_version"))
+                    val parent = reopened.parent(request.key)
+                    assertEquals(providerNoteId, parent?.activeNoteId)
+                    assertEquals(NoteRoutingPhase.ROUTED, parent?.routingPhase)
+                    assertEquals(1L, count(reopened.writableDatabase, "active_notes"))
+                    assertEquals(1L, count(reopened.writableDatabase, "note_commands"))
+                    assertEquals(1L, count(reopened.writableDatabase, "note_receipts"))
+                    assertEquals(1L, count(reopened.writableDatabase, "routing_intents"))
+                    assertEquals(1L, count(reopened.writableDatabase, "routing_observations"))
+                    reopened.writableDatabase.rawQuery(
+                        """SELECT i.card_id, i.note_id, i.ordinal, i.target_deck_id,
+                                  o.card_id, o.note_id, o.ordinal, o.deck_id
+                           FROM routing_intents i JOIN routing_observations o ON o.intent_id = i.id""".trimIndent(),
+                        null,
+                    ).use { cursor ->
+                        assertTrue(cursor.moveToFirst())
+                        assertEquals(cursor.getLong(0), cursor.getLong(4))
+                        assertEquals(cursor.getLong(1), cursor.getLong(5))
+                        assertEquals(cursor.getInt(2), cursor.getInt(6))
+                        assertEquals(cursor.getLong(3), cursor.getLong(7))
+                        assertFalse(cursor.moveToNext())
+                    }
+                    legacyStoredMedia?.let { (mediaRequest, media) ->
+                        val remediation =
+                            reopened.openRemediations().single {
+                                it.kind == RemediationKind.MEDIA_STORED_UNATTACHED
+                            }
+                        assertEquals(media.claim.id, remediation.claimId)
+                        assertEquals(
+                            MediaClaimState.STORED,
+                            reopened.mediaClaim(mediaRequest.key, media.claim.assetId)?.state,
+                        )
+                    }
+                }
+            } finally {
+                context.deleteDatabase(name)
+            }
+        }
+    }
+
+    @Test
     fun openingDatabaseRejectsMissingRequiredTrigger() {
         val name = databaseName()
         try {
@@ -560,7 +685,14 @@ class SqliteAnkiMutationStoreInstrumentedTest {
                     listOf(RoutingIntentDraft(0, 1_802, 1_801, 0, 2, 2)),
                 ).single()
 
-            val verified = store.verifyRoutingIntentWithoutMutation(intent.id, "exact card identity already in target deck")
+            val verified =
+                store.completeChildlessRoutingIntent(
+                    intent.id,
+                    ChildlessRoutingOutcome.Verified(
+                        RoutingCardObservation(intent.cardId, intent.noteId, intent.ordinal, intent.targetDeckId),
+                        "exact card identity already in target deck",
+                    ),
+                )
 
             assertEquals(RoutingIntentState.VERIFIED, verified.state)
             assertNull(verified.childId)
@@ -1283,7 +1415,18 @@ class SqliteAnkiMutationStoreInstrumentedTest {
                         RoutingIntentDraft(0, 3_203, 3_201, 1, 2, 2),
                     ),
                 )
-            store.verifyRoutingIntentWithoutMutation(intents[0].id, "first card exactly targeted")
+            store.completeChildlessRoutingIntent(
+                intents[0].id,
+                ChildlessRoutingOutcome.Verified(
+                    RoutingCardObservation(
+                        intents[0].cardId,
+                        intents[0].noteId,
+                        intents[0].ordinal,
+                        intents[0].targetDeckId,
+                    ),
+                    "first card exactly targeted",
+                ),
+            )
             assertThrows(SQLiteConstraintException::class.java) {
                 store.writableDatabase.update(
                     "routing_intents",
@@ -1307,7 +1450,18 @@ class SqliteAnkiMutationStoreInstrumentedTest {
                     arrayOf(request.key.runId, request.key.requestId),
                 )
             }
-            store.verifyRoutingIntentWithoutMutation(intents[1].id, "second card exactly targeted")
+            store.completeChildlessRoutingIntent(
+                intents[1].id,
+                ChildlessRoutingOutcome.Verified(
+                    RoutingCardObservation(
+                        intents[1].cardId,
+                        intents[1].noteId,
+                        intents[1].ordinal,
+                        intents[1].targetDeckId,
+                    ),
+                    "second card exactly targeted",
+                ),
+            )
             assertEquals(NoteRoutingPhase.ROUTED, store.parent(request.key)?.routingPhase)
             store.advanceNotePhase(request.key, 0, NoteRoutingPhase.POSTCHECK_VERIFIED)
         }
@@ -2759,7 +2913,13 @@ class SqliteAnkiMutationStoreInstrumentedTest {
                 0,
                 listOf(RoutingIntentDraft(0, providerNoteId + 1, providerNoteId, 0, 2, 2)),
             ).single()
-        store.verifyRoutingIntentWithoutMutation(intent.id, "card already exactly targeted")
+        store.completeChildlessRoutingIntent(
+            intent.id,
+            ChildlessRoutingOutcome.Verified(
+                RoutingCardObservation(intent.cardId, intent.noteId, intent.ordinal, intent.targetDeckId),
+                "card already exactly targeted",
+            ),
+        )
         store.advanceNotePhase(request.key, 0, NoteRoutingPhase.POSTCHECK_VERIFIED)
     }
 
@@ -2799,7 +2959,14 @@ class SqliteAnkiMutationStoreInstrumentedTest {
                 requestIndex,
                 listOf(RoutingIntentDraft(requestIndex, cardId, providerNoteId, 0, 2, 2)),
             )
-        store.verifyRoutingIntentWithoutMutation(intents.single().id, "card $cardId already exactly targeted")
+        val intent = intents.single()
+        store.completeChildlessRoutingIntent(
+            intent.id,
+            ChildlessRoutingOutcome.Verified(
+                RoutingCardObservation(intent.cardId, intent.noteId, intent.ordinal, intent.targetDeckId),
+                "card $cardId already exactly targeted",
+            ),
+        )
         assertEquals(NoteRoutingPhase.ROUTED, store.parent(request.key)?.routingPhase)
         store.advanceNotePhase(request.key, requestIndex, NoteRoutingPhase.POSTCHECK_VERIFIED)
         store.completeVerifiedNote(

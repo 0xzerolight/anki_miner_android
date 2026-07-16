@@ -486,6 +486,58 @@ class AnkiRunStateRegistryTest {
     }
 
     @Test
+    fun `mandatory card reconciliation ignores cancellation but not operation scope`() {
+        val cancellation = MutableAnkiCancellation()
+        val registry = AnkiRunStateRegistry()
+        assertTrue(registry.register(RUN_ID, cancellation))
+        registry.withOwner(RUN_ID) { owner ->
+            val cardScope =
+                ProviderMutationScope(
+                    requestId = REQUEST_ID,
+                    operation = ProviderMutationOperation.CARD_ROUTING,
+                    durableChildId = 3L,
+                    itemIdentity = "42",
+                )
+            val cardCapability = registry.beginProviderEntry(owner, cardScope)
+            cancellation.cancel()
+            assertEquals(
+                ProviderEntryAuthorization.AUTHORIZED,
+                registry.authorizeMandatoryReconciliationEntry(owner, cardCapability, cardScope),
+            )
+            registry.completeProviderEntry(owner, cardCapability, cardScope)
+
+            val mediaScope = mediaScope().copy(requestId = OTHER_REQUEST_ID)
+            val mediaCapability = registry.beginProviderEntry(owner, mediaScope)
+            assertThrows(InvalidCapabilityException::class.java) {
+                registry.authorizeMandatoryReconciliationEntry(owner, mediaCapability, mediaScope)
+            }
+            registry.abortProviderEntry(owner, mediaCapability, mediaScope)
+        }
+    }
+
+    @Test
+    fun `mandatory card reconciliation still denies release`() {
+        val registry = AnkiRunStateRegistry()
+        assertTrue(registry.register(RUN_ID, AnkiCancellation.NONE))
+        registry.withOwner(RUN_ID) { owner ->
+            val scope =
+                ProviderMutationScope(
+                    requestId = REQUEST_ID,
+                    operation = ProviderMutationOperation.CARD_ROUTING,
+                    durableChildId = 3L,
+                    itemIdentity = "42",
+                )
+            val capability = registry.beginProviderEntry(owner, scope)
+            assertEquals(ReleaseState.DEFERRED, registry.release(RUN_ID, true))
+            assertEquals(
+                ProviderEntryAuthorization.RELEASING,
+                registry.authorizeMandatoryReconciliationEntry(owner, capability, scope),
+            )
+            registry.abortProviderEntry(owner, capability, scope)
+        }
+    }
+
+    @Test
     fun `provider entry release before authorization is abortable`() {
         val cleanup = mutableListOf<Set<String>?>()
         val registry = AnkiRunStateRegistry { _, ids -> cleanup += ids }

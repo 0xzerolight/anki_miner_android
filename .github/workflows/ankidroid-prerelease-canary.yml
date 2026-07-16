@@ -1,0 +1,131 @@
+name: AnkiDroid prerelease runtime canary
+
+on:
+  schedule:
+    - cron: "41 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: anki-miner-android-hardware-ci
+  cancel-in-progress: false
+
+env:
+  LANG: C.UTF-8
+  LC_ALL: C.UTF-8
+  PYTHONDONTWRITEBYTECODE: "1"
+  PYTHONIOENCODING: utf-8
+  PYTHONUTF8: "1"
+  TZ: UTC
+  ANKI_MINER_ANDROID_TOOLCHAIN_ROOT: ${{ vars.ANKI_MINER_ANDROID_TOOLCHAIN_ROOT }}
+  ANKI_MINER_ANKIDROID_APK: ${{ vars.ANKI_MINER_ANKIDROID_APK }}
+  ORG_GRADLE_PROJECT_ankiMinerRuntimeManifest: ${{ vars.ANKI_MINER_RUNTIME_MANIFEST }}
+  ORG_GRADLE_PROJECT_ankiMinerS1aManifest: ${{ vars.ANKI_MINER_S1A_MANIFEST }}
+
+jobs:
+  prerelease-runtime:
+    name: Resolve and probe latest official prerelease
+    runs-on: [self-hosted, Linux, X64, anki-miner-android]
+    timeout-minutes: 120
+    steps:
+      - name: Checkout Android source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Verify provisioned runner inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          for variable in \
+              ANKI_MINER_ANDROID_TOOLCHAIN_ROOT \
+              ANKI_MINER_ANKIDROID_APK \
+              ORG_GRADLE_PROJECT_ankiMinerRuntimeManifest \
+              ORG_GRADLE_PROJECT_ankiMinerS1aManifest; do
+            test -n "${!variable}" || {
+              echo "Required self-hosted runner variable is empty: $variable" >&2
+              exit 1
+            }
+          done
+          test -f "$ANKI_MINER_ANKIDROID_APK"
+
+      - name: Resolve and verify the latest official prerelease APK
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          releases="$RUNNER_TEMP/ankidroid-releases.json"
+          manifest="$RUNNER_TEMP/ankidroid-prerelease-manifest.json"
+          apk="$RUNNER_TEMP/ankidroid-prerelease-x86_64.apk"
+          identity="$RUNNER_TEMP/ankidroid-prerelease-identity.json"
+          curl \
+            --proto '=https' \
+            --proto-redir '=https' \
+            --tlsv1.2 \
+            --fail \
+            --location \
+            --retry 3 \
+            --header 'Accept: application/vnd.github+json' \
+            --header "Authorization: Bearer $GH_TOKEN" \
+            --header 'X-GitHub-Api-Version: 2022-11-28' \
+            --output "$releases" \
+            'https://api.github.com/repos/ankidroid/Anki-Android/releases?per_page=30'
+          scripts/resolve_ankidroid_canary.py resolve \
+            --releases "$releases" \
+            --manifest "$manifest"
+          asset_url="$(scripts/resolve_ankidroid_canary.py field \
+            --manifest "$manifest" --name asset.url)"
+          curl \
+            --proto '=https' \
+            --proto-redir '=https' \
+            --tlsv1.2 \
+            --fail \
+            --location \
+            --retry 3 \
+            --output "$apk" \
+            "$asset_url"
+          scripts/resolve_ankidroid_canary.py verify-apk \
+            --manifest "$manifest" \
+            --apk "$apk" \
+            --apkanalyzer apkanalyzer \
+            --apksigner apksigner \
+            >"$identity"
+
+      - name: Build exact app and test artifacts with the stable S2 receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          source scripts/android-env.sh
+          scripts/health.sh \
+            --write-receipt "$RUNNER_TEMP/ankidroid-canary-receipt.json" \
+            --receipt-ankidroid-apk "$ANKI_MINER_ANKIDROID_APK" \
+            --receipt-s2-reset-opt-in
+
+      - name: Run isolated prerelease provider and adapter probe
+        shell: bash
+        env:
+          ANKI_MINER_S2_ALLOW_COLLECTION_RESET: "true"
+          ANKI_MINER_S2_CONNECTED_RUNNER: ${{ github.workspace }}/scripts/run-s2-ankidroid-prerelease-canary.sh
+          ANKI_MINER_ANKIDROID_CANARY_APK: ${{ runner.temp }}/ankidroid-prerelease-x86_64.apk
+          ANKI_MINER_ANKIDROID_CANARY_MANIFEST: ${{ runner.temp }}/ankidroid-prerelease-manifest.json
+        run: |
+          set -euo pipefail
+          source scripts/android-env.sh
+          scripts/run-emulator-tests.sh \
+            --s2 \
+            --receipt "$RUNNER_TEMP/ankidroid-canary-receipt.json"
+
+      - name: Upload version resolution and diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: ankidroid-prerelease-canary-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/ankidroid-releases.json
+            ${{ runner.temp }}/ankidroid-prerelease-manifest.json
+            ${{ runner.temp }}/ankidroid-prerelease-identity.json
+            ${{ runner.temp }}/ankidroid-canary-receipt.json
+            ${{ vars.ANKI_MINER_ANDROID_TOOLCHAIN_ROOT }}/emulator-4k-ankidroid-prerelease.logcat.txt
+          if-no-files-found: warn
+          retention-days: 30

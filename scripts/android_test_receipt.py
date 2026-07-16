@@ -14,15 +14,17 @@ from typing import Any
 import zipfile
 
 
-SCHEMA = "anki-miner-android-test-receipt-v1"
+SCHEMA = "anki-miner-android-test-receipt-v2"
 EXPECTED_APP_ID = "com.ankiminer.android"
 EXPECTED_TEST_APP_ID = "com.ankiminer.android.test"
 EXPECTED_TASKS = [
     ":app:testEmulatorDebugUnitTest",
     ":app:lintEmulatorDebug",
-    ":app:lintDeviceRelease",
     ":app:assembleEmulatorDebug",
     ":app:assembleEmulatorDebugAndroidTest",
+]
+EXPECTED_RELEASE_TASKS = [
+    ":app:lintDeviceRelease",
     ":app:assembleDeviceRelease",
     ":app:bundleDeviceRelease",
 ]
@@ -139,14 +141,6 @@ def _artifact_identity(name: str, raw_path: str) -> dict[str, Any]:
         if identity["application_id"] != EXPECTED_TEST_APP_ID:
             raise ReceiptError("emulator test APK package identity is wrong")
         identity["variant"] = "emulatorDebugAndroidTest"
-    elif name == "app_device_release":
-        if identity["application_id"] != EXPECTED_APP_ID:
-            raise ReceiptError("device release APK package identity is wrong")
-        if identity["abis"] != ["arm64-v8a"]:
-            raise ReceiptError("device release APK must contain only arm64-v8a native code")
-        identity["variant"] = "deviceRelease"
-    elif name == "bundle_device_release":
-        identity["variant"] = "deviceRelease"
     else:
         raise ReceiptError(f"unknown artifact name: {name}")
     return identity
@@ -200,8 +194,6 @@ def _parse_artifacts(values: list[str]) -> dict[str, dict[str, Any]]:
     required = {
         "app_emulator_debug",
         "test_emulator_debug",
-        "app_device_release",
-        "bundle_device_release",
     }
     if set(artifacts) != required:
         raise ReceiptError(f"artifact mappings must be exactly: {sorted(required)}")
@@ -210,7 +202,8 @@ def _parse_artifacts(values: list[str]) -> dict[str, dict[str, Any]]:
 
 def write_receipt(args: argparse.Namespace) -> None:
     repo_root = Path(args.repo_root).resolve(strict=True)
-    if args.task != EXPECTED_TASKS:
+    allowed_tasks = (EXPECTED_TASKS, EXPECTED_TASKS + EXPECTED_RELEASE_TASKS)
+    if args.task not in allowed_tasks:
         raise ReceiptError("receipt tasks do not match the authoritative host health gate")
     if args.gradle_argument != EXPECTED_GRADLE_ARGUMENTS:
         raise ReceiptError("receipt Gradle arguments do not match the resource-safe gate")
@@ -291,10 +284,12 @@ def validate_receipt(args: argparse.Namespace) -> dict[str, Any]:
         raise ReceiptError("receipt belongs to a different checkout")
     if payload["source"] != _source_identity(repo_root):
         raise ReceiptError("receipt source fingerprint is stale")
-    if payload.get("gradle") != {
-        "tasks": EXPECTED_TASKS,
-        "arguments": EXPECTED_GRADLE_ARGUMENTS,
-    }:
+    gradle = payload.get("gradle")
+    if (
+        not isinstance(gradle, dict)
+        or gradle.get("tasks") not in (EXPECTED_TASKS, EXPECTED_TASKS + EXPECTED_RELEASE_TASKS)
+        or gradle.get("arguments") != EXPECTED_GRADLE_ARGUMENTS
+    ):
         raise ReceiptError("receipt did not run the authoritative resource-safe host gate")
     if payload.get("connected") != {
         "application_id": EXPECTED_APP_ID,

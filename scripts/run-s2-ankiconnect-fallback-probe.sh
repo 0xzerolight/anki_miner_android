@@ -80,6 +80,8 @@ mkdir -p "$scratch"
 hierarchy="$scratch/window.xml"
 version_response="$scratch/version.json"
 decks_response="$scratch/decks.json"
+store_response="$scratch/store-media.json"
+media_readback="$scratch/media-readback.png"
 device_hierarchy=/sdcard/anki-miner-ankiconnect-window.xml
 forwarded=false
 cleanup() {
@@ -93,7 +95,8 @@ cleanup() {
         adb -s "$SERIAL" logcat -d >"$scratch/failure-logcat.txt" 2>&1 || true
         echo "Fallback failure evidence retained in $scratch" >&2
     else
-        rm -f "$hierarchy" "$version_response" "$decks_response"
+        rm -f "$hierarchy" "$version_response" "$decks_response" \
+            "$store_response" "$media_readback"
     fi
 }
 trap 'status=$?; cleanup "$status"; exit "$status"' EXIT
@@ -160,8 +163,32 @@ curl --noproxy '*' --fail --silent --show-error \
     --output "$decks_response" \
     "http://127.0.0.1:$HOST_PORT/" \
     || fail "fallback deckNames request failed"
-"$SCRIPT_DIR/verify_ankiconnect_probe_response.py" \
-    --version "$version_response" --decks "$decks_response" \
+curl --noproxy '*' --fail --silent --show-error \
+    --max-time "$HTTP_TIMEOUT_SECONDS" \
+    --header 'Content-Type: application/json' \
+    --data '{"action":"storeMediaFile","version":6,"params":{"filename":"anki_miner_fallback_probe.png","data":"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGMAAQAAAAUAAVnI4XQAAAAASUVORK5CYII="}}' \
+    --output "$store_response" \
+    "http://127.0.0.1:$HOST_PORT/" \
+    || fail "fallback storeMediaFile request failed"
+
+# AnkiconnectAndroid 1.15 implements storeMediaFile but has no retrieveMediaFile
+# route. Read the exact provider-returned basename from the disposable emulator
+# collection instead; the response validator rejects path characters first.
+media_filename="$("$SCRIPT_DIR/verify_ankiconnect_probe_response.py" \
+    --store-media "$store_response" --print-stored-filename)" \
+    || fail "fallback storeMediaFile returned an unsafe or unexpected filename"
+timeout --kill-after=2s "${ADB_TIMEOUT_SECONDS}s" \
+    adb -s "$SERIAL" exec-out cat \
+        "/storage/emulated/0/AnkiDroid/collection.media/$media_filename" \
+        >"$media_readback" \
+    || fail "cannot read back the stored fallback media"
+verified_filename="$("$SCRIPT_DIR/verify_ankiconnect_probe_response.py" \
+    --version "$version_response" \
+    --decks "$decks_response" \
+    --store-media "$store_response" \
+    --media-readback "$media_readback")" \
     || fail "fallback response contract changed"
+[[ "$verified_filename" == "$media_filename" ]] \
+    || fail "fallback response and readback filename diverged"
 
 echo "S2 AnkiconnectAndroid 1.15 fallback capability probe: OK"

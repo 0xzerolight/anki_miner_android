@@ -119,7 +119,7 @@
       ],
       "properties": {
         "corpus_sha256": {"$ref": "#/$defs/sha256"},
-        "japanese_character_count": {"type": "integer", "minimum": 1},
+        "japanese_character_count": {"type": "integer", "minimum": 50000},
         "elapsed_ms": {"type": "number", "exclusiveMinimum": 0},
         "characters_per_second": {"type": "number", "exclusiveMinimum": 0}
       }

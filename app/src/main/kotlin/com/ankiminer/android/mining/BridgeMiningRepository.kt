@@ -1,6 +1,7 @@
 package com.ankiminer.android.mining
 
 import com.ankiminer.android.anki.protocol.ReleaseState
+import com.ankiminer.android.data.RuntimeWorkCoordinator
 import com.ankiminer.android.engine.BridgeJsonCodec
 import com.ankiminer.android.engine.BridgeMessage
 import com.ankiminer.android.engine.EngineCallbacks
@@ -30,6 +31,10 @@ internal fun interface MiningForegroundStarter {
     ): CompletableFuture<MiningForegroundLease>
 }
 
+internal fun interface MiningConfigSnapshotResolver {
+    fun resolve(input: VideoMiningInput): MiningConfigSnapshot
+}
+
 /**
  * Process-scoped coordinator for the one parked Python engine invocation allowed at a time.
  *
@@ -47,6 +52,12 @@ internal class BridgeMiningRepository(
     private val runExecutor: MiningTaskExecutor,
     private val controlExecutor: MiningTaskExecutor,
     private val admissionGate: MiningRunAdmissionGate = AlwaysReadyMiningRunAdmissionGate,
+    private val runtimeWorkCoordinator: RuntimeWorkCoordinator = RuntimeWorkCoordinator(),
+    private val configSnapshotResolver: MiningConfigSnapshotResolver =
+        MiningConfigSnapshotResolver {
+            MiningConfigSnapshot(settings = emptyMap(), androidTtsEnabled = false)
+        },
+    private val resourceStartupReady: () -> Boolean = { true },
     private val cancellationTokenFactory: MiningCancellationTokenFactory =
         SecureMiningCancellationTokenFactory(),
     private val foregroundStartTimeoutSeconds: Long = 15,
@@ -70,6 +81,7 @@ internal class BridgeMiningRepository(
         val generation: Long,
         val input: VideoMiningInput,
         val cancellationToken: MiningCancellationToken,
+        val workLease: RuntimeWorkCoordinator.Lease,
         val cancellation: CoordinatorAnkiCancellation = CoordinatorAnkiCancellation(),
     ) {
         var phase = Phase.PREPARING
@@ -83,6 +95,7 @@ internal class BridgeMiningRepository(
         var foregroundLease: MiningForegroundLease? = null
         var foregroundClosingExpected = false
         var sourcesDetached = false
+        var configSnapshot: MiningConfigSnapshot? = null
     }
 
     private val monitor = Any()
@@ -100,12 +113,17 @@ internal class BridgeMiningRepository(
     override fun detachActiveSources(input: VideoMiningInput): Boolean =
         synchronized(monitor) {
             val run = active ?: return@synchronized false
-            if (run.input != input || run.sourcesDetached || run.phase == Phase.FINALIZING) {
+            if (
+                run.input.video != input.video ||
+                run.input.subtitle != input.subtitle ||
+                run.sourcesDetached ||
+                run.phase == Phase.FINALIZING
+            ) {
                 return@synchronized false
             }
             run.sourcesDetached = true
             true
-    }
+        }
 
     override suspend fun startVideo(input: VideoMiningInput) {
         val generation: Long
@@ -118,8 +136,18 @@ internal class BridgeMiningRepository(
                 mutableState.value = fault.toFailed(runId = null, result = null)
                 return
             }
+            if (!resourceStartupReady()) {
+                throw MiningCommandException(
+                    "Resource recovery must finish before a mining run starts",
+                )
+            }
+            val workLease =
+                runtimeWorkCoordinator.tryAcquire(RuntimeWorkCoordinator.Kind.MINING)
+                    ?: throw MiningCommandException(
+                        "Resource setup must finish before a mining run starts",
+                    )
             generation = nextGeneration++
-            active = ActiveRun(generation, input, cancellationToken)
+            active = ActiveRun(generation, input, cancellationToken, workLease)
             mutableState.value =
                 MiningRunState.Starting(
                     runId = null,
@@ -216,6 +244,14 @@ internal class BridgeMiningRepository(
         try {
             val run = requireActive(generation)
             if (run.cancellation.isCancelled()) return
+            run.configSnapshot =
+                try {
+                    configSnapshotResolver.resolve(run.input)
+                } catch (failure: Exception) {
+                    recordFault(generation, "Could not capture an immutable settings snapshot")
+                    throw failure
+                }
+            if (run.cancellation.isCancelled()) return
             val admission =
                 try {
                     admissionGate.evaluate(run.cancellation)
@@ -276,7 +312,7 @@ internal class BridgeMiningRepository(
                             audioTrackOverride = null,
                             cacheDir = runtimePaths.cacheDir.canonicalPath,
                             nativeLibraryDir = runtimePaths.nativeLibraryDir.canonicalPath,
-                            configSnapshot = MiningConfigSnapshot(settings = emptyMap(), androidTtsEnabled = false),
+                            configSnapshot = requireNotNull(run.configSnapshot),
                         ),
                     ),
                     RunCallbacks(generation),
@@ -387,6 +423,7 @@ internal class BridgeMiningRepository(
     ) {
         val runId: String?
         val lease: MiningForegroundLease?
+        val runtimeWorkLease: RuntimeWorkCoordinator.Lease
         val cancelled: Boolean
         var terminalForState = terminal
         synchronized(monitor) {
@@ -395,45 +432,51 @@ internal class BridgeMiningRepository(
             run.foregroundClosingExpected = true
             runId = run.runId
             lease = run.foregroundLease
+            runtimeWorkLease = run.workLease
             cancelled = run.cancelRequested || run.cancellation.isCancelled()
             if (terminalForState == null) terminalForState = run.terminalCallback
         }
-
-        if (runId != null) releaseAnkiFallback(generation, runId)
         try {
-            inputOwner?.close()
-        } catch (_: Exception) {
-            recordFault(generation, "Selected-media cleanup failed")
-        }
-        try {
-            lease?.close()
-        } catch (_: RuntimeException) {
-            recordFault(generation, "Background mining service cleanup failed")
-        }
+            if (runId != null) releaseAnkiFallback(generation, runId)
+            try {
+                inputOwner?.close()
+            } catch (_: Exception) {
+                recordFault(generation, "Selected-media cleanup failed")
+            }
+            try {
+                lease?.close()
+            } catch (_: RuntimeException) {
+                recordFault(generation, "Background mining service cleanup failed")
+            }
 
-        val detachedInput: VideoMiningInput?
-        val runFault: ProtocolFault?
-        synchronized(monitor) {
-            val run = activeFor(generation) ?: return
-            detachedInput = run.input.takeIf { run.sourcesDetached }
-            runFault = run.stickyFault
-            active = null
-        }
-        var detachedCleanupFault: ProtocolFault? = null
-        if (detachedInput != null) {
-            val videoFault = releaseDetachedSource(detachedInput.video.uri)
-            val subtitleFault = releaseDetachedSource(detachedInput.subtitle.uri)
-            detachedCleanupFault = videoFault ?: subtitleFault
-        }
+            val detachedInput: VideoMiningInput?
+            val runFault: ProtocolFault?
+            synchronized(monitor) {
+                val run = activeFor(generation) ?: return
+                detachedInput = run.input.takeIf { run.sourcesDetached }
+                runFault = run.stickyFault
+                active = null
+            }
+            var detachedCleanupFault: ProtocolFault? = null
+            if (detachedInput != null) {
+                val videoFault = releaseDetachedSource(detachedInput.video.uri)
+                val subtitleFault = releaseDetachedSource(detachedInput.subtitle.uri)
+                detachedCleanupFault = videoFault ?: subtitleFault
+            }
 
-        synchronized(monitor) {
-            mutableState.value =
-                terminalState(
-                    runId = runId,
-                    terminal = terminalForState,
-                    fault = runFault ?: detachedCleanupFault,
-                    cancelled = cancelled,
-                )
+            synchronized(monitor) {
+                mutableState.value =
+                    terminalState(
+                        runId = runId,
+                        terminal = terminalForState,
+                        fault = runFault ?: detachedCleanupFault,
+                        cancelled = cancelled,
+                    )
+            }
+        } finally {
+            // The lease spans provider cleanup, detached SAF cleanup, and terminal publication.
+            // Resource mutation cannot race any portion of the immutable job lifecycle.
+            runtimeWorkLease.close()
         }
     }
 

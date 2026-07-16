@@ -574,6 +574,28 @@ def test_boundary_routes_strict_resource_catalog_and_operation_cancel(
         assert operation.cancelled.is_set()
 
 
+def test_resource_cancel_is_sticky_across_pre_registration_race() -> None:
+    registry = resources._OperationRegistry()
+
+    assert registry.cancel("future-operation") is True
+    with registry.begin("future-operation") as operation:
+        assert operation.cancelled.is_set()
+        with pytest.raises(BridgeProtocolError) as cancelled:
+            operation.check()
+        assert cancelled.value.code == "resource_operation_cancelled"
+
+    # Pending tombstones are bounded, and evicting an ancient never-started ID
+    # cannot cancel an unrelated newly registered operation.
+    for index in range(resources._MAX_PENDING_RESOURCE_CANCELLATIONS + 1):
+        assert registry.cancel(f"pending-{index}") is True
+    with registry.begin("pending-0") as evicted:
+        assert not evicted.cancelled.is_set()
+    with registry.begin(
+        f"pending-{resources._MAX_PENDING_RESOURCE_CANCELLATIONS}"
+    ) as newest:
+        assert newest.cancelled.is_set()
+
+
 def test_resource_bridge_has_no_eager_engine_imports() -> None:
     source = Path(resources.__file__).read_text(encoding="utf-8")
     prefix = source.split("def install_unidic", 1)[0]
