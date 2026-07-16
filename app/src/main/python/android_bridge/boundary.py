@@ -48,6 +48,14 @@ def _dispatch_validated(
         "curation.response",
         "bridge.shutdown.request",
         "mining.video.run",
+        "resource.catalog.get",
+        "resource.cleanup",
+        "resource.dictionary.import",
+        "resource.dictionary.list",
+        "resource.dictionary.lookup",
+        "resource.operation.cancel",
+        "resource.unidic.install",
+        "tokenizer.configure",
     }
     if request_type not in supported_after_bootstrap:
         raise BridgeProtocolError(
@@ -57,6 +65,30 @@ def _dispatch_validated(
     from .bootstrap import require_initialized
 
     require_initialized()
+
+    if request_type.startswith("resource."):
+        from . import resources
+
+        handlers = {
+            "resource.catalog.get": resources.catalog_response,
+            "resource.cleanup": resources.cleanup_resources,
+            "resource.dictionary.import": resources.import_dictionary,
+            "resource.dictionary.list": resources.list_dictionaries,
+            "resource.dictionary.lookup": resources.lookup_dictionary,
+            "resource.operation.cancel": resources.cancel_operation,
+            "resource.unidic.install": resources.install_unidic,
+        }
+        return handlers[request_type](payload)
+
+    if request_type == "tokenizer.configure":
+        _exact_payload(
+            payload,
+            {"dicDir", "resourceId", "treeSha256", "backend"},
+            error_code="invalid_tokenizer_request",
+        )
+        from .tokenizer_runtime import configure_tokenizer
+
+        return configure_tokenizer(payload)
 
     if request_type == "mining.video.run":
         if callbacks is None:

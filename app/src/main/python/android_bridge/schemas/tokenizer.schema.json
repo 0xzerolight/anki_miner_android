@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://anki-miner.app/schemas/android-bridge/v1/tokenizer.json",
+  "title": "Anki Miner Android tokenizer runtime messages",
+  "$comment": "This schema validates complete bridge envelopes so the configure request and ready response cannot exchange payloads. protocol.decode_envelope first rejects duplicate keys, non-finite numbers, integers outside signed 64-bit, invalid Unicode scalars, and overlong numeric tokens. Runtime registration additionally canonicalizes dicDir and verifies the complete dictionary tree against treeSha256 before process-global backend configuration.",
+  "oneOf": [
+    {"$ref": "#/$defs/configureMessage"},
+    {"$ref": "#/$defs/readyMessage"}
+  ],
+  "$defs": {
+    "absolutePath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!.*\\u0000)/"
+    },
+    "resourceId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,126}[A-Za-z0-9_-])?$"
+    },
+    "treeSha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "nonNegativeSigned64": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9223372036854775807
+    },
+    "configurePayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["dicDir", "resourceId", "treeSha256", "backend"],
+      "properties": {
+        "dicDir": {"$ref": "#/$defs/absolutePath"},
+        "resourceId": {"$ref": "#/$defs/resourceId"},
+        "treeSha256": {"$ref": "#/$defs/treeSha256"},
+        "backend": {"const": "s1a"}
+      }
+    },
+    "readyPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "backend",
+        "resourceId",
+        "dicDir",
+        "treeSha256",
+        "fileCount",
+        "totalBytes"
+      ],
+      "properties": {
+        "backend": {"const": "s1a"},
+        "resourceId": {"$ref": "#/$defs/resourceId"},
+        "dicDir": {"$ref": "#/$defs/absolutePath"},
+        "treeSha256": {"$ref": "#/$defs/treeSha256"},
+        "fileCount": {"$ref": "#/$defs/nonNegativeSigned64"},
+        "totalBytes": {"$ref": "#/$defs/nonNegativeSigned64"}
+      }
+    },
+    "configureMessage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "type", "payload"],
+      "properties": {
+        "schemaVersion": {"const": 1},
+        "type": {"const": "tokenizer.configure"},
+        "payload": {"$ref": "#/$defs/configurePayload"}
+      }
+    },
+    "readyMessage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "type", "payload"],
+      "properties": {
+        "schemaVersion": {"const": 1},
+        "type": {"const": "tokenizer.ready"},
+        "payload": {"$ref": "#/$defs/readyPayload"}
+      }
+    }
+  }
+}

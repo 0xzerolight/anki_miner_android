@@ -1,16 +1,12 @@
 package com.ankiminer.android.tokenizer
 
 import android.content.Context
-import android.os.ParcelFileDescriptor.AutoCloseInputStream
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.ankiminer.android.BuildConfig
-import com.chaquo.python.Python
-import com.chaquo.python.android.AndroidPlatform
+import com.ankiminer.android.PythonInstrumentationRuntime
 import java.io.File
-import java.io.FileOutputStream
-import java.util.zip.ZipInputStream
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
@@ -50,68 +46,6 @@ class MecabNativeTokenizerInstrumentedTest {
             ?.let { expected -> assertEquals(expected, taggerPath) }
     }
 
-    private fun stageExternalDictionary(expectedHash: String): File {
-        val parent = File(context.filesDir, "test-assets").apply { mkdirs() }
-        val destination = File(parent, "unidic-$expectedHash")
-        if (destination.isDirectory) {
-            return destination
-        }
-        val staging = File(parent, ".unidic-$expectedHash.staging")
-        staging.deleteRecursively()
-        check(staging.mkdirs()) { "could not create UniDic staging directory" }
-        val rootPrefix = staging.canonicalPath + File.separator
-        var entryCount = 0
-        var totalBytes = 0L
-        val names = mutableSetOf<String>()
-        val descriptor =
-            InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand(
-                "cat ${BuildConfig.S1B_TEST_UNIDIC_ARCHIVE}",
-            )
-        ZipInputStream(AutoCloseInputStream(descriptor).buffered()).use { archive ->
-            while (true) {
-                val entry = archive.nextEntry ?: break
-                check(entry.name.isNotBlank() && names.add(entry.name)) {
-                    "external UniDic ZIP has an invalid or duplicate entry"
-                }
-                val target = File(staging, entry.name).canonicalFile
-                check(target.path.startsWith(rootPrefix)) {
-                    "external UniDic ZIP escapes its staging directory"
-                }
-                if (entry.isDirectory) {
-                    check(target.mkdirs() || target.isDirectory)
-                } else {
-                    target.parentFile?.let { parent ->
-                        check(parent.mkdirs() || parent.isDirectory)
-                    }
-                    FileOutputStream(target).use { output ->
-                        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-                        while (true) {
-                            val count = archive.read(buffer)
-                            if (count < 0) break
-                            output.write(buffer, 0, count)
-                            totalBytes += count
-                            check(totalBytes <= 512L * 1024 * 1024) {
-                                "external UniDic ZIP exceeds the test size limit"
-                            }
-                        }
-                    }
-                }
-                entryCount += 1
-                check(entryCount <= 512) {
-                    "external UniDic ZIP has too many entries"
-                }
-                archive.closeEntry()
-            }
-        }
-        check(entryCount > 0) {
-            "external UniDic ZIP is missing; run the emulator provisioning script"
-        }
-        check(staging.renameTo(destination)) {
-            "could not publish the versioned UniDic test directory"
-        }
-        return destination
-    }
-
     @Test
     fun nativeBoundaryRejectsIncompleteArgvWithoutExposingHandles() {
         val error =
@@ -134,18 +68,16 @@ class MecabNativeTokenizerInstrumentedTest {
                 .getJSONObject("data")
                 .getJSONObject("assets_sha256")
                 .getString("unidic_dicdir")
-        val dicdir = stageExternalDictionary(expectedHash)
-        if (!Python.isStarted()) {
-            Python.start(AndroidPlatform(context))
-        }
-        Python.getInstance()
-            .getModule("android_bridge.bootstrap")
-            .callAttr("initialize", context.filesDir.absolutePath)
+        val dicdir =
+            PythonInstrumentationRuntime.stageExternalUniDic(
+                expectedHash,
+                BuildConfig.S1B_TEST_UNIDIC_ARCHIVE,
+            )
+        val python = PythonInstrumentationRuntime.awaitReady()
 
         val result =
             JSONObject(
-                Python.getInstance()
-                    .getModule("tokenizer_s1b_instrumented")
+                python.getModule("tokenizer_s1b_instrumented")
                     .callAttr("run", goldenJson, dicdir.absolutePath)
                     .toString(),
             )

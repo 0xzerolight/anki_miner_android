@@ -1600,6 +1600,15 @@ internal object UnicodeContractV151 {
         return result.toIntArray()
     }
 
+    /** Exact Unicode 15.1 NFC normalization, or null for an invalid UTF-16 scalar sequence. */
+    fun normalizeNfc(value: String): String? {
+        val values = ArrayList<Int>()
+        if (!forEachScalar(value) { values.add(it) }) return null
+        return buildString {
+            for (codePoint in normalizedNfc(values.toIntArray())) appendCodePoint(codePoint)
+        }
+    }
+
     fun isNfc(value: String): Boolean {
         val values = ArrayList<Int>()
         if (!forEachScalar(value) { values.add(it) }) return false

@@ -29,12 +29,8 @@ class AndroidTestReceiptTest(unittest.TestCase):
         self.runtime_manifest.write_text("{}\n", encoding="utf-8")
         self.app_apk = self.root / "app-emulator-debug.apk"
         self.test_apk = self.root / "app-emulator-debug-androidTest.apk"
-        self.release_apk = self.root / "app-device-release-unsigned.apk"
-        self.release_aab = self.root / "app-device-release.aab"
         self._write_zip(self.app_apk, "lib/x86_64/libprobe.so")
         self._write_zip(self.test_apk, "classes.dex")
-        self._write_zip(self.release_apk, "lib/arm64-v8a/libprobe.so")
-        self.release_aab.write_bytes(b"bundle")
         self.receipt_path = self.root / "receipt.json"
 
     def tearDown(self) -> None:
@@ -62,8 +58,6 @@ class AndroidTestReceiptTest(unittest.TestCase):
             artifact=[
                 f"app_emulator_debug={self.app_apk}",
                 f"test_emulator_debug={self.test_apk}",
-                f"app_device_release={self.release_apk}",
-                f"bundle_device_release={self.release_aab}",
             ],
             ankidroid_apk=None,
             s2_reset_opt_in=False,
@@ -141,6 +135,22 @@ class AndroidTestReceiptTest(unittest.TestCase):
             self.assertRaisesRegex(receipt.ReceiptError, "authoritative host health"),
         ):
             receipt.write_receipt(args)
+
+    def test_receipt_may_record_separately_gated_release_tasks(self) -> None:
+        args = self._write_args()
+        args.task = receipt.EXPECTED_TASKS + receipt.EXPECTED_RELEASE_TASKS
+        with (
+            mock.patch.object(receipt, "_source_identity", return_value=SOURCE),
+            mock.patch.object(
+                receipt,
+                "_apk_manifest_value",
+                side_effect=self._manifest_value,
+            ),
+            redirect_stdout(io.StringIO()),
+        ):
+            receipt.write_receipt(args)
+        payload = json.loads(self.receipt_path.read_text(encoding="utf-8"))
+        self.assertEqual(args.task, payload["gradle"]["tasks"])
 
     def test_s2_identity_binds_path_hash_certificate_version_and_reset(self) -> None:
         apk = self.root / "AnkiDroid.apk"

@@ -1,0 +1,160 @@
+{
+  "version": 1,
+  "valid": [
+    {
+      "name": "settled S1a configuration request",
+      "message": {
+        "schemaVersion": 1,
+        "type": "tokenizer.configure",
+        "payload": {
+          "dicDir": "/data/user/0/com.ankiminer.android/files/tokenizer/unidic-lite-1.0.8",
+          "resourceId": "unidic-lite-1.0.8",
+          "treeSha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+          "backend": "s1a"
+        }
+      }
+    },
+    {
+      "name": "canonical tokenizer readiness response",
+      "message": {
+        "schemaVersion": 1,
+        "type": "tokenizer.ready",
+        "payload": {
+          "backend": "s1a",
+          "resourceId": "unidic-lite-1.0.8",
+          "dicDir": "/data/user/0/com.ankiminer.android/files/tokenizer/unidic-lite-1.0.8",
+          "treeSha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+          "fileCount": 17,
+          "totalBytes": 261392384
+        }
+      }
+    }
+  ],
+  "invalid": [
+    {
+      "name": "configure type cannot borrow ready payload",
+      "message": {
+        "schemaVersion": 1,
+        "type": "tokenizer.configure",
+        "payload": {
+          "backend": "s1a",
+          "resourceId": "unidic-lite-1.0.8",
+          "dicDir": "/tokenizer/unidic",
+          "treeSha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+          "fileCount": 17,
+          "totalBytes": 261392384
+        }
+      }
+    },
+    {
+      "name": "configure fields are exact",
+      "message": {
+        "schemaVersion": 1,
+        "type": "tokenizer.configure",
+        "payload": {
+          "dicDir": "/tokenizer/unidic",
+          "resourceId": "unidic-lite-1.0.8",
+          "treeSha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+          "backend": "s1a",
+          "unknown": true
+        }
+      }
+    },
+    {
+      "name": "dictionary path must be absolute",
+      "message": {
+        "schemaVersion": 1,
+        "type": "tokenizer.configure",
+        "payload": {
+          "dicDir": "tokenizer/unidic",
+          "resourceId": "unidic-lite-1.0.8",
+          "treeSha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+          "backend": "s1a"
+        }
+      }
+    },
+    {
+      "name": "resource identity syntax is closed",
+      "message": {
+        "schemaVersion": 1,
+        "type": "tokenizer.configure",
+        "payload": {
+          "dicDir": "/tokenizer/unidic",
+          "resourceId": "unidic lite.",
+          "treeSha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+          "backend": "s1a"
+        }
+      }
+    },
+    {
+      "name": "tree hash is lowercase SHA-256",
+      "message": {
+        "schemaVersion": 1,
+        "type": "tokenizer.configure",
+        "payload": {
+          "dicDir": "/tokenizer/unidic",
+          "resourceId": "unidic-lite-1.0.8",
+          "treeSha256": "ABCDEF0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+          "backend": "s1a"
+        }
+      }
+    },
+    {
+      "name": "only the settled S1a backend is accepted",
+      "message": {
+        "schemaVersion": 1,
+        "type": "tokenizer.configure",
+        "payload": {
+          "dicDir": "/tokenizer/unidic",
+          "resourceId": "unidic-lite-1.0.8",
+          "treeSha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+          "backend": "s1b"
+        }
+      }
+    },
+    {
+      "name": "ready fields are exact",
+      "message": {
+        "schemaVersion": 1,
+        "type": "tokenizer.ready",
+        "payload": {
+          "backend": "s1a",
+          "resourceId": "unidic-lite-1.0.8",
+          "dicDir": "/tokenizer/unidic",
+          "treeSha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+          "fileCount": 17,
+          "totalBytes": 261392384,
+          "unknown": true
+        }
+      }
+    },
+    {
+      "name": "ready counts are nonnegative signed 64 bit",
+      "message": {
+        "schemaVersion": 1,
+        "type": "tokenizer.ready",
+        "payload": {
+          "backend": "s1a",
+          "resourceId": "unidic-lite-1.0.8",
+          "dicDir": "/tokenizer/unidic",
+          "treeSha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+          "fileCount": -1,
+          "totalBytes": 9223372036854775808
+        }
+      }
+    },
+    {
+      "name": "unsupported tokenizer message type is rejected",
+      "message": {
+        "schemaVersion": 1,
+        "type": "tokenizer.preview",
+        "payload": {
+          "dicDir": "/tokenizer/unidic",
+          "resourceId": "unidic-lite-1.0.8",
+          "treeSha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+          "backend": "s1a"
+        }
+      }
+    }
+  ]
+}

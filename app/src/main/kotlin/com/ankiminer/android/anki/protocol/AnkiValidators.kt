@@ -565,13 +565,42 @@ internal object AnkiValidators {
         return stats
     }
 
-    private fun validateProviderFilename(actual: String, asset: MediaAsset) {
-        if (actual == asset.requestedFilename) return
+    fun validateProviderFilename(actual: String, asset: MediaAsset) {
+        validateProviderFilename(
+            actual = actual,
+            requested = asset.requestedFilename,
+            preferred = asset.preferredName,
+        )
+    }
+
+    /**
+     * Validates provider filename attribution from the durable media fields available at recovery.
+     *
+     * Recovery deliberately does not reconstruct a protocol [MediaAsset]. The requested and
+     * preferred names are nevertheless sufficient to prove that a returned filename belongs to
+     * the original namespace. Accepting either preferred-name derivation is safe here: the durable
+     * request already fixes the media purpose, while this overload's job is to reject corrupted or
+     * unrelated name triples before a persisted provider receipt is committed.
+     */
+    fun validateProviderFilename(
+        actual: String,
+        requested: String,
+        preferred: String,
+    ) {
+        validateMediaBasename(requested, actual = false)
+        validatePreferredFilename(preferred)
+        val expectedCardPreferred = cardPreferredName(requested)
+        val expectedDictionaryPreferred = "anki_miner_dict_${sha256Hex(requested)}"
+        if (preferred != expectedCardPreferred && preferred != expectedDictionaryPreferred) {
+            failValue("preferred media name is inconsistent with the requested filename")
+        }
+        if (actual == requested) return
+        validateMediaBasename(actual, actual = true)
         validatePreferredFilename(actual)
         val suffixIndex = actual.lastIndexOf('.')
         if (suffixIndex <= 0 || suffixIndex == actual.lastIndex) failValue("provider media filename has no extension")
         val stem = actual.substring(0, suffixIndex)
-        if (!stem.startsWith("${asset.preferredName}_")) failValue("provider media filename is unrelated to its request")
+        if (!stem.startsWith("${preferred}_")) failValue("provider media filename is unrelated to its request")
     }
 
     private fun cardPreferredName(filename: String): String {

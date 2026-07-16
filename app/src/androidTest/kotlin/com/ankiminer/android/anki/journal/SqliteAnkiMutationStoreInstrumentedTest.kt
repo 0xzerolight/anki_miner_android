@@ -67,6 +67,131 @@ class SqliteAnkiMutationStoreInstrumentedTest {
     }
 
     @Test
+    fun versionOneAndTwoUpgradeLosslesslyBackfillsChildlessRoutingObservations() {
+        listOf(1, 2).forEach { oldVersion ->
+            val name = databaseName()
+            val request = createRequest(200 + oldVersion, 1, 1)
+            val providerNoteId = 20_000L + oldVersion
+            var legacyStoredMedia: Pair<JournalRequest, MediaPromotion>? = null
+            try {
+                SqliteAnkiMutationStore(context, name, enforceBackgroundThread = false).use { store ->
+                    prepareCommittedNote(store, request, providerNoteId)
+                    store.advanceNotePhase(request.key, 0, NoteRoutingPhase.NOTE_READBACK_VERIFIED)
+                    store.advanceNotePhase(request.key, 0, NoteRoutingPhase.CARDS_DISCOVERED)
+                    val intent =
+                        store.createRoutingIntents(
+                            request.key,
+                            0,
+                            listOf(
+                                RoutingIntentDraft(
+                                    0,
+                                    providerNoteId + 1,
+                                    providerNoteId,
+                                    0,
+                                    targetDeckId = 2,
+                                    preUpdateDeckId = 2,
+                                ),
+                            ),
+                        ).single()
+                    store.completeChildlessRoutingIntent(
+                        intent.id,
+                        ChildlessRoutingOutcome.Verified(
+                            RoutingCardObservation(
+                                intent.cardId,
+                                intent.noteId,
+                                intent.ordinal,
+                                intent.targetDeckId,
+                            ),
+                            "legacy exact-target childless routing proof",
+                        ),
+                    )
+                    assertEquals(NoteRoutingPhase.ROUTED, store.parent(request.key)?.routingPhase)
+                    if (oldVersion == 1) {
+                        legacyStoredMedia = readyStoredMedia(store, 300 + oldVersion, 1, 1)
+                        val (mediaRequest, _) = requireNotNull(legacyStoredMedia)
+                        assertTrue(
+                            store.cleanupRun(
+                                mediaRequest.key.runId,
+                                acknowledgeAuthorized = true,
+                                frozenDurableRequestIds = listOf(mediaRequest.key.requestId),
+                            ).evidenceAccepted,
+                        )
+                    }
+                }
+
+                SQLiteDatabase.openDatabase(
+                    context.getDatabasePath(name).path,
+                    null,
+                    SQLiteDatabase.OPEN_READWRITE,
+                ).use { db ->
+                    // v1/v2 stored direct VERIFIED routing in routing_intents. Remove only the v3
+                    // normalized observation surface and retain all note/receipt/intent evidence.
+                    db.execSQL("DROP TRIGGER routing_observations_delete_guard")
+                    db.execSQL("DROP TRIGGER routing_observation_insert_guard")
+                    db.execSQL("DROP TRIGGER routing_observation_update_forbidden")
+                    db.execSQL("DROP TABLE routing_observations")
+                    if (oldVersion == 1) {
+                        // v1 allowed a finalized stored claim without the v2 remediation guards.
+                        db.execSQL("DROP TRIGGER remediation_delete_forbidden")
+                        assertEquals(
+                            1,
+                            db.delete(
+                                "remediations",
+                                "kind = ?",
+                                arrayOf(RemediationKind.MEDIA_STORED_UNATTACHED.name),
+                            ),
+                        )
+                        db.execSQL("DROP INDEX one_stored_unattached_remediation_per_claim")
+                        db.execSQL("DROP TRIGGER stored_unattached_remediation_insert_guard")
+                        db.execSQL("DROP TRIGGER stored_unattached_remediation_resolution_guard")
+                        db.execSQL("DROP TRIGGER stored_unattached_claim_guard")
+                        db.execSQL("DROP TRIGGER stored_unattached_claim_resolution")
+                    }
+                    db.execSQL("PRAGMA user_version = $oldVersion")
+                }
+
+                SqliteAnkiMutationStore(context, name, enforceBackgroundThread = false).use { reopened ->
+                    assertEquals(JournalSchema.VERSION.toString(), pragma(reopened.writableDatabase, "user_version"))
+                    val parent = reopened.parent(request.key)
+                    assertEquals(providerNoteId, parent?.activeNoteId)
+                    assertEquals(NoteRoutingPhase.ROUTED, parent?.routingPhase)
+                    assertEquals(1L, count(reopened.writableDatabase, "active_notes"))
+                    assertEquals(1L, count(reopened.writableDatabase, "note_commands"))
+                    assertEquals(1L, count(reopened.writableDatabase, "note_receipts"))
+                    assertEquals(1L, count(reopened.writableDatabase, "routing_intents"))
+                    assertEquals(1L, count(reopened.writableDatabase, "routing_observations"))
+                    reopened.writableDatabase.rawQuery(
+                        """SELECT i.card_id, i.note_id, i.ordinal, i.target_deck_id,
+                                  o.card_id, o.note_id, o.ordinal, o.deck_id
+                           FROM routing_intents i JOIN routing_observations o ON o.intent_id = i.id""".trimIndent(),
+                        null,
+                    ).use { cursor ->
+                        assertTrue(cursor.moveToFirst())
+                        assertEquals(cursor.getLong(0), cursor.getLong(4))
+                        assertEquals(cursor.getLong(1), cursor.getLong(5))
+                        assertEquals(cursor.getInt(2), cursor.getInt(6))
+                        assertEquals(cursor.getLong(3), cursor.getLong(7))
+                        assertFalse(cursor.moveToNext())
+                    }
+                    legacyStoredMedia?.let { (mediaRequest, media) ->
+                        val remediation =
+                            reopened.openRemediations().single {
+                                it.kind == RemediationKind.MEDIA_STORED_UNATTACHED
+                            }
+                        assertEquals(media.claim.id, remediation.claimId)
+                        assertEquals(
+                            MediaClaimState.STORED,
+                            reopened.mediaClaim(mediaRequest.key, media.claim.assetId)?.state,
+                        )
+                    }
+                }
+            } finally {
+                context.deleteDatabase(name)
+            }
+        }
+    }
+
+    @Test
     fun openingDatabaseRejectsMissingRequiredTrigger() {
         val name = databaseName()
         try {
@@ -221,6 +346,33 @@ class SqliteAnkiMutationStoreInstrumentedTest {
         }
 
     @Test
+    fun recoveryInventorySnapshotsEveryActiveDurableCapabilityAndRemediation() =
+        withStore { store ->
+            val prepared = prepareMedia(store, 52, 1, 1)
+            val reserved =
+                store.reserveMedia(
+                    prepared.claim.runId,
+                    listOf(reservation(ParentKey(prepared.claim.runId, requestId(2)), 2)),
+                ).single()
+            val remediation =
+                store.addRemediation(
+                    RemediationDraft(
+                        parentId = prepared.child.parentId,
+                        kind = RemediationKind.CAPACITY_EXHAUSTED,
+                        summary = "Recovery inventory test remediation",
+                        compactEvidence = "inventory snapshot remains actionable",
+                    ),
+                )
+
+            val inventory = store.recoveryInventory()
+
+            assertEquals(listOf(prepared.claim.runId), inventory.activeMediaLeaseRunIds)
+            assertEquals(listOf(reserved.id), inventory.reservedMediaReservationIds)
+            assertEquals(listOf(prepared.claim), inventory.unresolvedClaims)
+            assertEquals(listOf(remediation), inventory.openRemediations)
+        }
+
+    @Test
     fun mediaEntryWithoutReceiptRecoversUncertainAndIsNeverReissued() =
         withStore { store ->
             val prepared = prepareMedia(store, 5, 1, 1)
@@ -229,6 +381,50 @@ class SqliteAnkiMutationStoreInstrumentedTest {
             assertTrue(action is PreparedMutationRecovery.MarkMediaUncertain)
             assertEquals(prepared.claim.id, (action as PreparedMutationRecovery.MarkMediaUncertain).claimId)
         }
+
+    @Test
+    fun mediaClaimLookupUsesExactIdentityAndPersistsResolvedClaimsAcrossReopen() {
+        val name = databaseName()
+        val key = ParentKey(runId(51), requestId(1))
+        lateinit var expected: MediaClaimRecord
+        try {
+            SqliteAnkiMutationStore(context, name, enforceBackgroundThread = false).use { store ->
+                assertNull(store.mediaClaim(key, assetId(1)))
+                val promoted = prepareMedia(store, 51, 1, 1)
+                expected = promoted.claim
+
+                assertEquals(expected, store.mediaClaim(key, assetId(1)))
+                assertNull(store.mediaClaim(ParentKey(key.runId, requestId(2)), assetId(1)))
+                assertNull(store.mediaClaim(ParentKey(runId(52), key.requestId), assetId(1)))
+                assertNull(store.mediaClaim(key, assetId(2)))
+
+                store.completeMediaFailure(
+                    childId = promoted.child.id,
+                    claimId = expected.id,
+                    childOutcome = ChildState.PROVEN_NOT_COMMITTED,
+                    claimState = MediaClaimState.CLEANED_VERIFIED,
+                    result =
+                        AlignedResult.MediaFailed(
+                            0,
+                            expected.assetId,
+                            JournalError(JournalErrorCode.MEDIA_STORE_FAILED, "provider was never entered", false),
+                            "provider was never entered",
+                        ),
+                    compactEvidence = "provider was never entered",
+                )
+                expected = requireNotNull(store.mediaClaim(key, assetId(1)))
+                assertEquals(MediaClaimState.CLEANED_VERIFIED, expected.state)
+                assertTrue(store.unresolvedClaims().isEmpty())
+            }
+
+            SqliteAnkiMutationStore(context, name, enforceBackgroundThread = false).use { reopened ->
+                assertEquals(expected, reopened.mediaClaim(key, assetId(1)))
+                assertEquals(MediaClaimState.CLEANED_VERIFIED, reopened.mediaClaim(key, assetId(1))?.state)
+            }
+        } finally {
+            context.deleteDatabase(name)
+        }
+    }
 
     @Test
     fun mediaReceiptBoundarySurvivesCrashAsOneCommittedTransaction() {
@@ -489,7 +685,14 @@ class SqliteAnkiMutationStoreInstrumentedTest {
                     listOf(RoutingIntentDraft(0, 1_802, 1_801, 0, 2, 2)),
                 ).single()
 
-            val verified = store.verifyRoutingIntentWithoutMutation(intent.id, "exact card identity already in target deck")
+            val verified =
+                store.completeChildlessRoutingIntent(
+                    intent.id,
+                    ChildlessRoutingOutcome.Verified(
+                        RoutingCardObservation(intent.cardId, intent.noteId, intent.ordinal, intent.targetDeckId),
+                        "exact card identity already in target deck",
+                    ),
+                )
 
             assertEquals(RoutingIntentState.VERIFIED, verified.state)
             assertNull(verified.childId)
@@ -645,6 +848,10 @@ class SqliteAnkiMutationStoreInstrumentedTest {
 
             assertTrue(store.alignedResults(request.key).single() is AlignedResult.NoteCreated)
             assertEquals(MediaClaimState.ATTACHED_VERIFIED.name, claimState(store.writableDatabase, promoted.claim.id))
+            assertEquals(
+                MediaClaimState.ATTACHED_VERIFIED,
+                store.mediaClaim(ParentKey(promoted.claim.runId, promoted.claim.requestId), promoted.claim.assetId)?.state,
+            )
             assertNull(store.activeNote(request.key))
         }
 
@@ -1059,6 +1266,87 @@ class SqliteAnkiMutationStoreInstrumentedTest {
         }
 
     @Test
+    fun promotedPreEntrySystemStopPersistsNotAttemptedProof() =
+        withStore { store ->
+            val request = mediaRequest(130, 1, listOf(7))
+            val media = prepareMedia(store, 130, 1, 7)
+            store.completeMediaFailure(
+                media.child.id,
+                media.claim.id,
+                ChildState.PROVEN_NOT_COMMITTED,
+                MediaClaimState.CLEANED_VERIFIED,
+                AlignedResult.MediaNotAttempted(0, media.claim.assetId),
+                "provider entry was denied before the raw media call",
+            )
+            val error =
+                JournalError(
+                    JournalErrorCode.CANCELLED,
+                    "The run was cancelled before provider entry",
+                    retryable = false,
+                )
+            val response = JournalResponse.StoreMedia(request.key, store.alignedResults(request.key), error)
+            store.markResultReady(request, response)
+
+            assertEquals(ChildState.PROVEN_NOT_COMMITTED, childState(store.writableDatabase, media.child.id))
+            assertEquals(MediaClaimState.CLEANED_VERIFIED, store.mediaClaim(request.key, media.claim.assetId)?.state)
+            assertEquals(ReplayResult.Ready(response), store.replay(request, liveRun = true))
+        }
+
+    @Test
+    fun rawSqlRejectsNotAttemptedMediaWithUnresolvedClaimAndDuplicateChildIdentity() =
+        withStore { store ->
+            val media = prepareMedia(store, 131, 1, 8)
+            val db = store.writableDatabase
+            assertEquals(
+                1,
+                db.update(
+                    "mutation_children",
+                    ContentValues().apply {
+                        put("state", ChildState.PROVEN_NOT_COMMITTED.name)
+                        put("terminal_evidence", "raw pre-entry proof")
+                        put("updated_at_ms", media.child.updatedAtMs + 1)
+                    },
+                    "id = ?",
+                    arrayOf(media.child.id.toString()),
+                ),
+            )
+
+            assertThrows(SQLiteConstraintException::class.java) {
+                db.insertOrThrow(
+                    "aligned_results",
+                    null,
+                    ContentValues().apply {
+                        put("parent_id", media.child.parentId)
+                        put("request_index", 0)
+                        put("item_id", media.claim.assetId)
+                        put("status_kind", AlignedStatus.NOT_ATTEMPTED.name)
+                    },
+                )
+            }
+
+            assertThrows(SQLiteConstraintException::class.java) {
+                db.insertOrThrow(
+                    "mutation_children",
+                    null,
+                    ContentValues().apply {
+                        put("parent_id", media.child.parentId)
+                        put("sequence_number", 1)
+                        put("operation_kind", ChildOperation.MEDIA_INSERT.name)
+                        put("identity_key", media.claim.assetId)
+                        put("request_index", 0)
+                        put("digest_version", media.child.digestVersion)
+                        put("request_sha256", media.child.requestSha256)
+                        put("media_claim_id", media.claim.id)
+                        put("state", ChildState.PROVEN_NOT_COMMITTED.name)
+                        put("terminal_evidence", "duplicate raw child")
+                        put("created_at_ms", media.child.createdAtMs + 1)
+                        put("updated_at_ms", media.child.updatedAtMs + 2)
+                    },
+                )
+            }
+        }
+
+    @Test
     fun oneGlobalPreparedChildBlocksEveryOtherParentUntilRecoveryCompletes() =
         withStore { store ->
             val media = prepareMedia(store, 30, 1, 1)
@@ -1127,7 +1415,18 @@ class SqliteAnkiMutationStoreInstrumentedTest {
                         RoutingIntentDraft(0, 3_203, 3_201, 1, 2, 2),
                     ),
                 )
-            store.verifyRoutingIntentWithoutMutation(intents[0].id, "first card exactly targeted")
+            store.completeChildlessRoutingIntent(
+                intents[0].id,
+                ChildlessRoutingOutcome.Verified(
+                    RoutingCardObservation(
+                        intents[0].cardId,
+                        intents[0].noteId,
+                        intents[0].ordinal,
+                        intents[0].targetDeckId,
+                    ),
+                    "first card exactly targeted",
+                ),
+            )
             assertThrows(SQLiteConstraintException::class.java) {
                 store.writableDatabase.update(
                     "routing_intents",
@@ -1151,7 +1450,18 @@ class SqliteAnkiMutationStoreInstrumentedTest {
                     arrayOf(request.key.runId, request.key.requestId),
                 )
             }
-            store.verifyRoutingIntentWithoutMutation(intents[1].id, "second card exactly targeted")
+            store.completeChildlessRoutingIntent(
+                intents[1].id,
+                ChildlessRoutingOutcome.Verified(
+                    RoutingCardObservation(
+                        intents[1].cardId,
+                        intents[1].noteId,
+                        intents[1].ordinal,
+                        intents[1].targetDeckId,
+                    ),
+                    "second card exactly targeted",
+                ),
+            )
             assertEquals(NoteRoutingPhase.ROUTED, store.parent(request.key)?.routingPhase)
             store.advanceNotePhase(request.key, 0, NoteRoutingPhase.POSTCHECK_VERIFIED)
         }
@@ -1371,6 +1681,195 @@ class SqliteAnkiMutationStoreInstrumentedTest {
             assertEquals(2L, count(store.writableDatabase, "terminal_outcome_audit"))
             assertEquals(0L, count(store.writableDatabase, "parent_terminal_metadata"))
         }
+
+    @Test
+    fun finalizedStoredMediaRequiresAtomicUnattachedAcknowledgementAcrossReopen() {
+        val name = databaseName()
+        var firstClaimId = 0L
+        var secondClaimId = 0L
+        try {
+            SqliteAnkiMutationStore(context, name, enforceBackgroundThread = false).use { store ->
+                val (acknowledgedRequest, acknowledged) = readyStoredMedia(store, 140, 1, 1)
+                firstClaimId = acknowledged.claim.id
+                assertTrue(
+                    store.cleanupRun(
+                        acknowledgedRequest.key.runId,
+                        acknowledgeAuthorized = true,
+                        frozenDurableRequestIds = listOf(acknowledgedRequest.key.requestId),
+                    ).evidenceAccepted,
+                )
+
+                val (abandonedRequest, abandoned) = readyStoredMedia(store, 141, 1, 2)
+                secondClaimId = abandoned.claim.id
+                assertFalse(
+                    store.cleanupRun(
+                        abandonedRequest.key.runId,
+                        acknowledgeAuthorized = false,
+                        frozenDurableRequestIds = emptyList(),
+                    ).evidenceAccepted,
+                )
+
+                val remediations = store.openRemediations().filter {
+                    it.kind == RemediationKind.MEDIA_STORED_UNATTACHED
+                }
+                assertEquals(setOf(firstClaimId, secondClaimId), remediations.mapNotNull { it.claimId }.toSet())
+                assertTrue(remediations.all { it.parentId != null && it.stagingId == null })
+                assertThrows(JournalInvariantViolation::class.java) {
+                    store.transitionClaim(
+                        firstClaimId,
+                        MediaClaimState.ACKNOWLEDGED_BY_USER,
+                        compactEvidence = "generic transition must not bypass remediation",
+                    )
+                }
+                val firstRemediation = remediations.single { it.claimId == firstClaimId }
+                assertThrows(JournalInvariantViolation::class.java) {
+                    store.resolveRemediation(firstRemediation.id, "generic resolution must not split state")
+                }
+                assertThrows(SQLiteConstraintException::class.java) {
+                    store.writableDatabase.update(
+                        "remediations",
+                        ContentValues().apply {
+                            put("state", RemediationState.RESOLVED.name)
+                            put("compact_evidence", "invalid split resolution")
+                            put("updated_at_ms", firstRemediation.updatedAtMs + 1)
+                        },
+                        "id = ?",
+                        arrayOf(firstRemediation.id.toString()),
+                    )
+                }
+
+                val secondRemediation = remediations.single { it.claimId == secondClaimId }
+                assertEquals(
+                    RemediationState.RESOLVED,
+                    store.acknowledgeUnattachedMedia(
+                        secondRemediation.id,
+                        "user acknowledged the unattached provider media",
+                    ).state,
+                )
+                assertEquals(MediaClaimState.ACKNOWLEDGED_BY_USER.name, claimState(store.writableDatabase, secondClaimId))
+
+                val firstClaim = requireNotNull(store.mediaClaim(acknowledgedRequest.key, acknowledged.claim.assetId))
+                assertEquals(
+                    1,
+                    store.writableDatabase.update(
+                        "media_claims",
+                        ContentValues().apply {
+                            put("state", MediaClaimState.ACKNOWLEDGED_BY_USER.name)
+                            put("compact_evidence", "raw acknowledgement remains atomically coupled")
+                            put("updated_at_ms", firstClaim.updatedAtMs + 1)
+                        },
+                        "id = ?",
+                        arrayOf(firstClaimId.toString()),
+                    ),
+                )
+                assertTrue(store.openRemediations().none { it.kind == RemediationKind.MEDIA_STORED_UNATTACHED })
+            }
+
+            SqliteAnkiMutationStore(context, name, enforceBackgroundThread = false).use { reopened ->
+                assertEquals(MediaClaimState.ACKNOWLEDGED_BY_USER.name, claimState(reopened.writableDatabase, firstClaimId))
+                assertEquals(MediaClaimState.ACKNOWLEDGED_BY_USER.name, claimState(reopened.writableDatabase, secondClaimId))
+                assertTrue(reopened.openRemediations().none { it.kind == RemediationKind.MEDIA_STORED_UNATTACHED })
+            }
+        } finally {
+            context.deleteDatabase(name)
+        }
+    }
+
+    @Test
+    fun cleanupTerminalizesLaterNoteProofBeforeClassifyingStoredMediaAsUnattached() =
+        withStore { store ->
+            val (mediaRequest, media) = readyStoredMedia(store, 142, 1, 1)
+            val noteRequest =
+                createRequest(
+                    142,
+                    2,
+                    1,
+                    MediaBinding(media.claim.assetId, "audio_1.mp3"),
+                )
+            prepareCommittedNote(
+                store,
+                noteRequest,
+                14_201,
+                listOf(DurableMediaBinding(media.claim.assetId, "audio_1.mp3", media.claim.id)),
+            )
+            advanceToPostcheck(store, noteRequest, 14_201)
+
+            val cleanup =
+                store.cleanupRun(
+                    mediaRequest.key.runId,
+                    acknowledgeAuthorized = true,
+                    frozenDurableRequestIds = listOf(mediaRequest.key.requestId),
+                )
+
+            assertTrue(cleanup.evidenceAccepted)
+            assertEquals(MediaClaimState.ATTACHED_VERIFIED, store.mediaClaim(mediaRequest.key, media.claim.assetId)?.state)
+            assertEquals(
+                0L,
+                auditCount(
+                    store.writableDatabase,
+                    "remediations",
+                    "1",
+                    "kind = 'MEDIA_STORED_UNATTACHED'",
+                ),
+            )
+        }
+
+    @Test
+    fun preparedNoteBindingCanResolveEarlierStoredUnattachedRemediationAcrossReopen() {
+        val name = databaseName()
+        var claimId = 0L
+        try {
+            SqliteAnkiMutationStore(context, name, enforceBackgroundThread = false).use { store ->
+                val (mediaRequest, media) = readyStoredMedia(store, 143, 1, 1)
+                claimId = media.claim.id
+                val noteRequest = createRequest(143, 2, 1, MediaBinding(media.claim.assetId, "audio_1.mp3"))
+                store.createParent(noteRequest)
+                store.beginParent(noteRequest.key)
+                store.storeTargetSnapshot(noteRequest.key, targetSnapshot())
+                store.materializeActiveNote(
+                    noteRequest.key,
+                    materialization(
+                        noteRequest,
+                        0,
+                        listOf(DurableMediaBinding(media.claim.assetId, "audio_1.mp3", media.claim.id)),
+                    ),
+                )
+                val noteChild =
+                    store.prepareChild(
+                        noteRequest.key,
+                        MutationCommand.InsertNote(0, noteRequest.itemIds.single(), 11, "語\u001fword", "mined"),
+                    )
+
+                assertEquals(
+                    listOf(mediaRequest.key),
+                    store.abandonOwnerless(emptySet()).map { it.key },
+                )
+                assertEquals(
+                    RemediationKind.MEDIA_STORED_UNATTACHED,
+                    store.openRemediations().single().kind,
+                )
+
+                store.recordProviderEntry(noteChild.id)
+                store.commitNoteReceipt(
+                    noteChild.id,
+                    ProviderReceipt.Note(14_301, "content://com.ichi2.anki.flashcards/notes/14301"),
+                    "validated resumed note receipt",
+                )
+                advanceToPostcheck(store, noteRequest, 14_301)
+                store.completeVerifiedNote(noteRequest.key, 0, 14_301, "resumed exact attachment proof")
+
+                assertEquals(MediaClaimState.ATTACHED_VERIFIED.name, claimState(store.writableDatabase, claimId))
+                assertTrue(store.openRemediations().isEmpty())
+            }
+
+            SqliteAnkiMutationStore(context, name, enforceBackgroundThread = false).use { reopened ->
+                assertEquals(MediaClaimState.ATTACHED_VERIFIED.name, claimState(reopened.writableDatabase, claimId))
+                assertTrue(reopened.openRemediations().isEmpty())
+            }
+        } finally {
+            context.deleteDatabase(name)
+        }
+    }
 
     @Test
     fun rawSqlRejectsBadDigestNoncontiguousItemsBadStatusAndReceiptBeforeEntry() =
@@ -2204,10 +2703,12 @@ class SqliteAnkiMutationStoreInstrumentedTest {
     }
 
     @Test
-    fun resolvedCleanedStagingDetachesAndRetainsItsCompactSubjectAcrossReopen() {
+    fun completeStagingCleanupResolvesDetachesDeletesAndPersistsAcrossReopen() {
         val name = databaseName()
         val stagingId: Long
         val remediationId: Long
+        val secondRemediationId: Long
+        val cleanupEvidence = "quarantined staging was removed safely"
         try {
             SqliteAnkiMutationStore(context, name, enforceBackgroundThread = false).use { store ->
                 val staging =
@@ -2233,15 +2734,96 @@ class SqliteAnkiMutationStoreInstrumentedTest {
                             summary = "Manual staging cleanup required",
                         ),
                     ).id
+                secondRemediationId =
+                    store.addRemediation(
+                        RemediationDraft(
+                            stagingId = quarantined.id,
+                            kind = RemediationKind.CAPACITY_EXHAUSTED,
+                            summary = "Second attached remediation",
+                        ),
+                    ).id
             }
             SqliteAnkiMutationStore(context, name, enforceBackgroundThread = false).use { store ->
                 assertEquals(stagingId, store.stagingForRecovery().single().id)
-                assertEquals(remediationId, store.openRemediations().single().id)
-                store.transitionStaging(stagingId, StagingState.CLEANED, "quarantined staging was removed safely")
-                assertThrows(SQLiteConstraintException::class.java) { store.removeCleanedStaging(stagingId) }
-                assertEquals(RemediationState.RESOLVED, store.resolveRemediation(remediationId, "user resolved").state)
-                store.removeCleanedStaging(stagingId)
+                assertEquals(setOf(remediationId, secondRemediationId), store.openRemediations().map { it.id }.toSet())
+                store.completeStagingCleanup(stagingId, cleanupEvidence)
                 assertTrue(store.stagingForRecovery().isEmpty())
+                assertTrue(store.openRemediations().isEmpty())
+            }
+            SqliteAnkiMutationStore(context, name, enforceBackgroundThread = false).use { reopened ->
+                reopened.writableDatabase.rawQuery(
+                    """SELECT state, staging_id, staging_subject_id, compact_evidence,
+                              created_at_ms, updated_at_ms
+                       FROM remediations WHERE id = ?""".trimIndent(),
+                    arrayOf(remediationId.toString()),
+                ).use { cursor ->
+                    assertTrue(cursor.moveToFirst())
+                    assertEquals(RemediationState.RESOLVED.name, cursor.getString(0))
+                    assertTrue(cursor.isNull(1))
+                    assertEquals(stagingId, cursor.getLong(2))
+                    assertEquals(cleanupEvidence, cursor.getString(3))
+                    assertTrue(cursor.getLong(5) > cursor.getLong(4))
+                }
+                reopened.writableDatabase.rawQuery(
+                    """SELECT count(*) FROM remediations
+                       WHERE id IN (?, ?) AND state = 'RESOLVED' AND staging_id IS NULL AND
+                             staging_subject_id = ? AND compact_evidence = ?""".trimIndent(),
+                    arrayOf(
+                        remediationId.toString(),
+                        secondRemediationId.toString(),
+                        stagingId.toString(),
+                        cleanupEvidence,
+                    ),
+                ).use { cursor ->
+                    assertTrue(cursor.moveToFirst())
+                    assertEquals(2L, cursor.getLong(0))
+                }
+                assertEquals(0L, count(reopened.writableDatabase, "staging_artifacts"))
+            }
+        } finally {
+            context.deleteDatabase(name)
+        }
+    }
+
+    @Test
+    fun completeStagingCleanupFinalizesAnInterruptedAlreadyCleanedRow() {
+        val name = databaseName()
+        val stagingId: Long
+        val remediationId: Long
+        val cleanupEvidence = "recovered interrupted staging cleanup"
+        try {
+            SqliteAnkiMutationStore(context, name, enforceBackgroundThread = false).use { store ->
+                val staging =
+                    store.recordStaging(
+                        StagingDraft(
+                            runId(16),
+                            requestId(1),
+                            assetId(1),
+                            "run/interrupted.bin",
+                            "content://com.ankiminer.files/run/interrupted.bin",
+                            "com.ichi2.anki",
+                            3,
+                            SHA,
+                        ),
+                    )
+                stagingId = staging.id
+                val quarantined = store.transitionStaging(staging.id, StagingState.QUARANTINED, "cleanup failed")
+                remediationId =
+                    store.addRemediation(
+                        RemediationDraft(
+                            stagingId = quarantined.id,
+                            kind = RemediationKind.STAGING_QUARANTINED,
+                            summary = "Manual staging cleanup required",
+                        ),
+                    ).id
+                store.transitionStaging(staging.id, StagingState.CLEANED, "artifact deleted before journal finalization")
+            }
+            SqliteAnkiMutationStore(context, name, enforceBackgroundThread = false).use { recovered ->
+                assertEquals(StagingState.CLEANED, recovered.stagingForRecovery().single().state)
+                assertEquals(remediationId, recovered.openRemediations().single().id)
+                recovered.completeStagingCleanup(stagingId, cleanupEvidence)
+                assertTrue(recovered.stagingForRecovery().isEmpty())
+                assertTrue(recovered.openRemediations().isEmpty())
             }
             SqliteAnkiMutationStore(context, name, enforceBackgroundThread = false).use { reopened ->
                 reopened.writableDatabase.rawQuery(
@@ -2253,8 +2835,9 @@ class SqliteAnkiMutationStoreInstrumentedTest {
                     assertEquals(RemediationState.RESOLVED.name, cursor.getString(0))
                     assertTrue(cursor.isNull(1))
                     assertEquals(stagingId, cursor.getLong(2))
-                    assertEquals("user resolved", cursor.getString(3))
+                    assertEquals(cleanupEvidence, cursor.getString(3))
                 }
+                assertEquals(0L, count(reopened.writableDatabase, "staging_artifacts"))
             }
         } finally {
             context.deleteDatabase(name)
@@ -2330,7 +2913,13 @@ class SqliteAnkiMutationStoreInstrumentedTest {
                 0,
                 listOf(RoutingIntentDraft(0, providerNoteId + 1, providerNoteId, 0, 2, 2)),
             ).single()
-        store.verifyRoutingIntentWithoutMutation(intent.id, "card already exactly targeted")
+        store.completeChildlessRoutingIntent(
+            intent.id,
+            ChildlessRoutingOutcome.Verified(
+                RoutingCardObservation(intent.cardId, intent.noteId, intent.ordinal, intent.targetDeckId),
+                "card already exactly targeted",
+            ),
+        )
         store.advanceNotePhase(request.key, 0, NoteRoutingPhase.POSTCHECK_VERIFIED)
     }
 
@@ -2370,7 +2959,14 @@ class SqliteAnkiMutationStoreInstrumentedTest {
                 requestIndex,
                 listOf(RoutingIntentDraft(requestIndex, cardId, providerNoteId, 0, 2, 2)),
             )
-        store.verifyRoutingIntentWithoutMutation(intents.single().id, "card $cardId already exactly targeted")
+        val intent = intents.single()
+        store.completeChildlessRoutingIntent(
+            intent.id,
+            ChildlessRoutingOutcome.Verified(
+                RoutingCardObservation(intent.cardId, intent.noteId, intent.ordinal, intent.targetDeckId),
+                "card $cardId already exactly targeted",
+            ),
+        )
         assertEquals(NoteRoutingPhase.ROUTED, store.parent(request.key)?.routingPhase)
         store.advanceNotePhase(request.key, requestIndex, NoteRoutingPhase.POSTCHECK_VERIFIED)
         store.completeVerifiedNote(
@@ -2403,6 +2999,28 @@ class SqliteAnkiMutationStoreInstrumentedTest {
                 "audio_$asset",
             ),
         ).also { assertEquals(parent.id, it.child.parentId) }
+    }
+
+    private fun readyStoredMedia(
+        store: SqliteAnkiMutationStore,
+        run: Int,
+        requestNumber: Int,
+        asset: Int,
+    ): Pair<JournalRequest, MediaPromotion> {
+        val request = mediaRequest(run, requestNumber, listOf(asset))
+        val media = prepareMedia(store, run, requestNumber, asset)
+        store.recordProviderEntry(media.child.id)
+        store.commitMediaReceipt(
+            media.child.id,
+            media.claim.id,
+            ProviderReceipt.Media("audio_${asset}.mp3", "file:///audio_${asset}.mp3"),
+            "validated stored media receipt",
+        )
+        store.markResultReady(
+            request,
+            JournalResponse.StoreMedia(request.key, store.alignedResults(request.key), error = null),
+        )
+        return request to media
     }
 
     private fun verifyRequest(run: Int, request: Int): JournalRequest =

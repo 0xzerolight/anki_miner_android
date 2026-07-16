@@ -1,6 +1,10 @@
 package com.ankiminer.android.anki.provider
 
 import com.ankiminer.android.anki.protocol.AnkiJsonCodec
+import com.ankiminer.android.anki.protocol.AnkiOperation
+import com.ankiminer.android.anki.protocol.StoreMediaRequest
+import com.ankiminer.android.anki.protocol.StoreMediaResult
+import com.ankiminer.android.anki.protocol.StoredMedia
 import com.ankiminer.android.anki.protocol.VerifyTargetResult
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -8,6 +12,8 @@ import java.util.concurrent.atomic.AtomicReference
 import kotlin.concurrent.thread
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -168,17 +174,211 @@ class AnkiProviderCallbacksTest {
     }
 
     @Test
-    fun `read-only dispatcher explicitly rejects both mutation callbacks`() {
+    fun `note mutation remains unavailable until its durable service is wired`() {
         val harness = harness()
 
-        val media = harness.callbacks.ankiStoreMedia(storeMediaEnvelope())
         val notes = harness.callbacks.ankiCreateNotes(createNotesEnvelope())
 
-        assertTrue(media.contains("\"operation\":\"storeMedia\""))
-        assertTrue(media.contains("\"code\":\"unsupported_operation\""))
         assertTrue(notes.contains("\"operation\":\"createNotes\""))
         assertTrue(notes.contains("\"code\":\"unsupported_operation\""))
         assertTrue(harness.gateway.queries.isEmpty())
+    }
+
+    @Test
+    fun `media callback passes the exact owner and request then admits after exact encoding`() {
+        val cleanup = mutableListOf<Set<String>?>()
+        val registry = AnkiRunStateRegistry { _, ids -> cleanup += ids }
+        val acknowledgement = MediaAcknowledgement(ASSET_ID, "clip.mp3", 41L)
+        val outcome = storedMediaOutcome(listOf(acknowledgement))
+        var callbackOwner: AnkiRunStateRegistry.RunOwner? = null
+        var callbackRequest: StoreMediaRequest? = null
+        val media = FakeMediaMutationService { owner, request ->
+            callbackOwner = owner
+            callbackRequest = request
+            outcome
+        }
+        var encodeCalls = 0
+        val encoder =
+            AnkiProviderResponseEncoder { response, request ->
+                encodeCalls += 1
+                assertEquals(outcome.result, response)
+                assertFalse(outcome.result === response)
+                assertTrue(callbackOwner != null)
+                assertSame(callbackRequest, request)
+                assertNull(registry.mediaAcknowledgement(requireNotNull(callbackOwner), ASSET_ID))
+                AnkiJsonCodec.encodeResponse(response, request)
+            }
+        val harness = harness(registry = registry, encoder = encoder, mediaMutations = media)
+        val expectedRequest =
+            AnkiJsonCodec.decodeRequest(storeMediaEnvelope(), AnkiOperation.STORE_MEDIA)
+                as StoreMediaRequest
+
+        val encoded = harness.callbacks.ankiStoreMedia(storeMediaEnvelope())
+
+        assertEquals(expectedRequest, callbackRequest)
+        assertEquals(RUN_ID, callbackOwner?.runId)
+        assertEquals(1, media.calls)
+        assertEquals(1, encodeCalls)
+        assertTrue(encoded.contains("\"type\":\"anki.storemedia.result\""))
+        assertTrue(encoded.contains("\"status\":\"stored\""))
+        registry.withOwner(RUN_ID) { observer ->
+            assertEquals(acknowledgement, registry.mediaAcknowledgement(observer, ASSET_ID))
+        }
+        assertEquals(
+            com.ankiminer.android.anki.protocol.ReleaseState.RELEASED,
+            registry.release(RUN_ID, true),
+        )
+        assertEquals(listOf(setOf(REQUEST_ID)), cleanup)
+    }
+
+    @Test
+    fun `media admission mismatches quarantine without installing any acknowledgement`() {
+        val valid = MediaAcknowledgement(ASSET_ID, "clip.mp3", 41L)
+        val cases =
+            listOf(
+                Triple("missing", storeMediaEnvelope(), storedMediaOutcome(emptyList())),
+                Triple(
+                    "extra",
+                    storeMediaEnvelope(),
+                    storedMediaOutcome(
+                        listOf(valid, MediaAcknowledgement(OTHER_ASSET_ID, "other.mp3", 42L)),
+                    ),
+                ),
+                Triple(
+                    "name mismatch",
+                    storeMediaEnvelope(),
+                    storedMediaOutcome(listOf(MediaAcknowledgement(ASSET_ID, "clip_renamed.mp3", 41L))),
+                ),
+                Triple("duplicate", storeMediaEnvelope(), storedMediaOutcome(listOf(valid, valid))),
+                Triple(
+                    "non-positive claim",
+                    storeMediaEnvelope(),
+                    storedMediaOutcome(listOf(valid.copy(durableClaimId = 0L))),
+                ),
+                Triple(
+                    "duplicate claim",
+                    storeMediaEnvelope(includeSecondAsset = true),
+                    storedTwoMediaOutcome(
+                        listOf(
+                            valid,
+                            MediaAcknowledgement(OTHER_ASSET_ID, "image.webp", valid.durableClaimId),
+                        ),
+                    ),
+                ),
+            )
+
+        cases.forEach { (label, rawRequest, outcome) ->
+            val cleanup = mutableListOf<Set<String>?>()
+            val registry = AnkiRunStateRegistry { _, ids -> cleanup += ids }
+            val media = FakeMediaMutationService { _, _ -> outcome }
+            var mediaEncodes = 0
+            val encoder =
+                AnkiProviderResponseEncoder { response, request ->
+                    if (response is StoreMediaResult) {
+                        mediaEncodes += 1
+                        assertEquals(outcome.result, response)
+                    }
+                    AnkiJsonCodec.encodeResponse(response, request)
+                }
+            val harness = harness(registry = registry, mediaMutations = media, encoder = encoder)
+
+            registry.withOwner(RUN_ID) { observer ->
+                val encoded = harness.callbacks.ankiStoreMedia(rawRequest)
+                assertTrue("$label should fail safely", encoded.contains("\"code\":\"internal_error\""))
+                assertNull(registry.mediaAcknowledgement(observer, ASSET_ID))
+                assertNull(registry.mediaAcknowledgement(observer, OTHER_ASSET_ID))
+            }
+            assertEquals(label, 1, mediaEncodes)
+            assertEquals(
+                label,
+                com.ankiminer.android.anki.protocol.ReleaseState.RELEASED,
+                registry.release(RUN_ID, true),
+            )
+            assertEquals(label, listOf(null), cleanup)
+        }
+    }
+
+    @Test
+    fun `media response encoding failure quarantines and admits no durable state`() {
+        val cleanup = mutableListOf<Set<String>?>()
+        val registry = AnkiRunStateRegistry { _, ids -> cleanup += ids }
+        val acknowledgement = MediaAcknowledgement(ASSET_ID, "clip.mp3", 41L)
+        val outcome = storedMediaOutcome(listOf(acknowledgement))
+        var encodeCalls = 0
+        val encoder =
+            AnkiProviderResponseEncoder { response, request ->
+                encodeCalls += 1
+                if (response is StoreMediaResult) {
+                    assertEquals(outcome.result, response)
+                    assertFalse(outcome.result === response)
+                    error("injected media encoding failure")
+                }
+                AnkiJsonCodec.encodeResponse(response, request)
+            }
+        val harness =
+            harness(
+                registry = registry,
+                encoder = encoder,
+                mediaMutations = FakeMediaMutationService { _, _ -> outcome },
+            )
+
+        registry.withOwner(RUN_ID) { observer ->
+            val encoded = harness.callbacks.ankiStoreMedia(storeMediaEnvelope())
+            assertTrue(encoded.contains("\"code\":\"internal_error\""))
+            assertNull(registry.mediaAcknowledgement(observer, ASSET_ID))
+        }
+        assertEquals(2, encodeCalls)
+        assertEquals(
+            com.ankiminer.android.anki.protocol.ReleaseState.RELEASED,
+            registry.release(RUN_ID, true),
+        )
+        assertEquals(listOf(null), cleanup)
+    }
+
+    @Test
+    fun `release between media encoding and admission installs neither response nor claim`() {
+        val cleanup = mutableListOf<Set<String>?>()
+        val registry = AnkiRunStateRegistry { _, ids -> cleanup += ids }
+        val acknowledgement = MediaAcknowledgement(ASSET_ID, "clip.mp3", 41L)
+        val outcome = storedMediaOutcome(listOf(acknowledgement))
+        val enteredEncoding = CountDownLatch(1)
+        val finishEncoding = CountDownLatch(1)
+        var encodeCalls = 0
+        val encoder =
+            AnkiProviderResponseEncoder { response, request ->
+                encodeCalls += 1
+                if (response is StoreMediaResult) {
+                    assertEquals(outcome.result, response)
+                    assertFalse(outcome.result === response)
+                    enteredEncoding.countDown()
+                    check(finishEncoding.await(5, TimeUnit.SECONDS))
+                }
+                AnkiJsonCodec.encodeResponse(response, request)
+            }
+        val harness =
+            harness(
+                registry = registry,
+                encoder = encoder,
+                mediaMutations = FakeMediaMutationService { _, _ -> outcome },
+            )
+        var encoded = ""
+
+        registry.withOwner(RUN_ID) { observer ->
+            val callback = thread { encoded = harness.callbacks.ankiStoreMedia(storeMediaEnvelope()) }
+            assertTrue(enteredEncoding.await(5, TimeUnit.SECONDS))
+            assertEquals(
+                com.ankiminer.android.anki.protocol.ReleaseState.DEFERRED,
+                registry.release(RUN_ID, true),
+            )
+            finishEncoding.countDown()
+            callback.join(5_000)
+
+            assertFalse(callback.isAlive)
+            assertTrue(encoded.contains("\"code\":\"internal_error\""))
+            assertNull(registry.mediaAcknowledgement(observer, ASSET_ID))
+        }
+        assertEquals(2, encodeCalls)
+        assertEquals(listOf(null), cleanup)
     }
 
     @Test
@@ -418,6 +618,7 @@ class AnkiProviderCallbacksTest {
         cancellation: AnkiCancellation = AnkiCancellation.NONE,
         guard: WorkerThreadGuard = WorkerThreadGuard { },
         registry: AnkiRunStateRegistry = AnkiRunStateRegistry(),
+        mediaMutations: FakeMediaMutationService = FakeMediaMutationService(),
         encoder: AnkiProviderResponseEncoder =
             AnkiProviderResponseEncoder(AnkiJsonCodec::encodeResponse),
         startupRecoveryGate: AnkiStartupRecoveryGate = OpenAnkiStartupRecoveryGate,
@@ -447,6 +648,7 @@ class AnkiProviderCallbacksTest {
                 registry = registry,
                 reads = reads,
                 targetVerifier = targetVerifier,
+                mediaMutations = mediaMutations,
                 workerThreadGuard = guard,
                 startupRecoveryGate = startupRecoveryGate,
                 responseEncoder = encoder,
@@ -459,6 +661,36 @@ class AnkiProviderCallbacksTest {
         val gateway: FakeAnkiProviderGateway,
         val callbacks: AnkiProviderCallbacks,
     )
+
+    private fun storedMediaOutcome(acknowledgements: List<MediaAcknowledgement>) =
+        StoreMediaMutationOutcome(
+            result =
+                StoreMediaResult(
+                    runId = RUN_ID,
+                    requestId = REQUEST_ID,
+                    results = listOf(StoredMedia(ASSET_ID, "clip.mp3")),
+                    error = null,
+                ),
+            mediaAcknowledgements = acknowledgements,
+            replayed = false,
+        )
+
+    private fun storedTwoMediaOutcome(acknowledgements: List<MediaAcknowledgement>) =
+        StoreMediaMutationOutcome(
+            result =
+                StoreMediaResult(
+                    runId = RUN_ID,
+                    requestId = REQUEST_ID,
+                    results =
+                        listOf(
+                            StoredMedia(ASSET_ID, "clip.mp3"),
+                            StoredMedia(OTHER_ASSET_ID, "image.webp"),
+                        ),
+                    error = null,
+                ),
+            mediaAcknowledgements = acknowledgements,
+            replayed = false,
+        )
 
     private fun targetQueryHandler(): (ProviderQuery, AnkiCancellation) -> ProviderCursor? =
         { query, _ ->
@@ -506,11 +738,19 @@ class AnkiProviderCallbacksTest {
             """{"runId":"$RUN_ID","requestId":"$requestId","scope":{"kind":"knownVocabulary","excludedDecks":[],"cursor":null,"limits":{"maxScannedNotes":256,"maxTotalScannedNotes":100000,"maxItems":256,"maxItemUtf8Bytes":65536,"maxTotalUtf8Bytes":262144}}}""",
         )
 
-    private fun storeMediaEnvelope(): String =
-        envelope(
+    private fun storeMediaEnvelope(includeSecondAsset: Boolean = false): String {
+        val secondAsset =
+            if (includeSecondAsset) {
+                "," +
+                    """{"assetId":"$OTHER_ASSET_ID","sourcePath":"/tmp/image.webp","preferredName":"image","requestedFilename":"image.webp","purpose":"card","mediaKind":"image","expectedSizeBytes":3,"expectedSha256":"${"b".repeat(64)}"}"""
+            } else {
+                ""
+            }
+        return envelope(
             "anki.storemedia.request",
-            """{"runId":"$RUN_ID","requestId":"$REQUEST_ID","assets":[{"assetId":"asset_11111111111111111111111111111111","sourcePath":"/tmp/clip.mp3","preferredName":"clip","requestedFilename":"clip.mp3","purpose":"card","mediaKind":"audio","expectedSizeBytes":3,"expectedSha256":"${"a".repeat(64)}"}],"limits":{"maxAssets":50,"maxAssetBytes":67108864,"maxTotalBytes":67108864}}""",
+            """{"runId":"$RUN_ID","requestId":"$REQUEST_ID","assets":[{"assetId":"$ASSET_ID","sourcePath":"/tmp/clip.mp3","preferredName":"clip","requestedFilename":"clip.mp3","purpose":"card","mediaKind":"audio","expectedSizeBytes":3,"expectedSha256":"${"a".repeat(64)}"}$secondAsset],"limits":{"maxAssets":50,"maxAssetBytes":67108864,"maxTotalBytes":67108864}}""",
         )
+    }
 
     private fun createNotesEnvelope(): String =
         envelope(
@@ -532,5 +772,23 @@ class AnkiProviderCallbacksTest {
         const val REQUEST_ID = "anki_11111111111111111111111111111111"
         const val SECOND_REQUEST_ID = "anki_22222222222222222222222222222222"
         const val THIRD_REQUEST_ID = "anki_33333333333333333333333333333333"
+        const val ASSET_ID = "asset_11111111111111111111111111111111"
+        const val OTHER_ASSET_ID = "asset_22222222222222222222222222222222"
+    }
+}
+
+private class FakeMediaMutationService(
+    var handler: (AnkiRunStateRegistry.RunOwner, StoreMediaRequest) -> StoreMediaMutationOutcome =
+        { _, _ -> error("Unexpected media mutation") },
+) : MediaMutationService {
+    var calls: Int = 0
+        private set
+
+    override fun store(
+        owner: AnkiRunStateRegistry.RunOwner,
+        request: StoreMediaRequest,
+    ): StoreMediaMutationOutcome {
+        calls += 1
+        return handler(owner, request)
     }
 }

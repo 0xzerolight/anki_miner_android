@@ -21,6 +21,18 @@ class SafGrantLedgerTest {
     }
 
     @Test
+    fun dictionaryImportOwnerCannotRevokeSameUriVideoOwner() {
+        val ledger = SafGrantLedger()
+        val shared = "content://test/video-and-dictionary"
+        ledger.retain(shared) // video picker
+        ledger.retain(shared) // temporary resource importer
+
+        assertFalse(ledger.release(shared))
+        assertEquals(1, ledger.referenceCount(shared))
+        assertTrue(ledger.release(shared))
+    }
+
+    @Test
     fun staleOrRepeatedReleaseCannotConsumeAnotherOwner() {
         val ledger = SafGrantLedger()
 

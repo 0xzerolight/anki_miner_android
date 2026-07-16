@@ -14,6 +14,7 @@ import com.ankiminer.android.mining.MiningSource
 import com.ankiminer.android.mining.VideoMiningInput
 import com.ankiminer.android.mining.isTerminal
 import com.ankiminer.android.mining.runId
+import com.ankiminer.android.mining.cancellationToken
 import com.ankiminer.android.ui.video.CurationCandidateUiState
 import com.ankiminer.android.ui.video.CurationUiState
 import com.ankiminer.android.ui.video.DocumentSelectionError
@@ -256,7 +257,10 @@ class VideoMiningViewModel(
     }
 
     fun cancel() {
-        val runId = repository.state.value.runId ?: return
+        val runState = repository.state.value
+        val cancellationToken = runState.cancellationToken
+        val runId = runState.runId
+        if (cancellationToken == null && runId == null) return
         while (true) {
             val local = localState.value
             if (local.cancelPending || local.curationPending) return
@@ -270,7 +274,11 @@ class VideoMiningViewModel(
         }
         viewModelScope.launch {
             try {
-                repository.cancel(runId)
+                if (cancellationToken != null) {
+                    repository.cancel(cancellationToken)
+                } else {
+                    repository.cancel(requireNotNull(runId))
+                }
             } catch (failure: CancellationException) {
                 throw failure
             } catch (_: RuntimeException) {
@@ -412,14 +420,21 @@ class VideoMiningViewModel(
         videoDocumentRequest += 1
         subtitleDocumentRequest += 1
         val local = localState.value
-        val runState = repository.state.value
+        val video = local.video.document
+        val subtitle = local.subtitle.document
         val activeOwnershipTransferred =
-            repository.ownsActiveSourcesAfterViewModelCleared &&
-                runState != MiningRunState.Idle &&
-                !runState.isTerminal
+            if (video != null && subtitle != null) {
+                try {
+                    repository.detachActiveSources(video.toInput(subtitle))
+                } catch (_: RuntimeException) {
+                    false
+                }
+            } else {
+                false
+            }
         if (!activeOwnershipTransferred) {
-            local.video.document?.let { safBroker.releaseReadAccessEventually(it.uri) }
-            local.subtitle.document?.let { safBroker.releaseReadAccessEventually(it.uri) }
+            video?.let { safBroker.releaseReadAccessEventually(it.uri) }
+            subtitle?.let { safBroker.releaseReadAccessEventually(it.uri) }
         }
         super.onCleared()
     }

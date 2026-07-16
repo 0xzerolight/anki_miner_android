@@ -568,6 +568,33 @@ printf '%s\\n' "$@" >"$FAKE_STATE/connected.args"
             )
             self.assertFalse((state / "running").exists())
 
+            fallback = root / "fake-s2-fallback-connected.sh"
+            fallback.write_text(
+                "#!/usr/bin/env bash\nprintf '%s\\n' \"$@\" >\"$FAKE_STATE/fallback.args\"\n",
+                encoding="utf-8",
+            )
+            fallback.chmod(0o755)
+            s2_environment["ANKI_MINER_S2_FALLBACK_CONNECTED_RUNNER"] = str(fallback)
+            fallback_result = subprocess.run(
+                [
+                    str(SCRIPTS_DIR / "run-emulator-tests.sh"),
+                    "--s2-fallback",
+                    "--receipt",
+                    str(receipt),
+                ],
+                check=False,
+                capture_output=True,
+                env=s2_environment,
+                text=True,
+                timeout=10,
+            )
+            self.assertEqual(0, fallback_result.returncode, fallback_result.stderr)
+            self.assertEqual(
+                ["--receipt", str(receipt)],
+                (state / "fallback.args").read_text(encoding="utf-8").splitlines(),
+            )
+            self.assertFalse((state / "running").exists())
+
     def test_runner_refuses_an_already_online_target_without_cleanup(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

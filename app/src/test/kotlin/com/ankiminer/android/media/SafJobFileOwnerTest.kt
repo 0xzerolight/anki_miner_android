@@ -17,7 +17,7 @@ class SafJobFileOwnerTest {
         val descriptor = FakeDescriptor(rawFd = 41, seekable = true, content = byteArrayOf(1))
         val owner = ownerWith(descriptor)
 
-        val input = owner.openUri("content://test/seekable")
+        val input = owner.openVideoUri("content://test/seekable")
 
         assertEquals("/proc/self/fd/41", input.path)
         assertEquals(PythonMediaInput.Backing.SEEKABLE_DESCRIPTOR, input.backing)
@@ -40,7 +40,7 @@ class SafJobFileOwnerTest {
             val cache = File(directory, "copy.media")
             val owner = ownerWith(descriptor, cache)
 
-            val input = owner.openUri("content://test/pipe")
+            val input = owner.openVideoUri("content://test/pipe")
 
             assertEquals(cache.absolutePath, input.path)
             assertEquals(PythonMediaInput.Backing.CACHE_COPY, input.backing)
@@ -73,7 +73,7 @@ class SafJobFileOwnerTest {
 
             val error =
                 assertThrows(IOException::class.java) {
-                    owner.openUri("content://test/broken")
+                    owner.openVideoUri("content://test/broken")
                 }
 
             assertEquals("provider failed", error.message)
@@ -99,7 +99,7 @@ class SafJobFileOwnerTest {
         owner.close()
 
         assertThrows(IllegalStateException::class.java) {
-            owner.openUri("content://test/late")
+            owner.openVideoUri("content://test/late")
         }
         assertEquals(0, opens)
     }
@@ -114,8 +114,8 @@ class SafJobFileOwnerTest {
                 DescriptorOpener { descriptors.removeFirst() },
                 CacheFileFactory { error("cache not expected") },
             )
-        owner.openUri("content://test/one")
-        owner.openUri("content://test/two")
+        owner.openVideoUri("content://test/one")
+        owner.openVideoUri("content://test/two")
 
         val error = assertThrows(IOException::class.java) { owner.close() }
 
@@ -123,6 +123,131 @@ class SafJobFileOwnerTest {
         assertEquals(listOf("first"), error.suppressed.map { it.message })
         assertTrue(first.closed)
         assertTrue(second.closed)
+    }
+
+    @Test
+    fun seekableSubtitleIsStillCopiedWithNormalizedSupportedSuffix() {
+        val directory = Files.createTempDirectory("saf-subtitle-test").toFile()
+        try {
+            val descriptor =
+                FakeDescriptor(rawFd = 47, seekable = true, content = "subtitle".toByteArray())
+            var requestedSuffix: String? = null
+            val owner =
+                SafJobFileOwner(
+                    DescriptorOpener { descriptor },
+                    CacheFileFactory { suffix ->
+                        requestedSuffix = suffix
+                        File(directory, "subtitle$suffix").apply { createNewFile() }
+                    },
+                )
+
+            val input =
+                owner.materializeSubtitleUri(
+                    uri = "content://test/subtitle",
+                    displayName = "Episode.Final.SRT",
+                )
+
+            assertEquals(".srt", requestedSuffix)
+            assertEquals(PythonMediaInput.Backing.CACHE_COPY, input.backing)
+            assertTrue(input.path.endsWith(".srt"))
+            assertEquals(1, descriptor.copyCount)
+            assertFalse(descriptor.closed)
+
+            owner.close()
+
+            assertTrue(descriptor.closed)
+            assertFalse(File(input.path).exists())
+        } finally {
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun unsupportedSubtitleSuffixFailsBeforeOpeningProviderOrCreatingCache() {
+        var opens = 0
+        var cacheCreates = 0
+        val owner =
+            SafJobFileOwner(
+                DescriptorOpener {
+                    opens += 1
+                    FakeDescriptor(48, true, byteArrayOf())
+                },
+                CacheFileFactory {
+                    cacheCreates += 1
+                    error("cache not expected")
+                },
+            )
+
+        assertThrows(IllegalArgumentException::class.java) {
+            owner.materializeSubtitleUri("content://test/subtitle", "episode.txt")
+        }
+
+        assertEquals(0, opens)
+        assertEquals(0, cacheCreates)
+        owner.close()
+    }
+
+    @Test
+    fun failedSubtitleCopyClosesDescriptorAndDeletesSuffixedPartialFile() {
+        val directory = Files.createTempDirectory("saf-subtitle-failure").toFile()
+        try {
+            val descriptor =
+                FakeDescriptor(
+                    rawFd = 49,
+                    seekable = true,
+                    content = byteArrayOf(1),
+                    copyFailure = IOException("subtitle provider failed"),
+                )
+            val cache = File(directory, "partial.ass")
+            val owner = ownerWith(descriptor, cache)
+
+            val error =
+                assertThrows(IOException::class.java) {
+                    owner.materializeSubtitleUri("content://test/broken", "episode.ass")
+                }
+
+            assertEquals("subtitle provider failed", error.message)
+            assertTrue(descriptor.closed)
+            assertFalse(cache.exists())
+            owner.close()
+        } finally {
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun startupJanitorRemovesOnlyDirectOrphanEntries() {
+        val directory = Files.createTempDirectory("saf-janitor-test").toFile()
+        try {
+            File(directory, "input-one.media").writeText("video")
+            File(directory, "input-two.srt").writeText("subtitle")
+            val unrelated = File(directory, "future-resource.bin").apply { writeText("keep") }
+            val nested = File(directory, "input-nested.srt").apply { mkdir() }
+            File(nested, "payload").writeText("keep")
+
+            assertEquals(2, SafInputCacheJanitor(directory).removeOrphans())
+            assertTrue(directory.isDirectory)
+            assertTrue(unrelated.isFile)
+            assertTrue(nested.isDirectory)
+            assertEquals(0, SafInputCacheJanitor(directory).removeOrphans())
+        } finally {
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun startupJanitorHandlesAbsentRootAndRejectsNonDirectoryRoot() {
+        val parent = Files.createTempDirectory("saf-janitor-root-test").toFile()
+        try {
+            assertEquals(0, SafInputCacheJanitor(File(parent, "absent")).removeOrphans())
+            val regularFile = File(parent, "not-a-directory").apply { writeText("x") }
+
+            assertThrows(IOException::class.java) {
+                SafInputCacheJanitor(regularFile).removeOrphans()
+            }
+        } finally {
+            parent.deleteRecursively()
+        }
     }
 
     private fun ownerWith(

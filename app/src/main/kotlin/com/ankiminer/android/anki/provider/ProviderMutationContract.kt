@@ -278,7 +278,7 @@ private fun isSafeCanonicalMediaName(value: String): Boolean =
         false
     }
 
-private fun requireSafeCanonicalMediaName(
+internal fun requireSafeCanonicalMediaName(
     value: String,
     label: String,
     minimumScalarCount: Int,

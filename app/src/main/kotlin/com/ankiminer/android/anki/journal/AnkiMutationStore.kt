@@ -68,7 +68,7 @@ internal interface AnkiMutationStore : Closeable {
 
     fun completeChild(childId: Long, outcome: ChildState, compactEvidence: String): ChildRecord
 
-    /** Pre-entry media failure or post-entry uncertainty closes claim/child/result atomically. */
+    /** Pre-entry media failure/stop or post-entry uncertainty closes claim/child/result atomically. */
     fun completeMediaFailure(
         childId: Long,
         claimId: Long,
@@ -86,8 +86,11 @@ internal interface AnkiMutationStore : Closeable {
 
     fun prepareRoutingChild(intentId: Long): ChildRecord
 
-    /** Verifies an already-targeted card without inventing a provider mutation child. */
-    fun verifyRoutingIntentWithoutMutation(intentId: Long, compactEvidence: String): RoutingIntentRecord
+    /** Freezes a fresh exact readback without inventing a provider mutation child. */
+    fun completeChildlessRoutingIntent(
+        intentId: Long,
+        outcome: ChildlessRoutingOutcome,
+    ): RoutingIntentRecord
 
     fun completeRoutingChild(
         childId: Long,
@@ -106,6 +109,9 @@ internal interface AnkiMutationStore : Closeable {
         noteId: Long,
         compactEvidence: String,
     ): ParentRecord
+
+    /** Atomically stops the current note while preserving all mutation and routing evidence. */
+    fun terminateActiveNote(key: ParentKey, termination: ActiveNoteTermination): ParentRecord
 
     /** Adds only the next exact request-aligned row and never overwrites mutation evidence. */
     fun appendAlignedResult(key: ParentKey, result: AlignedResult): ParentRecord
@@ -147,6 +153,9 @@ internal interface AnkiMutationStore : Closeable {
         compactEvidence: String? = null,
     ): MediaClaimRecord
 
+    /** Exact durable identity lookup across both unresolved and resolved claim states. */
+    fun mediaClaim(key: ParentKey, assetId: String): MediaClaimRecord?
+
     fun unresolvedClaims(): List<MediaClaimRecord>
     fun releaseMediaLease(runId: String): MediaLeaseRecord?
 
@@ -158,10 +167,21 @@ internal interface AnkiMutationStore : Closeable {
     ): StagingRecord
 
     fun stagingForRecovery(): List<StagingRecord>
+
+    /** Cleans, resolves attached remediation, detaches its retained subject, and deletes atomically. */
+    fun completeStagingCleanup(stagingId: Long, compactEvidence: String)
+
     fun removeCleanedStaging(stagingId: Long)
 
     fun addRemediation(draft: RemediationDraft): RemediationRecord
     fun openRemediations(): List<RemediationRecord>
+
+    /** Resolves an orphaned stored-media warning together with its exact durable claim. */
+    fun acknowledgeUnattachedMedia(
+        remediationId: Long,
+        compactEvidence: String,
+    ): RemediationRecord
+
     fun resolveRemediation(remediationId: Long, compactEvidence: String): RemediationRecord
 }
 

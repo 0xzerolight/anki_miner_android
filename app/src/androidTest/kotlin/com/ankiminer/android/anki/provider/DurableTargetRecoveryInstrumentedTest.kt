@@ -3,12 +3,22 @@ package com.ankiminer.android.anki.provider
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.ankiminer.android.anki.journal.ActiveNoteMaterialization
+import com.ankiminer.android.anki.journal.DurableDuplicateDecision
 import com.ankiminer.android.anki.journal.JournalRequest
 import com.ankiminer.android.anki.journal.MediaReservationDraft
 import com.ankiminer.android.anki.journal.MutationCommand
+import com.ankiminer.android.anki.journal.NoteRoutingPhase
+import com.ankiminer.android.anki.journal.OrderedNoteField
+import com.ankiminer.android.anki.journal.ParentState
 import com.ankiminer.android.anki.journal.ProviderReceipt
 import com.ankiminer.android.anki.journal.RemediationKind
+import com.ankiminer.android.anki.journal.RoutingIntentDraft
 import com.ankiminer.android.anki.journal.SqliteAnkiMutationStore
+import com.ankiminer.android.anki.protocol.CollectionCreateDuplicateScope
+import com.ankiminer.android.anki.protocol.CreateDuplicateCandidate
+import com.ankiminer.android.anki.protocol.CreateNote
+import com.ankiminer.android.anki.protocol.CreateNotesRequest
 import com.ankiminer.android.anki.protocol.MediaAsset
 import com.ankiminer.android.anki.protocol.StoreMediaRequest
 import com.ankiminer.android.anki.protocol.VerifyTargetRequest
@@ -119,6 +129,130 @@ class DurableTargetRecoveryInstrumentedTest {
         }
 
     @Test
+    fun entered_receiptless_note_is_never_reinserted_and_recovery_persists_uncertainty() =
+        withStore { store ->
+            val request = createNotesRequest()
+            store.createParent(request)
+            store.beginParent(request.key)
+            store.storeTargetSnapshot(request.key, target().toDurableSnapshot())
+            store.materializeActiveNote(request.key, noteMaterialization())
+            val noteChild =
+                store.prepareChild(
+                    request.key,
+                    MutationCommand.InsertNote(
+                        requestIndexValue = 0,
+                        clientNoteId = CLIENT_NOTE_ID,
+                        modelId = target().model.id,
+                        joinedFields = "猫\u001fcat",
+                        providerTagsWire = "mined",
+                    ),
+                )
+            store.recordProviderEntry(noteChild.id)
+            val gateway = FakeAnkiProviderGateway()
+            gateway.queryHandler = { query, _ -> error("provider must not be queried: $query") }
+            val gate = gate(store, gateway)
+
+            gate.ensureRecovered()
+
+            assertTrue(gate.isOpen())
+            assertTrue(gateway.noteCommands.isEmpty())
+            assertTrue(gateway.routeCommands.isEmpty())
+            assertTrue(gateway.queries.isEmpty())
+            val parent = requireNotNull(store.parent(request.key))
+            assertEquals(ParentState.ABANDONED, parent.state)
+            assertEquals("UNCERTAIN", terminalStatus(store, parent.id))
+            assertEquals(
+                listOf(RemediationKind.NOTE_COMMIT_UNCERTAIN),
+                store.openRemediations().map { it.kind },
+            )
+            assertInventoryDrained(store)
+        }
+
+    @Test
+    fun entered_card_at_exact_preupdate_state_is_reissued_once_then_requeried() =
+        withStore { store ->
+            val request = createNotesRequest()
+            store.createParent(request)
+            store.beginParent(request.key)
+            store.storeTargetSnapshot(request.key, target().toDurableSnapshot())
+            store.materializeActiveNote(request.key, noteMaterialization())
+            val noteChild =
+                store.prepareChild(
+                    request.key,
+                    MutationCommand.InsertNote(
+                        requestIndexValue = 0,
+                        clientNoteId = CLIENT_NOTE_ID,
+                        modelId = target().model.id,
+                        joinedFields = "猫\u001fcat",
+                        providerTagsWire = "mined",
+                    ),
+                )
+            store.recordProviderEntry(noteChild.id)
+            store.commitNoteReceipt(
+                noteChild.id,
+                ProviderReceipt.Note(
+                    NOTE_ID,
+                    "${NoteInsertReceiptValidator.NOTE_COLLECTION_URI}/$NOTE_ID",
+                ),
+                "fixture exact note receipt",
+            )
+            store.advanceNotePhase(request.key, 0, NoteRoutingPhase.NOTE_READBACK_VERIFIED)
+            store.advanceNotePhase(request.key, 0, NoteRoutingPhase.CARDS_DISCOVERED)
+            val intent =
+                store.createRoutingIntents(
+                    request.key,
+                    0,
+                    listOf(
+                        RoutingIntentDraft(
+                            requestIndex = 0,
+                            cardId = CARD_ID,
+                            noteId = NOTE_ID,
+                            ordinal = 0,
+                            targetDeckId = target().deck.id,
+                            preUpdateDeckId = PREUPDATE_DECK_ID,
+                        ),
+                    ),
+                ).single()
+            val routingChild = store.prepareRoutingChild(intent.id)
+            store.recordProviderEntry(routingChild.id)
+            var observedDeckId = PREUPDATE_DECK_ID
+            val gateway = FakeAnkiProviderGateway()
+            gateway.queryHandler = { query, _ ->
+                when (query.endpoint) {
+                    ProviderEndpoint.CARD_BY_ID ->
+                        FakeProviderCursor(
+                            query.projection,
+                            listOf(cardRow(CARD_ID, NOTE_ID, 0, observedDeckId)),
+                        )
+                    else -> error("unexpected query $query")
+                }
+            }
+            gateway.routeCardHandler = { command ->
+                assertEquals(CARD_ID, command.expectedCardId)
+                assertEquals(NOTE_ID, command.noteId)
+                assertEquals(target().deck.id, command.targetDeckId)
+                observedDeckId = command.targetDeckId
+                1
+            }
+            val gate = gate(store, gateway)
+
+            gate.ensureRecovered()
+
+            assertTrue(gate.isOpen())
+            assertEquals(1, gateway.routeCommands.size)
+            assertEquals(2, gateway.queries.count { it.endpoint == ProviderEndpoint.CARD_BY_ID })
+            assertTrue(gateway.noteCommands.isEmpty())
+            val parent = requireNotNull(store.parent(request.key))
+            assertEquals(ParentState.ABANDONED, parent.state)
+            assertEquals("COMMITTED_FAILED", terminalStatus(store, parent.id))
+            assertEquals(
+                listOf(RemediationKind.NOTE_COMMITTED_FAILED),
+                store.openRemediations().map { it.kind },
+            )
+            assertInventoryDrained(store)
+        }
+
+    @Test
     fun concurrent_registration_serializes_recovery_once_then_admits_one_run() =
         withStore { store ->
             val request = request()
@@ -157,6 +291,7 @@ class DurableTargetRecoveryInstrumentedTest {
                             registry,
                             AnkiMutationTargetVerificationJournal(store),
                         ),
+                    mediaMutations = MediaMutationService { _, _ -> error("media mutation is not expected") },
                     workerThreadGuard = WorkerThreadGuard { },
                     startupRecoveryGate = gate,
                 )
@@ -256,6 +391,7 @@ class DurableTargetRecoveryInstrumentedTest {
                             registry,
                             AnkiMutationTargetVerificationJournal(store),
                         ),
+                    mediaMutations = MediaMutationService { _, _ -> error("media mutation is not expected") },
                     workerThreadGuard = WorkerThreadGuard { },
                     startupRecoveryGate = gate,
                 )
@@ -270,7 +406,13 @@ class DurableTargetRecoveryInstrumentedTest {
     private fun gate(
         store: SqliteAnkiMutationStore,
         gateway: FakeAnkiProviderGateway,
-    ) = JournalBackedTargetRecoveryGate(store, gateway, WorkerThreadGuard { })
+    ) =
+        JournalBackedTargetRecoveryGate(
+            store,
+            gateway,
+            WorkerThreadGuard { },
+            MediaStagingRecovery { AnkiMediaRecoveryReport(0, 0, 0) },
+        )
 
     private fun exactTargetHandler(
         deckExists: Boolean,
@@ -295,6 +437,15 @@ class DurableTargetRecoveryInstrumentedTest {
         assertTrue(inventory.unfinishedParents.isEmpty())
     }
 
+    private fun terminalStatus(store: SqliteAnkiMutationStore, parentId: Long): String =
+        store.writableDatabase.rawQuery(
+            "SELECT status_kind FROM terminal_result_audit WHERE parent_id = ? AND request_index = 0",
+            arrayOf(parentId.toString()),
+        ).use { cursor ->
+            check(cursor.moveToFirst()) { "missing terminal result audit" }
+            cursor.getString(0)
+        }
+
     private inline fun withStore(block: (SqliteAnkiMutationStore) -> Unit) {
         val name = "target-recovery-${System.nanoTime()}.db"
         try {
@@ -317,6 +468,41 @@ class DurableTargetRecoveryInstrumentedTest {
                 modelName = "Mining",
                 requiredFields = listOf("Expression"),
             ),
+        )
+
+    private fun createNotesRequest() =
+        JournalRequest.from(
+            CreateNotesRequest(
+                runId = RUN_ID,
+                requestId = CREATE_REQUEST_ID,
+                deckName = "Mining",
+                modelName = "Mining",
+                firstFieldName = "Expression",
+                baselineToken = BASELINE_TOKEN,
+                duplicateScope = CollectionCreateDuplicateScope,
+                notes =
+                    listOf(
+                        CreateNote(
+                            clientNoteId = CLIENT_NOTE_ID,
+                            fields = mapOf("Expression" to "猫", "Meaning" to "cat"),
+                            tags = listOf("mined"),
+                            duplicateCandidate = CreateDuplicateCandidate("猫", "猫", 0),
+                            mediaBindings = emptyList(),
+                        ),
+                    ),
+            ),
+        )
+
+    private fun noteMaterialization() =
+        ActiveNoteMaterialization(
+            requestIndex = 0,
+            clientNoteId = CLIENT_NOTE_ID,
+            orderedFields = listOf(OrderedNoteField("Expression", "猫"), OrderedNoteField("Meaning", "cat")),
+            joinedFields = "猫\u001fcat",
+            normalizedTags = listOf("mined"),
+            providerTagsWire = "mined",
+            duplicateDecision = DurableDuplicateDecision("猫", "猫", 0, duplicate = false),
+            mediaBindings = emptyList(),
         )
 
     private fun target() =
@@ -352,7 +538,13 @@ class DurableTargetRecoveryInstrumentedTest {
     private companion object {
         const val RUN_ID = "run_11111111111111111111111111111111"
         const val REQUEST_ID = "anki_11111111111111111111111111111111"
+        const val CREATE_REQUEST_ID = "anki_22222222222222222222222222222222"
+        const val BASELINE_TOKEN = "baseline_11111111111111111111111111111111"
+        const val CLIENT_NOTE_ID = "note_11111111111111111111111111111111"
         const val ASSET_ID = "asset_11111111111111111111111111111111"
+        const val NOTE_ID = 500L
+        const val CARD_ID = 501L
+        const val PREUPDATE_DECK_ID = 1L
         const val SHA = "0000000000000000000000000000000000000000000000000000000000000000"
     }
 }
@@ -362,8 +554,12 @@ private class FakeAnkiProviderGateway : AnkiProviderGateway {
         FakeProviderCursor(query.projection, emptyList())
     }
     var createDeckHandler: (AnkiProviderMutationCommand.CreateDeck) -> String? = { null }
+    var insertNoteHandler: (AnkiProviderMutationCommand.InsertNote) -> String? = { null }
+    var routeCardHandler: (AnkiProviderMutationCommand.RouteCard) -> Int = { 0 }
     val queries = mutableListOf<ProviderQuery>()
     val deckCommands = mutableListOf<AnkiProviderMutationCommand.CreateDeck>()
+    val noteCommands = mutableListOf<AnkiProviderMutationCommand.InsertNote>()
+    val routeCommands = mutableListOf<AnkiProviderMutationCommand.RouteCard>()
 
     override fun accessStatus(): ProviderAccessStatus =
         ProviderAccessStatus.Available("com.ichi2.anki", 2, 20240000)
@@ -386,9 +582,15 @@ private class FakeAnkiProviderGateway : AnkiProviderGateway {
 
     override fun storeMedia(command: AnkiProviderMutationCommand.StoreMedia): String? = null
 
-    override fun insertNote(command: AnkiProviderMutationCommand.InsertNote): String? = null
+    override fun insertNote(command: AnkiProviderMutationCommand.InsertNote): String? {
+        noteCommands += command
+        return insertNoteHandler(command)
+    }
 
-    override fun routeCard(command: AnkiProviderMutationCommand.RouteCard): Int = 0
+    override fun routeCard(command: AnkiProviderMutationCommand.RouteCard): Int {
+        routeCommands += command
+        return routeCardHandler(command)
+    }
 }
 
 private class FakeProviderCursor(
@@ -438,4 +640,17 @@ private fun deckRow(): Map<ProviderColumn, ProviderCell> =
         ProviderColumn.DECK_ID to ProviderCell.Integer(20L),
         ProviderColumn.DECK_NAME to ProviderCell.Text("Mining"),
         ProviderColumn.DECK_DYNAMIC to ProviderCell.Integer(0L),
+    )
+
+private fun cardRow(
+    id: Long,
+    noteId: Long,
+    ordinal: Int,
+    deckId: Long,
+): Map<ProviderColumn, ProviderCell> =
+    mapOf(
+        ProviderColumn.CARD_ID to ProviderCell.Integer(id),
+        ProviderColumn.CARD_NOTE_ID to ProviderCell.Integer(noteId),
+        ProviderColumn.CARD_ORDINAL to ProviderCell.Integer(ordinal.toLong()),
+        ProviderColumn.CARD_DECK_ID to ProviderCell.Integer(deckId),
     )

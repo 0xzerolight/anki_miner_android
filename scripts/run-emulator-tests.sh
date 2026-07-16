@@ -16,9 +16,11 @@ CONNECTED_TIMEOUT_SECONDS="${ANKI_MINER_CONNECTED_TIMEOUT_SECONDS:-1800}"
 EMULATOR_LAUNCHER="${ANKI_MINER_EMULATOR_LAUNCHER:-$SCRIPT_DIR/emulator.sh}"
 CONNECTED_RUNNER="${ANKI_MINER_CONNECTED_EMULATOR_RUNNER:-$SCRIPT_DIR/run-connected-emulator-tests.sh}"
 S2_CONNECTED_RUNNER="${ANKI_MINER_S2_CONNECTED_RUNNER:-$SCRIPT_DIR/run-s2-ankidroid-probe.sh}"
+S2_FALLBACK_CONNECTED_RUNNER="${ANKI_MINER_S2_FALLBACK_CONNECTED_RUNNER:-$SCRIPT_DIR/run-s2-ankiconnect-fallback-probe.sh}"
 RECEIPT_COMMAND="${ANKI_MINER_RECEIPT_COMMAND:-$SCRIPT_DIR/android_test_receipt.py}"
 RECEIPT="${ANKI_MINER_ANDROID_TEST_RECEIPT:-}"
 S2_MODE=false
+S2_FALLBACK_MODE=false
 EMULATOR_LANE=4k
 LANE_SELECTOR=""
 TEST_UNIDIC_DIR="${ANKI_MINER_TEST_UNIDIC_DIR:-}"
@@ -31,6 +33,7 @@ Usage: scripts/run-emulator-tests.sh --receipt FILE --unidic-dir DIR
                                      [--page-size 4k|16k]
                                      [emulator options]
        scripts/run-emulator-tests.sh --s2 --receipt FILE
+       scripts/run-emulator-tests.sh --s2-fallback --receipt FILE
 
 Starts one deterministic headless emulator, verifies its AVD identity and page
 size, API level, and pinned fingerprint where applicable, runs the adb-only
@@ -49,6 +52,11 @@ while (($#)); do
         --s2)
             [[ "$S2_MODE" == false ]] || { usage >&2; exit 2; }
             S2_MODE=true
+            ;;
+        --s2-fallback)
+            [[ "$S2_MODE" == false ]] || { usage >&2; exit 2; }
+            S2_MODE=true
+            S2_FALLBACK_MODE=true
             ;;
         --lane)
             (($# >= 2)) || { usage >&2; exit 2; }
@@ -239,7 +247,10 @@ timeout --kill-after=2s "${IDENTITY_TIMEOUT_SECONDS}s" \
 
 timeout --kill-after=2s "${ADB_TIMEOUT_SECONDS}s" \
     adb -s "$EMULATOR_SERIAL" shell input keyevent 82 >/dev/null 2>&1 || true
-if [[ "$S2_MODE" == true ]]; then
+if [[ "$S2_FALLBACK_MODE" == true ]]; then
+    timeout --kill-after=2s "${CONNECTED_TIMEOUT_SECONDS}s" \
+        "$S2_FALLBACK_CONNECTED_RUNNER" --receipt "$RECEIPT"
+elif [[ "$S2_MODE" == true ]]; then
     timeout --kill-after=2s "${CONNECTED_TIMEOUT_SECONDS}s" \
         "$S2_CONNECTED_RUNNER" --receipt "$RECEIPT"
 else

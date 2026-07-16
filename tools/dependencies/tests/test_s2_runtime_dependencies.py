@@ -63,6 +63,8 @@ class RuntimeDependenciesTest(unittest.TestCase):
         self.assertEqual("1.13.0", catalog["versions"]["androidx-activity"])
         self.assertEqual("2.10.0", catalog["versions"]["androidx-lifecycle"])
         self.assertEqual("2026.06.00", catalog["versions"]["androidx-compose-bom"])
+        self.assertEqual("1.2.1", catalog["versions"]["androidx-datastore"])
+        self.assertEqual("2.9.8", catalog["versions"]["androidx-navigation"])
         self.assertEqual("2.21.5", catalog["versions"]["jackson"])
         self.assertEqual("1.11.0", catalog["versions"]["kotlinx-coroutines"])
         self.assertEqual(
@@ -93,12 +95,18 @@ class RuntimeDependenciesTest(unittest.TestCase):
             "androidx.compose:compose-bom",
             catalog["libraries"]["androidx-compose-bom"]["module"],
         )
+        self.assertEqual(
+            "androidx.datastore:datastore-preferences",
+            catalog["libraries"]["androidx-datastore-preferences"]["module"],
+        )
+        self.assertEqual(
+            "androidx.navigation:navigation-compose",
+            catalog["libraries"]["androidx-navigation-compose"]["module"],
+        )
 
         libraries = catalog["libraries"]
         forbidden_modules = {
             "androidx.core:core-ktx",
-            "androidx.navigation:navigation-compose",
-            "androidx.datastore:datastore-preferences",
             "com.fasterxml.jackson.core:jackson-databind",
             "org.jetbrains.kotlinx:kotlinx-coroutines-android",
         }
@@ -114,6 +122,8 @@ class RuntimeDependenciesTest(unittest.TestCase):
             "implementation(libs.androidx.activity.compose)",
             "implementation(libs.androidx.lifecycle.runtime.compose)",
             "implementation(libs.androidx.lifecycle.viewmodel.compose)",
+            "implementation(libs.androidx.datastore.preferences)",
+            "implementation(libs.androidx.navigation.compose)",
             "implementation(composeBom)",
             "implementation(libs.androidx.compose.material3)",
             "implementation(libs.androidx.compose.ui.tooling.preview)",
@@ -124,8 +134,6 @@ class RuntimeDependenciesTest(unittest.TestCase):
         ):
             self.assertEqual(1, app_build.count(declaration), declaration)
         self.assertNotIn("kotlinx.coroutines.android", app_build)
-        self.assertNotIn("navigation.compose", app_build)
-        self.assertNotIn("datastore", app_build.lower())
 
     def test_inventory_is_the_complete_locked_runtime_closure(self) -> None:
         self.assertEqual(1, self.manifest["formatVersion"])
@@ -141,8 +149,10 @@ class RuntimeDependenciesTest(unittest.TestCase):
                 "androidx.compose.ui:ui-tooling:1.11.3",
                 "androidx.compose:compose-bom:2026.06.00",
                 "androidx.core:core:1.18.0",
+                "androidx.datastore:datastore-preferences:1.2.1",
                 "androidx.lifecycle:lifecycle-runtime-compose:2.10.0",
                 "androidx.lifecycle:lifecycle-viewmodel-compose:2.10.0",
+                "androidx.navigation:navigation-compose:2.9.8",
                 "com.fasterxml.jackson.core:jackson-core:2.21.5",
                 "org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0",
             },

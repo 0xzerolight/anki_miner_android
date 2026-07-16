@@ -1,10 +1,15 @@
 package com.ankiminer.android.anki.provider
 
 import com.ankiminer.android.anki.generated.AnkiLimitsV1
+import com.ankiminer.android.anki.protocol.AnkiProtocolException
 import com.ankiminer.android.anki.protocol.AnkiValidators
+import com.ankiminer.android.anki.protocol.CreateNotesResult
+import com.ankiminer.android.anki.protocol.CreatedNote
 import com.ankiminer.android.anki.protocol.DuplicateCandidate
 import com.ankiminer.android.anki.protocol.KnownVocabularyCursor
 import com.ankiminer.android.anki.protocol.ReleaseState
+import com.ankiminer.android.anki.protocol.StoreMediaResult
+import com.ankiminer.android.anki.protocol.StoredMedia
 import com.ankiminer.android.anki.protocol.VerifyTargetRequest
 import java.security.SecureRandom
 import java.util.Collections
@@ -56,6 +61,44 @@ internal data class MediaAcknowledgement(
     val durableClaimId: Long,
 )
 
+internal enum class ProviderMutationOperation {
+    MEDIA_INSERT,
+    NOTE_INSERT,
+    CARD_ROUTING,
+}
+
+internal data class ProviderMutationScope(
+    val requestId: String,
+    val operation: ProviderMutationOperation,
+    val durableChildId: Long,
+    val itemIdentity: String,
+)
+
+internal class ProviderEntryCapability internal constructor(
+    internal val runId: String,
+    internal val ownerId: Long,
+    internal val generation: Long,
+    val scope: ProviderMutationScope,
+) {
+    internal var lifecycle = ProviderEntryLifecycle.REGISTERED
+}
+
+internal enum class ProviderEntryAuthorization {
+    AUTHORIZED,
+    QUARANTINED,
+    RELEASING,
+    CANCELLED,
+}
+
+internal enum class ProviderEntryLifecycle {
+    REGISTERED,
+    AUTHORIZING,
+    DENIED,
+    AUTHORIZED,
+    ABORTED,
+    COMPLETED,
+}
+
 internal data class DuplicateBaseline(
     val token: String,
     val target: TargetSnapshot,
@@ -64,6 +107,7 @@ internal data class DuplicateBaseline(
     val candidates: List<DuplicateCandidate>,
     val occurrences: List<Int>,
     val providerNoteIds: List<Set<Long>>,
+    val normalizedMatchingNoteIds: List<Set<Long>>,
 )
 
 internal data class KnownTraversalInitialization(
@@ -296,6 +340,172 @@ internal class AnkiRunStateRegistry(
             TargetProviderEntryAuthorization.AUTHORIZED
         }
 
+    /**
+     * Registers one exact durable child mutation. Provider preflight happens after registration;
+     * authorization below is the only transition across the provider-entry boundary.
+     */
+    fun beginProviderEntry(
+        owner: RunOwner,
+        scope: ProviderMutationScope,
+    ): ProviderEntryCapability {
+        validateProviderMutationScope(owner.runId, scope)
+        return synchronized(lock) {
+            val state = requireOwnerLocked(owner)
+            if (state.terminalReceiptFailure) throw RunStateConflictException()
+            if (state.releaseRequested) throw RunReleasingException()
+            if (state.providerEntry != null) throw ProviderEntryInProgressException()
+            ProviderEntryCapability(
+                runId = state.runId,
+                ownerId = owner.ownerId,
+                generation = nextGeneration++,
+                scope = scope,
+            ).also { state.providerEntry = it }
+        }
+    }
+
+    /**
+     * Authorizes exactly once. The cancellation callback is deliberately evaluated without the
+     * registry lock; release and quarantine are checked on both sides of that callback.
+     */
+    fun authorizeProviderEntry(
+        owner: RunOwner,
+        capability: ProviderEntryCapability,
+        scope: ProviderMutationScope,
+    ): ProviderEntryAuthorization {
+        val cancellation =
+            synchronized(lock) {
+                val state = requireProviderEntryLocked(owner, capability, scope)
+                if (capability.lifecycle != ProviderEntryLifecycle.REGISTERED) {
+                    throw InvalidCapabilityException()
+                }
+                when {
+                    state.terminalReceiptFailure -> {
+                        capability.lifecycle = ProviderEntryLifecycle.DENIED
+                        return ProviderEntryAuthorization.QUARANTINED
+                    }
+                    state.releaseRequested -> {
+                        capability.lifecycle = ProviderEntryLifecycle.DENIED
+                        return ProviderEntryAuthorization.RELEASING
+                    }
+                    else -> {
+                        capability.lifecycle = ProviderEntryLifecycle.AUTHORIZING
+                        state.cancellation
+                    }
+                }
+            }
+
+        val cancelled =
+            try {
+                cancellation.isCancelled()
+            } catch (error: RuntimeException) {
+                synchronized(lock) {
+                    val state = states[owner.runId]
+                    if (
+                        state != null &&
+                            state.providerEntry === capability &&
+                            capability.lifecycle == ProviderEntryLifecycle.AUTHORIZING
+                    ) {
+                        capability.lifecycle = ProviderEntryLifecycle.DENIED
+                        markTerminalFailureLocked(state)
+                    }
+                }
+                throw error
+            }
+
+        return synchronized(lock) {
+            val state = requireProviderEntryLocked(owner, capability, scope)
+            if (capability.lifecycle != ProviderEntryLifecycle.AUTHORIZING) {
+                throw InvalidCapabilityException()
+            }
+            when {
+                state.terminalReceiptFailure -> {
+                    capability.lifecycle = ProviderEntryLifecycle.DENIED
+                    ProviderEntryAuthorization.QUARANTINED
+                }
+                state.releaseRequested -> {
+                    capability.lifecycle = ProviderEntryLifecycle.DENIED
+                    ProviderEntryAuthorization.RELEASING
+                }
+                cancelled -> {
+                    capability.lifecycle = ProviderEntryLifecycle.DENIED
+                    ProviderEntryAuthorization.CANCELLED
+                }
+                else -> {
+                    capability.lifecycle = ProviderEntryLifecycle.AUTHORIZED
+                    ProviderEntryAuthorization.AUTHORIZED
+                }
+            }
+        }
+    }
+
+    /**
+     * Authorizes card routing needed to reconcile a note whose insert receipt is already durable.
+     * User cancellation cannot revoke that post-commit obligation, but release and quarantine
+     * still fail closed. This seam is deliberately unavailable to initial note/media inserts.
+     */
+    fun authorizeMandatoryReconciliationEntry(
+        owner: RunOwner,
+        capability: ProviderEntryCapability,
+        scope: ProviderMutationScope,
+    ): ProviderEntryAuthorization =
+        synchronized(lock) {
+            if (scope.operation != ProviderMutationOperation.CARD_ROUTING) {
+                throw InvalidCapabilityException()
+            }
+            val state = requireProviderEntryLocked(owner, capability, scope)
+            if (capability.lifecycle != ProviderEntryLifecycle.REGISTERED) {
+                throw InvalidCapabilityException()
+            }
+            when {
+                state.terminalReceiptFailure -> {
+                    capability.lifecycle = ProviderEntryLifecycle.DENIED
+                    ProviderEntryAuthorization.QUARANTINED
+                }
+                state.releaseRequested -> {
+                    capability.lifecycle = ProviderEntryLifecycle.DENIED
+                    ProviderEntryAuthorization.RELEASING
+                }
+                else -> {
+                    capability.lifecycle = ProviderEntryLifecycle.AUTHORIZED
+                    ProviderEntryAuthorization.AUTHORIZED
+                }
+            }
+        }
+
+    fun abortProviderEntry(
+        owner: RunOwner,
+        capability: ProviderEntryCapability,
+        scope: ProviderMutationScope,
+    ) {
+        synchronized(lock) {
+            val state = requireProviderEntryLocked(owner, capability, scope)
+            if (
+                capability.lifecycle != ProviderEntryLifecycle.REGISTERED &&
+                    capability.lifecycle != ProviderEntryLifecycle.DENIED
+            ) {
+                throw InvalidCapabilityException()
+            }
+            state.providerEntry = null
+            capability.lifecycle = ProviderEntryLifecycle.ABORTED
+        }
+    }
+
+    /** Clears an authorized entry only after its provider outcome has been durably reconciled. */
+    fun completeProviderEntry(
+        owner: RunOwner,
+        capability: ProviderEntryCapability,
+        scope: ProviderMutationScope,
+    ) {
+        synchronized(lock) {
+            val state = requireProviderEntryLocked(owner, capability, scope)
+            if (capability.lifecycle != ProviderEntryLifecycle.AUTHORIZED) {
+                throw InvalidCapabilityException()
+            }
+            state.providerEntry = null
+            capability.lifecycle = ProviderEntryLifecycle.COMPLETED
+        }
+    }
+
     fun beginKnownTraversal(
         owner: RunOwner,
         scope: List<String>,
@@ -404,12 +614,13 @@ internal class AnkiRunStateRegistry(
         probe: BaselineProbe,
         baseline: DuplicateBaseline,
     ) {
+        val frozen = freezeDuplicateBaseline(baseline)
         synchronized(lock) {
             val state = requireOwnerLocked(owner)
             requireBaselineProbe(state, owner, probe)
-            if (state.target != baseline.target) throw RunStateConflictException()
+            if (state.target != frozen.target) throw RunStateConflictException()
             state.baselineProbe = null
-            state.duplicateBaseline = baseline
+            state.duplicateBaseline = frozen
         }
     }
 
@@ -436,37 +647,73 @@ internal class AnkiRunStateRegistry(
             baseline
         }
 
-    fun recordMediaAcknowledgement(
-        owner: RunOwner,
-        acknowledgement: MediaAcknowledgement,
-    ) {
-        synchronized(lock) {
-            val state = requireOwnerLocked(owner)
-            val prior = state.mediaAcknowledgements[acknowledgement.assetId]
-            if (prior != null && prior != acknowledgement) throw RunStateConflictException()
-            if (
-                prior == null &&
-                    state.mediaAcknowledgements.size >= AnkiLimitsV1.CreateCall.MAX_MEDIA_REFERENCE_COUNT
-            ) {
-                throw RunStateCapacityException()
-            }
-            if (
-                state.mediaAcknowledgements.values.any { existing ->
-                    existing.assetId != acknowledgement.assetId &&
-                        existing.actualFilename == acknowledgement.actualFilename
-                }
-            ) {
-                throw RunStateConflictException()
-            }
-            state.mediaAcknowledgements[acknowledgement.assetId] = acknowledgement
-        }
-    }
-
     fun mediaAcknowledgement(
         owner: RunOwner,
         assetId: String,
     ): MediaAcknowledgement? =
         synchronized(lock) { requireOwnerLocked(owner).mediaAcknowledgements[assetId] }
+
+    /**
+     * Atomically admits a canonically encoded RESULT_READY response and every media claim it
+     * acknowledges. Input contract validation runs outside the registry lock; all state checks
+     * precede either map or receipt mutation.
+     */
+    fun commitDurableMutationResponse(
+        owner: RunOwner,
+        requestId: String,
+        mediaAcknowledgements: List<MediaAcknowledgement>,
+    ) {
+        try {
+            validateMutationResponseInput(owner.runId, requestId, mediaAcknowledgements)
+        } catch (error: RuntimeException) {
+            synchronized(lock) { markTerminalFailureLocked(requireOwnerLocked(owner)) }
+            if (error is RunStateCapacityException) throw error
+            throw RunStateConflictException()
+        }
+
+        synchronized(lock) {
+            val state = requireOwnerLocked(owner)
+            fun fail(error: RuntimeException): Nothing {
+                markTerminalFailureLocked(state)
+                throw error
+            }
+
+            if (state.terminalReceiptFailure) fail(RunStateConflictException())
+            if (state.releaseRequested) fail(RunReleasingException())
+            if (state.providerEntry != null) fail(RunStateConflictException())
+            if (requestId in state.durableResponseIds) fail(RunStateConflictException())
+            if (state.durableResponseIds.size >= MAX_TERMINAL_RESPONSE_RECEIPTS) {
+                fail(RunStateCapacityException())
+            }
+
+            val newAcknowledgements = ArrayList<MediaAcknowledgement>()
+            for (acknowledgement in mediaAcknowledgements) {
+                val prior = state.mediaAcknowledgements[acknowledgement.assetId]
+                if (prior != null && prior != acknowledgement) fail(RunStateConflictException())
+                if (
+                    state.mediaAcknowledgements.values.any { existing ->
+                        existing.assetId != acknowledgement.assetId &&
+                            (existing.actualFilename == acknowledgement.actualFilename ||
+                                existing.durableClaimId == acknowledgement.durableClaimId)
+                    }
+                ) {
+                    fail(RunStateConflictException())
+                }
+                if (prior == null) newAcknowledgements += acknowledgement
+            }
+            if (
+                state.mediaAcknowledgements.size + newAcknowledgements.size >
+                    AnkiLimitsV1.CreateCall.MAX_MEDIA_REFERENCE_COUNT
+            ) {
+                fail(RunStateCapacityException())
+            }
+
+            state.durableResponseIds += requestId
+            for (acknowledgement in newAcknowledgements) {
+                state.mediaAcknowledgements[acknowledgement.assetId] = acknowledgement
+            }
+        }
+    }
 
     /** Called only after durable RESULT_READY terminalization and canonical response encoding. */
     fun retainDurableTerminalResponse(
@@ -531,7 +778,7 @@ internal class AnkiRunStateRegistry(
     }
 
     private fun beginCleanupLocked(state: RunState): CleanupAction? {
-        if (state.cleanupStarted) return null
+        if (state.cleanupStarted || state.providerEntry != null) return null
         state.cleanupStarted = true
         val durableResponseIds =
             if (state.releaseAcknowledgement == true && !state.terminalReceiptFailure) {
@@ -570,6 +817,105 @@ internal class AnkiRunStateRegistry(
         val state = states[owner.runId] ?: throw RunNotRegisteredException()
         if (owner.ownerId !in state.owners || owner.closed.get()) throw InvalidCapabilityException()
         return state
+    }
+
+    private fun requireProviderEntryLocked(
+        owner: RunOwner,
+        capability: ProviderEntryCapability,
+        scope: ProviderMutationScope,
+    ): RunState {
+        val state = requireOwnerLocked(owner)
+        if (
+            state.providerEntry !== capability ||
+                capability.runId != state.runId ||
+                capability.ownerId != owner.ownerId ||
+                capability.scope != scope
+        ) {
+            throw InvalidCapabilityException()
+        }
+        return state
+    }
+
+    private fun validateProviderMutationScope(
+        runId: String,
+        scope: ProviderMutationScope,
+    ) {
+        try {
+            if (!AnkiValidators.isValidRunId(runId) || !AnkiValidators.isValidRequestId(scope.requestId)) {
+                throw InvalidCapabilityException()
+            }
+            if (scope.durableChildId <= 0L) throw InvalidCapabilityException()
+            when (scope.operation) {
+                ProviderMutationOperation.MEDIA_INSERT ->
+                    AnkiValidators.validateResponse(
+                        StoreMediaResult(
+                            runId = runId,
+                            requestId = scope.requestId,
+                            results = listOf(StoredMedia(scope.itemIdentity, "scope-validation.bin")),
+                            error = null,
+                        ),
+                    )
+                ProviderMutationOperation.NOTE_INSERT ->
+                    AnkiValidators.validateResponse(
+                        CreateNotesResult(
+                            runId = runId,
+                            requestId = scope.requestId,
+                            results = listOf(CreatedNote(scope.itemIdentity, noteId = 1L)),
+                            error = null,
+                        ),
+                    )
+                ProviderMutationOperation.CARD_ROUTING -> {
+                    val cardId = scope.itemIdentity.toLongOrNull()
+                    if (cardId == null || cardId <= 0L || cardId.toString() != scope.itemIdentity) {
+                        throw InvalidCapabilityException()
+                    }
+                }
+            }
+        } catch (_: RuntimeException) {
+            throw InvalidCapabilityException()
+        }
+    }
+
+    private fun validateMutationResponseInput(
+        runId: String,
+        requestId: String,
+        acknowledgements: List<MediaAcknowledgement>,
+    ) {
+        if (!AnkiValidators.isValidRunId(runId) || !AnkiValidators.isValidRequestId(requestId)) {
+            throw RunStateConflictException()
+        }
+        if (acknowledgements.size > AnkiLimitsV1.StoreMedia.MAX_ASSET_COUNT) {
+            throw RunStateCapacityException()
+        }
+        if (
+            acknowledgements.any { it.durableClaimId <= 0L } ||
+                acknowledgements.map { it.durableClaimId }.toSet().size != acknowledgements.size
+        ) {
+            throw RunStateConflictException()
+        }
+        acknowledgements.forEach { acknowledgement ->
+            requireSafeCanonicalMediaName(
+                acknowledgement.actualFilename,
+                "acknowledged provider media filename",
+                minimumScalarCount = 1,
+            )
+        }
+        if (acknowledgements.isNotEmpty()) {
+            AnkiValidators.validateResponse(
+                StoreMediaResult(
+                    runId = runId,
+                    requestId = requestId,
+                    results =
+                        acknowledgements.map { acknowledgement ->
+                            StoredMedia(
+                                acknowledgement.assetId,
+                                acknowledgement.actualFilename,
+                            )
+                        },
+                    error = null,
+                ),
+            )
+        }
     }
 
     private fun requireInitialization(
@@ -659,6 +1005,112 @@ internal class AnkiRunStateRegistry(
         var pageInFlight = false
     }
 
+    private fun freezeDuplicateBaseline(baseline: DuplicateBaseline): DuplicateBaseline {
+        val count = baseline.candidates.size
+        val occurrenceCount = baseline.occurrences.size
+        if (
+            count > AnkiLimitsV1.ScanFirstFields.DUPLICATE_CANDIDATE_MAX_ITEM_COUNT ||
+                occurrenceCount > AnkiLimitsV1.ScanFirstFields.DUPLICATE_CANDIDATE_MAX_ITEM_COUNT ||
+                baseline.providerNoteIds.any {
+                    it.size > AnkiLimitsV1.ScanFirstFields.DUPLICATE_HIT_PER_CANDIDATE_MAX_ITEM_COUNT
+                } ||
+                baseline.normalizedMatchingNoteIds.any {
+                    it.size > AnkiLimitsV1.ScanFirstFields.DUPLICATE_HIT_PER_CANDIDATE_MAX_ITEM_COUNT
+                }
+        ) {
+            throw RunStateCapacityException()
+        }
+        if (
+            count == 0 ||
+                occurrenceCount == 0 ||
+                baseline.providerNoteIds.size != count ||
+                baseline.normalizedMatchingNoteIds.size != count ||
+                baseline.candidates.distinct().size != count ||
+                baseline.occurrences.any { it !in baseline.candidates.indices } ||
+                baseline.occurrences.toSet() != baseline.candidates.indices.toSet() ||
+                !BASELINE_TOKEN_PATTERN.matches(baseline.token) ||
+                baseline.firstFieldName != baseline.target.model.fieldNames.firstOrNull() ||
+                (baseline.scopeDeckId != null && baseline.scopeDeckId != baseline.target.deck.id)
+        ) {
+            throw RunStateConflictException()
+        }
+        try {
+            ProviderSnapshotValidation.validateModel(baseline.target.model)
+            ProviderSnapshotValidation.validateDeck(baseline.target.deck)
+        } catch (_: InvalidTargetSnapshotException) {
+            throw RunStateConflictException()
+        }
+
+        var rawTotal = 0
+        var matchingTotal = 0
+        for (index in baseline.candidates.indices) {
+            val candidate = baseline.candidates[index]
+            val normalized =
+                try {
+                    val keyStats = AnkiValidators.strictStats(candidate.key, "duplicate key")
+                    val fieldStats =
+                        AnkiValidators.strictStats(candidate.firstField, "duplicate first field")
+                    if (
+                        candidate.key.isEmpty() ||
+                            candidate.firstField.isEmpty() ||
+                            keyStats.scalarCount >
+                            AnkiLimitsV1.ScanFirstFields.DUPLICATE_KEY_MAX_CODE_POINTS ||
+                            fieldStats.scalarCount >
+                            AnkiLimitsV1.ScanFirstFields.DUPLICATE_FIRST_FIELD_MAX_CODE_POINTS
+                    ) {
+                        throw RunStateConflictException()
+                    }
+                    DuplicateFirstFieldNormalizer.normalize(candidate.firstField)
+                } catch (_: AnkiProtocolException) {
+                    throw RunStateConflictException()
+                } catch (_: IllegalArgumentException) {
+                    throw RunStateConflictException()
+                }
+            if (normalized != candidate.key) throw RunStateConflictException()
+
+            val raw = baseline.providerNoteIds[index]
+            val matching = baseline.normalizedMatchingNoteIds[index]
+            if (raw.any { it <= 0L } || matching.any { it <= 0L } || !raw.containsAll(matching)) {
+                throw RunStateConflictException()
+            }
+            rawTotal = addBaselineCount(rawTotal, raw.size)
+            matchingTotal = addBaselineCount(matchingTotal, matching.size)
+        }
+        if (
+            rawTotal > AnkiLimitsV1.ScanFirstFields.DUPLICATE_HIT_TOTAL_MAX_ITEM_COUNT ||
+                matchingTotal > AnkiLimitsV1.ScanFirstFields.DUPLICATE_HIT_TOTAL_MAX_ITEM_COUNT
+        ) {
+            throw RunStateCapacityException()
+        }
+
+        return baseline.copy(
+            candidates = Collections.unmodifiableList(baseline.candidates.toList()),
+            occurrences = Collections.unmodifiableList(baseline.occurrences.toList()),
+            providerNoteIds =
+                Collections.unmodifiableList(
+                    baseline.providerNoteIds.map { ids ->
+                        Collections.unmodifiableSet(LinkedHashSet(ids))
+                    },
+                ),
+            normalizedMatchingNoteIds =
+                Collections.unmodifiableList(
+                    baseline.normalizedMatchingNoteIds.map { ids ->
+                        Collections.unmodifiableSet(LinkedHashSet(ids))
+                    },
+                ),
+        )
+    }
+
+    private fun addBaselineCount(
+        current: Int,
+        increment: Int,
+    ): Int =
+        try {
+            Math.addExact(current, increment)
+        } catch (_: ArithmeticException) {
+            throw RunStateCapacityException()
+        }
+
     private class RunState(
         val runId: String,
         val cancellation: AnkiCancellation,
@@ -670,6 +1122,7 @@ internal class AnkiRunStateRegistry(
         var knownTraversal: KnownTraversal? = null
         var duplicateBaseline: DuplicateBaseline? = null
         var baselineProbe: Long? = null
+        var providerEntry: ProviderEntryCapability? = null
         val mediaAcknowledgements = HashMap<String, MediaAcknowledgement>()
         val durableResponseIds = HashSet<String>()
         var frozenDurableResponseIds: Set<String>? = null
@@ -681,6 +1134,7 @@ internal class AnkiRunStateRegistry(
 
     private companion object {
         const val MAX_TERMINAL_RESPONSE_RECEIPTS = 8192
+        val BASELINE_TOKEN_PATTERN = Regex("baseline_[0-9a-f]{32}")
     }
 }
 
@@ -697,3 +1151,5 @@ internal class RunStateConflictException : RuntimeException()
 internal class RunStateCapacityException : RuntimeException()
 
 internal class TargetVerificationInProgressException : RuntimeException()
+
+internal class ProviderEntryInProgressException : RuntimeException()

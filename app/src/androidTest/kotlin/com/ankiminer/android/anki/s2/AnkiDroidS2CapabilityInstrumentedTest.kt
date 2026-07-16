@@ -7,6 +7,8 @@ import android.util.Log
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.ankiminer.android.AnkiMinerApplication
+import com.ankiminer.android.PythonInstrumentationRuntime
 import com.ankiminer.android.anki.protocol.AnkiErrorCode
 import com.ankiminer.android.anki.protocol.AnkiErrorDetail
 import com.ankiminer.android.anki.protocol.AnkiJsonCodec
@@ -17,19 +19,16 @@ import com.ankiminer.android.anki.protocol.CreatedNote
 import com.ankiminer.android.anki.protocol.MediaKind
 import com.ankiminer.android.anki.protocol.NotAttemptedMedia
 import com.ankiminer.android.anki.protocol.NotAttemptedNote
-import com.ankiminer.android.anki.protocol.ReleaseRunStateRequest
 import com.ankiminer.android.anki.protocol.StoreMediaRequest
 import com.ankiminer.android.anki.protocol.StoreMediaResult
 import com.ankiminer.android.anki.protocol.StoredMedia
 import com.ankiminer.android.anki.protocol.UncertainMedia
 import com.ankiminer.android.anki.protocol.UncertainNote
-import com.ankiminer.android.anki.provider.AnkiProviderRuntime
+import com.ankiminer.android.anki.provider.AnkiProviderCallbacks
 import com.ankiminer.android.anki.provider.ContentResolverAnkiGateway
 import com.ankiminer.android.anki.provider.ProviderAccessStatus
 import com.ankiminer.android.anki.provider.WorkerThreadGuard
 import com.ankiminer.android.debug.s2.S2ProbeMediaProvider
-import com.chaquo.python.Python
-import com.chaquo.python.android.AndroidPlatform
 import com.ichi2.anki.FlashCardsContract
 import com.ichi2.anki.api.AddContentApi
 import java.io.File
@@ -47,6 +46,8 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 private const val RUN_S2_ARGUMENT = "ankiMinerRunS2"
+private const val EXPECTED_ANKIDROID_VERSION_NAME_ARGUMENT = "ankiMinerExpectedAnkiDroidVersionName"
+private const val EXPECTED_ANKIDROID_VERSION_CODE_ARGUMENT = "ankiMinerExpectedAnkiDroidVersionCode"
 private const val EVIDENCE_TAG = "AnkiMinerS2"
 
 @RunWith(AndroidJUnit4::class)
@@ -55,12 +56,27 @@ class AnkiDroidS2CapabilityInstrumentedTest {
     private val api = AddContentApi(context)
 
     @Test
-    fun current_stable_provider_and_android_adapter_complete_the_raw_round_trip() {
+    fun provider_and_android_adapter_complete_the_raw_round_trip() {
+        val arguments = InstrumentationRegistry.getArguments()
         assumeTrue(
             "S2 runs only through its pinned AnkiDroid capability-probe runner",
-            InstrumentationRegistry.getArguments().getString(RUN_S2_ARGUMENT) == "true",
+            arguments.getString(RUN_S2_ARGUMENT) == "true",
         )
-        assertPinnedProviderIdentity()
+        val expectedVersionName =
+            arguments.getString(EXPECTED_ANKIDROID_VERSION_NAME_ARGUMENT) ?: "2.24.0"
+        val rawExpectedVersionCode = arguments.getString(EXPECTED_ANKIDROID_VERSION_CODE_ARGUMENT)
+        val expectedVersionCode =
+            if (rawExpectedVersionCode == null) {
+                422400300L
+            } else {
+                requireNotNull(rawExpectedVersionCode.toLongOrNull()) {
+                    "expected AnkiDroid version code must be an integer"
+                }.also { require(it > 0L) }
+            }
+        val python = PythonInstrumentationRuntime.awaitReady()
+        val application = context.applicationContext as AnkiMinerApplication
+        val providerCallbacks = application.ankiCallbacksForInstrumentation
+        assertProviderIdentity(expectedVersionCode)
         val fixture = writeFixtures()
         val deckId = createProbeDeck()
         val modelId = createProbeModel(deckId)
@@ -82,14 +98,12 @@ class AnkiDroidS2CapabilityInstrumentedTest {
         assertArrayEquals(directFields, requireNotNull(api.getNote(directNoteId)).getFields())
         assertCardRouted(directNoteId, deckId, directAudioName, directImageName)
 
-        AnkiProviderRuntime(context, WorkerThreadGuard { }).use { runtime ->
-            assertTrue(runtime.callbacks.registerRun(RUN_ID))
-            val callbacks = ProbeMutationCallbacks(context, runtime, api, deckId, modelId)
-            startPython()
+        assertTrue(providerCallbacks.registerRun(RUN_ID))
+        val callbacks = ProbeMutationCallbacks(context, providerCallbacks, api, deckId, modelId)
+        try {
             val summary =
                 JSONObject(
-                    Python.getInstance()
-                        .getModule("s2_anki_adapter_probe")
+                    python.getModule("s2_anki_adapter_probe")
                         .callAttr(
                             "run",
                             context.filesDir.absolutePath,
@@ -119,7 +133,8 @@ class AnkiDroidS2CapabilityInstrumentedTest {
 
             val evidence =
                 JSONObject()
-                    .put("ankiDroidVersion", "2.24.0")
+                    .put("ankiDroidVersion", expectedVersionName)
+                    .put("ankiDroidVersionCode", expectedVersionCode)
                     .put("apiSpec", 2)
                     .put("deckId", deckId)
                     .put("modelId", modelId)
@@ -134,17 +149,19 @@ class AnkiDroidS2CapabilityInstrumentedTest {
             val renderedEvidence = "ANKI_MINER_S2_PROBE=${evidence}"
             Log.i(EVIDENCE_TAG, renderedEvidence)
             println(renderedEvidence)
+        } finally {
+            callbacks.releaseRunIfOwned()
         }
     }
 
-    private fun assertPinnedProviderIdentity() {
+    private fun assertProviderIdentity(expectedVersionCode: Long) {
         val status =
             ContentResolverAnkiGateway(context, WorkerThreadGuard { }).accessStatus()
         assertTrue(status is ProviderAccessStatus.Available)
         status as ProviderAccessStatus.Available
         assertEquals("com.ichi2.anki", status.packageName)
         assertEquals(2, status.apiSpecVersion)
-        assertEquals(422400300L, status.versionCode)
+        assertEquals(expectedVersionCode, status.versionCode)
     }
 
     private fun createProbeDeck(): Long {
@@ -208,13 +225,6 @@ class AnkiDroidS2CapabilityInstrumentedTest {
         }
     }
 
-    private fun startPython() {
-        if (!Python.isStarted()) Python.start(AndroidPlatform(context))
-        Python.getInstance()
-            .getModule("android_bridge.bootstrap")
-            .callAttr("initialize", context.filesDir.absolutePath)
-    }
-
     private fun rawStrings(values: JSONArray): Set<String> =
         (0 until values.length()).mapTo(linkedSetOf()) { values.getString(it) }
 
@@ -245,19 +255,38 @@ class AnkiDroidS2CapabilityInstrumentedTest {
 
     class ProbeMutationCallbacks internal constructor(
         private val context: Context,
-        private val runtime: AnkiProviderRuntime,
+        private val providerCallbacks: AnkiProviderCallbacks,
         private val api: AddContentApi,
         private val deckId: Long,
         private val modelId: Long,
     ) {
         private val mediaByAsset = linkedMapOf<String, String>()
+        private var released = false
         val storedMediaNames: Set<String> get() = mediaByAsset.values.toSet()
 
-        fun ankiVerifyTarget(raw: String): String = runtime.callbacks.ankiVerifyTarget(raw)
+        fun ankiVerifyTarget(raw: String): String = providerCallbacks.ankiVerifyTarget(raw)
 
-        fun ankiScanFirstFields(raw: String): String = runtime.callbacks.ankiScanFirstFields(raw)
+        fun ankiScanFirstFields(raw: String): String = providerCallbacks.ankiScanFirstFields(raw)
 
-        fun ankiReleaseRunState(raw: String): String = runtime.callbacks.ankiReleaseRunState(raw)
+        fun ankiReleaseRunState(raw: String): String {
+            released = true
+            return providerCallbacks.ankiReleaseRunState(raw)
+        }
+
+        fun releaseRunIfOwned() {
+            if (released) return
+            val payload =
+                JSONObject()
+                    .put("runId", RUN_ID)
+                    .put("requestId", "request_00000000000000000000000000000052")
+                    .put("acknowledgeTerminalResponses", true)
+            val envelope =
+                JSONObject()
+                    .put("schemaVersion", 1)
+                    .put("type", AnkiOperation.RELEASE_RUN_STATE.requestType)
+                    .put("payload", payload)
+            providerCallbacks.ankiReleaseRunState(envelope.toString())
+        }
 
         fun ankiStoreMedia(raw: String): String {
             val request = AnkiJsonCodec.decodeRequest(raw, AnkiOperation.STORE_MEDIA) as StoreMediaRequest

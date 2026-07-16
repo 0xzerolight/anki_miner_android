@@ -1,5 +1,16 @@
 package com.ankiminer.android.mining
 
+@JvmInline
+value class MiningCancellationToken(val value: String) {
+    init {
+        require(TOKEN.matches(value))
+    }
+
+    private companion object {
+        val TOKEN = Regex("cancel_[0-9a-f]{32}")
+    }
+}
+
 data class MiningSource(
     val uri: String,
     val displayName: String,
@@ -124,6 +135,7 @@ sealed interface MiningRunState {
     data class Starting(
         val runId: String?,
         val progress: MiningProgress?,
+        val cancellationToken: MiningCancellationToken? = null,
     ) : MiningRunState
 
     data class Curating(val request: CurationRequest) : MiningRunState
@@ -139,7 +151,7 @@ sealed interface MiningRunState {
     ) : MiningRunState
 
     data class Cancelled(
-        val runId: String,
+        val runId: String?,
         val result: ProcessingResult?,
     ) : MiningRunState
 
@@ -161,6 +173,9 @@ val MiningRunState.runId: String?
             is MiningRunState.Cancelled -> runId
             is MiningRunState.Failed -> runId
         }
+
+val MiningRunState.cancellationToken: MiningCancellationToken?
+    get() = (this as? MiningRunState.Starting)?.cancellationToken
 
 val MiningRunState.isTerminal: Boolean
     get() =

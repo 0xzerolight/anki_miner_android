@@ -21,26 +21,34 @@ def _engine_modules() -> list[str]:
     )
 
 
-def preflight() -> str:
-    """Prove the debug probe itself did not import the engine before bootstrap."""
+def preflight(expected_home: str | None = None) -> str:
+    """Report bootstrap ordering without importing any additional engine module."""
 
     loaded_before = _engine_modules()
-    failure_code = None
-    try:
-        from android_bridge.bootstrap import require_initialized
+    from android_bridge.bootstrap import (
+        engine_modules_before_initialize,
+        require_initialized,
+    )
 
-        require_initialized()
+    failure_code = None
+    home = None
+    try:
+        home = require_initialized(expected_home)
     except Exception as exc:
         failure_code = getattr(exc, "code", type(exc).__name__)
     loaded_after = _engine_modules()
-    return json.dumps(
-        {
-            "engine_modules_after": loaded_after,
-            "engine_modules_before": loaded_before,
-            "require_initialized_failure": failure_code,
-        },
-        sort_keys=True,
-    )
+    result = {
+        "bootstrap_engine_modules_before": list(
+            engine_modules_before_initialize() or ()
+        ),
+        "engine_modules_after": loaded_after,
+        "engine_modules_before": loaded_before,
+    }
+    if failure_code is not None:
+        result["require_initialized_failure"] = failure_code
+    if home is not None:
+        result["home"] = home
+    return json.dumps(result, sort_keys=True)
 
 
 def _canonical_bytes(value: Any) -> bytes:

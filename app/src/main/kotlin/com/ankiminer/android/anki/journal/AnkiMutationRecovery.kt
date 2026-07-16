@@ -5,6 +5,10 @@ internal data class RecoveryInventory(
     val preparedChild: ChildRecord?,
     val preparedRoutingIntent: RoutingIntentRecord?,
     val preparedTargetExpectation: DurableTargetExpectation? = null,
+    val activeMediaLeaseRunIds: List<String> = emptyList(),
+    val reservedMediaReservationIds: List<Long> = emptyList(),
+    val unresolvedClaims: List<MediaClaimRecord> = emptyList(),
+    val openRemediations: List<RemediationRecord> = emptyList(),
 )
 
 /** A startup plan classifies only the one globally serialized PREPARED mutation. */

@@ -36,9 +36,7 @@ internal class SqliteAnkiMutationStore(
     override fun onCreate(db: SQLiteDatabase) = JournalSchema.create(db)
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        throw JournalCorruptionException(
-            "Unsupported pre-release journal schema $oldVersion; expected fresh schema $newVersion",
-        )
+        JournalSchema.upgrade(db, oldVersion, newVersion)
     }
 
     override fun onDowngrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -139,6 +137,59 @@ internal class SqliteAnkiMutationStore(
                    ((c.operation_kind = 'CARD_DECK_UPDATE') != EXISTS(SELECT 1 FROM card_commands x WHERE x.child_id = c.id))""".trimIndent(),
             )
         if (malformedChildren != 0L) throw JournalCorruptionException("Mutation child lacks exactly one typed command")
+        val malformedRouting =
+            scalarLong(
+                db,
+                """SELECT count(*) FROM routing_intents i
+                   JOIN parents p ON p.id = i.parent_id
+                   LEFT JOIN verified_target_decks d ON d.parent_id = i.parent_id
+                   LEFT JOIN target_expectation_templates x
+                       ON x.parent_id = i.parent_id AND x.template_ordinal = i.ordinal
+                   LEFT JOIN routing_observations o ON o.intent_id = i.id
+                   WHERE d.parent_id IS NULL OR x.parent_id IS NULL OR i.target_deck_id != d.deck_id OR
+                       (i.child_id IS NULL AND i.state IN ('VERIFIED', 'FAILED') AND o.intent_id IS NULL) OR
+                       (i.child_id IS NOT NULL AND o.intent_id IS NOT NULL) OR
+                       (o.intent_id IS NOT NULL AND (o.parent_id != i.parent_id OR
+                           o.request_index != i.request_index OR
+                           (i.state = 'VERIFIED' AND (o.card_id != i.card_id OR o.note_id != i.note_id OR
+                               o.ordinal != i.ordinal OR o.deck_id != i.target_deck_id)) OR
+                           (i.state = 'FAILED' AND o.card_id = i.card_id AND o.note_id = i.note_id AND
+                               o.ordinal = i.ordinal AND o.deck_id = i.target_deck_id)))""".trimIndent(),
+            )
+        if (malformedRouting != 0L) {
+            throw JournalCorruptionException("Card-routing evidence differs from its durable target")
+        }
+        val finalizedUnremediatedMedia =
+            scalarLong(
+                db,
+                """SELECT count(*) FROM parents p JOIN media_claims c
+                   ON c.run_id = p.run_id AND c.request_id = p.request_id
+                   WHERE p.operation_kind = 'STORE_MEDIA' AND
+                       p.state IN ('RESPONSE_ACKNOWLEDGED', 'ABANDONED') AND
+                       c.state IN ('STORED', 'PRESENT_BYTES_VERIFIED') AND NOT EXISTS(
+                           SELECT 1 FROM remediations r WHERE r.parent_id = p.id AND
+                               r.claim_id = c.id AND r.kind = 'MEDIA_STORED_UNATTACHED' AND
+                               r.state = 'OPEN')""".trimIndent(),
+            )
+        if (finalizedUnremediatedMedia != 0L) {
+            throw JournalCorruptionException("Finalized stored media lacks unattached remediation")
+        }
+        val malformedStoredRemediations =
+            scalarLong(
+                db,
+                """SELECT count(*) FROM remediations r
+                   LEFT JOIN parents p ON p.id = r.parent_id
+                   LEFT JOIN media_claims c ON c.id = r.claim_id
+                   WHERE r.kind = 'MEDIA_STORED_UNATTACHED' AND (
+                       p.id IS NULL OR c.id IS NULL OR p.operation_kind != 'STORE_MEDIA' OR
+                       c.run_id != p.run_id OR c.request_id != p.request_id OR
+                       (r.state = 'OPEN' AND c.state NOT IN ('STORED', 'PRESENT_BYTES_VERIFIED')) OR
+                       (r.state = 'RESOLVED' AND c.state NOT IN (
+                           'ATTACHED_VERIFIED', 'CLEANED_VERIFIED', 'ACKNOWLEDGED_BY_USER')))""".trimIndent(),
+            )
+        if (malformedStoredRemediations != 0L) {
+            throw JournalCorruptionException("Stored-unattached remediation differs from its claim")
+        }
     }
 
     override fun createParent(request: JournalRequest): ParentRecord {
@@ -286,7 +337,11 @@ internal class SqliteAnkiMutationStore(
                     val claim = claimById(db, binding.claimId)
                     if (
                         claim.runId != key.runId || claim.assetId != binding.assetId ||
-                        claim.actualFilename != binding.actualFilename || !claim.state.isUnresolved
+                        claim.actualFilename != binding.actualFilename || claim.state !in setOf(
+                            MediaClaimState.STORED,
+                            MediaClaimState.PRESENT_BYTES_VERIFIED,
+                            MediaClaimState.ATTACHED_VERIFIED,
+                        )
                     ) {
                         throw JournalInvariantViolation("Active note media binding differs from durable claim")
                     }
@@ -639,11 +694,11 @@ internal class SqliteAnkiMutationStore(
                 ChildState.PROVEN_NOT_COMMITTED -> {
                     if (child.attemptCount != 0 || child.receipt != null ||
                         claimState !in setOf(MediaClaimState.CLEANED_VERIFIED, MediaClaimState.ACKNOWLEDGED_BY_USER) ||
-                        result !is AlignedResult.MediaFailed
+                        result !is AlignedResult.MediaFailed && result !is AlignedResult.MediaNotAttempted
                     ) {
                         throw JournalInvariantViolation("Pre-entry media completion contradicts its durable evidence")
                     }
-                    if (result.rowError.code != JournalErrorCode.MEDIA_STORE_FAILED) {
+                    if (result is AlignedResult.MediaFailed && result.rowError.code != JournalErrorCode.MEDIA_STORE_FAILED) {
                         throw JournalInvariantViolation("Degradable media failure requires media_store_failed")
                     }
                 }
@@ -697,15 +752,10 @@ internal class SqliteAnkiMutationStore(
                 }
                 val target = targetSnapshotByParent(db, parent.id)
                     ?: throw JournalCorruptionException("Active note lost its verified target")
-                if (intents.size != target.model.cardCount ||
-                    intents.map { it.ordinal }.sorted() != target.model.templates.indices.toList()
-                ) {
-                    throw JournalInvariantViolation("Routing intents must exactly cover every durable template ordinal")
-                }
                 intents.forEach { intent ->
                     if (intent.noteId != parent.activeNoteId) throw JournalInvariantViolation("Routing note ID mismatch")
                     if (intent.targetDeckId != target.deck.id) throw JournalInvariantViolation("Routing target deck differs from durable target")
-                    if (intent.ordinal !in target.model.templates.indices) {
+                    if (target.model.templates.none { it.ordinal == intent.ordinal }) {
                         throw JournalInvariantViolation("Routing ordinal is outside the durable model template range")
                     }
                     db.insertOrThrow(
@@ -773,15 +823,15 @@ internal class SqliteAnkiMutationStore(
         return result
     }
 
-    override fun verifyRoutingIntentWithoutMutation(
+    override fun completeChildlessRoutingIntent(
         intentId: Long,
-        compactEvidence: String,
+        outcome: ChildlessRoutingOutcome,
     ): RoutingIntentRecord {
-        requireCompactEvidence(compactEvidence)
+        requireCompactEvidence(outcome.compactEvidence)
         return write { db ->
             val intent = routingIntentById(db, intentId)
             if (intent.state != RoutingIntentState.PENDING || intent.childId != null) {
-                throw JournalInvariantViolation("Only a childless PENDING routing intent can verify directly")
+                throw JournalInvariantViolation("Only a childless PENDING routing intent can complete directly")
             }
             val parent = parentById(db, intent.parentId)
             val target = targetSnapshotByParent(db, parent.id)
@@ -789,22 +839,68 @@ internal class SqliteAnkiMutationStore(
             if (
                 parent.activeRequestIndex != intent.requestIndex || parent.activeNoteId != intent.noteId ||
                 parent.routingPhase != NoteRoutingPhase.ROUTING || intent.targetDeckId != target.deck.id ||
-                intent.ordinal !in target.model.templates.indices || intent.preUpdateDeckId != target.deck.id
+                target.model.templates.none { it.ordinal == intent.ordinal }
             ) {
-                throw JournalInvariantViolation("Direct routing verification is not exact-target evidence")
+                throw JournalInvariantViolation("Direct routing outcome differs from the durable active target")
             }
-            JournalStateMachine.requireRoutingTransition(intent.state, RoutingIntentState.VERIFIED)
+            val observation = outcome.observation
+            val exactTarget =
+                observation.cardId == intent.cardId &&
+                    observation.noteId == intent.noteId &&
+                    observation.ordinal == intent.ordinal &&
+                    observation.deckId == intent.targetDeckId
+            val terminalState =
+                when (outcome) {
+                    is ChildlessRoutingOutcome.Verified -> {
+                        if (!exactTarget) {
+                            throw JournalInvariantViolation("Verified routing observation differs from the intent")
+                        }
+                        RoutingIntentState.VERIFIED
+                    }
+                    is ChildlessRoutingOutcome.Failed -> {
+                        if (exactTarget) {
+                            throw JournalInvariantViolation("Failed routing observation is exact target evidence")
+                        }
+                        RoutingIntentState.FAILED
+                    }
+                }
+            JournalStateMachine.requireRoutingTransition(intent.state, terminalState)
+            db.insertOrThrow(
+                "routing_observations",
+                null,
+                values(
+                    "intent_id" to intent.id,
+                    "parent_id" to intent.parentId,
+                    "request_index" to intent.requestIndex,
+                    "card_id" to observation.cardId,
+                    "note_id" to observation.noteId,
+                    "ordinal" to observation.ordinal,
+                    "deck_id" to observation.deckId,
+                    "observed_at_ms" to timestamp(),
+                ),
+            )
+            if (terminalState == RoutingIntentState.FAILED) {
+                ensureRemediationDb(
+                    db,
+                    RemediationDraft(
+                        parentId = parent.id,
+                        kind = RemediationKind.CARD_ROUTING_FAILED,
+                        summary = "Committed note card routing requires review",
+                        compactEvidence = "noteId=${intent.noteId};cardId=${intent.cardId}",
+                    ),
+                )
+            }
             db.updateOrThrow(
                 "routing_intents",
                 values(
-                    "state" to RoutingIntentState.VERIFIED.name,
-                    "terminal_evidence" to compactEvidence,
+                    "state" to terminalState.name,
+                    "terminal_evidence" to outcome.compactEvidence,
                     "updated_at_ms" to nextTimestamp(intent.updatedAtMs),
                 ),
                 "id = ?",
                 arrayOf(intent.id.toString()),
             )
-            advanceRoutedIfComplete(db, parent)
+            if (terminalState == RoutingIntentState.VERIFIED) advanceRoutedIfComplete(db, parent)
             routingIntentById(db, intent.id)
         }
     }
@@ -873,12 +969,10 @@ internal class SqliteAnkiMutationStore(
         val noteId = parent.activeNoteId
             ?: throw JournalCorruptionException("Routing parent lost its active note ID")
         val intents = routingIntentsForNote(db, parent.id, requestIndex, noteId)
-        val target = targetSnapshotByParent(db, parent.id)
-            ?: throw JournalCorruptionException("Routing parent lost its durable target")
         if (
-            intents.size == target.model.cardCount &&
-            intents.map { it.ordinal }.sorted() == target.model.templates.indices.toList() &&
-            intents.all { it.state == RoutingIntentState.VERIFIED }
+            intents.isNotEmpty() &&
+            intents.all { it.state == RoutingIntentState.VERIFIED } &&
+            hasExactFrozenRoutingSubset(db, parent, intents)
         ) {
             db.updateOrThrow(
                 "parents",
@@ -931,7 +1025,11 @@ internal class SqliteAnkiMutationStore(
             if (
                 claim.runId != parent.key.runId || claim.assetId != binding.assetId ||
                 claim.actualFilename != binding.actualFilename ||
-                claim.state !in setOf(MediaClaimState.STORED, MediaClaimState.PRESENT_BYTES_VERIFIED)
+                claim.state !in setOf(
+                    MediaClaimState.STORED,
+                    MediaClaimState.PRESENT_BYTES_VERIFIED,
+                    MediaClaimState.ATTACHED_VERIFIED,
+                )
             ) {
                 throw JournalInvariantViolation("Verified note binding differs from its unresolved stored claim")
             }
@@ -944,28 +1042,342 @@ internal class SqliteAnkiMutationStore(
         )
         active.materialization.mediaBindings.forEach { binding ->
             val claim = claimById(db, binding.claimId)
-            updateClaim(db, claim, MediaClaimState.ATTACHED_VERIFIED, claim.actualFilename, compactEvidence)
+            if (claim.state != MediaClaimState.ATTACHED_VERIFIED) {
+                updateClaim(db, claim, MediaClaimState.ATTACHED_VERIFIED, claim.actualFilename, compactEvidence)
+            }
         }
         clearActiveNote(db, parent)
         return parentById(db, parent.id)
     }
 
+    override fun terminateActiveNote(
+        key: ParentKey,
+        termination: ActiveNoteTermination,
+    ): ParentRecord {
+        requireCompactEvidence(termination.compactEvidence)
+        return write { db ->
+            val parent = requireMutableParent(db, key, ParentOperation.CREATE_NOTES)
+            val active = activeNoteByParent(db, parent.id)
+                ?: throw JournalInvariantViolation("Active-note termination requires durable materialization")
+            if (
+                parent.activeRequestIndex != termination.requestIndex ||
+                active.materialization.requestIndex != termination.requestIndex ||
+                alignedResultsByParent(db, parent.id).size != termination.requestIndex
+            ) {
+                throw JournalInvariantViolation("Active-note termination is not the current aligned item")
+            }
+            val item = requestItem(db, parent.id, termination.requestIndex)
+            if (item.itemId != active.materialization.clientNoteId) {
+                throw JournalCorruptionException("Active-note termination identity differs from request")
+            }
+
+            val row =
+                when (termination) {
+                    is ActiveNoteTermination.StablePreEntryFailure -> {
+                        requireStableTerminalError(termination.error, "pre-entry note failure")
+                        requirePendingUnknownNote(parent)
+                        val child = currentNoteInsertChild(db, parent, active)
+                        if (child == null) {
+                            if (termination.preparedNoteChildId != null) {
+                                throw JournalInvariantViolation("Requested note child does not exist")
+                            }
+                        } else {
+                            if (child.state == ChildState.PREPARED) {
+                                if (termination.preparedNoteChildId != child.id) {
+                                    throw JournalInvariantViolation("PREPARED note child was not explicitly selected")
+                                }
+                                JournalStateMachine.requireChildCompletion(child, ChildState.PROVEN_NOT_COMMITTED)
+                                updateChildTerminal(
+                                    db,
+                                    child,
+                                    ChildState.PROVEN_NOT_COMMITTED,
+                                    termination.compactEvidence,
+                                )
+                            } else if (
+                                child.state != ChildState.PROVEN_NOT_COMMITTED || child.attemptCount != 0 ||
+                                child.receipt != null ||
+                                termination.preparedNoteChildId != null && termination.preparedNoteChildId != child.id
+                            ) {
+                                throw JournalInvariantViolation("Stable note failure lacks exact pre-entry proof")
+                            }
+                        }
+                        if (routingIntentsForActiveItem(db, parent).isNotEmpty()) {
+                            throw JournalInvariantViolation("Pre-entry note failure cannot retain routing intents")
+                        }
+                        AlignedResult.NoteFailed(
+                            termination.requestIndex,
+                            item.itemId,
+                            termination.error,
+                            termination.compactEvidence,
+                        )
+                    }
+                    is ActiveNoteTermination.EnteredReceiptlessUnknown -> {
+                        requirePendingUnknownNote(parent)
+                        val child = currentNoteInsertChild(db, parent, active)
+                            ?: throw JournalInvariantViolation("Entered note uncertainty lacks its insert child")
+                        if (child.id != termination.preparedNoteChildId) {
+                            throw JournalInvariantViolation("Entered note uncertainty selected a different child")
+                        }
+                        JournalStateMachine.requireChildCompletion(child, ChildState.COMMIT_UNCERTAIN)
+                        if (child.receipt != null) {
+                            throw JournalInvariantViolation("Receiptless note uncertainty cannot hide a receipt")
+                        }
+                        updateChildTerminal(db, child, ChildState.COMMIT_UNCERTAIN, termination.compactEvidence)
+                        ensureRemediationDb(
+                            db,
+                            RemediationDraft(
+                                parentId = parent.id,
+                                kind = RemediationKind.NOTE_COMMIT_UNCERTAIN,
+                                summary = "Note provider commit could not be conclusively reconciled",
+                                compactEvidence = termination.compactEvidence,
+                            ),
+                        )
+                        AlignedResult.NoteUncertain(
+                            termination.requestIndex,
+                            item.itemId,
+                            termination.compactEvidence,
+                        )
+                    }
+                    is ActiveNoteTermination.KnownNoteFailure -> {
+                        requireKnownNoteFailure(parent, termination)
+                        val noteChild = currentNoteInsertChild(db, parent, active)
+                            ?: throw JournalInvariantViolation("Known note failure lacks its insert child")
+                        val receipt = noteChild.receipt as? ProviderReceipt.Note
+                            ?: throw JournalInvariantViolation("Known note failure lacks its typed receipt")
+                        if (noteChild.state != ChildState.COMMIT_KNOWN || receipt.noteId != termination.noteId) {
+                            throw JournalInvariantViolation("Known note failure differs from durable receipt proof")
+                        }
+                        termination.preparedRoutingFailure?.let {
+                            terminatePreparedRoutingForActiveNote(db, parent, it, termination.compactEvidence)
+                        }
+                        if (preparedChildForParent(db, parent.id) != null) {
+                            throw JournalInvariantViolation("Active-note failure retains an unselected PREPARED child")
+                        }
+                        ensureRemediationDb(
+                            db,
+                            RemediationDraft(
+                                parentId = parent.id,
+                                kind = RemediationKind.NOTE_COMMITTED_FAILED,
+                                summary = "A committed note requires review because exact postchecks failed",
+                                compactEvidence =
+                                    "noteId=${termination.noteId};item=${item.itemId};" +
+                                        "phase=${parent.routingPhase};${termination.compactEvidence}",
+                            ),
+                        )
+                        val intents = routingIntentsForActiveItem(db, parent)
+                        if (intents.isNotEmpty() && intents.any { it.state != RoutingIntentState.VERIFIED }) {
+                            ensureRemediationDb(
+                                db,
+                                RemediationDraft(
+                                    parentId = parent.id,
+                                    kind = RemediationKind.CARD_ROUTING_FAILED,
+                                    summary = "Committed note card routing requires review",
+                                    compactEvidence = "noteId=${termination.noteId};item=${item.itemId}",
+                                ),
+                            )
+                        }
+                        AlignedResult.NoteCommittedFailed(
+                            termination.requestIndex,
+                            item.itemId,
+                            termination.noteId,
+                            termination.error,
+                            termination.compactEvidence,
+                        )
+                    }
+                }
+
+            if (preparedChildForParent(db, parent.id) != null) {
+                throw JournalInvariantViolation("Active-note termination retains a PREPARED child")
+            }
+            ensureUnattachedBindingsDb(db, parent, active, termination.compactEvidence)
+            appendResultDb(db, parent, row)
+            clearActiveNote(db, parent)
+            parentById(db, parent.id)
+        }
+    }
+
+    private fun requirePendingUnknownNote(parent: ParentRecord) {
+        if (parent.routingPhase != NoteRoutingPhase.NOTE_PENDING || parent.activeNoteId != null) {
+            throw JournalInvariantViolation("Pre-receipt note termination requires NOTE_PENDING without a note ID")
+        }
+    }
+
+    private fun requireKnownNoteFailure(
+        parent: ParentRecord,
+        termination: ActiveNoteTermination.KnownNoteFailure,
+    ) {
+        requireStableTerminalError(termination.error, "known note failure", allowPostCommitUncertain = true)
+        if (
+            parent.activeNoteId != termination.noteId ||
+            parent.routingPhase !in setOf(
+                NoteRoutingPhase.NOTE_COMMIT_KNOWN,
+                NoteRoutingPhase.NOTE_READBACK_VERIFIED,
+                NoteRoutingPhase.CARDS_DISCOVERED,
+                NoteRoutingPhase.ROUTING,
+                NoteRoutingPhase.ROUTED,
+                NoteRoutingPhase.POSTCHECK_VERIFIED,
+            )
+        ) {
+            throw JournalInvariantViolation("Known note failure differs from the active durable note")
+        }
+        if (termination.error.code == JournalErrorCode.CANCELLED) {
+            throw JournalInvariantViolation("A known committed note cannot be cleanly cancelled")
+        }
+    }
+
+    private fun requireStableTerminalError(
+        error: JournalError,
+        label: String,
+        allowPostCommitUncertain: Boolean = false,
+    ) {
+        if (error.retryable || (!allowPostCommitUncertain && error.code == JournalErrorCode.POST_COMMIT_UNCERTAIN)) {
+            throw JournalInvariantViolation("$label requires a stable non-retryable error")
+        }
+    }
+
+    private fun currentNoteInsertChild(
+        db: SQLiteDatabase,
+        parent: ParentRecord,
+        active: ActiveNoteRecord,
+    ): ChildRecord? {
+        val matches =
+            childrenForParent(db, parent.id).filter {
+                it.command.operation == ChildOperation.NOTE_INSERT &&
+                    it.command.requestIndex == active.materialization.requestIndex &&
+                    it.command.identityKey == active.materialization.clientNoteId
+            }
+        if (matches.size > 1) throw JournalCorruptionException("Active note has multiple insert children")
+        return matches.singleOrNull()?.also {
+            if (it.itemSha256 != active.itemSha256) {
+                throw JournalCorruptionException("Active note insert child has a different materialization digest")
+            }
+        }
+    }
+
+    private fun routingIntentsForActiveItem(
+        db: SQLiteDatabase,
+        parent: ParentRecord,
+    ): List<RoutingIntentRecord> {
+        val requestIndex = parent.activeRequestIndex ?: return emptyList()
+        return routingIntents(db, parent.id).filter { it.requestIndex == requestIndex }
+    }
+
+    private fun terminatePreparedRoutingForActiveNote(
+        db: SQLiteDatabase,
+        parent: ParentRecord,
+        failure: PreparedRoutingFailure,
+        compactEvidence: String,
+    ) {
+        val child = childById(db, failure.childId)
+        val command = child.command as? MutationCommand.RouteCard
+            ?: throw JournalInvariantViolation("Prepared routing termination selected a non-card child")
+        val intent = routingIntentById(db, command.intentId)
+        if (
+            child.parentId != parent.id || child.state != ChildState.PREPARED ||
+            intent.parentId != parent.id || intent.childId != child.id ||
+            intent.state != RoutingIntentState.UPDATE_PREPARED ||
+            intent.requestIndex != parent.activeRequestIndex || intent.noteId != parent.activeNoteId
+        ) {
+            throw JournalInvariantViolation("Prepared routing termination differs from the active intent")
+        }
+        val (childOutcome, intentOutcome) =
+            when (failure) {
+                is PreparedRoutingFailure.ProvenNotCommitted ->
+                    ChildState.PROVEN_NOT_COMMITTED to RoutingIntentState.FAILED
+                is PreparedRoutingFailure.PostconditionFailed ->
+                    ChildState.POSTCONDITION_FAILED to RoutingIntentState.FAILED
+                is PreparedRoutingFailure.CommitUncertain ->
+                    ChildState.COMMIT_UNCERTAIN to RoutingIntentState.COMMIT_UNCERTAIN
+            }
+        JournalStateMachine.requireChildCompletion(child, childOutcome)
+        JournalStateMachine.requireRoutingTransition(intent.state, intentOutcome)
+        updateChildTerminal(db, child, childOutcome, compactEvidence)
+        db.updateOrThrow(
+            "routing_intents",
+            values(
+                "state" to intentOutcome.name,
+                "terminal_evidence" to compactEvidence,
+                "updated_at_ms" to nextTimestamp(intent.updatedAtMs),
+            ),
+            "id = ?",
+            arrayOf(intent.id.toString()),
+        )
+    }
+
+    private fun ensureUnattachedBindingsDb(
+        db: SQLiteDatabase,
+        noteParent: ParentRecord,
+        active: ActiveNoteRecord,
+        compactEvidence: String,
+    ) {
+        active.materialization.mediaBindings.forEach { binding ->
+            val claim = claimById(db, binding.claimId)
+            if (
+                claim.runId != noteParent.key.runId || claim.assetId != binding.assetId ||
+                claim.actualFilename != binding.actualFilename || claim.state !in setOf(
+                    MediaClaimState.STORED,
+                    MediaClaimState.PRESENT_BYTES_VERIFIED,
+                    MediaClaimState.ATTACHED_VERIFIED,
+                )
+            ) {
+                throw JournalInvariantViolation("Terminated note binding differs from durable media proof")
+            }
+            if (claim.state == MediaClaimState.ATTACHED_VERIFIED) return@forEach
+            val mediaParent = parentByKey(db, ParentKey(claim.runId, claim.requestId))
+                ?: throw JournalCorruptionException("Bound media claim lost its journal parent")
+            if (
+                mediaParent.operation != ParentOperation.STORE_MEDIA ||
+                mediaParent.state !in setOf(
+                    ParentState.RESULT_READY,
+                    ParentState.RESPONSE_ACKNOWLEDGED,
+                    ParentState.ABANDONED,
+                )
+            ) {
+                throw JournalInvariantViolation("Stored media must be terminal before note failure can retain it")
+            }
+            ensureRemediationDb(
+                db,
+                RemediationDraft(
+                    parentId = mediaParent.id,
+                    claimId = claim.id,
+                    kind = RemediationKind.MEDIA_STORED_UNATTACHED,
+                    summary = "Stored Anki media was not attached to a verified note",
+                    compactEvidence =
+                        "noteRequest=${noteParent.key.requestId};noteIndex=${active.materialization.requestIndex};" +
+                            "asset=${claim.assetId};$compactEvidence",
+                ),
+            )
+        }
+    }
+
     private fun requireCompleteRoutingProof(db: SQLiteDatabase, parent: ParentRecord) {
-        val target = targetSnapshotByParent(db, parent.id)
-            ?: throw JournalCorruptionException("Active note lost its durable target")
         val noteId = parent.activeNoteId ?: throw JournalInvariantViolation("Routing proof requires a known note ID")
         val requestIndex = parent.activeRequestIndex ?: throw JournalInvariantViolation("Routing proof requires an active item")
         val intents = routingIntentsForNote(db, parent.id, requestIndex, noteId)
         if (
-            intents.size != target.model.cardCount ||
-            intents.map { it.ordinal }.sorted() != target.model.templates.indices.toList() ||
+            intents.isEmpty() || !hasExactFrozenRoutingSubset(db, parent, intents) ||
             intents.any {
-                it.requestIndex != requestIndex || it.noteId != noteId || it.targetDeckId != target.deck.id ||
-                    it.state != RoutingIntentState.VERIFIED
+                it.requestIndex != requestIndex || it.noteId != noteId || it.state != RoutingIntentState.VERIFIED
             }
         ) {
             throw JournalInvariantViolation("Complete exact card-routing verification is missing")
         }
+    }
+
+    private fun hasExactFrozenRoutingSubset(
+        db: SQLiteDatabase,
+        parent: ParentRecord,
+        intents: List<RoutingIntentRecord>,
+    ): Boolean {
+        val target = targetSnapshotByParent(db, parent.id)
+            ?: throw JournalCorruptionException("Routing parent lost its durable target")
+        val templateOrdinals = target.model.templates.mapTo(HashSet()) { it.ordinal }
+        return intents.isNotEmpty() &&
+            intents.map { it.cardId }.distinct().size == intents.size &&
+            intents.map { it.ordinal }.distinct().size == intents.size &&
+            intents.all {
+                it.parentId == parent.id && it.targetDeckId == target.deck.id && it.ordinal in templateOrdinals
+            }
     }
 
     override fun appendAlignedResult(key: ParentKey, result: AlignedResult): ParentRecord =
@@ -1055,17 +1467,21 @@ internal class SqliteAnkiMutationStore(
                 val duplicateFree = frozenDurableRequestIds.distinct().size == frozenDurableRequestIds.size
                 val evidenceAccepted =
                     acknowledgeAuthorized && duplicateFree && frozenDurableRequestIds.toSet() == readyIds.toSet()
+                val wasReady = parents.associate { it.id to (it.state == ParentState.RESULT_READY) }
+                val terminalParents =
+                    parents.map { parent ->
+                        if (wasReady.getValue(parent.id)) parent else terminalizeOwnerlessDb(db, parent)
+                    }
                 val acknowledged = ArrayList<String>()
                 val abandoned = ArrayList<String>()
-                parents.forEach { parent ->
-                    val wasReady = parent.state == ParentState.RESULT_READY
-                    val terminal = if (wasReady) parent else terminalizeOwnerlessDb(db, parent)
+                terminalParents.forEach { terminal ->
+                    val responseWasReady = wasReady.getValue(terminal.id)
                     val finalState =
-                        if (evidenceAccepted && wasReady) {
-                            acknowledged += parent.key.requestId
+                        if (evidenceAccepted && responseWasReady) {
+                            acknowledged += terminal.key.requestId
                             ParentState.RESPONSE_ACKNOWLEDGED
                         } else {
-                            abandoned += parent.key.requestId
+                            abandoned += terminal.key.requestId
                             ParentState.ABANDONED
                         }
                     finalizeAndScrub(db, terminal, finalState)
@@ -1085,12 +1501,15 @@ internal class SqliteAnkiMutationStore(
                 recoveryParentsDb(db).filter {
                     it.key.runId !in activeRunIds && it.id != preparedParentId && !it.state.isFinalized
                 }
-            val finalized = candidates.map { parent ->
+            val terminalized = candidates.map { parent ->
                 crashHooks.hit(JournalCrashPoint.BEFORE_OWNERLESS_TERMINALIZATION)
                 val terminal = if (parent.state == ParentState.RESULT_READY) parent else terminalizeOwnerlessDb(db, parent)
                 crashHooks.hit(JournalCrashPoint.AFTER_OWNERLESS_TERMINALIZATION)
+                terminal
+            }
+            val finalized = terminalized.map { terminal ->
                 finalizeAndScrub(db, terminal, ParentState.ABANDONED)
-                parentById(db, parent.id)
+                parentById(db, terminal.id)
             }
             candidates.map { it.key.runId }.distinct().forEach { runId ->
                 if (preparedChildForRun(db, runId) == null && parentsForRun(db, runId).all { it.state.isFinalized }) {
@@ -1106,13 +1525,22 @@ internal class SqliteAnkiMutationStore(
     override fun recoveryParents(): List<ParentRecord> = read(::recoveryParentsDb)
 
     override fun recoveryInventory(): RecoveryInventory =
-        read { db ->
+        readTransaction { db ->
             val child = preparedChildDb(db)
             val intent = child?.let { preparedRoutingIntent(db, it.id) }
             val expectation =
                 child?.takeIf { it.command.operation == ChildOperation.DECK_CREATE }
                     ?.let { targetExpectationByParent(db, it.parentId) }
-            RecoveryInventory(recoveryParentsDb(db), child, intent, expectation)
+            RecoveryInventory(
+                unfinishedParents = recoveryParentsDb(db),
+                preparedChild = child,
+                preparedRoutingIntent = intent,
+                preparedTargetExpectation = expectation,
+                activeMediaLeaseRunIds = activeMediaLeaseRunIdsDb(db),
+                reservedMediaReservationIds = reservedMediaReservationIdsDb(db),
+                unresolvedClaims = unresolvedClaimsDb(db),
+                openRemediations = openRemediationsDb(db),
+            )
         }
 
     override fun acquireMediaLease(runId: String): MediaLeaseRecord {
@@ -1293,9 +1721,33 @@ internal class SqliteAnkiMutationStore(
         actualFilename?.let { validateMediaNames(it, it) }
         return write { db ->
             val claim = claimById(db, claimId)
+            if (openStoredUnattachedRemediationDb(db, claim.id) != null) {
+                if (state != MediaClaimState.PRESENT_BYTES_VERIFIED || !hasDurableNoteBindingDb(db, claim)) {
+                    throw JournalInvariantViolation(
+                        "Stored-unattached media requires its typed acknowledgement or exact note binding",
+                    )
+                }
+            }
             JournalStateMachine.requireClaimTransition(claim.state, state)
             updateClaim(db, claim, state, actualFilename ?: claim.actualFilename, compactEvidence)
             claimById(db, claimId)
+        }
+    }
+
+    override fun mediaClaim(key: ParentKey, assetId: String): MediaClaimRecord? {
+        require(assetId.isNotBlank()) { "assetId must not be blank" }
+        return read { db ->
+            db.query(
+                "media_claims",
+                null,
+                "run_id = ? AND asset_id = ?",
+                arrayOf(key.runId, assetId),
+                null,
+                null,
+                null,
+            ).use { cursor ->
+                cursor.singleOrNull(::claimFromCursor, "media claim run/asset identity")
+            }?.takeIf { claim -> claim.requestId == key.requestId }
         }
     }
 
@@ -1365,13 +1817,72 @@ internal class SqliteAnkiMutationStore(
             db.query(
                 "staging_artifacts",
                 null,
-                "state != ?",
-                arrayOf(StagingState.CLEANED.name),
+                null,
+                null,
                 null,
                 null,
                 "created_at_ms, id",
             ).use { it.mapRows(::stagingFromCursor) }
         }
+
+    override fun completeStagingCleanup(stagingId: Long, compactEvidence: String) {
+        requireCompactEvidence(compactEvidence)
+        write { db ->
+            val staging = stagingById(db, stagingId)
+            if (staging.state != StagingState.CLEANED) {
+                JournalStateMachine.requireStagingTransition(staging.state, StagingState.CLEANED)
+                db.updateOrThrow(
+                    "staging_artifacts",
+                    values(
+                        "state" to StagingState.CLEANED.name,
+                        "compact_evidence" to compactEvidence,
+                        "updated_at_ms" to nextTimestamp(staging.updatedAtMs),
+                    ),
+                    "id = ?",
+                    arrayOf(stagingId.toString()),
+                )
+            }
+
+            val attachedRemediations =
+                db.query(
+                    "remediations",
+                    null,
+                    "staging_id = ?",
+                    arrayOf(stagingId.toString()),
+                    null,
+                    null,
+                    "id",
+                ).use { it.mapRows(::remediationFromCursor) }
+            attachedRemediations.filter { it.state == RemediationState.OPEN }.forEach { remediation ->
+                db.updateOrThrow(
+                    "remediations",
+                    values(
+                        "state" to RemediationState.RESOLVED.name,
+                        "compact_evidence" to compactEvidence,
+                        "updated_at_ms" to nextTimestamp(remediation.updatedAtMs),
+                    ),
+                    "id = ?",
+                    arrayOf(remediation.id.toString()),
+                )
+            }
+            attachedRemediations.forEach { remediation ->
+                val resolved = remediationById(db, remediation.id)
+                if (resolved.state != RemediationState.RESOLVED) {
+                    throw JournalInvariantViolation("Attached staging remediation did not resolve")
+                }
+                db.updateOrThrow(
+                    "remediations",
+                    values(
+                        "staging_id" to null,
+                        "updated_at_ms" to nextTimestamp(resolved.updatedAtMs),
+                    ),
+                    "id = ?",
+                    arrayOf(resolved.id.toString()),
+                )
+            }
+            db.delete("staging_artifacts", "id = ?", arrayOf(stagingId.toString())).requireOne("staging artifact delete")
+        }
+    }
 
     override fun removeCleanedStaging(stagingId: Long) {
         write { db ->
@@ -1389,24 +1900,48 @@ internal class SqliteAnkiMutationStore(
     override fun addRemediation(draft: RemediationDraft): RemediationRecord =
         write { db -> ensureRemediationDb(db, draft) }
 
-    override fun openRemediations(): List<RemediationRecord> =
-        read { db ->
-            db.query(
-                "remediations",
-                null,
-                "state = ?",
-                arrayOf(RemediationState.OPEN.name),
-                null,
-                null,
-                "created_at_ms, id",
-            ).use { it.mapRows(::remediationFromCursor) }
+    override fun openRemediations(): List<RemediationRecord> = read(::openRemediationsDb)
+
+    override fun acknowledgeUnattachedMedia(
+        remediationId: Long,
+        compactEvidence: String,
+    ): RemediationRecord {
+        requireCompactEvidence(compactEvidence)
+        return write { db ->
+            val remediation = remediationById(db, remediationId)
+            if (
+                remediation.kind != RemediationKind.MEDIA_STORED_UNATTACHED ||
+                    remediation.state != RemediationState.OPEN || remediation.claimId == null
+            ) {
+                throw JournalInvariantViolation("Remediation is not open stored-unattached media")
+            }
+            val claim = claimById(db, remediation.claimId)
+            if (claim.state !in setOf(MediaClaimState.STORED, MediaClaimState.PRESENT_BYTES_VERIFIED)) {
+                throw JournalInvariantViolation("Stored-unattached claim is no longer acknowledgeable")
+            }
+            updateClaim(
+                db,
+                claim,
+                MediaClaimState.ACKNOWLEDGED_BY_USER,
+                claim.actualFilename,
+                compactEvidence,
+            )
+            val resolved = remediationById(db, remediationId)
+            if (resolved.state != RemediationState.RESOLVED) {
+                throw JournalInvariantViolation("Stored-unattached acknowledgement did not resolve remediation")
+            }
+            resolved
         }
+    }
 
     override fun resolveRemediation(remediationId: Long, compactEvidence: String): RemediationRecord {
         requireCompactEvidence(compactEvidence)
         return write { db ->
             val current = remediationById(db, remediationId)
             if (current.state != RemediationState.OPEN) throw JournalInvariantViolation("Remediation is already resolved")
+            if (current.kind == RemediationKind.MEDIA_STORED_UNATTACHED) {
+                throw JournalInvariantViolation("Stored-unattached media requires typed acknowledgement")
+            }
             db.updateOrThrow(
                 "remediations",
                 values(
@@ -1625,17 +2160,18 @@ internal class SqliteAnkiMutationStore(
             }
             is AlignedResult.MediaNotAttempted -> {
                 val children = mutationChildCount(db, parent.id, result.requestIndex, result.itemId, ChildOperation.MEDIA_INSERT)
-                val contradictory =
+                val provenAbsent =
                     scalarLong(
                         db,
-                        """SELECT count(*) FROM mutation_children c WHERE c.parent_id = ? AND
-                           c.request_index = ? AND c.identity_key = ? AND c.operation_kind = 'MEDIA_INSERT' AND
-                           (c.state != 'PROVEN_NOT_COMMITTED' OR EXISTS(
-                               SELECT 1 FROM provider_attempts a WHERE a.child_id = c.id) OR EXISTS(
-                               SELECT 1 FROM media_receipts r WHERE r.child_id = c.id))""".trimIndent(),
+                        """SELECT count(*) FROM mutation_children c JOIN media_claims m ON m.id = c.media_claim_id
+                           WHERE c.parent_id = ? AND c.request_index = ? AND c.identity_key = ? AND
+                               c.operation_kind = 'MEDIA_INSERT' AND c.state = 'PROVEN_NOT_COMMITTED' AND
+                               m.state IN ('CLEANED_VERIFIED', 'ACKNOWLEDGED_BY_USER') AND NOT EXISTS(
+                                   SELECT 1 FROM provider_attempts a WHERE a.child_id = c.id) AND NOT EXISTS(
+                                   SELECT 1 FROM media_receipts r WHERE r.child_id = c.id)""".trimIndent(),
                         arrayOf(parent.id.toString(), result.requestIndex.toString(), result.itemId),
                     )
-                if (children > 1L || contradictory != 0L) {
+                if (children > 0L && (children != 1L || provenAbsent != 1L)) {
                     throw JournalInvariantViolation("Not-attempted media row hides entered mutation evidence")
                 }
             }
@@ -1825,7 +2361,7 @@ internal class SqliteAnkiMutationStore(
                     when (child.state) {
                         ChildState.PROVEN_NOT_COMMITTED -> {
                             if (child.attemptCount != 0 || child.receipt != null ||
-                                row !is AlignedResult.MediaFailed ||
+                                row !is AlignedResult.MediaFailed && row !is AlignedResult.MediaNotAttempted ||
                                 claim.state !in setOf(MediaClaimState.CLEANED_VERIFIED, MediaClaimState.ACKNOWLEDGED_BY_USER)
                             ) {
                                 throw JournalInvariantViolation("Pre-entry media evidence contradicts terminal row")
@@ -2296,7 +2832,7 @@ internal class SqliteAnkiMutationStore(
         }
         identityClauses += "kind = ?"
         identityArgs += draft.kind.name
-        val existing =
+        val matches =
             db.query(
                 "remediations",
                 null,
@@ -2305,8 +2841,14 @@ internal class SqliteAnkiMutationStore(
                 null,
                 null,
                 null,
-            ).use { it.singleOrNull(::remediationFromCursor, "matching remediation") }
-        if (existing != null) return existing
+            ).use { it.mapRows(::remediationFromCursor) }
+        if (matches.size > 1) throw JournalCorruptionException("Remediation identity is not unique")
+        matches.singleOrNull()?.let { existing ->
+            if (existing.state != RemediationState.OPEN) {
+                throw JournalInvariantViolation("A resolved remediation cannot be reopened")
+            }
+            return existing
+        }
         val now = timestamp()
         val id =
             db.insertOrThrow(
@@ -2336,6 +2878,7 @@ internal class SqliteAnkiMutationStore(
         if (parent.state != ParentState.RESULT_READY) {
             throw JournalInvariantViolation("Cleanup must terminalize exact aligned evidence before scrubbing")
         }
+        ensureUnattachedMediaRemediationsDb(db, parent, finalState)
         val variant = parentTerminalMetadata(db, parent.id)?.variant
         val resultCount = scalarLong(db, "SELECT count(*) FROM aligned_results WHERE parent_id = ?", arrayOf(parent.id.toString()))
         val childCount = scalarLong(db, "SELECT count(*) FROM mutation_children WHERE parent_id = ?", arrayOf(parent.id.toString()))
@@ -2434,6 +2977,43 @@ internal class SqliteAnkiMutationStore(
         db.delete("parent_terminal_metadata", "parent_id = ?", arrayOf(parent.id.toString()))
         db.delete("aligned_results", "parent_id = ?", arrayOf(parent.id.toString()))
         db.delete("parent_request_items", "parent_id = ?", arrayOf(parent.id.toString()))
+    }
+
+    private fun ensureUnattachedMediaRemediationsDb(
+        db: SQLiteDatabase,
+        parent: ParentRecord,
+        finalState: ParentState,
+    ) {
+        if (parent.operation != ParentOperation.STORE_MEDIA) return
+        val claims =
+            db.query(
+                "media_claims",
+                null,
+                "run_id = ? AND request_id = ? AND state IN (?, ?)",
+                arrayOf(
+                    parent.key.runId,
+                    parent.key.requestId,
+                    MediaClaimState.STORED.name,
+                    MediaClaimState.PRESENT_BYTES_VERIFIED.name,
+                ),
+                null,
+                null,
+                "created_at_ms, id",
+            ).use { it.mapRows(::claimFromCursor) }
+        claims.forEach { claim ->
+            ensureRemediationDb(
+                db,
+                RemediationDraft(
+                    parentId = parent.id,
+                    claimId = claim.id,
+                    kind = RemediationKind.MEDIA_STORED_UNATTACHED,
+                    summary = "Stored Anki media was not attached to a verified note",
+                    compactEvidence =
+                        "finalState=${finalState.name};request=${parent.key.requestId};" +
+                            "asset=${claim.assetId};actual=${claim.actualFilename}",
+                ),
+            )
+        }
     }
 
     private fun requireRequestSelfConsistent(request: JournalRequest) {
@@ -2858,10 +3438,12 @@ internal class SqliteAnkiMutationStore(
     private fun routingIntentById(db: SQLiteDatabase, id: Long): RoutingIntentRecord =
         db.query("routing_intents", null, "id = ?", arrayOf(id.toString()), null, null, null)
             .use { it.requireSingle(::routingIntentFromCursor, "routing intent $id") }
+            .withRoutingObservation(db)
 
     private fun routingIntents(db: SQLiteDatabase, parentId: Long): List<RoutingIntentRecord> =
         db.query("routing_intents", null, "parent_id = ?", arrayOf(parentId.toString()), null, null, "ordinal, id")
             .use { it.mapRows(::routingIntentFromCursor) }
+            .map { it.withRoutingObservation(db) }
 
     private fun routingIntentsForNote(
         db: SQLiteDatabase,
@@ -2878,6 +3460,33 @@ internal class SqliteAnkiMutationStore(
             null,
             "ordinal, id",
         ).use { it.mapRows(::routingIntentFromCursor) }
+            .map { it.withRoutingObservation(db) }
+
+    private fun RoutingIntentRecord.withRoutingObservation(db: SQLiteDatabase): RoutingIntentRecord {
+        val observation =
+            db.query(
+                "routing_observations",
+                null,
+                "intent_id = ?",
+                arrayOf(id.toString()),
+                null,
+                null,
+                null,
+            ).use { cursor ->
+                cursor.singleOrNull(
+                    { row ->
+                        RoutingCardObservation(
+                            cardId = row.long("card_id"),
+                            noteId = row.long("note_id"),
+                            ordinal = row.int("ordinal"),
+                            deckId = row.long("deck_id"),
+                        )
+                    },
+                    "routing observation $id",
+                )
+            }
+        return copy(terminalObservation = observation)
+    }
 
     private fun routingIntentFromCursor(row: Cursor) =
         RoutingIntentRecord(
@@ -3066,6 +3675,65 @@ internal class SqliteAnkiMutationStore(
             it.requireSingle(::claimFromCursor, "media claim $id")
         }
 
+    private fun openStoredUnattachedRemediationDb(
+        db: SQLiteDatabase,
+        claimId: Long,
+    ): RemediationRecord? =
+        db.query(
+            "remediations",
+            null,
+            "claim_id = ? AND kind = ? AND state = ?",
+            arrayOf(
+                claimId.toString(),
+                RemediationKind.MEDIA_STORED_UNATTACHED.name,
+                RemediationState.OPEN.name,
+            ),
+            null,
+            null,
+            null,
+        ).use { it.singleOrNull(::remediationFromCursor, "open stored-unattached remediation") }
+
+    private fun hasDurableNoteBindingDb(
+        db: SQLiteDatabase,
+        claim: MediaClaimRecord,
+    ): Boolean =
+        scalarLong(
+            db,
+            """SELECT count(*) FROM active_note_media_bindings b
+               JOIN active_notes n ON n.parent_id = b.parent_id
+               JOIN parents p ON p.id = n.parent_id
+               WHERE b.claim_id = ? AND b.asset_id = ? AND b.actual_filename = ? AND
+                   p.run_id = ? AND p.state IN ('PREPARED', 'RUNNING')""".trimIndent(),
+            arrayOf(
+                claim.id.toString(),
+                claim.assetId,
+                checkNotNull(claim.actualFilename),
+                claim.runId,
+            ),
+        ) == 1L
+
+    private fun activeMediaLeaseRunIdsDb(db: SQLiteDatabase): List<String> =
+        db.query(
+            "media_leases",
+            arrayOf("run_id"),
+            "state = ?",
+            arrayOf(MediaLeaseState.ACTIVE.name),
+            null,
+            null,
+            "run_id, id",
+        ).use { cursor -> cursor.mapRows { row -> row.string("run_id") } }
+
+    private fun reservedMediaReservationIdsDb(db: SQLiteDatabase): List<Long> =
+        db.query(
+            "media_reservations",
+            arrayOf("id"),
+            "state = ?",
+            arrayOf(MediaReservationState.RESERVED.name),
+            null,
+            null,
+            "created_at_ms, id",
+        ).use { cursor -> cursor.mapRows { row -> row.long("id") } }
+
     private fun unresolvedClaimsDb(db: SQLiteDatabase): List<MediaClaimRecord> =
         db.query(
             "media_claims",
@@ -3094,6 +3762,17 @@ internal class SqliteAnkiMutationStore(
             row.long("created_at_ms"),
             row.long("updated_at_ms"),
         )
+
+    private fun openRemediationsDb(db: SQLiteDatabase): List<RemediationRecord> =
+        db.query(
+            "remediations",
+            null,
+            "state = ?",
+            arrayOf(RemediationState.OPEN.name),
+            null,
+            null,
+            "created_at_ms, id",
+        ).use { it.mapRows(::remediationFromCursor) }
 
     private fun updateClaim(
         db: SQLiteDatabase,
@@ -3327,6 +4006,19 @@ internal class SqliteAnkiMutationStore(
         checkAccess()
         return block(readableDatabase)
     }
+
+    /** Pins multi-query recovery admission evidence to one WAL snapshot. */
+    private fun <T> readTransaction(block: (SQLiteDatabase) -> T): T =
+        read { db ->
+            db.beginTransactionNonExclusive()
+            try {
+                val value = block(db)
+                db.setTransactionSuccessful()
+                value
+            } finally {
+                db.endTransaction()
+            }
+        }
 
     private fun <T> write(block: (SQLiteDatabase) -> T): T {
         checkAccess()

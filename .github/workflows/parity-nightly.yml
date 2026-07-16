@@ -1,0 +1,106 @@
+name: Desktop HEAD parity warning
+
+on:
+  schedule:
+    - cron: "23 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: anki-miner-desktop-head-parity
+  cancel-in-progress: true
+
+env:
+  LANG: C.UTF-8
+  LC_ALL: C.UTF-8
+  PYTHONDONTWRITEBYTECODE: "1"
+  PYTHONHASHSEED: "0"
+  PYTHONIOENCODING: utf-8
+  PYTHONUTF8: "1"
+  SOURCE_DATE_EPOCH: "315532800"
+  TZ: UTC
+
+jobs:
+  derive-head:
+    name: Derive desktop HEAD and report semantic drift
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout Android contract
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          path: android
+
+      - name: Checkout desktop HEAD
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          repository: 0xzerolight/anki_miner
+          path: desktop
+
+      - name: Set up frozen exporter Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.13.7"
+          cache: pip
+          cache-dependency-path: desktop/scripts/golden-runtime-requirements.txt
+
+      - name: Install golden runtime and external UniDic
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install \
+            --require-hashes \
+            --only-binary=:all: \
+            --requirement desktop/scripts/golden-runtime-requirements.txt
+          python desktop/scripts/prepare_golden_unidic.py \
+            --destination "$RUNNER_TEMP/unidic-dicdir"
+
+      - name: Derive desktop HEAD contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          python desktop/scripts/dump_engine_goldens.py \
+            --schema-version 2 \
+            --engine-root "$GITHUB_WORKSPACE/desktop" \
+            --corpus "$GITHUB_WORKSPACE/android/golden/corpus/tokenizer-v1.json" \
+            --v2-input "$GITHUB_WORKSPACE/android/golden/corpus/engine-v2-input.json" \
+            --dicdir "$RUNNER_TEMP/unidic-dicdir" \
+            --compact \
+            --output artifacts/engine-v2-desktop-head.json
+
+      - name: Compare semantic cases with the pinned Android fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          pinned = json.loads(Path("android/golden/engine-v2.json").read_text(encoding="utf-8"))
+          head = json.loads(Path("artifacts/engine-v2-desktop-head.json").read_text(encoding="utf-8"))
+          lock_revision = Path("android/tools/engine-sync/engine.lock").read_text(encoding="utf-8").strip()
+          head_revision = head["provenance"]["engine"]["revision"]
+          semantic_drift = (pinned["section_status"], pinned["cases"]) != (head["section_status"], head["cases"])
+          summary = Path(os.environ["GITHUB_STEP_SUMMARY"])
+          with summary.open("a", encoding="utf-8") as stream:
+              stream.write("## Desktop HEAD parity\n\n")
+              stream.write(f"- Android pin: `{lock_revision}`\n")
+              stream.write(f"- Desktop HEAD: `{head_revision}`\n")
+              stream.write(f"- Semantic drift: `{'yes' if semantic_drift else 'no'}`\n")
+          if semantic_drift:
+              print("::warning title=Desktop engine parity drift::Desktop HEAD golden cases differ from the Android pin")
+          elif head_revision != lock_revision:
+              print("::notice title=Desktop engine advanced::Desktop HEAD changed without golden-case drift")
+          PY
+
+      - name: Upload desktop HEAD fixture
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: engine-v2-desktop-head-${{ github.run_id }}
+          path: artifacts/engine-v2-desktop-head.json
+          if-no-files-found: error
+          retention-days: 30

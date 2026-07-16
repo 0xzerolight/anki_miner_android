@@ -52,6 +52,7 @@ def test_preflight_proves_bootstrap_is_required_without_loading_engine(tmp_path:
 
     assert result.returncode == 0, result.stderr
     assert json.loads(result.stdout) == {
+        "bootstrap_engine_modules_before": [],
         "engine_modules_after": [],
         "engine_modules_before": [],
         "require_initialized_failure": "bootstrap_required",

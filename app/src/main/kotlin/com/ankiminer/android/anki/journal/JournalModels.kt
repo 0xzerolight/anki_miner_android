@@ -527,7 +527,110 @@ internal data class RoutingIntentRecord(
     val terminalEvidence: String?,
     val createdAtMs: Long,
     val updatedAtMs: Long,
+    /** Fresh readback kept separate from the immutable discovery-time intent. */
+    val terminalObservation: RoutingCardObservation? = null,
 )
+
+internal data class RoutingCardObservation(
+    val cardId: Long,
+    val noteId: Long,
+    val ordinal: Int,
+    val deckId: Long,
+) {
+    init {
+        require(cardId > 0 && noteId > 0 && deckId > 0)
+        require(ordinal >= 0)
+    }
+}
+
+internal sealed interface ChildlessRoutingOutcome {
+    val observation: RoutingCardObservation
+    val compactEvidence: String
+
+    data class Verified(
+        override val observation: RoutingCardObservation,
+        override val compactEvidence: String,
+    ) : ChildlessRoutingOutcome {
+        init {
+            requireCompactEvidence(compactEvidence)
+        }
+    }
+
+    data class Failed(
+        override val observation: RoutingCardObservation,
+        override val compactEvidence: String,
+    ) : ChildlessRoutingOutcome {
+        init {
+            requireCompactEvidence(compactEvidence)
+        }
+    }
+}
+
+/** Semantic routing-child outcomes used only while atomically terminating its active note. */
+internal sealed interface PreparedRoutingFailure {
+    val childId: Long
+
+    data class ProvenNotCommitted(override val childId: Long) : PreparedRoutingFailure {
+        init {
+            require(childId > 0)
+        }
+    }
+
+    data class PostconditionFailed(override val childId: Long) : PreparedRoutingFailure {
+        init {
+            require(childId > 0)
+        }
+    }
+
+    data class CommitUncertain(override val childId: Long) : PreparedRoutingFailure {
+        init {
+            require(childId > 0)
+        }
+    }
+}
+
+/** One typed command owns row selection, child resolution, remediation, and active-saga clearing. */
+internal sealed interface ActiveNoteTermination {
+    val requestIndex: Int
+    val compactEvidence: String
+
+    data class StablePreEntryFailure(
+        override val requestIndex: Int,
+        val error: JournalError,
+        override val compactEvidence: String,
+        val preparedNoteChildId: Long? = null,
+    ) : ActiveNoteTermination {
+        init {
+            require(requestIndex >= 0)
+            requireCompactEvidence(compactEvidence)
+            require(preparedNoteChildId == null || preparedNoteChildId > 0)
+        }
+    }
+
+    data class EnteredReceiptlessUnknown(
+        override val requestIndex: Int,
+        val preparedNoteChildId: Long,
+        override val compactEvidence: String,
+    ) : ActiveNoteTermination {
+        init {
+            require(requestIndex >= 0 && preparedNoteChildId > 0)
+            requireCompactEvidence(compactEvidence)
+        }
+    }
+
+    data class KnownNoteFailure(
+        override val requestIndex: Int,
+        val noteId: Long,
+        val error: JournalError,
+        override val compactEvidence: String,
+        val preparedRoutingFailure: PreparedRoutingFailure? = null,
+    ) : ActiveNoteTermination {
+        init {
+            require(requestIndex >= 0 && noteId > 0)
+            requireCompactEvidence(compactEvidence)
+        }
+    }
+}
 
 internal enum class JournalErrorCode {
     API_DISABLED,
@@ -966,6 +1069,7 @@ internal data class StagingRecord(
 internal enum class RemediationKind {
     DECK_COMMIT_UNCERTAIN,
     MEDIA_COMMIT_UNCERTAIN,
+    MEDIA_STORED_UNATTACHED,
     NOTE_COMMIT_UNCERTAIN,
     NOTE_COMMITTED_FAILED,
     CARD_ROUTING_FAILED,

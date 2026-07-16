@@ -1,10 +1,27 @@
 package com.ankiminer.android.anki.provider
 
+import com.ankiminer.android.anki.journal.AlignedResult
 import com.ankiminer.android.anki.journal.AnkiMutationRecovery
 import com.ankiminer.android.anki.journal.AnkiMutationStore
 import com.ankiminer.android.anki.journal.ChildOperation
+import com.ankiminer.android.anki.journal.ChildRecord
 import com.ankiminer.android.anki.journal.ChildState
+import com.ankiminer.android.anki.journal.CardRecoveryObservation
+import com.ankiminer.android.anki.journal.CardRecoveryDisposition
+import com.ankiminer.android.anki.journal.JournalCorruptionException
+import com.ankiminer.android.anki.journal.MediaClaimRecord
+import com.ankiminer.android.anki.journal.MediaClaimState
+import com.ankiminer.android.anki.journal.MutationCommand
+import com.ankiminer.android.anki.journal.ParentKey
+import com.ankiminer.android.anki.journal.ParentOperation
+import com.ankiminer.android.anki.journal.ParentRecord
 import com.ankiminer.android.anki.journal.PreparedMutationRecovery
+import com.ankiminer.android.anki.journal.RecoveryInventory
+import com.ankiminer.android.anki.journal.RemediationKind
+import com.ankiminer.android.anki.journal.RoutingIntentState
+import com.ankiminer.android.anki.journal.StagingState
+import com.ankiminer.android.anki.protocol.AnkiProtocolException
+import com.ankiminer.android.anki.protocol.AnkiValidators
 import java.util.concurrent.atomic.AtomicBoolean
 
 internal interface AnkiStartupRecoveryGate : AnkiStartupAdmission {
@@ -15,6 +32,11 @@ internal object OpenAnkiStartupRecoveryGate : AnkiStartupRecoveryGate {
     override fun ensureRecovered() = Unit
 
     override fun isOpen(): Boolean = true
+}
+
+/** Process-shared staging recovery supplied by the provider runtime composition root. */
+internal fun interface MediaStagingRecovery {
+    fun recover(): AnkiMediaRecoveryReport
 }
 
 internal class JournalAnkiRunCleanup(
@@ -32,15 +54,26 @@ internal class JournalAnkiRunCleanup(
     }
 }
 
-/** Closed startup gate. Recovery is serialized, provider-read-only, and never admits a target. */
+/**
+ * Closed startup gate for every durable provider mutation and private media staging artifact.
+ *
+ * Recovery never reissues a provider media write. The one PREPARED mutation is first reduced to
+ * durable journal evidence, ownerless parents are then abandoned, and only a typed-quiescent
+ * journal may hand control to staging cleanup. The gate opens after a clean staging report and a
+ * second quiescence check.
+ */
 internal class JournalBackedTargetRecoveryGate(
     private val store: AnkiMutationStore,
     gateway: AnkiProviderGateway,
     private val workerThreadGuard: WorkerThreadGuard,
+    private val mediaStagingRecovery: MediaStagingRecovery = MissingMediaStagingRecovery,
 ) : AnkiStartupRecoveryGate {
     private val gateLock = Any()
     private val open = AtomicBoolean(false)
-    private val snapshots = TargetSnapshotReader(CheckedProvider(gateway))
+    private val gateway = gateway
+    private val checked = CheckedProvider(gateway)
+    private val snapshots = TargetSnapshotReader(checked)
+    private val cards = GlobalCardReader(checked)
 
     override fun isOpen(): Boolean = open.get()
 
@@ -54,34 +87,415 @@ internal class JournalBackedTargetRecoveryGate(
                 null -> Unit
                 is PreparedMutationRecovery.ProveNotCommitted -> recoverPreEntry(action)
                 is PreparedMutationRecovery.ReconcileDeck -> recoverEnteredDeck(action)
-                is PreparedMutationRecovery.FinalizeMediaReceipt,
-                is PreparedMutationRecovery.MarkMediaUncertain,
-                is PreparedMutationRecovery.PromoteNoteReceipt,
-                is PreparedMutationRecovery.MarkNoteUncertain,
-                is PreparedMutationRecovery.InspectCardRouting,
-                -> {
-                    store.abandonOwnerless(emptySet())
-                    throw PendingNonTargetMutationRecoveryException()
-                }
+                is PreparedMutationRecovery.FinalizeMediaReceipt -> recoverMediaReceipt(action)
+                is PreparedMutationRecovery.MarkMediaUncertain -> recoverMediaUncertain(action)
+                is PreparedMutationRecovery.PromoteNoteReceipt -> recoverNoteReceipt(action)
+                is PreparedMutationRecovery.MarkNoteUncertain -> recoverNoteUncertain(action)
+                is PreparedMutationRecovery.InspectCardRouting -> recoverCardRouting(action)
             }
+
             store.abandonOwnerless(emptySet())
-            val remaining = store.recoveryInventory()
-            if (remaining.preparedChild != null || remaining.unfinishedParents.isNotEmpty()) {
-                throw PendingNonTargetMutationRecoveryException()
+            requireTypedQuiescence(store.recoveryInventory(), allowStagingRemediation = true)
+
+            val report = mediaStagingRecovery.recover()
+            if (
+                report.cleanedRecords < 0 ||
+                    report.quarantinedRecords < 0 ||
+                    report.sweptOrphans < 0
+            ) {
+                throw JournalCorruptionException("Media staging recovery returned an invalid report")
             }
+            if (!report.isClean) throw PendingMediaStagingRecoveryException()
+
+            requireTypedQuiescence(store.recoveryInventory(), allowStagingRemediation = false)
             open.set(true)
         }
     }
 
     private fun recoverPreEntry(action: PreparedMutationRecovery.ProveNotCommitted) {
-        if (action.child.command.operation != ChildOperation.DECK_CREATE) {
-            throw PendingNonTargetMutationRecoveryException()
+        when (action.child.command.operation) {
+            ChildOperation.DECK_CREATE -> recoverPreEntryDeck(action)
+            ChildOperation.MEDIA_INSERT -> recoverPreEntryMedia(action)
+            ChildOperation.NOTE_INSERT ->
+                store.completeChild(
+                    action.child.id,
+                    ChildState.PROVEN_NOT_COMMITTED,
+                    nonTargetRecoveryEvidence(action.parent, "note", providerEntered = false),
+                )
+            ChildOperation.CARD_DECK_UPDATE ->
+                store.completeRoutingChild(
+                    action.child.id,
+                    ChildState.PROVEN_NOT_COMMITTED,
+                    RoutingIntentState.FAILED,
+                    nonTargetRecoveryEvidence(action.parent, "card", providerEntered = false),
+                )
         }
+    }
+
+    private fun recoverNoteReceipt(action: PreparedMutationRecovery.PromoteNoteReceipt) {
+        val command = action.child.command as? MutationCommand.InsertNote
+            ?: throw JournalCorruptionException("Prepared note receipt lacks its insert command")
+        val active = store.activeNote(action.parent.key)
+            ?: throw JournalCorruptionException("Prepared note receipt lacks its active materialization")
+        val validated = NoteInsertReceiptValidator.validate(action.receipt.contentUri)
+            ?: throw JournalCorruptionException("Persisted note receipt URI is invalid")
+        if (
+            validated.noteId != action.receipt.noteId ||
+            action.child.parentId != action.parent.id ||
+            command.requestIndexValue != action.parent.activeRequestIndex ||
+            active.materialization.requestIndex != command.requestIndexValue ||
+            active.materialization.clientNoteId != command.clientNoteId ||
+            active.itemSha256 != action.child.itemSha256
+        ) {
+            throw JournalCorruptionException("Persisted note receipt differs from its durable command")
+        }
+        store.commitNoteReceipt(
+            action.child.id,
+            action.receipt,
+            nonTargetRecoveryEvidence(action.parent, "note", providerEntered = true),
+        )
+    }
+
+    private fun recoverNoteUncertain(action: PreparedMutationRecovery.MarkNoteUncertain) {
+        store.completeChild(
+            action.child.id,
+            ChildState.COMMIT_UNCERTAIN,
+            nonTargetRecoveryEvidence(action.parent, "note", providerEntered = true),
+        )
+    }
+
+    private fun recoverCardRouting(action: PreparedMutationRecovery.InspectCardRouting) {
+        val initial = observeCard(action)
+        if (initial.observation == CardRecoveryObservation.DESIRED_DECK) {
+            if (action.hasAffectedCountReceipt) {
+                completeRecoveredCard(action, verified = true, uncertain = false, suffix = "desired")
+            } else {
+                // Exact target state without a count-one receipt cannot be attributed to this child.
+                completeRecoveredCard(action, verified = false, uncertain = true, suffix = "desired-no-receipt")
+            }
+            return
+        }
+
+        when (
+            AnkiMutationRecovery.decideCardRecovery(
+                initial.observation,
+                action.hasAffectedCountReceipt,
+                action.child.attemptCount,
+            )
+        ) {
+            CardRecoveryDisposition.VERIFY_POSTCONDITION ->
+                throw JournalCorruptionException("Unreachable card recovery disposition")
+            CardRecoveryDisposition.COMMITTED_FAILED_EXTERNAL_DRIFT ->
+                completeRecoveredCard(action, verified = false, uncertain = false, suffix = "external-drift")
+            CardRecoveryDisposition.COMMITTED_FAILED_UNCERTAIN ->
+                completeRecoveredCard(action, verified = false, uncertain = true, suffix = "uncertain")
+            CardRecoveryDisposition.REISSUE_ONCE_THEN_REQUERY -> recoverCardByOneReissue(action)
+        }
+    }
+
+    private fun recoverCardByOneReissue(action: PreparedMutationRecovery.InspectCardRouting) {
+        val command = action.child.command as? MutationCommand.RouteCard
+            ?: throw JournalCorruptionException("Prepared card recovery lacks its route command")
+        // Do not consume the sole recovery attempt while provider access is unavailable.
+        checked.preflightMutation(AnkiCancellation.NONE)
+        store.recordProviderEntry(action.child.id, recoveryReissue = true)
+        val affected =
+            try {
+                gateway.routeCard(
+                    AnkiProviderMutationCommand.RouteCard(
+                        expectedCardId = command.cardId,
+                        noteId = command.noteId,
+                        ordinal = command.ordinal,
+                        targetDeckId = command.targetDeckId,
+                    ),
+                )
+            } catch (_: RuntimeException) {
+                null
+            }
+        if (affected == 1) store.recordCardReceipt(action.child.id)
+        val refreshed =
+            AnkiMutationRecovery.plan(store.recoveryInventory()).preparedMutation
+                as? PreparedMutationRecovery.InspectCardRouting
+                ?: throw JournalCorruptionException("Reissued card mutation is no longer recoverable")
+        if (refreshed.child.id != action.child.id || refreshed.child.attemptCount != 2) {
+            throw JournalCorruptionException("Reissued card mutation changed durable identity or attempt history")
+        }
+        val observation = observeCard(refreshed).observation
+        when {
+            observation == CardRecoveryObservation.DESIRED_DECK && refreshed.hasAffectedCountReceipt ->
+                completeRecoveredCard(refreshed, verified = true, uncertain = false, suffix = "reissued-desired")
+            observation == CardRecoveryObservation.THIRD_DECK ->
+                completeRecoveredCard(refreshed, verified = false, uncertain = false, suffix = "reissued-drift")
+            else ->
+                completeRecoveredCard(refreshed, verified = false, uncertain = true, suffix = "reissued-uncertain")
+        }
+    }
+
+    private fun observeCard(action: PreparedMutationRecovery.InspectCardRouting): ObservedCardRecovery {
+        val command = action.child.command as? MutationCommand.RouteCard
+            ?: throw JournalCorruptionException("Prepared card recovery lacks its route command")
+        val card =
+            try {
+                cards.readById(command.cardId, AnkiCancellation.NONE)
+            } catch (_: RuntimeException) {
+                return ObservedCardRecovery(CardRecoveryObservation.UNVERIFIABLE_IDENTITY_OR_DECK)
+            }
+        if (card.id != command.cardId || card.noteId != command.noteId || card.ordinal != command.ordinal) {
+            return ObservedCardRecovery(CardRecoveryObservation.UNVERIFIABLE_IDENTITY_OR_DECK)
+        }
+        return ObservedCardRecovery(
+            when (card.deckId) {
+                command.targetDeckId -> CardRecoveryObservation.DESIRED_DECK
+                command.preUpdateDeckId -> CardRecoveryObservation.PRE_UPDATE_DECK
+                else -> CardRecoveryObservation.THIRD_DECK
+            },
+        )
+    }
+
+    private fun completeRecoveredCard(
+        action: PreparedMutationRecovery.InspectCardRouting,
+        verified: Boolean,
+        uncertain: Boolean,
+        suffix: String,
+    ) {
+        val childState =
+            when {
+                verified -> ChildState.POSTCONDITION_VERIFIED
+                uncertain -> ChildState.COMMIT_UNCERTAIN
+                else -> ChildState.POSTCONDITION_FAILED
+            }
+        val intentState =
+            when {
+                verified -> RoutingIntentState.VERIFIED
+                uncertain -> RoutingIntentState.COMMIT_UNCERTAIN
+                else -> RoutingIntentState.FAILED
+            }
+        store.completeRoutingChild(
+            action.child.id,
+            childState,
+            intentState,
+            nonTargetRecoveryEvidence(action.parent, "card-$suffix", providerEntered = true),
+        )
+    }
+
+    private fun nonTargetRecoveryEvidence(
+        parent: ParentRecord,
+        kind: String,
+        providerEntered: Boolean,
+    ): String =
+        "startupRecovery=$kind;providerEntry=$providerEntered;requestSha256=${parent.requestSha256}"
+
+    private data class ObservedCardRecovery(val observation: CardRecoveryObservation)
+
+    private fun recoverPreEntryDeck(action: PreparedMutationRecovery.ProveNotCommitted) {
         store.completeChild(
             action.child.id,
             ChildState.PROVEN_NOT_COMMITTED,
             "startupRecovery=deck;providerEntry=false;requestSha256=${action.parent.requestSha256}",
         )
+    }
+
+    private fun recoverPreEntryMedia(action: PreparedMutationRecovery.ProveNotCommitted) {
+        val identity = requirePreparedMediaIdentity(action.parent, action.child, action.child.mediaClaimId)
+        if (action.child.attemptCount != 0 || action.child.receipt != null) {
+            throw JournalCorruptionException("Pre-entry media recovery contradicts provider evidence")
+        }
+        store.completeMediaFailure(
+            childId = action.child.id,
+            claimId = identity.claim.id,
+            childOutcome = ChildState.PROVEN_NOT_COMMITTED,
+            claimState = MediaClaimState.CLEANED_VERIFIED,
+            result =
+                AlignedResult.MediaNotAttempted(
+                    requestIndex = identity.command.requestIndexValue,
+                    itemId = identity.command.assetId,
+                ),
+            compactEvidence = mediaRecoveryEvidence(action.parent, providerEntered = false),
+        )
+    }
+
+    private fun recoverMediaUncertain(action: PreparedMutationRecovery.MarkMediaUncertain) {
+        val identity = requirePreparedMediaIdentity(action.parent, action.child, action.claimId)
+        if (action.child.attemptCount <= 0 || action.child.receipt != null) {
+            throw JournalCorruptionException("Entered media uncertainty contradicts provider evidence")
+        }
+        store.completeMediaFailure(
+            childId = action.child.id,
+            claimId = identity.claim.id,
+            childOutcome = ChildState.COMMIT_UNCERTAIN,
+            claimState = MediaClaimState.COMMIT_UNCERTAIN,
+            result =
+                AlignedResult.MediaUncertain(
+                    requestIndex = identity.command.requestIndexValue,
+                    itemId = identity.command.assetId,
+                    compactEvidence = mediaRecoveryEvidence(action.parent, providerEntered = true),
+                ),
+            compactEvidence = mediaRecoveryEvidence(action.parent, providerEntered = true),
+        )
+    }
+
+    private fun recoverMediaReceipt(action: PreparedMutationRecovery.FinalizeMediaReceipt) {
+        val identity = requirePreparedMediaIdentity(action.parent, action.child, action.claimId)
+        if (action.child.attemptCount <= 0 || action.child.receipt != action.receipt) {
+            throw JournalCorruptionException("Persisted media receipt contradicts provider evidence")
+        }
+        val validated = MediaInsertReceiptValidator.validate(action.receipt.fileUri)
+            ?: throw JournalCorruptionException("Persisted media receipt URI is invalid")
+        if (validated.actualFilename != action.receipt.actualFilename) {
+            throw JournalCorruptionException("Persisted media receipt filename and URI disagree")
+        }
+        try {
+            AnkiValidators.validateProviderFilename(
+                actual = action.receipt.actualFilename,
+                requested = identity.claim.requestedFilename,
+                preferred = identity.claim.preferredName,
+            )
+        } catch (error: AnkiProtocolException) {
+            throw JournalCorruptionException("Persisted media receipt is unrelated to its durable request", error)
+        }
+        store.commitMediaReceipt(
+            childId = action.child.id,
+            claimId = identity.claim.id,
+            receipt = action.receipt,
+            compactEvidence = mediaRecoveryEvidence(action.parent, providerEntered = true),
+        )
+    }
+
+    private fun requirePreparedMediaIdentity(
+        parent: ParentRecord,
+        child: ChildRecord,
+        expectedClaimId: Long?,
+    ): PreparedMediaIdentity {
+        try {
+            if (parent.operation != ParentOperation.STORE_MEDIA || child.parentId != parent.id) {
+                throw JournalCorruptionException("Prepared media parent and child disagree")
+            }
+            val command = child.command as? MutationCommand.StoreMedia
+                ?: throw JournalCorruptionException("Prepared media child lacks a media command")
+            val claimId = expectedClaimId
+                ?: throw JournalCorruptionException("Prepared media child lacks a claim ID")
+            if (child.mediaClaimId != claimId) {
+                throw JournalCorruptionException("Prepared media action and child claim IDs disagree")
+            }
+            val item = store.requestItems(parent.key).singleOrNull { requestItem ->
+                requestItem.requestIndex == command.requestIndexValue
+            } ?: throw JournalCorruptionException("Prepared media command lacks one exact request item")
+            if (
+                item.parentId != parent.id ||
+                    item.itemId != command.assetId ||
+                    command.identityKey != command.assetId
+            ) {
+                throw JournalCorruptionException("Prepared media command and request item disagree")
+            }
+            val claim = store.mediaClaim(parent.key, command.assetId)
+                ?: throw JournalCorruptionException("Prepared media command lacks an exact claim")
+            if (
+                claim.id != claimId ||
+                    claim.runId != parent.key.runId ||
+                    claim.requestId != parent.key.requestId ||
+                    claim.assetId != command.assetId ||
+                    claim.preferredName != command.preferredName ||
+                    claim.state != MediaClaimState.PENDING ||
+                    claim.actualFilename != null
+            ) {
+                throw JournalCorruptionException("Prepared media claim identity or state is invalid")
+            }
+            AnkiValidators.validateProviderFilename(
+                actual = claim.requestedFilename,
+                requested = claim.requestedFilename,
+                preferred = claim.preferredName,
+            )
+
+            val staging = store.stagingForRecovery().singleOrNull { record ->
+                record.runId == parent.key.runId &&
+                    record.requestId == parent.key.requestId &&
+                    record.assetId == command.assetId
+            } ?: throw JournalCorruptionException("Prepared media command lacks one exact staging record")
+            if (
+                staging.contentUri != command.fileUri ||
+                    staging.packageName != ANKIDROID_PACKAGE ||
+                    staging.sha256 != claim.sha256 ||
+                    staging.state != StagingState.GRANTED
+            ) {
+                throw JournalCorruptionException("Prepared media command and staging identity disagree")
+            }
+            return PreparedMediaIdentity(command, claim)
+        } catch (error: JournalCorruptionException) {
+            throw error
+        } catch (error: RuntimeException) {
+            throw JournalCorruptionException("Prepared media durable identity could not be validated", error)
+        }
+    }
+
+    private fun requireTypedQuiescence(
+        inventory: RecoveryInventory,
+        allowStagingRemediation: Boolean,
+    ) {
+        if (
+            inventory.preparedChild != null ||
+                inventory.preparedRoutingIntent != null ||
+                inventory.preparedTargetExpectation != null ||
+                inventory.unfinishedParents.isNotEmpty() ||
+                inventory.activeMediaLeaseRunIds.isNotEmpty() ||
+                inventory.reservedMediaReservationIds.isNotEmpty()
+        ) {
+            throw JournalCorruptionException("Startup recovery did not drain durable mutation capabilities")
+        }
+
+        val claimsById = inventory.unresolvedClaims.associateBy(MediaClaimRecord::id)
+        if (claimsById.size != inventory.unresolvedClaims.size) {
+            throw JournalCorruptionException("Startup recovery inventory repeats an unresolved media claim")
+        }
+        val mediaRemediations =
+            inventory.openRemediations.filter { remediation ->
+                remediation.kind == RemediationKind.MEDIA_COMMIT_UNCERTAIN ||
+                    remediation.kind == RemediationKind.MEDIA_STORED_UNATTACHED
+            }
+        inventory.unresolvedClaims.forEach { claim ->
+            val expectedKind =
+                when (claim.state) {
+                    MediaClaimState.COMMIT_UNCERTAIN -> RemediationKind.MEDIA_COMMIT_UNCERTAIN
+                    MediaClaimState.STORED,
+                    MediaClaimState.PRESENT_BYTES_VERIFIED,
+                    -> RemediationKind.MEDIA_STORED_UNATTACHED
+                    else -> throw JournalCorruptionException(
+                        "Startup recovery retained an unsupported unresolved media claim",
+                    )
+                }
+            val exact = mediaRemediations.filter { remediation -> remediation.claimId == claim.id }
+            val parent = store.parent(ParentKey(claim.runId, claim.requestId))
+            if (
+                exact.size != 1 ||
+                    exact.single().kind != expectedKind ||
+                    parent == null ||
+                    exact.single().parentId != parent.id ||
+                    parent.operation != ParentOperation.STORE_MEDIA ||
+                    !parent.state.isFinalized
+            ) {
+                throw JournalCorruptionException("Unresolved media claim lacks one exact remediation")
+            }
+        }
+        mediaRemediations.forEach { remediation ->
+            val claim = remediation.claimId?.let(claimsById::get)
+                ?: throw JournalCorruptionException("Media remediation lacks its unresolved claim")
+            val expectedKind =
+                when (claim.state) {
+                    MediaClaimState.COMMIT_UNCERTAIN -> RemediationKind.MEDIA_COMMIT_UNCERTAIN
+                    MediaClaimState.STORED,
+                    MediaClaimState.PRESENT_BYTES_VERIFIED,
+                    -> RemediationKind.MEDIA_STORED_UNATTACHED
+                    else -> throw JournalCorruptionException("Media remediation has an invalid claim state")
+                }
+            if (remediation.kind != expectedKind) {
+                throw JournalCorruptionException("Media remediation kind disagrees with its claim")
+            }
+        }
+        if (
+            !allowStagingRemediation &&
+                inventory.openRemediations.any { it.kind == RemediationKind.STAGING_QUARANTINED }
+        ) {
+            throw JournalCorruptionException("Clean staging recovery retained an open staging remediation")
+        }
     }
 
     private fun recoverEnteredDeck(action: PreparedMutationRecovery.ReconcileDeck) {
@@ -94,7 +508,11 @@ internal class JournalBackedTargetRecoveryGate(
         val receiptIsValid = receipt == null || validatedReceipt != null
         val target =
             if (receiptIsValid) {
-                reconcile(action.expectedTarget.model.toProviderSnapshot(), action.expectedTarget.expectedDeckName, validatedReceipt)
+                reconcile(
+                    action.expectedTarget.model.toProviderSnapshot(),
+                    action.expectedTarget.expectedDeckName,
+                    validatedReceipt,
+                )
             } else {
                 null
             }
@@ -133,6 +551,23 @@ internal class JournalBackedTargetRecoveryGate(
             null
         }
     }
+
+    private fun mediaRecoveryEvidence(
+        parent: ParentRecord,
+        providerEntered: Boolean,
+    ): String =
+        "startupRecovery=media;providerEntry=$providerEntered;requestSha256=${parent.requestSha256}"
+
+    private data class PreparedMediaIdentity(
+        val command: MutationCommand.StoreMedia,
+        val claim: MediaClaimRecord,
+    )
+}
+
+private object MissingMediaStagingRecovery : MediaStagingRecovery {
+    override fun recover(): AnkiMediaRecoveryReport = throw PendingMediaStagingRecoveryException()
 }
 
 internal class PendingNonTargetMutationRecoveryException : RuntimeException()
+
+internal class PendingMediaStagingRecoveryException : RuntimeException()

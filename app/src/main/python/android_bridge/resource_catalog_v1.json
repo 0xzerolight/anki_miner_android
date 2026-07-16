@@ -1,0 +1,91 @@
+{
+  "schemaVersion": 1,
+  "resources": [
+    {
+      "resourceId": "unidic-lite-1.0.8",
+      "kind": "unidic",
+      "displayName": "UniDic Lite 1.0.8",
+      "archive": {
+        "url": "https://files.pythonhosted.org/packages/55/2b/8cf7514cb57d028abcef625afa847d60ff1ffbf0049c36b78faa7c35046f/unidic-lite-1.0.8.tar.gz",
+        "sha256": "db9d4572d9fdd4d00a97949d4b0741ec480ee05a7e7e2e32f547500dae27b245",
+        "sizeBytes": 47356746,
+        "format": "tar.gz"
+      },
+      "install": {
+        "memberPrefix": "unidic-lite-1.0.8/unidic_lite/dicdir/",
+        "treeSha256": "bd942f1b395aa7c56fe20321dc7f021930e29107f6b2949a49f5c56caab55ea7",
+        "fileCount": 19,
+        "sizeBytes": 260467176,
+        "archiveMemberLimit": 128
+      },
+      "attribution": [
+        {
+          "name": "unidic-lite",
+          "copyright": "Copyright 2020 Paul McCann",
+          "license": "MIT",
+          "url": "https://github.com/polm/unidic-lite"
+        },
+        {
+          "name": "UniDic 2.1.2",
+          "copyright": "Copyright (c) 2011-2017, The UniDic Consortium",
+          "license": "BSD-3-Clause",
+          "url": "https://unidic.ninjal.ac.jp/"
+        }
+      ]
+    },
+    {
+      "resourceId": "jitendex-2026.07.09.0",
+      "kind": "yomitan-dictionary",
+      "displayName": "Jitendex.org 2026-07-09",
+      "slotId": "jitendex",
+      "archive": {
+        "url": "https://github.com/stephenmk/stephenmk.github.io/releases/download/2026.07.09.0/jitendex-yomitan.zip",
+        "sha256": "807d911114af9d2154d270702972aafb2b6a6c2dc2400afa98db870d035c1a0b",
+        "sizeBytes": 38545572,
+        "format": "zip"
+      },
+      "dictionary": {
+        "title": "Jitendex.org [2026-07-09]",
+        "revision": "2026.07.09.0",
+        "format": 3,
+        "memberCount": 473,
+        "uncompressedBytes": 540565403,
+        "archiveMemberLimit": 4096,
+        "uncompressedBytesLimit": 2147483648,
+        "fileBytesLimit": 16777216
+      },
+      "attribution": [
+        {
+          "name": "Jitendex",
+          "copyright": "Copyright Stephen Kraus 2023-2026",
+          "license": "CC-BY-SA-4.0",
+          "url": "https://jitendex.org/pages/legal.html"
+        },
+        {
+          "name": "JMdict",
+          "copyright": "Electronic Dictionary Research and Development Group",
+          "license": "EDRDG-Licence",
+          "url": "https://www.edrdg.org/edrdg/licence.html"
+        },
+        {
+          "name": "Tatoeba example sentences",
+          "copyright": "Tatoeba contributors",
+          "license": "CC-BY-2.0-FR",
+          "url": "https://tatoeba.org/en/downloads"
+        },
+        {
+          "name": "Kanji alive pronunciation audio",
+          "copyright": "Kanji alive project contributors",
+          "license": "CC-BY-4.0",
+          "url": "https://github.com/kanjialive/kanji-data-media"
+        },
+        {
+          "name": "JmdictFurigana",
+          "copyright": "JmdictFurigana contributors",
+          "license": "CC-BY-SA-4.0",
+          "url": "https://github.com/Doublevil/JmdictFurigana"
+        }
+      ]
+    }
+  ]
+}

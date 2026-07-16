@@ -26,6 +26,9 @@ data class SafDocument(
 }
 
 interface SafBroker {
+    /** Remove process-orphaned grants off the main thread before another selection is needed. */
+    suspend fun reconcileStartup() {}
+
     /** Persist read access and resolve display metadata without blocking the caller's thread. */
     suspend fun retainReadAccess(uri: String): SafDocument
 
@@ -53,7 +56,34 @@ class AndroidSafBroker(
     private val grantMonitor = Any()
     private val grantLedger = SafGrantLedger()
     private val cleanupScope = CoroutineScope(SupervisorJob() + ioDispatcher)
-    private var startupReconciled = false
+
+    // M3 has no durable selection inventory, so every grant surviving a process restart is
+    // orphaned. The process-wide broker removes those grants before accepting a new owner.
+    private val startupReconciler =
+        OrphanedSafGrantReconciler(
+            object : PersistedSafGrantAccess {
+                override fun readGrantUris(): List<String> =
+                    resolver.persistedUriPermissions
+                        .filter { it.isReadPermission }
+                        .map { it.uri.toString() }
+
+                override fun releaseReadGrant(uri: String) {
+                    try {
+                        resolver.releasePersistableUriPermission(
+                            Uri.parse(uri),
+                            Intent.FLAG_GRANT_READ_URI_PERMISSION,
+                        )
+                    } catch (_: SecurityException) {
+                        // The system or provider already removed it.
+                    }
+                }
+            },
+        )
+
+    override suspend fun reconcileStartup() =
+        withContext(ioDispatcher) {
+            synchronized(grantMonitor) { startupReconciler.reconcile() }
+        }
 
     override suspend fun retainReadAccess(uri: String): SafDocument =
         withContext(ioDispatcher) {
@@ -63,7 +93,7 @@ class AndroidSafBroker(
             }
 
             synchronized(grantMonitor) {
-                reconcileOrphanedStartupGrants()
+                startupReconciler.reconcile()
                 // Resolve metadata before persisting so a broken provider cannot consume a grant
                 // which the caller never receives ownership of.
                 val metadata = queryMetadata(parsed)
@@ -106,29 +136,6 @@ class AndroidSafBroker(
                 // A later process-start reconciliation gets another chance at an uncertain release.
             }
         }
-    }
-
-    /**
-     * This slice has no durable selection inventory, so every grant surviving a process restart is
-     * orphaned. The application-scoped broker removes them before accepting the first new owner.
-     * The production coordinator must replace this all-or-nothing rule with inventory reconciliation
-     * when it introduces durable jobs or imported resources.
-     */
-    private fun reconcileOrphanedStartupGrants() {
-        if (startupReconciled) return
-        resolver.persistedUriPermissions
-            .filter { it.isReadPermission }
-            .forEach { permission ->
-                try {
-                    resolver.releasePersistableUriPermission(
-                        permission.uri,
-                        Intent.FLAG_GRANT_READ_URI_PERMISSION,
-                    )
-                } catch (_: SecurityException) {
-                    // The system or provider already removed it.
-                }
-            }
-        startupReconciled = true
     }
 
     override suspend fun releaseReadAccess(uri: String) =
@@ -179,6 +186,28 @@ class AndroidSafBroker(
         val displayName: String? = null,
         val sizeBytes: Long? = null,
     )
+}
+
+internal interface PersistedSafGrantAccess {
+    fun readGrantUris(): List<String>
+
+    fun releaseReadGrant(uri: String)
+}
+
+/** One-shot process-start reconciliation; a failed pass remains retryable on the next retain. */
+internal class OrphanedSafGrantReconciler(
+    private val access: PersistedSafGrantAccess,
+) {
+    private var reconciled = false
+
+    fun reconcile() {
+        if (reconciled) return
+        val grants = access.readGrantUris()
+        grants.forEach(access::releaseReadGrant)
+        reconciled = true
+    }
+
+    internal fun isReconciled(): Boolean = reconciled
 }
 
 /** Reference counts selection ownership so same-URI slots and replace/clear races stay safe. */

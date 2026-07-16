@@ -6,7 +6,7 @@ import java.security.MessageDigest
 
 /** Clean pre-release schema. There is intentionally no migration from the discarded JSON scratch schema. */
 internal object JournalSchema {
-    const val VERSION = 1
+    const val VERSION = 3
 
     private fun names(values: Iterable<Enum<*>>) = values.joinToString(",") { "'${it.name}'" }
 
@@ -51,6 +51,7 @@ internal object JournalSchema {
             "note_receipts",
             "card_receipts",
             "routing_intents",
+            "routing_observations",
             "aligned_results",
             "parent_terminal_metadata",
             "media_leases",
@@ -67,6 +68,89 @@ internal object JournalSchema {
 
     fun create(db: SQLiteDatabase) {
         statements.forEach(db::execSQL)
+    }
+
+    /** Lossless additive migration for both durable journal versions shipped before note writes. */
+    fun upgrade(
+        db: SQLiteDatabase,
+        oldVersion: Int,
+        newVersion: Int,
+    ) {
+        if (oldVersion !in 1..2 || newVersion != VERSION) {
+            throw JournalCorruptionException(
+                "Unsupported journal schema migration $oldVersion -> $newVersion",
+            )
+        }
+
+        dropKnownNonTableObjects(db)
+        db.execSQL(requireStatement("CREATE TABLE routing_observations"))
+        db.execSQL(
+            """
+            INSERT INTO routing_observations (
+                intent_id, parent_id, request_index, card_id, note_id, ordinal, deck_id, observed_at_ms
+            )
+            SELECT id, parent_id, request_index, card_id, note_id, ordinal, target_deck_id, updated_at_ms
+            FROM routing_intents
+            WHERE child_id IS NULL AND state = 'VERIFIED' AND pre_update_deck_id = target_deck_id
+            """.trimIndent(),
+        )
+        db.execSQL(
+            """
+            INSERT INTO remediations (
+                parent_id, claim_id, staging_id, staging_subject_id, kind, state, summary,
+                compact_evidence, created_at_ms, updated_at_ms
+            )
+            SELECT p.id, c.id, NULL, NULL, 'MEDIA_STORED_UNATTACHED', 'OPEN',
+                'Stored Anki media was not attached to a verified note',
+                'schema=v3;reason=stored-unattached-backfill',
+                max(p.updated_at_ms, c.updated_at_ms), max(p.updated_at_ms, c.updated_at_ms)
+            FROM parents p JOIN media_claims c
+                ON c.run_id = p.run_id AND c.request_id = p.request_id
+            WHERE p.operation_kind = 'STORE_MEDIA' AND
+                p.state IN ('RESPONSE_ACKNOWLEDGED', 'ABANDONED') AND
+                c.state IN ('STORED', 'PRESENT_BYTES_VERIFIED') AND NOT EXISTS(
+                    SELECT 1 FROM remediations r
+                    WHERE r.claim_id = c.id AND r.kind = 'MEDIA_STORED_UNATTACHED')
+            """.trimIndent(),
+        )
+        nonTableStatements.forEach(db::execSQL)
+    }
+
+    private fun requireStatement(prefix: String): String =
+        statements.singleOrNull { it.startsWith(prefix) }
+            ?: throw IllegalStateException("Missing schema statement: $prefix")
+
+    private val nonTableStatements: List<String> by lazy {
+        statements.filter { sql ->
+            sql.startsWith("CREATE INDEX") ||
+                sql.startsWith("CREATE UNIQUE INDEX") ||
+                sql.startsWith("CREATE TRIGGER")
+        }
+    }
+
+    private fun dropKnownNonTableObjects(db: SQLiteDatabase) {
+        val objects =
+            db.rawQuery(
+                """SELECT type, name FROM sqlite_master
+                   WHERE type IN ('index', 'trigger') AND name NOT LIKE 'sqlite_%'
+                   ORDER BY type, name""".trimIndent(),
+                null,
+            ).use { cursor ->
+                buildList {
+                    while (cursor.moveToNext()) add(cursor.getString(0) to cursor.getString(1))
+                }
+            }
+        val allowedIndexes = requiredIndexes
+        val allowedTriggers = requiredTriggers
+        objects.forEach { (type, name) ->
+            val allowed = if (type == "index") allowedIndexes else allowedTriggers
+            if (name !in allowed || !SAFE_OBJECT_NAME.matches(name)) {
+                throw JournalCorruptionException("Unexpected $type during journal migration: $name")
+            }
+        }
+        objects.forEach { (type, name) ->
+            db.execSQL("DROP ${type.uppercase()} $name")
+        }
     }
 
     internal val requiredTriggers: Set<String> by lazy { declaredObjectNames("TRIGGER") }
@@ -153,6 +237,8 @@ internal object JournalSchema {
         }
         return canonical.toString()
     }
+
+    private val SAFE_OBJECT_NAME = Regex("[A-Za-z][A-Za-z0-9_]*")
 
     private fun declaredObjectNames(kind: String): Set<String> {
         val pattern = Regex("CREATE\\s+(?:UNIQUE\\s+)?$kind\\s+([^\\s(]+)", RegexOption.IGNORE_CASE)
@@ -418,6 +504,19 @@ internal object JournalSchema {
             )
             """.trimIndent(),
             """
+            CREATE TABLE routing_observations (
+                intent_id INTEGER PRIMARY KEY REFERENCES routing_intents(id) ON DELETE CASCADE,
+                parent_id INTEGER NOT NULL REFERENCES parents(id) ON DELETE CASCADE,
+                request_index INTEGER NOT NULL CHECK(request_index >= 0),
+                card_id INTEGER NOT NULL CHECK(card_id > 0),
+                note_id INTEGER NOT NULL CHECK(note_id > 0),
+                ordinal INTEGER NOT NULL CHECK(ordinal >= 0),
+                deck_id INTEGER NOT NULL CHECK(deck_id > 0),
+                observed_at_ms INTEGER NOT NULL CHECK(observed_at_ms >= 0),
+                UNIQUE(parent_id, card_id)
+            )
+            """.trimIndent(),
+            """
             CREATE TABLE card_commands (
                 child_id INTEGER PRIMARY KEY REFERENCES mutation_children(id) ON DELETE CASCADE,
                 intent_id INTEGER NOT NULL UNIQUE REFERENCES routing_intents(id) ON DELETE RESTRICT,
@@ -618,6 +717,7 @@ internal object JournalSchema {
             "CREATE INDEX claim_namespace_prefix_index ON media_claims(provider_prefix) WHERE state != 'CLEANED_VERIFIED'",
             "CREATE INDEX staging_recovery_index ON staging_artifacts(state, id)",
             "CREATE INDEX remediation_open_index ON remediations(state, id)",
+            "CREATE UNIQUE INDEX one_stored_unattached_remediation_per_claim ON remediations(claim_id) WHERE kind = 'MEDIA_STORED_UNATTACHED'",
             parentIdentityTrigger,
             *parentNormalizedTransitionTriggers.toTypedArray(),
             parentTransitionTrigger,
@@ -644,8 +744,12 @@ internal object JournalSchema {
             resultReadyTrigger,
             phaseTransitionTrigger,
             routingInsertTrigger,
+            routingObservationInsertTrigger,
+            routingObservationImmutableTrigger,
             routingTransitionTrigger,
             claimTransitionTrigger,
+            storedUnattachedClaimGuard,
+            storedUnattachedClaimResolutionTrigger,
             stagingTransitionTrigger,
         )
     }
@@ -692,10 +796,15 @@ internal object JournalSchema {
                                     (SELECT count(*) FROM active_note_media_bindings b WHERE b.parent_id = OLD.id))) OR
                     (OLD.active_request_index IS NOT NULL AND NEW.active_request_index IS NULL AND (
                         NEW.state IN ('RESPONSE_ACKNOWLEDGED', 'ABANDONED') OR
-                        (OLD.routing_phase = 'POSTCHECK_VERIFIED' AND EXISTS(
-                            SELECT 1 FROM aligned_results r WHERE r.parent_id = OLD.id AND
-                                r.request_index = OLD.active_request_index AND r.committed_id = OLD.active_note_id AND
-                                r.status_kind = 'CREATED')))))
+                        EXISTS(SELECT 1 FROM aligned_results r WHERE r.parent_id = OLD.id AND
+                            r.request_index = OLD.active_request_index AND (
+                                (r.status_kind = 'CREATED' AND OLD.routing_phase = 'POSTCHECK_VERIFIED' AND
+                                    r.committed_id = OLD.active_note_id) OR
+                                (r.status_kind IN ('FAILED', 'UNCERTAIN') AND
+                                    OLD.routing_phase = 'NOTE_PENDING' AND OLD.active_note_id IS NULL) OR
+                                (r.status_kind = 'COMMITTED_FAILED' AND OLD.active_note_id = r.committed_id AND
+                                    OLD.routing_phase IN ('NOTE_COMMIT_KNOWN', 'NOTE_READBACK_VERIFIED',
+                                        'CARDS_DISCOVERED', 'ROUTING', 'ROUTED', 'POSTCHECK_VERIFIED'))))))
                     THEN RAISE(ABORT, 'active-note scalar differs from normalized materialization') END;
             END
             """.trimIndent(),
@@ -712,10 +821,12 @@ internal object JournalSchema {
                     (OLD.active_note_id IS NOT NULL AND NEW.active_note_id IS NULL AND
                         NEW.active_request_index IS NULL AND (
                             NEW.state IN ('RESPONSE_ACKNOWLEDGED', 'ABANDONED') OR
-                            (OLD.routing_phase = 'POSTCHECK_VERIFIED' AND EXISTS(
-                                SELECT 1 FROM aligned_results r WHERE r.parent_id = OLD.id AND
-                                    r.request_index = OLD.active_request_index AND
-                                    r.committed_id = OLD.active_note_id AND r.status_kind = 'CREATED')))))
+                            EXISTS(SELECT 1 FROM aligned_results r WHERE r.parent_id = OLD.id AND
+                                r.request_index = OLD.active_request_index AND r.committed_id = OLD.active_note_id AND (
+                                    (r.status_kind = 'CREATED' AND OLD.routing_phase = 'POSTCHECK_VERIFIED') OR
+                                    (r.status_kind = 'COMMITTED_FAILED' AND OLD.routing_phase IN (
+                                        'NOTE_COMMIT_KNOWN', 'NOTE_READBACK_VERIFIED', 'CARDS_DISCOVERED',
+                                        'ROUTING', 'ROUTED', 'POSTCHECK_VERIFIED'))))))
                     THEN RAISE(ABORT, 'active note ID lacks exact receipt or completion proof') END;
             END
             """.trimIndent(),
@@ -741,6 +852,15 @@ internal object JournalSchema {
         BEGIN
             SELECT CASE WHEN EXISTS(SELECT 1 FROM mutation_children WHERE parent_id = OLD.id AND state = 'PREPARED')
                 THEN RAISE(ABORT, 'finalized parent retains PREPARED child') END;
+            SELECT CASE WHEN NEW.state IN ('RESPONSE_ACKNOWLEDGED', 'ABANDONED') AND
+                OLD.operation_kind = 'STORE_MEDIA' AND EXISTS(
+                    SELECT 1 FROM media_claims c
+                    WHERE c.run_id = OLD.run_id AND c.request_id = OLD.request_id AND
+                        c.state IN ('STORED', 'PRESENT_BYTES_VERIFIED') AND NOT EXISTS(
+                            SELECT 1 FROM remediations r
+                            WHERE r.parent_id = OLD.id AND r.claim_id = c.id AND
+                                r.kind = 'MEDIA_STORED_UNATTACHED' AND r.state = 'OPEN'))
+                THEN RAISE(ABORT, 'final stored media lacks unattached remediation') END;
             SELECT CASE WHEN NEW.state IN ('RESPONSE_ACKNOWLEDGED', 'ABANDONED') AND NOT EXISTS(
                 SELECT 1 FROM terminal_parent_audit a WHERE a.parent_id = OLD.id AND
                     a.final_state = NEW.state AND a.terminal_variant IS
@@ -916,7 +1036,8 @@ internal object JournalSchema {
                 SELECT CASE WHEN NOT EXISTS(
                     SELECT 1 FROM media_claims c JOIN parents p ON p.id = NEW.parent_id
                     WHERE c.id = NEW.claim_id AND c.run_id = p.run_id AND c.asset_id = NEW.asset_id AND
-                          c.actual_filename = NEW.actual_filename AND c.state IN ('STORED', 'PRESENT_BYTES_VERIFIED'))
+                          c.actual_filename = NEW.actual_filename AND
+                          c.state IN ('STORED', 'PRESENT_BYTES_VERIFIED', 'ATTACHED_VERIFIED'))
                     THEN RAISE(ABORT, 'active-note media binding differs from durable claim') END;
             END
             """.trimIndent(),
@@ -1170,12 +1291,14 @@ internal object JournalSchema {
                     p.routing_phase = 'POSTCHECK_VERIFIED')
                 THEN RAISE(ABORT, 'created result lacks note receipt and postcheck proof') END;
             SELECT CASE WHEN NEW.status_kind = 'CREATED' AND (
-                (SELECT count(*) FROM routing_intents i WHERE i.parent_id = NEW.parent_id AND
-                    i.request_index = NEW.request_index AND i.note_id = NEW.committed_id AND i.state = 'VERIFIED') !=
-                (SELECT card_count FROM target_expectations WHERE parent_id = NEW.parent_id) OR
+                NOT EXISTS(SELECT 1 FROM routing_intents i WHERE i.parent_id = NEW.parent_id AND
+                    i.request_index = NEW.request_index AND i.note_id = NEW.committed_id) OR
                 EXISTS(SELECT 1 FROM routing_intents i WHERE i.parent_id = NEW.parent_id AND
                     i.request_index = NEW.request_index AND (i.state != 'VERIFIED' OR
-                    i.target_deck_id != (SELECT deck_id FROM verified_target_decks WHERE parent_id = NEW.parent_id))))
+                    i.note_id != NEW.committed_id OR
+                    i.target_deck_id != (SELECT deck_id FROM verified_target_decks WHERE parent_id = NEW.parent_id) OR
+                    NOT EXISTS(SELECT 1 FROM target_expectation_templates x WHERE
+                        x.parent_id = NEW.parent_id AND x.template_ordinal = i.ordinal))))
                 THEN RAISE(ABORT, 'created result lacks complete exact routing proof') END;
             SELECT CASE WHEN NEW.status_kind = 'COMMITTED_FAILED' AND NOT EXISTS(
                 SELECT 1 FROM mutation_children c JOIN note_receipts x ON x.child_id = c.id
@@ -1205,10 +1328,21 @@ internal object JournalSchema {
                         c.identity_key = NEW.item_id AND c.operation_kind = 'NOTE_INSERT')
                 THEN RAISE(ABORT, 'failed note hides provider entry') END;
             SELECT CASE WHEN NEW.status_kind = 'NOT_ATTEMPTED' AND
-                (SELECT operation_kind FROM parents WHERE id = NEW.parent_id) = 'STORE_MEDIA' AND EXISTS(
-                    SELECT 1 FROM mutation_children c
+                (SELECT operation_kind FROM parents WHERE id = NEW.parent_id) = 'STORE_MEDIA' AND
+                (SELECT count(*) FROM mutation_children c
                     WHERE c.parent_id = NEW.parent_id AND c.request_index = NEW.request_index AND
-                        c.identity_key = NEW.item_id AND c.operation_kind = 'MEDIA_INSERT')
+                        c.identity_key = NEW.item_id AND c.operation_kind = 'MEDIA_INSERT') > 0 AND (
+                    (SELECT count(*) FROM mutation_children c
+                        WHERE c.parent_id = NEW.parent_id AND c.request_index = NEW.request_index AND
+                            c.identity_key = NEW.item_id AND c.operation_kind = 'MEDIA_INSERT') != 1 OR
+                    NOT EXISTS(
+                        SELECT 1 FROM mutation_children c JOIN media_claims m ON m.id = c.media_claim_id
+                        WHERE c.parent_id = NEW.parent_id AND c.request_index = NEW.request_index AND
+                            c.identity_key = NEW.item_id AND c.operation_kind = 'MEDIA_INSERT' AND
+                            c.state = 'PROVEN_NOT_COMMITTED' AND
+                            m.state IN ('CLEANED_VERIFIED', 'ACKNOWLEDGED_BY_USER') AND
+                            NOT EXISTS(SELECT 1 FROM provider_attempts a WHERE a.child_id = c.id) AND
+                            NOT EXISTS(SELECT 1 FROM media_receipts x WHERE x.child_id = c.id)))
                 THEN RAISE(ABORT, 'not-attempted media hides active mutation evidence') END;
             SELECT CASE WHEN NEW.status_kind IN ('DUPLICATE', 'NOT_ATTEMPTED') AND
                 (SELECT operation_kind FROM parents WHERE id = NEW.parent_id) = 'CREATE_NOTES' AND EXISTS(
@@ -1301,6 +1435,7 @@ internal object JournalSchema {
                     "verified_target_decks",
                     "mutation_children",
                     "routing_intents",
+                    "routing_observations",
                     "aligned_results",
                     "parent_terminal_metadata",
                 )
@@ -1329,7 +1464,17 @@ internal object JournalSchema {
                          NOT EXISTS(SELECT 1 FROM aligned_results r
                              WHERE r.parent_id = OLD.parent_id AND
                                    r.request_index = (SELECT active_request_index FROM parents WHERE id = OLD.parent_id) AND
-                                   r.status_kind = 'CREATED')
+                                   ((r.status_kind = 'CREATED' AND r.committed_id =
+                                        (SELECT active_note_id FROM parents WHERE id = OLD.parent_id) AND
+                                        (SELECT routing_phase FROM parents WHERE id = OLD.parent_id) = 'POSTCHECK_VERIFIED') OR
+                                    (r.status_kind IN ('FAILED', 'UNCERTAIN') AND
+                                        (SELECT active_note_id FROM parents WHERE id = OLD.parent_id) IS NULL AND
+                                        (SELECT routing_phase FROM parents WHERE id = OLD.parent_id) = 'NOTE_PENDING') OR
+                                    (r.status_kind = 'COMMITTED_FAILED' AND r.committed_id =
+                                        (SELECT active_note_id FROM parents WHERE id = OLD.parent_id) AND
+                                        (SELECT routing_phase FROM parents WHERE id = OLD.parent_id) IN (
+                                            'NOTE_COMMIT_KNOWN', 'NOTE_READBACK_VERIFIED', 'CARDS_DISCOVERED',
+                                            'ROUTING', 'ROUTED', 'POSTCHECK_VERIFIED'))))
                     BEGIN SELECT RAISE(ABORT, '$table cannot be deleted before completion or finalization'); END
                     """.trimIndent(),
                 )
@@ -1527,6 +1672,18 @@ internal object JournalSchema {
             BEGIN SELECT RAISE(ABORT, 'remediation must start open'); END
             """.trimIndent(),
             """
+            CREATE TRIGGER stored_unattached_remediation_insert_guard BEFORE INSERT ON remediations
+            WHEN NEW.kind = 'MEDIA_STORED_UNATTACHED' AND (
+                NEW.parent_id IS NULL OR NEW.claim_id IS NULL OR NEW.staging_id IS NOT NULL OR
+                NEW.staging_subject_id IS NOT NULL OR NOT EXISTS(
+                    SELECT 1 FROM parents p JOIN media_claims c
+                        ON c.run_id = p.run_id AND c.request_id = p.request_id
+                    WHERE p.id = NEW.parent_id AND c.id = NEW.claim_id AND
+                        p.operation_kind = 'STORE_MEDIA' AND p.state = 'RESULT_READY' AND
+                        c.state IN ('STORED', 'PRESENT_BYTES_VERIFIED')))
+            BEGIN SELECT RAISE(ABORT, 'stored-unattached remediation lacks exact claim proof'); END
+            """.trimIndent(),
+            """
             CREATE TRIGGER remediation_update_guard BEFORE UPDATE ON remediations
             WHEN NOT (
                 (OLD.state = 'OPEN' AND NEW.state = 'RESOLVED' AND
@@ -1543,6 +1700,13 @@ internal object JournalSchema {
                     NEW.updated_at_ms > OLD.updated_at_ms AND EXISTS(
                         SELECT 1 FROM staging_artifacts s WHERE s.id = OLD.staging_id AND s.state = 'CLEANED')))
             BEGIN SELECT RAISE(ABORT, 'illegal remediation mutation'); END
+            """.trimIndent(),
+            """
+            CREATE TRIGGER stored_unattached_remediation_resolution_guard BEFORE UPDATE OF state ON remediations
+            WHEN OLD.kind = 'MEDIA_STORED_UNATTACHED' AND NEW.state = 'RESOLVED' AND NOT EXISTS(
+                SELECT 1 FROM media_claims c WHERE c.id = OLD.claim_id AND
+                    c.state IN ('ATTACHED_VERIFIED', 'CLEANED_VERIFIED', 'ACKNOWLEDGED_BY_USER'))
+            BEGIN SELECT RAISE(ABORT, 'stored-unattached remediation resolved before its claim'); END
             """.trimIndent(),
             """
             CREATE TRIGGER remediation_delete_forbidden BEFORE DELETE ON remediations
@@ -1745,32 +1909,44 @@ internal object JournalSchema {
                 (OLD.routing_phase = 'NOTE_COMMIT_KNOWN' AND NEW.routing_phase = 'NOTE_READBACK_VERIFIED') OR
                 (OLD.routing_phase = 'NOTE_READBACK_VERIFIED' AND NEW.routing_phase = 'CARDS_DISCOVERED') OR
                 (OLD.routing_phase = 'CARDS_DISCOVERED' AND NEW.routing_phase = 'ROUTING' AND
-                    (SELECT count(*) FROM routing_intents i WHERE i.parent_id = OLD.id AND
-                        i.request_index = OLD.active_request_index AND i.note_id = OLD.active_note_id) =
-                    (SELECT card_count FROM target_expectations WHERE parent_id = OLD.id) AND
+                    EXISTS(SELECT 1 FROM routing_intents i WHERE i.parent_id = OLD.id AND
+                        i.request_index = OLD.active_request_index AND i.note_id = OLD.active_note_id) AND
                     NOT EXISTS(SELECT 1 FROM routing_intents i WHERE i.parent_id = OLD.id AND
                         i.request_index = OLD.active_request_index AND (i.note_id != OLD.active_note_id OR
                         i.state != 'PENDING' OR i.target_deck_id !=
-                            (SELECT deck_id FROM verified_target_decks WHERE parent_id = OLD.id)))) OR
+                            (SELECT deck_id FROM verified_target_decks WHERE parent_id = OLD.id) OR
+                        NOT EXISTS(SELECT 1 FROM target_expectation_templates x WHERE
+                            x.parent_id = OLD.id AND x.template_ordinal = i.ordinal)))) OR
                 (OLD.routing_phase = 'ROUTING' AND NEW.routing_phase = 'ROUTED' AND
-                    (SELECT count(*) FROM routing_intents i WHERE i.parent_id = OLD.id AND
-                        i.request_index = OLD.active_request_index AND i.note_id = OLD.active_note_id AND
-                        i.state = 'VERIFIED') =
-                    (SELECT card_count FROM target_expectations WHERE parent_id = OLD.id) AND
+                    EXISTS(SELECT 1 FROM routing_intents i WHERE i.parent_id = OLD.id AND
+                        i.request_index = OLD.active_request_index AND i.note_id = OLD.active_note_id) AND
                     NOT EXISTS(SELECT 1 FROM routing_intents i WHERE i.parent_id = OLD.id AND
-                        i.request_index = OLD.active_request_index AND (i.state != 'VERIFIED' OR
-                        i.target_deck_id != (SELECT deck_id FROM verified_target_decks WHERE parent_id = OLD.id)))) OR
+                        i.request_index = OLD.active_request_index AND (i.note_id != OLD.active_note_id OR
+                        i.state != 'VERIFIED' OR i.target_deck_id !=
+                            (SELECT deck_id FROM verified_target_decks WHERE parent_id = OLD.id) OR
+                        NOT EXISTS(SELECT 1 FROM target_expectation_templates x WHERE
+                            x.parent_id = OLD.id AND x.template_ordinal = i.ordinal)))) OR
                 (OLD.routing_phase = 'ROUTED' AND NEW.routing_phase = 'POSTCHECK_VERIFIED' AND
-                    (SELECT count(*) FROM routing_intents i WHERE i.parent_id = OLD.id AND
-                        i.request_index = OLD.active_request_index AND i.note_id = OLD.active_note_id AND
-                        i.state = 'VERIFIED') =
-                    (SELECT card_count FROM target_expectations WHERE parent_id = OLD.id) AND
+                    EXISTS(SELECT 1 FROM routing_intents i WHERE i.parent_id = OLD.id AND
+                        i.request_index = OLD.active_request_index AND i.note_id = OLD.active_note_id) AND
                     NOT EXISTS(SELECT 1 FROM routing_intents i WHERE i.parent_id = OLD.id AND
-                        i.request_index = OLD.active_request_index AND (i.state != 'VERIFIED' OR
-                        i.target_deck_id != (SELECT deck_id FROM verified_target_decks WHERE parent_id = OLD.id)))) OR
+                        i.request_index = OLD.active_request_index AND (i.note_id != OLD.active_note_id OR
+                        i.state != 'VERIFIED' OR i.target_deck_id !=
+                            (SELECT deck_id FROM verified_target_decks WHERE parent_id = OLD.id) OR
+                        NOT EXISTS(SELECT 1 FROM target_expectation_templates x WHERE
+                            x.parent_id = OLD.id AND x.template_ordinal = i.ordinal)))) OR
                 (OLD.routing_phase = 'POSTCHECK_VERIFIED' AND NEW.routing_phase IS NULL AND
                     EXISTS(SELECT 1 FROM aligned_results r WHERE r.parent_id = OLD.id AND
-                        r.request_index = OLD.active_request_index AND r.status_kind = 'CREATED')) OR
+                        r.request_index = OLD.active_request_index AND r.status_kind = 'CREATED' AND
+                        r.committed_id = OLD.active_note_id)) OR
+                (OLD.routing_phase = 'NOTE_PENDING' AND NEW.routing_phase IS NULL AND OLD.active_note_id IS NULL AND
+                    EXISTS(SELECT 1 FROM aligned_results r WHERE r.parent_id = OLD.id AND
+                        r.request_index = OLD.active_request_index AND r.status_kind IN ('FAILED', 'UNCERTAIN'))) OR
+                (OLD.routing_phase IN ('NOTE_COMMIT_KNOWN', 'NOTE_READBACK_VERIFIED', 'CARDS_DISCOVERED',
+                        'ROUTING', 'ROUTED', 'POSTCHECK_VERIFIED') AND NEW.routing_phase IS NULL AND
+                    EXISTS(SELECT 1 FROM aligned_results r WHERE r.parent_id = OLD.id AND
+                        r.request_index = OLD.active_request_index AND r.status_kind = 'COMMITTED_FAILED' AND
+                        r.committed_id = OLD.active_note_id)) OR
                 (NEW.routing_phase IS NULL AND NEW.state IN ('RESPONSE_ACKNOWLEDGED', 'ABANDONED')))
                 THEN RAISE(ABORT, 'illegal note phase transition') END;
             SELECT CASE WHEN NEW.routing_phase = 'NOTE_COMMIT_KNOWN' AND (
@@ -1789,8 +1965,19 @@ internal object JournalSchema {
                 (OLD.state = 'UPDATE_PREPARED' AND NEW.state IN ('VERIFIED', 'FAILED', 'COMMIT_UNCERTAIN')))
                 THEN RAISE(ABORT, 'illegal routing transition') END;
             SELECT CASE WHEN OLD.state = 'PENDING' AND NEW.state = 'VERIFIED' AND
-                (OLD.child_id IS NOT NULL OR OLD.pre_update_deck_id != OLD.target_deck_id)
+                (OLD.child_id IS NOT NULL OR NOT EXISTS(
+                    SELECT 1 FROM routing_observations o WHERE o.intent_id = OLD.id AND
+                        o.parent_id = OLD.parent_id AND o.request_index = OLD.request_index AND
+                        o.card_id = OLD.card_id AND o.note_id = OLD.note_id AND o.ordinal = OLD.ordinal AND
+                        o.deck_id = OLD.target_deck_id))
                 THEN RAISE(ABORT, 'direct routing verification is not exact target evidence') END;
+            SELECT CASE WHEN OLD.state = 'PENDING' AND NEW.state = 'FAILED' AND
+                (OLD.child_id IS NOT NULL OR NOT EXISTS(
+                    SELECT 1 FROM routing_observations o WHERE o.intent_id = OLD.id AND
+                        o.parent_id = OLD.parent_id AND o.request_index = OLD.request_index AND
+                        (o.card_id != OLD.card_id OR o.note_id != OLD.note_id OR o.ordinal != OLD.ordinal OR
+                            o.deck_id != OLD.target_deck_id)))
+                THEN RAISE(ABORT, 'direct routing failure lacks exact observed drift') END;
             SELECT CASE WHEN OLD.state = 'UPDATE_PREPARED' AND NOT EXISTS(
                 SELECT 1 FROM mutation_children c WHERE c.id = OLD.child_id AND (
                     (NEW.state = 'VERIFIED' AND c.state = 'POSTCONDITION_VERIFIED') OR
@@ -1806,9 +1993,6 @@ internal object JournalSchema {
         BEGIN
             SELECT CASE WHEN NEW.state != 'PENDING' OR NEW.child_id IS NOT NULL OR NEW.terminal_evidence IS NOT NULL
                 THEN RAISE(ABORT, 'routing intent must start pending without mutation evidence') END;
-            SELECT CASE WHEN NEW.ordinal != (SELECT count(*) FROM routing_intents i WHERE
-                i.parent_id = NEW.parent_id AND i.request_index = NEW.request_index)
-                THEN RAISE(ABORT, 'routing intent ordinals must be contiguous') END;
             SELECT CASE WHEN NOT EXISTS(
                 SELECT 1 FROM parents p
                 JOIN target_expectations t ON t.parent_id = p.id
@@ -1820,6 +2004,27 @@ internal object JournalSchema {
                     d.deck_id = NEW.target_deck_id)
                 THEN RAISE(ABORT, 'routing intent differs from durable active target') END;
         END
+        """.trimIndent()
+
+    private val routingObservationInsertTrigger =
+        """
+        CREATE TRIGGER routing_observation_insert_guard BEFORE INSERT ON routing_observations
+        BEGIN
+            SELECT CASE WHEN NOT EXISTS(
+                SELECT 1 FROM routing_intents i JOIN parents p ON p.id = i.parent_id
+                WHERE i.id = NEW.intent_id AND i.parent_id = NEW.parent_id AND
+                    i.request_index = NEW.request_index AND i.child_id IS NULL AND i.state = 'PENDING' AND
+                    p.state IN ('PREPARED', 'RUNNING') AND p.routing_phase = 'ROUTING' AND
+                    p.active_request_index = i.request_index AND p.active_note_id = i.note_id AND
+                    NEW.observed_at_ms >= i.created_at_ms)
+                THEN RAISE(ABORT, 'routing observation differs from the active childless intent') END;
+        END
+        """.trimIndent()
+
+    private val routingObservationImmutableTrigger =
+        """
+        CREATE TRIGGER routing_observation_update_forbidden BEFORE UPDATE ON routing_observations
+        BEGIN SELECT RAISE(ABORT, 'routing observation is immutable'); END
         """.trimIndent()
 
     private val claimTransitionTrigger =
@@ -1834,6 +2039,43 @@ internal object JournalSchema {
                 THEN RAISE(ABORT, 'illegal media claim transition') END;
             SELECT CASE WHEN NEW.compact_evidence IS NULL
                 THEN RAISE(ABORT, 'media claim transition needs compact evidence') END;
+        END
+        """.trimIndent()
+
+    /** Keeps orphan remediation and the only legitimate cross-parent attachment path coupled. */
+    private val storedUnattachedClaimGuard =
+        """
+        CREATE TRIGGER stored_unattached_claim_guard BEFORE UPDATE OF state ON media_claims
+        WHEN EXISTS(
+            SELECT 1 FROM remediations r WHERE r.claim_id = OLD.id AND
+                r.kind = 'MEDIA_STORED_UNATTACHED' AND r.state = 'OPEN')
+        BEGIN
+            SELECT CASE WHEN NEW.state NOT IN (
+                'PRESENT_BYTES_VERIFIED', 'ATTACHED_VERIFIED', 'CLEANED_VERIFIED', 'ACKNOWLEDGED_BY_USER')
+                THEN RAISE(ABORT, 'stored-unattached claim cannot leave its remediation stale') END;
+            SELECT CASE WHEN NEW.state = 'PRESENT_BYTES_VERIFIED' AND NOT EXISTS(
+                SELECT 1 FROM active_note_media_bindings b
+                JOIN active_notes n ON n.parent_id = b.parent_id
+                JOIN parents p ON p.id = n.parent_id
+                WHERE b.claim_id = OLD.id AND b.asset_id = OLD.asset_id AND
+                    b.actual_filename = OLD.actual_filename AND p.run_id = OLD.run_id AND
+                    p.state IN ('PREPARED', 'RUNNING'))
+                THEN RAISE(ABORT, 'stored-unattached byte proof lacks a durable note binding') END;
+        END
+        """.trimIndent()
+
+    private val storedUnattachedClaimResolutionTrigger =
+        """
+        CREATE TRIGGER stored_unattached_claim_resolution AFTER UPDATE OF state ON media_claims
+        WHEN NEW.state IN ('ATTACHED_VERIFIED', 'CLEANED_VERIFIED', 'ACKNOWLEDGED_BY_USER')
+        BEGIN
+            UPDATE remediations
+            SET state = 'RESOLVED', compact_evidence = NEW.compact_evidence,
+                updated_at_ms = CASE
+                    WHEN updated_at_ms >= NEW.updated_at_ms THEN updated_at_ms + 1
+                    ELSE NEW.updated_at_ms
+                END
+            WHERE claim_id = OLD.id AND kind = 'MEDIA_STORED_UNATTACHED' AND state = 'OPEN';
         END
         """.trimIndent()
 

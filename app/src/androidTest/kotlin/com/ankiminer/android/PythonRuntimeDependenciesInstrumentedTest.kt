@@ -2,8 +2,6 @@ package com.ankiminer.android
 
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import com.chaquo.python.Python
-import com.chaquo.python.android.AndroidPlatform
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -15,18 +13,11 @@ import org.junit.runner.RunWith
 class PythonRuntimeDependenciesInstrumentedTest {
     @Test
     fun commonRuntimeDependenciesLoadAndPerformRealWork() {
-        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
-        if (!Python.isStarted()) {
-            Python.start(AndroidPlatform(context))
-        }
-        Python.getInstance()
-            .getModule("android_bridge.bootstrap")
-            .callAttr("initialize", context.filesDir.absolutePath)
+        val python = PythonInstrumentationRuntime.awaitReady()
 
         val snapshot =
             JSONObject(
-                Python.getInstance()
-                    .getModule("runtime_dependencies_probe")
+                python.getModule("runtime_dependencies_probe")
                     .callAttr("snapshot")
                     .toString(),
             )
