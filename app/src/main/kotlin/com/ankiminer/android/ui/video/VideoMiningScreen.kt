@@ -1,0 +1,775 @@
+package com.ankiminer.android.ui.video
+
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.material3.Button
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedCard
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import com.ankiminer.android.R
+import com.ankiminer.android.media.SafDocument
+import com.ankiminer.android.mining.CurationSentence
+import com.ankiminer.android.mining.MiningProgress
+import com.ankiminer.android.mining.MiningRunState
+import com.ankiminer.android.mining.ProcessingResult
+
+@Composable
+fun VideoMiningScreen(
+    state: VideoMiningUiState,
+    onPickVideo: () -> Unit,
+    onPickSubtitle: () -> Unit,
+    onClearVideo: () -> Unit,
+    onClearSubtitle: () -> Unit,
+    onDismissDocumentError: (DocumentSelectionError) -> Unit,
+    onDismissCommandError: () -> Unit,
+    onStart: () -> Unit,
+    onToggleCandidate: (String) -> Unit,
+    onSelectAllCandidates: (Boolean) -> Unit,
+    onSelectSentence: (String, String) -> Unit,
+    onConfirmCuration: () -> Unit,
+    onCancel: () -> Unit,
+    onRetry: () -> Unit,
+    onReset: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Scaffold(
+        modifier = modifier.fillMaxSize(),
+        topBar = {
+            Surface(
+                color = MaterialTheme.colorScheme.surface,
+                tonalElevation = 2.dp,
+            ) {
+                Text(
+                    text = stringResource(R.string.app_name),
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .statusBarsPadding()
+                            .padding(horizontal = 20.dp, vertical = 16.dp),
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+        },
+    ) { scaffoldPadding ->
+        LazyColumn(
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .padding(scaffoldPadding)
+                    .navigationBarsPadding()
+                    .testTag(VideoMiningTestTags.CONTENT),
+            contentPadding = PaddingValues(20.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            state.commandError?.let { commandError ->
+                item(key = "command_error") {
+                    ErrorMessage(
+                        message = commandError.message(),
+                        onDismiss = onDismissCommandError,
+                    )
+                }
+            }
+
+            when (val runState = state.runState) {
+                MiningRunState.Idle ->
+                    setupItems(
+                        state = state,
+                        onPickVideo = onPickVideo,
+                        onPickSubtitle = onPickSubtitle,
+                        onClearVideo = onClearVideo,
+                        onClearSubtitle = onClearSubtitle,
+                        onDismissDocumentError = onDismissDocumentError,
+                        onStart = onStart,
+                    )
+                is MiningRunState.Starting ->
+                    progressItems(
+                        title = R.string.starting_title,
+                        progress = runState.progress,
+                        canCancel = runState.runId != null,
+                        cancelPending = state.cancelPending,
+                        onCancel = onCancel,
+                    )
+                is MiningRunState.Curating ->
+                    curationItems(
+                        state = state,
+                        onToggleCandidate = onToggleCandidate,
+                        onSelectAllCandidates = onSelectAllCandidates,
+                        onSelectSentence = onSelectSentence,
+                        onConfirmCuration = onConfirmCuration,
+                        onCancel = onCancel,
+                    )
+                is MiningRunState.Running ->
+                    progressItems(
+                        title = R.string.running_title,
+                        progress = runState.progress,
+                        canCancel = true,
+                        cancelPending = state.cancelPending,
+                        onCancel = onCancel,
+                    )
+                is MiningRunState.Success ->
+                    terminalItems(
+                        title = R.string.success_title,
+                        result = runState.result,
+                        videoDisplayName = state.video.document?.displayName,
+                        subtitleDisplayName = state.subtitle.document?.displayName,
+                        failureMessage = null,
+                        partial = false,
+                        canRetry = false,
+                        busy = state.resetPending,
+                        onRetry = onRetry,
+                        onReset = onReset,
+                    )
+                is MiningRunState.Cancelled ->
+                    terminalItems(
+                        title = R.string.cancelled_title,
+                        result = runState.result,
+                        videoDisplayName = state.video.document?.displayName,
+                        subtitleDisplayName = state.subtitle.document?.displayName,
+                        failureMessage = null,
+                        partial = runState.result?.cardsCreated?.let { it > 0 } == true,
+                        canRetry = false,
+                        busy = state.resetPending,
+                        onRetry = onRetry,
+                        onReset = onReset,
+                    )
+                is MiningRunState.Failed ->
+                    terminalItems(
+                        title = R.string.failed_title,
+                        result = runState.result,
+                        videoDisplayName = state.video.document?.displayName,
+                        subtitleDisplayName = state.subtitle.document?.displayName,
+                        failureMessage = runState.failure.message,
+                        partial = runState.result?.cardsCreated?.let { it > 0 } == true,
+                        canRetry =
+                            runState.failure.retryable &&
+                                state.video.document != null &&
+                                state.subtitle.document != null,
+                        busy = state.resetPending || state.startPending,
+                        onRetry = onRetry,
+                        onReset = onReset,
+                    )
+            }
+        }
+    }
+}
+
+private fun LazyListScope.setupItems(
+    state: VideoMiningUiState,
+    onPickVideo: () -> Unit,
+    onPickSubtitle: () -> Unit,
+    onClearVideo: () -> Unit,
+    onClearSubtitle: () -> Unit,
+    onDismissDocumentError: (DocumentSelectionError) -> Unit,
+    onStart: () -> Unit,
+) {
+    item(key = "setup_header") {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(
+                text = stringResource(R.string.video_mining_title),
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
+            )
+            Text(
+                text = stringResource(R.string.video_mining_intro),
+                style = MaterialTheme.typography.bodyLarge,
+            )
+        }
+    }
+    item(key = "video_file") {
+        DocumentCard(
+            label = stringResource(R.string.video_file_label),
+            document = state.video.document,
+            isResolving = state.video.isResolving,
+            enabled = !state.startPending,
+            pickTestTag = VideoMiningTestTags.PICK_VIDEO,
+            clearTestTag = VideoMiningTestTags.CLEAR_VIDEO,
+            onPick = onPickVideo,
+            onClear = onClearVideo,
+        )
+    }
+    if (state.video.error != null) {
+        item(key = "video_file_error") {
+            ErrorMessage(
+                message = stringResource(R.string.video_file_error),
+                onDismiss = { onDismissDocumentError(DocumentSelectionError.VIDEO) },
+            )
+        }
+    }
+    item(key = "subtitle_file") {
+        DocumentCard(
+            label = stringResource(R.string.subtitle_file_label),
+            document = state.subtitle.document,
+            isResolving = state.subtitle.isResolving,
+            enabled = !state.startPending,
+            pickTestTag = VideoMiningTestTags.PICK_SUBTITLE,
+            clearTestTag = VideoMiningTestTags.CLEAR_SUBTITLE,
+            onPick = onPickSubtitle,
+            onClear = onClearSubtitle,
+        )
+    }
+    if (state.subtitle.error != null) {
+        item(key = "subtitle_file_error") {
+            ErrorMessage(
+                message = stringResource(R.string.subtitle_file_error),
+                onDismiss = { onDismissDocumentError(DocumentSelectionError.SUBTITLE) },
+            )
+        }
+    }
+    item(key = "start") {
+        Button(
+            onClick = onStart,
+            enabled = state.canStart,
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .testTag(VideoMiningTestTags.START),
+        ) {
+            Text(stringResource(R.string.start_mining))
+        }
+    }
+}
+
+private fun LazyListScope.progressItems(
+    title: Int,
+    progress: MiningProgress?,
+    canCancel: Boolean,
+    cancelPending: Boolean,
+    onCancel: () -> Unit,
+) {
+    item(key = "progress") {
+        ProgressPanel(title = stringResource(title), progress = progress)
+    }
+    if (canCancel) {
+        item(key = "cancel") {
+            OutlinedButton(
+                onClick = onCancel,
+                enabled = !cancelPending,
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .testTag(VideoMiningTestTags.CANCEL),
+            ) {
+                Text(stringResource(R.string.cancel_mining))
+            }
+        }
+    }
+}
+
+private fun LazyListScope.curationItems(
+    state: VideoMiningUiState,
+    onToggleCandidate: (String) -> Unit,
+    onSelectAllCandidates: (Boolean) -> Unit,
+    onSelectSentence: (String, String) -> Unit,
+    onConfirmCuration: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    val candidates = state.curation?.candidates.orEmpty()
+    val selectedCount = candidates.count { it.selected }
+    val allSelected = candidates.isNotEmpty() && selectedCount == candidates.size
+
+    item(key = "curation_header") {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(
+                text = stringResource(R.string.curation_title),
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
+            )
+            Text(
+                text = stringResource(
+                    R.string.curation_selected_count,
+                    selectedCount,
+                    candidates.size,
+                ),
+                style = MaterialTheme.typography.bodyLarge,
+            )
+            OutlinedButton(
+                onClick = { onSelectAllCandidates(!allSelected) },
+                enabled =
+                    candidates.isNotEmpty() &&
+                        !state.curationPending &&
+                        !state.cancelPending,
+                modifier = VideoMiningTestTags.SELECT_ALL.tagged(),
+            ) {
+                Text(
+                    stringResource(
+                        if (allSelected) R.string.deselect_all else R.string.select_all,
+                    ),
+                )
+            }
+        }
+    }
+    items(
+        items = candidates,
+        key = { it.candidate.candidateId },
+    ) { candidate ->
+        CandidateCard(
+            state = candidate,
+            enabled = !state.curationPending && !state.cancelPending,
+            onToggle = { onToggleCandidate(candidate.candidate.candidateId) },
+            onSelectSentence = { sentenceId ->
+                onSelectSentence(candidate.candidate.candidateId, sentenceId)
+            },
+        )
+    }
+    item(key = "curation_actions") {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(
+                onClick = onConfirmCuration,
+                enabled = !state.curationPending && !state.cancelPending,
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .testTag(VideoMiningTestTags.CONFIRM_CURATION),
+            ) {
+                Text(stringResource(R.string.confirm_curation, selectedCount))
+            }
+            OutlinedButton(
+                onClick = onCancel,
+                enabled = !state.cancelPending && !state.curationPending,
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .testTag(VideoMiningTestTags.CANCEL),
+            ) {
+                Text(stringResource(R.string.cancel_mining))
+            }
+        }
+    }
+}
+
+private fun LazyListScope.terminalItems(
+    title: Int,
+    result: ProcessingResult?,
+    videoDisplayName: String?,
+    subtitleDisplayName: String?,
+    failureMessage: String?,
+    partial: Boolean,
+    canRetry: Boolean,
+    busy: Boolean,
+    onRetry: () -> Unit,
+    onReset: () -> Unit,
+) {
+    item(key = "terminal_header") {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(
+                text = stringResource(title),
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
+            )
+            failureMessage?.let {
+                Text(
+                    text = it,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+            }
+        }
+    }
+    result?.let {
+        item(key = "terminal_result") {
+            ResultSummary(
+                result = it,
+                videoDisplayName = videoDisplayName,
+                subtitleDisplayName = subtitleDisplayName,
+                partial = partial,
+            )
+        }
+    }
+    item(key = "terminal_actions") {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (canRetry) {
+                Button(
+                    onClick = onRetry,
+                    enabled = !busy,
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .testTag(VideoMiningTestTags.RETRY),
+                ) {
+                    Text(stringResource(R.string.retry_mining))
+                }
+            }
+            OutlinedButton(
+                onClick = onReset,
+                enabled = !busy,
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .testTag(VideoMiningTestTags.RESET),
+            ) {
+                Text(stringResource(R.string.reset_mining))
+            }
+        }
+    }
+}
+
+@Composable
+private fun DocumentCard(
+    label: String,
+    document: SafDocument?,
+    isResolving: Boolean,
+    enabled: Boolean,
+    pickTestTag: String,
+    clearTestTag: String,
+    onPick: () -> Unit,
+    onClear: () -> Unit,
+) {
+    OutlinedCard(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+            )
+            if (isResolving) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                    Text(stringResource(R.string.reading_file))
+                }
+            } else {
+                Text(
+                    text = document?.displayName ?: stringResource(R.string.no_file_selected),
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+            }
+            Button(
+                onClick = onPick,
+                enabled = enabled && !isResolving,
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .testTag(pickTestTag),
+            ) {
+                Text(
+                    stringResource(
+                        if (document == null) R.string.choose_file else R.string.replace_file,
+                    ),
+                )
+            }
+            if (document != null) {
+                TextButton(
+                    onClick = onClear,
+                    enabled = enabled && !isResolving,
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .testTag(clearTestTag),
+                ) {
+                    Text(stringResource(R.string.remove_file))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProgressPanel(
+    title: String,
+    progress: MiningProgress?,
+) {
+    OutlinedCard(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .testTag(VideoMiningTestTags.PROGRESS),
+    ) {
+        Column(
+            modifier = Modifier.padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+            )
+            progress?.description?.takeIf(String::isNotBlank)?.let { description ->
+                Text(text = description, style = MaterialTheme.typography.bodyLarge)
+            }
+            val fraction = progress?.fraction
+            if (fraction == null) {
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            } else {
+                LinearProgressIndicator(
+                    progress = { fraction },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            if (progress != null && progress.total > 0) {
+                Text(stringResource(R.string.progress_count, progress.current, progress.total))
+            }
+        }
+    }
+}
+
+@Composable
+private fun CandidateCard(
+    state: CurationCandidateUiState,
+    enabled: Boolean,
+    onToggle: () -> Unit,
+    onSelectSentence: (String) -> Unit,
+) {
+    val candidate = state.candidate
+    OutlinedCard(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .testTag(VideoMiningTestTags.candidate(candidate.candidateId)),
+        colors =
+            if (state.selected) {
+                CardDefaults.outlinedCardColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f),
+                )
+            } else {
+                CardDefaults.outlinedCardColors()
+            },
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                val description =
+                    stringResource(R.string.candidate_selection_description, candidate.minedForm)
+                Checkbox(
+                    checked = state.selected,
+                    onCheckedChange = { onToggle() },
+                    enabled = enabled,
+                    modifier =
+                        Modifier
+                            .testTag(VideoMiningTestTags.candidateToggle(candidate.candidateId))
+                            .semantics { contentDescription = description },
+                )
+                Column {
+                    Text(
+                        text = candidate.minedForm,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Text(stringResource(R.string.candidate_reading, candidate.expressionReading))
+                }
+            }
+            candidate.partOfSpeech?.takeIf { it.isNotBlank() }?.let {
+                Text(stringResource(R.string.candidate_part_of_speech, it))
+            }
+            Text(
+                candidate.frequencyRank?.let {
+                    stringResource(R.string.candidate_frequency, it)
+                } ?: stringResource(R.string.candidate_frequency_unknown),
+            )
+            Text(stringResource(R.string.candidate_occurrences, candidate.occurrenceCount))
+            HorizontalDivider()
+            candidate.sentences.forEach { sentence ->
+                SentenceChoice(
+                    sentence = sentence,
+                    selected = sentence.sentenceId == state.sentenceId,
+                    enabled = enabled,
+                    onClick = { onSelectSentence(sentence.sentenceId) },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SentenceChoice(
+    sentence: CurationSentence,
+    selected: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    val description =
+        stringResource(R.string.sentence_selection_description, sentence.sentence)
+    Row(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .selectable(
+                    selected = selected,
+                    enabled = enabled,
+                    role = Role.RadioButton,
+                    onClick = onClick,
+                ).testTag(VideoMiningTestTags.sentence(sentence.sentenceId))
+                .semantics { contentDescription = description }
+                .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.Top,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        RadioButton(
+            selected = selected,
+            onClick = null,
+            enabled = enabled,
+        )
+        Column {
+            Text(text = sentence.sentence, style = MaterialTheme.typography.bodyLarge)
+            if (sentence.sentenceFurigana.isNotBlank() &&
+                sentence.sentenceFurigana != sentence.sentence
+            ) {
+                Text(
+                    text = sentence.sentenceFurigana,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ResultSummary(
+    result: ProcessingResult,
+    videoDisplayName: String?,
+    subtitleDisplayName: String?,
+    partial: Boolean,
+) {
+    OutlinedCard(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .testTag(VideoMiningTestTags.RESULT),
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            if (partial) {
+                Text(
+                    text = stringResource(R.string.partial_result_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+            Text(stringResource(R.string.result_cards_created, result.cardsCreated))
+            Text(stringResource(R.string.result_new_words, result.newWordsFound))
+            Text(stringResource(R.string.result_total_words, result.totalWordsFound))
+            Text(
+                stringResource(
+                    R.string.result_comprehension,
+                    result.comprehensionPercentage,
+                ),
+            )
+            Text(stringResource(R.string.result_elapsed, result.elapsedTime))
+            Text(
+                stringResource(
+                    R.string.result_video,
+                    videoDisplayName
+                        ?: stringResource(R.string.result_unknown_file),
+                ),
+            )
+            Text(
+                stringResource(
+                    R.string.result_subtitle,
+                    subtitleDisplayName
+                        ?: stringResource(R.string.result_unknown_file),
+                ),
+            )
+            Text(
+                stringResource(
+                    R.string.result_mined_forms,
+                    result.minedForms.joinOrNone(),
+                ),
+            )
+            Text(
+                stringResource(
+                    R.string.result_card_ids,
+                    result.cardIds.joinOrNone(),
+                ),
+            )
+            if (result.errors.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = stringResource(R.string.result_errors_title),
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.error,
+                )
+                result.errors.forEach { error ->
+                    Text(
+                        text = stringResource(R.string.result_error_item, error),
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ErrorMessage(
+    message: String,
+    onDismiss: () -> Unit,
+) {
+    Surface(
+        color = MaterialTheme.colorScheme.errorContainer,
+        contentColor = MaterialTheme.colorScheme.onErrorContainer,
+        shape = MaterialTheme.shapes.medium,
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(message)
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.dismiss_error))
+            }
+        }
+    }
+}
+
+@Composable
+private fun MiningCommandError.message(): String =
+    stringResource(
+        when (this) {
+            MiningCommandError.START -> R.string.start_error
+            MiningCommandError.CURATION -> R.string.curation_error
+            MiningCommandError.CANCEL -> R.string.cancel_error
+            MiningCommandError.RESET -> R.string.reset_error
+        },
+    )
+
+@Composable
+private fun List<*>.joinOrNone(): String =
+    if (isEmpty()) stringResource(R.string.result_no_items) else joinToString()
+
+private fun String.tagged(): Modifier = Modifier.testTag(this)

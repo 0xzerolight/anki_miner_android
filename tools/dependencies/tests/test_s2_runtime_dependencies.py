@@ -7,6 +7,8 @@ import unittest
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
+from tools.dependencies.generate_runtime_dependency_manifest import generate
+
 REPO_ROOT = Path(__file__).resolve().parents[3]
 MANIFEST_PATH = REPO_ROOT / "third_party/s2-runtime-dependencies/manifest.json"
 LOCK_PATH = REPO_ROOT / "app/gradle.lockfile"
@@ -14,15 +16,20 @@ VERIFICATION_PATH = REPO_ROOT / "gradle/verification-metadata.xml"
 CATALOG_PATH = REPO_ROOT / "gradle/libs.versions.toml"
 APP_BUILD_PATH = REPO_ROOT / "app/build.gradle.kts"
 RUNTIME_CONFIGURATION = "emulatorDebugRuntimeClasspath"
+RELEASE_RUNTIME_CONFIGURATION = "deviceReleaseRuntimeClasspath"
 XML_NAMESPACE = {"v": "https://schema.gradle.org/dependency-verification"}
 
 
-def _runtime_lock_coordinates() -> set[str]:
+def _runtime_lock_coordinates(
+    configuration: str = RUNTIME_CONFIGURATION,
+) -> set[str]:
     coordinates: set[str] = set()
     for line in LOCK_PATH.read_text(encoding="utf-8").splitlines():
-        if line.startswith("empty=") or RUNTIME_CONFIGURATION not in line:
+        if line.startswith("empty=") or "=" not in line:
             continue
-        coordinates.add(line.split("=", 1)[0])
+        coordinate, configurations = line.split("=", 1)
+        if configuration in configurations.split(","):
+            coordinates.add(coordinate)
     return coordinates
 
 
@@ -42,7 +49,7 @@ def _verification_artifacts() -> dict[str, dict[str, str]]:
     return result
 
 
-class S2RuntimeDependenciesTest(unittest.TestCase):
+class RuntimeDependenciesTest(unittest.TestCase):
     def setUp(self) -> None:
         self.manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
         self.components = {
@@ -52,7 +59,10 @@ class S2RuntimeDependenciesTest(unittest.TestCase):
 
     def test_direct_catalog_pins_and_declarations_are_exact(self) -> None:
         catalog = tomllib.loads(CATALOG_PATH.read_text(encoding="utf-8"))
-        self.assertEqual("1.17.0", catalog["versions"]["androidx-core"])
+        self.assertEqual("1.18.0", catalog["versions"]["androidx-core"])
+        self.assertEqual("1.13.0", catalog["versions"]["androidx-activity"])
+        self.assertEqual("2.10.0", catalog["versions"]["androidx-lifecycle"])
+        self.assertEqual("2026.06.00", catalog["versions"]["androidx-compose-bom"])
         self.assertEqual("2.21.5", catalog["versions"]["jackson"])
         self.assertEqual("1.11.0", catalog["versions"]["kotlinx-coroutines"])
         self.assertEqual(
@@ -67,10 +77,28 @@ class S2RuntimeDependenciesTest(unittest.TestCase):
             "org.jetbrains.kotlinx:kotlinx-coroutines-core",
             catalog["libraries"]["kotlinx-coroutines-core"]["module"],
         )
+        self.assertEqual(
+            "androidx.activity:activity-compose",
+            catalog["libraries"]["androidx-activity-compose"]["module"],
+        )
+        self.assertEqual(
+            "androidx.lifecycle:lifecycle-runtime-compose",
+            catalog["libraries"]["androidx-lifecycle-runtime-compose"]["module"],
+        )
+        self.assertEqual(
+            "androidx.lifecycle:lifecycle-viewmodel-compose",
+            catalog["libraries"]["androidx-lifecycle-viewmodel-compose"]["module"],
+        )
+        self.assertEqual(
+            "androidx.compose:compose-bom",
+            catalog["libraries"]["androidx-compose-bom"]["module"],
+        )
 
         libraries = catalog["libraries"]
         forbidden_modules = {
             "androidx.core:core-ktx",
+            "androidx.navigation:navigation-compose",
+            "androidx.datastore:datastore-preferences",
             "com.fasterxml.jackson.core:jackson-databind",
             "org.jetbrains.kotlinx:kotlinx-coroutines-android",
         }
@@ -83,11 +111,21 @@ class S2RuntimeDependenciesTest(unittest.TestCase):
         app_build = APP_BUILD_PATH.read_text(encoding="utf-8")
         for declaration in (
             "implementation(libs.androidx.core)",
+            "implementation(libs.androidx.activity.compose)",
+            "implementation(libs.androidx.lifecycle.runtime.compose)",
+            "implementation(libs.androidx.lifecycle.viewmodel.compose)",
+            "implementation(composeBom)",
+            "implementation(libs.androidx.compose.material3)",
+            "implementation(libs.androidx.compose.ui.tooling.preview)",
             "implementation(libs.jackson.core)",
             "implementation(libs.kotlinx.coroutines.core)",
+            "debugImplementation(libs.androidx.compose.ui.tooling)",
+            "debugImplementation(libs.androidx.compose.ui.test.manifest)",
         ):
             self.assertEqual(1, app_build.count(declaration), declaration)
         self.assertNotIn("kotlinx.coroutines.android", app_build)
+        self.assertNotIn("navigation.compose", app_build)
+        self.assertNotIn("datastore", app_build.lower())
 
     def test_inventory_is_the_complete_locked_runtime_closure(self) -> None:
         self.assertEqual(1, self.manifest["formatVersion"])
@@ -96,7 +134,15 @@ class S2RuntimeDependenciesTest(unittest.TestCase):
         self.assertEqual(len(self.components), len(self.manifest["components"]))
         self.assertEqual(
             {
-                "androidx.core:core:1.17.0",
+                "androidx.activity:activity-compose:1.13.0",
+                "androidx.compose.material3:material3:1.4.0",
+                "androidx.compose.ui:ui-test-manifest:1.11.3",
+                "androidx.compose.ui:ui-tooling-preview:1.11.3",
+                "androidx.compose.ui:ui-tooling:1.11.3",
+                "androidx.compose:compose-bom:2026.06.00",
+                "androidx.core:core:1.18.0",
+                "androidx.lifecycle:lifecycle-runtime-compose:2.10.0",
+                "androidx.lifecycle:lifecycle-viewmodel-compose:2.10.0",
                 "com.fasterxml.jackson.core:jackson-core:2.21.5",
                 "org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0",
             },
@@ -106,6 +152,24 @@ class S2RuntimeDependenciesTest(unittest.TestCase):
             with self.subTest(coordinate=coordinate):
                 self.assertTrue(component["licenses"])
                 self.assertTrue(component["artifacts"])
+
+    def test_inventory_is_deterministically_generated_from_locked_evidence(self) -> None:
+        self.assertEqual(generate(), self.manifest)
+
+    def test_release_runtime_is_debug_inventory_without_debug_tooling(self) -> None:
+        debug = _runtime_lock_coordinates()
+        release = _runtime_lock_coordinates(RELEASE_RUNTIME_CONFIGURATION)
+        self.assertEqual(
+            {
+                "androidx.compose.ui:ui-test-manifest:1.11.3",
+                "androidx.compose.ui:ui-tooling-android:1.11.3",
+                "androidx.compose.ui:ui-tooling-data-android:1.11.3",
+                "androidx.compose.ui:ui-tooling-data:1.11.3",
+                "androidx.compose.ui:ui-tooling:1.11.3",
+            },
+            debug - release,
+        )
+        self.assertEqual(set(), release - debug)
 
     def test_inventory_hashes_equal_strict_gradle_verification(self) -> None:
         verification = ET.parse(VERIFICATION_PATH).getroot()
