@@ -6,7 +6,7 @@ import java.security.MessageDigest
 
 /** Clean pre-release schema. There is intentionally no migration from the discarded JSON scratch schema. */
 internal object JournalSchema {
-    const val VERSION = 1
+    const val VERSION = 2
 
     private fun names(values: Iterable<Enum<*>>) = values.joinToString(",") { "'${it.name}'" }
 
@@ -618,6 +618,7 @@ internal object JournalSchema {
             "CREATE INDEX claim_namespace_prefix_index ON media_claims(provider_prefix) WHERE state != 'CLEANED_VERIFIED'",
             "CREATE INDEX staging_recovery_index ON staging_artifacts(state, id)",
             "CREATE INDEX remediation_open_index ON remediations(state, id)",
+            "CREATE UNIQUE INDEX one_stored_unattached_remediation_per_claim ON remediations(claim_id) WHERE kind = 'MEDIA_STORED_UNATTACHED'",
             parentIdentityTrigger,
             *parentNormalizedTransitionTriggers.toTypedArray(),
             parentTransitionTrigger,
@@ -646,6 +647,8 @@ internal object JournalSchema {
             routingInsertTrigger,
             routingTransitionTrigger,
             claimTransitionTrigger,
+            storedUnattachedClaimGuard,
+            storedUnattachedClaimResolutionTrigger,
             stagingTransitionTrigger,
         )
     }
@@ -741,6 +744,15 @@ internal object JournalSchema {
         BEGIN
             SELECT CASE WHEN EXISTS(SELECT 1 FROM mutation_children WHERE parent_id = OLD.id AND state = 'PREPARED')
                 THEN RAISE(ABORT, 'finalized parent retains PREPARED child') END;
+            SELECT CASE WHEN NEW.state IN ('RESPONSE_ACKNOWLEDGED', 'ABANDONED') AND
+                OLD.operation_kind = 'STORE_MEDIA' AND EXISTS(
+                    SELECT 1 FROM media_claims c
+                    WHERE c.run_id = OLD.run_id AND c.request_id = OLD.request_id AND
+                        c.state IN ('STORED', 'PRESENT_BYTES_VERIFIED') AND NOT EXISTS(
+                            SELECT 1 FROM remediations r
+                            WHERE r.parent_id = OLD.id AND r.claim_id = c.id AND
+                                r.kind = 'MEDIA_STORED_UNATTACHED' AND r.state = 'OPEN'))
+                THEN RAISE(ABORT, 'final stored media lacks unattached remediation') END;
             SELECT CASE WHEN NEW.state IN ('RESPONSE_ACKNOWLEDGED', 'ABANDONED') AND NOT EXISTS(
                 SELECT 1 FROM terminal_parent_audit a WHERE a.parent_id = OLD.id AND
                     a.final_state = NEW.state AND a.terminal_variant IS
@@ -1538,6 +1550,18 @@ internal object JournalSchema {
             BEGIN SELECT RAISE(ABORT, 'remediation must start open'); END
             """.trimIndent(),
             """
+            CREATE TRIGGER stored_unattached_remediation_insert_guard BEFORE INSERT ON remediations
+            WHEN NEW.kind = 'MEDIA_STORED_UNATTACHED' AND (
+                NEW.parent_id IS NULL OR NEW.claim_id IS NULL OR NEW.staging_id IS NOT NULL OR
+                NEW.staging_subject_id IS NOT NULL OR NOT EXISTS(
+                    SELECT 1 FROM parents p JOIN media_claims c
+                        ON c.run_id = p.run_id AND c.request_id = p.request_id
+                    WHERE p.id = NEW.parent_id AND c.id = NEW.claim_id AND
+                        p.operation_kind = 'STORE_MEDIA' AND p.state = 'RESULT_READY' AND
+                        c.state IN ('STORED', 'PRESENT_BYTES_VERIFIED')))
+            BEGIN SELECT RAISE(ABORT, 'stored-unattached remediation lacks exact claim proof'); END
+            """.trimIndent(),
+            """
             CREATE TRIGGER remediation_update_guard BEFORE UPDATE ON remediations
             WHEN NOT (
                 (OLD.state = 'OPEN' AND NEW.state = 'RESOLVED' AND
@@ -1554,6 +1578,13 @@ internal object JournalSchema {
                     NEW.updated_at_ms > OLD.updated_at_ms AND EXISTS(
                         SELECT 1 FROM staging_artifacts s WHERE s.id = OLD.staging_id AND s.state = 'CLEANED')))
             BEGIN SELECT RAISE(ABORT, 'illegal remediation mutation'); END
+            """.trimIndent(),
+            """
+            CREATE TRIGGER stored_unattached_remediation_resolution_guard BEFORE UPDATE OF state ON remediations
+            WHEN OLD.kind = 'MEDIA_STORED_UNATTACHED' AND NEW.state = 'RESOLVED' AND NOT EXISTS(
+                SELECT 1 FROM media_claims c WHERE c.id = OLD.claim_id AND
+                    c.state IN ('ATTACHED_VERIFIED', 'CLEANED_VERIFIED', 'ACKNOWLEDGED_BY_USER'))
+            BEGIN SELECT RAISE(ABORT, 'stored-unattached remediation resolved before its claim'); END
             """.trimIndent(),
             """
             CREATE TRIGGER remediation_delete_forbidden BEFORE DELETE ON remediations
@@ -1845,6 +1876,43 @@ internal object JournalSchema {
                 THEN RAISE(ABORT, 'illegal media claim transition') END;
             SELECT CASE WHEN NEW.compact_evidence IS NULL
                 THEN RAISE(ABORT, 'media claim transition needs compact evidence') END;
+        END
+        """.trimIndent()
+
+    /** Keeps orphan remediation and the only legitimate cross-parent attachment path coupled. */
+    private val storedUnattachedClaimGuard =
+        """
+        CREATE TRIGGER stored_unattached_claim_guard BEFORE UPDATE OF state ON media_claims
+        WHEN EXISTS(
+            SELECT 1 FROM remediations r WHERE r.claim_id = OLD.id AND
+                r.kind = 'MEDIA_STORED_UNATTACHED' AND r.state = 'OPEN')
+        BEGIN
+            SELECT CASE WHEN NEW.state NOT IN (
+                'PRESENT_BYTES_VERIFIED', 'ATTACHED_VERIFIED', 'CLEANED_VERIFIED', 'ACKNOWLEDGED_BY_USER')
+                THEN RAISE(ABORT, 'stored-unattached claim cannot leave its remediation stale') END;
+            SELECT CASE WHEN NEW.state = 'PRESENT_BYTES_VERIFIED' AND NOT EXISTS(
+                SELECT 1 FROM active_note_media_bindings b
+                JOIN active_notes n ON n.parent_id = b.parent_id
+                JOIN parents p ON p.id = n.parent_id
+                WHERE b.claim_id = OLD.id AND b.asset_id = OLD.asset_id AND
+                    b.actual_filename = OLD.actual_filename AND p.run_id = OLD.run_id AND
+                    p.state IN ('PREPARED', 'RUNNING'))
+                THEN RAISE(ABORT, 'stored-unattached byte proof lacks a durable note binding') END;
+        END
+        """.trimIndent()
+
+    private val storedUnattachedClaimResolutionTrigger =
+        """
+        CREATE TRIGGER stored_unattached_claim_resolution AFTER UPDATE OF state ON media_claims
+        WHEN NEW.state IN ('ATTACHED_VERIFIED', 'CLEANED_VERIFIED', 'ACKNOWLEDGED_BY_USER')
+        BEGIN
+            UPDATE remediations
+            SET state = 'RESOLVED', compact_evidence = NEW.compact_evidence,
+                updated_at_ms = CASE
+                    WHEN updated_at_ms >= NEW.updated_at_ms THEN updated_at_ms + 1
+                    ELSE NEW.updated_at_ms
+                END
+            WHERE claim_id = OLD.id AND kind = 'MEDIA_STORED_UNATTACHED' AND state = 'OPEN';
         END
         """.trimIndent()
 

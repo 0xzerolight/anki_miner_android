@@ -139,6 +139,37 @@ internal class SqliteAnkiMutationStore(
                    ((c.operation_kind = 'CARD_DECK_UPDATE') != EXISTS(SELECT 1 FROM card_commands x WHERE x.child_id = c.id))""".trimIndent(),
             )
         if (malformedChildren != 0L) throw JournalCorruptionException("Mutation child lacks exactly one typed command")
+        val finalizedUnremediatedMedia =
+            scalarLong(
+                db,
+                """SELECT count(*) FROM parents p JOIN media_claims c
+                   ON c.run_id = p.run_id AND c.request_id = p.request_id
+                   WHERE p.operation_kind = 'STORE_MEDIA' AND
+                       p.state IN ('RESPONSE_ACKNOWLEDGED', 'ABANDONED') AND
+                       c.state IN ('STORED', 'PRESENT_BYTES_VERIFIED') AND NOT EXISTS(
+                           SELECT 1 FROM remediations r WHERE r.parent_id = p.id AND
+                               r.claim_id = c.id AND r.kind = 'MEDIA_STORED_UNATTACHED' AND
+                               r.state = 'OPEN')""".trimIndent(),
+            )
+        if (finalizedUnremediatedMedia != 0L) {
+            throw JournalCorruptionException("Finalized stored media lacks unattached remediation")
+        }
+        val malformedStoredRemediations =
+            scalarLong(
+                db,
+                """SELECT count(*) FROM remediations r
+                   LEFT JOIN parents p ON p.id = r.parent_id
+                   LEFT JOIN media_claims c ON c.id = r.claim_id
+                   WHERE r.kind = 'MEDIA_STORED_UNATTACHED' AND (
+                       p.id IS NULL OR c.id IS NULL OR p.operation_kind != 'STORE_MEDIA' OR
+                       c.run_id != p.run_id OR c.request_id != p.request_id OR
+                       (r.state = 'OPEN' AND c.state NOT IN ('STORED', 'PRESENT_BYTES_VERIFIED')) OR
+                       (r.state = 'RESOLVED' AND c.state NOT IN (
+                           'ATTACHED_VERIFIED', 'CLEANED_VERIFIED', 'ACKNOWLEDGED_BY_USER')))""".trimIndent(),
+            )
+        if (malformedStoredRemediations != 0L) {
+            throw JournalCorruptionException("Stored-unattached remediation differs from its claim")
+        }
     }
 
     override fun createParent(request: JournalRequest): ParentRecord {
@@ -1055,17 +1086,21 @@ internal class SqliteAnkiMutationStore(
                 val duplicateFree = frozenDurableRequestIds.distinct().size == frozenDurableRequestIds.size
                 val evidenceAccepted =
                     acknowledgeAuthorized && duplicateFree && frozenDurableRequestIds.toSet() == readyIds.toSet()
+                val wasReady = parents.associate { it.id to (it.state == ParentState.RESULT_READY) }
+                val terminalParents =
+                    parents.map { parent ->
+                        if (wasReady.getValue(parent.id)) parent else terminalizeOwnerlessDb(db, parent)
+                    }
                 val acknowledged = ArrayList<String>()
                 val abandoned = ArrayList<String>()
-                parents.forEach { parent ->
-                    val wasReady = parent.state == ParentState.RESULT_READY
-                    val terminal = if (wasReady) parent else terminalizeOwnerlessDb(db, parent)
+                terminalParents.forEach { terminal ->
+                    val responseWasReady = wasReady.getValue(terminal.id)
                     val finalState =
-                        if (evidenceAccepted && wasReady) {
-                            acknowledged += parent.key.requestId
+                        if (evidenceAccepted && responseWasReady) {
+                            acknowledged += terminal.key.requestId
                             ParentState.RESPONSE_ACKNOWLEDGED
                         } else {
-                            abandoned += parent.key.requestId
+                            abandoned += terminal.key.requestId
                             ParentState.ABANDONED
                         }
                     finalizeAndScrub(db, terminal, finalState)
@@ -1085,12 +1120,15 @@ internal class SqliteAnkiMutationStore(
                 recoveryParentsDb(db).filter {
                     it.key.runId !in activeRunIds && it.id != preparedParentId && !it.state.isFinalized
                 }
-            val finalized = candidates.map { parent ->
+            val terminalized = candidates.map { parent ->
                 crashHooks.hit(JournalCrashPoint.BEFORE_OWNERLESS_TERMINALIZATION)
                 val terminal = if (parent.state == ParentState.RESULT_READY) parent else terminalizeOwnerlessDb(db, parent)
                 crashHooks.hit(JournalCrashPoint.AFTER_OWNERLESS_TERMINALIZATION)
+                terminal
+            }
+            val finalized = terminalized.map { terminal ->
                 finalizeAndScrub(db, terminal, ParentState.ABANDONED)
-                parentById(db, parent.id)
+                parentById(db, terminal.id)
             }
             candidates.map { it.key.runId }.distinct().forEach { runId ->
                 if (preparedChildForRun(db, runId) == null && parentsForRun(db, runId).all { it.state.isFinalized }) {
@@ -1293,6 +1331,13 @@ internal class SqliteAnkiMutationStore(
         actualFilename?.let { validateMediaNames(it, it) }
         return write { db ->
             val claim = claimById(db, claimId)
+            if (openStoredUnattachedRemediationDb(db, claim.id) != null) {
+                if (state != MediaClaimState.PRESENT_BYTES_VERIFIED || !hasDurableNoteBindingDb(db, claim)) {
+                    throw JournalInvariantViolation(
+                        "Stored-unattached media requires its typed acknowledgement or exact note binding",
+                    )
+                }
+            }
             JournalStateMachine.requireClaimTransition(claim.state, state)
             updateClaim(db, claim, state, actualFilename ?: claim.actualFilename, compactEvidence)
             claimById(db, claimId)
@@ -1478,11 +1523,46 @@ internal class SqliteAnkiMutationStore(
             ).use { it.mapRows(::remediationFromCursor) }
         }
 
+    override fun acknowledgeUnattachedMedia(
+        remediationId: Long,
+        compactEvidence: String,
+    ): RemediationRecord {
+        requireCompactEvidence(compactEvidence)
+        return write { db ->
+            val remediation = remediationById(db, remediationId)
+            if (
+                remediation.kind != RemediationKind.MEDIA_STORED_UNATTACHED ||
+                    remediation.state != RemediationState.OPEN || remediation.claimId == null
+            ) {
+                throw JournalInvariantViolation("Remediation is not open stored-unattached media")
+            }
+            val claim = claimById(db, remediation.claimId)
+            if (claim.state !in setOf(MediaClaimState.STORED, MediaClaimState.PRESENT_BYTES_VERIFIED)) {
+                throw JournalInvariantViolation("Stored-unattached claim is no longer acknowledgeable")
+            }
+            updateClaim(
+                db,
+                claim,
+                MediaClaimState.ACKNOWLEDGED_BY_USER,
+                claim.actualFilename,
+                compactEvidence,
+            )
+            val resolved = remediationById(db, remediationId)
+            if (resolved.state != RemediationState.RESOLVED) {
+                throw JournalInvariantViolation("Stored-unattached acknowledgement did not resolve remediation")
+            }
+            resolved
+        }
+    }
+
     override fun resolveRemediation(remediationId: Long, compactEvidence: String): RemediationRecord {
         requireCompactEvidence(compactEvidence)
         return write { db ->
             val current = remediationById(db, remediationId)
             if (current.state != RemediationState.OPEN) throw JournalInvariantViolation("Remediation is already resolved")
+            if (current.kind == RemediationKind.MEDIA_STORED_UNATTACHED) {
+                throw JournalInvariantViolation("Stored-unattached media requires typed acknowledgement")
+            }
             db.updateOrThrow(
                 "remediations",
                 values(
@@ -2373,7 +2453,7 @@ internal class SqliteAnkiMutationStore(
         }
         identityClauses += "kind = ?"
         identityArgs += draft.kind.name
-        val existing =
+        val matches =
             db.query(
                 "remediations",
                 null,
@@ -2382,8 +2462,14 @@ internal class SqliteAnkiMutationStore(
                 null,
                 null,
                 null,
-            ).use { it.singleOrNull(::remediationFromCursor, "matching remediation") }
-        if (existing != null) return existing
+            ).use { it.mapRows(::remediationFromCursor) }
+        if (matches.size > 1) throw JournalCorruptionException("Remediation identity is not unique")
+        matches.singleOrNull()?.let { existing ->
+            if (existing.state != RemediationState.OPEN) {
+                throw JournalInvariantViolation("A resolved remediation cannot be reopened")
+            }
+            return existing
+        }
         val now = timestamp()
         val id =
             db.insertOrThrow(
@@ -2413,6 +2499,7 @@ internal class SqliteAnkiMutationStore(
         if (parent.state != ParentState.RESULT_READY) {
             throw JournalInvariantViolation("Cleanup must terminalize exact aligned evidence before scrubbing")
         }
+        ensureUnattachedMediaRemediationsDb(db, parent, finalState)
         val variant = parentTerminalMetadata(db, parent.id)?.variant
         val resultCount = scalarLong(db, "SELECT count(*) FROM aligned_results WHERE parent_id = ?", arrayOf(parent.id.toString()))
         val childCount = scalarLong(db, "SELECT count(*) FROM mutation_children WHERE parent_id = ?", arrayOf(parent.id.toString()))
@@ -2511,6 +2598,43 @@ internal class SqliteAnkiMutationStore(
         db.delete("parent_terminal_metadata", "parent_id = ?", arrayOf(parent.id.toString()))
         db.delete("aligned_results", "parent_id = ?", arrayOf(parent.id.toString()))
         db.delete("parent_request_items", "parent_id = ?", arrayOf(parent.id.toString()))
+    }
+
+    private fun ensureUnattachedMediaRemediationsDb(
+        db: SQLiteDatabase,
+        parent: ParentRecord,
+        finalState: ParentState,
+    ) {
+        if (parent.operation != ParentOperation.STORE_MEDIA) return
+        val claims =
+            db.query(
+                "media_claims",
+                null,
+                "run_id = ? AND request_id = ? AND state IN (?, ?)",
+                arrayOf(
+                    parent.key.runId,
+                    parent.key.requestId,
+                    MediaClaimState.STORED.name,
+                    MediaClaimState.PRESENT_BYTES_VERIFIED.name,
+                ),
+                null,
+                null,
+                "created_at_ms, id",
+            ).use { it.mapRows(::claimFromCursor) }
+        claims.forEach { claim ->
+            ensureRemediationDb(
+                db,
+                RemediationDraft(
+                    parentId = parent.id,
+                    claimId = claim.id,
+                    kind = RemediationKind.MEDIA_STORED_UNATTACHED,
+                    summary = "Stored Anki media was not attached to a verified note",
+                    compactEvidence =
+                        "finalState=${finalState.name};request=${parent.key.requestId};" +
+                            "asset=${claim.assetId};actual=${claim.actualFilename}",
+                ),
+            )
+        }
     }
 
     private fun requireRequestSelfConsistent(request: JournalRequest) {
@@ -3142,6 +3266,43 @@ internal class SqliteAnkiMutationStore(
         db.query("media_claims", null, "id = ?", arrayOf(id.toString()), null, null, null).use {
             it.requireSingle(::claimFromCursor, "media claim $id")
         }
+
+    private fun openStoredUnattachedRemediationDb(
+        db: SQLiteDatabase,
+        claimId: Long,
+    ): RemediationRecord? =
+        db.query(
+            "remediations",
+            null,
+            "claim_id = ? AND kind = ? AND state = ?",
+            arrayOf(
+                claimId.toString(),
+                RemediationKind.MEDIA_STORED_UNATTACHED.name,
+                RemediationState.OPEN.name,
+            ),
+            null,
+            null,
+            null,
+        ).use { it.singleOrNull(::remediationFromCursor, "open stored-unattached remediation") }
+
+    private fun hasDurableNoteBindingDb(
+        db: SQLiteDatabase,
+        claim: MediaClaimRecord,
+    ): Boolean =
+        scalarLong(
+            db,
+            """SELECT count(*) FROM active_note_media_bindings b
+               JOIN active_notes n ON n.parent_id = b.parent_id
+               JOIN parents p ON p.id = n.parent_id
+               WHERE b.claim_id = ? AND b.asset_id = ? AND b.actual_filename = ? AND
+                   p.run_id = ? AND p.state IN ('PREPARED', 'RUNNING')""".trimIndent(),
+            arrayOf(
+                claim.id.toString(),
+                claim.assetId,
+                checkNotNull(claim.actualFilename),
+                claim.runId,
+            ),
+        ) == 1L
 
     private fun unresolvedClaimsDb(db: SQLiteDatabase): List<MediaClaimRecord> =
         db.query(

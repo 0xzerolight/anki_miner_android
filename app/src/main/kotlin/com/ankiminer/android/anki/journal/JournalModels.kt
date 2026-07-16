@@ -966,6 +966,7 @@ internal data class StagingRecord(
 internal enum class RemediationKind {
     DECK_COMMIT_UNCERTAIN,
     MEDIA_COMMIT_UNCERTAIN,
+    MEDIA_STORED_UNATTACHED,
     NOTE_COMMIT_UNCERTAIN,
     NOTE_COMMITTED_FAILED,
     CARD_ROUTING_FAILED,

@@ -1502,6 +1502,195 @@ class SqliteAnkiMutationStoreInstrumentedTest {
         }
 
     @Test
+    fun finalizedStoredMediaRequiresAtomicUnattachedAcknowledgementAcrossReopen() {
+        val name = databaseName()
+        var firstClaimId = 0L
+        var secondClaimId = 0L
+        try {
+            SqliteAnkiMutationStore(context, name, enforceBackgroundThread = false).use { store ->
+                val (acknowledgedRequest, acknowledged) = readyStoredMedia(store, 140, 1, 1)
+                firstClaimId = acknowledged.claim.id
+                assertTrue(
+                    store.cleanupRun(
+                        acknowledgedRequest.key.runId,
+                        acknowledgeAuthorized = true,
+                        frozenDurableRequestIds = listOf(acknowledgedRequest.key.requestId),
+                    ).evidenceAccepted,
+                )
+
+                val (abandonedRequest, abandoned) = readyStoredMedia(store, 141, 1, 2)
+                secondClaimId = abandoned.claim.id
+                assertFalse(
+                    store.cleanupRun(
+                        abandonedRequest.key.runId,
+                        acknowledgeAuthorized = false,
+                        frozenDurableRequestIds = emptyList(),
+                    ).evidenceAccepted,
+                )
+
+                val remediations = store.openRemediations().filter {
+                    it.kind == RemediationKind.MEDIA_STORED_UNATTACHED
+                }
+                assertEquals(setOf(firstClaimId, secondClaimId), remediations.mapNotNull { it.claimId }.toSet())
+                assertTrue(remediations.all { it.parentId != null && it.stagingId == null })
+                assertThrows(JournalInvariantViolation::class.java) {
+                    store.transitionClaim(
+                        firstClaimId,
+                        MediaClaimState.ACKNOWLEDGED_BY_USER,
+                        compactEvidence = "generic transition must not bypass remediation",
+                    )
+                }
+                val firstRemediation = remediations.single { it.claimId == firstClaimId }
+                assertThrows(JournalInvariantViolation::class.java) {
+                    store.resolveRemediation(firstRemediation.id, "generic resolution must not split state")
+                }
+                assertThrows(SQLiteConstraintException::class.java) {
+                    store.writableDatabase.update(
+                        "remediations",
+                        ContentValues().apply {
+                            put("state", RemediationState.RESOLVED.name)
+                            put("compact_evidence", "invalid split resolution")
+                            put("updated_at_ms", firstRemediation.updatedAtMs + 1)
+                        },
+                        "id = ?",
+                        arrayOf(firstRemediation.id.toString()),
+                    )
+                }
+
+                val secondRemediation = remediations.single { it.claimId == secondClaimId }
+                assertEquals(
+                    RemediationState.RESOLVED,
+                    store.acknowledgeUnattachedMedia(
+                        secondRemediation.id,
+                        "user acknowledged the unattached provider media",
+                    ).state,
+                )
+                assertEquals(MediaClaimState.ACKNOWLEDGED_BY_USER.name, claimState(store.writableDatabase, secondClaimId))
+
+                val firstClaim = requireNotNull(store.mediaClaim(acknowledgedRequest.key, acknowledged.claim.assetId))
+                assertEquals(
+                    1,
+                    store.writableDatabase.update(
+                        "media_claims",
+                        ContentValues().apply {
+                            put("state", MediaClaimState.ACKNOWLEDGED_BY_USER.name)
+                            put("compact_evidence", "raw acknowledgement remains atomically coupled")
+                            put("updated_at_ms", firstClaim.updatedAtMs + 1)
+                        },
+                        "id = ?",
+                        arrayOf(firstClaimId.toString()),
+                    ),
+                )
+                assertTrue(store.openRemediations().none { it.kind == RemediationKind.MEDIA_STORED_UNATTACHED })
+            }
+
+            SqliteAnkiMutationStore(context, name, enforceBackgroundThread = false).use { reopened ->
+                assertEquals(MediaClaimState.ACKNOWLEDGED_BY_USER.name, claimState(reopened.writableDatabase, firstClaimId))
+                assertEquals(MediaClaimState.ACKNOWLEDGED_BY_USER.name, claimState(reopened.writableDatabase, secondClaimId))
+                assertTrue(reopened.openRemediations().none { it.kind == RemediationKind.MEDIA_STORED_UNATTACHED })
+            }
+        } finally {
+            context.deleteDatabase(name)
+        }
+    }
+
+    @Test
+    fun cleanupTerminalizesLaterNoteProofBeforeClassifyingStoredMediaAsUnattached() =
+        withStore { store ->
+            val (mediaRequest, media) = readyStoredMedia(store, 142, 1, 1)
+            val noteRequest =
+                createRequest(
+                    142,
+                    2,
+                    1,
+                    MediaBinding(media.claim.assetId, "audio_1.mp3"),
+                )
+            prepareCommittedNote(
+                store,
+                noteRequest,
+                14_201,
+                listOf(DurableMediaBinding(media.claim.assetId, "audio_1.mp3", media.claim.id)),
+            )
+            advanceToPostcheck(store, noteRequest, 14_201)
+
+            val cleanup =
+                store.cleanupRun(
+                    mediaRequest.key.runId,
+                    acknowledgeAuthorized = true,
+                    frozenDurableRequestIds = listOf(mediaRequest.key.requestId),
+                )
+
+            assertTrue(cleanup.evidenceAccepted)
+            assertEquals(MediaClaimState.ATTACHED_VERIFIED, store.mediaClaim(mediaRequest.key, media.claim.assetId)?.state)
+            assertEquals(
+                0L,
+                auditCount(
+                    store.writableDatabase,
+                    "remediations",
+                    "1",
+                    "kind = 'MEDIA_STORED_UNATTACHED'",
+                ),
+            )
+        }
+
+    @Test
+    fun preparedNoteBindingCanResolveEarlierStoredUnattachedRemediationAcrossReopen() {
+        val name = databaseName()
+        var claimId = 0L
+        try {
+            SqliteAnkiMutationStore(context, name, enforceBackgroundThread = false).use { store ->
+                val (mediaRequest, media) = readyStoredMedia(store, 143, 1, 1)
+                claimId = media.claim.id
+                val noteRequest = createRequest(143, 2, 1, MediaBinding(media.claim.assetId, "audio_1.mp3"))
+                store.createParent(noteRequest)
+                store.beginParent(noteRequest.key)
+                store.storeTargetSnapshot(noteRequest.key, targetSnapshot())
+                store.materializeActiveNote(
+                    noteRequest.key,
+                    materialization(
+                        noteRequest,
+                        0,
+                        listOf(DurableMediaBinding(media.claim.assetId, "audio_1.mp3", media.claim.id)),
+                    ),
+                )
+                val noteChild =
+                    store.prepareChild(
+                        noteRequest.key,
+                        MutationCommand.InsertNote(0, noteRequest.itemIds.single(), 11, "語\u001fword", "mined"),
+                    )
+
+                assertEquals(
+                    listOf(mediaRequest.key),
+                    store.abandonOwnerless(emptySet()).map { it.key },
+                )
+                assertEquals(
+                    RemediationKind.MEDIA_STORED_UNATTACHED,
+                    store.openRemediations().single().kind,
+                )
+
+                store.recordProviderEntry(noteChild.id)
+                store.commitNoteReceipt(
+                    noteChild.id,
+                    ProviderReceipt.Note(14_301, "content://com.ichi2.anki.flashcards/notes/14301"),
+                    "validated resumed note receipt",
+                )
+                advanceToPostcheck(store, noteRequest, 14_301)
+                store.completeVerifiedNote(noteRequest.key, 0, 14_301, "resumed exact attachment proof")
+
+                assertEquals(MediaClaimState.ATTACHED_VERIFIED.name, claimState(store.writableDatabase, claimId))
+                assertTrue(store.openRemediations().isEmpty())
+            }
+
+            SqliteAnkiMutationStore(context, name, enforceBackgroundThread = false).use { reopened ->
+                assertEquals(MediaClaimState.ATTACHED_VERIFIED.name, claimState(reopened.writableDatabase, claimId))
+                assertTrue(reopened.openRemediations().isEmpty())
+            }
+        } finally {
+            context.deleteDatabase(name)
+        }
+    }
+
+    @Test
     fun rawSqlRejectsBadDigestNoncontiguousItemsBadStatusAndReceiptBeforeEntry() =
         withStore { store ->
             val db = store.writableDatabase
@@ -2616,6 +2805,28 @@ class SqliteAnkiMutationStoreInstrumentedTest {
                 "audio_$asset",
             ),
         ).also { assertEquals(parent.id, it.child.parentId) }
+    }
+
+    private fun readyStoredMedia(
+        store: SqliteAnkiMutationStore,
+        run: Int,
+        requestNumber: Int,
+        asset: Int,
+    ): Pair<JournalRequest, MediaPromotion> {
+        val request = mediaRequest(run, requestNumber, listOf(asset))
+        val media = prepareMedia(store, run, requestNumber, asset)
+        store.recordProviderEntry(media.child.id)
+        store.commitMediaReceipt(
+            media.child.id,
+            media.claim.id,
+            ProviderReceipt.Media("audio_${asset}.mp3", "file:///audio_${asset}.mp3"),
+            "validated stored media receipt",
+        )
+        store.markResultReady(
+            request,
+            JournalResponse.StoreMedia(request.key, store.alignedResults(request.key), error = null),
+        )
+        return request to media
     }
 
     private fun verifyRequest(run: Int, request: Int): JournalRequest =

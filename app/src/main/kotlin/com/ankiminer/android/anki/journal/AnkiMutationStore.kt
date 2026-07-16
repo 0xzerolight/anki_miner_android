@@ -169,6 +169,13 @@ internal interface AnkiMutationStore : Closeable {
 
     fun addRemediation(draft: RemediationDraft): RemediationRecord
     fun openRemediations(): List<RemediationRecord>
+
+    /** Resolves an orphaned stored-media warning together with its exact durable claim. */
+    fun acknowledgeUnattachedMedia(
+        remediationId: Long,
+        compactEvidence: String,
+    ): RemediationRecord
+
     fun resolveRemediation(remediationId: Long, compactEvidence: String): RemediationRecord
 }
 
