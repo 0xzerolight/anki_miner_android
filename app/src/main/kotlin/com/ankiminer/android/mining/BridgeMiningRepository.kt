@@ -1,0 +1,950 @@
+package com.ankiminer.android.mining
+
+import com.ankiminer.android.anki.protocol.ReleaseState
+import com.ankiminer.android.engine.BridgeJsonCodec
+import com.ankiminer.android.engine.BridgeMessage
+import com.ankiminer.android.engine.EngineCallbacks
+import com.ankiminer.android.engine.MiningConfigSnapshot
+import com.ankiminer.android.engine.MiningOutcome
+import com.ankiminer.android.engine.PresenterEvent
+import com.ankiminer.android.engine.PyBridge
+import com.ankiminer.android.engine.TokenizerConfiguration
+import com.ankiminer.android.engine.VideoMiningWireRequest
+import com.ankiminer.android.service.MiningForegroundCancellationReason
+import com.ankiminer.android.service.MiningForegroundLease
+import com.ankiminer.android.service.MiningForegroundProgress
+import com.ankiminer.android.service.MiningForegroundSessionIdentity
+import com.ankiminer.android.service.MiningForegroundSessionListener
+import java.text.Normalizer
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+
+internal fun interface MiningForegroundStarter {
+    fun startSession(
+        runId: String,
+        generation: Long,
+        listener: MiningForegroundSessionListener,
+    ): CompletableFuture<MiningForegroundLease>
+}
+
+/**
+ * Process-scoped coordinator for the one parked Python engine invocation allowed at a time.
+ *
+ * The run executor is exclusively for `mining.video.run`. Control messages use a different
+ * executor so curation and cancellation can reach Python while that first thread is parked.
+ */
+internal class BridgeMiningRepository(
+    private val pyBridge: PyBridge,
+    private val anki: CoordinatorAnkiCallbacks,
+    private val inputOwnerFactory: MiningInputOwnerFactory,
+    private val tokenizerResourceProvider: InstalledTokenizerResourceProvider,
+    private val runtimePaths: MiningRuntimePaths,
+    private val sourceGrantReleaser: SourceGrantReleaser,
+    private val foregroundStarter: MiningForegroundStarter,
+    private val runExecutor: MiningTaskExecutor,
+    private val controlExecutor: MiningTaskExecutor,
+    private val foregroundStartTimeoutSeconds: Long = 15,
+) : MiningRepository {
+    private enum class Phase {
+        PREPARING,
+        REGISTERED,
+        CURATING,
+        PROMOTING,
+        RUNNING,
+        CANCELLING,
+        FINALIZING,
+    }
+
+    private data class ProtocolFault(
+        val message: String,
+        val retryable: Boolean = false,
+    )
+
+    private class ActiveRun(
+        val generation: Long,
+        val input: VideoMiningInput,
+        val cancellation: CoordinatorAnkiCancellation = CoordinatorAnkiCancellation(),
+    ) {
+        var phase = Phase.PREPARING
+        var runId: String? = null
+        var progress: MiningProgress? = null
+        var curation: CurationRequest? = null
+        var terminalCallback: BridgeMessage.Terminal? = null
+        var stickyFault: ProtocolFault? = null
+        var cancelRequested = false
+        var cancelCommandSent = false
+        var foregroundLease: MiningForegroundLease? = null
+        var foregroundClosingExpected = false
+        var sourcesDetached = false
+    }
+
+    private val monitor = Any()
+    private val mutableState = MutableStateFlow<MiningRunState>(MiningRunState.Idle)
+    override val state: StateFlow<MiningRunState> = mutableState.asStateFlow()
+    private var active: ActiveRun? = null
+    private var nextGeneration = 1L
+    private var restartRequired: ProtocolFault? = null
+
+    init {
+        require(foregroundStartTimeoutSeconds > 0)
+    }
+
+    override fun detachActiveSources(input: VideoMiningInput): Boolean =
+        synchronized(monitor) {
+            val run = active ?: return@synchronized false
+            if (run.input != input || run.sourcesDetached || run.phase == Phase.FINALIZING) {
+                return@synchronized false
+            }
+            run.sourcesDetached = true
+            true
+    }
+
+    override suspend fun startVideo(input: VideoMiningInput) {
+        val generation: Long
+        synchronized(monitor) {
+            if (active != null || mutableState.value != MiningRunState.Idle) {
+                throw MiningCommandException("A mining run is already active")
+            }
+            restartRequired?.let { fault ->
+                mutableState.value = fault.toFailed(runId = null, result = null)
+                return
+            }
+            generation = nextGeneration++
+            active = ActiveRun(generation, input)
+            mutableState.value =
+                MiningRunState.Starting(
+                    runId = null,
+                    progress = MiningProgress(0, 0, "Preparing selected media"),
+                )
+        }
+        try {
+            runExecutor.execute { runVideo(generation) }
+        } catch (_: RuntimeException) {
+            recordFault(generation, "Could not start the mining worker")
+            finishRun(generation, terminal = null, inputOwner = null)
+        }
+    }
+
+    override suspend fun confirmCuration(
+        runId: String,
+        requestId: String,
+        selection: List<CurationSelection>,
+    ) {
+        val request =
+            synchronized(monitor) {
+                val run = active ?: throw MiningCommandException("No curation request is pending")
+                val pending = run.curation ?: throw MiningCommandException("No curation request is pending")
+                if (
+                    run.phase != Phase.CURATING ||
+                    pending.runId != runId ||
+                    pending.requestId != requestId
+                ) {
+                    throw MiningCommandException("The curation response is stale")
+                }
+                pending
+            }
+        val rawResponse =
+            try {
+                BridgeJsonCodec.encodeCurationResponse(request, selection)
+            } catch (_: RuntimeException) {
+                throw MiningCommandException("The curation selection is invalid")
+            }
+        val generation =
+            synchronized(monitor) {
+                val run = active ?: throw MiningCommandException("No curation request is pending")
+                if (run.curation !== request || run.phase != Phase.CURATING) {
+                    throw MiningCommandException("The curation response is stale")
+                }
+                run.phase = Phase.PROMOTING
+                val progress = run.progress ?: MiningProgress(0, 0, "Starting background mining")
+                mutableState.value = MiningRunState.Running(runId, progress)
+                run.generation
+            }
+        executeControl(generation) { promoteAndSubmitCuration(generation, request, rawResponse) }
+    }
+
+    override suspend fun cancel(runId: String) {
+        val cancellation =
+            synchronized(monitor) {
+                val run = active ?: throw MiningCommandException("The mining run cannot be cancelled")
+                if (run.runId != runId || run.phase == Phase.FINALIZING) {
+                    throw MiningCommandException("The mining run cannot be cancelled")
+                }
+                markCancellationLocked(run)
+                run.generation to run.cancellation
+            }
+        cancellation.second.cancel()
+        executeControl(cancellation.first) { sendCancellation(cancellation.first) }
+    }
+
+    override suspend fun reset() {
+        synchronized(monitor) {
+            if (active != null || !mutableState.value.isTerminal) {
+                throw MiningCommandException("Only a terminal mining run can be reset")
+            }
+            mutableState.value = MiningRunState.Idle
+        }
+    }
+
+    private fun runVideo(generation: Long) {
+        var inputOwner: MiningInputOwner? = null
+        var terminal: BridgeMessage.Terminal? = null
+        try {
+            val run = requireActive(generation)
+            val tokenizer =
+                try {
+                    tokenizerResourceProvider.installedResource()
+                } catch (failure: Exception) {
+                    recordFault(generation, "Could not inspect the installed tokenizer resource")
+                    throw failure
+                }
+            if (tokenizer == null) {
+                recordFault(
+                    generation,
+                    "Install the Japanese tokenizer resource before mining",
+                    retryable = true,
+                )
+                return
+            }
+            configureTokenizer(run, tokenizer)
+            val videoPath: String
+            val subtitlePath: String
+            try {
+                inputOwner = inputOwnerFactory.create()
+                videoPath = inputOwner.openVideo(run.input.video)
+                subtitlePath = inputOwner.materializeSubtitle(run.input.subtitle)
+            } catch (failure: Exception) {
+                recordFault(generation, "Could not prepare the selected media")
+                throw failure
+            }
+            if (run.cancellation.isCancelled()) {
+                recordFault(generation, "Mining was cancelled before Python job registration", retryable = true)
+            }
+            val labels = labelsFor(run.input.video.displayName)
+            val rawResult =
+                pyBridge.dispatch(
+                    BridgeJsonCodec.encodeVideoRun(
+                        VideoMiningWireRequest(
+                            videoPath = videoPath,
+                            subtitlePath = subtitlePath,
+                            episodeName = labels.first,
+                            seriesName = labels.second,
+                            sourceLabel = null,
+                            audioTrackOverride = null,
+                            cacheDir = runtimePaths.cacheDir.canonicalPath,
+                            nativeLibraryDir = runtimePaths.nativeLibraryDir.canonicalPath,
+                            configSnapshot = MiningConfigSnapshot(settings = emptyMap(), androidTtsEnabled = false),
+                        ),
+                    ),
+                    RunCallbacks(generation),
+                )
+            terminal = reconcileTerminal(generation, rawResult)
+        } catch (_: Exception) {
+            recordFault(generation, "Embedded mining stopped unexpectedly")
+        } finally {
+            finishRun(generation, terminal, inputOwner)
+        }
+    }
+
+    private fun configureTokenizer(
+        run: ActiveRun,
+        tokenizer: InstalledTokenizerResource,
+    ) {
+        val raw =
+            try {
+                pyBridge.dispatch(
+                    BridgeJsonCodec.encodeTokenizerConfigure(
+                        TokenizerConfiguration(
+                            dicDir = tokenizer.dicDir.canonicalPath,
+                            resourceId = tokenizer.resourceId,
+                            treeSha256 = tokenizer.treeSha256,
+                            backend = tokenizer.backend,
+                        ),
+                    ),
+                    null,
+                )
+            } catch (failure: Exception) {
+                recordFault(run.generation, "Tokenizer setup failed")
+                throw failure
+            }
+        val decoded =
+            try {
+                BridgeJsonCodec.decode(raw)
+            } catch (failure: RuntimeException) {
+                recordFault(run.generation, "Tokenizer setup returned an invalid response")
+                throw failure
+            }
+        when (val response = decoded) {
+            is BridgeMessage.TokenizerReady -> {
+                val identity = response.identity
+                if (
+                    identity.dicDir != tokenizer.dicDir.canonicalPath ||
+                    identity.resourceId != tokenizer.resourceId ||
+                    identity.treeSha256 != tokenizer.treeSha256 ||
+                    identity.backend != tokenizer.backend ||
+                    identity.fileCount <= 0 ||
+                    identity.totalBytes <= 0
+                ) {
+                    recordFault(run.generation, "Tokenizer identity did not match its installed resource")
+                    throw MiningCommandException("Tokenizer identity did not match its installed resource")
+                }
+            }
+            is BridgeMessage.Error -> {
+                if (response.code == "tokenizer_restart_required") {
+                    setRestartRequired("Restart the app before retrying tokenizer setup")
+                }
+                recordFault(run.generation, "Installed tokenizer verification failed")
+                throw MiningCommandException("Tokenizer setup was rejected")
+            }
+            else -> {
+                recordFault(run.generation, "Tokenizer setup returned an invalid response")
+                throw MiningCommandException("Tokenizer setup returned an invalid response")
+            }
+        }
+    }
+
+    private fun reconcileTerminal(
+        generation: Long,
+        rawResult: String,
+    ): BridgeMessage.Terminal? {
+        val runId = synchronized(monitor) { activeFor(generation)?.runId }
+        val returned =
+            try {
+                BridgeJsonCodec.decode(rawResult, expectedRunId = runId)
+            } catch (_: RuntimeException) {
+                recordFault(generation, "Python returned an invalid terminal response")
+                return null
+            }
+        val terminal =
+            when (returned) {
+                is BridgeMessage.Terminal -> returned
+                is BridgeMessage.Error -> {
+                    recordFault(generation, "Python rejected the mining request")
+                    return null
+                }
+                else -> {
+                    recordFault(generation, "Python returned a non-terminal mining response")
+                    return null
+                }
+            }
+        val callback = synchronized(monitor) { activeFor(generation)?.terminalCallback }
+        if (callback != null && callback.rawEnvelope != terminal.rawEnvelope) {
+            recordFault(generation, "Python terminal callback and return value disagreed")
+            return terminal
+        }
+        return terminal
+    }
+
+    private fun finishRun(
+        generation: Long,
+        terminal: BridgeMessage.Terminal?,
+        inputOwner: MiningInputOwner?,
+    ) {
+        val runId: String?
+        val lease: MiningForegroundLease?
+        var terminalForState = terminal
+        synchronized(monitor) {
+            val run = activeFor(generation) ?: return
+            run.phase = Phase.FINALIZING
+            run.foregroundClosingExpected = true
+            runId = run.runId
+            lease = run.foregroundLease
+            if (terminalForState == null) terminalForState = run.terminalCallback
+        }
+
+        if (runId != null) releaseAnkiFallback(generation, runId)
+        try {
+            inputOwner?.close()
+        } catch (_: Exception) {
+            recordFault(generation, "Selected-media cleanup failed")
+        }
+        try {
+            lease?.close()
+        } catch (_: RuntimeException) {
+            recordFault(generation, "Background mining service cleanup failed")
+        }
+
+        val detachedInput: VideoMiningInput?
+        val runFault: ProtocolFault?
+        synchronized(monitor) {
+            val run = activeFor(generation) ?: return
+            detachedInput = run.input.takeIf { run.sourcesDetached }
+            runFault = run.stickyFault
+            active = null
+        }
+        var detachedCleanupFault: ProtocolFault? = null
+        if (detachedInput != null) {
+            val videoFault = releaseDetachedSource(detachedInput.video.uri)
+            val subtitleFault = releaseDetachedSource(detachedInput.subtitle.uri)
+            detachedCleanupFault = videoFault ?: subtitleFault
+        }
+
+        synchronized(monitor) {
+            mutableState.value = terminalState(runId, terminalForState, runFault ?: detachedCleanupFault)
+        }
+    }
+
+    private fun releaseAnkiFallback(
+        generation: Long,
+        runId: String,
+    ) {
+        val state =
+            try {
+                anki.releaseRunStateFallback(runId)
+            } catch (_: RuntimeException) {
+                setRestartRequired("Restart the app before starting another mining run")
+                recordFault(generation, "Anki cleanup did not complete")
+                return
+            }
+        if (state != ReleaseState.RELEASED && state != ReleaseState.ABSENT) {
+            setRestartRequired("Restart the app before starting another mining run")
+            recordFault(generation, "Anki cleanup remained incomplete")
+        }
+    }
+
+    private fun releaseDetachedSource(uri: String): ProtocolFault? =
+        try {
+            sourceGrantReleaser.release(uri)
+            null
+        } catch (_: Exception) {
+            ProtocolFault("Selected-document permission cleanup failed")
+        }
+
+    private fun terminalState(
+        runId: String?,
+        terminal: BridgeMessage.Terminal?,
+        fault: ProtocolFault?,
+    ): MiningRunState {
+        if (fault != null) return fault.toFailed(runId, terminal?.result)
+        if (terminal == null) {
+            return ProtocolFault("Mining ended without a valid result").toFailed(runId, null)
+        }
+        return when (terminal.outcome) {
+            MiningOutcome.SUCCESS -> MiningRunState.Success(terminal.runId, requireNotNull(terminal.result))
+            MiningOutcome.CANCELLED -> MiningRunState.Cancelled(terminal.runId, terminal.result)
+            MiningOutcome.FAILED ->
+                MiningRunState.Failed(
+                    runId = terminal.runId,
+                    failure =
+                        MiningFailure(
+                            message = terminal.error?.message ?: "Mining failed",
+                            retryable = terminal.error?.code in RETRYABLE_TERMINAL_ERRORS,
+                        ),
+                    result = terminal.result,
+                )
+        }
+    }
+
+    private fun promoteAndSubmitCuration(
+        generation: Long,
+        request: CurationRequest,
+        rawResponse: String,
+    ) {
+        val listener =
+            MiningForegroundSessionListener { identity, reason ->
+                onForegroundCancellation(identity, reason)
+            }
+        val future =
+            try {
+                foregroundStarter.startSession(request.runId, generation, listener)
+            } catch (_: RuntimeException) {
+                recordFaultAndCancel(generation, "Could not start background mining")
+                return
+            }
+        val lease =
+            try {
+                future.get(foregroundStartTimeoutSeconds, TimeUnit.SECONDS)
+            } catch (_: Exception) {
+                future.cancel(false)
+                recordFaultAndCancel(generation, "Background mining did not start safely")
+                return
+            }
+
+        var submit = false
+        var initialProgress: MiningProgress? = null
+        synchronized(monitor) {
+            val run = activeFor(generation)
+            if (run != null && run.runId == request.runId && run.phase != Phase.FINALIZING) {
+                run.foregroundLease = lease
+                initialProgress = run.progress
+                if (!run.cancelRequested && run.phase == Phase.PROMOTING) {
+                    run.phase = Phase.RUNNING
+                    submit = true
+                } else {
+                    run.foregroundClosingExpected = true
+                }
+            }
+        }
+        if (!submit) {
+            try {
+                lease.close()
+            } catch (_: RuntimeException) {
+                recordFault(generation, "Background mining service cleanup failed")
+            }
+            sendCancellation(generation)
+            return
+        }
+        initialProgress?.let { progress ->
+            if (!publishForegroundProgress(generation, lease, progress)) {
+                sendCancellation(generation)
+                return
+            }
+        }
+        val stillRunnable =
+            synchronized(monitor) {
+                val run = activeFor(generation)
+                run != null &&
+                    run.runId == request.runId &&
+                    !run.cancelRequested &&
+                    run.phase == Phase.RUNNING
+            }
+        if (!stillRunnable) {
+            sendCancellation(generation)
+            return
+        }
+
+        val response =
+            try {
+                pyBridge.dispatch(rawResponse, null)
+            } catch (_: RuntimeException) {
+                recordFaultAndCancel(generation, "Python rejected the curation response")
+                return
+            }
+        val accepted =
+            try {
+                BridgeJsonCodec.decode(
+                    response,
+                    expectedRunId = request.runId,
+                    expectedRequestId = request.requestId,
+                )
+            } catch (_: RuntimeException) {
+                recordFaultAndCancel(generation, "Python returned an invalid curation acknowledgement")
+                return
+            }
+        if (accepted !is BridgeMessage.CurationAccepted) {
+            recordFaultAndCancel(generation, "Python did not accept the curation response")
+        }
+    }
+
+    private fun onForegroundCancellation(
+        identity: MiningForegroundSessionIdentity,
+        reason: MiningForegroundCancellationReason,
+    ) {
+        val cancellation =
+            synchronized(monitor) {
+                val run = activeFor(identity.generation) ?: return
+                if (run.runId != identity.runId || run.foregroundClosingExpected) return
+                if (reason != MiningForegroundCancellationReason.USER_REQUESTED) {
+                    if (run.stickyFault == null) {
+                        run.stickyFault = ProtocolFault("Background mining stopped unexpectedly")
+                    }
+                }
+                markCancellationLocked(run)
+                run.generation to run.cancellation
+            }
+        cancellation.second.cancel()
+        executeControl(cancellation.first) { sendCancellation(cancellation.first) }
+    }
+
+    private fun sendCancellation(generation: Long) {
+        val runId =
+            synchronized(monitor) {
+                val run = activeFor(generation) ?: return
+                val registered = run.runId ?: return
+                if (run.cancelCommandSent || run.phase == Phase.FINALIZING) return
+                run.cancelCommandSent = true
+                registered
+            }
+        val response =
+            try {
+                pyBridge.dispatch(BridgeJsonCodec.encodeJobCancel(runId), null)
+            } catch (_: RuntimeException) {
+                recordFault(generation, "Python cancellation dispatch failed")
+                return
+            }
+        val decoded =
+            try {
+                BridgeJsonCodec.decode(response, expectedRunId = runId)
+            } catch (_: RuntimeException) {
+                recordFault(generation, "Python returned an invalid cancellation acknowledgement")
+                return
+            }
+        if (decoded !is BridgeMessage.JobCancelled) {
+            recordFault(generation, "Python did not acknowledge cancellation")
+        }
+    }
+
+    private fun updateProgress(
+        generation: Long,
+        progress: MiningProgress,
+    ) {
+        val lease: MiningForegroundLease?
+        synchronized(monitor) {
+            val run = activeFor(generation) ?: return
+            run.progress = progress
+            when (run.phase) {
+                Phase.PREPARING, Phase.REGISTERED ->
+                    mutableState.value = MiningRunState.Starting(run.runId, progress)
+                Phase.PROMOTING, Phase.RUNNING, Phase.CANCELLING ->
+                    run.runId?.let { mutableState.value = MiningRunState.Running(it, progress) }
+                Phase.CURATING, Phase.FINALIZING -> Unit
+            }
+            lease = run.foregroundLease
+        }
+        if (lease != null) publishForegroundProgress(generation, lease, progress)
+    }
+
+    private fun publishForegroundProgress(
+        generation: Long,
+        lease: MiningForegroundLease,
+        progress: MiningProgress,
+    ): Boolean {
+        val determinate =
+            progress.total in 1..Int.MAX_VALUE.toLong() &&
+                progress.current <= Int.MAX_VALUE.toLong()
+        val converted =
+            MiningForegroundProgress(
+                completed = progress.current.takeIf { determinate }?.toInt(),
+                total = progress.total.takeIf { determinate }?.toInt(),
+                message = notificationMessage(progress.description),
+            )
+        val accepted =
+            try {
+                lease.updateProgress(converted)
+            } catch (_: RuntimeException) {
+                false
+            }
+        if (!accepted) recordFaultAndCancel(generation, "Background progress session was lost")
+        return accepted
+    }
+
+    private fun registerJob(
+        generation: Long,
+        raw: String,
+    ): String {
+        val request = BridgeJsonCodec.decode(raw) as? BridgeMessage.JobRegistrationRequest
+            ?: throw IllegalStateException("Python sent an invalid job registration")
+        val cancellation: CoordinatorAnkiCancellation
+        synchronized(monitor) {
+            val run = activeFor(generation) ?: throw IllegalStateException("Mining registration is stale")
+            if (run.phase != Phase.PREPARING || run.runId != null) {
+                throw IllegalStateException("Mining registration is duplicated")
+            }
+            run.runId = request.runId
+            cancellation = run.cancellation
+        }
+        val admitted = anki.registerRun(request.runId, cancellation)
+        if (!admitted) {
+            recordFaultAndCancel(generation, "Anki is not ready for this mining run")
+            throw IllegalStateException("Anki run registration was rejected")
+        }
+        synchronized(monitor) {
+            val run = activeFor(generation) ?: throw IllegalStateException("Mining registration is stale")
+            run.phase = if (run.cancelRequested) Phase.CANCELLING else Phase.REGISTERED
+            mutableState.value = MiningRunState.Starting(run.runId, run.progress)
+        }
+        return BridgeJsonCodec.encodeRegistrationAccepted(request.runId)
+    }
+
+    private fun acceptCuration(
+        generation: Long,
+        raw: String,
+    ) {
+        val runId = synchronized(monitor) { activeFor(generation)?.runId }
+        val message = BridgeJsonCodec.decode(raw, expectedRunId = runId) as? BridgeMessage.CurationNeeded
+            ?: throw IllegalStateException("Python sent an invalid curation request")
+        synchronized(monitor) {
+            val run = activeFor(generation) ?: throw IllegalStateException("Curation request is stale")
+            if (run.cancelRequested) return
+            if (run.phase != Phase.REGISTERED || run.curation != null) {
+                throw IllegalStateException("Curation request is duplicated or out of order")
+            }
+            run.phase = Phase.CURATING
+            run.curation = message.request
+            mutableState.value = MiningRunState.Curating(message.request)
+        }
+    }
+
+    private fun captureTerminal(
+        generation: Long,
+        terminal: BridgeMessage.Terminal,
+    ) {
+        synchronized(monitor) {
+            val run = activeFor(generation) ?: throw IllegalStateException("Terminal callback is stale")
+            if (run.terminalCallback != null) {
+                throw IllegalStateException("Terminal callback was duplicated")
+            }
+            run.terminalCallback = terminal
+        }
+    }
+
+    private fun onProgressStart(
+        generation: Long,
+        message: BridgeMessage.ProgressStart,
+    ) {
+        updateProgress(generation, MiningProgress(0, message.total, message.description))
+    }
+
+    private fun onProgressUpdate(
+        generation: Long,
+        message: BridgeMessage.ProgressUpdate,
+    ) {
+        val total =
+            synchronized(monitor) {
+                activeFor(generation)?.progress?.total
+                    ?: throw IllegalStateException("Progress update arrived before progress start")
+            }
+        if (total != 0L && message.current > total) {
+            throw IllegalStateException("Progress exceeded its declared total")
+        }
+        updateProgress(generation, MiningProgress(message.current, total, message.description))
+    }
+
+    private fun onProgressComplete(generation: Long) {
+        val progress = synchronized(monitor) { activeFor(generation)?.progress } ?: return
+        updateProgress(generation, progress.copy(current = progress.total))
+    }
+
+    private fun handlePresenter(
+        generation: Long,
+        event: PresenterEvent,
+    ) {
+        synchronized(monitor) {
+            val run = activeFor(generation) ?: throw IllegalStateException("Presenter event is stale")
+            if (event.runId != run.runId) throw IllegalStateException("Presenter event belongs to another run")
+        }
+    }
+
+    private fun callbackFailure(
+        generation: Long,
+        block: () -> Unit,
+    ) {
+        try {
+            block()
+        } catch (failure: RuntimeException) {
+            recordFaultAndCancel(generation, "Python callback violated the bridge protocol")
+            throw IllegalStateException("Invalid Python callback", failure)
+        }
+    }
+
+    private inner class RunCallbacks(
+        private val generation: Long,
+    ) : EngineCallbacks {
+        override fun registerJob(message: String): String =
+            try {
+                registerJob(generation, message)
+            } catch (failure: RuntimeException) {
+                recordFaultAndCancel(generation, "Python job registration violated the bridge protocol")
+                throw failure
+            }
+
+        override fun onStart(message: String) =
+            callbackFailure(generation) {
+                val decoded = decodeCallback(generation, message)
+                val progress = decoded as? BridgeMessage.ProgressStart
+                    ?: throw IllegalStateException("Unexpected onStart message")
+                onProgressStart(generation, progress)
+            }
+
+        override fun onProgress(message: String) =
+            callbackFailure(generation) {
+                val decoded = decodeCallback(generation, message)
+                val progress = decoded as? BridgeMessage.ProgressUpdate
+                    ?: throw IllegalStateException("Unexpected onProgress message")
+                onProgressUpdate(generation, progress)
+            }
+
+        override fun onComplete(message: String) =
+            callbackFailure(generation) {
+                when (val decoded = decodeCallback(generation, message)) {
+                    is BridgeMessage.ProgressComplete -> onProgressComplete(generation)
+                    is BridgeMessage.Terminal -> {
+                        if (decoded.outcome == MiningOutcome.FAILED) {
+                            throw IllegalStateException("Failed terminal arrived on onComplete")
+                        }
+                        captureTerminal(generation, decoded)
+                    }
+                    else -> throw IllegalStateException("Unexpected onComplete message")
+                }
+            }
+
+        override fun onError(message: String) =
+            callbackFailure(generation) {
+                when (val decoded = decodeCallback(generation, message)) {
+                    is BridgeMessage.ProgressError -> Unit
+                    is BridgeMessage.Terminal -> {
+                        if (decoded.outcome != MiningOutcome.FAILED) {
+                            throw IllegalStateException("Non-failed terminal arrived on onError")
+                        }
+                        captureTerminal(generation, decoded)
+                    }
+                    else -> throw IllegalStateException("Unexpected onError message")
+                }
+            }
+
+        override fun onPresenterEvent(message: String) =
+            callbackFailure(generation) {
+                val decoded = decodeCallback(generation, message) as? BridgeMessage.Presenter
+                    ?: throw IllegalStateException("Unexpected presenter message")
+                handlePresenter(generation, decoded.event)
+            }
+
+        override fun onCurationNeeded(message: String) =
+            callbackFailure(generation) { acceptCuration(generation, message) }
+
+        override fun ankiVerifyTarget(message: String): String =
+            ankiCallback(generation) { anki.verifyTarget(message) }
+
+        override fun ankiScanFirstFields(message: String): String =
+            ankiCallback(generation) { anki.scanFirstFields(message) }
+
+        override fun ankiStoreMedia(message: String): String =
+            ankiCallback(generation) { anki.storeMedia(message) }
+
+        override fun ankiCreateNotes(message: String): String =
+            ankiCallback(generation) { anki.createNotes(message) }
+
+        override fun ankiReleaseRunState(message: String): String =
+            ankiCallback(generation) { anki.releaseRunState(message) }
+    }
+
+    private fun decodeCallback(
+        generation: Long,
+        raw: String,
+    ): BridgeMessage {
+        val runId = synchronized(monitor) { activeFor(generation)?.runId }
+            ?: throw IllegalStateException("Python callback arrived before job registration")
+        return BridgeJsonCodec.decode(raw, expectedRunId = runId)
+    }
+
+    private fun ankiCallback(
+        generation: Long,
+        block: () -> String,
+    ): String =
+        try {
+            synchronized(monitor) {
+                val run = activeFor(generation) ?: throw IllegalStateException("Anki callback is stale")
+                if (run.runId == null || run.phase == Phase.FINALIZING) {
+                    throw IllegalStateException("Anki callback is out of order")
+                }
+            }
+            block()
+        } catch (failure: RuntimeException) {
+            recordFaultAndCancel(generation, "Anki callback failed unexpectedly")
+            throw failure
+        }
+
+    private fun requireActive(generation: Long): ActiveRun =
+        synchronized(monitor) {
+            activeFor(generation) ?: throw IllegalStateException("Mining run is stale")
+        }
+
+    private fun activeFor(generation: Long): ActiveRun? =
+        active?.takeIf { it.generation == generation }
+
+    private fun markCancellationLocked(run: ActiveRun) {
+        run.cancelRequested = true
+        if (run.phase != Phase.FINALIZING) run.phase = Phase.CANCELLING
+    }
+
+    private fun recordFaultAndCancel(
+        generation: Long,
+        message: String,
+    ) {
+        val action =
+            synchronized(monitor) {
+                val run = activeFor(generation) ?: return
+                if (run.stickyFault == null) run.stickyFault = ProtocolFault(message)
+                markCancellationLocked(run)
+                Pair(
+                    run.cancellation,
+                    run.runId != null && !run.cancelCommandSent && run.phase != Phase.FINALIZING,
+                )
+            }
+        action.first.cancel()
+        if (action.second) executeControl(generation) { sendCancellation(generation) }
+    }
+
+    private fun recordFault(
+        generation: Long,
+        message: String,
+        retryable: Boolean = false,
+    ) {
+        synchronized(monitor) {
+            val run = activeFor(generation) ?: return
+            if (run.stickyFault == null) run.stickyFault = ProtocolFault(message, retryable)
+        }
+    }
+
+    private fun executeControl(
+        generation: Long,
+        task: () -> Unit,
+    ) {
+        try {
+            controlExecutor.execute(task)
+        } catch (_: RuntimeException) {
+            recordFault(generation, "Mining control worker is unavailable")
+        }
+    }
+
+    private fun setRestartRequired(message: String) {
+        synchronized(monitor) {
+            if (restartRequired == null) restartRequired = ProtocolFault(message)
+        }
+    }
+
+    private fun ProtocolFault.toFailed(
+        runId: String?,
+        result: ProcessingResult?,
+    ): MiningRunState.Failed =
+        MiningRunState.Failed(
+            runId = runId,
+            failure = MiningFailure(message, retryable),
+            result = result,
+        )
+
+    private fun labelsFor(displayName: String): Pair<String, String> {
+        val withoutExtension = displayName.substringBeforeLast('.', displayName)
+        val label = canonicalLabel(withoutExtension).ifEmpty { "Local video" }
+        return label to label
+    }
+
+    private fun canonicalLabel(raw: String): String {
+        val filtered =
+            buildString(raw.length) {
+                var index = 0
+                while (index < raw.length) {
+                    val codePoint = raw.codePointAt(index)
+                    if (!isCategoryC(codePoint)) appendCodePoint(codePoint)
+                    index += Character.charCount(codePoint)
+                }
+            }.trim { Character.isWhitespace(it) || Character.isSpaceChar(it) }
+        return Normalizer.normalize(filtered, Normalizer.Form.NFC)
+    }
+
+    private fun notificationMessage(raw: String): String? {
+        val canonical = canonicalLabel(raw).takeIf(String::isNotEmpty) ?: return null
+        if (canonical.length <= 512) return canonical
+        val end = if (canonical[511].isHighSurrogate()) 511 else 512
+        return canonical.substring(0, end).trimEnd().takeIf(String::isNotEmpty)
+    }
+
+    private fun isCategoryC(codePoint: Int): Boolean =
+        when (Character.getType(codePoint)) {
+            Character.CONTROL.toInt(),
+            Character.FORMAT.toInt(),
+            Character.PRIVATE_USE.toInt(),
+            Character.SURROGATE.toInt(),
+            Character.UNASSIGNED.toInt(),
+            -> true
+            else -> false
+        }
+
+    private companion object {
+        val RETRYABLE_TERMINAL_ERRORS =
+            setOf("provider_unavailable", "query_failed", "timeout", "processing_failed", "engine_error")
+    }
+}

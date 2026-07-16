@@ -17,7 +17,7 @@ class MainActivity : ComponentActivity() {
     private val viewModelFactory by lazy {
         val app = application as AnkiMinerApplication
         VideoMiningViewModel.Factory(
-            repository = MiningRepositoryFactory.create(),
+            repository = MiningRepositoryFactory.create(app),
             safBroker = app.safBroker,
         )
     }
