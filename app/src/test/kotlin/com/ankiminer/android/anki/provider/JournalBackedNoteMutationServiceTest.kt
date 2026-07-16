@@ -28,6 +28,7 @@ import com.ankiminer.android.anki.protocol.CreatedNote
 import com.ankiminer.android.anki.protocol.DuplicateCandidate
 import com.ankiminer.android.anki.protocol.DuplicateNote
 import com.ankiminer.android.anki.protocol.FailedNote
+import com.ankiminer.android.anki.protocol.ReleaseState
 import com.ankiminer.android.anki.protocol.UncertainNote
 import com.ankiminer.android.anki.protocol.VerifyTargetRequest
 import org.junit.Assert.assertEquals
@@ -258,9 +259,8 @@ class JournalBackedNoteMutationServiceTest {
             assertNull(harness.journal.parentRecord.activeNoteId)
             assertEquals(NoteRoutingPhase.NOTE_PENDING, harness.journal.parentRecord.routingPhase)
         }
-    }
 
-    private inline fun withHarness(
+    private fun withHarness(
         initialMatchingNoteIds: Set<Long> = emptySet(),
         cancellation: MutableAnkiCancellation = MutableAnkiCancellation(),
         installBaseline: Boolean = true,

@@ -1229,7 +1229,7 @@ class AnkiProviderReadsTest {
                     deckName = null,
                     candidates =
                         (0 until candidateCount).map { index ->
-                            DuplicateCandidate("key-$index", "cat")
+                            DuplicateCandidate("key-$index", "key-$index")
                         },
                     occurrences = (0 until candidateCount).toList(),
                     invalidateBaselineToken = null,
