@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "decision": {
+    "fallbackRole": "s2-capability-probe-only",
+    "productionPath": "ankidroid-content-provider",
+    "secondProductionExporterRequired": false
+  },
+  "artifact": {
+    "assetUrl": "https://github.com/KamWithK/AnkiconnectAndroid/releases/download/1.15/ankiconnect_android_1_15.apk",
+    "certificateSha256": "0d95a21cc32a64bdadfbc5ef8f7abf57dbd7c3bc2265f31331d0c919e5f49fd4",
+    "compileSdk": 33,
+    "minSdk": 26,
+    "nativeAbis": [],
+    "packageName": "com.kamwithk.ankiconnectandroid",
+    "sha256": "d2056c4543995243a4a5373b88628b8295c544fffd7824977879153e5911406c",
+    "signingSchemes": [
+      "v2"
+    ],
+    "sizeBytes": 5063255,
+    "targetSdk": 33,
+    "versionCode": 15,
+    "versionName": "1.15"
+  },
+  "license": {
+    "id": "GPL-3.0-only",
+    "sourcePath": "LICENSE",
+    "sourceSha256": "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903"
+  },
+  "probe": {
+    "apiVersion": 6,
+    "endpoint": "http://127.0.0.1:8765",
+    "requiredActions": [
+      "version",
+      "deckNames"
+    ]
+  },
+  "source": {
+    "commit": "4496450f0f5f187a79a6d0b7813f7b459da569ec",
+    "repository": "https://github.com/KamWithK/AnkiconnectAndroid.git",
+    "tag": "1.15"
+  }
+}
