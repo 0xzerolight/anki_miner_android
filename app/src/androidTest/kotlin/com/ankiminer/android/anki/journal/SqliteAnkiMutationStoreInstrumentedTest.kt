@@ -221,6 +221,33 @@ class SqliteAnkiMutationStoreInstrumentedTest {
         }
 
     @Test
+    fun recoveryInventorySnapshotsEveryActiveDurableCapabilityAndRemediation() =
+        withStore { store ->
+            val prepared = prepareMedia(store, 52, 1, 1)
+            val reserved =
+                store.reserveMedia(
+                    prepared.claim.runId,
+                    listOf(reservation(ParentKey(prepared.claim.runId, requestId(2)), 2)),
+                ).single()
+            val remediation =
+                store.addRemediation(
+                    RemediationDraft(
+                        parentId = prepared.child.parentId,
+                        kind = RemediationKind.CAPACITY_EXHAUSTED,
+                        summary = "Recovery inventory test remediation",
+                        compactEvidence = "inventory snapshot remains actionable",
+                    ),
+                )
+
+            val inventory = store.recoveryInventory()
+
+            assertEquals(listOf(prepared.claim.runId), inventory.activeMediaLeaseRunIds)
+            assertEquals(listOf(reserved.id), inventory.reservedMediaReservationIds)
+            assertEquals(listOf(prepared.claim), inventory.unresolvedClaims)
+            assertEquals(listOf(remediation), inventory.openRemediations)
+        }
+
+    @Test
     fun mediaEntryWithoutReceiptRecoversUncertainAndIsNeverReissued() =
         withStore { store ->
             val prepared = prepareMedia(store, 5, 1, 1)

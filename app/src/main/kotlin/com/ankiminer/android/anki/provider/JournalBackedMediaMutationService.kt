@@ -39,6 +39,13 @@ internal data class StoreMediaMutationOutcome(
     val replayed: Boolean,
 )
 
+internal fun interface MediaMutationService {
+    fun store(
+        owner: AnkiRunStateRegistry.RunOwner,
+        request: StoreMediaRequest,
+    ): StoreMediaMutationOutcome
+}
+
 /** The media service's complete durable surface, kept small enough for state-machine JVM tests. */
 internal interface MediaMutationJournal {
     fun replay(request: JournalRequest): ReplayResult
@@ -216,8 +223,8 @@ internal class JournalBackedMediaMutationService(
     private val journal: MediaMutationJournal,
     private val staging: MediaMutationStaging,
     private val provider: MediaMutationProvider,
-) {
-    fun store(
+) : MediaMutationService {
+    override fun store(
         owner: AnkiRunStateRegistry.RunOwner,
         request: StoreMediaRequest,
     ): StoreMediaMutationOutcome {

@@ -157,6 +157,7 @@ class DurableTargetRecoveryInstrumentedTest {
                             registry,
                             AnkiMutationTargetVerificationJournal(store),
                         ),
+                    mediaMutations = MediaMutationService { _, _ -> error("media mutation is not expected") },
                     workerThreadGuard = WorkerThreadGuard { },
                     startupRecoveryGate = gate,
                 )
@@ -256,6 +257,7 @@ class DurableTargetRecoveryInstrumentedTest {
                             registry,
                             AnkiMutationTargetVerificationJournal(store),
                         ),
+                    mediaMutations = MediaMutationService { _, _ -> error("media mutation is not expected") },
                     workerThreadGuard = WorkerThreadGuard { },
                     startupRecoveryGate = gate,
                 )
@@ -270,7 +272,13 @@ class DurableTargetRecoveryInstrumentedTest {
     private fun gate(
         store: SqliteAnkiMutationStore,
         gateway: FakeAnkiProviderGateway,
-    ) = JournalBackedTargetRecoveryGate(store, gateway, WorkerThreadGuard { })
+    ) =
+        JournalBackedTargetRecoveryGate(
+            store,
+            gateway,
+            WorkerThreadGuard { },
+            MediaStagingRecovery { AnkiMediaRecoveryReport(0, 0, 0) },
+        )
 
     private fun exactTargetHandler(
         deckExists: Boolean,

@@ -13,7 +13,10 @@ import com.ankiminer.android.anki.protocol.ReleaseRunStateRequest
 import com.ankiminer.android.anki.protocol.ReleaseRunStateResult
 import com.ankiminer.android.anki.protocol.ScanFirstFieldsRequest
 import com.ankiminer.android.anki.protocol.StoreMediaRequest
+import com.ankiminer.android.anki.protocol.StoreMediaResult
+import com.ankiminer.android.anki.protocol.StoredMedia
 import com.ankiminer.android.anki.protocol.VerifyTargetRequest
+import java.util.Collections
 
 internal fun interface AnkiProviderResponseEncoder {
     fun encode(
@@ -22,11 +25,69 @@ internal fun interface AnkiProviderResponseEncoder {
     ): String
 }
 
+/** Frozen media admission candidate, validated only after its exact result encodes successfully. */
+internal class DurableMediaAdmission private constructor(
+    val exactResult: StoreMediaResult,
+    private val acknowledgements: List<MediaAcknowledgement>,
+) {
+    fun validateAfterEncoding(
+        request: AnkiRequest,
+        response: AnkiResponse,
+    ): List<MediaAcknowledgement> {
+        if (response !== exactResult) throw IllegalStateException("The encoded durable media result changed identity")
+        AnkiValidators.validateResponseForRequest(exactResult, request)
+        requireBijection(exactResult, acknowledgements)
+        return acknowledgements
+    }
+
+    companion object {
+        fun freeze(
+            result: StoreMediaResult,
+            acknowledgements: List<MediaAcknowledgement>,
+        ): DurableMediaAdmission =
+            DurableMediaAdmission(
+                exactResult =
+                    result.copy(
+                        results = Collections.unmodifiableList(ArrayList(result.results)),
+                    ),
+                acknowledgements = Collections.unmodifiableList(ArrayList(acknowledgements)),
+            )
+
+        private fun requireBijection(
+            result: StoreMediaResult,
+            acknowledgements: List<MediaAcknowledgement>,
+        ) {
+            val storedRows = result.results.filterIsInstance<StoredMedia>()
+            if (
+                storedRows.map(StoredMedia::assetId).distinct().size != storedRows.size ||
+                storedRows.map(StoredMedia::actualFilename).distinct().size != storedRows.size
+            ) {
+                throw IllegalStateException("The durable media result contains duplicate stored identities")
+            }
+            if (
+                acknowledgements.any { it.durableClaimId <= 0L } ||
+                acknowledgements.map(MediaAcknowledgement::assetId).distinct().size != acknowledgements.size ||
+                acknowledgements.map(MediaAcknowledgement::actualFilename).distinct().size != acknowledgements.size ||
+                acknowledgements.map(MediaAcknowledgement::durableClaimId).distinct().size != acknowledgements.size
+            ) {
+                throw IllegalStateException("The durable media acknowledgements contain duplicate or invalid identities")
+            }
+
+            val storedByAsset = storedRows.associate { it.assetId to it.actualFilename }
+            val acknowledgedByAsset = acknowledgements.associate { it.assetId to it.actualFilename }
+            if (storedByAsset != acknowledgedByAsset) {
+                throw IllegalStateException("The durable media result and acknowledgements are not bijective")
+            }
+        }
+    }
+}
+
 /** Synchronous EngineCallbacks-facing dispatcher. Every method is called by the parked Python worker. */
 internal class AnkiProviderCallbacks(
     private val registry: AnkiRunStateRegistry,
     private val reads: AnkiProviderReadService,
     private val targetVerifier: AnkiTargetVerifier,
+    private val mediaMutations: MediaMutationService,
     private val workerThreadGuard: WorkerThreadGuard,
     private val startupRecoveryGate: AnkiStartupRecoveryGate = OpenAnkiStartupRecoveryGate,
     private val responseEncoder: AnkiProviderResponseEncoder =
@@ -76,12 +137,13 @@ internal class AnkiProviderCallbacks(
         }
 
     fun ankiStoreMedia(rawRequest: String): String =
-        dispatchOwned(AnkiOperation.STORE_MEDIA, rawRequest) { request, _ ->
-            request as StoreMediaRequest
-            throw AnkiReadFailure(
-                AnkiErrorCode.UNSUPPORTED_OPERATION,
-                retryable = false,
-                stableMessage = "Anki media mutation is not available in the read-only provider phase",
+        dispatchOwned(AnkiOperation.STORE_MEDIA, rawRequest) { request, owner ->
+            val typed = request as StoreMediaRequest
+            val outcome = mediaMutations.store(owner, typed)
+            val admission = DurableMediaAdmission.freeze(outcome.result, outcome.mediaAcknowledgements)
+            OwnedResponse(
+                response = admission.exactResult,
+                durableMedia = admission,
             )
         }
 
@@ -252,6 +314,7 @@ internal class AnkiProviderCallbacks(
         handled: OwnedResponse,
     ): String {
         val durableTarget = handled.durableTarget
+        val durableMedia = handled.durableMedia
         val encoded =
             try {
                 responseEncoder.encode(handled.response, request)
@@ -267,16 +330,34 @@ internal class AnkiProviderCallbacks(
                     ),
                 )
             }
-        if (durableTarget == null) return encoded
+        if (durableTarget == null && durableMedia == null) return encoded
         try {
-            registry.commitDurableTargetResponse(
-                owner = owner,
-                reservation = durableTarget.reservation,
-                requestId = request.requestId,
-                target = durableTarget.target,
-            )
+            if (durableTarget != null) {
+                registry.commitDurableTargetResponse(
+                    owner = owner,
+                    reservation = durableTarget.reservation,
+                    requestId = request.requestId,
+                    target = durableTarget.target,
+                )
+            } else {
+                val acknowledgements =
+                    checkNotNull(durableMedia).validateAfterEncoding(request, handled.response)
+                registry.commitDurableMutationResponse(
+                    owner = owner,
+                    requestId = request.requestId,
+                    mediaAcknowledgements = acknowledgements,
+                )
+            }
         } catch (_: RuntimeException) {
-            registry.abortTargetVerification(owner, durableTarget.reservation)
+            if (durableTarget != null) {
+                registry.abortTargetVerification(owner, durableTarget.reservation)
+            } else {
+                try {
+                    registry.markTerminalResponseFailure(owner)
+                } catch (_: RuntimeException) {
+                    // The durable admission failure remains authoritative.
+                }
+            }
             return encodeUnowned(
                 request,
                 request.error(
@@ -349,5 +430,12 @@ internal class AnkiProviderCallbacks(
     private data class OwnedResponse(
         val response: AnkiResponse,
         val durableTarget: DurableTargetCommit? = null,
-    )
+        val durableMedia: DurableMediaAdmission? = null,
+    ) {
+        init {
+            require(durableTarget == null || durableMedia == null) {
+                "One response cannot carry two durable admissions"
+            }
+        }
+    }
 }

@@ -1144,13 +1144,22 @@ internal class SqliteAnkiMutationStore(
     override fun recoveryParents(): List<ParentRecord> = read(::recoveryParentsDb)
 
     override fun recoveryInventory(): RecoveryInventory =
-        read { db ->
+        readTransaction { db ->
             val child = preparedChildDb(db)
             val intent = child?.let { preparedRoutingIntent(db, it.id) }
             val expectation =
                 child?.takeIf { it.command.operation == ChildOperation.DECK_CREATE }
                     ?.let { targetExpectationByParent(db, it.parentId) }
-            RecoveryInventory(recoveryParentsDb(db), child, intent, expectation)
+            RecoveryInventory(
+                unfinishedParents = recoveryParentsDb(db),
+                preparedChild = child,
+                preparedRoutingIntent = intent,
+                preparedTargetExpectation = expectation,
+                activeMediaLeaseRunIds = activeMediaLeaseRunIdsDb(db),
+                reservedMediaReservationIds = reservedMediaReservationIdsDb(db),
+                unresolvedClaims = unresolvedClaimsDb(db),
+                openRemediations = openRemediationsDb(db),
+            )
         }
 
     override fun acquireMediaLease(runId: String): MediaLeaseRecord {
@@ -1510,18 +1519,7 @@ internal class SqliteAnkiMutationStore(
     override fun addRemediation(draft: RemediationDraft): RemediationRecord =
         write { db -> ensureRemediationDb(db, draft) }
 
-    override fun openRemediations(): List<RemediationRecord> =
-        read { db ->
-            db.query(
-                "remediations",
-                null,
-                "state = ?",
-                arrayOf(RemediationState.OPEN.name),
-                null,
-                null,
-                "created_at_ms, id",
-            ).use { it.mapRows(::remediationFromCursor) }
-        }
+    override fun openRemediations(): List<RemediationRecord> = read(::openRemediationsDb)
 
     override fun acknowledgeUnattachedMedia(
         remediationId: Long,
@@ -3304,6 +3302,28 @@ internal class SqliteAnkiMutationStore(
             ),
         ) == 1L
 
+    private fun activeMediaLeaseRunIdsDb(db: SQLiteDatabase): List<String> =
+        db.query(
+            "media_leases",
+            arrayOf("run_id"),
+            "state = ?",
+            arrayOf(MediaLeaseState.ACTIVE.name),
+            null,
+            null,
+            "run_id, id",
+        ).use { cursor -> cursor.mapRows { row -> row.string("run_id") } }
+
+    private fun reservedMediaReservationIdsDb(db: SQLiteDatabase): List<Long> =
+        db.query(
+            "media_reservations",
+            arrayOf("id"),
+            "state = ?",
+            arrayOf(MediaReservationState.RESERVED.name),
+            null,
+            null,
+            "created_at_ms, id",
+        ).use { cursor -> cursor.mapRows { row -> row.long("id") } }
+
     private fun unresolvedClaimsDb(db: SQLiteDatabase): List<MediaClaimRecord> =
         db.query(
             "media_claims",
@@ -3332,6 +3352,17 @@ internal class SqliteAnkiMutationStore(
             row.long("created_at_ms"),
             row.long("updated_at_ms"),
         )
+
+    private fun openRemediationsDb(db: SQLiteDatabase): List<RemediationRecord> =
+        db.query(
+            "remediations",
+            null,
+            "state = ?",
+            arrayOf(RemediationState.OPEN.name),
+            null,
+            null,
+            "created_at_ms, id",
+        ).use { it.mapRows(::remediationFromCursor) }
 
     private fun updateClaim(
         db: SQLiteDatabase,
@@ -3565,6 +3596,19 @@ internal class SqliteAnkiMutationStore(
         checkAccess()
         return block(readableDatabase)
     }
+
+    /** Pins multi-query recovery admission evidence to one WAL snapshot. */
+    private fun <T> readTransaction(block: (SQLiteDatabase) -> T): T =
+        read { db ->
+            db.beginTransactionNonExclusive()
+            try {
+                val value = block(db)
+                db.setTransactionSuccessful()
+                value
+            } finally {
+                db.endTransaction()
+            }
+        }
 
     private fun <T> write(block: (SQLiteDatabase) -> T): T {
         checkAccess()

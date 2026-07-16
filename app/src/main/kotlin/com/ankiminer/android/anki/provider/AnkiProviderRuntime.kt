@@ -11,11 +11,17 @@ internal class AnkiProviderRuntime(
 ) : Closeable {
     private val store = SqliteAnkiMutationStore(context)
     private val gateway = ContentResolverAnkiGateway(context, workerThreadGuard)
+    private val mediaStaging =
+        AnkiMediaStaging(
+            journal = StoreAnkiMediaStagingJournal(store),
+            platform = AndroidAnkiMediaStagingPlatform(context),
+        )
     private val recoveryGate =
         JournalBackedTargetRecoveryGate(
             store = store,
             gateway = gateway,
             workerThreadGuard = workerThreadGuard,
+            mediaStagingRecovery = MediaStagingRecovery(mediaStaging::recover),
         )
     private val registry =
         AnkiRunStateRegistry(
@@ -23,6 +29,13 @@ internal class AnkiProviderRuntime(
             startupAdmission = recoveryGate,
         )
     private val reads = AnkiProviderReadService(gateway, registry)
+    private val mediaMutations =
+        JournalBackedMediaMutationService(
+            registry = registry,
+            journal = AnkiMutationMediaJournal(store),
+            staging = PrivateMediaMutationStaging(mediaStaging),
+            provider = CheckedMediaMutationProvider(gateway),
+        )
     private val verifier =
         DurableTargetVerifier(
             gateway = gateway,
@@ -35,6 +48,7 @@ internal class AnkiProviderRuntime(
             registry = registry,
             reads = reads,
             targetVerifier = verifier,
+            mediaMutations = mediaMutations,
             workerThreadGuard = workerThreadGuard,
             startupRecoveryGate = recoveryGate,
         )
