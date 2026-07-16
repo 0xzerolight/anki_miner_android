@@ -12,6 +12,8 @@ import java.io.File
 import java.io.FileNotFoundException
 import java.io.FileOutputStream
 import java.io.IOException
+import java.nio.file.Files
+import java.util.Locale
 
 /** A path whose backing resource is owned by a [SafJobFileOwner]. */
 @ConsistentCopyVisibility
@@ -29,9 +31,10 @@ data class PythonMediaInput internal constructor(
  * Owns every SAF descriptor opened for one Python mining job.
  *
  * Keep this object alive around the complete parked Python call, including curation and every
- * ffmpeg child process. Seekable inputs are passed as `/proc/self/fd/N`; non-seekable provider
- * streams are copied once into the app cache. The original [ParcelFileDescriptor] remains open in
- * both cases until [close], so neither path can change ownership underneath the engine.
+ * ffmpeg child process. Seekable videos are passed as `/proc/self/fd/N`; non-seekable videos are
+ * copied once into app cache. Subtitles are always copied because the engine's parser dispatches
+ * on their filename suffix. The original [ParcelFileDescriptor] remains open until [close], so no
+ * backing resource can change ownership underneath the engine.
  *
  * Opening and copying may block and must run on the mining worker, never the main thread.
  */
@@ -53,9 +56,33 @@ class SafJobFileOwner internal constructor(
     private val ownedInputs = mutableListOf<OwnedInput>()
     private var closed = false
 
-    fun open(uri: Uri): PythonMediaInput = openUri(uri.toString())
+    /** Compatibility alias for the S3 probe; production callers should name the video role. */
+    fun open(uri: Uri): PythonMediaInput = openVideo(uri)
 
-    internal fun openUri(uri: String): PythonMediaInput =
+    fun openVideo(uri: Uri): PythonMediaInput = openVideoUri(uri.toString())
+
+    fun materializeSubtitle(
+        uri: Uri,
+        displayName: String,
+    ): PythonMediaInput = materializeSubtitleUri(uri.toString(), displayName)
+
+    internal fun openUri(uri: String): PythonMediaInput = openVideoUri(uri)
+
+    internal fun openVideoUri(uri: String): PythonMediaInput =
+        openOwned(uri = uri, copySuffix = null)
+
+    internal fun materializeSubtitleUri(
+        uri: String,
+        displayName: String,
+    ): PythonMediaInput {
+        val suffix = subtitleSuffix(displayName)
+        return openOwned(uri = uri, copySuffix = suffix)
+    }
+
+    private fun openOwned(
+        uri: String,
+        copySuffix: String?,
+    ): PythonMediaInput =
         synchronized(monitor) {
             check(!closed) { "SAF job file owner is already closed" }
             require(uri.isNotBlank()) { "SAF URI must not be blank" }
@@ -64,14 +91,14 @@ class SafJobFileOwner internal constructor(
             var cacheFile: File? = null
             try {
                 val input =
-                    if (descriptor.isSeekable()) {
+                    if (copySuffix == null && descriptor.isSeekable()) {
                         require(descriptor.rawFd >= 0) { "SAF descriptor is invalid" }
                         PythonMediaInput(
                             path = "/proc/self/fd/${descriptor.rawFd}",
                             backing = PythonMediaInput.Backing.SEEKABLE_DESCRIPTOR,
                         )
                     } else {
-                        val createdCacheFile = cacheFileFactory.create()
+                        val createdCacheFile = cacheFileFactory.create(copySuffix ?: VIDEO_COPY_SUFFIX)
                         cacheFile = createdCacheFile
                         require(createdCacheFile.isAbsolute) { "SAF cache path must be absolute" }
                         descriptor.copyTo(createdCacheFile)
@@ -89,6 +116,16 @@ class SafJobFileOwner internal constructor(
                 throw failure
             }
         }
+
+    private fun subtitleSuffix(displayName: String): String {
+        require(displayName.isNotBlank()) { "Subtitle display name must not be blank" }
+        val extension = displayName.substringAfterLast('.', missingDelimiterValue = "")
+            .lowercase(Locale.ROOT)
+        require(extension in SUBTITLE_EXTENSIONS) {
+            "Subtitle filename must end in .srt, .ass, .ssa, or .vtt"
+        }
+        return ".$extension"
+    }
 
     override fun close() {
         val inputs =
@@ -156,6 +193,11 @@ class SafJobFileOwner internal constructor(
         current.addSuppressed(converted)
         return current
     }
+
+    private companion object {
+        const val VIDEO_COPY_SUFFIX = ".media"
+        val SUBTITLE_EXTENSIONS = setOf("ass", "srt", "ssa", "vtt")
+    }
 }
 
 internal fun interface DescriptorOpener {
@@ -165,7 +207,7 @@ internal fun interface DescriptorOpener {
 
 internal fun interface CacheFileFactory {
     @Throws(IOException::class)
-    fun create(): File
+    fun create(suffix: String): File
 }
 
 internal interface OwnedDescriptor : Closeable {
@@ -226,12 +268,54 @@ private class ParcelDescriptor(
 private class AndroidCacheFileFactory(
     cacheDir: File,
 ) : CacheFileFactory {
-    private val copyRoot = File(cacheDir, "saf-inputs")
+    private val copyRoot = safInputCacheRoot(cacheDir)
 
-    override fun create(): File {
+    override fun create(suffix: String): File {
+        require(SAFE_SUFFIX.matches(suffix)) { "SAF cache suffix is invalid" }
         if (!copyRoot.isDirectory && !copyRoot.mkdirs()) {
             throw IOException("Could not create SAF cache directory: ${copyRoot.absolutePath}")
         }
-        return File.createTempFile("input-", ".media", copyRoot)
+        return File.createTempFile("input-", suffix, copyRoot)
+    }
+
+    private companion object {
+        val SAFE_SUFFIX = Regex("\\.[a-z0-9]{1,16}")
+    }
+}
+
+internal fun safInputCacheRoot(cacheDir: File): File = File(cacheDir, "saf-inputs")
+
+/** Removes only recognized direct orphan files created by [SafJobFileOwner] in a prior process. */
+class SafInputCacheJanitor internal constructor(
+    private val copyRoot: File,
+) {
+    constructor(context: Context) : this(safInputCacheRoot(context.applicationContext.cacheDir))
+
+    @Throws(IOException::class)
+    fun removeOrphans(): Int {
+        if (!copyRoot.exists()) return 0
+        if (!copyRoot.isDirectory) {
+            throw IOException("SAF input cache root is not a directory")
+        }
+        val entries = copyRoot.listFiles()
+            ?: throw IOException("Could not inspect SAF input cache directory")
+        var removed = 0
+        entries.forEach { entry ->
+            if (!isOwnedCacheEntry(entry)) return@forEach
+            if (!entry.delete()) {
+                throw IOException("Could not remove orphaned SAF cache entry: ${entry.name}")
+            }
+            removed += 1
+        }
+        return removed
+    }
+
+    private fun isOwnedCacheEntry(entry: File): Boolean {
+        if (!OWNED_NAME.matches(entry.name)) return false
+        return entry.isFile || Files.isSymbolicLink(entry.toPath())
+    }
+
+    private companion object {
+        val OWNED_NAME = Regex("input-[A-Za-z0-9._-]+\\.(?:media|ass|srt|ssa|vtt)")
     }
 }

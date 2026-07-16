@@ -472,7 +472,7 @@ class VideoMiningViewModelTest {
     fun viewModelTeardownPreservesSourcesTransferredToLongLivedCoordinator() =
         runTest(mainDispatcherRule.dispatcher) {
             val broker = ImmediateSafBroker()
-            val repository = RecordingRepository(ownsActiveSourcesAfterViewModelCleared = true)
+            val repository = RecordingRepository(detachActiveSourcesResult = true)
             val store = ViewModelStore()
             val viewModel =
                 ViewModelProvider.create(
@@ -488,6 +488,58 @@ class VideoMiningViewModelTest {
             store.clear()
 
             assertEquals(emptyList<String>(), broker.eventualReleaseUris)
+            assertEquals(1, repository.detachedInputs.size)
+            assertEquals("content://test/video", repository.detachedInputs.single().video.uri)
+            assertEquals("content://test/subtitle", repository.detachedInputs.single().subtitle.uri)
+        }
+
+    @Test
+    fun teardownReleasesTwoSelectionCountsWhenBothSlotsUseSameUri() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val broker = ImmediateSafBroker()
+            val repository = RecordingRepository(detachActiveSourcesResult = false)
+            val store = ViewModelStore()
+            val viewModel =
+                ViewModelProvider.create(
+                    store,
+                    VideoMiningViewModel.Factory(repository, broker),
+                )[VideoMiningViewModel::class.java]
+            viewModel.onVideoPicked("content://test/shared")
+            viewModel.onSubtitlePicked("content://test/shared")
+            runCurrent()
+
+            store.clear()
+
+            assertEquals(
+                listOf("content://test/shared", "content://test/shared"),
+                broker.eventualReleaseUris,
+            )
+            assertEquals(1, repository.detachedInputs.size)
+        }
+
+    @Test
+    fun repositoryCanAcceptDetachAfterTerminalStateWasAlreadyPublished() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val broker = ImmediateSafBroker()
+            val repository =
+                RecordingRepository(
+                    detachActiveSourcesResult = true,
+                )
+            val store = ViewModelStore()
+            val viewModel =
+                ViewModelProvider.create(
+                    store,
+                    VideoMiningViewModel.Factory(repository, broker),
+                )[VideoMiningViewModel::class.java]
+            selectDocuments(viewModel)
+            runCurrent()
+            repository.transitionTo(MiningRunState.Success("run", result()))
+            runCurrent()
+
+            store.clear()
+
+            assertEquals(emptyList<String>(), broker.eventualReleaseUris)
+            assertEquals(1, repository.detachedInputs.size)
         }
 
     private fun selectDocuments(viewModel: VideoMiningViewModel) {
@@ -556,7 +608,7 @@ class VideoMiningViewModelTest {
         private val startGate: CompletableDeferred<Unit>? = null,
         private val cancelGate: CompletableDeferred<Unit>? = null,
         private val confirmGate: CompletableDeferred<Unit>? = null,
-        override val ownsActiveSourcesAfterViewModelCleared: Boolean = false,
+        private val detachActiveSourcesResult: Boolean = false,
     ) : MiningRepository {
         private val mutableState = MutableStateFlow(initialState)
         override val state: StateFlow<MiningRunState> = mutableState.asStateFlow()
@@ -569,6 +621,12 @@ class VideoMiningViewModelTest {
             private set
         var confirmCalls = 0
             private set
+        val detachedInputs = mutableListOf<VideoMiningInput>()
+
+        override fun detachActiveSources(input: VideoMiningInput): Boolean {
+            detachedInputs += input
+            return detachActiveSourcesResult
+        }
 
         override suspend fun startVideo(input: VideoMiningInput) {
             startCalls += 1

@@ -6,13 +6,22 @@ interface MiningRepository {
     val state: StateFlow<MiningRunState>
 
     /**
-     * True only when an active job coordinator outlives its ViewModel and accepts ownership of the
-     * selected SAF grants. The coordinator must eventually release those exact ownership counts.
+     * Atomically transfer the two selection-owned SAF references for [input] to a matching live
+     * coordinator run during ViewModel teardown.
+     *
+     * The video and subtitle entries are counts, not a URI set: both slots may refer to the same
+     * document. Returning true makes the repository responsible for releasing both references
+     * after its worker and cleanup finish. Returning false leaves both references with the caller.
      */
-    val ownsActiveSourcesAfterViewModelCleared: Boolean
-        get() = false
+    fun detachActiveSources(input: VideoMiningInput): Boolean = false
 
-    /** Accept one video job and return after it reaches a stable observable state. */
+    /**
+     * Accept one video job and return after it reaches a stable observable state.
+     *
+     * A long-lived implementation must install the matching active ownership record before this
+     * method first suspends. That makes teardown linearizable: [detachActiveSources] either sees
+     * the accepted run or permanently wins before the run can take ownership.
+     */
     suspend fun startVideo(input: VideoMiningInput)
 
     /**

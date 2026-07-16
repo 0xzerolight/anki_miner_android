@@ -412,14 +412,21 @@ class VideoMiningViewModel(
         videoDocumentRequest += 1
         subtitleDocumentRequest += 1
         val local = localState.value
-        val runState = repository.state.value
+        val video = local.video.document
+        val subtitle = local.subtitle.document
         val activeOwnershipTransferred =
-            repository.ownsActiveSourcesAfterViewModelCleared &&
-                runState != MiningRunState.Idle &&
-                !runState.isTerminal
+            if (video != null && subtitle != null) {
+                try {
+                    repository.detachActiveSources(video.toInput(subtitle))
+                } catch (_: RuntimeException) {
+                    false
+                }
+            } else {
+                false
+            }
         if (!activeOwnershipTransferred) {
-            local.video.document?.let { safBroker.releaseReadAccessEventually(it.uri) }
-            local.subtitle.document?.let { safBroker.releaseReadAccessEventually(it.uri) }
+            video?.let { safBroker.releaseReadAccessEventually(it.uri) }
+            subtitle?.let { safBroker.releaseReadAccessEventually(it.uri) }
         }
         super.onCleared()
     }
