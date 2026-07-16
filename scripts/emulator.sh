@@ -197,4 +197,17 @@ if command -v ss >/dev/null; then
     fi
 fi
 
+if pgrep -f 'org\.gradle\.launcher\.daemon\.bootstrap\.GradleDaemon|org\.gradle\.wrapper\.GradleWrapperMain' \
+    >/dev/null; then
+    echo "Refusing to start an emulator while Gradle is running; finish the build first." >&2
+    exit 1
+fi
+
+minimum_available_kib=$((6 * 1024 * 1024))
+available_kib="$(awk '/^MemAvailable:/ { print $2; exit }' /proc/meminfo)"
+if [[ ! "$available_kib" =~ ^[0-9]+$ ]] || ((available_kib < minimum_available_kib)); then
+    echo "Refusing to start an emulator with less than 6 GiB of available host memory." >&2
+    exit 1
+fi
+
 exec emulator "${final_args[@]}"
