@@ -88,16 +88,11 @@ or the engine from the shared contract modules.
 
 ## M0 decision status
 
-No tokenizer candidate has won yet. The Android engine overlay exposes one
-process-immutable shared-tagger factory, and
-`android_bridge.tokenizer_selection` can bind it to either registered backend.
-That selector is infrastructure for testing both production seams, not an M0
-choice. S1a has a copied-record Python backend, an offline native-wheel recipe,
-and property-gated x86_64/arm64 Android probes. Its decision remains provisional
-until both API-36 x86_64 page-size lanes and the explicit arm64 runtime lane
-pass against the seeded golden. Static wheel inspection, host parity, or
-x86_64 execution alone must not be recorded as an S1 winner. Record those
-runtime results here before making the M0 decision.
+S1a is the leading implementation candidate based on host and x86 emulator
+correctness evidence. No tokenizer is selected for M0 or release until physical
+ARM64 parity, cold-init, throughput, and RSS gates pass. Failure reopens S1b or
+mitigation evaluation. The process-immutable shared-tagger selector remains in
+place so both production seams can be tested against the same contract.
 
 | Gate | S1a result | Evidence |
 | --- | --- | --- |
@@ -106,7 +101,7 @@ runtime results here before making the M0 decision.
 | x86_64, 16 KiB | pass | API 36 `anki_miner_api36_ps16k`: 6 connected tests passed |
 | arm64 build/package/static ELF | pass | reproducible wheel, APK and AAB artifact gates |
 | arm64 runtime | pending supported target | no arm64 runtime is available on this x86_64 host |
-| M0 selection | not selected | requires all applicable runtime gates |
+| M0 selection | not selected | requires physical ARM64 parity and S4 performance/RSS gates |
 
 After the licensed wheel build emits its manifest, run both owned x86_64 lanes
 with `scripts/run-s1a-emulator-tests.sh --manifest FILE --unidic-dir DIR`.
@@ -135,9 +130,13 @@ and the locked emulator is installed, run:
 
 ```bash
 scripts/run-emulator-tests.sh \
+    --receipt /absolute/path/to/a/host-prepared-receipt.json \
     --unidic-dir /absolute/path/to/the/golden-pinned/unidic/dicdir \
     --page-size 4k
 ```
+
+Create that receipt first, with every emulator stopped, using
+`scripts/prepare-emulator-tests.sh --receipt FILE`.
 
 The connected gate verifies the dictionary on the host, writes a deterministic
 temporary ZIP to `/data/local/tmp`, and streams it into a versioned app-private

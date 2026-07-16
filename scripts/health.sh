@@ -5,118 +5,60 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # shellcheck source=android-env.sh
 source "$SCRIPT_DIR/android-env.sh"
-# shellcheck source=emulator-lanes.sh
-source "$SCRIPT_DIR/emulator-lanes.sh"
-# shellcheck source=instrumentation-result.sh
-source "$SCRIPT_DIR/instrumentation-result.sh"
+# shellcheck source=android-test-resources.sh
+source "$SCRIPT_DIR/android-test-resources.sh"
 
-CONNECTED_LANE=""
-staged_s1a_dictionary=false
-staged_s1b_dictionary=false
-cleanup_tokenizer_dictionaries() {
-    if [[ "$staged_s1a_dictionary" == true ]]; then
-        adb -s "$ANDROID_SERIAL" shell rm -f /data/local/tmp/anki-miner-tokenizer-unidic.zip \
-            >/dev/null 2>&1 || true
-    fi
-    if [[ "$staged_s1b_dictionary" == true ]]; then
-        adb -s "$ANDROID_SERIAL" shell rm -f "$ANDROID_S1B_TEST_UNIDIC_ARCHIVE" \
-            >/dev/null 2>&1 || true
-    fi
+RECEIPT_PATH=""
+RECEIPT_ANKIDROID_APK=""
+RECEIPT_S2_RESET_OPT_IN=false
+
+usage() {
+    cat <<'EOF' >&2
+Usage: scripts/health.sh [--write-receipt FILE]
+                         [--receipt-ankidroid-apk FILE --receipt-s2-reset-opt-in]
+
+Runs the complete host-only health gate. Connected tests are intentionally a
+separate, receipt-validated phase and never start Gradle.
+EOF
 }
-trap cleanup_tokenizer_dictionaries EXIT
-if [[ "${1:-}" == "--connected" ]]; then
-    (($# >= 2)) || {
-        echo "Usage: scripts/health.sh [--connected api26|4k|16k]" >&2
-        exit 2
-    }
-    CONNECTED_LANE="$2"
-    shift 2
-fi
-if (($#)); then
-    echo "Usage: scripts/health.sh [--connected api26|4k|16k]" >&2
-    exit 2
-fi
+
+while (($#)); do
+    case "$1" in
+        --write-receipt)
+            (($# >= 2)) || { usage; exit 2; }
+            RECEIPT_PATH="$2"
+            shift
+            ;;
+        --receipt-ankidroid-apk)
+            (($# >= 2)) || { usage; exit 2; }
+            RECEIPT_ANKIDROID_APK="$2"
+            shift
+            ;;
+        --receipt-s2-reset-opt-in)
+            RECEIPT_S2_RESET_OPT_IN=true
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        *)
+            usage
+            exit 2
+            ;;
+    esac
+    shift
+done
 
 fail() {
     echo "health: $*" >&2
     exit 1
 }
 
-run_isolated_tokenizer_instrumentation() {
-    local test_selector="$1"
-    local expected_count="$2"
-    local label="$3"
-    local output
-    adb -s "$ANDROID_SERIAL" shell am force-stop com.ankiminer.android \
-        || fail "cannot stop the app before isolated $label instrumentation"
-    output="$(
-        adb -s "$ANDROID_SERIAL" shell am instrument -w -r \
-            -e ankiMinerExpectedTokenizerPath engine_shared_tagger \
-            -e class "$test_selector" \
-            com.ankiminer.android.test/androidx.test.runner.AndroidJUnitRunner 2>&1
-    )" || {
-        printf '%s\n' "$output" >&2
-        fail "isolated $label instrumentation command failed"
-    }
-    if ! android_instrumentation_output_passed "$output" "$expected_count"; then
-        printf '%s\n' "$output" >&2
-        fail "isolated $label instrumentation did not pass exactly $expected_count test"
-    fi
-}
-
-run_isolated_s4_instrumentation() {
-    local output metrics
-    adb -s "$ANDROID_SERIAL" shell am force-stop com.ankiminer.android \
-        || fail "cannot stop the app before isolated S4 instrumentation"
-    adb -s "$ANDROID_SERIAL" logcat -c \
-        || fail "cannot clear logcat before isolated S4 instrumentation"
-    output="$(
-        adb -s "$ANDROID_SERIAL" shell am instrument -w -r \
-            -e ankiMinerRunS4 true \
-            -e ankiMinerExpectedFreshProcess true \
-            -e class com.ankiminer.android.S4EngineSmokeInstrumentedTest \
-            com.ankiminer.android.test/androidx.test.runner.AndroidJUnitRunner 2>&1
-    )" || {
-        printf '%s\n' "$output" >&2
-        fail "isolated S4 instrumentation command failed"
-    }
-    if ! android_instrumentation_output_passed "$output" 1; then
-        printf '%s\n' "$output" >&2
-        fail "isolated S4 instrumentation did not pass exactly 1 test"
-    fi
-    metrics="$(
-        adb -s "$ANDROID_SERIAL" logcat -d -s 'AnkiMinerS4:I' '*:S' \
-            | grep -F 'S4_EMULATOR_METRICS ' \
-            | tail -n 1
-    )"
-    [[ -n "$metrics" ]] || fail "isolated S4 instrumentation emitted no metrics"
-    printf '%s\n' "$metrics"
-}
-
-install_isolated_instrumentation_artifacts() {
-    local app_apk="$1"
-    local test_apk="$2"
-    local instrumentation
-
-    adb -s "$ANDROID_SERIAL" install -r "$app_apk" >/dev/null \
-        || fail "cannot reinstall the app for isolated tokenizer instrumentation"
-    adb -s "$ANDROID_SERIAL" install -r -t "$test_apk" >/dev/null \
-        || fail "cannot reinstall the test APK for isolated tokenizer instrumentation"
-    instrumentation="$(adb -s "$ANDROID_SERIAL" shell pm list instrumentation)" \
-        || fail "cannot list installed instrumentation"
-    grep -Fqx \
-        'instrumentation:com.ankiminer.android.test/androidx.test.runner.AndroidJUnitRunner (target=com.ankiminer.android)' \
-        <<<"$(tr -d '\r' <<<"$instrumentation")" \
-        || fail "isolated tokenizer instrumentation is not registered"
-}
-
-if [[ -n "$CONNECTED_LANE" ]]; then
-    resolve_android_emulator_lane "$CONNECTED_LANE" \
-        || fail "connected lane must be api26, 4k, or 16k"
-    export ANDROID_SERIAL="$ANDROID_LANE_EMULATOR_SERIAL"
-    "$SCRIPT_DIR/verify-emulator-runtime.sh" --lane "$CONNECTED_LANE" \
-        || fail "connected emulator identity mismatch"
-fi
+[[ -z "$RECEIPT_ANKIDROID_APK" || -n "$RECEIPT_PATH" ]] \
+    || fail "AnkiDroid receipt binding requires --write-receipt"
+[[ "$RECEIPT_S2_RESET_OPT_IN" == false || -n "$RECEIPT_ANKIDROID_APK" ]] \
+    || fail "S2 reset opt-in requires --receipt-ankidroid-apk"
+anki_miner_require_no_emulator || fail "host health requires every emulator to be stopped"
 
 [[ -x "$JAVA_HOME/bin/java" ]] || fail "JDK is missing; run scripts/provision-android.sh"
 [[ -x "$ANDROID_CMDLINE_TOOLS_HOME/bin/sdkmanager" ]] || fail "Android command-line tools are missing"
@@ -234,20 +176,7 @@ tasks=(
     :app:assembleDeviceRelease
     :app:bundleDeviceRelease
 )
-if [[ -n "$CONNECTED_LANE" ]]; then
-    test_unidic="${ANKI_MINER_TEST_UNIDIC_DIR:-}"
-    [[ -n "$test_unidic" && -d "$test_unidic" ]] \
-        || fail "connected tokenizer tests require ANKI_MINER_TEST_UNIDIC_DIR"
-    "$SCRIPT_DIR/provision-s1b-test-unidic.sh" --dicdir "$test_unidic"
-    staged_s1b_dictionary=true
-    if [[ -n "${ORG_GRADLE_PROJECT_ankiMinerS1aManifest:-}" ]]; then
-        "$SCRIPT_DIR/provision-tokenizer-test-unidic.sh" --dicdir "$test_unidic"
-        staged_s1a_dictionary=true
-    fi
-    tasks+=(:app:connectedEmulatorDebugAndroidTest)
-fi
-
-./gradlew --no-daemon --stacktrace --dependency-verification strict "${tasks[@]}"
+anki_miner_run_gradle ./gradlew "${tasks[@]}"
 
 emulator_apk="$REPO_ROOT/app/build/outputs/apk/emulator/debug/app-emulator-debug.apk"
 emulator_test_apk="$REPO_ROOT/app/build/outputs/apk/androidTest/emulator/debug/app-emulator-debug-androidTest.apk"
@@ -257,25 +186,6 @@ release_aab="$REPO_ROOT/app/build/outputs/bundle/deviceRelease/app-device-releas
 [[ -f "$emulator_test_apk" ]] || fail "emulator debug AndroidTest APK was not produced"
 [[ -f "$release_apk" ]] || fail "device release APK was not produced"
 [[ -f "$release_aab" ]] || fail "device release AAB was not produced"
-
-if [[ -n "$CONNECTED_LANE" ]]; then
-    # connectedAndroidTest removes its installed APKs when it completes. Reinstall
-    # the exact artifacts before the selector-isolation reruns below.
-    install_isolated_instrumentation_artifacts "$emulator_apk" "$emulator_test_apk"
-    if [[ -n "${ORG_GRADLE_PROJECT_ankiMinerS1aManifest:-}" ]]; then
-        run_isolated_s4_instrumentation
-    fi
-    run_isolated_tokenizer_instrumentation \
-        'com.ankiminer.android.tokenizer.MecabNativeTokenizerInstrumentedTest' \
-        2 \
-        S1b
-    if [[ -n "${ORG_GRADLE_PROJECT_ankiMinerS1aManifest:-}" ]]; then
-        run_isolated_tokenizer_instrumentation \
-            'com.ankiminer.android.TokenizerS1aInstrumentedTest' \
-            1 \
-            S1a
-    fi
-fi
 
 s1a_artifact_args=()
 runtime_s1a_artifact_args=()
@@ -343,6 +253,36 @@ python3.13 "$SCRIPT_DIR/check_runtime_artifact.py" \
 release_manifest="$(apkanalyzer manifest print "$release_apk")"
 if grep -Eq 'ScaffoldProbeActivity|scaffold_probe' <<<"$release_manifest"; then
     fail "debug probe component leaked into the release manifest"
+fi
+
+if [[ -n "$RECEIPT_PATH" ]]; then
+    receipt_args=(
+        write
+        --repo-root "$REPO_ROOT"
+        --receipt "$RECEIPT_PATH"
+        --runtime-manifest "$runtime_manifest"
+        --artifact "app_emulator_debug=$emulator_apk"
+        --artifact "test_emulator_debug=$emulator_test_apk"
+        --artifact "app_device_release=$release_apk"
+        --artifact "bundle_device_release=$release_aab"
+    )
+    for task in "${tasks[@]}"; do
+        receipt_args+=(--task "$task")
+    done
+    for argument in "${ANKI_MINER_GRADLE_ARGS[@]}"; do
+        receipt_args+=("--gradle-argument=$argument")
+    done
+    if [[ -n "${ORG_GRADLE_PROJECT_ankiMinerS1aManifest:-}" ]]; then
+        receipt_args+=(--s1a-manifest "$s1a_manifest")
+    fi
+    if [[ -n "$RECEIPT_ANKIDROID_APK" ]]; then
+        receipt_args+=(--ankidroid-apk "$RECEIPT_ANKIDROID_APK")
+    fi
+    if [[ "$RECEIPT_S2_RESET_OPT_IN" == true ]]; then
+        receipt_args+=(--s2-reset-opt-in)
+    fi
+    python3.13 "$SCRIPT_DIR/android_test_receipt.py" "${receipt_args[@]}" \
+        || fail "could not write the connected-test receipt"
 fi
 
 echo "health: OK"

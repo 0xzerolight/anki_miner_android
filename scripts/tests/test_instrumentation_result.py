@@ -26,6 +26,23 @@ def validate(output: str, expected_count: int = 1) -> subprocess.CompletedProces
     )
 
 
+def validate_any(output: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [
+            "bash",
+            "-c",
+            'source "$1"; payload="$(cat)"; '
+            'android_instrumentation_output_passed_any "$payload"',
+            "instrumentation-result-test",
+            str(SCRIPT),
+        ],
+        input=output,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+
 class InstrumentationResultTest(unittest.TestCase):
     def test_accepts_one_exact_summary_and_success_terminal_code(self) -> None:
         result = validate(
@@ -62,6 +79,22 @@ class InstrumentationResultTest(unittest.TestCase):
             2,
             validate("OK (1 test)\nINSTRUMENTATION_CODE: -1\n", 0).returncode,
         )
+
+    def test_any_count_contract_is_positive_exact_and_crash_safe(self) -> None:
+        self.assertEqual(
+            0,
+            validate_any("OK (37 tests)\nINSTRUMENTATION_CODE: -1\n").returncode,
+        )
+        rejected = (
+            "OK (0 tests)\nINSTRUMENTATION_CODE: -1\n",
+            "OK (1 test)\nOK (2 tests)\nINSTRUMENTATION_CODE: -1\n",
+            "OK (2 tests)\nProcess crashed\nINSTRUMENTATION_CODE: -1\n",
+            "OK (2 tests)\nINSTRUMENTATION_CODE: 0\n",
+            "OK (2 tests)\n",
+        )
+        for output in rejected:
+            with self.subTest(output=output):
+                self.assertNotEqual(0, validate_any(output).returncode)
 
 
 if __name__ == "__main__":

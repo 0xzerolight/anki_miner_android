@@ -44,7 +44,6 @@ class EmulatorScriptTest(unittest.TestCase):
         api: str | None = None,
         page_size: str | None = None,
         fingerprint: str | None = None,
-        through_health: bool = False,
     ) -> subprocess.CompletedProcess[str]:
         identities = {
             "api26": ("emulator-5558", "anki_miner_api26", "26", "4096"),
@@ -103,15 +102,11 @@ fi
                     "FAKE_FINGERPRINT": fingerprint or self.API26_FINGERPRINT,
                 },
             )
-            command = (
-                [str(SCRIPTS_DIR / "health.sh"), "--connected", lane]
-                if through_health
-                else [
-                    str(SCRIPTS_DIR / "verify-emulator-runtime.sh"),
-                    "--lane",
-                    lane,
-                ]
-            )
+            command = [
+                str(SCRIPTS_DIR / "verify-emulator-runtime.sh"),
+                "--lane",
+                lane,
+            ]
             return subprocess.run(
                 command,
                 check=False,
@@ -222,12 +217,18 @@ fi
 
     def test_launcher_guards_gradle_overlap_and_low_host_memory(self) -> None:
         launcher = (SCRIPTS_DIR / "emulator.sh").read_text(encoding="utf-8")
+        resources = (SCRIPTS_DIR / "android-test-resources.sh").read_text(
+            encoding="utf-8",
+        )
 
-        self.assertIn("GradleWrapperMain", launcher)
-        self.assertIn("GradleDaemon", launcher)
-        self.assertIn("MemAvailable:", launcher)
-        self.assertIn("6 * 1024 * 1024", launcher)
-        self.assertIn("less than 6 GiB", launcher)
+        self.assertIn("anki_miner_require_no_gradle", launcher)
+        self.assertIn("anki_miner_require_emulator_capacity", launcher)
+        self.assertIn("GradleWrapperMain", resources)
+        self.assertIn("GradleDaemon", resources)
+        self.assertIn("MemAvailable:", resources)
+        self.assertIn("6 * 1024 * 1024", resources)
+        self.assertIn("SwapFree:", resources)
+        self.assertIn("less than 1 GiB of free swap", resources)
 
     def test_runtime_identity_accepts_all_three_lanes(self) -> None:
         for lane in ("api26", "4k", "16k"):
@@ -279,69 +280,45 @@ fi
         self.assertEqual(1, result.returncode)
         self.assertIn("emulator-5558 is in ADB state 'offline'", result.stderr)
 
-    def test_health_connected_lane_enforces_api26_runtime_identity_first(self) -> None:
-        result = self.verify_runtime(
-            "api26",
-            fingerprint="wrong/fingerprint",
-            through_health=True,
-        )
-        self.assertEqual(1, result.returncode)
-        self.assertIn("build fingerprint", result.stderr)
-        self.assertIn("connected emulator identity mismatch", result.stderr)
-
-    def test_health_requires_fresh_engine_selector_paths_after_combined_tests(
+    def test_connected_gate_requires_fresh_engine_selector_paths_after_combined_tests(
         self,
     ) -> None:
-        health = (SCRIPTS_DIR / "health.sh").read_text(encoding="utf-8")
+        connected = (SCRIPTS_DIR / "run-connected-emulator-tests.sh").read_text(
+            encoding="utf-8",
+        )
 
-        self.assertIn("run_isolated_tokenizer_instrumentation", health)
+        self.assertIn("run_instrumentation_any combined", connected)
         self.assertIn(
             "-e ankiMinerExpectedTokenizerPath engine_shared_tagger",
-            health,
+            connected,
         )
         self.assertIn(
             "com.ankiminer.android.tokenizer.MecabNativeTokenizerInstrumentedTest",
-            health,
+            connected,
         )
         self.assertIn(
             "com.ankiminer.android.TokenizerS1aInstrumentedTest",
-            health,
+            connected,
         )
-        self.assertNotIn("InstrumentedTest#", health)
-        self.assertIn(
-            'install_isolated_instrumentation_artifacts "$emulator_apk" '
-            '"$emulator_test_apk"',
-            health,
-        )
-        gradle_index = health.index("./gradlew --no-daemon")
-        reinstall_index = health.index(
-            'install_isolated_instrumentation_artifacts "$emulator_apk" '
-            '"$emulator_test_apk"',
-        )
-        isolated_index = health.index("run_isolated_tokenizer_instrumentation \\\n")
+        self.assertNotIn("gradlew", connected)
         self.assertLess(
-            gradle_index,
-            reinstall_index,
+            connected.index("run_instrumentation_any combined"),
+            connected.index("run_instrumentation_exact S1b 2"),
         )
-        self.assertLess(reinstall_index, isolated_index)
 
-    def test_health_runs_s4_in_a_fresh_process_from_reinstalled_artifacts(self) -> None:
-        health = (SCRIPTS_DIR / "health.sh").read_text(encoding="utf-8")
+    def test_connected_gate_runs_s4_in_a_fresh_process(self) -> None:
+        connected = (SCRIPTS_DIR / "run-connected-emulator-tests.sh").read_text(
+            encoding="utf-8",
+        )
 
-        self.assertIn("run_isolated_s4_instrumentation", health)
-        self.assertIn("-e ankiMinerRunS4 true", health)
-        self.assertIn("-e ankiMinerExpectedFreshProcess true", health)
+        self.assertIn("run_instrumentation_exact S4 1", connected)
+        self.assertIn("-e ankiMinerRunS4 true", connected)
+        self.assertIn("-e ankiMinerExpectedFreshProcess true", connected)
         self.assertIn(
             "-e class com.ankiminer.android.S4EngineSmokeInstrumentedTest",
-            health,
+            connected,
         )
-        self.assertIn("S4_EMULATOR_METRICS ", health)
-        reinstall_index = health.index(
-            'install_isolated_instrumentation_artifacts "$emulator_apk" '
-            '"$emulator_test_apk"',
-        )
-        s4_index = health.index("        run_isolated_s4_instrumentation")
-        self.assertLess(reinstall_index, s4_index)
+        self.assertIn("S4_EMULATOR_METRICS ", connected)
 
     def test_runner_rejects_selector_conflicts_duplicates_and_invalid_values(
         self,
@@ -373,7 +350,7 @@ fi
                     )
                     self.assertEqual(2, result.returncode, result.stderr)
 
-    def test_runner_maps_all_lanes_to_health_log_serial_and_own_process(self) -> None:
+    def test_runner_maps_all_lanes_to_connected_gate_and_own_process(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             state = root / "state"
@@ -436,15 +413,26 @@ while :; do sleep 0.1; done
             )
             launcher.chmod(0o755)
 
-            health = root / "fake-health.sh"
-            health.write_text(
+            connected = root / "fake-connected.sh"
+            connected.write_text(
                 """#!/usr/bin/env bash
 set -euo pipefail
-printf '%s\\n' "$@" >"$FAKE_STATE/health.args"
+printf '%s\\n' "$@" >"$FAKE_STATE/connected.args"
+[[ "${FAKE_CONNECTED_FAIL:-}" != true ]] || exit 23
 """,
                 encoding="utf-8",
             )
-            health.chmod(0o755)
+            connected.chmod(0o755)
+            receipt = root / "receipt.json"
+            receipt.write_text("{}\n", encoding="utf-8")
+            receipt_command = root / "fake-receipt.sh"
+            receipt_command.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+            receipt_command.chmod(0o755)
+            meminfo = root / "meminfo"
+            meminfo.write_text(
+                "MemAvailable: 8388608 kB\nSwapTotal: 0 kB\nSwapFree: 0 kB\n",
+                encoding="utf-8",
+            )
 
             lanes = (
                 ("api26", "emulator-5558", "anki_miner_api26", "26", "4096"),
@@ -458,7 +446,9 @@ printf '%s\\n' "$@" >"$FAKE_STATE/health.args"
                         {
                             "ANKI_MINER_ANDROID_TOOLCHAIN_ROOT": str(root),
                             "ANKI_MINER_EMULATOR_LAUNCHER": str(launcher),
-                            "ANKI_MINER_HEALTH_SCRIPT": str(health),
+                            "ANKI_MINER_CONNECTED_EMULATOR_RUNNER": str(connected),
+                            "ANKI_MINER_RECEIPT_COMMAND": str(receipt_command),
+                            "ANKI_MINER_MEMINFO_PATH": str(meminfo),
                             "EMULATOR_BOOT_TIMEOUT_SECONDS": "5",
                             "FAKE_STATE": str(state),
                             "FAKE_SERIAL": serial,
@@ -472,6 +462,8 @@ printf '%s\\n' "$@" >"$FAKE_STATE/health.args"
                     result = subprocess.run(
                         [
                             str(SCRIPTS_DIR / "run-emulator-tests.sh"),
+                            "--receipt",
+                            str(receipt),
                             "--lane",
                             lane,
                         ],
@@ -492,8 +484,15 @@ printf '%s\\n' "$@" >"$FAKE_STATE/health.args"
                         launcher_arguments[launcher_arguments.index("--lane") + 1],
                     )
                     self.assertEqual(
-                        ["--connected", lane],
-                        (state / "health.args").read_text(
+                        [
+                            "--receipt",
+                            str(receipt),
+                            "--unidic-dir",
+                            str(root),
+                            "--lane",
+                            lane,
+                        ],
+                        (state / "connected.args").read_text(
                             encoding="utf-8",
                         ).splitlines(),
                     )
@@ -503,6 +502,71 @@ printf '%s\\n' "$@" >"$FAKE_STATE/health.args"
                     )
                     self.assertTrue((root / f"emulator-{lane}.log").is_file())
                     self.assertFalse((state / "running").exists())
+                    if lane == "4k":
+                        environment["FAKE_CONNECTED_FAIL"] = "true"
+                        failed = subprocess.run(
+                            [
+                                str(SCRIPTS_DIR / "run-emulator-tests.sh"),
+                                "--receipt",
+                                str(receipt),
+                                "--lane",
+                                lane,
+                            ],
+                            check=False,
+                            capture_output=True,
+                            env=environment,
+                            text=True,
+                            timeout=10,
+                        )
+                        self.assertEqual(23, failed.returncode, failed.stderr)
+                        self.assertFalse((state / "running").exists())
+
+            s2 = root / "fake-s2-connected.sh"
+            s2.write_text(
+                "#!/usr/bin/env bash\nprintf '%s\\n' \"$@\" >\"$FAKE_STATE/s2.args\"\n",
+                encoding="utf-8",
+            )
+            s2.chmod(0o755)
+            ankidroid_apk = root / "AnkiDroid.apk"
+            ankidroid_apk.write_bytes(b"fake")
+            s2_environment = os.environ.copy()
+            s2_environment.update(
+                {
+                    "ANKI_MINER_ANDROID_TOOLCHAIN_ROOT": str(root),
+                    "ANKI_MINER_EMULATOR_LAUNCHER": str(launcher),
+                    "ANKI_MINER_S2_CONNECTED_RUNNER": str(s2),
+                    "ANKI_MINER_RECEIPT_COMMAND": str(receipt_command),
+                    "ANKI_MINER_MEMINFO_PATH": str(meminfo),
+                    "ANKI_MINER_ANKIDROID_APK": str(ankidroid_apk),
+                    "ANKI_MINER_S2_ALLOW_COLLECTION_RESET": "true",
+                    "EMULATOR_BOOT_TIMEOUT_SECONDS": "5",
+                    "FAKE_STATE": str(state),
+                    "FAKE_SERIAL": "emulator-5554",
+                    "FAKE_AVD": "anki_miner_api36",
+                    "FAKE_API": "36",
+                    "FAKE_PAGE_SIZE": "4096",
+                    "FAKE_FINGERPRINT": self.API26_FINGERPRINT,
+                },
+            )
+            s2_result = subprocess.run(
+                [
+                    str(SCRIPTS_DIR / "run-emulator-tests.sh"),
+                    "--s2",
+                    "--receipt",
+                    str(receipt),
+                ],
+                check=False,
+                capture_output=True,
+                env=s2_environment,
+                text=True,
+                timeout=10,
+            )
+            self.assertEqual(0, s2_result.returncode, s2_result.stderr)
+            self.assertEqual(
+                ["--receipt", str(receipt)],
+                (state / "s2.args").read_text(encoding="utf-8").splitlines(),
+            )
+            self.assertFalse((state / "running").exists())
 
     def test_runner_refuses_an_already_online_target_without_cleanup(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -535,21 +599,33 @@ touch "$FAKE_STATE/launcher-ran"
                 encoding="utf-8",
             )
             launcher.chmod(0o755)
-            health = root / "must-not-test.sh"
-            health.write_text(
+            connected = root / "must-not-test.sh"
+            connected.write_text(
                 """#!/usr/bin/env bash
-touch "$FAKE_STATE/health-ran"
+touch "$FAKE_STATE/connected-ran"
 """,
                 encoding="utf-8",
             )
-            health.chmod(0o755)
+            connected.chmod(0o755)
+            receipt = root / "receipt.json"
+            receipt.write_text("{}\n", encoding="utf-8")
+            receipt_command = root / "fake-receipt.sh"
+            receipt_command.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+            receipt_command.chmod(0o755)
+            meminfo = root / "meminfo"
+            meminfo.write_text(
+                "MemAvailable: 8388608 kB\nSwapTotal: 0 kB\nSwapFree: 0 kB\n",
+                encoding="utf-8",
+            )
 
             environment = os.environ.copy()
             environment.update(
                 {
                     "ANKI_MINER_ANDROID_TOOLCHAIN_ROOT": str(root),
                     "ANKI_MINER_EMULATOR_LAUNCHER": str(launcher),
-                    "ANKI_MINER_HEALTH_SCRIPT": str(health),
+                    "ANKI_MINER_CONNECTED_EMULATOR_RUNNER": str(connected),
+                    "ANKI_MINER_RECEIPT_COMMAND": str(receipt_command),
+                    "ANKI_MINER_MEMINFO_PATH": str(meminfo),
                     "FAKE_STATE": str(state),
                 },
             )
@@ -557,7 +633,12 @@ touch "$FAKE_STATE/health-ran"
                 with self.subTest(arguments=arguments):
                     (state / "adb.log").unlink(missing_ok=True)
                     result = subprocess.run(
-                        [str(SCRIPTS_DIR / "run-emulator-tests.sh"), *arguments],
+                        [
+                            str(SCRIPTS_DIR / "run-emulator-tests.sh"),
+                            "--receipt",
+                            str(receipt),
+                            *arguments,
+                        ],
                         check=False,
                         capture_output=True,
                         env=environment,
@@ -569,7 +650,7 @@ touch "$FAKE_STATE/health-ran"
                     self.assertIn("already online", result.stderr)
                     self.assertIn("adb -s emulator-5554 emu kill", result.stderr)
                     self.assertFalse((state / "launcher-ran").exists())
-                    self.assertFalse((state / "health-ran").exists())
+                    self.assertFalse((state / "connected-ran").exists())
                     self.assertEqual(
                         ["devices"],
                         (state / "adb.log").read_text(
@@ -610,11 +691,26 @@ exit 99
                         encoding="utf-8",
                     )
                     launcher.chmod(0o755)
+                    receipt = root / "receipt.json"
+                    receipt.write_text("{}\n", encoding="utf-8")
+                    receipt_command = root / "fake-receipt.sh"
+                    receipt_command.write_text(
+                        "#!/usr/bin/env bash\nexit 0\n",
+                        encoding="utf-8",
+                    )
+                    receipt_command.chmod(0o755)
+                    meminfo = root / "meminfo"
+                    meminfo.write_text(
+                        "MemAvailable: 8388608 kB\nSwapTotal: 0 kB\nSwapFree: 0 kB\n",
+                        encoding="utf-8",
+                    )
                     environment = os.environ.copy()
                     environment.update(
                         {
                             "ANKI_MINER_ANDROID_TOOLCHAIN_ROOT": str(root),
                             "ANKI_MINER_EMULATOR_LAUNCHER": str(launcher),
+                            "ANKI_MINER_RECEIPT_COMMAND": str(receipt_command),
+                            "ANKI_MINER_MEMINFO_PATH": str(meminfo),
                             "FAKE_DEVICE_LINE": device_line,
                             "FAKE_STATE": str(state),
                         },
@@ -622,6 +718,8 @@ exit 99
                     result = subprocess.run(
                         [
                             str(SCRIPTS_DIR / "run-emulator-tests.sh"),
+                            "--receipt",
+                            str(receipt),
                             "--lane",
                             "api26",
                         ],
@@ -636,6 +734,58 @@ exit 99
                     self.assertIn(expected_message, result.stderr)
                     self.assertFalse((state / "launcher-ran").exists())
 
+    def test_runner_bounds_a_wedged_adb_before_emulator_start(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            platform_tools = root / "sdk" / "platform-tools"
+            platform_tools.mkdir(parents=True)
+            adb = platform_tools / "adb"
+            adb.write_text("#!/usr/bin/env bash\nsleep 30\n", encoding="utf-8")
+            adb.chmod(0o755)
+            launcher = root / "launcher.sh"
+            launcher.write_text(
+                "#!/usr/bin/env bash\ntouch \"$WEDGED_ROOT/launched\"\n",
+                encoding="utf-8",
+            )
+            launcher.chmod(0o755)
+            receipt = root / "receipt.json"
+            receipt.write_text("{}\n", encoding="utf-8")
+            receipt_command = root / "receipt.sh"
+            receipt_command.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+            receipt_command.chmod(0o755)
+            meminfo = root / "meminfo"
+            meminfo.write_text(
+                "MemAvailable: 8388608 kB\nSwapTotal: 0 kB\nSwapFree: 0 kB\n",
+                encoding="utf-8",
+            )
+            environment = os.environ.copy()
+            environment.update(
+                {
+                    "ANKI_MINER_ANDROID_TOOLCHAIN_ROOT": str(root),
+                    "ANKI_MINER_EMULATOR_LAUNCHER": str(launcher),
+                    "ANKI_MINER_RECEIPT_COMMAND": str(receipt_command),
+                    "ANKI_MINER_MEMINFO_PATH": str(meminfo),
+                    "ANKI_MINER_ADB_TIMEOUT_SECONDS": "1",
+                    "WEDGED_ROOT": str(root),
+                },
+            )
+            result = subprocess.run(
+                [
+                    str(SCRIPTS_DIR / "run-emulator-tests.sh"),
+                    "--receipt",
+                    str(receipt),
+                ],
+                check=False,
+                capture_output=True,
+                env=environment,
+                text=True,
+                timeout=5,
+            )
+
+            self.assertEqual(1, result.returncode, result.stderr)
+            self.assertIn("Could not list ADB devices", result.stderr)
+            self.assertFalse((root / "launched").exists())
+
     def test_s1a_runner_executes_both_page_size_lanes_by_default(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -645,6 +795,8 @@ exit 99
             dicdir.mkdir()
             log = root / "runner.log"
             wheel_log = root / "wheel.log"
+            prepare_log = root / "prepare.log"
+            receipt = root / "receipt.json"
             recipe_key = "a" * 64
             build_key = "b" * 64
             wheel_tool = root / "wheel-tool.sh"
@@ -670,12 +822,26 @@ printf '%s|%s|%s\n' \
                 encoding="utf-8",
             )
             runner.chmod(0o755)
+            preparer = root / "preparer.sh"
+            preparer.write_text(
+                """#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >>"$S1A_PREPARE_LOG"
+[[ "$1" == --receipt ]]
+touch "$2"
+""",
+                encoding="utf-8",
+            )
+            preparer.chmod(0o755)
             environment = os.environ.copy()
             environment.update(
                 {
                     "ANKI_MINER_S1A_EMULATOR_RUNNER": str(runner),
+                    "ANKI_MINER_EMULATOR_PREPARER": str(preparer),
                     "ANKI_MINER_S1A_WHEEL_TOOL": str(wheel_tool),
+                    "ANKI_MINER_ANDROID_TEST_RECEIPT": str(receipt),
                     "S1A_RUNNER_LOG": str(log),
+                    "S1A_PREPARE_LOG": str(prepare_log),
                     "S1A_WHEEL_LOG": str(wheel_log),
                     "S1A_RECIPE_KEY": recipe_key,
                     "S1A_BUILD_KEY": build_key,
@@ -697,8 +863,8 @@ printf '%s|%s|%s\n' \
             self.assertEqual(0, result.returncode, result.stderr)
             self.assertEqual(
                 [
-                    f"--page-size 4k|{manifest}|{dicdir}",
-                    f"--page-size 16k|{manifest}|{dicdir}",
+                    f"--receipt {receipt} --unidic-dir {dicdir} --page-size 4k|{manifest}|{dicdir}",
+                    f"--receipt {receipt} --unidic-dir {dicdir} --page-size 16k|{manifest}|{dicdir}",
                 ],
                 log.read_text(encoding="utf-8").splitlines(),
             )
@@ -706,6 +872,56 @@ printf '%s|%s|%s\n' \
                 f"verify-publication --manifest {manifest}\n",
                 wheel_log.read_text(encoding="utf-8"),
             )
+            self.assertEqual(
+                f"--receipt {receipt}\n",
+                prepare_log.read_text(encoding="utf-8"),
+            )
+
+    def test_s1a_prepare_failure_never_starts_an_emulator_lane(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest = root / "manifest.json"
+            manifest.write_text("{}\n", encoding="utf-8")
+            dicdir = root / "dicdir"
+            dicdir.mkdir()
+            wheel = root / "wheel.sh"
+            wheel.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+            wheel.chmod(0o755)
+            preparer = root / "prepare.sh"
+            preparer.write_text("#!/usr/bin/env bash\nexit 19\n", encoding="utf-8")
+            preparer.chmod(0o755)
+            runner = root / "runner.sh"
+            runner.write_text(
+                "#!/usr/bin/env bash\ntouch \"$FAILURE_ROOT/runner-ran\"\n",
+                encoding="utf-8",
+            )
+            runner.chmod(0o755)
+            environment = os.environ.copy()
+            environment.update(
+                {
+                    "ANKI_MINER_S1A_WHEEL_TOOL": str(wheel),
+                    "ANKI_MINER_EMULATOR_PREPARER": str(preparer),
+                    "ANKI_MINER_S1A_EMULATOR_RUNNER": str(runner),
+                    "ANKI_MINER_ANDROID_TEST_RECEIPT": str(root / "receipt.json"),
+                    "FAILURE_ROOT": str(root),
+                },
+            )
+            result = subprocess.run(
+                [
+                    str(SCRIPTS_DIR / "run-s1a-emulator-tests.sh"),
+                    "--manifest",
+                    str(manifest),
+                    "--unidic-dir",
+                    str(dicdir),
+                ],
+                check=False,
+                capture_output=True,
+                env=environment,
+                text=True,
+            )
+
+            self.assertEqual(19, result.returncode, result.stderr)
+            self.assertFalse((root / "runner-ran").exists())
 
 
 if __name__ == "__main__":

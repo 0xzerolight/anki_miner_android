@@ -3,6 +3,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+# shellcheck source=android-test-resources.sh
+source "$REPO_ROOT/scripts/android-test-resources.sh"
 # The path is resolved from this script at runtime.
 # shellcheck disable=SC1091
 source "$REPO_ROOT/scripts/android-env.sh"
@@ -22,10 +24,7 @@ source "$REPO_ROOT/scripts/android-env.sh"
 
 python3 "$SCRIPT_DIR/vendor_s1b_mecab.py" --check
 cd "$REPO_ROOT"
-./gradlew \
-    --no-daemon \
-    --stacktrace \
-    --dependency-verification strict \
+anki_miner_run_gradle ./gradlew \
     :app:assembleEmulatorDebug \
     :app:assembleDeviceRelease
 

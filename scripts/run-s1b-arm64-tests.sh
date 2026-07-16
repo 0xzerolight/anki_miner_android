@@ -7,6 +7,8 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 source "$SCRIPT_DIR/android-env.sh"
 # shellcheck source=instrumentation-result.sh
 source "$SCRIPT_DIR/instrumentation-result.sh"
+# shellcheck source=android-test-resources.sh
+source "$SCRIPT_DIR/android-test-resources.sh"
 
 ADB_COMMAND="${ANKI_MINER_ADB_COMMAND:-adb}"
 GRADLEW_COMMAND="${ANKI_MINER_GRADLEW_COMMAND:-$REPO_ROOT/gradlew}"
@@ -160,10 +162,7 @@ actual_fingerprint="$(read_property ro.build.fingerprint)"
     || fail "$serial image fingerprint does not match the requested image"
 
 cd "$REPO_ROOT"
-"$GRADLEW_COMMAND" \
-    --no-daemon \
-    --stacktrace \
-    --dependency-verification strict \
+anki_miner_run_gradle "$GRADLEW_COMMAND" \
     -PankiMinerS1bArm64Tests=true \
     :app:assembleDeviceDebug \
     :app:assembleDeviceDebugAndroidTest
