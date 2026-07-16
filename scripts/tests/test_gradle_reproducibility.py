@@ -164,6 +164,36 @@ class GradleReproducibilityTest(unittest.TestCase):
         self.assertIn("org.gradle.parallel=false", properties)
         self.assertIn("org.gradle.workers.max=1", properties)
 
+    def test_host_and_connected_android_phases_cannot_overlap(self) -> None:
+        health = (REPO_ROOT / "scripts" / "health.sh").read_text(encoding="utf-8")
+        connected = (
+            REPO_ROOT / "scripts" / "run-connected-emulator-tests.sh"
+        ).read_text(encoding="utf-8")
+        runner = (REPO_ROOT / "scripts" / "run-emulator-tests.sh").read_text(
+            encoding="utf-8",
+        )
+
+        self.assertIn("anki_miner_run_gradle ./gradlew", health)
+        self.assertNotIn("--connected", health)
+        self.assertNotIn("connectedEmulatorDebugAndroidTest", health)
+        self.assertNotIn("gradlew", connected)
+        self.assertNotIn("gradlew", runner)
+        self.assertIn("android_test_receipt.py", health)
+        self.assertIn("android_test_receipt.py", connected)
+
+    def test_every_repository_gradle_script_uses_the_shared_resource_wrapper(self) -> None:
+        paths = (
+            REPO_ROOT / "scripts" / "health.sh",
+            REPO_ROOT / "scripts" / "run-s1a-arm64-tests.sh",
+            REPO_ROOT / "scripts" / "run-s1b-arm64-tests.sh",
+            REPO_ROOT / "tools" / "tokenizer" / "build-s1b-android.sh",
+        )
+        for path in paths:
+            with self.subTest(path=path):
+                source = path.read_text(encoding="utf-8")
+                self.assertIn("anki_miner_run_gradle", source)
+                self.assertNotIn('\n"$GRADLEW_COMMAND" \\\n', source)
+
 
 if __name__ == "__main__":
     unittest.main()
