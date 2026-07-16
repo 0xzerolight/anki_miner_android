@@ -6,6 +6,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/android-env.sh"
 # shellcheck source=emulator-lanes.sh
 source "$SCRIPT_DIR/emulator-lanes.sh"
+# shellcheck source=android-test-resources.sh
+source "$SCRIPT_DIR/android-test-resources.sh"
 
 HEADLESS=auto
 SOFTWARE=auto
@@ -196,5 +198,8 @@ if command -v ss >/dev/null; then
         exit 1
     fi
 fi
+
+anki_miner_require_no_gradle
+anki_miner_require_emulator_capacity
 
 exec emulator "${final_args[@]}"

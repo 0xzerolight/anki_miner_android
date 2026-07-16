@@ -59,21 +59,39 @@ Run the connected suite on the compatibility and page-size lanes:
 
 ```bash
 UNIDIC_DIR=/absolute/path/to/the/golden-pinned/unidic/dicdir
-scripts/run-emulator-tests.sh --lane api26 --unidic-dir "$UNIDIC_DIR"
-scripts/run-emulator-tests.sh --lane 4k --unidic-dir "$UNIDIC_DIR"
-scripts/run-emulator-tests.sh --lane 16k --unidic-dir "$UNIDIC_DIR"
+RECEIPT="$ANKI_MINER_ANDROID_TOOLCHAIN_ROOT/test-receipts/connected.json"
+scripts/prepare-emulator-tests.sh --receipt "$RECEIPT"
+scripts/run-emulator-tests.sh --receipt "$RECEIPT" --lane api26 --unidic-dir "$UNIDIC_DIR"
+scripts/run-emulator-tests.sh --receipt "$RECEIPT" --lane 4k --unidic-dir "$UNIDIC_DIR"
+scripts/run-emulator-tests.sh --receipt "$RECEIPT" --lane 16k --unidic-dir "$UNIDIC_DIR"
 ```
 
 `--page-size 4k|16k` remains an exact backward-compatible alias for the two
 API 36 lanes. The AVDs have fixed identities and serials. Each connected run
 also checks the runtime API level and page size; the API 26 lane additionally
-checks its exact build fingerprint.
+checks its exact build fingerprint. Preparation runs Gradle once with every
+emulator stopped. Connected runs validate the source, manifest and APK hashes
+from that receipt, perform only adb work, and always stop their emulator.
 
 | Lane | AVD | Serial | API | Page size |
 | --- | --- | --- | --- | --- |
 | `api26` | `anki_miner_api26` | `emulator-5558` | 26 | 4096 |
 | `4k` | `anki_miner_api36` | `emulator-5554` | 36 | 4096 |
 | `16k` | `anki_miner_api36_ps16k` | `emulator-5556` | 36 | 16384 |
+
+The destructive S2 capability probe uses the same owned lifecycle. After
+confirming that the dedicated emulator collection is disposable, prepare its
+receipt with the pinned external AnkiDroid APK, then run the wiped 4 KiB lane:
+
+```bash
+export ANKI_MINER_S2_ALLOW_COLLECTION_RESET=true
+S2_RECEIPT="$ANKI_MINER_ANDROID_TOOLCHAIN_ROOT/test-receipts/s2.json"
+scripts/prepare-s2-ankidroid-probe.sh --receipt "$S2_RECEIPT"
+scripts/run-emulator-tests.sh --s2 --receipt "$S2_RECEIPT"
+```
+
+The owner runner stops the emulator on success, failure, or timeout. The
+adb-only `run-s2-ankidroid-probe.sh` is its internal connected phase.
 
 The separate arm64 S1b gate requires an already-running, explicitly named
 target and a previously recorded image fingerprint:
@@ -90,20 +108,16 @@ It temporarily enables the `deviceDebug` instrumentation variant and runs only
 the production-JNI S1b class. It does not manage or select a target.
 
 When KVM is unavailable, the launcher selects software CPU emulation and the
-Swangle renderer. A first boot can take several minutes. Use `--keep` with the
-test runner to leave an emulator running, or `scripts/emulator.sh --window` for
-an interactive window. Test runs always wipe userdata and disable snapshot
-load/save; an interactive launch remains persistent unless `--wipe-data` is
-given explicitly.
+Swangle renderer. A first boot can take several minutes. Test runs always wipe
+userdata, disable snapshot load/save, and stop the emulator afterward. Use
+`scripts/emulator.sh --window` only for a separate interactive session.
 
 Chaquopy reads ABI filters from product flavors. The normal Gradle variants
 are therefore `emulatorDebug` (x86_64) and `deviceRelease` (arm64-v8a):
 
-```bash
-./gradlew assembleEmulatorDebug
-./gradlew assembleDeviceRelease bundleDeviceRelease
-./gradlew connectedEmulatorDebugAndroidTest
-```
+The repository scripts enforce one Gradle worker, no parallel execution, no
+daemon, a 2 GiB heap, and no overlap between Gradle and an emulator. Use
+`scripts/health.sh` instead of invoking connected Gradle tasks directly.
 
 `scripts/check-native-artifact.sh` recursively opens APKs, AABs, ZIPs and
 Chaquopy `.imy` files. It rejects unexpected ABIs, 4 KiB-aligned ELF load

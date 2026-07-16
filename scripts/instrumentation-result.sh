@@ -27,3 +27,24 @@ android_instrumentation_output_passed() {
     )
     [[ "${#terminal_codes[@]}" == 1 && "${terminal_codes[0]}" == -1 ]]
 }
+
+android_instrumentation_output_passed_any() {
+    local output="$1"
+    local normalized summary_count
+    local -a terminal_codes
+
+    normalized="${output//$'\r'/}"
+    summary_count="$(
+        grep -Ec '^OK \([1-9][0-9]* tests?\)$' <<<"$normalized" || true
+    )"
+    [[ "$summary_count" == 1 ]] || return 1
+    if grep -Eq \
+        'FAILURES!!!|INSTRUMENTATION_FAILED|INSTRUMENTATION_ABORTED|shortMsg=|Process crashed' \
+        <<<"$normalized"; then
+        return 1
+    fi
+    mapfile -t terminal_codes < <(
+        sed -n 's/^INSTRUMENTATION_CODE: //p' <<<"$normalized"
+    )
+    [[ "${#terminal_codes[@]}" == 1 && "${terminal_codes[0]}" == -1 ]]
+}
