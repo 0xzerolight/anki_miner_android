@@ -220,6 +220,15 @@ fi
                     self.assertEqual(2, result.returncode, result.stderr)
                     self.assertIn("fixed by --lane", result.stderr)
 
+    def test_launcher_guards_gradle_overlap_and_low_host_memory(self) -> None:
+        launcher = (SCRIPTS_DIR / "emulator.sh").read_text(encoding="utf-8")
+
+        self.assertIn("GradleWrapperMain", launcher)
+        self.assertIn("GradleDaemon", launcher)
+        self.assertIn("MemAvailable:", launcher)
+        self.assertIn("6 * 1024 * 1024", launcher)
+        self.assertIn("less than 6 GiB", launcher)
+
     def test_runtime_identity_accepts_all_three_lanes(self) -> None:
         for lane in ("api26", "4k", "16k"):
             with self.subTest(lane=lane):

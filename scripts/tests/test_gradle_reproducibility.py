@@ -156,6 +156,14 @@ class GradleReproducibilityTest(unittest.TestCase):
         self.assertIn("allprojects", root_build)
         self.assertIn("lockAllConfigurations()", root_build)
 
+    def test_local_gradle_defaults_bound_resource_use(self) -> None:
+        properties = (REPO_ROOT / "gradle.properties").read_text(encoding="utf-8")
+
+        self.assertIn("org.gradle.jvmargs=-Xmx2g", properties)
+        self.assertIn("org.gradle.daemon=false", properties)
+        self.assertIn("org.gradle.parallel=false", properties)
+        self.assertIn("org.gradle.workers.max=1", properties)
+
 
 if __name__ == "__main__":
     unittest.main()
