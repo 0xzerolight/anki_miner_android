@@ -3,10 +3,11 @@ package com.ankiminer.android.anki.provider
 import com.ankiminer.android.anki.generated.AnkiLimitsV1
 import java.io.Closeable
 
-/** Project-owned description of the small, read-only AnkiDroid provider surface we use. */
+/** Project-owned description of the small AnkiDroid provider surface we use. */
 internal enum class ProviderEndpoint {
     NOTES_BROWSER,
     NOTES_V2,
+    NOTE_BY_ID,
     MODELS,
     MODEL_BY_ID,
     MODEL_TEMPLATES,
@@ -14,12 +15,14 @@ internal enum class ProviderEndpoint {
     DECK_BY_ID,
     CARDS,
     CARD_BY_ID,
+    CARDS_FOR_NOTE,
 }
 
 internal enum class ProviderColumn {
     NOTE_ID,
     NOTE_MODEL_ID,
     NOTE_FIELDS,
+    NOTE_TAGS,
     NOTE_CHECKSUM,
     MODEL_ID,
     MODEL_NAME,
@@ -91,6 +94,13 @@ internal object ProviderQueryShapes {
             ProviderColumn.NOTE_FIELDS,
             ProviderColumn.NOTE_CHECKSUM,
         )
+    val NOTE_SNAPSHOT_PROJECTION =
+        listOf(
+            ProviderColumn.NOTE_ID,
+            ProviderColumn.NOTE_MODEL_ID,
+            ProviderColumn.NOTE_FIELDS,
+            ProviderColumn.NOTE_TAGS,
+        )
     val MODEL_PROJECTION =
         listOf(
             ProviderColumn.MODEL_ID,
@@ -142,6 +152,11 @@ internal object ProviderQueryShapes {
                     query.selection.deckName.isValidDeckName() &&
                     query.sortOrder == null
             ProviderEndpoint.NOTES_V2 -> notesV2Allowed(query)
+            ProviderEndpoint.NOTE_BY_ID ->
+                query.endpointId != null &&
+                    query.projection == NOTE_SNAPSHOT_PROJECTION &&
+                    query.selection == null &&
+                    query.sortOrder == null
             ProviderEndpoint.MODELS ->
                 query.endpointId == null &&
                     query.projection == MODEL_PROJECTION &&
@@ -174,6 +189,11 @@ internal object ProviderQueryShapes {
                     query.selection.noteId > 0L &&
                     query.sortOrder == null
             ProviderEndpoint.CARD_BY_ID ->
+                query.endpointId != null &&
+                    query.projection == CARD_IDENTITY_PROJECTION &&
+                    query.selection == null &&
+                    query.sortOrder == null
+            ProviderEndpoint.CARDS_FOR_NOTE ->
                 query.endpointId != null &&
                     query.projection == CARD_IDENTITY_PROJECTION &&
                     query.selection == null &&
@@ -267,9 +287,24 @@ internal enum class ProviderFailureKind {
     PERMISSION_REQUIRED,
     PROVIDER_UNAVAILABLE,
     QUERY_FAILED,
+    MUTATION_FAILED,
     TIMEOUT,
     CANCELLED,
 }
+
+/** Mutations have no cancellation or timeout after durable provider entry, and never query. */
+internal fun ProviderFailureKind.normalizedForMutationBoundary(): ProviderFailureKind =
+    when (this) {
+        ProviderFailureKind.API_DISABLED,
+        ProviderFailureKind.PERMISSION_REQUIRED,
+        ProviderFailureKind.PROVIDER_UNAVAILABLE,
+        ProviderFailureKind.MUTATION_FAILED,
+        -> this
+        ProviderFailureKind.QUERY_FAILED,
+        ProviderFailureKind.TIMEOUT,
+        ProviderFailureKind.CANCELLED,
+        -> ProviderFailureKind.MUTATION_FAILED
+    }
 
 internal class ProviderGatewayException(
     val kind: ProviderFailureKind,
@@ -311,8 +346,20 @@ internal interface AnkiProviderGateway {
         cancellation: AnkiCancellation,
     ): ProviderCursor?
 
-    /** One sealed, synchronous provider insert. Cancellation is deliberately absent after entry. */
+    /**
+     * Raw commit boundary, not a service API. A journal owner must preflight access and durably
+     * record provider entry before calling it. Cancellation is deliberately absent after entry.
+     */
     fun createDeck(command: AnkiProviderMutationCommand.CreateDeck): String?
+
+    /** Raw media commit boundary; the returned URI is validated only after durable entry. */
+    fun storeMedia(command: AnkiProviderMutationCommand.StoreMedia): String?
+
+    /** Raw note commit boundary; the returned URI is validated only after durable entry. */
+    fun insertNote(command: AnkiProviderMutationCommand.InsertNote): String?
+
+    /** Raw routing commit boundary after durable entry; recovery owns the affected count. */
+    fun routeCard(command: AnkiProviderMutationCommand.RouteCard): Int
 
     /** Exact pinned AnkiDroid v2 field-checksum implementation. */
     fun fieldChecksum(firstField: String): Long

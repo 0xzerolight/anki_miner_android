@@ -20,6 +20,7 @@ internal data class ModelSnapshot(
     val name: String,
     val type: Int,
     val fieldNames: List<String>,
+    /** Number of standard templates; generated cards for one note may be a non-empty subset. */
     val cardCount: Int,
     val sortFieldIndex: Int,
     /** Provider-visible value; v2.24 coerces an underlying null to deck ID 1. */
@@ -41,11 +42,30 @@ internal data class TargetSnapshot(
     val model: ModelSnapshot,
 )
 
+/** Exact raw provider state for one known note ID. */
+internal data class NoteSnapshot(
+    val id: Long,
+    val modelId: Long,
+    val joinedFields: String,
+    val providerTagsWire: String,
+)
+
 internal data class CardIdentity(
     val id: Long,
     val noteId: Long,
     val ordinal: Int,
     val deckId: Long,
+)
+
+/**
+ * Exact raw card rows observed through `notes/{noteId}/cards`.
+ *
+ * Standard-template count is only an ordinal upper bound: conditional generation can omit any
+ * template for a particular note, so [cards] must never be required to equal the template set.
+ */
+internal data class CardsForNoteSnapshot(
+    val noteId: Long,
+    val cards: List<CardIdentity>,
 )
 
 internal data class ValidatedModelBase(

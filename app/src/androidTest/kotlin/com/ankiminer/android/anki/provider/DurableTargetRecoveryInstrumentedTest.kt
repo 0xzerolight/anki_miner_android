@@ -383,6 +383,12 @@ private class FakeAnkiProviderGateway : AnkiProviderGateway {
         deckCommands += command
         return createDeckHandler(command)
     }
+
+    override fun storeMedia(command: AnkiProviderMutationCommand.StoreMedia): String? = null
+
+    override fun insertNote(command: AnkiProviderMutationCommand.InsertNote): String? = null
+
+    override fun routeCard(command: AnkiProviderMutationCommand.RouteCard): Int = 0
 }
 
 private class FakeProviderCursor(
