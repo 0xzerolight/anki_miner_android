@@ -3,6 +3,12 @@
 
     <application>
         <provider
+            android:name="com.ankiminer.android.debug.s2.S2ProbeMediaProvider"
+            android:authorities="${applicationId}.s2.provider"
+            android:exported="false"
+            android:grantUriPermissions="true" />
+
+        <provider
             android:name="com.ankiminer.android.debug.S3TestDocumentsProvider"
             android:authorities="${applicationId}.s3.provider"
             android:exported="false"
