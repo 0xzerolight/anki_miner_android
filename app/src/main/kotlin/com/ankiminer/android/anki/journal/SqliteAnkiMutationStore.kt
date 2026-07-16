@@ -639,11 +639,11 @@ internal class SqliteAnkiMutationStore(
                 ChildState.PROVEN_NOT_COMMITTED -> {
                     if (child.attemptCount != 0 || child.receipt != null ||
                         claimState !in setOf(MediaClaimState.CLEANED_VERIFIED, MediaClaimState.ACKNOWLEDGED_BY_USER) ||
-                        result !is AlignedResult.MediaFailed
+                        result !is AlignedResult.MediaFailed && result !is AlignedResult.MediaNotAttempted
                     ) {
                         throw JournalInvariantViolation("Pre-entry media completion contradicts its durable evidence")
                     }
-                    if (result.rowError.code != JournalErrorCode.MEDIA_STORE_FAILED) {
+                    if (result is AlignedResult.MediaFailed && result.rowError.code != JournalErrorCode.MEDIA_STORE_FAILED) {
                         throw JournalInvariantViolation("Degradable media failure requires media_store_failed")
                     }
                 }
@@ -1701,17 +1701,18 @@ internal class SqliteAnkiMutationStore(
             }
             is AlignedResult.MediaNotAttempted -> {
                 val children = mutationChildCount(db, parent.id, result.requestIndex, result.itemId, ChildOperation.MEDIA_INSERT)
-                val contradictory =
+                val provenAbsent =
                     scalarLong(
                         db,
-                        """SELECT count(*) FROM mutation_children c WHERE c.parent_id = ? AND
-                           c.request_index = ? AND c.identity_key = ? AND c.operation_kind = 'MEDIA_INSERT' AND
-                           (c.state != 'PROVEN_NOT_COMMITTED' OR EXISTS(
-                               SELECT 1 FROM provider_attempts a WHERE a.child_id = c.id) OR EXISTS(
-                               SELECT 1 FROM media_receipts r WHERE r.child_id = c.id))""".trimIndent(),
+                        """SELECT count(*) FROM mutation_children c JOIN media_claims m ON m.id = c.media_claim_id
+                           WHERE c.parent_id = ? AND c.request_index = ? AND c.identity_key = ? AND
+                               c.operation_kind = 'MEDIA_INSERT' AND c.state = 'PROVEN_NOT_COMMITTED' AND
+                               m.state IN ('CLEANED_VERIFIED', 'ACKNOWLEDGED_BY_USER') AND NOT EXISTS(
+                                   SELECT 1 FROM provider_attempts a WHERE a.child_id = c.id) AND NOT EXISTS(
+                                   SELECT 1 FROM media_receipts r WHERE r.child_id = c.id)""".trimIndent(),
                         arrayOf(parent.id.toString(), result.requestIndex.toString(), result.itemId),
                     )
-                if (children > 1L || contradictory != 0L) {
+                if (children > 0L && (children != 1L || provenAbsent != 1L)) {
                     throw JournalInvariantViolation("Not-attempted media row hides entered mutation evidence")
                 }
             }
@@ -1901,7 +1902,7 @@ internal class SqliteAnkiMutationStore(
                     when (child.state) {
                         ChildState.PROVEN_NOT_COMMITTED -> {
                             if (child.attemptCount != 0 || child.receipt != null ||
-                                row !is AlignedResult.MediaFailed ||
+                                row !is AlignedResult.MediaFailed && row !is AlignedResult.MediaNotAttempted ||
                                 claim.state !in setOf(MediaClaimState.CLEANED_VERIFIED, MediaClaimState.ACKNOWLEDGED_BY_USER)
                             ) {
                                 throw JournalInvariantViolation("Pre-entry media evidence contradicts terminal row")

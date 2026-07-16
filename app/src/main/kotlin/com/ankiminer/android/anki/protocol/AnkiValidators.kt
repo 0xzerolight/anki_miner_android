@@ -565,7 +565,7 @@ internal object AnkiValidators {
         return stats
     }
 
-    private fun validateProviderFilename(actual: String, asset: MediaAsset) {
+    fun validateProviderFilename(actual: String, asset: MediaAsset) {
         if (actual == asset.requestedFilename) return
         validatePreferredFilename(actual)
         val suffixIndex = actual.lastIndexOf('.')

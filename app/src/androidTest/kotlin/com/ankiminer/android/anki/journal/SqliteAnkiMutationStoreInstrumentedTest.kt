@@ -1107,6 +1107,87 @@ class SqliteAnkiMutationStoreInstrumentedTest {
         }
 
     @Test
+    fun promotedPreEntrySystemStopPersistsNotAttemptedProof() =
+        withStore { store ->
+            val request = mediaRequest(130, 1, listOf(7))
+            val media = prepareMedia(store, 130, 1, 7)
+            store.completeMediaFailure(
+                media.child.id,
+                media.claim.id,
+                ChildState.PROVEN_NOT_COMMITTED,
+                MediaClaimState.CLEANED_VERIFIED,
+                AlignedResult.MediaNotAttempted(0, media.claim.assetId),
+                "provider entry was denied before the raw media call",
+            )
+            val error =
+                JournalError(
+                    JournalErrorCode.CANCELLED,
+                    "The run was cancelled before provider entry",
+                    retryable = false,
+                )
+            val response = JournalResponse.StoreMedia(request.key, store.alignedResults(request.key), error)
+            store.markResultReady(request, response)
+
+            assertEquals(ChildState.PROVEN_NOT_COMMITTED, childState(store.writableDatabase, media.child.id))
+            assertEquals(MediaClaimState.CLEANED_VERIFIED, store.mediaClaim(request.key, media.claim.assetId)?.state)
+            assertEquals(ReplayResult.Ready(response), store.replay(request, liveRun = true))
+        }
+
+    @Test
+    fun rawSqlRejectsNotAttemptedMediaWithUnresolvedClaimAndDuplicateChildIdentity() =
+        withStore { store ->
+            val media = prepareMedia(store, 131, 1, 8)
+            val db = store.writableDatabase
+            assertEquals(
+                1,
+                db.update(
+                    "mutation_children",
+                    ContentValues().apply {
+                        put("state", ChildState.PROVEN_NOT_COMMITTED.name)
+                        put("terminal_evidence", "raw pre-entry proof")
+                        put("updated_at_ms", media.child.updatedAtMs + 1)
+                    },
+                    "id = ?",
+                    arrayOf(media.child.id.toString()),
+                ),
+            )
+
+            assertThrows(SQLiteConstraintException::class.java) {
+                db.insertOrThrow(
+                    "aligned_results",
+                    null,
+                    ContentValues().apply {
+                        put("parent_id", media.child.parentId)
+                        put("request_index", 0)
+                        put("item_id", media.claim.assetId)
+                        put("status_kind", AlignedStatus.NOT_ATTEMPTED.name)
+                    },
+                )
+            }
+
+            assertThrows(SQLiteConstraintException::class.java) {
+                db.insertOrThrow(
+                    "mutation_children",
+                    null,
+                    ContentValues().apply {
+                        put("parent_id", media.child.parentId)
+                        put("sequence_number", 1)
+                        put("operation_kind", ChildOperation.MEDIA_INSERT.name)
+                        put("identity_key", media.claim.assetId)
+                        put("request_index", 0)
+                        put("digest_version", media.child.digestVersion)
+                        put("request_sha256", media.child.requestSha256)
+                        put("media_claim_id", media.claim.id)
+                        put("state", ChildState.PROVEN_NOT_COMMITTED.name)
+                        put("terminal_evidence", "duplicate raw child")
+                        put("created_at_ms", media.child.createdAtMs + 1)
+                        put("updated_at_ms", media.child.updatedAtMs + 2)
+                    },
+                )
+            }
+        }
+
+    @Test
     fun oneGlobalPreparedChildBlocksEveryOtherParentUntilRecoveryCompletes() =
         withStore { store ->
             val media = prepareMedia(store, 30, 1, 1)

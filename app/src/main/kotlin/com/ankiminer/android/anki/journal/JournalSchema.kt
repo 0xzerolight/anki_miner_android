@@ -1205,10 +1205,21 @@ internal object JournalSchema {
                         c.identity_key = NEW.item_id AND c.operation_kind = 'NOTE_INSERT')
                 THEN RAISE(ABORT, 'failed note hides provider entry') END;
             SELECT CASE WHEN NEW.status_kind = 'NOT_ATTEMPTED' AND
-                (SELECT operation_kind FROM parents WHERE id = NEW.parent_id) = 'STORE_MEDIA' AND EXISTS(
-                    SELECT 1 FROM mutation_children c
+                (SELECT operation_kind FROM parents WHERE id = NEW.parent_id) = 'STORE_MEDIA' AND
+                (SELECT count(*) FROM mutation_children c
                     WHERE c.parent_id = NEW.parent_id AND c.request_index = NEW.request_index AND
-                        c.identity_key = NEW.item_id AND c.operation_kind = 'MEDIA_INSERT')
+                        c.identity_key = NEW.item_id AND c.operation_kind = 'MEDIA_INSERT') > 0 AND (
+                    (SELECT count(*) FROM mutation_children c
+                        WHERE c.parent_id = NEW.parent_id AND c.request_index = NEW.request_index AND
+                            c.identity_key = NEW.item_id AND c.operation_kind = 'MEDIA_INSERT') != 1 OR
+                    NOT EXISTS(
+                        SELECT 1 FROM mutation_children c JOIN media_claims m ON m.id = c.media_claim_id
+                        WHERE c.parent_id = NEW.parent_id AND c.request_index = NEW.request_index AND
+                            c.identity_key = NEW.item_id AND c.operation_kind = 'MEDIA_INSERT' AND
+                            c.state = 'PROVEN_NOT_COMMITTED' AND
+                            m.state IN ('CLEANED_VERIFIED', 'ACKNOWLEDGED_BY_USER') AND
+                            NOT EXISTS(SELECT 1 FROM provider_attempts a WHERE a.child_id = c.id) AND
+                            NOT EXISTS(SELECT 1 FROM media_receipts x WHERE x.child_id = c.id)))
                 THEN RAISE(ABORT, 'not-attempted media hides active mutation evidence') END;
             SELECT CASE WHEN NEW.status_kind IN ('DUPLICATE', 'NOT_ATTEMPTED') AND
                 (SELECT operation_kind FROM parents WHERE id = NEW.parent_id) = 'CREATE_NOTES' AND EXISTS(

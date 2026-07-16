@@ -68,7 +68,7 @@ internal interface AnkiMutationStore : Closeable {
 
     fun completeChild(childId: Long, outcome: ChildState, compactEvidence: String): ChildRecord
 
-    /** Pre-entry media failure or post-entry uncertainty closes claim/child/result atomically. */
+    /** Pre-entry media failure/stop or post-entry uncertainty closes claim/child/result atomically. */
     fun completeMediaFailure(
         childId: Long,
         claimId: Long,
