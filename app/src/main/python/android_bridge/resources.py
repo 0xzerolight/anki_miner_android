@@ -38,8 +38,11 @@ _COMPATIBILITY_MARKER_NAME = "install.complete"
 _MAX_MANIFEST_BYTES = 16 * 1024
 _MAX_CUSTOM_DICTIONARY_ARCHIVE_BYTES = 1024 * 1024 * 1024
 _CUSTOM_ZIP_MEMBER_LIMIT = 10_000
-_CUSTOM_ZIP_TOTAL_LIMIT = 2 * 1024 * 1024 * 1024
-_CUSTOM_ZIP_FILE_LIMIT = 256 * 1024 * 1024
+_CUSTOM_ZIP_TOTAL_LIMIT = 1024 * 1024 * 1024
+# The desktop importer materializes each JSON bank at once. Keep a hostile
+# custom bank comfortably below the heap-risk range on a 3 GiB Android device.
+_CUSTOM_ZIP_FILE_LIMIT = 16 * 1024 * 1024
+_MAX_LOOKUP_HTML_BYTES = 2 * 1024 * 1024
 _FREE_SPACE_RESERVE_BYTES = 32 * 1024 * 1024
 _OPERATION_ID_RE = re.compile(r"[a-z0-9](?:[a-z0-9_-]{0,62}[a-z0-9])?")
 _SLOT_ID_RE = re.compile(
@@ -1195,6 +1198,20 @@ def list_dictionaries(payload: Mapping[str, object]) -> str:
     return encode_message("resource.dictionary.listed", {"dictionaries": dictionaries})
 
 
+def _validate_lookup_html(html: str) -> None:
+    try:
+        html_size = len(html.encode("utf-8"))
+    except UnicodeEncodeError as exc:
+        raise _fail(
+            "dictionary_result_invalid", "Dictionary lookup returned invalid text"
+        ) from exc
+    if html_size > _MAX_LOOKUP_HTML_BYTES:
+        raise _fail(
+            "dictionary_result_too_large",
+            "Dictionary lookup result exceeds the Android display limit",
+        )
+
+
 def lookup_dictionary(payload: Mapping[str, object]) -> str:
     _exact(payload, {"slotId", "term"}, code="invalid_resource_request")
     slot_id = _slot_id(payload["slotId"])
@@ -1226,6 +1243,7 @@ def lookup_dictionary(payload: Mapping[str, object]) -> str:
         html = provider.lookup(term)
     finally:
         provider.close()
+    _validate_lookup_html(html)
     return encode_message(
         "resource.dictionary.lookup.result",
         {"slotId": slot_id, "term": term, "html": html},

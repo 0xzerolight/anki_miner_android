@@ -52,7 +52,7 @@
         "uncompressedBytes": 540565403,
         "archiveMemberLimit": 4096,
         "uncompressedBytesLimit": 2147483648,
-        "fileBytesLimit": 268435456
+        "fileBytesLimit": 16777216
       },
       "attribution": [
         {

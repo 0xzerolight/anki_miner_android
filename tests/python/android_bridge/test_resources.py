@@ -143,6 +143,7 @@ def test_catalog_freezes_external_identity_and_attribution() -> None:
     assert jitendex.dictionary.revision == "2026.07.09.0"
     assert jitendex.dictionary.member_count == 473
     assert jitendex.dictionary.uncompressed_bytes == 540_565_403
+    assert jitendex.dictionary.file_bytes_limit == 16 * 1024 * 1024
     assert {notice.license for notice in jitendex.attribution} >= {
         "CC-BY-SA-4.0",
         "EDRDG-Licence",
@@ -486,6 +487,18 @@ def test_streamed_zip_validation_rejects_links_duplicates_and_cancel(
             file_limit=1024,
         )
     assert cancelled.value.code == "resource_operation_cancelled"
+
+
+def test_dictionary_memory_and_lookup_limits_are_low_memory_safe() -> None:
+    assert resources._CUSTOM_ZIP_FILE_LIMIT == 16 * 1024 * 1024
+    assert resources._CUSTOM_ZIP_TOTAL_LIMIT == 1024 * 1024 * 1024
+    assert resources._MAX_LOOKUP_HTML_BYTES == 2 * 1024 * 1024
+    resources._validate_lookup_html("x" * resources._MAX_LOOKUP_HTML_BYTES)
+    with pytest.raises(BridgeProtocolError) as oversized:
+        resources._validate_lookup_html(
+            "x" * (resources._MAX_LOOKUP_HTML_BYTES + 1)
+        )
+    assert oversized.value.code == "dictionary_result_too_large"
 
 
 def test_cleanup_restores_crash_backup_and_removes_operation_leftovers(
