@@ -1,0 +1,309 @@
+{
+  "version": 1,
+  "valid": [
+    {
+      "name": "progress start",
+      "message": {
+        "schemaVersion": 1,
+        "type": "progress.start",
+        "payload": {
+          "runId": "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "total": 0,
+          "description": "Parsing subtitles"
+        }
+      }
+    },
+    {
+      "name": "progress update",
+      "message": {
+        "schemaVersion": 1,
+        "type": "progress.update",
+        "payload": {
+          "runId": "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "current": 3,
+          "description": "字幕"
+        }
+      }
+    },
+    {
+      "name": "progress complete",
+      "message": {
+        "schemaVersion": 1,
+        "type": "progress.complete",
+        "payload": {"runId": "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
+      }
+    },
+    {
+      "name": "progress error",
+      "message": {
+        "schemaVersion": 1,
+        "type": "progress.error",
+        "payload": {
+          "runId": "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "description": "line 3",
+          "message": "bad input"
+        }
+      }
+    },
+    {
+      "name": "presenter message",
+      "message": {
+        "schemaVersion": 1,
+        "type": "presenter.event",
+        "payload": {
+          "runId": "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "kind": "warning",
+          "message": "Dictionary unavailable"
+        }
+      }
+    },
+    {
+      "name": "presenter information",
+      "message": {
+        "schemaVersion": 1,
+        "type": "presenter.event",
+        "payload": {
+          "runId": "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "kind": "info",
+          "message": "Ready"
+        }
+      }
+    },
+    {
+      "name": "presenter success",
+      "message": {
+        "schemaVersion": 1,
+        "type": "presenter.event",
+        "payload": {
+          "runId": "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "kind": "success",
+          "message": "Cards created"
+        }
+      }
+    },
+    {
+      "name": "presenter error",
+      "message": {
+        "schemaVersion": 1,
+        "type": "presenter.event",
+        "payload": {
+          "runId": "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "kind": "error",
+          "message": "Mining failed"
+        }
+      }
+    },
+    {
+      "name": "presenter validation result",
+      "message": {
+        "schemaVersion": 1,
+        "type": "presenter.event",
+        "payload": {
+          "runId": "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "kind": "validation",
+          "result": {
+            "ankiconnectOk": true,
+            "ffmpegOk": true,
+            "deckExists": false,
+            "noteTypeExists": true,
+            "issues": [
+              {
+                "component": "AnkiDroid",
+                "severity": "WARNING",
+                "message": "Deck will be created"
+              }
+            ],
+            "ffprobeOk": true
+          }
+        }
+      }
+    },
+    {
+      "name": "presenter processing result",
+      "message": {
+        "schemaVersion": 1,
+        "type": "presenter.event",
+        "payload": {
+          "runId": "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "kind": "processingResult",
+          "result": {
+            "totalWordsFound": 8,
+            "newWordsFound": 3,
+            "cardsCreated": 2,
+            "errors": [],
+            "elapsedTime": 1.25,
+            "comprehensionPercentage": 62.5,
+            "cardIds": [101, 102],
+            "videoFile": "/proc/self/fd/41",
+            "subtitleFile": "/cache/subtitle.srt",
+            "minedForms": ["猫", "食べる"]
+          }
+        }
+      }
+    }
+  ],
+  "invalid": [
+    {
+      "name": "event type cannot borrow another event payload",
+      "message": {
+        "schemaVersion": 1,
+        "type": "progress.complete",
+        "payload": {
+          "runId": "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "total": 10,
+          "description": "Parsing"
+        }
+      }
+    },
+    {
+      "name": "progress start total cannot be negative",
+      "message": {
+        "schemaVersion": 1,
+        "type": "progress.start",
+        "payload": {
+          "runId": "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "total": -1,
+          "description": "Parsing"
+        }
+      }
+    },
+    {
+      "name": "progress start total stays in signed 64 bit",
+      "message": {
+        "schemaVersion": 1,
+        "type": "progress.start",
+        "payload": {
+          "runId": "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "total": 9223372036854775808,
+          "description": "Parsing"
+        }
+      }
+    },
+    {
+      "name": "progress update current is integral",
+      "message": {
+        "schemaVersion": 1,
+        "type": "progress.update",
+        "payload": {
+          "runId": "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "current": 1.5,
+          "description": "Parsing"
+        }
+      }
+    },
+    {
+      "name": "progress payload fields are exact",
+      "message": {
+        "schemaVersion": 1,
+        "type": "progress.complete",
+        "payload": {
+          "runId": "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "unknown": true
+        }
+      }
+    },
+    {
+      "name": "progress error requires message",
+      "message": {
+        "schemaVersion": 1,
+        "type": "progress.error",
+        "payload": {
+          "runId": "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "description": "line 3"
+        }
+      }
+    },
+    {
+      "name": "event run ID is opaque",
+      "message": {
+        "schemaVersion": 1,
+        "type": "progress.complete",
+        "payload": {"runId": "not-a-run"}
+      }
+    },
+    {
+      "name": "presenter kind is closed",
+      "message": {
+        "schemaVersion": 1,
+        "type": "presenter.event",
+        "payload": {
+          "runId": "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "kind": "debug",
+          "message": "detail"
+        }
+      }
+    },
+    {
+      "name": "presenter message cannot carry result",
+      "message": {
+        "schemaVersion": 1,
+        "type": "presenter.event",
+        "payload": {
+          "runId": "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "kind": "info",
+          "message": "ready",
+          "result": null
+        }
+      }
+    },
+    {
+      "name": "validation fields are exact and complete",
+      "message": {
+        "schemaVersion": 1,
+        "type": "presenter.event",
+        "payload": {
+          "runId": "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "kind": "validation",
+          "result": {
+            "ankiconnectOk": true,
+            "ffmpegOk": true,
+            "deckExists": true,
+            "noteTypeExists": true,
+            "issues": []
+          }
+        }
+      }
+    },
+    {
+      "name": "validation severity is closed",
+      "message": {
+        "schemaVersion": 1,
+        "type": "presenter.event",
+        "payload": {
+          "runId": "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "kind": "validation",
+          "result": {
+            "ankiconnectOk": false,
+            "ffmpegOk": true,
+            "deckExists": true,
+            "noteTypeExists": true,
+            "issues": [
+              {"component": "AnkiDroid", "severity": "INFO", "message": "down"}
+            ],
+            "ffprobeOk": true
+          }
+        }
+      }
+    },
+    {
+      "name": "processing result fields are not partial",
+      "message": {
+        "schemaVersion": 1,
+        "type": "presenter.event",
+        "payload": {
+          "runId": "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "kind": "processingResult",
+          "result": {"cardsCreated": 2, "errors": []}
+        }
+      }
+    },
+    {
+      "name": "unknown callback event is rejected",
+      "message": {
+        "schemaVersion": 1,
+        "type": "progress.paused",
+        "payload": {"runId": "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
+      }
+    }
+  ]
+}

@@ -1,0 +1,184 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://anki-miner.app/schemas/android-bridge/v1/engine-events.json",
+  "title": "Anki Miner Android engine callback events",
+  "$comment": "Complete envelopes emitted by AndroidProgressCallback and AndroidPresenter. protocol.decode_envelope first enforces the shared finite signed-64 wire domain and strict Unicode scalar JSON contract.",
+  "oneOf": [
+    {"$ref": "#/$defs/progressStartMessage"},
+    {"$ref": "#/$defs/progressUpdateMessage"},
+    {"$ref": "#/$defs/progressCompleteMessage"},
+    {"$ref": "#/$defs/progressErrorMessage"},
+    {"$ref": "#/$defs/presenterEventMessage"}
+  ],
+  "$defs": {
+    "runId": {
+      "type": "string",
+      "pattern": "^run_[0-9a-f]{32}$"
+    },
+    "nonNegativeSigned64": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9223372036854775807
+    },
+    "validationIssue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["component", "severity", "message"],
+      "properties": {
+        "component": {"type": "string"},
+        "severity": {"enum": ["ERROR", "WARNING"]},
+        "message": {"type": "string"}
+      }
+    },
+    "validationResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ankiconnectOk",
+        "ffmpegOk",
+        "deckExists",
+        "noteTypeExists",
+        "issues",
+        "ffprobeOk"
+      ],
+      "properties": {
+        "ankiconnectOk": {"type": "boolean"},
+        "ffmpegOk": {"type": "boolean"},
+        "deckExists": {"type": "boolean"},
+        "noteTypeExists": {"type": "boolean"},
+        "issues": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/validationIssue"}
+        },
+        "ffprobeOk": {"type": "boolean"}
+      }
+    },
+    "progressStartPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runId", "total", "description"],
+      "properties": {
+        "runId": {"$ref": "#/$defs/runId"},
+        "total": {"$ref": "#/$defs/nonNegativeSigned64"},
+        "description": {"type": "string"}
+      }
+    },
+    "progressUpdatePayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runId", "current", "description"],
+      "properties": {
+        "runId": {"$ref": "#/$defs/runId"},
+        "current": {"$ref": "#/$defs/nonNegativeSigned64"},
+        "description": {"type": "string"}
+      }
+    },
+    "progressCompletePayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runId"],
+      "properties": {
+        "runId": {"$ref": "#/$defs/runId"}
+      }
+    },
+    "progressErrorPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runId", "description", "message"],
+      "properties": {
+        "runId": {"$ref": "#/$defs/runId"},
+        "description": {"type": "string"},
+        "message": {"type": "string"}
+      }
+    },
+    "presenterMessagePayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runId", "kind", "message"],
+      "properties": {
+        "runId": {"$ref": "#/$defs/runId"},
+        "kind": {"enum": ["info", "success", "warning", "error"]},
+        "message": {"type": "string"}
+      }
+    },
+    "presenterValidationPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runId", "kind", "result"],
+      "properties": {
+        "runId": {"$ref": "#/$defs/runId"},
+        "kind": {"const": "validation"},
+        "result": {"$ref": "#/$defs/validationResult"}
+      }
+    },
+    "presenterProcessingResultPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runId", "kind", "result"],
+      "properties": {
+        "runId": {"$ref": "#/$defs/runId"},
+        "kind": {"const": "processingResult"},
+        "result": {
+          "$ref": "https://anki-miner.app/schemas/android-bridge/v1/mining.json#/$defs/processingResult"
+        }
+      }
+    },
+    "presenterPayload": {
+      "oneOf": [
+        {"$ref": "#/$defs/presenterMessagePayload"},
+        {"$ref": "#/$defs/presenterValidationPayload"},
+        {"$ref": "#/$defs/presenterProcessingResultPayload"}
+      ]
+    },
+    "progressStartMessage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "type", "payload"],
+      "properties": {
+        "schemaVersion": {"const": 1},
+        "type": {"const": "progress.start"},
+        "payload": {"$ref": "#/$defs/progressStartPayload"}
+      }
+    },
+    "progressUpdateMessage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "type", "payload"],
+      "properties": {
+        "schemaVersion": {"const": 1},
+        "type": {"const": "progress.update"},
+        "payload": {"$ref": "#/$defs/progressUpdatePayload"}
+      }
+    },
+    "progressCompleteMessage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "type", "payload"],
+      "properties": {
+        "schemaVersion": {"const": 1},
+        "type": {"const": "progress.complete"},
+        "payload": {"$ref": "#/$defs/progressCompletePayload"}
+      }
+    },
+    "progressErrorMessage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "type", "payload"],
+      "properties": {
+        "schemaVersion": {"const": 1},
+        "type": {"const": "progress.error"},
+        "payload": {"$ref": "#/$defs/progressErrorPayload"}
+      }
+    },
+    "presenterEventMessage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "type", "payload"],
+      "properties": {
+        "schemaVersion": {"const": 1},
+        "type": {"const": "presenter.event"},
+        "payload": {"$ref": "#/$defs/presenterPayload"}
+      }
+    }
+  }
+}

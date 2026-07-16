@@ -854,6 +854,7 @@ class AndroidAnkiAdapter:
     def verify_card_target(self) -> None:
         """Validate model/fields and create the target deck only after checks."""
 
+        self._raise_if_cancelled("verifyTarget")
         if self._verified_field_names is not None:
             return
 
@@ -952,6 +953,7 @@ class AndroidAnkiAdapter:
     def _scan_known_vocabulary_page(
         self, cursor: dict[str, Any] | None
     ) -> tuple[list[str], int, dict[str, Any] | None]:
+        self._raise_if_cancelled("scanFirstFields")
         excluded_decks = _expect_bounded_string_list(
             list(self.config.excluded_decks),
             context="scanFirstFields excludedDecks",
@@ -1064,6 +1066,7 @@ class AndroidAnkiAdapter:
     def get_existing_vocabulary(self) -> set[str]:
         """Return cached, desktop-normalized Japanese first fields."""
 
+        self._raise_if_cancelled("scanFirstFields")
         if self._existing_vocab_cache is not None:
             return self._existing_vocab_cache
 

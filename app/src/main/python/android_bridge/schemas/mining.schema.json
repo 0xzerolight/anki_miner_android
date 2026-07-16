@@ -1,0 +1,333 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://anki-miner.app/schemas/android-bridge/v1/mining.json",
+  "title": "Anki Miner Android video-mining messages",
+  "$comment": "This schema validates complete bridge envelopes so a payload valid for one operation cannot be paired with another message type. protocol.decode_envelope first rejects duplicate keys, non-finite numbers, integers outside signed 64-bit, invalid Unicode scalars, and overlong numeric tokens. configSnapshot is additionally frozen by the shared config-snapshot schema.",
+  "oneOf": [
+    {"$ref": "#/$defs/videoRunMessage"},
+    {"$ref": "#/$defs/jobRegistrationRequestMessage"},
+    {"$ref": "#/$defs/jobRegistrationAcceptedMessage"},
+    {"$ref": "#/$defs/terminalMessage"}
+  ],
+  "$defs": {
+    "runId": {
+      "type": "string",
+      "pattern": "^run_[0-9a-f]{32}$"
+    },
+    "canonicalLabel": {
+      "type": "string",
+      "minLength": 1,
+      "$comment": "Runtime validation additionally enforces NFC and rejects every Unicode category-C code point.",
+      "pattern": "^(?!\\s)(?!.*\\s$)(?!.*[\\u0000-\\u001f\\u007f-\\u009f\\u00ad\\u061c\\u200b-\\u200f\\u202a-\\u202e\\u2060-\\u206f\\ufeff]).+$"
+    },
+    "absolutePath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!.*\\u0000)/"
+    },
+    "subtitlePath": {
+      "allOf": [
+        {"$ref": "#/$defs/absolutePath"},
+        {"pattern": "\\.(?:[aA][sS][sS]|[sS][rR][tT]|[sS][sS][aA]|[vV][tT][tT])$"}
+      ]
+    },
+    "nonNegativeSigned64": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9223372036854775807
+    },
+    "positiveSigned64": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9223372036854775807
+    },
+    "processingResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "totalWordsFound",
+        "newWordsFound",
+        "cardsCreated",
+        "errors",
+        "elapsedTime",
+        "comprehensionPercentage",
+        "cardIds",
+        "videoFile",
+        "subtitleFile",
+        "minedForms"
+      ],
+      "properties": {
+        "totalWordsFound": {"$ref": "#/$defs/nonNegativeSigned64"},
+        "newWordsFound": {"$ref": "#/$defs/nonNegativeSigned64"},
+        "cardsCreated": {
+          "$ref": "#/$defs/nonNegativeSigned64",
+          "$comment": "Legacy wire name: this is the count of successfully inserted Anki notes, not the number of generated card rows."
+        },
+        "errors": {
+          "type": "array",
+          "$comment": "Desktop AnkiMinerException text is preserved verbatim and may be empty.",
+          "items": {"type": "string"}
+        },
+        "elapsedTime": {
+          "type": "number",
+          "$comment": "Wall-clock adjustments can make the desktop duration negative; protocol decoding rejects NaN and infinity before schema validation."
+        },
+        "comprehensionPercentage": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "cardIds": {
+          "type": "array",
+          "uniqueItems": true,
+          "$comment": "Legacy wire name: these are the corresponding positive Anki note IDs from last_created_note_ids, including any proven partial inserts.",
+          "items": {"$ref": "#/$defs/positiveSigned64"}
+        },
+        "videoFile": {"type": "string"},
+        "subtitleFile": {"type": "string"},
+        "minedForms": {
+          "type": "array",
+          "items": {"type": "string"}
+        }
+      }
+    },
+    "terminalError": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message"],
+      "properties": {
+        "code": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"
+        },
+        "message": {
+          "type": "string",
+          "$comment": "result_error_text preserves a possibly empty desktop error string verbatim; Kotlin supplies any display fallback."
+        }
+      }
+    },
+    "videoRunPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "videoPath",
+        "subtitlePath",
+        "episodeName",
+        "seriesName",
+        "sourceLabel",
+        "audioTrackOverride",
+        "cacheDir",
+        "nativeLibraryDir",
+        "configSnapshot"
+      ],
+      "properties": {
+        "videoPath": {"$ref": "#/$defs/absolutePath"},
+        "subtitlePath": {"$ref": "#/$defs/subtitlePath"},
+        "episodeName": {"$ref": "#/$defs/canonicalLabel"},
+        "seriesName": {"$ref": "#/$defs/canonicalLabel"},
+        "sourceLabel": {
+          "oneOf": [
+            {"type": "null"},
+            {"$ref": "#/$defs/canonicalLabel"}
+          ]
+        },
+        "audioTrackOverride": {
+          "oneOf": [
+            {"type": "null"},
+            {"$ref": "#/$defs/nonNegativeSigned64"}
+          ]
+        },
+        "cacheDir": {"$ref": "#/$defs/absolutePath"},
+        "nativeLibraryDir": {"$ref": "#/$defs/absolutePath"},
+        "configSnapshot": {
+          "allOf": [
+            {"$ref": "https://anki-miner.app/schemas/android-bridge/v1/config-snapshot.json"},
+            {"required": ["settings"]}
+          ]
+        }
+      }
+    },
+    "registrationPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runId"],
+      "properties": {
+        "runId": {"$ref": "#/$defs/runId"}
+      }
+    },
+    "terminalPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runId", "outcome", "result", "error"],
+      "properties": {
+        "runId": {"$ref": "#/$defs/runId"},
+        "outcome": {"enum": ["success", "cancelled", "failed"]},
+        "result": {
+          "oneOf": [
+            {"type": "null"},
+            {"$ref": "#/$defs/processingResult"}
+          ]
+        },
+        "error": {
+          "oneOf": [
+            {"type": "null"},
+            {"$ref": "#/$defs/terminalError"}
+          ]
+        }
+      },
+      "oneOf": [
+        {
+          "$comment": "The desktop classifier reports success only for a ProcessingResult with no list errors.",
+          "properties": {
+            "outcome": {"const": "success"},
+            "result": {
+              "allOf": [
+                {"$ref": "#/$defs/processingResult"},
+                {"properties": {"errors": {"maxItems": 0}}}
+              ]
+            },
+            "error": {"type": "null"}
+          }
+        },
+        {
+          "$comment": "A non-raising engine cancellation retains its full partial ProcessingResult and has no separate terminal error.",
+          "properties": {
+            "outcome": {"const": "cancelled"},
+            "result": {
+              "allOf": [
+                {"$ref": "#/$defs/processingResult"},
+                {
+                  "properties": {
+                    "errors": {
+                      "contains": {"const": "Processing cancelled by user"}
+                    }
+                  }
+                }
+              ]
+            },
+            "error": {"type": "null"}
+          }
+        },
+        {
+          "$comment": "Cancellation raised by the synchronous Anki callback seam has no ProcessingResult.",
+          "properties": {
+            "outcome": {"const": "cancelled"},
+            "result": {"type": "null"},
+            "error": {
+              "allOf": [
+                {"$ref": "#/$defs/terminalError"},
+                {"properties": {"code": {"const": "cancelled"}}}
+              ]
+            }
+          }
+        },
+        {
+          "$comment": "A regular failed return either retains its non-cancellation errors or is the desktop None-result failure.",
+          "properties": {
+            "outcome": {"const": "failed"},
+            "result": {
+              "oneOf": [
+                {"type": "null"},
+                {
+                  "allOf": [
+                    {"$ref": "#/$defs/processingResult"},
+                    {
+                      "properties": {
+                        "errors": {
+                          "minItems": 1,
+                          "not": {
+                            "contains": {"const": "Processing cancelled by user"}
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            "error": {
+              "allOf": [
+                {"$ref": "#/$defs/terminalError"},
+                {"properties": {"code": {"const": "processing_failed"}}}
+              ]
+            }
+          }
+        },
+        {
+          "$comment": "Post-process cleanup failure retains whatever complete ProcessingResult the engine produced.",
+          "properties": {
+            "outcome": {"const": "failed"},
+            "result": {"$ref": "#/$defs/processingResult"},
+            "error": {
+              "allOf": [
+                {"$ref": "#/$defs/terminalError"},
+                {"properties": {"code": {"const": "cleanup_failed"}}}
+              ]
+            }
+          }
+        },
+        {
+          "$comment": "Raised protocol, engine-domain, and internal failures never fabricate a ProcessingResult.",
+          "properties": {
+            "outcome": {"const": "failed"},
+            "result": {"type": "null"},
+            "error": {
+              "allOf": [
+                {"$ref": "#/$defs/terminalError"},
+                {
+                  "properties": {
+                    "code": {
+                      "not": {
+                        "enum": ["processing_failed", "cleanup_failed", "cancelled"]
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "videoRunMessage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "type", "payload"],
+      "properties": {
+        "schemaVersion": {"const": 1},
+        "type": {"const": "mining.video.run"},
+        "payload": {"$ref": "#/$defs/videoRunPayload"}
+      }
+    },
+    "jobRegistrationRequestMessage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "type", "payload"],
+      "properties": {
+        "schemaVersion": {"const": 1},
+        "type": {"const": "job.registration.request"},
+        "payload": {"$ref": "#/$defs/registrationPayload"}
+      }
+    },
+    "jobRegistrationAcceptedMessage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "type", "payload"],
+      "properties": {
+        "schemaVersion": {"const": 1},
+        "type": {"const": "job.registration.accepted"},
+        "payload": {"$ref": "#/$defs/registrationPayload"}
+      }
+    },
+    "terminalMessage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "type", "payload"],
+      "properties": {
+        "schemaVersion": {"const": 1},
+        "type": {"const": "mining.terminal"},
+        "payload": {"$ref": "#/$defs/terminalPayload"}
+      }
+    }
+  }
+}

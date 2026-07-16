@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from dataclasses import dataclass, field
 from typing import Any
 from uuid import uuid4
@@ -421,6 +422,36 @@ class CallbackAdapters:
     def run_id(self) -> str:
         return self._handle.run_id
 
+    @property
+    def cancel_event(self) -> threading.Event:
+        """Return the live per-run ``threading.Event`` cancellation token."""
+
+        return self._handle.cancel_event
+
+    def register_job(self) -> None:
+        """Synchronously transfer the generated run ID to Kotlin ownership."""
+
+        response = decode_envelope(
+            _invoke_result(
+                self._callbacks,
+                "registerJob",
+                encode_message(
+                    "job.registration.request", {"runId": self._handle.run_id}
+                ),
+            ),
+            expected_type="job.registration.accepted",
+        )
+        if set(response.payload) != {"runId"}:
+            raise BridgeProtocolError(
+                "invalid_job_registration",
+                "job.registration.accepted must contain exactly runId",
+            )
+        if response.payload["runId"] != self._handle.run_id:
+            raise BridgeProtocolError(
+                "mismatched_callback_response",
+                "Job registration response belongs to a different run",
+            )
+
     def curate(self, candidates: list[object]) -> list[object] | None:
         """Blocking curation callback passed unchanged into ``process_*``."""
 
@@ -453,3 +484,9 @@ class CallbackAdapters:
                 },
             ),
         )
+
+    def notify_terminal(self, raw_terminal: str, *, failed: bool) -> None:
+        """Deliver the same canonical terminal envelope returned by dispatch."""
+
+        decode_envelope(raw_terminal, expected_type="mining.terminal")
+        _invoke(self._callbacks, "onError" if failed else "onComplete", raw_terminal)

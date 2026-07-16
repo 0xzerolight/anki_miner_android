@@ -132,6 +132,81 @@ def test_terminal_notifications_are_distinct_from_stage_progress() -> None:
     assert callbacks.calls[1][1]["payload"]["errorType"] == "RuntimeError"
 
 
+def test_job_registration_is_synchronous_strict_and_correlated() -> None:
+    registry = JobRegistry()
+    handle = registry.begin()
+
+    class RegistrationCallbacks(RecordingCallbacks):
+        def registerJob(self, raw: str) -> str:
+            self._record("registerJob", raw)
+            run_id = json.loads(raw)["payload"]["runId"]
+            return encode_message("job.registration.accepted", {"runId": run_id})
+
+    callbacks = RegistrationCallbacks()
+    adapters = CallbackAdapters(callbacks, registry, handle)
+
+    adapters.register_job()
+
+    assert callbacks.calls == [
+        (
+            "registerJob",
+            {
+                "schemaVersion": 1,
+                "type": "job.registration.request",
+                "payload": {"runId": handle.run_id},
+            },
+        )
+    ]
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        encode_message(
+            "job.registration.accepted", {"runId": "run_" + "0" * 32}
+        ),
+        encode_message(
+            "job.registration.accepted",
+            {"runId": _RUN_ID, "unknown": True},
+        ),
+        encode_message("job.registration.rejected", {"runId": _RUN_ID}),
+    ],
+)
+def test_job_registration_rejects_uncorrelated_or_malformed_acceptance(
+    response: str,
+) -> None:
+    registry = JobRegistry()
+    handle = registry.begin()
+
+    class BadRegistrationCallbacks:
+        def registerJob(self, raw: str) -> str:
+            return response
+
+    adapters = CallbackAdapters(BadRegistrationCallbacks(), registry, handle)
+    with pytest.raises(BridgeProtocolError):
+        adapters.register_job()
+
+
+def test_canonical_terminal_notification_uses_requested_channel_unchanged() -> None:
+    registry = JobRegistry()
+    handle = registry.begin()
+    callbacks = RecordingCallbacks()
+    adapters = CallbackAdapters(callbacks, registry, handle)
+    terminal = encode_message(
+        "mining.terminal",
+        {
+            "runId": handle.run_id,
+            "outcome": "failed",
+            "result": None,
+            "error": {"code": "engine_error", "message": "failed"},
+        },
+    )
+
+    adapters.notify_terminal(terminal, failed=True)
+
+    assert callbacks.calls == [("onError", json.loads(terminal))]
+
+
 class AnkiCallbacks(RecordingCallbacks):
     def _reply(self, method: str, raw: str, result_type: str) -> str:
         self._record(method, raw)

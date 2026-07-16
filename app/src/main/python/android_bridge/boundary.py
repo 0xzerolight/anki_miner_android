@@ -27,7 +27,10 @@ def _exact_payload(
 
 
 def _dispatch_validated(
-    request_type: str, payload: dict[str, object], raw_request: str
+    request_type: str,
+    payload: dict[str, object],
+    raw_request: str,
+    callbacks: object | None = None,
 ) -> str:
     if request_type == "bootstrap.initialize":
         _exact_payload(payload, {"filesDir"}, error_code="invalid_bootstrap_request")
@@ -44,6 +47,7 @@ def _dispatch_validated(
         "job.cancel",
         "curation.response",
         "bridge.shutdown.request",
+        "mining.video.run",
     }
     if request_type not in supported_after_bootstrap:
         raise BridgeProtocolError(
@@ -53,6 +57,16 @@ def _dispatch_validated(
     from .bootstrap import require_initialized
 
     require_initialized()
+
+    if request_type == "mining.video.run":
+        if callbacks is None:
+            raise BridgeProtocolError(
+                "missing_callbacks",
+                "mining.video.run requires an EngineCallbacks object",
+            )
+        from .mining import run_video
+
+        return run_video(raw_request, callbacks)
 
     if request_type == "job.cancel":
         from .jobs import cancel_job
@@ -69,7 +83,7 @@ def _dispatch_validated(
     return shutdown()
 
 
-def dispatch(raw_request: str) -> str:
+def dispatch(raw_request: str, callbacks: object | None = None) -> str:
     """Dispatch one Kotlin request and always return a versioned envelope.
 
     ``BridgeProtocolError`` becomes a ``bridge.error`` carrying its stable
@@ -83,7 +97,13 @@ def dispatch(raw_request: str) -> str:
     try:
         decoded = decode_envelope(raw_request)
         request_type = decoded.message_type
-        return _dispatch_validated(request_type, decoded.payload, raw_request)
+        if callbacks is None:
+            # Preserve the historical three-argument internal seam for callers
+            # and tests which do not use a callback-bearing operation.
+            return _dispatch_validated(request_type, decoded.payload, raw_request)
+        return _dispatch_validated(
+            request_type, decoded.payload, raw_request, callbacks
+        )
     except BridgeProtocolError as error:
         return encode_protocol_error(error, request_type=request_type)
     except Exception:

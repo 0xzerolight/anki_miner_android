@@ -1,0 +1,598 @@
+{
+  "version": 1,
+  "valid": [
+    {
+      "name": "video run with exact request fields",
+      "message": {
+        "schemaVersion": 1,
+        "type": "mining.video.run",
+        "payload": {
+          "videoPath": "/proc/self/fd/41",
+          "subtitlePath": "/cache/subtitle.SRT",
+          "episodeName": "Episode 1",
+          "seriesName": "Series",
+          "sourceLabel": "Series — Episode 1",
+          "audioTrackOverride": 2,
+          "cacheDir": "/cache",
+          "nativeLibraryDir": "/native",
+          "configSnapshot": {"settings": {}, "androidTtsEnabled": false}
+        }
+      }
+    },
+    {
+      "name": "video run nullable options",
+      "message": {
+        "schemaVersion": 1,
+        "type": "mining.video.run",
+        "payload": {
+          "videoPath": "/video.mkv",
+          "subtitlePath": "/subtitle.vtt",
+          "episodeName": "Episode",
+          "seriesName": "Series",
+          "sourceLabel": null,
+          "audioTrackOverride": null,
+          "cacheDir": "/cache",
+          "nativeLibraryDir": "/native",
+          "configSnapshot": {"settings": {}}
+        }
+      }
+    },
+    {
+      "name": "job registration request",
+      "message": {
+        "schemaVersion": 1,
+        "type": "job.registration.request",
+        "payload": {"runId": "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
+      }
+    },
+    {
+      "name": "job registration acceptance",
+      "message": {
+        "schemaVersion": 1,
+        "type": "job.registration.accepted",
+        "payload": {"runId": "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
+      }
+    },
+    {
+      "name": "successful terminal",
+      "message": {
+        "schemaVersion": 1,
+        "type": "mining.terminal",
+        "payload": {
+          "runId": "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "outcome": "success",
+          "result": {
+            "totalWordsFound": 8,
+            "newWordsFound": 3,
+            "cardsCreated": 2,
+            "errors": [],
+            "elapsedTime": 1.25,
+            "comprehensionPercentage": 62.5,
+            "cardIds": [101, 102],
+            "videoFile": "/proc/self/fd/41",
+            "subtitleFile": "/cache/subtitle.srt",
+            "minedForms": ["猫", "食べる"]
+          },
+          "error": null
+        }
+      }
+    },
+    {
+      "name": "cancelled result terminal",
+      "message": {
+        "schemaVersion": 1,
+        "type": "mining.terminal",
+        "payload": {
+          "runId": "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "outcome": "cancelled",
+          "result": {
+            "totalWordsFound": 8,
+            "newWordsFound": 3,
+            "cardsCreated": 1,
+            "errors": ["Processing cancelled by user"],
+            "elapsedTime": 1.25,
+            "comprehensionPercentage": 62.5,
+            "cardIds": [101],
+            "videoFile": "/proc/self/fd/41",
+            "subtitleFile": "/cache/subtitle.srt",
+            "minedForms": ["猫"]
+          },
+          "error": null
+        }
+      }
+    },
+    {
+      "name": "callback cancellation terminal",
+      "message": {
+        "schemaVersion": 1,
+        "type": "mining.terminal",
+        "payload": {
+          "runId": "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "outcome": "cancelled",
+          "result": null,
+          "error": {"code": "cancelled", "message": "Mining was cancelled"}
+        }
+      }
+    },
+    {
+      "name": "failed result terminal",
+      "message": {
+        "schemaVersion": 1,
+        "type": "mining.terminal",
+        "payload": {
+          "runId": "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "outcome": "failed",
+          "result": {
+            "totalWordsFound": 8,
+            "newWordsFound": 3,
+            "cardsCreated": 1,
+            "errors": [""],
+            "elapsedTime": 1.25,
+            "comprehensionPercentage": 62.5,
+            "cardIds": [101],
+            "videoFile": "/proc/self/fd/41",
+            "subtitleFile": "/cache/subtitle.srt",
+            "minedForms": ["猫"]
+          },
+          "error": {"code": "processing_failed", "message": ""}
+        }
+      }
+    },
+    {
+      "name": "none result failure terminal",
+      "message": {
+        "schemaVersion": 1,
+        "type": "mining.terminal",
+        "payload": {
+          "runId": "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "outcome": "failed",
+          "result": null,
+          "error": {"code": "processing_failed", "message": "Mining failed"}
+        }
+      }
+    },
+    {
+      "name": "cleanup failure retains result",
+      "message": {
+        "schemaVersion": 1,
+        "type": "mining.terminal",
+        "payload": {
+          "runId": "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "outcome": "failed",
+          "result": {
+            "totalWordsFound": 8,
+            "newWordsFound": 3,
+            "cardsCreated": 2,
+            "errors": [],
+            "elapsedTime": 1.25,
+            "comprehensionPercentage": 62.5,
+            "cardIds": [101, 102],
+            "videoFile": "/proc/self/fd/41",
+            "subtitleFile": "/cache/subtitle.srt",
+            "minedForms": ["猫", "食べる"]
+          },
+          "error": {
+            "code": "cleanup_failed",
+            "message": "Mining finished but resource cleanup failed"
+          }
+        }
+      }
+    },
+    {
+      "name": "raised internal failure terminal",
+      "message": {
+        "schemaVersion": 1,
+        "type": "mining.terminal",
+        "payload": {
+          "runId": "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "outcome": "failed",
+          "result": null,
+          "error": {"code": "internal_error", "message": "Internal mining failure"}
+        }
+      }
+    }
+  ],
+  "invalid": [
+    {
+      "name": "message type cannot borrow registration payload",
+      "message": {
+        "schemaVersion": 1,
+        "type": "mining.video.run",
+        "payload": {"runId": "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
+      }
+    },
+    {
+      "name": "video request missing required source label",
+      "message": {
+        "schemaVersion": 1,
+        "type": "mining.video.run",
+        "payload": {
+          "videoPath": "/video.mkv",
+          "subtitlePath": "/subtitle.srt",
+          "episodeName": "Episode",
+          "seriesName": "Series",
+          "audioTrackOverride": null,
+          "cacheDir": "/cache",
+          "nativeLibraryDir": "/native",
+          "configSnapshot": {"settings": {}}
+        }
+      }
+    },
+    {
+      "name": "video request rejects unknown field",
+      "message": {
+        "schemaVersion": 1,
+        "type": "mining.video.run",
+        "payload": {
+          "videoPath": "/video.mkv",
+          "subtitlePath": "/subtitle.srt",
+          "episodeName": "Episode",
+          "seriesName": "Series",
+          "sourceLabel": null,
+          "audioTrackOverride": null,
+          "cacheDir": "/cache",
+          "nativeLibraryDir": "/native",
+          "configSnapshot": {"settings": {}},
+          "unknown": true
+        }
+      }
+    },
+    {
+      "name": "video path must be absolute",
+      "message": {
+        "schemaVersion": 1,
+        "type": "mining.video.run",
+        "payload": {
+          "videoPath": "video.mkv",
+          "subtitlePath": "/subtitle.srt",
+          "episodeName": "Episode",
+          "seriesName": "Series",
+          "sourceLabel": null,
+          "audioTrackOverride": null,
+          "cacheDir": "/cache",
+          "nativeLibraryDir": "/native",
+          "configSnapshot": {"settings": {}}
+        }
+      }
+    },
+    {
+      "name": "subtitle suffix must be preserved",
+      "message": {
+        "schemaVersion": 1,
+        "type": "mining.video.run",
+        "payload": {
+          "videoPath": "/video.mkv",
+          "subtitlePath": "/subtitle.txt",
+          "episodeName": "Episode",
+          "seriesName": "Series",
+          "sourceLabel": null,
+          "audioTrackOverride": null,
+          "cacheDir": "/cache",
+          "nativeLibraryDir": "/native",
+          "configSnapshot": {"settings": {}}
+        }
+      }
+    },
+    {
+      "name": "audio track exceeds signed 64 bit",
+      "message": {
+        "schemaVersion": 1,
+        "type": "mining.video.run",
+        "payload": {
+          "videoPath": "/video.mkv",
+          "subtitlePath": "/subtitle.srt",
+          "episodeName": "Episode",
+          "seriesName": "Series",
+          "sourceLabel": null,
+          "audioTrackOverride": 9223372036854775808,
+          "cacheDir": "/cache",
+          "nativeLibraryDir": "/native",
+          "configSnapshot": {"settings": {}}
+        }
+      }
+    },
+    {
+      "name": "config snapshot reuses exact settings contract",
+      "message": {
+        "schemaVersion": 1,
+        "type": "mining.video.run",
+        "payload": {
+          "videoPath": "/video.mkv",
+          "subtitlePath": "/subtitle.srt",
+          "episodeName": "Episode",
+          "seriesName": "Series",
+          "sourceLabel": null,
+          "audioTrackOverride": null,
+          "cacheDir": "/cache",
+          "nativeLibraryDir": "/native",
+          "configSnapshot": {"settings": {"unknown": true}}
+        }
+      }
+    },
+    {
+      "name": "config snapshot integers stay in signed 64 bit",
+      "message": {
+        "schemaVersion": 1,
+        "type": "mining.video.run",
+        "payload": {
+          "videoPath": "/video.mkv",
+          "subtitlePath": "/subtitle.srt",
+          "episodeName": "Episode",
+          "seriesName": "Series",
+          "sourceLabel": null,
+          "audioTrackOverride": null,
+          "cacheDir": "/cache",
+          "nativeLibraryDir": "/native",
+          "configSnapshot": {
+            "settings": {"audio_bitrate": 9223372036854775808}
+          }
+        }
+      }
+    },
+    {
+      "name": "success requires result",
+      "message": {
+        "schemaVersion": 1,
+        "type": "mining.terminal",
+        "payload": {
+          "runId": "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "outcome": "success",
+          "result": null,
+          "error": null
+        }
+      }
+    },
+    {
+      "name": "success result cannot contain errors",
+      "message": {
+        "schemaVersion": 1,
+        "type": "mining.terminal",
+        "payload": {
+          "runId": "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "outcome": "success",
+          "result": {
+            "totalWordsFound": 1,
+            "newWordsFound": 1,
+            "cardsCreated": 0,
+            "errors": ["failed"],
+            "elapsedTime": 1,
+            "comprehensionPercentage": 0,
+            "cardIds": [],
+            "videoFile": "",
+            "subtitleFile": "",
+            "minedForms": []
+          },
+          "error": null
+        }
+      }
+    },
+    {
+      "name": "cancelled result requires desktop marker",
+      "message": {
+        "schemaVersion": 1,
+        "type": "mining.terminal",
+        "payload": {
+          "runId": "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "outcome": "cancelled",
+          "result": {
+            "totalWordsFound": 1,
+            "newWordsFound": 1,
+            "cardsCreated": 0,
+            "errors": ["some other error"],
+            "elapsedTime": 1,
+            "comprehensionPercentage": 0,
+            "cardIds": [],
+            "videoFile": "",
+            "subtitleFile": "",
+            "minedForms": []
+          },
+          "error": null
+        }
+      }
+    },
+    {
+      "name": "cancelled exception requires cancelled code",
+      "message": {
+        "schemaVersion": 1,
+        "type": "mining.terminal",
+        "payload": {
+          "runId": "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "outcome": "cancelled",
+          "result": null,
+          "error": {"code": "internal_error", "message": "failed"}
+        }
+      }
+    },
+    {
+      "name": "processing failure result requires errors",
+      "message": {
+        "schemaVersion": 1,
+        "type": "mining.terminal",
+        "payload": {
+          "runId": "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "outcome": "failed",
+          "result": {
+            "totalWordsFound": 1,
+            "newWordsFound": 1,
+            "cardsCreated": 0,
+            "errors": [],
+            "elapsedTime": 1,
+            "comprehensionPercentage": 0,
+            "cardIds": [],
+            "videoFile": "",
+            "subtitleFile": "",
+            "minedForms": []
+          },
+          "error": {"code": "processing_failed", "message": "failed"}
+        }
+      }
+    },
+    {
+      "name": "raised failure cannot carry result",
+      "message": {
+        "schemaVersion": 1,
+        "type": "mining.terminal",
+        "payload": {
+          "runId": "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "outcome": "failed",
+          "result": {
+            "totalWordsFound": 0,
+            "newWordsFound": 0,
+            "cardsCreated": 0,
+            "errors": [],
+            "elapsedTime": 0,
+            "comprehensionPercentage": 0,
+            "cardIds": [],
+            "videoFile": "",
+            "subtitleFile": "",
+            "minedForms": []
+          },
+          "error": {"code": "internal_error", "message": "failed"}
+        }
+      }
+    },
+    {
+      "name": "cleanup failure requires retained result",
+      "message": {
+        "schemaVersion": 1,
+        "type": "mining.terminal",
+        "payload": {
+          "runId": "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "outcome": "failed",
+          "result": null,
+          "error": {"code": "cleanup_failed", "message": "cleanup failed"}
+        }
+      }
+    },
+    {
+      "name": "result fields are exact",
+      "message": {
+        "schemaVersion": 1,
+        "type": "mining.terminal",
+        "payload": {
+          "runId": "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "outcome": "success",
+          "result": {
+            "totalWordsFound": 0,
+            "newWordsFound": 0,
+            "cardsCreated": 0,
+            "errors": [],
+            "elapsedTime": 0,
+            "comprehensionPercentage": 0,
+            "cardIds": [],
+            "videoFile": "",
+            "subtitleFile": "",
+            "minedForms": [],
+            "unknown": true
+          },
+          "error": null
+        }
+      }
+    },
+    {
+      "name": "counts stay in nonnegative signed 64 bit",
+      "message": {
+        "schemaVersion": 1,
+        "type": "mining.terminal",
+        "payload": {
+          "runId": "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "outcome": "success",
+          "result": {
+            "totalWordsFound": 9223372036854775808,
+            "newWordsFound": 0,
+            "cardsCreated": 0,
+            "errors": [],
+            "elapsedTime": 0,
+            "comprehensionPercentage": 0,
+            "cardIds": [],
+            "videoFile": "",
+            "subtitleFile": "",
+            "minedForms": []
+          },
+          "error": null
+        }
+      }
+    },
+    {
+      "name": "comprehension is a percentage",
+      "message": {
+        "schemaVersion": 1,
+        "type": "mining.terminal",
+        "payload": {
+          "runId": "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "outcome": "success",
+          "result": {
+            "totalWordsFound": 0,
+            "newWordsFound": 0,
+            "cardsCreated": 0,
+            "errors": [],
+            "elapsedTime": 0,
+            "comprehensionPercentage": 100.1,
+            "cardIds": [],
+            "videoFile": "",
+            "subtitleFile": "",
+            "minedForms": []
+          },
+          "error": null
+        }
+      }
+    },
+    {
+      "name": "card IDs are positive signed 64 bit",
+      "message": {
+        "schemaVersion": 1,
+        "type": "mining.terminal",
+        "payload": {
+          "runId": "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "outcome": "success",
+          "result": {
+            "totalWordsFound": 1,
+            "newWordsFound": 1,
+            "cardsCreated": 1,
+            "errors": [],
+            "elapsedTime": 1,
+            "comprehensionPercentage": 0,
+            "cardIds": [0],
+            "videoFile": "",
+            "subtitleFile": "",
+            "minedForms": ["猫"]
+          },
+          "error": null
+        }
+      }
+    },
+    {
+      "name": "terminal error fields are exact",
+      "message": {
+        "schemaVersion": 1,
+        "type": "mining.terminal",
+        "payload": {
+          "runId": "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "outcome": "failed",
+          "result": null,
+          "error": {
+            "code": "internal_error",
+            "message": "failed",
+            "retryable": false
+          }
+        }
+      }
+    },
+    {
+      "name": "run ID is opaque and exact",
+      "message": {
+        "schemaVersion": 1,
+        "type": "job.registration.request",
+        "payload": {"runId": "run_not-a-valid-id"}
+      }
+    },
+    {
+      "name": "unsupported message type is rejected",
+      "message": {
+        "schemaVersion": 1,
+        "type": "mining.video.preview",
+        "payload": {"runId": "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
+      }
+    }
+  ]
+}

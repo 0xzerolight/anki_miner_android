@@ -123,3 +123,29 @@ print(dispatch(encode_message("bootstrap.initialize", {"filesDir": sys.argv[1]})
         "type": "bootstrap.ready",
         "payload": {"home": str(tmp_path)},
     }
+
+
+def test_dispatch_routes_callback_bearing_video_run_only_with_callbacks(
+    initialized_bridge_home: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import android_bridge.mining as mining
+
+    callback = object()
+    request = encode_message("mining.video.run", {})
+    received: list[tuple[str, object]] = []
+
+    def run_video(raw: str, callbacks: object) -> str:
+        received.append((raw, callbacks))
+        return encode_message("mining.terminal", {"sentinel": True})
+
+    monkeypatch.setattr(mining, "run_video", run_video)
+
+    missing = decode_envelope(boundary.dispatch(request), expected_type="bridge.error")
+    returned = boundary.dispatch(request, callback)
+
+    assert missing.payload["code"] == "missing_callbacks"
+    assert decode_envelope(returned, expected_type="mining.terminal").payload == {
+        "sentinel": True
+    }
+    assert received == [(request, callback)]

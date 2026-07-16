@@ -1378,6 +1378,24 @@ def test_all_blank_mappings_are_valid_for_target_preflight(
     assert kotlin.requests_for("ankiVerifyTarget")[0]["payload"]["requiredFields"] == []
 
 
+def test_cancelled_target_preflight_stops_before_kotlin_callback(
+    initialized_bridge_home: Path,
+) -> None:
+    kotlin = FakeKotlinAnki()
+    adapter = _adapter(
+        _config(initialized_bridge_home),
+        kotlin,
+        cancellation_check=lambda: True,
+        target_verified=False,
+    )
+
+    with pytest.raises(AnkiOperationCancelled) as cancelled:
+        adapter.verify_card_target()
+
+    assert cancelled.value.operation == "verifyTarget"
+    assert kotlin.requests_for("ankiVerifyTarget") == []
+
+
 def test_known_vocabulary_is_normalized_filtered_and_cached(
     initialized_bridge_home: Path,
 ) -> None:
@@ -1407,6 +1425,26 @@ def test_known_vocabulary_is_normalized_filtered_and_cached(
         "cursor": None,
         "limits": _KNOWN_VOCABULARY_LIMITS,
     }
+
+
+def test_known_vocabulary_cancellation_stops_before_the_next_page(
+    initialized_bridge_home: Path,
+) -> None:
+    kotlin = FakeKotlinAnki()
+    kotlin.known_fields = [f"語{index}" for index in range(513)]
+    adapter = _adapter(
+        _config(initialized_bridge_home),
+        kotlin,
+        cancellation_check=lambda: bool(
+            kotlin.requests_for("ankiScanFirstFields")
+        ),
+    )
+
+    with pytest.raises(AnkiOperationCancelled) as cancelled:
+        adapter.get_existing_vocabulary()
+
+    assert cancelled.value.operation == "scanFirstFields"
+    assert len(kotlin.requests_for("ankiScanFirstFields")) == 1
 
 
 def test_known_vocabulary_excluded_deck_item_limit_is_exact_and_pre_callback(

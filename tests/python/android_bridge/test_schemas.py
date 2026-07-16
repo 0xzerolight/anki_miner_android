@@ -10,6 +10,7 @@ from typing import Any
 import pytest
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import ValidationError
+from referencing import Registry, Resource
 
 from android_bridge.anki_limits import (
     ANKI_ENVELOPE_LIMITS_V1,
@@ -21,6 +22,7 @@ from android_bridge.config_map import (
     map_config_json,
     map_config_settings,
 )
+from android_bridge.callbacks import CallbackAdapters
 from android_bridge.jobs import JobRegistry
 from android_bridge.protocol import BridgeProtocolError, decode_envelope, encode_message
 
@@ -30,6 +32,14 @@ SCHEMA_ROOT = (
 SOURCE_PATH_CORPUS = (
     Path(__file__).resolve().parents[3]
     / "app/src/test/resources/contracts/anki_media_source_path_v1.json"
+)
+MINING_PROTOCOL_CORPUS = (
+    Path(__file__).resolve().parents[3]
+    / "app/src/test/resources/contracts/mining_protocol_v1.json"
+)
+ENGINE_EVENTS_CORPUS = (
+    Path(__file__).resolve().parents[3]
+    / "app/src/test/resources/contracts/engine_events_v1.json"
 )
 
 
@@ -57,7 +67,19 @@ def schemas() -> dict[str, dict[str, Any]]:
         "config": _load_schema("config-snapshot.schema.json"),
         "curation": _load_schema("curation.schema.json"),
         "anki": _load_schema("anki.schema.json"),
+        "mining": _load_schema("mining.schema.json"),
+        "engine_events": _load_schema("engine-events.schema.json"),
     }
+
+
+def _cross_schema_registry(schemas: dict[str, dict[str, Any]]) -> Registry:
+    registry = Registry()
+    for name in ("config", "mining", "engine_events"):
+        schema = schemas[name]
+        registry = registry.with_resource(
+            schema["$id"], Resource.from_contents(schema)
+        )
+    return registry
 
 
 def _validated_payload(
@@ -156,6 +178,164 @@ def test_all_checked_in_schemas_self_validate_as_draft_2020_12(
     for schema in schemas.values():
         assert schema["$schema"] == "https://json-schema.org/draft/2020-12/schema"
         Draft202012Validator.check_schema(schema)
+
+
+def test_kotlin_facing_config_mining_and_event_integers_have_explicit_bounds(
+    schemas: dict[str, dict[str, Any]],
+) -> None:
+    def integer_nodes(value: object) -> list[dict[str, Any]]:
+        found: list[dict[str, Any]] = []
+        if isinstance(value, dict):
+            if value.get("type") == "integer":
+                found.append(value)
+            for child in value.values():
+                found.extend(integer_nodes(child))
+        elif isinstance(value, list):
+            for child in value:
+                found.extend(integer_nodes(child))
+        return found
+
+    for schema_name in ("config", "mining", "engine_events"):
+        nodes = integer_nodes(schemas[schema_name])
+        assert nodes, schema_name
+        for node in nodes:
+            assert "minimum" in node, (schema_name, node)
+            assert "maximum" in node, (schema_name, node)
+
+
+def test_mining_protocol_valid_and_rejected_corpora_freeze_complete_messages(
+    schemas: dict[str, dict[str, Any]],
+) -> None:
+    corpus = json.loads(MINING_PROTOCOL_CORPUS.read_text(encoding="utf-8"))
+    assert corpus["version"] == 1
+    validator = Draft202012Validator(
+        schemas["mining"], registry=_cross_schema_registry(schemas)
+    )
+
+    valid_types: set[str] = set()
+    for case in corpus["valid"]:
+        message = case["message"]
+        errors = list(validator.iter_errors(message))
+        assert errors == [], f"{case['name']}: {errors}"
+        raw = json.dumps(message, ensure_ascii=False, separators=(",", ":"))
+        decoded = decode_envelope(raw, expected_type=message["type"])
+        assert decoded.payload == message["payload"]
+        valid_types.add(message["type"])
+
+    assert valid_types == {
+        "mining.video.run",
+        "job.registration.request",
+        "job.registration.accepted",
+        "mining.terminal",
+    }
+    for case in corpus["invalid"]:
+        assert list(validator.iter_errors(case["message"])), case["name"]
+
+
+def test_engine_event_valid_and_rejected_corpora_freeze_callback_messages(
+    schemas: dict[str, dict[str, Any]],
+) -> None:
+    corpus = json.loads(ENGINE_EVENTS_CORPUS.read_text(encoding="utf-8"))
+    assert corpus["version"] == 1
+    validator = Draft202012Validator(
+        schemas["engine_events"], registry=_cross_schema_registry(schemas)
+    )
+
+    valid_types: set[str] = set()
+    presenter_kinds: set[str] = set()
+    for case in corpus["valid"]:
+        message = case["message"]
+        errors = list(validator.iter_errors(message))
+        assert errors == [], f"{case['name']}: {errors}"
+        raw = json.dumps(message, ensure_ascii=False, separators=(",", ":"))
+        decoded = decode_envelope(raw, expected_type=message["type"])
+        assert decoded.payload == message["payload"]
+        valid_types.add(message["type"])
+        if message["type"] == "presenter.event":
+            presenter_kinds.add(message["payload"]["kind"])
+
+    assert valid_types == {
+        "progress.start",
+        "progress.update",
+        "progress.complete",
+        "progress.error",
+        "presenter.event",
+    }
+    assert presenter_kinds == {
+        "info",
+        "success",
+        "warning",
+        "error",
+        "validation",
+        "processingResult",
+    }
+    for case in corpus["invalid"]:
+        assert list(validator.iter_errors(case["message"])), case["name"]
+
+
+def test_every_progress_and_presenter_emitter_matches_engine_event_schema(
+    schemas: dict[str, dict[str, Any]],
+) -> None:
+    raw_events: list[str] = []
+
+    class Callbacks:
+        def onStart(self, raw: str) -> None:
+            raw_events.append(raw)
+
+        def onProgress(self, raw: str) -> None:
+            raw_events.append(raw)
+
+        def onComplete(self, raw: str) -> None:
+            raw_events.append(raw)
+
+        def onError(self, raw: str) -> None:
+            raw_events.append(raw)
+
+        def onPresenterEvent(self, raw: str) -> None:
+            raw_events.append(raw)
+
+    registry = JobRegistry()
+    handle = registry.begin()
+    adapters = CallbackAdapters(Callbacks(), registry, handle)
+    adapters.progress.on_start(10, "Parsing")
+    adapters.progress.on_progress(3, "字幕")
+    adapters.progress.on_complete()
+    adapters.progress.on_error("line 3", "bad input")
+    adapters.presenter.show_info("Ready")
+    adapters.presenter.show_success("Created")
+    adapters.presenter.show_warning("Missing optional data")
+    adapters.presenter.show_error("Failed")
+    adapters.presenter.show_validation_result(
+        {
+            "ankiconnectOk": True,
+            "ffmpegOk": True,
+            "deckExists": True,
+            "noteTypeExists": True,
+            "issues": [],
+            "ffprobeOk": True,
+        }
+    )
+    adapters.presenter.show_processing_result(
+        {
+            "totalWordsFound": 1,
+            "newWordsFound": 1,
+            "cardsCreated": 0,
+            "errors": [],
+            "elapsedTime": 0.0,
+            "comprehensionPercentage": 0.0,
+            "cardIds": [],
+            "videoFile": "/video.mkv",
+            "subtitleFile": "/subtitle.srt",
+            "minedForms": [],
+        }
+    )
+
+    validator = Draft202012Validator(
+        schemas["engine_events"], registry=_cross_schema_registry(schemas)
+    )
+    assert len(raw_events) == 10
+    for raw in raw_events:
+        validator.validate(json.loads(raw))
 
 
 def test_anki_limits_v1_manifest_freezes_exact_units_and_values() -> None:
