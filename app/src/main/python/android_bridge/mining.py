@@ -335,6 +335,11 @@ def _build_processor(
                 if has_indexed_dictionary
                 else None
             ),
+            kana_attest_lookup=(
+                definition_service.has_offline_definitions
+                if has_indexed_dictionary
+                else None
+            ),
         )
         word_filter = WordFilterService(config, tagger=subtitle_parser.tagger)
         media_extractor = MediaExtractorService(config)

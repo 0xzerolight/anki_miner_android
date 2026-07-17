@@ -951,6 +951,9 @@ def test_runtime_composition_injects_only_android_video_services(
     captured: dict[str, object] = {}
     tagger = object()
     expected_tagger = tagger
+    expected_term_lookup = object()
+    expected_reading_lookup = object()
+    expected_kana_attest_lookup = object()
 
     class Registry:
         def __init__(self, root: Path) -> None:
@@ -965,8 +968,12 @@ def test_runtime_composition_injects_only_android_video_services(
     class Definition:
         def __init__(self, config: object, providers: list[object]) -> None:
             events.append("definition")
-            self.offline_terms_exist = object()
-            self.offline_term_readings = object()
+            self.offline_terms_exist = expected_term_lookup
+            self.offline_term_readings = expected_reading_lookup
+            self.has_offline_definitions = expected_kana_attest_lookup
+
+        def ensure_loaded(self) -> None:
+            events.append("definition-load")
 
         def close(self) -> None:
             events.append("definition-close")
@@ -978,9 +985,11 @@ def test_runtime_composition_injects_only_android_video_services(
             *,
             term_lookup: object,
             reading_lookup: object,
+            kana_attest_lookup: object,
         ) -> None:
-            assert term_lookup is None
-            assert reading_lookup is None
+            assert term_lookup is expected_term_lookup
+            assert reading_lookup is expected_reading_lookup
+            assert kana_attest_lookup is expected_kana_attest_lookup
             self.tagger = tagger
             events.append("subtitle-parser")
 
@@ -1030,7 +1039,7 @@ def test_runtime_composition_injects_only_android_video_services(
 
     config = SimpleNamespace(
         dicts_root=Path("/files/dicts"),
-        dictionary_chain=(),
+        dictionary_chain=(SimpleNamespace(kind="indexed", enabled=True),),
         expression_audio_chain=(),
         anki_fields={},
         pitch_active=False,
@@ -1053,6 +1062,7 @@ def test_runtime_composition_injects_only_android_video_services(
         "dictionary-registry",
         "dictionary-load",
         "definition",
+        "definition-load",
         "subtitle-parser",
         "word-filter",
         "media-extractor",

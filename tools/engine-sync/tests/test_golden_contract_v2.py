@@ -85,6 +85,10 @@ class GoldenV2ContractTests(unittest.TestCase):
                 mock.patch("engine_sync.golden_contract_v2.validate_committed_fixture", return_value=fixture),
                 mock.patch("engine_sync.golden_contract_v2.verify_engine_root"),
                 mock.patch("engine_sync.golden_contract_v2.verify_exporter_sources"),
+                mock.patch(
+                    "engine_sync.golden_contract_v2.materialize_golden_exporter",
+                    return_value=exporter,
+                ),
                 mock.patch("engine_sync.golden_contract_v2.verify_unidic"),
                 mock.patch("engine_sync.golden_contract_v2.load_lock", return_value="a" * 40),
                 mock.patch("engine_sync.golden_contract_v2.subprocess.run") as run,

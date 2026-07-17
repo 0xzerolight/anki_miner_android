@@ -5,6 +5,7 @@ import hashlib
 import json
 import subprocess
 import tempfile
+import tomllib
 import unittest
 from pathlib import Path
 
@@ -488,6 +489,62 @@ target = "anki_miner.services.youtube_fetcher"
         second = self._snapshot(fixture)
         self.assertEqual(first.manifest_bytes(), second.manifest_bytes())
         self.assertEqual(first.files, second.files)
+
+    def test_production_composition_keeps_known_words_import_as_a_root(self) -> None:
+        project_root = Path(__file__).resolve().parents[3]
+        composition = tomllib.loads(
+            (project_root / "tools/engine-sync/composition.toml").read_text(
+                encoding="utf-8"
+            )
+        )
+        self.assertIn(
+            "anki_miner.services.known_words_import",
+            composition["roots"],
+        )
+
+        manifest = json.loads(
+            (project_root / "app/src/main/python/.engine-sync-manifest.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        path = "anki_miner/services/known_words_import.py"
+        self.assertIn("anki_miner.services.known_words_import", manifest["modules"])
+        self.assertEqual("desktop", manifest["files"][path]["origin"])
+
+    def test_reading_image_limits_are_applied_before_every_decode(self) -> None:
+        project_root = Path(__file__).resolve().parents[3]
+        reading_root = (
+            project_root / "app/src/main/python/anki_miner/services/reading"
+        )
+        decodes: list[tuple[Path, int]] = []
+        application_lines: list[int] = []
+        images_path = reading_root / "images.py"
+        for path in sorted(reading_root.rglob("*.py")):
+            parsed = ast.parse(path.read_text(encoding="utf-8"))
+            for node in ast.walk(parsed):
+                if not isinstance(node, ast.Call):
+                    continue
+                if (
+                    isinstance(node.func, ast.Attribute)
+                    and isinstance(node.func.value, ast.Name)
+                    and node.func.value.id == "Image"
+                    and node.func.attr == "open"
+                ):
+                    decodes.append((path, node.lineno))
+            if path == images_path:
+                application_lines = [
+                    node.lineno
+                    for node in parsed.body
+                    if isinstance(node, ast.Expr)
+                    and isinstance(node.value, ast.Call)
+                    and isinstance(node.value.func, ast.Name)
+                    and node.value.func.id == "apply_pil_image_limits"
+                ]
+
+        self.assertTrue(decodes)
+        self.assertEqual({images_path}, {path for path, _ in decodes})
+        self.assertEqual(1, len(application_lines))
+        self.assertLess(application_lines[0], min(line for _, line in decodes))
 
     def test_media_extractor_override_has_only_reviewed_android_changes(self) -> None:
         project_root = Path(__file__).resolve().parents[3]
