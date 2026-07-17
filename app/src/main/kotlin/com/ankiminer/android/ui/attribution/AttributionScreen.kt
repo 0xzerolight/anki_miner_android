@@ -52,6 +52,16 @@ internal fun AttributionScreen(
         LicenseText(stringResource(R.string.attribution_unidic_lite_license), MIT_LICENSE)
         LicenseText(stringResource(R.string.attribution_unidic_license), BSD_3_CLAUSE)
 
+        OutlinedCard(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(stringResource(R.string.attribution_icon_title), style = MaterialTheme.typography.titleMedium)
+                Text(stringResource(R.string.attribution_icon_text))
+                TextButton(onClick = { uriHandler.openUri(SHIPPORI_URL) }) {
+                    Text(SHIPPORI_URL, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
+
         Text(
             stringResource(R.string.attribution_installed_dictionaries),
             style = MaterialTheme.typography.titleLarge,
@@ -235,6 +245,7 @@ Redistribution and use in source and binary forms, with or without modification,
 
 THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS “AS IS” AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE."""
 
+private const val SHIPPORI_URL = "https://fonts.google.com/specimen/Shippori+Mincho+B1"
 private const val SOURCE_URL = "https://github.com/0xzerolight/anki_miner_android"
 private const val NOTICES_URL = "$SOURCE_URL/blob/main/NOTICE.md"
 private const val PRIVACY_POLICY_URL = "$SOURCE_URL/blob/main/PRIVACY.md"

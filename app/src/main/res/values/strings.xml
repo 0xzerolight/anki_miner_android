@@ -354,6 +354,8 @@
     <string name="attribution_unidic">UniDic tokenizer data</string>
     <string name="attribution_unidic_lite_license">unidic-lite — MIT</string>
     <string name="attribution_unidic_license">UniDic 2.1.2 — BSD 3-Clause</string>
+    <string name="attribution_icon_title">App icon</string>
+    <string name="attribution_icon_text">The app icon\'s 鉱 glyph outline is derived from Shippori Mincho B1 (700), licensed under the SIL Open Font License 1.1.</string>
     <string name="attribution_installed_dictionaries">Installed dictionaries</string>
     <string name="attribution_no_installed_dictionaries">No offline dictionaries are currently installed.</string>
     <string name="attribution_installed_catalog_notices">Installed dictionary data notices</string>
