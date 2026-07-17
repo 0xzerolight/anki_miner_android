@@ -1641,6 +1641,90 @@ class AndroidAnkiAdapter:
             },
         )
 
+    def _is_allowed_dictionary_image_source(self, source: str) -> bool:
+        """Admit only private dictionary media or acknowledged Anki names."""
+
+        try:
+            _expect_media_basename(
+                source,
+                context="dictionary HTML image source",
+                code="invalid_note",
+            )
+        except BridgeProtocolError:
+            return False
+
+        # A renderer marker is provenance for an imported dictionary basename.
+        # Keep missing basenames in the existing reservation/collision proof:
+        # the file may legitimately disappear or appear between preflight and
+        # hashing, and those transitions are already fail-closed. A basename
+        # cannot trigger network I/O, but reject scheme-like spellings anyway.
+        colon = source.find(":")
+        slash_positions = [
+            position
+            for position in (source.find("/"), source.find("\\"))
+            if position >= 0
+        ]
+        first_slash = min(slash_positions, default=-1)
+        if source.startswith("//") or (
+            colon >= 0 and (first_slash < 0 or colon < first_slash)
+        ):
+            return False
+
+        if source in self._dict_media_actual_names.values():
+            return True
+        if source in self._dict_media_bindings:
+            return True
+
+        # Renderer-marked basenames remain local-only even when their file is
+        # missing. Preserve them for the existing media preflight/collision
+        # proof, which handles disappearance/appearance races fail-closed.
+        return True
+
+    def _sanitize_dictionary_payloads(self, word_data_list: Sequence[Any]) -> list[Any]:
+        """Remove remotely loading glossary media before note preflight."""
+
+        from dataclasses import replace
+
+        from .dictionary_html import sanitize_dictionary_html
+
+        sanitized_payloads: list[Any] = []
+        for item in word_data_list:
+            definition = item.definition
+            sanitized_definition = (
+                sanitize_dictionary_html(
+                    definition,
+                    local_source_allowed=self._is_allowed_dictionary_image_source,
+                )
+                if isinstance(definition, str)
+                else definition
+            )
+
+            extra_fields = item.extra_fields
+            sanitized_extra = extra_fields
+            if extra_fields and isinstance(extra_fields.get("glossary"), str):
+                glossary = extra_fields["glossary"]
+                sanitized_glossary = sanitize_dictionary_html(
+                    glossary,
+                    local_source_allowed=self._is_allowed_dictionary_image_source,
+                )
+                if sanitized_glossary != glossary:
+                    sanitized_extra = {
+                        **extra_fields,
+                        "glossary": sanitized_glossary,
+                    }
+
+            if (
+                sanitized_definition != definition
+                or sanitized_extra is not extra_fields
+            ):
+                item = replace(
+                    item,
+                    definition=sanitized_definition,
+                    extra_fields=sanitized_extra,
+                )
+            sanitized_payloads.append(item)
+        return sanitized_payloads
+
     @staticmethod
     def _rewrite_dictionary_html(value: str, actual_names: Mapping[str, str]) -> str:
         """Rewrite only renderer-marked dictionary image ``src`` attributes."""
@@ -3122,6 +3206,10 @@ class AndroidAnkiAdapter:
         self.last_created_note_ids = []
         self.last_skipped_duplicates = 0
         self.last_media_store_failures = 0
+        # Desktop deliberately renders HTTP(S) glossary images. Android strips
+        # every auto-loading image except a renderer-marked private dictionary
+        # asset before any note identity, media scan, or provider mutation.
+        word_data_list = self._sanitize_dictionary_payloads(word_data_list)
         preflight_plan = self._preflight_create_call(word_data_list)
         media_work_budget = _MediaWorkBudget()
         prepared_card_media = self._prepare_card_media(

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import queue
 import threading
 from copy import deepcopy
 from dataclasses import dataclass, field
@@ -228,6 +229,7 @@ def test_mining_protocol_valid_and_rejected_corpora_freeze_complete_messages(
         valid_types.add(message["type"])
 
     assert valid_types == {
+        "mining.reading.run",
         "mining.video.run",
         "job.registration.request",
         "job.registration.accepted",
@@ -1280,6 +1282,71 @@ def test_generated_curation_request_and_omitted_sentence_id_validate(
     assert not thread.is_alive()
     assert returned == [[word]]
     assert returned[0][0] is word
+
+
+def test_generated_paged_curation_messages_validate(
+    schemas: dict[str, dict[str, Any]],
+) -> None:
+    registry = JobRegistry()
+    handle = registry.begin()
+    words = [_FakeWord(surface=str(index), lemma=str(index)) for index in range(101)]
+    requests: queue.Queue[str] = queue.Queue()
+    returned: list[object] = []
+    thread = threading.Thread(
+        target=lambda: returned.append(
+            registry.await_curation(handle.run_id, words, requests.put)
+        ),
+        daemon=True,
+    )
+    envelope_validator = Draft202012Validator(schemas["envelope"])
+    curation_validator = Draft202012Validator(schemas["curation"])
+    thread.start()
+    try:
+        for page_index in range(2):
+            request_payload = _validated_payload(
+                requests.get(timeout=1),
+                "curation.page.request",
+                envelope_validator=envelope_validator,
+                payload_validator=curation_validator,
+            )
+            response = encode_message(
+                "curation.page.response",
+                {
+                    "runId": handle.run_id,
+                    "requestId": request_payload["requestId"],
+                    "pageIndex": page_index,
+                    "selection": [],
+                },
+            )
+            _validated_payload(
+                response,
+                "curation.page.response",
+                envelope_validator=envelope_validator,
+                payload_validator=curation_validator,
+            )
+            registry.resolve_curation(response)
+            accepted = encode_message(
+                "curation.page.accepted",
+                {
+                    "runId": handle.run_id,
+                    "requestId": request_payload["requestId"],
+                    "pageIndex": page_index,
+                    "finalPage": page_index == 1,
+                },
+            )
+            _validated_payload(
+                accepted,
+                "curation.page.accepted",
+                envelope_validator=envelope_validator,
+                payload_validator=curation_validator,
+            )
+        thread.join(1)
+    finally:
+        if thread.is_alive():
+            registry.cancel(handle.run_id)
+        thread.join(1)
+
+    assert returned == [[]]
 
 
 @pytest.mark.parametrize("sentence_id", [None, ""])

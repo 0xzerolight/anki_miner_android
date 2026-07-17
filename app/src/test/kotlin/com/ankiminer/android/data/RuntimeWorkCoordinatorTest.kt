@@ -11,19 +11,26 @@ import org.junit.Test
 
 class RuntimeWorkCoordinatorTest {
     @Test
-    fun miningSnapshotLeaseExcludesResourcePublicationUntilTerminalCleanup() {
+    fun runtimeLeasesExcludeMiningResourceAndAnkiSetupWorkUntilCleanup() {
         val coordinator = RuntimeWorkCoordinator()
         val mining = coordinator.tryAcquire(RuntimeWorkCoordinator.Kind.MINING)
         assertNotNull(mining)
 
         assertEquals(RuntimeWorkCoordinator.Kind.MINING, coordinator.activeKind())
         assertNull(coordinator.tryAcquire(RuntimeWorkCoordinator.Kind.RESOURCE))
+        assertNull(coordinator.tryAcquire(RuntimeWorkCoordinator.Kind.ANKI_SETUP))
 
         requireNotNull(mining).close()
         val resource = coordinator.tryAcquire(RuntimeWorkCoordinator.Kind.RESOURCE)
         assertNotNull(resource)
         assertNull(coordinator.tryAcquire(RuntimeWorkCoordinator.Kind.MINING))
         requireNotNull(resource).close()
+
+        val ankiSetup = coordinator.tryAcquire(RuntimeWorkCoordinator.Kind.ANKI_SETUP)
+        assertNotNull(ankiSetup)
+        assertEquals(RuntimeWorkCoordinator.Kind.ANKI_SETUP, coordinator.activeKind())
+        assertNull(coordinator.tryAcquire(RuntimeWorkCoordinator.Kind.RESOURCE))
+        requireNotNull(ankiSetup).close()
         assertNull(coordinator.activeKind())
     }
 

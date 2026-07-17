@@ -10,11 +10,15 @@ internal class FakeAnkiProviderGateway : AnkiProviderGateway {
     }
     var checksum: (String) -> Long = { value -> value.hashCode().toLong() and 0xffff_ffffL }
     var createDeckHandler: (AnkiProviderMutationCommand.CreateDeck) -> String? = { null }
+    var createModelHandler: (AnkiProviderMutationCommand.CreateAnkiMinerModel) -> String? = { null }
+    var updateTemplateHandler: (AnkiProviderMutationCommand.UpdateAnkiMinerTemplate) -> Int = { 0 }
     var storeMediaHandler: (AnkiProviderMutationCommand.StoreMedia) -> String? = { null }
     var insertNoteHandler: (AnkiProviderMutationCommand.InsertNote) -> String? = { null }
     var routeCardHandler: (AnkiProviderMutationCommand.RouteCard) -> Int = { 0 }
     val queries = mutableListOf<ProviderQuery>()
     val deckCommands = mutableListOf<AnkiProviderMutationCommand.CreateDeck>()
+    val modelCommands = mutableListOf<AnkiProviderMutationCommand.CreateAnkiMinerModel>()
+    val templateCommands = mutableListOf<AnkiProviderMutationCommand.UpdateAnkiMinerTemplate>()
     val mediaCommands = mutableListOf<AnkiProviderMutationCommand.StoreMedia>()
     val noteCommands = mutableListOf<AnkiProviderMutationCommand.InsertNote>()
     val cardCommands = mutableListOf<AnkiProviderMutationCommand.RouteCard>()
@@ -38,6 +42,20 @@ internal class FakeAnkiProviderGateway : AnkiProviderGateway {
     override fun createDeck(command: AnkiProviderMutationCommand.CreateDeck): String? {
         deckCommands += command
         return createDeckHandler(command)
+    }
+
+    override fun createAnkiMinerModel(
+        command: AnkiProviderMutationCommand.CreateAnkiMinerModel,
+    ): String? {
+        modelCommands += command
+        return createModelHandler(command)
+    }
+
+    override fun updateAnkiMinerTemplate(
+        command: AnkiProviderMutationCommand.UpdateAnkiMinerTemplate,
+    ): Int {
+        templateCommands += command
+        return updateTemplateHandler(command)
     }
 
     override fun storeMedia(command: AnkiProviderMutationCommand.StoreMedia): String? {

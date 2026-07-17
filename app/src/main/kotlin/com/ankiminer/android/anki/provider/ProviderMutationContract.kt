@@ -12,6 +12,16 @@ import java.nio.charset.StandardCharsets
 
 /** Sealed provider commands prevent callers from supplying arbitrary target URIs or ContentValues. */
 internal sealed interface AnkiProviderMutationCommand {
+    /** Creates only the fixed first-party model; arbitrary model creation is not exposed. */
+    data object CreateAnkiMinerModel : AnkiProviderMutationCommand
+
+    /** Updates only the single fixed template on an attributable first-party model. */
+    data class UpdateAnkiMinerTemplate(val modelId: Long) : AnkiProviderMutationCommand {
+        init {
+            require(modelId > 0L) { "Model template update requires a positive model ID" }
+        }
+    }
+
     data class CreateDeck(val deckName: String) : AnkiProviderMutationCommand {
         init {
             try {
@@ -94,6 +104,11 @@ internal data class DeckCreateReceipt(
     val contentUri: String,
 )
 
+internal data class ModelCreateReceipt(
+    val modelId: Long,
+    val contentUri: String,
+)
+
 internal data class MediaInsertReceipt(
     val actualFilename: String,
     val fileUri: String,
@@ -105,6 +120,22 @@ internal data class NoteInsertReceipt(
 )
 
 internal data object CardDeckUpdateReceipt
+
+/** Accepts only the exact pinned AnkiDroid positive model-item URI shape. */
+internal object ModelCreateReceiptValidator {
+    fun validate(raw: String?): ModelCreateReceipt? {
+        val item = validateCanonicalPositiveItemUri(raw, MODEL_COLLECTION_URI) ?: return null
+        return ModelCreateReceipt(item.id, item.uri)
+    }
+
+    internal const val MODEL_COLLECTION_URI =
+        "content://${DeckCreateReceiptValidator.ANKIDROID_AUTHORITY}/models"
+}
+
+/** Only one affected template is an attributable provider receipt. */
+internal object ModelTemplateUpdateReceiptValidator {
+    fun validate(affectedCount: Int): Boolean = affectedCount == 1
+}
 
 /** Accepts only the exact pinned AnkiDroid deck-item URI shape. */
 internal object DeckCreateReceiptValidator {

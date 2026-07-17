@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://anki-miner.app/schemas/android-bridge/v1/sentence-audio.json",
+  "title": "Anki Miner Android offline sentence-audio callback",
+  "$comment": "Complete synchronous EngineCallbacks envelopes. Runtime codecs additionally enforce strict Unicode scalars and 32 KiB request, 16 KiB sentence, 8 KiB result, 4 KiB path, and 16 MiB audio-file limits.",
+  "oneOf": [
+    {"$ref": "#/$defs/requestMessage"},
+    {"$ref": "#/$defs/resultMessage"}
+  ],
+  "$defs": {
+    "runId": {"type": "string", "pattern": "^run_[0-9a-f]{32}$"},
+    "requestId": {"type": "string", "pattern": "^tts_[0-9a-f]{32}$"},
+    "requestPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runId", "requestId", "sentence"],
+      "properties": {
+        "runId": {"$ref": "#/$defs/runId"},
+        "requestId": {"$ref": "#/$defs/requestId"},
+        "sentence": {"type": "string", "minLength": 1, "maxLength": 4000}
+      }
+    },
+    "readyPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runId", "requestId", "outcome", "path", "errorCode"],
+      "properties": {
+        "runId": {"$ref": "#/$defs/runId"},
+        "requestId": {"$ref": "#/$defs/requestId"},
+        "outcome": {"const": "ready"},
+        "path": {
+          "type": "string",
+          "pattern": "^/.*/sentence-audio-v1/android_tts_v1_[0-9a-f]{64}\\.wav$"
+        },
+        "errorCode": {"type": "null"}
+      }
+    },
+    "optionalFailurePayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runId", "requestId", "outcome", "path", "errorCode"],
+      "properties": {
+        "runId": {"$ref": "#/$defs/runId"},
+        "requestId": {"$ref": "#/$defs/requestId"},
+        "outcome": {"enum": ["unavailable", "failed"]},
+        "path": {"type": "null"},
+        "errorCode": {
+          "enum": [
+            "audio_output_too_large",
+            "cache_full",
+            "cache_publish_failed",
+            "cache_unavailable",
+            "internal_error",
+            "invalid_audio_output",
+            "invalid_sentence",
+            "main_thread_forbidden",
+            "network_voice_rejected",
+            "offline_japanese_voice_unavailable",
+            "offline_voice_changed",
+            "synthesis_failed",
+            "synthesis_timeout",
+            "synthesizer_closed",
+            "tts_engine_unavailable",
+            "tts_initialization_timeout"
+          ]
+        }
+      }
+    },
+    "cancelledPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runId", "requestId", "outcome", "path", "errorCode"],
+      "properties": {
+        "runId": {"$ref": "#/$defs/runId"},
+        "requestId": {"$ref": "#/$defs/requestId"},
+        "outcome": {"const": "cancelled"},
+        "path": {"type": "null"},
+        "errorCode": {"const": "cancelled"}
+      }
+    },
+    "resultPayload": {
+      "oneOf": [
+        {"$ref": "#/$defs/readyPayload"},
+        {"$ref": "#/$defs/optionalFailurePayload"},
+        {"$ref": "#/$defs/cancelledPayload"}
+      ]
+    },
+    "requestMessage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "type", "payload"],
+      "properties": {
+        "schemaVersion": {"const": 1},
+        "type": {"const": "tts.sentence.request"},
+        "payload": {"$ref": "#/$defs/requestPayload"}
+      }
+    },
+    "resultMessage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "type", "payload"],
+      "properties": {
+        "schemaVersion": {"const": 1},
+        "type": {"const": "tts.sentence.result"},
+        "payload": {"$ref": "#/$defs/resultPayload"}
+      }
+    }
+  }
+}

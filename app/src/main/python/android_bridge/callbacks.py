@@ -423,6 +423,12 @@ class CallbackAdapters:
         return self._handle.run_id
 
     @property
+    def callbacks(self) -> object:
+        """Return the reflected Kotlin callback owner for optional adapters."""
+
+        return self._callbacks
+
+    @property
     def cancel_event(self) -> threading.Event:
         """Return the live per-run ``threading.Event`` cancellation token."""
 

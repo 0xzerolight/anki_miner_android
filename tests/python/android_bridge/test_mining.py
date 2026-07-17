@@ -924,6 +924,44 @@ def test_expression_audio_builder_rejects_every_non_pack_kind_before_import() ->
     assert error.value.code == "unsupported_android_feature"
 
 
+def test_online_dictionary_provider_is_memoized_and_cancel_gated_per_run() -> None:
+    calls: list[str] = []
+
+    class OnlineProvider:
+        name = "online"
+        is_online = True
+
+        def is_available(self) -> bool:
+            return True
+
+        def load(self) -> bool:
+            return True
+
+        def lookup(self, word: str) -> str | None:
+            calls.append(word)
+            return f"definition:{word}"
+
+        def close(self) -> None:
+            calls.append("closed")
+
+    cancelled = threading.Event()
+    wrapped = mining._android_dictionary_provider_chain(
+        [OnlineProvider()],
+        cancelled.is_set,
+    )[0]
+
+    # Definition and glossary passes reuse the one consented network lookup.
+    assert wrapped.lookup("猫") == "definition:猫"
+    assert wrapped.lookup("猫") == "definition:猫"
+    assert calls == ["猫"]
+
+    cancelled.set()
+    assert wrapped.lookup("犬") is None
+    assert calls == ["猫"]
+    wrapped.close()
+    assert calls == ["猫", "closed"]
+
+
 def test_runtime_composition_injects_only_android_video_services(
     monkeypatch: pytest.MonkeyPatch,
     initialized_bridge_home: Path,
@@ -1052,7 +1090,7 @@ def test_runtime_composition_injects_only_android_video_services(
         stats_db_path=Path("/files/stats.db"),
     )
     presenter = object()
-    adapters = SimpleNamespace(presenter=presenter)
+    adapters = SimpleNamespace(presenter=presenter, cancel_event=threading.Event())
     anki_adapter = object()
 
     processor = mining._build_processor(config, adapters, anki_adapter)

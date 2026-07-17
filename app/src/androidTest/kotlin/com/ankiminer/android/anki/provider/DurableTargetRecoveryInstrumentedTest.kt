@@ -580,6 +580,14 @@ private class FakeAnkiProviderGateway : AnkiProviderGateway {
         return createDeckHandler(command)
     }
 
+    override fun createAnkiMinerModel(
+        command: AnkiProviderMutationCommand.CreateAnkiMinerModel,
+    ): String? = error("durable target recovery must not create a model")
+
+    override fun updateAnkiMinerTemplate(
+        command: AnkiProviderMutationCommand.UpdateAnkiMinerTemplate,
+    ): Int = error("durable target recovery must not update a model template")
+
     override fun storeMedia(command: AnkiProviderMutationCommand.StoreMedia): String? = null
 
     override fun insertNote(command: AnkiProviderMutationCommand.InsertNote): String? {

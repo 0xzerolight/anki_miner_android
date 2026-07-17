@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import queue
 import re
 import threading
 from dataclasses import dataclass, field
@@ -8,7 +9,11 @@ from pathlib import Path
 
 import pytest
 
-from android_bridge.jobs import JobRegistry
+from android_bridge.jobs import (
+    CURATION_PAGE_MAX_CANDIDATES,
+    CURATION_PAGE_MAX_UTF8_BYTES,
+    JobRegistry,
+)
 from android_bridge.protocol import BridgeProtocolError, encode_message
 
 UNKNOWN_REQUEST_ID = "curation_" + "0" * 32
@@ -74,6 +79,47 @@ def _response(run_id: str, request_id: str, selection: object) -> str:
         "curation.response",
         {"runId": run_id, "requestId": request_id, "selection": selection},
     )
+
+
+def _page_response(
+    run_id: str,
+    request_id: str,
+    page_index: int,
+    selection: object,
+) -> str:
+    return encode_message(
+        "curation.page.response",
+        {
+            "runId": run_id,
+            "requestId": request_id,
+            "pageIndex": page_index,
+            "selection": selection,
+        },
+    )
+
+
+def _start_paged_wait(
+    registry: JobRegistry,
+    candidates: list[object],
+) -> tuple[
+    str,
+    queue.Queue[tuple[str, dict[str, object]]],
+    list[object],
+    threading.Thread,
+]:
+    handle = registry.begin()
+    emitted: queue.Queue[tuple[str, dict[str, object]]] = queue.Queue()
+    returned: list[object] = []
+
+    def emit(raw: str) -> None:
+        emitted.put((raw, json.loads(raw)))
+
+    def wait() -> None:
+        returned.append(registry.await_curation(handle.run_id, candidates, emit))
+
+    thread = threading.Thread(target=wait, daemon=True)
+    thread.start()
+    return handle.run_id, emitted, returned, thread
 
 
 def test_one_active_job_and_fresh_cancel_event_per_run() -> None:
@@ -404,6 +450,193 @@ def test_sequential_curation_rejects_prior_response_without_poisoning_current_ga
     )
     second_thread.join(1)
     assert second_returned == [[second_word]]
+
+
+def test_large_curation_is_complete_bounded_and_aggregates_original_objects() -> None:
+    registry = JobRegistry()
+    words = [
+        FakeWord(f"word-{index}", f"lemma-{index}", f"sentence-{index}", 1, 2, 1)
+        for index in range(205)
+    ]
+    run_id, emitted, returned, thread = _start_paged_wait(registry, words)
+    seen_ids: set[str] = set()
+    selected_words: list[FakeWord] = []
+    request_id: str | None = None
+
+    for page_index in range(3):
+        raw, request = emitted.get(timeout=1)
+        assert len(raw.encode("utf-8")) <= CURATION_PAGE_MAX_UTF8_BYTES
+        assert request["type"] == "curation.page.request"
+        payload = request["payload"]
+        assert isinstance(payload, dict)
+        assert payload["pageIndex"] == page_index
+        assert payload["pageCount"] == 3
+        assert payload["candidateStart"] == page_index * 100
+        assert payload["totalCandidates"] == len(words)
+        candidates = payload["candidates"]
+        assert isinstance(candidates, list)
+        assert 1 <= len(candidates) <= CURATION_PAGE_MAX_CANDIDATES
+        assert len(candidates) == (5 if page_index == 2 else 100)
+        if request_id is None:
+            request_id = payload["requestId"]
+        assert payload["requestId"] == request_id
+        page_ids = {candidate["candidateId"] for candidate in candidates}
+        assert seen_ids.isdisjoint(page_ids)
+        seen_ids.update(page_ids)
+
+        chosen = candidates[-1]
+        selected_words.append(words[page_index * 100 + len(candidates) - 1])
+        resolution = registry.resolve_curation(
+            _page_response(
+                run_id,
+                request_id,
+                page_index,
+                [{"candidateId": chosen["candidateId"]}],
+            )
+        )
+        assert resolution.paged is True
+        assert resolution.page_index == page_index
+        assert resolution.final_page is (page_index == 2)
+        if page_index < 2:
+            assert thread.is_alive()
+
+    thread.join(1)
+    assert not thread.is_alive()
+    assert len(seen_ids) == len(words)
+    assert returned == [selected_words]
+    assert all(actual is expected for actual, expected in zip(returned[0], selected_words))
+
+
+def test_empty_selection_on_every_page_returns_empty_not_cancellation() -> None:
+    registry = JobRegistry()
+    words = [FakeWord(str(index), str(index), str(index), 1, 2, 1) for index in range(101)]
+    run_id, emitted, returned, thread = _start_paged_wait(registry, words)
+
+    for page_index in range(2):
+        _, request = emitted.get(timeout=1)
+        payload = request["payload"]
+        assert isinstance(payload, dict)
+        registry.resolve_curation(
+            _page_response(run_id, payload["requestId"], page_index, [])
+        )
+
+    thread.join(1)
+    assert returned == [[]]
+
+
+def test_null_page_selection_cancels_the_whole_curation() -> None:
+    registry = JobRegistry()
+    words = [FakeWord(str(index), str(index), str(index), 1, 2, 1) for index in range(101)]
+    run_id, emitted, returned, thread = _start_paged_wait(registry, words)
+    _, request = emitted.get(timeout=1)
+    payload = request["payload"]
+    assert isinstance(payload, dict)
+
+    resolution = registry.resolve_curation(
+        _page_response(run_id, payload["requestId"], 0, None)
+    )
+    thread.join(1)
+
+    assert resolution.final_page is True
+    assert returned == [None]
+    assert emitted.empty()
+
+
+def test_curation_pages_are_split_by_exact_utf8_envelope_size() -> None:
+    registry = JobRegistry()
+    large_sentence = "猫" * 90_000
+    words = [
+        FakeWord(str(index), str(index), large_sentence, 1, 2, 1)
+        for index in range(2)
+    ]
+    run_id, emitted, returned, thread = _start_paged_wait(registry, words)
+
+    for page_index in range(2):
+        raw, request = emitted.get(timeout=1)
+        payload = request["payload"]
+        assert isinstance(payload, dict)
+        assert len(raw.encode("utf-8")) <= CURATION_PAGE_MAX_UTF8_BYTES
+        assert len(payload["candidates"]) == 1
+        registry.resolve_curation(
+            _page_response(run_id, payload["requestId"], page_index, [])
+        )
+
+    thread.join(1)
+    assert returned == [[]]
+
+
+def test_one_oversized_candidate_fails_without_truncation_and_allows_retry() -> None:
+    registry = JobRegistry()
+    handle = registry.begin()
+    oversized = FakeWord("猫", "猫", "猫" * 180_000, 1, 2, 1)
+    emitted: list[str] = []
+
+    with pytest.raises(BridgeProtocolError) as failure:
+        registry.await_curation(handle.run_id, [oversized], emitted.append)
+    assert failure.value.code == "curation_candidate_too_large"
+    assert emitted == []
+
+    retry_request, returned, thread = _start_wait_for_run(
+        registry,
+        handle.run_id,
+        [FakeWord("犬", "犬", "犬だ", 1, 2, 1)],
+    )
+    payload = retry_request["payload"]
+    assert isinstance(payload, dict)
+    registry.resolve_curation(_response(handle.run_id, payload["requestId"], []))
+    thread.join(1)
+    assert returned == [[]]
+
+
+def test_paged_response_rejects_wrong_type_page_and_future_candidate() -> None:
+    registry = JobRegistry()
+    words = [FakeWord(str(index), str(index), str(index), 1, 2, 1) for index in range(101)]
+    run_id, emitted, _, thread = _start_paged_wait(registry, words)
+    _, request = emitted.get(timeout=1)
+    payload = request["payload"]
+    assert isinstance(payload, dict)
+    request_id = payload["requestId"]
+
+    with pytest.raises(BridgeProtocolError) as wrong_type:
+        registry.resolve_curation(_response(run_id, request_id, []))
+    assert wrong_type.value.code == "invalid_curation_response"
+
+    with pytest.raises(BridgeProtocolError) as wrong_page:
+        registry.resolve_curation(_page_response(run_id, request_id, 1, []))
+    assert wrong_page.value.code == "stale_curation_page"
+
+    gate = registry._active.curation  # type: ignore[union-attr]
+    assert gate is not None
+    future_candidate_id = gate.pages[1].candidate_ids[0]
+    with pytest.raises(BridgeProtocolError) as future_candidate:
+        registry.resolve_curation(
+            _page_response(
+                run_id,
+                request_id,
+                0,
+                [{"candidateId": future_candidate_id}],
+            )
+        )
+    assert future_candidate.value.code == "unknown_candidate"
+
+    registry.cancel(run_id)
+    thread.join(1)
+
+
+def test_cancel_between_pages_releases_wait_without_emitting_another_page() -> None:
+    registry = JobRegistry()
+    words = [FakeWord(str(index), str(index), str(index), 1, 2, 1) for index in range(101)]
+    run_id, emitted, returned, thread = _start_paged_wait(registry, words)
+    _, request = emitted.get(timeout=1)
+    payload = request["payload"]
+    assert isinstance(payload, dict)
+
+    registry.resolve_curation(_page_response(run_id, payload["requestId"], 0, []))
+    registry.cancel(run_id)
+    thread.join(1)
+
+    assert not thread.is_alive()
+    assert returned == [None]
 
 
 def test_curation_schema_matches_generated_ids_and_optional_sentence_selection() -> (

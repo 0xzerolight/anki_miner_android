@@ -1,0 +1,411 @@
+package com.ankiminer.android.vm
+
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.ViewModelStore
+import com.ankiminer.android.MainDispatcherRule
+import com.ankiminer.android.media.SafBroker
+import com.ankiminer.android.media.SafDocument
+import com.ankiminer.android.mining.CurationCandidate
+import com.ankiminer.android.mining.CurationPage
+import com.ankiminer.android.mining.CurationRequest
+import com.ankiminer.android.mining.CurationSelection
+import com.ankiminer.android.mining.CurationSentence
+import com.ankiminer.android.mining.MiningCancellationToken
+import com.ankiminer.android.mining.MiningProgress
+import com.ankiminer.android.mining.MiningRunState
+import com.ankiminer.android.reading.ReadingMiningInput
+import com.ankiminer.android.reading.ReadingMiningRepository
+import com.ankiminer.android.reading.ReadingSourceSelection
+import com.ankiminer.android.ui.reading.ReadingDocumentSelectionError
+import java.util.concurrent.ConcurrentHashMap
+import kotlin.coroutines.resume
+import kotlinx.coroutines.CancellableContinuation
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Rule
+import org.junit.Test
+
+@OptIn(ExperimentalCoroutinesApi::class)
+class ReadingMiningViewModelTest {
+    @get:Rule
+    val mainDispatcherRule = MainDispatcherRule()
+
+    @Test
+    fun subtitleStartUsesSingleSourceAndTrimmedOptionalSeriesName() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository = RecordingReadingRepository()
+            val viewModel = ReadingMiningViewModel(repository, ImmediateSafBroker())
+
+            viewModel.onSourcePicked("content://test/episode.SRT")
+            runCurrent()
+            viewModel.onSubtitleSeriesNameChanged("  Show name  ")
+
+            assertTrue(viewModel.uiState.value.canStart)
+            viewModel.start()
+            runCurrent()
+
+            val input = repository.startedInputs.single()
+            assertTrue(input.selection is ReadingSourceSelection.Single)
+            assertEquals("Show name", input.subtitleSeriesName)
+            assertEquals("episode.SRT", input.selection.documents().single().displayName)
+        }
+
+    @Test
+    fun mokuroRejectsWrongArchiveAndStartsWithMatchingPair() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository = RecordingReadingRepository()
+            val broker = ImmediateSafBroker()
+            val viewModel = ReadingMiningViewModel(repository, broker)
+
+            viewModel.onSourcePicked("content://test/book.mokuro")
+            runCurrent()
+            assertTrue(viewModel.uiState.value.canStart)
+
+            viewModel.onArchivePicked("content://test/other.cbz")
+            runCurrent()
+            assertEquals(
+                ReadingDocumentSelectionError.ARCHIVE_NAME,
+                viewModel.uiState.value.archive.error,
+            )
+            assertEquals(listOf("content://test/other.cbz"), broker.releasedUris)
+
+            viewModel.onArchivePicked("content://test/book.ZIP")
+            runCurrent()
+            assertTrue(viewModel.uiState.value.canStart)
+            viewModel.start()
+            runCurrent()
+
+            val pair =
+                repository.startedInputs.single().selection as
+                    ReadingSourceSelection.MokuroArchivePair
+            assertEquals("book.mokuro", pair.sidecar.displayName)
+            assertEquals("book.ZIP", pair.archive.displayName)
+        }
+
+    @Test
+    fun replacingMokuroWithTextReleasesItsArchive() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val broker = ImmediateSafBroker()
+            val viewModel = ReadingMiningViewModel(RecordingReadingRepository(), broker)
+            viewModel.onSourcePicked("content://test/book.mokuro")
+            runCurrent()
+            viewModel.onArchivePicked("content://test/book.cbz")
+            runCurrent()
+
+            viewModel.onSourcePicked("content://test/novel.txt")
+            runCurrent()
+
+            assertEquals("novel.txt", viewModel.uiState.value.source.document?.displayName)
+            assertNull(viewModel.uiState.value.archive.document)
+            assertTrue(viewModel.uiState.value.canStart)
+            assertEquals(
+                listOf("content://test/book.mokuro", "content://test/book.cbz"),
+                broker.eventualReleaseUris,
+            )
+        }
+
+    @Test
+    fun stalePickerCompletionCannotPublishOrLeakItsGrant() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val broker = ControlledSafBroker()
+            val viewModel = ReadingMiningViewModel(RecordingReadingRepository(), broker)
+
+            viewModel.onSourcePicked("content://test/old.txt")
+            runCurrent()
+            viewModel.onSourcePicked("content://test/new.epub")
+            runCurrent()
+            broker.succeed("content://test/new.epub")
+            broker.succeed("content://test/old.txt")
+            runCurrent()
+
+            assertEquals("new.epub", viewModel.uiState.value.source.document?.displayName)
+            assertEquals(listOf("content://test/old.txt"), broker.releasedUris)
+        }
+
+    @Test
+    fun pagedCurationKeepsOnlyCurrentDraftAndSubmitsExactPageIndex() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val first = curationRequest(page = CurationPage(0, 2, 0, 2))
+            val secondCandidate =
+                first.candidates.single().copy(
+                    candidateId = "candidate-2",
+                    minedForm = "見る",
+                )
+            val second =
+                first.copy(
+                    candidates = listOf(secondCandidate),
+                    page = CurationPage(1, 2, 1, 2),
+                )
+            val repository = RecordingReadingRepository(MiningRunState.Curating(first))
+            val viewModel = ReadingMiningViewModel(repository, ImmediateSafBroker())
+            runCurrent()
+
+            viewModel.toggleCandidate(first.candidates.single().candidateId)
+            runCurrent()
+            assertEquals(0, viewModel.uiState.value.curation?.selectedCount)
+            repository.transitionTo(MiningRunState.Curating(second))
+            runCurrent()
+
+            assertEquals(1, viewModel.uiState.value.curation?.candidates?.size)
+            assertEquals(
+                "candidate-2",
+                viewModel.uiState.value.curation
+                    ?.candidates
+                    ?.single()
+                    ?.candidate
+                    ?.candidateId,
+            )
+            assertEquals(1, viewModel.uiState.value.curation?.selectedCount)
+            viewModel.confirmCuration()
+            runCurrent()
+
+            assertEquals(1L, repository.confirmedPageIndex)
+            assertEquals("candidate-2", repository.confirmedSelection?.single()?.candidateId)
+        }
+
+    @Test
+    fun deselectAllConfirmsEmptyPageInsteadOfCancellingRun() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val request = curationRequest(page = CurationPage(0, 2, 0, 2))
+            val repository = RecordingReadingRepository(MiningRunState.Curating(request))
+            val viewModel = ReadingMiningViewModel(repository, ImmediateSafBroker())
+            runCurrent()
+
+            viewModel.selectAllCandidates(false)
+            viewModel.confirmCuration()
+            runCurrent()
+
+            assertEquals(emptyList<CurationSelection>(), repository.confirmedSelection)
+            assertEquals(emptyList<String>(), repository.cancelledRunIds)
+        }
+
+    @Test
+    fun teardownTransfersBothPairGrantsToMatchingProcessRun() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository = RecordingReadingRepository(detachResult = true)
+            val broker = ImmediateSafBroker()
+            val store = ViewModelStore()
+            val viewModel =
+                ViewModelProvider.create(
+                    store,
+                    ReadingMiningViewModel.Factory(repository, broker),
+                )[ReadingMiningViewModel::class.java]
+            viewModel.onSourcePicked("content://test/book.mokuro")
+            runCurrent()
+            viewModel.onArchivePicked("content://test/book.cbz")
+            runCurrent()
+            viewModel.start()
+            runCurrent()
+
+            store.clear()
+
+            assertEquals(emptyList<String>(), broker.eventualReleaseUris)
+            val pair =
+                repository.detachedInputs.single().selection as
+                    ReadingSourceSelection.MokuroArchivePair
+            assertEquals("content://test/book.mokuro", pair.sidecar.uri)
+            assertEquals("content://test/book.cbz", pair.archive.uri)
+        }
+
+    @Test
+    fun teardownReleasesTextOnlyMokuroWhenRepositoryDoesNotClaimIt() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository = RecordingReadingRepository(detachResult = false)
+            val broker = ImmediateSafBroker()
+            val store = ViewModelStore()
+            val viewModel =
+                ViewModelProvider.create(
+                    store,
+                    ReadingMiningViewModel.Factory(repository, broker),
+                )[ReadingMiningViewModel::class.java]
+            viewModel.onSourcePicked("content://test/book.mokuro")
+            runCurrent()
+
+            store.clear()
+
+            assertEquals(listOf("content://test/book.mokuro"), broker.eventualReleaseUris)
+            assertTrue(
+                repository.detachedInputs.single().selection is ReadingSourceSelection.Single,
+            )
+        }
+
+    @Test
+    fun startingCancellationUsesPreRegistrationToken() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val token = MiningCancellationToken("cancel_0123456789abcdef0123456789abcdef")
+            val repository =
+                RecordingReadingRepository(
+                    MiningRunState.Starting(
+                        runId = null,
+                        progress = MiningProgress(0, 0, "Preparing"),
+                        cancellationToken = token,
+                    ),
+                )
+            val viewModel = ReadingMiningViewModel(repository, ImmediateSafBroker())
+
+            viewModel.cancel()
+            runCurrent()
+
+            assertEquals(listOf(token), repository.cancelledTokens)
+            assertFalse(viewModel.uiState.value.cancelPending)
+        }
+
+    private class ImmediateSafBroker : SafBroker {
+        val releasedUris = mutableListOf<String>()
+        val eventualReleaseUris = mutableListOf<String>()
+
+        override suspend fun retainReadAccess(uri: String): SafDocument =
+            SafDocument(
+                uri = uri,
+                displayName = uri.substringAfterLast('/'),
+                mimeType = null,
+                sizeBytes = null,
+            )
+
+        override suspend fun releaseReadAccess(uri: String) {
+            releasedUris += uri
+        }
+
+        override fun releaseReadAccessEventually(uri: String) {
+            eventualReleaseUris += uri
+        }
+    }
+
+    private class ControlledSafBroker : SafBroker {
+        private val pending = ConcurrentHashMap<String, CancellableContinuation<SafDocument>>()
+        val releasedUris = mutableListOf<String>()
+
+        override suspend fun retainReadAccess(uri: String): SafDocument =
+            suspendCancellableCoroutine { continuation -> pending[uri] = continuation }
+
+        override suspend fun releaseReadAccess(uri: String) {
+            releasedUris += uri
+        }
+
+        override fun releaseReadAccessEventually(uri: String) {
+            releasedUris += uri
+        }
+
+        fun succeed(uri: String) {
+            requireNotNull(pending.remove(uri)).resume(
+                SafDocument(
+                    uri = uri,
+                    displayName = uri.substringAfterLast('/'),
+                    mimeType = null,
+                    sizeBytes = null,
+                ),
+            )
+        }
+    }
+
+    private class RecordingReadingRepository(
+        initialState: MiningRunState = MiningRunState.Idle,
+        private val detachResult: Boolean = false,
+    ) : ReadingMiningRepository {
+        private val mutableState = MutableStateFlow(initialState)
+        override val state: StateFlow<MiningRunState> = mutableState.asStateFlow()
+
+        val startedInputs = mutableListOf<ReadingMiningInput>()
+        val detachedInputs = mutableListOf<ReadingMiningInput>()
+        val cancelledTokens = mutableListOf<MiningCancellationToken>()
+        val cancelledRunIds = mutableListOf<String>()
+        var confirmedPageIndex: Long? = null
+            private set
+        var confirmedSelection: List<CurationSelection>? = null
+            private set
+
+        override fun detachActiveSources(input: ReadingMiningInput): Boolean {
+            detachedInputs += input
+            return detachResult
+        }
+
+        override suspend fun startReading(input: ReadingMiningInput) {
+            startedInputs += input
+            mutableState.value =
+                MiningRunState.Starting(
+                    runId = "run",
+                    progress = MiningProgress(0, 0, "Preparing"),
+                )
+        }
+
+        override suspend fun confirmCuration(
+            runId: String,
+            requestId: String,
+            selection: List<CurationSelection>,
+            pageIndex: Long?,
+        ) {
+            confirmedPageIndex = pageIndex
+            confirmedSelection = selection
+            mutableState.value = MiningRunState.Running(runId, MiningProgress(0, 0, "Running"))
+        }
+
+        override suspend fun cancel(runId: String) {
+            cancelledRunIds += runId
+            mutableState.value = MiningRunState.Cancelled(runId, null)
+        }
+
+        override suspend fun cancel(token: MiningCancellationToken) {
+            cancelledTokens += token
+            mutableState.value = MiningRunState.Cancelled(null, null)
+        }
+
+        override suspend fun reset() {
+            mutableState.value = MiningRunState.Idle
+        }
+
+        fun transitionTo(state: MiningRunState) {
+            mutableState.value = state
+        }
+    }
+
+    private fun ReadingSourceSelection.documents(): List<SafDocument> =
+        when (this) {
+            is ReadingSourceSelection.Single -> listOf(document)
+            is ReadingSourceSelection.MokuroArchivePair -> listOf(sidecar, archive)
+        }
+
+    private companion object {
+        fun curationRequest(page: CurationPage): CurationRequest {
+            val sentence =
+                CurationSentence(
+                    sentenceId = "sentence",
+                    sentence = "魚を食べる。",
+                    sentenceFurigana = "魚を食べる。",
+                    sentenceReading = "さかなをたべる",
+                    startTime = 0.0,
+                    endTime = 1.0,
+                    duration = 1.0,
+                )
+            return CurationRequest(
+                runId = "run",
+                requestId = "request",
+                candidates =
+                    listOf(
+                        CurationCandidate(
+                            candidateId = "candidate-1",
+                            minedForm = "食べる",
+                            surface = "食べる",
+                            lemma = "食べる",
+                            reading = "たべる",
+                            expressionReading = "たべる",
+                            partOfSpeech = "動詞",
+                            frequencyRank = 10,
+                            occurrenceCount = 1,
+                            defaultSentenceId = sentence.sentenceId,
+                            sentences = listOf(sentence),
+                        ),
+                    ),
+                page = page,
+            )
+        }
+    }
+}

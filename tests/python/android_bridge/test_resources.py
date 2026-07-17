@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import hashlib
 import importlib.util
 import io
@@ -13,6 +14,7 @@ from pathlib import Path
 import pytest
 
 import android_bridge.resources as resources
+import android_bridge.local_resources as local_resources
 from android_bridge import boundary
 from android_bridge.protocol import BridgeProtocolError, decode_envelope, encode_message
 from android_bridge.resource_catalog import (
@@ -23,6 +25,28 @@ from android_bridge.resource_catalog import (
     parse_catalog_json,
 )
 from android_bridge.unidic_resource import calculate_unidic_tree_sha256
+
+
+def test_dictionary_schema_version_matches_vendored_engine() -> None:
+    storage_source = (
+        Path(resources.__file__).resolve().parents[1]
+        / "anki_miner"
+        / "services"
+        / "dictionary"
+        / "storage.py"
+    )
+    module = ast.parse(storage_source.read_text(encoding="utf-8"))
+    schema_versions = [
+        ast.literal_eval(node.value)
+        for node in module.body
+        if isinstance(node, ast.Assign)
+        and any(
+            isinstance(target, ast.Name) and target.id == "SCHEMA_VERSION"
+            for target in node.targets
+        )
+    ]
+
+    assert schema_versions == [resources._DICTIONARY_SCHEMA_VERSION]
 
 
 def _catalog_unidic() -> UniDicResource:
@@ -167,9 +191,9 @@ def test_catalog_parser_rejects_duplicate_keys_unknown_fields_and_mutable_urls()
     with pytest.raises(BridgeProtocolError, match="HTTPS"):
         parse_catalog_json(json.dumps(payload))
 
-    payload["resources"][0]["archive"]["url"] = (
-        load_resource_catalog().payload()["resources"][0]["archive"]["url"]
-    )
+    payload["resources"][0]["archive"]["url"] = load_resource_catalog().payload()[
+        "resources"
+    ][0]["archive"]["url"]
     payload["resources"][1]["slotId"] = "ambiguous--slot"
     with pytest.raises(BridgeProtocolError, match="slot id is invalid"):
         parse_catalog_json(json.dumps(payload))
@@ -376,7 +400,15 @@ def test_yomitan_import_list_lookup_and_stable_overwrite(
     listed = decode_envelope(
         resources.list_dictionaries({}), expected_type="resource.dictionary.listed"
     )
-    assert listed.payload["dictionaries"][0]["embeddedAttribution"] == {
+    listed_by_slot = {
+        item["slotId"]: item for item in listed.payload["dictionaries"]
+    }
+    listed_dictionary = listed_by_slot["fixture"]
+    assert listed_dictionary["occupied"] is True
+    assert listed_dictionary["valid"] is True
+    assert listed_dictionary["schemaOk"] is True
+    assert listed_dictionary["format"] == "yomitan"
+    assert listed_dictionary["embeddedAttribution"] == {
         "author": "Fixture Author",
         "attribution": "Fixture Attribution",
     }
@@ -407,6 +439,204 @@ def test_yomitan_import_list_lookup_and_stable_overwrite(
         expected_type="resource.dictionary.lookup.result",
     )
     assert "dog" in dog.payload["html"]
+    assert not any((home / "resource-work" / "dictionary-backups").iterdir())
+
+
+def test_dictionary_inventory_surfaces_corrupt_occupied_catalog_slot(
+    tmp_path: Path,
+    initialized_bridge_home: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    home = tmp_path / "corrupt-catalog-home"
+    home.mkdir()
+    monkeypatch.setattr(resources, "require_initialized", lambda: str(home))
+    catalog_resource = load_resource_catalog().get("jitendex-2026.07.09.0")
+    assert isinstance(catalog_resource, YomitanResource)
+    slot = home / "dicts" / catalog_resource.slot_id
+    slot.mkdir(parents=True)
+    (slot / "index.sqlite").write_bytes(b"not sqlite")
+    archive = resources._ArchiveCopy(
+        slot / "unused.zip",
+        catalog_resource.archive.sha256,
+        catalog_resource.archive.size_bytes,
+    )
+    sidecar = resources._dictionary_sidecar(
+        slot_id=catalog_resource.slot_id,
+        archive=archive,
+        catalog_resource=catalog_resource,
+        source_name=catalog_resource.dictionary.title,
+        source_revision=catalog_resource.dictionary.revision,
+    )
+    (slot / "android-resource.json").write_bytes(
+        resources._canonical_json_bytes(sidecar)
+    )
+
+    listed = decode_envelope(
+        resources.list_dictionaries({}), expected_type="resource.dictionary.listed"
+    ).payload["dictionaries"]
+
+    assert len(listed) == 1
+    installed = listed[0]
+    assert installed["slotId"] == catalog_resource.slot_id
+    assert installed["occupied"] is True
+    assert installed["valid"] is False
+    assert installed["schemaOk"] is False
+    assert installed["catalogResourceId"] == catalog_resource.resource_id
+    assert installed["attribution"] == [
+        item.payload() for item in catalog_resource.attribution
+    ]
+
+
+def test_dictionary_inventory_discards_forged_catalog_sidecar(
+    tmp_path: Path,
+    initialized_bridge_home: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    home = tmp_path / "forged-sidecar-home"
+    home.mkdir()
+    monkeypatch.setattr(resources, "require_initialized", lambda: str(home))
+    catalog_resource = load_resource_catalog().get("jitendex-2026.07.09.0")
+    assert isinstance(catalog_resource, YomitanResource)
+    slot = home / "dicts" / catalog_resource.slot_id
+    slot.mkdir(parents=True)
+    (slot / "index.sqlite").write_bytes(b"not sqlite")
+    sidecar = resources._dictionary_sidecar(
+        slot_id=catalog_resource.slot_id,
+        archive=resources._ArchiveCopy(
+            slot / "unused.zip",
+            catalog_resource.archive.sha256,
+            catalog_resource.archive.size_bytes,
+        ),
+        catalog_resource=catalog_resource,
+        source_name=catalog_resource.dictionary.title,
+        source_revision=catalog_resource.dictionary.revision,
+    )
+    sidecar["attribution"] = []
+    (slot / "android-resource.json").write_bytes(
+        resources._canonical_json_bytes(sidecar)
+    )
+
+    installed = decode_envelope(
+        resources.list_dictionaries({}), expected_type="resource.dictionary.listed"
+    ).payload["dictionaries"][0]
+
+    assert installed["catalogResourceId"] is None
+    assert installed["attribution"] == []
+    assert installed["sourceName"] == catalog_resource.slot_id
+
+
+def test_dictionary_inventory_does_not_follow_slot_or_sidecar_symlinks(
+    tmp_path: Path,
+    initialized_bridge_home: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    home = tmp_path / "symlink-home"
+    home.mkdir()
+    monkeypatch.setattr(resources, "require_initialized", lambda: str(home))
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "index.sqlite").write_bytes(b"outside")
+    (outside / "android-resource.json").write_text("{}", encoding="utf-8")
+    original_read_text = Path.read_text
+
+    def guarded_read_text(path: Path, *args: object, **kwargs: object) -> str:
+        assert path.parent != outside, "inventory followed a dictionary-slot symlink"
+        return original_read_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", guarded_read_text)
+    root = home / "dicts"
+    root.mkdir()
+    (root / "linked").symlink_to(outside, target_is_directory=True)
+
+    listed = decode_envelope(
+        resources.list_dictionaries({}), expected_type="resource.dictionary.listed"
+    ).payload["dictionaries"]
+
+    assert listed == [
+        {
+            "slotId": "linked",
+            "occupied": True,
+            "valid": False,
+            "sourceName": "linked",
+            "sourceRevision": "",
+            "format": "unknown",
+            "entryCount": 0,
+            "schemaOk": False,
+            "embeddedAttribution": {},
+            "catalogResourceId": None,
+            "attribution": [],
+        }
+    ]
+
+
+def test_dictionary_inventory_rejects_unsafe_or_unbounded_slot_sets(
+    tmp_path: Path,
+    initialized_bridge_home: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    home = tmp_path / "unsafe-home"
+    home.mkdir()
+    monkeypatch.setattr(resources, "require_initialized", lambda: str(home))
+    root = home / "dicts"
+    root.mkdir()
+    (root / "unsafe slot").mkdir()
+    with pytest.raises(BridgeProtocolError) as unsafe:
+        resources.list_dictionaries({})
+    assert unsafe.value.code == "resource_inventory_failed"
+
+    (root / "unsafe slot").rmdir()
+    for index in range(resources._MAX_DICTIONARY_SLOTS + 1):
+        (root / f"slot{index:03d}").mkdir()
+    with pytest.raises(BridgeProtocolError) as unbounded:
+        resources.list_dictionaries({})
+    assert unbounded.value.code == "resource_inventory_failed"
+
+
+def test_non_overwrite_import_treats_broken_symlink_as_occupied(
+    tmp_path: Path,
+    initialized_bridge_home: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    home = tmp_path / "occupied-home"
+    home.mkdir()
+    monkeypatch.setattr(resources, "require_initialized", lambda: str(home))
+    root = home / "dicts"
+    root.mkdir()
+    (root / "occupied").symlink_to(tmp_path / "missing", target_is_directory=True)
+
+    with pytest.raises(BridgeProtocolError) as failure:
+        resources.import_dictionary(
+            {
+                "operationId": "occupied-slot",
+                "sourcePath": str(tmp_path / "also-missing.zip"),
+                "slotId": "occupied",
+                "overwrite": False,
+                "catalogResourceId": None,
+            }
+        )
+    assert failure.value.code == "resource_already_installed"
+
+
+def test_confirmed_publish_can_repair_a_non_directory_occupied_slot(
+    tmp_path: Path,
+) -> None:
+    home = tmp_path / "repair-home"
+    final = home / "dicts" / "repairable"
+    final.parent.mkdir(parents=True)
+    final.write_bytes(b"damaged slot")
+    candidate = tmp_path / "candidate"
+    candidate.mkdir()
+    (candidate / "index.sqlite").write_bytes(b"replacement")
+
+    resources._publish_dictionary(
+        candidate,
+        home=home,
+        slot_id="repairable",
+        operation_id="repair-slot",
+        overwrite=True,
+    )
+
+    assert (final / "index.sqlite").read_bytes() == b"replacement"
     assert not any((home / "resource-work" / "dictionary-backups").iterdir())
 
 
@@ -495,9 +725,7 @@ def test_dictionary_memory_and_lookup_limits_are_low_memory_safe() -> None:
     assert resources._MAX_LOOKUP_HTML_BYTES == 2 * 1024 * 1024
     resources._validate_lookup_html("x" * resources._MAX_LOOKUP_HTML_BYTES)
     with pytest.raises(BridgeProtocolError) as oversized:
-        resources._validate_lookup_html(
-            "x" * (resources._MAX_LOOKUP_HTML_BYTES + 1)
-        )
+        resources._validate_lookup_html("x" * (resources._MAX_LOOKUP_HTML_BYTES + 1))
     assert oversized.value.code == "dictionary_result_too_large"
 
 
@@ -601,3 +829,306 @@ def test_resource_bridge_has_no_eager_engine_imports() -> None:
     prefix = source.split("def install_unidic", 1)[0]
     assert "from anki_miner" not in prefix
     assert "import anki_miner" not in prefix
+
+
+def _local_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    home = tmp_path / "android-files"
+    home.mkdir()
+    monkeypatch.setattr(local_resources, "require_initialized", lambda: str(home))
+    return home
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="local-resource importers require the runtime engine dependency set",
+)
+def test_frequency_import_is_indexed_inventory_visible_and_no_replace_by_default(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    home = _local_home(tmp_path, monkeypatch)
+    source = tmp_path / "frequency.csv"
+    source.write_text("word,rank\n猫,10\n犬,20\n", encoding="utf-8")
+    request = {
+        "operationId": "frequency-one",
+        "sourcePath": str(source),
+        "sourceId": "fixture-freq",
+        "sourceName": "Fixture Frequency",
+        "sourceFormat": "csv",
+        "overwrite": False,
+    }
+
+    imported = decode_envelope(
+        local_resources.import_frequency(request),
+        expected_type="resource.frequency.imported",
+    )
+
+    assert imported.payload["sourceId"] == "fixture-freq"
+    assert imported.payload["sourceName"] == "Fixture Frequency"
+    assert imported.payload["entryCount"] == 2
+    final = home / "freqs" / "fixture-freq"
+    assert (final / "index.sqlite").is_file()
+    assert (final / "source.csv").read_text(encoding="utf-8") == source.read_text(
+        encoding="utf-8"
+    )
+    listed = decode_envelope(
+        local_resources.list_local_resources({}),
+        expected_type="resource.local.listed",
+    )
+    assert listed.payload["frequencies"] == [
+        {
+            "sourceId": "fixture-freq",
+            "sourceName": "Fixture Frequency",
+            "format": "csv",
+            "entryCount": 2,
+            "schemaOk": True,
+            "schemaVersion": 2,
+            "isCategorical": False,
+        }
+    ]
+
+    with pytest.raises(BridgeProtocolError) as collision:
+        local_resources.import_frequency({**request, "operationId": "frequency-two"})
+    assert collision.value.code == "resource_already_installed"
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="local-resource importers require the runtime engine dependency set",
+)
+def test_pitch_csv_import_publishes_canonical_file_and_inventory(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    home = _local_home(tmp_path, monkeypatch)
+    source = tmp_path / "pitch.tsv"
+    source.write_text(
+        "reading\tkanji\tpattern\tnasal\tdevoice\nねこ\t猫\t1\t\t\n",
+        encoding="utf-8",
+    )
+
+    imported = decode_envelope(
+        local_resources.import_pitch(
+            {
+                "operationId": "pitch-one",
+                "sourcePath": str(source),
+                "sourceName": "Fixture Pitch",
+                "sourceFormat": "tsv",
+                "overwrite": False,
+            }
+        ),
+        expected_type="resource.pitch.imported",
+    )
+
+    assert imported.payload["entryCount"] == 1
+    assert imported.payload["sourceName"] == "Fixture Pitch"
+    assert (home / "pitch_accent.csv").read_text(encoding="utf-8") == source.read_text(
+        encoding="utf-8"
+    )
+    listed = decode_envelope(
+        local_resources.list_local_resources({}),
+        expected_type="resource.local.listed",
+    )
+    assert listed.payload["pitchAccent"] == {
+        "sourceName": "Fixture Pitch",
+        "sourceRevision": "",
+        "sourceFormat": "tsv",
+        "entryCount": 1,
+        "fileSizeBytes": source.stat().st_size,
+        "schemaOk": True,
+    }
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="pitch validation requires the runtime engine dependency set",
+)
+def test_malformed_pitch_inventory_fails_closed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    home = _local_home(tmp_path, monkeypatch)
+    (home / "pitch_accent.csv").write_bytes(b"\xff")
+
+    listed = decode_envelope(
+        local_resources.list_local_resources({}),
+        expected_type="resource.local.listed",
+    )
+
+    assert listed.payload["pitchAccent"] == {
+        "sourceName": "Pitch accent data",
+        "sourceRevision": "",
+        "sourceFormat": "unknown",
+        "entryCount": 0,
+        "fileSizeBytes": 1,
+        "schemaOk": False,
+    }
+
+
+def _ajt_audio_zip(path: Path) -> Path:
+    index = {
+        "headwords": {"猫": ["cat.mp3"]},
+        "files": {"cat.mp3": {"kana_reading": "ねこ"}},
+    }
+    with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr(
+            "fixture-pack/index.json", json.dumps(index, ensure_ascii=False)
+        )
+        archive.writestr("fixture-pack/media/cat.mp3", b"fixture mp3")
+    return path
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="local-resource importers require the runtime engine dependency set",
+)
+def test_audio_pack_zip_is_private_self_contained_and_inventory_visible(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    home = _local_home(tmp_path, monkeypatch)
+    source = _ajt_audio_zip(tmp_path / "audio.zip")
+
+    imported = decode_envelope(
+        local_resources.import_audio_pack(
+            {
+                "operationId": "audio-one",
+                "sourcePath": str(source),
+                "packId": "fixture-pack",
+                "overwrite": False,
+            }
+        ),
+        expected_type="resource.audiopack.imported",
+    )
+
+    assert imported.payload["format"] == "ajt"
+    assert imported.payload["entryCount"] == 1
+    final = home / "audio_packs" / "fixture-pack"
+    assert (final / "content" / "media" / "cat.mp3").read_bytes() == b"fixture mp3"
+    source.unlink()
+
+    from anki_miner.services.audio_packs import storage
+
+    meta = storage.read_meta(final / "index.sqlite")
+    assert meta["pack_dir"] == str(final / "content")
+    listed = decode_envelope(
+        local_resources.list_local_resources({}),
+        expected_type="resource.local.listed",
+    )
+    assert listed.payload["audioPacks"] == [
+        {
+            "packId": "fixture-pack",
+            "sourceName": "fixture-pack",
+            "format": "ajt",
+            "entryCount": 1,
+            "contentAvailable": True,
+        }
+    ]
+
+
+def test_audio_pack_streaming_extractor_rejects_links(
+    tmp_path: Path,
+) -> None:
+    linked = tmp_path / "linked-audio.zip"
+    with zipfile.ZipFile(linked, "w") as archive:
+        archive.writestr("index.json", "{}")
+        info = zipfile.ZipInfo("media/link.mp3")
+        info.create_system = 3
+        info.external_attr = (stat.S_IFLNK | 0o777) << 16
+        archive.writestr(info, "target")
+
+    with pytest.raises(BridgeProtocolError) as failure:
+        local_resources._extract_audio_zip(
+            linked,
+            tmp_path / "extracted",
+            resources._Operation("audio-link"),
+        )
+    assert failure.value.code == "unsafe_resource_archive"
+    assert not (tmp_path / "extracted" / "media" / "link.mp3").exists()
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="local-resource importers require the runtime engine dependency set",
+)
+def test_known_words_import_is_transactional_and_wordsets_are_bundled(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _local_home(tmp_path, monkeypatch)
+    source = tmp_path / "known.txt"
+    source.write_text("# known words\n猫\n犬\n猫\n", encoding="utf-8")
+
+    imported = decode_envelope(
+        local_resources.import_known_words(
+            {
+                "operationId": "known-one",
+                "sourcePath": str(source),
+                "sourceFormat": "txt",
+            }
+        ),
+        expected_type="resource.knownwords.imported",
+    )
+    assert imported.payload == {
+        "format": "generic",
+        "importedCount": 2,
+        "newRowCount": 2,
+        "totalEntries": 3,
+        "isGeneric": True,
+    }
+
+    listed = decode_envelope(
+        local_resources.list_local_resources({}),
+        expected_type="resource.local.listed",
+    )
+    assert listed.payload["knownWords"] == {
+        "totalCount": 2,
+        "userCount": 2,
+        "ankiCount": 0,
+        "minedCount": 0,
+        "schemaOk": True,
+    }
+    assert [item["wordsetId"] for item in listed.payload["wordsets"]] == [
+        "surnames",
+        "given-names",
+        "place-names",
+        "org-product",
+    ]
+
+
+def test_cleanup_restores_frequency_and_audio_pack_backups(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    home = _local_home(tmp_path, monkeypatch)
+    monkeypatch.setattr(resources, "require_initialized", lambda: str(home))
+    for kind, final_root, require_content in (
+        ("frequency", home / "freqs", False),
+        ("audio-pack", home / "audio_packs", True),
+    ):
+        backup = home / "resource-work" / f"{kind}-backups" / "backup-fixture--crash"
+        backup.mkdir(parents=True)
+        (backup / "index.sqlite").write_bytes(b"sqlite")
+        if require_content:
+            (backup / "content").mkdir()
+
+    decoded = decode_envelope(
+        resources.cleanup_resources({}), expected_type="resource.cleanup.result"
+    )
+
+    assert decoded.payload == {"clean": True}
+    assert (home / "freqs" / "fixture" / "index.sqlite").is_file()
+    assert (home / "audio_packs" / "fixture" / "content").is_dir()
+
+
+def test_boundary_routes_local_resource_inventory(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _local_home(tmp_path, monkeypatch)
+    decoded = decode_envelope(
+        boundary.dispatch(encode_message("resource.local.list", {})),
+        expected_type="resource.local.listed",
+    )
+    assert decoded.payload["frequencies"] == []
+    assert decoded.payload["audioPacks"] == []

@@ -94,14 +94,140 @@ data class ImportedDictionary(
 
 data class InstalledDictionary(
     val slotId: String,
+    /** A private-storage entry currently owns this stable slot. */
+    val occupied: Boolean,
+    /** The index is readable and uses the current engine schema. */
+    val valid: Boolean,
     val sourceName: String,
     val sourceRevision: String,
-    val format: Long,
+    val format: String,
     val entryCount: Long,
     val schemaOk: Boolean,
     val embeddedAttribution: Map<String, String>,
     val catalogResourceId: String?,
     val attribution: List<ResourceAttribution>,
+) {
+    val isUsable: Boolean
+        get() = occupied && valid && schemaOk
+}
+
+enum class FrequencySourceFormat(
+    val wireValue: String,
+    val fileSuffix: String,
+) {
+    YOMITAN_ZIP("zip", ".zip"),
+    CSV("csv", ".csv"),
+    TSV("tsv", ".tsv"),
+    TEXT("txt", ".txt"),
+}
+
+enum class PitchAccentSourceFormat(
+    val wireValue: String,
+    val fileSuffix: String,
+) {
+    YOMITAN_ZIP("zip", ".zip"),
+    CSV("csv", ".csv"),
+    TSV("tsv", ".tsv"),
+}
+
+enum class KnownWordsSourceFormat(
+    val wireValue: String,
+    val fileSuffix: String,
+) {
+    JSON("json", ".json"),
+    CSV("csv", ".csv"),
+    TSV("tsv", ".tsv"),
+    TEXT("txt", ".txt"),
+}
+
+sealed interface LocalResourceImportResult
+
+data class ImportedFrequencySource(
+    val sourceId: String,
+    val sourceName: String,
+    val sourceRevision: String,
+    val format: String,
+    val entryCount: Long,
+    val skippedDisplayOnly: Long,
+    val skippedMalformed: Long,
+    val convertedToRanks: Boolean,
+    val isCategorical: Boolean,
+    val archiveSha256: String,
+) : LocalResourceImportResult
+
+data class InstalledFrequencySource(
+    val sourceId: String,
+    val sourceName: String,
+    val format: String,
+    val entryCount: Long,
+    val schemaOk: Boolean,
+    val schemaVersion: Long,
+    val isCategorical: Boolean,
+)
+
+data class ImportedPitchAccent(
+    val sourceName: String,
+    val sourceRevision: String,
+    val sourceFormat: String,
+    val entryCount: Long,
+    val skippedDisplayOnly: Long,
+    val skippedMalformed: Long,
+    val fileSha256: String,
+) : LocalResourceImportResult
+
+data class InstalledPitchAccent(
+    val sourceName: String,
+    val sourceRevision: String,
+    val sourceFormat: String,
+    val entryCount: Long,
+    val fileSizeBytes: Long,
+    val schemaOk: Boolean,
+)
+
+data class ImportedAudioPack(
+    val packId: String,
+    val sourceName: String,
+    val format: String,
+    val entryCount: Long,
+    val archiveSha256: String,
+) : LocalResourceImportResult
+
+data class InstalledAudioPack(
+    val packId: String,
+    val sourceName: String,
+    val format: String,
+    val entryCount: Long,
+    val contentAvailable: Boolean,
+)
+
+data class ImportedKnownWords(
+    val format: String,
+    val importedCount: Long,
+    val newRowCount: Long,
+    val totalEntries: Long,
+    val isGeneric: Boolean,
+) : LocalResourceImportResult
+
+data class KnownWordsInventory(
+    val totalCount: Long,
+    val userCount: Long,
+    val ankiCount: Long,
+    val minedCount: Long,
+    val schemaOk: Boolean,
+)
+
+data class BundledWordset(
+    val wordsetId: String,
+    val displayName: String,
+    val entryCount: Long,
+)
+
+data class LocalResourceInventory(
+    val frequencies: List<InstalledFrequencySource>,
+    val pitchAccent: InstalledPitchAccent?,
+    val audioPacks: List<InstalledAudioPack>,
+    val knownWords: KnownWordsInventory,
+    val wordsets: List<BundledWordset>,
 )
 
 data class DictionaryLookup(
@@ -149,6 +275,12 @@ data class ResourceManagerState(
     val catalog: ResourceCatalog? = null,
     val installedUniDic: InstalledUniDic? = null,
     val dictionaries: List<InstalledDictionary> = emptyList(),
+    val frequencySources: List<InstalledFrequencySource> = emptyList(),
+    val pitchAccent: InstalledPitchAccent? = null,
+    val audioPacks: List<InstalledAudioPack> = emptyList(),
+    val knownWords: KnownWordsInventory = KnownWordsInventory(0, 0, 0, 0, schemaOk = true),
+    val wordsets: List<BundledWordset> = emptyList(),
+    val lastLocalImport: LocalResourceImportResult? = null,
     val activeOperation: ResourceOperationProgress? = null,
     val failure: ResourceFailure? = null,
     val lastLookup: DictionaryLookup? = null,
@@ -157,7 +289,23 @@ data class ResourceManagerState(
         get() = installedUniDic != null
 
     val hasRecommendedDictionary: Boolean
-        get() = dictionaries.any { it.catalogResourceId == catalog?.recommendedDictionary?.resourceId }
+        get() {
+            val recommended = catalog?.recommendedDictionary ?: return false
+            return dictionaries.any {
+                it.isUsable &&
+                    it.slotId == recommended.slotId &&
+                    it.catalogResourceId == recommended.resourceId
+            }
+        }
+
+    val recommendedDictionarySlotOccupied: Boolean
+        get() {
+            val slotId = catalog?.recommendedDictionary?.slotId ?: return false
+            return dictionaries.any { it.occupied && it.slotId == slotId }
+        }
+
+    val recommendedDictionaryNeedsRepair: Boolean
+        get() = recommendedDictionarySlotOccupied && !hasRecommendedDictionary
 }
 
 class ResourceBridgeException(

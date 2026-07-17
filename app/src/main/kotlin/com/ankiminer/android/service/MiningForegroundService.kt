@@ -244,7 +244,7 @@ class MiningForegroundService : Service() {
         text: String,
     ): NotificationCompat.Builder =
         NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.stat_sys_download)
+            .setSmallIcon(R.drawable.ic_stat_mining)
             .setContentTitle(getString(R.string.mining_notification_title))
             .setContentText(text)
             .setContentIntent(openAppPendingIntent(identity))
@@ -329,6 +329,19 @@ class MiningForegroundService : Service() {
                 action = ACTION_UPDATE
                 putIdentity(identity)
             }
+
+        /** Resolve only this service's immutable notification-open payload. */
+        internal fun openedRunId(intent: Intent?): String? {
+            if (intent?.action != ACTION_OPEN_APP || intent.extras?.keySet() != IDENTITY_EXTRA_KEYS) {
+                return null
+            }
+            val runId = intent.getStringExtra(EXTRA_RUN_ID) ?: return null
+            val generation = intent.getLongExtra(EXTRA_GENERATION, Long.MIN_VALUE)
+            val leaseId = intent.getStringExtra(EXTRA_LEASE_ID) ?: return null
+            return runCatching {
+                MiningForegroundSessionIdentity(runId, generation, leaseId).runId
+            }.getOrNull()
+        }
 
         private fun cancelIntent(
             context: Context,

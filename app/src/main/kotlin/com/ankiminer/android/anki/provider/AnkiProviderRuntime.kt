@@ -49,6 +49,18 @@ internal class AnkiProviderRuntime(
             registry = registry,
             journal = AnkiMutationTargetVerificationJournal(store),
         )
+    private val modelProvisioner =
+        AnkiMinerModelProvisioner(
+            gateway = gateway,
+            journal = AtomicFileAnkiMinerModelProvisioningJournal(context),
+        )
+    private val remediation =
+        AnkiRemediationService(
+            journal = StoreAnkiRemediationJournal(store),
+            interruptedWorkRecovery = InterruptedAnkiWorkRecovery(recoveryGate::ensureRecovered),
+            stagingRecovery = MediaStagingRecovery(mediaStaging::recover),
+            workerThreadGuard = workerThreadGuard,
+        )
 
     private val readiness =
         AnkiProviderReadinessProbe(
@@ -83,6 +95,27 @@ internal class AnkiProviderRuntime(
 
     fun probeReadiness(cancellation: AnkiCancellation): AnkiProviderReadiness =
         readiness.probe(cancellation)
+
+    fun inspectAnkiMinerModel(
+        cancellation: AnkiCancellation,
+    ): AnkiMinerModelProvisioningResult = modelProvisioner.inspect(cancellation)
+
+    fun provisionAnkiMinerModel(
+        cancellation: AnkiCancellation,
+    ): AnkiMinerModelProvisioningResult = modelProvisioner.provision(cancellation)
+
+    fun remediationInventory(
+        cancellation: AnkiCancellation,
+    ): AnkiRemediationInventory = remediation.inventory(cancellation)
+
+    fun reconcileInterruptedWork(
+        cancellation: AnkiCancellation,
+    ): AnkiRemediationInventory = remediation.reconcileInterruptedWork(cancellation)
+
+    fun performRemediation(
+        command: AnkiRemediationCommand,
+        cancellation: AnkiCancellation,
+    ): AnkiRemediationInventory = remediation.perform(command, cancellation).inventory
 
     override fun close() {
         store.close()

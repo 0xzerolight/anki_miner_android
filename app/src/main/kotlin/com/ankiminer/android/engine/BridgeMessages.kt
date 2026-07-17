@@ -40,6 +40,25 @@ data class VideoMiningWireRequest(
     val configSnapshot: MiningConfigSnapshot,
 )
 
+enum class ReadingMiningSourceKind(
+    val wireName: String,
+) {
+    TXT("txt"),
+    EPUB("epub"),
+    SUBTITLE("subtitle"),
+    MOKURO("mokuro"),
+}
+
+data class ReadingMiningWireRequest(
+    val sourceKind: ReadingMiningSourceKind,
+    val sourcePath: String,
+    val imageArchivePath: String?,
+    val seriesName: String?,
+    val cacheDir: String,
+    val nativeLibraryDir: String,
+    val configSnapshot: MiningConfigSnapshot,
+)
+
 data class TokenizerConfiguration(
     val dicDir: String,
     val resourceId: String,
@@ -131,6 +150,8 @@ sealed interface BridgeMessage {
 
     data class VideoRun(val request: VideoMiningWireRequest) : BridgeMessage
 
+    data class ReadingRun(val request: ReadingMiningWireRequest) : BridgeMessage
+
     data class JobRegistrationRequest(val runId: String) : BridgeMessage
 
     data class JobRegistrationAccepted(val runId: String) : BridgeMessage
@@ -165,9 +186,23 @@ sealed interface BridgeMessage {
         val selection: List<com.ankiminer.android.mining.CurationSelection>?,
     ) : BridgeMessage
 
+    data class CurationPageResponse(
+        val runId: String,
+        val requestId: String,
+        val pageIndex: Long,
+        val selection: List<com.ankiminer.android.mining.CurationSelection>?,
+    ) : BridgeMessage
+
     data class CurationAccepted(
         val runId: String,
         val requestId: String,
+    ) : BridgeMessage
+
+    data class CurationPageAccepted(
+        val runId: String,
+        val requestId: String,
+        val pageIndex: Long,
+        val finalPage: Boolean,
     ) : BridgeMessage
 
     data class JobCancel(val runId: String) : BridgeMessage

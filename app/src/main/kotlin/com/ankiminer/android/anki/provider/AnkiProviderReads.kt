@@ -446,7 +446,18 @@ internal class TargetSnapshotReader(private val provider: CheckedProvider) {
     fun readModelByName(
         name: String,
         cancellation: AnkiCancellation,
-    ): ModelSnapshot {
+    ): ModelSnapshot =
+        readModelByNameOrNull(name, cancellation)
+            ?: throw AnkiReadFailure(
+                AnkiErrorCode.NOTE_TYPE_NOT_FOUND,
+                retryable = false,
+                stableMessage = "The selected Anki note type was not found",
+            )
+
+    fun readModelByNameOrNull(
+        name: String,
+        cancellation: AnkiCancellation,
+    ): ModelSnapshot? {
         val matches = ArrayList<ModelRow>()
         provider.queryRequired(MODEL_LIST_QUERY, cancellation).use { cursor ->
             requireProjection(cursor, MODEL_LIST_QUERY)
@@ -459,13 +470,7 @@ internal class TargetSnapshotReader(private val provider: CheckedProvider) {
                 if (providerName == name) matches += cursor.readModelRow(providerName)
             }
         }
-        if (matches.isEmpty()) {
-            throw AnkiReadFailure(
-                AnkiErrorCode.NOTE_TYPE_NOT_FOUND,
-                retryable = false,
-                stableMessage = "The selected Anki note type was not found",
-            )
-        }
+        if (matches.isEmpty()) return null
         if (matches.size != 1) throw targetInvalid("The selected Anki note type is ambiguous")
         return completeModel(matches.single(), cancellation)
     }

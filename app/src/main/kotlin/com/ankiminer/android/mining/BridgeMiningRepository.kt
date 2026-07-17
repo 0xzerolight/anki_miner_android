@@ -8,6 +8,7 @@ import com.ankiminer.android.engine.EngineCallbacks
 import com.ankiminer.android.engine.MiningConfigSnapshot
 import com.ankiminer.android.engine.MiningOutcome
 import com.ankiminer.android.engine.PresenterEvent
+import com.ankiminer.android.engine.PresenterMessageKind
 import com.ankiminer.android.engine.PyBridge
 import com.ankiminer.android.engine.TokenizerConfiguration
 import com.ankiminer.android.engine.VideoMiningWireRequest
@@ -39,7 +40,9 @@ internal fun interface MiningConfigSnapshotResolver {
  * Process-scoped coordinator for the one parked Python engine invocation allowed at a time.
  *
  * The run executor is exclusively for `mining.video.run`. Control messages use a different
- * executor so curation and cancellation can reach Python while that first thread is parked.
+ * executor so curation and cancellation can reach Python while that first thread is parked. A
+ * media-processing foreground session begins only after final curation confirms that the run has
+ * at least one selected candidate.
  */
 internal class BridgeMiningRepository(
     private val pyBridge: PyBridge,
@@ -66,6 +69,7 @@ internal class BridgeMiningRepository(
         PREPARING,
         REGISTERED,
         CURATING,
+        ADVANCING,
         PROMOTING,
         RUNNING,
         CANCELLING,
@@ -96,6 +100,8 @@ internal class BridgeMiningRepository(
         var foregroundClosingExpected = false
         var sourcesDetached = false
         var configSnapshot: MiningConfigSnapshot? = null
+        var hasSelectedCandidate = false
+        val presenterNotices = mutableListOf<String>()
     }
 
     private val monitor = Any()
@@ -167,6 +173,7 @@ internal class BridgeMiningRepository(
         runId: String,
         requestId: String,
         selection: List<CurationSelection>,
+        pageIndex: Long?,
     ) {
         val request =
             synchronized(monitor) {
@@ -175,7 +182,8 @@ internal class BridgeMiningRepository(
                 if (
                     run.phase != Phase.CURATING ||
                     pending.runId != runId ||
-                    pending.requestId != requestId
+                    pending.requestId != requestId ||
+                    pending.page?.pageIndex != pageIndex
                 ) {
                     throw MiningCommandException("The curation response is stale")
                 }
@@ -187,18 +195,36 @@ internal class BridgeMiningRepository(
             } catch (_: RuntimeException) {
                 throw MiningCommandException("The curation selection is invalid")
             }
-        val generation =
+        val (generation, hasSelectedCandidate) =
             synchronized(monitor) {
                 val run = active ?: throw MiningCommandException("No curation request is pending")
                 if (run.curation !== request || run.phase != Phase.CURATING) {
                     throw MiningCommandException("The curation response is stale")
                 }
-                run.phase = Phase.PROMOTING
-                val progress = run.progress ?: MiningProgress(0, 0, "Starting background mining")
-                mutableState.value = MiningRunState.Running(runId, progress)
-                run.generation
+                run.hasSelectedCandidate = run.hasSelectedCandidate || selection.isNotEmpty()
+                if (request.isFinalPage) {
+                    run.phase = Phase.PROMOTING
+                    val progress = run.progress ?: MiningProgress(0, 0, "Starting background mining")
+                    mutableState.value = MiningRunState.Running(runId, progress)
+                } else {
+                    run.phase = Phase.ADVANCING
+                    mutableState.value = MiningRunState.Curating(request, pageSubmissionPending = true)
+                }
+                run.generation to run.hasSelectedCandidate
             }
-        executeControl(generation) { promoteAndSubmitCuration(generation, request, rawResponse) }
+        if (request.isFinalPage) {
+            if (hasSelectedCandidate) {
+                executeControl(generation) {
+                    promoteAndSubmitCuration(generation, request, rawResponse)
+                }
+            } else {
+                executeControl(generation) {
+                    submitFinalCurationWithoutForeground(generation, request, rawResponse)
+                }
+            }
+        } else {
+            executeControl(generation) { submitIntermediateCurationPage(generation, request, rawResponse) }
+        }
     }
 
     override suspend fun cancel(runId: String) {
@@ -451,10 +477,12 @@ internal class BridgeMiningRepository(
 
             val detachedInput: VideoMiningInput?
             val runFault: ProtocolFault?
+            val presenterNotices: List<String>
             synchronized(monitor) {
                 val run = activeFor(generation) ?: return
                 detachedInput = run.input.takeIf { run.sourcesDetached }
                 runFault = run.stickyFault
+                presenterNotices = run.presenterNotices.toList()
                 active = null
             }
             var detachedCleanupFault: ProtocolFault? = null
@@ -471,6 +499,7 @@ internal class BridgeMiningRepository(
                         terminal = terminalForState,
                         fault = runFault ?: detachedCleanupFault,
                         cancelled = cancelled,
+                        presenterNotices = presenterNotices,
                     )
             }
         } finally {
@@ -511,24 +540,29 @@ internal class BridgeMiningRepository(
         terminal: BridgeMessage.Terminal?,
         fault: ProtocolFault?,
         cancelled: Boolean,
+        presenterNotices: List<String>,
     ): MiningRunState {
-        if (fault != null) return fault.toFailed(runId, terminal?.result)
+        val result = terminal?.result.withPresenterNotices(presenterNotices)
+        if (fault != null) return fault.toFailed(runId, result)
         if (terminal == null && cancelled) return MiningRunState.Cancelled(runId, null)
         if (terminal == null) {
             return ProtocolFault("Mining ended without a valid result").toFailed(runId, null)
         }
         return when (terminal.outcome) {
-            MiningOutcome.SUCCESS -> MiningRunState.Success(terminal.runId, requireNotNull(terminal.result))
-            MiningOutcome.CANCELLED -> MiningRunState.Cancelled(terminal.runId, terminal.result)
+            MiningOutcome.SUCCESS -> MiningRunState.Success(terminal.runId, requireNotNull(result))
+            MiningOutcome.CANCELLED -> MiningRunState.Cancelled(terminal.runId, result)
             MiningOutcome.FAILED ->
                 MiningRunState.Failed(
                     runId = terminal.runId,
                     failure =
                         MiningFailure(
-                            message = terminal.error?.message ?: "Mining failed",
+                            message =
+                                terminal.error?.message
+                                    ?: presenterNotices.firstOrNull()
+                                    ?: "Mining failed",
                             retryable = terminal.error?.code in RETRYABLE_TERMINAL_ERRORS,
                         ),
-                    result = terminal.result,
+                    result = result,
                 )
         }
     }
@@ -601,6 +635,42 @@ internal class BridgeMiningRepository(
             return
         }
 
+        submitFinalCurationResponse(generation, request, rawResponse)
+    }
+
+    /** Continue a zero-selection run without claiming a media-processing foreground service. */
+    private fun submitFinalCurationWithoutForeground(
+        generation: Long,
+        request: CurationRequest,
+        rawResponse: String,
+    ) {
+        val shouldSubmit =
+            synchronized(monitor) {
+                val run = activeFor(generation)
+                if (
+                    run != null &&
+                        run.runId == request.runId &&
+                        run.phase == Phase.PROMOTING &&
+                        !run.cancelRequested
+                ) {
+                    run.phase = Phase.RUNNING
+                    true
+                } else {
+                    false
+                }
+            }
+        if (!shouldSubmit) {
+            sendCancellation(generation)
+            return
+        }
+        submitFinalCurationResponse(generation, request, rawResponse)
+    }
+
+    private fun submitFinalCurationResponse(
+        generation: Long,
+        request: CurationRequest,
+        rawResponse: String,
+    ) {
         val response =
             try {
                 pyBridge.dispatch(rawResponse, null)
@@ -619,8 +689,65 @@ internal class BridgeMiningRepository(
                 recordFaultAndCancel(generation, "Python returned an invalid curation acknowledgement")
                 return
             }
-        if (accepted !is BridgeMessage.CurationAccepted) {
-            recordFaultAndCancel(generation, "Python did not accept the curation response")
+        val validAcknowledgement =
+            when (accepted) {
+                is BridgeMessage.CurationAccepted -> request.page == null
+                is BridgeMessage.CurationPageAccepted ->
+                    request.page?.pageIndex == accepted.pageIndex && accepted.finalPage
+                else -> false
+            }
+        if (!validAcknowledgement) {
+            recordFaultAndCancel(generation, "Python did not accept the final curation response")
+        }
+    }
+
+    private fun submitIntermediateCurationPage(
+        generation: Long,
+        request: CurationRequest,
+        rawResponse: String,
+    ) {
+        val page = request.page
+            ?: run {
+                recordFaultAndCancel(generation, "An intermediate curation page was missing metadata")
+                return
+            }
+        val shouldSubmit =
+            synchronized(monitor) {
+                val run = activeFor(generation)
+                run != null &&
+                    run.runId == request.runId &&
+                    run.curation === request &&
+                    run.phase == Phase.ADVANCING &&
+                    !run.cancelRequested
+            }
+        if (!shouldSubmit) return
+        val response =
+            try {
+                pyBridge.dispatch(rawResponse, null)
+            } catch (_: RuntimeException) {
+                if (isCancellationRequested(generation)) return
+                recordFaultAndCancel(generation, "Python rejected the curation page response")
+                return
+            }
+        val accepted =
+            try {
+                BridgeJsonCodec.decode(
+                    response,
+                    expectedRunId = request.runId,
+                    expectedRequestId = request.requestId,
+                )
+            } catch (_: RuntimeException) {
+                if (isCancellationRequested(generation)) return
+                recordFaultAndCancel(generation, "Python returned an invalid curation page acknowledgement")
+                return
+            }
+        if (isCancellationRequested(generation)) return
+        if (
+            accepted !is BridgeMessage.CurationPageAccepted ||
+            accepted.pageIndex != page.pageIndex ||
+            accepted.finalPage
+        ) {
+            recordFaultAndCancel(generation, "Python did not accept the curation page response")
         }
     }
 
@@ -690,7 +817,7 @@ internal class BridgeMiningRepository(
                         )
                 Phase.PROMOTING, Phase.RUNNING, Phase.CANCELLING ->
                     run.runId?.let { mutableState.value = MiningRunState.Running(it, progress) }
-                Phase.CURATING, Phase.FINALIZING -> Unit
+                Phase.CURATING, Phase.ADVANCING, Phase.FINALIZING -> Unit
             }
             lease = run.foregroundLease
         }
@@ -768,12 +895,37 @@ internal class BridgeMiningRepository(
         synchronized(monitor) {
             val run = activeFor(generation) ?: throw IllegalStateException("Curation request is stale")
             if (run.cancelRequested) return
-            if (run.phase != Phase.REGISTERED || run.curation != null) {
-                throw IllegalStateException("Curation request is duplicated or out of order")
+            when (run.phase) {
+                Phase.REGISTERED -> {
+                    val firstPageIndex = message.request.page?.pageIndex
+                    if (run.curation != null || (firstPageIndex != null && firstPageIndex != 0L)) {
+                        throw IllegalStateException("Curation request is duplicated or out of order")
+                    }
+                }
+                Phase.ADVANCING -> {
+                    val previous = run.curation
+                        ?: throw IllegalStateException("Curation page has no predecessor")
+                    val previousPage = previous.page
+                        ?: throw IllegalStateException("A single curation request cannot advance")
+                    val nextPage = message.request.page
+                        ?: throw IllegalStateException("A paged curation request cannot become single")
+                    if (
+                        previous.isFinalPage ||
+                        message.request.runId != previous.runId ||
+                        message.request.requestId != previous.requestId ||
+                        nextPage.pageIndex != previousPage.pageIndex + 1 ||
+                        nextPage.pageCount != previousPage.pageCount ||
+                        nextPage.totalCandidates != previousPage.totalCandidates ||
+                        nextPage.candidateStart != previousPage.candidateStart + previous.candidates.size.toLong()
+                    ) {
+                        throw IllegalStateException("Curation page is duplicated or out of order")
+                    }
+                }
+                else -> throw IllegalStateException("Curation request is duplicated or out of order")
             }
             run.phase = Phase.CURATING
             run.curation = message.request
-            mutableState.value = MiningRunState.Curating(message.request)
+            mutableState.value = MiningRunState.Curating(message.request, pageSubmissionPending = false)
         }
     }
 
@@ -824,6 +976,33 @@ internal class BridgeMiningRepository(
         synchronized(monitor) {
             val run = activeFor(generation) ?: throw IllegalStateException("Presenter event is stale")
             if (event.runId != run.runId) throw IllegalStateException("Presenter event belongs to another run")
+            val notices =
+                when (event) {
+                    is PresenterEvent.Message ->
+                        if (
+                            event.kind == PresenterMessageKind.WARNING ||
+                            event.kind == PresenterMessageKind.ERROR
+                        ) {
+                            listOf(event.message)
+                        } else {
+                            emptyList()
+                        }
+                    is PresenterEvent.Validation ->
+                        event.result.issues
+                            .filter { issue ->
+                                issue.severity == com.ankiminer.android.engine.ValidationSeverity.WARNING ||
+                                    issue.severity == com.ankiminer.android.engine.ValidationSeverity.ERROR
+                            }.map { it.message }
+                    is PresenterEvent.Processing -> emptyList()
+                }
+            notices.forEach { notice ->
+                if (
+                    run.presenterNotices.size < MAX_PRESENTER_NOTICES &&
+                    notice !in run.presenterNotices
+                ) {
+                    run.presenterNotices += notice
+                }
+            }
         }
     }
 
@@ -1020,6 +1199,9 @@ internal class BridgeMiningRepository(
             result = result,
         )
 
+    private fun ProcessingResult?.withPresenterNotices(notices: List<String>): ProcessingResult? =
+        this?.copy(errors = (notices + errors).distinct().take(MAX_RESULT_ERRORS))
+
     private fun labelsFor(displayName: String): Pair<String, String> {
         val withoutExtension = displayName.substringBeforeLast('.', displayName)
         val label = canonicalLabel(withoutExtension).ifEmpty { "Local video" }
@@ -1060,5 +1242,7 @@ internal class BridgeMiningRepository(
     private companion object {
         val RETRYABLE_TERMINAL_ERRORS =
             setOf("provider_unavailable", "query_failed", "timeout", "processing_failed", "engine_error")
+        const val MAX_PRESENTER_NOTICES = 16
+        const val MAX_RESULT_ERRORS = 256
     }
 }

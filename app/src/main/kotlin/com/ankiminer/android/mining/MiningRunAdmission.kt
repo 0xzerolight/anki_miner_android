@@ -1,6 +1,7 @@
 package com.ankiminer.android.mining
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
@@ -20,6 +21,25 @@ internal fun interface NotificationPermissionProbe {
     fun probe(): NotificationPermissionReadiness
 }
 
+internal sealed interface AnkiMiningTargetReadiness {
+    data object NotChecked : AnkiMiningTargetReadiness
+
+    data object Ready : AnkiMiningTargetReadiness
+
+    data class Blocked(
+        val message: String,
+        val retryable: Boolean,
+    ) : AnkiMiningTargetReadiness {
+        init {
+            require(message.isNotBlank()) { "A blocked Anki target needs a stable explanation" }
+        }
+    }
+}
+
+internal fun interface AnkiMiningTargetProbe {
+    fun probe(cancellation: AnkiCancellation): AnkiMiningTargetReadiness
+}
+
 internal enum class MiningRuntimePermissionKind {
     ANKIDROID_DATABASE,
     NOTIFICATIONS,
@@ -30,9 +50,10 @@ internal data class MiningRuntimePermissionRequest(
     val permission: String,
 )
 
-/** Activity-independent request descriptions for a future Activity Result launcher. */
+/** Activity-independent permissions which setup can request through an Activity Result launcher. */
+@SuppressLint("InlinedApi")
 internal object MiningRuntimePermissions {
-    fun requiredFor(sdkInt: Int): List<MiningRuntimePermissionRequest> =
+    fun requestableFor(sdkInt: Int): List<MiningRuntimePermissionRequest> =
         buildList {
             add(
                 MiningRuntimePermissionRequest(
@@ -80,19 +101,16 @@ private fun applicationPermissionChecker(context: Context): (String) -> Int {
 internal data class MiningRunAdmissionState(
     val anki: AnkiProviderReadiness,
     val notifications: NotificationPermissionReadiness,
+    val target: AnkiMiningTargetReadiness,
 ) {
     val isReady: Boolean
-        get() = anki is AnkiProviderReadiness.Ready && notifications == NotificationPermissionReadiness.READY
+        get() =
+            anki is AnkiProviderReadiness.Ready &&
+                target == AnkiMiningTargetReadiness.Ready
 
     val stableFailure: MiningFailure?
         get() {
-            if (notifications == NotificationPermissionReadiness.PERMISSION_DENIED) {
-                return MiningFailure(
-                    "Allow notifications before starting background mining",
-                    retryable = true,
-                )
-            }
-            return when (anki) {
+            val ankiFailure = when (anki) {
                 AnkiProviderReadiness.NotChecked ->
                     MiningFailure("AnkiDroid readiness has not been checked", retryable = true)
                 AnkiProviderReadiness.NotInstalled ->
@@ -107,6 +125,14 @@ internal data class MiningRunAdmissionState(
                     MiningFailure("Anki recovery must be resolved before another mining run", retryable = false)
                 is AnkiProviderReadiness.Ready -> null
             }
+            if (ankiFailure != null) return ankiFailure
+            return when (val targetState = target) {
+                AnkiMiningTargetReadiness.NotChecked ->
+                    MiningFailure("The Anki Miner note type has not been checked", retryable = true)
+                AnkiMiningTargetReadiness.Ready -> null
+                is AnkiMiningTargetReadiness.Blocked ->
+                    MiningFailure(targetState.message, retryable = targetState.retryable)
+            }
         }
 
     internal companion object {
@@ -114,6 +140,7 @@ internal data class MiningRunAdmissionState(
             MiningRunAdmissionState(
                 anki = AnkiProviderReadiness.Ready(apiSpecVersion = 2, versionCode = null),
                 notifications = NotificationPermissionReadiness.READY,
+                target = AnkiMiningTargetReadiness.Ready,
             )
     }
 }
@@ -128,6 +155,7 @@ internal interface MiningRunAdmissionGate {
 internal class StatefulMiningRunAdmissionGate(
     private val ankiProbe: (AnkiCancellation) -> AnkiProviderReadiness,
     private val notificationProbe: NotificationPermissionProbe,
+    private val targetProbe: AnkiMiningTargetProbe,
 ) : MiningRunAdmissionGate {
     private val mutableState = MutableStateFlow(initialState())
     override val state: StateFlow<MiningRunAdmissionState> = mutableState.asStateFlow()
@@ -136,6 +164,7 @@ internal class StatefulMiningRunAdmissionGate(
         MiningRunAdmissionState(
             anki = ankiProbe(cancellation),
             notifications = notificationProbe.probe(),
+            target = targetProbe.probe(cancellation),
         ).also { mutableState.value = it }
 
     private companion object {
@@ -143,6 +172,7 @@ internal class StatefulMiningRunAdmissionGate(
             MiningRunAdmissionState(
                 anki = AnkiProviderReadiness.NotChecked,
                 notifications = NotificationPermissionReadiness.READY,
+                target = AnkiMiningTargetReadiness.NotChecked,
             )
     }
 }

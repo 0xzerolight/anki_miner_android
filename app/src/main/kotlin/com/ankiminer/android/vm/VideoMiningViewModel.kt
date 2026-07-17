@@ -39,6 +39,7 @@ class VideoMiningViewModel(
 ) : ViewModel() {
     private data class CurationDraft(
         val requestId: String,
+        val pageIndex: Long?,
         val selectedCandidateIds: Set<String>,
         val sentenceIds: Map<String, String>,
     )
@@ -71,13 +72,15 @@ class VideoMiningViewModel(
                 (runState as? MiningRunState.Curating)?.request?.let { request ->
                     request.toUiState(local.curationDraft)
                 }
+            val repositoryCurationPending =
+                (runState as? MiningRunState.Curating)?.pageSubmissionPending == true
             VideoMiningUiState(
                 video = local.video,
                 subtitle = local.subtitle,
                 runState = runState,
                 curation = curation,
                 startPending = local.startPending,
-                curationPending = local.curationPending,
+                curationPending = local.curationPending || repositoryCurationPending,
                 cancelPending = local.cancelPending,
                 resetPending = local.resetPending,
                 commandError = local.commandError,
@@ -93,7 +96,7 @@ class VideoMiningViewModel(
             repository.state.collect { runState ->
                 if (runState is MiningRunState.Curating) {
                     localState.update { local ->
-                        if (local.curationDraft?.requestId == runState.request.requestId) {
+                        if (local.curationDraft.matches(runState.request)) {
                             local
                         } else {
                             local.copy(curationDraft = runState.request.defaultDraft())
@@ -167,7 +170,7 @@ class VideoMiningViewModel(
 
     fun toggleCandidate(candidateId: String) {
         val request = (repository.state.value as? MiningRunState.Curating)?.request ?: return
-        if (localState.value.curationPending || localState.value.cancelPending) return
+        if (isCurationSubmissionPending() || localState.value.cancelPending) return
         require(request.candidates.any { it.candidateId == candidateId })
         localState.update { local ->
             val draft = local.curationDraft.forRequest(request)
@@ -179,7 +182,7 @@ class VideoMiningViewModel(
 
     fun selectAllCandidates(selected: Boolean) {
         val request = (repository.state.value as? MiningRunState.Curating)?.request ?: return
-        if (localState.value.curationPending || localState.value.cancelPending) return
+        if (isCurationSubmissionPending() || localState.value.cancelPending) return
         localState.update { local ->
             val draft = local.curationDraft.forRequest(request)
             local.copy(
@@ -201,7 +204,7 @@ class VideoMiningViewModel(
         sentenceId: String,
     ) {
         val request = (repository.state.value as? MiningRunState.Curating)?.request ?: return
-        if (localState.value.curationPending || localState.value.cancelPending) return
+        if (isCurationSubmissionPending() || localState.value.cancelPending) return
         val candidate = request.candidates.singleOrNull { it.candidateId == candidateId } ?: return
         if (candidate.sentences.none { it.sentenceId == sentenceId }) return
         localState.update { local ->
@@ -215,6 +218,7 @@ class VideoMiningViewModel(
 
     fun confirmCuration() {
         val runState = repository.state.value as? MiningRunState.Curating ?: return
+        if (runState.pageSubmissionPending) return
         var acceptedSelection: List<CurationSelection>? = null
         while (acceptedSelection == null) {
             val local = localState.value
@@ -245,6 +249,7 @@ class VideoMiningViewModel(
                     runId = runState.request.runId,
                     requestId = runState.request.requestId,
                     selection = selection,
+                    pageIndex = runState.request.page?.pageIndex,
                 )
             } catch (failure: CancellationException) {
                 throw failure
@@ -512,18 +517,30 @@ class VideoMiningViewModel(
     private fun CurationRequest.defaultDraft(): CurationDraft =
         CurationDraft(
             requestId = requestId,
+            pageIndex = page?.pageIndex,
             selectedCandidateIds = candidates.mapTo(linkedSetOf()) { it.candidateId },
             sentenceIds = candidates.associate { it.candidateId to it.defaultSentenceId },
         )
 
     private fun CurationDraft?.forRequest(request: CurationRequest): CurationDraft =
-        if (this?.requestId == request.requestId) this else request.defaultDraft()
+        if (matches(request)) requireNotNull(this) else request.defaultDraft()
+
+    private fun CurationDraft?.matches(request: CurationRequest): Boolean =
+        this?.let { draft ->
+            draft.requestId == request.requestId &&
+                draft.pageIndex == request.page?.pageIndex
+        } == true
+
+    private fun isCurationSubmissionPending(): Boolean =
+        localState.value.curationPending ||
+            (repository.state.value as? MiningRunState.Curating)?.pageSubmissionPending == true
 
     private fun CurationRequest.toUiState(draft: CurationDraft?): CurationUiState {
         val current = draft.forRequest(this)
         return CurationUiState(
             runId = runId,
             requestId = requestId,
+            page = page,
             candidates =
                 candidates.map { candidate ->
                     CurationCandidateUiState(

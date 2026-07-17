@@ -5,16 +5,22 @@ from __future__ import annotations
 import threading
 import uuid
 import re
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, cast
 
-from .protocol import BridgeProtocolError, decode_message, encode_message
+from .protocol import BridgeProtocolError, decode_envelope, decode_message, encode_message
 
 _RUN_ID_RE = re.compile(r"^run_[0-9a-f]{32}$")
 _REQUEST_ID_RE = re.compile(r"^curation_[0-9a-f]{32}$")
 _CANDIDATE_ID_RE = re.compile(r"^candidate_[0-9a-f]{32}$")
 _SENTENCE_ID_RE = re.compile(r"^sentence_[0-9a-f]{32}$")
+
+# A page stays comfortably below the generic 32 MiB bridge envelope while keeping a
+# single Compose list and its decoded object graph bounded. These limits are mirrored by
+# BridgeJsonCodec and curation.schema.json.
+CURATION_PAGE_MAX_CANDIDATES = 100
+CURATION_PAGE_MAX_UTF8_BYTES = 512 * 1024
 
 
 @dataclass(frozen=True)
@@ -32,14 +38,38 @@ class _CandidateRef:
     sentences: Mapping[str, object]
 
 
+@dataclass(frozen=True)
+class _CurationPagePlan:
+    candidate_ids: tuple[str, ...]
+    candidate_start: int
+
+
+@dataclass(frozen=True)
+class CurationResolution:
+    paged: bool
+    page_index: int | None
+    final_page: bool
+
+
 @dataclass
 class _CurationGate:
     request_id: str
     candidates: Mapping[str, _CandidateRef]
-    request_json: str
+    request_json: str | None
+    pages: tuple[_CurationPagePlan, ...]
     event: threading.Event = field(default_factory=threading.Event)
-    resolved: bool = False
-    response: list[object] | None = None
+    page_index: int = 0
+    page_resolved: bool = False
+    cancelled: bool = False
+    selected: list[object] = field(default_factory=list)
+
+    @property
+    def paged(self) -> bool:
+        return bool(self.pages)
+
+    @property
+    def final_page(self) -> bool:
+        return not self.paged or self.page_index == len(self.pages) - 1
 
 
 @dataclass
@@ -47,6 +77,7 @@ class _JobState:
     handle: JobHandle
     curation: _CurationGate | None = None
     last_request_id: str | None = None
+    last_page_index: int | None = None
 
 
 def _opaque_id(prefix: str) -> str:
@@ -81,12 +112,9 @@ def _sentence_payload(sentence_id: str, word: object) -> dict[str, Any]:
     }
 
 
-def _candidate_payload(
-    candidate_id: str, word: object
-) -> tuple[dict[str, Any], _CandidateRef]:
+def _candidate_ref(word: object) -> _CandidateRef:
     default_sentence_id = _opaque_id("sentence")
     sentence_objects: dict[str, object] = {default_sentence_id: word}
-    sentence_payloads = [_sentence_payload(default_sentence_id, word)]
 
     alternatives = getattr(word, "sentence_candidates", ()) or ()
     if isinstance(alternatives, Sequence) and not isinstance(
@@ -97,10 +125,25 @@ def _candidate_payload(
                 continue
             sentence_id = _opaque_id("sentence")
             sentence_objects[sentence_id] = alternative
-            sentence_payloads.append(_sentence_payload(sentence_id, alternative))
+
+    return _CandidateRef(
+        original=word,
+        default_sentence_id=default_sentence_id,
+        sentences=sentence_objects,
+    )
+
+
+def _candidate_payload_from_ref(
+    candidate_id: str, reference: _CandidateRef
+) -> dict[str, Any]:
+    word = reference.original
+    sentence_payloads = [
+        _sentence_payload(sentence_id, sentence)
+        for sentence_id, sentence in reference.sentences.items()
+    ]
 
     mined_form = getattr(word, "mined_form", None)
-    payload = {
+    return {
         "candidateId": candidate_id,
         "minedForm": _as_string(
             mined_form, fallback=_as_string(getattr(word, "lemma", ""))
@@ -124,14 +167,134 @@ def _candidate_payload(
             if type(getattr(word, "occurrence_count", 0)) is int
             else 0
         ),
-        "defaultSentenceId": default_sentence_id,
+        "defaultSentenceId": reference.default_sentence_id,
         "sentences": sentence_payloads,
     }
-    return payload, _CandidateRef(
-        original=word,
-        default_sentence_id=default_sentence_id,
-        sentences=sentence_objects,
+
+
+def _candidate_payload(
+    candidate_id: str, word: object
+) -> tuple[dict[str, Any], _CandidateRef]:
+    """Retain the original raw-word helper contract used by existing tests."""
+
+    reference = _candidate_ref(word)
+    return _candidate_payload_from_ref(candidate_id, reference), reference
+
+
+def _utf8_size(raw: str) -> int:
+    try:
+        return len(raw.encode("utf-8"))
+    except UnicodeEncodeError as exc:
+        raise BridgeProtocolError(
+            "invalid_utf8", "Curation payload contains an invalid Unicode scalar"
+        ) from exc
+
+
+def _page_payload(
+    *,
+    run_id: str,
+    request_id: str,
+    page_index: int,
+    page_count: int,
+    candidate_start: int,
+    total_candidates: int,
+    candidates: list[dict[str, Any]],
+) -> dict[str, Any]:
+    return {
+        "runId": run_id,
+        "requestId": request_id,
+        "pageIndex": page_index,
+        "pageCount": page_count,
+        "candidateStart": candidate_start,
+        "totalCandidates": total_candidates,
+        "candidates": candidates,
+    }
+
+
+def _encoded_page_upper_bound(
+    *,
+    run_id: str,
+    request_id: str,
+    total_candidates: int,
+    candidates: list[dict[str, Any]],
+) -> int:
+    # Every actual page metadata value has no more decimal digits than totalCandidates.
+    # Using the total in every numeric slot makes this a conservative exact-JSON bound.
+    raw = encode_message(
+        "curation.page.request",
+        _page_payload(
+            run_id=run_id,
+            request_id=request_id,
+            page_index=total_candidates,
+            page_count=total_candidates,
+            candidate_start=total_candidates,
+            total_candidates=total_candidates,
+            candidates=candidates,
+        ),
     )
+    return _utf8_size(raw)
+
+
+def _partition_pages(
+    *,
+    run_id: str,
+    request_id: str,
+    total_candidates: int,
+    entries: Iterable[tuple[str, dict[str, Any]]],
+) -> tuple[_CurationPagePlan, ...]:
+    pages: list[_CurationPagePlan] = []
+    current_ids: list[str] = []
+    current_payloads: list[dict[str, Any]] = []
+    current_start = 0
+
+    for candidate_id, payload in entries:
+        proposed_payloads = [*current_payloads, payload]
+        within_count = len(proposed_payloads) <= CURATION_PAGE_MAX_CANDIDATES
+        within_bytes = (
+            _encoded_page_upper_bound(
+                run_id=run_id,
+                request_id=request_id,
+                total_candidates=total_candidates,
+                candidates=proposed_payloads,
+            )
+            <= CURATION_PAGE_MAX_UTF8_BYTES
+        )
+        if within_count and within_bytes:
+            current_ids.append(candidate_id)
+            current_payloads.append(payload)
+            continue
+
+        if not current_ids:
+            raise BridgeProtocolError(
+                "curation_candidate_too_large",
+                "One curation candidate exceeds the bounded page envelope",
+            )
+        pages.append(_CurationPagePlan(tuple(current_ids), current_start))
+        current_start += len(current_ids)
+        current_ids = [candidate_id]
+        current_payloads = [payload]
+        if (
+            _encoded_page_upper_bound(
+                run_id=run_id,
+                request_id=request_id,
+                total_candidates=total_candidates,
+                candidates=current_payloads,
+            )
+            > CURATION_PAGE_MAX_UTF8_BYTES
+        ):
+            raise BridgeProtocolError(
+                "curation_candidate_too_large",
+                "One curation candidate exceeds the bounded page envelope",
+            )
+
+    if current_ids:
+        pages.append(_CurationPagePlan(tuple(current_ids), current_start))
+    if len(pages) < 2:
+        raise BridgeProtocolError(
+            "invalid_curation_paging",
+            "Paged curation must contain at least two non-empty pages",
+        )
+    return tuple(pages)
 
 
 class JobRegistry:
@@ -191,8 +354,8 @@ class JobRegistry:
             first = not state.handle.cancel_event.is_set()
             state.handle.cancel_event.set()
             if state.curation is not None:
-                state.curation.response = None
-                state.curation.resolved = True
+                state.curation.cancelled = True
+                state.curation.page_resolved = True
                 state.curation.event.set()
             return first
 
@@ -202,8 +365,8 @@ class JobRegistry:
         with self._lock:
             state = self._require_active(run_id)
             if state.curation is not None:
-                state.curation.response = None
-                state.curation.resolved = True
+                state.curation.cancelled = True
+                state.curation.page_resolved = True
                 state.curation.event.set()
             self._active = None
 
@@ -215,8 +378,8 @@ class JobRegistry:
             if self._active is not None:
                 self._active.handle.cancel_event.set()
                 if self._active.curation is not None:
-                    self._active.curation.response = None
-                    self._active.curation.resolved = True
+                    self._active.curation.cancelled = True
+                    self._active.curation.page_resolved = True
                     self._active.curation.event.set()
 
     def await_curation(
@@ -254,49 +417,154 @@ class JobRegistry:
 
             request_id = _opaque_id("curation")
             refs: dict[str, _CandidateRef] = {}
-            payloads: list[dict[str, Any]] = []
             for word in candidates:
                 candidate_id = _opaque_id("candidate")
-                payload, reference = _candidate_payload(candidate_id, word)
+                reference = _candidate_ref(word)
                 refs[candidate_id] = reference
-                payloads.append(payload)
-            request_json = encode_message(
-                "curation.request",
-                {"runId": run_id, "requestId": request_id, "candidates": payloads},
-            )
+
+            request_json: str | None = None
+            pages: tuple[_CurationPagePlan, ...] = ()
+            if len(refs) <= CURATION_PAGE_MAX_CANDIDATES:
+                payloads = [
+                    _candidate_payload_from_ref(candidate_id, reference)
+                    for candidate_id, reference in refs.items()
+                ]
+                small_request = encode_message(
+                    "curation.request",
+                    {
+                        "runId": run_id,
+                        "requestId": request_id,
+                        "candidates": payloads,
+                    },
+                )
+                if _utf8_size(small_request) <= CURATION_PAGE_MAX_UTF8_BYTES:
+                    request_json = small_request
+                else:
+                    pages = _partition_pages(
+                        run_id=run_id,
+                        request_id=request_id,
+                        total_candidates=len(refs),
+                        entries=zip(refs.keys(), payloads, strict=True),
+                    )
+            else:
+                pages = _partition_pages(
+                    run_id=run_id,
+                    request_id=request_id,
+                    total_candidates=len(refs),
+                    entries=(
+                        (
+                            candidate_id,
+                            _candidate_payload_from_ref(candidate_id, reference),
+                        )
+                        for candidate_id, reference in refs.items()
+                    ),
+                )
             gate = _CurationGate(
-                request_id=request_id, candidates=refs, request_json=request_json
+                request_id=request_id,
+                candidates=refs,
+                request_json=request_json,
+                pages=pages,
             )
             state.curation = gate
 
-        try:
-            # Emit outside the registry lock: a Java fake or future Kotlin
-            # implementation may answer synchronously on the same thread.
-            emit_request(request_json)
-        except BaseException:
+        while True:
             with self._lock:
-                gate.response = None
-                gate.resolved = True
-                gate.event.set()
-                if state.curation is gate:
-                    state.curation = None
-                    state.last_request_id = request_id
-            raise
+                if state.handle.cancel_event.is_set() or gate.cancelled:
+                    self._complete_curation_locked(state, gate)
+                    return None
+                try:
+                    request_json = self._current_request_json(run_id, gate)
+                except BaseException:
+                    gate.cancelled = True
+                    gate.page_resolved = True
+                    gate.event.set()
+                    self._complete_curation_locked(state, gate)
+                    raise
+            try:
+                # Emit outside the registry lock: Kotlin fakes may answer synchronously.
+                emit_request(request_json)
+            except BaseException:
+                with self._lock:
+                    gate.cancelled = True
+                    gate.page_resolved = True
+                    gate.event.set()
+                    self._complete_curation_locked(state, gate)
+                raise
 
-        gate.event.wait()
-        with self._lock:
-            if state.curation is gate:
-                state.curation = None
-                state.last_request_id = request_id
-            if state.handle.cancel_event.is_set():
-                return None
-            return gate.response
+            gate.event.wait()
+            with self._lock:
+                if state.handle.cancel_event.is_set() or gate.cancelled:
+                    self._complete_curation_locked(state, gate)
+                    return None
+                if not gate.page_resolved:
+                    raise BridgeProtocolError(
+                        "invalid_curation_state",
+                        "Curation wait was released without a page response",
+                    )
+                if gate.final_page:
+                    result = list(gate.selected)
+                    self._complete_curation_locked(state, gate)
+                    return result
+                gate.page_index += 1
+                gate.page_resolved = False
+                gate.event.clear()
 
-    def resolve_curation(self, raw_response: str) -> None:
-        """Validate and apply a ``curation.response`` JSON message."""
+    def _current_request_json(self, run_id: str, gate: _CurationGate) -> str:
+        if not gate.paged:
+            return cast(str, gate.request_json)
+        plan = gate.pages[gate.page_index]
+        payloads = [
+            _candidate_payload_from_ref(candidate_id, gate.candidates[candidate_id])
+            for candidate_id in plan.candidate_ids
+        ]
+        raw = encode_message(
+            "curation.page.request",
+            _page_payload(
+                run_id=run_id,
+                request_id=gate.request_id,
+                page_index=gate.page_index,
+                page_count=len(gate.pages),
+                candidate_start=plan.candidate_start,
+                total_candidates=len(gate.candidates),
+                candidates=payloads,
+            ),
+        )
+        if (
+            len(payloads) > CURATION_PAGE_MAX_CANDIDATES
+            or _utf8_size(raw) > CURATION_PAGE_MAX_UTF8_BYTES
+        ):
+            raise BridgeProtocolError(
+                "invalid_curation_paging",
+                "A planned curation page exceeds its runtime bound",
+            )
+        return raw
 
-        payload = decode_message(raw_response, expected_type="curation.response")
-        if set(payload) != {"runId", "requestId", "selection"}:
+    @staticmethod
+    def _complete_curation_locked(
+        state: _JobState,
+        gate: _CurationGate,
+    ) -> None:
+        if state.curation is gate:
+            state.curation = None
+            state.last_request_id = gate.request_id
+            state.last_page_index = gate.page_index if gate.paged else None
+
+    def resolve_curation(self, raw_response: str) -> CurationResolution:
+        """Validate and apply a single or paged curation response."""
+
+        decoded = decode_envelope(raw_response)
+        if decoded.message_type not in {"curation.response", "curation.page.response"}:
+            raise BridgeProtocolError(
+                "invalid_curation_response", "Unsupported curation response type"
+            )
+        payload = decoded.payload
+        paged_response = decoded.message_type == "curation.page.response"
+        expected_fields = (
+            {"runId", "requestId", "pageIndex", "selection"}
+            if paged_response
+            else {"runId", "requestId", "selection"}
+        )
+        if set(payload) != expected_fields:
             raise BridgeProtocolError(
                 "invalid_curation_response", "Curation response fields are invalid"
             )
@@ -311,12 +579,24 @@ class JobRegistry:
                 "invalid_curation_response",
                 "requestId is not a valid opaque request ID",
             )
+        raw_page_index = payload.get("pageIndex")
+        if paged_response and (
+            type(raw_page_index) is not int or cast(int, raw_page_index) < 0
+        ):
+            raise BridgeProtocolError(
+                "invalid_curation_response",
+                "pageIndex must be a non-negative integer",
+            )
+        page_index = cast(int, raw_page_index) if paged_response else None
 
         with self._lock:
             state = self._require_active(run_id)
             gate = state.curation
             if gate is None:
-                if state.last_request_id == request_id:
+                if (
+                    state.last_request_id == request_id
+                    and state.last_page_index == page_index
+                ):
                     raise BridgeProtocolError(
                         "duplicate_curation_response", "Curation was already resolved"
                     )
@@ -329,28 +609,57 @@ class JobRegistry:
                     "stale_curation_request",
                     "The response belongs to a stale curation request",
                 )
-            if gate.resolved:
+            if gate.paged != paged_response:
+                raise BridgeProtocolError(
+                    "invalid_curation_response",
+                    "Curation response type does not match the pending request",
+                )
+            if gate.paged and page_index != gate.page_index:
+                raise BridgeProtocolError(
+                    "stale_curation_page",
+                    "The response belongs to a stale curation page",
+                )
+            if gate.page_resolved:
                 raise BridgeProtocolError(
                     "duplicate_curation_response", "Curation was already resolved"
                 )
 
             selection = payload["selection"]
             if selection is None:
-                resolved: list[object] | None = None
+                gate.cancelled = True
             elif isinstance(selection, list):
-                resolved = self._resolve_selection(gate, selection)
+                if len(selection) > CURATION_PAGE_MAX_CANDIDATES:
+                    raise BridgeProtocolError(
+                        "invalid_curation_response",
+                        "Curation selection exceeds the page item limit",
+                    )
+                allowed_candidate_ids = (
+                    set(gate.pages[gate.page_index].candidate_ids)
+                    if gate.paged
+                    else set(gate.candidates)
+                )
+                gate.selected.extend(
+                    self._resolve_selection(gate, selection, allowed_candidate_ids)
+                )
             else:
                 raise BridgeProtocolError(
                     "invalid_curation_response", "selection must be null or an array"
                 )
 
-            gate.response = resolved
-            gate.resolved = True
+            final_page = gate.final_page or gate.cancelled
+            gate.page_resolved = True
             gate.event.set()
+            return CurationResolution(
+                paged=gate.paged,
+                page_index=gate.page_index if gate.paged else None,
+                final_page=final_page,
+            )
 
     @staticmethod
     def _resolve_selection(
-        gate: _CurationGate, selection: list[object]
+        gate: _CurationGate,
+        selection: list[object],
+        allowed_candidate_ids: set[str],
     ) -> list[object]:
         resolved: list[object] = []
         seen_candidates: set[str] = set()
@@ -388,7 +697,7 @@ class JobRegistry:
                     "duplicate_candidate", "A candidate may only be selected once"
                 )
             candidate = gate.candidates.get(candidate_id)
-            if candidate is None:
+            if candidate is None or candidate_id not in allowed_candidate_ids:
                 raise BridgeProtocolError(
                     "unknown_candidate", "The selected candidate is unknown"
                 )
@@ -433,8 +742,19 @@ def cancel_job(raw_request: str) -> str:
 
 
 def submit_curation(raw_response: str) -> str:
-    _REGISTRY.resolve_curation(raw_response)
-    payload = decode_message(raw_response, expected_type="curation.response")
+    decoded = decode_envelope(raw_response)
+    resolution = _REGISTRY.resolve_curation(raw_response)
+    payload = decoded.payload
+    if resolution.paged:
+        return encode_message(
+            "curation.page.accepted",
+            {
+                "runId": payload["runId"],
+                "requestId": payload["requestId"],
+                "pageIndex": resolution.page_index,
+                "finalPage": resolution.final_page,
+            },
+        )
     return encode_message(
         "curation.accepted",
         {"runId": payload["runId"], "requestId": payload["requestId"]},

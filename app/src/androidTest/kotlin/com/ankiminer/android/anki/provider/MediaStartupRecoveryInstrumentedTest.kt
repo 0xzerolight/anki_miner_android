@@ -526,6 +526,14 @@ private class NoWriteGateway : AnkiProviderGateway {
     override fun createDeck(command: AnkiProviderMutationCommand.CreateDeck): String? =
         error("media startup recovery must not create a deck")
 
+    override fun createAnkiMinerModel(
+        command: AnkiProviderMutationCommand.CreateAnkiMinerModel,
+    ): String? = error("media startup recovery must not create a model")
+
+    override fun updateAnkiMinerTemplate(
+        command: AnkiProviderMutationCommand.UpdateAnkiMinerTemplate,
+    ): Int = error("media startup recovery must not update a model template")
+
     override fun storeMedia(command: AnkiProviderMutationCommand.StoreMedia): String? {
         mediaCommands += command
         error("media startup recovery must not reissue a provider media write")

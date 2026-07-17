@@ -16,6 +16,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
 import com.ankiminer.android.media.SafDocument
 import com.ankiminer.android.mining.CurationCandidate
+import com.ankiminer.android.mining.CurationPage
 import com.ankiminer.android.mining.CurationRequest
 import com.ankiminer.android.mining.CurationSentence
 import com.ankiminer.android.mining.MiningFailure
@@ -167,6 +168,37 @@ class VideoMiningScreenTest {
             .onNodeWithTag(VideoMiningTestTags.CONTENT)
             .performScrollToNode(hasTestTag(VideoMiningTestTags.CONFIRM_CURATION))
         composeRule.onNodeWithTag(VideoMiningTestTags.CONFIRM_CURATION).assertIsNotEnabled()
+    }
+
+    @Test
+    fun nonFinalCurationPageShowsPositionAndNextPageAction() {
+        val request = request().copy(page = CurationPage(0, 2, 0, 4))
+        setScreen(
+            state =
+                VideoMiningUiState(
+                    runState = MiningRunState.Curating(request),
+                    curation =
+                        CurationUiState(
+                            runId = request.runId,
+                            requestId = request.requestId,
+                            candidates =
+                                request.candidates.map {
+                                    CurationCandidateUiState(
+                                        candidate = it,
+                                        selected = true,
+                                        sentenceId = it.defaultSentenceId,
+                                    )
+                                },
+                            page = request.page,
+                        ),
+                ),
+        )
+
+        composeRule.onNodeWithText("Page 1 of 2 · items 1–2 of 4").assertExists()
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(VideoMiningTestTags.CONFIRM_CURATION))
+        composeRule.onNodeWithText("Continue to next page with 2 selected on this page").assertExists()
     }
 
     @Test

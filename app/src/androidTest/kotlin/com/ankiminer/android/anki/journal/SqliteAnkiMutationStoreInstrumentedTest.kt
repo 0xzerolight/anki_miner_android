@@ -999,6 +999,50 @@ class SqliteAnkiMutationStoreInstrumentedTest {
         }
 
     @Test
+    fun uncertainMediaAbandonmentAtomicallyTerminalizesClaimAndRemediation() =
+        withStore { store ->
+            val media = prepareMedia(store, 281, 1, 1)
+            store.recordProviderEntry(media.child.id)
+            store.completeMediaFailure(
+                media.child.id,
+                media.claim.id,
+                ChildState.COMMIT_UNCERTAIN,
+                MediaClaimState.COMMIT_UNCERTAIN,
+                AlignedResult.MediaUncertain(0, media.claim.assetId, "provider outcome unknown"),
+                "provider outcome unknown",
+            )
+            store.abandonOwnerless(emptySet())
+            val remediation =
+                store.openRemediations().single {
+                    it.kind == RemediationKind.MEDIA_COMMIT_UNCERTAIN
+                }
+
+            assertThrows(JournalInvariantViolation::class.java) {
+                store.transitionClaim(
+                    media.claim.id,
+                    MediaClaimState.ACKNOWLEDGED_BY_USER,
+                    compactEvidence = "generic split acknowledgement",
+                )
+            }
+            assertThrows(JournalInvariantViolation::class.java) {
+                store.resolveRemediation(remediation.id, "generic split resolution")
+            }
+
+            val resolved =
+                store.acknowledgeUncertainMedia(
+                    remediation.id,
+                    "user accepted possible orphaned media",
+                )
+
+            assertEquals(RemediationState.RESOLVED, resolved.state)
+            assertTrue(store.openRemediations().none { it.id == remediation.id })
+            assertEquals(
+                MediaClaimState.ACKNOWLEDGED_BY_USER.name,
+                claimState(store.writableDatabase, media.claim.id),
+            )
+        }
+
+    @Test
     fun enteredDeckUncertaintyAtomicallyCreatesRemediationBeforeTerminalResult() =
         withStore { store ->
             val request = verifyRequest(39, 1)
