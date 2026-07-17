@@ -1,6 +1,5 @@
 package com.ankiminer.android.ui.theme
 
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
@@ -29,10 +28,11 @@ private val DarkColors =
         secondaryContainer = Color(0xFF334B47),
     )
 
+/** Theme follows the persisted app setting, never the system theme; dark is the default. */
 @Composable
-fun AnkiMinerTheme(content: @Composable () -> Unit) {
+fun AnkiMinerTheme(darkTheme: Boolean = true, content: @Composable () -> Unit) {
     MaterialTheme(
-        colorScheme = if (isSystemInDarkTheme()) DarkColors else LightColors,
+        colorScheme = if (darkTheme) DarkColors else LightColors,
         content = content,
     )
 }

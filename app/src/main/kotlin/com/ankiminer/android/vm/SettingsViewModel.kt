@@ -51,6 +51,8 @@ internal class SettingsViewModel(
         save(
             AppSettings(
                 firstRunComplete = current.firstRunComplete,
+                // Restoring mining defaults must not change the user's chosen look.
+                theme = current.theme,
                 // Only the explicit Setup action may consent to changing a persisted target.
                 legacyNoteType = current.legacyNoteType,
                 // An empty persisted chain means newly imported resources should become active.

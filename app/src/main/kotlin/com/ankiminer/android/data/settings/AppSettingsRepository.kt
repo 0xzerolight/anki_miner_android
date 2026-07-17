@@ -83,6 +83,7 @@ class DataStoreAppSettingsRepository(context: Context) : AppSettingsRepository {
         return try {
             AppSettings(
             firstRunComplete = firstRunComplete,
+            theme = ThemeMode.fromWire(preferences[Keys.themeMode]),
             deckName = preferences[Keys.deckName],
             legacyNoteType = legacyTarget,
             tags = preferences[Keys.tags],
@@ -126,6 +127,7 @@ class DataStoreAppSettingsRepository(context: Context) : AppSettingsRepository {
             // settings Flow fail or silently admit an old target. Retain only migration state.
             AppSettings(
                 firstRunComplete = firstRunComplete,
+                theme = ThemeMode.fromWire(preferences[Keys.themeMode]),
                 legacyNoteType = legacyTarget,
             )
         }
@@ -137,6 +139,7 @@ class DataStoreAppSettingsRepository(context: Context) : AppSettingsRepository {
     ) {
         preferences.clear()
         preferences[Keys.firstRunComplete] = value.firstRunComplete
+        preferences[Keys.themeMode] = value.theme.wireValue
         value.deckName?.let { preferences[Keys.deckName] = it }
         // Persist the canonical target as an acceptance marker. A completed setup from an older
         // build may have no note_type key because it inherited the desktop Lapis default.
@@ -178,6 +181,7 @@ class DataStoreAppSettingsRepository(context: Context) : AppSettingsRepository {
 
     private object Keys {
         val firstRunComplete = booleanPreferencesKey("first_run_complete")
+        val themeMode = stringPreferencesKey("theme_mode")
         val deckName = stringPreferencesKey("deck_name")
         val noteType = stringPreferencesKey("note_type")
         val tags = stringPreferencesKey("tags")

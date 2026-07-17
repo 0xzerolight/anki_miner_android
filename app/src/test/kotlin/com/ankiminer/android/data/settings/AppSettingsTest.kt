@@ -10,6 +10,17 @@ import org.junit.Test
 
 class AppSettingsTest {
     @Test
+    fun themeDefaultsToDarkAndWireCodecRoundTrips() {
+        assertEquals(ThemeMode.DARK, AppSettings().theme)
+        ThemeMode.entries.forEach { mode ->
+            assertEquals(mode, ThemeMode.fromWire(mode.wireValue))
+        }
+        assertEquals(ThemeMode.DARK, ThemeMode.fromWire(null))
+        assertEquals(ThemeMode.DARK, ThemeMode.fromWire("solarized"))
+        assertEquals(ThemeMode.DARK, ThemeMode.fromWire(""))
+    }
+
+    @Test
     fun firstPartyAnkiTargetAndAndroidConstraintsAreAlwaysExplicit() {
         val snapshot = EngineSettingsSnapshotMapper.map(AppSettings(), emptyList())
 
