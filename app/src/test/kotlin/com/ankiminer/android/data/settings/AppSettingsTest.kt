@@ -10,6 +10,18 @@ import org.junit.Test
 
 class AppSettingsTest {
     @Test
+    fun themeDefaultsToDarkAndWireCodecRoundTrips() {
+        assertEquals(ThemeMode.DARK, AppSettings().theme)
+        assertFalse(AppSettings().setupWizardSeen)
+        ThemeMode.entries.forEach { mode ->
+            assertEquals(mode, ThemeMode.fromWire(mode.wireValue))
+        }
+        assertEquals(ThemeMode.DARK, ThemeMode.fromWire(null))
+        assertEquals(ThemeMode.DARK, ThemeMode.fromWire("solarized"))
+        assertEquals(ThemeMode.DARK, ThemeMode.fromWire(""))
+    }
+
+    @Test
     fun firstPartyAnkiTargetAndAndroidConstraintsAreAlwaysExplicit() {
         val snapshot = EngineSettingsSnapshotMapper.map(AppSettings(), emptyList())
 
@@ -61,44 +73,6 @@ class AppSettingsTest {
         assertEquals(BridgeJsonValue.Text("jisho"), last.values["kind"])
         assertEquals(BridgeJsonValue.Null, last.values["dict_id"])
         assertEquals(BridgeJsonValue.Decimal(1.0), snapshot.settings["jisho_delay"])
-    }
-
-    @Test
-    fun legacyNoteTypeIsRetainedForConsentButNeverBecomesTheAndroidJobTarget() {
-        val settings = AppSettings(legacyNoteType = "Lapis")
-
-        val snapshot = EngineSettingsSnapshotMapper.map(settings, emptyList())
-
-        assertEquals("Lapis", AppSettingsValidator.validate(settings).legacyNoteType)
-        assertEquals(
-            BridgeJsonValue.Text(AnkiMinerNoteModel.MODEL_NAME),
-            snapshot.settings["anki_note_type"],
-        )
-    }
-
-    @Test
-    fun completedPreMigrationSetupWithoutAnExplicitTargetFailsClosedToLapisConsent() {
-        assertEquals(
-            "Lapis",
-            AppSettingsTargetMigration.legacyTarget(
-                firstRunComplete = true,
-                persistedNoteType = null,
-            ),
-        )
-        assertEquals(
-            null,
-            AppSettingsTargetMigration.legacyTarget(
-                firstRunComplete = false,
-                persistedNoteType = null,
-            ),
-        )
-        assertEquals(
-            null,
-            AppSettingsTargetMigration.legacyTarget(
-                firstRunComplete = true,
-                persistedNoteType = AnkiMinerNoteModel.MODEL_NAME,
-            ),
-        )
     }
 
     @Test

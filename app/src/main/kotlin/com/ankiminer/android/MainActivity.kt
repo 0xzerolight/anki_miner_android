@@ -15,6 +15,8 @@ import androidx.activity.enableEdgeToEdge
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.ankiminer.android.anki.provider.ANKIDROID_PACKAGE
+import com.ankiminer.android.data.settings.AppSettings
+import com.ankiminer.android.data.settings.ThemeMode
 import com.ankiminer.android.mining.MiningRepositoryFactory
 import com.ankiminer.android.mining.MiningRuntimePermissions
 import com.ankiminer.android.reading.ReadingRepositoryFactory
@@ -65,7 +67,13 @@ class MainActivity : ComponentActivity() {
         notificationRunId.value = MiningForegroundService.openedRunId(intent)
         enableEdgeToEdge()
         setContent {
-            AnkiMinerTheme {
+            val appSettings =
+                (application as AnkiMinerApplication)
+                    .settingsRepository
+                    .settings
+                    .collectAsStateWithLifecycle(initialValue = AppSettings())
+                    .value
+            AnkiMinerTheme(darkTheme = appSettings.theme == ThemeMode.DARK) {
                 val miningViewModel: VideoMiningViewModel = viewModel(factory = viewModelFactory)
                 val readingViewModel: ReadingMiningViewModel =
                     viewModel(factory = readingViewModelFactory)

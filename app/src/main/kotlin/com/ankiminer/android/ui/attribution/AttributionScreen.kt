@@ -32,10 +32,7 @@ internal fun AttributionScreen(
     val uriHandler = LocalUriHandler.current
     val occupiedDictionaries = attributionDictionaries(installedDictionaries)
     val installedCatalogAttribution = installedCatalogAttributions(occupiedDictionaries)
-    val hasInstalledJitendex =
-        occupiedDictionaries.any {
-            it.catalogResourceId == catalog.recommendedDictionary.resourceId
-        }
+    val jitendexInstalled = hasInstalledJitendex(occupiedDictionaries)
     Column(
         modifier =
             modifier
@@ -51,6 +48,16 @@ internal fun AttributionScreen(
         AttributionGroup(stringResource(R.string.attribution_unidic), catalog.unidic.attribution)
         LicenseText(stringResource(R.string.attribution_unidic_lite_license), MIT_LICENSE)
         LicenseText(stringResource(R.string.attribution_unidic_license), BSD_3_CLAUSE)
+
+        OutlinedCard(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(stringResource(R.string.attribution_icon_title), style = MaterialTheme.typography.titleMedium)
+                Text(stringResource(R.string.attribution_icon_text))
+                TextButton(onClick = { uriHandler.openUri(SHIPPORI_URL) }) {
+                    Text(SHIPPORI_URL, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
 
         Text(
             stringResource(R.string.attribution_installed_dictionaries),
@@ -74,7 +81,7 @@ internal fun AttributionScreen(
                 installedCatalogAttribution,
             )
         }
-        if (hasInstalledJitendex) {
+        if (jitendexInstalled) {
             OutlinedCard(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(stringResource(R.string.attribution_derived_terms_title), style = MaterialTheme.typography.titleMedium)
@@ -126,6 +133,21 @@ internal fun attributionDictionaries(
         .filter { it.occupied }
         .distinctBy { it.slotId }
         .sortedBy { it.slotId }
+
+/**
+ * The derived-terms notice covers Jitendex-bundled upstreams (Tatoeba, Kanji alive,
+ * JmdictFurigana) and must never show for other catalog dictionaries.
+ */
+internal fun hasInstalledJitendex(
+    installedDictionaries: List<InstalledDictionary>,
+): Boolean {
+    val jitendex =
+        FrozenResourceCatalog.value.dictionaries.singleOrNull { it.slotId == "jitendex" }
+            ?: return false
+    return installedDictionaries.any {
+        it.occupied && it.slotId == jitendex.slotId && it.catalogResourceId == jitendex.resourceId
+    }
+}
 
 internal fun installedCatalogAttributions(
     installedDictionaries: List<InstalledDictionary>,
@@ -235,6 +257,7 @@ Redistribution and use in source and binary forms, with or without modification,
 
 THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS “AS IS” AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE."""
 
+private const val SHIPPORI_URL = "https://fonts.google.com/specimen/Shippori+Mincho+B1"
 private const val SOURCE_URL = "https://github.com/0xzerolight/anki_miner_android"
 private const val NOTICES_URL = "$SOURCE_URL/blob/main/NOTICE.md"
 private const val PRIVACY_POLICY_URL = "$SOURCE_URL/blob/main/PRIVACY.md"

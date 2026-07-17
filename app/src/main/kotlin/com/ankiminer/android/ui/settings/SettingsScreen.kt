@@ -1,5 +1,7 @@
 package com.ankiminer.android.ui.settings
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -7,18 +9,16 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedCard
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -26,7 +26,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
@@ -39,52 +38,117 @@ import com.ankiminer.android.data.settings.AppSettingsDraftParser
 import com.ankiminer.android.data.settings.AudioFormat
 import com.ankiminer.android.data.settings.EngineSettingsSnapshotMapper
 import com.ankiminer.android.data.settings.PitchCategoryFormat
-import com.ankiminer.android.data.settings.ResourceChainSelection
+import com.ankiminer.android.data.settings.ThemeMode
 import com.ankiminer.android.diagnostics.TesterDiagnostics
+import com.ankiminer.android.vm.SetupUiState
 import com.ankiminer.android.vm.SettingsViewModel
+import com.ankiminer.android.vm.SetupViewModel
 
 @Composable
 internal fun SettingsRoute(
     viewModel: SettingsViewModel,
+    setupViewModel: SetupViewModel,
     diagnostics: TesterDiagnostics,
+    onRequestPermissions: () -> Unit,
+    onOpenAppSettings: () -> Unit,
+    onInstallAnkiDroid: () -> Unit,
+    onOpenAnkiDroid: () -> Unit,
     onOpenSpeechSettings: () -> Unit,
     onShareDiagnostics: (String) -> Unit,
     onAttributions: () -> Unit,
+    onRunSetupWizard: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
+    LaunchedEffect(setupViewModel) { setupViewModel.refresh() }
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val saving by viewModel.saving.collectAsStateWithLifecycle()
     val error by viewModel.error.collectAsStateWithLifecycle()
     val resources by viewModel.resourceState.collectAsStateWithLifecycle()
+    val setup by setupViewModel.uiState.collectAsStateWithLifecycle()
+    val dictionaryPicker =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            uri?.let { setupViewModel.importCustomDictionary(it.toString()) }
+        }
+    val frequencyPicker =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            uri?.let { setupViewModel.importFrequencySource(it.toString()) }
+        }
+    val pitchPicker =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            uri?.let { setupViewModel.importPitchAccent(it.toString()) }
+        }
+    val audioPackPicker =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            uri?.let { setupViewModel.importAudioPack(it.toString()) }
+        }
+    val knownWordsPicker =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            uri?.let { setupViewModel.importKnownWords(it.toString()) }
+        }
     SettingsScreen(
         settings = settings,
         resources = resources,
+        setup = setup,
+        setupViewModel = setupViewModel,
         saving = saving,
         error = error,
         diagnostics = diagnostics,
         onSave = viewModel::save,
         onRestoreDefaults = viewModel::restoreDefaults,
         onDismissError = viewModel::dismissError,
+        onRequestPermissions = onRequestPermissions,
+        onOpenAppSettings = onOpenAppSettings,
+        onInstallAnkiDroid = onInstallAnkiDroid,
+        onOpenAnkiDroid = onOpenAnkiDroid,
         onOpenSpeechSettings = onOpenSpeechSettings,
         onShareDiagnostics = onShareDiagnostics,
         onAttributions = onAttributions,
+        onRunSetupWizard = onRunSetupWizard,
+        onImportCustom = { dictionaryPicker.launch(arrayOf("application/zip", "application/octet-stream")) },
+        onImportFrequency = {
+            frequencyPicker.launch(arrayOf("application/zip", "text/csv", "text/tab-separated-values", "text/plain", "application/octet-stream"))
+        },
+        onImportPitch = {
+            pitchPicker.launch(arrayOf("application/zip", "text/csv", "text/tab-separated-values", "application/octet-stream"))
+        },
+        onImportAudioPack = { audioPackPicker.launch(arrayOf("application/zip", "application/octet-stream")) },
+        onImportKnownWords = {
+            knownWordsPicker.launch(arrayOf("application/json", "text/csv", "text/tab-separated-values", "text/plain", "application/octet-stream"))
+        },
         modifier = modifier,
     )
 }
 
+/**
+ * Mirrors the desktop Settings organisation: Anki, Media, Dictionaries, Audio, Frequency,
+ * Filtering, UI. Immediate actions (installs, imports, recovery) run instantly through
+ * [SetupViewModel]; the Save button covers only the persisted [AppSettings] fields.
+ */
 @Composable
 private fun SettingsScreen(
     settings: AppSettings,
     resources: ResourceManagerState,
+    setup: SetupUiState,
+    setupViewModel: SetupViewModel,
     saving: Boolean,
     error: String?,
     diagnostics: TesterDiagnostics,
     onSave: (AppSettings) -> Unit,
     onRestoreDefaults: () -> Unit,
     onDismissError: () -> Unit,
+    onRequestPermissions: () -> Unit,
+    onOpenAppSettings: () -> Unit,
+    onInstallAnkiDroid: () -> Unit,
+    onOpenAnkiDroid: () -> Unit,
     onOpenSpeechSettings: () -> Unit,
     onShareDiagnostics: (String) -> Unit,
     onAttributions: () -> Unit,
+    onRunSetupWizard: (() -> Unit)?,
+    onImportCustom: () -> Unit,
+    onImportFrequency: () -> Unit,
+    onImportPitch: () -> Unit,
+    onImportAudioPack: () -> Unit,
+    onImportKnownWords: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var deckName by remember(settings.deckName) { mutableStateOf(settings.deckName.orEmpty()) }
@@ -112,6 +176,7 @@ private fun SettingsScreen(
     var iPlusOne by remember(settings.useIPlusOneFilter) { mutableStateOf(settings.useIPlusOneFilter) }
     var sentenceLength by remember(settings.useSentenceLengthFilter) { mutableStateOf(settings.useSentenceLengthFilter) }
     var pitchFormat by remember(settings.pitchCategoryFormat) { mutableStateOf(settings.pitchCategoryFormat) }
+    var theme by remember(settings.theme) { mutableStateOf(settings.theme) }
     var dictionarySources by remember(settings.dictionarySources, resources.dictionaries) {
         mutableStateOf(
             EngineSettingsSnapshotMapper.resolveResourceChain(
@@ -153,6 +218,12 @@ private fun SettingsScreen(
             listOf(bitrate, maxCharacters, readingOccurrence, maxFrequency, workers)
                 .all(AppSettingsDraftParser::isOptionalInt)
 
+    CatalogReplaceDialog(
+        state = setup,
+        onConfirm = setupViewModel::confirmCatalogDictionaryReplace,
+        onDismiss = setupViewModel::dismissCatalogDictionaryReplace,
+    )
+
     Column(
         modifier =
             modifier
@@ -168,6 +239,22 @@ private fun SettingsScreen(
         )
         Text(stringResource(R.string.settings_intro))
 
+        SystemStatusCard(
+            state = setup,
+            onRefresh = setupViewModel::refresh,
+            onRequestPermissions = onRequestPermissions,
+            onOpenAppSettings = onOpenAppSettings,
+            onInstallAnkiDroid = onInstallAnkiDroid,
+            onOpenAnkiDroid = onOpenAnkiDroid,
+        )
+        setup.operation?.let { operation ->
+            ResourceOperationCard(operation, setupViewModel::cancelOperation)
+        }
+        setup.failure?.let { failure ->
+            ResourceFailureCard(failure, setupViewModel::dismissFailure)
+        }
+
+        SettingsSectionHeading(stringResource(R.string.settings_anki_target))
         SettingsSection(stringResource(R.string.settings_anki_target)) {
             SettingTextField(
                 deckName,
@@ -175,15 +262,7 @@ private fun SettingsScreen(
                 stringResource(R.string.settings_deck_name),
                 stringResource(R.string.settings_deck_default),
             )
-            Text(
-                stringResource(
-                    if (settings.legacyNoteType == null) {
-                        R.string.settings_note_managed
-                    } else {
-                        R.string.settings_note_legacy_pending
-                    },
-                ),
-            )
+            Text(stringResource(R.string.settings_note_managed))
             BooleanSetting(
                 label = stringResource(R.string.settings_tags_override),
                 help = stringResource(R.string.settings_tags_override_help),
@@ -200,30 +279,180 @@ private fun SettingsScreen(
                 enabled = tagsOverride,
             )
         }
+        AnkiTargetCard(setup, setupViewModel::provisionModel)
+        AnkiRecoveryCard(
+            state = setup,
+            onReconcile = setupViewModel::reconcileInterruptedWork,
+            onRetryStaging = setupViewModel::retryStagingCleanup,
+            onAcknowledgeMedia = setupViewModel::acknowledgeUnattachedMedia,
+            onAcknowledgeUncertainMedia = setupViewModel::acknowledgeUncertainMedia,
+            onResolveReview = setupViewModel::resolveAfterExternalReview,
+        )
+        setup.ankiOperation?.let { AnkiOperationCard() }
+        setup.ankiFailure?.let { failure ->
+            AnkiFailureCard(failure, setupViewModel::dismissAnkiFailure)
+        }
 
+        SettingsSectionHeading(stringResource(R.string.settings_media))
         SettingsSection(stringResource(R.string.settings_media)) {
             NumericField(audioPadding, { audioPadding = it }, stringResource(R.string.settings_audio_padding), stringResource(R.string.settings_audio_padding_default))
             NumericField(screenshotOffset, { screenshotOffset = it }, stringResource(R.string.settings_screenshot_offset), stringResource(R.string.settings_screenshot_offset_default))
             NumericField(subtitleOffset, { subtitleOffset = it }, stringResource(R.string.settings_subtitle_offset), stringResource(R.string.settings_subtitle_offset_default), allowNegative = true)
             NumericField(bitrate, { bitrate = it }, stringResource(R.string.settings_audio_bitrate), stringResource(R.string.settings_audio_bitrate_default))
             Text(stringResource(R.string.settings_audio_format))
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf(
-                    null to stringResource(R.string.settings_desktop_default),
-                    AudioFormat.MP3 to stringResource(R.string.settings_mp3),
-                    AudioFormat.OPUS to stringResource(R.string.settings_opus),
-                )
-                    .forEach { (value, label) ->
-                        OutlinedButton(
-                            onClick = { audioFormat = value },
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            Text(if (audioFormat == value) "✓ $label" else label)
-                        }
-                    }
-            }
+            ChoiceSegmentedButtons(
+                values = listOf(null, AudioFormat.MP3, AudioFormat.OPUS),
+                selected = audioFormat,
+                label = { value ->
+                    stringResource(
+                        when (value) {
+                            null -> R.string.settings_desktop_default
+                            AudioFormat.MP3 -> R.string.settings_mp3
+                            AudioFormat.OPUS -> R.string.settings_opus
+                        },
+                    )
+                },
+                onSelect = { audioFormat = it },
+            )
         }
 
+        SettingsSectionHeading(stringResource(R.string.settings_dictionaries))
+        ResourceCard(
+            title = stringResource(R.string.unidic_resource_title),
+            description = stringResource(R.string.unidic_resource_description),
+            installed = setup.uniDicInstalled,
+            busy = setup.busy,
+            action = setupViewModel::installUniDic,
+            actionLabel = stringResource(if (setup.uniDicInstalled) R.string.unidic_repair else R.string.unidic_install),
+        )
+        CatalogDictionaryCards(setup, setupViewModel::installCatalogDictionary)
+        CustomDictionaryImportCard(
+            state = setup,
+            onSlotChanged = setupViewModel::setCustomSlotId,
+            onReplaceChanged = setupViewModel::setCustomReplace,
+            onImport = onImportCustom,
+        )
+        PitchImportCard(
+            state = setup,
+            onNameChanged = setupViewModel::setPitchSourceName,
+            onFormatChanged = setupViewModel::setPitchFormat,
+            onReplaceChanged = setupViewModel::setPitchReplace,
+            onImport = onImportPitch,
+        )
+        SettingsSection(stringResource(R.string.settings_dictionary_chain)) {
+            Text(stringResource(R.string.settings_dictionary_chain_help), style = MaterialTheme.typography.bodySmall)
+            ResourceChainEditor(
+                choices = dictionarySources,
+                labels =
+                    resources.dictionaries
+                        .filter { it.isUsable }
+                        .associate { dictionary ->
+                            dictionary.slotId to "${dictionary.sourceName} (${dictionary.entryCount})"
+                        },
+                emptyMessage = stringResource(R.string.settings_no_dictionaries),
+                onChange = { dictionarySources = it },
+            )
+            HorizontalDivider()
+            BooleanSetting(
+                label = stringResource(R.string.settings_jisho),
+                help = stringResource(R.string.settings_jisho_disclosure),
+                checked = jisho,
+                onCheckedChange = { jisho = it },
+            )
+            HorizontalDivider()
+            Text(stringResource(R.string.settings_pitch_format), style = MaterialTheme.typography.titleSmall)
+            Text(
+                resources.pitchAccent?.let {
+                    stringResource(R.string.settings_pitch_installed, it.sourceName, it.entryCount)
+                } ?: stringResource(R.string.settings_pitch_not_installed),
+                style = MaterialTheme.typography.bodySmall,
+            )
+            ChoiceSegmentedButtons(
+                values = listOf(null, PitchCategoryFormat.JAPANESE, PitchCategoryFormat.ROMAJI),
+                selected = pitchFormat,
+                label = { value ->
+                    stringResource(
+                        when (value) {
+                            null -> R.string.settings_desktop_default
+                            PitchCategoryFormat.JAPANESE -> R.string.settings_pitch_japanese
+                            PitchCategoryFormat.ROMAJI -> R.string.settings_pitch_romaji
+                        },
+                    )
+                },
+                onSelect = { pitchFormat = it },
+            )
+        }
+        DictionaryInventoryCard(setup)
+        if (setup.dictionaries.any { it.isUsable }) {
+            DictionaryLookupCard(
+                state = setup,
+                onTermChanged = setupViewModel::setLookupTerm,
+                onSelectSlot = setupViewModel::setLookupSlot,
+                onLookup = setupViewModel::lookup,
+            )
+        }
+
+        SettingsSectionHeading(stringResource(R.string.settings_audio_section))
+        SettingsSection(stringResource(R.string.settings_audio_pack_chain)) {
+            Text(stringResource(R.string.settings_audio_pack_help), style = MaterialTheme.typography.bodySmall)
+            ResourceChainEditor(
+                choices = audioPacks,
+                labels =
+                    resources.audioPacks.associate { pack ->
+                        pack.packId to "${pack.sourceName} (${pack.entryCount})"
+                    },
+                emptyMessage = stringResource(R.string.settings_no_audio_packs),
+                onChange = { audioPacks = it },
+            )
+        }
+        AudioPackImportCard(
+            state = setup,
+            onIdChanged = setupViewModel::setAudioPackId,
+            onReplaceChanged = setupViewModel::setAudioPackReplace,
+            onImport = onImportAudioPack,
+        )
+        SettingsSection(stringResource(R.string.settings_reading_audio)) {
+            BooleanSetting(
+                label = stringResource(R.string.settings_reading_tts),
+                help = stringResource(R.string.settings_reading_tts_help),
+                checked = readingTts,
+                onCheckedChange = { readingTts = it },
+            )
+            OutlinedButton(
+                onClick = onOpenSpeechSettings,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(stringResource(R.string.settings_open_speech_services))
+            }
+            Text(
+                stringResource(R.string.settings_tts_readiness_help),
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+
+        SettingsSectionHeading(stringResource(R.string.settings_frequency_section))
+        SettingsSection(stringResource(R.string.settings_frequency_chain)) {
+            Text(stringResource(R.string.settings_frequency_chain_help), style = MaterialTheme.typography.bodySmall)
+            ResourceChainEditor(
+                choices = frequencySources,
+                labels =
+                    resources.frequencySources.associate { source ->
+                        source.sourceId to "${source.sourceName} (${source.entryCount})"
+                    },
+                emptyMessage = stringResource(R.string.settings_no_frequency_sources),
+                onChange = { frequencySources = it },
+            )
+        }
+        FrequencyImportCard(
+            state = setup,
+            onIdChanged = setupViewModel::setFrequencySourceId,
+            onNameChanged = setupViewModel::setFrequencySourceName,
+            onFormatChanged = setupViewModel::setFrequencyFormat,
+            onReplaceChanged = setupViewModel::setFrequencyReplace,
+            onImport = onImportFrequency,
+        )
+
+        SettingsSectionHeading(stringResource(R.string.settings_filtering))
         SettingsSection(stringResource(R.string.settings_filtering)) {
             NullableToggle(stringResource(R.string.settings_known_words), knownWords, false) { knownWords = it }
             Text(
@@ -256,77 +485,11 @@ private fun SettingsScreen(
                 stringResource(R.string.settings_max_frequency_default),
             )
             NumericField(workers, { workers = it }, stringResource(R.string.settings_workers), stringResource(R.string.settings_workers_default))
-        }
-
-        SettingsSection(stringResource(R.string.settings_local_resources)) {
-            Text(stringResource(R.string.settings_dictionary_chain), style = MaterialTheme.typography.titleSmall)
-            Text(stringResource(R.string.settings_dictionary_chain_help), style = MaterialTheme.typography.bodySmall)
-            ResourceChainEditor(
-                choices = dictionarySources,
-                labels =
-                    resources.dictionaries
-                        .filter { it.isUsable }
-                        .associate { dictionary ->
-                            dictionary.slotId to "${dictionary.sourceName} (${dictionary.entryCount})"
-                        },
-                emptyMessage = stringResource(R.string.settings_no_dictionaries),
-                onChange = { dictionarySources = it },
-            )
-
-            HorizontalDivider()
-            Text(stringResource(R.string.settings_frequency_chain), style = MaterialTheme.typography.titleSmall)
-            Text(stringResource(R.string.settings_frequency_chain_help), style = MaterialTheme.typography.bodySmall)
-            ResourceChainEditor(
-                choices = frequencySources,
-                labels =
-                    resources.frequencySources.associate { source ->
-                        source.sourceId to "${source.sourceName} (${source.entryCount})"
-                    },
-                emptyMessage = stringResource(R.string.settings_no_frequency_sources),
-                onChange = { frequencySources = it },
-            )
-
-            HorizontalDivider()
-            Text(stringResource(R.string.settings_audio_pack_chain), style = MaterialTheme.typography.titleSmall)
-            Text(stringResource(R.string.settings_audio_pack_help), style = MaterialTheme.typography.bodySmall)
-            ResourceChainEditor(
-                choices = audioPacks,
-                labels =
-                    resources.audioPacks.associate { pack ->
-                        pack.packId to "${pack.sourceName} (${pack.entryCount})"
-                    },
-                emptyMessage = stringResource(R.string.settings_no_audio_packs),
-                onChange = { audioPacks = it },
-            )
-
-            HorizontalDivider()
-            Text(stringResource(R.string.settings_pitch_format), style = MaterialTheme.typography.titleSmall)
-            Text(
-                resources.pitchAccent?.let {
-                    stringResource(R.string.settings_pitch_installed, it.sourceName, it.entryCount)
-                } ?: stringResource(R.string.settings_pitch_not_installed),
-                style = MaterialTheme.typography.bodySmall,
-            )
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf(
-                    null to stringResource(R.string.settings_desktop_default),
-                    PitchCategoryFormat.JAPANESE to stringResource(R.string.settings_pitch_japanese),
-                    PitchCategoryFormat.ROMAJI to stringResource(R.string.settings_pitch_romaji),
-                ).forEach { (value, label) ->
-                    OutlinedButton(
-                        onClick = { pitchFormat = value },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text(if (pitchFormat == value) "✓ $label" else label)
-                    }
-                }
-            }
-
             HorizontalDivider()
             Text(stringResource(R.string.settings_wordsets), style = MaterialTheme.typography.titleSmall)
             Text(stringResource(R.string.settings_wordsets_help), style = MaterialTheme.typography.bodySmall)
             if (resources.wordsets.isEmpty()) {
-                Text(stringResource(R.string.settings_no_wordsets))
+                Text(stringResource(R.string.bundled_wordsets_unavailable), color = MaterialTheme.colorScheme.error)
             } else {
                 resources.wordsets.forEach { wordset ->
                     BooleanSetting(
@@ -345,33 +508,37 @@ private fun SettingsScreen(
                 }
             }
         }
+        KnownWordsImportCard(
+            state = setup,
+            onFormatChanged = setupViewModel::setKnownWordsFormat,
+            onImport = onImportKnownWords,
+        )
+        setup.lastLocalImport?.let { imported -> LocalImportResultCard(imported) }
 
-        SettingsSection(stringResource(R.string.settings_reading_audio)) {
-            BooleanSetting(
-                label = stringResource(R.string.settings_reading_tts),
-                help = stringResource(R.string.settings_reading_tts_help),
-                checked = readingTts,
-                onCheckedChange = { readingTts = it },
+        SettingsSectionHeading(stringResource(R.string.settings_ui_section))
+        SettingsSection(stringResource(R.string.settings_ui_section)) {
+            Text(stringResource(R.string.settings_theme))
+            ChoiceSegmentedButtons(
+                values = ThemeMode.entries,
+                selected = theme,
+                label = { value ->
+                    stringResource(
+                        when (value) {
+                            ThemeMode.LIGHT -> R.string.settings_theme_light
+                            ThemeMode.DARK -> R.string.settings_theme_dark
+                        },
+                    )
+                },
+                onSelect = { theme = it },
             )
-            OutlinedButton(
-                onClick = onOpenSpeechSettings,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(stringResource(R.string.settings_open_speech_services))
+            if (onRunSetupWizard != null) {
+                OutlinedButton(
+                    onClick = onRunSetupWizard,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(stringResource(R.string.settings_run_setup_wizard))
+                }
             }
-            Text(
-                stringResource(R.string.settings_tts_readiness_help),
-                style = MaterialTheme.typography.bodySmall,
-            )
-        }
-
-        SettingsSection(stringResource(R.string.settings_online_fallback)) {
-            BooleanSetting(
-                label = stringResource(R.string.settings_jisho),
-                help = stringResource(R.string.settings_jisho_disclosure),
-                checked = jisho,
-                onCheckedChange = { jisho = it },
-            )
         }
 
         error?.let {
@@ -401,6 +568,7 @@ private fun SettingsScreen(
             onClick = {
                 onSave(
                     settings.copy(
+                        theme = theme,
                         deckName = deckName.takeIf(String::isNotEmpty),
                         tags = tags.takeIf { tagsOverride },
                         audioPaddingSeconds = AppSettingsDraftParser.optionalDouble(audioPadding),
@@ -452,197 +620,5 @@ private fun SettingsScreen(
         }
         HorizontalDivider()
         TextButton(onClick = onAttributions) { Text(stringResource(R.string.settings_attributions)) }
-    }
-}
-
-@Composable
-private fun ResourceChainEditor(
-    choices: List<ResourceChainSelection>,
-    labels: Map<String, String>,
-    emptyMessage: String,
-    onChange: (List<ResourceChainSelection>) -> Unit,
-) {
-    if (choices.isEmpty()) {
-        Text(emptyMessage)
-        return
-    }
-    choices.forEachIndexed { index, choice ->
-        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .toggleable(
-                        value = choice.enabled,
-                        role = Role.Checkbox,
-                        onValueChange = { enabled ->
-                            onChange(
-                                choices.toMutableList().also {
-                                    it[index] = choice.copy(enabled = enabled)
-                                },
-                            )
-                        },
-                    ).padding(vertical = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Checkbox(
-                    checked = choice.enabled,
-                    onCheckedChange = null,
-                )
-                Column(Modifier.weight(1f)) {
-                    Text(labels[choice.resourceId] ?: choice.resourceId)
-                    Text(choice.resourceId, style = MaterialTheme.typography.bodySmall)
-                }
-            }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(
-                    enabled = index > 0,
-                    onClick = { onChange(choices.swap(index, index - 1)) },
-                    modifier = Modifier.weight(1f),
-                ) { Text(stringResource(R.string.settings_move_up)) }
-                OutlinedButton(
-                    enabled = index < choices.lastIndex,
-                    onClick = { onChange(choices.swap(index, index + 1)) },
-                    modifier = Modifier.weight(1f),
-                ) { Text(stringResource(R.string.settings_move_down)) }
-            }
-        }
-    }
-}
-
-private fun <T> List<T>.swap(
-    first: Int,
-    second: Int,
-): List<T> =
-    toMutableList().also { values ->
-        val held = values[first]
-        values[first] = values[second]
-        values[second] = held
-    }
-
-@Composable
-private fun SettingsSection(title: String, content: @Composable () -> Unit) {
-    OutlinedCard(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text(
-                title,
-                modifier = Modifier.semantics { heading() },
-                style = MaterialTheme.typography.titleMedium,
-            )
-            content()
-        }
-    }
-}
-
-@Composable
-private fun SettingTextField(
-    value: String,
-    onChange: (String) -> Unit,
-    label: String,
-    supporting: String,
-    enabled: Boolean = true,
-) {
-    OutlinedTextField(
-        value = value,
-        onValueChange = onChange,
-        label = { Text(label) },
-        supportingText = { Text(supporting) },
-        enabled = enabled,
-        singleLine = true,
-        modifier = Modifier.fillMaxWidth(),
-    )
-}
-
-@Composable
-private fun NumericField(
-    value: String,
-    onChange: (String) -> Unit,
-    label: String,
-    supporting: String,
-    allowNegative: Boolean = false,
-) {
-    SettingTextField(
-        value = value,
-        onChange = { candidate ->
-            if (
-                candidate.isEmpty() ||
-                candidate.toDoubleOrNull() != null ||
-                candidate == "." ||
-                (allowNegative && candidate in setOf("-", "-."))
-            ) {
-                onChange(candidate)
-            }
-        },
-        label = label,
-        supporting = supporting,
-    )
-}
-
-@Composable
-private fun NullableToggle(
-    label: String,
-    value: Boolean?,
-    desktopDefault: Boolean,
-    onChange: (Boolean?) -> Unit,
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .toggleable(
-                    value = value ?: desktopDefault,
-                    role = Role.Checkbox,
-                    onValueChange = { onChange(it) },
-                ).padding(vertical = 4.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-            Column(Modifier.weight(1f)) {
-                Text(label)
-                Text(
-                    stringResource(
-                        if (value == null) {
-                            if (desktopDefault) {
-                                R.string.settings_default_on
-                            } else {
-                                R.string.settings_default_off
-                            }
-                        } else {
-                            R.string.settings_android_override
-                        },
-                    ),
-                    style = MaterialTheme.typography.bodySmall,
-                )
-            }
-            Checkbox(checked = value ?: desktopDefault, onCheckedChange = null)
-        }
-        if (value != null) {
-            TextButton(onClick = { onChange(null) }) {
-                Text(stringResource(R.string.settings_default_action))
-            }
-        }
-    }
-}
-
-@Composable
-private fun BooleanSetting(
-    label: String,
-    help: String,
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit,
-) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .toggleable(
-                value = checked,
-                role = Role.Checkbox,
-                onValueChange = onCheckedChange,
-            ).padding(vertical = 4.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text(label)
-            Text(help, style = MaterialTheme.typography.bodySmall)
-        }
-        Checkbox(checked = checked, onCheckedChange = null)
     }
 }

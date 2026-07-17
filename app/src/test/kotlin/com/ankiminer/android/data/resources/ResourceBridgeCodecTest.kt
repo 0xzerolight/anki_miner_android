@@ -12,12 +12,41 @@ class ResourceBridgeCodecTest {
 
         assertEquals("unidic-lite-1.0.8", catalog.unidic.resourceId)
         assertEquals(260_467_176L, catalog.unidic.install.sizeBytes)
-        assertEquals("jitendex-2026.07.09.0", catalog.recommendedDictionary.resourceId)
-        assertEquals(540_565_403L, catalog.recommendedDictionary.dictionary.uncompressedBytes)
+        assertEquals(
+            listOf("jitendex-2026.07.09.0", "jmdict-en-2026-07-17"),
+            catalog.dictionaries.map { it.resourceId },
+        )
+
+        val jitendex = catalog.dictionary("jitendex-2026.07.09.0")!!
+        assertEquals("jitendex", jitendex.slotId)
+        assertEquals(540_565_403L, jitendex.dictionary.uncompressedBytes)
         assertEquals(
             setOf("Jitendex", "JMdict", "Tatoeba example sentences", "Kanji alive pronunciation audio", "JmdictFurigana"),
-            catalog.recommendedDictionary.attribution.mapTo(mutableSetOf()) { it.name },
+            jitendex.attribution.mapTo(mutableSetOf()) { it.name },
         )
+
+        val jmdict = catalog.dictionary("jmdict-en-2026-07-17")!!
+        assertEquals("jmdict", jmdict.slotId)
+        assertEquals(170_311_400L, jmdict.dictionary.uncompressedBytes)
+        assertEquals(
+            setOf("JMdict", "jmdict-yomitan"),
+            jmdict.attribution.mapTo(mutableSetOf()) { it.name },
+        )
+
+        assertEquals(null, catalog.dictionary("not-in-catalog"))
+    }
+
+    @Test
+    fun committedPythonCatalogJsonMatchesTheFrozenKotlinCatalog() {
+        val payload =
+            checkNotNull(javaClass.getResourceAsStream("/resource_catalog_v1.json")) {
+                "resource_catalog_v1.json missing from the test classpath"
+            }.bufferedReader().use { it.readText() }
+        val raw =
+            """{"schemaVersion":1,"type":"resource.catalog","payload":${payload.trim()}}"""
+
+        // decodeCatalog throws resource_catalog_mismatch on any divergence.
+        assertEquals(FrozenResourceCatalog.value, ResourceBridgeCodec.decodeCatalog(raw))
     }
 
     @Test
@@ -44,9 +73,13 @@ class ResourceBridgeCodecTest {
                 catalog = FrozenResourceCatalog.value,
                 dictionaries = listOf(installed),
             )
-        assertTrue(state.recommendedDictionarySlotOccupied)
-        assertTrue(state.recommendedDictionaryNeedsRepair)
-        assertTrue(!state.hasRecommendedDictionary)
+        val jitendexStatus = state.catalogDictionaries.single { it.resource.slotId == "jitendex" }
+        assertTrue(jitendexStatus.slotOccupied)
+        assertTrue(jitendexStatus.needsRepair)
+        assertTrue(!jitendexStatus.installed)
+        val jmdictStatus = state.catalogDictionaries.single { it.resource.slotId == "jmdict" }
+        assertTrue(!jmdictStatus.slotOccupied)
+        assertTrue(!jmdictStatus.installed)
     }
 
     @Test
@@ -65,9 +98,9 @@ class ResourceBridgeCodecTest {
     }
 
     @Test
-    fun recommendedDictionaryRequiresUsableCatalogIdentity() {
-        val expected = FrozenResourceCatalog.value.recommendedDictionary
-        val customInRecommendedSlot =
+    fun catalogDictionaryStatusRequiresUsableCatalogIdentity() {
+        val expected = FrozenResourceCatalog.value.dictionary("jitendex-2026.07.09.0")!!
+        val customInCatalogSlot =
             InstalledDictionary(
                 slotId = expected.slotId,
                 occupied = true,
@@ -84,22 +117,34 @@ class ResourceBridgeCodecTest {
         val customState =
             ResourceManagerState(
                 catalog = FrozenResourceCatalog.value,
-                dictionaries = listOf(customInRecommendedSlot),
+                dictionaries = listOf(customInCatalogSlot),
             )
-        assertTrue(customState.recommendedDictionarySlotOccupied)
-        assertTrue(customState.recommendedDictionaryNeedsRepair)
-        assertTrue(!customState.hasRecommendedDictionary)
+        val customStatus = customState.catalogDictionaries.single { it.resource.slotId == "jitendex" }
+        assertTrue(customStatus.slotOccupied)
+        assertTrue(customStatus.needsRepair)
+        assertTrue(!customStatus.installed)
 
-        val installedRecommended =
-            customInRecommendedSlot.copy(
+        val installedCatalog =
+            customInCatalogSlot.copy(
                 sourceName = expected.dictionary.title,
                 sourceRevision = expected.dictionary.revision,
                 catalogResourceId = expected.resourceId,
                 attribution = expected.attribution,
             )
-        val recommendedState = customState.copy(dictionaries = listOf(installedRecommended))
-        assertTrue(recommendedState.hasRecommendedDictionary)
-        assertTrue(!recommendedState.recommendedDictionaryNeedsRepair)
+        val installedState = customState.copy(dictionaries = listOf(installedCatalog))
+        val installedStatus =
+            installedState.catalogDictionaries.single { it.resource.slotId == "jitendex" }
+        assertTrue(installedStatus.installed)
+        assertTrue(!installedStatus.needsRepair)
+    }
+
+    @Test
+    fun installedDictionaryWithUnknownCatalogIdentityIsRejected() {
+        val unknownCatalogId =
+            """{"schemaVersion":1,"type":"resource.dictionary.listed","payload":{"dictionaries":[{"slotId":"jitendex","occupied":true,"valid":true,"sourceName":"Jitendex.org [2026-07-09]","sourceRevision":"2026.07.09.0","format":"yomitan","entryCount":1,"schemaOk":true,"embeddedAttribution":{},"catalogResourceId":"not-in-catalog","attribution":[]}]}}"""
+        assertThrows(ResourceBridgeException::class.java) {
+            ResourceBridgeCodec.decodeDictionaryList(unknownCatalogId)
+        }
     }
 
     @Test

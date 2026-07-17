@@ -66,8 +66,11 @@ data class ResourceCatalog(
     val unidic: UniDicCatalogResource
         get() = resources.filterIsInstance<UniDicCatalogResource>().single()
 
-    val recommendedDictionary: YomitanCatalogResource
-        get() = resources.filterIsInstance<YomitanCatalogResource>().single()
+    val dictionaries: List<YomitanCatalogResource>
+        get() = resources.filterIsInstance<YomitanCatalogResource>()
+
+    fun dictionary(resourceId: String): YomitanCatalogResource? =
+        dictionaries.singleOrNull { it.resourceId == resourceId }
 }
 
 data class InstalledUniDic(
@@ -288,24 +291,30 @@ data class ResourceManagerState(
     val hasUniDic: Boolean
         get() = installedUniDic != null
 
-    val hasRecommendedDictionary: Boolean
-        get() {
-            val recommended = catalog?.recommendedDictionary ?: return false
-            return dictionaries.any {
-                it.isUsable &&
-                    it.slotId == recommended.slotId &&
-                    it.catalogResourceId == recommended.resourceId
+    val catalogDictionaries: List<CatalogDictionaryStatus>
+        get() =
+            catalog?.dictionaries.orEmpty().map { resource ->
+                CatalogDictionaryStatus(
+                    resource = resource,
+                    installed =
+                        dictionaries.any {
+                            it.isUsable &&
+                                it.slotId == resource.slotId &&
+                                it.catalogResourceId == resource.resourceId
+                        },
+                    slotOccupied =
+                        dictionaries.any { it.occupied && it.slotId == resource.slotId },
+                )
             }
-        }
+}
 
-    val recommendedDictionarySlotOccupied: Boolean
-        get() {
-            val slotId = catalog?.recommendedDictionary?.slotId ?: return false
-            return dictionaries.any { it.occupied && it.slotId == slotId }
-        }
-
-    val recommendedDictionaryNeedsRepair: Boolean
-        get() = recommendedDictionarySlotOccupied && !hasRecommendedDictionary
+data class CatalogDictionaryStatus(
+    val resource: YomitanCatalogResource,
+    val installed: Boolean,
+    val slotOccupied: Boolean,
+) {
+    val needsRepair: Boolean
+        get() = slotOccupied && !installed
 }
 
 class ResourceBridgeException(

@@ -15,7 +15,6 @@ import com.ankiminer.android.data.resources.PitchAccentSourceFormat
 import com.ankiminer.android.data.settings.AppSettingsRepository
 import com.ankiminer.android.engine.PythonRuntimeReadiness
 import com.ankiminer.android.mining.MiningRunAdmissionState
-import com.ankiminer.android.ui.setup.SetupUiState
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -49,11 +48,7 @@ internal class SetupViewModel(
         val audioPackId: String = "audio-pack",
         val audioPackReplace: Boolean = false,
         val knownWordsFormat: KnownWordsSourceFormat = KnownWordsSourceFormat.JSON,
-        val completing: Boolean = false,
-        val completionError: Boolean = false,
-        val acceptingTarget: Boolean = false,
-        val targetConsentError: Boolean = false,
-        val recommendedReplaceConfirmationVisible: Boolean = false,
+        val pendingReplaceResourceId: String? = null,
     )
 
     private val local = MutableStateFlow(LocalState())
@@ -82,18 +77,12 @@ internal class SetupViewModel(
                 notifications = admission.notifications,
                 model = ankiState.model,
                 remediations = ankiState.remediations,
-                legacyNoteType = appSettings.legacyNoteType,
                 ankiOperation = ankiState.operation,
                 ankiFailure = ankiState.failure,
-                firstRunComplete = appSettings.firstRunComplete,
+                wizardSeen = appSettings.setupWizardSeen,
                 uniDicInstalled = resourceState.hasUniDic,
-                recommendedDictionaryInstalled = resourceState.hasRecommendedDictionary,
-                recommendedDictionarySlotOccupied =
-                    resourceState.recommendedDictionarySlotOccupied,
-                recommendedDictionaryNeedsRepair =
-                    resourceState.recommendedDictionaryNeedsRepair,
-                recommendedReplaceConfirmationVisible =
-                    localState.recommendedReplaceConfirmationVisible,
+                catalogDictionaries = resourceState.catalogDictionaries,
+                pendingReplaceResourceId = localState.pendingReplaceResourceId,
                 dictionaries = resourceState.dictionaries,
                 frequencySources = resourceState.frequencySources,
                 pitchAccent = resourceState.pitchAccent,
@@ -118,10 +107,6 @@ internal class SetupViewModel(
                 audioPackId = localState.audioPackId,
                 audioPackReplace = localState.audioPackReplace,
                 knownWordsFormat = localState.knownWordsFormat,
-                completing = localState.completing,
-                completionError = localState.completionError,
-                targetAcceptanceInProgress = localState.acceptingTarget,
-                targetConsentError = localState.targetConsentError,
             )
         }.stateIn(
             viewModelScope,
@@ -148,25 +133,8 @@ internal class SetupViewModel(
     }
 
     fun provisionModel() {
-        val current = uiState.value
-        if (current.ankiOperation != null || current.targetAcceptanceInProgress) return
-        if (current.legacyNoteType == null) {
-            ankiSetup.provisionModel()
-            return
-        }
-        local.update { it.copy(acceptingTarget = true, targetConsentError = false) }
-        viewModelScope.launch {
-            try {
-                repository.update { it.copy(legacyNoteType = null) }
-                ankiSetup.provisionModel()
-            } catch (failure: CancellationException) {
-                throw failure
-            } catch (_: Exception) {
-                local.update { it.copy(targetConsentError = true) }
-            } finally {
-                local.update { it.copy(acceptingTarget = false) }
-            }
-        }
+        if (uiState.value.ankiOperation != null) return
+        ankiSetup.provisionModel()
     }
 
     fun reconcileInterruptedWork() = ankiSetup.reconcileInterruptedWork()
@@ -193,22 +161,25 @@ internal class SetupViewModel(
         viewModelScope.launch { resources.installUniDic() }
     }
 
-    fun installRecommendedDictionary() {
-        if (uiState.value.recommendedDictionarySlotOccupied) {
-            local.update { it.copy(recommendedReplaceConfirmationVisible = true) }
+    fun installCatalogDictionary(resourceId: String) {
+        val status =
+            uiState.value.catalogDictionaries.firstOrNull { it.resource.resourceId == resourceId }
+                ?: return
+        if (status.slotOccupied) {
+            local.update { it.copy(pendingReplaceResourceId = resourceId) }
         } else {
-            viewModelScope.launch { resources.installRecommendedDictionary(replace = false) }
+            viewModelScope.launch { resources.installCatalogDictionary(resourceId, replace = false) }
         }
     }
 
-    fun confirmRecommendedDictionaryReplace() {
-        if (!uiState.value.recommendedDictionarySlotOccupied) return
-        local.update { it.copy(recommendedReplaceConfirmationVisible = false) }
-        viewModelScope.launch { resources.installRecommendedDictionary(replace = true) }
+    fun confirmCatalogDictionaryReplace() {
+        val resourceId = uiState.value.pendingReplaceResourceId ?: return
+        local.update { it.copy(pendingReplaceResourceId = null) }
+        viewModelScope.launch { resources.installCatalogDictionary(resourceId, replace = true) }
     }
 
-    fun dismissRecommendedDictionaryReplace() {
-        local.update { it.copy(recommendedReplaceConfirmationVisible = false) }
+    fun dismissCatalogDictionaryReplace() {
+        local.update { it.copy(pendingReplaceResourceId = null) }
     }
 
     fun importCustomDictionary(uri: String) {
@@ -330,18 +301,15 @@ internal class SetupViewModel(
 
     fun permissionsReturned() = refreshExternalReadiness()
 
-    fun finishFirstRun() {
-        if (!uiState.value.canFinishFirstRun) return
-        local.update { it.copy(completing = true, completionError = false) }
+    /** Fire-and-forget: the wizard was completed or skipped and must not re-appear. */
+    fun markWizardSeen() {
         viewModelScope.launch {
             try {
-                repository.update { it.copy(firstRunComplete = true) }
+                repository.update { it.copy(setupWizardSeen = true) }
             } catch (failure: CancellationException) {
                 throw failure
             } catch (_: Exception) {
-                local.update { it.copy(completionError = true) }
-            } finally {
-                local.update { it.copy(completing = false) }
+                // A failed write re-offers the (skippable) wizard next launch; never crash.
             }
         }
     }

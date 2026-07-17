@@ -565,9 +565,10 @@ object ResourceBridgeCodec {
             invalid("Unreadable dictionary fallback metadata is inconsistent")
         }
         installed.catalogResourceId?.let { catalogId ->
-            val expected = FrozenResourceCatalog.value.recommendedDictionary
+            val expected =
+                FrozenResourceCatalog.value.dictionary(catalogId)
+                    ?: invalid("Installed catalog dictionary identity is invalid")
             if (
-                catalogId != expected.resourceId ||
                 installed.slotId != expected.slotId ||
                 installed.sourceName != expected.dictionary.title ||
                 installed.sourceRevision != expected.dictionary.revision ||
@@ -899,6 +900,34 @@ object FrozenResourceCatalog {
                                 ResourceAttribution("Tatoeba example sentences", "Tatoeba contributors", "CC-BY-2.0-FR", "https://tatoeba.org/en/downloads"),
                                 ResourceAttribution("Kanji alive pronunciation audio", "Kanji alive project contributors", "CC-BY-4.0", "https://github.com/kanjialive/kanji-data-media"),
                                 ResourceAttribution("JmdictFurigana", "JmdictFurigana contributors", "CC-BY-SA-4.0", "https://github.com/Doublevil/JmdictFurigana"),
+                            ),
+                    ),
+                    YomitanCatalogResource(
+                        resourceId = "jmdict-en-2026-07-17",
+                        displayName = "JMdict (English) 2026-07-17",
+                        slotId = "jmdict",
+                        archive =
+                            ResourceArchive(
+                                url = "https://github.com/yomidevs/jmdict-yomitan/releases/download/2026-07-17/JMdict_english.zip",
+                                sha256 = "c085472220cdb5aec7e85d7ed4b10a66a74c285659ba5c794b2e9556cd646657",
+                                sizeBytes = 15_493_641,
+                                format = "zip",
+                            ),
+                        dictionary =
+                            YomitanDictionaryIdentity(
+                                title = "JMdict [2026-07-17]",
+                                revision = "JMdict.2026-07-17",
+                                format = 3,
+                                memberCount = 55,
+                                uncompressedBytes = 170_311_400,
+                                archiveMemberLimit = 4096,
+                                uncompressedBytesLimit = 2_147_483_648,
+                                fileBytesLimit = 16_777_216,
+                            ),
+                        attribution =
+                            listOf(
+                                ResourceAttribution("JMdict", "Electronic Dictionary Research and Development Group", "EDRDG-Licence", "https://www.edrdg.org/edrdg/licence.html"),
+                                ResourceAttribution("jmdict-yomitan", "yomidevs contributors (yomitan-import conversion)", "EDRDG-Licence", "https://github.com/yomidevs/jmdict-yomitan"),
                             ),
                     ),
                 ),

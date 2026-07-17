@@ -1,4 +1,4 @@
-package com.ankiminer.android.ui.setup
+package com.ankiminer.android.vm
 
 import com.ankiminer.android.anki.provider.AnkiMinerModelProvisioningResult
 import com.ankiminer.android.anki.provider.AnkiMinerModelReadyOrigin
@@ -31,21 +31,19 @@ class SetupUiStateTest {
                         AnkiMinerModelReadyOrigin.EXISTING_EXACT,
                     ),
                 uniDicInstalled = true,
-                recommendedDictionaryInstalled = false,
             )
 
-        assertTrue(recovered.canFinishFirstRun)
+        assertTrue(recovered.isMiningReady)
         assertTrue(
             recovered.copy(
                 notifications = NotificationPermissionReadiness.PERMISSION_DENIED,
-            ).canFinishFirstRun,
+            ).isMiningReady,
         )
-        assertFalse(recovered.copy(uniDicInstalled = false).canFinishFirstRun)
+        assertFalse(recovered.copy(uniDicInstalled = false).isMiningReady)
         assertFalse(
-            recovered.copy(resourceStartup = ResourceStartupReadiness.FAILED).canFinishFirstRun,
+            recovered.copy(resourceStartup = ResourceStartupReadiness.FAILED).isMiningReady,
         )
-        assertFalse(recovered.copy(legacyNoteType = "Lapis").canFinishFirstRun)
-        assertFalse(recovered.copy(ankiOperation = AnkiSetupOperation.REFRESHING).canFinishFirstRun)
+        assertFalse(recovered.copy(ankiOperation = AnkiSetupOperation.REFRESHING).isMiningReady)
         val pending =
             AnkiPendingRemediation(
                 id = 1L,
@@ -60,6 +58,13 @@ class SetupUiStateTest {
         assertFalse(
             recovered.copy(remediations = AnkiRemediationInventory(listOf(pending))).isMiningReady,
         )
+    }
+
+    @Test
+    fun wizardSeenStaysUnknownUntilTheSettingsStoreEmits() {
+        assertNull(SetupUiState().wizardSeen)
+        assertEquals(false, SetupUiState(wizardSeen = false).wizardSeen)
+        assertEquals(true, SetupUiState(wizardSeen = true).wizardSeen)
     }
 
     @Test

@@ -50,9 +50,10 @@ internal class SettingsViewModel(
         val current = settings.value
         save(
             AppSettings(
-                firstRunComplete = current.firstRunComplete,
-                // Only the explicit Setup action may consent to changing a persisted target.
-                legacyNoteType = current.legacyNoteType,
+                // Restoring mining defaults must never re-open the onboarding wizard or
+                // change the user's chosen look.
+                setupWizardSeen = current.setupWizardSeen,
+                theme = current.theme,
                 // An empty persisted chain means newly imported resources should become active.
                 // Record current installs as disabled so "restore defaults" still means no local
                 // frequency or expression-audio override at this point in time.

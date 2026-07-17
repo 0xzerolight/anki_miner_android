@@ -12,7 +12,7 @@ import com.ankiminer.android.mining.MiningProgress
 import com.ankiminer.android.mining.MiningRunState
 import com.ankiminer.android.ui.reading.ReadingDocumentSlotState
 import com.ankiminer.android.ui.reading.ReadingMiningUiState
-import com.ankiminer.android.ui.setup.SetupUiState
+import com.ankiminer.android.vm.SetupUiState
 import com.ankiminer.android.ui.video.DocumentSlotState
 import com.ankiminer.android.ui.video.VideoMiningUiState
 import org.junit.Assert.assertFalse

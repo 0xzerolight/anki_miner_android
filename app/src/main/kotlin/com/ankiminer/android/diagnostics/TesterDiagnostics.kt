@@ -7,7 +7,7 @@ import com.ankiminer.android.anki.provider.AnkiProviderReadiness
 import com.ankiminer.android.engine.PythonRuntimeReadiness
 import com.ankiminer.android.mining.MiningRunState
 import com.ankiminer.android.ui.reading.ReadingMiningUiState
-import com.ankiminer.android.ui.setup.SetupUiState
+import com.ankiminer.android.vm.SetupUiState
 import com.ankiminer.android.ui.video.VideoMiningUiState
 import java.util.Locale
 
@@ -82,14 +82,16 @@ internal object TesterDiagnosticsBuilder {
                 )
                 line("runtime.device_accepted", build.deviceRuntimeAccepted.toString())
                 line("python.readiness", pythonReadiness(setup.python))
-                line("setup.complete", setup.firstRunComplete.toString())
+                line("wizard.seen", setup.wizardSeen.toString())
                 line("setup.mining_ready", setup.isMiningReady.toString())
                 line("resources.startup", setup.resourceStartup.name.lowercase(Locale.ROOT))
                 line("resources.unidic", if (setup.uniDicInstalled) "installed" else "missing")
-                line(
-                    "resources.recommended_dictionary",
-                    if (setup.recommendedDictionaryInstalled) "installed" else "missing",
-                )
+                setup.catalogDictionaries.forEach { status ->
+                    line(
+                        "resources.dictionary.${status.resource.slotId}",
+                        if (status.installed) "installed" else "missing",
+                    )
+                }
                 line("resources.dictionaries_usable", setup.dictionaries.count { it.isUsable }.toString())
                 line(
                     "resources.frequencies_usable",

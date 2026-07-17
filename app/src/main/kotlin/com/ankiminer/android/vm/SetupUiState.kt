@@ -1,10 +1,11 @@
-package com.ankiminer.android.ui.setup
+package com.ankiminer.android.vm
 
 import com.ankiminer.android.anki.provider.AnkiProviderReadiness
 import com.ankiminer.android.anki.provider.AnkiMinerModelProvisioningResult
 import com.ankiminer.android.anki.provider.AnkiRemediationInventory
 import com.ankiminer.android.data.anki.AnkiSetupFailure
 import com.ankiminer.android.data.anki.AnkiSetupOperation
+import com.ankiminer.android.data.resources.CatalogDictionaryStatus
 import com.ankiminer.android.data.resources.DictionaryLookup
 import com.ankiminer.android.data.resources.InstalledDictionary
 import com.ankiminer.android.data.resources.InstalledAudioPack
@@ -29,15 +30,13 @@ internal data class SetupUiState(
     val notifications: NotificationPermissionReadiness = NotificationPermissionReadiness.READY,
     val model: AnkiMinerModelProvisioningResult? = null,
     val remediations: AnkiRemediationInventory = AnkiRemediationInventory(emptyList()),
-    val legacyNoteType: String? = null,
     val ankiOperation: AnkiSetupOperation? = null,
     val ankiFailure: AnkiSetupFailure? = null,
-    val firstRunComplete: Boolean = false,
+    /** Tri-state startup-flash guard: null until the settings store has emitted once. */
+    val wizardSeen: Boolean? = null,
     val uniDicInstalled: Boolean = false,
-    val recommendedDictionaryInstalled: Boolean = false,
-    val recommendedDictionarySlotOccupied: Boolean = false,
-    val recommendedDictionaryNeedsRepair: Boolean = false,
-    val recommendedReplaceConfirmationVisible: Boolean = false,
+    val catalogDictionaries: List<CatalogDictionaryStatus> = emptyList(),
+    val pendingReplaceResourceId: String? = null,
     val dictionaries: List<InstalledDictionary> = emptyList(),
     val frequencySources: List<InstalledFrequencySource> = emptyList(),
     val pitchAccent: InstalledPitchAccent? = null,
@@ -62,10 +61,6 @@ internal data class SetupUiState(
     val audioPackId: String = "audio-pack",
     val audioPackReplace: Boolean = false,
     val knownWordsFormat: KnownWordsSourceFormat = KnownWordsSourceFormat.JSON,
-    val completing: Boolean = false,
-    val completionError: Boolean = false,
-    val targetAcceptanceInProgress: Boolean = false,
-    val targetConsentError: Boolean = false,
 ) {
     val customSlotValid: Boolean
         get() = CUSTOM_SLOT_ID.matches(customSlotId)
@@ -92,10 +87,10 @@ internal data class SetupUiState(
         get() = remediations.pending.isEmpty()
 
     val targetReady: Boolean
-        get() = modelReady && legacyNoteType == null
+        get() = modelReady
 
     val busy: Boolean
-        get() = operation != null || ankiOperation != null || targetAcceptanceInProgress
+        get() = operation != null || ankiOperation != null
 
     val isMiningReady: Boolean
         get() =
@@ -106,17 +101,6 @@ internal data class SetupUiState(
                 recoveryReady &&
                 uniDicInstalled &&
                 !busy
-
-    val canFinishFirstRun: Boolean
-        get() =
-            pythonReady &&
-                resourceStartup == ResourceStartupReadiness.READY &&
-                ankiReady &&
-                targetReady &&
-                recoveryReady &&
-                uniDicInstalled &&
-                !busy &&
-                !completing
 
     val ankiDroidAction: AnkiDroidSetupAction?
         get() =
