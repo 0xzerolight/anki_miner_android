@@ -86,10 +86,12 @@ internal object TesterDiagnosticsBuilder {
                 line("setup.mining_ready", setup.isMiningReady.toString())
                 line("resources.startup", setup.resourceStartup.name.lowercase(Locale.ROOT))
                 line("resources.unidic", if (setup.uniDicInstalled) "installed" else "missing")
-                line(
-                    "resources.recommended_dictionary",
-                    if (setup.recommendedDictionaryInstalled) "installed" else "missing",
-                )
+                setup.catalogDictionaries.forEach { status ->
+                    line(
+                        "resources.dictionary.${status.resource.slotId}",
+                        if (status.installed) "installed" else "missing",
+                    )
+                }
                 line("resources.dictionaries_usable", setup.dictionaries.count { it.isUsable }.toString())
                 line(
                     "resources.frequencies_usable",

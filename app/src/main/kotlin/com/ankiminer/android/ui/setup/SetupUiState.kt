@@ -5,6 +5,7 @@ import com.ankiminer.android.anki.provider.AnkiMinerModelProvisioningResult
 import com.ankiminer.android.anki.provider.AnkiRemediationInventory
 import com.ankiminer.android.data.anki.AnkiSetupFailure
 import com.ankiminer.android.data.anki.AnkiSetupOperation
+import com.ankiminer.android.data.resources.CatalogDictionaryStatus
 import com.ankiminer.android.data.resources.DictionaryLookup
 import com.ankiminer.android.data.resources.InstalledDictionary
 import com.ankiminer.android.data.resources.InstalledAudioPack
@@ -33,10 +34,8 @@ internal data class SetupUiState(
     val ankiFailure: AnkiSetupFailure? = null,
     val firstRunComplete: Boolean = false,
     val uniDicInstalled: Boolean = false,
-    val recommendedDictionaryInstalled: Boolean = false,
-    val recommendedDictionarySlotOccupied: Boolean = false,
-    val recommendedDictionaryNeedsRepair: Boolean = false,
-    val recommendedReplaceConfirmationVisible: Boolean = false,
+    val catalogDictionaries: List<CatalogDictionaryStatus> = emptyList(),
+    val pendingReplaceResourceId: String? = null,
     val dictionaries: List<InstalledDictionary> = emptyList(),
     val frequencySources: List<InstalledFrequencySource> = emptyList(),
     val pitchAccent: InstalledPitchAccent? = null,

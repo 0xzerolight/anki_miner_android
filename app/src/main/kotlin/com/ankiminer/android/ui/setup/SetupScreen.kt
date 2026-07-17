@@ -110,9 +110,9 @@ internal fun SetupRoute(
         onResolveReview = viewModel::resolveAfterExternalReview,
         onDismissAnkiFailure = viewModel::dismissAnkiFailure,
         onInstallUniDic = viewModel::installUniDic,
-        onInstallRecommended = viewModel::installRecommendedDictionary,
-        onConfirmRecommendedReplace = viewModel::confirmRecommendedDictionaryReplace,
-        onDismissRecommendedReplace = viewModel::dismissRecommendedDictionaryReplace,
+        onInstallCatalogDictionary = viewModel::installCatalogDictionary,
+        onConfirmCatalogReplace = viewModel::confirmCatalogDictionaryReplace,
+        onDismissCatalogReplace = viewModel::dismissCatalogDictionaryReplace,
         onImportCustom = { dictionaryPicker.launch(arrayOf("application/zip", "application/octet-stream")) },
         onCustomSlotChanged = viewModel::setCustomSlotId,
         onCustomReplaceChanged = viewModel::setCustomReplace,
@@ -163,9 +163,9 @@ private fun SetupScreen(
     onResolveReview: (Long, AnkiExternalReviewOutcome) -> Unit,
     onDismissAnkiFailure: () -> Unit,
     onInstallUniDic: () -> Unit,
-    onInstallRecommended: () -> Unit,
-    onConfirmRecommendedReplace: () -> Unit,
-    onDismissRecommendedReplace: () -> Unit,
+    onInstallCatalogDictionary: (String) -> Unit,
+    onConfirmCatalogReplace: () -> Unit,
+    onDismissCatalogReplace: () -> Unit,
     onImportCustom: () -> Unit,
     onCustomSlotChanged: (String) -> Unit,
     onCustomReplaceChanged: (Boolean) -> Unit,
@@ -192,13 +192,17 @@ private fun SetupScreen(
     onContinue: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    if (state.recommendedReplaceConfirmationVisible) {
+    val pendingReplace =
+        state.pendingReplaceResourceId?.let { pending ->
+            state.catalogDictionaries.firstOrNull { it.resource.resourceId == pending }
+        }
+    if (pendingReplace != null) {
         AlertDialog(
-            onDismissRequest = onDismissRecommendedReplace,
+            onDismissRequest = onDismissCatalogReplace,
             title = {
                 Text(
                     stringResource(
-                        if (state.recommendedDictionaryNeedsRepair) {
+                        if (pendingReplace.needsRepair) {
                             R.string.dictionary_repair_confirm_title
                         } else {
                             R.string.dictionary_replace_confirm_title
@@ -208,10 +212,10 @@ private fun SetupScreen(
             },
             text = { Text(stringResource(R.string.dictionary_replace_confirm_message)) },
             confirmButton = {
-                Button(onClick = onConfirmRecommendedReplace) {
+                Button(onClick = onConfirmCatalogReplace) {
                     Text(
                         stringResource(
-                            if (state.recommendedDictionaryNeedsRepair) {
+                            if (pendingReplace.needsRepair) {
                                 R.string.dictionary_repair_confirm
                             } else {
                                 R.string.dictionary_replace_confirm
@@ -221,7 +225,7 @@ private fun SetupScreen(
                 }
             },
             dismissButton = {
-                TextButton(onClick = onDismissRecommendedReplace) {
+                TextButton(onClick = onDismissCatalogReplace) {
                     Text(stringResource(R.string.cancel))
                 }
             },
@@ -335,20 +339,36 @@ private fun SetupScreen(
             action = onInstallUniDic,
             actionLabel = stringResource(if (state.uniDicInstalled) R.string.unidic_repair else R.string.unidic_install),
         )
-        ResourceCard(
-            title = stringResource(R.string.jitendex_resource_title),
-            description = stringResource(R.string.jitendex_resource_description),
-            installed = state.recommendedDictionaryInstalled,
-            busy = state.busy,
-            action = onInstallRecommended,
-            actionLabel = stringResource(
-                when {
-                    state.recommendedDictionaryNeedsRepair -> R.string.dictionary_repair
-                    state.recommendedDictionaryInstalled -> R.string.dictionary_replace
-                    else -> R.string.dictionary_install
-                },
-            ),
-        )
+        state.catalogDictionaries.forEach { status ->
+            ResourceCard(
+                title =
+                    stringResource(
+                        if (status.resource.slotId == "jmdict") {
+                            R.string.jmdict_resource_title
+                        } else {
+                            R.string.jitendex_resource_title
+                        },
+                    ),
+                description =
+                    stringResource(
+                        if (status.resource.slotId == "jmdict") {
+                            R.string.jmdict_resource_description
+                        } else {
+                            R.string.jitendex_resource_description
+                        },
+                    ),
+                installed = status.installed,
+                busy = state.busy,
+                action = { onInstallCatalogDictionary(status.resource.resourceId) },
+                actionLabel = stringResource(
+                    when {
+                        status.needsRepair -> R.string.dictionary_repair
+                        status.installed -> R.string.dictionary_replace
+                        else -> R.string.dictionary_install
+                    },
+                ),
+            )
+        }
 
         OutlinedCard(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {

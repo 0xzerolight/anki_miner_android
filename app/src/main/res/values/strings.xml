@@ -162,6 +162,8 @@
     <string name="unidic_resource_description">UniDic Lite 1.0.8 · about 45 MiB download and 249 MiB installed</string>
     <string name="jitendex_resource_title">Jitendex dictionary — recommended</string>
     <string name="jitendex_resource_description">Offline Yomitan dictionary · about 37 MiB download and up to 516 MiB while importing</string>
+    <string name="jmdict_resource_title">JMdict dictionary (English)</string>
+    <string name="jmdict_resource_description">Offline Yomitan dictionary with English glosses · about 15 MiB download and up to 163 MiB while importing</string>
     <string name="resource_installed">Installed</string>
     <string name="resource_not_installed">Not installed</string>
     <string name="unidic_install">Download and install</string>

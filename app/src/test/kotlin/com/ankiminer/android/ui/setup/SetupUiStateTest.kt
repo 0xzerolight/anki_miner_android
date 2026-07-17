@@ -31,7 +31,6 @@ class SetupUiStateTest {
                         AnkiMinerModelReadyOrigin.EXISTING_EXACT,
                     ),
                 uniDicInstalled = true,
-                recommendedDictionaryInstalled = false,
             )
 
         assertTrue(recovered.isMiningReady)

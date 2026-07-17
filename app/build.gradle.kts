@@ -167,6 +167,11 @@ android {
         getByName("test").resources.srcDir(
             rootProject.file("tools/anki-contract/unicode/15.1.0"),
         )
+        // Lets the JVM catalog-parity test diff the committed Python catalog JSON against
+        // FrozenResourceCatalog without an emulator.
+        getByName("test").resources.srcDir(
+            rootProject.file("app/src/main/python/android_bridge"),
+        )
     }
 }
 

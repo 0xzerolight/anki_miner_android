@@ -28,7 +28,7 @@ interface ResourceManager {
 
     suspend fun installUniDic()
 
-    suspend fun installRecommendedDictionary(replace: Boolean)
+    suspend fun installCatalogDictionary(resourceId: String, replace: Boolean)
 
     suspend fun importCustomDictionary(
         uri: String,
@@ -166,9 +166,14 @@ internal class AndroidResourceManager(
         }
     }
 
-    override suspend fun installRecommendedDictionary(replace: Boolean) {
-        runOperation("Import recommended dictionary", ResourceOperationPhase.PREPARING) { operation ->
-            val resource = catalog().recommendedDictionary
+    override suspend fun installCatalogDictionary(resourceId: String, replace: Boolean) {
+        runOperation("Import catalog dictionary", ResourceOperationPhase.PREPARING) { operation ->
+            val resource =
+                catalog().dictionary(resourceId)
+                    ?: throw ResourceBridgeException(
+                        "resource_unknown",
+                        "Dictionary '$resourceId' is not in the pinned catalog",
+                    )
             val occupied =
                 mutableState.value.dictionaries.any {
                     it.occupied && it.slotId == resource.slotId
@@ -562,9 +567,9 @@ internal class AndroidResourceManager(
         if (current.installedUniDic?.resourceId == catalog.unidic.resourceId) {
             downloader.discard(catalog.unidic.archive)
         }
-        if (current.hasRecommendedDictionary) {
-            downloader.discard(catalog.recommendedDictionary.archive)
-        }
+        current.catalogDictionaries
+            .filter { it.installed }
+            .forEach { downloader.discard(it.resource.archive) }
     }
 
     private fun catalog(): ResourceCatalog {

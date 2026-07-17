@@ -86,6 +86,42 @@
           "url": "https://github.com/Doublevil/JmdictFurigana"
         }
       ]
+    },
+    {
+      "resourceId": "jmdict-en-2026-07-17",
+      "kind": "yomitan-dictionary",
+      "displayName": "JMdict (English) 2026-07-17",
+      "slotId": "jmdict",
+      "archive": {
+        "url": "https://github.com/yomidevs/jmdict-yomitan/releases/download/2026-07-17/JMdict_english.zip",
+        "sha256": "c085472220cdb5aec7e85d7ed4b10a66a74c285659ba5c794b2e9556cd646657",
+        "sizeBytes": 15493641,
+        "format": "zip"
+      },
+      "dictionary": {
+        "title": "JMdict [2026-07-17]",
+        "revision": "JMdict.2026-07-17",
+        "format": 3,
+        "memberCount": 55,
+        "uncompressedBytes": 170311400,
+        "archiveMemberLimit": 4096,
+        "uncompressedBytesLimit": 2147483648,
+        "fileBytesLimit": 16777216
+      },
+      "attribution": [
+        {
+          "name": "JMdict",
+          "copyright": "Electronic Dictionary Research and Development Group",
+          "license": "EDRDG-Licence",
+          "url": "https://www.edrdg.org/edrdg/licence.html"
+        },
+        {
+          "name": "jmdict-yomitan",
+          "copyright": "yomidevs contributors (yomitan-import conversion)",
+          "license": "EDRDG-Licence",
+          "url": "https://github.com/yomidevs/jmdict-yomitan"
+        }
+      ]
     }
   ]
 }

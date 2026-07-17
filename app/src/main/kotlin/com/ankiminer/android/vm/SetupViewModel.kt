@@ -51,7 +51,7 @@ internal class SetupViewModel(
         val knownWordsFormat: KnownWordsSourceFormat = KnownWordsSourceFormat.JSON,
         val completing: Boolean = false,
         val completionError: Boolean = false,
-        val recommendedReplaceConfirmationVisible: Boolean = false,
+        val pendingReplaceResourceId: String? = null,
     )
 
     private val local = MutableStateFlow(LocalState())
@@ -84,13 +84,8 @@ internal class SetupViewModel(
                 ankiFailure = ankiState.failure,
                 firstRunComplete = appSettings.firstRunComplete,
                 uniDicInstalled = resourceState.hasUniDic,
-                recommendedDictionaryInstalled = resourceState.hasRecommendedDictionary,
-                recommendedDictionarySlotOccupied =
-                    resourceState.recommendedDictionarySlotOccupied,
-                recommendedDictionaryNeedsRepair =
-                    resourceState.recommendedDictionaryNeedsRepair,
-                recommendedReplaceConfirmationVisible =
-                    localState.recommendedReplaceConfirmationVisible,
+                catalogDictionaries = resourceState.catalogDictionaries,
+                pendingReplaceResourceId = localState.pendingReplaceResourceId,
                 dictionaries = resourceState.dictionaries,
                 frequencySources = resourceState.frequencySources,
                 pitchAccent = resourceState.pitchAccent,
@@ -171,22 +166,25 @@ internal class SetupViewModel(
         viewModelScope.launch { resources.installUniDic() }
     }
 
-    fun installRecommendedDictionary() {
-        if (uiState.value.recommendedDictionarySlotOccupied) {
-            local.update { it.copy(recommendedReplaceConfirmationVisible = true) }
+    fun installCatalogDictionary(resourceId: String) {
+        val status =
+            uiState.value.catalogDictionaries.firstOrNull { it.resource.resourceId == resourceId }
+                ?: return
+        if (status.slotOccupied) {
+            local.update { it.copy(pendingReplaceResourceId = resourceId) }
         } else {
-            viewModelScope.launch { resources.installRecommendedDictionary(replace = false) }
+            viewModelScope.launch { resources.installCatalogDictionary(resourceId, replace = false) }
         }
     }
 
-    fun confirmRecommendedDictionaryReplace() {
-        if (!uiState.value.recommendedDictionarySlotOccupied) return
-        local.update { it.copy(recommendedReplaceConfirmationVisible = false) }
-        viewModelScope.launch { resources.installRecommendedDictionary(replace = true) }
+    fun confirmCatalogDictionaryReplace() {
+        val resourceId = uiState.value.pendingReplaceResourceId ?: return
+        local.update { it.copy(pendingReplaceResourceId = null) }
+        viewModelScope.launch { resources.installCatalogDictionary(resourceId, replace = true) }
     }
 
-    fun dismissRecommendedDictionaryReplace() {
-        local.update { it.copy(recommendedReplaceConfirmationVisible = false) }
+    fun dismissCatalogDictionaryReplace() {
+        local.update { it.copy(pendingReplaceResourceId = null) }
     }
 
     fun importCustomDictionary(uri: String) {

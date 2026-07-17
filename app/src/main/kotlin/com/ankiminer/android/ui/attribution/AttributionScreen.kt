@@ -32,10 +32,7 @@ internal fun AttributionScreen(
     val uriHandler = LocalUriHandler.current
     val occupiedDictionaries = attributionDictionaries(installedDictionaries)
     val installedCatalogAttribution = installedCatalogAttributions(occupiedDictionaries)
-    val hasInstalledJitendex =
-        occupiedDictionaries.any {
-            it.catalogResourceId == catalog.recommendedDictionary.resourceId
-        }
+    val jitendexInstalled = hasInstalledJitendex(occupiedDictionaries)
     Column(
         modifier =
             modifier
@@ -84,7 +81,7 @@ internal fun AttributionScreen(
                 installedCatalogAttribution,
             )
         }
-        if (hasInstalledJitendex) {
+        if (jitendexInstalled) {
             OutlinedCard(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(stringResource(R.string.attribution_derived_terms_title), style = MaterialTheme.typography.titleMedium)
@@ -136,6 +133,21 @@ internal fun attributionDictionaries(
         .filter { it.occupied }
         .distinctBy { it.slotId }
         .sortedBy { it.slotId }
+
+/**
+ * The derived-terms notice covers Jitendex-bundled upstreams (Tatoeba, Kanji alive,
+ * JmdictFurigana) and must never show for other catalog dictionaries.
+ */
+internal fun hasInstalledJitendex(
+    installedDictionaries: List<InstalledDictionary>,
+): Boolean {
+    val jitendex =
+        FrozenResourceCatalog.value.dictionaries.singleOrNull { it.slotId == "jitendex" }
+            ?: return false
+    return installedDictionaries.any {
+        it.occupied && it.slotId == jitendex.slotId && it.catalogResourceId == jitendex.resourceId
+    }
+}
 
 internal fun installedCatalogAttributions(
     installedDictionaries: List<InstalledDictionary>,
