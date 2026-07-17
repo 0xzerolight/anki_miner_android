@@ -267,7 +267,15 @@
 
     <string name="settings_title">Settings</string>
     <string name="settings_intro">Blank processing values use the current engine defaults. Every job uses the first-party Anki Miner note type created during Setup.</string>
-    <string name="settings_anki_target">Anki target</string>
+    <string name="settings_anki_target">Anki</string>
+    <string name="settings_dictionaries">Dictionaries</string>
+    <string name="settings_audio_section">Audio</string>
+    <string name="settings_frequency_section">Frequency</string>
+    <string name="settings_ui_section">UI</string>
+    <string name="settings_theme">Theme</string>
+    <string name="settings_theme_light">Light</string>
+    <string name="settings_theme_dark">Dark</string>
+    <string name="settings_run_setup_wizard">Run setup wizard</string>
     <string name="settings_deck_name">Deck name</string>
     <string name="settings_deck_default">Android default: Anki Miner</string>
     <string name="settings_note_managed">Note type: Anki Miner. Setup creates and verifies its exact fields and card template before mining.</string>
@@ -307,7 +315,6 @@
     <string name="settings_zero_default">Desktop default: 0</string>
     <string name="settings_workers">Parallel media workers (1–32)</string>
     <string name="settings_workers_default">Desktop default: 6</string>
-    <string name="settings_local_resources">Local language resources</string>
     <string name="settings_dictionary_chain">Dictionary priority</string>
     <string name="settings_dictionary_chain_help">Enabled offline dictionaries are checked in this order. Newly imported dictionaries are enabled automatically.</string>
     <string name="settings_no_dictionaries">No valid offline dictionary is installed. Install or import one in Setup.</string>
@@ -333,7 +340,6 @@
     <string name="settings_reading_tts_help">Off by default. When enabled for reading mining, Android synthesizes Japanese sentence audio locally with an installed offline voice. Text is never sent to a network TTS service.</string>
     <string name="settings_open_speech_services">Manage speech services</string>
     <string name="settings_tts_readiness_help">Install an offline Japanese voice in Android speech settings before enabling this option. A missing or failing voice skips sentence audio and is reported in the mining result.</string>
-    <string name="settings_online_fallback">Online fallback</string>
     <string name="settings_jisho">Jisho definition fallback</string>
     <string name="settings_jisho_disclosure">Off by default. When enabled and the engine reaches this fallback, Japanese lookup terms derived from selected subtitles or reading content are sent to jisho.org.</string>
     <string name="settings_numeric_incomplete">Complete or clear every numeric value before saving.</string>

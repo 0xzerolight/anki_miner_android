@@ -225,7 +225,12 @@ internal fun AnkiMinerApp(
             composable(Destination.SETTINGS.route) {
                 SettingsRoute(
                     viewModel = settingsViewModel,
+                    setupViewModel = setupViewModel,
                     diagnostics = diagnostics,
+                    onRequestPermissions = onRequestPermissions,
+                    onOpenAppSettings = onOpenAppSettings,
+                    onInstallAnkiDroid = onInstallAnkiDroid,
+                    onOpenAnkiDroid = onOpenAnkiDroid,
                     onOpenSpeechSettings = onOpenSpeechSettings,
                     onShareDiagnostics = onShareDiagnostics,
                     onAttributions = { navController.navigate(Destination.ATTRIBUTION.route) },
