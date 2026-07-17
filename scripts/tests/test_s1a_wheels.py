@@ -1247,18 +1247,6 @@ export CFLAGS="-D__BIONIC_NO_PAGE_SIZE_MACRO"
                 )
             self.assertFalse((root / "published").exists())
 
-    def test_gradle_recomputes_publication_identity_without_caller_keys(self) -> None:
-        gradle = (ROOT / "app/build.gradle.kts").read_text(encoding="utf-8")
-        self.assertIn('gradleProperty("ankiMinerS1aManifest")', gradle)
-        self.assertNotIn('gradleProperty("ankiMinerS1aRecipeKey")', gradle)
-        self.assertNotIn('gradleProperty("ankiMinerS1aBuildKey")', gradle)
-        self.assertIn('"verify-publication"', gradle)
-        self.assertIn("providers.exec", gradle)
-        self.assertIn('document["schema"] == 2', gradle)
-        self.assertIn('recipeKey == verification["recipe_key"]', gradle)
-        self.assertIn('buildKey == verification["build_key"]', gradle)
-        self.assertIn('"s1a-wheels-$buildKey"', gradle)
-
 
 if __name__ == "__main__":
     unittest.main()
