@@ -6,14 +6,19 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 
 ### Added
 
-- Android application shell, setup and settings flows, local-video mining path, foreground processing, and AnkiDroid ContentProvider integration.
+- Android application shell, first-run setup, persistent settings, local video/subtitle mining, and TXT/Aozora, subtitle, EPUB, and Mokuro reading mining with paged vocabulary curation.
+- First-party Anki Miner note model provisioning, ContentProvider note/media export, durable mutation recovery, explicit remediation, and notification routing back to the active run.
+- Private dictionary, frequency, pitch-accent, known-word, proper-name wordset, and expression-audio resources with import, validation, recovery, attribution, and configurable provider priority.
+- Offline Japanese Android TTS sentence audio for reading cards, with no network-voice fallback.
+- Post-curation media-processing foreground execution with progress, cancellation, timeout handling, and a policy evidence checklist.
 - Pinned Chaquopy runtime, synchronized Python engine, external UniDic installation, native tokenizer and FFmpeg tooling, golden parity fixtures, and host/emulator acceptance harnesses.
-- Durable Anki mutation recovery and bounded media staging.
+- Durable, bounded SAF staging for seekable and non-seekable providers, reading archives, and media inputs.
 - Initial GPL, privacy, security, third-party notice, corresponding-source, and release-record groundwork.
 
 ### Security
 
 - Resource downloads require HTTPS and immutable size/hash verification.
+- Custom resource parsing, archive extraction, bridge messages, callbacks, and card HTML are bounded and fail closed; remote dictionary media URLs are not permitted in generated notes.
 - Release packaging remains fail-closed pending exact physical ARM64 acceptance evidence.
 
 [Unreleased]: https://github.com/0xzerolight/anki_miner_android/commits/main

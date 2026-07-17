@@ -10,6 +10,7 @@ This is a release-owner worksheet, not a completed Play Console declaration. Goo
 | AnkiDroid collection and generated notes/media | Accessed locally through AnkiDroid's ContentProvider; committed output remains in AnkiDroid | Confirm permissions, retention, and deletion wording |
 | Required/recommended resource downloads | HTTPS request to pinned PyPI/GitHub URLs; hosts receive IP address, TLS/HTTP metadata, and resource-installer User-Agent | Decide applicable Data Safety classification and disclosure |
 | Jisho fallback | Off by default; when enabled, a Japanese lookup term derived from user-selected content is sent to `jisho.org`, with ordinary IP/request metadata | Explicitly classify collection/sharing, purpose, optionality, ephemeral handling, and user-generated/search-like content under current form definitions |
+| Android sentence TTS | Uses only a device voice which declares itself offline; sentence text is not sent to an Anki Miner or web TTS endpoint | Confirm the exact device/provider behavior used in release acceptance and that no network voice fallback was introduced |
 | Accounts, ads, analytics, remote crash reporting | None in the current source revision | Reconfirm from the exact dependency/artifact inventory |
 
 Do not mark “no data collected or shared” merely because the app has no first-party server. The release owner must decide how Play's current definitions apply to Jisho lookup terms, IP addresses, and resource-host requests and must document the rationale. This assessment requires privacy/legal review.

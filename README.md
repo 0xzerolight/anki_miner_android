@@ -1,12 +1,12 @@
 # Anki Miner for Android
 
-Anki Miner for Android mines Japanese vocabulary from user-selected local media and creates Anki notes through AnkiDroid. The app uses a Kotlin and Jetpack Compose UI around a Chaquopy-embedded Python engine synchronized from [Anki Miner](https://github.com/0xzerolight/anki_miner).
+Anki Miner for Android mines Japanese vocabulary from user-selected local video, subtitles, text, EPUB, and Mokuro sources and creates Anki notes through AnkiDroid. The app uses a Kotlin and Jetpack Compose UI around a Chaquopy-embedded Python engine synchronized from [Anki Miner](https://github.com/0xzerolight/anki_miner).
 
 This repository is pre-release. Do not distribute an APK or AAB until the open legal, privacy, physical-device, and Play Console gates in [release/CHECKLIST.md](release/CHECKLIST.md) have been completed for the exact artifact.
 
 ## Architecture
 
-The production path is Compose → ViewModels → Kotlin services → a media-processing foreground service → the JSON bridge → the vendored Python engine. AnkiDroid integration is ContentProvider-first. Video and subtitle access uses Android's Storage Access Framework; the app does not request broad video-library access. UniDic and optional dictionaries are verified external data resources and are not bundled in the base app.
+The production path is Compose → ViewModels → Kotlin services → the JSON bridge → the vendored Python engine. Post-curation work which transforms media uses a cancellable `mediaProcessing` foreground service; text-only reading work does not claim that type. AnkiDroid integration is ContentProvider-first and uses an app-owned note model plus durable mutation recovery. Video, subtitle, reading, dictionary, frequency, pitch, known-word, and local-audio input uses Android's Storage Access Framework; the app does not request broad video-library access. UniDic and optional language resources are installed into private storage and are not bundled in the base app. Reading sentence audio can use a device-installed offline Japanese Android TTS voice.
 
 The vendored engine under `app/src/main/python/anki_miner/` is generated from the revision in `tools/engine-sync/engine.lock`. Do not edit it directly. Android adaptations live in `app/src/main/python/android_bridge/` and `tools/engine-sync/overrides/`.
 

@@ -8,8 +8,12 @@ Automation cannot establish the following results. Record the exact commit, arti
 - [ ] Three clean runs on a representative mid-range ARM64 device meet the defined cold-initialization target and peak-memory ceiling.
 - [ ] Representative novel/reading tokenization throughput and storage use are recorded.
 - [ ] Real local video/subtitle mining creates a correctly rendered AnkiDroid card with verified audio and screenshot.
+- [ ] TXT/Aozora, reading-subtitle, EPUB, and Mokuro-plus-archive runs each create a correctly rendered AnkiDroid card; EPUB covers and Mokuro page images are verified where present.
+- [ ] Reading with an installed offline Japanese voice creates playable sentence audio; a missing or failing offline voice leaves the card usable and reports the retained warning.
+- [ ] Imported dictionary, frequency, pitch-accent, known-word, bundled-wordset, and local expression-audio sources affect cards in the configured order without remote media fetches.
 - [ ] Cancel during probing, extraction, media insertion, and note insertion produces an accurate result without blind retry or leaked work.
 - [ ] Screen-off/background processing, platform FGS timeout, process kill, low storage, non-seekable provider fallback, and recovery are exercised.
+- [ ] Empty selections and text-only reading without media options finish without an FGS; media work remains usable after notification permission denial and is visible in Android's Task Manager.
 
 ## User experience and compatibility
 
