@@ -287,7 +287,7 @@ internal class BridgeMiningRepository(
             val videoPath: String
             val subtitlePath: String
             try {
-                inputOwner = inputOwnerFactory.create()
+                inputOwner = inputOwnerFactory.create(run.cancellation)
                 if (run.cancellation.isCancelled()) return
                 videoPath = inputOwner.openVideo(run.input.video)
                 if (run.cancellation.isCancelled()) return

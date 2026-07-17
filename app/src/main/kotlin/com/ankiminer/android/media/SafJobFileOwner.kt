@@ -10,8 +10,8 @@ import android.system.OsConstants
 import java.io.Closeable
 import java.io.File
 import java.io.FileNotFoundException
-import java.io.FileOutputStream
 import java.io.IOException
+import java.io.InputStream
 import java.nio.file.Files
 import java.util.Locale
 
@@ -24,6 +24,25 @@ data class PythonMediaInput internal constructor(
     enum class Backing {
         SEEKABLE_DESCRIPTOR,
         CACHE_COPY,
+    }
+}
+
+internal enum class SafCopyRole {
+    VIDEO,
+    SUBTITLE,
+}
+
+internal data class SafCopyProgress(
+    val role: SafCopyRole,
+    val copiedBytes: Long,
+    val expectedBytes: Long?,
+)
+
+internal fun interface SafCopyProgressListener {
+    fun onProgress(progress: SafCopyProgress)
+
+    companion object {
+        val NONE = SafCopyProgressListener { }
     }
 }
 
@@ -41,6 +60,9 @@ data class PythonMediaInput internal constructor(
 class SafJobFileOwner internal constructor(
     private val descriptorOpener: DescriptorOpener,
     private val cacheFileFactory: CacheFileFactory,
+    private val fileCopier: BoundedFileCopier = BoundedFileCopier(),
+    private val cancellation: FileCopyCancellation = FileCopyCancellation.NONE,
+    private val progressListener: SafCopyProgressListener = SafCopyProgressListener.NONE,
 ) : Closeable {
     private data class OwnedInput(
         val descriptor: OwnedDescriptor,
@@ -50,6 +72,18 @@ class SafJobFileOwner internal constructor(
     constructor(context: Context) : this(
         AndroidDescriptorOpener(context.applicationContext.contentResolver),
         AndroidCacheFileFactory(context.applicationContext.cacheDir),
+    )
+
+    internal constructor(
+        context: Context,
+        cancellation: FileCopyCancellation,
+        progressListener: SafCopyProgressListener = SafCopyProgressListener.NONE,
+    ) : this(
+        AndroidDescriptorOpener(context.applicationContext.contentResolver),
+        AndroidCacheFileFactory(context.applicationContext.cacheDir),
+        BoundedFileCopier(),
+        cancellation,
+        progressListener,
     )
 
     private val monitor = Any()
@@ -101,7 +135,24 @@ class SafJobFileOwner internal constructor(
                         val createdCacheFile = cacheFileFactory.create(copySuffix ?: VIDEO_COPY_SUFFIX)
                         cacheFile = createdCacheFile
                         require(createdCacheFile.isAbsolute) { "SAF cache path must be absolute" }
-                        descriptor.copyTo(createdCacheFile)
+                        val role = if (copySuffix == null) SafCopyRole.VIDEO else SafCopyRole.SUBTITLE
+                        fileCopier.copy(
+                            openSource = descriptor::openInputStream,
+                            destination = createdCacheFile,
+                            knownSizeBytes = descriptor.knownSizeBytes,
+                            policy = if (role == SafCopyRole.VIDEO) VIDEO_COPY_POLICY else SUBTITLE_COPY_POLICY,
+                            cancellation = cancellation,
+                            progressListener =
+                                FileCopyProgressListener { progress ->
+                                    progressListener.onProgress(
+                                        SafCopyProgress(
+                                            role = role,
+                                            copiedBytes = progress.copiedBytes,
+                                            expectedBytes = progress.expectedBytes,
+                                        ),
+                                    )
+                                },
+                        )
                         check(createdCacheFile.isFile) { "SAF provider copy did not create a file" }
                         PythonMediaInput(
                             path = createdCacheFile.absolutePath,
@@ -196,7 +247,20 @@ class SafJobFileOwner internal constructor(
 
     private companion object {
         const val VIDEO_COPY_SUFFIX = ".media"
+        const val MAX_VIDEO_COPY_BYTES = 16L * 1024 * 1024 * 1024
+        const val MAX_SUBTITLE_COPY_BYTES = 32L * 1024 * 1024
+        const val FREE_SPACE_RESERVE_BYTES = 256L * 1024 * 1024
         val SUBTITLE_EXTENSIONS = setOf("ass", "srt", "ssa", "vtt")
+        val VIDEO_COPY_POLICY =
+            BoundedFileCopyPolicy(
+                maxBytes = MAX_VIDEO_COPY_BYTES,
+                freeSpaceReserveBytes = FREE_SPACE_RESERVE_BYTES,
+            )
+        val SUBTITLE_COPY_POLICY =
+            BoundedFileCopyPolicy(
+                maxBytes = MAX_SUBTITLE_COPY_BYTES,
+                freeSpaceReserveBytes = FREE_SPACE_RESERVE_BYTES,
+            )
     }
 }
 
@@ -212,12 +276,13 @@ internal fun interface CacheFileFactory {
 
 internal interface OwnedDescriptor : Closeable {
     val rawFd: Int
+    val knownSizeBytes: Long?
 
     @Throws(IOException::class)
     fun isSeekable(): Boolean
 
     @Throws(IOException::class)
-    fun copyTo(target: File)
+    fun openInputStream(): InputStream
 }
 
 private class AndroidDescriptorOpener(
@@ -238,6 +303,9 @@ private class ParcelDescriptor(
     override val rawFd: Int
         get() = descriptor.fd
 
+    override val knownSizeBytes: Long?
+        get() = descriptor.statSize.takeIf { it >= 0L }
+
     override fun isSeekable(): Boolean =
         try {
             Os.lseek(descriptor.fileDescriptor, 0L, OsConstants.SEEK_CUR)
@@ -250,15 +318,18 @@ private class ParcelDescriptor(
             }
         }
 
-    override fun copyTo(target: File) {
+    override fun openInputStream(): InputStream {
         // AutoCloseInputStream owns its PFD, so copy from a duplicate and retain the original.
-        ParcelFileDescriptor.dup(descriptor.fileDescriptor).use { duplicate ->
-            ParcelFileDescriptor.AutoCloseInputStream(duplicate).use { input ->
-                FileOutputStream(target, false).use { output ->
-                    input.copyTo(output)
-                    output.fd.sync()
-                }
+        val duplicate = ParcelFileDescriptor.dup(descriptor.fileDescriptor)
+        return try {
+            ParcelFileDescriptor.AutoCloseInputStream(duplicate)
+        } catch (failure: Throwable) {
+            try {
+                duplicate.close()
+            } catch (cleanupFailure: Exception) {
+                failure.addSuppressed(cleanupFailure)
             }
+            throw failure
         }
     }
 

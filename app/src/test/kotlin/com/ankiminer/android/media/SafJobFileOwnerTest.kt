@@ -1,7 +1,9 @@
 package com.ankiminer.android.media
 
+import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.IOException
+import java.io.InputStream
 import java.nio.file.Files
 import java.util.ArrayDeque
 import org.junit.Assert.assertArrayEquals
@@ -216,6 +218,35 @@ class SafJobFileOwnerTest {
     }
 
     @Test
+    fun oversizedSubtitleIsRejectedBeforeOpeningItsStreamAndCleansBothResources() {
+        val directory = Files.createTempDirectory("saf-subtitle-limit").toFile()
+        try {
+            val descriptor =
+                FakeDescriptor(
+                    rawFd = 50,
+                    seekable = true,
+                    content = byteArrayOf(),
+                    knownSizeBytes = 32L * 1024 * 1024 + 1,
+                )
+            val cache = File(directory, "oversized.srt")
+            val owner = ownerWith(descriptor, cache)
+
+            val failure =
+                assertThrows(FileCopyLimitExceededException::class.java) {
+                    owner.materializeSubtitleUri("content://test/oversized", "episode.srt")
+                }
+
+            assertEquals(32L * 1024 * 1024, failure.maxBytes)
+            assertEquals(0, descriptor.copyCount)
+            assertTrue(descriptor.closed)
+            assertFalse(cache.exists())
+            owner.close()
+        } finally {
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test
     fun startupJanitorRemovesOnlyDirectOrphanEntries() {
         val directory = Files.createTempDirectory("saf-janitor-test").toFile()
         try {
@@ -265,6 +296,7 @@ class SafJobFileOwnerTest {
         private val content: ByteArray,
         private val copyFailure: IOException? = null,
         private val closeFailure: IOException? = null,
+        override val knownSizeBytes: Long? = content.size.toLong(),
     ) : OwnedDescriptor {
         var closed = false
             private set
@@ -276,11 +308,20 @@ class SafJobFileOwnerTest {
             return seekable
         }
 
-        override fun copyTo(target: File) {
+        override fun openInputStream(): InputStream {
             check(!closed)
             copyCount += 1
-            target.writeBytes(content)
-            copyFailure?.let { throw it }
+            return object : ByteArrayInputStream(content) {
+                override fun read(
+                    buffer: ByteArray,
+                    offset: Int,
+                    length: Int,
+                ): Int {
+                    val count = super.read(buffer, offset, length)
+                    if (count < 0) copyFailure?.let { throw it }
+                    return count
+                }
+            }
         }
 
         override fun close() {
