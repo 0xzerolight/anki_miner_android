@@ -27,6 +27,36 @@ section through the vendored Android engine in one fresh process. The connected
 runner selects `EngineGoldenV2InstrumentedTest` explicitly after the bounded S4
 smoke whenever an S1a publication is present.
 
+## Reading-source parity
+
+`reading-v1.json` is the desktop-derived M4 contract for all four supported
+file-backed reading sources. It freezes detector/loader output for CP932 Aozora
+TXT, reading subtitles, EPUB with a cover, and Mokuro with a CBZ companion. The
+same fixture runs the loaded Mokuro volume through the real
+`EpisodeProcessor.process_reading`, `WordFilterService`, page-image
+materialization, definition lookup orchestration, and card-payload construction.
+Only the tokenizer, definition, and Anki I/O boundaries are deterministic
+in-memory fixtures; the committed card evidence includes its source field and
+decoded JPEG dimensions/pixel hash.
+
+Re-derive or byte-check it against a clean desktop checkout at `engine.lock`:
+
+```bash
+PYTHONPATH=tools/engine-sync python tools/engine-sync/run_reading_goldens.py \
+  --python /path/to/desktop/.venv/bin/python \
+  --engine-root /path/to/clean/pinned-desktop-checkout
+
+PYTHONPATH=tools/engine-sync python tools/engine-sync/run_reading_goldens.py \
+  --python /path/to/desktop/.venv/bin/python \
+  --engine-root /path/to/clean/pinned-desktop-checkout \
+  --check
+```
+
+The fixture separately pins the engine tree, corpus, exporter, contract, and
+support-tool hashes. `ReadingGoldenInstrumentedTest` reconstructs the sources
+inside app-private storage, loads them through the packaged Android bridge, and
+replays the Mokuro card in an isolated connected-test invocation on every lane.
+
 ## Historical v1 and bounded S4 fixtures
 
 `schema/engine-goldens-v1.schema.json` is the compatibility boundary between
@@ -130,10 +160,13 @@ physical-device run:
   selected-tokenizer initialization, and the episode-processor import in less
   than 4.0 seconds. Peak app-process RSS during the representative mining run
   must not exceed 384 MiB.
-- A representative novel corpus must run through production
-  `parse_text_units`; record its corpus SHA-256, Japanese character count,
-  elapsed phase-1 time, and fugashi characters per second. The one-line SRT
-  smoke is not a substitute for this measurement.
+- A representative novel corpus must run through production `process_reading`.
+  The measured parser records corpus SHA-256, Japanese character count, elapsed
+  phase-1 time, and fugashi characters per second from that same run; the
+  processor then filters, curates a frozen 100 candidates, constructs reading
+  media/card payloads, and writes them to deterministic offline sinks before
+  `VmHWM` is sampled. The one-line SRT smoke or a parser-only run is not a
+  substitute for this measurement.
 
 The v1 `section_status` remains intentionally staged for historical M0
 compatibility. It is no longer the complete parity claim; v2 is. Use the v1

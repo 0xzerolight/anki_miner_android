@@ -1,0 +1,68 @@
+name: Pull request checks
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: anki-miner-android-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  LANG: C.UTF-8
+  LC_ALL: C.UTF-8
+  PYTHONDONTWRITEBYTECODE: "1"
+  PYTHONHASHSEED: "0"
+  PYTHONIOENCODING: utf-8
+  PYTHONUTF8: "1"
+  TZ: UTC
+
+jobs:
+  secretless-host-checks:
+    name: Secretless host checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements-host-test.lock
+
+      - name: Install hash-locked host dependencies
+        run: >-
+          python -m pip install
+          --disable-pip-version-check
+          --only-binary=:all:
+          --require-hashes
+          -r requirements-host-test.lock
+
+      - name: Run secretless tooling and bridge checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          for script in scripts/*.sh; do
+            bash -n "$script"
+          done
+          python -m unittest discover -s scripts/tests -v
+          python -m unittest discover -s tools/ankidroid-api/tests -v
+          python tools/ankidroid-api/sync_ankidroid_api.py --check
+          python -m unittest discover -s tools/anki-contract/tests -v
+          python tools/anki-contract/generate_anki_limits.py --check
+          python tools/anki-contract/generate_unicode_contract.py --check
+          python tools/anki-contract/generate_html5_entities.py --check
+          python -m unittest discover -s tools/dependencies/tests -v
+          PYTHONPATH=tools/engine-sync \
+            python -m unittest discover -s tools/engine-sync/tests -v
+          python tools/engine-sync/sync_engine.py --check
+          python -m pytest -q tests/python/android_bridge
+          python -m compileall -q app/src/main/python/android_bridge app/src/debug/python

@@ -118,8 +118,21 @@ class VideoMiningScreenTest {
         composeRule.onNodeWithTag(VideoMiningTestTags.SELECT_ALL).performClick()
         composeRule
             .onNodeWithTag(VideoMiningTestTags.CONTENT)
-            .performScrollToNode(hasTestTag(VideoMiningTestTags.sentence(alternate.sentenceId)))
-        composeRule.onNodeWithTag(VideoMiningTestTags.sentence(alternate.sentenceId)).performClick()
+            .performScrollToNode(
+                hasTestTag(
+                    VideoMiningTestTags.sentence(
+                        request.candidates.first().candidateId,
+                        alternate.sentenceId,
+                    ),
+                ),
+            )
+        composeRule
+            .onNodeWithTag(
+                VideoMiningTestTags.sentence(
+                    request.candidates.first().candidateId,
+                    alternate.sentenceId,
+                ),
+            ).performClick()
         composeRule
             .onNodeWithTag(VideoMiningTestTags.CONTENT)
             .performScrollToNode(hasTestTag(VideoMiningTestTags.CONFIRM_CURATION))
@@ -168,6 +181,56 @@ class VideoMiningScreenTest {
             .onNodeWithTag(VideoMiningTestTags.CONTENT)
             .performScrollToNode(hasTestTag(VideoMiningTestTags.CONFIRM_CURATION))
         composeRule.onNodeWithTag(VideoMiningTestTags.CONFIRM_CURATION).assertIsNotEnabled()
+    }
+
+    @Test
+    fun longSentenceListIsVirtualizedAndTailSelectionKeepsCompositeIdentity() {
+        val candidateId = "candidate-long"
+        val sentences =
+            (0 until 120).map { index ->
+                sentence("sentence-$index", "Sentence number $index")
+            }
+        val candidate = candidate(candidateId, "長い", sentences)
+        val request =
+            CurationRequest(
+                runId = "run",
+                requestId = "request",
+                candidates = listOf(candidate),
+            )
+        var selection: Pair<String, String>? = null
+        setScreen(
+            state =
+                VideoMiningUiState(
+                    runState = MiningRunState.Curating(request),
+                    curation =
+                        CurationUiState(
+                            runId = request.runId,
+                            requestId = request.requestId,
+                            candidates =
+                                listOf(
+                                    CurationCandidateUiState(
+                                        candidate = candidate,
+                                        selected = true,
+                                        sentenceId = candidate.defaultSentenceId,
+                                    ),
+                                ),
+                        ),
+                ),
+            onSelectSentence = { selectedCandidateId, sentenceId ->
+                selection = selectedCandidateId to sentenceId
+            },
+        )
+        val tailTag = VideoMiningTestTags.sentence(candidateId, sentences.last().sentenceId)
+
+        composeRule.onNodeWithTag(tailTag).assertDoesNotExist()
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(tailTag))
+        composeRule.onNodeWithTag(tailTag).performClick()
+
+        composeRule.runOnIdle {
+            assertEquals(candidateId to sentences.last().sentenceId, selection)
+        }
     }
 
     @Test

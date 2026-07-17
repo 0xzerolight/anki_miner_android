@@ -55,14 +55,19 @@ Run all build-time checks without an emulator:
 scripts/health.sh
 ```
 
-That default gate builds only `emulatorDebug` plus its test APK. ARM64 release
-APK/AAB tasks are deliberately unavailable until a source-, publication-,
+That default gate builds only `emulatorDebug` plus its test APK. The ARM64
+release APK task is deliberately unavailable until a source-, publication-,
 artifact-, and device-bound physical acceptance receipt is supplied:
 
 ```bash
 export ORG_GRADLE_PROJECT_ankiMinerS1aManifest=/absolute/path/to/s1a/manifest.json
+export ORG_GRADLE_PROJECT_ankiMinerS1aArm64AcceptanceApk=/absolute/path/to/the-accepted-app-device-debug.apk
 scripts/health.sh --release-acceptance-receipt /outside/the/repo/s1a-acceptance.json
 ```
+
+The APK property is mandatory with the receipt and must name the exact external
+artifact recorded by the receipt. Verification never falls back to a local
+`app/build` output.
 
 Run the connected suite on the compatibility and page-size lanes:
 
@@ -184,11 +189,18 @@ scripts/collect-s1a-arm64-acceptance.sh \
 The collector rejects emulators and devices outside the frozen 3–5 GiB RAM
 class. It runs the v1 adversarial tokenizer corpus, three distinct fresh app
 processes for the complete cold initialization boundary, and one production
-`parse_text_units` novel workload. Peak RSS is the kernel's process-lifetime
+`process_reading` novel workload. That workload tokenizes the complete corpus,
+then runs filtering, bounded 100-word curation, reading media/card construction,
+offline deterministic definitions, and an in-memory Anki sink through the real
+episode processor. Peak RSS is the kernel's process-lifetime
 `VmHWM`, not a point-in-time heap estimate. The generated receipt is accepted
 only when every cold run is below 4.0 seconds and peak RSS is at most 384 MiB;
 it must live outside the checkout so creating it cannot dirty the source it
-attests.
+attests. Before the parity runner builds, the collector exports the clean Git
+commit as `ankiMinerSourceCommit`; receipt v2 reads that commit and the exact
+`device-acceptance` channel back from the tested APK manifest. It contains
+hashes and device characteristics but deliberately omits the ADB serial and
+local manifest/APK paths; those paths are verifier inputs.
 
 ## Continuous integration
 
@@ -202,8 +214,11 @@ health, then owns and stops the API 26, API 36 4 KiB, API 36 16 KiB, provider,
 and HTTP fallback emulators one at a time.
 
 `.github/workflows/parity-nightly.yml` is hosted and network-only. It checks out
-desktop HEAD, derives a complete v2 artifact with the desktop frozen runtime,
-and emits a visible warning when semantic cases differ from the Android pin.
+desktop HEAD, copies its exporter into an isolated directory, changes only the
+exporter's explicit revision guard to that exact HEAD, derives a complete v2
+artifact, and emits a visible warning when semantic cases differ from the
+Android pin. While the desktop repository is private, configure the read-only
+`ANKI_MINER_DESKTOP_READ_TOKEN` Actions secret; do not give it write scope.
 
 `.github/workflows/ankidroid-prerelease-canary.yml` supplies the moving half of
 the stable-plus-prerelease AnkiDroid matrix without weakening the immutable
@@ -221,19 +236,18 @@ userdata, disable snapshot load/save, and stop the emulator afterward. Use
 `scripts/emulator.sh --window` only for a separate interactive session.
 
 Chaquopy reads ABI filters from product flavors. The normal Gradle variants
-are therefore `emulatorDebug` (x86_64) and `deviceRelease` (arm64-v8a):
+are therefore `emulatorDebug` (x86_64) and `deviceRelease` (arm64-v8a).
 
 The repository scripts enforce one Gradle worker, no parallel execution, no
 daemon, a 2 GiB heap, and no overlap between Gradle and an emulator. Use
 `scripts/health.sh` instead of invoking connected Gradle tasks directly.
 
-`scripts/check-native-artifact.sh` recursively opens APKs, AABs, ZIPs and
-Chaquopy `.imy` files. It rejects unexpected ABIs, 4 KiB-aligned ELF load
-segments, ffmpeg/ffprobe files which are not dynamically linked PIE command
-executables, UniDic payloads or layouts in an APK/AAB base module, debug probe
-leakage, invalid APK zip-alignment, and manifests which do not extract native
-executables. A separate AAB asset-pack module is deliberately outside the
-UniDic base-module check. Gradle resolves with committed locks
+`scripts/check-native-artifact.sh` can recursively inspect APKs, ZIPs, and
+Chaquopy `.imy` files. The active release gate applies it to the APK and rejects
+unexpected ABIs, 4 KiB-aligned ELF load segments, ffmpeg/ffprobe files which are
+not dynamically linked PIE command executables, UniDic payloads, debug or
+parity-probe leakage, invalid APK zip-alignment, and manifests which do not
+extract native executables. Gradle resolves with committed locks
 for every project configuration and strict SHA-256 dependency verification;
 plugin artifacts and their transitives are covered by the same metadata.
 
@@ -244,3 +258,113 @@ inventory with the manifest. Gradle runs that verifier itself whenever
 `ankiMinerS1aManifest` is set, so no caller-supplied recipe or build key can
 bypass the gate. A publication built on a different host identity must be
 rebuilt locally instead of being treated as a portable cache entry.
+
+## GitHub APK prerelease
+
+The only active binary-distribution path is a signed ARM64 APK. The permanent
+key stays offline; the self-hosted runner produces an audited unsigned
+candidate and never receives the key or a password.
+
+1. Complete the physical S1a collector above from the exact clean commit and
+   preserve both its receipt and the accepted `deviceDebug` APK outside the
+   checkout.
+2. Update `release/version.json`, commit it, and create an annotated tag whose
+   name is exactly `v<version_name>`.
+3. When the repository plan supports the required protection, configure
+   `apk-candidate` and `github-prerelease` as approval environments which permit
+   deployments only from protected `main`. Always dispatch both workflows from
+   `main`; each separately proves that the annotated tag is in the fetched
+   default-branch history. Configure the runner paths documented in
+   `.github/workflows/apk-candidate.yml`, then dispatch **APK candidate** for
+   that exact tag and download its three-day unsigned artifact into an offline
+   signing workspace. GitHub currently limits protected-environment features in
+   private repositories by plan. If the private repository cannot enforce the
+   environments, build the unsigned candidate from the clean tag locally with
+   `scripts/health.sh` and use the verified local publication command in step 6;
+   do not treat an unavailable environment as an approval.
+4. Establish the permanent key as described in `release/signing/README.md`,
+   then sign without putting passwords on the command line:
+
+   ```bash
+   export ANKI_MINER_APP_SIGNING_CERT_SHA256=64_lowercase_hex
+   scripts/sign-github-apk.sh \
+     --unsigned /offline/app-device-release-unsigned.apk \
+     --keystore /offline/anki-miner-release.p12 \
+     --alias anki-miner \
+     --certificate /offline/app-signing-certificate.pem \
+     --output /offline/anki-miner-signed.apk \
+     --expected-source "$(git rev-parse HEAD)"
+   ```
+
+5. Assemble the reviewed corresponding-source tree under one staging root. It
+   must include every item in `SOURCE_AND_RELINKING.md`. Generate its identity
+   file directly under that root before creating the `.tar.zst` archive:
+
+   ```bash
+   python3.13 scripts/github_release.py write-source-manifest \
+     --repo-root . \
+     --tag v0.1.0-alpha.1 \
+     --runtime-manifest /public/runtime-manifest.json \
+     --s1a-manifest /public/s1a-manifest.json \
+     --source-root /reviewed/staging/anki-miner-android-0.1.0-alpha.1 \
+     --output /reviewed/staging/anki-miner-android-0.1.0-alpha.1/anki-miner-source-manifest.json
+   ```
+
+   The command first verifies every tracked path, executable mode, and Git blob
+   against the tagged tree. It then writes both the identity manifest and
+   `anki-miner-external-source-inventory.json`, which hashes every additional
+   file and records every additional symlink. Release preparation streams and
+   reopens the archive and repeats those checks before binding it to the record.
+   This mechanical completeness check does not replace the legal source review.
+
+6. Rehearse in the current private repository or a disposable private mirror as specified in
+   `release/MANUAL_GATES.md#private-repository-release-rehearsal`. Bind a copy
+   of `release/approval-template.json` to the exact tag, source commit, and
+   signed APK SHA-256; complete every other entry, leave only the rehearsal gate
+   `not_run`, and run both preparation and draft creation with
+   `--private-rehearsal`. If protected private environments are available,
+   dispatch **Publish APK prerelease** with its `private_rehearsal` input
+   enabled. Otherwise publish the already-created draft from the clean tagged
+   checkout with the same fail-closed verifier:
+
+   ```bash
+   scripts/publish-github-prerelease.sh --private-rehearsal v0.1.0-alpha.1
+   ```
+
+   The command downloads the draft into a fresh temporary directory, verifies
+   its exact assets, source tag, signature and certificate, proves the tag is in
+   the remote default-branch history, and then publishes only as a prerelease.
+   Private-repository downloads remain limited to repository collaborators.
+   After the exact downloaded APK and closed-test pass, hash the final redacted
+   report and mark the rehearsal gate `passed`.
+
+7. Prepare the final exact allowlisted assets for the real repository without
+   the rehearsal flag. The approval document must now have every GitHub gate
+   passed.
+
+   ```bash
+   scripts/prepare-github-prerelease.sh \
+     0xzerolight/anki_miner_android v0.1.0-alpha.1 \
+     /offline/app-device-release-unsigned.apk \
+     /offline/anki-miner-signed.apk \
+     /offline/app-signing-certificate.pem \
+     /private/s1a-acceptance.json \
+     /private/accepted-app-device-debug.apk \
+     /public/runtime-manifest.json \
+     /public/s1a-manifest.json \
+     /private/approvals.json \
+     /reviewed/corresponding-source.tar.zst \
+     /reviewed/notices.tar.zst \
+     /offline/release-assets
+   ```
+
+8. Create a draft prerelease with
+   `scripts/create-github-draft.sh TAG ASSET_DIRECTORY RELEASE_NOTES`, download
+   it into a fresh directory, and rerun `scripts/github_release.py
+   verify-assets`. Only after the signed physical smoke and independent review
+   are recorded should an approver dispatch **Publish APK prerelease** through
+   the protected `github-prerelease` environment, or run
+   `scripts/publish-github-prerelease.sh TAG` from the clean tagged checkout.
+
+The publish workflow accepts only the exact asset allowlist and recorded
+permanent certificate. It publishes a prerelease, never an AAB or Play release.

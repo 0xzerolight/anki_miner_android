@@ -8,6 +8,7 @@ import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URI
 import java.net.URL
+import java.nio.file.Files
 import java.security.MessageDigest
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -17,6 +18,8 @@ internal class ResourceCancellationSignal {
     fun cancel() {
         cancelled.set(true)
     }
+
+    fun isCancelled(): Boolean = cancelled.get()
 
     fun check() {
         if (cancelled.get()) {
@@ -96,20 +99,80 @@ internal class PinnedResourceDownloader(
     private val connections: DownloadConnectionFactory = HttpsDownloadConnectionFactory(),
     private val availableBytes: (File) -> Long = { it.usableSpace },
 ) {
+    /**
+     * Reconciles durable download state against the frozen catalog. Only direct, regular files
+     * with an exact catalog-derived name and a plausible size survive process restart.
+     */
+    fun reconcile(archives: Collection<ResourceArchive>) {
+        archives.forEach(::requireValidArchive)
+        preparePrivateRoot()
+        val expected = archives.associateBy { it.sha256 }
+        val validReady = mutableSetOf<String>()
+        val entries =
+            stagingRoot.listFiles()?.toList()
+                ?: throw ResourceDownloadException(
+                    "download_staging_failed",
+                    "Could not inspect private resource staging",
+                )
+
+        entries.forEach { entry ->
+            val stagedName = STAGED_FILE.matchEntire(entry.name)
+            val archive = stagedName?.groupValues?.get(1)?.let(expected::get)
+            val suffix = stagedName?.groupValues?.get(2)
+            if (
+                archive == null ||
+                suffix !in STAGED_SUFFIXES ||
+                !isDirectRegularFile(entry)
+            ) {
+                deleteEntry(entry)
+            } else if (suffix == READY_SUFFIX) {
+                if (entry.length() == archive.sizeBytes && sha256(entry) == archive.sha256) {
+                    validReady += archive.sha256
+                } else {
+                    deleteEntry(entry)
+                }
+            } else if (entry.length() <= 0L || entry.length() > archive.sizeBytes) {
+                deleteEntry(entry)
+            }
+        }
+
+        validReady.forEach { sha256 ->
+            deleteEntry(File(stagingRoot, "$sha256.$PART_SUFFIX"))
+        }
+    }
+
+    fun discard(archive: ResourceArchive) {
+        requireValidArchive(archive)
+        preparePrivateRoot()
+        deleteEntry(File(stagingRoot, "${archive.sha256}.$PART_SUFFIX"))
+        deleteEntry(File(stagingRoot, "${archive.sha256}.$READY_SUFFIX"))
+    }
+
     fun download(
         archive: ResourceArchive,
         cancellation: ResourceCancellationSignal,
         onProgress: (Long, Long, ResourceOperationPhase) -> Unit,
     ): StagedArchive {
-        require(archive.sizeBytes > 0)
-        require(archive.sha256.matches(SHA_256))
+        requireValidArchive(archive)
         preparePrivateRoot()
-        val partial = File(stagingRoot, "${archive.sha256}.part")
-        val ready = File(stagingRoot, "${archive.sha256}.ready")
-        partial.delete()
-        ready.delete()
+        val partial = File(stagingRoot, "${archive.sha256}.$PART_SUFFIX")
+        val ready = File(stagingRoot, "${archive.sha256}.$READY_SUFFIX")
         try {
-            checkFreeSpace(archive.sizeBytes)
+            reconcileArchiveFiles(archive, partial, ready)
+            if (ready.exists()) {
+                cancellation.check()
+                val actual =
+                    sha256(ready, cancellation) { current ->
+                        onProgress(current, archive.sizeBytes, ResourceOperationPhase.VERIFYING)
+                    }
+                if (actual == archive.sha256) {
+                    deleteEntry(partial)
+                    return StagedArchive(ready, actual, archive.sizeBytes)
+                }
+                deleteEntry(ready)
+            }
+
+            checkFreeSpace((archive.sizeBytes - partial.length()).coerceAtLeast(0L))
             var lastFailure: IOException? = null
             repeat(MAX_ATTEMPTS) {
                 cancellation.check()
@@ -138,8 +201,12 @@ internal class PinnedResourceDownloader(
                 lastFailure,
             )
         } catch (failure: Exception) {
-            partial.delete()
-            ready.delete()
+            if (!shouldPreservePartial(failure)) {
+                deleteEntry(partial)
+                deleteEntry(ready)
+            } else if (partial.length() == 0L) {
+                deleteEntry(partial)
+            }
             throw failure
         }
     }
@@ -167,6 +234,10 @@ internal class PinnedResourceDownloader(
                     onProgress(input.channel.position(), archive.sizeBytes, ResourceOperationPhase.VERIFYING)
                 }
             }
+        }
+        if (offset == archive.sizeBytes) {
+            onProgress(offset, archive.sizeBytes, ResourceOperationPhase.VERIFYING)
+            return digest.digest().joinToString("") { "%02x".format(it) }
         }
         val connection = connections.open(archive.url, offset)
         try {
@@ -239,25 +310,103 @@ internal class PinnedResourceDownloader(
         if (!stagingRoot.exists() && !stagingRoot.mkdirs()) {
             throw ResourceDownloadException("download_staging_failed", "Could not create private resource staging")
         }
-        if (!stagingRoot.isDirectory) {
+        if (Files.isSymbolicLink(stagingRoot.toPath()) || !stagingRoot.isDirectory) {
             throw ResourceDownloadException("download_staging_failed", "Private resource staging is unavailable")
         }
     }
 
     private fun checkFreeSpace(required: Long) {
+        if (required <= 0L) return
         val available = availableBytes(stagingRoot)
         if (available < required + FREE_SPACE_RESERVE_BYTES) {
             throw ResourceStorageException(required + FREE_SPACE_RESERVE_BYTES, available)
         }
     }
 
+    private fun reconcileArchiveFiles(
+        archive: ResourceArchive,
+        partial: File,
+        ready: File,
+    ) {
+        if (partial.exists() || Files.isSymbolicLink(partial.toPath())) {
+            if (!isDirectRegularFile(partial) || partial.length() > archive.sizeBytes) {
+                deleteEntry(partial)
+            }
+        }
+        if (ready.exists() || Files.isSymbolicLink(ready.toPath())) {
+            if (!isDirectRegularFile(ready) || ready.length() != archive.sizeBytes) {
+                deleteEntry(ready)
+            }
+        }
+    }
+
+    private fun isDirectRegularFile(file: File): Boolean {
+        if (Files.isSymbolicLink(file.toPath()) || !file.isFile) return false
+        return try {
+            file.canonicalFile.parentFile == stagingRoot.canonicalFile
+        } catch (_: IOException) {
+            false
+        }
+    }
+
+    private fun deleteEntry(file: File) {
+        val path = file.toPath()
+        if (!file.exists() && !Files.isSymbolicLink(path)) return
+        val deleted =
+            if (file.isDirectory && !Files.isSymbolicLink(path)) {
+                file.listFiles()?.forEach(::deleteEntry)
+                file.delete()
+            } else {
+                file.delete()
+            }
+        if (!deleted && (file.exists() || Files.isSymbolicLink(path))) {
+            throw ResourceDownloadException(
+                "download_staging_failed",
+                "Could not reconcile private resource staging",
+            )
+        }
+    }
+
+    private fun sha256(
+        file: File,
+        cancellation: ResourceCancellationSignal? = null,
+        onProgress: (Long) -> Unit = {},
+    ): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        FileInputStream(file).use { input ->
+            val buffer = ByteArray(BUFFER_BYTES)
+            while (true) {
+                cancellation?.check()
+                val count = input.read(buffer)
+                if (count < 0) break
+                digest.update(buffer, 0, count)
+                onProgress(input.channel.position())
+            }
+        }
+        return digest.digest().joinToString("") { "%02x".format(it) }
+    }
+
+    private fun requireValidArchive(archive: ResourceArchive) {
+        require(archive.sizeBytes > 0)
+        require(archive.sha256.matches(SHA_256))
+    }
+
+    private fun shouldPreservePartial(failure: Exception): Boolean =
+        failure is ResourceStorageException ||
+            (failure is ResourceDownloadException && failure.stableCode in PRESERVE_PARTIAL_CODES)
+
     companion object {
         private const val BUFFER_BYTES = 256 * 1024
         private const val MAX_ATTEMPTS = 3
         private const val FREE_SPACE_RESERVE_BYTES = 32L * 1024 * 1024
         private val SHA_256 = Regex("[0-9a-f]{64}")
+        private val STAGED_FILE = Regex("([0-9a-f]{64})\\.(part|ready)")
         private val CONTENT_RANGE = Regex("bytes ([0-9]+)-([0-9]+)/([0-9]+)")
         private val RETRYABLE_HTTP = setOf(408, 425, 429, 500, 502, 503, 504)
         private val RETRYABLE_CODES = setOf("download_http_retryable", "download_incomplete")
+        private val PRESERVE_PARTIAL_CODES = setOf("download_retry_exhausted")
+        private const val PART_SUFFIX = "part"
+        private const val READY_SUFFIX = "ready"
+        private val STAGED_SUFFIXES = setOf(PART_SUFFIX, READY_SUFFIX)
     }
 }

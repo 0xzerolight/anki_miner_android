@@ -1,0 +1,97 @@
+{
+  "schema_version": 1,
+  "sources": {
+    "aozora": {
+      "kind": "txt",
+      "filename": "wagahai.txt",
+      "encoding": "cp932",
+      "text": "吾輩は猫である\n夏目漱石\n\n　吾輩は｜猫《ねこ》である。名前はまだ無い。\n\n底本：『吾輩は猫である』\n青空文庫作成ファイル："
+    },
+    "subtitle": {
+      "kind": "subtitle",
+      "filename": "episode.srt",
+      "series_name": "Imported subtitles",
+      "text": "1\n00:00:01,000 --> 00:00:03,000\n<i>猫を見る。</i>\n\n2\n00:01:23,500 --> 00:01:25,000\n犬もいる。\n"
+    },
+    "epub": {
+      "kind": "epub",
+      "filename": "novel.epub",
+      "entries": [
+        {
+          "name": "mimetype",
+          "text": "application/epub+zip"
+        },
+        {
+          "name": "META-INF/container.xml",
+          "text": "<?xml version=\"1.0\"?>\n<container version=\"1.0\" xmlns=\"urn:oasis:names:tc:opendocument:xmlns:container\">\n  <rootfiles>\n    <rootfile full-path=\"OEBPS/content.opf\" media-type=\"application/oebps-package+xml\"/>\n  </rootfiles>\n</container>\n"
+        },
+        {
+          "name": "OEBPS/content.opf",
+          "text": "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<package xmlns=\"http://www.idpf.org/2007/opf\" version=\"3.0\">\n  <metadata xmlns:dc=\"http://purl.org/dc/elements/1.1/\">\n    <dc:title>試験小説</dc:title>\n  </metadata>\n  <manifest>\n    <item id=\"cover\" href=\"cover.png\" media-type=\"image/png\" properties=\"cover-image\"/>\n    <item id=\"chapter\" href=\"chapter.xhtml\" media-type=\"application/xhtml+xml\"/>\n  </manifest>\n  <spine><itemref idref=\"chapter\"/></spine>\n</package>\n"
+        },
+        {
+          "name": "OEBPS/cover.png",
+          "base64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+        },
+        {
+          "name": "OEBPS/chapter.xhtml",
+          "text": "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<html xmlns=\"http://www.w3.org/1999/xhtml\">\n  <head><title>第一章</title></head>\n  <body><p>吾輩は猫である。名前はまだ無い。</p></body>\n</html>\n"
+        }
+      ]
+    },
+    "mokuro": {
+      "kind": "mokuro",
+      "filename": "volume.mokuro",
+      "image_archive_filename": "volume.cbz",
+      "document": {
+        "version": "0.2.4",
+        "title": "漫画作品",
+        "title_uuid": "title-fixture",
+        "volume": "第一巻",
+        "volume_uuid": "volume-fixture",
+        "pages": [
+          {
+            "version": "0.2.4",
+            "img_width": 1,
+            "img_height": 1,
+            "img_path": "pages/001.png",
+            "blocks": [
+              {
+                "box": [1, 2, 30, 40],
+                "vertical": true,
+                "font_size": 24,
+                "lines": ["猫を", "見る。"],
+                "lines_coords": []
+              }
+            ]
+          },
+          {
+            "version": "0.2.4",
+            "img_width": 1,
+            "img_height": 1,
+            "img_path": "pages/002.png",
+            "blocks": [
+              {
+                "box": [5, 6, 35, 46],
+                "vertical": true,
+                "font_size": 24,
+                "lines": ["犬もいる。"],
+                "lines_coords": []
+              }
+            ]
+          }
+        ]
+      },
+      "images": [
+        {
+          "name": "pages/001.png",
+          "base64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+        },
+        {
+          "name": "pages/002.png",
+          "base64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+        }
+      ]
+    }
+  }
+}

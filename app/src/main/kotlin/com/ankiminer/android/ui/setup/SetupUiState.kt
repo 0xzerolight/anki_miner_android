@@ -118,7 +118,34 @@ internal data class SetupUiState(
                 !busy &&
                 !completing
 
+    val ankiDroidAction: AnkiDroidSetupAction?
+        get() =
+            when (val readiness = anki) {
+                AnkiProviderReadiness.NotInstalled -> AnkiDroidSetupAction.INSTALL
+                AnkiProviderReadiness.Uninitialized,
+                AnkiProviderReadiness.RecoveryBlocked,
+                -> AnkiDroidSetupAction.OPEN
+                is AnkiProviderReadiness.Incompatible ->
+                    if (readiness.apiSpecVersion == null) {
+                        AnkiDroidSetupAction.OPEN_OR_INSTALL
+                    } else {
+                        AnkiDroidSetupAction.INSTALL
+                    }
+                AnkiProviderReadiness.PermissionDenied ->
+                    AnkiDroidSetupAction.REQUEST_PERMISSION
+                AnkiProviderReadiness.NotChecked,
+                is AnkiProviderReadiness.Ready,
+                -> null
+            }
+
     private companion object {
         val CUSTOM_SLOT_ID = Regex("(?!.*(?:\\.\\.|--))[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?")
     }
+}
+
+internal enum class AnkiDroidSetupAction {
+    INSTALL,
+    OPEN,
+    OPEN_OR_INSTALL,
+    REQUEST_PERMISSION,
 }

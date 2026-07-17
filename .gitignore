@@ -46,7 +46,13 @@ tools/wheels/out/
 # Signing — never commit
 *.jks
 *.keystore
+*.p12
+*.pfx
+*.pk8
+*.key
 keystore.properties
+signing.properties
+signing-private/
 
 # OS
 .DS_Store

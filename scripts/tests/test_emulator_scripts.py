@@ -319,6 +319,12 @@ fi
             connected,
         )
         self.assertIn("S4_EMULATOR_METRICS ", connected)
+        self.assertIn("run_instrumentation_exact reading-parity 1", connected)
+        self.assertIn("-e ankiMinerRunReadingGolden true", connected)
+        self.assertIn(
+            "-e class com.ankiminer.android.ReadingGoldenInstrumentedTest",
+            connected,
+        )
 
     def test_runner_rejects_selector_conflicts_duplicates_and_invalid_values(
         self,

@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import java.security.MessageDigest
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -21,6 +22,11 @@ class EngineGoldenV2InstrumentedTest {
     private fun asset(path: String): String =
         InstrumentationRegistry.getInstrumentation().context.assets.open(path)
             .bufferedReader(Charsets.UTF_8).use { it.readText() }
+
+    private fun sha256(value: String): String =
+        MessageDigest.getInstance("SHA-256")
+            .digest(value.toByteArray(Charsets.UTF_8))
+            .joinToString(separator = "") { byte -> "%02x".format(byte) }
 
     @Test
     fun allCompleteSectionsReplayThroughPackagedEngine() {
@@ -54,7 +60,7 @@ class EngineGoldenV2InstrumentedTest {
         assertEquals("engine_shared_tagger", result.getString("tagger_path"))
         assertEquals(expectedDictionaryHash, result.getString("dictionary_sha256"))
         assertEquals(
-            "6ddc4371bf99f751f6db2cd6aac9c81b9262575edb0128777950672ee9a192d3",
+            sha256(fixtureJson),
             result.getString("fixture_sha256"),
         )
         val expectedSections =

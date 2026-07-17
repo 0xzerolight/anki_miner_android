@@ -68,6 +68,8 @@ internal fun SetupRoute(
     viewModel: SetupViewModel,
     onRequestPermissions: () -> Unit,
     onOpenAppSettings: () -> Unit,
+    onInstallAnkiDroid: () -> Unit,
+    onOpenAnkiDroid: () -> Unit,
     onContinue: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -98,6 +100,8 @@ internal fun SetupRoute(
         onRefresh = viewModel::refresh,
         onRequestPermissions = onRequestPermissions,
         onOpenAppSettings = onOpenAppSettings,
+        onInstallAnkiDroid = onInstallAnkiDroid,
+        onOpenAnkiDroid = onOpenAnkiDroid,
         onProvisionModel = viewModel::provisionModel,
         onReconcileAnki = viewModel::reconcileInterruptedWork,
         onRetryStaging = viewModel::retryStagingCleanup,
@@ -149,6 +153,8 @@ private fun SetupScreen(
     onRefresh: () -> Unit,
     onRequestPermissions: () -> Unit,
     onOpenAppSettings: () -> Unit,
+    onInstallAnkiDroid: () -> Unit,
+    onOpenAnkiDroid: () -> Unit,
     onProvisionModel: () -> Unit,
     onReconcileAnki: () -> Unit,
     onRetryStaging: (Long) -> Unit,
@@ -236,7 +242,14 @@ private fun SetupScreen(
         )
         Text(stringResource(R.string.setup_intro))
 
-        StatusCard(state, onRefresh, onRequestPermissions, onOpenAppSettings)
+        StatusCard(
+            state,
+            onRefresh,
+            onRequestPermissions,
+            onOpenAppSettings,
+            onInstallAnkiDroid,
+            onOpenAnkiDroid,
+        )
 
         AnkiTargetCard(state, onProvisionModel)
 
@@ -453,6 +466,8 @@ private fun StatusCard(
     onRefresh: () -> Unit,
     onRequestPermissions: () -> Unit,
     onOpenAppSettings: () -> Unit,
+    onInstallAnkiDroid: () -> Unit,
+    onOpenAnkiDroid: () -> Unit,
 ) {
     OutlinedCard(
         Modifier
@@ -503,14 +518,49 @@ private fun StatusCard(
                 ),
             )
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(
-                    onClick = onRequestPermissions,
-                    modifier = Modifier.fillMaxWidth(),
-                ) { Text(stringResource(R.string.allow_required_access)) }
-                OutlinedButton(
-                    onClick = onOpenAppSettings,
-                    modifier = Modifier.fillMaxWidth(),
-                ) { Text(stringResource(R.string.open_app_settings)) }
+                when (state.ankiDroidAction) {
+                    AnkiDroidSetupAction.INSTALL ->
+                        OutlinedButton(
+                            onClick = onInstallAnkiDroid,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text(stringResource(R.string.install_or_update_ankidroid)) }
+                    AnkiDroidSetupAction.OPEN ->
+                        OutlinedButton(
+                            onClick = onOpenAnkiDroid,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text(stringResource(R.string.open_ankidroid)) }
+                    AnkiDroidSetupAction.OPEN_OR_INSTALL -> {
+                        OutlinedButton(
+                            onClick = onOpenAnkiDroid,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text(stringResource(R.string.open_ankidroid)) }
+                        OutlinedButton(
+                            onClick = onInstallAnkiDroid,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text(stringResource(R.string.install_or_update_ankidroid)) }
+                    }
+                    AnkiDroidSetupAction.REQUEST_PERMISSION ->
+                        OutlinedButton(
+                            onClick = onRequestPermissions,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text(stringResource(R.string.allow_required_access)) }
+                    null -> Unit
+                }
+                if (!state.notificationReady) {
+                    OutlinedButton(
+                        onClick = onRequestPermissions,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text(stringResource(R.string.allow_notification_access)) }
+                }
+                if (
+                    state.ankiDroidAction == AnkiDroidSetupAction.REQUEST_PERMISSION ||
+                        !state.notificationReady
+                ) {
+                    OutlinedButton(
+                        onClick = onOpenAppSettings,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text(stringResource(R.string.open_app_settings)) }
+                }
                 TextButton(onClick = onRefresh, enabled = !state.busy) {
                     Text(stringResource(R.string.check_again))
                 }

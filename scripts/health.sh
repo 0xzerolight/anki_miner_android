@@ -22,6 +22,8 @@ Usage: scripts/health.sh [--write-receipt FILE]
 Runs the complete host-only health gate. Connected tests are intentionally a
 separate, receipt-validated phase and never start Gradle. ARM64 release
 artifacts are built only with an exact physical-device S1a acceptance receipt.
+The exact accepted deviceDebug APK must be supplied through
+ORG_GRADLE_PROJECT_ankiMinerS1aArm64AcceptanceApk.
 EOF
 }
 
@@ -108,15 +110,26 @@ if [[ -n "$RELEASE_ACCEPTANCE_RECEIPT" ]]; then
         || fail "release acceptance requires an exact S1a wheel publication"
     [[ -f "$RELEASE_ACCEPTANCE_RECEIPT" ]] \
         || fail "release acceptance receipt is missing: $RELEASE_ACCEPTANCE_RECEIPT"
+    [[ -n "${ORG_GRADLE_PROJECT_ankiMinerS1aArm64AcceptanceApk:-}" ]] \
+        || fail "release acceptance requires the exact externally stored deviceDebug APK"
+    [[ -f "$ORG_GRADLE_PROJECT_ankiMinerS1aArm64AcceptanceApk" ]] \
+        || fail "accepted deviceDebug APK is missing: $ORG_GRADLE_PROJECT_ankiMinerS1aArm64AcceptanceApk"
     RELEASE_ACCEPTANCE_RECEIPT="$(realpath "$RELEASE_ACCEPTANCE_RECEIPT")"
+    ORG_GRADLE_PROJECT_ankiMinerS1aArm64AcceptanceApk="$(
+        realpath "$ORG_GRADLE_PROJECT_ankiMinerS1aArm64AcceptanceApk"
+    )"
+    export ORG_GRADLE_PROJECT_ankiMinerS1aArm64AcceptanceApk
     python3.13 "$REPO_ROOT/tools/wheels/s1a_acceptance.py" verify \
         --receipt "$RELEASE_ACCEPTANCE_RECEIPT" \
         --manifest "$s1a_manifest" \
+        --apk "$ORG_GRADLE_PROJECT_ankiMinerS1aArm64AcceptanceApk" \
         --repo-root "$REPO_ROOT" \
         --golden "$REPO_ROOT/golden/engine-v1.json" >/dev/null \
         || fail "physical ARM64 S1a acceptance receipt is invalid or stale"
     ORG_GRADLE_PROJECT_ankiMinerS1aArm64AcceptanceReceipt="$RELEASE_ACCEPTANCE_RECEIPT"
     export ORG_GRADLE_PROJECT_ankiMinerS1aArm64AcceptanceReceipt
+    ORG_GRADLE_PROJECT_ankiMinerSourceCommit="$(git -C "$REPO_ROOT" rev-parse HEAD)"
+    export ORG_GRADLE_PROJECT_ankiMinerSourceCommit
 fi
 for script in "$SCRIPT_DIR"/*.sh; do
     bash -n "$script" || fail "shell syntax check failed: $script"
@@ -202,7 +215,6 @@ if [[ -n "$RELEASE_ACCEPTANCE_RECEIPT" ]]; then
     tasks+=(
         :app:lintDeviceRelease
         :app:assembleDeviceRelease
-        :app:bundleDeviceRelease
     )
 fi
 anki_miner_run_gradle ./gradlew "${tasks[@]}"
@@ -235,37 +247,34 @@ python3.13 "$SCRIPT_DIR/check_runtime_artifact.py" \
     "${runtime_s1a_artifact_args[@]}"
 if [[ -n "$RELEASE_ACCEPTANCE_RECEIPT" ]]; then
     release_apk="$REPO_ROOT/app/build/outputs/apk/device/release/app-device-release-unsigned.apk"
-    release_aab="$REPO_ROOT/app/build/outputs/bundle/deviceRelease/app-device-release.aab"
     [[ -f "$release_apk" ]] || fail "device release APK was not produced"
-    [[ -f "$release_aab" ]] || fail "device release AAB was not produced"
-    for release_artifact in "$release_apk" "$release_aab"; do
-        release_entry="lib/arm64-v8a/libanki_miner_mecab.so"
-        [[ "$release_artifact" == *.aab ]] \
-            && release_entry="base/lib/arm64-v8a/libanki_miner_mecab.so"
-        "$SCRIPT_DIR/check-native-artifact.sh" \
-            --artifact "$release_artifact" \
-            --allow-abi arm64-v8a \
-            --require-app-imy \
-            --reject-base-unidic \
-            --require-entry "$release_entry" \
-            --forbid-entry scaffold_probe \
-            --forbid-entry runtime_dependencies_probe \
-            --forbid-entry tokenizer_s1a_instrumented \
-            --forbid-entry TokenizerS1aInstrumentedTest \
-            --forbid-entry tokenizer_s1b_instrumented \
-            --forbid-entry s4_engine_smoke \
-            --forbid-entry engine_golden_v2_instrumented \
-            --forbid-entry EngineGoldenV2InstrumentedTest \
-            --forbid-entry s4-engine-smoke-v1.json \
-            --forbid-entry engine-v1.json \
-            --forbid-entry engine-v2.json \
-            "${s1a_artifact_args[@]}"
-        python3.13 "$SCRIPT_DIR/check_runtime_artifact.py" \
-            --artifact "$release_artifact" \
-            --runtime-manifest "$runtime_manifest" \
-            --allow-abi arm64-v8a \
-            "${runtime_s1a_artifact_args[@]}"
-    done
+    "$SCRIPT_DIR/check-native-artifact.sh" \
+        --artifact "$release_apk" \
+        --allow-abi arm64-v8a \
+        --require-app-imy \
+        --reject-base-unidic \
+        --require-entry lib/arm64-v8a/libanki_miner_mecab.so \
+        --forbid-entry scaffold_probe \
+        --forbid-entry runtime_dependencies_probe \
+        --forbid-entry tokenizer_s1a_instrumented \
+        --forbid-entry TokenizerS1aInstrumentedTest \
+        --forbid-entry tokenizer_s1b_instrumented \
+        --forbid-entry s4_engine_smoke \
+        --forbid-entry engine_golden_v2_instrumented \
+        --forbid-entry EngineGoldenV2InstrumentedTest \
+        --forbid-entry reading_golden_instrumented \
+        --forbid-entry ReadingGoldenInstrumentedTest \
+        --forbid-entry s4-engine-smoke-v1.json \
+        --forbid-entry engine-v1.json \
+        --forbid-entry engine-v2.json \
+        --forbid-entry reading-v1-input.json \
+        --forbid-entry reading-v1.json \
+        "${s1a_artifact_args[@]}"
+    python3.13 "$SCRIPT_DIR/check_runtime_artifact.py" \
+        --artifact "$release_apk" \
+        --runtime-manifest "$runtime_manifest" \
+        --allow-abi arm64-v8a \
+        "${runtime_s1a_artifact_args[@]}"
     release_manifest="$(apkanalyzer manifest print "$release_apk")"
     if grep -Eq 'ScaffoldProbeActivity|scaffold_probe' <<<"$release_manifest"; then
         fail "debug probe component leaked into the release manifest"

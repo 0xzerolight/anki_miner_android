@@ -14,10 +14,16 @@ Publish a source archive beside each binary release and bind it to the signed ar
 - `tools/engine-sync/engine.lock`, its composition/override inputs, and the generated engine manifest;
 - Gradle wrapper, version catalog, dependency locks, verification metadata, and all build scripts;
 - runtime-wheel, tokenizer, FFmpeg, AnkiDroid API, MeCab, and code-generation recipes, patches, source locks, provenance manifests, and license texts;
-- the exact release record, accepted hardware receipt, runtime/tokenizer publication identities, compiler/SDK/NDK/JDK versions, and artifact checksums;
+- runtime/tokenizer publication identities, compiler/SDK/NDK/JDK versions, and the non-private build evidence available before the source archive is finalized;
 - instructions and any non-secret material needed to rebuild, modify, relink, sign with a recipient-controlled key, and install the result.
 
+The archive has one top-level directory and contains `anki-miner-source-manifest.json` and `anki-miner-external-source-inventory.json` directly under that root. Generate both from the clean annotated tag with `scripts/github_release.py write-source-manifest`. The command and release verifier require every tracked path, executable mode, and Git blob to match the tagged tree exactly. Every additional regular file is size- and SHA-256-inventoried, and every additional symlink is mode- and target-inventoried. Release tooling reopens the compressed archive and binds both inventories to the signed candidate's source, engine, runtime-wheel, and tokenizer identities. These mechanical checks do not replace the completeness and legal reviews above.
+
 Signing keys, Play credentials, and private runner credentials must never be included. They must not be necessary to build and install a modified artifact under a different signature or application ID.
+
+The final `release.json` is published beside the corresponding-source archive, not inside it: the record contains the archive's SHA-256 and therefore cannot be a member of that same hashed archive without creating a cycle. Publish both as immutable sibling assets and bind the APK, archive, notices, certificate, and record through `SHA256SUMS`.
+
+Do not publish a raw physical-device receipt containing an ADB serial or machine-local path. The public record contains its SHA-256 and a reviewed redacted summary. The raw source-bound receipt remains private evidence available to the release reviewer and build verifier.
 
 ## Rebuild path
 

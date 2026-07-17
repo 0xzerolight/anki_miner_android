@@ -10,6 +10,7 @@ import com.ankiminer.android.data.anki.AnkiSetupManager
 import com.ankiminer.android.data.anki.ProcessAnkiSetupManager
 import com.ankiminer.android.data.RuntimeWorkCoordinator
 import com.ankiminer.android.data.resources.AndroidResourceManager
+import com.ankiminer.android.data.resources.PinnedResourceDownloader
 import com.ankiminer.android.data.resources.ResourceManager
 import com.ankiminer.android.data.resources.ResourceStartupReadiness
 import com.ankiminer.android.data.settings.AppSettingsRepository
@@ -148,6 +149,7 @@ class AnkiMinerApplication : Application() {
             bridge = pyBridge,
             tokenizerResources = tokenizerResourceProvider,
             stagingRoot = File(noBackupFilesDir, "resource-staging"),
+            downloader = PinnedResourceDownloader(File(noBackupFilesDir, "resource-downloads")),
             resourceExecutor = resourceExecutor,
             controlExecutor = resourceControlExecutor,
             runtimeWorkCoordinator = runtimeWorkCoordinator,
@@ -312,6 +314,12 @@ class AnkiMinerApplication : Application() {
                 lease.close()
             }
         }
+    }
+
+    /** Refresh process-owned state which may change while an external Android UI is visible. */
+    internal fun refreshExternalReadiness() {
+        ankiSetupManager.refresh()
+        refreshMiningAdmission()
     }
 
     private fun probeAnkiMiningTarget(

@@ -18,11 +18,15 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -31,6 +35,8 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.ankiminer.android.R
+import com.ankiminer.android.diagnostics.TesterDiagnosticsBuilder
+import com.ankiminer.android.diagnostics.currentTesterBuildIdentity
 import com.ankiminer.android.mining.runId
 import com.ankiminer.android.ui.attribution.AttributionScreen
 import com.ankiminer.android.ui.reading.ReadingMiningRoute
@@ -62,7 +68,10 @@ internal fun AnkiMinerApp(
     onNotificationRunHandled: () -> Unit,
     onRequestPermissions: () -> Unit,
     onOpenAppSettings: () -> Unit,
+    onInstallAnkiDroid: () -> Unit,
+    onOpenAnkiDroid: () -> Unit,
     onOpenSpeechSettings: () -> Unit,
+    onShareDiagnostics: (String) -> Unit,
 ) {
     val navController = rememberNavController()
     val currentEntry by navController.currentBackStackEntryAsState()
@@ -70,6 +79,11 @@ internal fun AnkiMinerApp(
     val setup by setupViewModel.uiState.collectAsStateWithLifecycle()
     val video by videoViewModel.uiState.collectAsStateWithLifecycle()
     val reading by readingViewModel.uiState.collectAsStateWithLifecycle()
+    val buildIdentity = remember { currentTesterBuildIdentity() }
+    val diagnostics =
+        remember(buildIdentity, setup, video, reading) {
+            TesterDiagnosticsBuilder.build(buildIdentity, setup, video, reading)
+        }
     var keepCompletedSetupVisible by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(
@@ -144,7 +158,12 @@ internal fun AnkiMinerApp(
                                     restoreState = true
                                 }
                             },
-                            icon = { Text(if (currentRoute == destination.route) "●" else "○") },
+                            icon = {
+                                Text(
+                                    if (currentRoute == destination.route) "●" else "○",
+                                    Modifier.clearAndSetSemantics {},
+                                )
+                            },
                             label = { Text(stringResource(destination.label)) },
                         )
                     }
@@ -162,6 +181,8 @@ internal fun AnkiMinerApp(
                     viewModel = setupViewModel,
                     onRequestPermissions = onRequestPermissions,
                     onOpenAppSettings = onOpenAppSettings,
+                    onInstallAnkiDroid = onInstallAnkiDroid,
+                    onOpenAnkiDroid = onOpenAnkiDroid,
                     onContinue = { navController.navigate(Destination.VIDEO.route) },
                 )
             }
@@ -204,7 +225,9 @@ internal fun AnkiMinerApp(
             composable(Destination.SETTINGS.route) {
                 SettingsRoute(
                     viewModel = settingsViewModel,
+                    diagnostics = diagnostics,
                     onOpenSpeechSettings = onOpenSpeechSettings,
+                    onShareDiagnostics = onShareDiagnostics,
                     onAttributions = { navController.navigate(Destination.ATTRIBUTION.route) },
                 )
             }
@@ -238,7 +261,11 @@ private fun MiningReadinessGate(
         Modifier.fillMaxSize().padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Text(stringResource(R.string.mining_not_ready), style = MaterialTheme.typography.headlineSmall)
+        Text(
+            stringResource(R.string.mining_not_ready),
+            modifier = Modifier.semantics { heading() },
+            style = MaterialTheme.typography.headlineSmall,
+        )
         OutlinedCard(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(message)

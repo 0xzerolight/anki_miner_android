@@ -20,6 +20,12 @@ from engine_sync.core import (
 
 PINNED_MEDIA_EXTRACTOR_BLOB = "357dea44ae92b47ad06e19d8692a863438fa3d62"
 PINNED_AUDIO_TRACK_DETECTOR_BLOB = "f785f5b8706e1073f076149dbfb873472446d414"
+REVIEWED_MEDIA_EXTRACTOR_SHA256 = (
+    "187d3b71e805d9e2e5ff3a726743699efee481c4a8ea3dfaa67c1a82a3c2f377"
+)
+REVIEWED_AUDIO_TRACK_DETECTOR_SHA256 = (
+    "429663d08bc19ac9591a78e4d480eeaa209939563e02822c8fe8b6ea37fb0f88"
+)
 REMOVED_WAV_TO_FLOAT32 = '''def wav_to_float32(path: Path) -> "tuple[Any, int, float]":
     """Read a mono 16-bit PCM WAV and return (samples, sample_rate, duration_s).
 
@@ -546,12 +552,19 @@ target = "anki_miner.services.youtube_fetcher"
         self.assertEqual(1, len(application_lines))
         self.assertLess(application_lines[0], min(line for _, line in decodes))
 
-    def test_media_extractor_override_has_only_reviewed_android_changes(self) -> None:
+    def test_media_extractor_override_is_the_reviewed_cancellable_overlay(self) -> None:
         project_root = Path(__file__).resolve().parents[3]
-        override = (
+        override_path = (
             project_root
             / "tools/engine-sync/overrides/anki_miner/services/media_extractor.py"
-        ).read_text(encoding="utf-8")
+        )
+        override_bytes = override_path.read_bytes()
+        override = override_bytes.decode("utf-8")
+        generated = (
+            project_root / "app/src/main/python/anki_miner/services/media_extractor.py"
+        ).read_bytes()
+        self.assertEqual(REVIEWED_MEDIA_EXTRACTOR_SHA256, hashlib.sha256(override_bytes).hexdigest())
+        self.assertEqual(override_bytes, generated)
         parsed = ast.parse(override)
         imported_roots = {
             alias.name.partition(".")[0]
@@ -573,45 +586,35 @@ target = "anki_miner.services.youtube_fetcher"
         self.assertIn("wave", imported_roots)
         self.assertIn("extract_full_audio", functions)
         self.assertEqual(override.count(ANDROID_WAVE_DOC), 1)
-
         self.assertEqual(override.count(ANDROID_FD_IMPORT), 1)
-        self.assertEqual(override.count(ANDROID_FFMPEG_SPAWN), 1)
-        reconstructed = override.replace(ANDROID_FD_IMPORT, "")
-        reconstructed = reconstructed.replace(
-            ANDROID_FFMPEG_SPAWN, DESKTOP_FFMPEG_SPAWN
-        )
-        reconstructed = reconstructed.replace(ANDROID_WAVE_DOC, PINNED_WAVE_DOC)
-        marker = 'def _kill_quietly(proc: "subprocess.Popen[str]") -> None:'
-        self.assertEqual(reconstructed.count(marker), 1)
-        reconstructed = reconstructed.replace(
-            marker, REMOVED_WAV_TO_FLOAT32 + marker
-        ).encode("utf-8")
-        git_object = f"blob {len(reconstructed)}\0".encode() + reconstructed
-        self.assertEqual(
-            hashlib.sha1(git_object, usedforsecurity=False).hexdigest(),
-            PINNED_MEDIA_EXTRACTOR_BLOB,
-        )
+        self.assertIn("_FfmpegProcRegistry", functions | {
+            node.name for node in ast.walk(parsed) if isinstance(node, ast.ClassDef)
+        })
+        self.assertNotIn("subprocess.run(", override)
+        self.assertIn("proc_registry=proc_registry", override)
+        self.assertIn("proc_registry.kill_all()", override)
 
-    def test_audio_detector_override_has_only_fd_inheritance_change(self) -> None:
+    def test_audio_detector_override_is_the_reviewed_cancellable_overlay(self) -> None:
         project_root = Path(__file__).resolve().parents[3]
-        override = (
+        override_path = (
             project_root
             / "tools/engine-sync/overrides/anki_miner/utils/audio_track_detector.py"
-        ).read_text(encoding="utf-8")
+        )
+        override_bytes = override_path.read_bytes()
+        override = override_bytes.decode("utf-8")
+        generated = (
+            project_root / "app/src/main/python/anki_miner/utils/audio_track_detector.py"
+        ).read_bytes()
+        self.assertEqual(
+            REVIEWED_AUDIO_TRACK_DETECTOR_SHA256,
+            hashlib.sha256(override_bytes).hexdigest(),
+        )
+        self.assertEqual(override_bytes, generated)
         self.assertEqual(override.count(ANDROID_FD_IMPORT), 1)
         self.assertEqual(override.count(ANDROID_FFPROBE_DOC), 1)
-        self.assertEqual(override.count(ANDROID_FFPROBE_SPAWN), 1)
-
-        reconstructed = override.replace(ANDROID_FD_IMPORT, "")
-        reconstructed = reconstructed.replace(ANDROID_FFPROBE_DOC, "")
-        reconstructed = reconstructed.replace(
-            ANDROID_FFPROBE_SPAWN, DESKTOP_FFPROBE_SPAWN
-        ).encode("utf-8")
-        git_object = f"blob {len(reconstructed)}\0".encode() + reconstructed
-        self.assertEqual(
-            hashlib.sha1(git_object, usedforsecurity=False).hexdigest(),
-            PINNED_AUDIO_TRACK_DETECTOR_BLOB,
-        )
+        self.assertNotIn("subprocess.run(", override)
+        self.assertIn("class ProcessRegistry(Protocol):", override)
+        self.assertIn("proc_registry.unregister(proc)", override)
 
 
 if __name__ == "__main__":

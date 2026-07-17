@@ -40,12 +40,15 @@ import com.ankiminer.android.data.settings.AudioFormat
 import com.ankiminer.android.data.settings.EngineSettingsSnapshotMapper
 import com.ankiminer.android.data.settings.PitchCategoryFormat
 import com.ankiminer.android.data.settings.ResourceChainSelection
+import com.ankiminer.android.diagnostics.TesterDiagnostics
 import com.ankiminer.android.vm.SettingsViewModel
 
 @Composable
 internal fun SettingsRoute(
     viewModel: SettingsViewModel,
+    diagnostics: TesterDiagnostics,
     onOpenSpeechSettings: () -> Unit,
+    onShareDiagnostics: (String) -> Unit,
     onAttributions: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -58,10 +61,12 @@ internal fun SettingsRoute(
         resources = resources,
         saving = saving,
         error = error,
+        diagnostics = diagnostics,
         onSave = viewModel::save,
         onRestoreDefaults = viewModel::restoreDefaults,
         onDismissError = viewModel::dismissError,
         onOpenSpeechSettings = onOpenSpeechSettings,
+        onShareDiagnostics = onShareDiagnostics,
         onAttributions = onAttributions,
         modifier = modifier,
     )
@@ -73,10 +78,12 @@ private fun SettingsScreen(
     resources: ResourceManagerState,
     saving: Boolean,
     error: String?,
+    diagnostics: TesterDiagnostics,
     onSave: (AppSettings) -> Unit,
     onRestoreDefaults: () -> Unit,
     onDismissError: () -> Unit,
     onOpenSpeechSettings: () -> Unit,
+    onShareDiagnostics: (String) -> Unit,
     onAttributions: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -154,7 +161,11 @@ private fun SettingsScreen(
                 .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Text(stringResource(R.string.settings_title), style = MaterialTheme.typography.headlineSmall)
+        Text(
+            stringResource(R.string.settings_title),
+            modifier = Modifier.semantics { heading() },
+            style = MaterialTheme.typography.headlineSmall,
+        )
         Text(stringResource(R.string.settings_intro))
 
         SettingsSection(stringResource(R.string.settings_anki_target)) {
@@ -424,6 +435,20 @@ private fun SettingsScreen(
         }
         OutlinedButton(onClick = onRestoreDefaults, enabled = !saving, modifier = Modifier.fillMaxWidth()) {
             Text(stringResource(R.string.settings_restore_defaults))
+        }
+        SettingsSection(stringResource(R.string.settings_tester_diagnostics)) {
+            Text(stringResource(R.string.settings_version_identity, diagnostics.versionLabel))
+            Text(stringResource(R.string.settings_source_identity, diagnostics.sourceLabel))
+            Text(
+                stringResource(R.string.settings_diagnostics_privacy),
+                style = MaterialTheme.typography.bodySmall,
+            )
+            OutlinedButton(
+                onClick = { onShareDiagnostics(diagnostics.report) },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(stringResource(R.string.settings_share_diagnostics))
+            }
         }
         HorizontalDivider()
         TextButton(onClick = onAttributions) { Text(stringResource(R.string.settings_attributions)) }

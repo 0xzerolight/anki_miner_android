@@ -2,7 +2,7 @@
 
 Last updated: 2026-07-17
 
-This document describes the behavior of the current Anki Miner for Android source revision. It is release groundwork, not yet the hosted Play Store privacy policy. Before publication, the release owner must add a monitored privacy contact, publish this policy at a stable public URL, review it against the exact signed artifact, and record that URL in the release record.
+This document describes the behavior of the current Anki Miner for Android source revision. It is release groundwork, not yet the final hosted policy for an external APK. Before publication, the release owner must add a monitored privacy contact, publish this policy at a stable URL reachable without login, review it against the exact signed artifact, and record that URL in the release evidence. A later Play listing may use the same reviewed policy but has separate Data Safety requirements.
 
 ## Data processed on the device
 
@@ -40,4 +40,4 @@ The app disables cleartext network traffic in its production manifest, uses HTTP
 
 Pre-release questions may be opened in the [project issue tracker](https://github.com/0xzerolight/anki_miner_android/issues). Do not report security vulnerabilities in a public issue.
 
-Release blocker: replace this paragraph with a monitored privacy email and the final hosted-policy URL before any closed, open, or production Play track. The exact Data Safety assessment must be recorded using [release/DATA_SAFETY.md](release/DATA_SAFETY.md).
+Release blocker: replace this paragraph with a monitored privacy email and the final hosted-policy URL before any external GitHub APK is published. Record the exact-artifact privacy review in the GitHub release approvals. The separate Play Data Safety assessment in [release/DATA_SAFETY.md](release/DATA_SAFETY.md) remains deferred until a Play release is pursued.

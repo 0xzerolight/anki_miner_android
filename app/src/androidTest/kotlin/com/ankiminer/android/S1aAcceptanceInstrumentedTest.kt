@@ -83,10 +83,14 @@ class S1aAcceptanceInstrumentedTest {
             val workload =
                 JSONObject(
                     python.getModule("s1a_acceptance_probe")
-                        .callAttr("measure_novel", novel.absolutePath)
+                        .callAttr("measure_representative_mining", novel.absolutePath)
                         .toString(),
                 )
             assertTrue(workload.getInt("japanese_character_count") >= 50_000)
+            assertEquals(100, workload.getInt("selected_count"))
+            assertEquals(100, workload.getInt("card_payload_count"))
+            assertEquals(100, workload.getInt("cards_created"))
+            assertTrue(workload.getBoolean("completed"))
             assertTrue(workload.getLong("peak_rss_bytes") > 0L)
             emit("ANKI_MINER_S1A_WORKLOAD", workload)
         }

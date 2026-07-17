@@ -1,0 +1,186 @@
+{
+  "declarations": {
+    "android_developer_verification": {
+      "completed_utc": "REPLACE_WITH_UTC_TIMESTAMP",
+      "evidence_sha256": "REPLACE_WITH_64_LOWERCASE_HEX",
+      "operator": "REPLACE_WITH_STABLE_HANDLE",
+      "outcome": "not_run",
+      "procedure": "release/CHECKLIST.md#github-apk-prerelease",
+      "required": true
+    },
+    "corresponding_source": {
+      "completed_utc": "REPLACE_WITH_UTC_TIMESTAMP",
+      "evidence_sha256": "REPLACE_WITH_64_LOWERCASE_HEX",
+      "operator": "REPLACE_WITH_STABLE_HANDLE",
+      "outcome": "not_run",
+      "procedure": "release/SOURCE_DISTRIBUTION.md",
+      "required": true
+    },
+    "foreground_service_behavior": {
+      "completed_utc": "REPLACE_WITH_UTC_TIMESTAMP",
+      "evidence_sha256": "REPLACE_WITH_64_LOWERCASE_HEX",
+      "operator": "REPLACE_WITH_STABLE_HANDLE",
+      "outcome": "not_run",
+      "procedure": "release/FOREGROUND_SERVICE.md",
+      "required": true
+    },
+    "play_data_safety": {
+      "completed_utc": "REPLACE_WITH_UTC_TIMESTAMP",
+      "evidence_sha256": "REPLACE_WITH_64_LOWERCASE_HEX",
+      "operator": "REPLACE_WITH_STABLE_HANDLE",
+      "outcome": "not_applicable_to_channel",
+      "procedure": "release/DATA_SAFETY.md",
+      "required": false
+    },
+    "play_foreground_service_submission": {
+      "completed_utc": "REPLACE_WITH_UTC_TIMESTAMP",
+      "evidence_sha256": "REPLACE_WITH_64_LOWERCASE_HEX",
+      "operator": "REPLACE_WITH_STABLE_HANDLE",
+      "outcome": "not_applicable_to_channel",
+      "procedure": "release/FOREGROUND_SERVICE.md#google-play-only",
+      "required": false
+    },
+    "privacy_policy": {
+      "completed_utc": "REPLACE_WITH_UTC_TIMESTAMP",
+      "evidence_sha256": "REPLACE_WITH_64_LOWERCASE_HEX",
+      "operator": "REPLACE_WITH_STABLE_HANDLE",
+      "outcome": "not_run",
+      "procedure": "PRIVACY.md",
+      "required": true
+    },
+    "relinking_installation_information": {
+      "completed_utc": "REPLACE_WITH_UTC_TIMESTAMP",
+      "evidence_sha256": "REPLACE_WITH_64_LOWERCASE_HEX",
+      "operator": "REPLACE_WITH_STABLE_HANDLE",
+      "outcome": "not_run",
+      "procedure": "SOURCE_AND_RELINKING.md",
+      "required": true
+    },
+    "security_review": {
+      "completed_utc": "REPLACE_WITH_UTC_TIMESTAMP",
+      "evidence_sha256": "REPLACE_WITH_64_LOWERCASE_HEX",
+      "operator": "REPLACE_WITH_STABLE_HANDLE",
+      "outcome": "not_run",
+      "procedure": "SECURITY.md",
+      "required": true
+    },
+    "support_contact": {
+      "completed_utc": "REPLACE_WITH_UTC_TIMESTAMP",
+      "evidence_sha256": "REPLACE_WITH_64_LOWERCASE_HEX",
+      "operator": "REPLACE_WITH_STABLE_HANDLE",
+      "outcome": "not_run",
+      "procedure": "SUPPORT.md",
+      "required": true
+    },
+    "third_party_notices": {
+      "completed_utc": "REPLACE_WITH_UTC_TIMESTAMP",
+      "evidence_sha256": "REPLACE_WITH_64_LOWERCASE_HEX",
+      "operator": "REPLACE_WITH_STABLE_HANDLE",
+      "outcome": "not_run",
+      "procedure": "NOTICE.md",
+      "required": true
+    }
+  },
+  "gates": {
+    "accessibility_review": {
+      "completed_utc": "REPLACE_WITH_UTC_TIMESTAMP",
+      "evidence_sha256": "REPLACE_WITH_64_LOWERCASE_HEX",
+      "operator": "REPLACE_WITH_STABLE_HANDLE",
+      "outcome": "not_run",
+      "procedure": "TESTING.md#failure-lifecycle-and-compatibility",
+      "required": true
+    },
+    "ankidroid_provider_roundtrip": {
+      "completed_utc": "REPLACE_WITH_UTC_TIMESTAMP",
+      "evidence_sha256": "REPLACE_WITH_64_LOWERCASE_HEX",
+      "operator": "REPLACE_WITH_STABLE_HANDLE",
+      "outcome": "not_run",
+      "procedure": "release/MANUAL_GATES.md",
+      "required": true
+    },
+    "emulator_compatibility_matrix": {
+      "completed_utc": "REPLACE_WITH_UTC_TIMESTAMP",
+      "evidence_sha256": "REPLACE_WITH_64_LOWERCASE_HEX",
+      "operator": "REPLACE_WITH_STABLE_HANDLE",
+      "outcome": "not_run",
+      "procedure": "scripts/README.md#checks",
+      "required": true
+    },
+    "host_health": {
+      "completed_utc": "REPLACE_WITH_UTC_TIMESTAMP",
+      "evidence_sha256": "REPLACE_WITH_64_LOWERCASE_HEX",
+      "operator": "REPLACE_WITH_STABLE_HANDLE",
+      "outcome": "not_run",
+      "procedure": "scripts/health.sh",
+      "required": true
+    },
+    "legal_distribution_review": {
+      "completed_utc": "REPLACE_WITH_UTC_TIMESTAMP",
+      "evidence_sha256": "REPLACE_WITH_64_LOWERCASE_HEX",
+      "operator": "REPLACE_WITH_STABLE_HANDLE",
+      "outcome": "not_run",
+      "procedure": "release/SOURCE_DISTRIBUTION.md",
+      "required": true
+    },
+    "lifecycle_and_cancellation": {
+      "completed_utc": "REPLACE_WITH_UTC_TIMESTAMP",
+      "evidence_sha256": "REPLACE_WITH_64_LOWERCASE_HEX",
+      "operator": "REPLACE_WITH_STABLE_HANDLE",
+      "outcome": "not_run",
+      "procedure": "TESTING.md#failure-lifecycle-and-compatibility",
+      "required": true
+    },
+    "physical_s1a_acceptance": {
+      "completed_utc": "REPLACE_WITH_UTC_TIMESTAMP",
+      "evidence_sha256": "REPLACE_WITH_64_LOWERCASE_HEX",
+      "operator": "REPLACE_WITH_STABLE_HANDLE",
+      "outcome": "not_run",
+      "procedure": "scripts/collect-s1a-arm64-acceptance.sh",
+      "required": true
+    },
+    "private_repository_rehearsal": {
+      "completed_utc": "REPLACE_WITH_UTC_TIMESTAMP",
+      "evidence_sha256": "REPLACE_WITH_64_LOWERCASE_HEX",
+      "operator": "REPLACE_WITH_STABLE_HANDLE",
+      "outcome": "not_run",
+      "procedure": "release/MANUAL_GATES.md#private-repository-release-rehearsal",
+      "required": true
+    },
+    "reading_source_matrix": {
+      "completed_utc": "REPLACE_WITH_UTC_TIMESTAMP",
+      "evidence_sha256": "REPLACE_WITH_64_LOWERCASE_HEX",
+      "operator": "REPLACE_WITH_STABLE_HANDLE",
+      "outcome": "not_run",
+      "procedure": "TESTING.md#reading-mining",
+      "required": true
+    },
+    "resource_download_resume": {
+      "completed_utc": "REPLACE_WITH_UTC_TIMESTAMP",
+      "evidence_sha256": "REPLACE_WITH_64_LOWERCASE_HEX",
+      "operator": "REPLACE_WITH_STABLE_HANDLE",
+      "outcome": "not_run",
+      "procedure": "TESTING.md#first-run-and-resource-setup",
+      "required": true
+    },
+    "signed_apk_physical_smoke": {
+      "completed_utc": "REPLACE_WITH_UTC_TIMESTAMP",
+      "evidence_sha256": "REPLACE_WITH_64_LOWERCASE_HEX",
+      "operator": "REPLACE_WITH_STABLE_HANDLE",
+      "outcome": "not_run",
+      "procedure": "release/MANUAL_GATES.md",
+      "required": true
+    },
+    "video_mining_acceptance": {
+      "completed_utc": "REPLACE_WITH_UTC_TIMESTAMP",
+      "evidence_sha256": "REPLACE_WITH_64_LOWERCASE_HEX",
+      "operator": "REPLACE_WITH_STABLE_HANDLE",
+      "outcome": "not_run",
+      "procedure": "TESTING.md#video-mining",
+      "required": true
+    }
+  },
+  "schema": "anki-miner-github-apk-approvals-v2",
+  "signed_apk_sha256": "REPLACE_WITH_64_LOWERCASE_HEX",
+  "source_commit": "REPLACE_WITH_40_LOWERCASE_HEX",
+  "tag": "v0.1.0-alpha.1"
+}

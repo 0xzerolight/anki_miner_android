@@ -59,30 +59,46 @@ class PinnedResourceDownloaderTest {
     }
 
     @Test
-    fun exhaustedNetworkFailureAndCancellationLeaveNoPartialOrPublishedArchive() {
+    fun exhaustedNetworkFailurePreservesPartialButCancellationDeletesIt() {
         val content = "resource".toByteArray()
+        val archive = archive(content)
         val networkRoot = temporary.newFolder("network-failure")
         val failing =
             PinnedResourceDownloader(
                 stagingRoot = networkRoot,
-                connections =
-                    DownloadConnectionFactory { _, _ ->
-                        FakeConnection(
-                            code = HttpURLConnection.HTTP_OK,
-                            input = object : InputStream() {
-                                override fun read(): Int = throw IOException("offline")
+                connections = DownloadConnectionFactory { _, offset ->
+                    val remaining = content.copyOfRange(offset.toInt(), content.size)
+                    FakeConnection(
+                        code =
+                            if (offset == 0L) {
+                                HttpURLConnection.HTTP_OK
+                            } else {
+                                HttpURLConnection.HTTP_PARTIAL
                             },
-                            contentLength = content.size.toLong(),
-                        )
-                    },
+                        input = DisconnectingInput(remaining, minOf(2, remaining.size)),
+                        contentLength = remaining.size.toLong(),
+                        contentRange =
+                            if (offset == 0L) {
+                                null
+                            } else {
+                                "bytes $offset-${content.lastIndex}/${content.size}"
+                            },
+                    )
+                },
                 availableBytes = { Long.MAX_VALUE / 2 },
             )
-        assertThrows(ResourceDownloadException::class.java) {
-            failing.download(archive(content), ResourceCancellationSignal()) { _, _, _ -> }
-        }
-        assertTrue(networkRoot.listFiles().orEmpty().isEmpty())
+        val failure =
+            assertThrows(ResourceDownloadException::class.java) {
+                failing.download(archive, ResourceCancellationSignal()) { _, _, _ -> }
+            }
+        assertEquals("download_retry_exhausted", failure.stableCode)
+        val partials = networkRoot.listFiles().orEmpty().filter { it.name.endsWith(".part") }
+        assertEquals(1, partials.size)
+        assertTrue(partials.single().length() in 1L until content.size.toLong())
 
         val cancelledRoot = temporary.newFolder("cancelled")
+        java.io.File(cancelledRoot, "${archive.sha256}.part")
+            .writeBytes(content.copyOfRange(0, 3))
         val signal = ResourceCancellationSignal().also { it.cancel() }
         val cancelled =
             PinnedResourceDownloader(
@@ -90,10 +106,124 @@ class PinnedResourceDownloaderTest {
                 connections = DownloadConnectionFactory { _, _ -> error("network must not open") },
                 availableBytes = { Long.MAX_VALUE / 2 },
             )
-        assertThrows(ResourceDownloadException::class.java) {
-            cancelled.download(archive(content), signal) { _, _, _ -> }
-        }
+        val cancellation =
+            assertThrows(ResourceDownloadException::class.java) {
+                cancelled.download(archive, signal) { _, _, _ -> }
+            }
+        assertEquals("resource_operation_cancelled", cancellation.stableCode)
         assertTrue(cancelledRoot.listFiles().orEmpty().isEmpty())
+    }
+
+    @Test
+    fun newDownloaderInstanceResumesAProcessSurvivingPartial() {
+        val content = "immutable resource bytes".toByteArray()
+        val archive = archive(content)
+        val root = temporary.newFolder("process-restart")
+        java.io.File(root, "${archive.sha256}.part").writeBytes(content.copyOfRange(0, 4))
+        val seenOffsets = mutableListOf<Long>()
+        val downloader =
+            PinnedResourceDownloader(
+                stagingRoot = root,
+                connections = DownloadConnectionFactory { _, offset ->
+                    seenOffsets += offset
+                    FakeConnection(
+                        code = HttpURLConnection.HTTP_PARTIAL,
+                        input =
+                            ByteArrayInputStream(
+                                content.copyOfRange(offset.toInt(), content.size),
+                            ),
+                        contentLength = content.size.toLong() - offset,
+                        contentRange = "bytes $offset-${content.lastIndex}/${content.size}",
+                    )
+                },
+                availableBytes = { Long.MAX_VALUE / 2 },
+            )
+
+        val staged = downloader.download(archive, ResourceCancellationSignal()) { _, _, _ -> }
+
+        assertEquals(listOf(4L), seenOffsets)
+        assertTrue(content.contentEquals(staged.file.readBytes()))
+    }
+
+    @Test
+    fun verifiedReadyArchiveIsReusedWithoutOpeningTheNetwork() {
+        val content = "verified archive".toByteArray()
+        val archive = archive(content)
+        val root = temporary.newFolder("ready-reuse")
+        java.io.File(root, "${archive.sha256}.ready").writeBytes(content)
+        val downloader =
+            PinnedResourceDownloader(
+                stagingRoot = root,
+                connections = DownloadConnectionFactory { _, _ -> error("network must not open") },
+                availableBytes = { Long.MAX_VALUE / 2 },
+            )
+
+        val staged = downloader.download(archive, ResourceCancellationSignal()) { _, _, _ -> }
+
+        assertTrue(staged.file.name.endsWith(".ready"))
+        assertTrue(content.contentEquals(staged.file.readBytes()))
+    }
+
+    @Test
+    fun reconciliationRetainsOnlyCatalogBoundPlausibleState() {
+        val readyContent = "ready archive".toByteArray()
+        val partialContent = "partial archive".toByteArray()
+        val invalidContent = "invalid archive".toByteArray()
+        val oversizedContent = "small".toByteArray()
+        val readyArchive = archive(readyContent)
+        val partialArchive = archive(partialContent)
+        val invalidArchive = archive(invalidContent)
+        val oversizedArchive = archive(oversizedContent)
+        val root = temporary.newFolder("reconcile")
+        java.io.File(root, "${readyArchive.sha256}.ready").writeBytes(readyContent)
+        java.io.File(root, "${readyArchive.sha256}.part")
+            .writeBytes(readyContent.copyOfRange(0, 2))
+        java.io.File(root, "${partialArchive.sha256}.part")
+            .writeBytes(partialContent.copyOfRange(0, 3))
+        java.io.File(root, "${invalidArchive.sha256}.ready")
+            .writeBytes(ByteArray(invalidContent.size))
+        java.io.File(root, "${oversizedArchive.sha256}.part")
+            .writeBytes(ByteArray(oversizedContent.size + 1))
+        java.io.File(root, "unknown.tmp").writeText("private filename")
+        java.io.File(root, "directory.part").mkdir()
+        val downloader =
+            PinnedResourceDownloader(
+                stagingRoot = root,
+                connections = DownloadConnectionFactory { _, _ -> error("network must not open") },
+                availableBytes = { Long.MAX_VALUE / 2 },
+            )
+
+        downloader.reconcile(
+            listOf(readyArchive, partialArchive, invalidArchive, oversizedArchive),
+        )
+
+        assertEquals(
+            setOf("${readyArchive.sha256}.ready", "${partialArchive.sha256}.part"),
+            root.listFiles().orEmpty().map { it.name }.toSet(),
+        )
+    }
+
+    @Test
+    fun discardRemovesOnlyTheSelectedCatalogArchiveState() {
+        val selectedArchive = archive("selected".toByteArray())
+        val retainedArchive = archive("retained".toByteArray())
+        val root = temporary.newFolder("discard")
+        java.io.File(root, "${selectedArchive.sha256}.ready").writeBytes("selected".toByteArray())
+        java.io.File(root, "${selectedArchive.sha256}.part").writeBytes(byteArrayOf(1))
+        java.io.File(root, "${retainedArchive.sha256}.part").writeBytes(byteArrayOf(2))
+        val downloader =
+            PinnedResourceDownloader(
+                stagingRoot = root,
+                connections = DownloadConnectionFactory { _, _ -> error("network must not open") },
+                availableBytes = { Long.MAX_VALUE / 2 },
+            )
+
+        downloader.discard(selectedArchive)
+
+        assertEquals(
+            setOf("${retainedArchive.sha256}.part"),
+            root.listFiles().orEmpty().map { it.name }.toSet(),
+        )
     }
 
     @Test
@@ -137,7 +267,11 @@ class PinnedResourceDownloaderTest {
     private fun archive(content: ByteArray) =
         ResourceArchive(
             url = "https://example.invalid/pinned.zip",
-            sha256 = MessageDigest.getInstance("SHA-256").digest(content).joinToString("") { "%02x".format(it) },
+            sha256 =
+                MessageDigest
+                    .getInstance("SHA-256")
+                    .digest(content)
+                    .joinToString("") { "%02x".format(it) },
             sizeBytes = content.size.toLong(),
             format = "zip",
         )

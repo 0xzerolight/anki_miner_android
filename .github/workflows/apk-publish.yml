@@ -1,0 +1,101 @@
+name: Publish APK prerelease
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing draft prerelease tag
+        required: true
+        type: string
+      private_rehearsal:
+        description: Publish only a rehearsal record in a private mirror
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: anki-miner-android-apk-publish
+  cancel-in-progress: false
+
+jobs:
+  verify-and-publish:
+    name: Verify exact assets and publish draft
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      ((inputs.private_rehearsal == true && github.event.repository.private == true) ||
+       (inputs.private_rehearsal == false && github.event.repository.private == false))
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: github-prerelease
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ inputs.tag }}
+      EXPECTED_CERTIFICATE_SHA256: ${{ vars.ANKI_MINER_APP_SIGNING_CERT_SHA256 }}
+      DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+      PRIVATE_REHEARSAL: ${{ inputs.private_rehearsal }}
+    steps:
+      - name: Checkout exact tagged verifier
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ inputs.tag }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Validate immutable tag and permanent certificate input
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-alpha\.[0-9]+$ ]]
+          [[ "$EXPECTED_CERTIFICATE_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          test "$(git rev-list -n 1 "$RELEASE_TAG")" = "$(git rev-parse HEAD)"
+          test "$(git cat-file -t "$RELEASE_TAG")" = tag
+          git merge-base --is-ancestor HEAD "refs/remotes/origin/$DEFAULT_BRANCH"
+          test -z "$(git status --porcelain=v2 --untracked-files=all)"
+
+      - name: Locate Android verification tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          build_tools="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
+          test -x "$build_tools/apksigner"
+          test -x "$build_tools/zipalign"
+          echo "$build_tools" >>"$GITHUB_PATH"
+          apkanalyzer_path="$(find "$ANDROID_HOME" -type f -name apkanalyzer | sort -V | tail -n 1)"
+          test -x "$apkanalyzer_path"
+          echo "$(dirname "$apkanalyzer_path")" >>"$GITHUB_PATH"
+
+      - name: Download and verify the draft's exact asset allowlist
+        shell: bash
+        run: |
+          set -euo pipefail
+          release_json="$(gh release view "$RELEASE_TAG" --json isDraft,isPrerelease,tagName)"
+          python3 -c '
+          import json, os, sys
+          value = json.loads(sys.argv[1])
+          expected = os.environ["RELEASE_TAG"]
+          if value != {"isDraft": True, "isPrerelease": True, "tagName": expected}:
+              raise SystemExit(f"release is not the expected draft prerelease: {value}")
+          ' "$release_json"
+          asset_directory="$RUNNER_TEMP/release-assets"
+          mkdir "$asset_directory"
+          gh release download "$RELEASE_TAG" --dir "$asset_directory"
+          rehearsal_args=()
+          if [[ "$PRIVATE_REHEARSAL" == "true" ]]; then
+            rehearsal_args+=(--private-rehearsal)
+          fi
+          python3 scripts/github_release.py verify-assets \
+            --directory "$asset_directory" \
+            --tag "$RELEASE_TAG" \
+            --repository "$GITHUB_REPOSITORY" \
+            --repo-root . \
+            --expected-certificate "$EXPECTED_CERTIFICATE_SHA256" \
+            "${rehearsal_args[@]}"
+
+      - name: Publish as a GitHub prerelease
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release edit "$RELEASE_TAG" --draft=false --prerelease

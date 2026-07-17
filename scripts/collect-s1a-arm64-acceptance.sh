@@ -32,7 +32,7 @@ Usage: scripts/collect-s1a-arm64-acceptance.sh \
     --output FILE
 
 Builds the exact S1a deviceDebug APK, proves tokenizer parity, then records
-three fresh-process cold starts and one representative novel parse on physical
+three fresh-process cold starts and one representative full reading mine on physical
 ARM64 hardware. FILE must contain at least 50,000 Japanese characters. The
 receipt output must be outside the Git checkout.
 EOF
@@ -110,6 +110,12 @@ boot_qemu="$("$ADB_COMMAND" -s "$serial" shell getprop ro.boot.qemu | tr -d '\r'
 source_status="$(git -C "$REPO_ROOT" status --porcelain=v2 --untracked-files=all)"
 [[ -z "$source_status" ]] \
     || fail "the receipt is source-bound and requires a clean Git checkout"
+source_commit="$(git -C "$REPO_ROOT" rev-parse HEAD)"
+[[ "$source_commit" =~ ^[0-9a-f]{40}$ ]] \
+    || fail "cannot resolve the exact source commit for the acceptance APK"
+# The parity runner owns the deviceDebug Gradle build. Bind BuildConfig and
+# manifest metadata before invoking it so the tested bytes attest this commit.
+export ORG_GRADLE_PROJECT_ankiMinerSourceCommit="$source_commit"
 
 temporary="$(mktemp -d /tmp/anki-miner-s1a-acceptance.XXXXXX)"
 novel_staged=false

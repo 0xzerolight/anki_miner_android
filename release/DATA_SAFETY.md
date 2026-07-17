@@ -1,27 +1,36 @@
-# Data Safety review
+# Privacy inventory and Play Data Safety worksheet
 
-This is a release-owner worksheet, not a completed Play Console declaration. Google requires the developer to classify the exact artifact and all included SDK behavior. Review the current [Data Safety guidance](https://support.google.com/googleplay/android-developer/answer/10787469) and [User Data policy](https://support.google.com/googleplay/android-developer/answer/10144311) at release time.
+The repository behavior inventory applies to every channel. The Google Play Data Safety form is a later Play-only gate and is not submitted for a GitHub APK prerelease. A GitHub release still requires a final hosted privacy policy with a monitored contact and an exact-artifact privacy review.
+
+Review current service and policy terms at release time. This worksheet is not a completed Play declaration and does not establish legal compliance.
 
 ## Repository evidence
 
-| Surface | Current behavior | Release review |
+| Surface | Current behavior | Every-channel review |
 |---|---|---|
 | Selected video, subtitles, reading files, dictionaries, and audio packs | Processed locally through SAF/app-private storage; no Anki Miner server | Confirm no added SDK or bridge transmits content |
-| AnkiDroid collection and generated notes/media | Accessed locally through AnkiDroid's ContentProvider; committed output remains in AnkiDroid | Confirm permissions, retention, and deletion wording |
-| Required/recommended resource downloads | HTTPS request to pinned PyPI/GitHub URLs; hosts receive IP address, TLS/HTTP metadata, and resource-installer User-Agent | Decide applicable Data Safety classification and disclosure |
-| Jisho fallback | Off by default; when enabled, a Japanese lookup term derived from user-selected content is sent to `jisho.org`, with ordinary IP/request metadata | Explicitly classify collection/sharing, purpose, optionality, ephemeral handling, and user-generated/search-like content under current form definitions |
-| Android sentence TTS | Uses only a device voice which declares itself offline; sentence text is not sent to an Anki Miner or web TTS endpoint | Confirm the exact device/provider behavior used in release acceptance and that no network voice fallback was introduced |
-| Accounts, ads, analytics, remote crash reporting | None in the current source revision | Reconfirm from the exact dependency/artifact inventory |
+| AnkiDroid collection and generated notes/media | Accessed locally through AnkiDroid's ContentProvider; committed output remains in AnkiDroid | Confirm permissions, retention, deletion wording, exact readback, and recovery |
+| Required/recommended resource downloads | HTTPS request to pinned PyPI/GitHub URLs; hosts receive IP address, TLS/HTTP metadata, and resource-installer User-Agent | Confirm immutable URL/size/hash behavior and disclose network metadata |
+| Jisho fallback | Off by default; when enabled, a Japanese lookup term derived from user-selected content is sent to `jisho.org`, with ordinary IP/request metadata | Confirm disclosure precedes opt-in, rate limiting/memoization remain active, and offline-only behavior works |
+| Android sentence TTS | Uses only a device voice which declares itself offline; sentence text is not sent to an Anki Miner or web TTS endpoint | Confirm exact accepted voice/provider behavior and no network fallback |
+| Accounts, ads, analytics, remote crash reporting | None in the current source revision | Reconfirm from the exact dependency and artifact inventory |
+| GitHub distribution and feedback | GitHub processes release downloads and issue submissions under GitHub's terms; users choose what they submit | Link GitHub's policy and warn testers not to submit private media, subtitles, Anki data, logs, identifiers, or credentials |
 
-Do not mark “no data collected or shared” merely because the app has no first-party server. The release owner must decide how Play's current definitions apply to Jisho lookup terms, IP addresses, and resource-host requests and must document the rationale. This assessment requires privacy/legal review.
+Do not describe the app as having no network activity. Required resources contact PyPI/GitHub, and enabled Jisho lookup transmits a Japanese term. The exact privacy classification and language require release-owner and legal review.
 
-## Required record
+## Required for every distributed binary
 
 - [ ] Exact signed artifact SHA-256 and dependency inventory reviewed.
-- [ ] Privacy policy URL and monitored privacy contact recorded.
-- [ ] Each applicable Play data type, purpose, optional/required status, collection/sharing status, retention/ephemeral status, and transport security answer recorded.
-- [ ] Jisho egress is explicitly present in both the policy and Play declaration.
-- [ ] Resource-host network metadata was considered.
+- [ ] Final privacy policy URL is public without login, linked in-app, and names a monitored privacy contact.
+- [ ] Jisho egress, resource-host metadata, GitHub distribution/feedback, and local/offline processing are accurately described.
 - [ ] User deletion explanation distinguishes app-private data from notes/media already written to AnkiDroid.
-- [ ] Submitted Play form export or screenshots are stored as release evidence without user data or credentials.
-- [ ] Reviewer, UTC review date, and final Play Console status are recorded.
+- [ ] Tester/support instructions warn against submitting private user content or identifiers.
+- [ ] Reviewer, UTC review date, exact artifact, and policy hash are recorded.
+
+## Google Play only
+
+- [ ] Each applicable Play data type, purpose, optional/required status, collection/sharing status, retention/ephemeral status, and transport-security answer is recorded under current definitions.
+- [ ] Jisho egress is explicitly present in both policy and Play declaration.
+- [ ] Resource-host network metadata and GitHub-hosted policy/support surfaces were considered.
+- [ ] Submitted Play form export or screenshots are stored as private release evidence without user data or credentials.
+- [ ] Final Play Console status and reviewer are recorded.

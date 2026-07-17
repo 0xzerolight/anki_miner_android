@@ -13,11 +13,14 @@ import sys
 from typing import Any
 
 
-SCHEMA = "anki-miner-s1a-arm64-acceptance-v1"
-SCHEMA_PATH = Path(__file__).with_name("s1a-arm64-acceptance-v1.schema.json")
+SCHEMA = "anki-miner-s1a-arm64-acceptance-v2"
+SCHEMA_PATH = Path(__file__).with_name("s1a-arm64-acceptance-v2.schema.json")
 COLD_INIT_LIMIT_MS = 4_000.0
 PEAK_RSS_LIMIT_BYTES = 384 * 1024 * 1024
 MIN_NOVEL_JAPANESE_CHARACTERS = 50_000
+REPRESENTATIVE_SELECTION_COUNT = 100
+REPRESENTATIVE_WORKLOAD_ID = "reading-process-reading-v1"
+ACCEPTANCE_APK_CHANNEL = "device-acceptance"
 EXPECTED_TEST_CLASS = "com.ankiminer.android.TokenizerS1aInstrumentedTest"
 SHA256 = re.compile(r"[0-9a-f]{64}")
 GIT_ID = re.compile(r"[0-9a-f]{40}")
@@ -78,6 +81,7 @@ def _positive_number(value: object, label: str) -> float:
 def validate(
     receipt_path: Path,
     manifest_path: Path,
+    apk_path: Path,
     repo_root: Path,
     golden_path: Path,
 ) -> dict[str, Any]:
@@ -102,6 +106,7 @@ def validate(
             "measurements",
             "tokenizer_parity",
             "novel_throughput",
+            "representative_mining",
             "thresholds",
             "payload_sha256",
         },
@@ -121,12 +126,10 @@ def validate(
 
     publication = _exact(
         document["publication"],
-        {"manifest_path", "manifest_sha256", "recipe_key", "build_key"},
+        {"manifest_sha256", "recipe_key", "build_key"},
         "publication",
     )
     canonical_manifest = manifest_path.resolve(strict=True)
-    if publication["manifest_path"] != str(canonical_manifest):
-        raise AcceptanceError("acceptance receipt uses a different S1a publication path")
     if publication["manifest_sha256"] != _sha256(canonical_manifest):
         raise AcceptanceError("accepted S1a publication changed")
     for key in ("recipe_key", "build_key"):
@@ -137,24 +140,35 @@ def validate(
 
     artifact = _exact(
         document["artifact"],
-        {"path", "sha256", "size_bytes", "application_id", "variant", "abi"},
+        {
+            "filename",
+            "sha256",
+            "size_bytes",
+            "application_id",
+            "variant",
+            "abi",
+            "source_commit",
+            "release_channel",
+        },
         "artifact",
     )
-    artifact_path = Path(artifact["path"]).resolve(strict=True)
+    canonical_apk = apk_path.resolve(strict=True)
     if (
-        artifact["path"] != str(artifact_path)
-        or artifact["sha256"] != _sha256(artifact_path)
-        or artifact["size_bytes"] != artifact_path.stat().st_size
+        artifact["filename"] != canonical_apk.name
+        or Path(artifact["filename"]).name != artifact["filename"]
+        or artifact["sha256"] != _sha256(canonical_apk)
+        or artifact["size_bytes"] != canonical_apk.stat().st_size
         or artifact["application_id"] != "com.ankiminer.android"
         or artifact["variant"] != "deviceDebug"
         or artifact["abi"] != "arm64-v8a"
+        or artifact["source_commit"] != source["commit"]
+        or artifact["release_channel"] != ACCEPTANCE_APK_CHANNEL
     ):
         raise AcceptanceError("accepted ARM64 APK identity changed or is invalid")
 
     device = _exact(
         document["device"],
         {
-            "serial",
             "manufacturer",
             "model",
             "build_fingerprint",
@@ -165,7 +179,7 @@ def validate(
         },
         "device",
     )
-    for key in ("serial", "manufacturer", "model", "build_fingerprint"):
+    for key in ("manufacturer", "model", "build_fingerprint"):
         if not isinstance(device[key], str) or not device[key].strip():
             raise AcceptanceError(f"device {key} is invalid")
     if (
@@ -191,7 +205,7 @@ def validate(
 
     measurements = _exact(
         document["measurements"],
-        {"cold_init_ms", "peak_rss_bytes"},
+        {"cold_init_ms"},
         "measurements",
     )
     cold = measurements["cold_init_ms"]
@@ -199,13 +213,6 @@ def validate(
         raise AcceptanceError("exactly three cold initialization measurements are required")
     if any(_positive_number(value, "cold initialization") >= COLD_INIT_LIMIT_MS for value in cold):
         raise AcceptanceError("cold initialization exceeds the frozen threshold")
-    if (
-        type(measurements["peak_rss_bytes"]) is not int
-        or measurements["peak_rss_bytes"] <= 0
-        or measurements["peak_rss_bytes"] > PEAK_RSS_LIMIT_BYTES
-    ):
-        raise AcceptanceError("peak RSS exceeds the frozen threshold")
-
     parity = _exact(
         document["tokenizer_parity"],
         {"passed", "test_class", "corpus_sha256", "assertion_count"},
@@ -223,7 +230,15 @@ def validate(
 
     throughput = _exact(
         document["novel_throughput"],
-        {"corpus_sha256", "japanese_character_count", "elapsed_ms", "characters_per_second"},
+        {
+            "corpus_sha256",
+            "japanese_character_count",
+            "elapsed_ms",
+            "characters_per_second",
+            "text_unit_count",
+            "word_count",
+            "lemma_count",
+        },
         "novel throughput",
     )
     if (
@@ -240,9 +255,49 @@ def validate(
     calculated_rate = throughput["japanese_character_count"] * 1000.0 / elapsed
     if abs(measured_rate - calculated_rate) > max(0.01, calculated_rate * 0.001):
         raise AcceptanceError("novel throughput rate does not match its raw measurement")
+    for key in ("text_unit_count", "word_count", "lemma_count"):
+        if type(throughput[key]) is not int or throughput[key] <= 0:
+            raise AcceptanceError(f"novel throughput {key} must be positive")
+
+    mining = _exact(
+        document["representative_mining"],
+        {
+            "workload_id",
+            "corpus_sha256",
+            "total_words_found",
+            "candidate_count",
+            "selected_count",
+            "card_payload_count",
+            "cards_created",
+            "elapsed_ms",
+            "peak_rss_bytes",
+            "completed",
+        },
+        "representative mining",
+    )
+    if (
+        mining["workload_id"] != REPRESENTATIVE_WORKLOAD_ID
+        or mining["completed"] is not True
+        or mining["corpus_sha256"] != throughput["corpus_sha256"]
+        or mining["total_words_found"] != throughput["word_count"]
+        or type(mining["candidate_count"]) is not int
+        or mining["candidate_count"] < REPRESENTATIVE_SELECTION_COUNT
+        or mining["candidate_count"] > mining["total_words_found"]
+        or mining["selected_count"] != REPRESENTATIVE_SELECTION_COUNT
+        or mining["card_payload_count"] != REPRESENTATIVE_SELECTION_COUNT
+        or mining["cards_created"] != REPRESENTATIVE_SELECTION_COUNT
+    ):
+        raise AcceptanceError("representative mining evidence is incomplete or stale")
+    _positive_number(mining["elapsed_ms"], "representative mining elapsed time")
+    if (
+        type(mining["peak_rss_bytes"]) is not int
+        or mining["peak_rss_bytes"] <= 0
+        or mining["peak_rss_bytes"] > PEAK_RSS_LIMIT_BYTES
+    ):
+        raise AcceptanceError("representative mining peak RSS exceeds the frozen threshold")
 
     return {
-        "schema": 1,
+        "schema": 2,
         "source_commit": source["commit"],
         "publication_build_key": publication["build_key"],
         "device_api_level": device["api_level"],
@@ -255,6 +310,7 @@ def main() -> int:
     parser.add_argument("verify", choices=["verify"])
     parser.add_argument("--receipt", required=True, type=Path)
     parser.add_argument("--manifest", required=True, type=Path)
+    parser.add_argument("--apk", required=True, type=Path)
     parser.add_argument("--repo-root", required=True, type=Path)
     parser.add_argument("--golden", required=True, type=Path)
     args = parser.parse_args()
@@ -262,6 +318,7 @@ def main() -> int:
         result = validate(
             args.receipt.resolve(strict=True),
             args.manifest.resolve(strict=True),
+            args.apk.resolve(strict=True),
             args.repo_root.resolve(strict=True),
             args.golden.resolve(strict=True),
         )

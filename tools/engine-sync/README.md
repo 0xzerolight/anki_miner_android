@@ -25,12 +25,14 @@ or update the pinned composition and rerun the sync. Unallowlisted, missing, or
 unused overlays fail the sync so a misspelled divergence cannot silently ship.
 
 The current `media_extractor.py` overlay is the pinned desktop file with the
-deferred ASR `wav_to_float32`/NumPy helper removed and Android SAF child-process
-inheritance added at the two native spawn seams. `audio_track_detector.py` uses
-the same per-child descriptor helper for ffprobe. Reconstruction tests pin
-those exact differences, and `overlay_base_blobs` binds each whole-file shadow
-to its upstream Git blob. An `engine.lock` bump which changes a bound blob fails
-before synchronization until the override is rebased and reviewed.
+deferred ASR `wav_to_float32`/NumPy helper removed, Android SAF child-process
+inheritance, and a per-run cancellation registry covering encoder probes,
+ffprobe, and ffmpeg. `audio_track_detector.py` accepts that registry and uses a
+cancellable, always-reaped `Popen` ffprobe path. Focused process tests exercise
+spawn/cancel/timeout races and single-flight stream probing; whole-file hashes
+freeze the reviewed overlays. `overlay_base_blobs` still binds each shadow to
+its upstream Git blob, so an `engine.lock` bump fails until the overlay is
+rebased and reviewed.
 
 ## Golden derivation
 
@@ -60,6 +62,16 @@ Any upstream exporter change requires an explicit rebase in
 
 `.github/workflows/parity-nightly.yml` separately derives desktop
 HEAD and reports semantic case drift as an early warning artifact.
+`run_head_goldens_v2.py` materializes desktop HEAD's exporter outside its clean
+checkout and changes only the unique pinned-revision assignment to that exact
+HEAD. This advisory path never replaces the attested overlay or pinned fixture
+used by release gates.
+
+`run_reading_goldens.py` owns the separate M4 reading contract. It derives
+Aozora, subtitle, EPUB, and Mokuro loader snapshots plus a real Mokuro
+`process_reading` card from the clean pinned desktop engine; the packaged
+instrumentation replay uses Android staging and loader limits before comparing
+the same semantic output.
 
 ### Historical v1 derivation
 

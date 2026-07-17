@@ -26,7 +26,6 @@ EXPECTED_TASKS = [
 EXPECTED_RELEASE_TASKS = [
     ":app:lintDeviceRelease",
     ":app:assembleDeviceRelease",
-    ":app:bundleDeviceRelease",
 ]
 EXPECTED_GRADLE_ARGUMENTS = [
     "--no-daemon",

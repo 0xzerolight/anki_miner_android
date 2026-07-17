@@ -32,7 +32,7 @@ internal class SetupViewModel(
     private val ankiSetup: AnkiSetupManager,
     pythonReadiness: StateFlow<PythonRuntimeReadiness>,
     miningAdmission: StateFlow<MiningRunAdmissionState>,
-    private val refreshAdmission: () -> Unit,
+    private val refreshExternalReadiness: () -> Unit,
 ) : ViewModel() {
     private data class LocalState(
         val lookupTerm: String = "猫",
@@ -143,8 +143,7 @@ internal class SetupViewModel(
                         ResourceStartupReadiness.RECOVERING,
                     )
             }
-            ankiSetup.refresh()
-            refreshAdmission()
+            refreshExternalReadiness()
         }
     }
 
@@ -329,7 +328,7 @@ internal class SetupViewModel(
 
     fun dismissFailure() = resources.dismissFailure()
 
-    fun permissionsReturned() = refreshAdmission()
+    fun permissionsReturned() = refreshExternalReadiness()
 
     fun finishFirstRun() {
         if (!uiState.value.canFinishFirstRun) return
@@ -353,7 +352,7 @@ internal class SetupViewModel(
         private val ankiSetup: AnkiSetupManager,
         private val python: StateFlow<PythonRuntimeReadiness>,
         private val admission: StateFlow<MiningRunAdmissionState>,
-        private val refreshAdmission: () -> Unit,
+        private val refreshExternalReadiness: () -> Unit,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>, extras: CreationExtras): T {
@@ -364,7 +363,7 @@ internal class SetupViewModel(
                 ankiSetup,
                 python,
                 admission,
-                refreshAdmission,
+                refreshExternalReadiness,
             ) as T
         }
     }

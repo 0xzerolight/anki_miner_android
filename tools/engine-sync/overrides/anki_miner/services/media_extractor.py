@@ -52,7 +52,7 @@ def _kill_quietly(proc: "subprocess.Popen[str]") -> None:
 
 
 class _FfmpegProcRegistry:
-    """Live ffmpeg ``Popen`` handles for a single ``extract_media_batch`` run.
+    """Live ffmpeg/ffprobe ``Popen`` handles for one media-processing run.
 
     On cancel the batch thread calls :meth:`kill_all`. Without it, in-flight
     encodes (30-60s timeouts) ran to completion and the executor's context
@@ -169,7 +169,9 @@ class MediaExtractorService:
         # _RESOLVE means "not threaded" — resolve here for direct callers/tests.
         if animated_format is _RESOLVE:
             effective_fmt = (
-                self.resolve_animated_format() if (self.config.screenshot_animated and not audio_only) else None
+                self.resolve_animated_format(proc_registry=proc_registry)
+                if (self.config.screenshot_animated and not audio_only)
+                else None
             )
         else:
             effective_fmt = animated_format
@@ -261,35 +263,52 @@ class MediaExtractorService:
                 QCoreApplication.translate("MediaExtractorService", "Extracting media"),
             )
 
-        # Resolve the animated screenshot format once, before the pool, so every
-        # worker shares one value (no per-word re-resolution). A threaded value
-        # (str | None) is used as-is; only the _RESOLVE default self-resolves.
-        if animated_format is _RESOLVE:
-            animated_fmt = (
-                self.resolve_animated_format() if (self.config.screenshot_animated and not audio_only) else None
-            )
-        else:
-            animated_fmt = animated_format
-
         media_data_list: list[tuple[TokenizedWord, MediaData]] = []
         max_workers = self.config.max_parallel_workers
         was_cancelled = False
-        # Per-run registry of live ffmpeg processes so the cancel path can
-        # kill them instead of waiting out their 30-60s encode timeouts.
+        # Per-run registry of every media subprocess so cancellation reaches
+        # encoder probes, ffprobe, and extraction alike.
         proc_registry = _FfmpegProcRegistry()
 
-        # Audiobooks have no video stream, so the Picture field uses the
-        # embedded cover art (attached_pic) instead — extracted once per book,
-        # shared by every card. None (no cover) leaves the field blank.
-        # Cover extraction runs synchronously before the polling loop, where
-        # proc_registry.kill_all() cannot reach it from this thread — so honour
-        # an already-set cancellation before starting it, mirroring the loop.
-        if cancelled_check and cancelled_check():
+        # Animated-format and cover-art probes run synchronously before the
+        # executor's polling loop. A short-lived watcher gives them the same
+        # prompt kill path as worker-owned subprocesses.
+        prepool_done = threading.Event()
+        prepool_watcher: threading.Thread | None = None
+        if cancelled_check is not None:
+            def _watch_prepool() -> None:
+                while not prepool_done.wait(self._CANCEL_POLL_INTERVAL):
+                    if cancelled_check():
+                        proc_registry.kill_all()
+                        return
+
+            prepool_watcher = threading.Thread(target=_watch_prepool, daemon=True)
+            prepool_watcher.start()
+        try:
+            # Resolve the animated screenshot format once, before the pool, so every
+            # worker shares one value (no per-word re-resolution).
+            if animated_format is _RESOLVE:
+                animated_fmt = (
+                    self.resolve_animated_format(proc_registry=proc_registry)
+                    if (self.config.screenshot_animated and not audio_only)
+                    else None
+                )
+            else:
+                animated_fmt = animated_format
+
+            if cancelled_check and cancelled_check():
+                proc_registry.kill_all()
+                return []
+            cover_path: Path | None = None
+            if audio_only:
+                output_dir = temp_folder if temp_folder is not None else self.config.media_temp_folder
+                cover_path = self.extract_cover_art(video_file, output_dir, proc_registry=proc_registry)
+        finally:
+            prepool_done.set()
+            if prepool_watcher is not None:
+                prepool_watcher.join(timeout=self._CANCEL_POLL_INTERVAL * 2)
+        if proc_registry.cancelled:
             return []
-        cover_path: Path | None = None
-        if audio_only:
-            output_dir = temp_folder if temp_folder is not None else self.config.media_temp_folder
-            cover_path = self.extract_cover_art(video_file, output_dir, proc_registry=proc_registry)
         # Poll only when the caller can actually cancel; otherwise block
         # until the next future completes.
         poll = self._CANCEL_POLL_INTERVAL if cancelled_check else None
@@ -496,12 +515,6 @@ class MediaExtractorService:
         if cancel_event is not None and cancel_event.is_set():
             return False
 
-        # Resolve track_override through the same audio-index → global-index
-        # helper as _extract_audio, so callers get identical semantics: the
-        # integer is an *audio* index (0-indexed among audio streams), not a
-        # raw ffprobe global stream index.
-        global_index = self._resolve_audio_track_global_index(video_file, track_override)
-
         proc_registry = _FfmpegProcRegistry()
 
         # Wire cancel_event → kill_all so long encodes can be interrupted.
@@ -525,6 +538,18 @@ class MediaExtractorService:
 
             cancel_thread = threading.Thread(target=_watch, daemon=True)
             cancel_thread.start()
+
+        # Resolve only after the watcher owns the registry: cancellation must
+        # be able to kill an in-flight ffprobe as well as the later ffmpeg.
+        global_index = self._resolve_audio_track_global_index(
+            video_file,
+            track_override,
+            proc_registry=proc_registry,
+        )
+        if proc_registry.cancelled:
+            if done_event is not None:
+                done_event.set()
+            return False
 
         cmd = [
             resolve_ffmpeg(self.config),
@@ -653,9 +678,10 @@ class MediaExtractorService:
             return False
         if proc_registry is not None and not proc_registry.register(proc):
             # Cancel raced the spawn: kill the fresh process; the context
-            # manager exit closes its pipes and reaps it.
+            # manager exit closes its pipes; communicate drains and reaps it.
             with proc:
                 _kill_quietly(proc)
+                proc.communicate()
             return False
         stderr = ""
         try:
@@ -733,7 +759,11 @@ class MediaExtractorService:
             return "libwebp_anim"
         raise ValueError(f"Unsupported animated screenshot format: {fmt}")
 
-    def _check_encoder_available(self, encoder: str) -> bool:
+    def _check_encoder_available(
+        self,
+        encoder: str,
+        proc_registry: _FfmpegProcRegistry | None = None,
+    ) -> bool:
         """Probe ffmpeg once for an encoder; cache result.
 
         Animated screenshots are opt-in via ``config.screenshot_animated`` and
@@ -746,18 +776,49 @@ class MediaExtractorService:
             cached = self._animated_encoder_ok.get(encoder)
             if cached is not None:
                 return cached
+            if proc_registry is not None and proc_registry.cancelled:
+                return False
             try:
-                proc = subprocess.run(
+                proc = subprocess.Popen(
                     [resolve_ffmpeg(self.config), "-hide_banner", "-encoders"],
-                    capture_output=True,
-                    timeout=15,
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
                     text=True,
+                    encoding="utf-8",
+                    errors="replace",
                     **no_window_kwargs(),  # hide the Windows cmd.exe flash (Issue #79)
                 )
-                available = proc.returncode == 0 and encoder in proc.stdout
             except (subprocess.SubprocessError, OSError) as e:
                 logger.warning(f"ffmpeg encoder probe failed: {e}")
                 available = False
+            else:
+                if proc_registry is not None and not proc_registry.register(proc):
+                    with proc:
+                        _kill_quietly(proc)
+                        proc.communicate()
+                    return False
+                stdout = ""
+                try:
+                    with proc:
+                        try:
+                            stdout, _ = proc.communicate(timeout=15)
+                        except subprocess.TimeoutExpired:
+                            _kill_quietly(proc)
+                            proc.communicate()
+                            logger.warning("ffmpeg encoder probe timed out")
+                            available = False
+                        except (subprocess.SubprocessError, OSError, ValueError) as e:
+                            _kill_quietly(proc)
+                            logger.warning(f"ffmpeg encoder probe failed: {e}")
+                            available = False
+                        else:
+                            available = proc.returncode == 0 and encoder in stdout
+                finally:
+                    if proc_registry is not None:
+                        proc_registry.unregister(proc)
+                if proc_registry is not None and proc_registry.cancelled:
+                    return False
             self._animated_encoder_ok[encoder] = available
             if not available:
                 logger.error(
@@ -767,7 +828,10 @@ class MediaExtractorService:
                 )
             return available
 
-    def resolve_animated_format(self) -> str | None:
+    def resolve_animated_format(
+        self,
+        proc_registry: _FfmpegProcRegistry | None = None,
+    ) -> str | None:
         """Effective animated screenshot format usable on this ffmpeg build.
 
         Returns the configured format when its encoder is present; ``"webp"``
@@ -787,9 +851,9 @@ class MediaExtractorService:
             encoder = self._encoder_for_format(configured)
         except ValueError:
             return configured  # unsupported format: leave it to the existing skip path
-        if self._check_encoder_available(encoder):
+        if self._check_encoder_available(encoder, proc_registry):
             return configured
-        if configured == "avif" and self._check_encoder_available("libwebp_anim"):
+        if configured == "avif" and self._check_encoder_available("libwebp_anim", proc_registry):
             return "webp"
         return None
 
@@ -818,7 +882,7 @@ class MediaExtractorService:
             logger.error(str(e))
             return False
 
-        if not self._check_encoder_available(encoder):
+        if not self._check_encoder_available(encoder, proc_registry):
             return False
 
         # Clip timing:
@@ -889,7 +953,11 @@ class MediaExtractorService:
             return False
         return output_path.exists()
 
-    def _get_japanese_audio_stream(self, video_file: Path) -> int | None:
+    def _get_japanese_audio_stream(
+        self,
+        video_file: Path,
+        proc_registry: _FfmpegProcRegistry | None = None,
+    ) -> int | None:
         """Detect Japanese audio stream index using ffprobe.
 
         Returns the global ffprobe stream index for ffmpeg `-map 0:N`.
@@ -898,13 +966,16 @@ class MediaExtractorService:
         with self._cache_lock:
             if video_file in self._audio_stream_cache:
                 return self._audio_stream_cache[video_file]
-
-        result = find_japanese_audio_stream(video_file, ffprobe_cmd=resolve_ffprobe(self.config))
-        global_index = result.global_index if result is not None else None
-
-        with self._cache_lock:
+            result = find_japanese_audio_stream(
+                video_file,
+                ffprobe_cmd=resolve_ffprobe(self.config),
+                proc_registry=proc_registry,
+            )
+            global_index = result.global_index if result is not None else None
+            if proc_registry is not None and proc_registry.cancelled:
+                return None
             self._audio_stream_cache[video_file] = global_index
-        return global_index
+            return global_index
 
     def invalidate_audio_stream_cache(self, video_file: Path | None = None) -> None:
         """Clear the per-file audio stream cache.
@@ -923,7 +994,11 @@ class MediaExtractorService:
                 self._audio_stream_list_cache.pop(video_file, None)
                 self._audio_stream_cache.pop(video_file, None)
 
-    def _list_audio_streams_cached(self, video_file: Path) -> list[AudioStream]:
+    def _list_audio_streams_cached(
+        self,
+        video_file: Path,
+        proc_registry: _FfmpegProcRegistry | None = None,
+    ) -> list[AudioStream]:
         """Return full audio stream list for *video_file*, probing once and caching.
 
         Thread-safe under ``_cache_lock``.
@@ -931,14 +1006,22 @@ class MediaExtractorService:
         with self._cache_lock:
             if video_file in self._audio_stream_list_cache:
                 return self._audio_stream_list_cache[video_file]
-
-        streams = list_audio_streams(video_file, ffprobe_cmd=resolve_ffprobe(self.config))
-
-        with self._cache_lock:
+            streams = list_audio_streams(
+                video_file,
+                ffprobe_cmd=resolve_ffprobe(self.config),
+                proc_registry=proc_registry,
+            )
+            if proc_registry is not None and proc_registry.cancelled:
+                return []
             self._audio_stream_list_cache[video_file] = streams
-        return streams
+            return streams
 
-    def _resolve_audio_track_global_index(self, video_file: Path, audio_track_override: int | None) -> int | None:
+    def _resolve_audio_track_global_index(
+        self,
+        video_file: Path,
+        audio_track_override: int | None,
+        proc_registry: _FfmpegProcRegistry | None = None,
+    ) -> int | None:
         """Translate an optional *audio_track_override* (audio_index) to a ffprobe global index.
 
         - If *audio_track_override* is ``None``, returns the JP auto-detect result.
@@ -947,9 +1030,9 @@ class MediaExtractorService:
           no stream matches.
         """
         if audio_track_override is None:
-            return self._get_japanese_audio_stream(video_file)
+            return self._get_japanese_audio_stream(video_file, proc_registry)
 
-        streams = self._list_audio_streams_cached(video_file)
+        streams = self._list_audio_streams_cached(video_file, proc_registry)
         for stream in streams:
             if stream.audio_index == audio_track_override:
                 return stream.global_index
@@ -996,11 +1079,15 @@ class MediaExtractorService:
         # Resolve encoder for the configured format and probe ffmpeg for support
         # before launching the encode. Cached probe; failure logs a clear error.
         encoder = "libopus" if self.config.audio_format == "opus" else "libmp3lame"
-        if not self._check_encoder_available(encoder):
+        if not self._check_encoder_available(encoder, proc_registry):
             return False
 
         # Resolve audio stream: honour override when set, else JP auto-detect.
-        global_index = self._resolve_audio_track_global_index(video_file, audio_track_override)
+        global_index = self._resolve_audio_track_global_index(
+            video_file,
+            audio_track_override,
+            proc_registry=proc_registry,
+        )
 
         # Build ffmpeg command
         cmd = [

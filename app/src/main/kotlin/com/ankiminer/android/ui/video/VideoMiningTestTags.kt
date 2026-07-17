@@ -20,5 +20,8 @@ object VideoMiningTestTags {
 
     fun candidateToggle(candidateId: String): String = "candidate_toggle:$candidateId"
 
-    fun sentence(sentenceId: String): String = "sentence:$sentenceId"
+    fun sentence(
+        candidateId: String,
+        sentenceId: String,
+    ): String = "sentence:$candidateId:$sentenceId"
 }

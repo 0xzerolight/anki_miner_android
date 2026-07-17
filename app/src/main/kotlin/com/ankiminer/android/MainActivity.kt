@@ -6,6 +6,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
 import android.speech.tts.TextToSpeech
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -13,6 +14,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.ankiminer.android.anki.provider.ANKIDROID_PACKAGE
 import com.ankiminer.android.mining.MiningRepositoryFactory
 import com.ankiminer.android.mining.MiningRuntimePermissions
 import com.ankiminer.android.reading.ReadingRepositoryFactory
@@ -43,7 +45,7 @@ class MainActivity : ComponentActivity() {
             ankiSetup = app.ankiSetupManager,
             python = app.pythonRuntimeReadiness,
             admission = app.miningAdmissionState,
-            refreshAdmission = app::refreshMiningAdmission,
+            refreshExternalReadiness = app::refreshExternalReadiness,
         )
     }
     private val settingsViewModelFactory by lazy {
@@ -90,11 +92,14 @@ class MainActivity : ComponentActivity() {
                     notificationRunId = openedRunId,
                     onNotificationRunHandled = { notificationRunId.value = null },
                     onRequestPermissions = {
-                        if (permissions.isEmpty()) app.refreshMiningAdmission()
+                        if (permissions.isEmpty()) app.refreshExternalReadiness()
                         else permissionLauncher.launch(permissions)
                     },
                     onOpenAppSettings = ::openAppSettings,
+                    onInstallAnkiDroid = ::installAnkiDroid,
+                    onOpenAnkiDroid = ::openAnkiDroid,
                     onOpenSpeechSettings = ::openSpeechSettings,
+                    onShareDiagnostics = ::shareDiagnostics,
                 )
             }
         }
@@ -108,8 +113,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        // Permission and provider settings may have changed while this activity was paused.
-        (application as AnkiMinerApplication).refreshMiningAdmission()
+        // Permission, package, provider, and model state may have changed while paused.
+        (application as AnkiMinerApplication).refreshExternalReadiness()
     }
 
     private fun openAppSettings() {
@@ -119,6 +124,37 @@ class MainActivity : ComponentActivity() {
                 Uri.fromParts("package", packageName, null),
             ),
         )
+    }
+
+    private fun installAnkiDroid() {
+        val opened =
+            startFirstAvailable(
+                Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$ANKIDROID_PACKAGE")),
+                Intent(Intent.ACTION_VIEW, Uri.parse(ANKIDROID_RELEASES_URL)),
+            )
+        if (!opened) {
+            Toast.makeText(this, R.string.ankidroid_action_unavailable, Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun openAnkiDroid() {
+        val launch = packageManager.getLaunchIntentForPackage(ANKIDROID_PACKAGE)
+        if (launch != null && startFirstAvailable(launch)) return
+        installAnkiDroid()
+    }
+
+    private fun startFirstAvailable(vararg candidates: Intent): Boolean {
+        candidates.forEach { candidate ->
+            try {
+                startActivity(candidate)
+                return true
+            } catch (_: ActivityNotFoundException) {
+                // Try the next official destination.
+            } catch (_: SecurityException) {
+                // An OEM handler may exist but reject third-party callers.
+            }
+        }
+        return false
     }
 
     private fun openSpeechSettings() {
@@ -140,7 +176,27 @@ class MainActivity : ComponentActivity() {
         openAppSettings()
     }
 
+    private fun shareDiagnostics(report: String) {
+        val send =
+            Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(Intent.EXTRA_SUBJECT, getString(R.string.diagnostics_share_subject))
+                putExtra(Intent.EXTRA_TEXT, report)
+            }
+        try {
+            startActivity(
+                Intent.createChooser(send, getString(R.string.settings_share_diagnostics)),
+            )
+        } catch (_: ActivityNotFoundException) {
+            Toast.makeText(this, R.string.diagnostics_action_unavailable, Toast.LENGTH_LONG).show()
+        } catch (_: SecurityException) {
+            Toast.makeText(this, R.string.diagnostics_action_unavailable, Toast.LENGTH_LONG).show()
+        }
+    }
+
     private companion object {
         const val ACTION_TTS_SETTINGS = "com.android.settings.TTS_SETTINGS"
+        const val ANKIDROID_RELEASES_URL =
+            "https://github.com/ankidroid/Anki-Android/releases"
     }
 }

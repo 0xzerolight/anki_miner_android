@@ -92,7 +92,7 @@ internal class AndroidResourceManager(
     private val resourceExecutor: Executor,
     private val controlExecutor: Executor,
     private val runtimeWorkCoordinator: RuntimeWorkCoordinator = RuntimeWorkCoordinator(),
-    private val downloader: PinnedResourceDownloader = PinnedResourceDownloader(stagingRoot),
+    private val downloader: PinnedResourceDownloader,
     private val safStager: SafArchiveStager = SafArchiveStager(resolver, stagingRoot),
 ) : ResourceManager {
     private data class ActiveOperation(
@@ -115,12 +115,14 @@ internal class AndroidResourceManager(
         }
         runOperation("Refresh resources", ResourceOperationPhase.REFRESHING) { operation ->
             clearStaging()
+            downloader.reconcile(FrozenResourceCatalog.value.resources.map { it.archive })
             operation.cancellation.check()
             operation.pythonStarted.set(true)
             ResourceBridgeCodec.decodeCleanup(
                 bridge.dispatch(ResourceBridgeCodec.encodeCleanupRequest(), null),
             )
             refreshFromPython()
+            discardInstalledCatalogDownloads()
         }
         if (!startupWasReady) {
             mutableState.update { current ->
@@ -143,7 +145,7 @@ internal class AndroidResourceManager(
         runOperation("Install UniDic", ResourceOperationPhase.PREPARING) { operation ->
             val resource = catalog().unidic
             val staged = download(resource, operation)
-            try {
+            consumePinnedArchive(operation, resource.archive) {
                 updateProgress(operation, ResourceOperationPhase.INSTALLING, resource.archive.sizeBytes, resource.archive.sizeBytes)
                 operation.cancellation.check()
                 operation.pythonStarted.set(true)
@@ -160,8 +162,6 @@ internal class AndroidResourceManager(
                     )
                 mutableState.update { it.copy(installedUniDic = installed) }
                 refreshFromPython()
-            } finally {
-                staged.file.delete()
             }
         }
     }
@@ -180,7 +180,7 @@ internal class AndroidResourceManager(
                 )
             }
             val staged = download(resource, operation)
-            try {
+            consumePinnedArchive(operation, resource.archive) {
                 updateProgress(operation, ResourceOperationPhase.IMPORTING, resource.archive.sizeBytes, resource.archive.sizeBytes)
                 operation.cancellation.check()
                 operation.pythonStarted.set(true)
@@ -197,8 +197,6 @@ internal class AndroidResourceManager(
                     ),
                 )
                 refreshFromPython()
-            } finally {
-                staged.file.delete()
             }
         }
     }
@@ -536,6 +534,39 @@ internal class AndroidResourceManager(
             updateProgress(operation, phase, current, total)
         }
 
+    private fun consumePinnedArchive(
+        operation: ActiveOperation,
+        archive: ResourceArchive,
+        block: () -> Unit,
+    ) {
+        try {
+            block()
+            downloader.discard(archive)
+        } catch (failure: Exception) {
+            val invalidArchive =
+                failure is ResourceBridgeException && failure.code in PINNED_ARCHIVE_INVALID_CODES
+            if (
+                operation.cancellation.isCancelled() ||
+                failure is CancellationException ||
+                invalidArchive
+            ) {
+                downloader.discard(archive)
+            }
+            throw failure
+        }
+    }
+
+    private fun discardInstalledCatalogDownloads() {
+        val current = mutableState.value
+        val catalog = current.catalog ?: return
+        if (current.installedUniDic?.resourceId == catalog.unidic.resourceId) {
+            downloader.discard(catalog.unidic.archive)
+        }
+        if (current.hasRecommendedDictionary) {
+            downloader.discard(catalog.recommendedDictionary.archive)
+        }
+    }
+
     private fun catalog(): ResourceCatalog {
         mutableState.value.catalog?.let { return it }
         val value = ResourceBridgeCodec.decodeCatalog(bridge.dispatch(ResourceBridgeCodec.encodeCatalogRequest(), null))
@@ -728,6 +759,16 @@ internal class AndroidResourceManager(
                 "audio_pack_import_failed",
                 "known_words_import_failed",
                 "resource_operation_failed",
+            )
+
+        val PINNED_ARCHIVE_INVALID_CODES =
+            setOf(
+                "resource_archive_mismatch",
+                "resource_archive_too_large",
+                "invalid_resource_archive",
+                "unsafe_resource_archive",
+                "unidic_provenance_mismatch",
+                "dictionary_import_failed",
             )
 
         const val FREQUENCY_ARCHIVE_LIMIT = 512L * 1024 * 1024

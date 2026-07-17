@@ -3,8 +3,6 @@ name: Android CI
 on:
   push:
     branches: [main]
-  pull_request:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -39,6 +37,8 @@ jobs:
     steps:
       - name: Checkout Android source
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
 
       - name: Verify provisioned runner inputs
         shell: bash
@@ -85,6 +85,12 @@ jobs:
               --exporter "$ANKI_MINER_DESKTOP_REPO/scripts/dump_engine_goldens.py" \
               --engine-root "$engine_root" \
               --dicdir "$ANKI_MINER_TEST_UNIDIC_DIR"
+          PYTHONPATH=tools/engine-sync \
+            "$ANKI_MINER_ANDROID_TOOLCHAIN_ROOT/host-tests/bin/python" \
+            tools/engine-sync/run_reading_goldens.py \
+              --python "$ANKI_MINER_DESKTOP_REPO/.venv/bin/python" \
+              --engine-root "$engine_root" \
+              --check
 
       - name: Build and run the host gates
         shell: bash

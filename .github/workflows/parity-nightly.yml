@@ -32,12 +32,15 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           path: android
+          persist-credentials: false
 
       - name: Checkout desktop HEAD
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           repository: 0xzerolight/anki_miner
           path: desktop
+          token: ${{ secrets.ANKI_MINER_DESKTOP_READ_TOKEN }}
+          persist-credentials: false
 
       - name: Set up frozen exporter Python
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
@@ -62,13 +65,11 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p artifacts
-          python desktop/scripts/dump_engine_goldens.py \
-            --schema-version 2 \
-            --engine-root "$GITHUB_WORKSPACE/desktop" \
-            --corpus "$GITHUB_WORKSPACE/android/golden/corpus/tokenizer-v1.json" \
-            --v2-input "$GITHUB_WORKSPACE/android/golden/corpus/engine-v2-input.json" \
+          PYTHONPATH=android/tools/engine-sync \
+          python android/tools/engine-sync/run_head_goldens_v2.py \
+            --python "$(command -v python)" \
+            --desktop-root "$GITHUB_WORKSPACE/desktop" \
             --dicdir "$RUNNER_TEMP/unidic-dicdir" \
-            --compact \
             --output artifacts/engine-v2-desktop-head.json
 
       - name: Compare semantic cases with the pinned Android fixture

@@ -35,13 +35,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.ankiminer.android.R
 import com.ankiminer.android.media.SafDocument
+import com.ankiminer.android.mining.CurationCandidate
 import com.ankiminer.android.mining.CurationSentence
 import com.ankiminer.android.mining.MiningProgress
 import com.ankiminer.android.mining.MiningRunState
@@ -201,6 +205,7 @@ private fun LazyListScope.setupItems(
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(
                 text = stringResource(R.string.video_mining_title),
+                modifier = Modifier.semantics { heading() },
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold,
             )
@@ -307,6 +312,7 @@ private fun LazyListScope.curationItems(
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(
                 text = stringResource(R.string.curation_title),
+                modifier = Modifier.semantics { heading() },
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold,
             )
@@ -358,18 +364,29 @@ private fun LazyListScope.curationItems(
             }
         }
     }
-    items(
-        items = candidates,
-        key = { it.candidate.candidateId },
-    ) { candidate ->
-        CandidateCard(
-            state = candidate,
-            enabled = !state.curationPending && !state.cancelPending,
-            onToggle = { onToggleCandidate(candidate.candidate.candidateId) },
-            onSelectSentence = { sentenceId ->
-                onSelectSentence(candidate.candidate.candidateId, sentenceId)
-            },
-        )
+    // Sentence choices share the outer LazyColumn so a candidate with many occurrences does not
+    // eagerly compose every row inside one card.
+    candidates.forEach { candidateState ->
+        val candidate = candidateState.candidate
+        item(key = "candidate:${candidate.candidateId}") {
+            CandidateCard(
+                state = candidateState,
+                enabled = !state.curationPending && !state.cancelPending,
+                onToggle = { onToggleCandidate(candidate.candidateId) },
+            )
+        }
+        items(
+            items = candidate.sentences,
+            key = { sentence -> "sentence:${candidate.candidateId}:${sentence.sentenceId}" },
+        ) { sentence ->
+            SentenceChoice(
+                candidate = candidate,
+                sentence = sentence,
+                selected = sentence.sentenceId == candidateState.sentenceId,
+                enabled = !state.curationPending && !state.cancelPending,
+                onClick = { onSelectSentence(candidate.candidateId, sentence.sentenceId) },
+            )
+        }
     }
     item(key = "curation_actions") {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -422,6 +439,7 @@ private fun LazyListScope.terminalItems(
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(
                 text = stringResource(title),
+                modifier = Modifier.semantics { heading() },
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold,
             )
@@ -546,6 +564,7 @@ private fun ProgressPanel(
         modifier =
             Modifier
                 .fillMaxWidth()
+                .semantics { liveRegion = LiveRegionMode.Polite }
                 .testTag(VideoMiningTestTags.PROGRESS),
     ) {
         Column(
@@ -554,6 +573,7 @@ private fun ProgressPanel(
         ) {
             Text(
                 text = title,
+                modifier = Modifier.semantics { heading() },
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
             )
@@ -581,7 +601,6 @@ private fun CandidateCard(
     state: CurationCandidateUiState,
     enabled: Boolean,
     onToggle: () -> Unit,
-    onSelectSentence: (String) -> Unit,
 ) {
     val candidate = state.candidate
     OutlinedCard(
@@ -636,20 +655,17 @@ private fun CandidateCard(
             )
             Text(stringResource(R.string.candidate_occurrences, candidate.occurrenceCount))
             HorizontalDivider()
-            candidate.sentences.forEach { sentence ->
-                SentenceChoice(
-                    sentence = sentence,
-                    selected = sentence.sentenceId == state.sentenceId,
-                    enabled = enabled,
-                    onClick = { onSelectSentence(sentence.sentenceId) },
-                )
-            }
+            Text(
+                text = stringResource(R.string.reading_sentence_prompt),
+                style = MaterialTheme.typography.labelLarge,
+            )
         }
     }
 }
 
 @Composable
 private fun SentenceChoice(
+    candidate: CurationCandidate,
     sentence: CurationSentence,
     selected: Boolean,
     enabled: Boolean,
@@ -657,35 +673,46 @@ private fun SentenceChoice(
 ) {
     val description =
         stringResource(R.string.sentence_selection_description, sentence.sentence)
-    Row(
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .selectable(
-                    selected = selected,
-                    enabled = enabled,
-                    role = Role.RadioButton,
-                    onClick = onClick,
-                ).testTag(VideoMiningTestTags.sentence(sentence.sentenceId))
-                .semantics { contentDescription = description }
-                .padding(vertical = 8.dp),
-        verticalAlignment = Alignment.Top,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        RadioButton(
-            selected = selected,
-            onClick = null,
-            enabled = enabled,
-        )
-        Column {
-            Text(text = sentence.sentence, style = MaterialTheme.typography.bodyLarge)
-            if (sentence.sentenceFurigana.isNotBlank() &&
-                sentence.sentenceFurigana != sentence.sentence
-            ) {
+    OutlinedCard(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .selectable(
+                        selected = selected,
+                        enabled = enabled,
+                        role = Role.RadioButton,
+                        onClick = onClick,
+                    ).testTag(
+                        VideoMiningTestTags.sentence(
+                            candidate.candidateId,
+                            sentence.sentenceId,
+                        ),
+                    ).semantics { contentDescription = description }
+                    .padding(12.dp),
+            verticalAlignment = Alignment.Top,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            RadioButton(
+                selected = selected,
+                onClick = null,
+                enabled = enabled,
+            )
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(
-                    text = sentence.sentenceFurigana,
-                    style = MaterialTheme.typography.bodySmall,
+                    text = candidate.minedForm,
+                    style = MaterialTheme.typography.labelMedium,
                 )
+                Text(text = sentence.sentence, style = MaterialTheme.typography.bodyLarge)
+                if (
+                    sentence.sentenceFurigana.isNotBlank() &&
+                    sentence.sentenceFurigana != sentence.sentence
+                ) {
+                    Text(
+                        text = sentence.sentenceFurigana,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
             }
         }
     }
@@ -775,6 +802,7 @@ private fun ErrorMessage(
     onDismiss: () -> Unit,
 ) {
     Surface(
+        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
         color = MaterialTheme.colorScheme.errorContainer,
         contentColor = MaterialTheme.colorScheme.onErrorContainer,
         shape = MaterialTheme.shapes.medium,

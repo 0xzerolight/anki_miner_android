@@ -11,6 +11,7 @@ import re
 import subprocess
 import sys
 from typing import Any
+from xml.etree import ElementTree
 
 try:
     from . import s1a_acceptance as acceptance
@@ -22,6 +23,9 @@ PARITY_MARKER = "ANKI_MINER_S1A_PARITY="
 COLD_MARKER = "ANKI_MINER_S1A_COLD="
 WORKLOAD_MARKER = "ANKI_MINER_S1A_WORKLOAD="
 MIN_NOVEL_JAPANESE_CHARACTERS = acceptance.MIN_NOVEL_JAPANESE_CHARACTERS
+ANDROID_NS = "http://schemas.android.com/apk/res/android"
+SOURCE_META_DATA = "com.ankiminer.android.SOURCE_COMMIT"
+CHANNEL_META_DATA = "com.ankiminer.android.RELEASE_CHANNEL"
 
 
 def _run(command: list[str], *, cwd: Path | None = None) -> str:
@@ -106,7 +110,6 @@ def _device(adb: str, serial: str) -> dict[str, Any]:
     if match is None:
         raise acceptance.AcceptanceError("the device total memory is unreadable")
     return {
-        "serial": serial,
         "manufacturer": _property(adb, serial, "ro.product.manufacturer"),
         "model": _property(adb, serial, "ro.product.model"),
         "build_fingerprint": fingerprint,
@@ -114,6 +117,33 @@ def _device(adb: str, serial: str) -> dict[str, Any]:
         "abi": _property(adb, serial, "ro.product.cpu.abi"),
         "page_size_bytes": int(_adb(adb, serial, "shell", "getconf", "PAGE_SIZE")),
         "total_memory_bytes": int(match.group(1)) * 1024,
+    }
+
+
+def _manifest_identity(apkanalyzer: str, apk_path: Path) -> dict[str, str]:
+    application_id = _run([apkanalyzer, "manifest", "application-id", str(apk_path)])
+    raw = _run([apkanalyzer, "manifest", "print", str(apk_path)])
+    try:
+        root = ElementTree.fromstring(raw)
+    except ElementTree.ParseError as error:
+        raise acceptance.AcceptanceError("acceptance APK manifest XML is invalid") from error
+    application = root.find("application")
+    if application is None:
+        raise acceptance.AcceptanceError("acceptance APK manifest has no application")
+    metadata: dict[str, str] = {}
+    for element in application.findall("meta-data"):
+        name = element.get(f"{{{ANDROID_NS}}}name")
+        value = element.get(f"{{{ANDROID_NS}}}value")
+        if name in {SOURCE_META_DATA, CHANNEL_META_DATA} and value is not None:
+            if name in metadata:
+                raise acceptance.AcceptanceError(f"duplicate acceptance APK metadata: {name}")
+            metadata[name] = value
+    if set(metadata) != {SOURCE_META_DATA, CHANNEL_META_DATA}:
+        raise acceptance.AcceptanceError("acceptance APK source/channel metadata is missing")
+    return {
+        "application_id": application_id,
+        "source_commit": metadata[SOURCE_META_DATA],
+        "release_channel": metadata[CHANNEL_META_DATA],
     }
 
 
@@ -178,14 +208,22 @@ def collect(args: argparse.Namespace) -> dict[str, Any]:
         args.workload_log.resolve(strict=True),
         WORKLOAD_MARKER,
         {
+            "candidate_count",
+            "card_payload_count",
+            "cards_created",
             "characters_per_second",
+            "completed",
             "corpus_sha256",
-            "elapsed_ms",
+            "full_mining_elapsed_ms",
             "japanese_character_count",
             "lemma_count",
             "peak_rss_bytes",
+            "phase1_elapsed_ms",
+            "selected_count",
             "text_unit_count",
+            "total_words_found",
             "word_count",
+            "workload_id",
         },
     )
     if (
@@ -194,35 +232,50 @@ def collect(args: argparse.Namespace) -> dict[str, Any]:
     ):
         raise acceptance.AcceptanceError("the novel corpus is too small for physical acceptance")
 
-    application_id = _run([args.apkanalyzer, "manifest", "application-id", str(apk_path)])
+    artifact_identity = _manifest_identity(args.apkanalyzer, apk_path)
     document: dict[str, Any] = {
         "schema": acceptance.SCHEMA,
         "source": source,
         "publication": {
-            "manifest_path": str(manifest_path),
             "manifest_sha256": _sha256(manifest_path),
             "recipe_key": manifest["recipe_key"],
             "build_key": manifest["build_key"],
         },
         "artifact": {
-            "path": str(apk_path),
+            "filename": apk_path.name,
             "sha256": _sha256(apk_path),
             "size_bytes": apk_path.stat().st_size,
-            "application_id": application_id,
+            "application_id": artifact_identity["application_id"],
             "variant": "deviceDebug",
             "abi": "arm64-v8a",
+            "source_commit": artifact_identity["source_commit"],
+            "release_channel": artifact_identity["release_channel"],
         },
         "device": _device(args.adb, args.serial),
         "measurements": {
             "cold_init_ms": cold_values,
-            "peak_rss_bytes": workload["peak_rss_bytes"],
         },
         "tokenizer_parity": parity,
         "novel_throughput": {
             "corpus_sha256": workload["corpus_sha256"],
             "japanese_character_count": workload["japanese_character_count"],
-            "elapsed_ms": workload["elapsed_ms"],
+            "elapsed_ms": workload["phase1_elapsed_ms"],
             "characters_per_second": workload["characters_per_second"],
+            "text_unit_count": workload["text_unit_count"],
+            "word_count": workload["word_count"],
+            "lemma_count": workload["lemma_count"],
+        },
+        "representative_mining": {
+            "workload_id": workload["workload_id"],
+            "corpus_sha256": workload["corpus_sha256"],
+            "total_words_found": workload["total_words_found"],
+            "candidate_count": workload["candidate_count"],
+            "selected_count": workload["selected_count"],
+            "card_payload_count": workload["card_payload_count"],
+            "cards_created": workload["cards_created"],
+            "elapsed_ms": workload["full_mining_elapsed_ms"],
+            "peak_rss_bytes": workload["peak_rss_bytes"],
+            "completed": workload["completed"],
         },
         "thresholds": {
             "cold_init_max_ms_exclusive": acceptance.COLD_INIT_LIMIT_MS,
@@ -238,7 +291,7 @@ def collect(args: argparse.Namespace) -> dict[str, Any]:
         json.dumps(document, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
         encoding="utf-8",
     )
-    acceptance.validate(staging, manifest_path, repo, golden_path)
+    acceptance.validate(staging, manifest_path, apk_path, repo, golden_path)
     staging.replace(output)
     return document
 

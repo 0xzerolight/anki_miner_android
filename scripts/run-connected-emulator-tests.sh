@@ -192,6 +192,12 @@ adb -s "$ANDROID_SERIAL" shell am force-stop com.ankiminer.android \
     || fail "cannot stop app before combined instrumentation"
 run_instrumentation_any combined
 
+adb -s "$ANDROID_SERIAL" shell am force-stop com.ankiminer.android \
+    || fail "cannot stop app before reading parity instrumentation"
+run_instrumentation_exact reading-parity 1 \
+    -e ankiMinerRunReadingGolden true \
+    -e class com.ankiminer.android.ReadingGoldenInstrumentedTest
+
 if [[ -n "$s1a_manifest" ]]; then
     adb -s "$ANDROID_SERIAL" shell am force-stop com.ankiminer.android \
         || fail "cannot stop app before S4 instrumentation"

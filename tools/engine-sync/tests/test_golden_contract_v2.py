@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import importlib.util
 import json
 from pathlib import Path
 import shutil
@@ -38,6 +39,21 @@ class GoldenV2ContractTests(unittest.TestCase):
                 (self.project_root / "golden/engine-v2.json").read_bytes()
             ).hexdigest(),
         )
+
+    def test_packaged_replay_uses_the_contract_fixture_identity(self) -> None:
+        replay_path = (
+            self.project_root
+            / "app/src/debug/python/engine_golden_v2_instrumented.py"
+        )
+        spec = importlib.util.spec_from_file_location(
+            "engine_golden_v2_instrumented_contract_test",
+            replay_path,
+        )
+        self.assertIsNotNone(spec)
+        assert spec is not None and spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        self.assertEqual(FIXTURE_SHA256, module.FIXTURE_SHA256)
 
     def test_fixture_validator_rejects_status_or_case_weakening(self) -> None:
         fixture_path = self.project_root / "golden/engine-v2.json"

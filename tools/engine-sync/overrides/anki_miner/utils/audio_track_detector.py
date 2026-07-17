@@ -5,6 +5,7 @@ import logging
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Protocol
 
 from anki_miner.utils.android_fd import inherited_fd_command
 from anki_miner.utils.subprocess_utils import no_window_kwargs
@@ -16,6 +17,22 @@ JAPANESE_LANGUAGE_CODES = frozenset({"jpn", "ja", "japanese", "jp"})
 # Image-based subtitle codecs: these carry rendered bitmaps, not extractable
 # text, so the condenser detects and reports them but never attempts extraction.
 BITMAP_SUBTITLE_CODECS = frozenset({"hdmv_pgs_subtitle", "dvd_subtitle", "dvb_subtitle", "xsub"})
+
+
+class ProcessRegistry(Protocol):
+    @property
+    def cancelled(self) -> bool: ...
+
+    def register(self, proc: "subprocess.Popen[str]") -> bool: ...
+
+    def unregister(self, proc: "subprocess.Popen[str]") -> None: ...
+
+
+def _kill_quietly(proc: "subprocess.Popen[str]") -> None:
+    try:
+        proc.kill()
+    except OSError:
+        pass
 
 
 @dataclass(frozen=True)
@@ -55,7 +72,12 @@ class SubtitleStream:
     is_text: bool
 
 
-def _run_ffprobe_json(video_path: Path, select_streams: str, ffprobe_cmd: str) -> dict | None:
+def _run_ffprobe_json(
+    video_path: Path,
+    select_streams: str,
+    ffprobe_cmd: str,
+    proc_registry: ProcessRegistry | None = None,
+) -> dict | None:
     """Run ffprobe for ``select_streams`` and return the parsed JSON object.
 
     Returns ``None`` if ffprobe fails, times out, raises an OSError, returns a
@@ -84,12 +106,15 @@ def _run_ffprobe_json(video_path: Path, select_streams: str, ffprobe_cmd: str) -
         str(video_path),
     ]
 
+    if proc_registry is not None and proc_registry.cancelled:
+        return None
     try:
         with inherited_fd_command(cmd) as (child_cmd, pass_fds):
-            proc = subprocess.run(
+            proc = subprocess.Popen(
                 child_cmd,
-                capture_output=True,
-                timeout=30,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 text=True,
                 encoding="utf-8",
                 errors="replace",
@@ -100,19 +125,55 @@ def _run_ffprobe_json(video_path: Path, select_streams: str, ffprobe_cmd: str) -
         logger.warning(f"Error probing {video_path} (select={select_streams}): {e}")
         return None
 
+    if proc_registry is not None and not proc_registry.register(proc):
+        with proc:
+            _kill_quietly(proc)
+            try:
+                proc.communicate()
+            except (subprocess.SubprocessError, OSError, ValueError):
+                pass
+        return None
+
+    stdout = ""
+    stderr = ""
+    try:
+        with proc:
+            try:
+                stdout, stderr = proc.communicate(timeout=30)
+            except subprocess.TimeoutExpired:
+                _kill_quietly(proc)
+                proc.communicate()
+                logger.warning(f"ffprobe timed out for {video_path}")
+                return None
+            except (subprocess.SubprocessError, OSError, ValueError) as e:
+                _kill_quietly(proc)
+                logger.warning(f"Error probing {video_path} (select={select_streams}): {e}")
+                return None
+    finally:
+        if proc_registry is not None:
+            proc_registry.unregister(proc)
+
     if proc.returncode != 0:
-        logger.warning(f"ffprobe failed for {video_path}: {proc.stderr}")
+        if proc_registry is not None and proc_registry.cancelled:
+            logger.debug(f"ffprobe cancelled for {video_path}")
+            return None
+        logger.warning(f"ffprobe failed for {video_path}: {stderr}")
         return None
 
     try:
-        data: dict = json.loads(proc.stdout)
+        data: dict = json.loads(stdout)
     except json.JSONDecodeError as e:
         logger.warning(f"ffprobe returned malformed JSON for {video_path}: {e}")
         return None
     return data
 
 
-def list_audio_streams(video_path: Path, ffprobe_cmd: str = "ffprobe") -> list[AudioStream]:
+def list_audio_streams(
+    video_path: Path,
+    ffprobe_cmd: str = "ffprobe",
+    *,
+    proc_registry: ProcessRegistry | None = None,
+) -> list[AudioStream]:
     """Probe a video file with ffprobe and return all audio streams.
 
     Returns an empty list if ffprobe fails, times out, raises an OSError,
@@ -126,7 +187,7 @@ def list_audio_streams(video_path: Path, ffprobe_cmd: str = "ffprobe") -> list[A
     callers should pass ``resolve_ffprobe(config)`` so frozen bundles use the
     bundled binary.
     """
-    data = _run_ffprobe_json(video_path, "a", ffprobe_cmd)
+    data = _run_ffprobe_json(video_path, "a", ffprobe_cmd, proc_registry)
     if data is None:
         return []
 
@@ -173,7 +234,12 @@ def list_audio_streams(video_path: Path, ffprobe_cmd: str = "ffprobe") -> list[A
     return result
 
 
-def list_subtitle_streams(video_path: Path, ffprobe_cmd: str = "ffprobe") -> list[SubtitleStream]:
+def list_subtitle_streams(
+    video_path: Path,
+    ffprobe_cmd: str = "ffprobe",
+    *,
+    proc_registry: ProcessRegistry | None = None,
+) -> list[SubtitleStream]:
     """Probe a video file with ffprobe and return all subtitle streams.
 
     Returns an empty list if ffprobe fails, times out, raises an OSError,
@@ -191,7 +257,7 @@ def list_subtitle_streams(video_path: Path, ffprobe_cmd: str = "ffprobe") -> lis
     callers should pass ``resolve_ffprobe(config)`` so frozen bundles use the
     bundled binary.
     """
-    data = _run_ffprobe_json(video_path, "s", ffprobe_cmd)
+    data = _run_ffprobe_json(video_path, "s", ffprobe_cmd, proc_registry)
     if data is None:
         return []
 
@@ -227,7 +293,12 @@ def list_subtitle_streams(video_path: Path, ffprobe_cmd: str = "ffprobe") -> lis
     return result
 
 
-def find_japanese_audio_stream(video_file: Path, ffprobe_cmd: str = "ffprobe") -> AudioStream | None:
+def find_japanese_audio_stream(
+    video_file: Path,
+    ffprobe_cmd: str = "ffprobe",
+    *,
+    proc_registry: ProcessRegistry | None = None,
+) -> AudioStream | None:
     """Probe a video file with ffprobe and return its Japanese audio stream.
 
     Returns None if ffprobe fails, returns malformed JSON, or no audio stream
@@ -236,7 +307,11 @@ def find_japanese_audio_stream(video_file: Path, ffprobe_cmd: str = "ffprobe") -
     ``ffprobe_cmd`` is forwarded to :func:`list_audio_streams`; defaults to the
     bare ``"ffprobe"`` literal so direct callers are unaffected.
     """
-    streams = list_audio_streams(video_file, ffprobe_cmd=ffprobe_cmd)
+    streams = list_audio_streams(
+        video_file,
+        ffprobe_cmd=ffprobe_cmd,
+        proc_registry=proc_registry,
+    )
 
     for stream in streams:
         if stream.language_tag in JAPANESE_LANGUAGE_CODES:
@@ -251,7 +326,12 @@ def find_japanese_audio_stream(video_file: Path, ffprobe_cmd: str = "ffprobe") -
     return None
 
 
-def get_primary_video_codec(video_file: Path, ffprobe_cmd: str = "ffprobe") -> str | None:
+def get_primary_video_codec(
+    video_file: Path,
+    ffprobe_cmd: str = "ffprobe",
+    *,
+    proc_registry: ProcessRegistry | None = None,
+) -> str | None:
     """Return the codec_name of the first video stream (lowercased), or None.
 
     Returns None on any ffprobe failure (timeout, OSError, non-zero exit,
@@ -263,7 +343,7 @@ def get_primary_video_codec(video_file: Path, ffprobe_cmd: str = "ffprobe") -> s
     ``"ffprobe"`` literal. Config-bearing callers should pass
     ``resolve_ffprobe(config)`` so frozen bundles use the bundled binary.
     """
-    data = _run_ffprobe_json(video_file, "v:0", ffprobe_cmd)
+    data = _run_ffprobe_json(video_file, "v:0", ffprobe_cmd, proc_registry)
     if data is None:
         return None
 

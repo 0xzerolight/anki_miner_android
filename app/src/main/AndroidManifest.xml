@@ -27,6 +27,13 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.AnkiMiner"
         android:usesCleartextTraffic="false">
+        <meta-data
+            android:name="com.ankiminer.android.SOURCE_COMMIT"
+            android:value="${ankiMinerSourceCommit}" />
+        <meta-data
+            android:name="com.ankiminer.android.RELEASE_CHANNEL"
+            android:value="${ankiMinerReleaseChannel}" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true">

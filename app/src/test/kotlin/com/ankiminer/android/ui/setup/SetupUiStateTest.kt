@@ -11,7 +11,9 @@ import com.ankiminer.android.data.anki.AnkiSetupOperation
 import com.ankiminer.android.data.resources.ResourceStartupReadiness
 import com.ankiminer.android.engine.PythonRuntimeReadiness
 import com.ankiminer.android.mining.NotificationPermissionReadiness
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -65,5 +67,42 @@ class SetupUiStateTest {
         assertTrue(SetupUiState(customSlotId = "custom-dictionary.v2").customSlotValid)
         assertFalse(SetupUiState(customSlotId = "Custom Dictionary").customSlotValid)
         assertFalse(SetupUiState(customSlotId = "custom..dictionary").customSlotValid)
+    }
+
+    @Test
+    fun ankiDroidActionMatchesEachExternalReadinessState() {
+        assertEquals(
+            AnkiDroidSetupAction.INSTALL,
+            SetupUiState(anki = AnkiProviderReadiness.NotInstalled).ankiDroidAction,
+        )
+        assertEquals(
+            AnkiDroidSetupAction.OPEN,
+            SetupUiState(anki = AnkiProviderReadiness.Uninitialized).ankiDroidAction,
+        )
+        assertEquals(
+            AnkiDroidSetupAction.OPEN,
+            SetupUiState(anki = AnkiProviderReadiness.RecoveryBlocked).ankiDroidAction,
+        )
+        assertEquals(
+            AnkiDroidSetupAction.REQUEST_PERMISSION,
+            SetupUiState(anki = AnkiProviderReadiness.PermissionDenied).ankiDroidAction,
+        )
+        assertEquals(
+            AnkiDroidSetupAction.OPEN_OR_INSTALL,
+            SetupUiState(
+                anki = AnkiProviderReadiness.Incompatible(apiSpecVersion = null),
+            ).ankiDroidAction,
+        )
+        assertEquals(
+            AnkiDroidSetupAction.INSTALL,
+            SetupUiState(
+                anki = AnkiProviderReadiness.Incompatible(apiSpecVersion = 1),
+            ).ankiDroidAction,
+        )
+        assertNull(SetupUiState(anki = AnkiProviderReadiness.NotChecked).ankiDroidAction)
+        assertNull(
+            SetupUiState(anki = AnkiProviderReadiness.Ready(apiSpecVersion = 2, versionCode = 7L))
+                .ankiDroidAction,
+        )
     }
 }

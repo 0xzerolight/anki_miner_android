@@ -12,11 +12,27 @@ plugins {
 val pythonVersion = libs.versions.python.get()
 val pythonTargetVersion = "3.12.12-0"
 val androidNdkVersion = "28.2.13676358"
+val releaseVersion = JsonSlurper().parse(rootProject.file("release/version.json")) as Map<*, *>
+require(releaseVersion.keys == setOf("schema", "version_code", "version_name")) {
+    "release/version.json keys differ from the supported schema"
+}
+require(releaseVersion["schema"] == 1) { "Unsupported release/version.json schema" }
+val appVersionCode = releaseVersion["version_code"] as? Int
+    ?: throw GradleException("release version_code must be an integer")
+val appVersionName = releaseVersion["version_name"] as? String
+    ?: throw GradleException("release version_name must be a string")
+require(appVersionCode > 0) { "release version_code must be positive" }
+require(appVersionName.matches(Regex("[0-9]+\\.[0-9]+\\.[0-9]+-alpha\\.[0-9]+"))) {
+    "release version_name must identify an alpha build"
+}
 val runtimeManifestProperty = providers.gradleProperty("ankiMinerRuntimeManifest")
 val s1aManifestProperty = providers.gradleProperty("ankiMinerS1aManifest")
 val s1aEnabled = s1aManifestProperty.isPresent
 val s1aArm64AcceptanceReceiptProperty =
     providers.gradleProperty("ankiMinerS1aArm64AcceptanceReceipt")
+val s1aArm64AcceptanceApkProperty =
+    providers.gradleProperty("ankiMinerS1aArm64AcceptanceApk")
+val sourceCommitProperty = providers.gradleProperty("ankiMinerSourceCommit")
 val chaquopyBuildPython =
     providers.environmentVariable("ANKI_MINER_CHAQUOPY_BUILD_PYTHON").orNull
         ?: throw GradleException(
@@ -290,6 +306,14 @@ val s1aArm64Acceptance =
             }
         val receipt = resolveManifest(configuredReceipt)
         require(receipt.isFile) { "S1a ARM64 acceptance receipt not found: $receipt" }
+        val acceptedApk =
+            resolveManifest(
+                requireNotNull(s1aArm64AcceptanceApkProperty.orNull) {
+                    "ARM64 S1a acceptance requires -PankiMinerS1aArm64AcceptanceApk " +
+                        "pointing to the exact externally supplied APK tested by the receipt"
+                },
+            )
+        require(acceptedApk.isFile) { "Accepted S1a ARM64 APK not found: $acceptedApk" }
         val verificationOutput =
             providers.exec {
                 commandLine(
@@ -300,6 +324,8 @@ val s1aArm64Acceptance =
                     receipt.absolutePath,
                     "--manifest",
                     publication.manifest.absolutePath,
+                    "--apk",
+                    acceptedApk.absolutePath,
                     "--repo-root",
                     rootProject.projectDir.absolutePath,
                     "--golden",
@@ -319,13 +345,31 @@ val s1aArm64Acceptance =
         ) {
             "Unexpected S1a ARM64 acceptance verification result"
         }
-        require(verification["schema"] == 1) { "Unsupported S1a ARM64 acceptance result" }
+        require(verification["schema"] == 2) { "Unsupported S1a ARM64 acceptance result" }
         require(verification["publication_build_key"] == publication.buildKey) {
             "S1a ARM64 acceptance belongs to another wheel publication"
         }
         verification
     }
 val s1aArm64Accepted = s1aArm64Acceptance != null
+val sourceCommit = sourceCommitProperty.orNull ?: "development"
+require(sourceCommit == "development" || sourceCommit.matches(Regex("[0-9a-f]{40}"))) {
+    "ankiMinerSourceCommit must be 'development' or an exact lowercase Git commit"
+}
+if (s1aArm64Accepted) {
+    require(sourceCommitProperty.isPresent) {
+        "Device release requires an explicit source-bound ankiMinerSourceCommit"
+    }
+    require(sourceCommit == s1aArm64Acceptance?.get("source_commit")) {
+        "Device release source commit differs from its physical acceptance receipt"
+    }
+}
+val releaseChannel =
+    when {
+        s1aArm64Accepted -> "github-apk-alpha"
+        sourceCommit != "development" && s1aPublicationVerified -> "device-acceptance"
+        else -> "development"
+    }
 val s1bArm64TestsEnabled =
     providers.gradleProperty("ankiMinerS1bArm64Tests")
         .map { value ->
@@ -349,8 +393,8 @@ android {
         applicationId = "com.ankiminer.android"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.0.1"
+        versionCode = appVersionCode
+        versionName = appVersionName
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "PYTHON_VERSION", "\"$pythonVersion\"")
@@ -363,6 +407,10 @@ android {
         buildConfigField("boolean", "S1A_SPIKE_ENABLED", s1aPublicationVerified.toString())
         buildConfigField("boolean", "S1A_PUBLICATION_VERIFIED", s1aPublicationVerified.toString())
         buildConfigField("boolean", "S1A_ARM64_ACCEPTED", s1aArm64Accepted.toString())
+        buildConfigField("String", "SOURCE_COMMIT", "\"$sourceCommit\"")
+        buildConfigField("String", "RELEASE_CHANNEL", "\"$releaseChannel\"")
+        manifestPlaceholders["ankiMinerSourceCommit"] = sourceCommit
+        manifestPlaceholders["ankiMinerReleaseChannel"] = releaseChannel
         buildConfigField(
             "String",
             "S1A_PUBLICATION_BUILD_KEY",

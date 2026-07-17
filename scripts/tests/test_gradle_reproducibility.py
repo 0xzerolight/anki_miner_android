@@ -132,6 +132,14 @@ class GradleReproducibilityTest(unittest.TestCase):
             'gradleProperty("ankiMinerS1aArm64AcceptanceReceipt")',
             app_build,
         )
+        self.assertIn(
+            'gradleProperty("ankiMinerS1aArm64AcceptanceApk")',
+            app_build,
+        )
+        self.assertNotIn(
+            'rootProject.file("app/build/outputs/apk/device/debug/app-device-debug.apk")',
+            app_build,
+        )
         self.assertIn('file("tools/wheels/s1a_acceptance.py")', app_build)
         self.assertIn(
             '(s1aArm64Accepted && runtimeAbi == "device" && variant.buildType == "release")',
@@ -256,6 +264,7 @@ class GradleReproducibilityTest(unittest.TestCase):
         for lane in ("api26", "4k", "16k"):
             self.assertIn(f"--lane {lane}", ci)
         self.assertIn("run_goldens_v2.py", ci)
+        self.assertIn("run_reading_goldens.py", ci)
         self.assertIn(
             'Path("tools/engine-sync/engine.lock").read_text(encoding="utf-8").strip()',
             ci,
@@ -269,7 +278,9 @@ class GradleReproducibilityTest(unittest.TestCase):
             ci.index("scripts/run-s5-video-acceptance.sh"),
         )
         self.assertIn("S2_FALLBACK_CONNECTED_RUNNER", emulator_runner)
-        self.assertIn("desktop/scripts/dump_engine_goldens.py", nightly)
+        self.assertIn("run_head_goldens_v2.py", nightly)
+        self.assertIn('--desktop-root "$GITHUB_WORKSPACE/desktop"', nightly)
+        self.assertIn("ANKI_MINER_DESKTOP_READ_TOKEN", nightly)
         self.assertIn(
             'Path("android/tools/engine-sync/engine.lock").read_text(encoding="utf-8").strip()',
             nightly,
@@ -284,7 +295,24 @@ class GradleReproducibilityTest(unittest.TestCase):
         prerelease = (
             REPO_ROOT / ".github/workflows/ankidroid-prerelease-canary.yml"
         ).read_text(encoding="utf-8")
+        apk_candidate = (
+            REPO_ROOT / ".github/workflows/apk-candidate.yml"
+        ).read_text(encoding="utf-8")
+        apk_publish = (
+            REPO_ROOT / ".github/workflows/apk-publish.yml"
+        ).read_text(encoding="utf-8")
         self.assertIn("group: anki-miner-android-hardware-ci", prerelease)
+        self.assertIn("group: anki-miner-android-hardware-ci", apk_candidate)
+        self.assertIn("environment: apk-candidate", apk_candidate)
+        self.assertIn("if: github.ref == 'refs/heads/main'", apk_candidate)
+        self.assertIn("git merge-base --is-ancestor HEAD", apk_candidate)
+        self.assertIn("persist-credentials: false", apk_candidate)
+        self.assertIn("environment: github-prerelease", apk_publish)
+        self.assertIn("github.ref == 'refs/heads/main'", apk_publish)
+        self.assertIn("github.event.repository.private", apk_publish)
+        self.assertIn("git merge-base --is-ancestor HEAD", apk_publish)
+        self.assertIn("persist-credentials: false", apk_publish)
+        self.assertGreaterEqual(nightly.count("persist-credentials: false"), 2)
         self.assertIn("resolve_ankidroid_canary.py resolve", prerelease)
         self.assertIn("run-s2-ankidroid-prerelease-canary.sh", prerelease)
         self.assertIn("--receipt-ankidroid-apk", prerelease)
