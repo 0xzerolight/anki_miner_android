@@ -61,6 +61,13 @@ class SetupUiStateTest {
     }
 
     @Test
+    fun wizardSeenStaysUnknownUntilTheSettingsStoreEmits() {
+        assertNull(SetupUiState().wizardSeen)
+        assertEquals(false, SetupUiState(wizardSeen = false).wizardSeen)
+        assertEquals(true, SetupUiState(wizardSeen = true).wizardSeen)
+    }
+
+    @Test
     fun customDictionarySlotMustUseTheStableWireFormat() {
         assertTrue(SetupUiState(customSlotId = "custom-dictionary.v2").customSlotValid)
         assertFalse(SetupUiState(customSlotId = "Custom Dictionary").customSlotValid)

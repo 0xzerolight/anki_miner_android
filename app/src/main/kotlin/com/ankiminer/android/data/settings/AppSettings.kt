@@ -38,6 +38,8 @@ data class ResourceChainSelection(
  */
 data class AppSettings(
     val firstRunComplete: Boolean = false,
+    /** The onboarding wizard was offered once and completed or skipped. */
+    val setupWizardSeen: Boolean = false,
     val theme: ThemeMode = ThemeMode.DARK,
     val deckName: String? = null,
     val tags: String? = null,

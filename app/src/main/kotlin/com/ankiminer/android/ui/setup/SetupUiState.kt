@@ -33,6 +33,8 @@ internal data class SetupUiState(
     val ankiOperation: AnkiSetupOperation? = null,
     val ankiFailure: AnkiSetupFailure? = null,
     val firstRunComplete: Boolean = false,
+    /** Tri-state startup-flash guard: null until the settings store has emitted once. */
+    val wizardSeen: Boolean? = null,
     val uniDicInstalled: Boolean = false,
     val catalogDictionaries: List<CatalogDictionaryStatus> = emptyList(),
     val pendingReplaceResourceId: String? = null,

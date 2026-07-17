@@ -51,7 +51,9 @@ internal class SettingsViewModel(
         save(
             AppSettings(
                 firstRunComplete = current.firstRunComplete,
-                // Restoring mining defaults must not change the user's chosen look.
+                // Restoring mining defaults must never re-open the onboarding wizard or
+                // change the user's chosen look.
+                setupWizardSeen = current.setupWizardSeen,
                 theme = current.theme,
                 // An empty persisted chain means newly imported resources should become active.
                 // Record current installs as disabled so "restore defaults" still means no local

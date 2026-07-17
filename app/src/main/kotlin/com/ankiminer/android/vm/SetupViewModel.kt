@@ -83,6 +83,7 @@ internal class SetupViewModel(
                 ankiOperation = ankiState.operation,
                 ankiFailure = ankiState.failure,
                 firstRunComplete = appSettings.firstRunComplete,
+                wizardSeen = appSettings.setupWizardSeen,
                 uniDicInstalled = resourceState.hasUniDic,
                 catalogDictionaries = resourceState.catalogDictionaries,
                 pendingReplaceResourceId = localState.pendingReplaceResourceId,
@@ -305,6 +306,19 @@ internal class SetupViewModel(
     fun dismissFailure() = resources.dismissFailure()
 
     fun permissionsReturned() = refreshExternalReadiness()
+
+    /** Fire-and-forget: the wizard was completed or skipped and must not re-appear. */
+    fun markWizardSeen() {
+        viewModelScope.launch {
+            try {
+                repository.update { it.copy(setupWizardSeen = true) }
+            } catch (failure: CancellationException) {
+                throw failure
+            } catch (_: Exception) {
+                // A failed write re-offers the (skippable) wizard next launch; never crash.
+            }
+        }
+    }
 
     fun finishFirstRun() {
         if (!uiState.value.canFinishFirstRun) return
