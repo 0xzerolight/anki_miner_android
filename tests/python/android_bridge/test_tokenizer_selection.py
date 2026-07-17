@@ -273,16 +273,14 @@ def test_debug_harnesses_and_isolated_runners_make_selection_path_observable() -
     assert "get_shared_tagger()" in helper
     assert "debug_direct_fallback_after_" in helper
 
-    for backend, kotlin_relative, runner_name in (
+    for backend, kotlin_relative in (
         (
             "s1a",
             "com/ankiminer/android/TokenizerS1aInstrumentedTest.kt",
-            "run-s1a-arm64-tests.sh",
         ),
         (
             "s1b",
             "com/ankiminer/android/tokenizer/MecabNativeTokenizerInstrumentedTest.kt",
-            "run-s1b-arm64-tests.sh",
         ),
     ):
         harness = (DEBUG_PYTHON_ROOT / f"tokenizer_{backend}_instrumented.py").read_text(
@@ -291,12 +289,9 @@ def test_debug_harnesses_and_isolated_runners_make_selection_path_observable() -
         kotlin = (
             PROJECT_ROOT / "app/src/androidTest/kotlin" / kotlin_relative
         ).read_text(encoding="utf-8")
-        runner = (PROJECT_ROOT / "scripts" / runner_name).read_text(encoding="utf-8")
         compact_harness = " ".join(harness.split())
         assert (
             f'acquire_tagger_for_instrumentation( "{backend}", registration )'
             in compact_harness
         )
         assert 'result.getString("tagger_path")' in kotlin
-        assert "ankiMinerExpectedTokenizerPath engine_shared_tagger" in runner
-        assert 'shell am force-stop "$app_id"' in runner

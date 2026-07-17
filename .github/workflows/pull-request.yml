@@ -1,6 +1,8 @@
-name: Pull request checks
+name: CI
 
 on:
+  push:
+    branches: [main]
   pull_request:
     branches: [main]
 
@@ -8,7 +10,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: anki-miner-android-pr-${{ github.event.pull_request.number }}
+  group: anki-miner-android-ci-${{ github.ref }}
   cancel-in-progress: true
 
 env:

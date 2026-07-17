@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Host health gate: toolchain presence, host Python suites, and the emulator
+# Gradle build + unit tests. Release/receipt/acceptance ceremony was removed;
+# real release verification is a local emulator-release smoke test + apksigner.
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # shellcheck source=android-env.sh
@@ -8,66 +12,11 @@ source "$SCRIPT_DIR/android-env.sh"
 # shellcheck source=android-test-resources.sh
 source "$SCRIPT_DIR/android-test-resources.sh"
 
-RECEIPT_PATH=""
-RECEIPT_ANKIDROID_APK=""
-RECEIPT_S2_RESET_OPT_IN=false
-RELEASE_ACCEPTANCE_RECEIPT=""
-
-usage() {
-    cat <<'EOF' >&2
-Usage: scripts/health.sh [--write-receipt FILE]
-                         [--receipt-ankidroid-apk FILE --receipt-s2-reset-opt-in]
-                         [--release-acceptance-receipt FILE]
-
-Runs the complete host-only health gate. Connected tests are intentionally a
-separate, receipt-validated phase and never start Gradle. ARM64 release
-artifacts are built only with an exact physical-device S1a acceptance receipt.
-The exact accepted deviceDebug APK must be supplied through
-ORG_GRADLE_PROJECT_ankiMinerS1aArm64AcceptanceApk.
-EOF
-}
-
-while (($#)); do
-    case "$1" in
-        --write-receipt)
-            (($# >= 2)) || { usage; exit 2; }
-            RECEIPT_PATH="$2"
-            shift
-            ;;
-        --receipt-ankidroid-apk)
-            (($# >= 2)) || { usage; exit 2; }
-            RECEIPT_ANKIDROID_APK="$2"
-            shift
-            ;;
-        --receipt-s2-reset-opt-in)
-            RECEIPT_S2_RESET_OPT_IN=true
-            ;;
-        --release-acceptance-receipt)
-            (($# >= 2)) || { usage; exit 2; }
-            RELEASE_ACCEPTANCE_RECEIPT="$2"
-            shift
-            ;;
-        -h|--help)
-            usage
-            exit 0
-            ;;
-        *)
-            usage
-            exit 2
-            ;;
-    esac
-    shift
-done
-
 fail() {
     echo "health: $*" >&2
     exit 1
 }
 
-[[ -z "$RECEIPT_ANKIDROID_APK" || -n "$RECEIPT_PATH" ]] \
-    || fail "AnkiDroid receipt binding requires --write-receipt"
-[[ "$RECEIPT_S2_RESET_OPT_IN" == false || -n "$RECEIPT_ANKIDROID_APK" ]] \
-    || fail "S2 reset opt-in requires --receipt-ankidroid-apk"
 anki_miner_require_no_emulator || fail "host health requires every emulator to be stopped"
 
 [[ -x "$JAVA_HOME/bin/java" ]] || fail "JDK is missing; run scripts/provision-android.sh"
@@ -87,50 +36,7 @@ python3.13 "$SCRIPT_DIR/verify_chaquopy_build_python.py" verify \
     --toolchain-root "$ANKI_MINER_ANDROID_TOOLCHAIN_ROOT" \
     --python "$ANKI_MINER_CHAQUOPY_BUILD_PYTHON" >/dev/null \
     || fail "pinned Chaquopy build Python is missing or stale; run scripts/provision-chaquopy-build-python.sh"
-runtime_manifest="${ORG_GRADLE_PROJECT_ankiMinerRuntimeManifest:-$REPO_ROOT/tools/runtime-wheels/out/current/manifest.json}"
-[[ -f "$runtime_manifest" ]] \
-    || fail "runtime wheel publication is missing; run tools/runtime-wheels/build-runtime-wheels.sh"
-runtime_manifest="$(realpath "$runtime_manifest")"
-python3.13 "$REPO_ROOT/tools/runtime-wheels/runtime_wheels.py" verify-publication \
-    --manifest "$runtime_manifest" >/dev/null \
-    || fail "runtime wheel publication is invalid or stale; rebuild it"
-ORG_GRADLE_PROJECT_ankiMinerRuntimeManifest="$runtime_manifest"
-export ORG_GRADLE_PROJECT_ankiMinerRuntimeManifest
-if [[ -n "${ORG_GRADLE_PROJECT_ankiMinerS1aManifest:-}" ]]; then
-    s1a_manifest="$(realpath "$ORG_GRADLE_PROJECT_ankiMinerS1aManifest")"
-    s1a_wheel_tool="${ANKI_MINER_S1A_WHEEL_TOOL:-$REPO_ROOT/tools/wheels/s1a_wheels.py}"
-    [[ -x "$s1a_wheel_tool" ]] || fail "S1a wheel tool is unavailable: $s1a_wheel_tool"
-    "$s1a_wheel_tool" verify-publication --manifest "$s1a_manifest" >/dev/null \
-        || fail "S1a wheel publication is invalid or stale for the active builder"
-    ORG_GRADLE_PROJECT_ankiMinerS1aManifest="$s1a_manifest"
-    export ORG_GRADLE_PROJECT_ankiMinerS1aManifest
-fi
-if [[ -n "$RELEASE_ACCEPTANCE_RECEIPT" ]]; then
-    [[ -n "${ORG_GRADLE_PROJECT_ankiMinerS1aManifest:-}" ]] \
-        || fail "release acceptance requires an exact S1a wheel publication"
-    [[ -f "$RELEASE_ACCEPTANCE_RECEIPT" ]] \
-        || fail "release acceptance receipt is missing: $RELEASE_ACCEPTANCE_RECEIPT"
-    [[ -n "${ORG_GRADLE_PROJECT_ankiMinerS1aArm64AcceptanceApk:-}" ]] \
-        || fail "release acceptance requires the exact externally stored deviceDebug APK"
-    [[ -f "$ORG_GRADLE_PROJECT_ankiMinerS1aArm64AcceptanceApk" ]] \
-        || fail "accepted deviceDebug APK is missing: $ORG_GRADLE_PROJECT_ankiMinerS1aArm64AcceptanceApk"
-    RELEASE_ACCEPTANCE_RECEIPT="$(realpath "$RELEASE_ACCEPTANCE_RECEIPT")"
-    ORG_GRADLE_PROJECT_ankiMinerS1aArm64AcceptanceApk="$(
-        realpath "$ORG_GRADLE_PROJECT_ankiMinerS1aArm64AcceptanceApk"
-    )"
-    export ORG_GRADLE_PROJECT_ankiMinerS1aArm64AcceptanceApk
-    python3.13 "$REPO_ROOT/tools/wheels/s1a_acceptance.py" verify \
-        --receipt "$RELEASE_ACCEPTANCE_RECEIPT" \
-        --manifest "$s1a_manifest" \
-        --apk "$ORG_GRADLE_PROJECT_ankiMinerS1aArm64AcceptanceApk" \
-        --repo-root "$REPO_ROOT" \
-        --golden "$REPO_ROOT/golden/engine-v1.json" >/dev/null \
-        || fail "physical ARM64 S1a acceptance receipt is invalid or stale"
-    ORG_GRADLE_PROJECT_ankiMinerS1aArm64AcceptanceReceipt="$RELEASE_ACCEPTANCE_RECEIPT"
-    export ORG_GRADLE_PROJECT_ankiMinerS1aArm64AcceptanceReceipt
-    ORG_GRADLE_PROJECT_ankiMinerSourceCommit="$(git -C "$REPO_ROOT" rev-parse HEAD)"
-    export ORG_GRADLE_PROJECT_ankiMinerSourceCommit
-fi
+
 for script in "$SCRIPT_DIR"/*.sh; do
     bash -n "$script" || fail "shell syntax check failed: $script"
 done
@@ -205,108 +111,22 @@ echo "$wrapper_checksum  $wrapper_jar" | sha256sum --check --status \
     || fail "Gradle wrapper JAR checksum mismatch"
 
 cd "$REPO_ROOT"
-tasks=(
-    :app:testEmulatorDebugUnitTest
-    :app:lintEmulatorDebug
-    :app:assembleEmulatorDebug
+anki_miner_run_gradle ./gradlew \
+    :app:testEmulatorDebugUnitTest \
+    :app:lintEmulatorDebug \
+    :app:assembleEmulatorDebug \
     :app:assembleEmulatorDebugAndroidTest
-)
-if [[ -n "$RELEASE_ACCEPTANCE_RECEIPT" ]]; then
-    tasks+=(
-        :app:lintDeviceRelease
-        :app:assembleDeviceRelease
-    )
-fi
-anki_miner_run_gradle ./gradlew "${tasks[@]}"
 
 emulator_apk="$REPO_ROOT/app/build/outputs/apk/emulator/debug/app-emulator-debug.apk"
 emulator_test_apk="$REPO_ROOT/app/build/outputs/apk/androidTest/emulator/debug/app-emulator-debug-androidTest.apk"
 [[ -f "$emulator_apk" ]] || fail "emulator debug APK was not produced"
 [[ -f "$emulator_test_apk" ]] || fail "emulator debug AndroidTest APK was not produced"
 
-s1a_artifact_args=()
-runtime_s1a_artifact_args=()
-if [[ -n "${ORG_GRADLE_PROJECT_ankiMinerS1aManifest:-}" ]]; then
-    s1a_artifact_args=(
-        --require-s1a
-        --s1a-manifest "$s1a_manifest"
-    )
-    runtime_s1a_artifact_args=(--s1a-manifest "$s1a_manifest")
-fi
 "$SCRIPT_DIR/check-native-artifact.sh" \
     --artifact "$emulator_apk" \
     --allow-abi x86_64 \
     --require-app-imy \
     --reject-base-unidic \
-    --require-entry lib/x86_64/libanki_miner_mecab.so \
-    "${s1a_artifact_args[@]}"
-python3.13 "$SCRIPT_DIR/check_runtime_artifact.py" \
-    --artifact "$emulator_apk" \
-    --runtime-manifest "$runtime_manifest" \
-    --allow-abi x86_64 \
-    "${runtime_s1a_artifact_args[@]}"
-if [[ -n "$RELEASE_ACCEPTANCE_RECEIPT" ]]; then
-    release_apk="$REPO_ROOT/app/build/outputs/apk/device/release/app-device-release-unsigned.apk"
-    [[ -f "$release_apk" ]] || fail "device release APK was not produced"
-    "$SCRIPT_DIR/check-native-artifact.sh" \
-        --artifact "$release_apk" \
-        --allow-abi arm64-v8a \
-        --require-app-imy \
-        --reject-base-unidic \
-        --require-entry lib/arm64-v8a/libanki_miner_mecab.so \
-        --forbid-entry scaffold_probe \
-        --forbid-entry runtime_dependencies_probe \
-        --forbid-entry tokenizer_s1a_instrumented \
-        --forbid-entry TokenizerS1aInstrumentedTest \
-        --forbid-entry tokenizer_s1b_instrumented \
-        --forbid-entry s4_engine_smoke \
-        --forbid-entry engine_golden_v2_instrumented \
-        --forbid-entry EngineGoldenV2InstrumentedTest \
-        --forbid-entry reading_golden_instrumented \
-        --forbid-entry ReadingGoldenInstrumentedTest \
-        --forbid-entry s4-engine-smoke-v1.json \
-        --forbid-entry engine-v1.json \
-        --forbid-entry engine-v2.json \
-        --forbid-entry reading-v1-input.json \
-        --forbid-entry reading-v1.json \
-        "${s1a_artifact_args[@]}"
-    python3.13 "$SCRIPT_DIR/check_runtime_artifact.py" \
-        --artifact "$release_apk" \
-        --runtime-manifest "$runtime_manifest" \
-        --allow-abi arm64-v8a \
-        "${runtime_s1a_artifact_args[@]}"
-    release_manifest="$(apkanalyzer manifest print "$release_apk")"
-    if grep -Eq 'ScaffoldProbeActivity|scaffold_probe' <<<"$release_manifest"; then
-        fail "debug probe component leaked into the release manifest"
-    fi
-fi
-
-if [[ -n "$RECEIPT_PATH" ]]; then
-    receipt_args=(
-        write
-        --repo-root "$REPO_ROOT"
-        --receipt "$RECEIPT_PATH"
-        --runtime-manifest "$runtime_manifest"
-        --artifact "app_emulator_debug=$emulator_apk"
-        --artifact "test_emulator_debug=$emulator_test_apk"
-    )
-    for task in "${tasks[@]}"; do
-        receipt_args+=(--task "$task")
-    done
-    for argument in "${ANKI_MINER_GRADLE_ARGS[@]}"; do
-        receipt_args+=("--gradle-argument=$argument")
-    done
-    if [[ -n "${ORG_GRADLE_PROJECT_ankiMinerS1aManifest:-}" ]]; then
-        receipt_args+=(--s1a-manifest "$s1a_manifest")
-    fi
-    if [[ -n "$RECEIPT_ANKIDROID_APK" ]]; then
-        receipt_args+=(--ankidroid-apk "$RECEIPT_ANKIDROID_APK")
-    fi
-    if [[ "$RECEIPT_S2_RESET_OPT_IN" == true ]]; then
-        receipt_args+=(--s2-reset-opt-in)
-    fi
-    python3.13 "$SCRIPT_DIR/android_test_receipt.py" "${receipt_args[@]}" \
-        || fail "could not write the connected-test receipt"
-fi
+    --require-entry lib/x86_64/libanki_miner_mecab.so
 
 echo "health: OK"

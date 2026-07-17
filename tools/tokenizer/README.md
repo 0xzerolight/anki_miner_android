@@ -103,10 +103,11 @@ place so both production seams can be tested against the same contract.
 | arm64 runtime | pending supported target | no arm64 runtime is available on this x86_64 host |
 | M0 selection | not selected | requires physical ARM64 parity and S4 performance/RSS gates |
 
-After the licensed wheel build emits its manifest, run both owned x86_64 lanes
-with `scripts/run-s1a-emulator-tests.sh --manifest FILE --unidic-dir DIR`.
-Run the provisional arm64 gate only against an explicitly chosen target with
-`scripts/run-s1a-arm64-tests.sh --serial SERIAL --manifest FILE --unidic-dir DIR`.
+The tokenizer wheels are built once via `tools/wheels/build-s1a-wheels.sh` and
+vendored into `app/wheels/`. Their behavior is exercised through the emulator
+instrumented tests built by `scripts/health.sh`
+(`:app:assembleEmulatorDebugAndroidTest`). The automated x86_64/arm64
+device-lane runner scripts were removed with the rest of the release ceremony.
 
 ## S1b verification
 
@@ -125,20 +126,8 @@ The supplied dictionary is accepted only when its canonical tree hash equals
 `golden/engine-v1.json`'s `provenance.data.assets_sha256.unidic_dicdir`.
 
 The Android x86_64 success-path test uses the same external dictionary without
-adding it to either APK. After the user has accepted the Android SDK license
-and the locked emulator is installed, run:
-
-```bash
-scripts/run-emulator-tests.sh \
-    --receipt /absolute/path/to/a/host-prepared-receipt.json \
-    --unidic-dir /absolute/path/to/the/golden-pinned/unidic/dicdir \
-    --page-size 4k
-```
-
-Create that receipt first, with every emulator stopped, using
-`scripts/prepare-emulator-tests.sh --receipt FILE`.
-
-The connected gate verifies the dictionary on the host, writes a deterministic
+adding it to either APK, via the instrumented tests built by `health.sh`. The
+connected gate verifies the dictionary on the host, writes a deterministic
 temporary ZIP to `/data/local/tmp`, and streams it into a versioned app-private
 test directory. Python verifies the extracted tree again before opening it.
 The instrumented test then traverses Chaquopy, the real vendored-engine shared
@@ -147,22 +136,8 @@ seeded cases, including the astral OOV UTF-16 span, and checks both dictionary
 mappings in the Android process. The temporary device ZIP is removed when the
 gate exits.
 
-S1b remains provisional until that same production-JNI class passes on an
-explicitly named arm64 target. Record the expected image fingerprint outside
-the target first, then run either page-size lane with:
-
-```bash
-scripts/run-s1b-arm64-tests.sh \
-    --serial ARM64_SERIAL \
-    --unidic-dir /absolute/path/to/the/golden-pinned/unidic/dicdir \
-    --page-size 16k \
-    --image-fingerprint EXPECTED_BUILD_FINGERPRINT
-```
-
-This opt-in gate enables only `deviceDebug`, checks the serial is an online
-API 36 `arm64-v8a` target with the requested actual page size and exact image
-fingerprint, inspects both APK identities and the production JNI artifact,
-provisions the golden-pinned external dictionary, and invokes only
-`MecabNativeTokenizerInstrumentedTest`. It never discovers, starts, stops, or
-chooses a target. Normal builds remain limited to `emulatorDebug` and
-`deviceRelease`.
+The production-JNI `MecabNativeTokenizerInstrumentedTest` runs against real
+arm64 hardware through the emulator/device instrumented tests. The dedicated
+arm64 device-lane runner script was removed with the release ceremony; run the
+instrumented tests directly against an attached device if arm64 hardware is
+available.
