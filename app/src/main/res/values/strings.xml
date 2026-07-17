@@ -257,7 +257,7 @@
     <string name="dictionary_lookup_label">%1$s: %2$s</string>
 
     <string name="settings_title">Settings</string>
-    <string name="settings_intro">Blank processing values use the current engine defaults. Every job uses the first-party Anki Miner note type created during Setup.</string>
+    <string name="settings_intro">Blank processing values use the current engine defaults. Every job uses the first-party Anki Miner note type created in the Anki section below.</string>
     <string name="settings_anki_target">Anki</string>
     <string name="settings_dictionaries">Dictionaries</string>
     <string name="settings_audio_section">Audio</string>
