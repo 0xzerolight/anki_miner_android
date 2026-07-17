@@ -67,10 +67,15 @@ internal class FakeMiningRepository(
         runId: String,
         requestId: String,
         selection: List<CurationSelection>,
+        pageIndex: Long?,
     ) {
         val curating = mutableState.value as? MiningRunState.Curating
             ?: throw MiningCommandException("No curation request is pending")
-        if (curating.request.runId != runId || curating.request.requestId != requestId) {
+        if (
+            curating.request.runId != runId ||
+            curating.request.requestId != requestId ||
+            curating.request.page?.pageIndex != pageIndex
+        ) {
             throw MiningCommandException("The curation response is stale")
         }
         validateSelection(curating.request, selection)

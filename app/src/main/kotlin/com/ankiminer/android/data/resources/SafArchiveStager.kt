@@ -15,13 +15,19 @@ internal class SafArchiveStager(
         source: Uri,
         operationId: String,
         cancellation: ResourceCancellationSignal,
+        fileSuffix: String = ".zip",
+        maximumBytes: Long = DEFAULT_MAXIMUM_BYTES,
+        sourceLabel: String = "resource",
         onProgress: (Long, Long) -> Unit,
     ): StagedArchive {
         require(source.scheme == ContentResolver.SCHEME_CONTENT)
+        require(FILE_SUFFIX.matches(fileSuffix))
+        require(maximumBytes in 1..MAXIMUM_SUPPORTED_BYTES)
+        require(sourceLabel.isNotBlank() && sourceLabel.length <= 64)
         if (!stagingRoot.exists() && !stagingRoot.mkdirs()) {
             throw ResourceDownloadException("import_staging_failed", "Could not create private import staging")
         }
-        val destination = File(stagingRoot, "$operationId-custom.zip")
+        val destination = File(stagingRoot, "$operationId-custom$fileSuffix")
         destination.delete()
         try {
             val available = availableBytes(stagingRoot)
@@ -30,7 +36,7 @@ internal class SafArchiveStager(
             }
             val digest = MessageDigest.getInstance("SHA-256")
             val input = resolver.openInputStream(source)
-                ?: throw ResourceDownloadException("import_source_unavailable", "The selected dictionary cannot be opened")
+                ?: throw ResourceDownloadException("import_source_unavailable", "The selected $sourceLabel cannot be opened")
             var total = 0L
             input.use { stream ->
                 FileOutputStream(destination, false).use { output ->
@@ -40,8 +46,8 @@ internal class SafArchiveStager(
                         val count = stream.read(buffer)
                         if (count < 0) break
                         total += count
-                        if (total > MAX_ARCHIVE_BYTES) {
-                            throw ResourceDownloadException("resource_archive_too_large", "Custom dictionary exceeds 1 GiB")
+                        if (total > maximumBytes) {
+                            throw ResourceDownloadException("resource_archive_too_large", "The selected $sourceLabel exceeds its size limit")
                         }
                         if (available - total < FREE_SPACE_RESERVE_BYTES) {
                             throw ResourceStorageException(total + FREE_SPACE_RESERVE_BYTES, available)
@@ -53,7 +59,12 @@ internal class SafArchiveStager(
                     output.fd.sync()
                 }
             }
-            if (total <= 0) throw ResourceDownloadException("resource_archive_mismatch", "Custom dictionary is empty")
+            if (total <= 0) {
+                throw ResourceDownloadException(
+                    "resource_archive_mismatch",
+                    "The selected $sourceLabel is empty",
+                )
+            }
             return StagedArchive(
                 file = destination,
                 sha256 = digest.digest().joinToString("") { "%02x".format(it) },
@@ -67,7 +78,9 @@ internal class SafArchiveStager(
 
     private companion object {
         const val BUFFER_BYTES = 256 * 1024
-        const val MAX_ARCHIVE_BYTES = 1024L * 1024 * 1024
+        const val DEFAULT_MAXIMUM_BYTES = 1024L * 1024 * 1024
+        const val MAXIMUM_SUPPORTED_BYTES = 2L * 1024 * 1024 * 1024
         const val FREE_SPACE_RESERVE_BYTES = 32L * 1024 * 1024
+        val FILE_SUFFIX = Regex("\\.[a-z0-9]{1,8}")
     }
 }

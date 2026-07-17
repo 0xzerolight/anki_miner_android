@@ -149,3 +149,39 @@ def test_dispatch_routes_callback_bearing_video_run_only_with_callbacks(
         "sentinel": True
     }
     assert received == [(request, callback)]
+
+
+def test_dispatch_routes_paged_curation_control_without_callbacks(
+    initialized_bridge_home: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import android_bridge.jobs as jobs
+
+    request = encode_message(
+        "curation.page.response",
+        {
+            "runId": "run_" + "a" * 32,
+            "requestId": "curation_" + "b" * 32,
+            "pageIndex": 0,
+            "selection": [],
+        },
+    )
+    received: list[str] = []
+
+    def submit(raw: str) -> str:
+        received.append(raw)
+        return encode_message(
+            "curation.page.accepted",
+            {
+                "runId": "run_" + "a" * 32,
+                "requestId": "curation_" + "b" * 32,
+                "pageIndex": 0,
+                "finalPage": False,
+            },
+        )
+
+    monkeypatch.setattr(jobs, "submit_curation", submit)
+    returned = boundary.dispatch(request)
+
+    assert decode_envelope(returned).message_type == "curation.page.accepted"
+    assert received == [request]

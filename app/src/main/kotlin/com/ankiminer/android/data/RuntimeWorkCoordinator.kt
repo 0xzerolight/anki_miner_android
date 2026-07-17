@@ -5,6 +5,7 @@ internal class RuntimeWorkCoordinator {
     enum class Kind {
         MINING,
         RESOURCE,
+        ANKI_SETUP,
     }
 
     class Lease internal constructor(

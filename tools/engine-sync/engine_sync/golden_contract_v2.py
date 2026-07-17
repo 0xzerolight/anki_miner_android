@@ -15,6 +15,7 @@ from typing import Any
 import jsonschema
 
 from .core import EngineSyncError, load_lock
+from .golden_exporter_overlay import materialize_golden_exporter
 
 
 SCHEMA_VERSION = 2
@@ -29,13 +30,13 @@ CASE_SECTIONS = (
     "pitch",
     "cards",
 )
-FIXTURE_SHA256 = "6ddc4371bf99f751f6db2cd6aac9c81b9262575edb0128777950672ee9a192d3"
+FIXTURE_SHA256 = "3f3146c906a3f59179b724e14be1424f740651de896febcf9c12ecccec3d94b4"
 INPUT_SHA256 = "68e3ce3bd9a9073534817a83ce6978e12758d85ab98887c014a0c2db932fbc79"
 SCHEMA_SHA256 = "05e611d5e2c10168a8dfd93d318fd007c67d2eecd7d67adbe72d1de49ee52115"
 TOKENIZER_CORPUS_SHA256 = (
     "12105dd9e223a1f3851f544074db93b0ce3b13b9e14f921f4a605e1504da405a"
 )
-ENGINE_TREE_SHA256 = "9c7c0636317c70cf5055afa4f5825c469d330e179e3a81732b748ed02740a750"
+ENGINE_TREE_SHA256 = "eb86c6988fe53a413520bd4120580eff527ed44be093e2e2f028b0467035aaba"
 UNIDIC_TREE_SHA256 = "bd942f1b395aa7c56fe20321dc7f021930e29107f6b2949a49f5c56caab55ea7"
 UNIDIC_FILE_COUNT = 19
 UNIDIC_SIZE_BYTES = 260_467_176
@@ -263,7 +264,6 @@ def derive_and_compare(
     fixture = validate_committed_fixture(project_root)
     expected_revision = load_lock(project_root / "tools/engine-sync/engine.lock")
     verify_engine_root(engine_root, expected_revision)
-    verify_exporter_sources(exporter, fixture)
     verify_unidic(dicdir)
     if timeout_seconds <= 0:
         raise GoldenV2Error("golden derivation timeout must be positive")
@@ -273,6 +273,10 @@ def derive_and_compare(
     with tempfile.TemporaryDirectory(prefix="anki-miner-android-golden-v2-") as raw_temp:
         temp = Path(raw_temp)
         output = temp / "derived.json"
+        materialized_exporter = materialize_golden_exporter(
+            exporter, temp / "exporter/scripts"
+        )
+        verify_exporter_sources(materialized_exporter, fixture)
         environment = {
             "HOME": os.fspath(temp / "home"),
             "LANG": "C.UTF-8",
@@ -294,7 +298,7 @@ def derive_and_compare(
             "-P",
             "-B",
             os.fspath(bootstrap),
-            os.fspath(exporter),
+            os.fspath(materialized_exporter),
             "--schema-version",
             "2",
             "--engine-root",

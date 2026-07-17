@@ -16,6 +16,10 @@ interface EngineCallbacks {
 
     fun onCurationNeeded(message: String)
 
+    /** Reading-only callback. Video runs and test fakes fail closed if it is ever invoked. */
+    fun synthesizeSentenceAudio(message: String): String =
+        throw UnsupportedOperationException("Sentence audio is unavailable for this run")
+
     fun ankiVerifyTarget(message: String): String
 
     fun ankiScanFirstFields(message: String): String

@@ -14,6 +14,7 @@ import json
 import os
 import re
 import shutil
+import sqlite3
 import stat
 import tarfile
 import threading
@@ -44,12 +45,13 @@ _CUSTOM_ZIP_TOTAL_LIMIT = 1024 * 1024 * 1024
 # custom bank comfortably below the heap-risk range on a 3 GiB Android device.
 _CUSTOM_ZIP_FILE_LIMIT = 16 * 1024 * 1024
 _MAX_LOOKUP_HTML_BYTES = 2 * 1024 * 1024
+_MAX_DICTIONARY_SLOTS = 128
 _FREE_SPACE_RESERVE_BYTES = 32 * 1024 * 1024
 _MAX_PENDING_RESOURCE_CANCELLATIONS = 256
+_DICTIONARY_SCHEMA_VERSION = 4
 _OPERATION_ID_RE = re.compile(r"[a-z0-9](?:[a-z0-9_-]{0,62}[a-z0-9])?")
-_SLOT_ID_RE = re.compile(
-    r"(?!.*(?:\.\.|--))[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?"
-)
+_SLOT_ID_RE = re.compile(r"(?!.*(?:\.\.|--))[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?")
+_SHA256_RE = re.compile(r"[0-9a-f]{64}")
 _PROMOTION_LOCK = threading.Lock()
 
 
@@ -178,8 +180,7 @@ class _OperationRegistry:
             self._pending_cancellations[operation_id] = None
             self._pending_cancellations.move_to_end(operation_id)
             while (
-                len(self._pending_cancellations)
-                > _MAX_PENDING_RESOURCE_CANCELLATIONS
+                len(self._pending_cancellations) > _MAX_PENDING_RESOURCE_CANCELLATIONS
             ):
                 self._pending_cancellations.popitem(last=False)
             return True
@@ -239,6 +240,34 @@ def _safe_rmtree(path: Path) -> None:
     except OSError as exc:
         raise _fail(
             "resource_cleanup_failed", "Cannot remove resource staging"
+        ) from exc
+
+
+def _safe_remove_dictionary_entry(path: Path) -> None:
+    """Remove one resolved dictionary-slot entry without following links."""
+
+    try:
+        value = path.lstat()
+    except FileNotFoundError:
+        return
+    except OSError as exc:
+        raise _fail(
+            "resource_cleanup_failed", "Cannot inspect dictionary slot"
+        ) from exc
+    try:
+        if stat.S_ISLNK(value.st_mode) or stat.S_ISREG(value.st_mode):
+            path.unlink()
+        elif stat.S_ISDIR(value.st_mode):
+            shutil.rmtree(path)
+        else:
+            raise _fail(
+                "resource_cleanup_failed", "Dictionary slot has an unsafe type"
+            )
+    except BridgeProtocolError:
+        raise
+    except OSError as exc:
+        raise _fail(
+            "resource_cleanup_failed", "Cannot remove dictionary slot"
         ) from exc
 
 
@@ -328,10 +357,7 @@ def _valid_unidic_install(root: Path, resource: UniDicResource) -> bool:
         # idempotently complete so setup can repair truncated or changed files.
         from .unidic_resource import calculate_unidic_tree_sha256
 
-        return (
-            calculate_unidic_tree_sha256(dicdir)
-            == resource.install.tree_sha256
-        )
+        return calculate_unidic_tree_sha256(dicdir) == resource.install.tree_sha256
     except (
         OSError,
         UnicodeError,
@@ -882,6 +908,52 @@ def _dictionary_sidecar(
     }
 
 
+@dataclass(frozen=True, slots=True)
+class _DictionarySidecar:
+    source_name: str
+    source_revision: str
+    catalog_resource: YomitanResource | None
+
+    @property
+    def catalog_resource_id(self) -> str | None:
+        return self.catalog_resource.resource_id if self.catalog_resource else None
+
+    @property
+    def attribution(self) -> list[dict[str, object]]:
+        if self.catalog_resource is None:
+            return []
+        return [item.payload() for item in self.catalog_resource.attribution]
+
+
+def _path_occupied(path: Path) -> bool:
+    """Return whether a path entry exists without following its final symlink."""
+
+    try:
+        path.lstat()
+        return True
+    except FileNotFoundError:
+        return False
+    except OSError as exc:
+        raise _fail(
+            "resource_inventory_failed", "Cannot inspect dictionary storage"
+        ) from exc
+
+
+def _ensure_real_directory(path: Path, *, code: str, message: str) -> None:
+    try:
+        value = path.lstat()
+    except FileNotFoundError:
+        try:
+            path.mkdir(parents=True)
+            value = path.lstat()
+        except OSError as exc:
+            raise _fail(code, message) from exc
+    except OSError as exc:
+        raise _fail(code, message) from exc
+    if stat.S_ISLNK(value.st_mode) or not stat.S_ISDIR(value.st_mode):
+        raise _fail(code, message)
+
+
 def _valid_dictionary_slot(path: Path) -> bool:
     try:
         value = path.lstat()
@@ -903,33 +975,63 @@ def _backup_root(home: Path) -> Path:
 
 def _recover_dictionary_backups(home: Path) -> None:
     backup_root = _backup_root(home)
-    if not backup_root.exists():
+    if not _path_occupied(backup_root):
         return
-    if backup_root.is_symlink() or not backup_root.is_dir():
-        raise _fail("resource_cleanup_failed", "Dictionary backup root is unsafe")
+    _ensure_real_directory(
+        backup_root,
+        code="resource_cleanup_failed",
+        message="Dictionary backup root is unsafe",
+    )
     dicts_root = _dictionary_root(home)
-    dicts_root.mkdir(parents=True, exist_ok=True)
-    for backup in sorted(backup_root.iterdir()):
-        if (
-            not backup.name.startswith("backup-")
-            or not backup.is_dir()
-            or backup.is_symlink()
-        ):
+    _ensure_real_directory(
+        dicts_root,
+        code="resource_cleanup_failed",
+        message="Dictionary storage root is unsafe",
+    )
+    try:
+        backups = []
+        for backup in backup_root.iterdir():
+            if len(backups) >= _MAX_DICTIONARY_SLOTS:
+                raise _fail(
+                    "resource_cleanup_failed", "Dictionary backup set is unbounded"
+                )
+            backups.append(backup)
+    except OSError as exc:
+        raise _fail(
+            "resource_cleanup_failed", "Cannot inspect dictionary backups"
+        ) from exc
+    for backup in sorted(backups):
+        if not backup.name.startswith("backup-"):
             raise _fail("resource_cleanup_failed", "Dictionary backup entry is unsafe")
         remainder = backup.name.removeprefix("backup-")
-        slot_id = remainder.split("--", 1)[0]
-        if not _SLOT_ID_RE.fullmatch(slot_id):
+        slot_id, separator, operation_id = remainder.partition("--")
+        if (
+            separator != "--"
+            or not _SLOT_ID_RE.fullmatch(slot_id)
+            or not _OPERATION_ID_RE.fullmatch(operation_id)
+        ):
             raise _fail("resource_cleanup_failed", "Dictionary backup slot is invalid")
+        try:
+            backup_stat = backup.lstat()
+        except OSError as exc:
+            raise _fail(
+                "resource_cleanup_failed", "Cannot inspect dictionary backup"
+            ) from exc
+        if stat.S_ISLNK(backup_stat.st_mode) or not stat.S_ISDIR(
+            backup_stat.st_mode
+        ):
+            _safe_remove_dictionary_entry(backup)
+            continue
         final = dicts_root / slot_id
         if _valid_dictionary_slot(final):
-            _safe_rmtree(backup)
+            _safe_remove_dictionary_entry(backup)
         elif _valid_dictionary_slot(backup):
-            if final.exists():
-                _safe_rmtree(final)
+            if _path_occupied(final):
+                _safe_remove_dictionary_entry(final)
             backup.rename(final)
             _fsync_directory(dicts_root)
         else:
-            _safe_rmtree(backup)
+            _safe_remove_dictionary_entry(backup)
 
 
 def _publish_dictionary(
@@ -942,20 +1044,28 @@ def _publish_dictionary(
 ) -> None:
     final_root = _dictionary_root(home)
     backup_root = _backup_root(home)
-    final_root.mkdir(parents=True, exist_ok=True)
-    backup_root.mkdir(parents=True, exist_ok=True)
+    _ensure_real_directory(
+        final_root,
+        code="resource_install_failed",
+        message="Dictionary storage root is unsafe",
+    )
+    _ensure_real_directory(
+        backup_root,
+        code="resource_install_failed",
+        message="Dictionary backup root is unsafe",
+    )
     final = final_root / slot_id
     backup = backup_root / f"backup-{slot_id}--{operation_id}"
     with _PROMOTION_LOCK:
         _recover_dictionary_backups(home)
-        if final.exists() and not overwrite:
+        if _path_occupied(final) and not overwrite:
             raise _fail(
                 "resource_already_installed",
                 f"Dictionary slot {slot_id!r} already exists",
             )
-        if backup.exists():
-            _safe_rmtree(backup)
-        if final.exists():
+        if _path_occupied(backup):
+            _safe_remove_dictionary_entry(backup)
+        if _path_occupied(final):
             final.rename(backup)
             _fsync_directory(final_root)
             _fsync_directory(backup_root)
@@ -963,14 +1073,14 @@ def _publish_dictionary(
             candidate.rename(final)
             _fsync_directory(final_root)
         except Exception:
-            if final.exists():
-                _safe_rmtree(final)
-            if backup.exists():
+            if _path_occupied(final):
+                _safe_remove_dictionary_entry(final)
+            if _path_occupied(backup):
                 backup.rename(final)
                 _fsync_directory(final_root)
             raise
-        if backup.exists():
-            _safe_rmtree(backup)
+        if _path_occupied(backup):
+            _safe_remove_dictionary_entry(backup)
 
 
 def import_dictionary(payload: Mapping[str, object]) -> str:
@@ -1008,7 +1118,7 @@ def import_dictionary(payload: Mapping[str, object]) -> str:
 
     home = Path(require_initialized())
     final = _dictionary_root(home) / slot_id
-    if final.exists() and not overwrite:
+    if _path_occupied(final) and not overwrite:
         raise _fail(
             "resource_already_installed", f"Dictionary slot {slot_id!r} already exists"
         )
@@ -1146,45 +1256,257 @@ def import_dictionary(payload: Mapping[str, object]) -> str:
                 _safe_rmtree(operation_root)
 
 
-def _read_dictionary_sidecar(slot: Path) -> dict[str, Any] | None:
+def _sidecar_object_pairs(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("duplicate dictionary sidecar key")
+        result[key] = value
+    return result
+
+
+def _sidecar_text(
+    value: object,
+    *,
+    maximum_bytes: int,
+    allow_empty: bool = False,
+) -> str | None:
+    if not isinstance(value, str) or (not allow_empty and not value):
+        return None
+    try:
+        if len(value.encode("utf-8")) > maximum_bytes:
+            return None
+    except UnicodeEncodeError:
+        return None
+    return value
+
+
+def _read_dictionary_sidecar(
+    slot: Path,
+    *,
+    slot_id: str,
+) -> _DictionarySidecar | None:
+    """Read only a fully validated Android identity sidecar.
+
+    A sidecar is advisory inventory metadata, never proof that the index is
+    usable. Catalog identity is exposed only when every immutable field matches
+    the frozen catalog, so corrupt files cannot forge catalog attribution.
+    """
+
     sidecar = slot / "android-resource.json"
     try:
+        sidecar_stat = sidecar.lstat()
         if (
-            not sidecar.is_file()
-            or sidecar.is_symlink()
-            or sidecar.stat().st_size > _MAX_MANIFEST_BYTES
+            stat.S_ISLNK(sidecar_stat.st_mode)
+            or not stat.S_ISREG(sidecar_stat.st_mode)
+            or sidecar_stat.st_size <= 0
+            or sidecar_stat.st_size > _MAX_MANIFEST_BYTES
         ):
             return None
-        value = json.loads(sidecar.read_text(encoding="utf-8"))
-        return value if isinstance(value, dict) else None
+        with sidecar.open("rb") as stream:
+            content = stream.read(_MAX_MANIFEST_BYTES + 1)
+        if len(content) != sidecar_stat.st_size or len(content) > _MAX_MANIFEST_BYTES:
+            return None
+        value = json.loads(
+            content.decode("utf-8"), object_pairs_hook=_sidecar_object_pairs
+        )
+    except FileNotFoundError:
+        return None
     except (OSError, UnicodeError, json.JSONDecodeError, TypeError, ValueError):
         return None
 
-
-def _dictionary_payload(meta: object, slot: Path) -> dict[str, object]:
-    # Function-local storage import preserves bootstrap ordering.
-    from anki_miner.services.dictionary.storage import read_meta_cached
-
-    values = read_meta_cached(meta.db_path)
-    sidecar = _read_dictionary_sidecar(slot)
-    catalog_attribution = sidecar.get("attribution", []) if sidecar else []
-    if not isinstance(catalog_attribution, list):
-        catalog_attribution = []
-    embedded = {
-        key: values[key]
-        for key in ("author", "attribution", "description")
-        if isinstance(values.get(key), str) and values[key]
+    expected_keys = {
+        "schemaVersion",
+        "slotId",
+        "archiveSha256",
+        "archiveSizeBytes",
+        "catalogResourceId",
+        "sourceName",
+        "sourceRevision",
+        "attribution",
     }
+    if not isinstance(value, dict) or set(value) != expected_keys:
+        return None
+    if type(value["schemaVersion"]) is not int or value["schemaVersion"] != 1:
+        return None
+    if value["slotId"] != slot_id:
+        return None
+    archive_hash = _sidecar_text(value["archiveSha256"], maximum_bytes=64)
+    if archive_hash is None or not _SHA256_RE.fullmatch(archive_hash):
+        return None
+    archive_size = value["archiveSizeBytes"]
+    if (
+        type(archive_size) is not int
+        or archive_size <= 0
+        or archive_size > _MAX_CUSTOM_DICTIONARY_ARCHIVE_BYTES
+    ):
+        return None
+    source_name = _sidecar_text(value["sourceName"], maximum_bytes=4096)
+    source_revision = _sidecar_text(
+        value["sourceRevision"], maximum_bytes=4096, allow_empty=True
+    )
+    if source_name is None or source_revision is None:
+        return None
+
+    catalog_id = value["catalogResourceId"]
+    catalog_resource: YomitanResource | None = None
+    if catalog_id is None:
+        if value["attribution"] != []:
+            return None
+    else:
+        catalog_text = _sidecar_text(catalog_id, maximum_bytes=64)
+        if catalog_text is None:
+            return None
+        try:
+            selected = load_resource_catalog().get(catalog_text)
+        except BridgeProtocolError:
+            return None
+        if not isinstance(selected, YomitanResource):
+            return None
+        if (
+            selected.slot_id != slot_id
+            or selected.archive.sha256 != archive_hash
+            or selected.archive.size_bytes != archive_size
+            or selected.dictionary.title != source_name
+            or selected.dictionary.revision != source_revision
+            or value["attribution"]
+            != [item.payload() for item in selected.attribution]
+        ):
+            return None
+        catalog_resource = selected
+    return _DictionarySidecar(
+        source_name=source_name,
+        source_revision=source_revision,
+        catalog_resource=catalog_resource,
+    )
+
+
+def _inventory_text(
+    value: object,
+    *,
+    maximum_bytes: int,
+    allow_empty: bool = False,
+) -> str | None:
+    return _sidecar_text(
+        value,
+        maximum_bytes=maximum_bytes,
+        allow_empty=allow_empty,
+    )
+
+
+def _invalid_dictionary_payload(
+    slot_id: str,
+    sidecar: _DictionarySidecar | None,
+) -> dict[str, object]:
     return {
-        "slotId": meta.dict_id,
-        "sourceName": meta.source_name,
-        "sourceRevision": values.get("source_revision", ""),
-        "format": meta.format,
-        "entryCount": meta.entry_count,
-        "schemaOk": meta.schema_ok,
+        "slotId": slot_id,
+        "occupied": True,
+        "valid": False,
+        "sourceName": sidecar.source_name if sidecar else slot_id,
+        "sourceRevision": sidecar.source_revision if sidecar else "",
+        "format": "unknown",
+        "entryCount": 0,
+        "schemaOk": False,
+        "embeddedAttribution": {},
+        "catalogResourceId": sidecar.catalog_resource_id if sidecar else None,
+        "attribution": sidecar.attribution if sidecar else [],
+    }
+
+
+def _read_dictionary_meta(index: Path) -> dict[object, object]:
+    """Read dictionary metadata without importing the engine service package.
+
+    Importing ``anki_miner.services.dictionary.storage`` executes the eager
+    ``anki_miner.services`` package initializer, which pulls network and media
+    dependencies into this otherwise offline inventory path. Keep inventory
+    available in recovery/minimal-runtime contexts by using the same SQLite
+    query directly. A contract test binds the local schema constant to the
+    vendored engine's ``SCHEMA_VERSION``.
+    """
+
+    connection = sqlite3.connect(index.resolve().as_uri() + "?mode=ro", uri=True)
+    try:
+        return {
+            key: value
+            for key, value in connection.execute("SELECT key, value FROM meta")
+        }
+    finally:
+        connection.close()
+
+
+def _dictionary_payload(slot: Path) -> dict[str, object]:
+    slot_id = slot.name
+    try:
+        slot_stat = slot.lstat()
+        if stat.S_ISLNK(slot_stat.st_mode) or not stat.S_ISDIR(slot_stat.st_mode):
+            return _invalid_dictionary_payload(slot_id, None)
+    except (FileNotFoundError, OSError):
+        return _invalid_dictionary_payload(slot_id, None)
+    sidecar = _read_dictionary_sidecar(slot, slot_id=slot_id)
+    try:
+        index = slot / "index.sqlite"
+        index_stat = index.lstat()
+        if (
+            stat.S_ISLNK(index_stat.st_mode)
+            or not stat.S_ISREG(index_stat.st_mode)
+            or index_stat.st_size <= 0
+        ):
+            return _invalid_dictionary_payload(slot_id, sidecar)
+    except (FileNotFoundError, OSError):
+        return _invalid_dictionary_payload(slot_id, sidecar)
+
+    # Read SQLite directly instead of trusting its performance-only meta.json
+    # cache. This confirms that the occupied index can at least be opened and
+    # that its metadata table is readable before marking the slot valid.
+    try:
+        values = _read_dictionary_meta(index)
+    except (sqlite3.Error, OSError, UnicodeError, ValueError, TypeError):
+        return _invalid_dictionary_payload(slot_id, sidecar)
+
+    source_name = _inventory_text(values.get("source_name"), maximum_bytes=4096)
+    source_revision = _inventory_text(
+        values.get("source_revision", ""), maximum_bytes=4096, allow_empty=True
+    )
+    resource_format = _inventory_text(values.get("format"), maximum_bytes=64)
+    try:
+        entry_count = int(values.get("entry_count", ""))
+        schema_version = int(values.get("schema_version", ""))
+    except (TypeError, ValueError, OverflowError):
+        return _invalid_dictionary_payload(slot_id, sidecar)
+    if (
+        source_name is None
+        or source_revision is None
+        or resource_format is None
+        or entry_count < 0
+        or entry_count > 2**63 - 1
+    ):
+        return _invalid_dictionary_payload(slot_id, sidecar)
+    if sidecar is not None and (
+        sidecar.source_name != source_name
+        or sidecar.source_revision != source_revision
+    ):
+        sidecar = None
+
+    embedded = {
+        key: validated
+        for key in ("author", "attribution", "description")
+        if (
+            validated := _inventory_text(values.get(key), maximum_bytes=64 * 1024)
+        )
+    }
+    schema_ok = schema_version == _DICTIONARY_SCHEMA_VERSION
+    return {
+        "slotId": slot_id,
+        "occupied": True,
+        "valid": schema_ok,
+        "sourceName": source_name,
+        "sourceRevision": source_revision,
+        "format": resource_format,
+        "entryCount": entry_count,
+        "schemaOk": schema_ok,
         "embeddedAttribution": embedded,
-        "catalogResourceId": sidecar.get("catalogResourceId") if sidecar else None,
-        "attribution": catalog_attribution,
+        "catalogResourceId": sidecar.catalog_resource_id if sidecar else None,
+        "attribution": sidecar.attribution if sidecar else [],
     }
 
 
@@ -1194,25 +1516,33 @@ def list_dictionaries(payload: Mapping[str, object]) -> str:
     with _PROMOTION_LOCK:
         _recover_dictionary_backups(home)
     root = _dictionary_root(home)
-    if not root.exists():
+    if not _path_occupied(root):
         return encode_message("resource.dictionary.listed", {"dictionaries": []})
-
-    # Function-local registry import preserves bootstrap ordering.
-    from anki_miner.services.dictionary.registry import DictionaryRegistry
-
-    registry = DictionaryRegistry(root)
-    registry.load()
+    _ensure_real_directory(
+        root,
+        code="resource_inventory_failed",
+        message="Dictionary storage root is unsafe",
+    )
+    try:
+        slots = []
+        for slot in root.iterdir():
+            if len(slots) >= _MAX_DICTIONARY_SLOTS:
+                raise _fail(
+                    "resource_inventory_failed", "Dictionary storage has too many slots"
+                )
+            slots.append(slot)
+    except OSError as exc:
+        raise _fail(
+            "resource_inventory_failed", "Cannot inspect dictionary storage"
+        ) from exc
     dictionaries: list[dict[str, object]] = []
-    for slot in sorted(root.iterdir(), key=lambda item: item.name):
-        if (
-            not _SLOT_ID_RE.fullmatch(slot.name)
-            or not slot.is_dir()
-            or slot.is_symlink()
-        ):
-            continue
-        meta = registry.get(slot.name)
-        if meta is not None:
-            dictionaries.append(_dictionary_payload(meta, slot))
+    for slot in sorted(slots, key=lambda item: item.name):
+        if not _SLOT_ID_RE.fullmatch(slot.name):
+            raise _fail(
+                "resource_inventory_failed",
+                "Dictionary storage contains an unsafe slot name",
+            )
+        dictionaries.append(_dictionary_payload(slot))
     return encode_message("resource.dictionary.listed", {"dictionaries": dictionaries})
 
 
@@ -1238,6 +1568,23 @@ def lookup_dictionary(payload: Mapping[str, object]) -> str:
         raise _fail("invalid_resource_request", "term must not be blank")
     home = Path(require_initialized())
     root = _dictionary_root(home)
+    if not _path_occupied(root):
+        raise _fail(
+            "dictionary_not_found", f"Dictionary slot {slot_id!r} is not installed"
+        )
+    _ensure_real_directory(
+        root,
+        code="dictionary_unavailable",
+        message="Dictionary storage root is unsafe",
+    )
+    slot = root / slot_id
+    if not _path_occupied(slot):
+        raise _fail(
+            "dictionary_not_found", f"Dictionary slot {slot_id!r} is not installed"
+        )
+    inventory = _dictionary_payload(slot)
+    if not inventory["valid"]:
+        raise _fail("dictionary_schema_mismatch", "Dictionary must be reimported")
 
     # Function-local imports preserve bootstrap ordering.
     from anki_miner.services.dictionary.providers.indexed_provider import (
@@ -1289,6 +1636,12 @@ def cleanup_resources(payload: Mapping[str, object]) -> str:
     # control executor from deleting a live copy, extraction, or import tree.
     with _OPERATIONS.exclusive_cleanup(), _PROMOTION_LOCK:
         _recover_dictionary_backups(home)
+        # Function-local import preserves bootstrap ordering and avoids a module
+        # cycle: local_resources intentionally reuses this module's guarded
+        # copy/publication primitives.
+        from .local_resources import recover_local_resources
+
+        recover_local_resources(home)
         operations = _resource_work_root(home) / "operations"
         if operations.exists():
             if operations.is_symlink() or not operations.is_dir():

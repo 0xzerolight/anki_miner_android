@@ -4,7 +4,14 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.CreationExtras
+import com.ankiminer.android.anki.provider.AnkiExternalReviewOutcome
+import com.ankiminer.android.anki.provider.AnkiRemediationCommand
+import com.ankiminer.android.data.anki.AnkiSetupManager
 import com.ankiminer.android.data.resources.ResourceManager
+import com.ankiminer.android.data.resources.ResourceStartupReadiness
+import com.ankiminer.android.data.resources.FrequencySourceFormat
+import com.ankiminer.android.data.resources.KnownWordsSourceFormat
+import com.ankiminer.android.data.resources.PitchAccentSourceFormat
 import com.ankiminer.android.data.settings.AppSettingsRepository
 import com.ankiminer.android.engine.PythonRuntimeReadiness
 import com.ankiminer.android.mining.MiningRunAdmissionState
@@ -14,6 +21,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -21,6 +29,7 @@ import kotlinx.coroutines.launch
 internal class SetupViewModel(
     private val resources: ResourceManager,
     settingsRepository: AppSettingsRepository,
+    private val ankiSetup: AnkiSetupManager,
     pythonReadiness: StateFlow<PythonRuntimeReadiness>,
     miningAdmission: StateFlow<MiningRunAdmissionState>,
     private val refreshAdmission: () -> Unit,
@@ -30,35 +39,68 @@ internal class SetupViewModel(
         val lookupSlotId: String? = null,
         val customSlotId: String = "custom-dictionary",
         val customReplace: Boolean = false,
+        val frequencySourceId: String = "frequency",
+        val frequencySourceName: String = "Imported frequency",
+        val frequencyFormat: FrequencySourceFormat = FrequencySourceFormat.YOMITAN_ZIP,
+        val frequencyReplace: Boolean = false,
+        val pitchSourceName: String = "Imported pitch accent",
+        val pitchFormat: PitchAccentSourceFormat = PitchAccentSourceFormat.YOMITAN_ZIP,
+        val pitchReplace: Boolean = false,
+        val audioPackId: String = "audio-pack",
+        val audioPackReplace: Boolean = false,
+        val knownWordsFormat: KnownWordsSourceFormat = KnownWordsSourceFormat.JSON,
         val completing: Boolean = false,
         val completionError: Boolean = false,
+        val acceptingTarget: Boolean = false,
+        val targetConsentError: Boolean = false,
+        val recommendedReplaceConfirmationVisible: Boolean = false,
     )
 
     private val local = MutableStateFlow(LocalState())
     private val settings = settingsRepository.settings
     private val repository = settingsRepository
+    private val settingsAndAnki =
+        combine(settings, ankiSetup.state) { appSettings, ankiState -> appSettings to ankiState }
 
     val uiState: StateFlow<SetupUiState> =
-        combine(resources.state, settings, pythonReadiness, miningAdmission, local) {
+        combine(resources.state, settingsAndAnki, pythonReadiness, miningAdmission, local) {
                 resourceState,
-                appSettings,
+                settingsAndAnkiState,
                 python,
                 admission,
                 localState,
             ->
+            val (appSettings, ankiState) = settingsAndAnkiState
             val selectedSlot =
                 localState.lookupSlotId?.takeIf { selected ->
-                    resourceState.dictionaries.any { it.slotId == selected }
-                } ?: resourceState.dictionaries.firstOrNull()?.slotId
+                    resourceState.dictionaries.any { it.isUsable && it.slotId == selected }
+                } ?: resourceState.dictionaries.firstOrNull { it.isUsable }?.slotId
             SetupUiState(
                 python = python,
                 resourceStartup = resourceState.startupReadiness,
                 anki = admission.anki,
                 notifications = admission.notifications,
+                model = ankiState.model,
+                remediations = ankiState.remediations,
+                legacyNoteType = appSettings.legacyNoteType,
+                ankiOperation = ankiState.operation,
+                ankiFailure = ankiState.failure,
                 firstRunComplete = appSettings.firstRunComplete,
                 uniDicInstalled = resourceState.hasUniDic,
                 recommendedDictionaryInstalled = resourceState.hasRecommendedDictionary,
+                recommendedDictionarySlotOccupied =
+                    resourceState.recommendedDictionarySlotOccupied,
+                recommendedDictionaryNeedsRepair =
+                    resourceState.recommendedDictionaryNeedsRepair,
+                recommendedReplaceConfirmationVisible =
+                    localState.recommendedReplaceConfirmationVisible,
                 dictionaries = resourceState.dictionaries,
+                frequencySources = resourceState.frequencySources,
+                pitchAccent = resourceState.pitchAccent,
+                audioPacks = resourceState.audioPacks,
+                knownWords = resourceState.knownWords,
+                wordsets = resourceState.wordsets,
+                lastLocalImport = resourceState.lastLocalImport,
                 operation = resourceState.activeOperation,
                 failure = resourceState.failure,
                 lookup = resourceState.lastLookup,
@@ -66,8 +108,20 @@ internal class SetupViewModel(
                 lookupSlotId = selectedSlot,
                 customSlotId = localState.customSlotId,
                 customReplace = localState.customReplace,
+                frequencySourceId = localState.frequencySourceId,
+                frequencySourceName = localState.frequencySourceName,
+                frequencyFormat = localState.frequencyFormat,
+                frequencyReplace = localState.frequencyReplace,
+                pitchSourceName = localState.pitchSourceName,
+                pitchFormat = localState.pitchFormat,
+                pitchReplace = localState.pitchReplace,
+                audioPackId = localState.audioPackId,
+                audioPackReplace = localState.audioPackReplace,
+                knownWordsFormat = localState.knownWordsFormat,
                 completing = localState.completing,
                 completionError = localState.completionError,
+                targetAcceptanceInProgress = localState.acceptingTarget,
+                targetConsentError = localState.targetConsentError,
             )
         }.stateIn(
             viewModelScope,
@@ -76,17 +130,86 @@ internal class SetupViewModel(
         )
 
     fun refresh() {
-        refreshAdmission()
-        viewModelScope.launch { resources.recoverAndRefresh() }
+        viewModelScope.launch {
+            resources.recoverAndRefresh()
+            // A process-start or prior import may already own the resource operation. Await its
+            // terminal publication before asking admission to acquire the mutually exclusive
+            // mining lease; otherwise Check again can reproduce the startup race.
+            resources.state.first { state ->
+                state.activeOperation == null &&
+                    state.startupReadiness !in
+                    setOf(
+                        ResourceStartupReadiness.PENDING,
+                        ResourceStartupReadiness.RECOVERING,
+                    )
+            }
+            ankiSetup.refresh()
+            refreshAdmission()
+        }
     }
+
+    fun provisionModel() {
+        val current = uiState.value
+        if (current.ankiOperation != null || current.targetAcceptanceInProgress) return
+        if (current.legacyNoteType == null) {
+            ankiSetup.provisionModel()
+            return
+        }
+        local.update { it.copy(acceptingTarget = true, targetConsentError = false) }
+        viewModelScope.launch {
+            try {
+                repository.update { it.copy(legacyNoteType = null) }
+                ankiSetup.provisionModel()
+            } catch (failure: CancellationException) {
+                throw failure
+            } catch (_: Exception) {
+                local.update { it.copy(targetConsentError = true) }
+            } finally {
+                local.update { it.copy(acceptingTarget = false) }
+            }
+        }
+    }
+
+    fun reconcileInterruptedWork() = ankiSetup.reconcileInterruptedWork()
+
+    fun retryStagingCleanup(remediationId: Long) =
+        ankiSetup.performRemediation(AnkiRemediationCommand.RetryStagingCleanup(remediationId))
+
+    fun acknowledgeUnattachedMedia(remediationId: Long) =
+        ankiSetup.performRemediation(AnkiRemediationCommand.AcknowledgeUnattachedMedia(remediationId))
+
+    fun acknowledgeUncertainMedia(remediationId: Long) =
+        ankiSetup.performRemediation(AnkiRemediationCommand.AcknowledgeUncertainMedia(remediationId))
+
+    fun resolveAfterExternalReview(
+        remediationId: Long,
+        outcome: AnkiExternalReviewOutcome,
+    ) = ankiSetup.performRemediation(
+        AnkiRemediationCommand.ResolveAfterExternalReview(remediationId, outcome),
+    )
+
+    fun dismissAnkiFailure() = ankiSetup.dismissFailure()
 
     fun installUniDic() {
         viewModelScope.launch { resources.installUniDic() }
     }
 
     fun installRecommendedDictionary() {
-        val replace = uiState.value.recommendedDictionaryInstalled
-        viewModelScope.launch { resources.installRecommendedDictionary(replace) }
+        if (uiState.value.recommendedDictionarySlotOccupied) {
+            local.update { it.copy(recommendedReplaceConfirmationVisible = true) }
+        } else {
+            viewModelScope.launch { resources.installRecommendedDictionary(replace = false) }
+        }
+    }
+
+    fun confirmRecommendedDictionaryReplace() {
+        if (!uiState.value.recommendedDictionarySlotOccupied) return
+        local.update { it.copy(recommendedReplaceConfirmationVisible = false) }
+        viewModelScope.launch { resources.installRecommendedDictionary(replace = true) }
+    }
+
+    fun dismissRecommendedDictionaryReplace() {
+        local.update { it.copy(recommendedReplaceConfirmationVisible = false) }
     }
 
     fun importCustomDictionary(uri: String) {
@@ -105,12 +228,92 @@ internal class SetupViewModel(
         local.update { it.copy(customReplace = value) }
     }
 
+    fun setFrequencySourceId(value: String) {
+        if (value.length <= 64) local.update { it.copy(frequencySourceId = value.lowercase()) }
+    }
+
+    fun setFrequencySourceName(value: String) {
+        if (value.toByteArray().size <= 1024) local.update { it.copy(frequencySourceName = value) }
+    }
+
+    fun setFrequencyFormat(value: FrequencySourceFormat) {
+        local.update { it.copy(frequencyFormat = value) }
+    }
+
+    fun setFrequencyReplace(value: Boolean) {
+        local.update { it.copy(frequencyReplace = value) }
+    }
+
+    fun importFrequencySource(uri: String) {
+        val state = uiState.value
+        if (!state.frequencySourceIdValid || state.frequencySourceName.isBlank()) return
+        viewModelScope.launch {
+            resources.importFrequencySource(
+                uri = uri,
+                sourceId = state.frequencySourceId,
+                sourceName = state.frequencySourceName,
+                format = state.frequencyFormat,
+                replace = state.frequencyReplace,
+            )
+        }
+    }
+
+    fun setPitchSourceName(value: String) {
+        if (value.toByteArray().size <= 1024) local.update { it.copy(pitchSourceName = value) }
+    }
+
+    fun setPitchFormat(value: PitchAccentSourceFormat) {
+        local.update { it.copy(pitchFormat = value) }
+    }
+
+    fun setPitchReplace(value: Boolean) {
+        local.update { it.copy(pitchReplace = value) }
+    }
+
+    fun importPitchAccent(uri: String) {
+        val state = uiState.value
+        if (state.pitchSourceName.isBlank()) return
+        viewModelScope.launch {
+            resources.importPitchAccent(
+                uri = uri,
+                sourceName = state.pitchSourceName,
+                format = state.pitchFormat,
+                replace = state.pitchReplace,
+            )
+        }
+    }
+
+    fun setAudioPackId(value: String) {
+        if (value.length <= 64) local.update { it.copy(audioPackId = value.lowercase()) }
+    }
+
+    fun setAudioPackReplace(value: Boolean) {
+        local.update { it.copy(audioPackReplace = value) }
+    }
+
+    fun importAudioPack(uri: String) {
+        val state = uiState.value
+        if (!state.audioPackIdValid) return
+        viewModelScope.launch {
+            resources.importAudioPack(uri, state.audioPackId, state.audioPackReplace)
+        }
+    }
+
+    fun setKnownWordsFormat(value: KnownWordsSourceFormat) {
+        local.update { it.copy(knownWordsFormat = value) }
+    }
+
+    fun importKnownWords(uri: String) {
+        val format = uiState.value.knownWordsFormat
+        viewModelScope.launch { resources.importKnownWords(uri, format) }
+    }
+
     fun setLookupTerm(value: String) {
         if (value.toByteArray().size <= 1024) local.update { it.copy(lookupTerm = value) }
     }
 
     fun setLookupSlot(value: String) {
-        if (uiState.value.dictionaries.any { it.slotId == value }) {
+        if (uiState.value.dictionaries.any { it.isUsable && it.slotId == value }) {
             local.update { it.copy(lookupSlotId = value) }
         }
     }
@@ -147,6 +350,7 @@ internal class SetupViewModel(
     class Factory(
         private val resources: ResourceManager,
         private val settings: AppSettingsRepository,
+        private val ankiSetup: AnkiSetupManager,
         private val python: StateFlow<PythonRuntimeReadiness>,
         private val admission: StateFlow<MiningRunAdmissionState>,
         private val refreshAdmission: () -> Unit,
@@ -154,7 +358,14 @@ internal class SetupViewModel(
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>, extras: CreationExtras): T {
             require(modelClass.isAssignableFrom(SetupViewModel::class.java))
-            return SetupViewModel(resources, settings, python, admission, refreshAdmission) as T
+            return SetupViewModel(
+                resources,
+                settings,
+                ankiSetup,
+                python,
+                admission,
+                refreshAdmission,
+            ) as T
         }
     }
 

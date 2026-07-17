@@ -298,7 +298,8 @@ private fun LazyListScope.curationItems(
     onConfirmCuration: () -> Unit,
     onCancel: () -> Unit,
 ) {
-    val candidates = state.curation?.candidates.orEmpty()
+    val curation = state.curation
+    val candidates = curation?.candidates.orEmpty()
     val selectedCount = candidates.count { it.selected }
     val allSelected = candidates.isNotEmpty() && selectedCount == candidates.size
 
@@ -311,19 +312,43 @@ private fun LazyListScope.curationItems(
             )
             Text(
                 text = stringResource(
-                    R.string.curation_selected_count,
+                    if (curation?.page == null) {
+                        R.string.curation_selected_count
+                    } else {
+                        R.string.curation_selected_count_page
+                    },
                     selectedCount,
                     candidates.size,
                 ),
                 style = MaterialTheme.typography.bodyLarge,
             )
+            curation?.page?.let { page ->
+                Text(
+                    text =
+                        stringResource(
+                            R.string.curation_page_position,
+                            page.pageIndex + 1,
+                            page.pageCount,
+                            page.candidateStart + 1,
+                            page.candidateStart + candidates.size,
+                            page.totalCandidates,
+                        ),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                if (page.pageIndex > 0) {
+                    Text(
+                        text = stringResource(R.string.curation_previous_pages_saved),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+            }
             OutlinedButton(
                 onClick = { onSelectAllCandidates(!allSelected) },
                 enabled =
                     candidates.isNotEmpty() &&
                         !state.curationPending &&
                         !state.cancelPending,
-                modifier = VideoMiningTestTags.SELECT_ALL.tagged(),
+                modifier = Modifier.testTag(VideoMiningTestTags.SELECT_ALL),
             ) {
                 Text(
                     stringResource(
@@ -356,7 +381,16 @@ private fun LazyListScope.curationItems(
                         .fillMaxWidth()
                         .testTag(VideoMiningTestTags.CONFIRM_CURATION),
             ) {
-                Text(stringResource(R.string.confirm_curation, selectedCount))
+                Text(
+                    stringResource(
+                        when {
+                            curation?.page == null -> R.string.confirm_curation
+                            curation?.isFinalPage == false -> R.string.confirm_curation_page
+                            else -> R.string.confirm_curation_final_page
+                        },
+                        selectedCount,
+                    ),
+                )
             }
             OutlinedButton(
                 onClick = onCancel,
@@ -771,5 +805,3 @@ private fun MiningCommandError.message(): String =
 @Composable
 private fun List<*>.joinOrNone(): String =
     if (isEmpty()) stringResource(R.string.result_no_items) else joinToString()
-
-private fun String.tagged(): Modifier = Modifier.testTag(this)

@@ -271,10 +271,70 @@ def _build_local_audio_pack_chain(config: object) -> _LocalAudioPackChain | None
     return _LocalAudioPackChain(fetchers)
 
 
+class _AndroidOnlineDictionaryProvider:
+    """Run-scoped cancel gate and memoizer for an explicitly enabled online provider.
+
+    Definition and glossary generation may ask the same provider for the same word. Android
+    permits that term to leave the device at most once per run. Cancellation prevents every new
+    request; an already in-flight provider timeout remains bounded by the provider itself.
+    """
+
+    def __init__(
+        self,
+        provider: object,
+        cancelled_check: Callable[[], bool],
+    ) -> None:
+        self._provider = provider
+        self._cancelled_check = cancelled_check
+        self._cache: dict[str, str | None] = {}
+
+    @property
+    def name(self) -> str:
+        return str(self._provider.name)
+
+    @property
+    def is_online(self) -> bool:
+        return True
+
+    def is_available(self) -> bool:
+        return bool(self._provider.is_available())
+
+    def load(self) -> bool:
+        return bool(self._provider.load())
+
+    def lookup(self, word: str) -> str | None:
+        if word in self._cache:
+            return self._cache[word]
+        if self._cancelled_check():
+            return None
+        result = self._provider.lookup(word)
+        self._cache[word] = result
+        return result
+
+    def close(self) -> None:
+        closer = getattr(self._provider, "close", None)
+        if callable(closer):
+            closer()
+
+
+def _android_dictionary_provider_chain(
+    providers: list[object],
+    cancelled_check: Callable[[], bool],
+) -> list[object]:
+    return [
+        _AndroidOnlineDictionaryProvider(provider, cancelled_check)
+        if getattr(provider, "is_online", False)
+        else provider
+        for provider in providers
+    ]
+
+
 def _build_processor(
     config: object,
     adapters: CallbackAdapters,
     anki_adapter: object,
+    *,
+    sentence_audio_fetcher: object | None = None,
 ) -> object:
     """Mirror the desktop service factory without importing cut fetchers."""
 
@@ -308,7 +368,10 @@ def _build_processor(
             _show_optional_failure(
                 adapters.presenter, "Couldn't scan dictionaries folder", error
             )
-        providers = dictionary_registry.build_provider_chain(config)
+        providers = _android_dictionary_provider_chain(
+            dictionary_registry.build_provider_chain(config),
+            adapters.cancel_event.is_set,
+        )
         definition_service = DefinitionService(config, providers=providers)
 
         has_indexed_dictionary = any(
@@ -332,6 +395,11 @@ def _build_processor(
             ),
             reading_lookup=(
                 definition_service.offline_term_readings
+                if has_indexed_dictionary
+                else None
+            ),
+            kana_attest_lookup=(
+                definition_service.has_offline_definitions
                 if has_indexed_dictionary
                 else None
             ),
@@ -440,7 +508,7 @@ def _build_processor(
             youtube_fetcher=None,
             expression_audio_fetcher=expression_audio_fetcher,
             dictionary_registry=dictionary_registry,
-            sentence_audio_fetcher=None,
+            sentence_audio_fetcher=sentence_audio_fetcher,
         )
     except BaseException:
         _close_without_masking(expression_audio_fetcher, "expression-audio chain")

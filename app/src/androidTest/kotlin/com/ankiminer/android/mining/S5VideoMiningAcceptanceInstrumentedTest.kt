@@ -13,6 +13,8 @@ import androidx.core.content.pm.PackageInfoCompat
 import com.ankiminer.android.AnkiMinerApplication
 import com.ankiminer.android.BuildConfig
 import com.ankiminer.android.PythonInstrumentationRuntime
+import com.ankiminer.android.anki.provider.AnkiMinerModelProvisioningResult
+import com.ankiminer.android.anki.provider.AnkiMinerNoteModel
 import com.ankiminer.android.data.resources.ResourceBridgeCodec
 import com.ankiminer.android.data.settings.AppSettings
 import com.ankiminer.android.debug.S3TestDocumentsProvider
@@ -42,7 +44,7 @@ private const val EVIDENCE_TAG = "AnkiMinerS5"
 /**
  * Destructive, opt-in needle-thread against a pinned disposable AnkiDroid collection.
  *
- * Setup creates resources and a test model, but the accepted notes and media travel only through
+ * Setup creates resources and the production model, but the accepted notes and media travel only through
  * the process-owned BridgeMiningRepository and its production durable provider callbacks.
  */
 @RunWith(AndroidJUnit4::class)
@@ -69,7 +71,6 @@ class S5VideoMiningAcceptanceInstrumentedTest {
                 AppSettings(
                     firstRunComplete = true,
                     deckName = DECK_NAME,
-                    noteType = MODEL_NAME,
                     tags = PROBE_TAG,
                     audioPaddingSeconds = 8.0,
                     screenshotOffsetSeconds = 0.2,
@@ -141,28 +142,31 @@ class S5VideoMiningAcceptanceInstrumentedTest {
 
     private fun createTarget() {
         assertFalse(api.deckList.orEmpty().containsValue(DECK_NAME))
-        assertFalse(api.modelList.orEmpty().containsValue(MODEL_NAME))
+        assertFalse(api.modelList.orEmpty().containsValue(AnkiMinerNoteModel.MODEL_NAME))
         val deckId = requireNotNull(api.addNewDeck(DECK_NAME))
+        application.ankiSetupManager.refresh()
+        runBlocking {
+            withTimeout(STATE_TIMEOUT_MS) {
+                application.ankiSetupManager.state.first { it.operation == null }
+            }
+        }
+        application.ankiSetupManager.provisionModel()
         val modelId =
-            requireNotNull(
-                api.addNewCustomModel(
-                    MODEL_NAME,
-                    MODEL_FIELDS,
-                    arrayOf("S5 Card"),
-                    arrayOf("{{Expression}}"),
-                    arrayOf(
-                        "{{FrontSide}}<hr id=answer>" +
-                            "{{Sentence}}{{MainDefinition}}{{Picture}}{{SentenceAudio}}" +
-                            "{{ExpressionFurigana}}{{SentenceFurigana}}",
-                    ),
-                    ".card { font-family: sans-serif; }",
-                    deckId,
-                    0,
-                ),
-            )
+            runBlocking {
+                withTimeout(STATE_TIMEOUT_MS) {
+                    val state =
+                        application.ankiSetupManager.state.first {
+                            it.operation == null && it.model is AnkiMinerModelProvisioningResult.Ready
+                        }
+                    (state.model as AnkiMinerModelProvisioningResult.Ready).modelId
+                }
+            }
         assertEquals(DECK_NAME, api.deckList.orEmpty()[deckId])
-        assertEquals(MODEL_NAME, api.modelList.orEmpty()[modelId])
-        assertEquals(MODEL_FIELDS.toList(), requireNotNull(api.getFieldList(modelId)).toList())
+        assertEquals(AnkiMinerNoteModel.MODEL_NAME, api.modelList.orEmpty()[modelId])
+        assertEquals(
+            AnkiMinerNoteModel.FIELD_NAMES,
+            requireNotNull(api.getFieldList(modelId)).toList(),
+        )
     }
 
     private fun createSafFixtures(python: com.chaquo.python.Python) {
@@ -212,13 +216,14 @@ class S5VideoMiningAcceptanceInstrumentedTest {
         val noteId = success.result.cardIds.single()
         val note = requireNotNull(api.getNote(noteId))
         val fields = note.getFields()
-        assertEquals(MODEL_FIELDS.size, fields.size)
-        assertEquals(SUCCESS_TERM, fields[0])
-        assertTrue(fields[1].contains(SUCCESS_TERM))
-        assertTrue(fields[2].contains(SUCCESS_DEFINITION))
+        assertEquals(AnkiMinerNoteModel.FIELD_NAMES.size, fields.size)
+        fun field(name: String) = fields[AnkiMinerNoteModel.FIELD_NAMES.indexOf(name)]
+        assertEquals(SUCCESS_TERM, field("Expression"))
+        assertTrue(field("Sentence").contains(SUCCESS_TERM))
+        assertTrue(field("MainDefinition").contains(SUCCESS_DEFINITION))
         assertTrue(note.getTags().contains(PROBE_TAG))
-        val picture = requireNotNull(PICTURE_MARKUP.matchEntire(fields[3])).groupValues[1]
-        val audio = requireNotNull(AUDIO_MARKUP.matchEntire(fields[4])).groupValues[1]
+        val picture = requireNotNull(PICTURE_MARKUP.matchEntire(field("Picture"))).groupValues[1]
+        val audio = requireNotNull(AUDIO_MARKUP.matchEntire(field("SentenceAudio"))).groupValues[1]
         assertAnkiMediaNonEmpty(picture)
         assertAnkiMediaNonEmpty(audio)
 
@@ -440,7 +445,6 @@ class S5VideoMiningAcceptanceInstrumentedTest {
         private const val PINNED_ANKIDROID_VERSION = "2.24.0"
         private const val PINNED_ANKIDROID_VERSION_CODE = 422400300L
         private const val DECK_NAME = "Anki Miner S5 Probe"
-        private const val MODEL_NAME = "Anki Miner S5 Probe Lapis"
         private const val PROBE_TAG = "anki_miner_s5_probe"
         private const val DICTIONARY_SLOT = "s5-fixture"
         private const val SUCCESS_TERM = "猫"
@@ -455,16 +459,6 @@ class S5VideoMiningAcceptanceInstrumentedTest {
         private const val SERVICE_STOP_TIMEOUT_MS = 5_000L
         private const val ANKIDROID_MEDIA_ROOT = "/storage/emulated/0/AnkiDroid/collection.media"
 
-        private val MODEL_FIELDS =
-            arrayOf(
-                "Expression",
-                "Sentence",
-                "MainDefinition",
-                "Picture",
-                "SentenceAudio",
-                "ExpressionFurigana",
-                "SentenceFurigana",
-            )
         private val PICTURE_MARKUP = Regex("^<img src=\"([^/\\\\\"<>]+)\">$")
         private val AUDIO_MARKUP = Regex("^\\[sound:([^/\\\\\\[\\]]+)]$")
         private val TERMS =

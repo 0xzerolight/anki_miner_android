@@ -38,7 +38,7 @@ class S4EngineSmokeContractTests(unittest.TestCase):
     def test_committed_fixture_validates_against_current_contract_inputs(self) -> None:
         self.validate(self.fixture)
         self.assertEqual(
-            "c9f48dbba6e9ed46872d3c6aafcaf41ecceaac4a30945c096366deeb3839fdea",
+            "6ab94b8662c7920326fcb8d49015389644496dd5ba1b956901fbac6340a29437",
             hashlib.sha256(self.fixture_path.read_bytes()).hexdigest(),
         )
 

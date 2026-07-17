@@ -6,6 +6,7 @@ import com.ankiminer.android.MainDispatcherRule
 import com.ankiminer.android.media.SafBroker
 import com.ankiminer.android.media.SafDocument
 import com.ankiminer.android.mining.CurationCandidate
+import com.ankiminer.android.mining.CurationPage
 import com.ankiminer.android.mining.CurationRequest
 import com.ankiminer.android.mining.CurationSelection
 import com.ankiminer.android.mining.CurationSentence
@@ -95,6 +96,64 @@ class VideoMiningViewModelTest {
             assertEquals(emptyList<CurationSelection>(), repository.confirmedSelection)
             assertEquals(0L, (repository.state.value as MiningRunState.Success).result.cardsCreated)
             assertEquals(0, repository.cancelCount)
+        }
+
+    @Test
+    fun pagedCurationResetsDraftForSameRequestAndSubmitsExactPageIndex() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val first = curationRequest().copy(page = CurationPage(0, 2, 0, 2))
+            val firstCandidate = first.candidates.single()
+            val secondSentence =
+                firstCandidate.sentences.single().copy(sentenceId = "sentence-next")
+            val secondCandidate =
+                firstCandidate.copy(
+                    candidateId = "candidate-next",
+                    minedForm = "見る",
+                    defaultSentenceId = secondSentence.sentenceId,
+                    sentences = listOf(secondSentence),
+                )
+            val second =
+                first.copy(
+                    candidates = listOf(secondCandidate),
+                    page = CurationPage(1, 2, 1, 2),
+                )
+            val repository = RecordingRepository(MiningRunState.Curating(first))
+            val viewModel = VideoMiningViewModel(repository, ImmediateSafBroker())
+            runCurrent()
+
+            assertEquals(0L, viewModel.uiState.value.curation?.page?.pageIndex)
+            viewModel.toggleCandidate(firstCandidate.candidateId)
+            runCurrent()
+            assertEquals(0, viewModel.uiState.value.curation?.selectedCount)
+
+            repository.transitionTo(MiningRunState.Curating(second))
+            runCurrent()
+
+            assertEquals(1L, viewModel.uiState.value.curation?.page?.pageIndex)
+            assertEquals(1, viewModel.uiState.value.curation?.selectedCount)
+            viewModel.confirmCuration()
+            runCurrent()
+
+            assertEquals(1L, repository.confirmedPageIndex)
+            assertEquals(secondCandidate.candidateId, repository.confirmedSelection?.single()?.candidateId)
+        }
+
+    @Test
+    fun repositoryPageSubmissionPendingDisablesDuplicateConfirmation() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val request = curationRequest().copy(page = CurationPage(0, 2, 0, 2))
+            val repository =
+                RecordingRepository(
+                    MiningRunState.Curating(request, pageSubmissionPending = true),
+                )
+            val viewModel = VideoMiningViewModel(repository, ImmediateSafBroker())
+            runCurrent()
+
+            assertTrue(viewModel.uiState.value.curationPending)
+            viewModel.confirmCuration()
+            runCurrent()
+
+            assertEquals(0, repository.confirmCalls)
         }
 
     @Test
@@ -621,6 +680,10 @@ class VideoMiningViewModelTest {
             private set
         var confirmCalls = 0
             private set
+        var confirmedPageIndex: Long? = null
+            private set
+        var confirmedSelection: List<CurationSelection>? = null
+            private set
         val detachedInputs = mutableListOf<VideoMiningInput>()
 
         override fun detachActiveSources(input: VideoMiningInput): Boolean {
@@ -642,8 +705,11 @@ class VideoMiningViewModelTest {
             runId: String,
             requestId: String,
             selection: List<CurationSelection>,
+            pageIndex: Long?,
         ) {
             confirmCalls += 1
+            confirmedPageIndex = pageIndex
+            confirmedSelection = selection
             confirmGate?.await()
             mutableState.value =
                 MiningRunState.Running(runId, MiningProgress(0, 0, "Running"))

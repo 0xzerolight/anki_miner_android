@@ -109,6 +109,9 @@ _EXPOSED_CONFIG_FIELDS = frozenset(
 # never assigned to AnkiMinerConfig, because that would build the desktop
 # Google/Papago sentence-TTS chain.
 _LEGACY_ANDROID_TTS_FIELD = "reading_tts_enabled"
+_ANDROID_BUNDLED_WORDSETS = frozenset(
+    {"surnames", "given-names", "place-names", "org-product"}
+)
 
 
 @dataclass(frozen=True)
@@ -239,6 +242,20 @@ def _excluded_decks(value: object) -> tuple[str, ...]:
     if len(set(canonical)) != len(canonical):
         raise _invalid("excluded_decks", "deck names must be unique")
     return canonical
+
+
+def _excluded_wordsets(value: object) -> tuple[str, ...]:
+    items = _string_tuple("excluded_wordsets", value)
+    if len(items) > len(_ANDROID_BUNDLED_WORDSETS):
+        raise _invalid("excluded_wordsets", "too many wordsets")
+    if len(set(items)) != len(items):
+        raise _invalid("excluded_wordsets", "wordset IDs must be unique")
+    unknown = set(items) - _ANDROID_BUNDLED_WORDSETS
+    if unknown:
+        raise _invalid(
+            "excluded_wordsets", f"unknown Android wordsets: {sorted(unknown)!r}"
+        )
+    return items
 
 
 def _optional_path(field_name: str, value: object) -> Path | None:
@@ -543,11 +560,12 @@ def map_config_settings(
                 field_name, value, _LITERAL_FIELDS[field_name]
             )
         elif field_name in _STRING_TUPLE_FIELDS:
-            updates[field_name] = (
-                _excluded_decks(value)
-                if field_name == "excluded_decks"
-                else _string_tuple(field_name, value)
-            )
+            if field_name == "excluded_decks":
+                updates[field_name] = _excluded_decks(value)
+            elif field_name == "excluded_wordsets":
+                updates[field_name] = _excluded_wordsets(value)
+            else:
+                updates[field_name] = _string_tuple(field_name, value)
         elif field_name in _OPTIONAL_PATH_FIELDS:
             updates[field_name] = _optional_path(field_name, value)
         elif field_name in _MAPPING_FIELDS:
@@ -569,11 +587,14 @@ def map_config_settings(
     # The compact native recipe intentionally contains the static JPEG path,
     # not the desktop-only AVIF/WebP encoders.
     updates["screenshot_animated"] = False
-    # The Android TTS preference is execution metadata for a Kotlin-injected
-    # synthesizer.  Keeping all desktop flags false mechanically prevents the
-    # Google/Papago sentence fetcher chain from being composed.
-    updates["reading_tts_enabled"] = False
-    updates["reading_tts_google_enabled"] = False
+    # ``AudioStage.reading_tts_active`` has a settled four-part desktop gate:
+    # injected fetcher, master flag, mapped audio field, and a provider bit.
+    # Android uses the Google-named bit only as the final compatibility gate;
+    # reading_mining composes AndroidSentenceAudioFetcher directly and never
+    # imports the desktop Google/Papago/gtts provider factory.  Thus enabling
+    # this bit cannot select or construct a network fetcher.
+    updates["reading_tts_enabled"] = ephemeral_tts
+    updates["reading_tts_google_enabled"] = ephemeral_tts
     updates["reading_tts_papago_enabled"] = False
 
     engine_config = replace(base, **updates)  # type: ignore[arg-type]

@@ -25,13 +25,15 @@ interface MiningRepository {
     suspend fun startVideo(input: VideoMiningInput)
 
     /**
-     * Confirm curation. An empty list is a successful zero-selection response and must remain
-     * distinct from [cancel], which maps to Python's null curation response.
+     * Confirm the current curation page. [pageIndex] is null for the legacy single request and
+     * must match paged requests exactly. An empty list is a successful zero-selection response
+     * and remains distinct from [cancel], which maps to Python's null curation response.
      */
     suspend fun confirmCuration(
         runId: String,
         requestId: String,
         selection: List<CurationSelection>,
+        pageIndex: Long? = null,
     )
 
     /** Cancel the whole run, including a worker parked for curation. */

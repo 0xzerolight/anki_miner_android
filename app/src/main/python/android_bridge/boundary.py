@@ -45,15 +45,22 @@ def _dispatch_validated(
 
     supported_after_bootstrap = {
         "job.cancel",
+        "curation.page.response",
         "curation.response",
         "bridge.shutdown.request",
+        "mining.reading.run",
         "mining.video.run",
         "resource.catalog.get",
         "resource.cleanup",
+        "resource.audiopack.import",
         "resource.dictionary.import",
         "resource.dictionary.list",
         "resource.dictionary.lookup",
+        "resource.frequency.import",
+        "resource.knownwords.import",
+        "resource.local.list",
         "resource.operation.cancel",
+        "resource.pitch.import",
         "resource.unidic.install",
         "tokenizer.configure",
     }
@@ -68,6 +75,24 @@ def _dispatch_validated(
 
     if request_type.startswith("resource."):
         from . import resources
+
+        if request_type in {
+            "resource.audiopack.import",
+            "resource.frequency.import",
+            "resource.knownwords.import",
+            "resource.local.list",
+            "resource.pitch.import",
+        }:
+            from . import local_resources
+
+            local_handlers = {
+                "resource.audiopack.import": local_resources.import_audio_pack,
+                "resource.frequency.import": local_resources.import_frequency,
+                "resource.knownwords.import": local_resources.import_known_words,
+                "resource.local.list": local_resources.list_local_resources,
+                "resource.pitch.import": local_resources.import_pitch,
+            }
+            return local_handlers[request_type](payload)
 
         handlers = {
             "resource.catalog.get": resources.catalog_response,
@@ -100,11 +125,21 @@ def _dispatch_validated(
 
         return run_video(raw_request, callbacks)
 
+    if request_type == "mining.reading.run":
+        if callbacks is None:
+            raise BridgeProtocolError(
+                "missing_callbacks",
+                "mining.reading.run requires an EngineCallbacks object",
+            )
+        from .reading_mining import run_reading
+
+        return run_reading(raw_request, callbacks)
+
     if request_type == "job.cancel":
         from .jobs import cancel_job
 
         return cancel_job(raw_request)
-    if request_type == "curation.response":
+    if request_type in {"curation.response", "curation.page.response"}:
         from .jobs import submit_curation
 
         return submit_curation(raw_request)

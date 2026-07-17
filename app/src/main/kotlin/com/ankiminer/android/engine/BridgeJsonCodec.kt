@@ -2,9 +2,11 @@ package com.ankiminer.android.engine
 
 import com.ankiminer.android.anki.generated.UnicodeContractV151
 import com.ankiminer.android.mining.CurationCandidate
+import com.ankiminer.android.mining.CurationPage
 import com.ankiminer.android.mining.CurationRequest
 import com.ankiminer.android.mining.CurationSelection
 import com.ankiminer.android.mining.CurationSentence
+import com.ankiminer.android.mining.CURATION_PAGE_MAX_CANDIDATES
 import com.ankiminer.android.mining.ProcessingResult
 import com.fasterxml.jackson.core.JsonFactory
 import com.fasterxml.jackson.core.JsonFactoryBuilder
@@ -26,10 +28,15 @@ import java.nio.ByteBuffer
 import java.nio.CharBuffer
 import java.nio.charset.CodingErrorAction
 import java.nio.charset.StandardCharsets
+import java.nio.file.InvalidPathException
+import java.nio.file.Paths
 
 /** Strict JSON codec for every non-Anki message crossing the Chaquopy boundary. */
 object BridgeJsonCodec {
     const val MAX_ENVELOPE_UTF8_BYTES = 32 * 1024 * 1024
+    const val MAX_READING_RUN_UTF8_BYTES = 1024 * 1024
+    const val MAX_READING_SERIES_NAME_UTF8_BYTES = 1024
+    const val MAX_CURATION_PAGE_UTF8_BYTES = 512 * 1024
     private const val MAX_JSON_DEPTH = 128
     private const val MAX_JSON_TOKENS = 1_000_000L
     private const val MAX_JSON_NUMBER_CHARS = 1000
@@ -124,6 +131,9 @@ object BridgeJsonCodec {
     fun encodeVideoRun(request: VideoMiningWireRequest): String =
         encode("mining.video.run") { generator -> writeVideoRequest(generator, request) }
 
+    fun encodeReadingRun(request: ReadingMiningWireRequest): String =
+        encode("mining.reading.run") { generator -> writeReadingRequest(generator, request) }
+
     fun encodeRegistrationAccepted(runId: String): String =
         encode("job.registration.accepted") { generator -> generator.writeStringField("runId", runId) }
 
@@ -135,9 +145,11 @@ object BridgeJsonCodec {
         selection: List<CurationSelection>?,
     ): String {
         validateSelection(request, selection)
-        return encode("curation.response") { generator ->
+        val type = if (request.page == null) "curation.response" else "curation.page.response"
+        return encode(type) { generator ->
             generator.writeStringField("runId", request.runId)
             generator.writeStringField("requestId", request.requestId)
+            request.page?.let { generator.writeNumberField("pageIndex", it.pageIndex) }
             generator.writeFieldName("selection")
             if (selection == null) {
                 generator.writeNull()
@@ -189,6 +201,12 @@ object BridgeJsonCodec {
             "tokenizer.ready" -> BridgeMessage.TokenizerReady(readTokenizerIdentity(payload))
             "bridge.error" -> readBridgeError(payload)
             "mining.video.run" -> BridgeMessage.VideoRun(readVideoRequest(payload))
+            "mining.reading.run" -> {
+                if (strictUtf8(raw).size > MAX_READING_RUN_UTF8_BYTES) {
+                    fail(BridgeProtocolCategory.INPUT_TOO_LARGE, "reading mining request is too large")
+                }
+                BridgeMessage.ReadingRun(readReadingRequest(payload))
+            }
             "job.registration.request" -> BridgeMessage.JobRegistrationRequest(singleRunId(payload, type))
             "job.registration.accepted" -> BridgeMessage.JobRegistrationAccepted(singleRunId(payload, type))
             "progress.start" -> readProgressStart(payload)
@@ -196,9 +214,18 @@ object BridgeJsonCodec {
             "progress.complete" -> BridgeMessage.ProgressComplete(singleRunId(payload, type))
             "progress.error" -> readProgressError(payload)
             "presenter.event" -> BridgeMessage.Presenter(readPresenter(payload))
-            "curation.request" -> BridgeMessage.CurationNeeded(readCurationRequest(payload))
+            "curation.request" -> {
+                requireCurationEnvelopeBound(raw)
+                BridgeMessage.CurationNeeded(readCurationRequest(payload, paged = false))
+            }
+            "curation.page.request" -> {
+                requireCurationEnvelopeBound(raw)
+                BridgeMessage.CurationNeeded(readCurationRequest(payload, paged = true))
+            }
             "curation.response" -> readCurationResponse(payload)
+            "curation.page.response" -> readCurationPageResponse(payload)
             "curation.accepted" -> readCurationAccepted(payload)
+            "curation.page.accepted" -> readCurationPageAccepted(payload)
             "job.cancel" -> BridgeMessage.JobCancel(singleRunId(payload, type))
             "job.cancelled" -> readJobCancelled(payload)
             "mining.terminal" -> readTerminal(payload, raw)
@@ -385,15 +412,59 @@ object BridgeJsonCodec {
         }
     }
 
-    private fun readCurationRequest(payload: Map<String, BridgeJsonValue>): CurationRequest {
-        requireExact(payload, setOf("runId", "requestId", "candidates"), "curation.request")
+    private fun requireCurationEnvelopeBound(raw: String) {
+        if (strictUtf8(raw).size > MAX_CURATION_PAGE_UTF8_BYTES) {
+            fail(BridgeProtocolCategory.INPUT_TOO_LARGE, "curation request page is too large")
+        }
+    }
+
+    private fun readCurationRequest(
+        payload: Map<String, BridgeJsonValue>,
+        paged: Boolean,
+    ): CurationRequest {
+        val context = if (paged) "curation.page.request" else "curation.request"
+        requireExact(
+            payload,
+            if (paged) {
+                setOf(
+                    "runId",
+                    "requestId",
+                    "pageIndex",
+                    "pageCount",
+                    "candidateStart",
+                    "totalCandidates",
+                    "candidates",
+                )
+            } else {
+                setOf("runId", "requestId", "candidates")
+            },
+            context,
+        )
         val candidates = array(payload.getValue("candidates"), "curation candidates").map { rawCandidate ->
             readCurationCandidate(objectValue(rawCandidate, "curation candidate"))
         }
+        if (candidates.size > CURATION_PAGE_MAX_CANDIDATES) {
+            fail(BridgeProtocolCategory.INVALID_VALUE, "curation request exceeds its candidate limit")
+        }
+        if (paged && candidates.isEmpty()) {
+            fail(BridgeProtocolCategory.INVALID_VALUE, "curation page must not be empty")
+        }
+        val page =
+            if (paged) {
+                CurationPage(
+                    pageIndex = nonNegative(payload.getValue("pageIndex"), "curation page index"),
+                    pageCount = positive(payload.getValue("pageCount"), "curation page count"),
+                    candidateStart = nonNegative(payload.getValue("candidateStart"), "curation candidate start"),
+                    totalCandidates = positive(payload.getValue("totalCandidates"), "curation total candidates"),
+                )
+            } else {
+                null
+            }
         return CurationRequest(
             runId(payload.getValue("runId")),
             opaque(payload.getValue("requestId"), curationIdPattern, "curation request ID"),
             candidates,
+            page,
         )
     }
 
@@ -452,19 +523,36 @@ object BridgeJsonCodec {
 
     private fun readCurationResponse(payload: Map<String, BridgeJsonValue>): BridgeMessage.CurationResponse {
         requireExact(payload, setOf("runId", "requestId", "selection"), "curation.response")
-        val selections =
-            when (val value = payload.getValue("selection")) {
-                BridgeJsonValue.Null -> null
-                else -> array(value, "curation selection").map { rawSelection -> readSelection(objectValue(rawSelection, "curation selection")) }
-            }
-        if (selections != null && selections.map { it.candidateId }.toSet().size != selections.size) {
-            fail(BridgeProtocolCategory.INVALID_VALUE, "a curation candidate may only be selected once")
-        }
         return BridgeMessage.CurationResponse(
             runId(payload.getValue("runId")),
             opaque(payload.getValue("requestId"), curationIdPattern, "curation request ID"),
-            selections,
+            readSelections(payload.getValue("selection")),
         )
+    }
+
+    private fun readCurationPageResponse(payload: Map<String, BridgeJsonValue>): BridgeMessage.CurationPageResponse {
+        requireExact(payload, setOf("runId", "requestId", "pageIndex", "selection"), "curation.page.response")
+        return BridgeMessage.CurationPageResponse(
+            runId(payload.getValue("runId")),
+            opaque(payload.getValue("requestId"), curationIdPattern, "curation request ID"),
+            nonNegative(payload.getValue("pageIndex"), "curation page index"),
+            readSelections(payload.getValue("selection")),
+        )
+    }
+
+    private fun readSelections(value: BridgeJsonValue): List<CurationSelection>? {
+        val selections =
+            when (value) {
+                BridgeJsonValue.Null -> null
+                else -> array(value, "curation selection").map { rawSelection -> readSelection(objectValue(rawSelection, "curation selection")) }
+            }
+        if (selections != null && selections.size > CURATION_PAGE_MAX_CANDIDATES) {
+            fail(BridgeProtocolCategory.INVALID_VALUE, "curation selection exceeds its candidate limit")
+        }
+        if (selections != null && selections.map { it.candidateId }.toSet().size != selections.size) {
+            fail(BridgeProtocolCategory.INVALID_VALUE, "a curation candidate may only be selected once")
+        }
+        return selections
     }
 
     private fun readSelection(payload: Map<String, BridgeJsonValue>): CurationSelection {
@@ -482,6 +570,20 @@ object BridgeJsonCodec {
         return BridgeMessage.CurationAccepted(
             runId(payload.getValue("runId")),
             opaque(payload.getValue("requestId"), curationIdPattern, "curation request ID"),
+        )
+    }
+
+    private fun readCurationPageAccepted(payload: Map<String, BridgeJsonValue>): BridgeMessage.CurationPageAccepted {
+        requireExact(
+            payload,
+            setOf("runId", "requestId", "pageIndex", "finalPage"),
+            "curation.page.accepted",
+        )
+        return BridgeMessage.CurationPageAccepted(
+            runId(payload.getValue("runId")),
+            opaque(payload.getValue("requestId"), curationIdPattern, "curation request ID"),
+            nonNegative(payload.getValue("pageIndex"), "curation page index"),
+            bool(payload.getValue("finalPage"), "curation final page"),
         )
     }
 
@@ -552,6 +654,159 @@ object BridgeJsonCodec {
             readConfigSnapshot(objectValue(payload.getValue("configSnapshot"), "configSnapshot")),
         )
     }
+
+    private fun readReadingRequest(payload: Map<String, BridgeJsonValue>): ReadingMiningWireRequest {
+        requireExact(
+            payload,
+            setOf(
+                "sourceKind",
+                "sourcePath",
+                "imageArchivePath",
+                "seriesName",
+                "cacheDir",
+                "nativeLibraryDir",
+                "configSnapshot",
+            ),
+            "mining.reading.run",
+        )
+        val sourceKindText = text(payload.getValue("sourceKind"), "sourceKind")
+        val sourceKind =
+            ReadingMiningSourceKind.entries.singleOrNull { it.wireName == sourceKindText }
+                ?: fail(BridgeProtocolCategory.INVALID_VALUE, "sourceKind is invalid")
+        val sourcePath = boundedAbsolutePath(payload.getValue("sourcePath"), "sourcePath")
+        val archivePath =
+            payload.getValue("imageArchivePath").let { value ->
+                if (value is BridgeJsonValue.Null) null else boundedAbsolutePath(value, "imageArchivePath")
+            }
+        val cacheDir = boundedAbsolutePath(payload.getValue("cacheDir"), "cacheDir")
+        val nativeLibraryDir =
+            boundedAbsolutePath(payload.getValue("nativeLibraryDir"), "nativeLibraryDir")
+        val seriesName =
+            payload.getValue("seriesName").let { value ->
+                if (value is BridgeJsonValue.Null) {
+                    null
+                } else {
+                    canonicalLabel(value, "seriesName").also {
+                        if (strictUtf8(it).size > MAX_READING_SERIES_NAME_UTF8_BYTES) {
+                            fail(
+                                BridgeProtocolCategory.INVALID_VALUE,
+                                "seriesName exceeds its UTF-8 byte limit",
+                            )
+                        }
+                    }
+                }
+            }
+
+        requireReadingPathInsideCache(sourcePath, cacheDir, "sourcePath")
+        requireReadingSuffix(sourcePath, sourceKind)
+        when (sourceKind) {
+            ReadingMiningSourceKind.MOKURO -> {
+                if (seriesName != null) {
+                    fail(BridgeProtocolCategory.INVALID_VALUE, "seriesName is only valid for subtitles")
+                }
+                archivePath?.let { archive ->
+                    requireReadingPathInsideCache(archive, cacheDir, "imageArchivePath")
+                    if (!archive.lowercase().let { it.endsWith(".cbz") || it.endsWith(".zip") }) {
+                        fail(
+                            BridgeProtocolCategory.INVALID_VALUE,
+                            "imageArchivePath must preserve a supported archive suffix",
+                        )
+                    }
+                    requireMokuroCompanion(sourcePath, archive)
+                }
+            }
+            ReadingMiningSourceKind.SUBTITLE -> {
+                if (archivePath != null) {
+                    fail(
+                        BridgeProtocolCategory.INVALID_VALUE,
+                        "imageArchivePath is only valid for a mokuro source",
+                    )
+                }
+                if (seriesName == null) {
+                    fail(BridgeProtocolCategory.INVALID_VALUE, "seriesName is required for subtitles")
+                }
+            }
+            ReadingMiningSourceKind.TXT, ReadingMiningSourceKind.EPUB -> {
+                if (archivePath != null) {
+                    fail(
+                        BridgeProtocolCategory.INVALID_VALUE,
+                        "imageArchivePath is only valid for a mokuro source",
+                    )
+                }
+                if (seriesName != null) {
+                    fail(BridgeProtocolCategory.INVALID_VALUE, "seriesName is only valid for subtitles")
+                }
+            }
+        }
+        return ReadingMiningWireRequest(
+            sourceKind = sourceKind,
+            sourcePath = sourcePath,
+            imageArchivePath = archivePath,
+            seriesName = seriesName,
+            cacheDir = cacheDir,
+            nativeLibraryDir = nativeLibraryDir,
+            configSnapshot =
+                readConfigSnapshot(objectValue(payload.getValue("configSnapshot"), "configSnapshot")),
+        )
+    }
+
+    private fun requireReadingSuffix(
+        sourcePath: String,
+        sourceKind: ReadingMiningSourceKind,
+    ) {
+        val suffixes =
+            when (sourceKind) {
+                ReadingMiningSourceKind.TXT -> setOf(".txt")
+                ReadingMiningSourceKind.EPUB -> setOf(".epub")
+                ReadingMiningSourceKind.SUBTITLE -> setOf(".ass", ".srt", ".ssa", ".vtt")
+                ReadingMiningSourceKind.MOKURO -> setOf(".mokuro")
+            }
+        if (suffixes.none(sourcePath.lowercase()::endsWith)) {
+            fail(BridgeProtocolCategory.INVALID_VALUE, "sourcePath suffix does not match sourceKind")
+        }
+    }
+
+    private fun requireReadingPathInsideCache(
+        candidate: String,
+        cacheDir: String,
+        context: String,
+    ) {
+        val candidatePath = normalizedPath(candidate, context)
+        val cachePath = normalizedPath(cacheDir, "cacheDir")
+        if (candidatePath == cachePath || !candidatePath.startsWith(cachePath)) {
+            fail(BridgeProtocolCategory.INVALID_VALUE, "$context must be inside cacheDir")
+        }
+    }
+
+    private fun requireMokuroCompanion(
+        sourcePath: String,
+        archivePath: String,
+    ) {
+        val source = normalizedPath(sourcePath, "sourcePath")
+        val archive = normalizedPath(archivePath, "imageArchivePath")
+        val sourceName = source.fileName.toString()
+        val archiveName = archive.fileName.toString()
+        if (
+            source.parent != archive.parent ||
+            sourceName.substringBeforeLast('.', sourceName) !=
+            archiveName.substringBeforeLast('.', archiveName)
+        ) {
+            fail(
+                BridgeProtocolCategory.INVALID_VALUE,
+                "imageArchivePath must be a same-directory, same-stem mokuro companion",
+            )
+        }
+    }
+
+    private fun normalizedPath(
+        value: String,
+        context: String,
+    ) =
+        try {
+            Paths.get(value).normalize()
+        } catch (failure: InvalidPathException) {
+            fail(BridgeProtocolCategory.INVALID_VALUE, "$context is not a valid path", failure)
+        }
 
     private fun readConfigSnapshot(payload: Map<String, BridgeJsonValue>): MiningConfigSnapshot {
         if (payload.keys !in setOf(setOf("settings"), setOf("settings", "androidTtsEnabled"))) {
@@ -775,6 +1030,36 @@ object BridgeJsonCodec {
         generator.writeEndObject()
     }
 
+    private fun writeReadingRequest(
+        generator: JsonGenerator,
+        request: ReadingMiningWireRequest,
+    ) {
+        generator.writeStringField("sourceKind", request.sourceKind.wireName)
+        generator.writeStringField("sourcePath", request.sourcePath)
+        generator.writeFieldName("imageArchivePath")
+        writeNullableString(generator, request.imageArchivePath)
+        generator.writeFieldName("seriesName")
+        writeNullableString(generator, request.seriesName)
+        generator.writeStringField("cacheDir", request.cacheDir)
+        generator.writeStringField("nativeLibraryDir", request.nativeLibraryDir)
+        writeConfigSnapshot(generator, request.configSnapshot)
+    }
+
+    private fun writeConfigSnapshot(
+        generator: JsonGenerator,
+        snapshot: MiningConfigSnapshot,
+    ) {
+        generator.writeObjectFieldStart("configSnapshot")
+        generator.writeObjectFieldStart("settings")
+        snapshot.settings.toSortedMap().forEach { (key, value) ->
+            generator.writeFieldName(key)
+            writeJsonValue(generator, value)
+        }
+        generator.writeEndObject()
+        snapshot.androidTtsEnabled?.let { generator.writeBooleanField("androidTtsEnabled", it) }
+        generator.writeEndObject()
+    }
+
     private fun writeJsonValue(
         generator: JsonGenerator,
         value: BridgeJsonValue,
@@ -813,6 +1098,9 @@ object BridgeJsonCodec {
         selection: List<CurationSelection>?,
     ) {
         if (selection == null) return
+        if (selection.size > CURATION_PAGE_MAX_CANDIDATES) {
+            fail(BridgeProtocolCategory.INVALID_VALUE, "curation selection exceeds its candidate limit")
+        }
         if (selection.map { it.candidateId }.toSet().size != selection.size) {
             fail(BridgeProtocolCategory.INVALID_VALUE, "a curation candidate may only be selected once")
         }
@@ -837,7 +1125,9 @@ object BridgeJsonCodec {
             is BridgeMessage.Presenter -> message.event.runId to null
             is BridgeMessage.CurationNeeded -> message.request.runId to message.request.requestId
             is BridgeMessage.CurationResponse -> message.runId to message.requestId
+            is BridgeMessage.CurationPageResponse -> message.runId to message.requestId
             is BridgeMessage.CurationAccepted -> message.runId to message.requestId
+            is BridgeMessage.CurationPageAccepted -> message.runId to message.requestId
             is BridgeMessage.JobCancel -> message.runId to null
             is BridgeMessage.JobCancelled -> message.runId to null
             is BridgeMessage.Terminal -> message.runId to null
@@ -972,6 +1262,16 @@ object BridgeJsonCodec {
         value: BridgeJsonValue,
         context: String,
     ): String = text(value, context).also { if (it.isEmpty() || !it.startsWith('/') || '\u0000' in it) fail(BridgeProtocolCategory.INVALID_VALUE, "$context must be an absolute path") }
+
+    private fun boundedAbsolutePath(
+        value: BridgeJsonValue,
+        context: String,
+    ): String =
+        absolutePath(value, context).also {
+            if (strictUtf8(it).size > 4096) {
+                fail(BridgeProtocolCategory.INVALID_VALUE, "$context exceeds its UTF-8 byte limit")
+            }
+        }
 
     private fun canonicalLabel(
         value: BridgeJsonValue,

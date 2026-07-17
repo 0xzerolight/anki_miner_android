@@ -1,0 +1,91 @@
+{
+  "version": 1,
+  "valid": [
+    {
+      "schemaVersion": 1,
+      "type": "tts.sentence.request",
+      "payload": {
+        "runId": "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "requestId": "tts_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "sentence": "猫だ。"
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "type": "tts.sentence.result",
+      "payload": {
+        "runId": "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "requestId": "tts_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "outcome": "ready",
+        "path": "/data/user/0/app/cache/sentence-audio-v1/android_tts_v1_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.wav",
+        "errorCode": null
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "type": "tts.sentence.result",
+      "payload": {
+        "runId": "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "requestId": "tts_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "outcome": "unavailable",
+        "path": null,
+        "errorCode": "offline_japanese_voice_unavailable"
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "type": "tts.sentence.result",
+      "payload": {
+        "runId": "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "requestId": "tts_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "outcome": "cancelled",
+        "path": null,
+        "errorCode": "cancelled"
+      }
+    }
+  ],
+  "invalid": [
+    {
+      "schemaVersion": 1,
+      "type": "tts.sentence.request",
+      "payload": {
+        "runId": "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "requestId": "tts_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "sentence": ""
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "type": "tts.sentence.result",
+      "payload": {
+        "runId": "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "requestId": "tts_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "outcome": "ready",
+        "path": null,
+        "errorCode": null
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "type": "tts.sentence.result",
+      "payload": {
+        "runId": "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "requestId": "tts_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "outcome": "failed",
+        "path": null,
+        "errorCode": "cancelled"
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "type": "tts.sentence.result",
+      "payload": {
+        "runId": "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "requestId": "tts_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "outcome": "ready",
+        "path": "/outside.wav",
+        "errorCode": null
+      }
+    }
+  ]
+}

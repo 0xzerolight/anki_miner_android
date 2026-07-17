@@ -2,6 +2,7 @@ package com.ankiminer.android.ui.video
 
 import com.ankiminer.android.media.SafDocument
 import com.ankiminer.android.mining.CurationCandidate
+import com.ankiminer.android.mining.CurationPage
 import com.ankiminer.android.mining.MiningRunState
 
 enum class DocumentSelectionError {
@@ -32,9 +33,13 @@ data class CurationUiState(
     val runId: String,
     val requestId: String,
     val candidates: List<CurationCandidateUiState>,
+    val page: CurationPage? = null,
 ) {
     val selectedCount: Int
         get() = candidates.count { it.selected }
+
+    val isFinalPage: Boolean
+        get() = page?.let { it.pageIndex == it.pageCount - 1 } ?: true
 }
 
 data class VideoMiningUiState(

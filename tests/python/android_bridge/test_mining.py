@@ -924,6 +924,44 @@ def test_expression_audio_builder_rejects_every_non_pack_kind_before_import() ->
     assert error.value.code == "unsupported_android_feature"
 
 
+def test_online_dictionary_provider_is_memoized_and_cancel_gated_per_run() -> None:
+    calls: list[str] = []
+
+    class OnlineProvider:
+        name = "online"
+        is_online = True
+
+        def is_available(self) -> bool:
+            return True
+
+        def load(self) -> bool:
+            return True
+
+        def lookup(self, word: str) -> str | None:
+            calls.append(word)
+            return f"definition:{word}"
+
+        def close(self) -> None:
+            calls.append("closed")
+
+    cancelled = threading.Event()
+    wrapped = mining._android_dictionary_provider_chain(
+        [OnlineProvider()],
+        cancelled.is_set,
+    )[0]
+
+    # Definition and glossary passes reuse the one consented network lookup.
+    assert wrapped.lookup("猫") == "definition:猫"
+    assert wrapped.lookup("猫") == "definition:猫"
+    assert calls == ["猫"]
+
+    cancelled.set()
+    assert wrapped.lookup("犬") is None
+    assert calls == ["猫"]
+    wrapped.close()
+    assert calls == ["猫", "closed"]
+
+
 def test_runtime_composition_injects_only_android_video_services(
     monkeypatch: pytest.MonkeyPatch,
     initialized_bridge_home: Path,
@@ -951,6 +989,9 @@ def test_runtime_composition_injects_only_android_video_services(
     captured: dict[str, object] = {}
     tagger = object()
     expected_tagger = tagger
+    expected_term_lookup = object()
+    expected_reading_lookup = object()
+    expected_kana_attest_lookup = object()
 
     class Registry:
         def __init__(self, root: Path) -> None:
@@ -965,8 +1006,12 @@ def test_runtime_composition_injects_only_android_video_services(
     class Definition:
         def __init__(self, config: object, providers: list[object]) -> None:
             events.append("definition")
-            self.offline_terms_exist = object()
-            self.offline_term_readings = object()
+            self.offline_terms_exist = expected_term_lookup
+            self.offline_term_readings = expected_reading_lookup
+            self.has_offline_definitions = expected_kana_attest_lookup
+
+        def ensure_loaded(self) -> None:
+            events.append("definition-load")
 
         def close(self) -> None:
             events.append("definition-close")
@@ -978,9 +1023,11 @@ def test_runtime_composition_injects_only_android_video_services(
             *,
             term_lookup: object,
             reading_lookup: object,
+            kana_attest_lookup: object,
         ) -> None:
-            assert term_lookup is None
-            assert reading_lookup is None
+            assert term_lookup is expected_term_lookup
+            assert reading_lookup is expected_reading_lookup
+            assert kana_attest_lookup is expected_kana_attest_lookup
             self.tagger = tagger
             events.append("subtitle-parser")
 
@@ -1030,7 +1077,7 @@ def test_runtime_composition_injects_only_android_video_services(
 
     config = SimpleNamespace(
         dicts_root=Path("/files/dicts"),
-        dictionary_chain=(),
+        dictionary_chain=(SimpleNamespace(kind="indexed", enabled=True),),
         expression_audio_chain=(),
         anki_fields={},
         pitch_active=False,
@@ -1043,7 +1090,7 @@ def test_runtime_composition_injects_only_android_video_services(
         stats_db_path=Path("/files/stats.db"),
     )
     presenter = object()
-    adapters = SimpleNamespace(presenter=presenter)
+    adapters = SimpleNamespace(presenter=presenter, cancel_event=threading.Event())
     anki_adapter = object()
 
     processor = mining._build_processor(config, adapters, anki_adapter)
@@ -1053,6 +1100,7 @@ def test_runtime_composition_injects_only_android_video_services(
         "dictionary-registry",
         "dictionary-load",
         "definition",
+        "definition-load",
         "subtitle-parser",
         "word-filter",
         "media-extractor",

@@ -5,6 +5,7 @@ import com.ankiminer.android.anki.protocol.ReleaseState
 import com.ankiminer.android.anki.provider.AnkiCancellation
 import com.ankiminer.android.anki.provider.AnkiProviderCallbacks
 import com.ankiminer.android.anki.provider.CancellationRegistration
+import com.ankiminer.android.media.FileCopyCancellation
 import com.ankiminer.android.media.SafBroker
 import com.ankiminer.android.media.SafJobFileOwner
 import java.io.File
@@ -100,14 +101,23 @@ internal interface MiningInputOwner : AutoCloseable {
 
 internal fun interface MiningInputOwnerFactory {
     fun create(): MiningInputOwner
+
+    /** Production overload; test and alternate factories may keep the non-cancellable default. */
+    fun create(cancellation: AnkiCancellation): MiningInputOwner = create()
 }
 
 internal class AndroidMiningInputOwnerFactory(context: Context) : MiningInputOwnerFactory {
     private val applicationContext = context.applicationContext
 
-    override fun create(): MiningInputOwner =
+    override fun create(): MiningInputOwner = create(AnkiCancellation.NONE)
+
+    override fun create(cancellation: AnkiCancellation): MiningInputOwner =
         object : MiningInputOwner {
-            private val owner = SafJobFileOwner(applicationContext)
+            private val owner =
+                SafJobFileOwner(
+                    applicationContext,
+                    cancellation = FileCopyCancellation(cancellation::isCancelled),
+                )
 
             override fun openVideo(source: MiningSource): String =
                 owner.openVideoUri(source.uri).path

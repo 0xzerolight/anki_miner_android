@@ -1,6 +1,7 @@
 package com.ankiminer.android.engine
 
 import com.ankiminer.android.mining.CurationCandidate
+import com.ankiminer.android.mining.CurationPage
 import com.ankiminer.android.mining.CurationRequest
 import com.ankiminer.android.mining.CurationSelection
 import com.ankiminer.android.mining.CurationSentence
@@ -143,6 +144,57 @@ class BridgeJsonCodecTest {
         val skipped = BridgeJsonCodec.encodeCurationResponse(request, emptyList())
         assertEquals(null, (BridgeJsonCodec.decode(cancelled) as BridgeMessage.CurationResponse).selection)
         assertEquals(emptyList<CurationSelection>(), (BridgeJsonCodec.decode(skipped) as BridgeMessage.CurationResponse).selection)
+    }
+
+    @Test
+    fun `paged curation preserves metadata and uses page-specific control messages`() {
+        val base = curationRequest()
+        val page = CurationPage(pageIndex = 1, pageCount = 2, candidateStart = 1, totalCandidates = 2)
+        val request = base.copy(page = page)
+        val candidate = request.candidates.single()
+        val sentence = candidate.sentences.single()
+        val rawRequest =
+            """{"schemaVersion":1,"type":"curation.page.request","payload":{"runId":"${request.runId}","requestId":"${request.requestId}","pageIndex":1,"pageCount":2,"candidateStart":1,"totalCandidates":2,"candidates":[{"candidateId":"${candidate.candidateId}","minedForm":"猫","surface":"猫","lemma":"猫","reading":"ネコ","expressionReading":"ねこ","partOfSpeech":null,"frequencyRank":12,"occurrenceCount":2,"defaultSentenceId":"${candidate.defaultSentenceId}","sentences":[{"sentenceId":"${sentence.sentenceId}","sentence":"猫だ。","sentenceFurigana":"猫[ねこ]だ。","sentenceReading":"ねこだ。","startTime":1.0,"endTime":2.0,"duration":1.0}]}]}}"""
+
+        assertEquals(request, (BridgeJsonCodec.decode(rawRequest) as BridgeMessage.CurationNeeded).request)
+        val encoded =
+            BridgeJsonCodec.encodeCurationResponse(
+                request,
+                listOf(CurationSelection(candidate.candidateId, null)),
+            )
+        val response = BridgeJsonCodec.decode(encoded) as BridgeMessage.CurationPageResponse
+        assertEquals(page.pageIndex, response.pageIndex)
+        assertEquals(candidate.candidateId, response.selection?.single()?.candidateId)
+
+        val acknowledgement =
+            BridgeJsonCodec.decode(
+                """{"schemaVersion":1,"type":"curation.page.accepted","payload":{"runId":"${request.runId}","requestId":"${request.requestId}","pageIndex":1,"finalPage":true}}""",
+            ) as BridgeMessage.CurationPageAccepted
+        assertEquals(1L, acknowledgement.pageIndex)
+        assertTrue(acknowledgement.finalPage)
+    }
+
+    @Test
+    fun `paged curation rejects inconsistent bounds and oversized envelopes`() {
+        val request = curationRequest()
+        val candidate = request.candidates.single()
+        val sentence = candidate.sentences.single()
+        val inconsistent =
+            """{"schemaVersion":1,"type":"curation.page.request","payload":{"runId":"${request.runId}","requestId":"${request.requestId}","pageIndex":0,"pageCount":2,"candidateStart":1,"totalCandidates":2,"candidates":[{"candidateId":"${candidate.candidateId}","minedForm":"猫","surface":"猫","lemma":"猫","reading":"ネコ","expressionReading":"ねこ","partOfSpeech":null,"frequencyRank":12,"occurrenceCount":2,"defaultSentenceId":"${candidate.defaultSentenceId}","sentences":[{"sentenceId":"${sentence.sentenceId}","sentence":"猫だ。","sentenceFurigana":"","sentenceReading":"","startTime":1.0,"endTime":2.0,"duration":1.0}]}]}}"""
+        assertEquals(
+            BridgeProtocolCategory.INVALID_VALUE,
+            protocolFailure { BridgeJsonCodec.decode(inconsistent) }.category,
+        )
+
+        val oversized =
+            inconsistent.replace(
+                "\"sentence\":\"猫だ。\"",
+                "\"sentence\":\"${"猫".repeat(BridgeJsonCodec.MAX_CURATION_PAGE_UTF8_BYTES)}\"",
+            )
+        assertEquals(
+            BridgeProtocolCategory.INPUT_TOO_LARGE,
+            protocolFailure { BridgeJsonCodec.decode(oversized) }.category,
+        )
     }
 
     @Test

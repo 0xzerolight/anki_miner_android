@@ -1721,6 +1721,11 @@ internal class SqliteAnkiMutationStore(
         actualFilename?.let { validateMediaNames(it, it) }
         return write { db ->
             val claim = claimById(db, claimId)
+            if (openUncertainMediaRemediationDb(db, claim.id) != null) {
+                throw JournalInvariantViolation(
+                    "Uncertain media requires its typed acknowledgement boundary",
+                )
+            }
             if (openStoredUnattachedRemediationDb(db, claim.id) != null) {
                 if (state != MediaClaimState.PRESENT_BYTES_VERIFIED || !hasDurableNoteBindingDb(db, claim)) {
                     throw JournalInvariantViolation(
@@ -1934,13 +1939,62 @@ internal class SqliteAnkiMutationStore(
         }
     }
 
+    override fun acknowledgeUncertainMedia(
+        remediationId: Long,
+        compactEvidence: String,
+    ): RemediationRecord {
+        requireCompactEvidence(compactEvidence)
+        return write { db ->
+            val remediation = remediationById(db, remediationId)
+            if (
+                remediation.kind != RemediationKind.MEDIA_COMMIT_UNCERTAIN ||
+                    remediation.state != RemediationState.OPEN || remediation.claimId == null
+            ) {
+                throw JournalInvariantViolation("Remediation is not open uncertain media")
+            }
+            val claim = claimById(db, remediation.claimId)
+            if (claim.state != MediaClaimState.COMMIT_UNCERTAIN) {
+                throw JournalInvariantViolation("Uncertain media claim is no longer acknowledgeable")
+            }
+            updateClaim(
+                db,
+                claim,
+                MediaClaimState.ACKNOWLEDGED_BY_USER,
+                claim.actualFilename,
+                compactEvidence,
+            )
+            db.updateOrThrow(
+                "remediations",
+                values(
+                    "state" to RemediationState.RESOLVED.name,
+                    "compact_evidence" to compactEvidence,
+                    "updated_at_ms" to nextTimestamp(remediation.updatedAtMs),
+                ),
+                "id = ? AND state = ? AND kind = ?",
+                arrayOf(
+                    remediationId.toString(),
+                    RemediationState.OPEN.name,
+                    RemediationKind.MEDIA_COMMIT_UNCERTAIN.name,
+                ),
+            )
+            val resolved = remediationById(db, remediationId)
+            if (resolved.state != RemediationState.RESOLVED) {
+                throw JournalInvariantViolation("Uncertain media acknowledgement did not resolve remediation")
+            }
+            resolved
+        }
+    }
+
     override fun resolveRemediation(remediationId: Long, compactEvidence: String): RemediationRecord {
         requireCompactEvidence(compactEvidence)
         return write { db ->
             val current = remediationById(db, remediationId)
             if (current.state != RemediationState.OPEN) throw JournalInvariantViolation("Remediation is already resolved")
-            if (current.kind == RemediationKind.MEDIA_STORED_UNATTACHED) {
-                throw JournalInvariantViolation("Stored-unattached media requires typed acknowledgement")
+            if (
+                current.kind == RemediationKind.MEDIA_STORED_UNATTACHED ||
+                    current.kind == RemediationKind.MEDIA_COMMIT_UNCERTAIN
+            ) {
+                throw JournalInvariantViolation("Media claim remediation requires typed acknowledgement")
             }
             db.updateOrThrow(
                 "remediations",
@@ -3692,6 +3746,24 @@ internal class SqliteAnkiMutationStore(
             null,
             null,
         ).use { it.singleOrNull(::remediationFromCursor, "open stored-unattached remediation") }
+
+    private fun openUncertainMediaRemediationDb(
+        db: SQLiteDatabase,
+        claimId: Long,
+    ): RemediationRecord? =
+        db.query(
+            "remediations",
+            null,
+            "claim_id = ? AND kind = ? AND state = ?",
+            arrayOf(
+                claimId.toString(),
+                RemediationKind.MEDIA_COMMIT_UNCERTAIN.name,
+                RemediationState.OPEN.name,
+            ),
+            null,
+            null,
+            null,
+        ).use { it.singleOrNull(::remediationFromCursor, "open uncertain-media remediation") }
 
     private fun hasDurableNoteBindingDb(
         db: SQLiteDatabase,

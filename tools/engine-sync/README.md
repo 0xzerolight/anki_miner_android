@@ -50,7 +50,15 @@ PYTHONPATH=tools/engine-sync python tools/engine-sync/run_goldens_v2.py \
 
 The exporter source is independently pinned by file hash, so pointing this
 command at a newer desktop exporter fails rather than silently changing the
-contract. `.github/workflows/parity-nightly.yml` separately derives desktop
+contract. The frozen desktop v2 contract still names the earlier Android
+engine revision. Before derivation, the runner therefore materializes an
+attested exporter trio and changes only that revision constant to `engine.lock`'s
+reviewed `40f2f5c` pin. Both SHA-256 and Git-blob identities bind the desktop
+sources, and the fixture records the hashes of the actual materialized files.
+Any upstream exporter change requires an explicit rebase in
+`golden_exporter_overlay.py`.
+
+`.github/workflows/parity-nightly.yml` separately derives desktop
 HEAD and reports semantic case drift as an early warning artifact.
 
 ### Historical v1 derivation

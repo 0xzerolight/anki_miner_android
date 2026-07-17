@@ -182,6 +182,12 @@ internal interface AnkiMutationStore : Closeable {
         compactEvidence: String,
     ): RemediationRecord
 
+    /** Atomically abandons an unknowable media commit and its namespace claim by user consent. */
+    fun acknowledgeUncertainMedia(
+        remediationId: Long,
+        compactEvidence: String,
+    ): RemediationRecord
+
     fun resolveRemediation(remediationId: Long, compactEvidence: String): RemediationRecord
 }
 

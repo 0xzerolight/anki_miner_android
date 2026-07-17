@@ -98,16 +98,55 @@ data class CurationCandidate(
     }
 }
 
+const val CURATION_PAGE_MAX_CANDIDATES = 100
+
+data class CurationPage(
+    val pageIndex: Long,
+    val pageCount: Long,
+    val candidateStart: Long,
+    val totalCandidates: Long,
+) {
+    init {
+        require(pageIndex >= 0)
+        require(pageCount >= 2)
+        require(pageIndex < pageCount)
+        require(candidateStart >= 0)
+        require(totalCandidates >= 2)
+        require(pageCount <= totalCandidates)
+    }
+}
+
 data class CurationRequest(
     val runId: String,
     val requestId: String,
     val candidates: List<CurationCandidate>,
+    val page: CurationPage? = null,
 ) {
     init {
         require(runId.isNotBlank())
         require(requestId.isNotBlank())
+        require(candidates.size <= CURATION_PAGE_MAX_CANDIDATES)
         require(candidates.map { it.candidateId }.toSet().size == candidates.size)
+        page?.let { metadata ->
+            require(candidates.isNotEmpty())
+            require(metadata.candidateStart >= metadata.pageIndex)
+            require(metadata.pageIndex != 0L || metadata.candidateStart == 0L)
+            val candidateCount = candidates.size.toLong()
+            require(metadata.candidateStart <= metadata.totalCandidates - candidateCount)
+            val candidateEnd = metadata.candidateStart + candidateCount
+            val remainingPages = metadata.pageCount - metadata.pageIndex - 1
+            val remainingCandidates = metadata.totalCandidates - candidateEnd
+            require(remainingCandidates >= remainingPages)
+            if (metadata.pageIndex == metadata.pageCount - 1) {
+                require(candidateEnd == metadata.totalCandidates)
+            } else {
+                require(candidateEnd < metadata.totalCandidates)
+            }
+        }
     }
+
+    val isFinalPage: Boolean
+        get() = page?.let { it.pageIndex == it.pageCount - 1 } ?: true
 }
 
 data class CurationSelection(
@@ -138,7 +177,10 @@ sealed interface MiningRunState {
         val cancellationToken: MiningCancellationToken? = null,
     ) : MiningRunState
 
-    data class Curating(val request: CurationRequest) : MiningRunState
+    data class Curating(
+        val request: CurationRequest,
+        val pageSubmissionPending: Boolean = false,
+    ) : MiningRunState
 
     data class Running(
         val runId: String,

@@ -1,8 +1,21 @@
 package com.ankiminer.android.ui.setup
 
 import com.ankiminer.android.anki.provider.AnkiProviderReadiness
+import com.ankiminer.android.anki.provider.AnkiMinerModelProvisioningResult
+import com.ankiminer.android.anki.provider.AnkiRemediationInventory
+import com.ankiminer.android.data.anki.AnkiSetupFailure
+import com.ankiminer.android.data.anki.AnkiSetupOperation
 import com.ankiminer.android.data.resources.DictionaryLookup
 import com.ankiminer.android.data.resources.InstalledDictionary
+import com.ankiminer.android.data.resources.InstalledAudioPack
+import com.ankiminer.android.data.resources.InstalledFrequencySource
+import com.ankiminer.android.data.resources.InstalledPitchAccent
+import com.ankiminer.android.data.resources.KnownWordsInventory
+import com.ankiminer.android.data.resources.BundledWordset
+import com.ankiminer.android.data.resources.LocalResourceImportResult
+import com.ankiminer.android.data.resources.FrequencySourceFormat
+import com.ankiminer.android.data.resources.KnownWordsSourceFormat
+import com.ankiminer.android.data.resources.PitchAccentSourceFormat
 import com.ankiminer.android.data.resources.ResourceFailure
 import com.ankiminer.android.data.resources.ResourceOperationProgress
 import com.ankiminer.android.data.resources.ResourceStartupReadiness
@@ -14,10 +27,24 @@ internal data class SetupUiState(
     val resourceStartup: ResourceStartupReadiness = ResourceStartupReadiness.PENDING,
     val anki: AnkiProviderReadiness = AnkiProviderReadiness.NotChecked,
     val notifications: NotificationPermissionReadiness = NotificationPermissionReadiness.READY,
+    val model: AnkiMinerModelProvisioningResult? = null,
+    val remediations: AnkiRemediationInventory = AnkiRemediationInventory(emptyList()),
+    val legacyNoteType: String? = null,
+    val ankiOperation: AnkiSetupOperation? = null,
+    val ankiFailure: AnkiSetupFailure? = null,
     val firstRunComplete: Boolean = false,
     val uniDicInstalled: Boolean = false,
     val recommendedDictionaryInstalled: Boolean = false,
+    val recommendedDictionarySlotOccupied: Boolean = false,
+    val recommendedDictionaryNeedsRepair: Boolean = false,
+    val recommendedReplaceConfirmationVisible: Boolean = false,
     val dictionaries: List<InstalledDictionary> = emptyList(),
+    val frequencySources: List<InstalledFrequencySource> = emptyList(),
+    val pitchAccent: InstalledPitchAccent? = null,
+    val audioPacks: List<InstalledAudioPack> = emptyList(),
+    val knownWords: KnownWordsInventory = KnownWordsInventory(0, 0, 0, 0, schemaOk = true),
+    val wordsets: List<BundledWordset> = emptyList(),
+    val lastLocalImport: LocalResourceImportResult? = null,
     val operation: ResourceOperationProgress? = null,
     val failure: ResourceFailure? = null,
     val lookup: DictionaryLookup? = null,
@@ -25,11 +52,29 @@ internal data class SetupUiState(
     val lookupSlotId: String? = null,
     val customSlotId: String = "custom-dictionary",
     val customReplace: Boolean = false,
+    val frequencySourceId: String = "frequency",
+    val frequencySourceName: String = "Imported frequency",
+    val frequencyFormat: FrequencySourceFormat = FrequencySourceFormat.YOMITAN_ZIP,
+    val frequencyReplace: Boolean = false,
+    val pitchSourceName: String = "Imported pitch accent",
+    val pitchFormat: PitchAccentSourceFormat = PitchAccentSourceFormat.YOMITAN_ZIP,
+    val pitchReplace: Boolean = false,
+    val audioPackId: String = "audio-pack",
+    val audioPackReplace: Boolean = false,
+    val knownWordsFormat: KnownWordsSourceFormat = KnownWordsSourceFormat.JSON,
     val completing: Boolean = false,
     val completionError: Boolean = false,
+    val targetAcceptanceInProgress: Boolean = false,
+    val targetConsentError: Boolean = false,
 ) {
     val customSlotValid: Boolean
         get() = CUSTOM_SLOT_ID.matches(customSlotId)
+
+    val frequencySourceIdValid: Boolean
+        get() = CUSTOM_SLOT_ID.matches(frequencySourceId)
+
+    val audioPackIdValid: Boolean
+        get() = CUSTOM_SLOT_ID.matches(audioPackId) && audioPackId != "jpod101"
 
     val pythonReady: Boolean
         get() = python is PythonRuntimeReadiness.Ready
@@ -40,20 +85,37 @@ internal data class SetupUiState(
     val notificationReady: Boolean
         get() = notifications == NotificationPermissionReadiness.READY
 
+    val modelReady: Boolean
+        get() = model is AnkiMinerModelProvisioningResult.Ready
+
+    val recoveryReady: Boolean
+        get() = remediations.pending.isEmpty()
+
+    val targetReady: Boolean
+        get() = modelReady && legacyNoteType == null
+
+    val busy: Boolean
+        get() = operation != null || ankiOperation != null || targetAcceptanceInProgress
+
     val isMiningReady: Boolean
         get() =
             pythonReady &&
                 resourceStartup == ResourceStartupReadiness.READY &&
                 ankiReady &&
-                notificationReady &&
+                targetReady &&
+                recoveryReady &&
                 uniDicInstalled &&
-                operation == null
+                !busy
 
     val canFinishFirstRun: Boolean
         get() =
-            resourceStartup == ResourceStartupReadiness.READY &&
+            pythonReady &&
+                resourceStartup == ResourceStartupReadiness.READY &&
+                ankiReady &&
+                targetReady &&
+                recoveryReady &&
                 uniDicInstalled &&
-                operation == null &&
+                !busy &&
                 !completing
 
     private companion object {

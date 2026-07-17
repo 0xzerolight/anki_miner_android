@@ -23,7 +23,7 @@ from typing import Any, Literal
 from anki_miner.exceptions import SetupError
 from anki_miner.models.reading import ReadingDocument, ReadingSourceRef
 
-from ._util import is_junk_path, natural_sort_key
+from ._util import MAX_MOKURO_JSON_BYTES, is_junk_path, natural_sort_key, read_text_capped
 
 # Required top-level keys in a ``.mokuro`` sidecar. Unknown keys are ignored —
 # community files carry extras like ``chars``/``spine_width``.
@@ -44,6 +44,9 @@ _ARCHIVE_EXTS: tuple[str, ...] = (".cbz", ".zip")
 # MicroDVD ``.sub``: frame-based, pysubs2 needs a media-derived fps we don't
 # have without the video.
 _SUBTITLE_EXTS: tuple[str, ...] = (".srt", ".ass", ".ssa", ".vtt")
+
+# Book-file extensions (Reading → Novels sub-tab); matched case-insensitively.
+_BOOK_EXTS: tuple[str, ...] = (".epub", ".txt")
 
 
 def detect(path: Path) -> list[ReadingSourceRef]:
@@ -108,6 +111,42 @@ def load(ref: ReadingSourceRef) -> ReadingDocument:
         return subtitle_source.load(ref)
 
     raise SetupError(f"Unknown reading source kind: {ref.kind!r}")
+
+
+def detect_book_folder(directory: Path) -> list[ReadingSourceRef]:
+    """Enumerate the top-level ``.epub``/``.txt`` books in a directory.
+
+    The Novels sub-tab's folder-mining path: one ref per book, natural-sorted
+    by filename. Deliberately non-recursive — a folder pick must not sweep a
+    whole library through its subfolders. Refs are provisional (extension
+    only, no file open), so the per-book loader stays authoritative for
+    metadata and the EPUB DRM check: one protected book fails its own queue
+    item at mine time instead of poisoning the scan.
+
+    Separate from :func:`detect`'s directory branch on purpose — that cascade
+    stays mokuro-only so the manga tab's folder semantics are unchanged.
+
+    Raises :class:`SetupError` on an unreadable path or a folder with no
+    top-level books.
+    """
+    try:
+        entries = list(directory.iterdir())
+    except OSError as e:
+        raise SetupError(f"Cannot read folder '{directory.name}': {e}") from e
+
+    books = sorted(
+        (
+            child
+            for child in entries
+            if child.is_file() and child.suffix.lower() in _BOOK_EXTS and not is_junk_path(child.name)
+        ),
+        key=lambda child: natural_sort_key(child.name),
+    )
+    if not books:
+        raise SetupError(
+            f"No .epub or .txt books found in '{directory.name}'. " "Manga folders are mined in the Manga tab."
+        )
+    return [_book_ref(child, "epub" if child.suffix.lower() == ".epub" else "txt") for child in books]
 
 
 # --------------------------------------------------------------------------- #
@@ -215,7 +254,9 @@ def _read_mokuro_meta(mokuro_path: Path) -> dict[str, Any]:
     top level, or any missing required key.
     """
     try:
-        raw = mokuro_path.read_text(encoding="utf-8")
+        # Size-capped (module global so tests can shrink it): a hostile
+        # multi-GB sidecar must fail fast instead of OOMing the load.
+        raw = read_text_capped(mokuro_path, MAX_MOKURO_JSON_BYTES, ".mokuro file")
     except OSError as e:
         raise SetupError(f"Cannot read .mokuro file '{mokuro_path.name}': {e}") from e
 

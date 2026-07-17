@@ -38,6 +38,70 @@
       }
     },
     {
+      "name": "txt reading run",
+      "message": {
+        "schemaVersion": 1,
+        "type": "mining.reading.run",
+        "payload": {
+          "sourceKind": "txt",
+          "sourcePath": "/cache/reading/book.TXT",
+          "imageArchivePath": null,
+          "seriesName": null,
+          "cacheDir": "/cache",
+          "nativeLibraryDir": "/native",
+          "configSnapshot": {"settings": {}, "androidTtsEnabled": false}
+        }
+      }
+    },
+    {
+      "name": "epub reading run",
+      "message": {
+        "schemaVersion": 1,
+        "type": "mining.reading.run",
+        "payload": {
+          "sourceKind": "epub",
+          "sourcePath": "/cache/reading/book.epub",
+          "imageArchivePath": null,
+          "seriesName": null,
+          "cacheDir": "/cache",
+          "nativeLibraryDir": "/native",
+          "configSnapshot": {"settings": {}}
+        }
+      }
+    },
+    {
+      "name": "subtitle reading run",
+      "message": {
+        "schemaVersion": 1,
+        "type": "mining.reading.run",
+        "payload": {
+          "sourceKind": "subtitle",
+          "sourcePath": "/cache/reading/dialogue.VTT",
+          "imageArchivePath": null,
+          "seriesName": "Subtitles",
+          "cacheDir": "/cache",
+          "nativeLibraryDir": "/native",
+          "configSnapshot": {"settings": {}}
+        }
+      }
+    },
+    {
+      "name": "mokuro reading run with archive",
+      "message": {
+        "schemaVersion": 1,
+        "type": "mining.reading.run",
+        "payload": {
+          "sourceKind": "mokuro",
+          "sourcePath": "/cache/reading/volume.mokuro",
+          "imageArchivePath": "/cache/reading/volume.CBZ",
+          "seriesName": null,
+          "cacheDir": "/cache",
+          "nativeLibraryDir": "/native",
+          "configSnapshot": {"settings": {}}
+        }
+      }
+    },
+    {
       "name": "job registration request",
       "message": {
         "schemaVersion": 1,
@@ -326,6 +390,119 @@
           "configSnapshot": {
             "settings": {"audio_bitrate": 9223372036854775808}
           }
+        }
+      }
+    },
+    {
+      "name": "reading request rejects mismatched kind and suffix",
+      "message": {
+        "schemaVersion": 1,
+        "type": "mining.reading.run",
+        "payload": {
+          "sourceKind": "epub",
+          "sourcePath": "/cache/reading/book.txt",
+          "imageArchivePath": null,
+          "seriesName": null,
+          "cacheDir": "/cache",
+          "nativeLibraryDir": "/native",
+          "configSnapshot": {"settings": {}}
+        }
+      }
+    },
+    {
+      "name": "reading request rejects unsupported kind",
+      "message": {
+        "schemaVersion": 1,
+        "type": "mining.reading.run",
+        "payload": {
+          "sourceKind": "pdf",
+          "sourcePath": "/cache/reading/book.pdf",
+          "imageArchivePath": null,
+          "seriesName": null,
+          "cacheDir": "/cache",
+          "nativeLibraryDir": "/native",
+          "configSnapshot": {"settings": {}}
+        }
+      }
+    },
+    {
+      "name": "non-mokuro reading request rejects archive",
+      "message": {
+        "schemaVersion": 1,
+        "type": "mining.reading.run",
+        "payload": {
+          "sourceKind": "txt",
+          "sourcePath": "/cache/reading/book.txt",
+          "imageArchivePath": "/cache/reading/book.zip",
+          "seriesName": null,
+          "cacheDir": "/cache",
+          "nativeLibraryDir": "/native",
+          "configSnapshot": {"settings": {}}
+        }
+      }
+    },
+    {
+      "name": "subtitle reading request requires stable series name",
+      "message": {
+        "schemaVersion": 1,
+        "type": "mining.reading.run",
+        "payload": {
+          "sourceKind": "subtitle",
+          "sourcePath": "/cache/reading/dialogue.srt",
+          "imageArchivePath": null,
+          "seriesName": null,
+          "cacheDir": "/cache",
+          "nativeLibraryDir": "/native",
+          "configSnapshot": {"settings": {}}
+        }
+      }
+    },
+    {
+      "name": "non-subtitle reading request rejects series name",
+      "message": {
+        "schemaVersion": 1,
+        "type": "mining.reading.run",
+        "payload": {
+          "sourceKind": "txt",
+          "sourcePath": "/cache/reading/book.txt",
+          "imageArchivePath": null,
+          "seriesName": "Books",
+          "cacheDir": "/cache",
+          "nativeLibraryDir": "/native",
+          "configSnapshot": {"settings": {}}
+        }
+      }
+    },
+    {
+      "name": "reading source path must be absolute",
+      "message": {
+        "schemaVersion": 1,
+        "type": "mining.reading.run",
+        "payload": {
+          "sourceKind": "txt",
+          "sourcePath": "book.txt",
+          "imageArchivePath": null,
+          "seriesName": null,
+          "cacheDir": "/cache",
+          "nativeLibraryDir": "/native",
+          "configSnapshot": {"settings": {}}
+        }
+      }
+    },
+    {
+      "name": "reading request rejects unknown field",
+      "message": {
+        "schemaVersion": 1,
+        "type": "mining.reading.run",
+        "payload": {
+          "sourceKind": "txt",
+          "sourcePath": "/cache/reading/book.txt",
+          "imageArchivePath": null,
+          "seriesName": null,
+          "cacheDir": "/cache",
+          "nativeLibraryDir": "/native",
+          "configSnapshot": {"settings": {}},
+          "unknown": true
         }
       }
     },

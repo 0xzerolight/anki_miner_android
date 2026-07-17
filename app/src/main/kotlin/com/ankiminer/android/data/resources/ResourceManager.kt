@@ -36,6 +36,32 @@ interface ResourceManager {
         replace: Boolean,
     )
 
+    suspend fun importFrequencySource(
+        uri: String,
+        sourceId: String,
+        sourceName: String,
+        format: FrequencySourceFormat,
+        replace: Boolean,
+    )
+
+    suspend fun importPitchAccent(
+        uri: String,
+        sourceName: String,
+        format: PitchAccentSourceFormat,
+        replace: Boolean,
+    )
+
+    suspend fun importAudioPack(
+        uri: String,
+        packId: String,
+        replace: Boolean,
+    )
+
+    suspend fun importKnownWords(
+        uri: String,
+        format: KnownWordsSourceFormat,
+    )
+
     suspend fun lookup(
         slotId: String,
         term: String,
@@ -46,7 +72,15 @@ interface ResourceManager {
     fun dismissFailure()
 
     fun installedDictionaryIds(): List<String> =
-        state.value.dictionaries.filter { it.schemaOk }.map { it.slotId }
+        state.value.dictionaries.filter { it.isUsable }.map { it.slotId }
+
+    fun installedFrequencyIds(): List<String> =
+        state.value.frequencySources.filter { it.schemaOk && it.entryCount > 0 }.map { it.sourceId }
+
+    fun installedAudioPackIds(): List<String> =
+        state.value.audioPacks.filter { it.contentAvailable && it.entryCount > 0 }.map { it.packId }
+
+    fun bundledWordsetIds(): List<String> = state.value.wordsets.map { it.wordsetId }
 }
 
 internal class AndroidResourceManager(
@@ -135,6 +169,16 @@ internal class AndroidResourceManager(
     override suspend fun installRecommendedDictionary(replace: Boolean) {
         runOperation("Import recommended dictionary", ResourceOperationPhase.PREPARING) { operation ->
             val resource = catalog().recommendedDictionary
+            val occupied =
+                mutableState.value.dictionaries.any {
+                    it.occupied && it.slotId == resource.slotId
+                }
+            if (occupied && !replace) {
+                throw ResourceBridgeException(
+                    "resource_already_installed",
+                    "Dictionary slot '${resource.slotId}' already exists",
+                )
+            }
             val staged = download(resource, operation)
             try {
                 updateProgress(operation, ResourceOperationPhase.IMPORTING, resource.archive.sizeBytes, resource.archive.sizeBytes)
@@ -187,6 +231,196 @@ internal class AndroidResourceManager(
                         null,
                     ),
                 )
+                refreshFromPython()
+            } finally {
+                staged?.file?.delete()
+                runBlocking { safBroker.releaseReadAccess(retained.uri) }
+            }
+        }
+    }
+
+    override suspend fun importFrequencySource(
+        uri: String,
+        sourceId: String,
+        sourceName: String,
+        format: FrequencySourceFormat,
+        replace: Boolean,
+    ) {
+        runOperation("Import frequency source", ResourceOperationPhase.PREPARING) { operation ->
+            val retained = runBlocking { safBroker.retainReadAccess(uri) }
+            var staged: StagedArchive? = null
+            try {
+                staged =
+                    safStager.stage(
+                        source = Uri.parse(retained.uri),
+                        operationId = operation.id,
+                        cancellation = operation.cancellation,
+                        fileSuffix = format.fileSuffix,
+                        maximumBytes =
+                            if (format == FrequencySourceFormat.YOMITAN_ZIP) {
+                                FREQUENCY_ARCHIVE_LIMIT
+                            } else {
+                                FREQUENCY_TEXT_LIMIT
+                            },
+                        sourceLabel = "frequency source",
+                    ) { current, total ->
+                        updateProgress(operation, ResourceOperationPhase.PREPARING, current, total)
+                    }
+                updateProgress(operation, ResourceOperationPhase.IMPORTING, staged.sizeBytes, staged.sizeBytes)
+                operation.cancellation.check()
+                operation.pythonStarted.set(true)
+                val imported =
+                    ResourceBridgeCodec.decodeImportedFrequency(
+                        bridge.dispatch(
+                            ResourceBridgeCodec.encodeFrequencyImportRequest(
+                                operation.id,
+                                staged.file.canonicalPath,
+                                sourceId,
+                                sourceName,
+                                format,
+                                replace,
+                            ),
+                            null,
+                        ),
+                    )
+                mutableState.update { it.copy(lastLocalImport = imported) }
+                refreshFromPython()
+            } finally {
+                staged?.file?.delete()
+                runBlocking { safBroker.releaseReadAccess(retained.uri) }
+            }
+        }
+    }
+
+    override suspend fun importPitchAccent(
+        uri: String,
+        sourceName: String,
+        format: PitchAccentSourceFormat,
+        replace: Boolean,
+    ) {
+        runOperation("Import pitch accent", ResourceOperationPhase.PREPARING) { operation ->
+            val retained = runBlocking { safBroker.retainReadAccess(uri) }
+            var staged: StagedArchive? = null
+            try {
+                staged =
+                    safStager.stage(
+                        source = Uri.parse(retained.uri),
+                        operationId = operation.id,
+                        cancellation = operation.cancellation,
+                        fileSuffix = format.fileSuffix,
+                        maximumBytes =
+                            if (format == PitchAccentSourceFormat.YOMITAN_ZIP) {
+                                PITCH_ARCHIVE_LIMIT
+                            } else {
+                                PITCH_TEXT_LIMIT
+                            },
+                        sourceLabel = "pitch-accent source",
+                    ) { current, total ->
+                        updateProgress(operation, ResourceOperationPhase.PREPARING, current, total)
+                    }
+                updateProgress(operation, ResourceOperationPhase.IMPORTING, staged.sizeBytes, staged.sizeBytes)
+                operation.cancellation.check()
+                operation.pythonStarted.set(true)
+                val imported =
+                    ResourceBridgeCodec.decodeImportedPitch(
+                        bridge.dispatch(
+                            ResourceBridgeCodec.encodePitchImportRequest(
+                                operation.id,
+                                staged.file.canonicalPath,
+                                sourceName,
+                                format,
+                                replace,
+                            ),
+                            null,
+                        ),
+                    )
+                mutableState.update { it.copy(lastLocalImport = imported) }
+                refreshFromPython()
+            } finally {
+                staged?.file?.delete()
+                runBlocking { safBroker.releaseReadAccess(retained.uri) }
+            }
+        }
+    }
+
+    override suspend fun importAudioPack(
+        uri: String,
+        packId: String,
+        replace: Boolean,
+    ) {
+        runOperation("Import local audio pack", ResourceOperationPhase.PREPARING) { operation ->
+            val retained = runBlocking { safBroker.retainReadAccess(uri) }
+            var staged: StagedArchive? = null
+            try {
+                staged =
+                    safStager.stage(
+                        source = Uri.parse(retained.uri),
+                        operationId = operation.id,
+                        cancellation = operation.cancellation,
+                        fileSuffix = ".zip",
+                        maximumBytes = AUDIO_ARCHIVE_LIMIT,
+                        sourceLabel = "audio-pack ZIP",
+                    ) { current, total ->
+                        updateProgress(operation, ResourceOperationPhase.PREPARING, current, total)
+                    }
+                updateProgress(operation, ResourceOperationPhase.IMPORTING, staged.sizeBytes, staged.sizeBytes)
+                operation.cancellation.check()
+                operation.pythonStarted.set(true)
+                val imported =
+                    ResourceBridgeCodec.decodeImportedAudioPack(
+                        bridge.dispatch(
+                            ResourceBridgeCodec.encodeAudioPackImportRequest(
+                                operation.id,
+                                staged.file.canonicalPath,
+                                packId,
+                                replace,
+                            ),
+                            null,
+                        ),
+                    )
+                mutableState.update { it.copy(lastLocalImport = imported) }
+                refreshFromPython()
+            } finally {
+                staged?.file?.delete()
+                runBlocking { safBroker.releaseReadAccess(retained.uri) }
+            }
+        }
+    }
+
+    override suspend fun importKnownWords(
+        uri: String,
+        format: KnownWordsSourceFormat,
+    ) {
+        runOperation("Import known words", ResourceOperationPhase.PREPARING) { operation ->
+            val retained = runBlocking { safBroker.retainReadAccess(uri) }
+            var staged: StagedArchive? = null
+            try {
+                staged =
+                    safStager.stage(
+                        source = Uri.parse(retained.uri),
+                        operationId = operation.id,
+                        cancellation = operation.cancellation,
+                        fileSuffix = format.fileSuffix,
+                        maximumBytes = KNOWN_WORDS_FILE_LIMIT,
+                        sourceLabel = "known-word export",
+                    ) { current, total ->
+                        updateProgress(operation, ResourceOperationPhase.PREPARING, current, total)
+                    }
+                updateProgress(operation, ResourceOperationPhase.IMPORTING, staged.sizeBytes, staged.sizeBytes)
+                operation.cancellation.check()
+                operation.pythonStarted.set(true)
+                val imported =
+                    ResourceBridgeCodec.decodeImportedKnownWords(
+                        bridge.dispatch(
+                            ResourceBridgeCodec.encodeKnownWordsImportRequest(
+                                operation.id,
+                                staged.file.canonicalPath,
+                                format,
+                            ),
+                            null,
+                        ),
+                    )
+                mutableState.update { it.copy(lastLocalImport = imported) }
                 refreshFromPython()
             } finally {
                 staged?.file?.delete()
@@ -315,6 +549,29 @@ internal class AndroidResourceManager(
             ResourceBridgeCodec.decodeDictionaryList(
                 bridge.dispatch(ResourceBridgeCodec.encodeDictionaryListRequest(), null),
             ).sortedBy { it.slotId }
+        val localResources =
+            ResourceBridgeCodec.decodeLocalResourceList(
+                bridge.dispatch(ResourceBridgeCodec.encodeLocalResourceListRequest(), null),
+            )
+        val fatalInventoryFailure =
+            when {
+                dictionaries.any { !it.isUsable } ->
+                    ResourceBridgeException(
+                        "dictionary_resource_invalid",
+                        "An occupied dictionary slot is incomplete, unsafe, or uses an old schema",
+                    )
+                localResources.pitchAccent?.schemaOk == false ->
+                    ResourceBridgeException(
+                        "pitch_resource_invalid",
+                        "Installed pitch-accent data is incomplete or malformed",
+                    )
+                !localResources.knownWords.schemaOk ->
+                    ResourceBridgeException(
+                        "known_words_resource_invalid",
+                        "Known-word storage is incomplete or malformed",
+                    )
+                else -> null
+            }
         val installed =
             tokenizerResources.installedResource()?.let { resource ->
                 val expected = catalog.unidic
@@ -337,11 +594,27 @@ internal class AndroidResourceManager(
             }
         mutableState.update {
             it.copy(
+                startupReadiness =
+                    if (fatalInventoryFailure != null) {
+                        ResourceStartupReadiness.FAILED
+                    } else if (it.startupReadiness == ResourceStartupReadiness.FAILED) {
+                        ResourceStartupReadiness.READY
+                    } else {
+                        it.startupReadiness
+                    },
                 catalog = catalog,
                 dictionaries = dictionaries,
+                frequencySources = localResources.frequencies.sortedBy { source -> source.sourceId },
+                pitchAccent = localResources.pitchAccent,
+                audioPacks = localResources.audioPacks.sortedBy { pack -> pack.packId },
+                knownWords = localResources.knownWords,
+                wordsets = localResources.wordsets,
                 installedUniDic = installed,
             )
         }
+        // Publish the invalid inventory so Setup can explain exactly what must be replaced, then
+        // fail closed because both fixed resources are consumed without a selectable chain gate.
+        fatalInventoryFailure?.let { throw it }
     }
 
     private fun updateProgress(
@@ -390,8 +663,22 @@ internal class AndroidResourceManager(
                 "That dictionary slot already exists; choose Replace to update it"
             "dictionary_import_failed" ->
                 "The selected ZIP is not a supported Yomitan dictionary"
+            "frequency_import_failed" ->
+                "The selected file is not a supported frequency source"
+            "pitch_import_failed" ->
+                "The selected file is not supported pitch-accent data"
+            "pitch_resource_invalid" ->
+                "Installed pitch-accent data is damaged; replace it before mining"
+            "audio_pack_import_failed" ->
+                "The selected ZIP is not a supported local audio pack"
+            "known_words_import_failed" ->
+                "The selected file contains no supported known words"
+            "known_words_database_unsafe", "resource_inventory_failed" ->
+                "A local resource is damaged or unsafe and needs attention"
             "dictionary_schema_mismatch" ->
                 "This dictionary must be replaced because its index schema is stale"
+            "dictionary_resource_invalid" ->
+                "An occupied dictionary slot is damaged or stale; explicitly replace it before mining"
             else -> fallback
         }
 
@@ -436,7 +723,18 @@ internal class AndroidResourceManager(
                 "insufficient_storage",
                 "resource_busy",
                 "resource_already_installed",
+                "frequency_import_failed",
+                "pitch_import_failed",
+                "audio_pack_import_failed",
+                "known_words_import_failed",
                 "resource_operation_failed",
             )
+
+        const val FREQUENCY_ARCHIVE_LIMIT = 512L * 1024 * 1024
+        const val FREQUENCY_TEXT_LIMIT = 64L * 1024 * 1024
+        const val PITCH_ARCHIVE_LIMIT = 512L * 1024 * 1024
+        const val PITCH_TEXT_LIMIT = 64L * 1024 * 1024
+        const val AUDIO_ARCHIVE_LIMIT = 2L * 1024 * 1024 * 1024
+        const val KNOWN_WORDS_FILE_LIMIT = 32L * 1024 * 1024
     }
 }

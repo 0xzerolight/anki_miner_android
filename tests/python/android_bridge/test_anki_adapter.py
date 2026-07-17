@@ -5111,7 +5111,52 @@ def test_dictionary_media_preserves_quote_filename_for_direct_fallback(
     ] == [{"assetId": asset["assetId"], "actualFilename": filename}]
 
 
-def test_dictionary_media_random_names_rewrite_only_marked_html_safely(
+def test_remote_yomitan_image_never_reaches_anki_or_media_callbacks(
+    initialized_bridge_home: Path,
+) -> None:
+    from anki_miner.services.dictionary.yomitan_renderer import (
+        structured_content_to_html,
+    )
+
+    remote = "https://tracker.example.test/glossary/cat.png?source=anki"
+    definition = structured_content_to_html(
+        {
+            "tag": "div",
+            "content": [
+                "ordinary text before ",
+                {
+                    "tag": "img",
+                    "path": remote,
+                    "alt": "remote illustration",
+                    "appearance": "monochrome",
+                },
+                " ordinary text after",
+            ],
+        },
+        dict_id="custom-dictionary",
+        media_collector=set(),
+    )
+    assert remote in definition
+
+    kotlin = FakeKotlinAnki()
+    adapter = _adapter(_config(initialized_bridge_home), kotlin)
+
+    assert adapter.create_cards_batch([_card("猫", definition=definition)]) == 1
+
+    assert kotlin.requests_for("ankiStoreMedia") == []
+    create_request = kotlin.requests_for("ankiCreateNotes")[0]
+    encoded_request = json.dumps(create_request, ensure_ascii=False)
+    stored_definition = create_request["payload"]["notes"][0]["fields"][
+        "MainDefinition"
+    ]
+    assert remote not in encoded_request
+    assert "tracker.example.test" not in encoded_request
+    assert "ordinary text before" in stored_definition
+    assert "ordinary text after" in stored_definition
+    assert "remote illustration" in stored_definition
+
+
+def test_dictionary_media_random_names_rewrite_marked_html_and_strip_unmarked_src(
     initialized_bridge_home: Path,
 ) -> None:
     media_root = initialized_bridge_home / "dicts" / "dict" / "media"
@@ -5181,7 +5226,7 @@ def test_dictionary_media_random_names_rewrite_only_marked_html_safely(
         f'src="{first_preferred}_random.jpeg">'
         '<img class="anki-miner-dict-media" '
         f'src="{first_preferred}_random.jpeg">'
-        '<img class="ordinary" src="dict__pic&amp;one.png">'
+        '<img class="ordinary">'
         f'<img src="{second_preferred}_random.webp" class="anki-miner-dict-media">'
     )
     expected_glossary = (

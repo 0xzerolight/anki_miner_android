@@ -17,6 +17,7 @@ roots = [
   "anki_miner.services.frequency.registry",
   "anki_miner.services.frequency.source_importer",
   "anki_miner.services.known_word_db",
+  "anki_miner.services.known_words_import",
   "anki_miner.services.pitch_accent.yomitan_pitch_importer",
   "anki_miner.services.pitch_accent_service",
   "anki_miner.services.reading.aozora_source",

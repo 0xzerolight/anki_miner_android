@@ -86,6 +86,7 @@ def test_typed_fields_and_entries_are_reconstructed(tmp_path: Path) -> None:
         {
             "anki_fields": {"expression_audio": "WordAudio"},
             "allowed_pos": ["名詞", "動詞"],
+            "excluded_wordsets": ["given-names", "place-names"],
             "blacklist_path": str(tmp_path / "files" / "blacklist.txt"),
             "dictionary_chain": [
                 {"kind": "indexed", "dict_id": "jmdict-english"},
@@ -99,6 +100,7 @@ def test_typed_fields_and_entries_are_reconstructed(tmp_path: Path) -> None:
     config = snapshot.engine_config
 
     assert config.allowed_pos == ("名詞", "動詞")
+    assert config.excluded_wordsets == ("given-names", "place-names")
     assert isinstance(config.blacklist_path, Path)
     assert config.dictionary_chain == (
         ChainEntry(kind="indexed", dict_id="jmdict-english"),
@@ -142,15 +144,38 @@ def test_desktop_animated_screenshot_tuning_is_not_exposed(tmp_path: Path) -> No
     assert error.value.code == "unknown_config_field"
 
 
-def test_legacy_android_tts_flag_is_ephemeral_and_cannot_compose_fetchers(
+def test_android_tts_flag_satisfies_vendored_gate_without_enabling_papago(
     tmp_path: Path,
 ) -> None:
     mapped = map_config_settings({"reading_tts_enabled": True}, _paths(tmp_path))
 
     assert mapped.android_tts_enabled is True
-    assert mapped.engine_config.reading_tts_enabled is False
-    assert mapped.engine_config.reading_tts_google_enabled is False
+    assert mapped.engine_config.reading_tts_enabled is True
+    # Compatibility-only provider bit for AudioStage.reading_tts_active. The
+    # Android reading bridge directly injects its Kotlin callback adapter.
+    assert mapped.engine_config.reading_tts_google_enabled is True
     assert mapped.engine_config.reading_tts_papago_enabled is False
+
+
+def test_android_tts_composition_has_no_desktop_network_fetcher_imports() -> None:
+    source_root = Path(__file__).resolve().parents[3] / "app/src/main/python/android_bridge"
+    imported_modules: set[str] = set()
+    for filename in ("config_map.py", "mining.py", "reading_mining.py", "sentence_audio.py"):
+        tree = ast.parse((source_root / filename).read_text(encoding="utf-8"))
+        imported_modules.update(
+            alias.name
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Import)
+            for alias in node.names
+        )
+        imported_modules.update(
+            node.module or ""
+            for node in ast.walk(tree)
+            if isinstance(node, ast.ImportFrom)
+        )
+
+    forbidden = ("gtts", "google_translate", "papago", "sentence_tts_fetcher")
+    assert all(not any(part in module for part in forbidden) for module in imported_modules)
 
 
 def test_conflicting_tts_aliases_are_rejected(tmp_path: Path) -> None:
@@ -181,6 +206,8 @@ def test_conflicting_tts_aliases_are_rejected(tmp_path: Path) -> None:
         ({"excluded_decks": [""]}, "invalid_config_field"),
         ({"excluded_decks": ["Known", "Known"]}, "invalid_config_field"),
         ({"excluded_decks": ["Known "]}, "invalid_config_field"),
+        ({"excluded_wordsets": ["../escape"]}, "invalid_config_field"),
+        ({"excluded_wordsets": ["surnames", "surnames"]}, "invalid_config_field"),
         ({"frequency_chain": [{"source_id": "../escape"}]}, "invalid_config_field"),
     ],
 )

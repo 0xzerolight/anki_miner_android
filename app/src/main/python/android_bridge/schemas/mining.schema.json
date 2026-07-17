@@ -1,10 +1,11 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://anki-miner.app/schemas/android-bridge/v1/mining.json",
-  "title": "Anki Miner Android video-mining messages",
-  "$comment": "This schema validates complete bridge envelopes so a payload valid for one operation cannot be paired with another message type. protocol.decode_envelope first rejects duplicate keys, non-finite numbers, integers outside signed 64-bit, invalid Unicode scalars, and overlong numeric tokens. configSnapshot is additionally frozen by the shared config-snapshot schema.",
+  "title": "Anki Miner Android mining messages",
+  "$comment": "This schema validates complete bridge envelopes so a payload valid for one operation cannot be paired with another message type. protocol.decode_envelope first rejects duplicate keys, non-finite numbers, integers outside signed 64-bit, invalid Unicode scalars, and overlong numeric tokens. configSnapshot is additionally frozen by the shared config-snapshot schema. The reading runtime also caps its complete request at 1 MiB after strict UTF-8 encoding.",
   "oneOf": [
     {"$ref": "#/$defs/videoRunMessage"},
+    {"$ref": "#/$defs/readingRunMessage"},
     {"$ref": "#/$defs/jobRegistrationRequestMessage"},
     {"$ref": "#/$defs/jobRegistrationAcceptedMessage"},
     {"$ref": "#/$defs/terminalMessage"}
@@ -29,6 +30,27 @@
       "allOf": [
         {"$ref": "#/$defs/absolutePath"},
         {"pattern": "\\.(?:[aA][sS][sS]|[sS][rR][tT]|[sS][sS][aA]|[vV][tT][tT])$"}
+      ]
+    },
+    "privateReadingPath": {
+      "allOf": [
+        {"$ref": "#/$defs/absolutePath"},
+        {
+          "maxLength": 4096,
+          "$comment": "Runtime validation applies a stricter 4096-byte UTF-8 ceiling and requires source/archive paths to resolve inside cacheDir."
+        }
+      ]
+    },
+    "readingSourcePath": {
+      "allOf": [
+        {"$ref": "#/$defs/privateReadingPath"},
+        {"pattern": "\\.(?:[tT][xX][tT]|[eE][pP][uU][bB]|[mM][oO][kK][uU][rR][oO]|[aA][sS][sS]|[sS][rR][tT]|[sS][sS][aA]|[vV][tT][tT])$"}
+      ]
+    },
+    "readingArchivePath": {
+      "allOf": [
+        {"$ref": "#/$defs/privateReadingPath"},
+        {"pattern": "\\.(?:[cC][bB][zZ]|[zZ][iI][pP])$"}
       ]
     },
     "nonNegativeSigned64": {
@@ -146,6 +168,67 @@
           ]
         }
       }
+    },
+    "readingRunPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sourceKind",
+        "sourcePath",
+        "imageArchivePath",
+        "seriesName",
+        "cacheDir",
+        "nativeLibraryDir",
+        "configSnapshot"
+      ],
+      "properties": {
+        "sourceKind": {"enum": ["txt", "epub", "subtitle", "mokuro"]},
+        "sourcePath": {"$ref": "#/$defs/readingSourcePath"},
+        "imageArchivePath": {
+          "oneOf": [
+            {"type": "null"},
+            {"$ref": "#/$defs/readingArchivePath"}
+          ]
+        },
+        "seriesName": {
+          "oneOf": [
+            {"type": "null"},
+            {
+              "allOf": [
+                {"$ref": "#/$defs/canonicalLabel"},
+                {"maxLength": 1024}
+              ]
+            }
+          ]
+        },
+        "cacheDir": {"$ref": "#/$defs/absolutePath"},
+        "nativeLibraryDir": {"$ref": "#/$defs/absolutePath"},
+        "configSnapshot": {
+          "allOf": [
+            {"$ref": "https://anki-miner.app/schemas/android-bridge/v1/config-snapshot.json"},
+            {"required": ["settings"]}
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"sourceKind": {"const": "txt"}}},
+          "then": {"properties": {"sourcePath": {"pattern": "\\.[tT][xX][tT]$"}, "imageArchivePath": {"type": "null"}, "seriesName": {"type": "null"}}}
+        },
+        {
+          "if": {"properties": {"sourceKind": {"const": "epub"}}},
+          "then": {"properties": {"sourcePath": {"pattern": "\\.[eE][pP][uU][bB]$"}, "imageArchivePath": {"type": "null"}, "seriesName": {"type": "null"}}}
+        },
+        {
+          "if": {"properties": {"sourceKind": {"const": "subtitle"}}},
+          "then": {"properties": {"sourcePath": {"pattern": "\\.(?:[aA][sS][sS]|[sS][rR][tT]|[sS][sS][aA]|[vV][tT][tT])$"}, "imageArchivePath": {"type": "null"}, "seriesName": {"$ref": "#/$defs/canonicalLabel"}}}
+        },
+        {
+          "if": {"properties": {"sourceKind": {"const": "mokuro"}}},
+          "then": {"properties": {"sourcePath": {"pattern": "\\.[mM][oO][kK][uU][rR][oO]$"}, "seriesName": {"type": "null"}}}
+        }
+      ],
+      "$comment": "Runtime validation additionally requires sourcePath and imageArchivePath to resolve inside cacheDir. A non-null archive is only accepted for mokuro and must be an existing same-directory, same-stem companion selected by the desktop detector. seriesName is a stable Kotlin-owned subtitle label which replaces the loader's nonce job-directory-derived series; it is null for every other kind."
     },
     "registrationPayload": {
       "type": "object",
@@ -297,6 +380,16 @@
         "schemaVersion": {"const": 1},
         "type": {"const": "mining.video.run"},
         "payload": {"$ref": "#/$defs/videoRunPayload"}
+      }
+    },
+    "readingRunMessage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "type", "payload"],
+      "properties": {
+        "schemaVersion": {"const": 1},
+        "type": {"const": "mining.reading.run"},
+        "payload": {"$ref": "#/$defs/readingRunPayload"}
       }
     },
     "jobRegistrationRequestMessage": {

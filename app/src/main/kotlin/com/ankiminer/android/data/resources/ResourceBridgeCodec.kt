@@ -45,6 +45,8 @@ object ResourceBridgeCodec {
 
     fun encodeDictionaryListRequest(): String = encode("resource.dictionary.list") {}
 
+    fun encodeLocalResourceListRequest(): String = encode("resource.local.list") {}
+
     fun encodeUniDicInstallRequest(
         operation: String,
         selectedResourceId: String,
@@ -78,6 +80,79 @@ object ResourceBridgeCodec {
             generator.writeBooleanField("overwrite", overwrite)
             if (catalogResourceId == null) generator.writeNullField("catalogResourceId")
             else generator.writeStringField("catalogResourceId", catalogResourceId)
+        }
+    }
+
+    fun encodeFrequencyImportRequest(
+        operation: String,
+        sourcePath: String,
+        sourceId: String,
+        sourceName: String,
+        sourceFormat: FrequencySourceFormat,
+        overwrite: Boolean,
+    ): String {
+        requireOperationId(operation)
+        requireAbsolutePath(sourcePath)
+        requireSlotId(sourceId)
+        requireDisplayName(sourceName)
+        return encode("resource.frequency.import") { generator ->
+            generator.writeStringField("operationId", operation)
+            generator.writeStringField("sourcePath", sourcePath)
+            generator.writeStringField("sourceId", sourceId)
+            generator.writeStringField("sourceName", sourceName)
+            generator.writeStringField("sourceFormat", sourceFormat.wireValue)
+            generator.writeBooleanField("overwrite", overwrite)
+        }
+    }
+
+    fun encodePitchImportRequest(
+        operation: String,
+        sourcePath: String,
+        sourceName: String,
+        sourceFormat: PitchAccentSourceFormat,
+        overwrite: Boolean,
+    ): String {
+        requireOperationId(operation)
+        requireAbsolutePath(sourcePath)
+        requireDisplayName(sourceName)
+        return encode("resource.pitch.import") { generator ->
+            generator.writeStringField("operationId", operation)
+            generator.writeStringField("sourcePath", sourcePath)
+            generator.writeStringField("sourceName", sourceName)
+            generator.writeStringField("sourceFormat", sourceFormat.wireValue)
+            generator.writeBooleanField("overwrite", overwrite)
+        }
+    }
+
+    fun encodeAudioPackImportRequest(
+        operation: String,
+        sourcePath: String,
+        packId: String,
+        overwrite: Boolean,
+    ): String {
+        requireOperationId(operation)
+        requireAbsolutePath(sourcePath)
+        requireSlotId(packId)
+        require(packId != "jpod101")
+        return encode("resource.audiopack.import") { generator ->
+            generator.writeStringField("operationId", operation)
+            generator.writeStringField("sourcePath", sourcePath)
+            generator.writeStringField("packId", packId)
+            generator.writeBooleanField("overwrite", overwrite)
+        }
+    }
+
+    fun encodeKnownWordsImportRequest(
+        operation: String,
+        sourcePath: String,
+        sourceFormat: KnownWordsSourceFormat,
+    ): String {
+        requireOperationId(operation)
+        requireAbsolutePath(sourcePath)
+        return encode("resource.knownwords.import") { generator ->
+            generator.writeStringField("operationId", operation)
+            generator.writeStringField("sourcePath", sourcePath)
+            generator.writeStringField("sourceFormat", sourceFormat.wireValue)
         }
     }
 
@@ -176,6 +251,128 @@ object ResourceBridgeCodec {
             strings(value.getValue("mediaWarnings"), "mediaWarnings", 4096),
             requireSha256(text(value.getValue("archiveSha256"), "archiveSha256")),
             attributions(value.getValue("attribution"), allowEmpty = true),
+        )
+    }
+
+    fun decodeImportedFrequency(raw: String): ImportedFrequencySource {
+        val value = payload(raw, "resource.frequency.imported")
+        exact(
+            value,
+            setOf(
+                "sourceId",
+                "sourceName",
+                "sourceRevision",
+                "format",
+                "entryCount",
+                "skippedDisplayOnly",
+                "skippedMalformed",
+                "convertedToRanks",
+                "isCategorical",
+                "archiveSha256",
+            ),
+            "imported frequency source",
+        )
+        return ImportedFrequencySource(
+            sourceId = requireSlotId(text(value.getValue("sourceId"), "sourceId")),
+            sourceName = boundedText(value.getValue("sourceName"), "sourceName", 4096),
+            sourceRevision = boundedText(value.getValue("sourceRevision"), "sourceRevision", 4096, allowEmpty = true),
+            format = boundedText(value.getValue("format"), "format", 64),
+            entryCount = nonNegative(value.getValue("entryCount"), "entryCount"),
+            skippedDisplayOnly = nonNegative(value.getValue("skippedDisplayOnly"), "skippedDisplayOnly"),
+            skippedMalformed = nonNegative(value.getValue("skippedMalformed"), "skippedMalformed"),
+            convertedToRanks = bool(value.getValue("convertedToRanks"), "convertedToRanks"),
+            isCategorical = bool(value.getValue("isCategorical"), "isCategorical"),
+            archiveSha256 = requireSha256(text(value.getValue("archiveSha256"), "archiveSha256")),
+        )
+    }
+
+    fun decodeImportedPitch(raw: String): ImportedPitchAccent {
+        val value = payload(raw, "resource.pitch.imported")
+        exact(
+            value,
+            setOf(
+                "sourceName",
+                "sourceRevision",
+                "sourceFormat",
+                "entryCount",
+                "skippedDisplayOnly",
+                "skippedMalformed",
+                "fileSha256",
+            ),
+            "imported pitch accent",
+        )
+        return ImportedPitchAccent(
+            sourceName = boundedText(value.getValue("sourceName"), "sourceName", 4096),
+            sourceRevision = boundedText(value.getValue("sourceRevision"), "sourceRevision", 4096, allowEmpty = true),
+            sourceFormat = sourceFormat(value.getValue("sourceFormat"), PitchAccentSourceFormat.entries.map { it.wireValue }.toSet()),
+            entryCount = positive(value.getValue("entryCount"), "entryCount"),
+            skippedDisplayOnly = nonNegative(value.getValue("skippedDisplayOnly"), "skippedDisplayOnly"),
+            skippedMalformed = nonNegative(value.getValue("skippedMalformed"), "skippedMalformed"),
+            fileSha256 = requireSha256(text(value.getValue("fileSha256"), "fileSha256")),
+        )
+    }
+
+    fun decodeImportedAudioPack(raw: String): ImportedAudioPack {
+        val value = payload(raw, "resource.audiopack.imported")
+        exact(
+            value,
+            setOf("packId", "sourceName", "format", "entryCount", "archiveSha256"),
+            "imported audio pack",
+        )
+        return ImportedAudioPack(
+            packId = requireSlotId(text(value.getValue("packId"), "packId")),
+            sourceName = boundedText(value.getValue("sourceName"), "sourceName", 4096),
+            format = boundedText(value.getValue("format"), "format", 64),
+            entryCount = positive(value.getValue("entryCount"), "entryCount"),
+            archiveSha256 = requireSha256(text(value.getValue("archiveSha256"), "archiveSha256")),
+        )
+    }
+
+    fun decodeImportedKnownWords(raw: String): ImportedKnownWords {
+        val value = payload(raw, "resource.knownwords.imported")
+        exact(
+            value,
+            setOf("format", "importedCount", "newRowCount", "totalEntries", "isGeneric"),
+            "imported known words",
+        )
+        return ImportedKnownWords(
+            format = boundedText(value.getValue("format"), "format", 64),
+            importedCount = positive(value.getValue("importedCount"), "importedCount"),
+            newRowCount = nonNegative(value.getValue("newRowCount"), "newRowCount"),
+            totalEntries = positive(value.getValue("totalEntries"), "totalEntries"),
+            isGeneric = bool(value.getValue("isGeneric"), "isGeneric"),
+        ).also { imported ->
+            if (imported.newRowCount > imported.importedCount || imported.importedCount > imported.totalEntries) {
+                invalid("Known-word import counts are inconsistent")
+            }
+        }
+    }
+
+    fun decodeLocalResourceList(raw: String): LocalResourceInventory {
+        val value = payload(raw, "resource.local.listed")
+        exact(
+            value,
+            setOf("frequencies", "pitchAccent", "audioPacks", "knownWords", "wordsets"),
+            "local resource inventory",
+        )
+        val frequencies = array(value.getValue("frequencies"), "frequencies").also {
+            if (it.size > 128) invalid("Too many frequency sources")
+        }.map(::installedFrequency)
+        val audioPacks = array(value.getValue("audioPacks"), "audioPacks").also {
+            if (it.size > 128) invalid("Too many audio packs")
+        }.map(::installedAudioPack)
+        val wordsets = array(value.getValue("wordsets"), "wordsets").also {
+            if (it.size > 32) invalid("Too many bundled wordsets")
+        }.map(::bundledWordset)
+        if (frequencies.map { it.sourceId }.distinct().size != frequencies.size) invalid("Duplicate frequency source")
+        if (audioPacks.map { it.packId }.distinct().size != audioPacks.size) invalid("Duplicate audio pack")
+        if (wordsets.map { it.wordsetId }.distinct().size != wordsets.size) invalid("Duplicate bundled wordset")
+        return LocalResourceInventory(
+            frequencies = frequencies,
+            pitchAccent = if (value.getValue("pitchAccent") is BridgeJsonValue.Null) null else installedPitch(value.getValue("pitchAccent")),
+            audioPacks = audioPacks,
+            knownWords = knownWordsInventory(value.getValue("knownWords")),
+            wordsets = wordsets,
         )
     }
 
@@ -331,6 +528,8 @@ object ResourceBridgeCodec {
             value,
             setOf(
                 "slotId",
+                "occupied",
+                "valid",
                 "sourceName",
                 "sourceRevision",
                 "format",
@@ -346,16 +545,125 @@ object ResourceBridgeCodec {
         if (!setOf("author", "attribution", "description").containsAll(embedded.keys)) {
             invalid("Embedded attribution contains unknown fields")
         }
-        return InstalledDictionary(
-            requireSlotId(text(value.getValue("slotId"), "slotId")),
-            boundedText(value.getValue("sourceName"), "sourceName", 4096),
-            boundedText(value.getValue("sourceRevision"), "sourceRevision", 4096, allowEmpty = true),
-            positive(value.getValue("format"), "format"),
-            nonNegative(value.getValue("entryCount"), "entryCount"),
-            bool(value.getValue("schemaOk"), "schemaOk"),
-            embedded.mapValues { (_, child) -> boundedText(child, "embedded attribution", 64 * 1024) },
-            nullableText(value.getValue("catalogResourceId"), "catalogResourceId")?.let(::requireResourceId),
-            attributions(value.getValue("attribution"), allowEmpty = true),
+        val installed = InstalledDictionary(
+            slotId = requireSlotId(text(value.getValue("slotId"), "slotId")),
+            occupied = bool(value.getValue("occupied"), "occupied"),
+            valid = bool(value.getValue("valid"), "valid"),
+            sourceName = boundedText(value.getValue("sourceName"), "sourceName", 4096),
+            sourceRevision = boundedText(value.getValue("sourceRevision"), "sourceRevision", 4096, allowEmpty = true),
+            format = boundedText(value.getValue("format"), "format", 64),
+            entryCount = nonNegative(value.getValue("entryCount"), "entryCount"),
+            schemaOk = bool(value.getValue("schemaOk"), "schemaOk"),
+            embeddedAttribution = embedded.mapValues { (_, child) -> boundedText(child, "embedded attribution", 64 * 1024) },
+            catalogResourceId = nullableText(value.getValue("catalogResourceId"), "catalogResourceId")?.let(::requireResourceId),
+            attribution = attributions(value.getValue("attribution"), allowEmpty = true),
+        )
+        if (!installed.occupied || installed.valid != installed.schemaOk) {
+            invalid("Dictionary occupancy or validity flags are inconsistent")
+        }
+        if (!installed.valid && installed.entryCount != 0L && installed.format == "unknown") {
+            invalid("Unreadable dictionary fallback metadata is inconsistent")
+        }
+        installed.catalogResourceId?.let { catalogId ->
+            val expected = FrozenResourceCatalog.value.recommendedDictionary
+            if (
+                catalogId != expected.resourceId ||
+                installed.slotId != expected.slotId ||
+                installed.sourceName != expected.dictionary.title ||
+                installed.sourceRevision != expected.dictionary.revision ||
+                installed.attribution != expected.attribution
+            ) {
+                invalid("Installed catalog dictionary identity is invalid")
+            }
+        }
+        if (installed.catalogResourceId == null && installed.attribution.isNotEmpty()) {
+            invalid("Uncatalogued dictionary cannot claim catalog attribution")
+        }
+        return installed
+    }
+
+    private fun installedFrequency(raw: BridgeJsonValue): InstalledFrequencySource {
+        val value = objectValue(raw, "installed frequency source")
+        exact(
+            value,
+            setOf("sourceId", "sourceName", "format", "entryCount", "schemaOk", "schemaVersion", "isCategorical"),
+            "installed frequency source",
+        )
+        return InstalledFrequencySource(
+            sourceId = requireSlotId(text(value.getValue("sourceId"), "sourceId")),
+            sourceName = boundedText(value.getValue("sourceName"), "sourceName", 4096),
+            format = boundedText(value.getValue("format"), "format", 64),
+            entryCount = nonNegative(value.getValue("entryCount"), "entryCount"),
+            schemaOk = bool(value.getValue("schemaOk"), "schemaOk"),
+            schemaVersion = nonNegative(value.getValue("schemaVersion"), "schemaVersion"),
+            isCategorical = bool(value.getValue("isCategorical"), "isCategorical"),
+        )
+    }
+
+    private fun installedPitch(raw: BridgeJsonValue): InstalledPitchAccent {
+        val value = objectValue(raw, "installed pitch accent")
+        exact(
+            value,
+            setOf("sourceName", "sourceRevision", "sourceFormat", "entryCount", "fileSizeBytes", "schemaOk"),
+            "installed pitch accent",
+        )
+        return InstalledPitchAccent(
+            sourceName = boundedText(value.getValue("sourceName"), "sourceName", 4096),
+            sourceRevision = boundedText(value.getValue("sourceRevision"), "sourceRevision", 4096, allowEmpty = true),
+            sourceFormat = boundedText(value.getValue("sourceFormat"), "sourceFormat", 64),
+            entryCount = nonNegative(value.getValue("entryCount"), "entryCount"),
+            fileSizeBytes = nonNegative(value.getValue("fileSizeBytes"), "fileSizeBytes"),
+            schemaOk = bool(value.getValue("schemaOk"), "schemaOk"),
+        )
+    }
+
+    private fun installedAudioPack(raw: BridgeJsonValue): InstalledAudioPack {
+        val value = objectValue(raw, "installed audio pack")
+        exact(
+            value,
+            setOf("packId", "sourceName", "format", "entryCount", "contentAvailable"),
+            "installed audio pack",
+        )
+        return InstalledAudioPack(
+            packId = requireSlotId(text(value.getValue("packId"), "packId")),
+            sourceName = boundedText(value.getValue("sourceName"), "sourceName", 4096),
+            format = boundedText(value.getValue("format"), "format", 64),
+            entryCount = nonNegative(value.getValue("entryCount"), "entryCount"),
+            contentAvailable = bool(value.getValue("contentAvailable"), "contentAvailable"),
+        )
+    }
+
+    private fun knownWordsInventory(raw: BridgeJsonValue): KnownWordsInventory {
+        val value = objectValue(raw, "known words inventory")
+        exact(
+            value,
+            setOf("totalCount", "userCount", "ankiCount", "minedCount", "schemaOk"),
+            "known words inventory",
+        )
+        return KnownWordsInventory(
+            totalCount = nonNegative(value.getValue("totalCount"), "totalCount"),
+            userCount = nonNegative(value.getValue("userCount"), "userCount"),
+            ankiCount = nonNegative(value.getValue("ankiCount"), "ankiCount"),
+            minedCount = nonNegative(value.getValue("minedCount"), "minedCount"),
+            schemaOk = bool(value.getValue("schemaOk"), "schemaOk"),
+        ).also { inventory ->
+            if (
+                inventory.userCount > inventory.totalCount ||
+                inventory.ankiCount > inventory.totalCount - inventory.userCount ||
+                inventory.minedCount > inventory.totalCount - inventory.userCount - inventory.ankiCount
+            ) {
+                invalid("Known-word inventory counts are inconsistent")
+            }
+        }
+    }
+
+    private fun bundledWordset(raw: BridgeJsonValue): BundledWordset {
+        val value = objectValue(raw, "bundled wordset")
+        exact(value, setOf("wordsetId", "displayName", "entryCount"), "bundled wordset")
+        return BundledWordset(
+            wordsetId = requireSlotId(text(value.getValue("wordsetId"), "wordsetId")),
+            displayName = boundedText(value.getValue("displayName"), "displayName", 512),
+            entryCount = nonNegative(value.getValue("entryCount"), "entryCount"),
         )
     }
 
@@ -490,6 +798,17 @@ object ResourceBridgeCodec {
     private fun requireSha256(value: String): String = value.also { if (!sha256.matches(it)) invalid("Invalid SHA-256") }
 
     private fun requireAbsolutePath(value: String): String = value.also { if (!it.startsWith('/') || '\u0000' in it) invalid("Invalid absolute path") }
+
+    private fun requireDisplayName(value: String): String =
+        value.also {
+            require(it.isNotBlank() && it == it.trim() && it.toByteArray().size <= 512)
+            require(it.none { character -> character.code < 0x20 })
+        }
+
+    private fun sourceFormat(value: BridgeJsonValue, allowed: Set<String>): String =
+        boundedText(value, "sourceFormat", 16).also {
+            if (it !in allowed) invalid("Source format is invalid")
+        }
 
     private fun requireHttpsUrl(value: String): String =
         value.also {
