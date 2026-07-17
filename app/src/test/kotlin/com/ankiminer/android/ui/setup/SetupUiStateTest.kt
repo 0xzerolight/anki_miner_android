@@ -34,18 +34,17 @@ class SetupUiStateTest {
                 recommendedDictionaryInstalled = false,
             )
 
-        assertTrue(recovered.canFinishFirstRun)
+        assertTrue(recovered.isMiningReady)
         assertTrue(
             recovered.copy(
                 notifications = NotificationPermissionReadiness.PERMISSION_DENIED,
-            ).canFinishFirstRun,
+            ).isMiningReady,
         )
-        assertFalse(recovered.copy(uniDicInstalled = false).canFinishFirstRun)
+        assertFalse(recovered.copy(uniDicInstalled = false).isMiningReady)
         assertFalse(
-            recovered.copy(resourceStartup = ResourceStartupReadiness.FAILED).canFinishFirstRun,
+            recovered.copy(resourceStartup = ResourceStartupReadiness.FAILED).isMiningReady,
         )
-        assertFalse(recovered.copy(legacyNoteType = "Lapis").canFinishFirstRun)
-        assertFalse(recovered.copy(ankiOperation = AnkiSetupOperation.REFRESHING).canFinishFirstRun)
+        assertFalse(recovered.copy(ankiOperation = AnkiSetupOperation.REFRESHING).isMiningReady)
         val pending =
             AnkiPendingRemediation(
                 id = 1L,

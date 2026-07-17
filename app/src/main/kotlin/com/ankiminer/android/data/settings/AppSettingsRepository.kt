@@ -8,7 +8,6 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
-import com.ankiminer.android.anki.provider.AnkiMinerNoteModel
 import java.io.IOException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
@@ -39,20 +38,6 @@ interface AppSettingsRepository {
         )
 }
 
-internal object AppSettingsTargetMigration {
-    const val LEGACY_DEFAULT_NOTE_TYPE = "Lapis"
-
-    fun legacyTarget(
-        firstRunComplete: Boolean,
-        persistedNoteType: String?,
-    ): String? =
-        when (persistedNoteType) {
-            AnkiMinerNoteModel.MODEL_NAME -> null
-            null -> LEGACY_DEFAULT_NOTE_TYPE.takeIf { firstRunComplete }
-            else -> persistedNoteType
-        }
-}
-
 class DataStoreAppSettingsRepository(context: Context) : AppSettingsRepository {
     private val store = context.applicationContext.ankiMinerSettingsDataStore
 
@@ -75,17 +60,11 @@ class DataStoreAppSettingsRepository(context: Context) : AppSettingsRepository {
 
     private fun decode(preferences: Preferences): AppSettings {
         val firstRunComplete = preferences[Keys.firstRunComplete] ?: false
-        val legacyTarget =
-            AppSettingsTargetMigration.legacyTarget(
-                firstRunComplete = firstRunComplete,
-                persistedNoteType = preferences[Keys.noteType],
-            )
         return try {
             AppSettings(
             firstRunComplete = firstRunComplete,
             theme = ThemeMode.fromWire(preferences[Keys.themeMode]),
             deckName = preferences[Keys.deckName],
-            legacyNoteType = legacyTarget,
             tags = preferences[Keys.tags],
             audioPaddingSeconds = preferences[Keys.audioPadding],
             screenshotOffsetSeconds = preferences[Keys.screenshotOffset],
@@ -124,11 +103,10 @@ class DataStoreAppSettingsRepository(context: Context) : AppSettingsRepository {
             ).let(AppSettingsValidator::validate)
         } catch (_: InvalidAppSettingException) {
             // Preferences are app-private, but a partial/corrupt write must never make the
-            // settings Flow fail or silently admit an old target. Retain only migration state.
+            // settings Flow fail.
             AppSettings(
                 firstRunComplete = firstRunComplete,
                 theme = ThemeMode.fromWire(preferences[Keys.themeMode]),
-                legacyNoteType = legacyTarget,
             )
         }
     }
@@ -141,9 +119,6 @@ class DataStoreAppSettingsRepository(context: Context) : AppSettingsRepository {
         preferences[Keys.firstRunComplete] = value.firstRunComplete
         preferences[Keys.themeMode] = value.theme.wireValue
         value.deckName?.let { preferences[Keys.deckName] = it }
-        // Persist the canonical target as an acceptance marker. A completed setup from an older
-        // build may have no note_type key because it inherited the desktop Lapis default.
-        preferences[Keys.noteType] = value.legacyNoteType ?: AnkiMinerNoteModel.MODEL_NAME
         value.tags?.let { preferences[Keys.tags] = it }
         value.audioPaddingSeconds?.let { preferences[Keys.audioPadding] = it }
         value.screenshotOffsetSeconds?.let { preferences[Keys.screenshotOffset] = it }
@@ -183,7 +158,6 @@ class DataStoreAppSettingsRepository(context: Context) : AppSettingsRepository {
         val firstRunComplete = booleanPreferencesKey("first_run_complete")
         val themeMode = stringPreferencesKey("theme_mode")
         val deckName = stringPreferencesKey("deck_name")
-        val noteType = stringPreferencesKey("note_type")
         val tags = stringPreferencesKey("tags")
         val audioPadding = doublePreferencesKey("audio_padding_seconds")
         val screenshotOffset = doublePreferencesKey("screenshot_offset_seconds")

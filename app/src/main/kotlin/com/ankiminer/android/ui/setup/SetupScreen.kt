@@ -584,8 +584,7 @@ private fun AnkiTargetCard(
             is AnkiMinerModelProvisioningResult.FailedBeforeEntry -> model.stableMessage
         }
     val actionVisible =
-        state.legacyNoteType != null ||
-            state.model == AnkiMinerModelProvisioningResult.Missing ||
+        state.model == AnkiMinerModelProvisioningResult.Missing ||
             state.model is AnkiMinerModelProvisioningResult.RecoveryRequired ||
             state.model is AnkiMinerModelProvisioningResult.FailedBeforeEntry ||
             (state.model as? AnkiMinerModelProvisioningResult.Conflict)?.reason in
@@ -598,12 +597,6 @@ private fun AnkiTargetCard(
             Text(stringResource(R.string.anki_model_title), style = MaterialTheme.typography.titleMedium)
             Text(stringResource(R.string.anki_model_description))
             Text(modelMessage)
-            state.legacyNoteType?.let { legacy ->
-                Text(
-                    stringResource(R.string.anki_model_legacy_warning, legacy),
-                    color = MaterialTheme.colorScheme.error,
-                )
-            }
             if (state.model is AnkiMinerModelProvisioningResult.Conflict) {
                 Text(
                     stringResource(
@@ -622,9 +615,7 @@ private fun AnkiTargetCard(
                 ) {
                     Text(
                         stringResource(
-                            if (state.legacyNoteType != null) {
-                                R.string.anki_model_accept_migration
-                            } else if (state.model is AnkiMinerModelProvisioningResult.RecoveryRequired) {
+                            if (state.model is AnkiMinerModelProvisioningResult.RecoveryRequired) {
                                 R.string.anki_model_resume
                             } else if (state.model is AnkiMinerModelProvisioningResult.Conflict) {
                                 R.string.anki_model_restart
@@ -634,12 +625,6 @@ private fun AnkiTargetCard(
                         ),
                     )
                 }
-            }
-            if (state.targetConsentError) {
-                Text(
-                    stringResource(R.string.anki_model_consent_save_failed),
-                    color = MaterialTheme.colorScheme.error,
-                )
             }
         }
     }

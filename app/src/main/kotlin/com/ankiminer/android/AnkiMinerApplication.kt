@@ -328,21 +328,6 @@ class AnkiMinerApplication : Application() {
         if (cancellation.isCancelled()) {
             return AnkiMiningTargetReadiness.Blocked("Anki target verification was cancelled", true)
         }
-        val legacyTarget =
-            try {
-                runBlocking { settingsRepository.settings.first().legacyNoteType }
-            } catch (_: Exception) {
-                return AnkiMiningTargetReadiness.Blocked(
-                    "Saved Anki target settings could not be read",
-                    true,
-                )
-            }
-        if (legacyTarget != null) {
-            return AnkiMiningTargetReadiness.Blocked(
-                "Review and accept migration from the saved legacy note type before mining",
-                false,
-            )
-        }
         return try {
             when (val model = ankiProviderRuntime.inspectAnkiMinerModel(cancellation)) {
             is AnkiMinerModelProvisioningResult.Ready -> {

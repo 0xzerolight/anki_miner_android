@@ -35,15 +35,11 @@ data class ResourceChainSelection(
 /**
  * Android-owned preferences. Nullable processing fields mean "use the current engine default";
  * the Android-owned Anki model contract is always emitted explicitly by the snapshot mapper.
- * This distinction keeps engine defaults current without allowing the desktop Lapis target to
- * leak into Android jobs.
  */
 data class AppSettings(
     val firstRunComplete: Boolean = false,
     val theme: ThemeMode = ThemeMode.DARK,
     val deckName: String? = null,
-    /** Pre-first-party persisted target retained until the user explicitly accepts migration. */
-    val legacyNoteType: String? = null,
     val tags: String? = null,
     val audioPaddingSeconds: Double? = null,
     val screenshotOffsetSeconds: Double? = null,
@@ -101,7 +97,6 @@ object AppSettingsValidator {
     fun validate(settings: AppSettings): AppSettings =
         settings.also {
             it.deckName?.let { value -> canonicalName("Deck name", value) }
-            it.legacyNoteType?.let { value -> canonicalName("Legacy note type", value) }
             it.tags?.let { value -> validScalarText("Tags", value) }
             nonNegative("Audio padding", it.audioPaddingSeconds)
             nonNegative("Screenshot offset", it.screenshotOffsetSeconds)

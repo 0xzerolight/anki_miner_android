@@ -175,15 +175,7 @@ private fun SettingsScreen(
                 stringResource(R.string.settings_deck_name),
                 stringResource(R.string.settings_deck_default),
             )
-            Text(
-                stringResource(
-                    if (settings.legacyNoteType == null) {
-                        R.string.settings_note_managed
-                    } else {
-                        R.string.settings_note_legacy_pending
-                    },
-                ),
-            )
+            Text(stringResource(R.string.settings_note_managed))
             BooleanSetting(
                 label = stringResource(R.string.settings_tags_override),
                 help = stringResource(R.string.settings_tags_override_help),

@@ -51,8 +51,6 @@ internal class SetupViewModel(
         val knownWordsFormat: KnownWordsSourceFormat = KnownWordsSourceFormat.JSON,
         val completing: Boolean = false,
         val completionError: Boolean = false,
-        val acceptingTarget: Boolean = false,
-        val targetConsentError: Boolean = false,
         val recommendedReplaceConfirmationVisible: Boolean = false,
     )
 
@@ -82,7 +80,6 @@ internal class SetupViewModel(
                 notifications = admission.notifications,
                 model = ankiState.model,
                 remediations = ankiState.remediations,
-                legacyNoteType = appSettings.legacyNoteType,
                 ankiOperation = ankiState.operation,
                 ankiFailure = ankiState.failure,
                 firstRunComplete = appSettings.firstRunComplete,
@@ -120,8 +117,6 @@ internal class SetupViewModel(
                 knownWordsFormat = localState.knownWordsFormat,
                 completing = localState.completing,
                 completionError = localState.completionError,
-                targetAcceptanceInProgress = localState.acceptingTarget,
-                targetConsentError = localState.targetConsentError,
             )
         }.stateIn(
             viewModelScope,
@@ -148,25 +143,8 @@ internal class SetupViewModel(
     }
 
     fun provisionModel() {
-        val current = uiState.value
-        if (current.ankiOperation != null || current.targetAcceptanceInProgress) return
-        if (current.legacyNoteType == null) {
-            ankiSetup.provisionModel()
-            return
-        }
-        local.update { it.copy(acceptingTarget = true, targetConsentError = false) }
-        viewModelScope.launch {
-            try {
-                repository.update { it.copy(legacyNoteType = null) }
-                ankiSetup.provisionModel()
-            } catch (failure: CancellationException) {
-                throw failure
-            } catch (_: Exception) {
-                local.update { it.copy(targetConsentError = true) }
-            } finally {
-                local.update { it.copy(acceptingTarget = false) }
-            }
-        }
+        if (uiState.value.ankiOperation != null) return
+        ankiSetup.provisionModel()
     }
 
     fun reconcileInterruptedWork() = ankiSetup.reconcileInterruptedWork()

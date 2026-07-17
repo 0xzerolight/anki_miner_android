@@ -119,14 +119,11 @@
     <string name="anki_model_not_checked">The note type has not been checked yet.</string>
     <string name="anki_model_ready">The exact first-party note type is ready.</string>
     <string name="anki_model_missing">The first-party note type has not been created.</string>
-    <string name="anki_model_legacy_warning">An earlier build targeted “%1$s”. Continuing explicitly switches future jobs to “Anki Miner”; existing notes are unchanged.</string>
     <string name="anki_model_conflict_help">Rename or remove the conflicting note type in AnkiDroid, then check again. Anki Miner will not change it.</string>
     <string name="anki_model_restart_help">An earlier completed setup can be retired only after the current note type is verified exactly or found missing. A differing same-name note type is never changed.</string>
-    <string name="anki_model_accept_migration">Use Anki Miner for future jobs</string>
     <string name="anki_model_resume">Resume verified setup</string>
     <string name="anki_model_restart">Restart verified setup</string>
     <string name="anki_model_create">Create Anki Miner note type</string>
-    <string name="anki_model_consent_save_failed">The target choice could not be saved. No model setup was started.</string>
     <string name="anki_recovery_title">Anki recovery</string>
     <string name="anki_recovery_clear">No unresolved Anki operations were found.</string>
     <string name="anki_recovery_attention">%1$d Anki operation(s) need review before mining.</string>
@@ -272,7 +269,6 @@
     <string name="settings_deck_name">Deck name</string>
     <string name="settings_deck_default">Android default: Anki Miner</string>
     <string name="settings_note_managed">Note type: Anki Miner. Setup creates and verifies its exact fields and card template before mining.</string>
-    <string name="settings_note_legacy_pending">An earlier build saved another note type. It will not be replaced silently; open Setup and explicitly create the Anki Miner note type.</string>
     <string name="settings_tags_override">Override note tags</string>
     <string name="settings_tags_override_help">Enable this to use the text below; an empty override adds no tags.</string>
     <string name="settings_tags">Tags</string>

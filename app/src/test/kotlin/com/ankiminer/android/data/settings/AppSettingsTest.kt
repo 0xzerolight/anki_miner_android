@@ -75,44 +75,6 @@ class AppSettingsTest {
     }
 
     @Test
-    fun legacyNoteTypeIsRetainedForConsentButNeverBecomesTheAndroidJobTarget() {
-        val settings = AppSettings(legacyNoteType = "Lapis")
-
-        val snapshot = EngineSettingsSnapshotMapper.map(settings, emptyList())
-
-        assertEquals("Lapis", AppSettingsValidator.validate(settings).legacyNoteType)
-        assertEquals(
-            BridgeJsonValue.Text(AnkiMinerNoteModel.MODEL_NAME),
-            snapshot.settings["anki_note_type"],
-        )
-    }
-
-    @Test
-    fun completedPreMigrationSetupWithoutAnExplicitTargetFailsClosedToLapisConsent() {
-        assertEquals(
-            "Lapis",
-            AppSettingsTargetMigration.legacyTarget(
-                firstRunComplete = true,
-                persistedNoteType = null,
-            ),
-        )
-        assertEquals(
-            null,
-            AppSettingsTargetMigration.legacyTarget(
-                firstRunComplete = false,
-                persistedNoteType = null,
-            ),
-        )
-        assertEquals(
-            null,
-            AppSettingsTargetMigration.legacyTarget(
-                firstRunComplete = true,
-                persistedNoteType = AnkiMinerNoteModel.MODEL_NAME,
-            ),
-        )
-    }
-
-    @Test
     fun validationRejectsNoncanonicalAnkiIdentityAndUnsafeWorkerCount() {
         assertThrows(InvalidAppSettingException::class.java) {
             AppSettingsValidator.validate(AppSettings(deckName = " Anki"))

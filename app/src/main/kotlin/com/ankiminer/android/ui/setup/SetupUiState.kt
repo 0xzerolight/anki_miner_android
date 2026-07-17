@@ -29,7 +29,6 @@ internal data class SetupUiState(
     val notifications: NotificationPermissionReadiness = NotificationPermissionReadiness.READY,
     val model: AnkiMinerModelProvisioningResult? = null,
     val remediations: AnkiRemediationInventory = AnkiRemediationInventory(emptyList()),
-    val legacyNoteType: String? = null,
     val ankiOperation: AnkiSetupOperation? = null,
     val ankiFailure: AnkiSetupFailure? = null,
     val firstRunComplete: Boolean = false,
@@ -64,8 +63,6 @@ internal data class SetupUiState(
     val knownWordsFormat: KnownWordsSourceFormat = KnownWordsSourceFormat.JSON,
     val completing: Boolean = false,
     val completionError: Boolean = false,
-    val targetAcceptanceInProgress: Boolean = false,
-    val targetConsentError: Boolean = false,
 ) {
     val customSlotValid: Boolean
         get() = CUSTOM_SLOT_ID.matches(customSlotId)
@@ -92,10 +89,10 @@ internal data class SetupUiState(
         get() = remediations.pending.isEmpty()
 
     val targetReady: Boolean
-        get() = modelReady && legacyNoteType == null
+        get() = modelReady
 
     val busy: Boolean
-        get() = operation != null || ankiOperation != null || targetAcceptanceInProgress
+        get() = operation != null || ankiOperation != null
 
     val isMiningReady: Boolean
         get() =
