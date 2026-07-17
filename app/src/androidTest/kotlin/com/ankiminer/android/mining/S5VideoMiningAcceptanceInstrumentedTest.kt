@@ -69,7 +69,6 @@ class S5VideoMiningAcceptanceInstrumentedTest {
         runBlocking {
             application.settingsRepository.update(
                 AppSettings(
-                    firstRunComplete = true,
                     deckName = DECK_NAME,
                     tags = PROBE_TAG,
                     audioPaddingSeconds = 8.0,

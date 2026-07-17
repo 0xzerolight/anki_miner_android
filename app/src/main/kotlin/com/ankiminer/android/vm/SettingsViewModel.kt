@@ -50,7 +50,6 @@ internal class SettingsViewModel(
         val current = settings.value
         save(
             AppSettings(
-                firstRunComplete = current.firstRunComplete,
                 // Restoring mining defaults must never re-open the onboarding wizard or
                 // change the user's chosen look.
                 setupWizardSeen = current.setupWizardSeen,

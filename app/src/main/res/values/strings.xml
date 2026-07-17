@@ -70,7 +70,7 @@
     <string name="result_errors_title">Errors</string>
     <string name="result_error_item">• %1$s</string>
     <string name="retry_mining">Retry</string>
-    <string name="reset_mining">Back to setup</string>
+    <string name="reset_mining">Start over</string>
     <string name="start_error">The mining run could not be started.</string>
     <string name="curation_error">Your vocabulary choices could not be submitted.</string>
     <string name="cancel_error">The mining run could not be cancelled.</string>
@@ -85,10 +85,10 @@
 
     <string name="nav_video">Video</string>
     <string name="nav_reading">Reading</string>
-    <string name="nav_setup">Setup</string>
     <string name="nav_settings">Settings</string>
     <string name="nav_licenses">Licences</string>
     <string name="mining_not_ready">Mining is not ready</string>
+    <string name="open_settings">Open Settings</string>
     <string name="allow_required_access">Request app permissions</string>
     <string name="allow_notification_access">Request notification access</string>
     <string name="open_app_settings">Open app settings</string>
@@ -102,7 +102,6 @@
     <string name="settings_share_diagnostics">Share tester diagnostics</string>
     <string name="diagnostics_share_subject">Anki Miner tester diagnostics</string>
     <string name="diagnostics_action_unavailable">No app is available to share tester diagnostics.</string>
-    <string name="open_setup_resources">Open setup and resources</string>
     <string name="readiness_python_pending">The embedded Python engine has not finished starting.</string>
     <string name="readiness_resources_pending">Private resource recovery has not completed. Open Setup and check again.</string>
     <string name="readiness_unidic_required">The verified UniDic tokenizer resource is required.</string>
@@ -112,8 +111,6 @@
     <string name="readiness_resource_operation">Wait for the active setup or resource operation to finish.</string>
     <string name="readiness_unknown">Readiness could not be confirmed.</string>
 
-    <string name="setup_title">Set up Anki Miner</string>
-    <string name="setup_intro">Connect AnkiDroid, create the verified Anki Miner note type, and install UniDic before mining. The recommended dictionary is optional but gives fully offline definitions.</string>
     <string name="anki_model_title">Anki Miner note type — required</string>
     <string name="anki_model_description">Anki Miner creates and verifies its own fields and card template. It never overwrites a different note type with the same name.</string>
     <string name="anki_model_not_checked">The note type has not been checked yet.</string>
@@ -222,12 +219,6 @@
     <string name="pitch_import_result">%1$s: %2$d entries; %3$d malformed rows skipped</string>
     <string name="audio_pack_import_result">%1$s: %2$d audio entries</string>
     <string name="known_words_import_result">Read %1$d words, added %2$d, total %3$d</string>
-    <string name="finish_setup">Finish first-run setup</string>
-    <string name="finish_setup_unidic_required">Install the verified UniDic resource to continue.</string>
-    <string name="finish_setup_model_required">Create and verify the Anki Miner note type to continue.</string>
-    <string name="finish_setup_recovery_required">Resolve every pending Anki recovery item to continue.</string>
-    <string name="finish_setup_save_failed">Setup status could not be saved.</string>
-    <string name="continue_to_mining">Continue to mining</string>
     <string name="readiness_title">Readiness</string>
     <string name="readiness_python">Embedded Python: %1$s</string>
     <string name="readiness_resource_recovery">Resource recovery: %1$s</string>

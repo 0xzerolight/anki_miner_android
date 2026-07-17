@@ -1,4 +1,4 @@
-package com.ankiminer.android.ui.setup
+package com.ankiminer.android.vm
 
 import com.ankiminer.android.anki.provider.AnkiMinerModelProvisioningResult
 import com.ankiminer.android.anki.provider.AnkiMinerModelReadyOrigin

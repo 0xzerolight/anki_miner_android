@@ -15,7 +15,6 @@ import com.ankiminer.android.data.resources.PitchAccentSourceFormat
 import com.ankiminer.android.data.settings.AppSettingsRepository
 import com.ankiminer.android.engine.PythonRuntimeReadiness
 import com.ankiminer.android.mining.MiningRunAdmissionState
-import com.ankiminer.android.ui.setup.SetupUiState
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -49,8 +48,6 @@ internal class SetupViewModel(
         val audioPackId: String = "audio-pack",
         val audioPackReplace: Boolean = false,
         val knownWordsFormat: KnownWordsSourceFormat = KnownWordsSourceFormat.JSON,
-        val completing: Boolean = false,
-        val completionError: Boolean = false,
         val pendingReplaceResourceId: String? = null,
     )
 
@@ -82,7 +79,6 @@ internal class SetupViewModel(
                 remediations = ankiState.remediations,
                 ankiOperation = ankiState.operation,
                 ankiFailure = ankiState.failure,
-                firstRunComplete = appSettings.firstRunComplete,
                 wizardSeen = appSettings.setupWizardSeen,
                 uniDicInstalled = resourceState.hasUniDic,
                 catalogDictionaries = resourceState.catalogDictionaries,
@@ -111,8 +107,6 @@ internal class SetupViewModel(
                 audioPackId = localState.audioPackId,
                 audioPackReplace = localState.audioPackReplace,
                 knownWordsFormat = localState.knownWordsFormat,
-                completing = localState.completing,
-                completionError = localState.completionError,
             )
         }.stateIn(
             viewModelScope,
@@ -316,22 +310,6 @@ internal class SetupViewModel(
                 throw failure
             } catch (_: Exception) {
                 // A failed write re-offers the (skippable) wizard next launch; never crash.
-            }
-        }
-    }
-
-    fun finishFirstRun() {
-        if (!uiState.value.canFinishFirstRun) return
-        local.update { it.copy(completing = true, completionError = false) }
-        viewModelScope.launch {
-            try {
-                repository.update { it.copy(firstRunComplete = true) }
-            } catch (failure: CancellationException) {
-                throw failure
-            } catch (_: Exception) {
-                local.update { it.copy(completionError = true) }
-            } finally {
-                local.update { it.copy(completing = false) }
             }
         }
     }

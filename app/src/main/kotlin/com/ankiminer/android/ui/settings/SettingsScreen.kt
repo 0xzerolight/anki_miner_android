@@ -40,7 +40,7 @@ import com.ankiminer.android.data.settings.EngineSettingsSnapshotMapper
 import com.ankiminer.android.data.settings.PitchCategoryFormat
 import com.ankiminer.android.data.settings.ThemeMode
 import com.ankiminer.android.diagnostics.TesterDiagnostics
-import com.ankiminer.android.ui.setup.SetupUiState
+import com.ankiminer.android.vm.SetupUiState
 import com.ankiminer.android.vm.SettingsViewModel
 import com.ankiminer.android.vm.SetupViewModel
 

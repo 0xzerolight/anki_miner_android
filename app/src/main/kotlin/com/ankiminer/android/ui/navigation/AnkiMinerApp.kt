@@ -24,7 +24,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -42,10 +41,12 @@ import com.ankiminer.android.ui.attribution.AttributionScreen
 import com.ankiminer.android.ui.reading.ReadingMiningRoute
 import com.ankiminer.android.ui.reading.ReadingMiningTestTags
 import com.ankiminer.android.ui.settings.SettingsRoute
-import com.ankiminer.android.ui.setup.SetupRoute
 import com.ankiminer.android.ui.video.VideoMiningRoute
 import com.ankiminer.android.ui.video.VideoMiningTestTags
+import com.ankiminer.android.ui.wizard.OnboardingWizard
+import com.ankiminer.android.ui.wizard.wizardVisible
 import com.ankiminer.android.vm.SettingsViewModel
+import com.ankiminer.android.vm.SetupUiState
 import com.ankiminer.android.vm.SetupViewModel
 import com.ankiminer.android.vm.ReadingMiningViewModel
 import com.ankiminer.android.vm.VideoMiningViewModel
@@ -53,7 +54,6 @@ import com.ankiminer.android.vm.VideoMiningViewModel
 private enum class Destination(val route: String, @StringRes val label: Int) {
     VIDEO("video", R.string.nav_video),
     READING("reading", R.string.nav_reading),
-    SETUP("setup", R.string.nav_setup),
     SETTINGS("settings", R.string.nav_settings),
     ATTRIBUTION("attribution", R.string.nav_licenses),
 }
@@ -84,15 +84,14 @@ internal fun AnkiMinerApp(
         remember(buildIdentity, setup, video, reading) {
             TesterDiagnosticsBuilder.build(buildIdentity, setup, video, reading)
         }
-    var keepCompletedSetupVisible by rememberSaveable { mutableStateOf(false) }
+    var wizardRerunRequested by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(
         notificationRunId,
         video.runState.runId,
         reading.runState.runId,
-        setup.firstRunComplete,
     ) {
-        if (!setup.firstRunComplete || notificationRunId == null) return@LaunchedEffect
+        if (notificationRunId == null) return@LaunchedEffect
         val destination =
             when (notificationRunId) {
                 video.runState.runId -> Destination.VIDEO
@@ -101,34 +100,30 @@ internal fun AnkiMinerApp(
             }
         if (destination != null) {
             navController.navigate(destination.route) {
-                popUpTo(Destination.SETUP.route) { inclusive = true }
+                popUpTo(navController.graph.findStartDestination().id) { saveState = true }
                 launchSingleTop = true
             }
         }
         // The process repositories publish their current state synchronously into each ViewModel,
-        // so an unmatched ID is stale and must not pin a completed user on the setup route.
+        // so an unmatched ID is stale and must be released.
         onNotificationRunHandled()
     }
 
-    LaunchedEffect(
-        setup.firstRunComplete,
-        currentRoute,
-        keepCompletedSetupVisible,
-        notificationRunId,
-    ) {
-        if (
-            notificationRunId == null &&
-                shouldRedirectCompletedSetup(
-                    setup.firstRunComplete,
-                    currentRoute,
-                    keepCompletedSetupVisible,
-                )
-        ) {
-            navController.navigate(Destination.VIDEO.route) {
-                popUpTo(Destination.SETUP.route) { inclusive = true }
-                launchSingleTop = true
-            }
-        }
+    if (wizardVisible(setup.wizardSeen, wizardRerunRequested)) {
+        LaunchedEffect(setupViewModel) { setupViewModel.refresh() }
+        OnboardingWizard(
+            state = setup,
+            viewModel = setupViewModel,
+            onRequestPermissions = onRequestPermissions,
+            onOpenAppSettings = onOpenAppSettings,
+            onInstallAnkiDroid = onInstallAnkiDroid,
+            onOpenAnkiDroid = onOpenAnkiDroid,
+            onFinished = {
+                wizardRerunRequested = false
+                setupViewModel.markWizardSeen()
+            },
+        )
+        return
     }
 
     Scaffold(
@@ -138,18 +133,11 @@ internal fun AnkiMinerApp(
                     listOf(
                         Destination.VIDEO,
                         Destination.READING,
-                        Destination.SETUP,
                         Destination.SETTINGS,
                     ).forEach { destination ->
                         NavigationBarItem(
                             selected = currentRoute == destination.route,
-                            enabled =
-                                destination !in setOf(Destination.VIDEO, Destination.READING) ||
-                                    setup.firstRunComplete,
                             onClick = {
-                                if (destination == Destination.SETUP) {
-                                    keepCompletedSetupVisible = true
-                                }
                                 navController.navigate(destination.route) {
                                     popUpTo(navController.graph.findStartDestination().id) {
                                         saveState = true
@@ -158,13 +146,9 @@ internal fun AnkiMinerApp(
                                     restoreState = true
                                 }
                             },
-                            icon = {
-                                Text(
-                                    if (currentRoute == destination.route) "●" else "○",
-                                    Modifier.clearAndSetSemantics {},
-                                )
-                            },
-                            label = { Text(stringResource(destination.label)) },
+                            // Text-only tabs mirror the desktop app; the label lives in the
+                            // icon slot because Material3 requires an icon composable.
+                            icon = { Text(stringResource(destination.label)) },
                         )
                     }
                 }
@@ -173,19 +157,9 @@ internal fun AnkiMinerApp(
     ) { padding ->
         NavHost(
             navController = navController,
-            startDestination = Destination.SETUP.route,
+            startDestination = Destination.VIDEO.route,
             modifier = Modifier.padding(padding),
         ) {
-            composable(Destination.SETUP.route) {
-                SetupRoute(
-                    viewModel = setupViewModel,
-                    onRequestPermissions = onRequestPermissions,
-                    onOpenAppSettings = onOpenAppSettings,
-                    onInstallAnkiDroid = onInstallAnkiDroid,
-                    onOpenAnkiDroid = onOpenAnkiDroid,
-                    onContinue = { navController.navigate(Destination.VIDEO.route) },
-                )
-            }
             composable(Destination.VIDEO.route) {
                 if (setup.isMiningReady) {
                     VideoMiningRoute(
@@ -193,14 +167,11 @@ internal fun AnkiMinerApp(
                         modifier = Modifier.testTag(VideoMiningTestTags.SCREEN),
                     )
                 } else {
-                    MiningReadinessGate(
+                    MiningReadinessNotice(
                         message = stringResource(miningReadinessMessage(setup)),
                         onRequestPermissions = onRequestPermissions,
                         onOpenAppSettings = onOpenAppSettings,
-                        onOpenSetup = {
-                            keepCompletedSetupVisible = true
-                            navController.navigate(Destination.SETUP.route)
-                        },
+                        onOpenSettings = { navController.navigate(Destination.SETTINGS.route) },
                     )
                 }
             }
@@ -211,14 +182,11 @@ internal fun AnkiMinerApp(
                         modifier = Modifier.testTag(ReadingMiningTestTags.SCREEN),
                     )
                 } else {
-                    MiningReadinessGate(
+                    MiningReadinessNotice(
                         message = stringResource(miningReadinessMessage(setup)),
                         onRequestPermissions = onRequestPermissions,
                         onOpenAppSettings = onOpenAppSettings,
-                        onOpenSetup = {
-                            keepCompletedSetupVisible = true
-                            navController.navigate(Destination.SETUP.route)
-                        },
+                        onOpenSettings = { navController.navigate(Destination.SETTINGS.route) },
                     )
                 }
             }
@@ -234,6 +202,7 @@ internal fun AnkiMinerApp(
                     onOpenSpeechSettings = onOpenSpeechSettings,
                     onShareDiagnostics = onShareDiagnostics,
                     onAttributions = { navController.navigate(Destination.ATTRIBUTION.route) },
+                    onRunSetupWizard = { wizardRerunRequested = true },
                 )
             }
             composable(Destination.ATTRIBUTION.route) {
@@ -246,21 +215,12 @@ internal fun AnkiMinerApp(
     }
 }
 
-internal fun shouldRedirectCompletedSetup(
-    firstRunComplete: Boolean,
-    currentRoute: String?,
-    keepCompletedSetupVisible: Boolean,
-): Boolean =
-    firstRunComplete &&
-        currentRoute == Destination.SETUP.route &&
-        !keepCompletedSetupVisible
-
 @Composable
-private fun MiningReadinessGate(
+private fun MiningReadinessNotice(
     message: String,
     onRequestPermissions: () -> Unit,
     onOpenAppSettings: () -> Unit,
-    onOpenSetup: () -> Unit,
+    onOpenSettings: () -> Unit,
 ) {
     Column(
         Modifier.fillMaxSize().padding(16.dp),
@@ -278,14 +238,14 @@ private fun MiningReadinessGate(
                 OutlinedButton(onClick = onOpenAppSettings) {
                     Text(stringResource(R.string.open_app_settings))
                 }
-                OutlinedButton(onClick = onOpenSetup) { Text(stringResource(R.string.open_setup_resources)) }
+                OutlinedButton(onClick = onOpenSettings) { Text(stringResource(R.string.open_settings)) }
             }
         }
     }
 }
 
 @StringRes
-private fun miningReadinessMessage(state: com.ankiminer.android.ui.setup.SetupUiState): Int =
+private fun miningReadinessMessage(state: SetupUiState): Int =
     when {
         !state.pythonReady -> R.string.readiness_python_pending
         state.resourceStartup != com.ankiminer.android.data.resources.ResourceStartupReadiness.READY ->

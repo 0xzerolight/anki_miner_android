@@ -17,7 +17,7 @@ import com.ankiminer.android.R
 import com.ankiminer.android.data.resources.FrequencySourceFormat
 import com.ankiminer.android.data.resources.KnownWordsSourceFormat
 import com.ankiminer.android.data.resources.PitchAccentSourceFormat
-import com.ankiminer.android.ui.setup.SetupUiState
+import com.ankiminer.android.vm.SetupUiState
 
 @Composable
 internal fun FrequencyImportCard(

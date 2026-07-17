@@ -59,10 +59,8 @@ class DataStoreAppSettingsRepository(context: Context) : AppSettingsRepository {
     }
 
     private fun decode(preferences: Preferences): AppSettings {
-        val firstRunComplete = preferences[Keys.firstRunComplete] ?: false
         return try {
             AppSettings(
-            firstRunComplete = firstRunComplete,
             setupWizardSeen = preferences[Keys.setupWizardSeen] ?: false,
             theme = ThemeMode.fromWire(preferences[Keys.themeMode]),
             deckName = preferences[Keys.deckName],
@@ -106,7 +104,6 @@ class DataStoreAppSettingsRepository(context: Context) : AppSettingsRepository {
             // Preferences are app-private, but a partial/corrupt write must never make the
             // settings Flow fail.
             AppSettings(
-                firstRunComplete = firstRunComplete,
                 setupWizardSeen = preferences[Keys.setupWizardSeen] ?: false,
                 theme = ThemeMode.fromWire(preferences[Keys.themeMode]),
             )
@@ -118,7 +115,6 @@ class DataStoreAppSettingsRepository(context: Context) : AppSettingsRepository {
         preferences: androidx.datastore.preferences.core.MutablePreferences,
     ) {
         preferences.clear()
-        preferences[Keys.firstRunComplete] = value.firstRunComplete
         preferences[Keys.setupWizardSeen] = value.setupWizardSeen
         preferences[Keys.themeMode] = value.theme.wireValue
         value.deckName?.let { preferences[Keys.deckName] = it }
@@ -158,7 +154,6 @@ class DataStoreAppSettingsRepository(context: Context) : AppSettingsRepository {
     }
 
     private object Keys {
-        val firstRunComplete = booleanPreferencesKey("first_run_complete")
         val setupWizardSeen = booleanPreferencesKey("setup_wizard_seen")
         val themeMode = stringPreferencesKey("theme_mode")
         val deckName = stringPreferencesKey("deck_name")

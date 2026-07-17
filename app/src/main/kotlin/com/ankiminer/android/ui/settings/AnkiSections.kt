@@ -32,7 +32,7 @@ import com.ankiminer.android.anki.provider.AnkiProviderReadiness
 import com.ankiminer.android.anki.provider.AnkiRemediationActionKind
 import com.ankiminer.android.anki.provider.AnkiRemediationType
 import com.ankiminer.android.data.anki.AnkiSetupFailure
-import com.ankiminer.android.ui.setup.SetupUiState
+import com.ankiminer.android.vm.SetupUiState
 
 @Composable
 internal fun AnkiTargetCard(

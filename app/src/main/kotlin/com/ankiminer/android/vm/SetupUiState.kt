@@ -1,4 +1,4 @@
-package com.ankiminer.android.ui.setup
+package com.ankiminer.android.vm
 
 import com.ankiminer.android.anki.provider.AnkiProviderReadiness
 import com.ankiminer.android.anki.provider.AnkiMinerModelProvisioningResult
@@ -32,7 +32,6 @@ internal data class SetupUiState(
     val remediations: AnkiRemediationInventory = AnkiRemediationInventory(emptyList()),
     val ankiOperation: AnkiSetupOperation? = null,
     val ankiFailure: AnkiSetupFailure? = null,
-    val firstRunComplete: Boolean = false,
     /** Tri-state startup-flash guard: null until the settings store has emitted once. */
     val wizardSeen: Boolean? = null,
     val uniDicInstalled: Boolean = false,
@@ -62,8 +61,6 @@ internal data class SetupUiState(
     val audioPackId: String = "audio-pack",
     val audioPackReplace: Boolean = false,
     val knownWordsFormat: KnownWordsSourceFormat = KnownWordsSourceFormat.JSON,
-    val completing: Boolean = false,
-    val completionError: Boolean = false,
 ) {
     val customSlotValid: Boolean
         get() = CUSTOM_SLOT_ID.matches(customSlotId)
@@ -104,17 +101,6 @@ internal data class SetupUiState(
                 recoveryReady &&
                 uniDicInstalled &&
                 !busy
-
-    val canFinishFirstRun: Boolean
-        get() =
-            pythonReady &&
-                resourceStartup == ResourceStartupReadiness.READY &&
-                ankiReady &&
-                targetReady &&
-                recoveryReady &&
-                uniDicInstalled &&
-                !busy &&
-                !completing
 
     val ankiDroidAction: AnkiDroidSetupAction?
         get() =

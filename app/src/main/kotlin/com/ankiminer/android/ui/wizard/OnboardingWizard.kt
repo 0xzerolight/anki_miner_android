@@ -34,8 +34,8 @@ import com.ankiminer.android.ui.settings.ResourceCard
 import com.ankiminer.android.ui.settings.ResourceFailureCard
 import com.ankiminer.android.ui.settings.ResourceOperationCard
 import com.ankiminer.android.ui.settings.SystemStatusCard
-import com.ankiminer.android.ui.setup.AnkiDroidSetupAction
-import com.ankiminer.android.ui.setup.SetupUiState
+import com.ankiminer.android.vm.AnkiDroidSetupAction
+import com.ankiminer.android.vm.SetupUiState
 import com.ankiminer.android.vm.SetupViewModel
 
 /**

@@ -18,8 +18,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.ankiminer.android.R
 import com.ankiminer.android.mining.NotificationPermissionReadiness
-import com.ankiminer.android.ui.setup.AnkiDroidSetupAction
-import com.ankiminer.android.ui.setup.SetupUiState
+import com.ankiminer.android.vm.AnkiDroidSetupAction
+import com.ankiminer.android.vm.SetupUiState
 
 @Composable
 internal fun SystemStatusCard(

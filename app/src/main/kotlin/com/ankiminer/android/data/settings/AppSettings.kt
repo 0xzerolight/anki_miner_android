@@ -37,7 +37,6 @@ data class ResourceChainSelection(
  * the Android-owned Anki model contract is always emitted explicitly by the snapshot mapper.
  */
 data class AppSettings(
-    val firstRunComplete: Boolean = false,
     /** The onboarding wizard was offered once and completed or skipped. */
     val setupWizardSeen: Boolean = false,
     val theme: ThemeMode = ThemeMode.DARK,
