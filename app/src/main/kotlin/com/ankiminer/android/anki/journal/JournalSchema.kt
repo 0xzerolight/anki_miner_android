@@ -189,6 +189,7 @@ internal object JournalSchema {
         val canonical = StringBuilder(source.length)
         var quote: Char? = null
         var bracketQuoted = false
+        var parenthesisDepth = 0
         var pendingSpace = false
         var index = 0
         while (index < source.length) {
@@ -230,11 +231,19 @@ internal object JournalSchema {
                 else -> {
                     if (pendingSpace && canonical.isNotEmpty()) canonical.append(' ')
                     pendingSpace = false
+                    when (char) {
+                        '(' -> parenthesisDepth += 1
+                        ')' -> {
+                            check(parenthesisDepth > 0) { "Unbalanced closing parenthesis in schema definition" }
+                            parenthesisDepth -= 1
+                        }
+                    }
                     canonical.append(char)
                 }
             }
             index += 1
         }
+        check(parenthesisDepth == 0) { "Unbalanced opening parenthesis in schema definition" }
         return canonical.toString()
     }
 
@@ -804,7 +813,7 @@ internal object JournalSchema {
                                     OLD.routing_phase = 'NOTE_PENDING' AND OLD.active_note_id IS NULL) OR
                                 (r.status_kind = 'COMMITTED_FAILED' AND OLD.active_note_id = r.committed_id AND
                                     OLD.routing_phase IN ('NOTE_COMMIT_KNOWN', 'NOTE_READBACK_VERIFIED',
-                                        'CARDS_DISCOVERED', 'ROUTING', 'ROUTED', 'POSTCHECK_VERIFIED'))))))
+                                        'CARDS_DISCOVERED', 'ROUTING', 'ROUTED', 'POSTCHECK_VERIFIED')))))))
                     THEN RAISE(ABORT, 'active-note scalar differs from normalized materialization') END;
             END
             """.trimIndent(),
@@ -826,7 +835,7 @@ internal object JournalSchema {
                                     (r.status_kind = 'CREATED' AND OLD.routing_phase = 'POSTCHECK_VERIFIED') OR
                                     (r.status_kind = 'COMMITTED_FAILED' AND OLD.routing_phase IN (
                                         'NOTE_COMMIT_KNOWN', 'NOTE_READBACK_VERIFIED', 'CARDS_DISCOVERED',
-                                        'ROUTING', 'ROUTED', 'POSTCHECK_VERIFIED'))))))
+                                        'ROUTING', 'ROUTED', 'POSTCHECK_VERIFIED')))))))
                     THEN RAISE(ABORT, 'active note ID lacks exact receipt or completion proof') END;
             END
             """.trimIndent(),

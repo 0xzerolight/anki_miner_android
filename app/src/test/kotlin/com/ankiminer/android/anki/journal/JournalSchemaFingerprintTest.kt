@@ -2,6 +2,7 @@ package com.ankiminer.android.anki.journal
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -33,6 +34,22 @@ class JournalSchemaFingerprintTest {
 
         assertNotEquals(JournalSchema.definitionHash(realTrigger), JournalSchema.definitionHash(noOpTrigger))
         assertNotEquals(JournalSchema.definitionHash(realIndex), JournalSchema.definitionHash(wrongIndex))
+    }
+
+    @Test
+    fun definitionHashRejectsUnbalancedParenthesesOutsideQuotedText() {
+        val malformed =
+            "CREATE TRIGGER exact_guard BEFORE UPDATE ON parents " +
+                "BEGIN SELECT CASE WHEN NOT (NEW.state = OLD.state THEN RAISE(ABORT, 'blocked)'); END; END"
+
+        assertThrows(IllegalStateException::class.java) {
+            JournalSchema.definitionHash(malformed)
+        }
+
+        JournalSchema.definitionHash(
+            "CREATE TRIGGER exact_guard BEFORE UPDATE ON parents " +
+                "BEGIN SELECT CASE WHEN NOT (NEW.state = OLD.state) THEN RAISE(ABORT, 'blocked)'); END; END",
+        )
     }
 
     @Test
