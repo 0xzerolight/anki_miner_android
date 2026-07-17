@@ -41,7 +41,13 @@ done
 
 echo "Building and installing $VARIANT ..."
 export GRADLE_OPTS="-Dorg.gradle.daemon=false -Dorg.gradle.workers.max=1 -Xmx2g"
-ANDROID_SERIAL="$SERIAL" ./gradlew ":app:install$VARIANT" --console=plain --no-daemon
+if ! ANDROID_SERIAL="$SERIAL" ./gradlew ":app:install$VARIANT" --console=plain --no-daemon; then
+    # Most common cause: the installed build was signed with a different key
+    # (e.g. switching between debug and release). Uninstall and retry once.
+    echo "Install failed; uninstalling existing app and retrying ..."
+    adb -s "$SERIAL" uninstall "$APP_ID" || true
+    ANDROID_SERIAL="$SERIAL" ./gradlew ":app:install$VARIANT" --console=plain --no-daemon
+fi
 
 echo "Launching $APP_ID ..."
 adb -s "$SERIAL" shell monkey -p "$APP_ID" -c android.intent.category.LAUNCHER 1 >/dev/null
