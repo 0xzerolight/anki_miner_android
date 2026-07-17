@@ -22,7 +22,7 @@ APP_ID="com.ankiminer.android"
 
 # Launch the emulator only if it is not already online (with a window unless
 # there is no display, e.g. over SSH).
-if ! adb devices | grep -q "^$SERIAL[[:space:]]*device$"; then
+if ! adb devices | grep -q "^${SERIAL}[[:space:]]*device$"; then
     echo "Starting emulator $ANDROID_AVD_API26_NAME ..."
     window_args=()
     [[ -z "${DISPLAY:-}" && -z "${WAYLAND_DISPLAY:-}" ]] && window_args=(-no-window)
