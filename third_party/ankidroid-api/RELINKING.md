@@ -18,11 +18,9 @@ in this repository. The normal manifest check is an integrity check only; the
 opt-in verified-upstream mode proves byte equality against regular,
 non-executable blobs in the exact pinned Git tree.
 
-There is no top-level license for the app repository at this snapshot. Source
-availability alone does not grant recipients permission to modify the
-Corresponding Application Code. Distribution of a combined APK is therefore
-not cleared by this source vendor alone. Before any distribution, add explicit
-terms permitting the recombination/relinking LGPLv3 requires, and convey the
+The app repository is licensed under GPL-3.0-or-later (top-level `LICENSE`),
+which grants recipients the terms to modify and rebuild the combined work and
+supplies the recombination/relinking permission LGPLv3 requires. Convey the
 complete source/build material for the exact released revision with the APK.
 
 ## Rebuild and relink

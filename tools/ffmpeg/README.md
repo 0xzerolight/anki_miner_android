@@ -39,6 +39,6 @@ file/pipe protocol surfaces used by the engine and the S3 instrumented test.
 
 The source set is LGPL-compatible: FFmpeg 7.1.5, LAME 3.100, Opus 1.5.2, and
 ffmpeg-android-maker v2.12 at commit
-`69bc3f2968e5335fff43123a2bef6c54428144ce`. A public distribution will still
-need the corresponding notices, source offer, and static-relink materials;
-those release artifacts are intentionally outside the current technical port.
+`69bc3f2968e5335fff43123a2bef6c54428144ce`. The corresponding notices, source offer, and static-relink materials for a
+public distribution are in `third_party/ffmpeg/` (the LGPL/BSD license texts and
+`NOTICE.md`).
