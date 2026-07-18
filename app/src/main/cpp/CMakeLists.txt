@@ -13,6 +13,14 @@ if(NOT CMAKE_ANDROID_ARCH_ABI MATCHES "^(arm64-v8a|x86_64)$")
     message(FATAL_ERROR "S1b supports only arm64-v8a and x86_64")
 endif()
 
+# Neutralize the absolute build path baked into __FILE__ (MeCab's CHECK_DIE/die
+# macros embed it) so the shipped libanki_miner_mecab.so carries no maintainer
+# path. -ffile-prefix-map rewrites only recorded paths, not real file access.
+get_filename_component(
+    ANKI_MINER_REPO_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../../.." ABSOLUTE
+)
+add_compile_options("-ffile-prefix-map=${ANKI_MINER_REPO_ROOT}=.")
+
 set(MECAB_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../../../third_party/mecab/src")
 set(MECAB_RUNTIME_SOURCES
     "${MECAB_SOURCE_DIR}/char_property.cpp"
