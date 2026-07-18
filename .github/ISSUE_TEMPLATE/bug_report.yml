@@ -1,5 +1,5 @@
 name: Bug report
-description: Report one reproducible, non-security problem in an official Anki Miner Android prerelease.
+description: Report one reproducible, non-security problem in an official Anki Miner Android release.
 title: "[Bug]: "
 body:
   - type: markdown
@@ -18,7 +18,7 @@ body:
           required: true
         - label: I removed private user content, personal identifiers, credentials, document URIs, and unreviewed logs.
           required: true
-        - label: I am testing an official GitHub prerelease APK with the expected signing certificate, not a fork, debug build, or workflow artifact.
+        - label: I am testing an official GitHub release APK with the expected signing certificate, not a fork, debug build, or workflow artifact.
           required: true
 
   - type: input
@@ -26,7 +26,7 @@ body:
     attributes:
       label: Anki Miner version
       description: Include version name and code from the installed app or release record.
-      placeholder: 0.1.0 (code 1)
+      placeholder: 0.1.1 (code 2)
     validations:
       required: true
 

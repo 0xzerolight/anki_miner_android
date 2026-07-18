@@ -2,9 +2,9 @@
 
 All notable project changes will be recorded here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and releases will use semantic versioning once a public version exists.
 
-## [Unreleased]
+## [0.1.1] - 2026-07-19
 
-Version 0.1.0 is planned but has not been tagged or published.
+First published release; supersedes the internal 0.1.0 test build.
 
 ### Added
 
@@ -12,6 +12,7 @@ Version 0.1.0 is planned but has not been tagged or published.
 - JMdict (English) as a second pinned dictionary download alongside Jitendex; either, both, or neither can be installed.
 - Skippable onboarding wizard (tokenizer, dictionary choice, AnkiDroid) replacing the mandatory first-run Setup tab; re-runnable from Settings → UI.
 - Launcher icon ported from the desktop Anki Miner logo, with a monochrome themed-icon variant.
+- Third-party license notices are bundled in the APK and viewable from Settings → Licenses → third-party notices.
 
 ### Changed
 
