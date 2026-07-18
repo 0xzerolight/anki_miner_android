@@ -56,6 +56,13 @@ jobs:
           --only-binary=:all:
           --require-hashes
           -r requirements-host-test.lock
+          -r requirements-lint.lock
+
+      - name: Lint Python (ruff)
+        run: ruff check .
+
+      - name: Check Python formatting (black)
+        run: black --check .
 
       - name: Run secretless tooling and bridge checks
         shell: bash
