@@ -46,6 +46,13 @@ val keystoreProps =
         }
     }
 
+// Release builds inject the immutable build commit via -PankiMinerSourceCommit=<sha>
+// (or the ANKI_MINER_SOURCE_COMMIT env var); dev builds keep "development".
+val ankiMinerSourceCommit: String =
+    (project.findProperty("ankiMinerSourceCommit") as String?)
+        ?: System.getenv("ANKI_MINER_SOURCE_COMMIT")
+        ?: "development"
+
 android {
     namespace = "com.ankiminer.android"
     compileSdk = 36
@@ -68,7 +75,7 @@ android {
         buildConfigField("boolean", "S1A_SPIKE_ENABLED", "true")
         buildConfigField("boolean", "S1A_PUBLICATION_VERIFIED", "true")
         buildConfigField("boolean", "S1A_ARM64_ACCEPTED", "false")
-        buildConfigField("String", "SOURCE_COMMIT", "\"development\"")
+        buildConfigField("String", "SOURCE_COMMIT", "\"$ankiMinerSourceCommit\"")
         buildConfigField("String", "RELEASE_CHANNEL", "\"github-alpha\"")
         buildConfigField("String", "S1A_PUBLICATION_BUILD_KEY", "\"$s1aWheelBuildKey\"")
         buildConfigField(
@@ -81,7 +88,7 @@ android {
             "S1B_TEST_UNIDIC_ARCHIVE",
             "\"/data/local/tmp/anki-miner-s1b-unidic.zip\"",
         )
-        manifestPlaceholders["ankiMinerSourceCommit"] = "development"
+        manifestPlaceholders["ankiMinerSourceCommit"] = ankiMinerSourceCommit
         manifestPlaceholders["ankiMinerReleaseChannel"] = "github-alpha"
     }
 
