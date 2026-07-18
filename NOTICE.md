@@ -6,7 +6,7 @@ Anki Miner for Android is licensed under GPL-3.0-or-later (see [LICENSE](LICENSE
 
 | Component | Evidence in this repository | Recorded terms or status |
 |---|---|---|
-| Anki Miner Python engine | `app/src/main/python/anki_miner/`, `tools/engine-sync/engine.lock`, `.engine-sync-manifest.json` | GPL-3.0-or-later; full text is packaged at `app/src/main/python/anki_miner/LICENSE` |
+| Anki Miner Python engine | `app/src/main/python/anki_miner/`, `tools/engine-sync/engine.lock`, `app/src/main/python/.engine-sync-manifest.json` | GPL-3.0-or-later; full text is packaged at `app/src/main/python/anki_miner/LICENSE` |
 | AnkiDroid API source | `third_party/ankidroid-api/manifest.json`, `NOTICE.md`, `upstream/` | Per-file LGPL-3.0-only, LGPL-3.0-or-later, and the recorded permissive `FlashCardsContract` notice |
 | MeCab and mecab_for_dart-derived source | `third_party/mecab/source-manifest.json` and both `LICENSE.*` files | BSD-3-Clause |
 | FFmpeg, LAME, and Opus CLI build | `tools/ffmpeg/sources.lock`, build recipes, and committed `jniLibs` executables | LGPL/GPL-compatible source set; upstream source pinned in `sources.lock` |
