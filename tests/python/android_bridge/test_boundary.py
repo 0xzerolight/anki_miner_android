@@ -6,10 +6,9 @@ import subprocess
 import sys
 from pathlib import Path
 
-import pytest
-
 import android_bridge
 import android_bridge.boundary as boundary
+import pytest
 from android_bridge.protocol import decode_envelope, encode_message
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]

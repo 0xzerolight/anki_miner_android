@@ -4,13 +4,10 @@
 from __future__ import annotations
 
 import argparse
-from email.parser import BytesParser
-from email.policy import compat32
 import hashlib
 import importlib.util
 import json
 import os
-from pathlib import Path
 import platform
 import re
 import shutil
@@ -22,6 +19,9 @@ import tempfile
 import urllib.request
 import zipfile
 import zlib
+from email.parser import BytesParser
+from email.policy import compat32
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 TOOL_ROOT = Path(__file__).resolve().parent
@@ -176,9 +176,8 @@ def fetch_sources(downloads: Path) -> None:
         temporary = target.with_suffix(target.suffix + ".partial")
         if temporary.exists():
             temporary.unlink()
-        with urllib.request.urlopen(entry["url"], timeout=120) as response:
-            with temporary.open("wb") as output:
-                shutil.copyfileobj(response, output)
+        with urllib.request.urlopen(entry["url"], timeout=120) as response, temporary.open("wb") as output:
+            shutil.copyfileobj(response, output)
         verify_file(temporary, entry["sha256"])
         os.replace(temporary, target)
     verify_locked_sources(downloads)
@@ -460,6 +459,7 @@ def source_recipe_key(
     for entry, (_, path) in zip(
         recipe_inventory(tool_root, repo_root)[:-1],
         _recipe_path_entries(tool_root, repo_root),
+        strict=False,
     ):
         data = path.read_bytes()
         header = _canonical_json(
@@ -550,8 +550,7 @@ def _target_python_identity() -> dict[str, object]:
             ),
         ],
         check=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        capture_output=True,
         text=True,
         env={**os.environ, "LC_ALL": "C", "LANG": "C", "TZ": "UTC"},
     )
@@ -736,9 +735,10 @@ def _validate_expected_keys(expected_recipe: str, expected_build: str) -> tuple[
 def validate_recipes(chaquopy_root: Path) -> list[str]:
     try:
         from copy import deepcopy
-        from jinja2 import StrictUndefined, Template, TemplateError
+
         import jsonschema
         import yaml
+        from jinja2 import StrictUndefined, Template, TemplateError
     except ImportError as error:
         raise WheelError(
             "Jinja2, jsonschema and PyYAML are required for staged recipe validation",
@@ -1091,7 +1091,6 @@ def verify_s1a_wheel(path: Path) -> tuple[str, str, dict[str, object]]:
                 f"{path.name}: native payload path is {elf_names[0]!r}, " f"expected {expected_native_path!r}"
             )
         elf_entry = _inspect_elf(archive.read(elf_names[0]), elf_names[0], abi)
-        native_name = Path(elf_names[0]).name
         expected_native = {
             "chaquopy_libcxx": "libc++_shared.so",
             "chaquopy_libmecab": "libmecab.so.2",

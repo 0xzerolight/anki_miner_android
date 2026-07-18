@@ -1,15 +1,14 @@
 from __future__ import annotations
 
+import importlib.util
 import shlex
 import sys
 import threading
 import time
-import importlib.util
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-
 from android_bridge.tokenizer_contract import TokenizerContractError
 from android_bridge.tokenizer_s1a import S1aTokenizerBackend, create_s1a_tagger
 from android_bridge.unidic_resource import RegisteredUniDic
@@ -29,11 +28,34 @@ def _registration(tmp_path: Path) -> RegisteredUniDic:
 
 
 def _features(**values: str) -> str:
-    names = (
-        "pos1 pos2 pos3 pos4 cType cForm lForm lemma orth pron orthBase "
-        "pronBase goshu iType iForm fType fForm kana kanaBase form formBase "
-        "iConType fConType aType aConType aModeType"
-    ).split()
+    names = [
+        "pos1",
+        "pos2",
+        "pos3",
+        "pos4",
+        "cType",
+        "cForm",
+        "lForm",
+        "lemma",
+        "orth",
+        "pron",
+        "orthBase",
+        "pronBase",
+        "goshu",
+        "iType",
+        "iForm",
+        "fType",
+        "fForm",
+        "kana",
+        "kanaBase",
+        "form",
+        "formBase",
+        "iConType",
+        "fConType",
+        "aType",
+        "aConType",
+        "aModeType",
+    ]
     return ",".join(values.get(name, "*") for name in names)
 
 

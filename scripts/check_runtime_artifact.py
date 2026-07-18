@@ -4,18 +4,18 @@
 from __future__ import annotations
 
 import argparse
-from dataclasses import dataclass, field
-from email.parser import BytesParser
-from email.policy import compat32
 import hashlib
-from io import BytesIO
 import json
-from pathlib import Path, PurePosixPath
 import re
 import stat
 import struct
 import sys
 import zipfile
+from dataclasses import dataclass, field
+from email.parser import BytesParser
+from email.policy import compat32
+from io import BytesIO
+from pathlib import Path, PurePosixPath
 
 SUPPORTED_ABIS = {"arm64-v8a": 183, "x86_64": 62}
 RUNTIME_SCHEMA = 1

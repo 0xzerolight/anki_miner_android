@@ -2,17 +2,15 @@ from __future__ import annotations
 
 import ast
 import importlib
-import json
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import SimpleNamespace
 
-import pytest
-
 import android_bridge.anki_adapter as anki_adapter_module
 import android_bridge.jobs as jobs_module
 import android_bridge.mining as mining
+import pytest
 from android_bridge.anki_adapter import AnkiOperationCancelled
 from android_bridge.jobs import JobRegistry
 from android_bridge.protocol import BridgeProtocolError, decode_envelope, encode_message

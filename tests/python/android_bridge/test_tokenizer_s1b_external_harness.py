@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 import sys
-from types import SimpleNamespace
 import zipfile
+from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -12,15 +12,14 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(PROJECT_ROOT / "tools/tokenizer"))
 sys.path.insert(0, str(PROJECT_ROOT / "tools/engine-sync"))
 
+from android_bridge.tokenizer_contract import UNIDIC_FEATURE_FIELDS  # noqa: E402
+from android_bridge.unidic_resource import UNIDIC_REQUIRED_FILES  # noqa: E402
 from engine_sync.golden_contract import sha256_tree  # noqa: E402
 from package_s1b_test_unidic import package_dictionary  # noqa: E402
 from verify_s1b_host_parity import (  # noqa: E402
     _actual_token,
     verify_dictionary_provenance,
 )
-
-from android_bridge.tokenizer_contract import UNIDIC_FEATURE_FIELDS  # noqa: E402
-from android_bridge.unidic_resource import UNIDIC_REQUIRED_FILES  # noqa: E402
 
 
 def _dictionary(root: Path, *, suffix: str = "") -> None:
@@ -96,7 +95,7 @@ def test_external_dictionary_zip_is_deterministic_and_never_bundled(
 
 
 def test_golden_serialization_does_not_mutate_engine_star_semantics() -> None:
-    feature_values = {name: None for name in UNIDIC_FEATURE_FIELDS}
+    feature_values = dict.fromkeys(UNIDIC_FEATURE_FIELDS)
     feature_values["pos1"] = "*"
     token = SimpleNamespace(
         surface="猫",

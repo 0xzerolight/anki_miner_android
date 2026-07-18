@@ -4,13 +4,13 @@ import hashlib
 import importlib.util
 import json
 import os
-from pathlib import Path
 import py_compile
 import stat
 import subprocess
 import sys
 import tempfile
 import unittest
+from pathlib import Path
 
 SCRIPTS_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SCRIPTS_DIR))

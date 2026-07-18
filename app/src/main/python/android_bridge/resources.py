@@ -292,7 +292,7 @@ def _compatibility_marker(resource: UniDicResource) -> bytes:
         "anki-miner-tokenizer-v1\n"
         f"resourceId={resource.resource_id}\n"
         f"treeSha256={resource.install.tree_sha256}\n"
-    ).encode("utf-8")
+    ).encode()
 
 
 def _valid_unidic_install(root: Path, resource: UniDicResource) -> bool:
@@ -1323,7 +1323,7 @@ def _read_dictionary_meta(index: Path) -> dict[object, object]:
 
     connection = sqlite3.connect(index.resolve().as_uri() + "?mode=ro", uri=True)
     try:
-        return {key: value for key, value in connection.execute("SELECT key, value FROM meta")}
+        return dict(connection.execute("SELECT key, value FROM meta"))
     finally:
         connection.close()
 

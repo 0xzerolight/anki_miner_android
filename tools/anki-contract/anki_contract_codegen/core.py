@@ -6,7 +6,7 @@ import json
 import os
 import secrets
 import stat
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any, Iterator, NoReturn
@@ -697,10 +697,8 @@ def _atomic_write(
         )
     except BaseException:
         if temporary_name is not None:
-            try:
+            with suppress(FileNotFoundError):
                 os.unlink(temporary_name, dir_fd=parent_fd)
-            except FileNotFoundError:
-                pass
         raise
     finally:
         os.close(parent_fd)

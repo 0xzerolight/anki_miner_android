@@ -1,9 +1,9 @@
 """Deterministic cross-language Anki contract generation."""
 
 from .core import (
-    ContractError,
     GENERATED_KOTLIN_PATH,
     LIMITS_MANIFEST_PATH,
+    ContractError,
     check,
     generate_kotlin,
     iter_constants,

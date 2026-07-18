@@ -19,9 +19,8 @@ import zipfile
 from dataclasses import replace
 from pathlib import Path
 
-import pytest
-
 import android_bridge.reading_mining as reading_mining
+import pytest
 from android_bridge.protocol import encode_message
 
 _PNG_BYTES = base64.b64decode(

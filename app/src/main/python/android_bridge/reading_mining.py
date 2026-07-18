@@ -12,12 +12,12 @@ from .callbacks import CallbackAdapters
 from .config_map import AndroidPaths, map_config_settings
 from .jobs import JobRegistry, registry
 from .mining import (
-    _PostProcessCleanupError,
     _build_processor,
     _cleanup_failure_terminal,
     _emit_terminal,
     _ensure_runtime_ready,
     _exception_terminal,
+    _PostProcessCleanupError,
     _result_terminal,
 )
 from .protocol import BridgeProtocolError, decode_message

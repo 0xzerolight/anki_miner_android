@@ -5,17 +5,17 @@ import importlib.util
 import io
 import json
 import os
-from pathlib import Path
 import shutil
-import subprocess
 import struct
+import subprocess
 import sys
 import tarfile
 import tempfile
 import types
 import unittest
-from unittest import mock
 import zipfile
+from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[2]
 MODULE_PATH = ROOT / "tools/wheels/s1a_wheels.py"
@@ -722,9 +722,8 @@ class S1aWheelToolTests(unittest.TestCase):
                     if not isinstance(value, dict):
                         raise FakeValidationError()
                     properties = schema.get("properties", {})
-                    if schema.get("additionalProperties") is False:
-                        if set(value) - set(properties):
-                            raise FakeValidationError()
+                    if schema.get("additionalProperties") is False and set(value) - set(properties):
+                        raise FakeValidationError()
                     for name, nested in properties.items():
                         if name in value:
                             validate_object(nested, value[name])

@@ -7,9 +7,6 @@ from pathlib import Path, PurePosixPath
 from typing import Any, NoReturn
 
 import pytest
-from jsonschema import Draft202012Validator
-from jsonschema.exceptions import ValidationError
-
 from android_bridge.anki_limits import ANKI_ENVELOPE_LIMITS_V1, ANKI_LIMITS_V1
 from android_bridge.protocol import (
     BridgeProtocolError,
@@ -23,8 +20,9 @@ from android_bridge.unicode_contract import (
     scalar_count,
     strict_utf8_length,
 )
-
 from anki_protocol_corpus import CorpusCase, CorpusFormatError, load_anki_protocol_corpus
+from jsonschema import Draft202012Validator
+from jsonschema.exceptions import ValidationError
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 CORPUS_PATH = PROJECT_ROOT / "golden/bridge/anki-protocol-v1.jsonl"
@@ -217,13 +215,12 @@ def _media_basename(value: str, *, preferred: bool = False, actual: bool = False
         _reject("invalid_value")
     if any(is_category_c(ord(character)) for character in value):
         _reject("invalid_value")
-    if preferred:
-        if (
-            not is_nfc(value)
-            or has_leading_or_trailing_python_whitespace(value)
-            or any(character in '/\\<>[]:"' for character in value)
-        ):
-            _reject("invalid_value")
+    if preferred and (
+        not is_nfc(value)
+        or has_leading_or_trailing_python_whitespace(value)
+        or any(character in '/\\<>[]:"' for character in value)
+    ):
+        _reject("invalid_value")
     if actual and (value.startswith("[sound:") or value.startswith("<img")):
         _reject("invalid_value")
     return utf8_bytes

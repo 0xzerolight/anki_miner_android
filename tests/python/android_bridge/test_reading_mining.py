@@ -6,14 +6,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from types import SimpleNamespace
 
-import pytest
-
 import android_bridge.anki_adapter as anki_adapter_module
 import android_bridge.boundary as boundary
 import android_bridge.jobs as jobs_module
 import android_bridge.mining as video_mining
 import android_bridge.reading_limits as reading_limits
 import android_bridge.reading_mining as reading_mining
+import pytest
 from android_bridge.anki_adapter import AnkiOperationCancelled
 from android_bridge.jobs import JobRegistry
 from android_bridge.protocol import BridgeProtocolError, decode_envelope, encode_message

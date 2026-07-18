@@ -5,9 +5,8 @@ import os
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-import pytest
-
 import android_bridge.unidic_resource as unidic_resource
+import pytest
 from android_bridge.tokenizer_contract import TokenizerContractError
 from android_bridge.unidic_resource import (
     UNIDIC_REQUIRED_FILES,

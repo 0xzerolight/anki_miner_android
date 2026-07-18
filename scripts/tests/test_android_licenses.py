@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from pathlib import Path
 
 SCRIPTS_DIR = Path(__file__).resolve().parents[1]
 LICENSE_HASH = "24333f8a63b6825ea9c5514f83c2829b004d1fee"

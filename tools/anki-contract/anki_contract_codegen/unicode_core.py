@@ -236,9 +236,8 @@ def _parse_property_ranges(
             _fail(f"{description}:{line_number} has too few fields")
         if fields[1] != property_name:
             continue
-        if property_value is not None:
-            if len(fields) < 3 or fields[2] != property_value:
-                continue
+        if property_value is not None and (len(fields) < 3 or fields[2] != property_value):
+            continue
         ranges.append(_parse_code_point_range(fields[0], f"{description}:{line_number}"))
     return _merge_ranges(ranges, description)
 
@@ -367,10 +366,10 @@ def _hangul_decomposition(code_point: int) -> tuple[int, ...] | None:
     n_count = 588
     t_count = 28
     s_index = code_point - s_base
-    l = l_base + s_index // n_count
+    lead = l_base + s_index // n_count
     v = v_base + (s_index % n_count) // t_count
     t_index = s_index % t_count
-    return (l, v) if t_index == 0 else (l, v, t_base + t_index)
+    return (lead, v) if t_index == 0 else (lead, v, t_base + t_index)
 
 
 def _build_tables(inputs: dict[str, bytes], whitespace: tuple[tuple[int, int], ...]) -> UnicodeTables:

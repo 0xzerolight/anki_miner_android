@@ -4,8 +4,8 @@
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
 import sys
+from pathlib import Path
 
 from verify_android_toolchain import VerificationError, read_lock
 
@@ -69,12 +69,11 @@ def preflight(lock: Path, sdkmanager_list: Path) -> None:
                 f"{package_path}: stable-channel revision {available_revision!r}, "
                 f"expected locked revision {expected_revision!r}",
             )
-        if update is not None and installed_revision is not None:
-            if update[0] != installed_revision:
-                raise VerificationError(
-                    f"{package_path}: sdkmanager update row starts at {update[0]!r}, "
-                    f"but installed revision is {installed_revision!r}",
-                )
+        if update is not None and installed_revision is not None and update[0] != installed_revision:
+            raise VerificationError(
+                f"{package_path}: sdkmanager update row starts at {update[0]!r}, "
+                f"but installed revision is {installed_revision!r}",
+            )
         if update is not None:
             candidate_revision = update[1]
         elif installed_revision is not None:

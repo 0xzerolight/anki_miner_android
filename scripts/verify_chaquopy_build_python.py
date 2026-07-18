@@ -7,12 +7,12 @@ import argparse
 import hashlib
 import json
 import os
-from pathlib import Path
 import re
 import stat
 import subprocess
 import sys
 import tempfile
+from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlparse
 
@@ -398,8 +398,7 @@ print(f"anki-miner-bytecode-ok:{count}")
                     str(install_root),
                 ],
                 check=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                capture_output=True,
                 text=True,
                 timeout=120,
                 env=environment,
@@ -530,8 +529,7 @@ def verify(
         result = subprocess.run(
             [str(resolved_python), "-I", "-S", "-B", "-c", probe],
             check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            capture_output=True,
             text=True,
             timeout=30,
             env=environment,

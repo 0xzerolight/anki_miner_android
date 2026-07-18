@@ -5,12 +5,12 @@ from __future__ import annotations
 
 import argparse
 import json
-from pathlib import Path
 import re
 import struct
 import subprocess
 import sys
 import types
+from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(PROJECT_ROOT / "app/src/main/python"))
@@ -34,7 +34,7 @@ _MAX_WIRE_BYTES = (1 << 31) - 1
 
 
 def _read_exact(stream: object, size: int) -> bytes:
-    read = getattr(stream, "read")
+    read = stream.read
     output = read(size)
     if len(output) != size:
         raise RuntimeError("native parity driver returned a truncated frame")
@@ -48,16 +48,16 @@ def _golden_feature(value: object) -> object:
 
 
 def _actual_token(token: object) -> dict[str, object]:
-    feature = getattr(token, "feature")
+    feature = token.feature
     return {
-        "surface": getattr(token, "surface"),
+        "surface": token.surface,
         "features": {name: _golden_feature(getattr(feature, name)) for name in UNIDIC_FEATURE_FIELDS},
-        "is_unknown": getattr(token, "is_unk"),
+        "is_unknown": token.is_unk,
         "offsets": {
-            "codepoint_start": getattr(token, "codepoint_start"),
-            "codepoint_end": getattr(token, "codepoint_end"),
-            "utf16_start": getattr(token, "utf16_start"),
-            "utf16_end": getattr(token, "utf16_end"),
+            "codepoint_start": token.codepoint_start,
+            "codepoint_end": token.codepoint_end,
+            "utf16_start": token.utf16_start,
+            "utf16_end": token.utf16_end,
         },
     }
 
@@ -158,7 +158,7 @@ def _load_engine_compound_pipeline() -> tuple[object, object, object, object, ob
 
 def _verify_engine_star_semantics(tagged_cases: dict[str, list[object]]) -> None:
     tokens = tagged_cases["astral-oov-offsets"]
-    unknown_tokens = [token for token in tokens if getattr(token, "is_unk")]
+    unknown_tokens = [token for token in tokens if token.is_unk]
     if len(unknown_tokens) != 1:
         raise RuntimeError("astral-oov-offsets must contain exactly one unknown token")
     oov = unknown_tokens[0]

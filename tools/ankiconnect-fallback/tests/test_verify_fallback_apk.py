@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import importlib.util
 import json
-from pathlib import Path
 import tempfile
 import unittest
 import zipfile
+from pathlib import Path
 
 SCRIPT = Path(__file__).resolve().parents[1] / "verify_fallback_apk.py"
 SPEC = importlib.util.spec_from_file_location("verify_fallback_apk", SCRIPT)

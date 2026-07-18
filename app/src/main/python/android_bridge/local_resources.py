@@ -9,6 +9,7 @@ strict inventory payload.  Engine imports stay function-local because
 
 from __future__ import annotations
 
+import contextlib
 import csv
 import hashlib
 import json
@@ -20,9 +21,9 @@ import zipfile
 from collections.abc import Mapping
 from pathlib import Path, PurePosixPath
 
+from . import resources as core
 from .bootstrap import require_initialized
 from .protocol import BridgeProtocolError, encode_message
-from . import resources as core
 
 _FREQUENCY_FORMATS = frozenset({"zip", "csv", "tsv", "txt"})
 _PITCH_FORMATS = frozenset({"zip", "csv", "tsv"})
@@ -1083,7 +1084,7 @@ def _audio_inventory(home: Path) -> list[dict[str, object]]:
         expected_content = child / "content"
         configured_content = Path(meta.get("pack_dir", ""))
         content_available = False
-        try:
+        with contextlib.suppress(OSError):
             content_available = (
                 version == 1
                 and count > 0
@@ -1091,8 +1092,6 @@ def _audio_inventory(home: Path) -> list[dict[str, object]]:
                 and not expected_content.is_symlink()
                 and configured_content == expected_content
             )
-        except OSError:
-            pass
         result.append(
             {
                 "packId": child.name,

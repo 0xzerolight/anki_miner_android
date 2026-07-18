@@ -7,7 +7,6 @@ from dataclasses import fields, replace
 from pathlib import Path
 
 import pytest
-
 from android_bridge.config_map import (
     AndroidPaths,
     exposed_config_fields,

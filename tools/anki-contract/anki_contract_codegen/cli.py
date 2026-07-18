@@ -6,7 +6,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from .core import ContractError, GENERATED_KOTLIN_PATH, check, refresh
+from .core import GENERATED_KOTLIN_PATH, ContractError, check, refresh
 
 
 def _parser() -> argparse.ArgumentParser:

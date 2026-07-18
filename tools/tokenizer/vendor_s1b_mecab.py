@@ -120,8 +120,7 @@ def _git_value(source: Path, *args: str) -> str:
     result = subprocess.run(
         ["git", "-C", str(source), *args],
         check=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        capture_output=True,
         text=True,
     )
     return result.stdout.strip()

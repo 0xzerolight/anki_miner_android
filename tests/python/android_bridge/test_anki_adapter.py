@@ -14,12 +14,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from jsonschema import Draft202012Validator
-
 from android_bridge.anki_adapter import (
-    AndroidAnkiAdapter,
-    AnkiOperationCancelled,
-    _MAX_DECK_NAME_UTF8_BYTES,
     _MAX_CARD_MEDIA_BYTES,
     _MAX_CARDS_PER_NOTE,
     _MAX_CREATE_CALL_MEDIA_BYTES,
@@ -29,15 +24,16 @@ from android_bridge.anki_adapter import (
     _MAX_CREATE_CALL_SOURCE_UTF8_BYTES,
     _MAX_CREATE_CONTENT_UTF8_BYTES,
     _MAX_CREATE_ENVELOPE_UTF8_BYTES,
-    _MAX_FIELD_NAME_UTF8_BYTES,
-    _MAX_FIELD_VALUE_UTF8_BYTES,
+    _MAX_DECK_NAME_UTF8_BYTES,
     _MAX_EXCLUDED_DECKS,
     _MAX_EXCLUDED_DECKS_UTF8_BYTES,
+    _MAX_FIELD_NAME_UTF8_BYTES,
+    _MAX_FIELD_VALUE_UTF8_BYTES,
     _MAX_KNOWN_VOCABULARY_SCANNED_NOTES,
     _MAX_MEDIA_ASSET_BYTES,
-    _MAX_MEDIA_CALLBACK_BYTES,
     _MAX_MEDIA_BINDINGS_PER_NOTE,
     _MAX_MEDIA_BINDINGS_TOTAL,
+    _MAX_MEDIA_CALLBACK_BYTES,
     _MAX_MEDIA_SOURCE_PATH_UTF8_BYTES,
     _MAX_MODEL_NAME_UTF8_BYTES,
     _MAX_NOTE_CONTENT_UTF8_BYTES,
@@ -48,16 +44,19 @@ from android_bridge.anki_adapter import (
     _MAX_TARGET_FIELDS,
     _MAX_TARGET_FIELDS_UTF8_BYTES,
     _MEDIA_HASH_CHUNK_BYTES,
-    _MediaAsset,
+    AndroidAnkiAdapter,
+    AnkiOperationCancelled,
     _chunk_media_assets,
     _dictionary_provider_preferred_name,
     _expect_bounded_utf8,
     _expect_media_basename,
     _expect_media_source_path,
+    _MediaAsset,
     _strict_utf8_bytes,
 )
 from android_bridge.callbacks import AndroidAnkiCallbacks, AnkiCallbackError
 from android_bridge.protocol import BridgeProtocolError, encode_message
+from jsonschema import Draft202012Validator
 
 RUN_ID = "run_" + "a" * 32
 _DUPLICATE_LIMITS = {
@@ -1262,9 +1261,9 @@ def test_all_blank_mappings_are_valid_for_target_preflight(
     base = _config(initialized_bridge_home)
     config = replace(
         base,
-        anki_fields={key: "" for key in base.anki_fields},
+        anki_fields=dict.fromkeys(base.anki_fields, ""),
         card_type="click",
-        card_type_marker_fields={key: "" for key in base.card_type_marker_fields},
+        card_type_marker_fields=dict.fromkeys(base.card_type_marker_fields, ""),
     )
     kotlin = FakeKotlinAnki()
 
@@ -4649,7 +4648,7 @@ def test_media_provider_prefix_overlap_fails_before_callback(
 
     assert exc_info.value.code == "media_name_collision"
     assert not kotlin.requests_for("ankiStoreMedia")
-    assert all(media.audio_filename == name for media, name in zip(media_rows, names))
+    assert all(media.audio_filename == name for media, name in zip(media_rows, names, strict=True))
     assert not kotlin.requests_for("ankiCreateNotes")
 
 

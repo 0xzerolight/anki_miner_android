@@ -8,7 +8,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
-
 from android_bridge.jobs import (
     CURATION_PAGE_MAX_CANDIDATES,
     CURATION_PAGE_MAX_UTF8_BYTES,
@@ -487,7 +486,7 @@ def test_large_curation_is_complete_bounded_and_aggregates_original_objects() ->
     assert not thread.is_alive()
     assert len(seen_ids) == len(words)
     assert returned == [selected_words]
-    assert all(actual is expected for actual, expected in zip(returned[0], selected_words))
+    assert all(actual is expected for actual, expected in zip(returned[0], selected_words, strict=True))
 
 
 def test_empty_selection_on_every_page_returns_empty_not_cancellation() -> None:

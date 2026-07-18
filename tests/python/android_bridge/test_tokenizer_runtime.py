@@ -2,12 +2,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 import android_bridge.bootstrap as bootstrap
 import android_bridge.tokenizer_runtime as tokenizer_runtime
 import android_bridge.tokenizer_selection as tokenizer_selection
 import android_bridge.unidic_resource as unidic_resource
+import pytest
 from android_bridge import boundary
 from android_bridge.protocol import decode_envelope, encode_message
 from android_bridge.unidic_resource import (

@@ -6,9 +6,8 @@ import zipfile
 from pathlib import Path
 from types import SimpleNamespace
 
-import pytest
-
 import android_bridge.reading_limits as reading_limits
+import pytest
 from android_bridge.anki_adapter import AnkiOperationCancelled
 from android_bridge.protocol import BridgeProtocolError
 from android_bridge.reading_limits import ZipArchiveLimits

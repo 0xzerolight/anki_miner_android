@@ -4,15 +4,15 @@
 from __future__ import annotations
 
 import argparse
-from dataclasses import dataclass, field
 import hashlib
-from io import BytesIO
 import json
-from pathlib import Path, PurePosixPath
 import re
 import struct
 import sys
 import zipfile
+from dataclasses import dataclass, field
+from io import BytesIO
+from pathlib import Path, PurePosixPath
 
 PAGE_SIZE = 16 * 1024
 MAX_ARCHIVE_DEPTH = 12

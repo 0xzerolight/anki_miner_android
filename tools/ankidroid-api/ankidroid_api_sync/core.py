@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import errno
 import hashlib
 import json
@@ -105,8 +106,7 @@ def _run_git_bytes(checkout: Path, *args: str) -> bytes:
         result = subprocess.run(
             ["git", "--no-replace-objects", "-C", os.fspath(checkout), *args],
             check=False,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            capture_output=True,
         )
     except OSError as exc:
         _fail(f"cannot execute git to verify upstream checkout: {exc}")
@@ -263,7 +263,7 @@ def _strict_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
 
 def _manifest_bytes(manifest: dict[str, Any]) -> bytes:
     rendered = json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True)
-    return f"{rendered}\n".encode("utf-8")
+    return f"{rendered}\n".encode()
 
 
 def _build_manifest(source_bytes: dict[PurePosixPath, bytes], pin: UpstreamPin) -> dict[str, Any]:
@@ -421,10 +421,8 @@ class _ManagedRepository:
                 current_fd = next_fd
             return current_fd
         except BaseException:
-            try:
+            with contextlib.suppress(OSError):
                 os.close(current_fd)
-            except OSError:
-                pass
             raise
 
     def read_regular(
@@ -613,10 +611,8 @@ class _ManagedRepository:
             if descriptor is not None:
                 os.close(descriptor)
             if temporary_name is not None:
-                try:
+                with contextlib.suppress(FileNotFoundError):
                     os.unlink(temporary_name, dir_fd=parent_fd)
-                except FileNotFoundError:
-                    pass
             os.close(parent_fd)
 
     def unlink_regular(self, relative: PurePosixPath) -> None:

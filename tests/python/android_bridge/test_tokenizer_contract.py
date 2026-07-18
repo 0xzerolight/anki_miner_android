@@ -5,9 +5,8 @@ import json
 import struct
 from pathlib import Path
 
-import pytest
-
 import android_bridge.tokenizer_contract as tokenizer_contract
+import pytest
 from android_bridge.tokenizer_contract import (
     MECAB_NORMAL_NODE,
     MECAB_UNKNOWN_NODE,
@@ -17,8 +16,8 @@ from android_bridge.tokenizer_contract import (
     TOKEN_WIRE_VERSION,
     UNIDIC_FEATURE_FIELDS,
     TaggerAdapter,
-    TokenRecord,
     TokenizerContractError,
+    TokenRecord,
     Utf8OffsetMap,
     adapt_tokens,
     decode_mecab_feature_csv,

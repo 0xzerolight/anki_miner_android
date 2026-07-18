@@ -5,10 +5,8 @@ from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 
-import pytest
-
 import android_bridge.protocol as protocol
-
+import pytest
 from android_bridge.protocol import (
     BRIDGE_SCHEMA_VERSION,
     JSON_INTEGER_MAX,

@@ -1,20 +1,20 @@
 from __future__ import annotations
 
-from contextlib import contextmanager
 import hashlib
-from io import BytesIO
 import json
 import os
-from pathlib import Path
 import stat
 import struct
 import subprocess
 import sys
 import tempfile
 import unittest
-from unittest import mock
 import warnings
 import zipfile
+from contextlib import contextmanager
+from io import BytesIO
+from pathlib import Path
+from unittest import mock
 
 SCRIPTS_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SCRIPTS_DIR))

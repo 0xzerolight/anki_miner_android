@@ -1,18 +1,18 @@
 from __future__ import annotations
 
-from argparse import Namespace
 import hashlib
-from io import BytesIO
 import json
 import os
-from pathlib import Path
-import subprocess
 import struct
+import subprocess
 import sys
 import tempfile
 import unittest
 import warnings
 import zipfile
+from argparse import Namespace
+from io import BytesIO
+from pathlib import Path
 
 SCRIPTS_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SCRIPTS_DIR))

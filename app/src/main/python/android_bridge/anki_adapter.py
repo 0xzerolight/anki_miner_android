@@ -2270,7 +2270,7 @@ class AndroidAnkiAdapter:
                     if rewritable_sources:
                         worst_fields[payload_index][field_name] = self._rewrite_dictionary_html(
                             html_field,
-                            {source: longest_provider_filename for source in rewritable_sources},
+                            dict.fromkeys(rewritable_sources, longest_provider_filename),
                         )
                         note_binding_sources[payload_index].update(
                             ("dictionary", source) for source in rewritable_sources

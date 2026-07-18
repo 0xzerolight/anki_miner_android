@@ -8,11 +8,12 @@ from pathlib import Path
 from typing import Any, NoReturn
 
 import pytest
-
 from android_bridge.protocol import BridgeProtocolError, decode_envelope, encode_message
 from request_digest_reference import (
     ANKI_REQUEST_DIGEST_DOMAIN,
     ANKI_REQUEST_DIGEST_VERSION,
+)
+from request_digest_reference import (
     _compute_prevalidated_request_digest as _reference_digest,
 )
 from test_anki_protocol_corpus import (
@@ -204,9 +205,7 @@ def _validated_reference(
 def _resolve(container: object, path: list[object]) -> object:
     current = container
     for part in path:
-        if isinstance(part, str) and isinstance(current, dict):
-            current = current[part]
-        elif type(part) is int and isinstance(current, list):
+        if isinstance(part, str) and isinstance(current, dict) or type(part) is int and isinstance(current, list):
             current = current[part]
         else:
             raise AssertionError(f"invalid mutation path segment: {part!r}")

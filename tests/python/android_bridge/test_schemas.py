@@ -9,23 +9,22 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from jsonschema import Draft202012Validator
-from jsonschema.exceptions import ValidationError
-from referencing import Registry, Resource
-
 from android_bridge.anki_limits import (
     ANKI_ENVELOPE_LIMITS_V1,
     ANKI_LIMITS_V1,
 )
+from android_bridge.callbacks import CallbackAdapters
 from android_bridge.config_map import (
     AndroidPaths,
     exposed_config_fields,
     map_config_json,
     map_config_settings,
 )
-from android_bridge.callbacks import CallbackAdapters
 from android_bridge.jobs import JobRegistry
 from android_bridge.protocol import BridgeProtocolError, decode_envelope, encode_message
+from jsonschema import Draft202012Validator
+from jsonschema.exceptions import ValidationError
+from referencing import Registry, Resource
 
 SCHEMA_ROOT = Path(__file__).resolve().parents[3] / "app/src/main/python/android_bridge/schemas"
 SOURCE_PATH_CORPUS = (

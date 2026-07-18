@@ -6,14 +6,11 @@ from __future__ import annotations
 import argparse
 import base64
 import csv
-from email.parser import BytesParser
-from email.policy import compat32
 import hashlib
 import importlib.util
 import io
 import json
 import os
-from pathlib import Path
 import platform
 import re
 import shutil
@@ -25,6 +22,9 @@ import tempfile
 import urllib.request
 import zipfile
 import zlib
+from email.parser import BytesParser
+from email.policy import compat32
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 TOOL_ROOT = Path(__file__).resolve().parent
@@ -979,7 +979,7 @@ def source_recipe_key(
 ) -> str:
     value = hashlib.sha256()
     paths = recipe_path_entries(tool_root, repo_root)
-    for entry, (_, path) in zip(recipe_inventory(tool_root, repo_root)[:-1], paths):
+    for entry, (_, path) in zip(recipe_inventory(tool_root, repo_root)[:-1], paths, strict=False):
         data = path.read_bytes()
         header = canonical_json(
             {"path": entry["path"], "mode": entry["mode"], "size": entry["size"]},
@@ -1037,8 +1037,7 @@ def _interpreter_identity(executable: str) -> dict[str, str]:
             "'version':platform.python_version()},sort_keys=True))",
         ],
         check=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        capture_output=True,
         text=True,
         env={**os.environ, "LC_ALL": "C", "LANG": "C", "TZ": "UTC"},
     )
@@ -1250,9 +1249,10 @@ def validate_expected_keys(
 def validate_recipes(chaquopy_root: Path) -> list[str]:
     try:
         from copy import deepcopy
-        from jinja2 import StrictUndefined, Template, TemplateError
+
         import jsonschema
         import yaml
+        from jinja2 import StrictUndefined, Template, TemplateError
     except ImportError as error:
         raise RuntimeWheelError("Jinja2, jsonschema and PyYAML are required") from error
     pypi = chaquopy_root.resolve(strict=True) / "server/pypi"

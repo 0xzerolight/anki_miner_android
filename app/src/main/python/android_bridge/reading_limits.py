@@ -472,11 +472,10 @@ def _validate_image_headers(
                 raise _invalid_source("The loaded reading document references an undeclared image source")
             try:
                 member_context = archive.open(ref.entry)
-                with member_context as member:
-                    with warnings.catch_warnings():
-                        warnings.simplefilter("error", Image.DecompressionBombWarning)
-                        with Image.open(member) as image:
-                            width, height = image.size
+                with member_context as member, warnings.catch_warnings():
+                    warnings.simplefilter("error", Image.DecompressionBombWarning)
+                    with Image.open(member) as image:
+                        width, height = image.size
             except Image.DecompressionBombError as error:
                 raise _too_large("A reading image exceeds the mobile pixel safety limit") from error
             except Image.DecompressionBombWarning as error:

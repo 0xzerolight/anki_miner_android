@@ -11,8 +11,8 @@ from typing import Protocol
 
 from .tokenizer_contract import (
     TaggerAdapter,
-    TokenRecord,
     TokenizerContractError,
+    TokenRecord,
     Utf8OffsetMap,
     decode_token_wire,
 )

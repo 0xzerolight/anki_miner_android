@@ -4,9 +4,9 @@
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
 import re
 import sys
+from pathlib import Path
 
 _DEFINE_RE = re.compile(r"^#define ([A-Z][A-Z0-9_]*) ([01])$")
 

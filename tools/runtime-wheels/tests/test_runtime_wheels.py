@@ -7,16 +7,16 @@ import importlib.util
 import io
 import json
 import os
-from pathlib import Path
 import shlex
 import subprocess
 import sys
 import tarfile
 import tempfile
 import unittest
-from unittest import mock
 import warnings
 import zipfile
+from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[3]
 TOOL_ROOT = ROOT / "tools/runtime-wheels"
@@ -804,8 +804,7 @@ class DriverBehaviorTests(unittest.TestCase):
             ["bash", "-c", driver_command(mode)],
             env=self._environment(root),
             text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            capture_output=True,
             timeout=20,
             check=False,
         )

@@ -11,10 +11,9 @@ import zipfile
 from dataclasses import replace
 from pathlib import Path
 
-import pytest
-
-import android_bridge.resources as resources
 import android_bridge.local_resources as local_resources
+import android_bridge.resources as resources
+import pytest
 from android_bridge import boundary
 from android_bridge.protocol import BridgeProtocolError, decode_envelope, encode_message
 from android_bridge.resource_catalog import (
@@ -1144,7 +1143,7 @@ def test_cleanup_restores_frequency_and_audio_pack_backups(
 ) -> None:
     home = _local_home(tmp_path, monkeypatch)
     monkeypatch.setattr(resources, "require_initialized", lambda: str(home))
-    for kind, final_root, require_content in (
+    for kind, _final_root, require_content in (
         ("frequency", home / "freqs", False),
         ("audio-pack", home / "audio_packs", True),
     ):

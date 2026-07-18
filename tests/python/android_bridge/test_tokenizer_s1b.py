@@ -4,9 +4,8 @@ import ast
 import struct
 from pathlib import Path
 
-import pytest
-
 import android_bridge.tokenizer_s1b as tokenizer_s1b
+import pytest
 from android_bridge.tokenizer_contract import (
     TOKEN_WIRE_HEADER_FORMAT,
     TOKEN_WIRE_MAGIC,

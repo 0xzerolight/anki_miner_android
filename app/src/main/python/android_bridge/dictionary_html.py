@@ -155,9 +155,12 @@ def sanitize_dictionary_html(
                 # Renderer-marked src is the only image-loading attribute the
                 # Android product admits. srcset/background remain forbidden.
                 remove = not (allowed_image and name == "src")
-            elif name in _AUTOLOAD_ATTRIBUTES and _contains_remote_url(decoded):
-                remove = True
-            elif name in _REPEATED_URL_ATTRIBUTES and _contains_remote_url(decoded):
+            elif (
+                name in _AUTOLOAD_ATTRIBUTES
+                and _contains_remote_url(decoded)
+                or name in _REPEATED_URL_ATTRIBUTES
+                and _contains_remote_url(decoded)
+            ):
                 remove = True
             elif any(remote in decoded for remote in rejected_remote_urls):
                 # The renderer repeats an image path in data-path, style and

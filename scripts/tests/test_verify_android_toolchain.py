@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
 import sys
 import tempfile
 import unittest
+from pathlib import Path
 
 SCRIPTS_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SCRIPTS_DIR))

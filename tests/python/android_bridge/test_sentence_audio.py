@@ -4,10 +4,9 @@ import json
 from pathlib import Path
 
 import pytest
-from jsonschema import Draft202012Validator
-
 from android_bridge.protocol import decode_envelope, encode_message
 from android_bridge.sentence_audio import AndroidSentenceAudioFetcher
+from jsonschema import Draft202012Validator
 
 RUN_ID = "run_00000000000000000000000000000000"
 PROJECT_ROOT = Path(__file__).resolve().parents[3]

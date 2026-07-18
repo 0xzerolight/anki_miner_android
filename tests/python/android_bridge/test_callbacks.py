@@ -3,9 +3,8 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 
-import pytest
-
 import android_bridge.callbacks as callbacks_module
+import pytest
 from android_bridge.anki_limits import ANKI_ENVELOPE_LIMITS_V1
 from android_bridge.callbacks import (
     AndroidAnkiCallbacks,

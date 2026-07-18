@@ -8,10 +8,10 @@ import importlib
 import importlib.metadata
 import json
 import os
-from pathlib import Path
 import platform
 import sys
 import tempfile
+from pathlib import Path
 
 from PIL import features
 

@@ -151,9 +151,12 @@ def test_bridge_modules_have_no_top_level_engine_imports() -> None:
     for path in bridge_root.glob("*.py"):
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         for node in tree.body:
-            if isinstance(node, ast.Import) and any(alias.name.startswith("anki_miner") for alias in node.names):
-                offenders.append(f"{path.name}:{node.lineno}")
-            elif isinstance(node, ast.ImportFrom) and (node.module or "").startswith("anki_miner"):
+            if (
+                isinstance(node, ast.Import)
+                and any(alias.name.startswith("anki_miner") for alias in node.names)
+                or isinstance(node, ast.ImportFrom)
+                and (node.module or "").startswith("anki_miner")
+            ):
                 offenders.append(f"{path.name}:{node.lineno}")
 
     assert offenders == []

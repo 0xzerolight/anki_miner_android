@@ -4,10 +4,10 @@
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
 import sys
+from pathlib import Path
 
-from check_native_artifacts import ArtifactError, Inspection, MACHINE_ABIS, parse_elf
+from check_native_artifacts import MACHINE_ABIS, ArtifactError, Inspection, parse_elf
 
 
 def parse_args() -> argparse.Namespace:

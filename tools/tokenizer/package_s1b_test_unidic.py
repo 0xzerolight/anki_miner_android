@@ -7,11 +7,11 @@ import argparse
 import hashlib
 import json
 import os
-from pathlib import Path
 import shutil
 import stat
 import sys
 import zipfile
+from pathlib import Path
 
 from verify_s1b_host_parity import verify_dictionary_provenance
 
