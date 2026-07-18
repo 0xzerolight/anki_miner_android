@@ -83,6 +83,8 @@ class AnkiMinerApplication : Application() {
     }
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val runtimeWorkCoordinator = RuntimeWorkCoordinator()
+    internal val runtimeWorkState
+        get() = runtimeWorkCoordinator.activeKind
     private val pythonRuntime by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         ChaquopyPythonRuntime(this)
     }
@@ -343,7 +345,7 @@ class AnkiMinerApplication : Application() {
             }
             AnkiMinerModelProvisioningResult.Missing ->
                 AnkiMiningTargetReadiness.Blocked(
-                    "Create the Anki Miner note type in setup before mining",
+                    "Create the Anki Miner note type in Settings before mining",
                     true,
                 )
             is AnkiMinerModelProvisioningResult.Conflict ->

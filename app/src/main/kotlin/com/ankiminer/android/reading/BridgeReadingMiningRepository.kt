@@ -383,7 +383,8 @@ internal class BridgeReadingMiningRepository(
                 }
             if (run.cancellation.isCancelled()) return
             run.requiresMediaForeground =
-                stagedSource.imageArchivePath != null ||
+                stagedSource.sourceKind == StagedReadingSourceKind.EPUB ||
+                    stagedSource.imageArchivePath != null ||
                     requireNotNull(run.configSnapshot).androidTtsEnabled == true ||
                     requireNotNull(run.configSnapshot).hasEnabledExpressionAudio()
             if (requireNotNull(run.configSnapshot).androidTtsEnabled == true) {

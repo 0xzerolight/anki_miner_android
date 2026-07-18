@@ -103,11 +103,17 @@
     <string name="diagnostics_share_subject">Anki Miner tester diagnostics</string>
     <string name="diagnostics_action_unavailable">No app is available to share tester diagnostics.</string>
     <string name="readiness_python_pending">The embedded Python engine has not finished starting.</string>
-    <string name="readiness_resources_pending">Private resource recovery has not completed. Open Setup and check again.</string>
+    <string name="readiness_resources_pending">Private resource recovery has not completed. Open Settings and check again.</string>
+    <string name="runtime_work_mining_active">Another mining workflow is active. Finish or cancel it before starting this one.</string>
+    <string name="runtime_work_resource_active">Resource setup is active. Wait for it to finish or cancel it before mining.</string>
+    <string name="runtime_work_anki_active">Anki setup is active. Wait for it to finish before mining.</string>
+    <string name="runtime_work_settings_mining_active">Mining is active. Resource and Anki setup actions are temporarily unavailable.</string>
+    <string name="runtime_work_settings_resource_active">Resource setup is active. Other resource and Anki setup actions are temporarily unavailable.</string>
+    <string name="runtime_work_settings_anki_active">Anki setup is active. Resource and other Anki setup actions are temporarily unavailable.</string>
     <string name="readiness_unidic_required">The verified UniDic tokenizer resource is required.</string>
     <string name="readiness_anki_required">Install and initialize AnkiDroid, then allow database access.</string>
-    <string name="readiness_model_required">Create or recover the verified Anki Miner note type in Setup.</string>
-    <string name="readiness_recovery_required">Resolve pending Anki recovery items in Setup.</string>
+    <string name="readiness_model_required">Create or recover the verified Anki Miner note type in Settings.</string>
+    <string name="readiness_recovery_required">Resolve pending Anki recovery items in Settings.</string>
     <string name="readiness_resource_operation">Wait for the active setup or resource operation to finish.</string>
     <string name="readiness_unknown">Readiness could not be confirmed.</string>
 
@@ -197,7 +203,7 @@
     <string name="known_words_import_help">Imported words are merged into the private known-words database and always excluded from future candidate lists. The Anki collection cache is controlled separately in Settings.</string>
     <string name="known_words_choose_file">Choose known-words file</string>
     <string name="known_words_inventory">Total %1$d · imported %2$d · Anki cache %3$d · mined %4$d</string>
-    <string name="known_words_inventory_invalid">Known-words storage is invalid (total %1$d · imported %2$d · Anki cache %3$d · mined %4$d). Reopen Setup to retry recovery.</string>
+    <string name="known_words_inventory_invalid">Known-words storage is invalid (total %1$d · imported %2$d · Anki cache %3$d · mined %4$d). Reopen Settings to retry recovery.</string>
     <string name="bundled_wordsets_title">Bundled proper-name wordsets</string>
     <string name="bundled_wordsets_help">These offline lists are available as optional exclusions in Settings.</string>
     <string name="bundled_wordset_item">%1$s · %2$d entries</string>
@@ -327,13 +333,13 @@
     <string name="settings_workers_default">Desktop default: 6</string>
     <string name="settings_dictionary_chain">Dictionary priority</string>
     <string name="settings_dictionary_chain_help">Enabled offline dictionaries are checked in this order. Newly imported dictionaries are enabled automatically.</string>
-    <string name="settings_no_dictionaries">No valid offline dictionary is installed. Install or import one in Setup.</string>
+    <string name="settings_no_dictionaries">No valid offline dictionary is installed. Install or import one in Settings.</string>
     <string name="settings_frequency_chain">Frequency priority</string>
     <string name="settings_frequency_chain_help">Enabled sources are checked in this order. Newly imported sources are enabled automatically.</string>
-    <string name="settings_no_frequency_sources">No valid frequency sources are installed. Import one in Setup.</string>
+    <string name="settings_no_frequency_sources">No valid frequency sources are installed. Import one in Settings.</string>
     <string name="settings_audio_pack_chain">Expression audio priority</string>
     <string name="settings_audio_pack_help">Only private local packs are supported. No network audio provider is used.</string>
-    <string name="settings_no_audio_packs">No valid local audio packs are installed. Import one in Setup.</string>
+    <string name="settings_no_audio_packs">No valid local audio packs are installed. Import one in Settings.</string>
     <string name="settings_pitch_format">Pitch category labels</string>
     <string name="settings_pitch_installed">%1$s installed · %2$d entries</string>
     <string name="settings_pitch_not_installed">No valid pitch-accent source is installed.</string>

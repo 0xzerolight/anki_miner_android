@@ -1,5 +1,6 @@
 package com.ankiminer.android.ui.wizard
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -15,6 +16,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -54,6 +56,12 @@ internal enum class WizardStep {
     DONE,
 }
 
+internal fun nextWizardStep(step: WizardStep): WizardStep =
+    WizardStep.entries.getOrElse(step.ordinal + 1) { step }
+
+internal fun previousWizardStep(step: WizardStep): WizardStep =
+    WizardStep.entries.getOrElse(step.ordinal - 1) { step }
+
 @Composable
 internal fun OnboardingWizard(
     state: SetupUiState,
@@ -66,6 +74,9 @@ internal fun OnboardingWizard(
     modifier: Modifier = Modifier,
 ) {
     var step by rememberSaveable { mutableStateOf(WizardStep.WELCOME) }
+    val scrollState = rememberScrollState()
+    BackHandler(onBack = onFinished)
+    LaunchedEffect(step) { scrollState.scrollTo(0) }
     CatalogReplaceDialog(
         state = state,
         onConfirm = viewModel::confirmCatalogDictionaryReplace,
@@ -75,7 +86,7 @@ internal fun OnboardingWizard(
         Column(
             Modifier
                 .fillMaxSize()
-                .verticalScroll(rememberScrollState())
+                .verticalScroll(scrollState)
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
@@ -210,7 +221,7 @@ private fun NavigationButtons(
             when (step) {
                 WizardStep.WELCOME -> {
                     Button(
-                        onClick = { onStep(WizardStep.TOKENIZER) },
+                        onClick = { onStep(nextWizardStep(step)) },
                         modifier = Modifier.fillMaxWidth(),
                     ) { Text(stringResource(R.string.wizard_set_up_now)) }
                     OutlinedButton(
@@ -224,7 +235,7 @@ private fun NavigationButtons(
                         modifier = Modifier.fillMaxWidth(),
                     ) { Text(stringResource(R.string.wizard_finish)) }
                     OutlinedButton(
-                        onClick = { onStep(WizardStep.ANKIDROID) },
+                        onClick = { onStep(previousWizardStep(step)) },
                         modifier = Modifier.fillMaxWidth(),
                     ) { Text(stringResource(R.string.wizard_back)) }
                 }
@@ -234,11 +245,11 @@ private fun NavigationButtons(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         OutlinedButton(
-                            onClick = { onStep(WizardStep.entries[step.ordinal - 1]) },
+                            onClick = { onStep(previousWizardStep(step)) },
                             modifier = Modifier.weight(1f),
                         ) { Text(stringResource(R.string.wizard_back)) }
                         Button(
-                            onClick = { onStep(WizardStep.entries[step.ordinal + 1]) },
+                            onClick = { onStep(nextWizardStep(step)) },
                             modifier = Modifier.weight(1f),
                         ) { Text(stringResource(R.string.wizard_next)) }
                     }

@@ -36,6 +36,7 @@ import androidx.navigation.compose.rememberNavController
 import com.ankiminer.android.R
 import com.ankiminer.android.diagnostics.TesterDiagnosticsBuilder
 import com.ankiminer.android.diagnostics.currentTesterBuildIdentity
+import com.ankiminer.android.mining.MiningRunState
 import com.ankiminer.android.mining.runId
 import com.ankiminer.android.ui.attribution.AttributionScreen
 import com.ankiminer.android.ui.reading.ReadingMiningRoute
@@ -57,6 +58,11 @@ private enum class Destination(val route: String, @StringRes val label: Int) {
     SETTINGS("settings", R.string.nav_settings),
     ATTRIBUTION("attribution", R.string.nav_licenses),
 }
+
+internal fun miningWorkflowVisible(
+    setupReady: Boolean,
+    runState: MiningRunState,
+): Boolean = setupReady || runState != MiningRunState.Idle
 
 @Composable
 internal fun AnkiMinerApp(
@@ -161,7 +167,7 @@ internal fun AnkiMinerApp(
             modifier = Modifier.padding(padding),
         ) {
             composable(Destination.VIDEO.route) {
-                if (setup.isMiningReady) {
+                if (miningWorkflowVisible(setup.isMiningReady, video.runState)) {
                     VideoMiningRoute(
                         viewModel = videoViewModel,
                         modifier = Modifier.testTag(VideoMiningTestTags.SCREEN),
@@ -176,7 +182,7 @@ internal fun AnkiMinerApp(
                 }
             }
             composable(Destination.READING.route) {
-                if (setup.isMiningReady) {
+                if (miningWorkflowVisible(setup.isMiningReady, reading.runState)) {
                     ReadingMiningRoute(
                         viewModel = readingViewModel,
                         modifier = Modifier.testTag(ReadingMiningTestTags.SCREEN),

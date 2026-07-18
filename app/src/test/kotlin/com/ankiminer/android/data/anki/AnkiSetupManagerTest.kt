@@ -55,7 +55,7 @@ class AnkiSetupManagerTest {
         manager.reconcileInterruptedWork()
 
         assertEquals(AnkiSetupOperation.PROVISIONING_MODEL, manager.state.value.operation)
-        assertEquals(RuntimeWorkCoordinator.Kind.ANKI_SETUP, coordinator.activeKind())
+        assertEquals(RuntimeWorkCoordinator.Kind.ANKI_SETUP, coordinator.activeKind.value)
         assertEquals(1, executor.queued.size)
         executor.runNext()
 
@@ -63,7 +63,7 @@ class AnkiSetupManagerTest {
         assertEquals(0, backend.reconcileCalls)
         assertTrue(manager.state.value.model is AnkiMinerModelProvisioningResult.Ready)
         assertNull(manager.state.value.operation)
-        assertNull(coordinator.activeKind())
+        assertNull(coordinator.activeKind.value)
     }
 
     @Test
@@ -76,7 +76,7 @@ class AnkiSetupManagerTest {
 
         assertEquals("anki_setup_failed", requireNotNull(manager.state.value.failure).code)
         assertNull(manager.state.value.operation)
-        assertNull(coordinator.activeKind())
+        assertNull(coordinator.activeKind.value)
     }
 
     private class QueuedExecutor : Executor {

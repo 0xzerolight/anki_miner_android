@@ -5,6 +5,7 @@ import com.ankiminer.android.anki.provider.AnkiMinerModelProvisioningResult
 import com.ankiminer.android.anki.provider.AnkiRemediationInventory
 import com.ankiminer.android.data.anki.AnkiSetupFailure
 import com.ankiminer.android.data.anki.AnkiSetupOperation
+import com.ankiminer.android.data.RuntimeWorkCoordinator
 import com.ankiminer.android.data.resources.CatalogDictionaryStatus
 import com.ankiminer.android.data.resources.DictionaryLookup
 import com.ankiminer.android.data.resources.InstalledDictionary
@@ -32,6 +33,7 @@ internal data class SetupUiState(
     val remediations: AnkiRemediationInventory = AnkiRemediationInventory(emptyList()),
     val ankiOperation: AnkiSetupOperation? = null,
     val ankiFailure: AnkiSetupFailure? = null,
+    val runtimeWorkKind: RuntimeWorkCoordinator.Kind? = null,
     /** Tri-state startup-flash guard: null until the settings store has emitted once. */
     val wizardSeen: Boolean? = null,
     val uniDicInstalled: Boolean = false,
@@ -90,7 +92,7 @@ internal data class SetupUiState(
         get() = modelReady
 
     val busy: Boolean
-        get() = operation != null || ankiOperation != null
+        get() = operation != null || ankiOperation != null || runtimeWorkKind != null
 
     val isMiningReady: Boolean
         get() =
@@ -100,7 +102,10 @@ internal data class SetupUiState(
                 targetReady &&
                 recoveryReady &&
                 uniDicInstalled &&
-                !busy
+                operation == null &&
+                ankiOperation == null &&
+                runtimeWorkKind != RuntimeWorkCoordinator.Kind.RESOURCE &&
+                runtimeWorkKind != RuntimeWorkCoordinator.Kind.ANKI_SETUP
 
     val ankiDroidAction: AnkiDroidSetupAction?
         get() =

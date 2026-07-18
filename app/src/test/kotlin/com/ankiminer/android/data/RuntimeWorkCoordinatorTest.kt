@@ -4,6 +4,8 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.launch
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -16,7 +18,7 @@ class RuntimeWorkCoordinatorTest {
         val mining = coordinator.tryAcquire(RuntimeWorkCoordinator.Kind.MINING)
         assertNotNull(mining)
 
-        assertEquals(RuntimeWorkCoordinator.Kind.MINING, coordinator.activeKind())
+        assertEquals(RuntimeWorkCoordinator.Kind.MINING, coordinator.activeKind.value)
         assertNull(coordinator.tryAcquire(RuntimeWorkCoordinator.Kind.RESOURCE))
         assertNull(coordinator.tryAcquire(RuntimeWorkCoordinator.Kind.ANKI_SETUP))
 
@@ -28,10 +30,10 @@ class RuntimeWorkCoordinatorTest {
 
         val ankiSetup = coordinator.tryAcquire(RuntimeWorkCoordinator.Kind.ANKI_SETUP)
         assertNotNull(ankiSetup)
-        assertEquals(RuntimeWorkCoordinator.Kind.ANKI_SETUP, coordinator.activeKind())
+        assertEquals(RuntimeWorkCoordinator.Kind.ANKI_SETUP, coordinator.activeKind.value)
         assertNull(coordinator.tryAcquire(RuntimeWorkCoordinator.Kind.RESOURCE))
         requireNotNull(ankiSetup).close()
-        assertNull(coordinator.activeKind())
+        assertNull(coordinator.activeKind.value)
     }
 
     @Test
@@ -56,5 +58,25 @@ class RuntimeWorkCoordinatorTest {
             check(executor.awaitTermination(2, TimeUnit.SECONDS))
             assertEquals(1, winners.get())
         }
+    }
+
+    @Test
+    fun activeKindFlowPublishesAcquisitionAndFinalCleanupExactlyOnce() {
+        val coordinator = RuntimeWorkCoordinator()
+        val observed = mutableListOf<RuntimeWorkCoordinator.Kind?>()
+        val collector =
+            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Unconfined).launch {
+                coordinator.activeKind.collect { observed += it }
+            }
+
+        val lease = requireNotNull(coordinator.tryAcquire(RuntimeWorkCoordinator.Kind.RESOURCE))
+        lease.close()
+        lease.close()
+        collector.cancel()
+
+        assertEquals(
+            listOf(null, RuntimeWorkCoordinator.Kind.RESOURCE, null),
+            observed,
+        )
     }
 }

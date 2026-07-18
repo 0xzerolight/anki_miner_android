@@ -184,6 +184,36 @@ class VideoMiningScreenTest {
     }
 
     @Test
+    fun pendingPageSubmissionKeepsCancelEnabled() {
+        val request = request()
+        setScreen(
+            state =
+                VideoMiningUiState(
+                    runState = MiningRunState.Curating(request, pageSubmissionPending = true),
+                    curationPending = true,
+                    curation =
+                        CurationUiState(
+                            runId = request.runId,
+                            requestId = request.requestId,
+                            candidates =
+                                request.candidates.map {
+                                    CurationCandidateUiState(
+                                        candidate = it,
+                                        selected = true,
+                                        sentenceId = it.defaultSentenceId,
+                                    )
+                                },
+                        ),
+                ),
+        )
+
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(VideoMiningTestTags.CANCEL))
+        composeRule.onNodeWithTag(VideoMiningTestTags.CANCEL).assertIsEnabled()
+    }
+
+    @Test
     fun longSentenceListIsVirtualizedAndTailSelectionKeepsCompositeIdentity() {
         val candidateId = "candidate-long"
         val sentences =

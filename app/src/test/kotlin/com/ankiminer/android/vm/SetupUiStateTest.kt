@@ -8,6 +8,7 @@ import com.ankiminer.android.anki.provider.AnkiRemediationActionKind
 import com.ankiminer.android.anki.provider.AnkiRemediationInventory
 import com.ankiminer.android.anki.provider.AnkiRemediationType
 import com.ankiminer.android.data.anki.AnkiSetupOperation
+import com.ankiminer.android.data.RuntimeWorkCoordinator
 import com.ankiminer.android.data.resources.ResourceStartupReadiness
 import com.ankiminer.android.engine.PythonRuntimeReadiness
 import com.ankiminer.android.mining.NotificationPermissionReadiness
@@ -44,6 +45,13 @@ class SetupUiStateTest {
             recovered.copy(resourceStartup = ResourceStartupReadiness.FAILED).isMiningReady,
         )
         assertFalse(recovered.copy(ankiOperation = AnkiSetupOperation.REFRESHING).isMiningReady)
+        assertTrue(
+            recovered.copy(runtimeWorkKind = RuntimeWorkCoordinator.Kind.MINING).isMiningReady,
+        )
+        assertFalse(
+            recovered.copy(runtimeWorkKind = RuntimeWorkCoordinator.Kind.RESOURCE).isMiningReady,
+        )
+        assertTrue(recovered.copy(runtimeWorkKind = RuntimeWorkCoordinator.Kind.MINING).busy)
         val pending =
             AnkiPendingRemediation(
                 id = 1L,

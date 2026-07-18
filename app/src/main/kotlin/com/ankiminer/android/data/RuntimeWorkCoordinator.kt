@@ -1,5 +1,9 @@
 package com.ankiminer.android.data
 
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+
 /** Process-wide exclusion between immutable mining jobs and resource publication. */
 internal class RuntimeWorkCoordinator {
     enum class Kind {
@@ -29,14 +33,17 @@ internal class RuntimeWorkCoordinator {
     private val monitor = Any()
     private var active: Lease? = null
     private var generation = 1L
+    private val mutableActiveKind = MutableStateFlow<Kind?>(null)
+    val activeKind: StateFlow<Kind?> = mutableActiveKind.asStateFlow()
 
     fun tryAcquire(kind: Kind): Lease? =
         synchronized(monitor) {
             if (active != null) return@synchronized null
-            Lease(this, kind, generation++).also { active = it }
+            Lease(this, kind, generation++).also {
+                active = it
+                mutableActiveKind.value = kind
+            }
         }
-
-    fun activeKind(): Kind? = synchronized(monitor) { active?.kind }
 
     private fun release(lease: Lease, expectedGeneration: Long) {
         synchronized(monitor) {
@@ -44,6 +51,7 @@ internal class RuntimeWorkCoordinator {
                 "Runtime work lease is stale"
             }
             active = null
+            mutableActiveKind.value = null
         }
     }
 }

@@ -3,6 +3,7 @@ package com.ankiminer.android.vm
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
 import com.ankiminer.android.MainDispatcherRule
+import com.ankiminer.android.data.RuntimeWorkCoordinator
 import com.ankiminer.android.media.SafBroker
 import com.ankiminer.android.media.SafDocument
 import com.ankiminer.android.mining.CurationCandidate
@@ -281,6 +282,28 @@ class VideoMiningViewModelTest {
         }
 
     @Test
+    fun conflictingRuntimeWorkDisablesStartUntilAuthoritativeLeaseClears() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val runtimeWork = MutableStateFlow<RuntimeWorkCoordinator.Kind?>(null)
+            val repository = RecordingRepository()
+            val viewModel = VideoMiningViewModel(repository, ImmediateSafBroker(), runtimeWork)
+            selectDocuments(viewModel)
+            runCurrent()
+            assertTrue(viewModel.uiState.value.canStart)
+
+            runtimeWork.value = RuntimeWorkCoordinator.Kind.MINING
+            runCurrent()
+            assertFalse(viewModel.uiState.value.canStart)
+            viewModel.start()
+            runCurrent()
+            assertEquals(0, repository.startCalls)
+
+            runtimeWork.value = null
+            runCurrent()
+            assertTrue(viewModel.uiState.value.canStart)
+        }
+
+    @Test
     fun pendingStartKeepsCapturedSourceGrantsAndRejectsReplacement() =
         runTest(mainDispatcherRule.dispatcher) {
             val startGate = CompletableDeferred<Unit>()
@@ -336,7 +359,7 @@ class VideoMiningViewModelTest {
         }
 
     @Test
-    fun pendingCurationConfirmationRejectsCancellation() =
+    fun pendingCurationConfirmationStillAllowsPromptCancellation() =
         runTest(mainDispatcherRule.dispatcher) {
             val request = curationRequest()
             val confirmGate = CompletableDeferred<Unit>()
@@ -353,12 +376,12 @@ class VideoMiningViewModelTest {
             runCurrent()
 
             assertEquals(1, repository.confirmCalls)
-            assertEquals(0, repository.cancelCalls)
-            assertTrue(viewModel.uiState.value.curationPending)
+            assertEquals(1, repository.cancelCalls)
+            assertTrue(repository.state.value is MiningRunState.Cancelled)
 
             confirmGate.complete(Unit)
             runCurrent()
-            assertTrue(repository.state.value is MiningRunState.Running)
+            assertTrue(repository.state.value is MiningRunState.Cancelled)
         }
 
     @Test
@@ -711,8 +734,10 @@ class VideoMiningViewModelTest {
             confirmedPageIndex = pageIndex
             confirmedSelection = selection
             confirmGate?.await()
-            mutableState.value =
-                MiningRunState.Running(runId, MiningProgress(0, 0, "Running"))
+            if (mutableState.value is MiningRunState.Curating) {
+                mutableState.value =
+                    MiningRunState.Running(runId, MiningProgress(0, 0, "Running"))
+            }
         }
 
         override suspend fun cancel(runId: String) {
