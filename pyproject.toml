@@ -1,0 +1,77 @@
+# Tool configuration only. This repo is NOT a Python package: there is
+# deliberately no [build-system]/[project] table, so Chaquopy, Gradle, and pip
+# ignore this file — only ruff/black read it.
+#
+# Frozen artifacts are NEVER formatted — their exact bytes are load-bearing
+# contracts, so reformatting them breaks a check or golden:
+#   - vendored engine + PyQt6 shim + engine-sync overrides (sync_engine.py --check)
+#   - app/src/main/python/android_bridge/unicode_contract.py (generated; the
+#     codegen --check compares it byte-for-byte against generator output)
+#   - tools/engine-sync/ (golden/provenance subsystem: goldens embed sha256 of
+#     these runner/exporter scripts, so any reformat fails the tamper checks)
+#   - app/src/debug/python/ (instrumented harnesses whose exact source is
+#     asserted by the bridge tokenizer tests)
+# `force-exclude` keeps these out even when a path is passed explicitly.
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"  # Chaquopy runtime floor; valid on the 3.13 host too
+force-exclude = true
+extend-exclude = [
+    "app/src/main/python/anki_miner",
+    "app/src/main/python/PyQt6",
+    "app/src/main/python/android_bridge/unicode_contract.py",
+    "app/src/debug/python",
+    "tools/engine-sync",
+    ".venv",
+    "venv",
+    ".gradle",
+    "build",
+    "app/build",
+    ".android-toolchain",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "A", "C4", "SIM"]
+ignore = [
+    "E501",   # Line length handled by black
+    "N802",   # PyQt method overrides use camelCase (closeEvent, keyPressEvent, etc.)
+    "N818",   # AnkiMinerException is the project's base exception name
+    "UP035",  # Deprecated typing imports; most resolved by UP006/UP045 auto-fixes
+    "N999",   # Hyphenated tool dirs (tools/anki-contract, tools/ankidroid-api) are
+              # path-run script dirs, not importable packages — do not rename them
+]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]  # Allow unused imports in __init__.py
+# Stacked context managers (mock.patch + assertRaises) are idiomatic in the
+# unittest suites and exceed the line length when combined — keep them nested.
+"**/test_*.py" = ["SIM117"]
+
+[tool.black]
+line-length = 120
+target-version = ["py312", "py313"]
+include = '\.pyi?$'
+# force-exclude: applies even to explicitly-passed paths. Frozen artifacts only.
+force-exclude = '''
+(
+  /(
+      app/src/main/python/anki_miner
+    | app/src/main/python/PyQt6
+    | app/src/debug/python
+    | tools/engine-sync
+  )/
+  | /app/src/main/python/android_bridge/unicode_contract\.py$
+)
+'''
+extend-exclude = '''
+/(
+  | \.git
+  | \.venv
+  | venv
+  | \.gradle
+  | build
+  | app/build
+  | \.android-toolchain
+)/
+'''
