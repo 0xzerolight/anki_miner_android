@@ -8,12 +8,11 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 PYTHON_ROOT = PROJECT_ROOT / "app" / "src" / "main" / "python"
-DESKTOP_ROOT = Path("/home/light/Projects/anki_miner")
 
 
 def _run(script: str, home: Path) -> subprocess.CompletedProcess[str]:
     env = dict(os.environ)
-    env["PYTHONPATH"] = os.pathsep.join((str(PYTHON_ROOT), str(DESKTOP_ROOT)))
+    env["PYTHONPATH"] = str(PYTHON_ROOT)
     env.pop("ANKI_MINER_HOME", None)
     return subprocess.run(
         [sys.executable, "-c", script, str(home)],

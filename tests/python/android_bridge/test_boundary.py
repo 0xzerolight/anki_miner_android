@@ -14,7 +14,6 @@ from android_bridge.protocol import decode_envelope, encode_message
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 PYTHON_ROOT = PROJECT_ROOT / "app" / "src" / "main" / "python"
-DESKTOP_ROOT = Path("/home/light/Projects/anki_miner")
 
 
 def test_package_exposes_one_guarded_kotlin_entry_point() -> None:
@@ -100,7 +99,7 @@ def test_dispatch_serializes_numeric_policy_errors_without_raw_value_error(
 
 def test_dispatch_bootstrap_success_returns_versioned_envelope(tmp_path: Path) -> None:
     env = dict(os.environ)
-    env["PYTHONPATH"] = os.pathsep.join((str(PYTHON_ROOT), str(DESKTOP_ROOT)))
+    env["PYTHONPATH"] = str(PYTHON_ROOT)
     env.pop("ANKI_MINER_HOME", None)
     script = """
 import json, sys
