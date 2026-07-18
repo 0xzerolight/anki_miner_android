@@ -870,7 +870,7 @@ def import_known_words(payload: Mapping[str, object]) -> str:
                     "importedCount": len(parsed.words),
                     "newRowCount": added_count,
                     "totalEntries": parsed.total_entries,
-                    "isGeneric": parsed.is_generic,
+                    "isGeneric": parsed.format_key == "generic",
                 },
             )
         finally:

@@ -37,6 +37,7 @@ from anki_miner.utils import (
     generate_furigana,
     generate_reading,
     katakana_to_hiragana,
+    strip_inline_annotations,
     wrap_target_plain,
 )
 from anki_miner.utils.ja_normalize import (
@@ -65,6 +66,7 @@ PARSE_RELEVANT_CONFIG_FIELDS = (
     "use_subtitle_regex_filter",
     "subtitle_regex_filter",
     "subtitle_regex_replacement",
+    "strip_subtitle_annotations",
 )
 
 # Dictionary-attested compound matching (Yomitan longest-match principle):
@@ -114,6 +116,91 @@ _KANA_RECOVER_POS1: frozenset[str] = frozenset({"動詞", "形容詞", "形状�
 #   either. Kanji-spelled 非自立可能 tokens (見る, 来る) are untouched — they pass
 #   should_include and never reach this path.
 _KANA_RECOVER_REJECT_POS2: frozenset[str] = frozenset({"助動詞語幹", "非自立可能"})
+
+# U4 lexicalized-expression reject. A kana-recovery candidate that IS an attested
+# headword on its own (すむ, しれる) is still junk when it is really a fragment of
+# a longer grammaticalized sequence (すみません, かもしれない). The signal: joining
+# the candidate's surface with the contiguous FUNCTIONAL particles/auxiliaries
+# around it reproduces a form the dictionary attests (as a term OR a reading —
+# かもしれない is attested only as the reading of かも知れない). Restricting the join
+# to 助詞/助動詞 is the false-positive guard: a content neighbor (ものすごい's もの)
+# never joins, so real vocabulary (すごい) abutting a lexicalized homograph is
+# never suppressed.
+_KANA_RECOVER_WINDOW_FUNCTIONAL_POS1: frozenset[str] = frozenset({"助詞", "助動詞"})
+# Max contiguous functional neighbors joined on EACH side of the candidate. Bounds
+# the window enumeration (and the attestation probe) to O(side^2) joins per rare
+# recovery candidate; grammaticalized sequences are short (にとって, かもしれない).
+_KANA_RECOVER_WINDOW_MAX_SIDE: int = 3
+
+
+def _is_katakana_surface_char(ch: str) -> bool:
+    """True for any char in the katakana Unicode block U+30A0–U+30FF.
+
+    Whether a char can belong to a katakana *surface* — used by
+    ``_is_all_katakana``. The block spans the phonetic kana plus the
+    prolonged-sound mark ー (U+30FC) and small tsu ッ (U+30C3), but also the
+    non-phonetic separators ゠ (U+30A0) and ・ (U+30FB). Belonging to a surface
+    is a broader test than *continuing a run* (``_continues_katakana_run``),
+    which excludes those two separators.
+    """
+    return "゠" <= ch <= "ヿ"
+
+
+# Non-phonetic katakana-block chars that are author-inserted SEPARATORS, not
+# unmerged-run glue: ・ (U+30FB middle dot) and ゠ (U+30A0 double hyphen). A run
+# broken by one of these (アイス・ベア, メリット・デメリット) is two intended words,
+# not a tokenizer-fragmented compound — so they must not extend a run for the
+# fragment guard even though they sit inside the katakana surface block.
+_KATAKANA_RUN_SEPARATORS: frozenset[str] = frozenset({"・", "゠"})
+
+
+def _continues_katakana_run(ch: str) -> bool:
+    """True when ``ch`` extends a katakana run for the fragment-guard adjacency test.
+
+    A katakana-block char (``_is_katakana_surface_char``) EXCEPT the author-inserted
+    separators ・/゠ (``_KATAKANA_RUN_SEPARATORS``): those mark a deliberate word
+    boundary, so a token abutting one is NOT a fragment of a longer run.
+    """
+    return _is_katakana_surface_char(ch) and ch not in _KATAKANA_RUN_SEPARATORS
+
+
+def _is_all_katakana(surface: str) -> bool:
+    """True when every non-whitespace char of ``surface`` is katakana (>=1 char).
+
+    Mirrors the katakana-loanword branch of ``TokenInclusionRule.should_include``
+    (all-katakana ⇒ no kanji): the fragment guard only ever reasons about tokens
+    that branch already accepted, and deliberately ignores mixed loanword verbs
+    (サボる, ヤバい) whose hiragana okurigana makes them not all-katakana. Uses the
+    broad surface-char test (``_is_katakana_surface_char``), NOT the run-continuation
+    test — a ・/゠ inside a surface still counts toward all-katakana.
+    """
+    non_ws = [c for c in surface if not c.isspace()]
+    return bool(non_ws) and all(_is_katakana_surface_char(c) for c in non_ws)
+
+
+def _differs_by_okurigana_only(orth_base: str, lemma: str) -> bool:
+    """Whether ``orth_base`` is ``lemma`` with only its trailing okurigana changed.
+
+    True iff the two share a common leading prefix and BOTH differing tails are
+    pure hiragana — so every kanji sits in the shared stem (呼ばる/呼ぶ → stem 呼,
+    tails ばる/ぶ; 抜る/抜く → stem 抜). A kanji difference pushes a kanji into a
+    tail and fails (帰れる/返る → stems 帰≠返; 治せる/直す → 治≠直; 殺る/遣る → 殺≠遣).
+
+    This is the load-bearing safety gate for the U3 attest-or-remap guard: unidic's
+    canonical ``lemma`` silently collapses kanji-variant homographs (殺る→遣る,
+    賭ける→掛ける, 帰れる→返る) onto a DIFFERENT-meaning or different-orthography
+    headword. Remapping a card front onto such a lemma would ship the wrong
+    homograph's spelling/definition — the exact bug Issues #19/#5 fix at the
+    lookup layer by keying on ``mined_form``. Requiring an okurigana-only
+    derivation confines the remap to genuine same-kanji suffix collapses (the
+    classical passive 呼ばる, not covered by ``morphology._FOLD_SUFFIX_PAIRS``),
+    where the base spelling is unambiguous.
+    """
+    i = 0
+    limit = min(len(orth_base), len(lemma))
+    while i < limit and orth_base[i] == lemma[i]:
+        i += 1
+    return _is_pure_hiragana(orth_base[i:]) and _is_pure_hiragana(lemma[i:])
 
 
 class SubtitleParserService:
@@ -241,6 +328,12 @@ class SubtitleParserService:
         # once per distinct token instead of once per occurrence (count_lemmas is
         # a hot path: tens of thousands of tokens). Caches misses too.
         self._kana_recover_cache: dict[tuple[str, str], bool] = {}
+        # U4 lexicalized-window attestation memo (see _rejected_by_lexicalized_window).
+        # Keyed on the JOINED WINDOW STRING, never on (surface, pos1): the window
+        # verdict is context-dependent, so the same recovery candidate can be
+        # rejected in one line (すみません) and recovered in another (すみます). Same
+        # clear-on-cap bounding as the caches above.
+        self._kana_window_cache: dict[str, bool] = {}
 
     # ------------------------------------------------------------------
     # Per-parse memoization helpers
@@ -314,6 +407,23 @@ class SubtitleParserService:
             return text
         filtered = self._filter_pattern.sub(self.config.subtitle_regex_replacement, text)
         return " ".join(filtered.split())
+
+    def _clean_line_text(self, raw_text: str) -> str:
+        """Full per-line text pipeline shared by the mining and display paths.
+
+        Order: ``clean_subtitle_text`` (markup strip + JP normalization) →
+        ``strip_inline_annotations`` (structural SFX-caption / speaker-tag /
+        inline-furigana strip, gated on ``config.strip_subtitle_annotations``,
+        default ON) → ``_apply_text_filter`` (the user regex, which composes on
+        top of the strip). Applied identically by ``_iter_parsed_lines`` (mining)
+        and ``parse_raw_entries`` (display) so the shown cue text matches what
+        mining tokenizes. A line that collapses to empty is skipped by each
+        caller's existing ``if not text: continue`` guard.
+        """
+        cleaned = clean_subtitle_text(raw_text)
+        if self.config.strip_subtitle_annotations:
+            cleaned = strip_inline_annotations(cleaned)
+        return self._apply_text_filter(cleaned)
 
     def _load_subs(self, subtitle_file: Path):
         """Load a subtitle file via pysubs2 with normalized error wrapping.
@@ -390,7 +500,7 @@ class SubtitleParserService:
             # whose auto-created attr is a truthy non-bool) never triggers the skip.
             if getattr(line, "is_comment", None) is True:
                 continue
-            text = self._apply_text_filter(clean_subtitle_text(line.text))
+            text = self._clean_line_text(line.text)
             if not text:
                 continue
 
@@ -559,12 +669,19 @@ class SubtitleParserService:
             # the headword-regenerated reading.
             expression_reading = katakana_to_hiragana(reading)
             expression_furigana = generate_furigana_from_tokens([word_token])
-        elif getattr(word_token, "compound", False) is True and kana_attested:
-            # Attested compound (mined == lemma == the attested headword for
-            # kind-B spans): the dictionary-corrected kana IS the expression
-            # reading — re-tokenizing ``mined`` would re-concatenate per-token
-            # kana and resurrect the rendaku bug (audit F2). ``reading`` was
-            # folded to hiragana in the compound branch above.
+        elif getattr(word_token, "compound", False) is True and kana_attested and mined == surface:
+            # Attested compound whose card front IS the span surface (kind-B, or
+            # a kind-A span appearing UNINFLECTED): the dictionary-corrected kana
+            # IS the expression reading — re-tokenizing ``mined`` would
+            # re-concatenate per-token kana and resurrect the rendaku bug (audit
+            # F2). ``reading`` was folded to hiragana in the compound branch
+            # above. The ``mined == surface`` guard (U6) is load-bearing: an
+            # INFLECTED kind-A span (surface 絶え間なく, mined headword 絶え間ない)
+            # can itself be an attested headword (絶え間なく is a JMdict adverb),
+            # stamping kana_attested on the span — but its attested kana is the
+            # INFLECTED reading (たえまなく), not the headword reading the card
+            # front shows. Such spans (mined != surface) fall through to the
+            # headword-attestation elif below, which yields たえまない.
             expression_reading = reading
             expression_furigana = _format_furigana(mined, expression_reading)
         elif (
@@ -666,7 +783,7 @@ class SubtitleParserService:
         # Spans come from the shared locator — same offset and drop rule as
         # parse_subtitle_file (Issue #20 / T-38, see _iter_token_spans).
         for word_token, tok_start, tok_end in self._iter_token_spans(text, merged_tokens):
-            if not self._should_include_word(word_token):
+            if not self._mine_token(word_token, text, tok_start, tok_end, merged_tokens):
                 continue
             lemma_here = self._extract_lemma(word_token)
             line_lemmas.add(lemma_here)
@@ -748,7 +865,7 @@ class SubtitleParserService:
             # Skip ASS/SSA Comment events (same guard as _iter_parsed_lines).
             if getattr(line, "is_comment", None) is True:
                 continue
-            text = self._apply_text_filter(clean_subtitle_text(line.text))
+            text = self._clean_line_text(line.text)
             if not text:
                 continue
 
@@ -797,7 +914,7 @@ class SubtitleParserService:
             # Spans come from the shared locator (Issue #20 / T-38 — see
             # _iter_token_spans for the cursor+find and drop-rule rationale).
             for word_token, tok_start, tok_end in self._iter_token_spans(text, merged_tokens):
-                if not self._should_include_word(word_token):
+                if not self._mine_token(word_token, text, tok_start, tok_end, merged_tokens):
                     continue
 
                 highlight_end = self._find_highlight_end(text, raw_tokens, tok_start, tok_end, word_token)
@@ -932,8 +1049,8 @@ class SubtitleParserService:
             # count_lemmas): a token mining drops (find == -1) is counted
             # nowhere it is not mined, or the preview over-promises (T-38 — see
             # _iter_token_spans for the drop-rule rationale).
-            for token, _tok_start, _tok_end in self._iter_token_spans(text, merged_tokens):
-                if self._should_include_word(token):
+            for token, tok_start, tok_end in self._iter_token_spans(text, merged_tokens):
+                if self._mine_token(token, text, tok_start, tok_end, merged_tokens):
                     counts[self._extract_lemma(token)] += 1
 
             line_words, line_lemmas_entry = self._emit_line_words_and_index(
@@ -970,8 +1087,8 @@ class SubtitleParserService:
             # Deck Builder preview over-promises (T-38). The cursor+find and
             # drop-rule rationale lives on _iter_token_spans; do not inline a
             # divergent copy here.
-            for token, _tok_start, _tok_end in self._iter_token_spans(text, merged_tokens):
-                if self._should_include_word(token):
+            for token, tok_start, tok_end in self._iter_token_spans(text, merged_tokens):
+                if self._mine_token(token, text, tok_start, tok_end, merged_tokens):
                     counts[self._extract_lemma(token)] += 1
         return counts
 
@@ -1036,6 +1153,12 @@ class SubtitleParserService:
         algorithm; the deinflect + offline existence lookup is memoized per
         ``(inflected_surface, orth_base, cType)`` so identical tokens never repeat
         the work.
+
+        Second seam (U3 attest-or-remap): when the deinflection resolver leaves
+        orth_base unchanged AND that orth_base matches no dictionary headword,
+        ``_attest_or_remap_front`` remaps it to the attested lemma — but only
+        when the lemma/orthBase readings diverge, guarding the #19/#5
+        same-reading-variant contract. See that method for the full gate.
         """
         feature = getattr(word_token, "feature", None)
         if getattr(feature, "pos1", None) not in ("動詞", "形容詞"):
@@ -1054,10 +1177,78 @@ class SubtitleParserService:
         cached = self._front_cache.get(key)
         if cached is None:
             cached = resolve_dictionary_form(inflected_surface, orth_base, self._term_lookup)
+            # The deinflection resolver only rewrites じる/ずる (and leaves every
+            # other form == orth_base). Where it made no change, run the
+            # garbage-orthBase net so a same-kanji derived front the dictionary
+            # does not attest (呼ばる → 呼ぶ) collapses onto its attested lemma. A
+            # resolver override (感じる) is dictionary-attested by construction,
+            # so skip it.
+            if cached == orth_base:
+                cached = self._attest_or_remap_front(word_token, orth_base)
             if len(self._front_cache) >= _FRONT_CACHE_CAP:
                 self._front_cache.clear()
             self._front_cache[key] = cached
         return cached
+
+    def _attest_or_remap_front(self, word_token, orth_base: str) -> str:
+        """Remap a non-attested derived 動詞/形容詞 front to its attested lemma.
+
+        Live-audit net for garbage/derived card fronts that match no dictionary
+        headword — e.g. 呼ばる minted from the classical passive 呼ばれる (its ばる/ぶ
+        suffix is outside ``morphology._FOLD_SUFFIX_PAIRS``). Such fronts miss the
+        exact-term definition/frequency lookup and split dedup/known-word/audio
+        identity from the base verb's card.
+
+        Remaps ``orth_base`` → ``lemma`` iff ALL hold:
+
+        * the lemma/orthBase readings DIVERGE (``lForm`` vs ``kanaBase``,
+          hiragana-folded). LOAD-BEARING: okurigana spelling variants that read the
+          same (変る/変わる, 表す/表わす — both readings equal) must NEVER remap, or
+          the card front stops preserving the source orthography (Issue #19/#5).
+          Mirrors ``mining_base``'s fold trigger, so an equal-reading token is left
+          untouched.
+        * ``orth_base`` differs from ``lemma`` by TRAILING OKURIGANA ONLY
+          (``_differs_by_okurigana_only`` — same kanji stem). LOAD-BEARING: unidic's
+          ``lemma`` canonicalizes kanji-variant homographs onto a different-kanji
+          headword (帰れる→返る "can go home" vs "revert", 殺る→遣る, 混ぜる→交ぜる).
+          Remapping onto such a lemma would ship the wrong homograph — so a kanji
+          change blocks the remap and the source spelling is kept (its correct
+          definition still arrives via the mined-form→lemma miss fallback).
+        * the offline dictionary does NOT attest ``orth_base`` as a term (exact
+          headword, no kana folding) — an attested front is a real word and is
+          always KEPT; attestation, not a fold table, decides.
+        * the dictionary DOES attest ``lemma`` — never remap onto an unattested
+          target; keep the source spelling when there is nothing better.
+
+        Reached only for a wired ``term_lookup`` and a token whose ``mining_base``
+        did not fold (``orth_base`` is the token's own orthBase). Missing / ``*`` /
+        non-string readings (synthetic compounds, OOV, MagicMock fakes) cannot
+        prove divergence, so the front is conservatively kept. Attestation is
+        memoized via the shared ``_memoized_attest`` probe.
+        """
+        lemma = extract_lemma(word_token)
+        if not lemma or lemma == orth_base:
+            return orth_base
+        feature = getattr(word_token, "feature", None)
+        l_form = getattr(feature, "lForm", None)
+        kana_base = getattr(feature, "kanaBase", None)
+        if not isinstance(l_form, str) or not isinstance(kana_base, str):
+            return orth_base
+        if l_form in ("", "*") or kana_base in ("", "*"):
+            return orth_base
+        if katakana_to_hiragana(l_form) == katakana_to_hiragana(kana_base):
+            # Equal-reading okurigana variant: preserve the source orthography.
+            return orth_base
+        if not _differs_by_okurigana_only(orth_base, lemma):
+            # Kanji differs ⇒ unidic lemma canonicalization onto a homograph
+            # (帰れる→返る, 殺る→遣る): never let it swap the card front's kanji.
+            return orth_base
+        attested = self._memoized_attest([orth_base, lemma])
+        if orth_base in attested:
+            return orth_base  # a real headword — attestation decides, keep it
+        if lemma not in attested:
+            return orth_base  # no attested target to remap onto
+        return lemma
 
     def _extract_reading(self, word_token) -> str:
         """Extract kana reading from a token (see morphology.extract_reading)."""
@@ -1077,6 +1268,164 @@ class SubtitleParserService:
         if self._inclusion_rule.should_include(word_token):
             return True
         return self._recover_kana_content_word(word_token)
+
+    def _mine_token(self, word_token, text: str, tok_start: int, tok_end: int, tokens: list) -> bool:
+        """Context-aware mining acceptance: inclusion, minus fragment reject layers.
+
+        The SINGLE acceptance seam every token-span call site routes through —
+        both mining passes (``parse_subtitle_file`` /
+        ``_emit_line_words_and_index``), ``count_lemmas`` and
+        ``parse_text_units``' count loop — so a token counted is a token mined and
+        the T-38 count==mine parity can never break. All four pass ``tokens`` (the
+        full per-line ``merged_tokens`` list) so the recovery path can inspect the
+        candidate's functional neighbors.
+
+        Two disjoint acceptance paths, each with its own reject layer:
+
+        - ``should_include`` accepts (kanji / katakana loanword): apply ONLY the
+          U5 katakana run-fragment guard (``_is_katakana_run_fragment``). The U4
+          window reject never touches a morphology-accepted token.
+        - ``should_include`` rejects → last-chance ``_recover_kana_content_word``
+          (pure-hiragana content word attested as its own front). On a recovery
+          acceptance, apply the U4 lexicalized-window reject
+          (``_rejected_by_lexicalized_window``). Recovery surfaces are pure
+          hiragana, so the katakana guard can never fire on this branch.
+
+        ``_should_include_word`` stays the token-only, span-free gate that unit
+        tests and non-span callers use directly; this method reproduces its
+        ``should_include``-then-recover order so the two never diverge.
+        """
+        if self._inclusion_rule.should_include(word_token):
+            return not self._is_katakana_run_fragment(word_token, text, tok_start, tok_end)
+        if not self._recover_kana_content_word(word_token):
+            return False
+        return not self._rejected_by_lexicalized_window(word_token, tokens)
+
+    def _rejected_by_lexicalized_window(self, word_token, tokens: list) -> bool:
+        """Whether a recovered kana fragment sits inside an attested lexicalized expression.
+
+        Runs ONLY on a kana-recovery acceptance (see ``_mine_token``). Locates the
+        candidate in ``tokens`` by identity — it is an element of that list (yielded
+        from ``iter_token_spans`` over it) — then joins its surface with the
+        contiguous functional neighbors (``_lexicalized_window_surfaces``) into every
+        window that strictly contains it. If ANY joined window is attested via the
+        term-OR-reading probe, the recovery is a lexicalized fragment → reject.
+
+        Attestation is memoized on the joined WINDOW STRING (``_kana_window_cache``),
+        never on ``(surface, pos1)``: the verdict is context-dependent. The uncached
+        windows for one candidate are batched into a SINGLE probe call. No probe
+        wired ⇒ unreachable (recovery already returned False) but guarded for safety.
+        """
+        lookup = self._kana_attest_lookup
+        if lookup is None:  # unreachable via _mine_token (recovery gates on the probe)
+            return False
+        idx = next((i for i, tok in enumerate(tokens) if tok is word_token), None)
+        if idx is None:  # defensive: candidate not in the list ⇒ no context to judge
+            return False
+        windows = self._lexicalized_window_surfaces(tokens, idx)
+        if not windows:
+            return False
+        uncached = [w for w in windows if w not in self._kana_window_cache]
+        # Snapshot the already-cached verdicts BEFORE the clear-on-cap below can
+        # evict a window this candidate still needs: the shared cache may be wiped
+        # mid-call, so the per-call answer is read from this local dict — never
+        # re-read from the (possibly emptied) cache, which would KeyError on an
+        # evicted pre-cached window. Mirrors _memoized_attest's memoize-then-decide
+        # shape, but keeps a local verdict so eviction can't drop an attested hit.
+        verdicts = {w: self._kana_window_cache[w] for w in windows if w not in uncached}
+        if uncached:
+            if len(self._kana_window_cache) + len(uncached) > _FRONT_CACHE_CAP:
+                self._kana_window_cache.clear()
+            hits = lookup(uncached)
+            for w in uncached:
+                verdicts[w] = self._kana_window_cache[w] = bool(hits.get(w))
+        return any(verdicts[w] for w in windows)
+
+    def _lexicalized_window_surfaces(self, tokens: list, idx: int) -> list[str]:
+        """Joined surfaces of every functional-neighbor window strictly containing ``tokens[idx]``.
+
+        Walks up to ``_KANA_RECOVER_WINDOW_MAX_SIDE`` contiguous FUNCTIONAL neighbors
+        (``pos1 ∈ _KANA_RECOVER_WINDOW_FUNCTIONAL_POS1``) on each side, stopping at
+        the first non-functional token or the line edge, then enumerates every
+        contiguous ``[left, right]`` span with ``left ≤ idx ≤ right`` and
+        ``(left, right) != (idx, idx)`` — i.e. windows that keep the candidate but
+        add at least one neighbor. Returns the joined token surfaces, order-preserving
+        de-duplicated. Empty when the candidate has no functional neighbor (ものすごい:
+        the content-noun もの is not functional, so no window forms and すごい survives).
+        """
+        left = idx
+        while (
+            left - 1 >= 0
+            and idx - (left - 1) <= _KANA_RECOVER_WINDOW_MAX_SIDE
+            and self._is_functional_token(tokens[left - 1])
+        ):
+            left -= 1
+        right = idx
+        last = len(tokens) - 1
+        while (
+            right + 1 <= last
+            and (right + 1) - idx <= _KANA_RECOVER_WINDOW_MAX_SIDE
+            and self._is_functional_token(tokens[right + 1])
+        ):
+            right += 1
+        windows: list[str] = []
+        for start in range(left, idx + 1):
+            for end in range(idx, right + 1):
+                if start == idx and end == idx:
+                    continue
+                windows.append("".join(tokens[i].surface for i in range(start, end + 1)))
+        return list(dict.fromkeys(windows))
+
+    @staticmethod
+    def _is_functional_token(token) -> bool:
+        """True when ``token`` is a functional particle/auxiliary (pos1 ∈ 助詞/助動詞)."""
+        pos1 = getattr(getattr(token, "feature", None), "pos1", None)
+        return pos1 in _KANA_RECOVER_WINDOW_FUNCTIONAL_POS1
+
+    def _is_katakana_run_fragment(self, word_token, text: str, tok_start: int, tok_end: int) -> bool:
+        """Whether an accepted all-katakana token is a fragment of a longer katakana run.
+
+        Post-acceptance REJECT layer (runs AFTER ``_should_include_word`` accepts)
+        closing the katakana tokenizer-fragment junk class (デット←アンデット,
+        ベア←アイスベア glossed "increase in basic salary", live-audit 2026-07):
+        when an unknown katakana name/compound is short-unit segmented, its
+        dictionary-matching pieces (ベア, レッド, ヒヒ are real JMdict headwords)
+        clear ``should_include``'s >=2-char katakana floor. Attestation cannot
+        catch them — the only signal is positional: the token sits INSIDE a longer
+        unmerged katakana run in the raw line.
+
+        Active ONLY with an offline dictionary wired, gated on the compound matcher
+        (the seam that is ``None`` without a dict). Rationale: without a dict the
+        matcher (see ``compound_matcher.merge_line``) can never merge a legit full
+        run (スマホケース-class) into one synthetic upstream, so this positional
+        rule would then reject BOTH halves of every real unspaced compound. No
+        dict ⇒ returns ``False`` ⇒ mining is byte-identical to pre-guard behavior.
+
+        A ``CompoundSyntheticToken`` is never a fragment: its span IS the merged
+        full run (the matcher ran in ``_build_line_state`` before this guard), so
+        it is exempt even when an unmerged katakana neighbor abuts it
+        (アンデッド|ゾンビ — the synthetic survives, the residual ゾンビ is dropped).
+
+        Rejects when the surface is all-katakana AND the raw-text char immediately
+        adjacent on either side CONTINUES the katakana run (``_continues_katakana_run``:
+        a katakana-block char covering ー/ッ, but NOT the author-inserted separators
+        ・/゠). Whitespace, ・, ゠ or any non-katakana between katakana does NOT
+        continue a run — アイ ウォン stays two tokens, アイス・ベア keeps both halves,
+        スマホ|と|バッグ keeps バッグ. Deliberate precision-over-recall (plan-decided):
+        an attested word abutting an unbroken katakana run (アイス|ベア) is rejected,
+        and legit adjacent loanword bigrams whose full run is no headword lose both
+        halves — no independent-attestation carve-out.
+        """
+        if self._compound_matcher is None:
+            return False
+        if getattr(word_token, "compound", False) is True:
+            return False
+        surface = getattr(word_token, "surface", None)
+        if not isinstance(surface, str) or not _is_all_katakana(surface):
+            return False
+        left = text[tok_start - 1] if tok_start > 0 else ""
+        right = text[tok_end] if tok_end < len(text) else ""
+        return _continues_katakana_run(left) or _continues_katakana_run(right)
 
     def _recover_kana_content_word(self, word_token) -> bool:
         """Whether an otherwise-rejected pure-hiragana content word is recoverable.

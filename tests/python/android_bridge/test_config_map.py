@@ -53,7 +53,7 @@ def _path_overrides(paths: AndroidPaths) -> dict[str, Path]:
     }
 
 
-def test_empty_snapshot_preserves_all_97_desktop_defaults_except_targeted_android_overrides(
+def test_empty_snapshot_preserves_all_98_desktop_defaults_except_targeted_android_overrides(
     tmp_path: Path,
 ) -> None:
     from anki_miner.config import AnkiMinerConfig
@@ -71,7 +71,7 @@ def test_empty_snapshot_preserves_all_97_desktop_defaults_except_targeted_androi
     )
 
     desktop_fields = fields(AnkiMinerConfig)
-    assert len(desktop_fields) == 97
+    assert len(desktop_fields) == 98
     assert {
         field.name: getattr(mapped.engine_config, field.name)
         for field in desktop_fields

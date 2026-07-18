@@ -81,9 +81,9 @@ class GoldenExporterOverlayTests(unittest.TestCase):
 
     def test_production_patch_targets_the_frozen_revision_exactly(self) -> None:
         self.assertIn(b"ba3b3cfbcc53e57a440c8b9f157209851408c62a", overlay.DESKTOP_REVISION_LINE)
-        self.assertIn(b"40f2f5c714421585f68504f6027d85dc3843e90e", overlay.ANDROID_REVISION_LINE)
+        self.assertIn(b"edad8e503ded5b33e56a33822693b239a057b88d", overlay.ANDROID_REVISION_LINE)
         self.assertEqual(
-            "e49d93a50cc2ce54dc2e2335b158960eaaa0c84839f03c6b8d6d768081afc268",
+            "a6fba4c51ffc3fafdab14f47bd0b227d7f08fa4f716dc8ef779fd1381d6c9d86",
             overlay.MATERIALIZED_SHA256["engine_golden_contract_v2.py"],
         )
 
