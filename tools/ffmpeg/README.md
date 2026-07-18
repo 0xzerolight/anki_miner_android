@@ -42,3 +42,22 @@ ffmpeg-android-maker v2.12 at commit
 `69bc3f2968e5335fff43123a2bef6c54428144ce`. The corresponding notices, source offer, and static-relink materials for a
 public distribution are in `third_party/ffmpeg/` (the LGPL/BSD license texts and
 `NOTICE.md`).
+
+## Path-clean release binaries
+
+FFmpeg bakes the absolute build, sysroot, and compiler paths into its
+configuration string and its datadir into a separate string, so the committed
+`jniLibs` executables are built under a **username-free** toolchain root to keep
+them free of any maintainer path. Stage a neutral root holding the pinned NDK and
+the `downloads/` cache — copy, not symlink, since a symlink can be
+realpath-resolved back to the real location — then build against it:
+
+```bash
+ANKI_MINER_ANDROID_TOOLCHAIN_ROOT=/var/tmp/anki-miner-build tools/ffmpeg/build.sh --install
+```
+
+Acceptance gate — the shipped ELFs must embed no maintainer path (prints nothing):
+
+```bash
+strings app/src/main/jniLibs/*/lib{ffmpeg,ffprobe}.so | grep -E '/home/|/Users/'
+```
