@@ -172,7 +172,7 @@ class ReadingMiningScreenTest {
 
     @Test
     fun pendingReadingPageSubmissionKeepsCancelEnabled() {
-        val request = request(CurationPage(0, 2, 0, 2))
+        val request = request(CurationPage(0, 2, 0, 3))
         setScreen(
             state =
                 ReadingMiningUiState(
