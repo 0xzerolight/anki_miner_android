@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Host health gate: toolchain presence, host Python suites, and the emulator
-# Gradle build + unit tests. Release/receipt/acceptance ceremony was removed;
-# real release verification is a local emulator-release smoke test + apksigner.
+# Host health gate: toolchain and Python suites, then one serialized Gradle
+# invocation covering debug tests/lint and a non-distributable R8 release APK.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -111,22 +110,82 @@ echo "$wrapper_checksum  $wrapper_jar" | sha256sum --check --status \
     || fail "Gradle wrapper JAR checksum mismatch"
 
 cd "$REPO_ROOT"
+
+health_signing_root="$(mktemp -d -t anki-miner-health-signing.XXXXXXXX)"
+cleanup_health_signing() {
+    rm -rf -- "$health_signing_root"
+}
+trap cleanup_health_signing EXIT
+health_keystore="$health_signing_root/health.jks"
+health_password="anki-miner-health-only"
+"$JAVA_HOME/bin/keytool" -genkeypair -noprompt \
+    -keystore "$health_keystore" \
+    -storepass "$health_password" \
+    -alias anki-miner-health \
+    -keypass "$health_password" \
+    -keyalg RSA -keysize 2048 -validity 2 \
+    -dname "CN=Anki Miner Health,OU=Non-distributable,O=Anki Miner,C=XX" \
+    >/dev/null 2>&1
+
+export ANKI_MINER_KEYSTORE="$health_keystore"
+export ANKI_MINER_KEYSTORE_PASSWORD="$health_password"
+export ANKI_MINER_KEY_ALIAS="anki-miner-health"
+export ANKI_MINER_KEY_PASSWORD="$health_password"
+export ANKI_MINER_VERSION_CODE="1"
+export ANKI_MINER_VERSION_NAME="0.0.0-ci"
+export ANKI_MINER_SOURCE_COMMIT
+ANKI_MINER_SOURCE_COMMIT="$(git rev-parse HEAD)"
+export ANKI_MINER_RELEASE_CHANNEL="ci"
+export ANKI_MINER_S1A_ARM64_ACCEPTED="false"
+
 anki_miner_run_gradle ./gradlew \
     :app:testEmulatorDebugUnitTest \
     :app:lintEmulatorDebug \
     :app:assembleEmulatorDebug \
-    :app:assembleEmulatorDebugAndroidTest
+    :app:assembleEmulatorDebugAndroidTest \
+    :app:assembleEmulatorRelease
 
 emulator_apk="$REPO_ROOT/app/build/outputs/apk/emulator/debug/app-emulator-debug.apk"
 emulator_test_apk="$REPO_ROOT/app/build/outputs/apk/androidTest/emulator/debug/app-emulator-debug-androidTest.apk"
+emulator_release_apk="$REPO_ROOT/app/build/outputs/apk/emulator/release/app-emulator-release.apk"
 [[ -f "$emulator_apk" ]] || fail "emulator debug APK was not produced"
 [[ -f "$emulator_test_apk" ]] || fail "emulator debug AndroidTest APK was not produced"
+[[ -f "$emulator_release_apk" ]] || fail "emulator release APK was not produced"
 
 "$SCRIPT_DIR/check-native-artifact.sh" \
-    --artifact "$emulator_apk" \
+    --artifact "$emulator_release_apk" \
     --allow-abi x86_64 \
     --require-app-imy \
     --reject-base-unidic \
-    --require-entry lib/x86_64/libanki_miner_mecab.so
+    --require-entry lib/x86_64/libanki_miner_mecab.so \
+    --require-entry lib/x86_64/libffmpeg.so \
+    --require-entry lib/x86_64/libffprobe.so
+
+health_certificate="$health_signing_root/health.der"
+"$JAVA_HOME/bin/keytool" -exportcert \
+    -keystore "$health_keystore" \
+    -storepass "$health_password" \
+    -alias anki-miner-health \
+    -file "$health_certificate" >/dev/null 2>&1
+expected_health_certificate="$(sha256sum "$health_certificate" | awk '{ print $1 }')"
+signer_output="$(apksigner verify --verbose --print-certs "$emulator_release_apk")" \
+    || fail "emulator release APK signature is invalid"
+actual_health_certificate="$(
+    sed -n 's/^Signer #1 certificate SHA-256 digest: //p' <<<"$signer_output"
+)"
+[[ "$actual_health_certificate" == "$expected_health_certificate" ]] \
+    || fail "emulator release APK certificate differs from the ephemeral health key"
+[[ "$(apkanalyzer manifest version-code "$emulator_release_apk")" == "1" ]] \
+    || fail "emulator release version code differs"
+[[ "$(apkanalyzer manifest version-name "$emulator_release_apk")" == "0.0.0-ci" ]] \
+    || fail "emulator release version name differs"
+release_manifest="$(apkanalyzer manifest print "$emulator_release_apk")"
+grep -F "android:value=\"$ANKI_MINER_SOURCE_COMMIT\"" <<<"$release_manifest" >/dev/null \
+    || fail "emulator release source commit differs"
+grep -F 'android:value="ci"' <<<"$release_manifest" >/dev/null \
+    || fail "emulator release channel differs"
+grep -A1 -F 'android:name="com.ankiminer.android.S1A_ARM64_ACCEPTED"' \
+    <<<"$release_manifest" | grep -F 'android:value="false"' >/dev/null \
+    || fail "emulator release ARM64 acceptance metadata differs"
 
 echo "health: OK"

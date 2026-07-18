@@ -4,6 +4,7 @@ import com.ankiminer.android.media.SafDocument
 import com.ankiminer.android.mining.CurationCandidate
 import com.ankiminer.android.mining.CurationPage
 import com.ankiminer.android.mining.MiningRunState
+import com.ankiminer.android.mining.RuntimeWorkConflict
 
 enum class DocumentSelectionError {
     VIDEO,
@@ -52,6 +53,7 @@ data class VideoMiningUiState(
     val cancelPending: Boolean = false,
     val resetPending: Boolean = false,
     val commandError: MiningCommandError? = null,
+    val runtimeConflict: RuntimeWorkConflict? = null,
 ) {
     val canStart: Boolean
         get() =
@@ -60,5 +62,6 @@ data class VideoMiningUiState(
                 subtitle.document != null &&
                 !video.isResolving &&
                 !subtitle.isResolving &&
-                !startPending
+                !startPending &&
+                runtimeConflict == null
 }

@@ -10,6 +10,24 @@ import org.junit.Test
 
 class AttributionScreenTest {
     @Test
+    fun releaseLinksBindNoticesAndSourceToEmbeddedCommit() {
+        val commit = "a".repeat(40)
+
+        assertEquals(
+            "https://github.com/0xzerolight/anki_miner_android/tree/$commit",
+            sourceUrl(commit),
+        )
+        assertEquals(
+            "https://github.com/0xzerolight/anki_miner_android/blob/$commit/NOTICE.md",
+            sourceDocumentUrl(commit, "NOTICE.md"),
+        )
+        assertEquals(
+            "https://github.com/0xzerolight/anki_miner_android/blob/main/PRIVACY.md",
+            sourceDocumentUrl("development", "PRIVACY.md"),
+        )
+    }
+
+    @Test
     fun installedInventoryIsStableAndCatalogNoticesAreDeduplicated() {
         val notice = ResourceAttribution("Data", "Copyright", "CC", "https://example.com/data")
         val later = dictionary("zeta", notice)

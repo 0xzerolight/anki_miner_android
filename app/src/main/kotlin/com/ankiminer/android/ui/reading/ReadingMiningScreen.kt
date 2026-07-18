@@ -52,6 +52,7 @@ import com.ankiminer.android.mining.CurationSentence
 import com.ankiminer.android.mining.MiningProgress
 import com.ankiminer.android.mining.MiningRunState
 import com.ankiminer.android.mining.ProcessingResult
+import com.ankiminer.android.mining.RuntimeWorkConflict
 
 @Composable
 fun ReadingMiningScreen(
@@ -218,6 +219,12 @@ private fun LazyListScope.setupItems(
                 text = stringResource(R.string.reading_mining_intro),
                 style = MaterialTheme.typography.bodyLarge,
             )
+            state.runtimeConflict?.let { conflict ->
+                Text(
+                    text = stringResource(readingRuntimeConflictMessage(conflict)),
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
         }
     }
     item(key = "reading_source") {
@@ -293,6 +300,14 @@ private fun LazyListScope.setupItems(
         }
     }
 }
+
+@StringRes
+private fun readingRuntimeConflictMessage(conflict: RuntimeWorkConflict): Int =
+    when (conflict) {
+        RuntimeWorkConflict.MINING -> R.string.runtime_work_mining_active
+        RuntimeWorkConflict.RESOURCE -> R.string.runtime_work_resource_active
+        RuntimeWorkConflict.ANKI_SETUP -> R.string.runtime_work_anki_active
+    }
 
 private fun LazyListScope.readingProgressItems(
     title: Int,
@@ -438,7 +453,7 @@ private fun LazyListScope.readingCurationItems(
             }
             OutlinedButton(
                 onClick = onCancel,
-                enabled = enabled,
+                enabled = !state.cancelPending,
                 modifier =
                     Modifier
                         .fillMaxWidth()

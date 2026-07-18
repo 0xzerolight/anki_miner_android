@@ -255,16 +255,10 @@ class MiningForegroundService : Service() {
             .setSilent(true)
 
     private fun openAppPendingIntent(identity: MiningForegroundSessionIdentity): PendingIntent {
-        val intent =
-            Intent(this, MainActivity::class.java).apply {
-                action = ACTION_OPEN_APP
-                flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
-                putIdentity(identity)
-            }
         return PendingIntent.getActivity(
             this,
             identity.leaseId.hashCode(),
-            intent,
+            openAppIntent(this, identity),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
     }
@@ -342,6 +336,25 @@ class MiningForegroundService : Service() {
                 MiningForegroundSessionIdentity(runId, generation, leaseId).runId
             }.getOrNull()
         }
+
+        /** Resolve and remove a notification-open payload so Activity recreation cannot replay it. */
+        internal fun consumeOpenedRunId(intent: Intent?): String? {
+            val consumedIntent = intent ?: return null
+            val runId = openedRunId(consumedIntent) ?: return null
+            consumedIntent.action = null
+            IDENTITY_EXTRA_KEYS.forEach(consumedIntent::removeExtra)
+            return runId
+        }
+
+        internal fun openAppIntent(
+            context: Context,
+            identity: MiningForegroundSessionIdentity,
+        ): Intent =
+            Intent(context, MainActivity::class.java).apply {
+                action = ACTION_OPEN_APP
+                flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+                putIdentity(identity)
+            }
 
         private fun cancelIntent(
             context: Context,

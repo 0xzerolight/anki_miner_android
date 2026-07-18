@@ -9,6 +9,7 @@ import com.ankiminer.android.engine.EngineCallbacks
 import com.ankiminer.android.engine.MiningConfigSnapshot
 import com.ankiminer.android.engine.PyBridge
 import com.ankiminer.android.engine.TokenizerIdentity
+import com.ankiminer.android.engine.VideoMiningWireRequest
 import com.ankiminer.android.service.MiningForegroundLease
 import com.ankiminer.android.service.MiningForegroundProgress
 import com.ankiminer.android.service.MiningForegroundSessionIdentity
@@ -65,6 +66,42 @@ class BridgeMiningRepositoryTest {
         assertEquals(1, harness.inputOwner.closeCount.get())
         assertEquals(1, harness.foreground.lease.closeCount.get())
         assertEquals(listOf(RUN_ID), harness.anki.fallbackRuns)
+    }
+
+    @Test
+    fun `video request keeps episode filename and uses stable local series label`() {
+        val harness = harness()
+
+        runBlocking { harness.repository.startVideo(INPUT) }
+        val curating =
+            awaitState(harness.repository) { it is MiningRunState.Curating } as MiningRunState.Curating
+        val request = requireNotNull(harness.bridge.videoRequest.get())
+
+        assertEquals("episode", request.episodeName)
+        assertEquals("Local video", request.seriesName)
+        runBlocking { harness.repository.cancel(curating.request.runId) }
+        assertTrue(harness.bridge.cancellationSubmitted.await(2, TimeUnit.SECONDS))
+        harness.bridge.allowTerminal.countDown()
+        assertTrue(awaitState(harness.repository, MiningRunState::isTerminal) is MiningRunState.Cancelled)
+    }
+
+    @Test
+    fun `video request falls back to local label when filename has no usable stem`() {
+        val input =
+            INPUT.copy(video = MiningSource("content://test/unnamed-video", ".mkv"))
+        val harness = harness()
+
+        runBlocking { harness.repository.startVideo(input) }
+        val curating =
+            awaitState(harness.repository) { it is MiningRunState.Curating } as MiningRunState.Curating
+        val request = requireNotNull(harness.bridge.videoRequest.get())
+
+        assertEquals("Local video", request.episodeName)
+        assertEquals("Local video", request.seriesName)
+        runBlocking { harness.repository.cancel(curating.request.runId) }
+        assertTrue(harness.bridge.cancellationSubmitted.await(2, TimeUnit.SECONDS))
+        harness.bridge.allowTerminal.countDown()
+        awaitState(harness.repository, MiningRunState::isTerminal)
     }
 
     @Test
@@ -598,6 +635,7 @@ class BridgeMiningRepositoryTest {
         private val terminalErrorCount: Int = 0,
     ) : PyBridge {
         val videoRuns = AtomicInteger()
+        val videoRequest = AtomicReference<VideoMiningWireRequest?>()
         val curationSubmitted = CountDownLatch(1)
         val intermediateCurationSubmitted = CountDownLatch(1)
         val cancellationSubmitted = CountDownLatch(1)
@@ -626,7 +664,7 @@ class BridgeMiningRepositoryTest {
                             totalBytes = 1024,
                         ),
                     )
-                is BridgeMessage.VideoRun -> runVideo(requireNotNull(callbacks))
+                is BridgeMessage.VideoRun -> runVideo(request.request, requireNotNull(callbacks))
                 is BridgeMessage.CurationResponse -> {
                     selection = request.selection
                     curationSubmitted.countDown()
@@ -651,8 +689,12 @@ class BridgeMiningRepositoryTest {
                 else -> error("Unexpected request: $request")
             }
 
-        private fun runVideo(callbacks: EngineCallbacks): String {
+        private fun runVideo(
+            request: VideoMiningWireRequest,
+            callbacks: EngineCallbacks,
+        ): String {
             runCallbacks = callbacks
+            videoRequest.set(request)
             videoRuns.incrementAndGet()
             registrationReached.countDown()
             check(allowRegistration.await(3, TimeUnit.SECONDS))

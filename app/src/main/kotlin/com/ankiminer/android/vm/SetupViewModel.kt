@@ -7,6 +7,7 @@ import androidx.lifecycle.viewmodel.CreationExtras
 import com.ankiminer.android.anki.provider.AnkiExternalReviewOutcome
 import com.ankiminer.android.anki.provider.AnkiRemediationCommand
 import com.ankiminer.android.data.anki.AnkiSetupManager
+import com.ankiminer.android.data.RuntimeWorkCoordinator
 import com.ankiminer.android.data.resources.ResourceManager
 import com.ankiminer.android.data.resources.ResourceStartupReadiness
 import com.ankiminer.android.data.resources.FrequencySourceFormat
@@ -31,6 +32,7 @@ internal class SetupViewModel(
     private val ankiSetup: AnkiSetupManager,
     pythonReadiness: StateFlow<PythonRuntimeReadiness>,
     miningAdmission: StateFlow<MiningRunAdmissionState>,
+    private val runtimeWorkState: StateFlow<RuntimeWorkCoordinator.Kind?>,
     private val refreshExternalReadiness: () -> Unit,
 ) : ViewModel() {
     private data class LocalState(
@@ -54,18 +56,20 @@ internal class SetupViewModel(
     private val local = MutableStateFlow(LocalState())
     private val settings = settingsRepository.settings
     private val repository = settingsRepository
-    private val settingsAndAnki =
-        combine(settings, ankiSetup.state) { appSettings, ankiState -> appSettings to ankiState }
+    private val settingsAnkiAndRuntime =
+        combine(settings, ankiSetup.state, runtimeWorkState) { appSettings, ankiState, runtimeKind ->
+            Triple(appSettings, ankiState, runtimeKind)
+        }
 
     val uiState: StateFlow<SetupUiState> =
-        combine(resources.state, settingsAndAnki, pythonReadiness, miningAdmission, local) {
+        combine(resources.state, settingsAnkiAndRuntime, pythonReadiness, miningAdmission, local) {
                 resourceState,
-                settingsAndAnkiState,
+                settingsAnkiRuntimeState,
                 python,
                 admission,
                 localState,
             ->
-            val (appSettings, ankiState) = settingsAndAnkiState
+            val (appSettings, ankiState, runtimeKind) = settingsAnkiRuntimeState
             val selectedSlot =
                 localState.lookupSlotId?.takeIf { selected ->
                     resourceState.dictionaries.any { it.isUsable && it.slotId == selected }
@@ -79,6 +83,7 @@ internal class SetupViewModel(
                 remediations = ankiState.remediations,
                 ankiOperation = ankiState.operation,
                 ankiFailure = ankiState.failure,
+                runtimeWorkKind = runtimeKind,
                 wizardSeen = appSettings.setupWizardSeen,
                 uniDicInstalled = resourceState.hasUniDic,
                 catalogDictionaries = resourceState.catalogDictionaries,
@@ -116,6 +121,10 @@ internal class SetupViewModel(
 
     fun refresh() {
         viewModelScope.launch {
+            if (runtimeWorkState.value != null) {
+                refreshExternalReadiness()
+                return@launch
+            }
             resources.recoverAndRefresh()
             // A process-start or prior import may already own the resource operation. Await its
             // terminal publication before asking admission to acquire the mutually exclusive
@@ -133,35 +142,52 @@ internal class SetupViewModel(
     }
 
     fun provisionModel() {
-        if (uiState.value.ankiOperation != null) return
+        if (uiState.value.busy) return
         ankiSetup.provisionModel()
     }
 
-    fun reconcileInterruptedWork() = ankiSetup.reconcileInterruptedWork()
+    fun reconcileInterruptedWork() {
+        if (!uiState.value.busy) ankiSetup.reconcileInterruptedWork()
+    }
 
-    fun retryStagingCleanup(remediationId: Long) =
-        ankiSetup.performRemediation(AnkiRemediationCommand.RetryStagingCleanup(remediationId))
+    fun retryStagingCleanup(remediationId: Long) {
+        if (!uiState.value.busy) {
+            ankiSetup.performRemediation(AnkiRemediationCommand.RetryStagingCleanup(remediationId))
+        }
+    }
 
-    fun acknowledgeUnattachedMedia(remediationId: Long) =
-        ankiSetup.performRemediation(AnkiRemediationCommand.AcknowledgeUnattachedMedia(remediationId))
+    fun acknowledgeUnattachedMedia(remediationId: Long) {
+        if (!uiState.value.busy) {
+            ankiSetup.performRemediation(AnkiRemediationCommand.AcknowledgeUnattachedMedia(remediationId))
+        }
+    }
 
-    fun acknowledgeUncertainMedia(remediationId: Long) =
-        ankiSetup.performRemediation(AnkiRemediationCommand.AcknowledgeUncertainMedia(remediationId))
+    fun acknowledgeUncertainMedia(remediationId: Long) {
+        if (!uiState.value.busy) {
+            ankiSetup.performRemediation(AnkiRemediationCommand.AcknowledgeUncertainMedia(remediationId))
+        }
+    }
 
     fun resolveAfterExternalReview(
         remediationId: Long,
         outcome: AnkiExternalReviewOutcome,
-    ) = ankiSetup.performRemediation(
-        AnkiRemediationCommand.ResolveAfterExternalReview(remediationId, outcome),
-    )
+    ) {
+        if (!uiState.value.busy) {
+            ankiSetup.performRemediation(
+                AnkiRemediationCommand.ResolveAfterExternalReview(remediationId, outcome),
+            )
+        }
+    }
 
     fun dismissAnkiFailure() = ankiSetup.dismissFailure()
 
     fun installUniDic() {
+        if (uiState.value.busy) return
         viewModelScope.launch { resources.installUniDic() }
     }
 
     fun installCatalogDictionary(resourceId: String) {
+        if (uiState.value.busy) return
         val status =
             uiState.value.catalogDictionaries.firstOrNull { it.resource.resourceId == resourceId }
                 ?: return
@@ -173,6 +199,7 @@ internal class SetupViewModel(
     }
 
     fun confirmCatalogDictionaryReplace() {
+        if (uiState.value.busy) return
         val resourceId = uiState.value.pendingReplaceResourceId ?: return
         local.update { it.copy(pendingReplaceResourceId = null) }
         viewModelScope.launch { resources.installCatalogDictionary(resourceId, replace = true) }
@@ -184,7 +211,7 @@ internal class SetupViewModel(
 
     fun importCustomDictionary(uri: String) {
         val state = uiState.value
-        if (!SLOT_ID.matches(state.customSlotId)) return
+        if (state.busy || !SLOT_ID.matches(state.customSlotId)) return
         viewModelScope.launch {
             resources.importCustomDictionary(uri, state.customSlotId, state.customReplace)
         }
@@ -216,7 +243,7 @@ internal class SetupViewModel(
 
     fun importFrequencySource(uri: String) {
         val state = uiState.value
-        if (!state.frequencySourceIdValid || state.frequencySourceName.isBlank()) return
+        if (state.busy || !state.frequencySourceIdValid || state.frequencySourceName.isBlank()) return
         viewModelScope.launch {
             resources.importFrequencySource(
                 uri = uri,
@@ -242,7 +269,7 @@ internal class SetupViewModel(
 
     fun importPitchAccent(uri: String) {
         val state = uiState.value
-        if (state.pitchSourceName.isBlank()) return
+        if (state.busy || state.pitchSourceName.isBlank()) return
         viewModelScope.launch {
             resources.importPitchAccent(
                 uri = uri,
@@ -263,7 +290,7 @@ internal class SetupViewModel(
 
     fun importAudioPack(uri: String) {
         val state = uiState.value
-        if (!state.audioPackIdValid) return
+        if (state.busy || !state.audioPackIdValid) return
         viewModelScope.launch {
             resources.importAudioPack(uri, state.audioPackId, state.audioPackReplace)
         }
@@ -274,7 +301,9 @@ internal class SetupViewModel(
     }
 
     fun importKnownWords(uri: String) {
-        val format = uiState.value.knownWordsFormat
+        val state = uiState.value
+        if (state.busy) return
+        val format = state.knownWordsFormat
         viewModelScope.launch { resources.importKnownWords(uri, format) }
     }
 
@@ -291,7 +320,7 @@ internal class SetupViewModel(
     fun lookup() {
         val state = uiState.value
         val slot = state.lookupSlotId ?: return
-        if (state.lookupTerm.isBlank()) return
+        if (state.busy || state.lookupTerm.isBlank()) return
         viewModelScope.launch { resources.lookup(slot, state.lookupTerm) }
     }
 
@@ -320,6 +349,7 @@ internal class SetupViewModel(
         private val ankiSetup: AnkiSetupManager,
         private val python: StateFlow<PythonRuntimeReadiness>,
         private val admission: StateFlow<MiningRunAdmissionState>,
+        private val runtimeWorkState: StateFlow<RuntimeWorkCoordinator.Kind?>,
         private val refreshExternalReadiness: () -> Unit,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
@@ -331,6 +361,7 @@ internal class SetupViewModel(
                 ankiSetup,
                 python,
                 admission,
+                runtimeWorkState,
                 refreshExternalReadiness,
             ) as T
         }

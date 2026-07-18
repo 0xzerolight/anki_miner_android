@@ -1096,6 +1096,98 @@ def test_known_words_import_is_transactional_and_wordsets_are_bundled(
     ]
 
 
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="local-resource importers require the runtime engine dependency set",
+)
+@pytest.mark.parametrize(
+    ("payload", "expected_format"),
+    (
+        (
+            {
+                "cards_vocabulary_jp_en": [
+                    {
+                        "spelling": "  食べる  ",
+                        "reviews": [{"grade": "easy", "timestamp": 1}],
+                    }
+                ]
+            },
+            "jpdb",
+        ),
+        (
+            {"words": [{"word": "  食べる  ", "status": "KNOWN"}]},
+            "migaku_json",
+        ),
+    ),
+)
+def test_known_words_json_import_strips_words_and_reports_non_generic(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    payload: dict[str, object],
+    expected_format: str,
+) -> None:
+    home = _local_home(tmp_path, monkeypatch)
+    source = tmp_path / f"{expected_format}.json"
+    source.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+
+    imported = decode_envelope(
+        local_resources.import_known_words(
+            {
+                "operationId": f"known-{expected_format}",
+                "sourcePath": str(source),
+                "sourceFormat": "json",
+            }
+        ),
+        expected_type="resource.knownwords.imported",
+    )
+
+    assert imported.payload == {
+        "format": expected_format,
+        "importedCount": 1,
+        "newRowCount": 1,
+        "totalEntries": 1,
+        "isGeneric": False,
+    }
+    from anki_miner.services.known_word_db import KnownWordDB
+
+    assert KnownWordDB(home / "known_words.db").get_known_words() == {"食べる"}
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="local-resource importers require the runtime engine dependency set",
+)
+def test_known_words_import_accepts_cp932_generic_lists(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    home = _local_home(tmp_path, monkeypatch)
+    source = tmp_path / "known-cp932.txt"
+    source.write_bytes("食べる\n犬\n".encode("cp932"))
+
+    imported = decode_envelope(
+        local_resources.import_known_words(
+            {
+                "operationId": "known-cp932",
+                "sourcePath": str(source),
+                "sourceFormat": "txt",
+            }
+        ),
+        expected_type="resource.knownwords.imported",
+    )
+
+    assert imported.payload == {
+        "format": "generic",
+        "importedCount": 2,
+        "newRowCount": 2,
+        "totalEntries": 2,
+        "isGeneric": True,
+    }
+    from anki_miner.services.known_word_db import KnownWordDB
+
+    assert KnownWordDB(home / "known_words.db").get_known_words() == {"食べる", "犬"}
+
+
 def test_cleanup_restores_frequency_and_audio_pack_backups(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

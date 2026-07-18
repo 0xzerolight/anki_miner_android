@@ -50,7 +50,7 @@ class ReadingUnit:
 
 @dataclass(frozen=True)
 class ReadingSourceRef:
-    """A detected, loadable source: one manga volume or one novel file.
+    """A detected, loadable source: one manga volume, novel file, or pasted text.
 
     Per-kind population contract:
 
@@ -62,13 +62,29 @@ class ReadingSourceRef:
       ``path.stem`` (a provisional label for queue rows only), ``volume`` =
       None and ``image_root`` = None; the loader is authoritative for the
       final ``ReadingDocument`` metadata.
+    * kind="text": built directly by the Text sub-tab, never by the detector —
+      ``text`` holds the pasted content, ``title`` = "Text", and ``path`` /
+      ``image_root`` / ``volume`` are None. Distinct from kind="txt", which is
+      a ``.txt`` *file* on disk (aozora loader).
+
+    ``path`` is always set for the file-backed kinds (their loaders assert
+    this) and only None for kind="text".
     """
 
-    kind: Literal["mokuro", "epub", "txt", "subtitle"]
-    path: Path
-    image_root: Path | None
-    title: str
-    volume: str | None
+    kind: Literal["mokuro", "epub", "txt", "subtitle", "text"]
+    path: Path | None = None
+    image_root: Path | None = None
+    title: str = ""
+    volume: str | None = None
+    text: str | None = None
+
+    def __post_init__(self) -> None:
+        # Every field defaults so kind="text" can be built positionally, but the
+        # file-backed kinds must carry a path — their loaders assert it, and that
+        # assert is stripped under `python -O`. Enforce the invariant at
+        # construction so a malformed ref fails loudly at its source instead.
+        if self.kind != "text" and self.path is None:
+            raise ValueError(f"ReadingSourceRef(kind={self.kind!r}) requires a path")
 
 
 @dataclass

@@ -1,5 +1,11 @@
 package com.ankiminer.android.mining
 
+enum class RuntimeWorkConflict {
+    MINING,
+    RESOURCE,
+    ANKI_SETUP,
+}
+
 @JvmInline
 value class MiningCancellationToken(val value: String) {
     init {

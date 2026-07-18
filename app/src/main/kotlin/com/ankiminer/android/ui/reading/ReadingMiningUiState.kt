@@ -4,6 +4,7 @@ import com.ankiminer.android.media.SafDocument
 import com.ankiminer.android.mining.CurationCandidate
 import com.ankiminer.android.mining.CurationPage
 import com.ankiminer.android.mining.MiningRunState
+import com.ankiminer.android.mining.RuntimeWorkConflict
 import java.nio.charset.StandardCharsets
 import java.text.Normalizer
 import java.util.Locale
@@ -67,6 +68,7 @@ data class ReadingMiningUiState(
     val cancelPending: Boolean = false,
     val resetPending: Boolean = false,
     val commandError: ReadingMiningCommandError? = null,
+    val runtimeConflict: RuntimeWorkConflict? = null,
 ) {
     val acceptsArchive: Boolean
         get() = sourceKind == ReadingSourceKindUi.MOKURO
@@ -87,7 +89,8 @@ data class ReadingMiningUiState(
                 !archive.isResolving &&
                 (!acceptsArchive || archive.document == null || archiveNamesMatch) &&
                 !startPending &&
-                !resetPending
+                !resetPending &&
+                runtimeConflict == null
 }
 
 internal fun readingSourceKind(displayName: String): ReadingSourceKindUi? =

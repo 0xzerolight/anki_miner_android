@@ -1,6 +1,6 @@
 # Third-party notices
 
-Anki Miner for Android is licensed under GPL-3.0-or-later (see [LICENSE](LICENSE)) and bundles the third-party components listed below, each retaining its own terms. The complete corresponding source for the application is this public repository at the release tag. The native components' upstream sources and hashes are pinned in `tools/ffmpeg/sources.lock`, `tools/runtime-wheels/sources.lock`, and `tools/wheels/sources.lock`.
+Anki Miner for Android is licensed under GPL-3.0-or-later (see [LICENSE](LICENSE)) and bundles the third-party components listed below, each retaining its own terms. No public release has been tagged yet. Every distributed APK must identify an immutable commit and be accompanied by the corresponding source from that commit. The native components' upstream sources and hashes are pinned in `tools/ffmpeg/sources.lock`, `tools/runtime-wheels/sources.lock`, and `tools/wheels/sources.lock`.
 
 ## Embedded source and native components
 
@@ -24,7 +24,7 @@ UniDic Lite and the recommended Jitendex/Yomitan dictionary are downloaded as da
 
 ## Source availability
 
-The corresponding source for the GPL/LGPL components is available at no charge:
-the application source is this repository at the release tag, and the pinned
-upstream sources for FFmpeg, LAME, Opus, MeCab, fugashi, and the runtime wheels
-are recorded (with hashes) in the `sources.lock` files referenced above.
+For a distributed APK, the corresponding source for the GPL/LGPL components
+must be made available at no charge at the immutable application commit embedded
+in that APK. Pinned upstream sources for FFmpeg, LAME, Opus, MeCab, fugashi, and
+the runtime wheels are recorded with hashes in the `sources.lock` files above.

@@ -3,6 +3,7 @@ package com.ankiminer.android.vm
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
 import com.ankiminer.android.MainDispatcherRule
+import com.ankiminer.android.data.RuntimeWorkCoordinator
 import com.ankiminer.android.media.SafBroker
 import com.ankiminer.android.media.SafDocument
 import com.ankiminer.android.mining.CurationCandidate
@@ -20,6 +21,7 @@ import com.ankiminer.android.ui.reading.ReadingDocumentSelectionError
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.coroutines.resume
 import kotlinx.coroutines.CancellableContinuation
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -259,6 +261,52 @@ class ReadingMiningViewModelTest {
             assertFalse(viewModel.uiState.value.cancelPending)
         }
 
+    @Test
+    fun resourceWorkDisablesReadingStartUntilLeaseClears() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val runtimeWork = MutableStateFlow<RuntimeWorkCoordinator.Kind?>(null)
+            val repository = RecordingReadingRepository()
+            val viewModel = ReadingMiningViewModel(repository, ImmediateSafBroker(), runtimeWork)
+            viewModel.onSourcePicked("content://test/novel.txt")
+            runCurrent()
+            assertTrue(viewModel.uiState.value.canStart)
+
+            runtimeWork.value = RuntimeWorkCoordinator.Kind.RESOURCE
+            runCurrent()
+            assertFalse(viewModel.uiState.value.canStart)
+            viewModel.start()
+            runCurrent()
+            assertTrue(repository.startedInputs.isEmpty())
+
+            runtimeWork.value = null
+            runCurrent()
+            assertTrue(viewModel.uiState.value.canStart)
+        }
+
+    @Test
+    fun pendingReadingCurationStillAllowsPromptCancellation() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val request = curationRequest(page = null)
+            val confirmGate = CompletableDeferred<Unit>()
+            val repository =
+                RecordingReadingRepository(
+                    initialState = MiningRunState.Curating(request),
+                    confirmGate = confirmGate,
+                )
+            val viewModel = ReadingMiningViewModel(repository, ImmediateSafBroker())
+            runCurrent()
+
+            viewModel.confirmCuration()
+            viewModel.cancel()
+            runCurrent()
+
+            assertEquals(listOf(request.runId), repository.cancelledRunIds)
+            assertTrue(repository.state.value is MiningRunState.Cancelled)
+            confirmGate.complete(Unit)
+            runCurrent()
+            assertTrue(repository.state.value is MiningRunState.Cancelled)
+        }
+
     private class ImmediateSafBroker : SafBroker {
         val releasedUris = mutableListOf<String>()
         val eventualReleaseUris = mutableListOf<String>()
@@ -310,6 +358,7 @@ class ReadingMiningViewModelTest {
     private class RecordingReadingRepository(
         initialState: MiningRunState = MiningRunState.Idle,
         private val detachResult: Boolean = false,
+        private val confirmGate: CompletableDeferred<Unit>? = null,
     ) : ReadingMiningRepository {
         private val mutableState = MutableStateFlow(initialState)
         override val state: StateFlow<MiningRunState> = mutableState.asStateFlow()
@@ -345,7 +394,10 @@ class ReadingMiningViewModelTest {
         ) {
             confirmedPageIndex = pageIndex
             confirmedSelection = selection
-            mutableState.value = MiningRunState.Running(runId, MiningProgress(0, 0, "Running"))
+            confirmGate?.await()
+            if (mutableState.value is MiningRunState.Curating) {
+                mutableState.value = MiningRunState.Running(runId, MiningProgress(0, 0, "Running"))
+            }
         }
 
         override suspend fun cancel(runId: String) {
@@ -374,7 +426,7 @@ class ReadingMiningViewModelTest {
         }
 
     private companion object {
-        fun curationRequest(page: CurationPage): CurationRequest {
+        fun curationRequest(page: CurationPage?): CurationRequest {
             val sentence =
                 CurationSentence(
                     sentenceId = "sentence",

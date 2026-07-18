@@ -33,6 +33,15 @@
         <meta-data
             android:name="com.ankiminer.android.RELEASE_CHANNEL"
             android:value="${ankiMinerReleaseChannel}" />
+        <meta-data
+            android:name="com.ankiminer.android.S1A_ARM64_ACCEPTED"
+            android:value="${ankiMinerS1aArm64Accepted}" />
+        <meta-data
+            android:name="com.ankiminer.android.RUNTIME_WHEEL_BUILD_KEY"
+            android:value="${ankiMinerRuntimeWheelBuildKey}" />
+        <meta-data
+            android:name="com.ankiminer.android.S1A_PUBLICATION_BUILD_KEY"
+            android:value="${ankiMinerS1aPublicationBuildKey}" />
 
         <activity
             android:name=".MainActivity"

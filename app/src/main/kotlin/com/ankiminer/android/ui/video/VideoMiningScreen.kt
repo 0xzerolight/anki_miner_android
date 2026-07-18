@@ -1,5 +1,6 @@
 package com.ankiminer.android.ui.video
 
+import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -50,6 +51,7 @@ import com.ankiminer.android.mining.CurationSentence
 import com.ankiminer.android.mining.MiningProgress
 import com.ankiminer.android.mining.MiningRunState
 import com.ankiminer.android.mining.ProcessingResult
+import com.ankiminer.android.mining.RuntimeWorkConflict
 
 @Composable
 fun VideoMiningScreen(
@@ -213,6 +215,12 @@ private fun LazyListScope.setupItems(
                 text = stringResource(R.string.video_mining_intro),
                 style = MaterialTheme.typography.bodyLarge,
             )
+            state.runtimeConflict?.let { conflict ->
+                Text(
+                    text = stringResource(runtimeConflictMessage(conflict)),
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
         }
     }
     item(key = "video_file") {
@@ -268,6 +276,14 @@ private fun LazyListScope.setupItems(
         }
     }
 }
+
+@StringRes
+private fun runtimeConflictMessage(conflict: RuntimeWorkConflict): Int =
+    when (conflict) {
+        RuntimeWorkConflict.MINING -> R.string.runtime_work_mining_active
+        RuntimeWorkConflict.RESOURCE -> R.string.runtime_work_resource_active
+        RuntimeWorkConflict.ANKI_SETUP -> R.string.runtime_work_anki_active
+    }
 
 private fun LazyListScope.progressItems(
     title: Int,
@@ -411,7 +427,7 @@ private fun LazyListScope.curationItems(
             }
             OutlinedButton(
                 onClick = onCancel,
-                enabled = !state.cancelPending && !state.curationPending,
+                enabled = !state.cancelPending,
                 modifier =
                     Modifier
                         .fillMaxWidth()

@@ -170,6 +170,37 @@ class ReadingMiningScreenTest {
         composeRule.onNodeWithText(rawArchivePath, substring = true).assertDoesNotExist()
     }
 
+    @Test
+    fun pendingReadingPageSubmissionKeepsCancelEnabled() {
+        val request = request(CurationPage(0, 2, 0, 3))
+        setScreen(
+            state =
+                ReadingMiningUiState(
+                    runState = MiningRunState.Curating(request, pageSubmissionPending = true),
+                    curationPending = true,
+                    curation =
+                        ReadingCurationUiState(
+                            runId = request.runId,
+                            requestId = request.requestId,
+                            candidates =
+                                request.candidates.map {
+                                    ReadingCurationCandidateUiState(
+                                        candidate = it,
+                                        selected = true,
+                                        sentenceId = it.defaultSentenceId,
+                                    )
+                                },
+                            page = request.page,
+                        ),
+                ),
+        )
+
+        composeRule
+            .onNodeWithTag(ReadingMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(ReadingMiningTestTags.CANCEL))
+        composeRule.onNodeWithTag(ReadingMiningTestTags.CANCEL).assertIsEnabled()
+    }
+
     private fun setScreen(
         state: ReadingMiningUiState,
         onPickSource: () -> Unit = {},

@@ -1204,8 +1204,8 @@ internal class BridgeMiningRepository(
 
     private fun labelsFor(displayName: String): Pair<String, String> {
         val withoutExtension = displayName.substringBeforeLast('.', displayName)
-        val label = canonicalLabel(withoutExtension).ifEmpty { "Local video" }
-        return label to label
+        val episodeLabel = canonicalLabel(withoutExtension).ifEmpty { LOCAL_VIDEO_LABEL }
+        return episodeLabel to LOCAL_VIDEO_LABEL
     }
 
     private fun canonicalLabel(raw: String): String {
@@ -1240,6 +1240,7 @@ internal class BridgeMiningRepository(
         }
 
     private companion object {
+        const val LOCAL_VIDEO_LABEL = "Local video"
         val RETRYABLE_TERMINAL_ERRORS =
             setOf("provider_unavailable", "query_failed", "timeout", "processing_failed", "engine_error")
         const val MAX_PRESENTER_NOTICES = 16

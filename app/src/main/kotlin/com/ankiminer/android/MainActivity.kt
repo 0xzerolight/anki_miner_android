@@ -37,6 +37,7 @@ class MainActivity : ComponentActivity() {
         VideoMiningViewModel.Factory(
             repository = MiningRepositoryFactory.create(app),
             safBroker = app.safBroker,
+            runtimeWorkState = app.runtimeWorkState,
         )
     }
     private val setupViewModelFactory by lazy {
@@ -47,6 +48,7 @@ class MainActivity : ComponentActivity() {
             ankiSetup = app.ankiSetupManager,
             python = app.pythonRuntimeReadiness,
             admission = app.miningAdmissionState,
+            runtimeWorkState = app.runtimeWorkState,
             refreshExternalReadiness = app::refreshExternalReadiness,
         )
     }
@@ -59,12 +61,13 @@ class MainActivity : ComponentActivity() {
         ReadingMiningViewModel.Factory(
             repository = ReadingRepositoryFactory.create(app),
             safBroker = app.safBroker,
+            runtimeWorkState = app.runtimeWorkState,
         )
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        notificationRunId.value = MiningForegroundService.openedRunId(intent)
+        notificationRunId.value = MiningForegroundService.consumeOpenedRunId(intent)
         enableEdgeToEdge()
         setContent {
             val appSettings =
@@ -116,7 +119,7 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        notificationRunId.value = MiningForegroundService.openedRunId(intent)
+        notificationRunId.value = MiningForegroundService.consumeOpenedRunId(intent)
     }
 
     override fun onResume() {

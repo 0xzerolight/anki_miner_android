@@ -10,6 +10,7 @@ import com.ankiminer.android.engine.EngineCallbacks
 import com.ankiminer.android.engine.MiningConfigSnapshot
 import com.ankiminer.android.engine.PyBridge
 import com.ankiminer.android.engine.ReadingMiningWireRequest
+import com.ankiminer.android.engine.ReadingMiningSourceKind
 import com.ankiminer.android.engine.TokenizerIdentity
 import com.ankiminer.android.media.SafDocument
 import com.ankiminer.android.mining.CoordinatorAnkiCallbacks
@@ -136,6 +137,73 @@ class BridgeReadingMiningRepositoryTest {
 
         assertTrue(awaitState(harness.repository, MiningRunState::isTerminal) is MiningRunState.Success)
         assertEquals(0, harness.foreground.lease.closeCount.get())
+    }
+
+    @Test
+    fun `epub selection promotes foreground only when curation is nonempty`() {
+        val selectedHarness =
+            harness(inputBytes = mapOf(EPUB_DOCUMENT.uri to "epub".toByteArray()))
+
+        runBlocking { selectedHarness.repository.startReading(EPUB_INPUT) }
+        val selectedCuration =
+            awaitState(selectedHarness.repository) { it is MiningRunState.Curating } as
+                MiningRunState.Curating
+        assertEquals(
+            ReadingMiningSourceKind.EPUB,
+            requireNotNull(selectedHarness.bridge.readingRequest.get()).sourceKind,
+        )
+        runBlocking {
+            selectedHarness.repository.confirmCuration(
+                selectedCuration.request.runId,
+                selectedCuration.request.requestId,
+                FIRST_SELECTION,
+            )
+        }
+
+        assertTrue(selectedHarness.bridge.curationSubmitted.await(2, TimeUnit.SECONDS))
+        assertEquals(1, selectedHarness.foreground.startCount.get())
+        selectedHarness.bridge.allowTerminal.countDown()
+        assertTrue(
+            awaitState(selectedHarness.repository, MiningRunState::isTerminal) is
+                MiningRunState.Success,
+        )
+
+        val emptyHarness =
+            harness(inputBytes = mapOf(EPUB_DOCUMENT.uri to "epub".toByteArray()))
+        runBlocking { emptyHarness.repository.startReading(EPUB_INPUT) }
+        val emptyCuration =
+            awaitState(emptyHarness.repository) { it is MiningRunState.Curating } as
+                MiningRunState.Curating
+        runBlocking {
+            emptyHarness.repository.confirmCuration(
+                emptyCuration.request.runId,
+                emptyCuration.request.requestId,
+                emptyList(),
+            )
+        }
+
+        assertTrue(emptyHarness.bridge.curationSubmitted.await(2, TimeUnit.SECONDS))
+        assertEquals(0, emptyHarness.foreground.startCount.get())
+        emptyHarness.bridge.allowTerminal.countDown()
+        assertTrue(
+            awaitState(emptyHarness.repository, MiningRunState::isTerminal) is
+                MiningRunState.Success,
+        )
+
+        val cancelledHarness =
+            harness(inputBytes = mapOf(EPUB_DOCUMENT.uri to "epub".toByteArray()))
+        runBlocking { cancelledHarness.repository.startReading(EPUB_INPUT) }
+        val cancelledCuration =
+            awaitState(cancelledHarness.repository) { it is MiningRunState.Curating } as
+                MiningRunState.Curating
+        runBlocking { cancelledHarness.repository.cancel(cancelledCuration.request.runId) }
+        assertTrue(cancelledHarness.bridge.cancellationSubmitted.await(2, TimeUnit.SECONDS))
+        assertEquals(0, cancelledHarness.foreground.startCount.get())
+        cancelledHarness.bridge.allowTerminal.countDown()
+        assertTrue(
+            awaitState(cancelledHarness.repository, MiningRunState::isTerminal) is
+                MiningRunState.Cancelled,
+        )
     }
 
     @Test
@@ -706,6 +774,14 @@ class BridgeReadingMiningRepositoryTest {
                 sizeBytes = 5L,
             )
         val INPUT = ReadingMiningInput(ReadingSourceSelection.Single(INPUT_DOCUMENT))
+        val EPUB_DOCUMENT =
+            SafDocument(
+                uri = "content://reading/book",
+                displayName = "Book.epub",
+                mimeType = "application/epub+zip",
+                sizeBytes = 4L,
+            )
+        val EPUB_INPUT = ReadingMiningInput(ReadingSourceSelection.Single(EPUB_DOCUMENT))
         val FIRST_SELECTION = listOf(CurationSelection(CANDIDATE_ID, SENTENCE_ID))
         val JOB_REGISTRATION =
             """{"schemaVersion":1,"type":"job.registration.request","payload":{"runId":"$RUN_ID"}}"""

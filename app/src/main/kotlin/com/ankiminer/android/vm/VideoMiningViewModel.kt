@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.CreationExtras
+import com.ankiminer.android.data.RuntimeWorkCoordinator
 import com.ankiminer.android.media.SafBroker
 import com.ankiminer.android.media.SafDocument
 import com.ankiminer.android.mining.CurationRequest
@@ -11,6 +12,7 @@ import com.ankiminer.android.mining.CurationSelection
 import com.ankiminer.android.mining.MiningRepository
 import com.ankiminer.android.mining.MiningRunState
 import com.ankiminer.android.mining.MiningSource
+import com.ankiminer.android.mining.RuntimeWorkConflict
 import com.ankiminer.android.mining.VideoMiningInput
 import com.ankiminer.android.mining.isTerminal
 import com.ankiminer.android.mining.runId
@@ -33,9 +35,10 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-class VideoMiningViewModel(
+class VideoMiningViewModel internal constructor(
     private val repository: MiningRepository,
     private val safBroker: SafBroker,
+    private val runtimeWorkState: StateFlow<RuntimeWorkCoordinator.Kind?> = MutableStateFlow(null),
 ) : ViewModel() {
     private data class CurationDraft(
         val requestId: String,
@@ -67,7 +70,7 @@ class VideoMiningViewModel(
     private var subtitleDocumentJob: Job? = null
 
     val uiState: StateFlow<VideoMiningUiState> =
-        combine(repository.state, localState) { runState, local ->
+        combine(repository.state, localState, runtimeWorkState) { runState, local, activeKind ->
             val curation =
                 (runState as? MiningRunState.Curating)?.request?.let { request ->
                     request.toUiState(local.curationDraft)
@@ -84,6 +87,8 @@ class VideoMiningViewModel(
                 cancelPending = local.cancelPending,
                 resetPending = local.resetPending,
                 commandError = local.commandError,
+                runtimeConflict =
+                    activeKind?.toRuntimeConflict()?.takeIf { runState == MiningRunState.Idle },
             )
         }.stateIn(
             scope = viewModelScope,
@@ -150,6 +155,7 @@ class VideoMiningViewModel(
             val video = local.video.document ?: return
             val subtitle = local.subtitle.document ?: return
             if (repository.state.value != MiningRunState.Idle ||
+                runtimeWorkState.value != null ||
                 local.video.isResolving ||
                 local.subtitle.isResolving ||
                 local.startPending ||
@@ -268,7 +274,7 @@ class VideoMiningViewModel(
         if (cancellationToken == null && runId == null) return
         while (true) {
             val local = localState.value
-            if (local.cancelPending || local.curationPending) return
+            if (local.cancelPending) return
             if (localState.compareAndSet(
                     local,
                     local.copy(cancelPending = true, commandError = null),
@@ -535,6 +541,13 @@ class VideoMiningViewModel(
         localState.value.curationPending ||
             (repository.state.value as? MiningRunState.Curating)?.pageSubmissionPending == true
 
+    private fun RuntimeWorkCoordinator.Kind.toRuntimeConflict(): RuntimeWorkConflict =
+        when (this) {
+            RuntimeWorkCoordinator.Kind.MINING -> RuntimeWorkConflict.MINING
+            RuntimeWorkCoordinator.Kind.RESOURCE -> RuntimeWorkConflict.RESOURCE
+            RuntimeWorkCoordinator.Kind.ANKI_SETUP -> RuntimeWorkConflict.ANKI_SETUP
+        }
+
     private fun CurationRequest.toUiState(draft: CurationDraft?): CurationUiState {
         val current = draft.forRequest(this)
         return CurationUiState(
@@ -552,9 +565,10 @@ class VideoMiningViewModel(
         )
     }
 
-    class Factory(
+    internal class Factory(
         private val repository: MiningRepository,
         private val safBroker: SafBroker,
+        private val runtimeWorkState: StateFlow<RuntimeWorkCoordinator.Kind?> = MutableStateFlow(null),
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(
@@ -562,7 +576,7 @@ class VideoMiningViewModel(
             extras: CreationExtras,
         ): T {
             require(modelClass.isAssignableFrom(VideoMiningViewModel::class.java))
-            return VideoMiningViewModel(repository, safBroker) as T
+            return VideoMiningViewModel(repository, safBroker, runtimeWorkState) as T
         }
     }
 }

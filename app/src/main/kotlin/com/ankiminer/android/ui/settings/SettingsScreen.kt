@@ -2,7 +2,9 @@ package com.ankiminer.android.ui.settings
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -11,6 +13,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -20,10 +23,8 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.heading
@@ -32,16 +33,16 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.ankiminer.android.R
+import com.ankiminer.android.data.RuntimeWorkCoordinator
 import com.ankiminer.android.data.resources.ResourceManagerState
 import com.ankiminer.android.data.settings.AppSettings
-import com.ankiminer.android.data.settings.AppSettingsDraftParser
 import com.ankiminer.android.data.settings.AudioFormat
-import com.ankiminer.android.data.settings.EngineSettingsSnapshotMapper
 import com.ankiminer.android.data.settings.PitchCategoryFormat
 import com.ankiminer.android.data.settings.ThemeMode
 import com.ankiminer.android.diagnostics.TesterDiagnostics
 import com.ankiminer.android.vm.SetupUiState
 import com.ankiminer.android.vm.SettingsViewModel
+import com.ankiminer.android.vm.SettingsDraft
 import com.ankiminer.android.vm.SetupViewModel
 
 @Composable
@@ -60,11 +61,17 @@ internal fun SettingsRoute(
     modifier: Modifier = Modifier,
 ) {
     LaunchedEffect(setupViewModel) { setupViewModel.refresh() }
-    val settings by viewModel.settings.collectAsStateWithLifecycle()
+    val draftState by viewModel.draftState.collectAsStateWithLifecycle()
     val saving by viewModel.saving.collectAsStateWithLifecycle()
     val error by viewModel.error.collectAsStateWithLifecycle()
     val resources by viewModel.resourceState.collectAsStateWithLifecycle()
     val setup by setupViewModel.uiState.collectAsStateWithLifecycle()
+    if (!draftState.loaded) {
+        Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator()
+        }
+        return
+    }
     val dictionaryPicker =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             uri?.let { setupViewModel.importCustomDictionary(it.toString()) }
@@ -86,13 +93,14 @@ internal fun SettingsRoute(
             uri?.let { setupViewModel.importKnownWords(it.toString()) }
         }
     SettingsScreen(
-        settings = settings,
+        draft = draftState.draft,
         resources = resources,
         setup = setup,
         setupViewModel = setupViewModel,
         saving = saving,
         error = error,
         diagnostics = diagnostics,
+        onDraftChange = viewModel::updateDraft,
         onSave = viewModel::save,
         onRestoreDefaults = viewModel::restoreDefaults,
         onDismissError = viewModel::dismissError,
@@ -126,14 +134,15 @@ internal fun SettingsRoute(
  */
 @Composable
 private fun SettingsScreen(
-    settings: AppSettings,
+    draft: SettingsDraft,
     resources: ResourceManagerState,
     setup: SetupUiState,
     setupViewModel: SetupViewModel,
     saving: Boolean,
     error: String?,
     diagnostics: TesterDiagnostics,
-    onSave: (AppSettings) -> Unit,
+    onDraftChange: (SettingsDraft) -> Unit,
+    onSave: () -> Unit,
     onRestoreDefaults: () -> Unit,
     onDismissError: () -> Unit,
     onRequestPermissions: () -> Unit,
@@ -151,72 +160,35 @@ private fun SettingsScreen(
     onImportKnownWords: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    var deckName by remember(settings.deckName) { mutableStateOf(settings.deckName.orEmpty()) }
-    var tags by remember(settings.tags) { mutableStateOf(settings.tags.orEmpty()) }
-    var tagsOverride by remember(settings.tags) { mutableStateOf(settings.tags != null) }
-    var audioPadding by remember(settings.audioPaddingSeconds) { mutableStateOf(settings.audioPaddingSeconds?.toString().orEmpty()) }
-    var screenshotOffset by remember(settings.screenshotOffsetSeconds) { mutableStateOf(settings.screenshotOffsetSeconds?.toString().orEmpty()) }
-    var subtitleOffset by remember(settings.subtitleOffsetSeconds) { mutableStateOf(settings.subtitleOffsetSeconds?.toString().orEmpty()) }
-    var bitrate by remember(settings.audioBitrateKbps) { mutableStateOf(settings.audioBitrateKbps?.toString().orEmpty()) }
-    var maxDuration by remember(settings.maxSentenceDurationSeconds) { mutableStateOf(settings.maxSentenceDurationSeconds?.toString().orEmpty()) }
-    var maxCharacters by remember(settings.maxSentenceCharacters) { mutableStateOf(settings.maxSentenceCharacters?.toString().orEmpty()) }
-    var readingOccurrence by remember(settings.readingMinimumOccurrence) {
-        mutableStateOf(settings.readingMinimumOccurrence?.toString().orEmpty())
-    }
-    var maxFrequency by remember(settings.maxFrequencyRank) {
-        mutableStateOf(settings.maxFrequencyRank?.toString().orEmpty())
-    }
-    var workers by remember(settings.maxParallelWorkers) { mutableStateOf(settings.maxParallelWorkers?.toString().orEmpty()) }
-    var audioFormat by remember(settings.audioFormat) { mutableStateOf(settings.audioFormat) }
-    var knownWords by remember(settings.useKnownWordsDatabase) { mutableStateOf(settings.useKnownWordsDatabase) }
-    var hiragana by remember(settings.excludeHiraganaOnly) { mutableStateOf(settings.excludeHiraganaOnly) }
-    var katakana by remember(settings.excludeKatakanaOnly) { mutableStateOf(settings.excludeKatakanaOnly) }
-    var boldTarget by remember(settings.boldTargetInSentence) { mutableStateOf(settings.boldTargetInSentence) }
-    var deduplicate by remember(settings.deduplicateSentences) { mutableStateOf(settings.deduplicateSentences) }
-    var iPlusOne by remember(settings.useIPlusOneFilter) { mutableStateOf(settings.useIPlusOneFilter) }
-    var sentenceLength by remember(settings.useSentenceLengthFilter) { mutableStateOf(settings.useSentenceLengthFilter) }
-    var pitchFormat by remember(settings.pitchCategoryFormat) { mutableStateOf(settings.pitchCategoryFormat) }
-    var theme by remember(settings.theme) { mutableStateOf(settings.theme) }
-    var dictionarySources by remember(settings.dictionarySources, resources.dictionaries) {
-        mutableStateOf(
-            EngineSettingsSnapshotMapper.resolveResourceChain(
-                settings.dictionarySources,
-                resources.dictionaries
-                    .filter { it.isUsable }
-                    .map { it.slotId },
-            ),
-        )
-    }
-    var frequencySources by remember(settings.frequencySources, resources.frequencySources) {
-        mutableStateOf(
-            EngineSettingsSnapshotMapper.resolveResourceChain(
-                settings.frequencySources,
-                resources.frequencySources
-                    .filter { it.schemaOk && it.entryCount > 0 }
-                    .map { it.sourceId },
-            ),
-        )
-    }
-    var audioPacks by remember(settings.audioPacks, resources.audioPacks) {
-        mutableStateOf(
-            EngineSettingsSnapshotMapper.resolveResourceChain(
-                settings.audioPacks,
-                resources.audioPacks
-                    .filter { it.contentAvailable && it.entryCount > 0 }
-                    .map { it.packId },
-            ),
-        )
-    }
-    var excludedWordsets by remember(settings.excludedWordsets, resources.wordsets) {
-        mutableStateOf(settings.excludedWordsets.filter { selected -> resources.wordsets.any { it.wordsetId == selected } })
-    }
-    var readingTts by remember(settings.readingTtsEnabled) { mutableStateOf(settings.readingTtsEnabled) }
-    var jisho by remember(settings.jishoEnabled) { mutableStateOf(settings.jishoEnabled) }
-    val numericDraftValid =
-        listOf(audioPadding, screenshotOffset, subtitleOffset, maxDuration)
-            .all(AppSettingsDraftParser::isOptionalDouble) &&
-            listOf(bitrate, maxCharacters, readingOccurrence, maxFrequency, workers)
-                .all(AppSettingsDraftParser::isOptionalInt)
+    val deckName = draft.deckName
+    val tags = draft.tags
+    val tagsOverride = draft.tagsOverride
+    val audioPadding = draft.audioPadding
+    val screenshotOffset = draft.screenshotOffset
+    val subtitleOffset = draft.subtitleOffset
+    val bitrate = draft.bitrate
+    val maxDuration = draft.maxDuration
+    val maxCharacters = draft.maxCharacters
+    val readingOccurrence = draft.readingOccurrence
+    val maxFrequency = draft.maxFrequency
+    val workers = draft.workers
+    val audioFormat = draft.audioFormat
+    val knownWords = draft.knownWords
+    val hiragana = draft.hiragana
+    val katakana = draft.katakana
+    val boldTarget = draft.boldTarget
+    val deduplicate = draft.deduplicate
+    val iPlusOne = draft.iPlusOne
+    val sentenceLength = draft.sentenceLength
+    val pitchFormat = draft.pitchFormat
+    val theme = draft.theme
+    val dictionarySources = draft.dictionarySources
+    val frequencySources = draft.frequencySources
+    val audioPacks = draft.audioPacks
+    val excludedWordsets = draft.excludedWordsets
+    val readingTts = draft.readingTts
+    val jisho = draft.jisho
+    val numericDraftValid = draft.numericValuesValid
 
     CatalogReplaceDialog(
         state = setup,
@@ -238,6 +210,17 @@ private fun SettingsScreen(
             style = MaterialTheme.typography.headlineSmall,
         )
         Text(stringResource(R.string.settings_intro))
+        setup.runtimeWorkKind?.let { kind ->
+            OutlinedCard(Modifier.fillMaxWidth()) {
+                Text(
+                    text = stringResource(settingsRuntimeWorkMessage(kind)),
+                    modifier =
+                        Modifier
+                            .padding(12.dp)
+                            .semantics { liveRegion = LiveRegionMode.Polite },
+                )
+            }
+        }
 
         SystemStatusCard(
             state = setup,
@@ -258,7 +241,7 @@ private fun SettingsScreen(
         SettingsSection(stringResource(R.string.settings_anki_target)) {
             SettingTextField(
                 deckName,
-                { deckName = it },
+                { onDraftChange(draft.copy(deckName = it)) },
                 stringResource(R.string.settings_deck_name),
                 stringResource(R.string.settings_deck_default),
             )
@@ -267,11 +250,11 @@ private fun SettingsScreen(
                 label = stringResource(R.string.settings_tags_override),
                 help = stringResource(R.string.settings_tags_override_help),
                 checked = tagsOverride,
-                onCheckedChange = { tagsOverride = it },
+                onCheckedChange = { onDraftChange(draft.copy(tagsOverride = it)) },
             )
             SettingTextField(
                 tags,
-                { tags = it },
+                { onDraftChange(draft.copy(tags = it)) },
                 stringResource(R.string.settings_tags),
                 stringResource(
                     if (tagsOverride) R.string.settings_tags_help else R.string.settings_tags_default,
@@ -295,10 +278,10 @@ private fun SettingsScreen(
 
         SettingsSectionHeading(stringResource(R.string.settings_media))
         SettingsSection(stringResource(R.string.settings_media)) {
-            NumericField(audioPadding, { audioPadding = it }, stringResource(R.string.settings_audio_padding), stringResource(R.string.settings_audio_padding_default))
-            NumericField(screenshotOffset, { screenshotOffset = it }, stringResource(R.string.settings_screenshot_offset), stringResource(R.string.settings_screenshot_offset_default))
-            NumericField(subtitleOffset, { subtitleOffset = it }, stringResource(R.string.settings_subtitle_offset), stringResource(R.string.settings_subtitle_offset_default), allowNegative = true)
-            NumericField(bitrate, { bitrate = it }, stringResource(R.string.settings_audio_bitrate), stringResource(R.string.settings_audio_bitrate_default))
+            NumericField(audioPadding, { onDraftChange(draft.copy(audioPadding = it)) }, stringResource(R.string.settings_audio_padding), stringResource(R.string.settings_audio_padding_default))
+            NumericField(screenshotOffset, { onDraftChange(draft.copy(screenshotOffset = it)) }, stringResource(R.string.settings_screenshot_offset), stringResource(R.string.settings_screenshot_offset_default))
+            NumericField(subtitleOffset, { onDraftChange(draft.copy(subtitleOffset = it)) }, stringResource(R.string.settings_subtitle_offset), stringResource(R.string.settings_subtitle_offset_default), allowNegative = true)
+            NumericField(bitrate, { onDraftChange(draft.copy(bitrate = it)) }, stringResource(R.string.settings_audio_bitrate), stringResource(R.string.settings_audio_bitrate_default))
             Text(stringResource(R.string.settings_audio_format))
             ChoiceSegmentedButtons(
                 values = listOf(null, AudioFormat.MP3, AudioFormat.OPUS),
@@ -312,7 +295,7 @@ private fun SettingsScreen(
                         },
                     )
                 },
-                onSelect = { audioFormat = it },
+                onSelect = { onDraftChange(draft.copy(audioFormat = it)) },
             )
         }
 
@@ -350,14 +333,14 @@ private fun SettingsScreen(
                             dictionary.slotId to "${dictionary.sourceName} (${dictionary.entryCount})"
                         },
                 emptyMessage = stringResource(R.string.settings_no_dictionaries),
-                onChange = { dictionarySources = it },
+                onChange = { onDraftChange(draft.copy(dictionarySources = it)) },
             )
             HorizontalDivider()
             BooleanSetting(
                 label = stringResource(R.string.settings_jisho),
                 help = stringResource(R.string.settings_jisho_disclosure),
                 checked = jisho,
-                onCheckedChange = { jisho = it },
+                onCheckedChange = { onDraftChange(draft.copy(jisho = it)) },
             )
             HorizontalDivider()
             Text(stringResource(R.string.settings_pitch_format), style = MaterialTheme.typography.titleSmall)
@@ -379,7 +362,7 @@ private fun SettingsScreen(
                         },
                     )
                 },
-                onSelect = { pitchFormat = it },
+                onSelect = { onDraftChange(draft.copy(pitchFormat = it)) },
             )
         }
         DictionaryInventoryCard(setup)
@@ -402,7 +385,7 @@ private fun SettingsScreen(
                         pack.packId to "${pack.sourceName} (${pack.entryCount})"
                     },
                 emptyMessage = stringResource(R.string.settings_no_audio_packs),
-                onChange = { audioPacks = it },
+                onChange = { onDraftChange(draft.copy(audioPacks = it)) },
             )
         }
         AudioPackImportCard(
@@ -416,7 +399,7 @@ private fun SettingsScreen(
                 label = stringResource(R.string.settings_reading_tts),
                 help = stringResource(R.string.settings_reading_tts_help),
                 checked = readingTts,
-                onCheckedChange = { readingTts = it },
+                onCheckedChange = { onDraftChange(draft.copy(readingTts = it)) },
             )
             OutlinedButton(
                 onClick = onOpenSpeechSettings,
@@ -440,7 +423,7 @@ private fun SettingsScreen(
                         source.sourceId to "${source.sourceName} (${source.entryCount})"
                     },
                 emptyMessage = stringResource(R.string.settings_no_frequency_sources),
-                onChange = { frequencySources = it },
+                onChange = { onDraftChange(draft.copy(frequencySources = it)) },
             )
         }
         FrequencyImportCard(
@@ -454,7 +437,9 @@ private fun SettingsScreen(
 
         SettingsSectionHeading(stringResource(R.string.settings_filtering))
         SettingsSection(stringResource(R.string.settings_filtering)) {
-            NullableToggle(stringResource(R.string.settings_known_words), knownWords, false) { knownWords = it }
+            NullableToggle(stringResource(R.string.settings_known_words), knownWords, false) {
+                onDraftChange(draft.copy(knownWords = it))
+            }
             Text(
                 stringResource(
                     R.string.settings_known_words_inventory,
@@ -464,27 +449,27 @@ private fun SettingsScreen(
                 ),
                 style = MaterialTheme.typography.bodySmall,
             )
-            NullableToggle(stringResource(R.string.settings_exclude_hiragana), hiragana, false) { hiragana = it }
-            NullableToggle(stringResource(R.string.settings_exclude_katakana), katakana, false) { katakana = it }
-            NullableToggle(stringResource(R.string.settings_bold_target), boldTarget, false) { boldTarget = it }
-            NullableToggle(stringResource(R.string.settings_deduplicate), deduplicate, true) { deduplicate = it }
-            NullableToggle(stringResource(R.string.settings_i_plus_one), iPlusOne, false) { iPlusOne = it }
-            NullableToggle(stringResource(R.string.settings_sentence_length), sentenceLength, false) { sentenceLength = it }
-            NumericField(maxDuration, { maxDuration = it }, stringResource(R.string.settings_max_duration), stringResource(R.string.settings_zero_default))
-            NumericField(maxCharacters, { maxCharacters = it }, stringResource(R.string.settings_max_characters), stringResource(R.string.settings_zero_default))
+            NullableToggle(stringResource(R.string.settings_exclude_hiragana), hiragana, false) { onDraftChange(draft.copy(hiragana = it)) }
+            NullableToggle(stringResource(R.string.settings_exclude_katakana), katakana, false) { onDraftChange(draft.copy(katakana = it)) }
+            NullableToggle(stringResource(R.string.settings_bold_target), boldTarget, false) { onDraftChange(draft.copy(boldTarget = it)) }
+            NullableToggle(stringResource(R.string.settings_deduplicate), deduplicate, true) { onDraftChange(draft.copy(deduplicate = it)) }
+            NullableToggle(stringResource(R.string.settings_i_plus_one), iPlusOne, false) { onDraftChange(draft.copy(iPlusOne = it)) }
+            NullableToggle(stringResource(R.string.settings_sentence_length), sentenceLength, false) { onDraftChange(draft.copy(sentenceLength = it)) }
+            NumericField(maxDuration, { onDraftChange(draft.copy(maxDuration = it)) }, stringResource(R.string.settings_max_duration), stringResource(R.string.settings_zero_default))
+            NumericField(maxCharacters, { onDraftChange(draft.copy(maxCharacters = it)) }, stringResource(R.string.settings_max_characters), stringResource(R.string.settings_zero_default))
             NumericField(
                 readingOccurrence,
-                { readingOccurrence = it },
+                { onDraftChange(draft.copy(readingOccurrence = it)) },
                 stringResource(R.string.settings_reading_occurrence),
                 stringResource(R.string.settings_reading_occurrence_default),
             )
             NumericField(
                 maxFrequency,
-                { maxFrequency = it },
+                { onDraftChange(draft.copy(maxFrequency = it)) },
                 stringResource(R.string.settings_max_frequency),
                 stringResource(R.string.settings_max_frequency_default),
             )
-            NumericField(workers, { workers = it }, stringResource(R.string.settings_workers), stringResource(R.string.settings_workers_default))
+            NumericField(workers, { onDraftChange(draft.copy(workers = it)) }, stringResource(R.string.settings_workers), stringResource(R.string.settings_workers_default))
             HorizontalDivider()
             Text(stringResource(R.string.settings_wordsets), style = MaterialTheme.typography.titleSmall)
             Text(stringResource(R.string.settings_wordsets_help), style = MaterialTheme.typography.bodySmall)
@@ -497,12 +482,16 @@ private fun SettingsScreen(
                         help = stringResource(R.string.settings_resource_entries, wordset.entryCount),
                         checked = wordset.wordsetId in excludedWordsets,
                         onCheckedChange = { checked ->
-                            excludedWordsets =
-                                if (checked) {
-                                    (excludedWordsets + wordset.wordsetId).distinct()
-                                } else {
-                                    excludedWordsets - wordset.wordsetId
-                                }
+                            onDraftChange(
+                                draft.copy(
+                                    excludedWordsets =
+                                        if (checked) {
+                                            (excludedWordsets + wordset.wordsetId).distinct()
+                                        } else {
+                                            excludedWordsets - wordset.wordsetId
+                                        },
+                                ),
+                            )
                         },
                     )
                 }
@@ -529,7 +518,7 @@ private fun SettingsScreen(
                         },
                     )
                 },
-                onSelect = { theme = it },
+                onSelect = { onDraftChange(draft.copy(theme = it)) },
             )
             if (onRunSetupWizard != null) {
                 OutlinedButton(
@@ -565,39 +554,7 @@ private fun SettingsScreen(
         Button(
             enabled = !saving && numericDraftValid,
             modifier = Modifier.fillMaxWidth(),
-            onClick = {
-                onSave(
-                    settings.copy(
-                        theme = theme,
-                        deckName = deckName.takeIf(String::isNotEmpty),
-                        tags = tags.takeIf { tagsOverride },
-                        audioPaddingSeconds = AppSettingsDraftParser.optionalDouble(audioPadding),
-                        screenshotOffsetSeconds = AppSettingsDraftParser.optionalDouble(screenshotOffset),
-                        subtitleOffsetSeconds = AppSettingsDraftParser.optionalDouble(subtitleOffset),
-                        audioFormat = audioFormat,
-                        audioBitrateKbps = AppSettingsDraftParser.optionalInt(bitrate),
-                        useKnownWordsDatabase = knownWords,
-                        excludeHiraganaOnly = hiragana,
-                        excludeKatakanaOnly = katakana,
-                        boldTargetInSentence = boldTarget,
-                        deduplicateSentences = deduplicate,
-                        useIPlusOneFilter = iPlusOne,
-                        useSentenceLengthFilter = sentenceLength,
-                        maxSentenceDurationSeconds = AppSettingsDraftParser.optionalDouble(maxDuration),
-                        maxSentenceCharacters = AppSettingsDraftParser.optionalInt(maxCharacters),
-                        readingMinimumOccurrence = AppSettingsDraftParser.optionalInt(readingOccurrence),
-                        maxFrequencyRank = AppSettingsDraftParser.optionalInt(maxFrequency),
-                        pitchCategoryFormat = pitchFormat,
-                        maxParallelWorkers = AppSettingsDraftParser.optionalInt(workers),
-                        dictionarySources = dictionarySources,
-                        frequencySources = frequencySources,
-                        audioPacks = audioPacks,
-                        excludedWordsets = excludedWordsets,
-                        readingTtsEnabled = readingTts,
-                        jishoEnabled = jisho,
-                    ),
-                )
-            },
+            onClick = onSave,
         ) {
             Text(stringResource(if (saving) R.string.settings_saving else R.string.settings_save))
         }
@@ -622,3 +579,11 @@ private fun SettingsScreen(
         TextButton(onClick = onAttributions) { Text(stringResource(R.string.settings_attributions)) }
     }
 }
+
+@StringRes
+private fun settingsRuntimeWorkMessage(kind: RuntimeWorkCoordinator.Kind): Int =
+    when (kind) {
+        RuntimeWorkCoordinator.Kind.MINING -> R.string.runtime_work_settings_mining_active
+        RuntimeWorkCoordinator.Kind.RESOURCE -> R.string.runtime_work_settings_resource_active
+        RuntimeWorkCoordinator.Kind.ANKI_SETUP -> R.string.runtime_work_settings_anki_active
+    }

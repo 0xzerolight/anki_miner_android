@@ -4,11 +4,13 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.CreationExtras
+import com.ankiminer.android.data.RuntimeWorkCoordinator
 import com.ankiminer.android.media.SafBroker
 import com.ankiminer.android.media.SafDocument
 import com.ankiminer.android.mining.CurationRequest
 import com.ankiminer.android.mining.CurationSelection
 import com.ankiminer.android.mining.MiningRunState
+import com.ankiminer.android.mining.RuntimeWorkConflict
 import com.ankiminer.android.mining.cancellationToken
 import com.ankiminer.android.mining.isTerminal
 import com.ankiminer.android.mining.runId
@@ -41,6 +43,7 @@ import kotlinx.coroutines.withContext
 class ReadingMiningViewModel internal constructor(
     private val repository: ReadingMiningRepository,
     private val safBroker: SafBroker,
+    private val runtimeWorkState: StateFlow<RuntimeWorkCoordinator.Kind?> = MutableStateFlow(null),
 ) : ViewModel() {
     private data class CurationDraft(
         val requestId: String,
@@ -74,7 +77,7 @@ class ReadingMiningViewModel internal constructor(
     private var archiveDocumentJob: Job? = null
 
     val uiState: StateFlow<ReadingMiningUiState> =
-        combine(repository.state, localState) { runState, local ->
+        combine(repository.state, localState, runtimeWorkState) { runState, local, activeKind ->
             val curation =
                 (runState as? MiningRunState.Curating)?.request?.let { request ->
                     request.toUiState(local.curationDraft)
@@ -93,6 +96,8 @@ class ReadingMiningViewModel internal constructor(
                 cancelPending = local.cancelPending,
                 resetPending = local.resetPending,
                 commandError = local.commandError,
+                runtimeConflict =
+                    activeKind?.toRuntimeConflict()?.takeIf { runState == MiningRunState.Idle },
             )
         }.stateIn(
             scope = viewModelScope,
@@ -181,6 +186,7 @@ class ReadingMiningViewModel internal constructor(
             val input = local.toInputOrNull() ?: return
             if (
                 repository.state.value != MiningRunState.Idle ||
+                runtimeWorkState.value != null ||
                 local.source.isResolving ||
                 local.archive.isResolving ||
                 local.startPending ||
@@ -301,7 +307,7 @@ class ReadingMiningViewModel internal constructor(
         if (cancellationToken == null && runId == null) return
         while (true) {
             val local = localState.value
-            if (local.cancelPending || local.curationPending) return
+            if (local.cancelPending) return
             if (
                 localState.compareAndSet(
                     local,
@@ -668,6 +674,13 @@ class ReadingMiningViewModel internal constructor(
         localState.value.curationPending ||
             (repository.state.value as? MiningRunState.Curating)?.pageSubmissionPending == true
 
+    private fun RuntimeWorkCoordinator.Kind.toRuntimeConflict(): RuntimeWorkConflict =
+        when (this) {
+            RuntimeWorkCoordinator.Kind.MINING -> RuntimeWorkConflict.MINING
+            RuntimeWorkCoordinator.Kind.RESOURCE -> RuntimeWorkConflict.RESOURCE
+            RuntimeWorkCoordinator.Kind.ANKI_SETUP -> RuntimeWorkConflict.ANKI_SETUP
+        }
+
     private fun String.takeCodePoints(maximum: Int): String {
         require(maximum >= 0)
         val count = codePointCount(0, length)
@@ -677,6 +690,7 @@ class ReadingMiningViewModel internal constructor(
     internal class Factory(
         private val repository: ReadingMiningRepository,
         private val safBroker: SafBroker,
+        private val runtimeWorkState: StateFlow<RuntimeWorkCoordinator.Kind?> = MutableStateFlow(null),
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(
@@ -684,7 +698,7 @@ class ReadingMiningViewModel internal constructor(
             extras: CreationExtras,
         ): T {
             require(modelClass.isAssignableFrom(ReadingMiningViewModel::class.java))
-            return ReadingMiningViewModel(repository, safBroker) as T
+            return ReadingMiningViewModel(repository, safBroker, runtimeWorkState) as T
         }
     }
 
