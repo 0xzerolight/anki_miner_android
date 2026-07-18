@@ -1,69 +1,99 @@
-# Anki Miner for Android
+<h1 align="center">
+  <img src="https://raw.githubusercontent.com/0xzerolight/anki_miner/main/anki_miner/gui/resources/icons/anki_miner.svg" height="76" align="absmiddle" alt=""> Anki Miner for Android
+</h1>
 
-> Alpha. This README is a minimal placeholder — expect it to be rewritten.
+<p align="center">
+<a href="https://www.gnu.org/licenses/gpl-3.0"><img src="https://img.shields.io/badge/License-GPLv3-blue.svg" alt="License: GPL v3"></a>
+<a href="https://github.com/0xzerolight/anki_miner_android/releases/latest"><img src="https://img.shields.io/github/v/release/0xzerolight/anki_miner_android.svg" alt="Latest release"></a>
+<a href="https://github.com/0xzerolight/anki_miner_android/releases/latest"><img src="https://img.shields.io/github/downloads/0xzerolight/anki_miner_android/total.svg" alt="GitHub downloads"></a>
+<a href="https://developer.android.com/tools/releases/platforms"><img src="https://img.shields.io/badge/Android-8.0%2B-3DDC84?logo=android&logoColor=white" alt="Android 8.0+"></a>
+<a href="https://github.com/0xzerolight/anki_miner_android/stargazers"><img src="https://img.shields.io/github/stars/0xzerolight/anki_miner_android?style=social" alt="GitHub stars"></a>
+<a href="https://discord.com/invite/aDtQyZzUVP"><img src="https://img.shields.io/discord/1517634859110240326?logo=discord&logoColor=white&label=Discord&color=5865F2" alt="Discord community"></a>
+</p>
 
-Anki Miner for Android mines Japanese vocabulary from local video, subtitles,
-text, EPUB, and Mokuro sources and creates Anki notes through AnkiDroid. It pairs
-a Kotlin / Jetpack Compose UI with a Chaquopy-embedded Python engine synchronized
-from [Anki Miner](https://github.com/0xzerolight/anki_miner).
+<p align="center">
+Turn native Japanese content into Anki vocabulary cards, on Android through AnkiDroid.
+</p>
 
-## Install
+<p align="center">
+Please leave a ⭐ star if Anki Miner helped you - it helps others find it :).
+</p>
 
-1. Install **AnkiDroid** from the Play Store or F-Droid first.
-2. Download the latest `anki-miner-android-<version>-arm64-v8a.apk` from the
-   [Releases](https://github.com/0xzerolight/anki_miner_android/releases) page.
-   Requires a 64-bit ARM device on Android 8.0 (API 26) or newer.
+## Tabs
+
+- **Video** - mine a video + subtitle pair, with a screenshot and audio clip on every card.
+- **Reading** - mine manga (mokuro), novels (`.epub`, Aozora `.txt`), or standalone subtitle files.
+- **Settings** - Anki, dictionaries, audio, frequency, filtering, UI. A skippable onboarding wizard walks the first run (tokenizer, dictionary, AnkiDroid).
+
+## Other Features
+
+- Extensive filtering: i+1, frequency limits, blacklist, wordsets, and more.
+- Offline Yomitan dictionary import - definitions, pitch accent, frequency - chained by priority.
+- Word audio from local audio packs; sentence audio from your device's offline Japanese text-to-speech.
+- Optional Jisho.org online fallback for definitions (slower, rate-limited).
+- Proper-noun filtering from bundled name wordsets.
+
+<details>
+<summary><strong>How It Works</strong></summary>
+
+1. **Read the subtitles or text** and split Japanese into individual words.
+2. **Filter** to content words you don't already know.
+3. **Grab a screenshot and audio clip** from the video for each line.
+4. **Look up definitions** in your configured offline dictionaries, optionally falling back to Jisho online if enabled.
+5. **Send the finished cards to AnkiDroid.**
+
+</details>
+
+## Installation
+
+### Requirements
+
+- **AnkiDroid** installed from the [Play Store](https://play.google.com/store/apps/details?id=com.ichi2.anki) or [F-Droid](https://f-droid.org/packages/com.ichi2.anki/).
+- A 64-bit ARM (`arm64-v8a`) device on Android 8.0 (API 26) or newer.
+
+1. Install **AnkiDroid** and open it once.
+2. Download `anki-miner-android-<version>-arm64-v8a.apk` from the [latest release](https://github.com/0xzerolight/anki_miner_android/releases/latest).
 3. Allow installing from unknown sources, then open the APK to install.
 4. Optionally verify the download against the published `SHA256SUMS`.
 
 The app does not update itself; install a newer APK over the old one to update.
 
+## Recommended Resources
+
+| Type | Resource | What you get | Add via |
+|------|----------|--------------|---------|
+| Dictionary | [Jitendex](https://jitendex.org/) | JMdict successor; structured formatting, examples, tags | Onboarding wizard, or Settings -> Dictionaries |
+| Dictionary | [JMdict](https://github.com/yomidevs/jmdict-yomitan) | Plain glosses; smaller, faster to index | Onboarding wizard, or Settings -> Dictionaries |
+| Pitch | [Kanjium](https://github.com/mifunetoshiro/kanjium) | ~124k pitch-accent patterns | Settings -> Dictionaries -> Pitch Accent File |
+| Frequency | [JPDB v2.2 Kana](https://github.com/Kuuuube/yomitan-dictionaries) | All-round default for media | Settings -> Filtering -> Frequency List File |
+
+Proper-noun filtering uses bundled name wordsets derived from [JMnedict](https://www.edrdg.org/enamdict/enamdict_doc.html) (JMdict/EDICT project, EDRDG, CC BY-SA 4.0).
+
+## Troubleshooting
+
+| Issue | Solution |
+|-------|----------|
+| Cards not reaching Anki | Install AnkiDroid and grant Anki Miner permission when prompted. |
+| APK won't install | Enable install-from-unknown-sources for your browser/file manager; the device must be `arm64-v8a` on Android 8.0+. |
+| No definitions found | Add a dictionary in Settings -> Dictionaries, or enable the Jisho fallback (slower, rate-limited). |
+| Setup notice on a mining tab | Open Settings and finish the flagged step (tokenizer, dictionary, or AnkiDroid). |
+| Sentence audio missing or wrong | Install a Japanese text-to-speech voice in your Android system settings. |
+| Subtitles out of sync | Use the subtitle offset control on the mining screen. |
+
 ## Privacy
 
-Offline-first. No accounts, analytics, or tracking. It only reaches the network
-for optional Jisho.org dictionary lookups and one-time resource downloads (e.g.
-the UniDic tokenizer dictionary), always over HTTPS. See [PRIVACY.md](PRIVACY.md).
+Offline-first: no accounts, analytics, or tracking. The app only reaches the network for optional Jisho.org lookups and one-time resource downloads (e.g. the UniDic tokenizer), always over HTTPS. See [PRIVACY.md](PRIVACY.md).
 
-## Build from source
+## Contributing
 
-Linux x86_64 host with the provisioned Android toolchain. See
-[scripts/README.md](scripts/README.md) for setup, then:
+Contributions of any kind are welcome.
 
-```sh
-source scripts/android-env.sh
-scripts/health.sh                        # host checks + emulator build + unit tests
-./gradlew :app:assembleDeviceRelease     # signed arm64 release APK (needs keystore.properties)
-```
+- Build from source and dev setup: [CONTRIBUTING.md](CONTRIBUTING.md).
+- Architecture overview: [ARCHITECTURE.md](ARCHITECTURE.md).
+- Bug reports and feature requests -> [Issues](https://github.com/0xzerolight/anki_miner_android/issues).
 
-To sign locally, generate a keystore and create a `keystore.properties` at the
-repo root (gitignored):
-
-```sh
-keytool -genkeypair -v -keystore anki-miner-release.jks -alias anki-miner \
-    -keyalg RSA -keysize 4096 -validity 10000
-```
-
-```properties
-# keystore.properties (never commit)
-storeFile=/absolute/path/to/anki-miner-release.jks
-storePassword=...
-keyAlias=anki-miner
-keyPassword=...
-```
-
-Keep the keystore file and its passwords safe and reuse them for every future
-release, or updates will not install over an existing version.
-
-## Architecture
-
-Compose → ViewModels → Kotlin services → a JSON bridge → the vendored Python
-engine under `app/src/main/python/anki_miner/` (generated from
-`tools/engine-sync/engine.lock`; do not edit directly). AnkiDroid integration
-uses its local ContentProvider with an app-owned note model, exact readback, and
-durable mutation recovery. The Python tokenizer/runtime wheels are vendored under
-`app/wheels/` and ffmpeg/ffprobe under `app/src/main/jniLibs/`.
+Related project: the desktop [Anki Miner](https://github.com/0xzerolight/anki_miner).
 
 ## License
 
-GPL-3.0-or-later. See [LICENSE](LICENSE) and third-party terms in
-[NOTICE.md](NOTICE.md).
+GNU General Public License v3.0-or-later. See [LICENSE](LICENSE); bundled third-party components are listed in [NOTICE.md](NOTICE.md).
