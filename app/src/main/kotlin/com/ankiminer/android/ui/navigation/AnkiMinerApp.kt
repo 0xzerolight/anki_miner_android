@@ -39,6 +39,7 @@ import com.ankiminer.android.diagnostics.currentTesterBuildIdentity
 import com.ankiminer.android.mining.MiningRunState
 import com.ankiminer.android.mining.runId
 import com.ankiminer.android.ui.attribution.AttributionScreen
+import com.ankiminer.android.ui.attribution.NoticesScreen
 import com.ankiminer.android.ui.reading.ReadingMiningRoute
 import com.ankiminer.android.ui.reading.ReadingMiningTestTags
 import com.ankiminer.android.ui.settings.SettingsRoute
@@ -57,6 +58,7 @@ private enum class Destination(val route: String, @StringRes val label: Int) {
     READING("reading", R.string.nav_reading),
     SETTINGS("settings", R.string.nav_settings),
     ATTRIBUTION("attribution", R.string.nav_licenses),
+    NOTICES("notices", R.string.nav_notices),
 }
 
 internal fun miningWorkflowVisible(
@@ -134,7 +136,7 @@ internal fun AnkiMinerApp(
 
     Scaffold(
         bottomBar = {
-            if (currentRoute != Destination.ATTRIBUTION.route) {
+            if (currentRoute != Destination.ATTRIBUTION.route && currentRoute != Destination.NOTICES.route) {
                 NavigationBar {
                     listOf(
                         Destination.VIDEO,
@@ -215,7 +217,11 @@ internal fun AnkiMinerApp(
                 AttributionScreen(
                     installedDictionaries = setup.dictionaries,
                     onBack = { navController.popBackStack() },
+                    onOpenNotices = { navController.navigate(Destination.NOTICES.route) },
                 )
+            }
+            composable(Destination.NOTICES.route) {
+                NoticesScreen(onBack = { navController.popBackStack() })
             }
         }
     }

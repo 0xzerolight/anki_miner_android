@@ -87,6 +87,7 @@
     <string name="nav_reading">Reading</string>
     <string name="nav_settings">Settings</string>
     <string name="nav_licenses">Licences</string>
+    <string name="nav_notices">Third-party notices</string>
     <string name="mining_not_ready">Mining is not ready</string>
     <string name="open_settings">Open Settings</string>
     <string name="allow_required_access">Request app permissions</string>
@@ -399,7 +400,9 @@
     <string name="privacy_retention">App-private data remains until replaced, app storage is cleared, or the app is uninstalled. Notes and media already added to AnkiDroid remain in AnkiDroid and must be managed there.</string>
     <string name="privacy_open_policy">Open the complete privacy policy</string>
     <string name="source_notices_title">Source and third-party notices</string>
-    <string name="source_notices_help">The complete dependency, native-component, data-source, corresponding-source, and relinking records are maintained with the source release.</string>
-    <string name="source_open_notices">Open third-party notices</string>
+    <string name="source_notices_help">The full third-party license texts and corresponding-source/relinking records for the components bundled in this app are included below.</string>
+    <string name="source_open_notices">View third-party notices</string>
     <string name="source_open_repository">Open source repository</string>
+    <string name="notices_title">Third-party notices</string>
+    <string name="notices_intro">Full license texts and provenance for the third-party components bundled in this app. The corresponding source is available from the source repository.</string>
 </resources>

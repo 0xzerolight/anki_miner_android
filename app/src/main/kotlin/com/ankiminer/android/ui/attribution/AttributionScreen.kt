@@ -25,6 +25,7 @@ import com.ankiminer.android.data.resources.ResourceAttribution
 @Composable
 internal fun AttributionScreen(
     onBack: () -> Unit,
+    onOpenNotices: () -> Unit,
     modifier: Modifier = Modifier,
     installedDictionaries: List<InstalledDictionary> = emptyList(),
 ) {
@@ -115,7 +116,7 @@ internal fun AttributionScreen(
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(stringResource(R.string.source_notices_title), style = MaterialTheme.typography.titleMedium)
                 Text(stringResource(R.string.source_notices_help))
-                TextButton(onClick = { uriHandler.openUri(NOTICES_URL) }) {
+                TextButton(onClick = onOpenNotices) {
                     Text(stringResource(R.string.source_open_notices))
                 }
                 TextButton(onClick = { uriHandler.openUri(SOURCE_URL) }) {
@@ -259,5 +260,4 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS “AS IS” 
 
 private const val SHIPPORI_URL = "https://fonts.google.com/specimen/Shippori+Mincho+B1"
 private const val SOURCE_URL = "https://github.com/0xzerolight/anki_miner_android"
-private const val NOTICES_URL = "$SOURCE_URL/blob/main/NOTICE.md"
 private const val PRIVACY_POLICY_URL = "$SOURCE_URL/blob/main/PRIVACY.md"
