@@ -4,6 +4,8 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+Version 0.1.0 is planned but has not been tagged or published.
+
 ### Added
 
 - Light/Dark theme setting (dark by default) in Settings → UI.
@@ -22,11 +24,9 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 - The Setup tab and forced first-run flow.
 - The legacy "Lapis" note-type migration path.
 
-## [0.1.0] - 2026-07-17
+### Initial alpha implementation
 
-First alpha release: a signed ARM64 APK distributed on GitHub Releases.
-
-### Added
+#### Capabilities
 
 - Android application shell, first-run setup, persistent settings, local video/subtitle mining, and TXT/Aozora, subtitle, EPUB, and Mokuro reading mining with paged vocabulary curation.
 - First-party Anki Miner note model provisioning, ContentProvider note/media export, durable mutation recovery, explicit remediation, and notification routing back to the active run.
@@ -41,10 +41,8 @@ First alpha release: a signed ARM64 APK distributed on GitHub Releases.
 - Resumable resource downloads across process death, setup readiness refresh,
   long-list curation virtualization, and privacy-safe tester diagnostics.
 
-### Security
+#### Security
 
 - Resource downloads require HTTPS and immutable size/hash verification.
 - Custom resource parsing, archive extraction, bridge messages, callbacks, and card HTML are bounded and fail closed; remote dictionary media URLs are not permitted in generated notes.
 - Media probe cancellation kills and reaps ffprobe/ffmpeg children.
-
-[0.1.0]: https://github.com/0xzerolight/anki_miner_android/releases/tag/v0.1.0

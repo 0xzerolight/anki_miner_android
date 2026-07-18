@@ -1,52 +1,69 @@
 #!/usr/bin/env bash
-# One-command dev launcher: boot the emulator (if needed), build+install the
-# app, and start it. Usage:
+# One-command dev launcher: build without an emulator, then boot exactly one
+# emulator, install the prebuilt APK without clearing app data, and start it.
+# Usage:
 #   scripts/run-app.sh            # emulatorDebug (fast, default)
-#   scripts/run-app.sh release    # emulatorRelease (R8 + release signing)
+#   scripts/run-app.sh release    # emulatorRelease (requires release identity/signing)
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # shellcheck source=android-env.sh
 source "$SCRIPT_DIR/android-env.sh"
+# shellcheck source=android-test-resources.sh
+source "$SCRIPT_DIR/android-test-resources.sh"
 cd "$REPO_ROOT"
 
 case "${1:-debug}" in
-    debug)   VARIANT=EmulatorDebug ;;
-    release) VARIANT=EmulatorRelease ;;
+    debug)
+        VARIANT=EmulatorDebug
+        APK="$REPO_ROOT/app/build/outputs/apk/emulator/debug/app-emulator-debug.apk"
+        ;;
+    release)
+        VARIANT=EmulatorRelease
+        APK="$REPO_ROOT/app/build/outputs/apk/emulator/release/app-emulator-release.apk"
+        ;;
     *) echo "usage: scripts/run-app.sh [debug|release]" >&2; exit 2 ;;
 esac
 
 SERIAL="$ANDROID_EMULATOR_API26_SERIAL"
 APP_ID="com.ankiminer.android"
 
-# Launch the emulator only if it is not already online (with a window unless
-# there is no display, e.g. over SSH).
-if ! adb devices | grep -q "^${SERIAL}[[:space:]]*device$"; then
-    echo "Starting emulator $ANDROID_AVD_API26_NAME ..."
-    window_args=()
-    [[ -z "${DISPLAY:-}" && -z "${WAYLAND_DISPLAY:-}" ]] && window_args=(-no-window)
-    nohup "$ANDROID_HOME/emulator/emulator" \
-        -avd "$ANDROID_AVD_API26_NAME" \
-        -port "$ANDROID_EMULATOR_API26_PORT" \
-        -no-snapshot -no-audio -gpu swiftshader_indirect \
-        "${window_args[@]}" >/tmp/anki-miner-emulator.log 2>&1 &
-    adb -s "$SERIAL" wait-for-device
+echo "Building $VARIANT before starting an emulator ..."
+anki_miner_run_gradle ./gradlew ":app:assemble$VARIANT"
+[[ -f "$APK" ]] || {
+    echo "Expected APK was not produced: $APK" >&2
+    exit 1
+}
+
+anki_miner_require_no_gradle
+if anki_miner_emulator_is_running; then
+    echo "An emulator started during the build; refusing to start another." >&2
+    exit 1
 fi
+anki_miner_require_emulator_capacity
+
+echo "Starting emulator $ANDROID_AVD_API26_NAME ..."
+window_args=()
+[[ -z "${DISPLAY:-}" && -z "${WAYLAND_DISPLAY:-}" ]] && window_args=(-no-window)
+nohup "$ANDROID_HOME/emulator/emulator" \
+    -avd "$ANDROID_AVD_API26_NAME" \
+    -port "$ANDROID_EMULATOR_API26_PORT" \
+    -no-snapshot -no-audio -gpu swiftshader_indirect \
+    "${window_args[@]}" >/tmp/anki-miner-emulator.log 2>&1 &
+adb -s "$SERIAL" wait-for-device
 
 echo "Waiting for boot to finish ..."
 until [[ "$(adb -s "$SERIAL" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" == "1" ]]; do
     sleep 2
 done
 
-echo "Building and installing $VARIANT ..."
-export GRADLE_OPTS="-Dorg.gradle.daemon=false -Dorg.gradle.workers.max=1 -Xmx2g"
-if ! ANDROID_SERIAL="$SERIAL" ./gradlew ":app:install$VARIANT" --console=plain --no-daemon; then
-    # Most common cause: the installed build was signed with a different key
-    # (e.g. switching between debug and release). Uninstall and retry once.
-    echo "Install failed; uninstalling existing app and retrying ..."
-    adb -s "$SERIAL" uninstall "$APP_ID" || true
-    ANDROID_SERIAL="$SERIAL" ./gradlew ":app:install$VARIANT" --console=plain --no-daemon
+echo "Installing the prebuilt $VARIANT APK ..."
+if ! adb -s "$SERIAL" install -r "$APK"; then
+    echo "Install failed. A different signing key may already be installed." >&2
+    echo "App data was preserved; uninstall it manually only if losing that data is acceptable." >&2
+    adb -s "$SERIAL" emu kill >/dev/null 2>&1 || true
+    exit 1
 fi
 
 echo "Launching $APP_ID ..."
