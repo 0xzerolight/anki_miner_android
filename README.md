@@ -1,22 +1,22 @@
 # Anki Miner for Android
 
-> Alpha under active pre-release testing. No public APK has been tagged yet.
+> Alpha. This README is a minimal placeholder — expect it to be rewritten.
 
 Anki Miner for Android mines Japanese vocabulary from local video, subtitles,
 text, EPUB, and Mokuro sources and creates Anki notes through AnkiDroid. It pairs
 a Kotlin / Jetpack Compose UI with a Chaquopy-embedded Python engine synchronized
 from [Anki Miner](https://github.com/0xzerolight/anki_miner).
 
-## Tester installation
+## Install
 
-There is no verified tester artifact to install yet. When one is published, it
-will be a permanently signed `github-alpha` ARM64 APK accompanied by its exact
-source commit, certificate fingerprint, `SHA256SUMS`, `NOTICE.md`, and an
-accepted physical ARM64 evidence. Testers will need AnkiDroid and a 64-bit ARM
-device running Android 8.0 (API 26) or newer.
+1. Install **AnkiDroid** from the Play Store or F-Droid first.
+2. Download the latest `anki-miner-android-<version>-arm64-v8a.apk` from the
+   [Releases](https://github.com/0xzerolight/anki_miner_android/releases) page.
+   Requires a 64-bit ARM device on Android 8.0 (API 26) or newer.
+3. Allow installing from unknown sources, then open the APK to install.
+4. Optionally verify the download against the published `SHA256SUMS`.
 
-The app does not update itself. Future APKs must use the same signing key to
-install over an existing version without clearing app data.
+The app does not update itself; install a newer APK over the old one to update.
 
 ## Privacy
 
@@ -31,13 +31,9 @@ Linux x86_64 host with the provisioned Android toolchain. See
 
 ```sh
 source scripts/android-env.sh
-scripts/health.sh  # host checks + debug tests/lint + non-distributable R8 audit
+scripts/health.sh                        # host checks + emulator build + unit tests
+./gradlew :app:assembleDeviceRelease     # signed arm64 release APK (needs keystore.properties)
 ```
-
-Release tasks fail unless signing, version, source commit, release channel, and
-ARM64 acceptance state are all explicit. Follow [RELEASE.md](RELEASE.md) and the
-commands in [scripts/README.md](scripts/README.md); a successful Gradle task by
-itself is not permission to distribute its APK.
 
 To sign locally, generate a keystore and create a `keystore.properties` at the
 repo root (gitignored):

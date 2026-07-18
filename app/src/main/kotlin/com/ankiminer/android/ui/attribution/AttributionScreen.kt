@@ -17,7 +17,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import com.ankiminer.android.BuildConfig
 import com.ankiminer.android.R
 import com.ankiminer.android.data.resources.FrozenResourceCatalog
 import com.ankiminer.android.data.resources.InstalledDictionary
@@ -34,9 +33,6 @@ internal fun AttributionScreen(
     val occupiedDictionaries = attributionDictionaries(installedDictionaries)
     val installedCatalogAttribution = installedCatalogAttributions(occupiedDictionaries)
     val jitendexInstalled = hasInstalledJitendex(occupiedDictionaries)
-    val sourceUrl = sourceUrl(BuildConfig.SOURCE_COMMIT)
-    val noticesUrl = sourceDocumentUrl(BuildConfig.SOURCE_COMMIT, "NOTICE.md")
-    val privacyPolicyUrl = sourceDocumentUrl(BuildConfig.SOURCE_COMMIT, "PRIVACY.md")
     Column(
         modifier =
             modifier
@@ -109,7 +105,7 @@ internal fun AttributionScreen(
                 Text(stringResource(R.string.privacy_local_processing))
                 Text(stringResource(R.string.privacy_network_processing))
                 Text(stringResource(R.string.privacy_retention))
-                TextButton(onClick = { uriHandler.openUri(privacyPolicyUrl) }) {
+                TextButton(onClick = { uriHandler.openUri(PRIVACY_POLICY_URL) }) {
                     Text(stringResource(R.string.privacy_open_policy))
                 }
             }
@@ -119,10 +115,10 @@ internal fun AttributionScreen(
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(stringResource(R.string.source_notices_title), style = MaterialTheme.typography.titleMedium)
                 Text(stringResource(R.string.source_notices_help))
-                TextButton(onClick = { uriHandler.openUri(noticesUrl) }) {
+                TextButton(onClick = { uriHandler.openUri(NOTICES_URL) }) {
                     Text(stringResource(R.string.source_open_notices))
                 }
-                TextButton(onClick = { uriHandler.openUri(sourceUrl) }) {
+                TextButton(onClick = { uriHandler.openUri(SOURCE_URL) }) {
                     Text(stringResource(R.string.source_open_repository))
                 }
             }
@@ -262,21 +258,6 @@ Redistribution and use in source and binary forms, with or without modification,
 THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS “AS IS” AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE."""
 
 private const val SHIPPORI_URL = "https://fonts.google.com/specimen/Shippori+Mincho+B1"
-private const val REPOSITORY_URL = "https://github.com/0xzerolight/anki_miner_android"
-private val SOURCE_COMMIT_PATTERN = Regex("[0-9a-f]{40}")
-
-internal fun sourceUrl(sourceCommit: String): String =
-    if (SOURCE_COMMIT_PATTERN.matches(sourceCommit)) {
-        "$REPOSITORY_URL/tree/$sourceCommit"
-    } else {
-        REPOSITORY_URL
-    }
-
-internal fun sourceDocumentUrl(
-    sourceCommit: String,
-    document: String,
-): String {
-    require(document == "NOTICE.md" || document == "PRIVACY.md")
-    val revision = sourceCommit.takeIf(SOURCE_COMMIT_PATTERN::matches) ?: "main"
-    return "$REPOSITORY_URL/blob/$revision/$document"
-}
+private const val SOURCE_URL = "https://github.com/0xzerolight/anki_miner_android"
+private const val NOTICES_URL = "$SOURCE_URL/blob/main/NOTICE.md"
+private const val PRIVACY_POLICY_URL = "$SOURCE_URL/blob/main/PRIVACY.md"

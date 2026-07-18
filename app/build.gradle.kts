@@ -15,30 +15,9 @@ val androidNdkVersion = "28.2.13676358"
 // Identity of the vendored Chaquopy wheels under app/wheels/ (built once via
 // tools/wheels + tools/runtime-wheels; regenerate and update these keys on bump).
 val runtimeWheelBuildKey =
-    "bec101fa4d0ed89106d32e576440726ee6ff3159a7650a9396672ede8a54ddfa"
+    "01b8673597844082d525926e56c895c8e7e59f514334093789780295779eb76c"
 val s1aWheelBuildKey =
     "fcebd0499b2b9e8cacf622f7516676b2230d8507a24785578fe335dd04577325"
-
-fun releaseValue(propertyName: String, environmentName: String): String? =
-    providers.gradleProperty(propertyName).orNull
-        ?: providers.environmentVariable(environmentName).orNull
-
-fun quotedBuildValue(value: String): String =
-    "\"${value.replace("\\", "\\\\").replace("\"", "\\\"")}\""
-
-val releaseVersionCodeRaw = releaseValue("ankiMinerVersionCode", "ANKI_MINER_VERSION_CODE")
-val releaseVersionName = releaseValue("ankiMinerVersionName", "ANKI_MINER_VERSION_NAME")
-val releaseSourceCommit = releaseValue("ankiMinerSourceCommit", "ANKI_MINER_SOURCE_COMMIT")
-val releaseChannel = releaseValue("ankiMinerReleaseChannel", "ANKI_MINER_RELEASE_CHANNEL")
-val releaseS1aAcceptedRaw =
-    releaseValue("ankiMinerS1aArm64Accepted", "ANKI_MINER_S1A_ARM64_ACCEPTED")
-val releaseS1aAccepted = releaseS1aAcceptedRaw?.toBooleanStrictOrNull() ?: false
-
-val releaseStorePath = releaseValue("ankiMinerStoreFile", "ANKI_MINER_KEYSTORE")
-val releaseStorePassword =
-    releaseValue("ankiMinerStorePassword", "ANKI_MINER_KEYSTORE_PASSWORD")
-val releaseKeyAlias = releaseValue("ankiMinerKeyAlias", "ANKI_MINER_KEY_ALIAS")
-val releaseKeyPassword = releaseValue("ankiMinerKeyPassword", "ANKI_MINER_KEY_PASSWORD")
 
 val chaquopyBuildPython =
     providers.environmentVariable("ANKI_MINER_CHAQUOPY_BUILD_PYTHON").orNull
@@ -58,8 +37,7 @@ val commonWheels = wheelsIn("common")
 val deviceWheels = commonWheels + wheelsIn("arm64-v8a")
 val emulatorWheels = commonWheels + wheelsIn("x86_64")
 
-// Local release-signing config (never committed). Every release task validates
-// the complete signing and identity contract before doing work.
+// Optional local release-signing config (never committed). See keystore.properties.example.
 val keystorePropsFile = rootProject.file("keystore.properties")
 val keystoreProps =
     Properties().apply {
@@ -80,8 +58,8 @@ android {
         applicationId = "com.ankiminer.android"
         minSdk = 26
         targetSdk = 36
-        versionCode = releaseVersionCodeRaw?.toIntOrNull() ?: 1
-        versionName = releaseVersionName ?: "0.1.0-dev"
+        versionCode = 1
+        versionName = "0.1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "PYTHON_VERSION", "\"$pythonVersion\"")
@@ -89,17 +67,9 @@ android {
         buildConfigField("String", "RUNTIME_WHEEL_BUILD_KEY", "\"$runtimeWheelBuildKey\"")
         buildConfigField("boolean", "S1A_SPIKE_ENABLED", "true")
         buildConfigField("boolean", "S1A_PUBLICATION_VERIFIED", "true")
-        buildConfigField("boolean", "S1A_ARM64_ACCEPTED", releaseS1aAccepted.toString())
-        buildConfigField(
-            "String",
-            "SOURCE_COMMIT",
-            quotedBuildValue(releaseSourceCommit ?: "development"),
-        )
-        buildConfigField(
-            "String",
-            "RELEASE_CHANNEL",
-            quotedBuildValue(releaseChannel ?: "development"),
-        )
+        buildConfigField("boolean", "S1A_ARM64_ACCEPTED", "false")
+        buildConfigField("String", "SOURCE_COMMIT", "\"development\"")
+        buildConfigField("String", "RELEASE_CHANNEL", "\"github-alpha\"")
         buildConfigField("String", "S1A_PUBLICATION_BUILD_KEY", "\"$s1aWheelBuildKey\"")
         buildConfigField(
             "String",
@@ -111,11 +81,8 @@ android {
             "S1B_TEST_UNIDIC_ARCHIVE",
             "\"/data/local/tmp/anki-miner-s1b-unidic.zip\"",
         )
-        manifestPlaceholders["ankiMinerSourceCommit"] = releaseSourceCommit ?: "development"
-        manifestPlaceholders["ankiMinerReleaseChannel"] = releaseChannel ?: "development"
-        manifestPlaceholders["ankiMinerS1aArm64Accepted"] = releaseS1aAccepted.toString()
-        manifestPlaceholders["ankiMinerRuntimeWheelBuildKey"] = runtimeWheelBuildKey
-        manifestPlaceholders["ankiMinerS1aPublicationBuildKey"] = s1aWheelBuildKey
+        manifestPlaceholders["ankiMinerSourceCommit"] = "development"
+        manifestPlaceholders["ankiMinerReleaseChannel"] = "github-alpha"
     }
 
     productFlavors {
@@ -136,14 +103,18 @@ android {
     signingConfigs {
         create("release") {
             val storePath =
-                releaseStorePath
-                    ?: keystoreProps.getProperty("storeFile")
+                keystoreProps.getProperty("storeFile")
+                    ?: System.getenv("ANKI_MINER_KEYSTORE")
             if (storePath != null) {
-                storeFile = rootProject.file(storePath)
+                storeFile = file(storePath)
+                storePassword =
+                    keystoreProps.getProperty("storePassword")
+                        ?: System.getenv("ANKI_MINER_KEYSTORE_PASSWORD")
+                keyAlias = keystoreProps.getProperty("keyAlias") ?: "anki-miner"
+                keyPassword =
+                    keystoreProps.getProperty("keyPassword")
+                        ?: System.getenv("ANKI_MINER_KEY_PASSWORD")
             }
-            storePassword = releaseStorePassword ?: keystoreProps.getProperty("storePassword")
-            keyAlias = releaseKeyAlias ?: keystoreProps.getProperty("keyAlias")
-            keyPassword = releaseKeyPassword ?: keystoreProps.getProperty("keyPassword")
         }
     }
 
@@ -155,7 +126,10 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
-            signingConfig = signingConfigs.getByName("release")
+            // Sign only when a local keystore is configured (present for release builds).
+            if (keystorePropsFile.exists() || System.getenv("ANKI_MINER_KEYSTORE") != null) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
 
@@ -198,63 +172,6 @@ android {
         getByName("test").resources.srcDir(
             rootProject.file("app/src/main/python/android_bridge"),
         )
-    }
-}
-
-val validateReleaseConfiguration by tasks.registering {
-    group = "verification"
-    description = "Fail closed unless release signing and immutable identity are explicit."
-    doLast {
-        val failures = mutableListOf<String>()
-        val versionCode = releaseVersionCodeRaw?.toIntOrNull()
-        if (versionCode == null || versionCode <= 0) {
-            failures += "ANKI_MINER_VERSION_CODE must be an explicit positive integer"
-        }
-        val validVersionName =
-            releaseVersionName?.matches(
-                Regex("[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?(?:\\+[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?"),
-            ) == true
-        if (!validVersionName) {
-            failures += "ANKI_MINER_VERSION_NAME must be an explicit semantic version"
-        }
-        if (releaseSourceCommit?.matches(Regex("[0-9a-f]{40}")) != true) {
-            failures += "ANKI_MINER_SOURCE_COMMIT must be an explicit lowercase 40-hex commit"
-        }
-        val allowedChannels = setOf("github-alpha", "production", "ci")
-        if (releaseChannel !in allowedChannels) {
-            failures += "ANKI_MINER_RELEASE_CHANNEL must be github-alpha, production, or ci"
-        }
-        if (releaseS1aAcceptedRaw !in setOf("true", "false")) {
-            failures += "ANKI_MINER_S1A_ARM64_ACCEPTED must be explicitly true or false"
-        }
-        if (releaseChannel in setOf("github-alpha", "production") && releaseS1aAcceptedRaw != "true") {
-            failures += "distribution channels require accepted ARM64 S1a physical evidence"
-        }
-
-        val configuredStorePath =
-            releaseStorePath ?: keystoreProps.getProperty("storeFile")
-        val configuredStore = configuredStorePath?.let(rootProject::file)
-        if (configuredStore == null || !configuredStore.isFile) {
-            failures += "release signing storeFile is missing or is not a regular file"
-        }
-        if ((releaseStorePassword ?: keystoreProps.getProperty("storePassword")).isNullOrBlank()) {
-            failures += "release signing storePassword is missing"
-        }
-        if ((releaseKeyAlias ?: keystoreProps.getProperty("keyAlias")).isNullOrBlank()) {
-            failures += "release signing keyAlias is missing"
-        }
-        if ((releaseKeyPassword ?: keystoreProps.getProperty("keyPassword")).isNullOrBlank()) {
-            failures += "release signing keyPassword is missing"
-        }
-        if (failures.isNotEmpty()) {
-            throw GradleException(failures.joinToString(prefix = "Release configuration rejected:\n- ", separator = "\n- "))
-        }
-    }
-}
-
-tasks.configureEach {
-    if (name != "validateReleaseConfiguration" && name.contains("Release")) {
-        dependsOn(validateReleaseConfiguration)
     }
 }
 

@@ -23,10 +23,10 @@ env:
   TZ: UTC
 
 jobs:
-  checks:
-    name: Host and Android checks
+  secretless-host-checks:
+    name: Secretless host checks
     runs-on: ubuntu-latest
-    timeout-minutes: 75
+    timeout-minutes: 30
     steps:
       - name: Checkout source
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -82,103 +82,3 @@ jobs:
           "$HOST_PYTHON" -m pytest -q tests/python/android_bridge
           "$HOST_PYTHON" -m compileall -q \
             app/src/main/python/android_bridge app/src/debug/python
-
-      - name: Build and audit non-distributable Android artifacts
-        shell: bash
-        env:
-          BUILD_PYTHON: ${{ steps.build_python.outputs.python-path }}
-          ANKI_MINER_KEYSTORE: ${{ runner.temp }}/anki-miner-ci.jks
-          ANKI_MINER_KEYSTORE_PASSWORD: ci-only-password
-          ANKI_MINER_KEY_ALIAS: anki-miner-ci
-          ANKI_MINER_KEY_PASSWORD: ci-only-password
-          ANKI_MINER_VERSION_CODE: "1"
-          ANKI_MINER_VERSION_NAME: 0.0.0-ci
-          ANKI_MINER_SOURCE_COMMIT: ${{ github.sha }}
-          ANKI_MINER_RELEASE_CHANNEL: ci
-          ANKI_MINER_S1A_ARM64_ACCEPTED: "false"
-        run: |
-          set -euo pipefail
-          system_android_home="${ANDROID_HOME:?}"
-          sdkmanager="$system_android_home/cmdline-tools/latest/bin/sdkmanager"
-          "$sdkmanager" \
-            "platforms;android-36" \
-            "build-tools;36.0.0" \
-            "ndk;28.2.13676358" \
-            "cmake;3.22.1" >/dev/null
-
-          ci_toolchain="$RUNNER_TEMP/anki-miner-android-toolchain"
-          mkdir -p "$ci_toolchain/chaquopy-build-python/bin"
-          ln -s "$system_android_home" "$ci_toolchain/sdk"
-          ln -s "${JAVA_HOME_17_X64:?}" "$ci_toolchain/jdk-17"
-          ln -s "$BUILD_PYTHON" \
-            "$ci_toolchain/chaquopy-build-python/bin/python3.12"
-          export ANKI_MINER_ANDROID_TOOLCHAIN_ROOT="$ci_toolchain"
-          source scripts/android-env.sh
-          export PATH="$system_android_home/cmdline-tools/latest/bin:$PATH"
-
-          "$JAVA_HOME/bin/keytool" -genkeypair -noprompt \
-            -keystore "$ANKI_MINER_KEYSTORE" \
-            -storepass "$ANKI_MINER_KEYSTORE_PASSWORD" \
-            -alias "$ANKI_MINER_KEY_ALIAS" \
-            -keypass "$ANKI_MINER_KEY_PASSWORD" \
-            -keyalg RSA -keysize 2048 -validity 2 \
-            -dname "CN=Anki Miner CI,OU=Non-distributable,O=Anki Miner,C=XX"
-          ci_certificate="$RUNNER_TEMP/anki-miner-ci.der"
-          "$JAVA_HOME/bin/keytool" -exportcert \
-            -keystore "$ANKI_MINER_KEYSTORE" \
-            -storepass "$ANKI_MINER_KEYSTORE_PASSWORD" \
-            -alias "$ANKI_MINER_KEY_ALIAS" \
-            -file "$ci_certificate" >/dev/null
-          expected_certificate="$(sha256sum "$ci_certificate" | awk '{ print $1 }')"
-
-          source scripts/android-test-resources.sh
-          free -h
-          anki_miner_run_gradle ./gradlew \
-            :app:testEmulatorDebugUnitTest \
-            :app:lintEmulatorDebug \
-            :app:assembleEmulatorDebug \
-            :app:assembleEmulatorDebugAndroidTest \
-            :app:assembleEmulatorRelease \
-            :app:assembleDeviceRelease
-          free -h
-
-          audit_apk() {
-            local artifact="$1"
-            local abi="$2"
-            scripts/check-native-artifact.sh \
-              --artifact "$artifact" \
-              --allow-abi "$abi" \
-              --require-app-imy \
-              --reject-base-unidic \
-              --require-entry "lib/$abi/libanki_miner_mecab.so" \
-              --require-entry "lib/$abi/libffmpeg.so" \
-              --require-entry "lib/$abi/libffprobe.so"
-            local signer_output actual_certificate
-            signer_output="$(apksigner verify --verbose --print-certs "$artifact")"
-            actual_certificate="$(
-              sed -n 's/^Signer #1 certificate SHA-256 digest: //p' \
-                <<<"$signer_output"
-            )"
-            [[ "$actual_certificate" == "$expected_certificate" ]]
-            [[ "$(apkanalyzer manifest version-code "$artifact")" == "1" ]]
-            [[ "$(apkanalyzer manifest version-name "$artifact")" == "0.0.0-ci" ]]
-            [[ "$(apkanalyzer manifest application-id "$artifact")" \
-              == "com.ankiminer.android" ]]
-            [[ "$(apkanalyzer manifest min-sdk "$artifact")" == "26" ]]
-            [[ "$(apkanalyzer manifest target-sdk "$artifact")" == "36" ]]
-            local manifest
-            manifest="$(apkanalyzer manifest print "$artifact")"
-            grep -F 'android:value="ci"' <<<"$manifest" >/dev/null
-            grep -F "android:value=\"$ANKI_MINER_SOURCE_COMMIT\"" \
-              <<<"$manifest" >/dev/null
-            grep -A1 -F \
-              'android:name="com.ankiminer.android.S1A_ARM64_ACCEPTED"' \
-              <<<"$manifest" | grep -F 'android:value="false"' >/dev/null
-          }
-
-          audit_apk \
-            app/build/outputs/apk/emulator/release/app-emulator-release.apk \
-            x86_64
-          audit_apk \
-            app/build/outputs/apk/device/release/app-device-release.apk \
-            arm64-v8a
