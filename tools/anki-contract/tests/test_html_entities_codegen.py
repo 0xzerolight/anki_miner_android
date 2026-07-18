@@ -17,7 +17,7 @@ from anki_contract_codegen.core import ContractError  # noqa: E402
 
 class HtmlEntitiesCodegenTest(unittest.TestCase):
     def test_synthetic_generation_is_sorted_deterministic_and_escaped(self) -> None:
-        entries = (("A;", "\U0001D504"), ("amp;", "&"), ("quot;", '"'))
+        entries = (("A;", "\U0001d504"), ("amp;", "&"), ("quot;", '"'))
         first = html_entities_core.generate_kotlin(entries)
         self.assertEqual(first, html_entities_core.generate_kotlin(entries))
         source = first.decode("utf-8")

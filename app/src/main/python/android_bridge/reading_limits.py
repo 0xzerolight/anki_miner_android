@@ -184,20 +184,13 @@ def _read_eocd(path: Path, limits: ZipArchiveLimits) -> tuple[int, int, int]:
         central_offset,
         comment_length,
     ) = _EOCD.unpack_from(tail, offset)
-    if signature != _EOCD_SIGNATURE or offset + _EOCD.size + comment_length != len(
-        tail
-    ):
+    if signature != _EOCD_SIGNATURE or offset + _EOCD.size + comment_length != len(tail):
         raise _invalid_archive(limits.label)
     if disk_number != 0 or central_disk != 0 or disk_entries != total_entries:
         raise _invalid_archive(limits.label)
-    if (
-        total_entries == _ZIP64_U16
-        or central_size == _ZIP64_U32
-        or central_offset == _ZIP64_U32
-    ):
+    if total_entries == _ZIP64_U16 or central_size == _ZIP64_U32 or central_offset == _ZIP64_U32:
         raise _too_large(
-            f"The selected {limits.label} uses a ZIP64 central directory, "
-            "which is outside the mobile safety limits"
+            f"The selected {limits.label} uses a ZIP64 central directory, " "which is outside the mobile safety limits"
         )
     if total_entries > limits.max_members:
         raise _too_large(
@@ -285,13 +278,8 @@ def validate_zip_archive(
                 f"The selected {limits.label} contains an oversized member "
                 f"({member_size:,} > {limits.max_member_uncompressed_bytes:,} bytes)"
             )
-        if member_size and (
-            compressed_size == 0
-            or member_size > compressed_size * _MAX_COMPRESSION_RATIO
-        ):
-            raise _too_large(
-                f"The selected {limits.label} contains a suspiciously compressed member"
-            )
+        if member_size and (compressed_size == 0 or member_size > compressed_size * _MAX_COMPRESSION_RATIO):
+            raise _too_large(f"The selected {limits.label} contains a suspiciously compressed member")
 
         total += member_size
         if total > limits.max_total_uncompressed_bytes:
@@ -301,10 +289,7 @@ def validate_zip_archive(
                 f"{limits.max_total_uncompressed_bytes:,} bytes)"
             )
 
-        if (
-            limits.max_text_member_uncompressed_bytes is not None
-            and _is_epub_text_member(info.filename)
-        ):
+        if limits.max_text_member_uncompressed_bytes is not None and _is_epub_text_member(info.filename):
             if member_size > limits.max_text_member_uncompressed_bytes:
                 raise _too_large(
                     f"The selected {limits.label} contains an oversized text member "
@@ -341,8 +326,7 @@ def _validate_mokuro_json(
     pages = payload["pages"]
     if len(pages) > MAX_MOKURO_PAGES:
         raise _too_large(
-            f"The selected .mokuro sidecar contains too many pages "
-            f"({len(pages):,} > {MAX_MOKURO_PAGES:,})"
+            f"The selected .mokuro sidecar contains too many pages " f"({len(pages):,} > {MAX_MOKURO_PAGES:,})"
         )
 
     blocks = 0
@@ -352,54 +336,36 @@ def _validate_mokuro_json(
         if page_index % _CANCEL_CHECK_INTERVAL == 0:
             _check_cancelled(cancellation_check)
         if not isinstance(page, dict):
-            raise _invalid_source(
-                "The selected .mokuro sidecar contains an invalid page"
-            )
+            raise _invalid_source("The selected .mokuro sidecar contains an invalid page")
         page_blocks = page.get("blocks", []) or []
         if not isinstance(page_blocks, list):
-            raise _invalid_source(
-                "The selected .mokuro sidecar contains an invalid block list"
-            )
+            raise _invalid_source("The selected .mokuro sidecar contains an invalid block list")
         blocks += len(page_blocks)
         if blocks > MAX_MOKURO_BLOCKS:
             raise _too_large(
-                f"The selected .mokuro sidecar contains too many text blocks "
-                f"({blocks:,} > {MAX_MOKURO_BLOCKS:,})"
+                f"The selected .mokuro sidecar contains too many text blocks " f"({blocks:,} > {MAX_MOKURO_BLOCKS:,})"
             )
         for block in page_blocks:
             if not isinstance(block, dict):
-                raise _invalid_source(
-                    "The selected .mokuro sidecar contains an invalid block"
-                )
+                raise _invalid_source("The selected .mokuro sidecar contains an invalid block")
             block_lines = block.get("lines", []) or []
-            if not isinstance(block_lines, list) or not all(
-                isinstance(line, str) for line in block_lines
-            ):
-                raise _invalid_source(
-                    "The selected .mokuro sidecar contains invalid OCR text"
-                )
+            if not isinstance(block_lines, list) or not all(isinstance(line, str) for line in block_lines):
+                raise _invalid_source("The selected .mokuro sidecar contains invalid OCR text")
             lines += len(block_lines)
             if lines > MAX_MOKURO_LINES:
                 raise _too_large(
-                    f"The selected .mokuro sidecar contains too many OCR lines "
-                    f"({lines:,} > {MAX_MOKURO_LINES:,})"
+                    f"The selected .mokuro sidecar contains too many OCR lines " f"({lines:,} > {MAX_MOKURO_LINES:,})"
                 )
             for line in block_lines:
                 try:
                     line_bytes = len(line.encode("utf-8"))
                 except UnicodeEncodeError as error:
-                    raise _invalid_source(
-                        "The selected .mokuro sidecar contains invalid Unicode"
-                    ) from error
+                    raise _invalid_source("The selected .mokuro sidecar contains invalid Unicode") from error
                 if line_bytes > MAX_UNIT_TEXT_UTF8_BYTES:
-                    raise _too_large(
-                        "The selected .mokuro sidecar contains an oversized OCR line"
-                    )
+                    raise _too_large("The selected .mokuro sidecar contains an oversized OCR line")
                 text_bytes += line_bytes
                 if text_bytes > MAX_DOCUMENT_TEXT_UTF8_BYTES:
-                    raise _too_large(
-                        "The selected .mokuro sidecar exceeds the mobile OCR text limit"
-                    )
+                    raise _too_large("The selected .mokuro sidecar exceeds the mobile OCR text limit")
     _check_cancelled(cancellation_check)
 
 
@@ -458,9 +424,7 @@ def _utf8_size(value: str, *, label: str) -> int:
     try:
         return len(value.encode("utf-8"))
     except UnicodeEncodeError as error:
-        raise _invalid_source(
-            f"The loaded reading document contains invalid {label}"
-        ) from error
+        raise _invalid_source(f"The loaded reading document contains invalid {label}") from error
 
 
 def _iter_unique_image_refs(units: Iterable[Any]) -> list[Any]:
@@ -472,12 +436,8 @@ def _iter_unique_image_refs(units: Iterable[Any]) -> list[Any]:
             continue
         source = getattr(ref, "source", None)
         entry = getattr(ref, "entry", None)
-        if not isinstance(source, Path) or (
-            entry is not None and not isinstance(entry, str)
-        ):
-            raise _invalid_source(
-                "The loaded reading document contains an invalid image reference"
-            )
+        if not isinstance(source, Path) or (entry is not None and not isinstance(entry, str)):
+            raise _invalid_source("The loaded reading document contains an invalid image reference")
         key = (str(source), entry)
         if key not in seen:
             seen.add(key)
@@ -501,9 +461,7 @@ def _validate_image_headers(
     try:
         archive_context = zipfile.ZipFile(expected)
     except (OSError, zipfile.BadZipFile, NotImplementedError) as error:
-        raise _invalid_source(
-            "The loaded reading document image archive changed during validation"
-        ) from error
+        raise _invalid_source("The loaded reading document image archive changed during validation") from error
 
     with archive_context as archive:
         for index, ref in enumerate(refs):
@@ -511,9 +469,7 @@ def _validate_image_headers(
                 _check_cancelled(cancellation_check)
             source = ref.source.resolve(strict=False)
             if source != expected or ref.entry is None:
-                raise _invalid_source(
-                    "The loaded reading document references an undeclared image source"
-                )
+                raise _invalid_source("The loaded reading document references an undeclared image source")
             try:
                 member_context = archive.open(ref.entry)
                 with member_context as member:
@@ -522,13 +478,9 @@ def _validate_image_headers(
                         with Image.open(member) as image:
                             width, height = image.size
             except Image.DecompressionBombError as error:
-                raise _too_large(
-                    "A reading image exceeds the mobile pixel safety limit"
-                ) from error
+                raise _too_large("A reading image exceeds the mobile pixel safety limit") from error
             except Image.DecompressionBombWarning as error:
-                raise _too_large(
-                    "A reading image exceeds the mobile pixel safety limit"
-                ) from error
+                raise _too_large("A reading image exceeds the mobile pixel safety limit") from error
             except (KeyError, OSError, zipfile.BadZipFile, UnidentifiedImageError):
                 # The desktop phase-3 path already turns corrupt/unreadable images
                 # into per-image warnings. They carry no decode amplification here.
@@ -555,10 +507,7 @@ def validate_loaded_document(
     if not isinstance(units, list):
         raise _invalid_source("The reading loader returned an invalid unit list")
     if len(units) > MAX_DOCUMENT_UNITS:
-        raise _too_large(
-            f"The reading document contains too many units "
-            f"({len(units):,} > {MAX_DOCUMENT_UNITS:,})"
-        )
+        raise _too_large(f"The reading document contains too many units " f"({len(units):,} > {MAX_DOCUMENT_UNITS:,})")
 
     text_bytes = 0
     location_bytes = 0
@@ -574,32 +523,23 @@ def validate_loaded_document(
             raise _too_large("A reading unit exceeds the mobile text safety limit")
         text_bytes += unit_bytes
         if text_bytes > MAX_DOCUMENT_TEXT_UTF8_BYTES:
-            raise _too_large(
-                "The reading document exceeds the mobile retained-text safety limit"
-            )
+            raise _too_large("The reading document exceeds the mobile retained-text safety limit")
         label_bytes = _utf8_size(location, label="location label")
         if label_bytes > MAX_LOCATION_LABEL_UTF8_BYTES:
             raise _too_large("A reading location label exceeds the mobile safety limit")
         location_bytes += label_bytes
         if location_bytes > MAX_DOCUMENT_LOCATION_UTF8_BYTES:
-            raise _too_large(
-                "The reading document exceeds the mobile location-label safety limit"
-            )
+            raise _too_large("The reading document exceeds the mobile location-label safety limit")
 
     image_refs = _iter_unique_image_refs(units)
     if len(image_refs) > MAX_UNIQUE_IMAGE_REFS:
         raise _too_large(
-            f"The reading document references too many images "
-            f"({len(image_refs):,} > {MAX_UNIQUE_IMAGE_REFS:,})"
+            f"The reading document references too many images " f"({len(image_refs):,} > {MAX_UNIQUE_IMAGE_REFS:,})"
         )
     if image_refs:
-        expected_image_source = (
-            source_path if source_kind == "epub" else image_archive_path
-        )
+        expected_image_source = source_path if source_kind == "epub" else image_archive_path
         if expected_image_source is None:
-            raise _invalid_source(
-                "The reading document references images without a declared archive"
-            )
+            raise _invalid_source("The reading document references images without a declared archive")
         _validate_image_headers(
             image_refs,
             expected_source=expected_image_source,

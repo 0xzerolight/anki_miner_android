@@ -4,7 +4,6 @@ from pathlib import Path
 import subprocess
 import unittest
 
-
 SCRIPT = Path(__file__).resolve().parents[1] / "instrumentation-result.sh"
 
 
@@ -13,8 +12,7 @@ def validate(output: str, expected_count: int = 1) -> subprocess.CompletedProces
         [
             "bash",
             "-c",
-            'source "$1"; payload="$(cat)"; '
-            'android_instrumentation_output_passed "$payload" "$2"',
+            'source "$1"; payload="$(cat)"; ' 'android_instrumentation_output_passed "$payload" "$2"',
             "instrumentation-result-test",
             str(SCRIPT),
             str(expected_count),
@@ -31,8 +29,7 @@ def validate_any(output: str) -> subprocess.CompletedProcess[str]:
         [
             "bash",
             "-c",
-            'source "$1"; payload="$(cat)"; '
-            'android_instrumentation_output_passed_any "$payload"',
+            'source "$1"; payload="$(cat)"; ' 'android_instrumentation_output_passed_any "$payload"',
             "instrumentation-result-test",
             str(SCRIPT),
         ],

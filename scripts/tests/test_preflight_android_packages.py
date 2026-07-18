@@ -7,13 +7,11 @@ import sys
 import tempfile
 import unittest
 
-
 SCRIPTS_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SCRIPTS_DIR))
 
 from preflight_android_packages import preflight  # noqa: E402
 from verify_android_toolchain import VerificationError, read_lock  # noqa: E402
-
 
 LOCKED_PACKAGES = {
     "platform-tools": "37.0.0",
@@ -29,13 +27,9 @@ LOCKED_PACKAGES = {
 
 
 def write_listing(path: Path, revisions: dict[str, str]) -> None:
-    rows = "\n".join(
-        f"{package} | {revision} | fixture" for package, revision in revisions.items()
-    )
+    rows = "\n".join(f"{package} | {revision} | fixture" for package, revision in revisions.items())
     path.write_text(
-        "Available Packages:\nPath | Version | Description\n"
-        "------- | ------- | -------\n"
-        f"{rows}\n",
+        "Available Packages:\nPath | Version | Description\n" "------- | ------- | -------\n" f"{rows}\n",
         encoding="utf-8",
     )
 
@@ -84,8 +78,7 @@ class PackagePreflightTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             listing = Path(directory) / "sdkmanager-list.txt"
             installed_rows = "\n".join(
-                f"{package} | {revision} | fixture"
-                for package, revision in LOCKED_PACKAGES.items()
+                f"{package} | {revision} | fixture" for package, revision in LOCKED_PACKAGES.items()
             )
             listing.write_text(
                 "Installed packages:\nPath | Version | Description\n"
@@ -107,14 +100,7 @@ class PackagePreflightTest(unittest.TestCase):
             revisions["emulator"] = "99.0.0"
             write_listing(listing, revisions)
 
-            sdkmanager = (
-                root
-                / "sdk"
-                / "cmdline-tools"
-                / "14742923"
-                / "bin"
-                / "sdkmanager"
-            )
+            sdkmanager = root / "sdk" / "cmdline-tools" / "14742923" / "bin" / "sdkmanager"
             sdkmanager.parent.mkdir(parents=True)
             sdkmanager.write_text(
                 """#!/usr/bin/env bash

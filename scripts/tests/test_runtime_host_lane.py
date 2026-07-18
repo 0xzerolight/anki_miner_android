@@ -9,9 +9,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 class RuntimeHostLaneTests(unittest.TestCase):
     def test_lock_is_exact_cpython_312_runtime_closure(self) -> None:
-        lock = (REPO_ROOT / "requirements-runtime-host-test.lock").read_text(
-            encoding="utf-8"
-        )
+        lock = (REPO_ROOT / "requirements-runtime-host-test.lock").read_text(encoding="utf-8")
         records = re.findall(
             r"^([A-Za-z0-9_-]+)==([^ ]+) \\\n" r"    --hash=sha256:([0-9a-f]+)$",
             lock,
@@ -24,9 +22,7 @@ class RuntimeHostLaneTests(unittest.TestCase):
             name.lower(): version
             for name, version in re.findall(
                 r"^([A-Za-z0-9_-]+)==([^\s]+)$",
-                (REPO_ROOT / "requirements-runtime-host-test.in").read_text(
-                    encoding="utf-8"
-                ),
+                (REPO_ROOT / "requirements-runtime-host-test.in").read_text(encoding="utf-8"),
                 flags=re.MULTILINE,
             )
         }
@@ -60,9 +56,7 @@ class RuntimeHostLaneTests(unittest.TestCase):
         self.assertNotIn("unidic-lite", versions)
 
     def test_provisioning_and_health_keep_the_lane_separate(self) -> None:
-        provision = (REPO_ROOT / "scripts/provision-runtime-host-tests.sh").read_text(
-            encoding="utf-8"
-        )
+        provision = (REPO_ROOT / "scripts/provision-runtime-host-tests.sh").read_text(encoding="utf-8")
         health = (REPO_ROOT / "scripts/health.sh").read_text(encoding="utf-8")
         environment = (REPO_ROOT / "scripts/android-env.sh").read_text(encoding="utf-8")
 
@@ -78,41 +72,27 @@ class RuntimeHostLaneTests(unittest.TestCase):
         self.assertNotIn("runtime-host-tests/bin", environment)
 
     def test_runtime_provisioning_uses_safe_lock_order(self) -> None:
-        runtime_provision = (
-            REPO_ROOT / "scripts/provision-runtime-host-tests.sh"
-        ).read_text(encoding="utf-8")
-        build_provision = (
-            REPO_ROOT / "scripts/provision-chaquopy-build-python.sh"
-        ).read_text(encoding="utf-8")
+        runtime_provision = (REPO_ROOT / "scripts/provision-runtime-host-tests.sh").read_text(encoding="utf-8")
+        build_provision = (REPO_ROOT / "scripts/provision-chaquopy-build-python.sh").read_text(encoding="utf-8")
 
-        provision_build = runtime_provision.index(
-            '"$SCRIPT_DIR/provision-chaquopy-build-python.sh"'
-        )
-        shared_build_lock = runtime_provision.index(
-            'flock --shared "$build_python_lock_fd"'
-        )
+        provision_build = runtime_provision.index('"$SCRIPT_DIR/provision-chaquopy-build-python.sh"')
+        shared_build_lock = runtime_provision.index('flock --shared "$build_python_lock_fd"')
         runtime_lock = runtime_provision.index('flock --exclusive "$runtime_lock_fd"')
         runtime_swap = runtime_provision.index('mv "$staging" "$RUNTIME_VENV"')
         self.assertLess(provision_build, shared_build_lock)
         self.assertLess(shared_build_lock, runtime_lock)
         self.assertLess(runtime_lock, runtime_swap)
 
-        exclusive_build_lock = build_provision.index(
-            'flock --exclusive "$build_python_lock_fd"'
-        )
-        first_verification = build_provision.index(
-            'python3.13 "$VERIFIER" --lock "$LOCK" verify'
-        )
+        exclusive_build_lock = build_provision.index('flock --exclusive "$build_python_lock_fd"')
+        first_verification = build_provision.index('python3.13 "$VERIFIER" --lock "$LOCK" verify')
         build_swap = build_provision.index('mv "$staging" "$install_root"')
         self.assertLess(exclusive_build_lock, first_verification)
         self.assertLess(first_verification, build_swap)
 
     def test_current_runtime_environment_reuses_full_identity_probe(self) -> None:
-        provision = (REPO_ROOT / "scripts/provision-runtime-host-tests.sh").read_text(
-            encoding="utf-8"
-        )
+        provision = (REPO_ROOT / "scripts/provision-runtime-host-tests.sh").read_text(encoding="utf-8")
         self.assertGreaterEqual(provision.count("verify_runtime_environment"), 3)
-        self.assertIn('pip check || return 1', provision)
+        self.assertIn("pip check || return 1", provision)
         self.assertIn("if verify_runtime_environment", provision)
         self.assertIn("failed verification; rebuilding it", provision)
 

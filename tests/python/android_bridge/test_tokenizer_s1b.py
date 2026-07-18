@@ -66,9 +66,7 @@ class FakeNative:
         self.init_argv: list[tuple[str, ...]] = []
         self.calls: list[tuple[bytes, tuple[str, ...]]] = []
 
-    def loaded_dictionary_filenames(
-        self, argv: tuple[str, ...]
-    ) -> tuple[str, ...]:
+    def loaded_dictionary_filenames(self, argv: tuple[str, ...]) -> tuple[str, ...]:
         self.init_argv.append(argv)
         return (str(self.root / "sys.dic"),)
 
@@ -142,16 +140,12 @@ def test_backend_translates_native_failures_without_masking_wire_errors(
         def tokenize(self, input_utf8: bytes, argv: tuple[str, ...]) -> bytes:
             raise RuntimeError("native detail")
 
-    backend = S1bTokenizerBackend(
-        _registration(root), FailingNative(root, b"")
-    )
+    backend = S1bTokenizerBackend(_registration(root), FailingNative(root, b""))
     with pytest.raises(TokenizerContractError) as native_error:
         backend.tokenize("猫")
     assert native_error.value.code == "native_tokenizer_failed"
 
-    malformed = S1bTokenizerBackend(
-        _registration(root), FakeNative(root, b"not a wire")
-    )
+    malformed = S1bTokenizerBackend(_registration(root), FakeNative(root, b"not a wire"))
     with pytest.raises(TokenizerContractError) as wire_error:
         malformed.tokenize("猫")
     assert wire_error.value.code == "invalid_token_wire"
@@ -160,15 +154,10 @@ def test_backend_translates_native_failures_without_masking_wire_errors(
 def test_java_import_is_lazy_and_confined_to_s1b_adapter() -> None:
     tree = ast.parse(Path(tokenizer_s1b.__file__).read_text(encoding="utf-8"))
     top_level_imports = {
-        alias.name.split(".", 1)[0]
-        for node in tree.body
-        if isinstance(node, ast.Import)
-        for alias in node.names
+        alias.name.split(".", 1)[0] for node in tree.body if isinstance(node, ast.Import) for alias in node.names
     }
     top_level_imports.update(
-        node.module.split(".", 1)[0]
-        for node in tree.body
-        if isinstance(node, ast.ImportFrom) and node.module
+        node.module.split(".", 1)[0] for node in tree.body if isinstance(node, ast.ImportFrom) and node.module
     )
 
     assert "java" not in top_level_imports

@@ -143,9 +143,7 @@ def test_sentence_audio_schema_and_corpus_freeze_complete_envelopes() -> None:
         )
     )
     corpus = json.loads(
-        (PROJECT_ROOT / "app/src/test/resources/contracts/sentence_audio_protocol_v1.json").read_text(
-            encoding="utf-8"
-        )
+        (PROJECT_ROOT / "app/src/test/resources/contracts/sentence_audio_protocol_v1.json").read_text(encoding="utf-8")
     )
     Draft202012Validator.check_schema(schema)
     validator = Draft202012Validator(schema)

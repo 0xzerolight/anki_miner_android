@@ -20,14 +20,10 @@ def test_mecab_source_subset_is_byte_pinned_and_contains_no_flutter() -> None:
         ],
         check=True,
     )
-    manifest = json.loads(
-        (MECAB_ROOT / "source-manifest.json").read_text(encoding="utf-8")
-    )
+    manifest = json.loads((MECAB_ROOT / "source-manifest.json").read_text(encoding="utf-8"))
 
     assert manifest["upstream"]["tag"] == "d2.0.0"
-    assert manifest["upstream"]["revision"] == (
-        "453d4deb7e3857f32c1ab6c1ced574d9f73a2233"
-    )
+    assert manifest["upstream"]["revision"] == ("453d4deb7e3857f32c1ab6c1ced574d9f73a2233")
     names = set(manifest["files"])
     assert "dart_ffi.cpp" not in names
     assert not any("flutter" in name.lower() for name in names)
@@ -35,9 +31,7 @@ def test_mecab_source_subset_is_byte_pinned_and_contains_no_flutter() -> None:
 
 
 def test_original_and_wrapper_licenses_are_separate_exact_provenance_domains() -> None:
-    manifest = json.loads(
-        (MECAB_ROOT / "source-manifest.json").read_text(encoding="utf-8")
-    )
+    manifest = json.loads((MECAB_ROOT / "source-manifest.json").read_text(encoding="utf-8"))
     expected = {
         "mecab": {
             "path": "LICENSE.mecab",
@@ -81,9 +75,7 @@ def test_original_and_wrapper_licenses_are_separate_exact_provenance_domains() -
         )
     )
     assert (
-        (MECAB_ROOT / "LICENSE.mecab_for_dart")
-        .read_text(encoding="utf-8")
-        .startswith("Copyright 2024 CaptainDario\n")
+        (MECAB_ROOT / "LICENSE.mecab_for_dart").read_text(encoding="utf-8").startswith("Copyright 2024 CaptainDario\n")
     )
 
 
@@ -127,21 +119,13 @@ def test_native_api_keeps_complete_argv_and_copies_frozen_wire_fields() -> None:
 
 def test_gradle_wires_locked_cmake_and_s1b_uses_engine_tagger_seam() -> None:
     gradle = (PROJECT_ROOT / "app/build.gradle.kts").read_text(encoding="utf-8")
-    adapter = (
-        PROJECT_ROOT / "app/src/main/python/android_bridge/tokenizer_s1b.py"
-    ).read_text(encoding="utf-8")
-    vendored_tagger = (
-        PROJECT_ROOT / "app/src/main/python/anki_miner/services/tagger.py"
-    ).read_text(encoding="utf-8")
-    selection = (
-        PROJECT_ROOT / "app/src/main/python/android_bridge/tokenizer_selection.py"
-    ).read_text(encoding="utf-8")
-    harness = (
-        PROJECT_ROOT / "app/src/debug/python/tokenizer_s1b_instrumented.py"
-    ).read_text(encoding="utf-8")
-    instrumentation_selection = (
-        PROJECT_ROOT / "app/src/debug/python/tokenizer_instrumented_selection.py"
-    ).read_text(encoding="utf-8")
+    adapter = (PROJECT_ROOT / "app/src/main/python/android_bridge/tokenizer_s1b.py").read_text(encoding="utf-8")
+    vendored_tagger = (PROJECT_ROOT / "app/src/main/python/anki_miner/services/tagger.py").read_text(encoding="utf-8")
+    selection = (PROJECT_ROOT / "app/src/main/python/android_bridge/tokenizer_selection.py").read_text(encoding="utf-8")
+    harness = (PROJECT_ROOT / "app/src/debug/python/tokenizer_s1b_instrumented.py").read_text(encoding="utf-8")
+    instrumentation_selection = (PROJECT_ROOT / "app/src/debug/python/tokenizer_instrumented_selection.py").read_text(
+        encoding="utf-8"
+    )
 
     assert 'path = file("src/main/cpp/CMakeLists.txt")' in gradle
     assert 'version = "3.22.1"' in gradle
@@ -150,18 +134,13 @@ def test_gradle_wires_locked_cmake_and_s1b_uses_engine_tagger_seam() -> None:
     assert "configure_tagger_factory" in vendored_tagger
     assert "create_s1b_tagger" in selection
     compact_harness = " ".join(harness.split())
-    assert (
-        'acquire_tagger_for_instrumentation( "s1b", registration )'
-        in compact_harness
-    )
+    assert 'acquire_tagger_for_instrumentation( "s1b", registration )' in compact_harness
     assert "configure_tokenizer_backend(backend)" in instrumentation_selection
     assert "get_shared_tagger()" in instrumentation_selection
 
 
 def test_android_build_gate_requires_the_exact_s1b_library_for_both_abis() -> None:
-    build = (PROJECT_ROOT / "tools/tokenizer/build-s1b-android.sh").read_text(
-        encoding="utf-8"
-    )
+    build = (PROJECT_ROOT / "tools/tokenizer/build-s1b-android.sh").read_text(encoding="utf-8")
 
     assert "--require-entry lib/x86_64/libanki_miner_mecab.so" in build
     assert "--require-entry lib/arm64-v8a/libanki_miner_mecab.so" in build

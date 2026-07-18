@@ -28,9 +28,7 @@ def _run(script: str, home: Path) -> subprocess.CompletedProcess[str]:
 
 def _run_debug(script: str, home: Path) -> subprocess.CompletedProcess[str]:
     env = dict(os.environ)
-    env["PYTHONPATH"] = os.pathsep.join(
-        (str(DEBUG_PYTHON_ROOT), str(PYTHON_ROOT))
-    )
+    env["PYTHONPATH"] = os.pathsep.join((str(DEBUG_PYTHON_ROOT), str(PYTHON_ROOT)))
     env.pop("ANKI_MINER_HOME", None)
     return subprocess.run(
         [sys.executable, "-c", script, str(home)],
@@ -42,9 +40,7 @@ def _run_debug(script: str, home: Path) -> subprocess.CompletedProcess[str]:
 
 
 @pytest.mark.parametrize("backend", ["s1a", "s1b"])
-def test_backend_reaches_real_engine_shared_tagger_seam(
-    backend: str, tmp_path: Path
-) -> None:
+def test_backend_reaches_real_engine_shared_tagger_seam(backend: str, tmp_path: Path) -> None:
     result = _run(
         f"""
 import json, sys
@@ -266,9 +262,7 @@ print(json.dumps({{
 
 
 def test_debug_harnesses_and_isolated_runners_make_selection_path_observable() -> None:
-    helper = (DEBUG_PYTHON_ROOT / "tokenizer_instrumented_selection.py").read_text(
-        encoding="utf-8"
-    )
+    helper = (DEBUG_PYTHON_ROOT / "tokenizer_instrumented_selection.py").read_text(encoding="utf-8")
     assert "configure_tokenizer_backend(backend)" in helper
     assert "get_shared_tagger()" in helper
     assert "debug_direct_fallback_after_" in helper
@@ -283,15 +277,8 @@ def test_debug_harnesses_and_isolated_runners_make_selection_path_observable() -
             "com/ankiminer/android/tokenizer/MecabNativeTokenizerInstrumentedTest.kt",
         ),
     ):
-        harness = (DEBUG_PYTHON_ROOT / f"tokenizer_{backend}_instrumented.py").read_text(
-            encoding="utf-8"
-        )
-        kotlin = (
-            PROJECT_ROOT / "app/src/androidTest/kotlin" / kotlin_relative
-        ).read_text(encoding="utf-8")
+        harness = (DEBUG_PYTHON_ROOT / f"tokenizer_{backend}_instrumented.py").read_text(encoding="utf-8")
+        kotlin = (PROJECT_ROOT / "app/src/androidTest/kotlin" / kotlin_relative).read_text(encoding="utf-8")
         compact_harness = " ".join(harness.split())
-        assert (
-            f'acquire_tagger_for_instrumentation( "{backend}", registration )'
-            in compact_harness
-        )
+        assert f'acquire_tagger_for_instrumentation( "{backend}", registration )' in compact_harness
         assert 'result.getString("tagger_path")' in kotlin

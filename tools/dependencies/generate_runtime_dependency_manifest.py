@@ -66,16 +66,12 @@ def _verified_artifacts() -> dict[str, dict[str, str]]:
     root = ET.parse(VERIFICATION_PATH).getroot()
     components: dict[str, dict[str, str]] = {}
     for component in root.findall(".//v:component", XML_NAMESPACE):
-        coordinate = ":".join(
-            component.attrib[key] for key in ("group", "name", "version")
-        )
+        coordinate = ":".join(component.attrib[key] for key in ("group", "name", "version"))
         artifacts: dict[str, str] = {}
         for artifact in component.findall("v:artifact", XML_NAMESPACE):
             checksums = artifact.findall("v:sha256", XML_NAMESPACE)
             if len(checksums) != 1:
-                raise InventoryError(
-                    f"Expected one SHA-256 for {coordinate}/{artifact.attrib['name']}"
-                )
+                raise InventoryError(f"Expected one SHA-256 for {coordinate}/{artifact.attrib['name']}")
             artifacts[artifact.attrib["name"]] = checksums[0].attrib["value"]
         if coordinate in components:
             raise InventoryError(f"Duplicate verification component: {coordinate}")
@@ -142,17 +138,13 @@ def generate() -> dict[str, Any]:
     verified = _verified_artifacts()
     missing_direct = set(DIRECT_COORDINATES).difference(locked)
     if missing_direct:
-        raise InventoryError(
-            f"Direct runtime components are not locked: {sorted(missing_direct)!r}"
-        )
+        raise InventoryError(f"Direct runtime components are not locked: {sorted(missing_direct)!r}")
 
     components: list[dict[str, Any]] = []
     for coordinate in locked:
         artifacts = verified.get(coordinate)
         if not artifacts:
-            raise InventoryError(
-                f"Locked runtime component has no verified artifacts: {coordinate}"
-            )
+            raise InventoryError(f"Locked runtime component has no verified artifacts: {coordinate}")
         components.append(
             {
                 "coordinate": coordinate,
@@ -186,9 +178,7 @@ def main() -> int:
         return 0
     actual = MANIFEST_PATH.read_text(encoding="utf-8")
     if actual != expected:
-        raise InventoryError(
-            "Runtime dependency manifest is stale; rerun with --write"
-        )
+        raise InventoryError("Runtime dependency manifest is stale; rerun with --write")
     return 0
 
 

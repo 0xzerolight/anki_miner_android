@@ -162,9 +162,7 @@ def test_job_registration_is_synchronous_strict_and_correlated() -> None:
 @pytest.mark.parametrize(
     "response",
     [
-        encode_message(
-            "job.registration.accepted", {"runId": "run_" + "0" * 32}
-        ),
+        encode_message("job.registration.accepted", {"runId": "run_" + "0" * 32}),
         encode_message(
             "job.registration.accepted",
             {"runId": _RUN_ID, "unknown": True},
@@ -501,9 +499,7 @@ def test_anki_response_rejects_ascii_escaped_surrogate_after_json_decode() -> No
     with pytest.raises(BridgeProtocolError) as exc_info:
         callbacks.scan_first_fields({})
     assert exc_info.value.code == "invalid_utf8"
-    assert str(exc_info.value) == (
-        "Bridge JSON string contains an invalid Unicode scalar"
-    )
+    assert str(exc_info.value) == ("Bridge JSON string contains an invalid Unicode scalar")
 
 
 def test_terminal_mutation_receipt_requires_explicit_semantic_acceptance() -> None:

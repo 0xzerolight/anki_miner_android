@@ -11,13 +11,8 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any, Iterator, NoReturn
 
-
-LIMITS_MANIFEST_PATH = PurePosixPath(
-    "app/src/main/python/android_bridge/anki_limits_v1.json"
-)
-GENERATED_KOTLIN_PATH = PurePosixPath(
-    "app/src/main/kotlin/com/ankiminer/android/anki/generated/AnkiLimitsV1.kt"
-)
+LIMITS_MANIFEST_PATH = PurePosixPath("app/src/main/python/android_bridge/anki_limits_v1.json")
+GENERATED_KOTLIN_PATH = PurePosixPath("app/src/main/kotlin/com/ankiminer/android/anki/generated/AnkiLimitsV1.kt")
 MAX_MANIFEST_BYTES = 128 * 1024
 MAX_GENERATED_KOTLIN_BYTES = 512 * 1024
 MAX_KOTLIN_INT = 2_147_483_647
@@ -296,25 +291,16 @@ def _validate_fields(
         field_value = value[field.json_name]
         if isinstance(field, IntegerSpec):
             if type(field_value) is not int:
-                _fail(
-                    f"{_describe_path(field_path)} must be an integer; "
-                    "booleans are not integers"
-                )
+                _fail(f"{_describe_path(field_path)} must be an integer; " "booleans are not integers")
             if not 0 <= field_value <= MAX_KOTLIN_INT:
-                _fail(
-                    f"{_describe_path(field_path)} must fit a non-negative Kotlin Int"
-                )
+                _fail(f"{_describe_path(field_path)} must fit a non-negative Kotlin Int")
             if field.exact_value is not None and field_value != field.exact_value:
-                _fail(
-                    f"{_describe_path(field_path)} must equal {field.exact_value}"
-                )
+                _fail(f"{_describe_path(field_path)} must equal {field.exact_value}")
         elif isinstance(field, StringSpec):
             if type(field_value) is not str:
                 _fail(f"{_describe_path(field_path)} must be a string")
             if field_value != field.exact_value:
-                _fail(
-                    f"{_describe_path(field_path)} does not match the frozen v1 meaning"
-                )
+                _fail(f"{_describe_path(field_path)} does not match the frozen v1 meaning")
         elif isinstance(field, ObjectSpec):
             _validate_fields(field_value, field.fields, field_path)
         else:  # pragma: no cover - the frozen local specification owns this branch
@@ -614,9 +600,7 @@ def _render_fields(
                 if index:
                     body.append("")
                 body.extend(child_block)
-            blocks.append(
-                [f"{indent}object {field.kotlin_name} {{", *body, f"{indent}}}"]
-            )
+            blocks.append([f"{indent}object {field.kotlin_name} {{", *body, f"{indent}}}"])
     return blocks
 
 
@@ -736,10 +720,7 @@ def _check_from_fd(
         max_bytes=MAX_GENERATED_KOTLIN_BYTES,
     )
     if actual != expected:
-        _fail(
-            "generated Kotlin limits drifted; run "
-            "tools/anki-contract/generate_anki_limits.py --refresh"
-        )
+        _fail("generated Kotlin limits drifted; run " "tools/anki-contract/generate_anki_limits.py --refresh")
 
 
 def refresh(

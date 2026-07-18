@@ -70,9 +70,7 @@ class RecordingCallbacks:
         self.register_requests.append(raw)
         request = decode_envelope(raw, expected_type="job.registration.request")
         assert set(request.payload) == {"runId"}
-        return encode_message(
-            "job.registration.accepted", {"runId": request.payload["runId"]}
-        )
+        return encode_message("job.registration.accepted", {"runId": request.payload["runId"]})
 
     def _terminal(self, channel: str, raw: str) -> None:
         assert self.registry is None or self.registry.active_run_id is None
@@ -124,9 +122,7 @@ def test_run_admits_before_config_or_engine_work_and_returns_same_terminal(
 
     assert events == ["register", "map", "process", "complete"]
     assert callbacks.terminals == [("complete", returned)]
-    registration = decode_envelope(
-        callbacks.register_requests[0], expected_type="job.registration.request"
-    )
+    registration = decode_envelope(callbacks.register_requests[0], expected_type="job.registration.request")
     terminal = decode_envelope(returned, expected_type="mining.terminal")
     assert terminal.payload["runId"] == registration.payload["runId"]
     assert terminal.payload == {
@@ -224,9 +220,7 @@ def test_registration_failure_releases_python_job_without_composition(
     class RejectingCallbacks(RecordingCallbacks):
         def registerJob(self, raw: str) -> str:
             self.register_requests.append(raw)
-            return encode_message(
-                "job.registration.accepted", {"runId": "run_" + "0" * 32}
-            )
+            return encode_message("job.registration.accepted", {"runId": "run_" + "0" * 32})
 
     callbacks = RejectingCallbacks(registry=registry)
     with pytest.raises(BridgeProtocolError) as error:
@@ -268,9 +262,7 @@ def test_cancellation_raced_through_registration_skips_expensive_composition(
     class CancelOnRegistration(RecordingCallbacks):
         def registerJob(self, raw: str) -> str:
             response = super().registerJob(raw)
-            run_id = decode_envelope(
-                raw, expected_type="job.registration.request"
-            ).payload["runId"]
+            run_id = decode_envelope(raw, expected_type="job.registration.request").payload["runId"]
             assert registry.cancel(run_id)
             events.append("cancel")
             return response
@@ -395,13 +387,9 @@ def test_run_video_threaded_curation_parks_and_resumes_through_control_seams(
     try:
         assert curation_emitted.wait(5), "curation request was not emitted"
         assert not curation_returned.wait(0.05), "engine thread did not park"
-        request = decode_envelope(
-            callback_requests[0], expected_type="curation.request"
-        )
+        request = decode_envelope(callback_requests[0], expected_type="curation.request")
         if resolution == "cancel":
-            response = jobs_module.cancel_job(
-                encode_message("job.cancel", {"runId": request.payload["runId"]})
-            )
+            response = jobs_module.cancel_job(encode_message("job.cancel", {"runId": request.payload["runId"]}))
             assert decode_envelope(response, expected_type="job.cancelled").payload == {
                 "runId": request.payload["runId"],
                 "newlyCancelled": True,
@@ -417,9 +405,7 @@ def test_run_video_threaded_curation_parks_and_resumes_through_control_seams(
                     },
                 )
             )
-            assert decode_envelope(
-                response, expected_type="curation.accepted"
-            ).payload == {
+            assert decode_envelope(response, expected_type="curation.accepted").payload == {
                 "runId": request.payload["runId"],
                 "requestId": request.payload["requestId"],
             }
@@ -434,9 +420,7 @@ def test_run_video_threaded_curation_parks_and_resumes_through_control_seams(
     assert len(returned) == 1
     assert curated == ([[]] if resolution == "empty" else [None])
     terminal = decode_envelope(returned[0], expected_type="mining.terminal")
-    assert terminal.payload["outcome"] == (
-        "success" if resolution == "empty" else "cancelled"
-    )
+    assert terminal.payload["outcome"] == ("success" if resolution == "empty" else "cancelled")
     assert callbacks.terminals == [("complete", returned[0])]
     assert registry.active_run_id is None
 
@@ -549,9 +533,7 @@ def test_terminal_callback_failure_does_not_replace_synchronous_terminal(
         def onComplete(self, raw: str) -> None:
             raise RuntimeError("UI disappeared")
 
-    returned = mining.run_video(
-        _request(), BrokenTerminalCallbacks(registry=registry), job_registry=registry
-    )
+    returned = mining.run_video(_request(), BrokenTerminalCallbacks(registry=registry), job_registry=registry)
 
     assert decode_envelope(returned).payload["outcome"] == "success"
     assert registry.active_run_id is None
@@ -619,9 +601,7 @@ def test_process_episode_receives_exact_desktop_contract_and_cleans_lifo(
 
     processor = FakeProcessor()
 
-    def build(
-        received_config: object, received_adapters: object, adapter: object
-    ) -> object:
+    def build(received_config: object, received_adapters: object, adapter: object) -> object:
         assert received_config is config
         assert received_adapters is adapters
         assert isinstance(adapter, FakeAdapter)
@@ -668,9 +648,7 @@ def test_process_episode_cancelled_at_entry_opens_no_resources(
     monkeypatch.setattr(anki_adapter_module, "AndroidAnkiAdapter", ForbiddenAdapter)
 
     with pytest.raises(AnkiOperationCancelled) as cancelled:
-        mining._process_episode(
-            mining._parse_request(_request()), object(), adapters
-        )
+        mining._process_episode(mining._parse_request(_request()), object(), adapters)
 
     assert cancelled.value.operation == "runVideo"
 
@@ -884,9 +862,7 @@ def test_local_audio_chain_is_source_first_cancellable_and_best_effort() -> None
             self.result = result
             self.fail = fail
 
-        def fetch_candidates(
-            self, candidates: object, cancelled_check: object
-        ) -> Path | None:
+        def fetch_candidates(self, candidates: object, cancelled_check: object) -> Path | None:
             calls.append(f"candidates:{self.name}")
             if self.fail:
                 raise RuntimeError("broken pack")
@@ -901,9 +877,7 @@ def test_local_audio_chain_is_source_first_cancellable_and_best_effort() -> None
         def close(self) -> None:
             calls.append(f"close:{self.name}")
 
-    chain = mining._LocalAudioPackChain(
-        [Fetcher("broken", None, True), Fetcher("miss", None), Fetcher("hit", hit)]
-    )
+    chain = mining._LocalAudioPackChain([Fetcher("broken", None, True), Fetcher("miss", None), Fetcher("hit", hit)])
     assert chain.fetch_candidates([("猫", "ねこ")]) == hit
     assert calls == ["candidates:broken", "candidates:miss", "candidates:hit"]
 
@@ -1183,38 +1157,17 @@ def test_request_requires_exact_fields_and_preserves_fd_paths_and_identity() -> 
 
 
 def test_mining_module_keeps_all_engine_imports_after_bootstrap_and_excludes_cut_modules() -> None:
-    path = (
-        PROJECT_ROOT
-        / "app"
-        / "src"
-        / "main"
-        / "python"
-        / "android_bridge"
-        / "mining.py"
-    )
+    path = PROJECT_ROOT / "app" / "src" / "main" / "python" / "android_bridge" / "mining.py"
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     top_level_engine_imports = [
         node
         for node in tree.body
-        if (
-            isinstance(node, ast.Import)
-            and any(alias.name.startswith("anki_miner") for alias in node.names)
-        )
-        or (
-            isinstance(node, ast.ImportFrom)
-            and (node.module or "").startswith("anki_miner")
-        )
+        if (isinstance(node, ast.Import) and any(alias.name.startswith("anki_miner") for alias in node.names))
+        or (isinstance(node, ast.ImportFrom) and (node.module or "").startswith("anki_miner"))
     ]
     imported_modules = {
-        alias.name
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Import)
-        for alias in node.names
-    } | {
-        node.module or ""
-        for node in ast.walk(tree)
-        if isinstance(node, ast.ImportFrom)
-    }
+        alias.name for node in ast.walk(tree) if isinstance(node, ast.Import) for alias in node.names
+    } | {node.module or "" for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)}
 
     assert top_level_engine_imports == []
     assert imported_modules.isdisjoint(

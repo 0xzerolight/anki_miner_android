@@ -22,9 +22,7 @@ def test_package_exposes_one_guarded_kotlin_entry_point() -> None:
 
 
 def test_dispatch_serializes_malformed_and_protocol_errors() -> None:
-    malformed = decode_envelope(
-        boundary.dispatch("not json"), expected_type="bridge.error"
-    )
+    malformed = decode_envelope(boundary.dispatch("not json"), expected_type="bridge.error")
     invalid_request = decode_envelope(
         boundary.dispatch(encode_message("bootstrap.initialize", {})),
         expected_type="bridge.error",
@@ -144,9 +142,7 @@ def test_dispatch_routes_callback_bearing_video_run_only_with_callbacks(
     returned = boundary.dispatch(request, callback)
 
     assert missing.payload["code"] == "missing_callbacks"
-    assert decode_envelope(returned, expected_type="mining.terminal").payload == {
-        "sentinel": True
-    }
+    assert decode_envelope(returned, expected_type="mining.terminal").payload == {"sentinel": True}
     assert received == [(request, callback)]
 
 

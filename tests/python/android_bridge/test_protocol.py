@@ -34,10 +34,7 @@ class Result:
 def test_round_trip_is_versioned_canonical_and_unicode_safe() -> None:
     raw = encode_message("mining.result", {"text": "日本語", "count": 2})
 
-    assert raw == (
-        '{"schemaVersion":1,"type":"mining.result",'
-        '"payload":{"text":"日本語","count":2}}'
-    )
+    assert raw == ('{"schemaVersion":1,"type":"mining.result",' '"payload":{"text":"日本語","count":2}}')
     assert decode_message(raw, expected_type="mining.result") == {
         "text": "日本語",
         "count": 2,
@@ -109,9 +106,7 @@ def test_non_finite_and_recursive_values_are_rejected() -> None:
 def test_decoder_rejects_ascii_escaped_surrogates_in_keys_and_values(
     payload: str,
 ) -> None:
-    raw = (
-        '{"schemaVersion":1,"type":"anki.storemedia.result","payload":' + payload + "}"
-    )
+    raw = '{"schemaVersion":1,"type":"anki.storemedia.result","payload":' + payload + "}"
 
     assert raw.isascii()
     with pytest.raises(BridgeProtocolError) as error:
@@ -121,10 +116,7 @@ def test_decoder_rejects_ascii_escaped_surrogates_in_keys_and_values(
 
 
 def test_decoder_accepts_an_ascii_escaped_valid_surrogate_pair() -> None:
-    raw = (
-        r'{"schemaVersion":1,"type":"progress.update",'
-        r'"payload":{"message":"\ud83d\ude00"}}'
-    )
+    raw = r'{"schemaVersion":1,"type":"progress.update",' r'"payload":{"message":"\ud83d\ude00"}}'
 
     assert raw.isascii()
     assert decode_message(raw) == {"message": "😀"}
@@ -212,10 +204,7 @@ def test_encoder_rejects_integer_overflow(value: int) -> None:
     ],
 )
 def test_decoder_rejects_integer_overflow_without_raw_value_error(literal: str) -> None:
-    raw = (
-        '{"schemaVersion":1,"type":"progress.update",'
-        '"payload":{"nested":[{"value":' + literal + "}]}}"
-    )
+    raw = '{"schemaVersion":1,"type":"progress.update",' '"payload":{"nested":[{"value":' + literal + "}]}}"
 
     with pytest.raises(BridgeProtocolError) as error:
         decode_message(raw)
@@ -231,11 +220,7 @@ def test_decoder_rejects_integer_overflow_without_raw_value_error(literal: str) 
 )
 def test_decoder_accepts_exact_lexical_number_token_limit(literal: str) -> None:
     assert len(literal) == 1000
-    raw = (
-        '{"schemaVersion":1,"type":"progress.update","payload":{"value":'
-        + literal
-        + "}}"
-    )
+    raw = '{"schemaVersion":1,"type":"progress.update","payload":{"value":' + literal + "}}"
 
     assert decode_message(raw)["value"] == 0.0
 
@@ -249,11 +234,7 @@ def test_decoder_accepts_exact_lexical_number_token_limit(literal: str) -> None:
 )
 def test_decoder_rejects_number_token_one_character_over_limit(literal: str) -> None:
     assert len(literal) == 1001
-    raw = (
-        '{"schemaVersion":1,"type":"progress.update","payload":{"value":'
-        + literal
-        + "}}"
-    )
+    raw = '{"schemaVersion":1,"type":"progress.update","payload":{"value":' + literal + "}}"
 
     with pytest.raises(BridgeProtocolError) as error:
         decode_message(raw)
@@ -285,11 +266,7 @@ def test_decoder_rejects_leading_unicode_bom_before_json_parse() -> None:
 @pytest.mark.parametrize("literal", ["1e309", "-1e309"])
 def test_decoder_rejects_exponent_overflow_at_depth(literal: str) -> None:
     nested = "[" * 64 + literal + "]" * 64
-    raw = (
-        '{"schemaVersion":1,"type":"progress.update","payload":{"nested":'
-        + nested
-        + "}}"
-    )
+    raw = '{"schemaVersion":1,"type":"progress.update","payload":{"nested":' + nested + "}}"
 
     with pytest.raises(BridgeProtocolError) as error:
         decode_message(raw)
@@ -297,10 +274,7 @@ def test_decoder_rejects_exponent_overflow_at_depth(literal: str) -> None:
 
 
 def test_largest_finite_ieee_double_is_accepted() -> None:
-    raw = (
-        '{"schemaVersion":1,"type":"progress.update",'
-        '"payload":{"value":1.7976931348623157e308}}'
-    )
+    raw = '{"schemaVersion":1,"type":"progress.update",' '"payload":{"value":1.7976931348623157e308}}'
 
     assert decode_message(raw)["value"] == float("1.7976931348623157e308")
 
@@ -321,8 +295,7 @@ def test_nonintegral_float_schema_version_is_rejected() -> None:
 
 def test_checked_in_schema_matches_codec_version() -> None:
     schema_path = (
-        Path(__file__).resolve().parents[3]
-        / "app/src/main/python/android_bridge/schemas/bridge-envelope.schema.json"
+        Path(__file__).resolve().parents[3] / "app/src/main/python/android_bridge/schemas/bridge-envelope.schema.json"
     )
     schema = json.loads(schema_path.read_text(encoding="utf-8"))
 

@@ -143,10 +143,7 @@ def host_entries() -> list[tuple[str, str, str, str]]:
         requirement = entry["requirement"]
         filename = entry["filename"]
         sha256 = entry["sha256"]
-        if not all(
-            isinstance(item, str) and item
-            for item in (interpreter, requirement, filename, sha256)
-        ):
+        if not all(isinstance(item, str) and item for item in (interpreter, requirement, filename, sha256)):
             raise WheelError("invalid host wheel lock entry")
         if interpreter not in {"outer", "target"}:
             raise WheelError(f"invalid host wheel interpreter: {interpreter}")
@@ -191,18 +188,10 @@ def fetch_host_wheels(wheelhouse: Path) -> None:
     wheelhouse.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(dir=wheelhouse.parent) as temporary:
         for interpreter in ("outer", "target"):
-            requirements = [
-                requirement
-                for role, requirement, _, _ in host_entries()
-                if role == interpreter
-            ]
+            requirements = [requirement for role, requirement, _, _ in host_entries() if role == interpreter]
             if not requirements:
                 continue
-            executable = (
-                sys.executable
-                if interpreter == "outer"
-                else target_python_executable()
-            )
+            executable = sys.executable if interpreter == "outer" else target_python_executable()
             subprocess.run(
                 [
                     executable,
@@ -312,9 +301,9 @@ def patch_builder(chaquopy: Path, wheelhouse: Path) -> None:
     _replace(
         builder,
         'os.environ["PIP_DISABLE_PIP_VERSION_CHECK"] = "1"',
-        'for name in list(os.environ):\n'
+        "for name in list(os.environ):\n"
         '            if name.startswith("PIP_") or name.casefold().endswith("_proxy"):\n'
-        '                os.environ.pop(name, None)\n'
+        "                os.environ.pop(name, None)\n"
         '        os.environ["PIP_DISABLE_PIP_VERSION_CHECK"] = "1"\n'
         '        os.environ["PIP_CONFIG_FILE"] = os.devnull\n',
     )
@@ -322,7 +311,7 @@ def patch_builder(chaquopy: Path, wheelhouse: Path) -> None:
         builder,
         'run(f"{bootstrap_env}/bin/pip install pip=={pip_version}")',
         'run(f"{bootstrap_env}/bin/pip install --no-index "\n'
-        '    f"--find-links={os.environ[\'ANKI_MINER_HOST_WHEELHOUSE\']} "\n'
+        "    f\"--find-links={os.environ['ANKI_MINER_HOST_WHEELHOUSE']} \"\n"
         '    f"pip=={pip_version}")',
     )
     _replace(builder, 'pip_version = "23.2.1"', 'pip_version = "25.1.1"')
@@ -330,7 +319,7 @@ def patch_builder(chaquopy: Path, wheelhouse: Path) -> None:
         builder,
         'f"install " + " ".join(shlex.quote(req) for req in requirements))',
         'f"install --no-index --only-binary=:all: "\n'
-        '                f"--find-links={os.environ[\'ANKI_MINER_HOST_WHEELHOUSE\']} " +\n'
+        "                f\"--find-links={os.environ['ANKI_MINER_HOST_WHEELHOUSE']} \" +\n"
         '                " ".join(shlex.quote(req) for req in requirements))',
     )
     _replace(
@@ -375,13 +364,13 @@ def patch_builder(chaquopy: Path, wheelhouse: Path) -> None:
         'export CFLAGS="-D__BIONIC_NO_PAGE_SIZE_MACRO"',
         'case "${ANKI_MINER_S1A_STAGE_ROOT:-}" in\n'
         '    /*[[:space:]]*) fail "S1a stage root contains whitespace" ;;\n'
-        '    /*) ;;\n'
+        "    /*) ;;\n"
         '    *) fail "S1a stage root is not absolute" ;;\n'
-        'esac\n'
-        's1a_source_prefix=/anki-miner-s1a\n'
+        "esac\n"
+        "s1a_source_prefix=/anki-miner-s1a\n"
         'export CFLAGS="-D__BIONIC_NO_PAGE_SIZE_MACRO '
-        '-ffile-prefix-map=$ANKI_MINER_S1A_STAGE_ROOT=$s1a_source_prefix '
-        '-fdebug-prefix-map=$ANKI_MINER_S1A_STAGE_ROOT=$s1a_source_prefix '
+        "-ffile-prefix-map=$ANKI_MINER_S1A_STAGE_ROOT=$s1a_source_prefix "
+        "-fdebug-prefix-map=$ANKI_MINER_S1A_STAGE_ROOT=$s1a_source_prefix "
         '-fmacro-prefix-map=$ANKI_MINER_S1A_STAGE_ROOT=$s1a_source_prefix"',
     )
     libcxx = chaquopy / "server/pypi/packages/chaquopy-libcxx/meta.yaml"
@@ -599,10 +588,7 @@ def _validate_interpreter_identity(
     if not isinstance(version, str) or re.fullmatch(version_pattern, version) is None:
         raise WheelError(f"S1a {label} interpreter has the wrong version")
     executable_sha256 = identity.get("executable_sha256")
-    if (
-        not isinstance(executable_sha256, str)
-        or KEY_PATTERN.fullmatch(executable_sha256) is None
-    ):
+    if not isinstance(executable_sha256, str) or KEY_PATTERN.fullmatch(executable_sha256) is None:
         raise WheelError(f"invalid {label} interpreter hash")
     return identity
 
@@ -614,11 +600,7 @@ def _validate_builder_identity(identity: object) -> dict[str, object]:
     interpreters = identity.get("interpreters")
     host = identity.get("host")
     tools = identity.get("tools")
-    if (
-        not isinstance(interpreters, dict)
-        or not isinstance(host, dict)
-        or not isinstance(tools, dict)
-    ):
+    if not isinstance(interpreters, dict) or not isinstance(host, dict) or not isinstance(tools, dict):
         raise WheelError("incomplete builder identity")
     _require_exact_keys(interpreters, {"outer", "target"}, "builder interpreters")
     _validate_interpreter_identity(
@@ -665,9 +647,7 @@ def _validate_builder_identity(identity: object) -> dict[str, object]:
         "sed",
         "unzip",
     }
-    if set(tools) != expected_tools or not all(
-        isinstance(value, str) and value for value in tools.values()
-    ):
+    if set(tools) != expected_tools or not all(isinstance(value, str) and value for value in tools.values()):
         raise WheelError("incomplete builder tool-version identity")
     return identity
 
@@ -731,8 +711,7 @@ def enforce_reproducible_environment() -> None:
         mismatches["umask"] = (oct(current_umask), oct(0o022))
     if mismatches:
         details = ", ".join(
-            f"{name}={actual!r} (expected {expected!r})"
-            for name, (actual, expected) in sorted(mismatches.items())
+            f"{name}={actual!r} (expected {expected!r})" for name, (actual, expected) in sorted(mismatches.items())
         )
         raise WheelError(f"non-reproducible builder environment: {details}")
 
@@ -793,9 +772,7 @@ def validate_recipes(chaquopy_root: Path) -> list[str]:
         raise WheelError(f"invalid staged Chaquopy recipe schema: {schema_path}") from error
 
     validated: list[str] = []
-    for recipe_name in sorted(
-        path.name for path in (TOOL_ROOT / "recipes").iterdir() if path.is_dir()
-    ):
+    for recipe_name in sorted(path.name for path in (TOOL_ROOT / "recipes").iterdir() if path.is_dir()):
         meta_path = pypi_root / "packages" / recipe_name / "meta.yaml"
         if not meta_path.is_file():
             raise WheelError(f"staged custom recipe is missing: {meta_path}")
@@ -846,8 +823,8 @@ def _wheel_message(archive: zipfile.ZipFile, package: str, filename: str) -> obj
 
 
 _S1A_REQUIREMENT = re.compile(
-    r'^\s*(?P<name>[A-Za-z0-9][A-Za-z0-9._-]*)'
-    r'(?:\s*\(\s*>=\s*(?P<minimum>[A-Za-z0-9.]+)\s*\))?'
+    r"^\s*(?P<name>[A-Za-z0-9][A-Za-z0-9._-]*)"
+    r"(?:\s*\(\s*>=\s*(?P<minimum>[A-Za-z0-9.]+)\s*\))?"
     r'(?:\s*;\s*extra\s*==\s*"(?P<extra>[A-Za-z0-9._-]+)")?\s*$'
 )
 
@@ -941,26 +918,13 @@ def _validated_zip_members(
             raise WheelError(f"{archive_name}: symlink {kind} entry {name!r}")
         is_directory = info.is_dir()
         if normalized in seen:
-            duplicate_kind = (
-                "directory/file ambiguity"
-                if seen[normalized] != is_directory
-                else "duplicate"
-            )
+            duplicate_kind = "directory/file ambiguity" if seen[normalized] != is_directory else "duplicate"
             raise WheelError(f"{archive_name}: {duplicate_kind} entry {normalized!r}")
-        ancestors = [
-            "/".join(components[:index])
-            for index in range(1, len(components))
-        ]
+        ancestors = ["/".join(components[:index]) for index in range(1, len(components))]
         if any(seen.get(ancestor) is False for ancestor in ancestors):
-            raise WheelError(
-                f"{archive_name}: file/descendant ambiguity at {normalized!r}"
-            )
-        if not is_directory and any(
-            existing.startswith(f"{normalized}/") for existing in seen
-        ):
-            raise WheelError(
-                f"{archive_name}: file/descendant ambiguity at {normalized!r}"
-            )
+            raise WheelError(f"{archive_name}: file/descendant ambiguity at {normalized!r}")
+        if not is_directory and any(existing.startswith(f"{normalized}/") for existing in seen):
+            raise WheelError(f"{archive_name}: file/descendant ambiguity at {normalized!r}")
         seen[normalized] = is_directory
         members.append(info)
     return members
@@ -987,18 +951,12 @@ def verify_python_target_archive(
         raise WheelError(f"invalid Python target archive: {path}") from error
     with archive:
         members = _validated_zip_members(archive, path.name, "target archive")
-        native_members = [
-            info
-            for info in members
-            if not info.is_dir() and ".so" in Path(info.filename).name
-        ]
+        native_members = [info for info in members if not info.is_dir() and ".so" in Path(info.filename).name]
         if not native_members:
             raise WheelError(f"{path.name}: Python target contains no native payloads")
         libpython_path = f"jniLibs/{abi}/libpython3.12.so"
         if [info.filename for info in native_members].count(libpython_path) != 1:
-            raise WheelError(
-                f"{path.name}: expected exactly one {libpython_path} native payload"
-            )
+            raise WheelError(f"{path.name}: expected exactly one {libpython_path} native payload")
         inspected: list[dict[str, object]] = []
         forbidden_signatures = (
             (b"mimalloc", "mimalloc"),
@@ -1006,15 +964,11 @@ def verify_python_target_archive(
         )
         for info in native_members:
             if abi not in Path(info.filename).parts:
-                raise WheelError(
-                    f"{path.name}: native payload is outside the locked ABI: {info.filename}"
-                )
+                raise WheelError(f"{path.name}: native payload is outside the locked ABI: {info.filename}")
             data = archive.read(info)
             for signature, label in forbidden_signatures:
                 if signature in data:
-                    raise WheelError(
-                        f"{path.name}: forbidden {label} signature in {info.filename}"
-                    )
+                    raise WheelError(f"{path.name}: forbidden {label} signature in {info.filename}")
             entry = _inspect_elf(
                 data,
                 info.filename,
@@ -1035,9 +989,7 @@ def verify_python_target_archive(
         "sha256": expected_sha256,
         "abi": abi,
         "native_count": len(inspected),
-        "libpython": next(
-            entry for entry in inspected if entry["path"] == libpython_path
-        ),
+        "libpython": next(entry for entry in inspected if entry["path"] == libpython_path),
     }
 
 
@@ -1073,10 +1025,7 @@ def verify_s1a_wheel(path: Path) -> tuple[str, str, dict[str, object]]:
         metadata_name = str(message.get("Name", "")).casefold().replace("-", "_")
         if metadata_name != package or message.get("Version") != expected_version:
             raise WheelError(f"{path.name}: METADATA identity mismatch")
-        requirements = {
-            _parse_s1a_requirement(str(value))
-            for value in (message.get_all("Requires-Dist") or [])
-        }
+        requirements = {_parse_s1a_requirement(str(value)) for value in (message.get_all("Requires-Dist") or [])}
         expected_requirements = {
             "chaquopy_libcxx": set(),
             "chaquopy_libmecab": {("chaquopy-libcxx", "190000", None)},
@@ -1092,8 +1041,7 @@ def verify_s1a_wheel(path: Path) -> tuple[str, str, dict[str, object]]:
                 f"expected {sorted(expected_requirements, key=repr)}",
             )
         provided_extras = {
-            str(value).casefold().replace("_", "-")
-            for value in (message.get_all("Provides-Extra") or [])
+            str(value).casefold().replace("_", "-") for value in (message.get_all("Provides-Extra") or [])
         }
         expected_extras = {
             "chaquopy_libcxx": set(),
@@ -1102,8 +1050,7 @@ def verify_s1a_wheel(path: Path) -> tuple[str, str, dict[str, object]]:
         }[package]
         if provided_extras != expected_extras:
             raise WheelError(
-                f"{path.name}: extras are {sorted(provided_extras)}, "
-                f"expected {sorted(expected_extras)}",
+                f"{path.name}: extras are {sorted(provided_extras)}, " f"expected {sorted(expected_extras)}",
             )
         wheel_message = _wheel_message(archive, package, "WHEEL")
         python_tag, abi_tag = WHEEL_SPECS[package][1:]
@@ -1117,17 +1064,14 @@ def verify_s1a_wheel(path: Path) -> tuple[str, str, dict[str, object]]:
             for name in names
             if f"{package}-{expected_version}.dist-info" in Path(name).parts
             and (
-                Path(name).name.upper().startswith(
-                    ("LICENSE", "COPYING", "COPYRIGHT", "NOTICE")
-                )
+                Path(name).name.upper().startswith(("LICENSE", "COPYING", "COPYRIGHT", "NOTICE"))
                 or (package == "chaquopy_libmecab" and Path(name).name == "BSD")
             )
         ]
         if not license_names:
             raise WheelError(f"{path.name}: license attribution is missing")
         license_entries = [
-            {"path": name, "sha256": hashlib.sha256(archive.read(name)).hexdigest()}
-            for name in sorted(license_names)
+            {"path": name, "sha256": hashlib.sha256(archive.read(name)).hexdigest()} for name in sorted(license_names)
         ]
         license_text = b"\n".join(archive.read(name) for name in license_names).lower()
         markers = {
@@ -1144,8 +1088,7 @@ def verify_s1a_wheel(path: Path) -> tuple[str, str, dict[str, object]]:
         expected_native_path = S1A_NATIVE_PATHS[package]
         if elf_names[0] != expected_native_path:
             raise WheelError(
-                f"{path.name}: native payload path is {elf_names[0]!r}, "
-                f"expected {expected_native_path!r}"
+                f"{path.name}: native payload path is {elf_names[0]!r}, " f"expected {expected_native_path!r}"
             )
         elf_entry = _inspect_elf(archive.read(elf_names[0]), elf_names[0], abi)
         native_name = Path(elf_names[0]).name
@@ -1165,16 +1108,19 @@ def verify_s1a_wheel(path: Path) -> tuple[str, str, dict[str, object]]:
         allowed_needed = required_needed | ANDROID_SYSTEM_LIBS
         if not required_needed.issubset(needed) or not needed.issubset(allowed_needed):
             raise WheelError(
-                f"{path.name}: native dependencies are {sorted(needed)}, "
-                f"required {sorted(required_needed)}",
+                f"{path.name}: native dependencies are {sorted(needed)}, " f"required {sorted(required_needed)}",
             )
-        return package, abi, {
-            "filename": path.name,
-            "sha256": digest(path),
-            "size": path.stat().st_size,
-            "licenses": license_entries,
-            "elf": elf_entry,
-        }
+        return (
+            package,
+            abi,
+            {
+                "filename": path.name,
+                "sha256": digest(path),
+                "size": path.stat().st_size,
+                "licenses": license_entries,
+                "elf": elf_entry,
+            },
+        )
 
 
 def _stage_manifest_path(stage_root: Path) -> Path:
@@ -1208,13 +1154,9 @@ def validate_stage(
         raise WheelError("S1a stage NDK/Python target differs from current inputs")
     if document.get("recipe_inventory") != recipe_inventory():
         raise WheelError("S1a stage recipe inventory differs from current inputs")
-    if document.get("source_hashes") != {
-        name: entry["sha256"] for name, entry in source_entries().items()
-    }:
+    if document.get("source_hashes") != {name: entry["sha256"] for name, entry in source_entries().items()}:
         raise WheelError("S1a stage source lock differs from current inputs")
-    if document.get("host_wheels") != {
-        filename: sha256 for _, _, filename, sha256 in host_entries()
-    }:
+    if document.get("host_wheels") != {filename: sha256 for _, _, filename, sha256 in host_entries()}:
         raise WheelError("S1a stage host-wheel lock differs from current inputs")
     chaquopy_root = stage_root / "chaquopy"
     roots = sorted(path for path in chaquopy_root.iterdir() if path.is_dir())
@@ -1238,9 +1180,7 @@ def _wheel_set(dist: Path) -> dict[str, Path]:
             raise WheelError(f"duplicate S1a wheel identity: {package}/{abi}")
         identities.add((package, abi))
         result[wheel.name] = wheel
-    expected_identities = {
-        (package.replace("-", "_"), abi) for package in PACKAGES for abi in ABIS
-    }
+    expected_identities = {(package.replace("-", "_"), abi) for package in PACKAGES for abi in ABIS}
     if identities != expected_identities:
         raise WheelError(f"incomplete S1a wheel identities: {sorted(identities)}")
     return result
@@ -1367,11 +1307,7 @@ def publish(
     wheels_b = _wheel_set(dist_b)
     if set(wheels_a) != set(wheels_b):
         raise WheelError("clean S1a builds produced different wheel filename sets")
-    mismatched = [
-        filename
-        for filename in sorted(wheels_a)
-        if digest(wheels_a[filename]) != digest(wheels_b[filename])
-    ]
+    mismatched = [filename for filename in sorted(wheels_a) if digest(wheels_a[filename]) != digest(wheels_b[filename])]
     if mismatched:
         raise WheelError(
             "clean S1a builds are not byte-for-byte reproducible: " + ", ".join(mismatched),
@@ -1386,9 +1322,7 @@ def publish(
             raise WheelError(f"duplicate S1a wheel for {package}/{abi}")
         identities.add((package, abi))
         verified.append((wheel, abi, entry))
-    expected_identities = {
-        (package.replace("-", "_"), abi) for package in PACKAGES for abi in ABIS
-    }
+    expected_identities = {(package.replace("-", "_"), abi) for package in PACKAGES for abi in ABIS}
     if identities != expected_identities:
         raise WheelError(f"incomplete S1a wheel identities: {sorted(identities)}")
 
@@ -1416,13 +1350,10 @@ def publish(
             "ndk": NDK_VERSION,
             "python_target": PYTHON_TARGET,
             "recipe_inventory": recipe_inventory(),
-            "source_hashes": {
-                name: entry["sha256"] for name, entry in source_entries().items()
-            },
+            "source_hashes": {name: entry["sha256"] for name, entry in source_entries().items()},
             "sources": source_entries(),
             "patch_hashes": {
-                path.relative_to(TOOL_ROOT).as_posix(): digest(path)
-                for path in sorted(TOOL_ROOT.rglob("*.patch"))
+                path.relative_to(TOOL_ROOT).as_posix(): digest(path) for path in sorted(TOOL_ROOT.rglob("*.patch"))
             },
             "reproducibility": {
                 "stage_manifests": [
@@ -1504,9 +1435,7 @@ def stage(
         "ndk": NDK_VERSION,
         "python_target": PYTHON_TARGET,
         "source_hashes": {name: entry["sha256"] for name, entry in entries.items()},
-        "host_wheels": {
-            filename: sha256 for _, _, filename, sha256 in host_entries()
-        },
+        "host_wheels": {filename: sha256 for _, _, filename, sha256 in host_entries()},
     }
     (temporary / "manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     os.replace(temporary, target)

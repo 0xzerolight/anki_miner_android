@@ -18,7 +18,6 @@ from unittest import mock
 import warnings
 import zipfile
 
-
 ROOT = Path(__file__).resolve().parents[3]
 TOOL_ROOT = ROOT / "tools/runtime-wheels"
 SPEC = importlib.util.spec_from_file_location(
@@ -61,10 +60,7 @@ def make_wheel(
     files = {
         f"{dist_info}/METADATA": ("\n".join(metadata) + "\n\n").encode(),
         f"{dist_info}/WHEEL": (
-            "Wheel-Version: 1.0\n"
-            "Generator: runtime-wheel-test\n"
-            "Root-Is-Purelib: false\n"
-            f"Tag: {tag}\n\n"
+            "Wheel-Version: 1.0\n" "Generator: runtime-wheel-test\n" "Root-Is-Purelib: false\n" f"Tag: {tag}\n\n"
         ).encode(),
         f"{dist_info}/{license_name}": license_data,
         **(extra_files or {}),
@@ -133,7 +129,7 @@ def builder_identity() -> dict[str, object]:
 
 def driver_command(mode: str = "success") -> str:
     if mode == "success":
-        build_body = r'''
+        build_body = r"""
     printf 'build\n' >>"$TEST_ROOT/builds.log"
     sleep "${TEST_BUILD_DELAY:-0}"
     mkdir -p "$target"
@@ -141,17 +137,17 @@ def driver_command(mode: str = "success") -> str:
     : >"$target/manifest.json"
     run_root="$(mktemp -d "$build_root/runtime-$build_key-run-XXXXXXXX")"
     built_manifest="$target/manifest.json"
-'''
+"""
     elif mode == "fail":
-        build_body = r'''
+        build_body = r"""
     printf 'build\n' >>"$TEST_ROOT/builds.log"
     run_root="$(mktemp -d "$build_root/runtime-$build_key-run-XXXXXXXX")"
     return 23
-'''
+"""
     else:
         raise AssertionError(mode)
     driver = shlex.quote(str(TOOL_ROOT / "build-runtime-wheels.sh"))
-    return f'''
+    return f"""
 source {driver}
 runtime_configure_paths() {{
     runtime_root="$TEST_ROOT/runtime-root"
@@ -185,7 +181,7 @@ runtime_activate_target() {{
 runtime_build_target() {{{build_body}
 }}
 runtime_main
-'''
+"""
 
 
 class LockContractTests(unittest.TestCase):
@@ -365,7 +361,7 @@ class BuilderContractTests(unittest.TestCase):
             runtime_wheels.validate_builder_identity(extra)
 
     def test_patch_builder_closes_network_and_selects_exact_target_python(self) -> None:
-        builder_text = '''import pypi_simple
+        builder_text = """import pypi_simple
 class Builder:
     def setup(self):
         os.environ["PIP_DISABLE_PIP_VERSION_CHECK"] = "1"
@@ -382,14 +378,14 @@ class Builder:
         return url
     def apply_patches(self):
         return None
-'''
-        android_text = '''ndk_version=27.3.13750724
+"""
+        android_text = """ndk_version=27.3.13750724
 if ! [ -e $ndk ]; then
     log "Installing NDK - this may take several minutes"
     yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "ndk;$ndk_version"
 fi
 export CFLAGS="-D__BIONIC_NO_PAGE_SIZE_MACRO"
-'''
+"""
         with tempfile.TemporaryDirectory() as temporary:
             chaquopy = Path(temporary)
             builder = chaquopy / "server/pypi/build-wheel.py"

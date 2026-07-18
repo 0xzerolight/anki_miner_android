@@ -14,13 +14,7 @@ _engine_modules_before_initialize: tuple[str, ...] | None = None
 
 
 def _loaded_engine_modules() -> tuple[str, ...]:
-    return tuple(
-        sorted(
-            name
-            for name in sys.modules
-            if name == "anki_miner" or name.startswith("anki_miner.")
-        )
-    )
+    return tuple(sorted(name for name in sys.modules if name == "anki_miner" or name.startswith("anki_miner.")))
 
 
 def initialize(files_dir: str) -> str:
@@ -33,9 +27,7 @@ def initialize(files_dir: str) -> str:
     """
 
     if not isinstance(files_dir, str) or not files_dir.strip():
-        raise BridgeProtocolError(
-            "invalid_files_dir", "files_dir must be a non-empty string"
-        )
+        raise BridgeProtocolError("invalid_files_dir", "files_dir must be a non-empty string")
     if not os.path.isabs(files_dir):
         raise BridgeProtocolError("invalid_files_dir", "files_dir must be absolute")
     requested = os.path.realpath(files_dir)
@@ -43,9 +35,7 @@ def initialize(files_dir: str) -> str:
     global _engine_modules_before_initialize, _initialized_home
     with _LOCK:
         if _initialized_home is not None and _initialized_home != requested:
-            raise BridgeProtocolError(
-                "already_initialized", "The Python engine home cannot change in-process"
-            )
+            raise BridgeProtocolError("already_initialized", "The Python engine home cannot change in-process")
 
         engine_modules_before = _loaded_engine_modules()
         already_loaded = sys.modules.get("anki_miner.config.paths")
@@ -118,9 +108,7 @@ def require_initialized(expected_home: str | os.PathLike[str] | None = None) -> 
         if expected_home is not None:
             candidate = os.fspath(expected_home)
             if not candidate or not os.path.isabs(candidate):
-                raise BridgeProtocolError(
-                    "invalid_files_dir", "expected_home must be absolute"
-                )
+                raise BridgeProtocolError("invalid_files_dir", "expected_home must be absolute")
             if os.path.realpath(candidate) != home:
                 raise BridgeProtocolError(
                     "home_mismatch",

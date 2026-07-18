@@ -90,9 +90,7 @@ def test_external_dictionary_zip_is_deterministic_and_never_bundled(
     assert first.read_bytes() == second.read_bytes()
     with zipfile.ZipFile(first) as archive:
         assert archive.namelist() == sorted(UNIDIC_REQUIRED_FILES)
-        assert all(
-            info.compress_type == zipfile.ZIP_STORED for info in archive.infolist()
-        )
+        assert all(info.compress_type == zipfile.ZIP_STORED for info in archive.infolist())
     asset_files = list((PROJECT_ROOT / "app/src").glob("**/assets/**/*"))
     assert not any(path.name in UNIDIC_REQUIRED_FILES for path in asset_files)
 
@@ -124,20 +122,13 @@ def test_android_harness_crosses_all_layers_with_external_provisioning() -> None
         "MecabNativeTokenizerInstrumentedTest.kt"
     ).read_text(encoding="utf-8")
     shared_runtime = (
-        PROJECT_ROOT
-        / "app/src/androidTest/kotlin/com/ankiminer/android/PythonInstrumentationRuntime.kt"
+        PROJECT_ROOT / "app/src/androidTest/kotlin/com/ankiminer/android/PythonInstrumentationRuntime.kt"
     ).read_text(encoding="utf-8")
-    python = (
-        PROJECT_ROOT / "app/src/debug/python/tokenizer_s1b_instrumented.py"
-    ).read_text(encoding="utf-8")
-    selection = (
-        PROJECT_ROOT / "app/src/debug/python/tokenizer_instrumented_selection.py"
-    ).read_text(encoding="utf-8")
+    python = (PROJECT_ROOT / "app/src/debug/python/tokenizer_s1b_instrumented.py").read_text(encoding="utf-8")
+    selection = (PROJECT_ROOT / "app/src/debug/python/tokenizer_instrumented_selection.py").read_text(encoding="utf-8")
     gradle = (PROJECT_ROOT / "app/build.gradle.kts").read_text(encoding="utf-8")
     environment = (PROJECT_ROOT / "scripts/android-env.sh").read_text(encoding="utf-8")
-    provision = (PROJECT_ROOT / "scripts/provision-s1b-test-unidic.sh").read_text(
-        encoding="utf-8"
-    )
+    provision = (PROJECT_ROOT / "scripts/provision-s1b-test-unidic.sh").read_text(encoding="utf-8")
 
     assert 'assets.srcDir(rootProject.file("golden"))' in gradle
     assert "BuildConfig.S1B_TEST_UNIDIC_ARCHIVE" in kotlin
@@ -145,10 +136,7 @@ def test_android_harness_crosses_all_layers_with_external_provisioning() -> None
     assert "PythonInstrumentationRuntime.stageExternalUniDic" in kotlin
     assert "ZipInputStream" in shared_runtime
     compact_python = " ".join(python.split())
-    assert (
-        'acquire_tagger_for_instrumentation( "s1b", registration )'
-        in compact_python
-    )
+    assert 'acquire_tagger_for_instrumentation( "s1b", registration )' in compact_python
     assert "configure_tokenizer_backend(backend)" in selection
     assert "get_shared_tagger()" in selection
     assert "debug_direct_fallback_after_" in selection

@@ -10,9 +10,7 @@ from .core import ContractError, GENERATED_KOTLIN_PATH, check, refresh
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        description="generate Kotlin constants from the strict Anki limits manifest"
-    )
+    parser = argparse.ArgumentParser(description="generate Kotlin constants from the strict Anki limits manifest")
     parser.add_argument(
         "--repo-root",
         type=Path,

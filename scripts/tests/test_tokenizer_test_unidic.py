@@ -9,7 +9,6 @@ import tempfile
 import unittest
 import zipfile
 
-
 ROOT = Path(__file__).resolve().parents[2]
 MODULE_PATH = ROOT / "tools/tokenizer/package_test_unidic.py"
 SPEC = importlib.util.spec_from_file_location("package_test_unidic", MODULE_PATH)
@@ -75,10 +74,7 @@ class TokenizerTestUniDicTests(unittest.TestCase):
             with zipfile.ZipFile(first) as archive:
                 self.assertIn("nested/notice.txt", archive.namelist())
                 self.assertTrue(
-                    all(
-                        info.date_time == (1980, 1, 1, 0, 0, 0)
-                        for info in archive.infolist()
-                    ),
+                    all(info.date_time == (1980, 1, 1, 0, 0, 0) for info in archive.infolist()),
                 )
 
     def test_hash_mismatch_fails_before_writing_output(self) -> None:

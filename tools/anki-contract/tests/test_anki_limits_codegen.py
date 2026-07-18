@@ -53,11 +53,7 @@ class AnkiLimitsCodegenTest(unittest.TestCase):
 
     @staticmethod
     def _file_snapshot(root: Path) -> dict[str, bytes]:
-        return {
-            path.relative_to(root).as_posix(): path.read_bytes()
-            for path in root.rglob("*")
-            if path.is_file()
-        }
+        return {path.relative_to(root).as_posix(): path.read_bytes() for path in root.rglob("*") if path.is_file()}
 
     def test_every_numeric_leaf_has_one_explicit_unit_bearing_kotlin_mapping(self) -> None:
         manifest = core.load_manifest(self.repo)

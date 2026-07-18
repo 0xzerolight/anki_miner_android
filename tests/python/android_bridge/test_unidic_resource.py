@@ -62,9 +62,7 @@ def test_registration_verifies_tree_and_freezes_explicit_mecab_paths(
     assert registered.dicdir == root.resolve()
     assert registered.tree_sha256 == _manual_tree_hash(root)
     assert registered.file_count == len(UNIDIC_REQUIRED_FILES) + 1
-    assert registered.total_bytes == sum(
-        path.stat().st_size for path in root.rglob("*") if path.is_file()
-    )
+    assert registered.total_bytes == sum(path.stat().st_size for path in root.rglob("*") if path.is_file())
     assert registered.mecab_arguments == (
         "-r",
         str(root / "mecabrc"),
@@ -87,16 +85,9 @@ def test_identical_registration_is_idempotent_but_switching_is_forbidden(
     root = _make_dicdir(tmp_path, "one")
     other = _make_dicdir(tmp_path, "two")
     expected_hash = calculate_unidic_tree_sha256(root)
-    first = register_unidic(
-        root, resource_id="unidic-v1", expected_tree_sha256=expected_hash
-    )
+    first = register_unidic(root, resource_id="unidic-v1", expected_tree_sha256=expected_hash)
 
-    assert (
-        register_unidic(
-            root, resource_id="unidic-v1", expected_tree_sha256=expected_hash
-        )
-        is first
-    )
+    assert register_unidic(root, resource_id="unidic-v1", expected_tree_sha256=expected_hash) is first
     with pytest.raises(TokenizerContractError) as changed:
         register_unidic(
             other,
@@ -112,9 +103,7 @@ def test_registration_rejects_wrong_provenance_without_freezing_it(
     root = _make_dicdir(tmp_path)
 
     with pytest.raises(TokenizerContractError) as mismatch:
-        register_unidic(
-            root, resource_id="unidic-v1", expected_tree_sha256="0" * 64
-        )
+        register_unidic(root, resource_id="unidic-v1", expected_tree_sha256="0" * 64)
     assert mismatch.value.code == "unidic_provenance_mismatch"
 
     with pytest.raises(TokenizerContractError) as missing:
@@ -131,15 +120,11 @@ def test_registration_rejects_wrong_provenance_without_freezing_it(
         ("valid", "not-a-hash"),
     ],
 )
-def test_registration_rejects_untrusted_identity_syntax(
-    tmp_path: Path, resource_id: str, tree_hash: str
-) -> None:
+def test_registration_rejects_untrusted_identity_syntax(tmp_path: Path, resource_id: str, tree_hash: str) -> None:
     root = _make_dicdir(tmp_path)
 
     with pytest.raises(TokenizerContractError) as error:
-        register_unidic(
-            root, resource_id=resource_id, expected_tree_sha256=tree_hash
-        )
+        register_unidic(root, resource_id=resource_id, expected_tree_sha256=tree_hash)
     assert error.value.code == "invalid_unidic_identity"
 
 
@@ -190,9 +175,7 @@ def test_loaded_dictionary_must_be_exact_registered_sys_dic(tmp_path: Path) -> N
     assert none_loaded.value.code == "invalid_loaded_dictionary"
 
     with pytest.raises(TokenizerContractError) as extra_loaded:
-        validate_loaded_dictionary_filenames(
-            [registered.sys_dic, registered.dicdir / "unk.dic"]
-        )
+        validate_loaded_dictionary_filenames([registered.sys_dic, registered.dicdir / "unk.dic"])
     assert extra_loaded.value.code == "invalid_loaded_dictionary"
 
     with pytest.raises(TokenizerContractError) as wrong:
@@ -211,9 +194,7 @@ def test_competing_registrations_are_atomic(tmp_path: Path) -> None:
     def register(request: tuple[Path, str, str]) -> object:
         path, resource_id, tree_hash = request
         try:
-            return register_unidic(
-                path, resource_id=resource_id, expected_tree_sha256=tree_hash
-            )
+            return register_unidic(path, resource_id=resource_id, expected_tree_sha256=tree_hash)
         except TokenizerContractError as exc:
             return exc
 

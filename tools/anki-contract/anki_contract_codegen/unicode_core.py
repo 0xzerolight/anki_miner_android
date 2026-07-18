@@ -18,17 +18,12 @@ from .core import (
     _read_regular_file,
 )
 
-
 UNICODE_VERSION = "15.1.0"
 UNICODE_ROOT = PurePosixPath("tools/anki-contract/unicode/15.1.0")
 MANIFEST_PATH = UNICODE_ROOT / "manifest.json"
 WHITESPACE_PATH = UNICODE_ROOT / "python-3.13-isspace.json"
-PYTHON_OUTPUT_PATH = PurePosixPath(
-    "app/src/main/python/android_bridge/unicode_contract.py"
-)
-KOTLIN_OUTPUT_PATH = PurePosixPath(
-    "app/src/main/kotlin/com/ankiminer/android/anki/generated/UnicodeContractV151.kt"
-)
+PYTHON_OUTPUT_PATH = PurePosixPath("app/src/main/python/android_bridge/unicode_contract.py")
+KOTLIN_OUTPUT_PATH = PurePosixPath("app/src/main/kotlin/com/ankiminer/android/anki/generated/UnicodeContractV151.kt")
 
 _MAX_CODE_POINT = 0x10FFFF
 _RANGE_MASK = (1 << 21) - 1
@@ -152,9 +147,7 @@ def _read_inputs(repo_fd: int) -> tuple[dict[str, bytes], tuple[tuple[int, int],
         _fail("Python whitespace provenance is invalid")
     if whitespace_entry["path"] != WHITESPACE_PATH.name:
         _fail("Python whitespace provenance path drifted")
-    if whitespace_entry["source"] != (
-        "CPython 3.13 str.isspace() with unicodedata 15.1.0"
-    ):
+    if whitespace_entry["source"] != ("CPython 3.13 str.isspace() with unicodedata 15.1.0"):
         _fail("Python whitespace provenance source drifted")
     whitespace_raw = _read_regular_file(
         repo_fd,
@@ -189,11 +182,7 @@ def _parse_whitespace(raw: bytes) -> tuple[tuple[int, int], ...]:
     ranges: list[tuple[int, int]] = []
     previous_end = -1
     for item in value["ranges"]:
-        if (
-            type(item) is not list
-            or len(item) != 2
-            or any(type(component) is not int for component in item)
-        ):
+        if type(item) is not list or len(item) != 2 or any(type(component) is not int for component in item):
             _fail("Python whitespace range is invalid")
         start, end = item
         if not 0 <= start <= end <= _MAX_CODE_POINT or start <= previous_end:
@@ -250,15 +239,11 @@ def _parse_property_ranges(
         if property_value is not None:
             if len(fields) < 3 or fields[2] != property_value:
                 continue
-        ranges.append(
-            _parse_code_point_range(fields[0], f"{description}:{line_number}")
-        )
+        ranges.append(_parse_code_point_range(fields[0], f"{description}:{line_number}"))
     return _merge_ranges(ranges, description)
 
 
-def _merge_ranges(
-    ranges: Iterable[tuple[int, int]], description: str
-) -> tuple[tuple[int, int], ...]:
+def _merge_ranges(ranges: Iterable[tuple[int, int]], description: str) -> tuple[tuple[int, int], ...]:
     ordered = sorted(ranges)
     merged: list[tuple[int, int]] = []
     for start, end in ordered:
@@ -389,16 +374,10 @@ def _hangul_decomposition(code_point: int) -> tuple[int, ...] | None:
 
 
 def _build_tables(inputs: dict[str, bytes], whitespace: tuple[tuple[int, int], ...]) -> UnicodeTables:
-    category_c, combining, raw_decompositions = _parse_unicode_data(
-        inputs["UnicodeData.txt"]
-    )
+    category_c, combining, raw_decompositions = _parse_unicode_data(inputs["UnicodeData.txt"])
     derived = inputs["DerivedNormalizationProps.txt"]
-    nfc_no = _parse_property_ranges(
-        derived, "DerivedNormalizationProps.txt", "NFC_QC", "N"
-    )
-    nfc_maybe = _parse_property_ranges(
-        derived, "DerivedNormalizationProps.txt", "NFC_QC", "M"
-    )
+    nfc_no = _parse_property_ranges(derived, "DerivedNormalizationProps.txt", "NFC_QC", "N")
+    nfc_maybe = _parse_property_ranges(derived, "DerivedNormalizationProps.txt", "NFC_QC", "M")
     full_exclusions = set()
     for start, end in _parse_property_ranges(
         derived,
@@ -408,24 +387,16 @@ def _build_tables(inputs: dict[str, bytes], whitespace: tuple[tuple[int, int], .
         full_exclusions.update(range(start, end + 1))
 
     explicit_exclusions: set[int] = set()
-    for line_number, line in _data_lines(
-        inputs["CompositionExclusions.txt"], "CompositionExclusions.txt"
-    ):
+    for line_number, line in _data_lines(inputs["CompositionExclusions.txt"], "CompositionExclusions.txt"):
         if ";" in line:
             _fail(f"CompositionExclusions.txt:{line_number} has an unexpected field")
-        start, end = _parse_code_point_range(
-            line, f"CompositionExclusions.txt:{line_number}"
-        )
+        start, end = _parse_code_point_range(line, f"CompositionExclusions.txt:{line_number}")
         explicit_exclusions.update(range(start, end + 1))
     if not explicit_exclusions <= full_exclusions:
         _fail("CompositionExclusions.txt is not covered by derived full exclusions")
 
-    ucd_whitespace = _parse_property_ranges(
-        inputs["PropList.txt"], "PropList.txt", "White_Space"
-    )
-    expected_python_whitespace = _merge_ranges(
-        [*ucd_whitespace, (0x1C, 0x1F)], "Python/UCD whitespace cross-check"
-    )
+    ucd_whitespace = _parse_property_ranges(inputs["PropList.txt"], "PropList.txt", "White_Space")
+    expected_python_whitespace = _merge_ranges([*ucd_whitespace, (0x1C, 0x1F)], "Python/UCD whitespace cross-check")
     if whitespace != expected_python_whitespace:
         _fail("Python whitespace differs from UCD White_Space plus U+001C..U+001F")
 
@@ -442,10 +413,7 @@ def _build_tables(inputs: dict[str, bytes], whitespace: tuple[tuple[int, int], .
             expanded.extend(expand(child))
         return tuple(expanded)
 
-    decompositions = tuple(
-        (code_point, expand(code_point))
-        for code_point in sorted(raw_decompositions)
-    )
+    decompositions = tuple((code_point, expand(code_point)) for code_point in sorted(raw_decompositions))
     if any(len(mapping) > 255 for _, mapping in decompositions):
         _fail("Expanded canonical decomposition exceeds its packed length")
 
@@ -458,9 +426,7 @@ def _build_tables(inputs: dict[str, bytes], whitespace: tuple[tuple[int, int], .
             _fail("Canonical composition starter has a non-zero combining class")
         compositions.append((starter, combiner, composite))
     compositions.sort()
-    if len({(starter, combiner) for starter, combiner, _ in compositions}) != len(
-        compositions
-    ):
+    if len({(starter, combiner) for starter, combiner, _ in compositions}) != len(compositions):
         _fail("Canonical composition pairs are not unique")
 
     tables = UnicodeTables(
@@ -487,9 +453,7 @@ def _validate_table_counts(tables: UnicodeTables) -> None:
         "compositions": (len(tables.compositions), 941),
     }
     mismatches = [
-        f"{name}: expected {wanted}, found {actual}"
-        for name, (actual, wanted) in expected.items()
-        if actual != wanted
+        f"{name}: expected {wanted}, found {actual}" for name, (actual, wanted) in expected.items() if actual != wanted
     ]
     if mismatches:
         _fail("Unicode generated table counts drifted: " + "; ".join(mismatches))
@@ -517,10 +481,7 @@ def _pack_decompositions(
 def _pack_compositions(
     compositions: Sequence[tuple[int, int, int]],
 ) -> tuple[int, ...]:
-    return tuple(
-        (starter << 42) | (combiner << 21) | composite
-        for starter, combiner, composite in compositions
-    )
+    return tuple((starter << 42) | (combiner << 21) | composite for starter, combiner, composite in compositions)
 
 
 def _render_python_tuple(name: str, values: Sequence[int], per_line: int) -> list[str]:
@@ -532,9 +493,7 @@ def _render_python_tuple(name: str, values: Sequence[int], per_line: int) -> lis
 
 
 def generate_python(tables: UnicodeTables) -> bytes:
-    decomposition_metadata, decomposition_data = _pack_decompositions(
-        tables.decompositions
-    )
+    decomposition_metadata, decomposition_data = _pack_decompositions(tables.decompositions)
     blocks = [
         _render_python_tuple("_CATEGORY_C_RANGES", _pack_ranges(tables.category_c_ranges), 4),
         _render_python_tuple("_WHITESPACE_RANGES", _pack_ranges(tables.whitespace_ranges), 4),
@@ -557,8 +516,7 @@ def generate_python(tables: UnicodeTables) -> bytes:
         if index:
             lines.append("")
         lines.extend(block)
-    lines.extend(
-        """
+    lines.extend("""
 
 def is_unicode_scalar(code_point: int) -> bool:
     return type(code_point) is int and 0 <= code_point <= 0x10FFFF and not 0xD800 <= code_point <= 0xDFFF
@@ -727,8 +685,7 @@ def is_nfc(value: str) -> bool:
         last_class = current_class
         maybe = maybe or _contains_range(_NFC_MAYBE_RANGES, code_point)
     return not maybe or _normalized_nfc(values) == values
-""".strip("\n").splitlines()
-    )
+""".strip("\n").splitlines())
     lines.append("")
     return "\n".join(lines).encode("utf-8")
 
@@ -750,9 +707,7 @@ def _render_kotlin_array(
 
 
 def generate_kotlin(tables: UnicodeTables) -> bytes:
-    decomposition_metadata, decomposition_data = _pack_decompositions(
-        tables.decompositions
-    )
+    decomposition_metadata, decomposition_data = _pack_decompositions(tables.decompositions)
     blocks = [
         _render_kotlin_array("CategoryCData", "ranges", "longArrayOf", _pack_ranges(tables.category_c_ranges), 4),
         _render_kotlin_array("WhitespaceData", "ranges", "longArrayOf", _pack_ranges(tables.whitespace_ranges), 4),
@@ -778,8 +733,7 @@ def generate_kotlin(tables: UnicodeTables) -> bytes:
         if index:
             lines.append("")
         lines.extend(block)
-    lines.extend(
-        """
+    lines.extend("""
 
     fun isUnicodeScalar(codePoint: Int): Boolean =
         codePoint in 0..0x10FFFF && codePoint !in 0xD800..0xDFFF
@@ -1015,8 +969,7 @@ def generate_kotlin(tables: UnicodeTables) -> bytes:
         return !maybe || normalizedNfc(values.toIntArray()).contentEquals(values.toIntArray())
     }
 }
-""".strip("\n").splitlines()
-    )
+""".strip("\n").splitlines())
     lines.append("")
     return "\n".join(lines).encode("utf-8")
 
@@ -1040,10 +993,7 @@ def _check_output(
         max_bytes=_MAX_OUTPUT_BYTES,
     )
     if actual != expected:
-        _fail(
-            f"{description} drifted; run "
-            "tools/anki-contract/generate_unicode_contract.py --refresh"
-        )
+        _fail(f"{description} drifted; run " "tools/anki-contract/generate_unicode_contract.py --refresh")
 
 
 def refresh(repo_root: Path) -> None:

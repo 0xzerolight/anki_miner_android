@@ -94,11 +94,7 @@ def _wire(
 
 
 def test_feature_schema_is_the_checked_in_golden_schema() -> None:
-    schema = json.loads(
-        (PROJECT_ROOT / "golden/schema/engine-goldens-v1.schema.json").read_text(
-            encoding="utf-8"
-        )
-    )
+    schema = json.loads((PROJECT_ROOT / "golden/schema/engine-goldens-v1.schema.json").read_text(encoding="utf-8"))
     prefix = schema["properties"]["unidic_feature_fields"]["prefixItems"]
 
     assert len(UNIDIC_FEATURE_FIELDS) == 26
@@ -255,18 +251,14 @@ def test_record_validation_rejects_bad_coverage_and_metadata(
         ),
     ],
 )
-def test_wire_decoder_rejects_bad_framing(
-    payload: bytes, text: str, code: str
-) -> None:
+def test_wire_decoder_rejects_bad_framing(payload: bytes, text: str, code: str) -> None:
     with pytest.raises(TokenizerContractError) as error:
         decode_token_wire(payload, text)
     assert error.value.code == code
 
 
 def test_wire_decoder_rejects_feature_length_overflow_before_slicing() -> None:
-    payload = bytearray(
-        struct.pack(TOKEN_WIRE_HEADER_FORMAT, TOKEN_WIRE_MAGIC, 1, 0, 3, 1)
-    )
+    payload = bytearray(struct.pack(TOKEN_WIRE_HEADER_FORMAT, TOKEN_WIRE_MAGIC, 1, 0, 3, 1))
     payload.extend(
         struct.pack(
             TOKEN_WIRE_RECORD_FORMAT,
@@ -326,15 +318,10 @@ def test_tagger_adapter_materializes_backend_records_before_adapting() -> None:
 def test_contract_module_has_no_backend_or_engine_imports() -> None:
     tree = ast.parse(Path(tokenizer_contract.__file__).read_text(encoding="utf-8"))
     imported_roots = {
-        alias.name.split(".", 1)[0]
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Import)
-        for alias in node.names
+        alias.name.split(".", 1)[0] for node in ast.walk(tree) if isinstance(node, ast.Import) for alias in node.names
     }
     imported_roots.update(
-        node.module.split(".", 1)[0]
-        for node in ast.walk(tree)
-        if isinstance(node, ast.ImportFrom) and node.module
+        node.module.split(".", 1)[0] for node in ast.walk(tree) if isinstance(node, ast.ImportFrom) and node.module
     )
 
     assert imported_roots.isdisjoint({"anki_miner", "fugashi", "java", "com"})

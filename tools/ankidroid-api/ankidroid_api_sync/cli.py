@@ -55,15 +55,11 @@ def main(argv: list[str] | None = None) -> int:
             print(f"AnkiDroid API manifest check OK: {MANIFEST_PATH}")
         elif args.refresh:
             refresh(args.repo_root, args.source)
-            print(
-                "AnkiDroid API refreshed from verified "
-                f"{PINNED_UPSTREAM.tag} @ {PINNED_UPSTREAM.commit}"
-            )
+            print("AnkiDroid API refreshed from verified " f"{PINNED_UPSTREAM.tag} @ {PINNED_UPSTREAM.commit}")
         else:
             check_upstream(args.repo_root, args.source)
             print(
-                "AnkiDroid API verified-upstream byte equality OK: "
-                f"{PINNED_UPSTREAM.tag} @ {PINNED_UPSTREAM.commit}"
+                "AnkiDroid API verified-upstream byte equality OK: " f"{PINNED_UPSTREAM.tag} @ {PINNED_UPSTREAM.commit}"
             )
     except SyncError as exc:
         print(f"AnkiDroid API sync failed: {exc}", file=sys.stderr)

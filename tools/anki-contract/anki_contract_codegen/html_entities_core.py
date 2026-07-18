@@ -12,10 +12,7 @@ from typing import NoReturn, Sequence
 
 from .core import ContractError, _atomic_write, _open_repo, _read_regular_file
 
-
-KOTLIN_OUTPUT_PATH = PurePosixPath(
-    "app/src/main/kotlin/com/ankiminer/android/anki/generated/Html5EntitiesV312.kt"
-)
+KOTLIN_OUTPUT_PATH = PurePosixPath("app/src/main/kotlin/com/ankiminer/android/anki/generated/Html5EntitiesV312.kt")
 # The device runtime is Chaquopy's 3.12.12-0 target. Its packaged
 # ``stdlib-common.imy`` was inspected directly: both this canonical table hash and
 # CHARREF_PATTERN match the local CPython 3.12.13 generator interpreter.
@@ -42,10 +39,7 @@ def _canonical_table(table: dict[str, str]) -> bytes:
 
 
 def load_pinned_table() -> tuple[tuple[str, str], ...]:
-    if (
-        platform.python_implementation() != "CPython"
-        or sys.version_info[:3] != GENERATOR_PYTHON_VERSION
-    ):
+    if platform.python_implementation() != "CPython" or sys.version_info[:3] != GENERATOR_PYTHON_VERSION:
         _fail("HTML5 entity generation requires the pinned CPython 3.12.13 interpreter")
     table = html.entities.html5
     if type(table) is not dict or len(table) != TABLE_ENTRY_COUNT:
@@ -55,12 +49,7 @@ def load_pinned_table() -> tuple[tuple[str, str], ...]:
         _fail("CPython HTML5 entity table content drifted")
     entries = tuple(sorted(table.items()))
     if any(
-        not name
-        or len(name) > 32
-        or not name.isascii()
-        or "\x00" in name
-        or not value
-        or "\x00" in value
+        not name or len(name) > 32 or not name.isascii() or "\x00" in name or not value or "\x00" in value
         for name, value in entries
     ):
         _fail("CPython HTML5 entity table contains an unsupported entry")
@@ -170,6 +159,5 @@ def check(repo_root: Path) -> None:
         )
     if actual != expected:
         _fail(
-            "generated Kotlin HTML5 entities drifted; run "
-            "tools/anki-contract/generate_html5_entities.py --refresh"
+            "generated Kotlin HTML5 entities drifted; run " "tools/anki-contract/generate_html5_entities.py --refresh"
         )

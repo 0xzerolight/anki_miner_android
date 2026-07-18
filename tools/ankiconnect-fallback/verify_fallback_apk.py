@@ -13,7 +13,6 @@ import sys
 from typing import Any
 import zipfile
 
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_MANIFEST = REPO_ROOT / "third_party" / "ankiconnect-fallback" / "manifest.json"
 CERTIFICATE_PREFIX = "Signer #1 certificate SHA-256 digest: "

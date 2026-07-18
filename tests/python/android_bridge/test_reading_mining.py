@@ -35,9 +35,7 @@ class FakeResult:
     mined_forms: list[str] = field(default_factory=lambda: ["猫", "食べる"])
 
 
-def _payload(
-    cache_dir: Path | str = "/cache", **overrides: object
-) -> dict[str, object]:
+def _payload(cache_dir: Path | str = "/cache", **overrides: object) -> dict[str, object]:
     cache = Path(cache_dir)
     payload: dict[str, object] = {
         "sourceKind": "txt",
@@ -71,9 +69,7 @@ class RecordingCallbacks:
         self.events.append("register")
         self.register_requests.append(raw)
         request = decode_envelope(raw, expected_type="job.registration.request")
-        return encode_message(
-            "job.registration.accepted", {"runId": request.payload["runId"]}
-        )
+        return encode_message("job.registration.accepted", {"runId": request.payload["runId"]})
 
     def _terminal(self, channel: str, raw: str) -> None:
         assert self.registry is None or self.registry.active_run_id is None
@@ -240,9 +236,7 @@ def test_load_document_calls_desktop_detect_then_load_for_every_kind(
     series_name: str | None,
 ) -> None:
     monkeypatch.setattr(reading_limits, "validate_source_before_load", lambda **_: None)
-    monkeypatch.setattr(
-        reading_limits, "validate_loaded_document", lambda *_, **__: None
-    )
+    monkeypatch.setattr(reading_limits, "validate_loaded_document", lambda *_, **__: None)
     job_dir = tmp_path / "reading-job-v1-nonce"
     job_dir.mkdir()
     source = job_dir / f"source{suffix}"
@@ -277,9 +271,7 @@ def test_load_document_calls_desktop_detect_then_load_for_every_kind(
 
     assert reading_mining._load_document(request) is document
     assert calls == [("detect", source), ("load", ref)]
-    assert document.series == (
-        series_name if kind == "subtitle" else "reading-job-v1-nonce"
-    )
+    assert document.series == (series_name if kind == "subtitle" else "reading-job-v1-nonce")
 
 
 def test_subtitle_series_never_leaks_random_staging_directory(
@@ -313,9 +305,7 @@ def test_load_document_rejects_missing_or_undeclared_inputs(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    missing = reading_mining._parse_request(
-        _request(tmp_path, sourcePath=str(tmp_path / "missing.txt"))
-    )
+    missing = reading_mining._parse_request(_request(tmp_path, sourcePath=str(tmp_path / "missing.txt")))
     with pytest.raises(BridgeProtocolError) as missing_error:
         reading_mining._load_document(missing)
     assert missing_error.value.code == "invalid_reading_mining_request"
@@ -664,13 +654,9 @@ def test_reading_curation_parks_and_preserves_none_vs_empty_semantics(
     try:
         assert emitted.wait(5), "curation request was not emitted"
         assert not returned_from_curation.wait(0.05), "engine thread did not park"
-        request = decode_envelope(
-            curation_requests[0], expected_type="curation.request"
-        )
+        request = decode_envelope(curation_requests[0], expected_type="curation.request")
         if resolution == "cancel":
-            jobs_module.cancel_job(
-                encode_message("job.cancel", {"runId": request.payload["runId"]})
-            )
+            jobs_module.cancel_job(encode_message("job.cancel", {"runId": request.payload["runId"]}))
         else:
             jobs_module.submit_curation(
                 encode_message(
@@ -693,9 +679,7 @@ def test_reading_curation_parks_and_preserves_none_vs_empty_semantics(
     assert raised == []
     assert selections == ([[]] if resolution == "empty" else [None])
     terminal = decode_envelope(terminal_results[0], expected_type="mining.terminal")
-    assert terminal.payload["outcome"] == (
-        "success" if resolution == "empty" else "cancelled"
-    )
+    assert terminal.payload["outcome"] == ("success" if resolution == "empty" else "cancelled")
 
 
 def test_boundary_routes_reading_without_changing_video_dispatch(
@@ -718,9 +702,7 @@ def test_boundary_routes_reading_without_changing_video_dispatch(
     monkeypatch.setattr(reading_mining, "run_reading", run_reading)
     monkeypatch.setattr(video_mining, "run_video", run_video)
 
-    missing = decode_envelope(
-        boundary.dispatch(reading_request), expected_type="bridge.error"
-    )
+    missing = decode_envelope(boundary.dispatch(reading_request), expected_type="bridge.error")
     reading_result = boundary.dispatch(reading_request, callback)
     video_result = boundary.dispatch(video_request, callback)
 
@@ -734,26 +716,12 @@ def test_boundary_routes_reading_without_changing_video_dispatch(
 
 
 def test_reading_module_has_no_top_level_engine_imports() -> None:
-    path = (
-        PROJECT_ROOT
-        / "app"
-        / "src"
-        / "main"
-        / "python"
-        / "android_bridge"
-        / "reading_mining.py"
-    )
+    path = PROJECT_ROOT / "app" / "src" / "main" / "python" / "android_bridge" / "reading_mining.py"
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     top_level_engine_imports = [
         node
         for node in tree.body
-        if (
-            isinstance(node, ast.Import)
-            and any(alias.name.startswith("anki_miner") for alias in node.names)
-        )
-        or (
-            isinstance(node, ast.ImportFrom)
-            and (node.module or "").startswith("anki_miner")
-        )
+        if (isinstance(node, ast.Import) and any(alias.name.startswith("anki_miner") for alias in node.names))
+        or (isinstance(node, ast.ImportFrom) and (node.module or "").startswith("anki_miner"))
     ]
     assert top_level_engine_imports == []

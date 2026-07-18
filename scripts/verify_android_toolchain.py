@@ -36,11 +36,7 @@ def package_xml_revision(package_xml: Path, expected_path: str) -> str:
     if not package_xml.is_file():
         raise VerificationError(f"missing package metadata: {package_xml}")
     root = ET.parse(package_xml).getroot()
-    local_packages = [
-        element
-        for element in root.iter()
-        if element.tag.rsplit("}", 1)[-1] == "localPackage"
-    ]
+    local_packages = [element for element in root.iter() if element.tag.rsplit("}", 1)[-1] == "localPackage"]
     if len(local_packages) != 1:
         raise VerificationError(
             f"{package_xml}: expected one localPackage element, found {len(local_packages)}",
@@ -48,8 +44,7 @@ def package_xml_revision(package_xml: Path, expected_path: str) -> str:
     local_package = local_packages[0]
     if local_package.attrib.get("path") != expected_path:
         raise VerificationError(
-            f"{package_xml}: path is {local_package.attrib.get('path')!r}, "
-            f"expected {expected_path!r}",
+            f"{package_xml}: path is {local_package.attrib.get('path')!r}, " f"expected {expected_path!r}",
         )
     revision = child(local_package, "revision")
     if revision is None:
@@ -143,15 +138,10 @@ def verify_avd(avd_home: Path, specification: str) -> None:
         )
 
     if required_tags is not None:
-        actual_tags = {
-            tag.strip()
-            for tag in config.get("tag.ids", "").split(",")
-            if tag.strip()
-        }
+        actual_tags = {tag.strip() for tag in config.get("tag.ids", "").split(",") if tag.strip()}
         if actual_tags != required_tags:
             raise VerificationError(
-                f"{avd_dir}/config.ini: tag.ids is {sorted(actual_tags)!r}, "
-                f"expected {sorted(required_tags)!r}",
+                f"{avd_dir}/config.ini: tag.ids is {sorted(actual_tags)!r}, " f"expected {sorted(required_tags)!r}",
             )
 
     if root_config.get("target") != platform:
@@ -178,14 +168,12 @@ def verify(args: argparse.Namespace) -> None:
         xml_revision = package_xml_revision(args.sdk_root / relative_xml, package_path)
         if xml_revision != expected_revision:
             raise VerificationError(
-                f"{package_path}: package.xml revision {xml_revision!r}, "
-                f"expected {expected_revision!r}",
+                f"{package_path}: package.xml revision {xml_revision!r}, " f"expected {expected_revision!r}",
             )
         listed_revision = installed.get(package_path)
         if listed_revision != expected_revision:
             raise VerificationError(
-                f"{package_path}: sdkmanager revision {listed_revision!r}, "
-                f"expected {expected_revision!r}",
+                f"{package_path}: sdkmanager revision {listed_revision!r}, " f"expected {expected_revision!r}",
             )
 
     for avd in args.avd:

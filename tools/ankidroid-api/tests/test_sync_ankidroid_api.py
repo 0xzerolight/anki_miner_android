@@ -70,11 +70,7 @@ class AnkiDroidApiSyncTest(unittest.TestCase):
 
     @staticmethod
     def _file_snapshot(root: Path) -> dict[str, bytes]:
-        return {
-            path.relative_to(root).as_posix(): path.read_bytes()
-            for path in root.rglob("*")
-            if path.is_file()
-        }
+        return {path.relative_to(root).as_posix(): path.read_bytes() for path in root.rglob("*") if path.is_file()}
 
     def test_refresh_is_deterministic_and_manifest_check_is_offline(self) -> None:
         refresh(self.repo, self.checkout, self.pin)
@@ -167,14 +163,10 @@ class AnkiDroidApiSyncTest(unittest.TestCase):
             (verified / entry.source_path).write_bytes(b"changed after verification\n")
             return verified
 
-        with mock.patch.object(
-            sync_core, "verify_checkout", side_effect=verify_then_mutate
-        ):
+        with mock.patch.object(sync_core, "verify_checkout", side_effect=verify_then_mutate):
             refresh(self.repo, self.checkout, self.pin)
 
-        self.assertEqual(
-            pinned_bytes, (self.repo / entry.destination_path).read_bytes()
-        )
+        self.assertEqual(pinned_bytes, (self.repo / entry.destination_path).read_bytes())
 
     def test_commit_replacement_cannot_relabel_the_pinned_tree(self) -> None:
         entry = VENDORED_FILES[0]
@@ -252,11 +244,7 @@ class AnkiDroidApiSyncTest(unittest.TestCase):
         self,
     ) -> None:
         refresh(self.repo, self.checkout, self.pin)
-        extra = (
-            self.repo
-            / GENERATED_SOURCE_ROOT
-            / "com/ichi2/anki/provider/Implementation.kt"
-        )
+        extra = self.repo / GENERATED_SOURCE_ROOT / "com/ichi2/anki/provider/Implementation.kt"
         extra.parent.mkdir(parents=True)
         extra.write_text("implementation\n", encoding="utf-8")
 
@@ -300,9 +288,7 @@ class AnkiDroidApiSyncTest(unittest.TestCase):
         manifest.parent.mkdir(parents=True)
         os.mkfifo(manifest)
 
-        with self.assertRaisesRegex(
-            SyncError, "manifest is missing or not a regular file"
-        ):
+        with self.assertRaisesRegex(SyncError, "manifest is missing or not a regular file"):
             check(self.repo, self.pin)
 
     def test_regular_file_swapped_to_fifo_during_open_is_rejected(self) -> None:
@@ -320,21 +306,14 @@ class AnkiDroidApiSyncTest(unittest.TestCase):
             dir_fd: int | None = None,
         ) -> int:
             nonlocal swapped
-            if (
-                path == MANIFEST_PATH.name
-                and dir_fd is not None
-                and not flags & os.O_DIRECTORY
-                and not swapped
-            ):
+            if path == MANIFEST_PATH.name and dir_fd is not None and not flags & os.O_DIRECTORY and not swapped:
                 os.unlink(path, dir_fd=dir_fd)
                 os.mkfifo(path, dir_fd=dir_fd)
                 swapped = True
             return original_open(path, flags, mode, dir_fd=dir_fd)
 
         with mock.patch.object(sync_core.os, "open", side_effect=open_after_swap):
-            with self.assertRaisesRegex(
-                SyncError, "manifest is missing or not a regular file"
-            ):
+            with self.assertRaisesRegex(SyncError, "manifest is missing or not a regular file"):
                 check(self.repo, self.pin)
 
         self.assertTrue(swapped)
@@ -357,9 +336,7 @@ class AnkiDroidApiSyncTest(unittest.TestCase):
         external_source_root.mkdir(parents=True)
         sentinel = external_source_root / "outside-only.kt"
         sentinel.write_bytes(b"must survive refresh\n")
-        expected_destination = external / VENDORED_FILES[
-            0
-        ].destination_path.relative_to(GENERATED_SOURCE_ROOT.parent)
+        expected_destination = external / VENDORED_FILES[0].destination_path.relative_to(GENERATED_SOURCE_ROOT.parent)
         expected_destination.parent.mkdir(parents=True, exist_ok=True)
         expected_destination.write_bytes(b"must not be overwritten\n")
         before = self._file_snapshot(external)
@@ -368,9 +345,7 @@ class AnkiDroidApiSyncTest(unittest.TestCase):
         shutil.rmtree(ancestor)
         ancestor.symlink_to(external, target_is_directory=True)
 
-        with self.assertRaisesRegex(
-            SyncError, "managed output root traverses a symlink"
-        ):
+        with self.assertRaisesRegex(SyncError, "managed output root traverses a symlink"):
             refresh(self.repo, self.checkout, self.pin)
 
         self.assertEqual(before, self._file_snapshot(external))
@@ -573,17 +548,11 @@ class AnkiDroidApiSyncTest(unittest.TestCase):
                     swapped = True
                 return descriptor
 
-            with mock.patch.object(
-                repository, "_open_directory", side_effect=open_then_swap
-            ):
+            with mock.patch.object(repository, "_open_directory", side_effect=open_then_swap):
                 repository.atomic_write(destination, b"descriptor-rooted write\n")
 
         self.assertEqual(b"external sentinel\n", external_destination.read_bytes())
-        written = (
-            self.repo
-            / "app-before-write-race"
-            / destination.relative_to(PurePosixPath("app"))
-        )
+        written = self.repo / "app-before-write-race" / destination.relative_to(PurePosixPath("app"))
         self.assertEqual(b"descriptor-rooted write\n", written.read_bytes())
 
     def test_descriptor_relative_read_survives_ancestor_swap_without_escape(
@@ -612,9 +581,7 @@ class AnkiDroidApiSyncTest(unittest.TestCase):
                     swapped = True
                 return descriptor
 
-            with mock.patch.object(
-                repository, "_open_directory", side_effect=open_then_swap
-            ):
+            with mock.patch.object(repository, "_open_directory", side_effect=open_then_swap):
                 actual = repository.read_regular(destination, label="generated file")
 
         self.assertEqual(b"descriptor-rooted read\n", actual)
@@ -625,9 +592,7 @@ class AnkiDroidApiSyncTest(unittest.TestCase):
         extra.parent.mkdir(parents=True)
         extra.write_bytes(b"in-repo extra\n")
         external = Path(self.temporary_directory.name) / "external-delete-race"
-        external_extra = (
-            external / GENERATED_SOURCE_ROOT.relative_to(PurePosixPath("app")) / "EXTRA"
-        )
+        external_extra = external / GENERATED_SOURCE_ROOT.relative_to(PurePosixPath("app")) / "EXTRA"
         external_extra.parent.mkdir(parents=True)
         external_extra.write_bytes(b"external sentinel\n")
 
@@ -653,10 +618,7 @@ class AnkiDroidApiSyncTest(unittest.TestCase):
 
         self.assertEqual(b"external sentinel\n", external_extra.read_bytes())
         original_extra = (
-            self.repo
-            / "app-before-delete-race"
-            / GENERATED_SOURCE_ROOT.relative_to(PurePosixPath("app"))
-            / "EXTRA"
+            self.repo / "app-before-delete-race" / GENERATED_SOURCE_ROOT.relative_to(PurePosixPath("app")) / "EXTRA"
         )
         self.assertEqual(b"in-repo extra\n", original_extra.read_bytes())
 

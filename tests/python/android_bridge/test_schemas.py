@@ -27,24 +27,16 @@ from android_bridge.callbacks import CallbackAdapters
 from android_bridge.jobs import JobRegistry
 from android_bridge.protocol import BridgeProtocolError, decode_envelope, encode_message
 
-SCHEMA_ROOT = (
-    Path(__file__).resolve().parents[3] / "app/src/main/python/android_bridge/schemas"
-)
+SCHEMA_ROOT = Path(__file__).resolve().parents[3] / "app/src/main/python/android_bridge/schemas"
 SOURCE_PATH_CORPUS = (
-    Path(__file__).resolve().parents[3]
-    / "app/src/test/resources/contracts/anki_media_source_path_v1.json"
+    Path(__file__).resolve().parents[3] / "app/src/test/resources/contracts/anki_media_source_path_v1.json"
 )
 MINING_PROTOCOL_CORPUS = (
-    Path(__file__).resolve().parents[3]
-    / "app/src/test/resources/contracts/mining_protocol_v1.json"
+    Path(__file__).resolve().parents[3] / "app/src/test/resources/contracts/mining_protocol_v1.json"
 )
-ENGINE_EVENTS_CORPUS = (
-    Path(__file__).resolve().parents[3]
-    / "app/src/test/resources/contracts/engine_events_v1.json"
-)
+ENGINE_EVENTS_CORPUS = Path(__file__).resolve().parents[3] / "app/src/test/resources/contracts/engine_events_v1.json"
 TOKENIZER_PROTOCOL_CORPUS = (
-    Path(__file__).resolve().parents[3]
-    / "app/src/test/resources/contracts/tokenizer_protocol_v1.json"
+    Path(__file__).resolve().parents[3] / "app/src/test/resources/contracts/tokenizer_protocol_v1.json"
 )
 
 
@@ -82,9 +74,7 @@ def _cross_schema_registry(schemas: dict[str, dict[str, Any]]) -> Registry:
     registry = Registry()
     for name in ("config", "mining", "engine_events"):
         schema = schemas[name]
-        registry = registry.with_resource(
-            schema["$id"], Resource.from_contents(schema)
-        )
+        registry = registry.with_resource(schema["$id"], Resource.from_contents(schema))
     return registry
 
 
@@ -148,9 +138,7 @@ def _full_config_payload(home: Path) -> dict[str, Any]:
             {"kind": "jisho", "dict_id": None, "enabled": False},
         ],
         "jisho_delay": 0.5,
-        "expression_audio_chain": [
-            {"kind": "pack", "pack_id": "local-audio", "enabled": True}
-        ],
+        "expression_audio_chain": [{"kind": "pack", "pack_id": "local-audio", "enabled": True}],
         "reading_tts_enabled": True,
         "pitch_category_format": "romaji",
         "max_frequency_rank": 20000,
@@ -214,9 +202,7 @@ def test_mining_protocol_valid_and_rejected_corpora_freeze_complete_messages(
 ) -> None:
     corpus = json.loads(MINING_PROTOCOL_CORPUS.read_text(encoding="utf-8"))
     assert corpus["version"] == 1
-    validator = Draft202012Validator(
-        schemas["mining"], registry=_cross_schema_registry(schemas)
-    )
+    validator = Draft202012Validator(schemas["mining"], registry=_cross_schema_registry(schemas))
 
     valid_types: set[str] = set()
     for case in corpus["valid"]:
@@ -266,9 +252,7 @@ def test_engine_event_valid_and_rejected_corpora_freeze_callback_messages(
 ) -> None:
     corpus = json.loads(ENGINE_EVENTS_CORPUS.read_text(encoding="utf-8"))
     assert corpus["version"] == 1
-    validator = Draft202012Validator(
-        schemas["engine_events"], registry=_cross_schema_registry(schemas)
-    )
+    validator = Draft202012Validator(schemas["engine_events"], registry=_cross_schema_registry(schemas))
 
     valid_types: set[str] = set()
     presenter_kinds: set[str] = set()
@@ -359,9 +343,7 @@ def test_every_progress_and_presenter_emitter_matches_engine_event_schema(
         }
     )
 
-    validator = Draft202012Validator(
-        schemas["engine_events"], registry=_cross_schema_registry(schemas)
-    )
+    validator = Draft202012Validator(schemas["engine_events"], registry=_cross_schema_registry(schemas))
     assert len(raw_events) == 10
     for raw in raw_events:
         validator.validate(json.loads(raw))
@@ -373,10 +355,7 @@ def test_anki_limits_v1_manifest_freezes_exact_units_and_values() -> None:
         "units": {
             "codePoints": "Unicode scalar values counted by JSON Schema maxLength",
             "items": "array entries",
-            "utf8Bytes": (
-                "bytes after strict UTF-8 encoding of the decoded string or "
-                "complete JSON envelope"
-            ),
+            "utf8Bytes": ("bytes after strict UTF-8 encoding of the decoded string or " "complete JSON envelope"),
         },
         "wire": {"numericTokenMaxChars": 1000},
         "names": {
@@ -467,19 +446,10 @@ def test_anki_limits_v1_manifest_freezes_exact_units_and_values() -> None:
         "createNotes": (524288, 524288),
         "releaseRunState": (16384, 16384),
     }
-    assert (
-        ANKI_LIMITS_V1["names"]["targetFields"]["maxItems"]
-        == (ANKI_LIMITS_V1["createNotes"]["maxFieldsPerNote"])
-    )
-    assert (
-        ANKI_LIMITS_V1["names"]["field"]["maxUtf8Bytes"]
-        == (ANKI_LIMITS_V1["createNotes"]["fieldNameMaxUtf8Bytes"])
-    )
+    assert ANKI_LIMITS_V1["names"]["targetFields"]["maxItems"] == (ANKI_LIMITS_V1["createNotes"]["maxFieldsPerNote"])
+    assert ANKI_LIMITS_V1["names"]["field"]["maxUtf8Bytes"] == (ANKI_LIMITS_V1["createNotes"]["fieldNameMaxUtf8Bytes"])
     assert ANKI_LIMITS_V1["targetModel"]["allowedType"] == 0
-    assert (
-        ANKI_LIMITS_V1["targetModel"]["maxTemplates"]
-        == ANKI_LIMITS_V1["createNotes"]["maxCardsPerNote"]
-    )
+    assert ANKI_LIMITS_V1["targetModel"]["maxTemplates"] == ANKI_LIMITS_V1["createNotes"]["maxCardsPerNote"]
 
 
 _SchemaPath = tuple[str | int, ...]
@@ -940,10 +910,7 @@ def _numeric_schema_bound_paths(value: Any, path: _SchemaPath = ()) -> set[_Sche
     if isinstance(value, dict):
         for key, child in value.items():
             child_path = (*path, key)
-            if (
-                key in {"maxLength", "maxItems", "maxProperties", "maximum", "const"}
-                and type(child) is int
-            ):
+            if key in {"maxLength", "maxItems", "maxProperties", "maximum", "const"} and type(child) is int:
                 result.add(child_path)
             result.update(_numeric_schema_bound_paths(child, child_path))
     elif isinstance(value, list):
@@ -959,8 +926,7 @@ def _schema_limit_mismatches(schema: dict[str, Any]) -> list[str]:
         actual = _path_value(schema, schema_path)
         if actual != expected:
             mismatches.append(
-                f"{'/'.join(map(str, schema_path))}: {actual} != {expected} "
-                f"from {'/'.join(manifest_path)}"
+                f"{'/'.join(map(str, schema_path))}: {actual} != {expected} " f"from {'/'.join(manifest_path)}"
             )
     return mismatches
 
@@ -1142,9 +1108,7 @@ def test_schema_code_point_bound_is_distinct_from_runtime_utf8_bound(
 def test_media_source_path_schema_matches_shared_contract_corpus(
     case: dict[str, Any], schemas: dict[str, dict[str, Any]]
 ) -> None:
-    source_path_schema = schemas["anki"]["$defs"]["mediaAsset"]["properties"][
-        "sourcePath"
-    ]
+    source_path_schema = schemas["anki"]["$defs"]["mediaAsset"]["properties"]["sourcePath"]
     errors = list(Draft202012Validator(source_path_schema).iter_errors(case["path"]))
 
     assert (not errors) is case["schemaValid"]
@@ -1259,9 +1223,7 @@ def test_generated_curation_request_and_omitted_sentence_id_validate(
             {
                 "runId": handle.run_id,
                 "requestId": request_payload["requestId"],
-                "selection": [
-                    {"candidateId": request_payload["candidates"][0]["candidateId"]}
-                ],
+                "selection": [{"candidateId": request_payload["candidates"][0]["candidateId"]}],
             },
         )
         _validated_payload(
@@ -1293,9 +1255,7 @@ def test_generated_paged_curation_messages_validate(
     requests: queue.Queue[str] = queue.Queue()
     returned: list[object] = []
     thread = threading.Thread(
-        target=lambda: returned.append(
-            registry.await_curation(handle.run_id, words, requests.put)
-        ),
+        target=lambda: returned.append(registry.await_curation(handle.run_id, words, requests.put)),
         daemon=True,
     )
     envelope_validator = Draft202012Validator(schemas["envelope"])
@@ -1375,11 +1335,7 @@ def test_null_or_empty_sentence_id_is_schema_invalid(
         {"settings": {"unknown_field": True}},
         {"settings": {"dictionary_chain": [{"kind": "indexed", "enabled": True}]}},
         {"settings": {"frequency_chain": [{"source_id": "freq", "unexpected": True}]}},
-        {
-            "settings": {
-                "expression_audio_chain": [{"kind": "jpod101", "pack_id": "not-local"}]
-            }
-        },
+        {"settings": {"expression_audio_chain": [{"kind": "jpod101", "pack_id": "not-local"}]}},
         {"settings": {"blacklist_path": "relative/blacklist.txt"}},
         {"settings": {"whitelist_path": ""}},
         {"settings": {"anki_deck_name": ""}},
@@ -1781,19 +1737,14 @@ def test_verify_target_result_rejects_deck_created_true(
         },
     ],
 )
-def test_anki_callback_schema_is_closed(
-    schemas: dict[str, dict[str, Any]], payload: dict[str, Any]
-) -> None:
+def test_anki_callback_schema_is_closed(schemas: dict[str, dict[str, Any]], payload: dict[str, Any]) -> None:
     with pytest.raises(ValidationError):
         Draft202012Validator(schemas["anki"]).validate(payload)
 
 
 @pytest.mark.parametrize("literal", ["NaN", "Infinity", "-Infinity"])
 def test_validation_pipeline_rejects_non_rfc_numeric_messages(literal: str) -> None:
-    raw = (
-        '{"schemaVersion":1,"type":"config.snapshot",'
-        '"payload":{"settings":{"subtitle_offset":' + literal + "}}}"
-    )
+    raw = '{"schemaVersion":1,"type":"config.snapshot",' '"payload":{"settings":{"subtitle_offset":' + literal + "}}}"
 
     with pytest.raises(BridgeProtocolError) as error:
         decode_envelope(raw, expected_type="config.snapshot")

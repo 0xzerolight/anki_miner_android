@@ -21,9 +21,7 @@ from android_bridge.unidic_resource import (
 def _reset_tokenizer_process_state(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(unidic_resource, "_registration", None)
     monkeypatch.setattr(tokenizer_selection, "_selected_backend", None)
-    monkeypatch.setattr(
-        tokenizer_runtime, "_configuration_requires_restart", False
-    )
+    monkeypatch.setattr(tokenizer_runtime, "_configuration_requires_restart", False)
 
 
 def _make_dicdir(parent: Path, name: str = "dicdir") -> Path:
@@ -69,9 +67,7 @@ def test_tokenizer_configuration_requires_bootstrap_before_any_mutation(
         lambda *args, **kwargs: registrations.append((args, kwargs)),
     )
 
-    response = decode_envelope(
-        _dispatch(_payload("/unidic")), expected_type="bridge.error"
-    )
+    response = decode_envelope(_dispatch(_payload("/unidic")), expected_type="bridge.error")
 
     assert response.payload["code"] == "bootstrap_required"
     assert registrations == []
@@ -175,9 +171,7 @@ def test_tokenizer_configuration_returns_canonical_ready_payload(
         "dicDir": str(root.resolve()),
         "treeSha256": tree_sha256,
         "fileCount": len(UNIDIC_REQUIRED_FILES) + 1,
-        "totalBytes": sum(
-            path.stat().st_size for path in root.rglob("*") if path.is_file()
-        ),
+        "totalBytes": sum(path.stat().st_size for path in root.rglob("*") if path.is_file()),
     }
     assert selected == ["s1a"]
 
@@ -204,10 +198,7 @@ def test_exact_tokenizer_configuration_is_idempotent(
     second = _dispatch(request)
 
     assert first == second
-    assert (
-        decode_envelope(second, expected_type="tokenizer.ready").payload["backend"]
-        == "s1a"
-    )
+    assert decode_envelope(second, expected_type="tokenizer.ready").payload["backend"] == "s1a"
     assert require_registered_unidic() is registration
     assert selected == ["s1a", "s1a"]
 
@@ -245,9 +236,7 @@ def test_different_registration_is_rejected_without_identity_leak(
     del initialized_bridge_home
     first_root = _make_dicdir(tmp_path, "one")
     second_root = _make_dicdir(tmp_path, "two")
-    monkeypatch.setattr(
-        tokenizer_runtime, "configure_tokenizer_backend", lambda backend: backend
-    )
+    monkeypatch.setattr(tokenizer_runtime, "configure_tokenizer_backend", lambda backend: backend)
 
     first = _dispatch(
         _payload(
@@ -265,10 +254,7 @@ def test_different_registration_is_rejected_without_identity_leak(
     )
     response = decode_envelope(raw, expected_type="bridge.error")
 
-    assert (
-        decode_envelope(first, expected_type="tokenizer.ready").payload["resourceId"]
-        == "unidic-one"
-    )
+    assert decode_envelope(first, expected_type="tokenizer.ready").payload["resourceId"] == "unidic-one"
     assert response.payload == {
         "code": "unidic_already_registered",
         "message": "Tokenizer resource configuration was rejected",
@@ -299,9 +285,7 @@ def test_post_registration_failure_poison_requires_process_restart(
 
     assert response.payload == {
         "code": "tokenizer_restart_required",
-        "message": (
-            "Tokenizer setup cannot continue until the Python process is restarted"
-        ),
+        "message": ("Tokenizer setup cannot continue until the Python process is restarted"),
         "requestType": "tokenizer.configure",
     }
     assert str(root) not in raw

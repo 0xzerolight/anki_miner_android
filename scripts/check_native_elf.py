@@ -13,9 +13,7 @@ from check_native_artifacts import ArtifactError, Inspection, MACHINE_ABIS, pars
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--elf", type=Path, required=True)
-    parser.add_argument(
-        "--allow-abi", required=True, choices=sorted(MACHINE_ABIS.values())
-    )
+    parser.add_argument("--allow-abi", required=True, choices=sorted(MACHINE_ABIS.values()))
     parser.add_argument("--require-pie-cli", action="store_true")
     return parser.parse_args()
 
@@ -33,9 +31,7 @@ def main() -> int:
             require_pie_cli=args.require_pie_cli,
         )
         if inspection.found_abis != {args.allow_abi}:
-            raise ArtifactError(
-                f"found ABIs {sorted(inspection.found_abis)}, expected {args.allow_abi}"
-            )
+            raise ArtifactError(f"found ABIs {sorted(inspection.found_abis)}, expected {args.allow_abi}")
     except (ArtifactError, OSError) as error:
         print(f"native ELF verification failed: {error}", file=sys.stderr)
         return 1

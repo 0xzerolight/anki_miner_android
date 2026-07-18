@@ -172,9 +172,7 @@ def test_default_factory_is_lazy(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 
     def fake_import(name: str) -> object:
         imported.append(name)
-        return SimpleNamespace(
-            GenericTagger=lambda _args: FakeTagger(registration.sys_dic, [])
-        )
+        return SimpleNamespace(GenericTagger=lambda _args: FakeTagger(registration.sys_dic, []))
 
     monkeypatch.setattr("android_bridge.tokenizer_s1a.importlib.import_module", fake_import)
     S1aTokenizerBackend(registration)
@@ -182,10 +180,7 @@ def test_default_factory_is_lazy(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 
 
 def test_literal_star_reaches_compound_morphology(tmp_path: Path) -> None:
-    morphology_path = (
-        Path(__file__).resolve().parents[3]
-        / "app/src/main/python/anki_miner/services/morphology.py"
-    )
+    morphology_path = Path(__file__).resolve().parents[3] / "app/src/main/python/anki_miner/services/morphology.py"
     spec = importlib.util.spec_from_file_location("s1a_morphology_probe", morphology_path)
     assert spec is not None and spec.loader is not None
     morphology = importlib.util.module_from_spec(spec)

@@ -24,10 +24,8 @@ import pytest
 import android_bridge.reading_mining as reading_mining
 from android_bridge.protocol import encode_message
 
-
 _PNG_BYTES = base64.b64decode(
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk"
-    "+A8AAQUBAScY42YAAAAASUVORK5CYII="
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk" "+A8AAQUBAScY42YAAAAASUVORK5CYII="
 )
 
 _AOZORA_TEXT = "\n".join(
@@ -97,9 +95,7 @@ def _reading_request(
         {
             "sourceKind": source_kind,
             "sourcePath": str(source_path),
-            "imageArchivePath": (
-                str(image_archive_path) if image_archive_path is not None else None
-            ),
+            "imageArchivePath": (str(image_archive_path) if image_archive_path is not None else None),
             "seriesName": series_name,
             "cacheDir": str(cache_dir),
             "nativeLibraryDir": str(cache_dir / "native"),
@@ -373,9 +369,7 @@ def test_real_mokuro_archive_detector_and_loader_match_contract(
     tmp_path: Path,
 ) -> None:
     assert initialized_bridge_home.is_absolute()
-    source, image_archive = _write_mokuro_fixture(
-        tmp_path / "reading-job-v1-mokuro"
-    )
+    source, image_archive = _write_mokuro_fixture(tmp_path / "reading-job-v1-mokuro")
 
     document = _load_real_document(
         cache_dir=tmp_path,
@@ -466,7 +460,7 @@ class _DefinitionService:
         assert progress_callback is None
         self.lookup_pairs = list(pairs)
         self.fallback_context = dict(fallback_context)
-        return ["<div class=\"definition\">cat</div>"]
+        return ['<div class="definition">cat</div>']
 
     def close(self) -> None:
         self.closed = True
@@ -515,9 +509,7 @@ def test_actual_process_reading_mines_loaded_mokuro_document(
     from anki_miner.presenters import NullPresenter
     from anki_miner.services.word_filter import WordFilterService
 
-    source, image_archive = _write_mokuro_fixture(
-        tmp_path / "reading-job-v1-process"
-    )
+    source, image_archive = _write_mokuro_fixture(tmp_path / "reading-job-v1-process")
     raw_request = _reading_request(
         cache_dir=tmp_path,
         source_kind="mokuro",

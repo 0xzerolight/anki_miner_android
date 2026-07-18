@@ -176,9 +176,7 @@ def test_selection_returns_original_objects_and_chosen_sentence_variant() -> Non
 
 
 @pytest.mark.parametrize(("selection", "expected"), [(None, None), ([], [])])
-def test_null_and_empty_selection_remain_distinct(
-    selection: object, expected: object
-) -> None:
+def test_null_and_empty_selection_remain_distinct(selection: object, expected: object) -> None:
     registry = JobRegistry()
     word = FakeWord("猫", "猫", "猫だ", 1, 2, 1)
     run_id, request, returned, thread = _start_wait(registry, [word])
@@ -255,9 +253,7 @@ def test_cancel_before_curation_does_not_emit() -> None:
         ),
     ],
 )
-def test_invalid_object_ids_never_reconstruct_engine_values(
-    selection: list[dict[str, str]], code: str
-) -> None:
+def test_invalid_object_ids_never_reconstruct_engine_values(selection: list[dict[str, str]], code: str) -> None:
     registry = JobRegistry()
     word = FakeWord("猫", "猫", "猫だ", 1, 2, 1)
     run_id, request, _, thread = _start_wait(registry, [word])
@@ -265,11 +261,7 @@ def test_invalid_object_ids_never_reconstruct_engine_values(
     assert isinstance(payload, dict)
     candidate_id = payload["candidates"][0]["candidateId"]
     patched = [
-        {
-            key: candidate_id if value == "USE_REAL" else value
-            for key, value in item.items()
-        }
-        for item in selection
+        {key: candidate_id if value == "USE_REAL" else value for key, value in item.items()} for item in selection
     ]
 
     with pytest.raises(BridgeProtocolError) as error:
@@ -388,13 +380,9 @@ def test_resolve_versus_cancel_is_race_safe_and_never_hangs() -> None:
     canceller.join(1)
     waiter.join(1)
 
-    assert (
-        not resolver.is_alive() and not canceller.is_alive() and not waiter.is_alive()
-    )
+    assert not resolver.is_alive() and not canceller.is_alive() and not waiter.is_alive()
     assert returned in ([[word]], [None])
-    assert (
-        not resolver_errors or resolver_errors[0].code == "duplicate_curation_response"
-    )
+    assert not resolver_errors or resolver_errors[0].code == "duplicate_curation_response"
 
 
 def test_repeated_cancellation_is_idempotent() -> None:
@@ -409,9 +397,7 @@ def test_repeated_cancellation_is_idempotent() -> None:
     assert returned == [None]
 
 
-def test_sequential_curation_rejects_prior_response_without_poisoning_current_gate() -> (
-    None
-):
+def test_sequential_curation_rejects_prior_response_without_poisoning_current_gate() -> None:
     registry = JobRegistry()
     handle = registry.begin()
     first_word = FakeWord("猫", "猫", "猫だ", 1, 2, 1)
@@ -454,10 +440,7 @@ def test_sequential_curation_rejects_prior_response_without_poisoning_current_ga
 
 def test_large_curation_is_complete_bounded_and_aggregates_original_objects() -> None:
     registry = JobRegistry()
-    words = [
-        FakeWord(f"word-{index}", f"lemma-{index}", f"sentence-{index}", 1, 2, 1)
-        for index in range(205)
-    ]
+    words = [FakeWord(f"word-{index}", f"lemma-{index}", f"sentence-{index}", 1, 2, 1) for index in range(205)]
     run_id, emitted, returned, thread = _start_paged_wait(registry, words)
     seen_ids: set[str] = set()
     selected_words: list[FakeWord] = []
@@ -516,9 +499,7 @@ def test_empty_selection_on_every_page_returns_empty_not_cancellation() -> None:
         _, request = emitted.get(timeout=1)
         payload = request["payload"]
         assert isinstance(payload, dict)
-        registry.resolve_curation(
-            _page_response(run_id, payload["requestId"], page_index, [])
-        )
+        registry.resolve_curation(_page_response(run_id, payload["requestId"], page_index, []))
 
     thread.join(1)
     assert returned == [[]]
@@ -532,9 +513,7 @@ def test_null_page_selection_cancels_the_whole_curation() -> None:
     payload = request["payload"]
     assert isinstance(payload, dict)
 
-    resolution = registry.resolve_curation(
-        _page_response(run_id, payload["requestId"], 0, None)
-    )
+    resolution = registry.resolve_curation(_page_response(run_id, payload["requestId"], 0, None))
     thread.join(1)
 
     assert resolution.final_page is True
@@ -545,10 +524,7 @@ def test_null_page_selection_cancels_the_whole_curation() -> None:
 def test_curation_pages_are_split_by_exact_utf8_envelope_size() -> None:
     registry = JobRegistry()
     large_sentence = "猫" * 90_000
-    words = [
-        FakeWord(str(index), str(index), large_sentence, 1, 2, 1)
-        for index in range(2)
-    ]
+    words = [FakeWord(str(index), str(index), large_sentence, 1, 2, 1) for index in range(2)]
     run_id, emitted, returned, thread = _start_paged_wait(registry, words)
 
     for page_index in range(2):
@@ -557,9 +533,7 @@ def test_curation_pages_are_split_by_exact_utf8_envelope_size() -> None:
         assert isinstance(payload, dict)
         assert len(raw.encode("utf-8")) <= CURATION_PAGE_MAX_UTF8_BYTES
         assert len(payload["candidates"]) == 1
-        registry.resolve_curation(
-            _page_response(run_id, payload["requestId"], page_index, [])
-        )
+        registry.resolve_curation(_page_response(run_id, payload["requestId"], page_index, []))
 
     thread.join(1)
     assert returned == [[]]
@@ -639,12 +613,9 @@ def test_cancel_between_pages_releases_wait_without_emitting_another_page() -> N
     assert returned == [None]
 
 
-def test_curation_schema_matches_generated_ids_and_optional_sentence_selection() -> (
-    None
-):
+def test_curation_schema_matches_generated_ids_and_optional_sentence_selection() -> None:
     schema_path = (
-        Path(__file__).resolve().parents[3]
-        / "app/src/main/python/android_bridge/schemas/curation.schema.json"
+        Path(__file__).resolve().parents[3] / "app/src/main/python/android_bridge/schemas/curation.schema.json"
     )
     schema = json.loads(schema_path.read_text(encoding="utf-8"))
     definitions = schema["$defs"]

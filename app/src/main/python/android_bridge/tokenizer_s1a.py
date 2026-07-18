@@ -102,8 +102,7 @@ class S1aTokenizerBackend:
                     if (
                         byte_start < 0
                         or byte_end > offsets.byte_length
-                        or surface.encode("utf-8")
-                        != offsets.encoded[byte_start:byte_end]
+                        or surface.encode("utf-8") != offsets.encoded[byte_start:byte_end]
                     ):
                         raise TokenizerContractError(
                             "s1a_surface_mismatch",

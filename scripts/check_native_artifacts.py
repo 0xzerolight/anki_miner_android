@@ -140,9 +140,7 @@ class Inspection:
     expected_attributions: dict[str, S1aAttribution] = field(default_factory=dict)
     found_attributions: set[str] = field(default_factory=set)
     attribution_text: dict[str, list[bytes]] = field(default_factory=dict)
-    expected_natives: dict[tuple[str, str], S1aNativePayload] = field(
-        default_factory=dict
-    )
+    expected_natives: dict[tuple[str, str], S1aNativePayload] = field(default_factory=dict)
     found_natives: dict[tuple[str, str], int] = field(default_factory=dict)
 
 
@@ -163,20 +161,13 @@ def s1a_native_package(path: PurePosixPath) -> str | None:
         return "chaquopy_libcxx"
     if basename == "libmecab.so.2":
         return "chaquopy_libmecab"
-    if (
-        bool(path.parts)
-        and path.parts[0] == "fugashi"
-        and basename.startswith("fugashi.")
-        and basename.endswith(".so")
-    ):
+    if bool(path.parts) and path.parts[0] == "fugashi" and basename.startswith("fugashi.") and basename.endswith(".so"):
         return "fugashi"
     return None
 
 
 def s1a_requirement_imys(allowed_abis: set[str]) -> set[str]:
-    return {"requirements-common.imy"} | {
-        f"requirements-{abi}.imy" for abi in allowed_abis
-    }
+    return {"requirements-common.imy"} | {f"requirements-{abi}.imy" for abi in allowed_abis}
 
 
 def s1a_native_owner(abi: str, allowed_abis: set[str]) -> str:
@@ -205,10 +196,7 @@ def load_s1a_inventory(
     if not isinstance(wheels, dict) or set(wheels) != expected_abis:
         raise ArtifactError("S1a publication manifest ABI set is invalid")
     if not allowed_abis or not allowed_abis.issubset(expected_abis):
-        raise ArtifactError(
-            f"S1a packaging supports only {sorted(expected_abis)}, "
-            f"found {sorted(allowed_abis)}"
-        )
+        raise ArtifactError(f"S1a packaging supports only {sorted(expected_abis)}, " f"found {sorted(allowed_abis)}")
 
     by_abi: dict[str, dict[str, dict[str, str]]] = {}
     expected_natives: dict[tuple[str, str], S1aNativePayload] = {}
@@ -241,32 +229,21 @@ def load_s1a_inventory(
             if not isinstance(native_path, str) or not isinstance(native_hash, str):
                 raise ArtifactError("S1a publication native path/hash is invalid")
             normalized_native = safe_entry_name(native_path, str(manifest)).as_posix()
-            if (
-                normalized_native != native_path
-                or not re.fullmatch(r"[0-9a-f]{64}", native_hash)
-                or native_abi != abi
-            ):
+            if normalized_native != native_path or not re.fullmatch(r"[0-9a-f]{64}", native_hash) or native_abi != abi:
                 raise ArtifactError("S1a publication native path/hash/ABI is invalid")
             if native_path != S1A_NATIVE_PATHS[package]:
-                raise ArtifactError(
-                    f"S1a {package} manifest native path is unexpected: {native_path}"
-                )
+                raise ArtifactError(f"S1a {package} manifest native path is unexpected: {native_path}")
             if abi in allowed_abis:
                 native_key = (s1a_native_owner(abi, allowed_abis), native_path)
                 if native_key in expected_natives:
-                    raise ArtifactError(
-                        f"duplicate S1a publication native path for "
-                        f"{native_key[0]}: {native_path}"
-                    )
+                    raise ArtifactError(f"duplicate S1a publication native path for " f"{native_key[0]}: {native_path}")
                 expected_natives[native_key] = S1aNativePayload(
                     package,
                     abi,
                     native_path,
                     native_hash,
                 )
-            expected_dist_info = (
-                f"{package}-{S1A_PACKAGE_VERSIONS[package]}.dist-info"
-            ).casefold()
+            expected_dist_info = (f"{package}-{S1A_PACKAGE_VERSIONS[package]}.dist-info").casefold()
             package_licenses: dict[str, str] = {}
             for raw_license in licenses:
                 if not isinstance(raw_license, dict):
@@ -280,13 +257,11 @@ def load_s1a_inventory(
                     raise ArtifactError("S1a publication license path/hash is invalid")
                 parts = tuple(part.casefold() for part in PurePosixPath(path).parts)
                 if parts.count(expected_dist_info) != 1:
-                    raise ArtifactError(
-                        f"S1a {package} attribution is outside its dist-info directory: {path}"
-                    )
+                    raise ArtifactError(f"S1a {package} attribution is outside its dist-info directory: {path}")
                 basename = PurePosixPath(path).name.upper()
-                expected_name = basename.startswith(
-                    ("LICENSE", "COPYING", "COPYRIGHT", "NOTICE")
-                ) or (package == "chaquopy_libmecab" and basename == "BSD")
+                expected_name = basename.startswith(("LICENSE", "COPYING", "COPYRIGHT", "NOTICE")) or (
+                    package == "chaquopy_libmecab" and basename == "BSD"
+                )
                 if not expected_name:
                     raise ArtifactError(f"S1a attribution has an unexpected name: {path}")
                 if path in package_licenses:
@@ -317,9 +292,7 @@ def safe_entry_name(name: str, archive_name: str) -> PurePosixPath:
         raise ArtifactError(f"{archive_name}: unsafe archive entry {name!r}")
     without_directory_marker = name[:-1] if name.endswith("/") else name
     components = without_directory_marker.split("/")
-    if not without_directory_marker or any(
-        component in {"", ".", ".."} for component in components
-    ):
+    if not without_directory_marker or any(component in {"", ".", ".."} for component in components):
         raise ArtifactError(f"{archive_name}: unsafe archive entry {name!r}")
     path = PurePosixPath(without_directory_marker)
     if path.is_absolute():
@@ -341,10 +314,7 @@ def parse_elf(
     elf_class = data[4]
     data_encoding = data[5]
     if data_encoding != 1:
-        raise ArtifactError(
-            f"{logical_name}: Android ELF must be little-endian, found encoding "
-            f"{data_encoding}"
-        )
+        raise ArtifactError(f"{logical_name}: Android ELF must be little-endian, found encoding " f"{data_encoding}")
     endian = "<"
 
     elf_type = struct.unpack_from(f"{endian}H", data, 16)[0]
@@ -354,10 +324,7 @@ def parse_elf(
         raise ArtifactError(f"{logical_name}: unsupported ELF machine {machine}")
     expected_class = ABI_ELF_CLASSES[abi]
     if elf_class != expected_class:
-        raise ArtifactError(
-            f"{logical_name}: ABI {abi} requires ELF class {expected_class}, "
-            f"found {elf_class}"
-        )
+        raise ArtifactError(f"{logical_name}: ABI {abi} requires ELF class {expected_class}, " f"found {elf_class}")
     if abi not in inspection.allowed_abis:
         raise ArtifactError(
             f"{logical_name}: contains ABI {abi}, allowed: {sorted(inspection.allowed_abis)}",
@@ -399,9 +366,7 @@ def parse_elf(
                 interpreter_offset, interpreter_size = fields[1], fields[4]
             else:
                 interpreter_offset, interpreter_size = fields[2], fields[5]
-            if interpreter_size == 0 or interpreter_offset + interpreter_size > len(
-                data
-            ):
+            if interpreter_size == 0 or interpreter_offset + interpreter_size > len(data):
                 raise ArtifactError(f"{logical_name}: invalid PT_INTERP segment")
             has_interpreter = True
         if fields[0] != PT_LOAD:
@@ -431,8 +396,7 @@ def parse_elf(
         loads.append((offset, virtual_address, file_size))
         if alignment < PAGE_SIZE:
             raise ArtifactError(
-                f"{logical_name}: PT_LOAD[{index}] alignment is {alignment}, "
-                f"requires at least {PAGE_SIZE}",
+                f"{logical_name}: PT_LOAD[{index}] alignment is {alignment}, " f"requires at least {PAGE_SIZE}",
             )
         if (virtual_address - offset) % PAGE_SIZE != 0:
             raise ArtifactError(
@@ -441,9 +405,7 @@ def parse_elf(
     if not loads:
         raise ArtifactError(f"{logical_name}: ELF has no PT_LOAD segment")
     if require_et_dyn and elf_type != ET_DYN:
-        raise ArtifactError(
-            f"{logical_name}: required shared library must be ET_DYN, found {elf_type}"
-        )
+        raise ArtifactError(f"{logical_name}: required shared library must be ET_DYN, found {elf_type}")
     if require_pie_cli:
         if elf_type != ET_DYN:
             raise ArtifactError(
@@ -471,11 +433,7 @@ def parse_elf(
         dynamic_offset, dynamic_size = dynamic_segment
         entry_size = 8 if elf_class == 1 else 16
         dynamic_format = f"{endian}iI" if elf_class == 1 else f"{endian}qQ"
-        if (
-            dynamic_size < entry_size
-            or dynamic_size % entry_size
-            or dynamic_offset + dynamic_size > len(data)
-        ):
+        if dynamic_size < entry_size or dynamic_size % entry_size or dynamic_offset + dynamic_size > len(data):
             raise ArtifactError(f"{logical_name}: invalid PT_DYNAMIC segment")
         dynamic: list[tuple[int, int]] = []
         terminated = False
@@ -493,9 +451,7 @@ def parse_elf(
             raise ArtifactError(f"{logical_name}: forbidden text relocation flag")
         string_tables = [value for tag, value in dynamic if tag == DT_STRTAB]
         string_sizes = [value for tag, value in dynamic if tag == DT_STRSZ]
-        string_offsets = [
-            value for tag, value in dynamic if tag in {DT_NEEDED, DT_SONAME}
-        ]
+        string_offsets = [value for tag, value in dynamic if tag in {DT_NEEDED, DT_SONAME}]
         if string_offsets:
             if len(string_tables) != 1 or len(string_sizes) != 1:
                 raise ArtifactError(f"{logical_name}: invalid dynamic string table")
@@ -506,11 +462,7 @@ def parse_elf(
                 if load_address <= table_address < load_address + load_size:
                     table_offset = load_offset + table_address - load_address
                     break
-            if (
-                table_offset is None
-                or table_size == 0
-                or table_offset + table_size > len(data)
-            ):
+            if table_offset is None or table_size == 0 or table_offset + table_size > len(data):
                 raise ArtifactError(f"{logical_name}: dynamic string table is out of bounds")
 
             def dynamic_string(offset: int) -> str:
@@ -559,8 +511,7 @@ def validate_s1a_native(
     allowed = required | ANDROID_SYSTEM_LIBS
     if not required.issubset(needed) or not needed.issubset(allowed):
         raise ArtifactError(
-            f"{logical_name}: native dependencies are {sorted(needed)}, "
-            f"required {sorted(required)}",
+            f"{logical_name}: native dependencies are {sorted(needed)}, " f"required {sorted(required)}",
         )
 
 
@@ -571,13 +522,8 @@ def reject_base_unidic_entry(path: PurePosixPath, logical_name: str) -> None:
     if basename in UNIDIC_PAYLOAD_NAMES:
         raise ArtifactError(f"{logical_name}: UniDic payload is forbidden in base")
     for index in range(len(components) - 1):
-        if (
-            components[index] in {"unidic_lite", "unidic-lite"}
-            and components[index + 1] == "dicdir"
-        ):
-            raise ArtifactError(
-                f"{logical_name}: UniDic dicdir layout is forbidden in base"
-            )
+        if components[index] in {"unidic_lite", "unidic-lite"} and components[index + 1] == "dicdir":
+            raise ArtifactError(f"{logical_name}: UniDic dicdir layout is forbidden in base")
     if "unidic" in normalized and basename.endswith(UNIDIC_ARCHIVE_SUFFIXES):
         raise ArtifactError(f"{logical_name}: UniDic archive is forbidden in base")
 
@@ -592,9 +538,7 @@ def inspect_zip(
     requirement_depth: int = 0,
 ) -> None:
     if depth > MAX_ARCHIVE_DEPTH:
-        raise ArtifactError(
-            f"{logical_name}: archive nesting exceeds {MAX_ARCHIVE_DEPTH}"
-        )
+        raise ArtifactError(f"{logical_name}: archive nesting exceeds {MAX_ARCHIVE_DEPTH}")
     try:
         archive = zipfile.ZipFile(source)
     except zipfile.BadZipFile as error:
@@ -604,9 +548,7 @@ def inspect_zip(
         members = archive.infolist()
         if requirement_owner is not None and requirement_depth == 0:
             if requirement_owner in inspection.requirement_member_counts:
-                raise ArtifactError(
-                    f"{logical_name}: requirement IMY owner was inspected more than once"
-                )
+                raise ArtifactError(f"{logical_name}: requirement IMY owner was inspected more than once")
             inspection.requirement_member_counts[requirement_owner] = len(members)
         seen_entries: set[str] = set()
         for info in members:
@@ -614,18 +556,12 @@ def inspect_zip(
             entry_name = f"{logical_name}!/{entry_path.as_posix()}"
             direct_path = entry_path.as_posix()
             if direct_path in seen_entries:
-                raise ArtifactError(
-                    f"{logical_name}: duplicate archive entry {direct_path!r}"
-                )
+                raise ArtifactError(f"{logical_name}: duplicate archive entry {direct_path!r}")
             seen_entries.add(direct_path)
-            required_direct = (
-                depth == 0 and direct_path in inspection.required_direct_entries
-            )
+            required_direct = depth == 0 and direct_path in inspection.required_direct_entries
             if depth == 0:
                 is_aab = logical_name.casefold().endswith(".aab")
-                entry_in_base = not is_aab or (
-                    bool(entry_path.parts) and entry_path.parts[0].casefold() == "base"
-                )
+                entry_in_base = not is_aab or (bool(entry_path.parts) and entry_path.parts[0].casefold() == "base")
             else:
                 entry_in_base = bool(inside_base_module)
             if inspection.reject_base_unidic and entry_in_base:
@@ -635,57 +571,40 @@ def inspect_zip(
             folded_name = entry_name.casefold()
             for forbidden in inspection.forbidden:
                 if forbidden.casefold() in folded_name:
-                    raise ArtifactError(
-                        f"{entry_name}: forbidden release entry {forbidden!r}"
-                    )
+                    raise ArtifactError(f"{entry_name}: forbidden release entry {forbidden!r}")
 
             basename = entry_path.name
             is_app_imy = basename == "app.imy"
-            is_requirement_imy = (
-                basename.startswith("requirements-") and basename.endswith(".imy")
-            )
+            is_requirement_imy = basename.startswith("requirements-") and basename.endswith(".imy")
             if is_app_imy or is_requirement_imy:
                 if depth != 0:
-                    raise ArtifactError(
-                        f"{entry_name}: Chaquopy IMY must be a direct outer artifact entry"
-                    )
+                    raise ArtifactError(f"{entry_name}: Chaquopy IMY must be a direct outer artifact entry")
                 is_aab = logical_name.casefold().endswith(".aab")
                 prefix = "base/assets/chaquopy" if is_aab else "assets/chaquopy"
                 canonical_path = f"{prefix}/{basename}"
                 if direct_path != canonical_path:
                     raise ArtifactError(
-                        f"{entry_name}: Chaquopy IMY path is not canonical; "
-                        f"expected {canonical_path!r}"
+                        f"{entry_name}: Chaquopy IMY path is not canonical; " f"expected {canonical_path!r}"
                     )
                 if is_requirement_imy:
                     expected_requirement_imys = {"requirements-common.imy"} | {
-                            f"requirements-{abi}.imy"
-                            for abi in inspection.allowed_abis
+                        f"requirements-{abi}.imy" for abi in inspection.allowed_abis
                     }
                     if inspection.require_s1a:
-                        expected_requirement_imys = s1a_requirement_imys(
-                            inspection.allowed_abis
-                        )
+                        expected_requirement_imys = s1a_requirement_imys(inspection.allowed_abis)
                     if basename not in expected_requirement_imys:
-                        raise ArtifactError(
-                            f"{entry_name}: unexpected requirement IMY for artifact ABI set"
-                        )
+                        raise ArtifactError(f"{entry_name}: unexpected requirement IMY for artifact ABI set")
             if is_app_imy:
                 inspection.app_imy_count += 1
             if is_requirement_imy:
                 inspection.requirement_imys.add(basename)
             if requirement_owner:
                 payload_name = entry_path.as_posix()
-                previous_owners = inspection.requirement_owners.setdefault(
-                    payload_name, set()
-                )
+                previous_owners = inspection.requirement_owners.setdefault(payload_name, set())
                 candidate_owners = previous_owners | {requirement_owner}
-                distinct_owner = bool(previous_owners) and (
-                    requirement_owner not in previous_owners
-                )
+                distinct_owner = bool(previous_owners) and (requirement_owner not in previous_owners)
                 owners_are_manifest_natives = all(
-                    (owner, payload_name) in inspection.expected_natives
-                    for owner in candidate_owners
+                    (owner, payload_name) in inspection.expected_natives for owner in candidate_owners
                 )
                 if distinct_owner and not owners_are_manifest_natives:
                     raise ArtifactError(
@@ -708,39 +627,24 @@ def inspect_zip(
                 is_archive = prefix in ZIP_MAGICS or basename.endswith(".imy")
                 payload_name = entry_path.as_posix()
                 attribution = inspection.expected_attributions.get(payload_name)
-                expected_native = inspection.expected_natives.get(
-                    (requirement_owner or "", payload_name)
-                )
-                manifest_native_path = any(
-                    path == payload_name
-                    for _, path in inspection.expected_natives
-                )
+                expected_native = inspection.expected_natives.get((requirement_owner or "", payload_name))
+                manifest_native_path = any(path == payload_name for _, path in inspection.expected_natives)
                 if attribution is not None and (
-                    requirement_owner != "requirements-common.imy"
-                    or requirement_depth != 0
+                    requirement_owner != "requirements-common.imy" or requirement_depth != 0
                 ):
                     raise ArtifactError(
-                        f"{entry_name}: S1a attribution must be a direct member of "
-                        "requirements-common.imy"
+                        f"{entry_name}: S1a attribution must be a direct member of " "requirements-common.imy"
                     )
-                if manifest_native_path and (
-                    expected_native is None or requirement_depth != 0
-                ):
+                if manifest_native_path and (expected_native is None or requirement_depth != 0):
                     raise ArtifactError(
                         f"{entry_name}: S1a native payload must be a direct member of its "
                         "manifest-selected requirements IMY"
                     )
                 if expected_native is not None and not is_elf:
-                    raise ArtifactError(
-                        f"{entry_name}: manifest S1a native payload is not an ELF"
-                    )
+                    raise ArtifactError(f"{entry_name}: manifest S1a native payload is not an ELF")
                 if not (is_elf or is_archive or attribution is not None):
                     continue
-                size_limit = (
-                    MAX_ATTRIBUTION_SIZE
-                    if attribution is not None
-                    else MAX_NESTED_ARCHIVE_SIZE
-                )
+                size_limit = MAX_ATTRIBUTION_SIZE if attribution is not None else MAX_NESTED_ARCHIVE_SIZE
                 if info.file_size > size_limit:
                     raise ArtifactError(
                         f"{entry_name}: inspected entry exceeds {size_limit} bytes",
@@ -750,13 +654,9 @@ def inspect_zip(
             if attribution is not None:
                 actual_hash = hashlib.sha256(payload).hexdigest()
                 if actual_hash != attribution.sha256:
-                    raise ArtifactError(
-                        f"{entry_name}: S1a attribution hash differs from the wheel manifest"
-                    )
+                    raise ArtifactError(f"{entry_name}: S1a attribution hash differs from the wheel manifest")
                 inspection.found_attributions.add(entry_path.as_posix())
-                inspection.attribution_text.setdefault(attribution.package, []).append(
-                    payload.lower()
-                )
+                inspection.attribution_text.setdefault(attribution.package, []).append(payload.lower())
                 continue
 
             if is_elf:
@@ -767,44 +667,27 @@ def inspect_zip(
                     inspection,
                     require_pie_cli=basename in EXECUTABLE_NATIVE_NAMES,
                     require_et_dyn=required_direct,
-                    inspect_dynamic=(
-                        inspection.require_s1a and native_package is not None
-                    ),
+                    inspect_dynamic=(inspection.require_s1a and native_package is not None),
                 )
                 if required_direct:
                     inspection.found_required_entries.add(direct_path)
                 if inspection.require_s1a and native_package is not None:
                     if expected_native is None or requirement_depth != 0:
-                        raise ArtifactError(
-                            f"{entry_name}: unexpected S1a native payload location"
-                        )
+                        raise ArtifactError(f"{entry_name}: unexpected S1a native payload location")
                     if native_package != expected_native.package:
-                        raise ArtifactError(
-                            f"{entry_name}: S1a native payload package mismatch"
-                        )
+                        raise ArtifactError(f"{entry_name}: S1a native payload package mismatch")
                     if metadata.abi != expected_native.abi:
                         raise ArtifactError(
-                            f"{entry_name}: S1a native ABI is {metadata.abi}, "
-                            f"expected {expected_native.abi}"
+                            f"{entry_name}: S1a native ABI is {metadata.abi}, " f"expected {expected_native.abi}"
                         )
                     validate_s1a_native(basename, entry_name, metadata)
                     if hashlib.sha256(payload).hexdigest() != expected_native.sha256:
-                        raise ArtifactError(
-                            f"{entry_name}: S1a native hash differs from the wheel manifest"
-                        )
+                        raise ArtifactError(f"{entry_name}: S1a native hash differs from the wheel manifest")
                     native_key = (requirement_owner or "", expected_native.path)
-                    inspection.found_natives[native_key] = (
-                        inspection.found_natives.get(native_key, 0) + 1
-                    )
+                    inspection.found_natives[native_key] = inspection.found_natives.get(native_key, 0) + 1
                     if inspection.found_natives[native_key] != 1:
-                        raise ArtifactError(
-                            f"{entry_name}: S1a native payload appears more than once"
-                        )
-                    inspection.s1a_payloads.add(
-                        "fugashi-extension"
-                        if native_package == "fugashi"
-                        else basename
-                    )
+                        raise ArtifactError(f"{entry_name}: S1a native payload appears more than once")
+                    inspection.s1a_payloads.add("fugashi-extension" if native_package == "fugashi" else basename)
             else:
                 child_owner = requirement_owner
                 child_requirement_depth = requirement_depth + 1 if child_owner else 0
@@ -863,17 +746,10 @@ def inspect_artifact(args: argparse.Namespace) -> Inspection:
             f"expected exactly {sorted(inspection.allowed_abis)}",
         )
     if args.require_app_imy and inspection.app_imy_count == 0:
-        raise ArtifactError(
-            f"{args.artifact}: Chaquopy app.imy was not recursively inspected"
-        )
-    missing_entries = (
-        inspection.required_direct_entries - inspection.found_required_entries
-    )
+        raise ArtifactError(f"{args.artifact}: Chaquopy app.imy was not recursively inspected")
+    missing_entries = inspection.required_direct_entries - inspection.found_required_entries
     if missing_entries:
-        raise ArtifactError(
-            f"{args.artifact}: missing required direct archive entries "
-            f"{sorted(missing_entries)!r}"
-        )
+        raise ArtifactError(f"{args.artifact}: missing required direct archive entries " f"{sorted(missing_entries)!r}")
     if args.require_s1a:
         expected_imys = s1a_requirement_imys(inspection.allowed_abis)
         if expected_imys != inspection.requirement_imys:
@@ -889,18 +765,14 @@ def inspect_artifact(args: argparse.Namespace) -> Inspection:
             abi_member_count = inspection.requirement_member_counts.get(abi_imy)
             if abi_member_count != 0:
                 raise ArtifactError(
-                    f"{args.artifact}: single-ABI {abi_imy} must be empty, "
-                    f"found {abi_member_count} members"
+                    f"{args.artifact}: single-ABI {abi_imy} must be empty, " f"found {abi_member_count} members"
                 )
         expected_native_keys = set(inspection.expected_natives)
-        if (
-            set(inspection.found_natives) != expected_native_keys
-            or any(count != 1 for count in inspection.found_natives.values())
+        if set(inspection.found_natives) != expected_native_keys or any(
+            count != 1 for count in inspection.found_natives.values()
         ):
             missing = sorted(expected_native_keys - set(inspection.found_natives))
-            raise ArtifactError(
-                f"{args.artifact}: missing exact S1a native payloads {missing}"
-            )
+            raise ArtifactError(f"{args.artifact}: missing exact S1a native payloads {missing}")
         expected_payloads = {"fugashi-extension", "libmecab.so.2", "libc++_shared.so"}
         if inspection.s1a_payloads != expected_payloads:
             raise ArtifactError(
@@ -916,9 +788,7 @@ def inspect_artifact(args: argparse.Namespace) -> Inspection:
         for package, markers in S1A_LICENSE_MARKERS.items():
             text = b"\n".join(inspection.attribution_text.get(package, []))
             if not all(marker in text for marker in markers):
-                raise ArtifactError(
-                    f"{args.artifact}: {package} attribution markers are missing"
-                )
+                raise ArtifactError(f"{args.artifact}: {package} attribution markers are missing")
     return inspection
 
 

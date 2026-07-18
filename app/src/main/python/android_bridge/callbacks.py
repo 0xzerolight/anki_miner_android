@@ -21,9 +21,7 @@ from .protocol import (
 def _invoke(callbacks: object, method_name: str, message: str) -> None:
     method = getattr(callbacks, method_name, None)
     if not callable(method):
-        raise BridgeProtocolError(
-            "missing_callback", f"EngineCallbacks.{method_name} is required"
-        )
+        raise BridgeProtocolError("missing_callback", f"EngineCallbacks.{method_name} is required")
     method(message)
 
 
@@ -32,15 +30,11 @@ def _invoke_result(callbacks: object, method_name: str, message: str) -> str:
 
     method = getattr(callbacks, method_name, None)
     if not callable(method):
-        raise BridgeProtocolError(
-            "missing_callback", f"EngineCallbacks.{method_name} is required"
-        )
+        raise BridgeProtocolError("missing_callback", f"EngineCallbacks.{method_name} is required")
     try:
         result = method(message)
     except Exception as exc:
-        raise BridgeProtocolError(
-            "callback_failed", f"EngineCallbacks.{method_name} raised an exception"
-        ) from exc
+        raise BridgeProtocolError("callback_failed", f"EngineCallbacks.{method_name} raised an exception") from exc
     if not isinstance(result, str):
         raise BridgeProtocolError(
             "invalid_callback_result",
@@ -53,9 +47,7 @@ def _utf8_size(raw: str, *, context: str) -> int:
     try:
         return len(raw.encode("utf-8"))
     except UnicodeEncodeError as exc:
-        raise BridgeProtocolError(
-            "invalid_utf8", f"{context} contains an invalid Unicode scalar"
-        ) from exc
+        raise BridgeProtocolError("invalid_utf8", f"{context} contains an invalid Unicode scalar") from exc
 
 
 @dataclass(frozen=True)
@@ -94,15 +86,11 @@ _ANKI_ERROR_CODES = frozenset(
 )
 
 
-def _parse_anki_error(
-    message: DecodedMessage, *, run_id: str, request_id: str, operation: str
-) -> AnkiCallbackError:
+def _parse_anki_error(message: DecodedMessage, *, run_id: str, request_id: str, operation: str) -> AnkiCallbackError:
     payload = message.payload
     required = {"runId", "requestId", "operation", "code", "message", "retryable"}
     if set(payload) != required:
-        raise BridgeProtocolError(
-            "invalid_anki_error", "anki.error has missing or unknown fields"
-        )
+        raise BridgeProtocolError("invalid_anki_error", "anki.error has missing or unknown fields")
     if payload["runId"] != run_id or payload["requestId"] != request_id:
         raise BridgeProtocolError(
             "mismatched_callback_response",
@@ -113,17 +101,12 @@ def _parse_anki_error(
             "mismatched_callback_response",
             "Anki callback error names the wrong operation",
         )
-    if (
-        not isinstance(payload["code"], str)
-        or payload["code"] not in _ANKI_ERROR_CODES
-    ):
+    if not isinstance(payload["code"], str) or payload["code"] not in _ANKI_ERROR_CODES:
         raise BridgeProtocolError("invalid_anki_error", "anki.error code is invalid")
     if not isinstance(payload["message"], str) or not payload["message"]:
         raise BridgeProtocolError("invalid_anki_error", "anki.error message is invalid")
     if not isinstance(payload["retryable"], bool):
-        raise BridgeProtocolError(
-            "invalid_anki_error", "anki.error retryable flag is invalid"
-        )
+        raise BridgeProtocolError("invalid_anki_error", "anki.error retryable flag is invalid")
     if payload["code"] == "post_commit_uncertain" and payload["retryable"]:
         raise BridgeProtocolError(
             "invalid_anki_error",
@@ -143,9 +126,7 @@ def _parse_anki_error(
     )
 
 
-_TERMINAL_MUTATION_OPERATIONS = frozenset(
-    {"verifyTarget", "storeMedia", "createNotes"}
-)
+_TERMINAL_MUTATION_OPERATIONS = frozenset({"verifyTarget", "storeMedia", "createNotes"})
 _MAX_PENDING_TERMINAL_RECEIPTS = 8192
 
 
@@ -155,9 +136,7 @@ class AndroidAnkiCallbacks:
 
     callbacks: object
     run_id: str
-    _pending_terminal_receipts: set[str] = field(
-        default_factory=set, init=False, repr=False
-    )
+    _pending_terminal_receipts: set[str] = field(default_factory=set, init=False, repr=False)
     _receipt_failure: bool = field(default=False, init=False, repr=False)
 
     def _record_terminal_receipt(self, request_id: str) -> None:
@@ -252,10 +231,7 @@ class AndroidAnkiCallbacks:
                 "unexpected_message_type",
                 f"Expected {result_type!r}, received {message.message_type!r}",
             )
-        if (
-            message.payload.get("runId") != self.run_id
-            or message.payload.get("requestId") != request_id
-        ):
+        if message.payload.get("runId") != self.run_id or message.payload.get("requestId") != request_id:
             self._receipt_failure = True
             raise BridgeProtocolError(
                 "mismatched_callback_response",
@@ -309,11 +285,7 @@ class AndroidAnkiCallbacks:
             operation="releaseRunState",
             request_type="anki.releaserunstate.request",
             result_type="anki.releaserunstate.result",
-            payload={
-                "acknowledgeTerminalResponses": (
-                    self.can_acknowledge_terminal_responses
-                )
-            },
+            payload={"acknowledgeTerminalResponses": (self.can_acknowledge_terminal_responses)},
         )
 
 
@@ -381,9 +353,7 @@ class AndroidPresenter:
         _invoke(
             self.callbacks,
             "onPresenterEvent",
-            encode_message(
-                "presenter.event", {"runId": self.run_id, "kind": kind, **payload}
-            ),
+            encode_message("presenter.event", {"runId": self.run_id, "kind": kind, **payload}),
         )
 
     def show_info(self, message: str) -> None:
@@ -408,9 +378,7 @@ class AndroidPresenter:
 class CallbackAdapters:
     """One coherent adapter set bound to a single live job."""
 
-    def __init__(
-        self, callbacks: object, registry: JobRegistry, handle: JobHandle
-    ) -> None:
+    def __init__(self, callbacks: object, registry: JobRegistry, handle: JobHandle) -> None:
         self._callbacks = callbacks
         self._registry = registry
         self._handle = handle
@@ -441,9 +409,7 @@ class CallbackAdapters:
             _invoke_result(
                 self._callbacks,
                 "registerJob",
-                encode_message(
-                    "job.registration.request", {"runId": self._handle.run_id}
-                ),
+                encode_message("job.registration.request", {"runId": self._handle.run_id}),
             ),
             expected_type="job.registration.accepted",
         )

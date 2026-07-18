@@ -18,17 +18,12 @@ from android_bridge.protocol import BridgeProtocolError, encode_message
 
 
 def _paths(tmp_path: Path) -> AndroidPaths:
-    return AndroidPaths(
-        Path(os.environ["ANKI_MINER_HOME"]), tmp_path / "cache", tmp_path / "native"
-    )
+    return AndroidPaths(Path(os.environ["ANKI_MINER_HOME"]), tmp_path / "cache", tmp_path / "native")
 
 
 @pytest.fixture(autouse=True)
 def _bootstrap_mapper(initialized_bridge_home: Path) -> None:
-    assert (
-        Path(os.environ["ANKI_MINER_HOME"]).resolve()
-        == initialized_bridge_home.resolve()
-    )
+    assert Path(os.environ["ANKI_MINER_HOME"]).resolve() == initialized_bridge_home.resolve()
 
 
 def _path_overrides(paths: AndroidPaths) -> dict[str, Path]:
@@ -72,10 +67,9 @@ def test_empty_snapshot_preserves_all_98_desktop_defaults_except_targeted_androi
 
     desktop_fields = fields(AnkiMinerConfig)
     assert len(desktop_fields) == 98
-    assert {
-        field.name: getattr(mapped.engine_config, field.name)
-        for field in desktop_fields
-    } == {field.name: getattr(expected, field.name) for field in desktop_fields}
+    assert {field.name: getattr(mapped.engine_config, field.name) for field in desktop_fields} == {
+        field.name: getattr(expected, field.name) for field in desktop_fields
+    }
     assert mapped.android_tts_enabled is False
 
 
@@ -107,9 +101,7 @@ def test_typed_fields_and_entries_are_reconstructed(tmp_path: Path) -> None:
         ChainEntry(kind="jisho", dict_id=None, enabled=False),
     )
     assert config.frequency_chain == (FreqEntry(source_id="bccwj"),)
-    assert config.expression_audio_chain == (
-        AudioSourceEntry(kind="pack", pack_id="my-pack"),
-    )
+    assert config.expression_audio_chain == (AudioSourceEntry(kind="pack", pack_id="my-pack"),)
     assert config.anki_fields["expression_audio"] == "WordAudio"
     assert config.anki_fields["word"] == "Expression"
 
@@ -163,16 +155,9 @@ def test_android_tts_composition_has_no_desktop_network_fetcher_imports() -> Non
     for filename in ("config_map.py", "mining.py", "reading_mining.py", "sentence_audio.py"):
         tree = ast.parse((source_root / filename).read_text(encoding="utf-8"))
         imported_modules.update(
-            alias.name
-            for node in ast.walk(tree)
-            if isinstance(node, ast.Import)
-            for alias in node.names
+            alias.name for node in ast.walk(tree) if isinstance(node, ast.Import) for alias in node.names
         )
-        imported_modules.update(
-            node.module or ""
-            for node in ast.walk(tree)
-            if isinstance(node, ast.ImportFrom)
-        )
+        imported_modules.update(node.module or "" for node in ast.walk(tree) if isinstance(node, ast.ImportFrom))
 
     forbidden = ("gtts", "google_translate", "papago", "sentence_tts_fetcher")
     assert all(not any(part in module for part in forbidden) for module in imported_modules)
@@ -243,10 +228,7 @@ def test_draft_integer_floats_normalize_for_schema_and_config_fields(
     tmp_path: Path,
 ) -> None:
     paths = _paths(tmp_path)
-    raw = (
-        '{"schemaVersion":1.0,"type":"config.snapshot",'
-        '"payload":{"settings":{"audio_bitrate":128.0}}}'
-    )
+    raw = '{"schemaVersion":1.0,"type":"config.snapshot",' '"payload":{"settings":{"audio_bitrate":128.0}}}'
 
     mapped = map_config_json(
         raw,
@@ -283,8 +265,7 @@ def test_nonintegral_float_is_not_an_integer_config_field(tmp_path: Path) -> Non
 
 def test_checked_in_schema_allowlist_matches_mapper() -> None:
     schema_path = (
-        Path(__file__).resolve().parents[3]
-        / "app/src/main/python/android_bridge/schemas/config-snapshot.schema.json"
+        Path(__file__).resolve().parents[3] / "app/src/main/python/android_bridge/schemas/config-snapshot.schema.json"
     )
     schema = json.loads(schema_path.read_text(encoding="utf-8"))
     schema_fields = set(schema["$defs"]["settings"]["properties"])
@@ -292,14 +273,11 @@ def test_checked_in_schema_allowlist_matches_mapper() -> None:
     assert schema_fields == set(exposed_config_fields()) | {"reading_tts_enabled"}
 
 
-def test_checked_in_schema_has_exact_mapping_keys_chain_shapes_and_absolute_paths() -> (
-    None
-):
+def test_checked_in_schema_has_exact_mapping_keys_chain_shapes_and_absolute_paths() -> None:
     from anki_miner.config import AnkiMinerConfig
 
     schema_path = (
-        Path(__file__).resolve().parents[3]
-        / "app/src/main/python/android_bridge/schemas/config-snapshot.schema.json"
+        Path(__file__).resolve().parents[3] / "app/src/main/python/android_bridge/schemas/config-snapshot.schema.json"
     )
     schema = json.loads(schema_path.read_text(encoding="utf-8"))
     definitions = schema["$defs"]
@@ -307,25 +285,15 @@ def test_checked_in_schema_has_exact_mapping_keys_chain_shapes_and_absolute_path
 
     assert definitions["ankiFields"]["additionalProperties"] is False
     assert set(definitions["ankiFields"]["properties"]) == set(defaults.anki_fields)
-    assert set(definitions["cardTypeMarkerFields"]["properties"]) == set(
-        defaults.card_type_marker_fields
-    )
+    assert set(definitions["cardTypeMarkerFields"]["properties"]) == set(defaults.card_type_marker_fields)
     assert definitions["indexedDictionary"]["required"] == ["kind", "dict_id"]
     assert definitions["frequencySource"]["required"] == ["source_id"]
     assert definitions["audioPack"]["properties"]["kind"] == {"const": "pack"}
     assert definitions["absolutePathOrNull"]["oneOf"][1]["pattern"] == "^/"
-    assert definitions["settings"]["properties"]["excluded_decks"][
-        "uniqueItems"
-    ] is True
-    assert definitions["settings"]["properties"]["anki_deck_name"] == {
-        "$ref": "#/$defs/canonicalNonEmptyString"
-    }
-    assert definitions["ankiFields"]["properties"]["word"] == {
-        "$ref": "#/$defs/optionalMappedField"
-    }
-    assert definitions["ankiFields"]["properties"]["glossary"] == {
-        "$ref": "#/$defs/optionalMappedField"
-    }
+    assert definitions["settings"]["properties"]["excluded_decks"]["uniqueItems"] is True
+    assert definitions["settings"]["properties"]["anki_deck_name"] == {"$ref": "#/$defs/canonicalNonEmptyString"}
+    assert definitions["ankiFields"]["properties"]["word"] == {"$ref": "#/$defs/optionalMappedField"}
+    assert definitions["ankiFields"]["properties"]["glossary"] == {"$ref": "#/$defs/optionalMappedField"}
 
 
 @pytest.mark.parametrize(
@@ -337,9 +305,7 @@ def test_checked_in_schema_has_exact_mapping_keys_chain_shapes_and_absolute_path
     ],
     ids=["python-whitespace-leading", "python-whitespace-trailing", "nfc-trap"],
 )
-def test_canonical_names_follow_pinned_unicode_contract(
-    value: str, tmp_path: Path
-) -> None:
+def test_canonical_names_follow_pinned_unicode_contract(value: str, tmp_path: Path) -> None:
     with pytest.raises(BridgeProtocolError) as error:
         map_config_settings({"anki_deck_name": value}, _paths(tmp_path))
     assert error.value.code == "invalid_config_field"
@@ -355,11 +321,7 @@ def test_contract_validators_do_not_use_host_unicode_or_strip_tables() -> None:
             for node in ast.walk(tree)
             if isinstance(node, ast.Import)
             for alias in node.names
-        } | {
-            (node.module or "").split(".", 1)[0]
-            for node in ast.walk(tree)
-            if isinstance(node, ast.ImportFrom)
-        }
+        } | {(node.module or "").split(".", 1)[0] for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)}
         forbidden_calls = [
             node.func.attr
             for node in ast.walk(tree)

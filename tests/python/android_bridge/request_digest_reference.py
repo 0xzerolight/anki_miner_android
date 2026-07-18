@@ -105,9 +105,7 @@ def _string(value: object, context: str) -> str:
     try:
         value.encode("utf-8", errors="strict")
     except UnicodeEncodeError as error:
-        raise BridgeProtocolError(
-            "invalid_utf8", f"{context} contains an invalid Unicode scalar"
-        ) from error
+        raise BridgeProtocolError("invalid_utf8", f"{context} contains an invalid Unicode scalar") from error
     return value
 
 
@@ -146,10 +144,7 @@ def _list(value: object, context: str) -> Sequence[Any]:
 
 
 def _string_list(value: object, context: str) -> list[str]:
-    return [
-        _string(item, f"{context}[{index}]")
-        for index, item in enumerate(_list(value, context))
-    ]
+    return [_string(item, f"{context}[{index}]") for index, item in enumerate(_list(value, context))]
 
 
 def _canonical_request(
@@ -195,10 +190,7 @@ def _canonical_request(
             {"runId", "requestId", "assets", "limits"},
             "storeMedia request",
         )
-        assets = [
-            _media_asset(asset, index)
-            for index, asset in enumerate(_list(request["assets"], "assets"))
-        ]
+        assets = [_media_asset(asset, index) for index, asset in enumerate(_list(request["assets"], "assets"))]
         media_limits = ANKI_LIMITS_V1["storeMedia"]
         _constant_limits(
             request["limits"],
@@ -233,10 +225,7 @@ def _canonical_request(
             },
             "createNotes request",
         )
-        notes = [
-            _create_note(note, index)
-            for index, note in enumerate(_list(request["notes"], "notes"))
-        ]
+        notes = [_create_note(note, index) for index, note in enumerate(_list(request["notes"], "notes"))]
         note_limits = ANKI_LIMITS_V1["createNotes"]
         _constant_limits(
             request["limits"],
@@ -361,22 +350,16 @@ def _scan_scope(value: object) -> _Object:
         )
         candidates = [
             _duplicate_candidate(candidate, index)
-            for index, candidate in enumerate(
-                _list(scope["candidates"], "duplicate candidates")
-            )
+            for index, candidate in enumerate(_list(scope["candidates"], "duplicate candidates"))
         ]
         scan_limits = ANKI_LIMITS_V1["scanFirstFields"]
         _constant_limits(
             scope["limits"],
             {
-                "maxHitsPerCandidate": scan_limits[
-                    "duplicateHitsPerCandidateMaxItems"
-                ],
+                "maxHitsPerCandidate": scan_limits["duplicateHitsPerCandidateMaxItems"],
                 "maxTotalHits": scan_limits["duplicateHitsTotalMaxItems"],
                 "maxItemUtf8Bytes": scan_limits["firstFieldMaxUtf8Bytes"],
-                "maxTotalUtf8Bytes": scan_limits[
-                    "duplicateHitsTotalMaxUtf8Bytes"
-                ],
+                "maxTotalUtf8Bytes": scan_limits["duplicateHitsTotalMaxUtf8Bytes"],
             },
             "duplicate scan limits",
         )
@@ -502,9 +485,7 @@ def _validate_create_duplicate_limits(value: object) -> None:
     _constant_limits(
         value,
         {
-            "maxNoteIdsPerCandidate": scan_limits[
-                "duplicateHitsPerCandidateMaxItems"
-            ],
+            "maxNoteIdsPerCandidate": scan_limits["duplicateHitsPerCandidateMaxItems"],
             "maxTotalNoteIds": scan_limits["duplicateHitsTotalMaxItems"],
         },
         "create duplicate limits",
@@ -523,9 +504,7 @@ def _create_note(value: object, index: int) -> _Object:
     normalized_fields: dict[str, str] = {}
     for key, field_value in fields.items():
         normalized_key = _string(key, f"notes[{index}].fields key")
-        normalized_fields[normalized_key] = _string(
-            field_value, f"notes[{index}].fields[{normalized_key!r}]"
-        )
+        normalized_fields[normalized_key] = _string(field_value, f"notes[{index}].fields[{normalized_key!r}]")
     candidate = _mapping(
         note["duplicateCandidate"],
         {"key", "firstField", "occurrence"},
@@ -533,9 +512,7 @@ def _create_note(value: object, index: int) -> _Object:
     )
     bindings = [
         _media_binding(binding, binding_index)
-        for binding_index, binding in enumerate(
-            _list(note["mediaBindings"], f"notes[{index}].mediaBindings")
-        )
+        for binding_index, binding in enumerate(_list(note["mediaBindings"], f"notes[{index}].mediaBindings"))
     ]
     return _Object(
         (
@@ -599,9 +576,7 @@ def _write(value: object, output: bytearray) -> None:
         return
     if isinstance(value, _SemanticMap):
         output.extend(b"{")
-        for index, key in enumerate(
-            sorted(value.values, key=lambda item: item.encode("utf-8", errors="strict"))
-        ):
+        for index, key in enumerate(sorted(value.values, key=lambda item: item.encode("utf-8", errors="strict"))):
             if index:
                 output.extend(b",")
             _write_string(key, output)

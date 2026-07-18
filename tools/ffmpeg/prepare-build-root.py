@@ -53,9 +53,7 @@ def prepare_build_root(allowed_parent: Path, requested_root: Path) -> Path:
     try:
         canonical_relative = canonical_requested.relative_to(canonical_parent)
     except ValueError as error:
-        raise UnsafeBuildRoot(
-            f"canonical build root escapes {canonical_parent}: {canonical_requested}"
-        ) from error
+        raise UnsafeBuildRoot(f"canonical build root escapes {canonical_parent}: {canonical_requested}") from error
     if not canonical_relative.parts:
         raise UnsafeBuildRoot("canonical build root must not equal the allowed parent")
 

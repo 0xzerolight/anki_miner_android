@@ -11,9 +11,7 @@ from .unicode_core import KOTLIN_OUTPUT_PATH, PYTHON_OUTPUT_PATH, check, refresh
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        description="generate pinned Unicode 15.1 Python and Kotlin validators"
-    )
+    parser = argparse.ArgumentParser(description="generate pinned Unicode 15.1 Python and Kotlin validators")
     parser.add_argument(
         "--repo-root",
         type=Path,

@@ -48,9 +48,7 @@ def _utf8_size(value: str, *, context: str) -> int:
     try:
         return len(value.encode("utf-8"))
     except UnicodeEncodeError as exc:
-        raise BridgeProtocolError(
-            "invalid_tts_callback", f"{context} contains invalid Unicode"
-        ) from exc
+        raise BridgeProtocolError("invalid_tts_callback", f"{context} contains invalid Unicode") from exc
 
 
 class AndroidSentenceAudioFetcher:
@@ -103,9 +101,7 @@ class AndroidSentenceAudioFetcher:
             )
             if _utf8_size(raw_request, context="TTS request") > _MAX_REQUEST_UTF8_BYTES:
                 return None
-            raw_result = _invoke_result(
-                self._callbacks, "synthesizeSentenceAudio", raw_request
-            )
+            raw_result = _invoke_result(self._callbacks, "synthesizeSentenceAudio", raw_request)
             if _utf8_size(raw_result, context="TTS result") > _MAX_RESULT_UTF8_BYTES:
                 return None
             message = decode_envelope(
@@ -193,15 +189,9 @@ class AndroidSentenceAudioFetcher:
                 "Japanese voice in Android speech settings."
             )
         elif error_code in {"cache_full", "cache_unavailable", "cache_publish_failed"}:
-            message = (
-                "Offline sentence audio was skipped because private cache storage is "
-                "unavailable or full."
-            )
+            message = "Offline sentence audio was skipped because private cache storage is " "unavailable or full."
         else:
-            message = (
-                "Offline sentence audio could not be synthesized for one or more selected "
-                "sentences."
-            )
+            message = "Offline sentence audio could not be synthesized for one or more selected " "sentences."
         try:
             self._warning_callback(message)
         except Exception:

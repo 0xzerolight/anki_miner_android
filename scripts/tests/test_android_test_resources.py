@@ -6,7 +6,6 @@ import subprocess
 import tempfile
 import unittest
 
-
 RESOURCE_SCRIPT = Path(__file__).resolve().parents[1] / "android-test-resources.sh"
 
 
@@ -39,7 +38,7 @@ class AndroidTestResourceTest(unittest.TestCase):
             )
             self._script(bin_dir / "pgrep", "exit 1\n")
             gradle = bin_dir / "gradlew"
-            self._script(gradle, "touch \"$FAKE_ROOT/gradle-ran\"\n")
+            self._script(gradle, 'touch "$FAKE_ROOT/gradle-ran"\n')
             result = subprocess.run(
                 [
                     "bash",
@@ -85,7 +84,7 @@ class AndroidTestResourceTest(unittest.TestCase):
         with temporary:
             self._script(bin_dir / "pgrep", "exit 0\n")
             gradle = bin_dir / "gradlew"
-            self._script(gradle, "touch \"$FAKE_ROOT/gradle-ran\"\n")
+            self._script(gradle, 'touch "$FAKE_ROOT/gradle-ran"\n')
             result = subprocess.run(
                 [
                     "bash",
@@ -145,7 +144,7 @@ class AndroidTestResourceTest(unittest.TestCase):
             self._script(bin_dir / "adb", "echo 'List of devices attached'\n")
             self._script(bin_dir / "pgrep", "exit 1\n")
             gradle = bin_dir / "gradlew"
-            self._script(gradle, "printf '%s\\n' \"$@\" >\"$FAKE_ROOT/args\"\n")
+            self._script(gradle, 'printf \'%s\\n\' "$@" >"$FAKE_ROOT/args"\n')
             result = subprocess.run(
                 [
                     "bash",
@@ -162,9 +161,13 @@ class AndroidTestResourceTest(unittest.TestCase):
             )
 
             self.assertEqual(0, result.returncode, result.stderr)
-            arguments = (Path(temporary.name) / "args").read_text(
-                encoding="utf-8",
-            ).splitlines()
+            arguments = (
+                (Path(temporary.name) / "args")
+                .read_text(
+                    encoding="utf-8",
+                )
+                .splitlines()
+            )
             self.assertIn("--no-daemon", arguments)
             self.assertIn("--no-parallel", arguments)
             self.assertIn("--max-workers=1", arguments)

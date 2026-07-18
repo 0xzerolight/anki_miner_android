@@ -22,9 +22,7 @@ def configure_tokenizer_backend(backend: str) -> TokenizerBackendName:
     """
 
     if backend not in {"s1a", "s1b"}:
-        raise BridgeProtocolError(
-            "invalid_tokenizer_backend", "Tokenizer backend must be 's1a' or 's1b'"
-        )
+        raise BridgeProtocolError("invalid_tokenizer_backend", "Tokenizer backend must be 's1a' or 's1b'")
 
     from .bootstrap import require_initialized
 

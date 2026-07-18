@@ -34,16 +34,11 @@ def main() -> int:
     arguments = parser.parse_args()
 
     root = arguments.python_root.resolve(strict=True)
-    manifest = json.loads(
-        (root / ".engine-sync-manifest.json").read_text(encoding="utf-8")
-    )
+    manifest = json.loads((root / ".engine-sync-manifest.json").read_text(encoding="utf-8"))
     if platform.python_implementation() != "CPython":
         raise RuntimeError("runtime smoke requires CPython")
     if platform.python_version() != arguments.expected_version:
-        raise RuntimeError(
-            f"runtime Python is {platform.python_version()}, "
-            f"expected {arguments.expected_version}"
-        )
+        raise RuntimeError(f"runtime Python is {platform.python_version()}, " f"expected {arguments.expected_version}")
 
     sys.path.insert(0, os.fspath(root))
     with tempfile.TemporaryDirectory(prefix="anki-miner-runtime-home-") as home:
@@ -61,19 +56,12 @@ def main() -> int:
     forbidden = {"fugashi", "gtts", "unidic", "unidic-lite", "yt-dlp"}
     present_forbidden = forbidden & distributions
     if present_forbidden:
-        raise RuntimeError(
-            f"forbidden runtime distributions are installed: {sorted(present_forbidden)}"
-        )
+        raise RuntimeError(f"forbidden runtime distributions are installed: {sorted(present_forbidden)}")
     for name, expected_version in EXPECTED_DISTRIBUTIONS.items():
         actual_version = importlib.metadata.version(name)
         if actual_version != expected_version:
-            raise RuntimeError(
-                f"runtime distribution {name} is {actual_version}, "
-                f"expected {expected_version}"
-            )
-    missing_codecs = [
-        codec for codec in ("jpg", "webp", "zlib") if not features.check(codec)
-    ]
+            raise RuntimeError(f"runtime distribution {name} is {actual_version}, " f"expected {expected_version}")
+    missing_codecs = [codec for codec in ("jpg", "webp", "zlib") if not features.check(codec)]
     if missing_codecs:
         raise RuntimeError(f"Pillow codecs are unavailable: {missing_codecs}")
     external_imports = set(manifest["external_imports"]["eager"])

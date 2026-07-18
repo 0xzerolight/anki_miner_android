@@ -17,7 +17,6 @@ import struct
 import sys
 import zipfile
 
-
 SUPPORTED_ABIS = {"arm64-v8a": 183, "x86_64": 62}
 RUNTIME_SCHEMA = 1
 S1A_SCHEMA = 2
@@ -94,9 +93,7 @@ class ExpectedInventory:
     def add_distribution(self, package: str, version: str, label: str) -> None:
         normalized = normalize_package(package)
         if normalized in self.distributions:
-            raise RuntimeArtifactError(
-                f"{label}: duplicate distribution {normalized}"
-            )
+            raise RuntimeArtifactError(f"{label}: duplicate distribution {normalized}")
         self.distributions[normalized] = version
 
     def add_file(
@@ -148,10 +145,7 @@ def normalize_package(value: str) -> str:
 
 def _is_forbidden_package(value: str) -> bool:
     package = normalize_package(value)
-    return any(
-        package == prefix or package.startswith(f"{prefix}-")
-        for prefix in FORBIDDEN_PACKAGE_PREFIXES
-    )
+    return any(package == prefix or package.startswith(f"{prefix}-") for prefix in FORBIDDEN_PACKAGE_PREFIXES)
 
 
 def _sha256(data: bytes) -> str:
@@ -169,11 +163,7 @@ def _safe_member_name(name: str, label: str) -> PurePosixPath:
         raise RuntimeArtifactError(f"{label}: unsafe archive entry {name!r}")
     normalized = name[:-1] if name.endswith("/") else name
     components = normalized.split("/")
-    if (
-        not normalized
-        or normalized.startswith("/")
-        or any(component in {"", ".", ".."} for component in components)
-    ):
+    if not normalized or normalized.startswith("/") or any(component in {"", ".", ".."} for component in components):
         raise RuntimeArtifactError(f"{label}: unsafe archive entry {name!r}")
     return PurePosixPath(normalized)
 
@@ -195,9 +185,7 @@ def _is_license_path(path: str) -> bool:
 def _dist_info_identity(path: str, label: str) -> tuple[str, str, str]:
     parts = PurePosixPath(path).parts
     if not parts or not parts[0].endswith(".dist-info"):
-        raise RuntimeArtifactError(
-            f"{label}: attribution is outside a top-level dist-info directory"
-        )
+        raise RuntimeArtifactError(f"{label}: attribution is outside a top-level dist-info directory")
     if any(part.endswith(".dist-info") for part in parts[1:]):
         raise RuntimeArtifactError(f"{label}: nested dist-info directory")
     stem = parts[0][: -len(".dist-info")]
@@ -215,9 +203,7 @@ def _validate_license_owner(
 ) -> None:
     _, owner, owner_version = _dist_info_identity(path, label)
     if owner != package or owner_version != version or not _is_license_path(path):
-        raise RuntimeArtifactError(
-            f"{label}: attribution path does not belong to {package} {version}"
-        )
+        raise RuntimeArtifactError(f"{label}: attribution path does not belong to {package} {version}")
 
 
 def _read_manifest(path: Path, label: str) -> tuple[Path, dict[str, object]]:
@@ -272,9 +258,7 @@ def _runtime_entry_inventory(
         raise RuntimeArtifactError(f"{label}: invalid distribution identity")
     package = normalize_package(package_value)
     if _is_forbidden_package(package) or package in S1A_ONLY_PACKAGES:
-        raise RuntimeArtifactError(
-            f"{label}: forbidden tokenizer or cut distribution {package}"
-        )
+        raise RuntimeArtifactError(f"{label}: forbidden tokenizer or cut distribution {package}")
     _require_hash(raw_entry.get("sha256"), label)
     if (
         not isinstance(raw_entry.get("size"), int)
@@ -343,9 +327,7 @@ def load_runtime_inventory(manifest: Path, abi: str) -> ExpectedInventory:
         raise RuntimeArtifactError("unsupported runtime manifest schema")
     build_key = _require_hash(document.get("build_key"), "runtime manifest")
     if resolved.parent.name != f"runtime-wheels-{build_key}":
-        raise RuntimeArtifactError(
-            "runtime manifest is outside its immutable build-key directory"
-        )
+        raise RuntimeArtifactError("runtime manifest is outside its immutable build-key directory")
     wheels = document.get("wheels")
     expected_groups = {"common", *SUPPORTED_ABIS}
     if not isinstance(wheels, dict) or set(wheels) != expected_groups:
@@ -355,9 +337,7 @@ def load_runtime_inventory(manifest: Path, abi: str) -> ExpectedInventory:
     for group in ("common", abi):
         entries = wheels.get(group)
         if not isinstance(entries, list) or not entries:
-            raise RuntimeArtifactError(
-                f"runtime manifest {group} wheel group is empty"
-            )
+            raise RuntimeArtifactError(f"runtime manifest {group} wheel group is empty")
         for raw_entry in entries:
             _runtime_entry_inventory(raw_entry, abi, group, inventory)
     return inventory
@@ -365,15 +345,10 @@ def load_runtime_inventory(manifest: Path, abi: str) -> ExpectedInventory:
 
 def _s1a_package_from_filename(filename: str, abi: str) -> tuple[str, str, str]:
     for package, (wheel_name, version, tags, native_path) in S1A_SPECS.items():
-        expected = (
-            f"{wheel_name}-{version}-0-{tags}-android_26_"
-            f"{abi.replace('-', '_')}.whl"
-        )
+        expected = f"{wheel_name}-{version}-0-{tags}-android_26_" f"{abi.replace('-', '_')}.whl"
         if filename == expected:
             return package, version, native_path
-    raise RuntimeArtifactError(
-        f"S1a manifest has an unexpected {abi} wheel: {filename!r}"
-    )
+    raise RuntimeArtifactError(f"S1a manifest has an unexpected {abi} wheel: {filename!r}")
 
 
 def load_s1a_inventory(manifest: Path, abi: str) -> ExpectedInventory:
@@ -382,9 +357,7 @@ def load_s1a_inventory(manifest: Path, abi: str) -> ExpectedInventory:
         raise RuntimeArtifactError("unsupported S1a manifest schema")
     build_key = _require_hash(document.get("build_key"), "S1a manifest")
     if resolved.parent.name != f"s1a-wheels-{build_key}":
-        raise RuntimeArtifactError(
-            "S1a manifest is outside its immutable build-key directory"
-        )
+        raise RuntimeArtifactError("S1a manifest is outside its immutable build-key directory")
     wheels = document.get("wheels")
     if not isinstance(wheels, dict) or set(wheels) != set(SUPPORTED_ABIS):
         raise RuntimeArtifactError("S1a manifest ABI groups are invalid")
@@ -406,9 +379,7 @@ def load_s1a_inventory(manifest: Path, abi: str) -> ExpectedInventory:
         filename = raw_entry.get("filename")
         if not isinstance(filename, str):
             raise RuntimeArtifactError(f"{label}: wheel filename is missing")
-        package, version, expected_native_path = _s1a_package_from_filename(
-            filename, abi
-        )
+        package, version, expected_native_path = _s1a_package_from_filename(filename, abi)
         _require_hash(raw_entry.get("sha256"), label)
         if not isinstance(raw_entry.get("size"), int) or raw_entry["size"] <= 0:
             raise RuntimeArtifactError(f"{label}: wheel size is invalid")
@@ -514,9 +485,7 @@ def _read_member(
             if stream.read(1):
                 data += b"!"
     except (OSError, RuntimeError, zipfile.BadZipFile) as error:
-        raise RuntimeArtifactError(
-            f"{label}: cannot read archive entry {info.filename}"
-        ) from error
+        raise RuntimeArtifactError(f"{label}: cannot read archive entry {info.filename}") from error
     if len(data) > limit or len(data) != info.file_size:
         raise RuntimeArtifactError(f"{label}: payload size differs for {info.filename}")
     return data
@@ -536,15 +505,9 @@ def _module_root(path: str) -> str:
 def _check_module_boundary(path: str, s1a_enabled: bool) -> None:
     root = _module_root(path)
     if _is_forbidden_package(root):
-        raise RuntimeArtifactError(
-            f"requirements-common.imy: forbidden package payload {root}"
-        )
-    if not s1a_enabled and (
-        root in S1A_ONLY_PACKAGES or path in S1A_ONLY_NATIVE_PATHS
-    ):
-        raise RuntimeArtifactError(
-            f"requirements-common.imy: S1a-only payload without S1a manifest: {path}"
-        )
+        raise RuntimeArtifactError(f"requirements-common.imy: forbidden package payload {root}")
+    if not s1a_enabled and (root in S1A_ONLY_PACKAGES or path in S1A_ONLY_NATIVE_PATHS):
+        raise RuntimeArtifactError(f"requirements-common.imy: S1a-only payload without S1a manifest: {path}")
 
 
 def _parse_metadata(data: bytes, root: str) -> tuple[str, str]:
@@ -557,12 +520,7 @@ def _parse_metadata(data: bytes, root: str) -> tuple[str, str]:
     names = message.get_all("Name") or []
     versions = message.get_all("Version") or []
     metadata_versions = message.get_all("Metadata-Version") or []
-    if (
-        message.defects
-        or len(names) != 1
-        or len(versions) != 1
-        or len(metadata_versions) != 1
-    ):
+    if message.defects or len(names) != 1 or len(versions) != 1 or len(metadata_versions) != 1:
         raise RuntimeArtifactError(f"{root}: METADATA identity headers differ")
     name = str(names[0])
     version = str(versions[0])
@@ -574,9 +532,7 @@ def _parse_metadata(data: bytes, root: str) -> tuple[str, str]:
         or any(ord(character) < 0x20 for character in version)
     ):
         raise RuntimeArtifactError(f"{root}: invalid METADATA identity")
-    _, root_name, root_version = _dist_info_identity(
-        f"{root}/METADATA", f"{root}/METADATA"
-    )
+    _, root_name, root_version = _dist_info_identity(f"{root}/METADATA", f"{root}/METADATA")
     normalized = normalize_package(name)
     if root_name != normalized or root_version != version:
         raise RuntimeArtifactError(f"{root}: dist-info name differs from METADATA")
@@ -643,11 +599,7 @@ def _audit_requirements(
         parts = PurePosixPath(path).parts
         roots = [part for part in parts if part.casefold().endswith(".dist-info")]
         if roots:
-            if (
-                len(roots) != 1
-                or parts[0] != roots[0]
-                or not roots[0].endswith(".dist-info")
-            ):
+            if len(roots) != 1 or parts[0] != roots[0] or not roots[0].endswith(".dist-info"):
                 raise RuntimeArtifactError(f"{label}: nested dist-info path {path}")
             dist_roots.add(roots[0])
         if any(part.casefold().endswith(".egg-info") for part in parts):
@@ -666,9 +618,7 @@ def _audit_requirements(
         if _is_forbidden_package(package):
             raise RuntimeArtifactError(f"{label}: forbidden distribution {package}")
         if not s1a_enabled and package in S1A_ONLY_PACKAGES:
-            raise RuntimeArtifactError(
-                f"{label}: S1a-only distribution without manifest: {package}"
-            )
+            raise RuntimeArtifactError(f"{label}: S1a-only distribution without manifest: {package}")
         actual_distributions[package] = version
         root_owners[root] = package
 
@@ -698,9 +648,7 @@ def _audit_requirements(
         if native_magic:
             native_abi = _native_abi(data, path)
             if native_abi != abi:
-                raise RuntimeArtifactError(
-                    f"{label}: native payload {path} is {native_abi}, expected {abi}"
-                )
+                raise RuntimeArtifactError(f"{label}: native payload {path} is {native_abi}, expected {abi}")
             owner = expected.natives.get(path)
             actual_natives[path] = ExpectedFile(
                 owner.package if owner is not None else "<unowned>",
@@ -797,9 +745,7 @@ def audit_artifact(
         )
 
     if abi_payload != EMPTY_ZIP:
-        raise RuntimeArtifactError(
-            f"{abi_path}: single-ABI Chaquopy requirements archive must be empty"
-        )
+        raise RuntimeArtifactError(f"{abi_path}: single-ABI Chaquopy requirements archive must be empty")
     _audit_requirements(
         common_payload,
         expected,

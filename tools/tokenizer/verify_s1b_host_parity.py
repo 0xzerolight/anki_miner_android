@@ -51,10 +51,7 @@ def _actual_token(token: object) -> dict[str, object]:
     feature = getattr(token, "feature")
     return {
         "surface": getattr(token, "surface"),
-        "features": {
-            name: _golden_feature(getattr(feature, name))
-            for name in UNIDIC_FEATURE_FIELDS
-        },
+        "features": {name: _golden_feature(getattr(feature, name)) for name in UNIDIC_FEATURE_FIELDS},
         "is_unknown": getattr(token, "is_unk"),
         "offsets": {
             "codepoint_start": getattr(token, "codepoint_start"),
@@ -91,9 +88,7 @@ class _NativeDriverApi:
         if argv != self._argv:
             raise RuntimeError("S1b adapter changed the verified native argv")
 
-    def loaded_dictionary_filenames(
-        self, argv: tuple[str, ...]
-    ) -> tuple[str, ...]:
+    def loaded_dictionary_filenames(self, argv: tuple[str, ...]) -> tuple[str, ...]:
         self._require_argv(argv)
         return (str(self._dicdir / "sys.dic"),)
 
@@ -128,9 +123,7 @@ class _NativeDriverApi:
             self._process.wait()
 
 
-def _load_engine_compound_pipeline() -> tuple[
-    object, object, object, object, object, object
-]:
+def _load_engine_compound_pipeline() -> tuple[object, object, object, object, object, object]:
     """Load the vendored pure token pipeline without broad service imports."""
 
     import anki_miner  # noqa: PLC0415
@@ -167,9 +160,7 @@ def _verify_engine_star_semantics(tagged_cases: dict[str, list[object]]) -> None
     tokens = tagged_cases["astral-oov-offsets"]
     unknown_tokens = [token for token in tokens if getattr(token, "is_unk")]
     if len(unknown_tokens) != 1:
-        raise RuntimeError(
-            "astral-oov-offsets must contain exactly one unknown token"
-        )
+        raise RuntimeError("astral-oov-offsets must contain exactly one unknown token")
     oov = unknown_tokens[0]
     if oov.feature.pos3 != "*":
         raise RuntimeError("S1b collapsed MeCab's explicit star before the engine")
@@ -191,12 +182,8 @@ def _verify_seeded_compound(
     ) = _load_engine_compound_pipeline()
     tokenization_cases = document["cases"]["tokenization"]
     compound_cases = document["cases"]["compounds"]
-    token_case = next(
-        case for case in tokenization_cases if case["id"] == "compound-hashiridasu"
-    )
-    expected_case = next(
-        case for case in compound_cases if case["id"] == "compound-hashiridasu"
-    )
+    token_case = next(case for case in tokenization_cases if case["id"] == "compound-hashiridasu")
+    expected_case = next(case for case in compound_cases if case["id"] == "compound-hashiridasu")
     dictionary_terms = set(expected_case["input"]["dictionary_terms"])
     rule = rule_type(
         allowed_pos=frozenset({"名詞", "動詞", "形容詞", "副詞", "代名詞"}),
@@ -226,11 +213,7 @@ def _verify_seeded_compound(
         ),
         "pos": token.feature.pos1,
     }
-    expected_word = next(
-        word
-        for word in expected_case["output"]["words"]
-        if word["surface"] == "走り出し"
-    )
+    expected_word = next(word for word in expected_case["output"]["words"] if word["surface"] == "走り出し")
     expected = {name: expected_word[name] for name in actual}
     if actual != expected:
         raise RuntimeError(
@@ -267,9 +250,7 @@ def verify_dictionary_provenance(
     except GoldenContractError as exc:
         raise RuntimeError(f"UniDic directory cannot be verified: {exc}") from exc
     if actual != expected:
-        raise RuntimeError(
-            f"UniDic dictionary provenance mismatch: {actual} != {expected}"
-        )
+        raise RuntimeError(f"UniDic dictionary provenance mismatch: {actual} != {expected}")
     return actual
 
 

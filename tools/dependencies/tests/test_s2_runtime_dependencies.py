@@ -37,9 +37,7 @@ def _verification_artifacts() -> dict[str, dict[str, str]]:
     root = ET.parse(VERIFICATION_PATH).getroot()
     result: dict[str, dict[str, str]] = {}
     for component in root.findall(".//v:component", XML_NAMESPACE):
-        coordinate = ":".join(
-            component.attrib[key] for key in ("group", "name", "version")
-        )
+        coordinate = ":".join(component.attrib[key] for key in ("group", "name", "version"))
         artifacts: dict[str, str] = {}
         for artifact in component.findall("v:artifact", XML_NAMESPACE):
             checksums = artifact.findall("v:sha256", XML_NAMESPACE)
@@ -52,10 +50,7 @@ def _verification_artifacts() -> dict[str, dict[str, str]]:
 class RuntimeDependenciesTest(unittest.TestCase):
     def setUp(self) -> None:
         self.manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
-        self.components = {
-            component["coordinate"]: component
-            for component in self.manifest["components"]
-        }
+        self.components = {component["coordinate"]: component for component in self.manifest["components"]}
 
     def test_direct_catalog_pins_and_declarations_are_exact(self) -> None:
         catalog = tomllib.loads(CATALOG_PATH.read_text(encoding="utf-8"))
@@ -111,9 +106,7 @@ class RuntimeDependenciesTest(unittest.TestCase):
             "org.jetbrains.kotlinx:kotlinx-coroutines-android",
         }
         self.assertTrue(
-            forbidden_modules.isdisjoint(
-                entry["module"] for entry in libraries.values() if "module" in entry
-            )
+            forbidden_modules.isdisjoint(entry["module"] for entry in libraries.values() if "module" in entry)
         )
 
         app_build = APP_BUILD_PATH.read_text(encoding="utf-8")
@@ -212,14 +205,10 @@ class RuntimeDependenciesTest(unittest.TestCase):
         )
         self.assertEqual(
             {
-                "kotlinx-coroutines-android-1.11.0.jar":
-                    "c2cb206d27017c7d1bf5ff179787397543d13748dbabb0d7237e1585e0b29044",
-                "kotlinx-coroutines-android-1.11.0.module":
-                    "7b7d1dddf188817deaad738e92e11faa5abdf937c87120cdf036102566ad4be3",
+                "kotlinx-coroutines-android-1.11.0.jar": "c2cb206d27017c7d1bf5ff179787397543d13748dbabb0d7237e1585e0b29044",
+                "kotlinx-coroutines-android-1.11.0.module": "7b7d1dddf188817deaad738e92e11faa5abdf937c87120cdf036102566ad4be3",
             },
-            self.components[
-                "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0"
-            ]["artifacts"],
+            self.components["org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0"]["artifacts"],
         )
         self.assertIn(
             "org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm:1.11.0",

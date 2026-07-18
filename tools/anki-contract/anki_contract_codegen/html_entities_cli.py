@@ -11,9 +11,7 @@ from .html_entities_core import KOTLIN_OUTPUT_PATH, check, refresh
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        description="generate the pinned Chaquopy CPython 3.12 HTML5 entity table"
-    )
+    parser = argparse.ArgumentParser(description="generate the pinned Chaquopy CPython 3.12 HTML5 entity table")
     parser.add_argument(
         "--repo-root",
         type=Path,

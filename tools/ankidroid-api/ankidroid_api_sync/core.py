@@ -13,7 +13,6 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any, NoReturn
 
-
 MANIFEST_VERSION = 1
 MAX_MANIFEST_BYTES = 128 * 1024
 _READ_CHUNK_BYTES = 64 * 1024
@@ -113,11 +112,7 @@ def _run_git_bytes(checkout: Path, *args: str) -> bytes:
         _fail(f"cannot execute git to verify upstream checkout: {exc}")
     if result.returncode != 0:
         raw_detail = result.stderr.strip() or result.stdout.strip()
-        detail = (
-            raw_detail.decode("utf-8", errors="replace")
-            if raw_detail
-            else "git command failed"
-        )
+        detail = raw_detail.decode("utf-8", errors="replace") if raw_detail else "git command failed"
         _fail(f"cannot verify upstream checkout: {detail}")
     return result.stdout
 
@@ -165,10 +160,7 @@ def _read_pinned_source_bytes(
     for entry in VENDORED_FILES:
         mode, object_type, object_id = tree_entries[entry.source_path]
         if mode != "100644" or object_type != "blob":
-            _fail(
-                "pinned Git tree entry must be a 100644 blob: "
-                f"{entry.source_path} is {mode} {object_type}"
-            )
+            _fail("pinned Git tree entry must be a 100644 blob: " f"{entry.source_path} is {mode} {object_type}")
         source_bytes[entry.source_path] = _run_git_bytes(
             checkout,
             "cat-file",
@@ -240,9 +232,7 @@ def verify_checkout(checkout: Path, pin: UpstreamPin = PINNED_UPSTREAM) -> Path:
         "--ignore-submodules=none",
     )
     if status:
-        _fail(
-            "upstream checkout is dirty; refresh and upstream proof require a clean checkout"
-        )
+        _fail("upstream checkout is dirty; refresh and upstream proof require a clean checkout")
 
     for entry in VENDORED_FILES:
         source = checkout / entry.source_path
@@ -253,9 +243,7 @@ def verify_checkout(checkout: Path, pin: UpstreamPin = PINNED_UPSTREAM) -> Path:
         if source.is_symlink() or not source.is_file():
             _fail(f"upstream source is not a regular file: {entry.source_path}")
         if source.read_bytes() != pinned_source_bytes[entry.source_path]:
-            _fail(
-                f"upstream worktree bytes differ from pinned Git blob: {entry.source_path}"
-            )
+            _fail(f"upstream worktree bytes differ from pinned Git blob: {entry.source_path}")
 
     return checkout
 
@@ -278,9 +266,7 @@ def _manifest_bytes(manifest: dict[str, Any]) -> bytes:
     return f"{rendered}\n".encode("utf-8")
 
 
-def _build_manifest(
-    source_bytes: dict[PurePosixPath, bytes], pin: UpstreamPin
-) -> dict[str, Any]:
+def _build_manifest(source_bytes: dict[PurePosixPath, bytes], pin: UpstreamPin) -> dict[str, Any]:
     files = []
     for entry in VENDORED_FILES:
         data = source_bytes[entry.source_path]
@@ -365,10 +351,7 @@ class _ManagedRepository:
         )
         try:
             opened = os.fstat(descriptor)
-            if (
-                not stat.S_ISDIR(opened.st_mode)
-                or (opened.st_dev, opened.st_ino) != self._root_identity
-            ):
+            if not stat.S_ISDIR(opened.st_mode) or (opened.st_dev, opened.st_ino) != self._root_identity:
                 _fail("repository root changed between construction and opening")
         except BaseException:
             os.close(descriptor)
@@ -389,9 +372,7 @@ class _ManagedRepository:
 
     @staticmethod
     def _parts(relative: PurePosixPath) -> tuple[str, ...]:
-        if relative.is_absolute() or any(
-            part in {"", ".", ".."} for part in relative.parts
-        ):
+        if relative.is_absolute() or any(part in {"", ".", ".."} for part in relative.parts):
             _fail(f"managed path is not a safe repository-relative path: {relative}")
         return relative.parts
 
@@ -429,19 +410,13 @@ class _ManagedRepository:
                     _fail(f"{description} is missing: {relative}")
                 except OSError as exc:
                     try:
-                        component_stat = os.stat(
-                            part, dir_fd=current_fd, follow_symlinks=False
-                        )
+                        component_stat = os.stat(part, dir_fd=current_fd, follow_symlinks=False)
                     except OSError:
                         component_stat = None
                     component = PurePosixPath(*traversed)
-                    if component_stat is not None and stat.S_ISLNK(
-                        component_stat.st_mode
-                    ):
+                    if component_stat is not None and stat.S_ISLNK(component_stat.st_mode):
                         _fail(f"{description} traverses a symlink: {component}")
-                    _fail(
-                        f"{description} is not a regular directory: {component}: {exc}"
-                    )
+                    _fail(f"{description} is not a regular directory: {component}: {exc}")
                 os.close(current_fd)
                 current_fd = next_fd
             return current_fd
@@ -600,11 +575,7 @@ class _ManagedRepository:
                 try:
                     descriptor = os.open(
                         candidate,
-                        os.O_WRONLY
-                        | os.O_CREAT
-                        | os.O_EXCL
-                        | os.O_CLOEXEC
-                        | os.O_NOFOLLOW,
+                        os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC | os.O_NOFOLLOW,
                         0o600,
                         dir_fd=parent_fd,
                     )
@@ -613,9 +584,7 @@ class _ManagedRepository:
                 temporary_name = candidate
                 break
             if descriptor is None or temporary_name is None:
-                _fail(
-                    f"cannot allocate temporary file for managed destination: {destination}"
-                )
+                _fail(f"cannot allocate temporary file for managed destination: {destination}")
 
             offset = 0
             while offset < len(data):
@@ -702,11 +671,7 @@ class _ManagedRepository:
 
 
 def _expected_under(root: PurePosixPath) -> set[PurePosixPath]:
-    return {
-        entry.destination_path
-        for entry in VENDORED_FILES
-        if entry.destination_path.is_relative_to(root)
-    }
+    return {entry.destination_path for entry in VENDORED_FILES if entry.destination_path.is_relative_to(root)}
 
 
 def _remove_extraneous_outputs(repository: _ManagedRepository) -> None:
@@ -715,16 +680,12 @@ def _remove_extraneous_outputs(repository: _ManagedRepository) -> None:
         actual, directories = repository.scan_tree(root)
         for relative in sorted(actual - expected):
             repository.unlink_regular(relative)
-        for directory in sorted(
-            directories, key=lambda path: len(path.parts), reverse=True
-        ):
+        for directory in sorted(directories, key=lambda path: len(path.parts), reverse=True):
             repository.rmdir_if_empty(directory)
 
 
 def _paths_intersect(first: Path, second: Path) -> bool:
-    return (
-        first == second or first.is_relative_to(second) or second.is_relative_to(first)
-    )
+    return first == second or first.is_relative_to(second) or second.is_relative_to(first)
 
 
 def _reject_checkout_output_overlap(repo_root: Path, checkout: Path) -> None:
@@ -742,9 +703,7 @@ def _reject_checkout_output_overlap(repo_root: Path, checkout: Path) -> None:
             )
 
 
-def refresh(
-    repo_root: Path, checkout: Path, pin: UpstreamPin = PINNED_UPSTREAM
-) -> None:
+def refresh(repo_root: Path, checkout: Path, pin: UpstreamPin = PINNED_UPSTREAM) -> None:
     """Regenerate all managed files from a proven, clean pinned checkout."""
 
     repository = _ManagedRepository(repo_root)
@@ -756,9 +715,7 @@ def refresh(
     with repository:
         _remove_extraneous_outputs(repository)
         for entry in VENDORED_FILES:
-            repository.atomic_write(
-                entry.destination_path, source_bytes[entry.source_path]
-            )
+            repository.atomic_write(entry.destination_path, source_bytes[entry.source_path])
         repository.atomic_write(MANIFEST_PATH, _manifest_bytes(manifest))
         _check_managed(repository, pin)
 
@@ -779,19 +736,12 @@ def _load_manifest(raw: bytes) -> dict[str, Any]:
 def _require_keys(value: dict[str, Any], expected: set[str], context: str) -> None:
     actual = set(value)
     if actual != expected:
-        _fail(
-            f"{context} keys differ: expected {sorted(expected)}, found {sorted(actual)}"
-        )
+        _fail(f"{context} keys differ: expected {sorted(expected)}, found {sorted(actual)}")
 
 
-def _validate_manifest(
-    manifest: dict[str, Any], pin: UpstreamPin
-) -> list[dict[str, Any]]:
+def _validate_manifest(manifest: dict[str, Any], pin: UpstreamPin) -> list[dict[str, Any]]:
     _require_keys(manifest, _MANIFEST_TOP_LEVEL_KEYS, "manifest")
-    if (
-        type(manifest["formatVersion"]) is not int
-        or manifest["formatVersion"] != MANIFEST_VERSION
-    ):
+    if type(manifest["formatVersion"]) is not int or manifest["formatVersion"] != MANIFEST_VERSION:
         _fail(f"unsupported manifest formatVersion: {manifest['formatVersion']!r}")
 
     component = manifest["component"]
@@ -814,9 +764,7 @@ def _validate_manifest(
         _fail(f"manifest must contain exactly {len(VENDORED_FILES)} files")
 
     validated: list[dict[str, Any]] = []
-    for index, (raw_entry, expected) in enumerate(
-        zip(files, VENDORED_FILES, strict=True)
-    ):
+    for index, (raw_entry, expected) in enumerate(zip(files, VENDORED_FILES, strict=True)):
         if not isinstance(raw_entry, dict):
             _fail(f"manifest files[{index}] must be an object")
         _require_keys(raw_entry, _MANIFEST_FILE_KEYS, f"manifest files[{index}]")
@@ -828,9 +776,7 @@ def _validate_manifest(
         }
         for key, expected_value in expected_metadata.items():
             if raw_entry[key] != expected_value:
-                _fail(
-                    f"manifest files[{index}].{key} does not match the pinned file set"
-                )
+                _fail(f"manifest files[{index}].{key} does not match the pinned file set")
         byte_count = raw_entry["byteCount"]
         sha256 = raw_entry["sha256"]
         if type(byte_count) is not int or byte_count < 0:
@@ -865,9 +811,7 @@ def _check_managed(
         missing = expected - actual
         extraneous = actual - expected
         if missing:
-            _fail(
-                f"managed output is missing files: {', '.join(map(str, sorted(missing)))}"
-            )
+            _fail(f"managed output is missing files: {', '.join(map(str, sorted(missing)))}")
         if extraneous:
             paths = ", ".join(map(str, sorted(extraneous)))
             _fail(f"managed output contains extraneous files: {paths}")
@@ -903,8 +847,5 @@ def check_upstream(
     with repository:
         generated_bytes = _check_managed(repository, pin)
         for entry in VENDORED_FILES:
-            if (
-                generated_bytes[entry.destination_path]
-                != source_bytes[entry.source_path]
-            ):
+            if generated_bytes[entry.destination_path] != source_bytes[entry.source_path]:
                 _fail(f"verified upstream bytes differ: {entry.source_path}")

@@ -7,7 +7,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 PYTHON_ROOT = PROJECT_ROOT / "app/src/main/python"
 DEBUG_PYTHON_ROOT = PROJECT_ROOT / "app/src/debug/python"
@@ -19,8 +18,7 @@ def test_debug_probe_does_not_import_engine_at_module_scope() -> None:
     offenders: list[int] = []
     for node in tree.body:
         if isinstance(node, ast.Import) and any(
-            alias.name == "anki_miner" or alias.name.startswith("anki_miner.")
-            for alias in node.names
+            alias.name == "anki_miner" or alias.name.startswith("anki_miner.") for alias in node.names
         ):
             offenders.append(node.lineno)
         if isinstance(node, ast.ImportFrom) and (
@@ -34,9 +32,7 @@ def test_debug_probe_does_not_import_engine_at_module_scope() -> None:
 def test_preflight_proves_bootstrap_is_required_without_loading_engine(tmp_path: Path) -> None:
     environment = dict(os.environ)
     environment.pop("ANKI_MINER_HOME", None)
-    environment["PYTHONPATH"] = os.pathsep.join(
-        (str(DEBUG_PYTHON_ROOT), str(PYTHON_ROOT))
-    )
+    environment["PYTHONPATH"] = os.pathsep.join((str(DEBUG_PYTHON_ROOT), str(PYTHON_ROOT)))
     result = subprocess.run(
         [
             sys.executable,
@@ -76,4 +72,4 @@ def test_probe_replays_one_unbroken_production_chain() -> None:
     assert '"engine_import_ms"' not in source
     assert 'QCoreApplication.translate("S4", "%n cards", "", 2)' in source
     assert 'tr_format("Step %1 of %2", 1, 5)' in source
-    assert 'actual_output != expected_output' in source
+    assert "actual_output != expected_output" in source

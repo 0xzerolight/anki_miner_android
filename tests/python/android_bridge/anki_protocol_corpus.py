@@ -91,9 +91,7 @@ def _require_scalar_strings(value: Any) -> None:
             try:
                 current.encode("utf-8")
             except UnicodeEncodeError as error:
-                raise CorpusFormatError(
-                    "corpus data must use utf16CodeUnits for unpaired surrogates"
-                ) from error
+                raise CorpusFormatError("corpus data must use utf16CodeUnits for unpaired surrogates") from error
         elif isinstance(current, dict):
             pending.extend(current.keys())
             pending.extend(current.values())
@@ -120,11 +118,7 @@ def _utf16_string(units: object, context: str) -> str:
     index = 0
     while index < len(units):
         first = units[index]
-        if (
-            0xD800 <= first <= 0xDBFF
-            and index + 1 < len(units)
-            and 0xDC00 <= units[index + 1] <= 0xDFFF
-        ):
+        if 0xD800 <= first <= 0xDBFF and index + 1 < len(units) and 0xDC00 <= units[index + 1] <= 0xDFFF:
             second = units[index + 1]
             result.append(chr(0x10000 + ((first - 0xD800) << 10) + second - 0xDC00))
             index += 2
@@ -146,11 +140,7 @@ def _expand_input(value: object, context: str) -> str:
         _fail(f"{context} has an unknown construction")
 
     segments = value["concat"]
-    if (
-        not isinstance(segments, list)
-        or not segments
-        or len(segments) > _MAX_CONCAT_SEGMENTS
-    ):
+    if not isinstance(segments, list) or not segments or len(segments) > _MAX_CONCAT_SEGMENTS:
         _fail(f"{context}.concat must contain 1..{_MAX_CONCAT_SEGMENTS} segments")
 
     expanded: list[str] = []
@@ -160,9 +150,7 @@ def _expand_input(value: object, context: str) -> str:
         if isinstance(segment, str):
             text = segment
         elif isinstance(segment, dict) and set(segment) == {"repeat"}:
-            repeat = _exact_keys(
-                segment["repeat"], {"text", "count"}, f"{segment_context}.repeat"
-            )
+            repeat = _exact_keys(segment["repeat"], {"text", "count"}, f"{segment_context}.repeat")
             text_value = repeat["text"]
             count = repeat["count"]
             if not isinstance(text_value, str) or not text_value:

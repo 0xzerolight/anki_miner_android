@@ -28,9 +28,7 @@ class NativeTokenizerApi(Protocol):
     def tokenize(self, input_utf8: bytes, argv: tuple[str, ...]) -> bytes:
         """Return one complete AMTK wire buffer."""
 
-    def loaded_dictionary_filenames(
-        self, argv: tuple[str, ...]
-    ) -> Sequence[str]:
+    def loaded_dictionary_filenames(self, argv: tuple[str, ...]) -> Sequence[str]:
         """Return copied MeCab dictionary-info filenames."""
 
 
@@ -43,9 +41,7 @@ class _ChaquopyNativeTokenizerApi:
         self._jarray = jarray
         self._jbyte = jbyte
         self._string = jclass("java.lang.String")
-        self._tokenizer = jclass(
-            "com.ankiminer.android.tokenizer.MecabNativeTokenizer"
-        )
+        self._tokenizer = jclass("com.ankiminer.android.tokenizer.MecabNativeTokenizer")
 
     def _java_argv(self, argv: tuple[str, ...]) -> object:
         return self._jarray(self._string)(argv)
@@ -54,9 +50,7 @@ class _ChaquopyNativeTokenizerApi:
         java_input = self._jarray(self._jbyte)(input_utf8)
         return bytes(self._tokenizer.tokenize(java_input, self._java_argv(argv)))
 
-    def loaded_dictionary_filenames(
-        self, argv: tuple[str, ...]
-    ) -> tuple[str, ...]:
+    def loaded_dictionary_filenames(self, argv: tuple[str, ...]) -> tuple[str, ...]:
         values = self._tokenizer.loadedDictionaryFilenames(self._java_argv(argv))
         return tuple(str(value) for value in values)
 
@@ -78,12 +72,8 @@ class S1bTokenizerBackend:
             )
         self._argv = registration.mecab_new_argv
         try:
-            self._native = (
-                native if native is not None else _ChaquopyNativeTokenizerApi()
-            )
-            filenames = tuple(
-                self._native.loaded_dictionary_filenames(self._argv)
-            )
+            self._native = native if native is not None else _ChaquopyNativeTokenizerApi()
+            filenames = tuple(self._native.loaded_dictionary_filenames(self._argv))
         except Exception as exc:
             raise TokenizerContractError(
                 "native_tokenizer_initialization_failed",

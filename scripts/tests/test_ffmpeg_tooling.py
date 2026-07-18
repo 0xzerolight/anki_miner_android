@@ -8,7 +8,6 @@ import tempfile
 import unittest
 from pathlib import Path
 
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 FFMPEG_ROOT = REPO_ROOT / "tools/ffmpeg"
 
@@ -43,9 +42,7 @@ def _write_executable(path: Path, content: str) -> None:
 class FfmpegToolingTests(unittest.TestCase):
     def test_source_lock_is_complete_and_immutable(self) -> None:
         rows: dict[str, tuple[str, str, str]] = {}
-        for raw_line in (FFMPEG_ROOT / "sources.lock").read_text(
-            encoding="utf-8"
-        ).splitlines():
+        for raw_line in (FFMPEG_ROOT / "sources.lock").read_text(encoding="utf-8").splitlines():
             if not raw_line or raw_line.startswith("#"):
                 continue
             key, checksum, filename, url = raw_line.split()
@@ -76,9 +73,7 @@ class FfmpegToolingTests(unittest.TestCase):
                 filename = f"{key}.tar.gz"
                 (cache / filename).write_bytes(content)
                 checksum = hashlib.sha256(content).hexdigest()
-                lines.append(
-                    f"{key} {checksum} {filename} https://example.invalid/{filename}"
-                )
+                lines.append(f"{key} {checksum} {filename} https://example.invalid/{filename}")
             lock = root / "sources.lock"
             lock.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
@@ -92,15 +87,9 @@ class FfmpegToolingTests(unittest.TestCase):
 
     def test_builder_is_standalone_local_only_and_16k_aligned(self) -> None:
         build = (FFMPEG_ROOT / "build.sh").read_text(encoding="utf-8")
-        configure = (FFMPEG_ROOT / "overrides/ffmpeg-build.sh").read_text(
-            encoding="utf-8"
-        )
-        maker = (FFMPEG_ROOT / "overrides/ffmpeg-android-maker.sh").read_text(
-            encoding="utf-8"
-        )
-        common = (FFMPEG_ROOT / "overrides/common-functions.sh").read_text(
-            encoding="utf-8"
-        )
+        configure = (FFMPEG_ROOT / "overrides/ffmpeg-build.sh").read_text(encoding="utf-8")
+        maker = (FFMPEG_ROOT / "overrides/ffmpeg-android-maker.sh").read_text(encoding="utf-8")
+        common = (FFMPEG_ROOT / "overrides/common-functions.sh").read_text(encoding="utf-8")
 
         self.assertIn("ANDROID_NDK_VERSION", build)
         self.assertIn("arm64-v8a,x86_64", build)
@@ -121,7 +110,7 @@ class FfmpegToolingTests(unittest.TestCase):
         self.assertIn("prepare-build-root.py", build)
         self.assertIn("install-outputs.sh", build)
         self.assertLess(
-            build.index('for abi in arm64-v8a x86_64; do'),
+            build.index("for abi in arm64-v8a x86_64; do"),
             build.index('if [[ "$INSTALL_OUTPUT" == true ]]'),
         )
         self.assertNotIn("curl", common)
@@ -259,12 +248,7 @@ class FfmpegToolingTests(unittest.TestCase):
             components.write_text("", encoding="utf-8")
 
             config.write_text(
-                "\n".join(
-                    line
-                    for line in lines
-                    if line != "#define CONFIG_PIPE_PROTOCOL 1"
-                )
-                + "\n",
+                "\n".join(line for line in lines if line != "#define CONFIG_PIPE_PROTOCOL 1") + "\n",
                 encoding="utf-8",
             )
             with self.assertRaisesRegex(
@@ -334,8 +318,7 @@ class FfmpegToolingTests(unittest.TestCase):
             cases = (
                 ("#!/bin/sh\necho readelf-broke >&2\nexit 9\n", "llvm-readelf failed"),
                 (
-                    "#!/bin/sh\necho ' 0x0 (TEXTREL) 0x0'\n"
-                    "echo ' 0x1 (NEEDED) Shared library: [libc.so]'\n",
+                    "#!/bin/sh\necho ' 0x0 (TEXTREL) 0x0'\n" "echo ' 0x1 (NEEDED) Shared library: [libc.so]'\n",
                     "text relocations",
                 ),
                 (
@@ -388,9 +371,7 @@ class FfmpegToolingTests(unittest.TestCase):
             missing = source / "x86_64" / "libffprobe.so"
             missing.unlink()
             before = {
-                path.relative_to(destination): path.read_bytes()
-                for path in destination.rglob("*")
-                if path.is_file()
+                path.relative_to(destination): path.read_bytes() for path in destination.rglob("*") if path.is_file()
             }
             rejected = subprocess.run(
                 [str(installer), str(source), str(destination)],
@@ -399,9 +380,7 @@ class FfmpegToolingTests(unittest.TestCase):
                 check=False,
             )
             after = {
-                path.relative_to(destination): path.read_bytes()
-                for path in destination.rglob("*")
-                if path.is_file()
+                path.relative_to(destination): path.read_bytes() for path in destination.rglob("*") if path.is_file()
             }
             self.assertNotEqual(0, rejected.returncode)
             self.assertEqual(before, after)

@@ -28,9 +28,7 @@ from anki_protocol_corpus import CorpusCase, CorpusFormatError, load_anki_protoc
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 CORPUS_PATH = PROJECT_ROOT / "golden/bridge/anki-protocol-v1.jsonl"
-SCHEMA_PATH = (
-    PROJECT_ROOT / "app/src/main/python/android_bridge/schemas/anki.schema.json"
-)
+SCHEMA_PATH = PROJECT_ROOT / "app/src/main/python/android_bridge/schemas/anki.schema.json"
 
 _REQUEST_TYPES = {
     "verifyTarget": "anki.verifytarget.request",
@@ -40,8 +38,7 @@ _REQUEST_TYPES = {
     "releaseRunState": "anki.releaserunstate.request",
 }
 _RESULT_TYPES = {
-    callback: message_type.replace(".request", ".result")
-    for callback, message_type in _REQUEST_TYPES.items()
+    callback: message_type.replace(".request", ".result") for callback, message_type in _REQUEST_TYPES.items()
 }
 _SCHEMA_DEFS = {
     "anki.verifytarget.request": "verifyTargetRequest",
@@ -131,20 +128,14 @@ def _schema_category(error: ValidationError) -> str:
             return "invalid_value"
         if current.validator in {"pattern", "minimum", "maximum", "uniqueItems"}:
             return "invalid_value"
-        if (
-            current.validator == "type"
-            and current.validator_value == "integer"
-            and type(current.instance) is float
-        ):
+        if current.validator == "type" and current.validator_value == "integer" and type(current.instance) is float:
             return "invalid_value"
     return "invalid_payload"
 
 
 def _validate_schema(message_type: str, payload: dict[str, Any]) -> None:
     definition = _schema_def_for(message_type, payload)
-    if message_type == "anki.scanfirstfields.request" and isinstance(
-        payload.get("scope"), dict
-    ):
+    if message_type == "anki.scanfirstfields.request" and isinstance(payload.get("scope"), dict):
         scope_definition = {
             "knownVocabulary": "knownVocabularyScope",
             "duplicates": "duplicateScope",
@@ -313,10 +304,7 @@ def _validate_scan_payload(payload: dict[str, Any], *, response: bool) -> None:
                     max_scalars=limits["firstFieldMaxCodePoints"],
                     max_utf8_bytes=limits["firstFieldMaxUtf8Bytes"],
                 )[1]
-        if (
-            seen_hits > limits["duplicateHitsTotalMaxItems"]
-            or seen_bytes > limits["duplicateHitsTotalMaxUtf8Bytes"]
-        ):
+        if seen_hits > limits["duplicateHitsTotalMaxItems"] or seen_bytes > limits["duplicateHitsTotalMaxUtf8Bytes"]:
             _reject("invalid_value")
         return
 
@@ -340,9 +328,7 @@ def _validate_scan_payload(payload: dict[str, Any], *, response: bool) -> None:
     _canonical_name(scope["firstFieldName"], "field")
     if scope["deckName"] is not None:
         _canonical_name(scope["deckName"], "deck")
-    if len({json.dumps(item, sort_keys=True) for item in scope["candidates"]}) != len(
-        scope["candidates"]
-    ):
+    if len({json.dumps(item, sort_keys=True) for item in scope["candidates"]}) != len(scope["candidates"]):
         _reject("invalid_value")
     for candidate in scope["candidates"]:
         _plain_string(
@@ -356,8 +342,7 @@ def _validate_scan_payload(payload: dict[str, Any], *, response: bool) -> None:
             max_scalars=limits["duplicateFirstFieldMaxCodePoints"],
         )
     if any(
-        normalize_integral_json_number(index) not in range(len(scope["candidates"]))
-        for index in scope["occurrences"]
+        normalize_integral_json_number(index) not in range(len(scope["candidates"])) for index in scope["occurrences"]
     ):
         _reject("invalid_value")
 
@@ -384,24 +369,16 @@ def _validate_store_payload(payload: dict[str, Any], *, response: bool) -> None:
             _media_basename(asset["preferredName"], preferred=True)
             if asset["purpose"] == "card":
                 _media_basename(asset["requestedFilename"], preferred=True)
-                expected_preferred = _card_provider_preferred_name(
-                    asset["requestedFilename"]
-                )
+                expected_preferred = _card_provider_preferred_name(asset["requestedFilename"])
             else:
                 _media_basename(asset["requestedFilename"])
-                expected_preferred = _dictionary_provider_preferred_name(
-                    asset["requestedFilename"]
-                )
+                expected_preferred = _dictionary_provider_preferred_name(asset["requestedFilename"])
             if asset["preferredName"] != expected_preferred:
                 _reject("invalid_value")
-            prior_owner = requested_name_owners.setdefault(
-                asset["requestedFilename"], asset["assetId"]
-            )
+            prior_owner = requested_name_owners.setdefault(asset["requestedFilename"], asset["assetId"])
             if prior_owner != asset["assetId"]:
                 _reject("invalid_value")
-            namespace_prefixes.append(
-                (f'{asset["preferredName"]}_', asset["assetId"])
-            )
+            namespace_prefixes.append((f'{asset["preferredName"]}_', asset["assetId"]))
             requested_stem = _strict_filename_stem(asset["requestedFilename"])
             if requested_stem is not None:
                 concrete_claims.append((requested_stem, asset["assetId"]))
@@ -413,14 +390,9 @@ def _validate_store_payload(payload: dict[str, Any], *, response: bool) -> None:
             _reject("invalid_value")
         for index, (prefix, owner) in enumerate(namespace_prefixes):
             for other_prefix, other_owner in namespace_prefixes[index + 1 :]:
-                if owner != other_owner and (
-                    prefix.startswith(other_prefix) or other_prefix.startswith(prefix)
-                ):
+                if owner != other_owner and (prefix.startswith(other_prefix) or other_prefix.startswith(prefix)):
                     _reject("invalid_value")
-            if any(
-                concrete_owner != owner and stem.startswith(prefix)
-                for stem, concrete_owner in concrete_claims
-            ):
+            if any(concrete_owner != owner and stem.startswith(prefix) for stem, concrete_owner in concrete_claims):
                 _reject("invalid_value")
         return
 
@@ -460,9 +432,7 @@ def _validate_store_payload(payload: dict[str, Any], *, response: bool) -> None:
         _validate_error_detail(error)
         if known_write_seen and error["retryable"]:
             _reject("invalid_value")
-        if uncertain_seen and (
-            error["code"] != "post_commit_uncertain" or error["retryable"]
-        ):
+        if uncertain_seen and (error["code"] != "post_commit_uncertain" or error["retryable"]):
             _reject("invalid_value")
         if error["code"] == "post_commit_uncertain" and not uncertain_seen:
             _reject("invalid_value")
@@ -514,9 +484,7 @@ def _validate_create_payload(payload: dict[str, Any], *, response: bool) -> None
                     _reject("invalid_value")
                 binding_ids.add(binding["assetId"])
                 note_content += len(binding["assetId"].encode("utf-8"))
-                note_content += _media_basename(
-                    binding["actualFilename"], actual=True
-                )
+                note_content += _media_basename(binding["actualFilename"], actual=True)
             total_bindings += len(note["mediaBindings"])
             if note_content > limits["noteContentMaxUtf8Bytes"]:
                 _reject("invalid_value")
@@ -527,10 +495,7 @@ def _validate_create_payload(payload: dict[str, Any], *, response: bool) -> None
             if occurrence is None or occurrence <= previous_occurrence:
                 _reject("invalid_value")
             previous_occurrence = occurrence
-        if (
-            total_bindings > limits["maxMediaBindingsTotal"]
-            or total_content > limits["callbackContentMaxUtf8Bytes"]
-        ):
+        if total_bindings > limits["maxMediaBindingsTotal"] or total_content > limits["callbackContentMaxUtf8Bytes"]:
             _reject("invalid_value")
         return
 
@@ -575,21 +540,15 @@ def _validate_create_payload(payload: dict[str, Any], *, response: bool) -> None
         _validate_error_detail(error)
         if known_write_seen and error["retryable"]:
             _reject("invalid_value")
-        if uncertain_seen and (
-            error["code"] != "post_commit_uncertain" or error["retryable"]
-        ):
+        if uncertain_seen and (error["code"] != "post_commit_uncertain" or error["retryable"]):
             _reject("invalid_value")
-        if error["code"] == "post_commit_uncertain" and not (
-            uncertain_seen or committed_failure_seen
-        ):
+        if error["code"] == "post_commit_uncertain" and not (uncertain_seen or committed_failure_seen):
             _reject("invalid_value")
         if committed_failure_seen and error["code"] == "cancelled":
             _reject("invalid_value")
 
 
-def _validate_semantics(
-    message_type: str, payload: dict[str, Any], callback: str
-) -> None:
+def _validate_semantics(message_type: str, payload: dict[str, Any], callback: str) -> None:
     if message_type == "anki.error":
         if payload["operation"] != callback:
             _reject("unexpected_message_type")
@@ -663,40 +622,26 @@ def test_shared_anki_protocol_vector(case: CorpusCase) -> None:
         canonical_message = decode_envelope(canonical)
         assert canonical_message.message_type == message_type
         assert canonical_message.payload == case.expectation.payload
-        assert json.dumps(
-            json.loads(canonical), ensure_ascii=False, separators=(",", ":")
-        ) == canonical
+        assert json.dumps(json.loads(canonical), ensure_ascii=False, separators=(",", ":")) == canonical
     else:
         assert case.expectation.canonical is None
 
 
 def test_corpus_freezes_all_operation_and_result_variants() -> None:
     accepted = [case for case in _CORPUS if case.expectation.outcome == "accept"]
-    request_callbacks = {
-        case.callback for case in accepted if case.direction == "request"
-    }
+    request_callbacks = {case.callback for case in accepted if case.direction == "request"}
     assert request_callbacks == set(_REQUEST_TYPES)
 
-    accepted_payloads = [
-        case.expectation.payload
-        for case in accepted
-        if case.expectation.payload is not None
-    ]
-    assert {
-        payload["scope"]["kind"]
-        for payload in accepted_payloads
-        if "scope" in payload
-    } == {"knownVocabulary", "duplicates"}
-    assert {
-        payload["duplicateScope"]["kind"]
-        for payload in accepted_payloads
-        if "duplicateScope" in payload
-    } == {"collection", "exactDeck"}
-    assert {
-        row["status"]
-        for payload in accepted_payloads
-        for row in payload.get("results", [])
-    } == {
+    accepted_payloads = [case.expectation.payload for case in accepted if case.expectation.payload is not None]
+    assert {payload["scope"]["kind"] for payload in accepted_payloads if "scope" in payload} == {
+        "knownVocabulary",
+        "duplicates",
+    }
+    assert {payload["duplicateScope"]["kind"] for payload in accepted_payloads if "duplicateScope" in payload} == {
+        "collection",
+        "exactDeck",
+    }
+    assert {row["status"] for payload in accepted_payloads for row in payload.get("results", [])} == {
         "stored",
         "failed",
         "uncertain",
@@ -705,12 +650,12 @@ def test_corpus_freezes_all_operation_and_result_variants() -> None:
         "duplicate",
         "committedFailed",
     }
-    assert {
-        payload["state"] for payload in accepted_payloads if "state" in payload
-    } == {"released", "deferred", "absent"}
-    assert {
-        payload["code"] for payload in accepted_payloads if "operation" in payload
-    } == _ERROR_CODES
+    assert {payload["state"] for payload in accepted_payloads if "state" in payload} == {
+        "released",
+        "deferred",
+        "absent",
+    }
+    assert {payload["code"] for payload in accepted_payloads if "operation" in payload} == _ERROR_CODES
 
 
 def test_corpus_constructions_and_rejection_categories_stay_covered() -> None:
@@ -729,11 +674,7 @@ def test_corpus_constructions_and_rejection_categories_stay_covered() -> None:
         "reject_verify_deck_created_true",
     }
     assert required_constructions <= by_id.keys()
-    assert {
-        case.expectation.category
-        for case in _CORPUS
-        if case.expectation.outcome == "reject"
-    } == {
+    assert {case.expectation.category for case in _CORPUS if case.expectation.outcome == "reject"} == {
         "input_too_large",
         "output_too_large",
         "invalid_utf8",
@@ -757,9 +698,7 @@ def test_corpus_constructions_and_rejection_categories_stay_covered() -> None:
         ('{"id":"x"}', "must end with a newline"),
     ],
 )
-def test_loader_rejects_malformed_corpus(
-    tmp_path: Path, line: str, message: str
-) -> None:
+def test_loader_rejects_malformed_corpus(tmp_path: Path, line: str, message: str) -> None:
     path = tmp_path / "corpus.jsonl"
     path.write_text(line, encoding="utf-8")
 
@@ -774,14 +713,8 @@ def test_numeric_construction_lengths_are_exact() -> None:
         suffix = raw.split(marker, 1)[1]
         return re.match(r"-?[0-9]+(?:\.[0-9]+)?", suffix).group(0)  # type: ignore[union-attr]
 
-    assert (
-        len(number_after(by_id["request_numeric_token_positive_exact_1000"], ":"))
-        == 1000
-    )
-    assert (
-        len(number_after(by_id["reject_numeric_token_positive_1001"], ":"))
-        == 1001
-    )
+    assert len(number_after(by_id["request_numeric_token_positive_exact_1000"], ":")) == 1000
+    assert len(number_after(by_id["reject_numeric_token_positive_1001"], ":")) == 1001
     assert (
         len(
             number_after(
@@ -791,11 +724,4 @@ def test_numeric_construction_lengths_are_exact() -> None:
         )
         == 1000
     )
-    assert (
-        len(
-            number_after(
-                by_id["reject_numeric_token_negative_1001"], '"deckId":'
-            )
-        )
-        == 1001
-    )
+    assert len(number_after(by_id["reject_numeric_token_negative_1001"], '"deckId":')) == 1001

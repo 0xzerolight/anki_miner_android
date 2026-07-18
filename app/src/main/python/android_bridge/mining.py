@@ -132,9 +132,7 @@ def _canonical_label(field_name: str, value: object) -> str:
     if not isinstance(value, str) or not value:
         raise _invalid_request(f"{field_name} must be a non-empty string")
     if has_leading_or_trailing_python_whitespace(value):
-        raise _invalid_request(
-            f"{field_name} must not have leading or trailing whitespace"
-        )
+        raise _invalid_request(f"{field_name} must not have leading or trailing whitespace")
     if not is_nfc(value):
         raise _invalid_request(f"{field_name} must use NFC Unicode normalization")
     if any(is_category_c(ord(character)) for character in value):
@@ -153,23 +151,17 @@ def _optional_audio_track(value: object) -> int | None:
         return None
     converted = normalize_integral_json_number(value)
     if converted is None or converted < 0:
-        raise _invalid_request(
-            "audioTrackOverride must be a non-negative integer or null"
-        )
+        raise _invalid_request("audioTrackOverride must be a non-negative integer or null")
     return converted
 
 
 def _parse_request(raw_request: str) -> _VideoRequest:
     payload = decode_message(raw_request, expected_type="mining.video.run")
     if set(payload) != _VIDEO_REQUEST_FIELDS:
-        raise _invalid_request(
-            f"Expected payload fields: {sorted(_VIDEO_REQUEST_FIELDS)!r}"
-        )
+        raise _invalid_request(f"Expected payload fields: {sorted(_VIDEO_REQUEST_FIELDS)!r}")
 
     snapshot = payload["configSnapshot"]
-    if not isinstance(snapshot, dict) or not set(snapshot).issubset(
-        _CONFIG_SNAPSHOT_FIELDS
-    ):
+    if not isinstance(snapshot, dict) or not set(snapshot).issubset(_CONFIG_SNAPSHOT_FIELDS):
         raise _invalid_request("configSnapshot fields are invalid")
     if "settings" not in snapshot or not isinstance(snapshot["settings"], dict):
         raise _invalid_request("configSnapshot.settings must be an object")
@@ -180,9 +172,7 @@ def _parse_request(raw_request: str) -> _VideoRequest:
 
     subtitle_path = _absolute_path("subtitlePath", payload["subtitlePath"])
     if subtitle_path.suffix.lower() not in _SUBTITLE_SUFFIXES:
-        raise _invalid_request(
-            "subtitlePath must preserve a supported subtitle filename suffix"
-        )
+        raise _invalid_request("subtitlePath must preserve a supported subtitle filename suffix")
 
     return _VideoRequest(
         video_path=_absolute_path("videoPath", payload["videoPath"]),
@@ -192,9 +182,7 @@ def _parse_request(raw_request: str) -> _VideoRequest:
         source_label=_optional_source_label(payload["sourceLabel"]),
         audio_track_override=_optional_audio_track(payload["audioTrackOverride"]),
         cache_dir=_absolute_path("cacheDir", payload["cacheDir"]),
-        native_library_dir=_absolute_path(
-            "nativeLibraryDir", payload["nativeLibraryDir"]
-        ),
+        native_library_dir=_absolute_path("nativeLibraryDir", payload["nativeLibraryDir"]),
         settings=dict(snapshot["settings"]),
         android_tts_enabled=android_tts_enabled,
     )
@@ -265,9 +253,7 @@ def _build_local_audio_pack_chain(config: object) -> _LocalAudioPackChain | None
 
     pack_registry = AudioPackRegistry(config.audio_packs_root)
     pack_registry.load()
-    fetchers = pack_registry.build_fetcher_chain(
-        config, ANKI_MINER_HOME / "audio_cache" / "local_packs"
-    )
+    fetchers = pack_registry.build_fetcher_chain(config, ANKI_MINER_HOME / "audio_cache" / "local_packs")
     return _LocalAudioPackChain(fetchers)
 
 
@@ -322,9 +308,11 @@ def _android_dictionary_provider_chain(
     cancelled_check: Callable[[], bool],
 ) -> list[object]:
     return [
-        _AndroidOnlineDictionaryProvider(provider, cancelled_check)
-        if getattr(provider, "is_online", False)
-        else provider
+        (
+            _AndroidOnlineDictionaryProvider(provider, cancelled_check)
+            if getattr(provider, "is_online", False)
+            else provider
+        )
         for provider in providers
     ]
 
@@ -365,44 +353,25 @@ def _build_processor(
         try:
             dictionary_registry.load()
         except OSError as error:
-            _show_optional_failure(
-                adapters.presenter, "Couldn't scan dictionaries folder", error
-            )
+            _show_optional_failure(adapters.presenter, "Couldn't scan dictionaries folder", error)
         providers = _android_dictionary_provider_chain(
             dictionary_registry.build_provider_chain(config),
             adapters.cancel_event.is_set,
         )
         definition_service = DefinitionService(config, providers=providers)
 
-        has_indexed_dictionary = any(
-            entry.kind == "indexed" and entry.enabled
-            for entry in config.dictionary_chain
-        )
+        has_indexed_dictionary = any(entry.kind == "indexed" and entry.enabled for entry in config.dictionary_chain)
         if has_indexed_dictionary:
             try:
                 definition_service.ensure_loaded()
             except Exception as error:
-                _show_optional_failure(
-                    adapters.presenter, "Couldn't load dictionary chain", error
-                )
+                _show_optional_failure(adapters.presenter, "Couldn't load dictionary chain", error)
 
         subtitle_parser = SubtitleParserService(
             config,
-            term_lookup=(
-                definition_service.offline_terms_exist
-                if has_indexed_dictionary
-                else None
-            ),
-            reading_lookup=(
-                definition_service.offline_term_readings
-                if has_indexed_dictionary
-                else None
-            ),
-            kana_attest_lookup=(
-                definition_service.has_offline_definitions
-                if has_indexed_dictionary
-                else None
-            ),
+            term_lookup=(definition_service.offline_terms_exist if has_indexed_dictionary else None),
+            reading_lookup=(definition_service.offline_term_readings if has_indexed_dictionary else None),
+            kana_attest_lookup=(definition_service.has_offline_definitions if has_indexed_dictionary else None),
         )
         word_filter = WordFilterService(config, tagger=subtitle_parser.tagger)
         media_extractor = MediaExtractorService(config)
@@ -414,14 +383,10 @@ def _build_processor(
                 pitch_accent_service = PitchAccentService(config.pitch_accent_path)
                 pitch_accent_service.load()
                 if pitch_accent_service.entry_count <= 0:
-                    adapters.presenter.show_warning(
-                        "Pitch accent file has no valid entries"
-                    )
+                    adapters.presenter.show_warning("Pitch accent file has no valid entries")
                     pitch_accent_service = None
             except Exception as error:
-                _show_optional_failure(
-                    adapters.presenter, "Couldn't load pitch accent data", error
-                )
+                _show_optional_failure(adapters.presenter, "Couldn't load pitch accent data", error)
                 pitch_accent_service = None
 
         if config.frequency_active:
@@ -439,9 +404,7 @@ def _build_processor(
             except Exception as error:
                 for provider in candidates:
                     _close_without_masking(provider, "frequency provider")
-                _show_optional_failure(
-                    adapters.presenter, "Couldn't load frequency data", error
-                )
+                _show_optional_failure(adapters.presenter, "Couldn't load frequency data", error)
                 frequency_service = None
 
         try:
@@ -449,42 +412,30 @@ def _build_processor(
             if config.use_known_words_db:
                 known_word_db.initialize()
         except Exception as error:
-            _show_optional_failure(
-                adapters.presenter, "Couldn't initialize known word database", error
-            )
+            _show_optional_failure(adapters.presenter, "Couldn't initialize known word database", error)
             known_word_db = None
 
         word_list_service = None
         if config.use_blacklist or config.use_whitelist:
             try:
                 word_list_service = WordListService(
-                    blacklist_path=(
-                        config.blacklist_path if config.use_blacklist else None
-                    ),
-                    whitelist_path=(
-                        config.whitelist_path if config.use_whitelist else None
-                    ),
+                    blacklist_path=(config.blacklist_path if config.use_blacklist else None),
+                    whitelist_path=(config.whitelist_path if config.use_whitelist else None),
                 )
                 word_list_service.load()
             except Exception as error:
-                _show_optional_failure(
-                    adapters.presenter, "Couldn't load word lists", error
-                )
+                _show_optional_failure(adapters.presenter, "Couldn't load word lists", error)
                 word_list_service = None
 
         wordset_service = None
         if config.excluded_wordsets:
             try:
-                wordset_service = WordsetService(
-                    enabled_ids=config.excluded_wordsets
-                )
+                wordset_service = WordsetService(enabled_ids=config.excluded_wordsets)
                 wordset_service.load()
                 if not wordset_service.is_available():
                     wordset_service = None
             except Exception as error:
-                _show_optional_failure(
-                    adapters.presenter, "Couldn't load name wordsets", error
-                )
+                _show_optional_failure(adapters.presenter, "Couldn't load name wordsets", error)
                 wordset_service = None
 
         stats_service = StatsService(config.stats_db_path)
@@ -557,9 +508,7 @@ def _process_episode(
         try:
             stack.close()
         except BaseException:
-            logger.exception(
-                "Mining cleanup failed while preserving the primary failure"
-            )
+            logger.exception("Mining cleanup failed while preserving the primary failure")
         raise
     try:
         stack.close()
@@ -643,9 +592,7 @@ def _cleanup_failure_terminal(run_id: str, result: object) -> tuple[str, str]:
     )
 
 
-def _emit_terminal(
-    adapters: CallbackAdapters, outcome: str, terminal_message: str
-) -> None:
+def _emit_terminal(adapters: CallbackAdapters, outcome: str, terminal_message: str) -> None:
     try:
         adapters.notify_terminal(terminal_message, failed=outcome == "failed")
     except Exception:
@@ -676,29 +623,19 @@ def run_video(
             # Honor a cancellation raced through that handoff before config
             # mapping scans disk or processor composition opens resources.
             if adapters.cancel_event.is_set():
-                raise AnkiOperationCancelled(
-                    "runVideo", "Mining was cancelled", False
-                )
+                raise AnkiOperationCancelled("runVideo", "Mining was cancelled", False)
             config = _map_config(request, files_dir)
             if adapters.cancel_event.is_set():
-                raise AnkiOperationCancelled(
-                    "runVideo", "Mining was cancelled", False
-                )
+                raise AnkiOperationCancelled("runVideo", "Mining was cancelled", False)
             result = _process_episode(request, config, adapters)
             outcome, terminal = _result_terminal(handle.run_id, result)
         except _PostProcessCleanupError as error:
-            outcome, terminal = _cleanup_failure_terminal(
-                handle.run_id, error.result
-            )
+            outcome, terminal = _cleanup_failure_terminal(handle.run_id, error.result)
         except AnkiOperationCancelled as error:
-            outcome, terminal = _exception_terminal(
-                handle.run_id, error, cancelled=True
-            )
+            outcome, terminal = _exception_terminal(handle.run_id, error, cancelled=True)
         except Exception as error:
             logger.exception("Video mining failed")
-            outcome, terminal = _exception_terminal(
-                handle.run_id, error, cancelled=False
-            )
+            outcome, terminal = _exception_terminal(handle.run_id, error, cancelled=False)
     finally:
         owner.finish(handle.run_id)
 

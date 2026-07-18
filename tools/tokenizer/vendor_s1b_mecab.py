@@ -155,11 +155,7 @@ def reproduce(
     revision = upstream.get("revision")
     tag = upstream.get("tag")
     source_root = upstream.get("source_root")
-    if (
-        not isinstance(revision, str)
-        or not isinstance(tag, str)
-        or not isinstance(source_root, str)
-    ):
+    if not isinstance(revision, str) or not isinstance(tag, str) or not isinstance(source_root, str):
         raise VendorError("source manifest upstream fields are malformed")
     if _git_value(source, "rev-parse", "HEAD") != revision:
         raise VendorError(f"source checkout is not pinned revision {revision}")
@@ -196,9 +192,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--mecab-source", type=Path)
     args = parser.parse_args(argv)
     reproducing = args.source is not None or args.mecab_source is not None
-    if args.check == reproducing or (
-        reproducing and (args.source is None or args.mecab_source is None)
-    ):
+    if args.check == reproducing or (reproducing and (args.source is None or args.mecab_source is None)):
         parser.error("choose --check, or both --source and --mecab-source")
 
     try:

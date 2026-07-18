@@ -26,7 +26,6 @@ import urllib.request
 import zipfile
 import zlib
 
-
 ROOT = Path(__file__).resolve().parents[2]
 TOOL_ROOT = Path(__file__).resolve().parent
 SOURCE_LOCK = TOOL_ROOT / "sources.lock"
@@ -425,11 +424,7 @@ def host_entries() -> list[dict[str, object]]:
         result.append(entry)
     if seen_requirements != set(HOST_REQUIREMENTS):
         raise RuntimeWheelError("host wheel lock inventory differs from the contract")
-    target_filenames = {
-        str(entry["filename"])
-        for entry in result
-        if "target" in entry["roles"]
-    }
+    target_filenames = {str(entry["filename"]) for entry in result if "target" in entry["roles"]}
     if any("cp313" in filename for filename in target_filenames):
         raise RuntimeWheelError("target build wheels must not use the cp313 ABI")
     cython = next(entry for entry in result if entry["requirement"] == "Cython==3.2.4")
@@ -441,11 +436,7 @@ def host_entries() -> list[dict[str, object]]:
 def host_requirements(role: str) -> list[str]:
     if role not in {"outer", "target"}:
         raise RuntimeWheelError(f"unknown host wheel role: {role}")
-    return [
-        str(entry["requirement"])
-        for entry in host_entries()
-        if role in entry["roles"]
-    ]
+    return [str(entry["requirement"]) for entry in host_entries() if role in entry["roles"]]
 
 
 def verify_file(path: Path, expected: str) -> None:
@@ -499,11 +490,7 @@ def _normalized_archive_name(name: str) -> str | None:
         return ""
     normalized = name[:-1] if name.endswith("/") else name
     components = normalized.split("/")
-    if (
-        not normalized
-        or normalized.startswith("/")
-        or any(component in {"", ".", ".."} for component in components)
-    ):
+    if not normalized or normalized.startswith("/") or any(component in {"", ".", ".."} for component in components):
         return None
     return normalized
 
@@ -576,9 +563,7 @@ def _validated_tar_members(
                 raise RuntimeWheelError(f"{archive_name}: unsafe source root entry")
             continue
         components = normalized.split("/")
-        if member.issym() or member.islnk() or member.isdev() or not (
-            member.isdir() or member.isfile()
-        ):
+        if member.issym() or member.islnk() or member.isdev() or not (member.isdir() or member.isfile()):
             raise RuntimeWheelError(f"{archive_name}: special source entry {name!r}")
         is_directory = member.isdir()
         if normalized in seen:
@@ -702,11 +687,7 @@ def verify_python_target_archive(path: Path, abi: str, expected_sha256: str) -> 
         raise RuntimeWheelError(f"invalid Python target archive: {path}") from error
     with archive:
         members = _validated_zip_members(archive, path.name, "target archive")
-        native_members = [
-            info
-            for info in members
-            if not info.is_dir() and Path(info.filename).name.endswith(".so")
-        ]
+        native_members = [info for info in members if not info.is_dir() and Path(info.filename).name.endswith(".so")]
         libpython_path = f"jniLibs/{abi}/libpython3.12.so"
         if [info.filename for info in native_members].count(libpython_path) != 1:
             raise RuntimeWheelError(f"{path.name}: missing {libpython_path}")
@@ -850,9 +831,9 @@ def patch_builder(chaquopy: Path) -> None:
     _replace(
         builder,
         'os.environ["PIP_DISABLE_PIP_VERSION_CHECK"] = "1"',
-        'for name in list(os.environ):\n'
+        "for name in list(os.environ):\n"
         '            if name.startswith("PIP_") or name.casefold().endswith("_proxy"):\n'
-        '                os.environ.pop(name, None)\n'
+        "                os.environ.pop(name, None)\n"
         '        os.environ["PIP_DISABLE_PIP_VERSION_CHECK"] = "1"\n'
         '        os.environ["PIP_CONFIG_FILE"] = os.devnull',
     )
@@ -860,14 +841,14 @@ def patch_builder(chaquopy: Path) -> None:
         builder,
         'run(f"{bootstrap_env}/bin/pip install pip=={pip_version}")',
         'run(f"{bootstrap_env}/bin/pip install --no-index --only-binary=:all: "\n'
-        '    f"--find-links={os.environ[\'ANKI_MINER_HOST_WHEELHOUSE\']} "\n'
+        "    f\"--find-links={os.environ['ANKI_MINER_HOST_WHEELHOUSE']} \"\n"
         '    f"pip=={pip_version}")',
     )
     _replace(
         builder,
         'f"install " + " ".join(shlex.quote(req) for req in requirements))',
         'f"install --no-index --only-binary=:all: "\n'
-        '                f"--find-links={os.environ[\'ANKI_MINER_HOST_WHEELHOUSE\']} " +\n'
+        "                f\"--find-links={os.environ['ANKI_MINER_HOST_WHEELHOUSE']} \" +\n"
         '                " ".join(shlex.quote(req) for req in requirements))',
     )
     _replace(
@@ -903,27 +884,25 @@ def patch_builder(chaquopy: Path) -> None:
     _replace(android_env, "ndk_version=27.3.13750724", f"ndk_version={NDK_VERSION}")
     _replace(
         android_env,
-        'if ! [ -e $ndk ]; then\n'
+        "if ! [ -e $ndk ]; then\n"
         '    log "Installing NDK - this may take several minutes"\n'
         '    yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "ndk;$ndk_version"\n'
         "fi",
-        'if ! [ -e "$ndk" ]; then\n'
-        '    fail "locked NDK is missing: $ndk"\n'
-        "fi",
+        'if ! [ -e "$ndk" ]; then\n' '    fail "locked NDK is missing: $ndk"\n' "fi",
     )
     _replace(
         android_env,
         'export CFLAGS="-D__BIONIC_NO_PAGE_SIZE_MACRO"',
         'case "${ANKI_MINER_RUNTIME_STAGE_ROOT:-}" in\n'
         '    /*[[:space:]]*) fail "runtime stage root contains whitespace" ;;\n'
-        '    /*) ;;\n'
+        "    /*) ;;\n"
         '    *) fail "runtime stage root is not absolute" ;;\n'
-        'esac\n'
-        'runtime_source_prefix=/anki-miner-runtime\n'
-        'export ZERO_AR_DATE=1\n'
+        "esac\n"
+        "runtime_source_prefix=/anki-miner-runtime\n"
+        "export ZERO_AR_DATE=1\n"
         'export CFLAGS="-D__BIONIC_NO_PAGE_SIZE_MACRO '
-        '-ffile-prefix-map=$ANKI_MINER_RUNTIME_STAGE_ROOT=$runtime_source_prefix '
-        '-fdebug-prefix-map=$ANKI_MINER_RUNTIME_STAGE_ROOT=$runtime_source_prefix '
+        "-ffile-prefix-map=$ANKI_MINER_RUNTIME_STAGE_ROOT=$runtime_source_prefix "
+        "-fdebug-prefix-map=$ANKI_MINER_RUNTIME_STAGE_ROOT=$runtime_source_prefix "
         '-fmacro-prefix-map=$ANKI_MINER_RUNTIME_STAGE_ROOT=$runtime_source_prefix"',
     )
 
@@ -1183,8 +1162,10 @@ def validate_builder_identity(value: object) -> dict[str, object]:
         "tar",
         "unzip",
     }
-    if not isinstance(tools, dict) or set(tools) != expected_tools or not all(
-        isinstance(item, str) and item for item in tools.values()
+    if (
+        not isinstance(tools, dict)
+        or set(tools) != expected_tools
+        or not all(isinstance(item, str) and item for item in tools.values())
     ):
         raise RuntimeWheelError("incomplete builder tool identity")
     return identity
@@ -1245,8 +1226,7 @@ def enforce_reproducible_environment() -> None:
         mismatches["umask"] = (oct(current_umask), oct(0o022))
     if mismatches:
         details = ", ".join(
-            f"{name}={actual!r} (expected {expected!r})"
-            for name, (actual, expected) in sorted(mismatches.items())
+            f"{name}={actual!r} (expected {expected!r})" for name, (actual, expected) in sorted(mismatches.items())
         )
         raise RuntimeWheelError(f"non-reproducible builder environment: {details}")
 
@@ -1255,10 +1235,7 @@ def validate_expected_keys(
     expected_recipe: str,
     expected_build: str,
 ) -> tuple[str, str, dict[str, object]]:
-    if (
-        KEY_PATTERN.fullmatch(expected_recipe) is None
-        or KEY_PATTERN.fullmatch(expected_build) is None
-    ):
+    if KEY_PATTERN.fullmatch(expected_recipe) is None or KEY_PATTERN.fullmatch(expected_build) is None:
         raise RuntimeWheelError("expected keys must be lowercase SHA-256 values")
     recipe = source_recipe_key()
     identity = builder_identity()
@@ -1400,9 +1377,7 @@ def stage(
             "ndk": NDK_VERSION,
             "python_target": PYTHON_TARGET,
             "source_hashes": {name: entry["sha256"] for name, entry in entries.items()},
-            "host_wheels": {
-                str(entry["filename"]): entry["sha256"] for entry in host_entries()
-            },
+            "host_wheels": {str(entry["filename"]): entry["sha256"] for entry in host_entries()},
         }
         (_stage_manifest_path(temporary)).write_text(
             json.dumps(manifest, indent=2, sort_keys=True) + "\n",
@@ -1462,13 +1437,9 @@ def validate_stage(
         or document.get("python_target") != PYTHON_TARGET
     ):
         raise RuntimeWheelError("runtime stage differs from active locked inputs")
-    if document.get("source_hashes") != {
-        name: entry["sha256"] for name, entry in source_entries().items()
-    }:
+    if document.get("source_hashes") != {name: entry["sha256"] for name, entry in source_entries().items()}:
         raise RuntimeWheelError("runtime stage source lock differs")
-    if document.get("host_wheels") != {
-        str(entry["filename"]): entry["sha256"] for entry in host_entries()
-    }:
+    if document.get("host_wheels") != {str(entry["filename"]): entry["sha256"] for entry in host_entries()}:
         raise RuntimeWheelError("runtime stage host-wheel lock differs")
     roots = [path for path in (stage_root / "chaquopy").iterdir() if path.is_dir()]
     if len(roots) != 1:
@@ -1561,8 +1532,7 @@ def _expected_license_hashes(package: str) -> tuple[str, set[str]]:
         source_name = next(
             name
             for name, entry in entries.items()
-            if entry.get("kind") == "prebuilt-wheel"
-            and normalize_package(str(entry.get("package"))) == package
+            if entry.get("kind") == "prebuilt-wheel" and normalize_package(str(entry.get("package"))) == package
         )
     else:
         source_name = str(NATIVE_SPECS[package]["source"])
@@ -1575,13 +1545,18 @@ def _expected_license_hashes(package: str) -> tuple[str, set[str]]:
 
 def _allowed_native_path(package: str, name: str) -> bool:
     if package == "chaquopy-libwebp":
-        return name.startswith("chaquopy/lib/lib") and name.endswith(".so") and Path(name).name in {
-            "libsharpyuv.so",
-            "libwebp.so",
-            "libwebpdecoder.so",
-            "libwebpdemux.so",
-            "libwebpmux.so",
-        }
+        return (
+            name.startswith("chaquopy/lib/lib")
+            and name.endswith(".so")
+            and Path(name).name
+            in {
+                "libsharpyuv.so",
+                "libwebp.so",
+                "libwebpdecoder.so",
+                "libwebpdemux.so",
+                "libwebpmux.so",
+            }
+        )
     if package == "pillow":
         return name.startswith("PIL/") and name.endswith(".so") and "/" not in name[4:]
     if package == "lxml":
@@ -1656,9 +1631,7 @@ def verify_runtime_wheel(path: Path) -> tuple[str, str | None, dict[str, object]
             {"path": name, "sha256": hashlib.sha256(data).hexdigest()}
             for name, data in sorted(files.items())
             if dist_info in Path(name).parts
-            and Path(name).name.upper().startswith(
-                ("LICENSE", "COPYING", "COPYRIGHT", "NOTICE", "FTL")
-            )
+            and Path(name).name.upper().startswith(("LICENSE", "COPYING", "COPYRIGHT", "NOTICE", "FTL"))
         ]
         actual_license_hashes = {str(entry["sha256"]) for entry in license_entries}
         if not expected_license_hashes.issubset(actual_license_hashes):
@@ -1704,18 +1677,22 @@ def verify_runtime_wheel(path: Path) -> tuple[str, str | None, dict[str, object]
                 elif item["soname"] is not None:
                     raise RuntimeWheelError(f"{path.name}: Python extension has a SONAME")
 
-    return package, abi, {
-        "package": package,
-        "version": expected_version,
-        "filename": path.name,
-        "sha256": digest(path),
-        "size": path.stat().st_size,
-        "tag": expected_tag,
-        "requires": requirements,
-        "license_expression": expression,
-        "licenses": license_entries,
-        "native": native_entries,
-    }
+    return (
+        package,
+        abi,
+        {
+            "package": package,
+            "version": expected_version,
+            "filename": path.name,
+            "sha256": digest(path),
+            "size": path.stat().st_size,
+            "tag": expected_tag,
+            "requires": requirements,
+            "license_expression": expression,
+            "licenses": license_entries,
+            "native": native_entries,
+        },
+    )
 
 
 def _native_wheel_set(dist: Path) -> dict[str, Path]:
@@ -1789,9 +1766,7 @@ def publish(
     wheels_b = _native_wheel_set(dist_b)
     if set(wheels_a) != set(wheels_b):
         raise RuntimeWheelError("clean builds produced different wheel names")
-    mismatches = [
-        name for name in sorted(wheels_a) if digest(wheels_a[name]) != digest(wheels_b[name])
-    ]
+    mismatches = [name for name in sorted(wheels_a) if digest(wheels_a[name]) != digest(wheels_b[name])]
     if mismatches:
         raise RuntimeWheelError(
             "clean runtime builds are not byte-for-byte reproducible: " + ", ".join(mismatches),
@@ -1812,8 +1787,7 @@ def publish(
         source_entry = next(
             entry
             for entry in source_values.values()
-            if entry.get("kind") == "prebuilt-wheel"
-            and normalize_package(str(entry.get("package"))) == package
+            if entry.get("kind") == "prebuilt-wheel" and normalize_package(str(entry.get("package"))) == package
         )
         wheel = downloads / str(source_entry["filename"])
         _, abi, entry = verify_runtime_wheel(wheel)
@@ -1852,9 +1826,7 @@ def publish(
             "target_build_python": TARGET_BUILD_PYTHON_VERSION,
             "recipe_inventory": recipe_inventory(),
             "sources": source_values,
-            "host_wheels": {
-                str(entry["filename"]): entry["sha256"] for entry in host_entries()
-            },
+            "host_wheels": {str(entry["filename"]): entry["sha256"] for entry in host_entries()},
             "reproducibility": {
                 "stage_manifests": [
                     {
@@ -1913,10 +1885,7 @@ def _publication_summary(
         "api_level": API_LEVEL,
         "ndk": NDK_VERSION,
         "python_target": PYTHON_TARGET,
-        "groups": {
-            group: sorted(str(entry["filename"]) for entry in wheels[group])
-            for group in ("common", *ABIS)
-        },
+        "groups": {group: sorted(str(entry["filename"]) for entry in wheels[group]) for group in ("common", *ABIS)},
     }
 
 
@@ -1969,8 +1938,7 @@ def verify_publication(
         raise RuntimeWheelError("publication keys are invalid")
     identity = validate_builder_identity(document.get("builder_identity"))
     if (
-        document.get("builder_identity_sha256")
-        != hashlib.sha256(canonical_json(identity)).hexdigest()
+        document.get("builder_identity_sha256") != hashlib.sha256(canonical_json(identity)).hexdigest()
         or build_key(recipe, identity) != build
     ):
         raise RuntimeWheelError("publication builder identity/key mismatch")
@@ -1994,9 +1962,7 @@ def verify_publication(
         raise RuntimeWheelError("publication platform identity mismatch")
     if document.get("sources") != source_entries():
         raise RuntimeWheelError("publication source lock differs")
-    if document.get("host_wheels") != {
-        str(entry["filename"]): entry["sha256"] for entry in host_entries()
-    }:
+    if document.get("host_wheels") != {str(entry["filename"]): entry["sha256"] for entry in host_entries()}:
         raise RuntimeWheelError("publication host-wheel lock differs")
     reproducibility = require_exact_keys(
         document.get("reproducibility"),

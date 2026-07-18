@@ -22,9 +22,7 @@ UNIDIC_REQUIRED_FILES = (
     "unk.dic",
 )
 
-_RESOURCE_ID_RE = re.compile(
-    r"^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,126}[A-Za-z0-9_-])?$"
-)
+_RESOURCE_ID_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,126}[A-Za-z0-9_-])?$")
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _HASH_CHUNK_SIZE = 1024 * 1024
 _LOCK = threading.Lock()
@@ -105,9 +103,7 @@ def _canonical_root(dicdir: str | os.PathLike[str]) -> Path:
     except OSError as exc:
         raise _invalid("invalid_unidic_path", f"Cannot inspect UniDic path: {exc}") from exc
     if stat.S_ISLNK(root_stat.st_mode) or not stat.S_ISDIR(root_stat.st_mode):
-        raise _invalid(
-            "invalid_unidic_path", "UniDic path must be a real directory, not a symlink"
-        )
+        raise _invalid("invalid_unidic_path", "UniDic path must be a real directory, not a symlink")
     try:
         return path.resolve(strict=True)
     except OSError as exc:
@@ -130,36 +126,24 @@ def _scan_tree(
             directory_stat = directory.stat(follow_symlinks=False)
             entries = sorted(os.scandir(directory), key=lambda item: item.name)
         except OSError as exc:
-            raise _invalid(
-                "invalid_unidic_tree", f"Cannot inspect UniDic directory: {exc}"
-            ) from exc
+            raise _invalid("invalid_unidic_tree", f"Cannot inspect UniDic directory: {exc}") from exc
         if not stat.S_ISDIR(directory_stat.st_mode):
             raise _invalid("invalid_unidic_tree", "UniDic directory changed during scan")
         directories[directory] = _StatIdentity.from_stat(directory_stat)
 
         for entry in entries:
-            relative = (
-                f"{relative_directory}/{entry.name}"
-                if relative_directory
-                else entry.name
-            )
+            relative = f"{relative_directory}/{entry.name}" if relative_directory else entry.name
             try:
                 entry_stat = entry.stat(follow_symlinks=False)
             except OSError as exc:
-                raise _invalid(
-                    "invalid_unidic_tree", f"Cannot inspect UniDic entry {relative}: {exc}"
-                ) from exc
+                raise _invalid("invalid_unidic_tree", f"Cannot inspect UniDic entry {relative}: {exc}") from exc
             mode = entry_stat.st_mode
             if stat.S_ISLNK(mode):
-                raise _invalid(
-                    "invalid_unidic_tree", f"UniDic tree contains a symlink: {relative}"
-                )
+                raise _invalid("invalid_unidic_tree", f"UniDic tree contains a symlink: {relative}")
             if stat.S_ISDIR(mode):
                 pending.append((Path(entry.path), relative))
             elif stat.S_ISREG(mode):
-                files.append(
-                    (relative, Path(entry.path), _StatIdentity.from_stat(entry_stat))
-                )
+                files.append((relative, Path(entry.path), _StatIdentity.from_stat(entry_stat)))
             else:
                 raise _invalid(
                     "invalid_unidic_tree",
@@ -175,9 +159,7 @@ def _tree_identity(root: Path) -> _TreeIdentity:
     top_level_files = {relative for relative, _, _ in files if "/" not in relative}
     missing = set(UNIDIC_REQUIRED_FILES) - top_level_files
     if missing:
-        raise _invalid(
-            "invalid_unidic_tree", f"UniDic directory is missing {sorted(missing)!r}"
-        )
+        raise _invalid("invalid_unidic_tree", f"UniDic directory is missing {sorted(missing)!r}")
 
     digest = hashlib.sha256()
     total_bytes = 0
@@ -192,9 +174,7 @@ def _tree_identity(root: Path) -> _TreeIdentity:
         try:
             with path.open("rb", buffering=0) as stream:
                 opened_identity = _StatIdentity.from_stat(os.fstat(stream.fileno()))
-                if opened_identity != scanned_identity or not stat.S_ISREG(
-                    opened_identity.mode
-                ):
+                if opened_identity != scanned_identity or not stat.S_ISREG(opened_identity.mode):
                     raise _invalid(
                         "unidic_tree_changed",
                         f"UniDic file changed before hashing: {relative}",
@@ -211,29 +191,19 @@ def _tree_identity(root: Path) -> _TreeIdentity:
         except TokenizerContractError:
             raise
         except OSError as exc:
-            raise _invalid(
-                "invalid_unidic_tree", f"Cannot hash UniDic file {relative}: {exc}"
-            ) from exc
+            raise _invalid("invalid_unidic_tree", f"Cannot hash UniDic file {relative}: {exc}") from exc
 
         if read_size != opened_identity.size or final_identity != opened_identity:
-            raise _invalid(
-                "unidic_tree_changed", f"UniDic file changed while hashing: {relative}"
-            )
+            raise _invalid("unidic_tree_changed", f"UniDic file changed while hashing: {relative}")
         total_bytes += read_size
 
     for directory, scanned_identity in directories.items():
         try:
-            final_identity = _StatIdentity.from_stat(
-                directory.stat(follow_symlinks=False)
-            )
+            final_identity = _StatIdentity.from_stat(directory.stat(follow_symlinks=False))
         except OSError as exc:
-            raise _invalid(
-                "unidic_tree_changed", f"UniDic directory changed while hashing: {exc}"
-            ) from exc
+            raise _invalid("unidic_tree_changed", f"UniDic directory changed while hashing: {exc}") from exc
         if final_identity != scanned_identity:
-            raise _invalid(
-                "unidic_tree_changed", "UniDic directory changed while hashing"
-            )
+            raise _invalid("unidic_tree_changed", "UniDic directory changed while hashing")
 
     return _TreeIdentity(digest.hexdigest(), len(files), total_bytes)
 
@@ -244,19 +214,13 @@ def calculate_unidic_tree_sha256(dicdir: str | os.PathLike[str]) -> str:
     return _tree_identity(_canonical_root(dicdir)).sha256
 
 
-def validate_unidic_identity_inputs(
-    resource_id: object, expected_tree_sha256: object
-) -> None:
+def validate_unidic_identity_inputs(resource_id: object, expected_tree_sha256: object) -> None:
     """Validate the cheap catalog identity fields without touching process state."""
 
     if not isinstance(resource_id, str) or not _RESOURCE_ID_RE.fullmatch(resource_id):
         raise _invalid("invalid_unidic_identity", "Invalid UniDic resource id")
-    if not isinstance(expected_tree_sha256, str) or not _SHA256_RE.fullmatch(
-        expected_tree_sha256
-    ):
-        raise _invalid(
-            "invalid_unidic_identity", "Expected UniDic tree hash must be lowercase SHA-256"
-        )
+    if not isinstance(expected_tree_sha256, str) or not _SHA256_RE.fullmatch(expected_tree_sha256):
+        raise _invalid("invalid_unidic_identity", "Expected UniDic tree hash must be lowercase SHA-256")
 
 
 def _same_request(
@@ -361,32 +325,22 @@ def validate_loaded_dictionary_filenames(
     """Prove a backend loaded only the registered ``sys.dic`` file."""
 
     if isinstance(filenames, (str, bytes, os.PathLike)):
-        raise _invalid(
-            "invalid_loaded_dictionary", "Dictionary filenames must be an iterable"
-        )
+        raise _invalid("invalid_loaded_dictionary", "Dictionary filenames must be an iterable")
     try:
         candidates = tuple(Path(filename) for filename in filenames)
     except (TypeError, ValueError) as exc:
-        raise _invalid(
-            "invalid_loaded_dictionary", "Backend returned an invalid dictionary path"
-        ) from exc
+        raise _invalid("invalid_loaded_dictionary", "Backend returned an invalid dictionary path") from exc
     if len(candidates) != 1:
-        raise _invalid(
-            "invalid_loaded_dictionary", "Backend must load exactly one system dictionary"
-        )
+        raise _invalid("invalid_loaded_dictionary", "Backend must load exactly one system dictionary")
 
     expected = registration or require_registered_unidic()
     candidate = candidates[0]
     if not candidate.is_absolute():
-        raise _invalid(
-            "invalid_loaded_dictionary", "Backend returned a relative dictionary path"
-        )
+        raise _invalid("invalid_loaded_dictionary", "Backend returned a relative dictionary path")
     try:
         resolved = candidate.resolve(strict=True)
     except OSError as exc:
-        raise _invalid(
-            "invalid_loaded_dictionary", f"Cannot resolve loaded dictionary: {exc}"
-        ) from exc
+        raise _invalid("invalid_loaded_dictionary", f"Cannot resolve loaded dictionary: {exc}") from exc
     if resolved != expected.sys_dic:
         raise _invalid(
             "unidic_provenance_mismatch",

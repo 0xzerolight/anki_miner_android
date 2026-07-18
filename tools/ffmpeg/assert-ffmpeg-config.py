@@ -8,7 +8,6 @@ from pathlib import Path
 import re
 import sys
 
-
 _DEFINE_RE = re.compile(r"^#define ([A-Z][A-Z0-9_]*) ([01])$")
 
 REQUIRED_ENABLED = frozenset(
@@ -74,18 +73,14 @@ def read_configuration(paths: tuple[Path, ...]) -> dict[str, int]:
     for path in paths:
         if not path.is_file():
             raise ConfigurationError(f"generated config is missing: {path}")
-        for line_number, line in enumerate(
-            path.read_text(encoding="utf-8").splitlines(), 1
-        ):
+        for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
             match = _DEFINE_RE.fullmatch(line)
             if match is None:
                 continue
             key, raw_value = match.groups()
             value = int(raw_value)
             if key in values and values[key] != value:
-                raise ConfigurationError(
-                    f"conflicting duplicate {key} at {path.name}:{line_number}"
-                )
+                raise ConfigurationError(f"conflicting duplicate {key} at {path.name}:{line_number}")
             values[key] = value
     return values
 
@@ -93,28 +88,16 @@ def read_configuration(paths: tuple[Path, ...]) -> dict[str, int]:
 def assert_configuration(config_h: Path, components_h: Path) -> None:
     values = read_configuration((config_h, components_h))
     failures = [
-        *(
-            f"{key}=1 required, found {values.get(key)!r}"
-            for key in sorted(REQUIRED_ENABLED)
-            if values.get(key) != 1
-        ),
-        *(
-            f"{key}=0 required, found {values.get(key)!r}"
-            for key in sorted(REQUIRED_DISABLED)
-            if values.get(key) != 0
-        ),
+        *(f"{key}=1 required, found {values.get(key)!r}" for key in sorted(REQUIRED_ENABLED) if values.get(key) != 1),
+        *(f"{key}=0 required, found {values.get(key)!r}" for key in sorted(REQUIRED_DISABLED) if values.get(key) != 0),
     ]
     unexpected_devices = sorted(
         key
         for key, value in values.items()
-        if value == 1
-        and key.endswith(("_INDEV", "_OUTDEV"))
-        and key not in ALLOWED_ENABLED_DEVICES
+        if value == 1 and key.endswith(("_INDEV", "_OUTDEV")) and key not in ALLOWED_ENABLED_DEVICES
     )
     if unexpected_devices:
-        failures.append(
-            "unexpected enabled devices: " + ", ".join(unexpected_devices)
-        )
+        failures.append("unexpected enabled devices: " + ", ".join(unexpected_devices))
     if failures:
         raise ConfigurationError("; ".join(failures))
 
@@ -133,10 +116,7 @@ def main() -> int:
     except (ConfigurationError, OSError, UnicodeError) as error:
         print(f"FFmpeg configuration check failed: {error}", file=sys.stderr)
         return 1
-    print(
-        "FFmpeg configuration OK: Matroska, static JPEG, MP3/Opus/WAV, "
-        "local protocols only"
-    )
+    print("FFmpeg configuration OK: Matroska, static JPEG, MP3/Opus/WAV, " "local protocols only")
     return 0
 
 

@@ -16,7 +16,6 @@ import tempfile
 from typing import Any
 from urllib.parse import unquote, urlparse
 
-
 SCRIPT_DIR = Path(__file__).resolve().parent
 DEFAULT_LOCK = SCRIPT_DIR / "chaquopy-build-python.lock.json"
 SHA256_PATTERN = re.compile(r"[0-9a-f]{64}")
@@ -318,7 +317,7 @@ def validate_generated_bytecode(python_command: Path, install_root: Path) -> Non
 
     if not any(install_root.glob("**/__pycache__/*.pyc")):
         return
-    probe = r'''
+    probe = r"""
 import importlib.util
 import io
 import marshal
@@ -377,7 +376,7 @@ for pyc in sorted(root.glob("**/__pycache__/*.pyc")):
     count += 1
 
 print(f"anki-miner-bytecode-ok:{count}")
-'''
+"""
     environment = {
         key: value
         for key, value in os.environ.items()
@@ -525,11 +524,7 @@ def verify(
         "'executable':sys.executable,"
         "'prefix':sys.prefix},sort_keys=True))"
     )
-    environment = {
-        key: value
-        for key, value in os.environ.items()
-        if key not in {"PYTHONHOME", "PYTHONPATH"}
-    }
+    environment = {key: value for key, value in os.environ.items() if key not in {"PYTHONHOME", "PYTHONPATH"}}
     environment["PYTHONDONTWRITEBYTECODE"] = "1"
     try:
         result = subprocess.run(

@@ -17,7 +17,6 @@ import unittest
 from unittest import mock
 import zipfile
 
-
 ROOT = Path(__file__).resolve().parents[2]
 MODULE_PATH = ROOT / "tools/wheels/s1a_wheels.py"
 SPEC = importlib.util.spec_from_file_location("s1a_wheels", MODULE_PATH)
@@ -239,14 +238,8 @@ class S1aWheelToolTests(unittest.TestCase):
             "recipe_inventory": s1a_wheels.recipe_inventory(),
             "ndk": s1a_wheels.NDK_VERSION,
             "python_target": s1a_wheels.PYTHON_TARGET,
-            "source_hashes": {
-                name: entry["sha256"]
-                for name, entry in s1a_wheels.source_entries().items()
-            },
-            "host_wheels": {
-                filename: sha256
-                for _, _, filename, sha256 in s1a_wheels.host_entries()
-            },
+            "source_hashes": {name: entry["sha256"] for name, entry in s1a_wheels.source_entries().items()},
+            "host_wheels": {filename: sha256 for _, _, filename, sha256 in s1a_wheels.host_entries()},
         }
         (stage / "manifest.json").write_text(
             json.dumps(manifest, indent=2, sort_keys=True) + "\n",
@@ -257,13 +250,17 @@ class S1aWheelToolTests(unittest.TestCase):
     @staticmethod
     def _fake_verify(path: Path):
         package, abi = s1a_wheels._wheel_identity(path)
-        return package, abi, {
-            "filename": path.name,
-            "sha256": s1a_wheels.digest(path),
-            "size": path.stat().st_size,
-            "licenses": [],
-            "elf": {"abi": abi},
-        }
+        return (
+            package,
+            abi,
+            {
+                "filename": path.name,
+                "sha256": s1a_wheels.digest(path),
+                "size": path.stat().st_size,
+                "licenses": [],
+                "elf": {"abi": abi},
+            },
+        )
 
     @staticmethod
     def _write_target_archive(
@@ -276,11 +273,7 @@ class S1aWheelToolTests(unittest.TestCase):
         libpython_version: str = "3.12",
         machine_override: int | None = None,
     ) -> Path:
-        machine = (
-            machine_override
-            if machine_override is not None
-            else (183 if abi == "arm64-v8a" else 62)
-        )
+        machine = machine_override if machine_override is not None else (183 if abi == "arm64-v8a" else 62)
         archive_path = root / f"target-3.12.12-0-{abi}.zip"
         with zipfile.ZipFile(archive_path, "w") as archive:
             archive.writestr(
@@ -353,11 +346,7 @@ class S1aWheelToolTests(unittest.TestCase):
         extra_entry_key["requirements"][0]["unexpected"] = True
         invalid_documents.append(extra_entry_key)
         cp313_target = json.loads(json.dumps(valid))
-        target = next(
-            entry
-            for entry in cp313_target["requirements"]
-            if entry["interpreter"] == "target"
-        )
+        target = next(entry for entry in cp313_target["requirements"] if entry["interpreter"] == "target")
         target["filename"] = target["filename"].replace("cp312", "cp313")
         invalid_documents.append(cp313_target)
 
@@ -420,9 +409,9 @@ class S1aWheelToolTests(unittest.TestCase):
         self.assertRegex(self.recipe, r"^[0-9a-f]{64}$")
         inventory = s1a_wheels.recipe_inventory()
         self.assertEqual(len(inventory), len({entry["path"] for entry in inventory}))
-        self.assertIn("tools/wheels/recipes/fugashi/patches/fugashi-android-link.patch", {
-            entry["path"] for entry in inventory
-        })
+        self.assertIn(
+            "tools/wheels/recipes/fugashi/patches/fugashi-android-link.patch", {entry["path"] for entry in inventory}
+        )
         with tempfile.TemporaryDirectory() as temporary:
             repo = Path(temporary) / "repo"
             copied = repo / "tools/wheels"
@@ -464,9 +453,7 @@ class S1aWheelToolTests(unittest.TestCase):
         self.assertEqual(self.recipe, result.stdout.strip())
 
     def test_locked_pip_wheel_bootstraps_a_clean_pipless_venv(self) -> None:
-        build_script = (ROOT / "tools/wheels/build-s1a-wheels.sh").read_text(
-            encoding="utf-8"
-        )
+        build_script = (ROOT / "tools/wheels/build-s1a-wheels.sh").read_text(encoding="utf-8")
         self.assertIn(
             'PYTHONPATH="$pip_wheel" "$builder_env/bin/python" -m pip install',
             build_script,
@@ -474,9 +461,9 @@ class S1aWheelToolTests(unittest.TestCase):
         self.assertIn("pip==25.1.1", build_script)
         self.assertIn('PATH="$builder_env/bin:$patchelf_dir:$PATH"', build_script)
         self.assertIn('ANKI_MINER_S1A_STAGE_ROOT="$stage"', build_script)
-        self.assertIn('build-wheel.py --python 3.12', build_script)
-        self.assertIn('export ANKI_MINER_CHAQUOPY_BUILD_PYTHON', build_script)
-        self.assertNotIn('build-wheel.py --python 3.13', build_script)
+        self.assertIn("build-wheel.py --python 3.12", build_script)
+        self.assertIn("export ANKI_MINER_CHAQUOPY_BUILD_PYTHON", build_script)
+        self.assertNotIn("build-wheel.py --python 3.13", build_script)
         self.assertNotIn('"$pip_wheel/pip"', build_script)
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -537,9 +524,7 @@ class S1aWheelToolTests(unittest.TestCase):
             set(self.identity["tools"]),
         )
         expected = hashlib.sha256(
-            self.recipe.encode("ascii")
-            + b"\n"
-            + s1a_wheels._canonical_json(self.identity),
+            self.recipe.encode("ascii") + b"\n" + s1a_wheels._canonical_json(self.identity),
         ).hexdigest()
         self.assertEqual(expected, self.build)
         for interpreter in ("outer", "target"):
@@ -698,9 +683,7 @@ class S1aWheelToolTests(unittest.TestCase):
         self.assertNotIn("\npatches:", fugashi)
         self.assertTrue((recipe_root / "fugashi/patches/fugashi-android-link.patch").is_file())
         combined = "\n".join(
-            path.read_text(encoding="utf-8")
-            for path in sorted(recipe_root.rglob("*"))
-            if path.is_file()
+            path.read_text(encoding="utf-8") for path in sorted(recipe_root.rglob("*")) if path.is_file()
         )
         self.assertIn("make -C src", combined)
         self.assertIn("--enable-utf8-only", combined)
@@ -795,9 +778,7 @@ class S1aWheelToolTests(unittest.TestCase):
             }
             (pypi / "meta-schema.yaml").write_text(json.dumps(schema), encoding="utf-8")
             recipe_names = sorted(
-                path.name
-                for path in s1a_wheels.TOOL_ROOT.joinpath("recipes").iterdir()
-                if path.is_dir()
+                path.name for path in s1a_wheels.TOOL_ROOT.joinpath("recipes").iterdir() if path.is_dir()
             )
             for name in recipe_names:
                 recipe = packages / name
@@ -824,7 +805,7 @@ class S1aWheelToolTests(unittest.TestCase):
         build_script = (ROOT / "tools/wheels/build-s1a-wheels.sh").read_text(encoding="utf-8")
         self.assertLess(
             build_script.index("validate-recipes"),
-            build_script.index('build-wheel.py --abi'),
+            build_script.index("build-wheel.py --abi"),
         )
 
     def test_builder_patch_is_network_closed(self) -> None:
@@ -888,10 +869,7 @@ export CFLAGS="-D__BIONIC_NO_PAGE_SIZE_MACRO"
 """,
                 encoding="utf-8",
             )
-            libcxx = (
-                chaquopy
-                / "server/pypi/packages/chaquopy-libcxx/meta.yaml"
-            )
+            libcxx = chaquopy / "server/pypi/packages/chaquopy-libcxx/meta.yaml"
             libcxx.parent.mkdir(parents=True)
             libcxx.write_text('version: "180000"\n', encoding="utf-8")
 
@@ -928,10 +906,7 @@ export CFLAGS="-D__BIONIC_NO_PAGE_SIZE_MACRO"
 
     def test_wheel_verifier_rejects_dictionary_before_native_inspection(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
-            wheel = (
-                Path(temporary)
-                / "fugashi-1.5.2-0-cp312-cp312-android_26_x86_64.whl"
-            )
+            wheel = Path(temporary) / "fugashi-1.5.2-0-cp312-cp312-android_26_x86_64.whl"
             with zipfile.ZipFile(wheel, "w") as archive:
                 archive.writestr("unidic_lite/dicdir/sys.dic", b"forbidden")
             with self.assertRaisesRegex(s1a_wheels.WheelError, "dictionary"):
@@ -1018,9 +993,7 @@ export CFLAGS="-D__BIONIC_NO_PAGE_SIZE_MACRO"
                 return self.entries
 
         for unsafe in ("", "../escape", "a/../escape", "a\\b", "/absolute", "a//b", "a/./b"):
-            with self.subTest(unsafe=unsafe), self.assertRaisesRegex(
-                s1a_wheels.WheelError, "unsafe wheel entry"
-            ):
+            with self.subTest(unsafe=unsafe), self.assertRaisesRegex(s1a_wheels.WheelError, "unsafe wheel entry"):
                 s1a_wheels._validated_wheel_members(
                     FakeArchive([FakeInfo(unsafe)]),
                     "fixture.whl",
@@ -1066,9 +1039,7 @@ export CFLAGS="-D__BIONIC_NO_PAGE_SIZE_MACRO"
                 0,
                 0,
             )
-            struct.pack_into(
-                "<IIQQQQQQ", data, 64, 1, 5, 0, 0, 0, len(data), len(data), 16384
-            )
+            struct.pack_into("<IIQQQQQQ", data, 64, 1, 5, 0, 0, 0, len(data), len(data), 16384)
             return bytes(data)
 
         with self.assertRaisesRegex(s1a_wheels.WheelError, "requires ELF class"):
@@ -1105,9 +1076,7 @@ export CFLAGS="-D__BIONIC_NO_PAGE_SIZE_MACRO"
                 {path.name for path in wheels},
                 {path.name for path in manifest_path.parent.glob("*.whl")},
             )
-            with mock.patch.object(
-                s1a_wheels, "verify_s1a_wheel", side_effect=self._fake_verify
-            ):
+            with mock.patch.object(s1a_wheels, "verify_s1a_wheel", side_effect=self._fake_verify):
                 keys = s1a_wheels.verify_publication(manifest_path)
             self.assertEqual(
                 {"schema": 2, "recipe_key": self.recipe, "build_key": self.build},
@@ -1118,9 +1087,7 @@ export CFLAGS="-D__BIONIC_NO_PAGE_SIZE_MACRO"
             document["wheels"]["x86_64"][0]["size"] += 1
             manifest_path.write_text(json.dumps(document), encoding="utf-8")
             with (
-                mock.patch.object(
-                    s1a_wheels, "verify_s1a_wheel", side_effect=self._fake_verify
-                ),
+                mock.patch.object(s1a_wheels, "verify_s1a_wheel", side_effect=self._fake_verify),
                 self.assertRaisesRegex(s1a_wheels.WheelError, "inventory mismatch"),
             ):
                 s1a_wheels.verify_publication(manifest_path)
@@ -1197,9 +1164,7 @@ export CFLAGS="-D__BIONIC_NO_PAGE_SIZE_MACRO"
             stage_b, _ = self._fake_stage(root, "clean-b")
             with (
                 mock.patch.object(s1a_wheels, "builder_identity", return_value=self.identity),
-                mock.patch.object(
-                    s1a_wheels, "verify_s1a_wheel", side_effect=self._fake_verify
-                ),
+                mock.patch.object(s1a_wheels, "verify_s1a_wheel", side_effect=self._fake_verify),
             ):
                 manifest = s1a_wheels.publish(
                     stage_a,
@@ -1213,9 +1178,7 @@ export CFLAGS="-D__BIONIC_NO_PAGE_SIZE_MACRO"
             foreign["tools"]["bash"] += " foreign"
             foreign_build = s1a_wheels.build_key(self.recipe, foreign)
             document["builder_identity"] = foreign
-            document["builder_identity_sha256"] = hashlib.sha256(
-                s1a_wheels._canonical_json(foreign)
-            ).hexdigest()
+            document["builder_identity_sha256"] = hashlib.sha256(s1a_wheels._canonical_json(foreign)).hexdigest()
             document["build_key"] = foreign_build
             foreign_parent = manifest.parent.with_name(f"s1a-wheels-{foreign_build}")
             manifest.parent.rename(foreign_parent)

@@ -94,9 +94,7 @@ def package_dictionary(dicdir: Path, golden: Path, output: Path) -> str:
                     shutil.copyfileobj(source, target, length=1024 * 1024)
         packaged_hash = _archive_tree_sha256(temporary)
         if packaged_hash != provenance_hash:
-            raise RuntimeError(
-                "dictionary changed while the external test ZIP was created"
-            )
+            raise RuntimeError("dictionary changed while the external test ZIP was created")
         temporary.replace(output)
     finally:
         temporary.unlink(missing_ok=True)

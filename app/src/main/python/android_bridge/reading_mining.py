@@ -78,9 +78,7 @@ def _utf8_size(value: str, *, field_name: str) -> int:
     try:
         return len(value.encode("utf-8"))
     except UnicodeEncodeError as exc:
-        raise _invalid_request(
-            f"{field_name} contains an invalid Unicode scalar"
-        ) from exc
+        raise _invalid_request(f"{field_name} contains an invalid Unicode scalar") from exc
 
 
 def _absolute_path(field_name: str, value: object) -> Path:
@@ -103,9 +101,7 @@ def _canonical_label(field_name: str, value: object) -> str:
     if _utf8_size(value, field_name=field_name) > _MAX_READING_LABEL_UTF8_BYTES:
         raise _invalid_request(f"{field_name} exceeds its UTF-8 byte limit")
     if has_leading_or_trailing_python_whitespace(value):
-        raise _invalid_request(
-            f"{field_name} must not have leading or trailing whitespace"
-        )
+        raise _invalid_request(f"{field_name} must not have leading or trailing whitespace")
     if not is_nfc(value):
         raise _invalid_request(f"{field_name} must use NFC Unicode normalization")
     if any(is_category_c(ord(character)) for character in value):
@@ -123,28 +119,19 @@ def _private_source_path(field_name: str, value: object, cache_dir: Path) -> Pat
 def _parse_request(raw_request: str) -> _ReadingRequest:
     if not isinstance(raw_request, str):
         raise _invalid_request("Reading request must be a JSON string")
-    if (
-        _utf8_size(raw_request, field_name="Reading request")
-        > _MAX_READING_REQUEST_UTF8_BYTES
-    ):
+    if _utf8_size(raw_request, field_name="Reading request") > _MAX_READING_REQUEST_UTF8_BYTES:
         raise _invalid_request("Reading request exceeds its UTF-8 byte limit")
 
     payload = decode_message(raw_request, expected_type="mining.reading.run")
     if set(payload) != _READING_REQUEST_FIELDS:
-        raise _invalid_request(
-            f"Expected payload fields: {sorted(_READING_REQUEST_FIELDS)!r}"
-        )
+        raise _invalid_request(f"Expected payload fields: {sorted(_READING_REQUEST_FIELDS)!r}")
 
     source_kind = payload["sourceKind"]
     if not isinstance(source_kind, str) or source_kind not in _SOURCE_SUFFIXES:
-        raise _invalid_request(
-            f"sourceKind must be one of {sorted(_SOURCE_SUFFIXES)!r}"
-        )
+        raise _invalid_request(f"sourceKind must be one of {sorted(_SOURCE_SUFFIXES)!r}")
 
     snapshot = payload["configSnapshot"]
-    if not isinstance(snapshot, dict) or not set(snapshot).issubset(
-        _CONFIG_SNAPSHOT_FIELDS
-    ):
+    if not isinstance(snapshot, dict) or not set(snapshot).issubset(_CONFIG_SNAPSHOT_FIELDS):
         raise _invalid_request("configSnapshot fields are invalid")
     if "settings" not in snapshot or not isinstance(snapshot["settings"], dict):
         raise _invalid_request("configSnapshot.settings must be an object")
@@ -171,18 +158,11 @@ def _parse_request(raw_request: str) -> _ReadingRequest:
     else:
         if source_kind != "mokuro":
             raise _invalid_request("imageArchivePath is only valid for a mokuro source")
-        image_archive_path = _private_source_path(
-            "imageArchivePath", raw_archive_path, cache_dir
-        )
+        image_archive_path = _private_source_path("imageArchivePath", raw_archive_path, cache_dir)
         if image_archive_path.suffix.lower() not in _ARCHIVE_SUFFIXES:
             raise _invalid_request("imageArchivePath must end in .cbz or .zip")
-        if (
-            image_archive_path.parent != source_path.parent
-            or image_archive_path.stem != source_path.stem
-        ):
-            raise _invalid_request(
-                "imageArchivePath must be a same-directory, same-stem mokuro companion"
-            )
+        if image_archive_path.parent != source_path.parent or image_archive_path.stem != source_path.stem:
+            raise _invalid_request("imageArchivePath must be a same-directory, same-stem mokuro companion")
 
     return _ReadingRequest(
         source_kind=source_kind,
@@ -190,9 +170,7 @@ def _parse_request(raw_request: str) -> _ReadingRequest:
         image_archive_path=image_archive_path,
         series_name=series_name,
         cache_dir=cache_dir,
-        native_library_dir=_absolute_path(
-            "nativeLibraryDir", payload["nativeLibraryDir"]
-        ),
+        native_library_dir=_absolute_path("nativeLibraryDir", payload["nativeLibraryDir"]),
         settings=dict(snapshot["settings"]),
         android_tts_enabled=android_tts_enabled,
     )
@@ -226,10 +204,7 @@ def _load_document(
 
     if not request.source_path.is_file():
         raise _invalid_request("sourcePath must name an existing staged file")
-    if (
-        request.image_archive_path is not None
-        and not request.image_archive_path.is_file()
-    ):
+    if request.image_archive_path is not None and not request.image_archive_path.is_file():
         raise _invalid_request("imageArchivePath must name an existing staged file")
 
     # Staging bounds compressed bytes only. The Android bridge additionally
@@ -256,13 +231,9 @@ def _load_document(
     # Initial Android mokuro support stages either a sidecar alone (text-only)
     # or one explicit sibling archive. Do not silently consume an undeclared
     # archive/directory merely because the desktop detector can discover it.
-    detected_image_root = (
-        ref.image_root.resolve(strict=False) if ref.image_root is not None else None
-    )
+    detected_image_root = ref.image_root.resolve(strict=False) if ref.image_root is not None else None
     if detected_image_root != request.image_archive_path:
-        raise _invalid_request(
-            "Detected mokuro image companion does not match imageArchivePath"
-        )
+        raise _invalid_request("Detected mokuro image companion does not match imageArchivePath")
     if cancellation_check is not None and cancellation_check():
         from .anki_adapter import AnkiOperationCancelled
 
@@ -336,9 +307,7 @@ def _process_reading(
         try:
             stack.close()
         except BaseException:
-            logger.exception(
-                "Reading-mining cleanup failed while preserving the primary failure"
-            )
+            logger.exception("Reading-mining cleanup failed while preserving the primary failure")
         raise
     try:
         stack.close()
@@ -367,35 +336,25 @@ def run_reading(
         adapters.register_job()
         try:
             if adapters.cancel_event.is_set():
-                raise AnkiOperationCancelled(
-                    "runReading", "Mining was cancelled", False
-                )
+                raise AnkiOperationCancelled("runReading", "Mining was cancelled", False)
             config = _map_config(request, files_dir)
             if adapters.cancel_event.is_set():
-                raise AnkiOperationCancelled(
-                    "runReading", "Mining was cancelled", False
-                )
+                raise AnkiOperationCancelled("runReading", "Mining was cancelled", False)
             document = _load_document(
                 request,
                 adapters.cancel_event.is_set,
             )
             if adapters.cancel_event.is_set():
-                raise AnkiOperationCancelled(
-                    "runReading", "Mining was cancelled", False
-                )
+                raise AnkiOperationCancelled("runReading", "Mining was cancelled", False)
             result = _process_reading(document, config, adapters)
             outcome, terminal = _result_terminal(handle.run_id, result)
         except _PostProcessCleanupError as error:
             outcome, terminal = _cleanup_failure_terminal(handle.run_id, error.result)
         except AnkiOperationCancelled as error:
-            outcome, terminal = _exception_terminal(
-                handle.run_id, error, cancelled=True
-            )
+            outcome, terminal = _exception_terminal(handle.run_id, error, cancelled=True)
         except Exception as error:
             logger.exception("Reading mining failed")
-            outcome, terminal = _exception_terminal(
-                handle.run_id, error, cancelled=False
-            )
+            outcome, terminal = _exception_terminal(handle.run_id, error, cancelled=False)
     finally:
         owner.finish(handle.run_id)
 

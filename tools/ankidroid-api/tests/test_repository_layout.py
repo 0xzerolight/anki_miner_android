@@ -34,26 +34,15 @@ class RepositoryLayoutTest(unittest.TestCase):
 
     def test_generated_tree_contains_only_the_seven_pinned_api_sources(self) -> None:
         generated_root = REPO_ROOT / GENERATED_SOURCE_ROOT
-        actual = {
-            path.relative_to(REPO_ROOT).as_posix()
-            for path in generated_root.rglob("*.kt")
-            if path.is_file()
-        }
-        expected = {
-            entry.destination_path.as_posix()
-            for entry in VENDORED_FILES
-            if entry.kind == "kotlin-source"
-        }
+        actual = {path.relative_to(REPO_ROOT).as_posix() for path in generated_root.rglob("*.kt") if path.is_file()}
+        expected = {entry.destination_path.as_posix() for entry in VENDORED_FILES if entry.kind == "kotlin-source"}
 
         self.assertEqual(7, len(expected))
         self.assertEqual(expected, actual)
         self.assertFalse(any(path.endswith("BuildConfig.kt") for path in actual))
 
     def test_hand_owned_build_config_shim_has_only_release_constants(self) -> None:
-        shim = (
-            REPO_ROOT
-            / "app/src/main/kotlin/com/ichi2/anki/api/BuildConfig.kt"
-        ).read_text(encoding="utf-8")
+        shim = (REPO_ROOT / "app/src/main/kotlin/com/ichi2/anki/api/BuildConfig.kt").read_text(encoding="utf-8")
         self.assertEqual(
             """package com.ichi2.anki.api
 
@@ -71,7 +60,7 @@ internal object BuildConfig {
         app_gradle = (REPO_ROOT / "app/build.gradle.kts").read_text(encoding="utf-8")
 
         self.assertIn('include(":app")', settings)
-        self.assertNotRegex(settings, r'include\([^)]*ankidroid')
+        self.assertNotRegex(settings, r"include\([^)]*ankidroid")
         self.assertIn(
             'getByName("main").java.srcDir("src/main/ankidroidApi/kotlin")',
             app_gradle,

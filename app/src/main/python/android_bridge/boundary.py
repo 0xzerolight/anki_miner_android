@@ -21,9 +21,7 @@ def _exact_payload(
     error_code: str,
 ) -> None:
     if set(payload) != keys:
-        raise BridgeProtocolError(
-            error_code, f"Expected payload fields: {sorted(keys)!r}"
-        )
+        raise BridgeProtocolError(error_code, f"Expected payload fields: {sorted(keys)!r}")
 
 
 def _dispatch_validated(
@@ -36,9 +34,7 @@ def _dispatch_validated(
         _exact_payload(payload, {"filesDir"}, error_code="invalid_bootstrap_request")
         files_dir = payload["filesDir"]
         if not isinstance(files_dir, str):
-            raise BridgeProtocolError(
-                "invalid_bootstrap_request", "filesDir must be a string"
-            )
+            raise BridgeProtocolError("invalid_bootstrap_request", "filesDir must be a string")
         from .bootstrap import initialize
 
         return initialize(files_dir)
@@ -65,9 +61,7 @@ def _dispatch_validated(
         "tokenizer.configure",
     }
     if request_type not in supported_after_bootstrap:
-        raise BridgeProtocolError(
-            "unsupported_operation", f"Unsupported bridge operation: {request_type}"
-        )
+        raise BridgeProtocolError("unsupported_operation", f"Unsupported bridge operation: {request_type}")
 
     from .bootstrap import require_initialized
 
@@ -168,15 +162,11 @@ def dispatch(raw_request: str, callbacks: object | None = None) -> str:
             # Preserve the historical three-argument internal seam for callers
             # and tests which do not use a callback-bearing operation.
             return _dispatch_validated(request_type, decoded.payload, raw_request)
-        return _dispatch_validated(
-            request_type, decoded.payload, raw_request, callbacks
-        )
+        return _dispatch_validated(request_type, decoded.payload, raw_request, callbacks)
     except BridgeProtocolError as error:
         return encode_protocol_error(error, request_type=request_type)
     except Exception:
-        logger.exception(
-            "Unexpected failure in Android bridge operation %r", request_type
-        )
+        logger.exception("Unexpected failure in Android bridge operation %r", request_type)
         return encode_protocol_error(
             BridgeProtocolError("internal_error", "Internal bridge failure"),
             request_type=request_type,

@@ -57,9 +57,7 @@ def elf64(
         0,
         0,
     )
-    struct.pack_into(
-        "<IIQQQQQQ", data, 64, 1, 5, 0, 0, 0, len(data), len(data), alignment
-    )
+    struct.pack_into("<IIQQQQQQ", data, 64, 1, 5, 0, 0, 0, len(data), len(data), alignment)
     if interpreter:
         struct.pack_into(
             "<IIQQQQQQ",
@@ -104,9 +102,7 @@ def elf32(
         0,
         0,
     )
-    struct.pack_into(
-        "<IIIIIIII", data, 52, 1, 0, 0, 0, len(data), len(data), 5, alignment
-    )
+    struct.pack_into("<IIIIIIII", data, 52, 1, 0, 0, 0, len(data), len(data), 5, alignment)
     return bytes(data)
 
 
@@ -256,15 +252,11 @@ class NativeArtifactTest(unittest.TestCase):
             abi: [
                 {
                     "filename": S1A_FILENAMES[abi][package],
-                    "licenses": sorted(
-                        licenses_by_package[package], key=lambda entry: entry["path"]
-                    ),
+                    "licenses": sorted(licenses_by_package[package], key=lambda entry: entry["path"]),
                     "elf": {
                         "path": native_paths[package],
                         "sha256": hashlib.sha256(
-                            NativeArtifactTest.valid_s1a_native_entries(abi)[
-                                S1A_NATIVE_PATHS[package]
-                            ]
+                            NativeArtifactTest.valid_s1a_native_entries(abi)[S1A_NATIVE_PATHS[package]]
                         ).hexdigest(),
                         "abi": abi,
                     },
@@ -376,9 +368,7 @@ class NativeArtifactTest(unittest.TestCase):
             with self.subTest(suffix=suffix, case="decoy"):
                 payload = archive(
                     {
-                        f"{canonical_prefix}/app.imy": archive(
-                            {"chaquopy/lib/x86_64/libpython.so": elf64()}
-                        ),
+                        f"{canonical_prefix}/app.imy": archive({"chaquopy/lib/x86_64/libpython.so": elf64()}),
                         f"{decoy_prefix}/requirements-common.imy": archive({}),
                     }
                 )
@@ -388,9 +378,7 @@ class NativeArtifactTest(unittest.TestCase):
             with self.subTest(suffix=suffix, case="nested"):
                 payload = archive(
                     {
-                        f"{canonical_prefix}/app.imy": archive(
-                            {"nested/requirements-common.imy": archive({})}
-                        ),
+                        f"{canonical_prefix}/app.imy": archive({"nested/requirements-common.imy": archive({})}),
                     }
                 )
                 with self.assertRaisesRegex(ArtifactError, "direct outer artifact"):
@@ -477,9 +465,7 @@ class NativeArtifactTest(unittest.TestCase):
     def test_required_shared_library_must_match_abi_elf_class(self) -> None:
         expected = "lib/x86_64/libanki_miner_mecab.so"
         payload = archive({expected: elf32(machine=62)})
-        with self.assertRaisesRegex(
-            ArtifactError, "ABI x86_64 requires ELF class 2"
-        ):
+        with self.assertRaisesRegex(ArtifactError, "ABI x86_64 requires ELF class 2"):
             self.inspect_complete(payload, required=[expected])
 
     def test_android_elf_must_be_little_endian(self) -> None:
@@ -536,9 +522,7 @@ class NativeArtifactTest(unittest.TestCase):
             )
 
     def test_rejects_unidic_layout_inside_nested_imy_archive(self) -> None:
-        nested_zip = archive(
-            {"python/unidic_lite/dicdir/sys.dic": b"dictionary payload"}
-        )
+        nested_zip = archive({"python/unidic_lite/dicdir/sys.dic": b"dictionary payload"})
         app_imy = archive({"chaquopy/assets/runtime.zip": nested_zip})
         payload = archive(
             {
@@ -719,29 +703,18 @@ class NativeArtifactTest(unittest.TestCase):
         common = dict(
             attribution_entries
             if attribution_entries is not None
-            else {
-                path: payload
-                for path, (_, payload) in S1A_ATTRIBUTIONS.items()
-            }
+            else {path: payload for path, (_, payload) in S1A_ATTRIBUTIONS.items()}
         )
         artifact_entries: dict[str, bytes] = {}
         if len(abis) == 1:
-            natives = (
-                native_entries
-                if native_entries is not None
-                else cls.valid_s1a_native_entries(abis[0])
-            )
+            natives = native_entries if native_entries is not None else cls.valid_s1a_native_entries(abis[0])
             common.update(natives)
         elif native_entries is not None:
             raise ValueError("multi-ABI fixtures require per-ABI native entries")
         artifact_entries[f"{prefix}/requirements-common.imy"] = archive(common)
         for abi in sorted(abis):
-            abi_entries = (
-                cls.valid_s1a_native_entries(abi) if len(abis) > 1 else {}
-            )
-            artifact_entries[f"{prefix}/requirements-{abi}.imy"] = archive(
-                abi_entries
-            )
+            abi_entries = cls.valid_s1a_native_entries(abi) if len(abis) > 1 else {}
+            artifact_entries[f"{prefix}/requirements-{abi}.imy"] = archive(abi_entries)
         return archive(artifact_entries)
 
     def test_packaged_s1a_requires_exact_manifest_attributions(self) -> None:
@@ -773,17 +746,12 @@ class NativeArtifactTest(unittest.TestCase):
                         result.requirement_imys,
                     )
                     self.assertEqual(
-                        {
-                            ("requirements-common.imy", path)
-                            for path in S1A_NATIVE_PATHS.values()
-                        },
+                        {("requirements-common.imy", path) for path in S1A_NATIVE_PATHS.values()},
                         set(result.found_natives),
                     )
                     self.assertEqual(
                         0,
-                        result.requirement_member_counts[
-                            f"requirements-{abi}.imy"
-                        ],
+                        result.requirement_member_counts[f"requirements-{abi}.imy"],
                     )
 
     def test_multi_abi_apk_and_aab_use_per_abi_native_layout(self) -> None:
@@ -809,20 +777,13 @@ class NativeArtifactTest(unittest.TestCase):
                     result.requirement_imys,
                 )
                 self.assertEqual(
-                    {
-                        (f"requirements-{abi}.imy", path)
-                        for abi in abis
-                        for path in S1A_NATIVE_PATHS.values()
-                    },
+                    {(f"requirements-{abi}.imy", path) for abi in abis for path in S1A_NATIVE_PATHS.values()},
                     set(result.found_natives),
                 )
 
     def test_single_abi_requires_empty_abi_imy_in_apk_and_aab(self) -> None:
         common = {
-            **{
-                path: data
-                for path, (_, data) in S1A_ATTRIBUTIONS.items()
-            },
+            **{path: data for path, (_, data) in S1A_ATTRIBUTIONS.items()},
             **self.valid_s1a_native_entries(),
         }
         for suffix, prefix in (
@@ -830,9 +791,7 @@ class NativeArtifactTest(unittest.TestCase):
             (".aab", "base/assets/chaquopy"),
         ):
             with self.subTest(suffix=suffix):
-                payload = archive(
-                    {f"{prefix}/requirements-common.imy": archive(common)}
-                )
+                payload = archive({f"{prefix}/requirements-common.imy": archive(common)})
                 with self.assertRaisesRegex(
                     ArtifactError,
                     "S1a requirement IMY layout differs",
@@ -846,10 +805,7 @@ class NativeArtifactTest(unittest.TestCase):
 
     def test_single_abi_rejects_any_abi_imy_member_in_apk_and_aab(self) -> None:
         common = {
-            **{
-                path: data
-                for path, (_, data) in S1A_ATTRIBUTIONS.items()
-            },
+            **{path: data for path, (_, data) in S1A_ATTRIBUTIONS.items()},
             **self.valid_s1a_native_entries(),
         }
         rogue_members = {
@@ -869,9 +825,7 @@ class NativeArtifactTest(unittest.TestCase):
                     payload = archive(
                         {
                             f"{prefix}/requirements-common.imy": archive(common),
-                            f"{prefix}/requirements-x86_64.imy": archive_entries(
-                                [member]
-                            ),
+                            f"{prefix}/requirements-x86_64.imy": archive_entries([member]),
                         }
                     )
                     with self.assertRaisesRegex(
@@ -894,14 +848,9 @@ class NativeArtifactTest(unittest.TestCase):
                 payload = archive(
                     {
                         f"{prefix}/requirements-common.imy": archive(
-                            {
-                                path: data
-                                for path, (_, data) in S1A_ATTRIBUTIONS.items()
-                            }
+                            {path: data for path, (_, data) in S1A_ATTRIBUTIONS.items()}
                         ),
-                        f"{prefix}/requirements-x86_64.imy": archive(
-                            self.valid_s1a_native_entries()
-                        ),
+                        f"{prefix}/requirements-x86_64.imy": archive(self.valid_s1a_native_entries()),
                     }
                 )
                 with self.assertRaisesRegex(
@@ -919,17 +868,10 @@ class NativeArtifactTest(unittest.TestCase):
         payload = archive(
             {
                 "assets/chaquopy/requirements-common.imy": archive(
-                    {
-                        path: data
-                        for path, (_, data) in S1A_ATTRIBUTIONS.items()
-                    }
+                    {path: data for path, (_, data) in S1A_ATTRIBUTIONS.items()}
                 ),
-                "assets/chaquopy/requirements-arm64-v8a.imy": archive(
-                    self.valid_s1a_native_entries("x86_64")
-                ),
-                "assets/chaquopy/requirements-x86_64.imy": archive(
-                    self.valid_s1a_native_entries("arm64-v8a")
-                ),
+                "assets/chaquopy/requirements-arm64-v8a.imy": archive(self.valid_s1a_native_entries("x86_64")),
+                "assets/chaquopy/requirements-x86_64.imy": archive(self.valid_s1a_native_entries("arm64-v8a")),
             }
         )
         with self.assertRaisesRegex(ArtifactError, "S1a native ABI"):
@@ -945,17 +887,12 @@ class NativeArtifactTest(unittest.TestCase):
         duplicate_path = "chaquopy/lib/libc++_shared.so"
         common = archive_entries(
             [
-                *(
-                    (path, data)
-                    for path, (_, data) in S1A_ATTRIBUTIONS.items()
-                ),
+                *((path, data) for path, (_, data) in S1A_ATTRIBUTIONS.items()),
                 *natives.items(),
                 (duplicate_path, natives[duplicate_path]),
             ]
         )
-        payload = archive(
-            {"assets/chaquopy/requirements-common.imy": common}
-        )
+        payload = archive({"assets/chaquopy/requirements-common.imy": common})
         with self.assertRaisesRegex(ArtifactError, "duplicate archive entry"):
             self.inspect_complete(payload, required=[], require_s1a=True)
 
@@ -983,10 +920,7 @@ class NativeArtifactTest(unittest.TestCase):
     def test_s1a_named_placeholders_are_not_credited_by_unrelated_elf(self) -> None:
         common = archive_entries(
             [
-                *(
-                    (path, data)
-                    for path, (_, data) in S1A_ATTRIBUTIONS.items()
-                ),
+                *((path, data) for path, (_, data) in S1A_ATTRIBUTIONS.items()),
                 ("unrelated/valid.so", elf64()),
                 ("chaquopy/lib/libc++_shared.so", b"text placeholder"),
                 ("chaquopy/lib/libmecab.so.2", b"text placeholder"),
@@ -1005,10 +939,7 @@ class NativeArtifactTest(unittest.TestCase):
         valid = self.valid_s1a_native_entries()
         common = archive_entries(
             [
-                *(
-                    (path, data)
-                    for path, (_, data) in S1A_ATTRIBUTIONS.items()
-                ),
+                *((path, data) for path, (_, data) in S1A_ATTRIBUTIONS.items()),
                 ("elsewhere/libmecab.so.2", valid["chaquopy/lib/libmecab.so.2"]),
                 *valid.items(),
             ]
@@ -1026,9 +957,7 @@ class NativeArtifactTest(unittest.TestCase):
         attributions = {path: data for path, (_, data) in S1A_ATTRIBUTIONS.items()}
         wrong_owner = archive(
             {
-                "assets/chaquopy/requirements-common.imy": archive(
-                    {**native_entries, **attributions}
-                ),
+                "assets/chaquopy/requirements-common.imy": archive({**native_entries, **attributions}),
                 "assets/chaquopy/requirements-arm64-v8a.imy": archive({}),
                 "assets/chaquopy/requirements-x86_64.imy": archive({}),
             }
@@ -1079,9 +1008,7 @@ class NativeArtifactTest(unittest.TestCase):
 
     def test_s1a_attribution_absence_and_arbitrary_license_do_not_pass(self) -> None:
         payload = self.valid_s1a_artifact(
-            attribution_entries={
-                "unrelated-1.0.dist-info/LICENSE": b"all expected marker words"
-            },
+            attribution_entries={"unrelated-1.0.dist-info/LICENSE": b"all expected marker words"},
         )
         with self.assertRaisesRegex(ArtifactError, "missing S1a package attributions"):
             self.inspect_complete(payload, required=[], require_s1a=True)
@@ -1104,19 +1031,14 @@ class NativeArtifactTest(unittest.TestCase):
             )
 
     def test_s1a_attribution_cannot_have_duplicate_imy_owners(self) -> None:
-        common_entries = {
-            path: payload
-            for path, (_, payload) in S1A_ATTRIBUTIONS.items()
-        }
+        common_entries = {path: payload for path, (_, payload) in S1A_ATTRIBUTIONS.items()}
         duplicate_path = "fugashi-1.5.2.dist-info/LICENSE"
         x86_entries = self.valid_s1a_native_entries()
         x86_entries[duplicate_path] = S1A_ATTRIBUTIONS[duplicate_path][1]
         payload = archive(
             {
                 "assets/chaquopy/requirements-common.imy": archive(common_entries),
-                "assets/chaquopy/requirements-arm64-v8a.imy": archive(
-                    self.valid_s1a_native_entries("arm64-v8a")
-                ),
+                "assets/chaquopy/requirements-arm64-v8a.imy": archive(self.valid_s1a_native_entries("arm64-v8a")),
                 "assets/chaquopy/requirements-x86_64.imy": archive(x86_entries),
             }
         )
@@ -1147,7 +1069,7 @@ class NativeArtifactTest(unittest.TestCase):
             root = Path(temporary)
             fake_python = root / "python3.13"
             fake_python.write_text(
-                "#!/usr/bin/env bash\nprintf '%s\\n' \"$@\" > \"$ARG_LOG\"\n",
+                '#!/usr/bin/env bash\nprintf \'%s\\n\' "$@" > "$ARG_LOG"\n',
                 encoding="utf-8",
             )
             fake_python.chmod(0o755)
@@ -1194,6 +1116,7 @@ class NativeArtifactTest(unittest.TestCase):
             self.assertIn("--require-s1a", forwarded)
             self.assertIn("--s1a-manifest", forwarded)
             self.assertIn(str(root / "manifest.json"), forwarded)
+
 
 if __name__ == "__main__":
     unittest.main()

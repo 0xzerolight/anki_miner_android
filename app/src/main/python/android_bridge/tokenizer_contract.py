@@ -112,9 +112,7 @@ class Utf8OffsetMap:
         for codepoint_offset, character in enumerate(text, start=1):
             value = ord(character)
             if 0xD800 <= value <= 0xDFFF:
-                raise TokenizerContractError(
-                    "invalid_text_utf8", "Tokenizer text contains a lone surrogate"
-                )
+                raise TokenizerContractError("invalid_text_utf8", "Tokenizer text contains a lone surrogate")
             encoded.extend(character.encode("utf-8"))
             utf16_offset += 2 if value > 0xFFFF else 1
             boundaries[len(encoded)] = (codepoint_offset, utf16_offset)
@@ -139,9 +137,7 @@ class Utf8OffsetMap:
         """Return ``(codepoint_offset, utf16_offset)`` for a byte boundary."""
 
         if type(byte_offset) is not int:
-            raise TokenizerContractError(
-                "invalid_token_offset", "UTF-8 byte offsets must be integers"
-            )
+            raise TokenizerContractError("invalid_token_offset", "UTF-8 byte offsets must be integers")
         try:
             return self._boundaries[byte_offset]
         except KeyError as exc:
@@ -149,9 +145,7 @@ class Utf8OffsetMap:
                 detail = "outside the encoded input"
             else:
                 detail = "inside a UTF-8 code point"
-            raise TokenizerContractError(
-                "invalid_token_offset", f"Byte offset {byte_offset} is {detail}"
-            ) from exc
+            raise TokenizerContractError("invalid_token_offset", f"Byte offset {byte_offset} is {detail}") from exc
 
     def decode_slice(self, byte_start: int, byte_end: int) -> str:
         """Decode a slice whose endpoints must both be UTF-8 boundaries."""
@@ -159,9 +153,7 @@ class Utf8OffsetMap:
         self.resolve(byte_start)
         self.resolve(byte_end)
         if byte_start > byte_end:
-            raise TokenizerContractError(
-                "invalid_token_offset", "Token byte range is reversed"
-            )
+            raise TokenizerContractError("invalid_token_offset", "Token byte range is reversed")
         return self._encoded[byte_start:byte_end].decode("utf-8")
 
 
@@ -174,20 +166,14 @@ def decode_mecab_feature_csv(raw: str) -> tuple[str | None, ...]:
     """
 
     if not isinstance(raw, str):
-        raise TokenizerContractError(
-            "invalid_feature_csv", "MeCab features must be a UTF-8 string"
-        )
+        raise TokenizerContractError("invalid_feature_csv", "MeCab features must be a UTF-8 string")
     if "\x00" in raw or "\r" in raw or "\n" in raw:
-        raise TokenizerContractError(
-            "invalid_feature_csv", "MeCab features must be one NUL-free CSV row"
-        )
+        raise TokenizerContractError("invalid_feature_csv", "MeCab features must be one NUL-free CSV row")
 
     try:
         fields = next(csv.reader([raw], strict=True)) if '"' in raw else raw.split(",")
     except (csv.Error, StopIteration) as exc:
-        raise TokenizerContractError(
-            "invalid_feature_csv", "Malformed MeCab feature CSV"
-        ) from exc
+        raise TokenizerContractError("invalid_feature_csv", "Malformed MeCab feature CSV") from exc
 
     expected = len(UNIDIC_FEATURE_FIELDS)
     if len(fields) > expected:
@@ -200,53 +186,31 @@ def decode_mecab_feature_csv(raw: str) -> tuple[str | None, ...]:
 
 def _require_uint(name: str, value: object, maximum: int) -> int:
     if type(value) is not int or value < 0 or value > maximum:
-        raise TokenizerContractError(
-            "invalid_token_record", f"{name} is outside its unsigned wire domain"
-        )
+        raise TokenizerContractError("invalid_token_record", f"{name} is outside its unsigned wire domain")
     return value
 
 
 def _validate_features(features: object) -> tuple[str | None, ...]:
-    if not isinstance(features, tuple) or len(features) != len(
-        UNIDIC_FEATURE_FIELDS
-    ):
-        raise TokenizerContractError(
-            "invalid_token_record", "Token features must be the frozen 26-field tuple"
-        )
-    if any(
-        value is not None
-        and (not isinstance(value, str) or "\x00" in value)
-        for value in features
-    ):
-        raise TokenizerContractError(
-            "invalid_token_record", "Token feature values must be NUL-free strings or None"
-        )
+    if not isinstance(features, tuple) or len(features) != len(UNIDIC_FEATURE_FIELDS):
+        raise TokenizerContractError("invalid_token_record", "Token features must be the frozen 26-field tuple")
+    if any(value is not None and (not isinstance(value, str) or "\x00" in value) for value in features):
+        raise TokenizerContractError("invalid_token_record", "Token feature values must be NUL-free strings or None")
     return features
 
 
-def validate_token_records(
-    text: str, records: Sequence[TokenRecord]
-) -> Utf8OffsetMap:
+def validate_token_records(text: str, records: Sequence[TokenRecord]) -> Utf8OffsetMap:
     """Validate copied nodes against the original input and return its map."""
 
     offsets = Utf8OffsetMap(text)
-    if not isinstance(records, Sequence) or isinstance(
-        records, (str, bytes, bytearray)
-    ):
-        raise TokenizerContractError(
-            "invalid_token_record", "Tokenizer records must be a sequence"
-        )
+    if not isinstance(records, Sequence) or isinstance(records, (str, bytes, bytearray)):
+        raise TokenizerContractError("invalid_token_record", "Tokenizer records must be a sequence")
     if len(records) > offsets.byte_length:
-        raise TokenizerContractError(
-            "invalid_token_record", "There cannot be more tokens than input bytes"
-        )
+        raise TokenizerContractError("invalid_token_record", "There cannot be more tokens than input bytes")
 
     previous_end = 0
     for index, record in enumerate(records):
         if not isinstance(record, TokenRecord):
-            raise TokenizerContractError(
-                "invalid_token_record", f"Record {index} is not a TokenRecord"
-            )
+            raise TokenizerContractError("invalid_token_record", f"Record {index} is not a TokenRecord")
 
         byte_start = _require_uint("byte_start", record.byte_start, _UINT32_MAX)
         byte_end = _require_uint("byte_end", record.byte_end, _UINT32_MAX)
@@ -257,17 +221,11 @@ def validate_token_records(
         _validate_features(record.features)
 
         if record.status not in (MECAB_NORMAL_NODE, MECAB_UNKNOWN_NODE):
-            raise TokenizerContractError(
-                "invalid_token_record", "Only normal and unknown nodes may cross the wire"
-            )
+            raise TokenizerContractError("invalid_token_record", "Only normal and unknown nodes may cross the wire")
         if byte_start >= byte_end or byte_end > offsets.byte_length:
-            raise TokenizerContractError(
-                "invalid_token_offset", f"Record {index} has an invalid byte range"
-            )
+            raise TokenizerContractError("invalid_token_offset", f"Record {index} has an invalid byte range")
         if byte_start < previous_end:
-            raise TokenizerContractError(
-                "invalid_token_offset", f"Record {index} overlaps its predecessor"
-            )
+            raise TokenizerContractError("invalid_token_offset", f"Record {index} overlaps its predecessor")
 
         offsets.resolve(byte_start)
         offsets.resolve(byte_end)
@@ -287,9 +245,7 @@ def validate_token_records(
 
     trailing = offsets.decode_slice(previous_end, offsets.byte_length)
     if trailing and not trailing.isspace():
-        raise TokenizerContractError(
-            "invalid_token_coverage", "Tokenizer omitted trailing non-whitespace input"
-        )
+        raise TokenizerContractError("invalid_token_coverage", "Tokenizer omitted trailing non-whitespace input")
     return offsets
 
 
@@ -302,52 +258,36 @@ def decode_token_wire(payload: object, text: str) -> tuple[TokenRecord, ...]:
     """
 
     if not isinstance(payload, (bytes, bytearray, memoryview)):
-        raise TokenizerContractError(
-            "invalid_token_wire", "Native tokenizer payload must be bytes-like"
-        )
+        raise TokenizerContractError("invalid_token_wire", "Native tokenizer payload must be bytes-like")
     data = bytes(payload)
     offsets = Utf8OffsetMap(text)
     if offsets.byte_length > _UINT32_MAX:
-        raise TokenizerContractError(
-            "invalid_text", "Tokenizer input exceeds the v1 wire size domain"
-        )
+        raise TokenizerContractError("invalid_text", "Tokenizer input exceeds the v1 wire size domain")
     if len(data) < _HEADER.size:
-        raise TokenizerContractError(
-            "invalid_token_wire", "Native tokenizer payload has no complete header"
-        )
+        raise TokenizerContractError("invalid_token_wire", "Native tokenizer payload has no complete header")
 
     magic, version, flags, input_length, token_count = _HEADER.unpack_from(data)
     if magic != TOKEN_WIRE_MAGIC:
-        raise TokenizerContractError(
-            "invalid_token_wire", "Native tokenizer payload has the wrong magic"
-        )
+        raise TokenizerContractError("invalid_token_wire", "Native tokenizer payload has the wrong magic")
     if version != TOKEN_WIRE_VERSION:
         raise TokenizerContractError(
             "unsupported_token_wire_version",
             f"Expected token wire {TOKEN_WIRE_VERSION}, received {version}",
         )
     if flags != 0:
-        raise TokenizerContractError(
-            "invalid_token_wire", "Native tokenizer payload uses unknown flags"
-        )
+        raise TokenizerContractError("invalid_token_wire", "Native tokenizer payload uses unknown flags")
     if input_length != offsets.byte_length:
-        raise TokenizerContractError(
-            "invalid_token_wire", "Native tokenizer input length does not match Python"
-        )
+        raise TokenizerContractError("invalid_token_wire", "Native tokenizer input length does not match Python")
 
     remaining = len(data) - _HEADER.size
     if token_count > input_length or token_count > remaining // _RECORD.size:
-        raise TokenizerContractError(
-            "invalid_token_wire", "Native tokenizer token count exceeds its buffer"
-        )
+        raise TokenizerContractError("invalid_token_wire", "Native tokenizer token count exceeds its buffer")
 
     cursor = _HEADER.size
     records: list[TokenRecord] = []
     for index in range(token_count):
         if len(data) - cursor < _RECORD.size:
-            raise TokenizerContractError(
-                "invalid_token_wire", f"Token record {index} is truncated"
-            )
+            raise TokenizerContractError("invalid_token_wire", f"Token record {index} is truncated")
         (
             byte_start,
             byte_end,
@@ -361,17 +301,11 @@ def decode_token_wire(payload: object, text: str) -> tuple[TokenRecord, ...]:
         cursor += _RECORD.size
 
         if reserved != b"\x00\x00\x00":
-            raise TokenizerContractError(
-                "invalid_token_wire", f"Token record {index} has nonzero reserved bytes"
-            )
+            raise TokenizerContractError("invalid_token_wire", f"Token record {index} has nonzero reserved bytes")
         if feature_length > _MAX_FEATURE_BYTES:
-            raise TokenizerContractError(
-                "invalid_token_wire", f"Token record {index} feature row is too large"
-            )
+            raise TokenizerContractError("invalid_token_wire", f"Token record {index} feature row is too large")
         if feature_length > len(data) - cursor:
-            raise TokenizerContractError(
-                "invalid_token_wire", f"Token record {index} feature row is truncated"
-            )
+            raise TokenizerContractError("invalid_token_wire", f"Token record {index} feature row is truncated")
 
         raw_feature = data[cursor : cursor + feature_length]
         cursor += feature_length
@@ -394,9 +328,7 @@ def decode_token_wire(payload: object, text: str) -> tuple[TokenRecord, ...]:
         )
 
     if cursor != len(data):
-        raise TokenizerContractError(
-            "invalid_token_wire", "Native tokenizer payload has trailing bytes"
-        )
+        raise TokenizerContractError("invalid_token_wire", "Native tokenizer payload has trailing bytes")
     validate_token_records(text, records)
     return tuple(records)
 
@@ -410,9 +342,7 @@ def adapt_tokens(text: str, records: Sequence[TokenRecord]) -> list[SimpleNamesp
     for record in records:
         codepoint_start, utf16_start = offsets.resolve(record.byte_start)
         codepoint_end, utf16_end = offsets.resolve(record.byte_end)
-        feature = SimpleNamespace(
-            **dict(zip(UNIDIC_FEATURE_FIELDS, record.features, strict=True))
-        )
+        feature = SimpleNamespace(**dict(zip(UNIDIC_FEATURE_FIELDS, record.features, strict=True)))
         output.append(
             SimpleNamespace(
                 surface=offsets.decode_slice(record.byte_start, record.byte_end),

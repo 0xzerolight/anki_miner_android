@@ -111,9 +111,7 @@ class _Operation:
 
     def check(self) -> None:
         if self.cancelled.is_set():
-            raise _fail(
-                "resource_operation_cancelled", "Resource operation was cancelled"
-            )
+            raise _fail("resource_operation_cancelled", "Resource operation was cancelled")
 
 
 class _OperationRegistry:
@@ -179,9 +177,7 @@ class _OperationRegistry:
             # from growing process memory with never-started operations.
             self._pending_cancellations[operation_id] = None
             self._pending_cancellations.move_to_end(operation_id)
-            while (
-                len(self._pending_cancellations) > _MAX_PENDING_RESOURCE_CANCELLATIONS
-            ):
+            while len(self._pending_cancellations) > _MAX_PENDING_RESOURCE_CANCELLATIONS:
                 self._pending_cancellations.popitem(last=False)
             return True
 
@@ -220,27 +216,19 @@ def _safe_rmtree(path: Path) -> None:
     except FileNotFoundError:
         return
     except OSError as exc:
-        raise _fail(
-            "resource_cleanup_failed", "Cannot inspect resource staging"
-        ) from exc
+        raise _fail("resource_cleanup_failed", "Cannot inspect resource staging") from exc
     if stat.S_ISLNK(path_stat.st_mode):
         try:
             path.unlink()
         except OSError as exc:
-            raise _fail(
-                "resource_cleanup_failed", "Cannot remove resource staging link"
-            ) from exc
+            raise _fail("resource_cleanup_failed", "Cannot remove resource staging link") from exc
         return
     if not stat.S_ISDIR(path_stat.st_mode):
-        raise _fail(
-            "resource_cleanup_failed", "Resource staging path is not a directory"
-        )
+        raise _fail("resource_cleanup_failed", "Resource staging path is not a directory")
     try:
         shutil.rmtree(path)
     except OSError as exc:
-        raise _fail(
-            "resource_cleanup_failed", "Cannot remove resource staging"
-        ) from exc
+        raise _fail("resource_cleanup_failed", "Cannot remove resource staging") from exc
 
 
 def _safe_remove_dictionary_entry(path: Path) -> None:
@@ -251,31 +239,22 @@ def _safe_remove_dictionary_entry(path: Path) -> None:
     except FileNotFoundError:
         return
     except OSError as exc:
-        raise _fail(
-            "resource_cleanup_failed", "Cannot inspect dictionary slot"
-        ) from exc
+        raise _fail("resource_cleanup_failed", "Cannot inspect dictionary slot") from exc
     try:
         if stat.S_ISLNK(value.st_mode) or stat.S_ISREG(value.st_mode):
             path.unlink()
         elif stat.S_ISDIR(value.st_mode):
             shutil.rmtree(path)
         else:
-            raise _fail(
-                "resource_cleanup_failed", "Dictionary slot has an unsafe type"
-            )
+            raise _fail("resource_cleanup_failed", "Dictionary slot has an unsafe type")
     except BridgeProtocolError:
         raise
     except OSError as exc:
-        raise _fail(
-            "resource_cleanup_failed", "Cannot remove dictionary slot"
-        ) from exc
+        raise _fail("resource_cleanup_failed", "Cannot remove dictionary slot") from exc
 
 
 def _canonical_json_bytes(value: Mapping[str, object]) -> bytes:
-    return (
-        json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-        + "\n"
-    ).encode("utf-8")
+    return (json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
 
 
 def _write_all(stream: BinaryIO, content: bytes) -> None:
@@ -293,9 +272,7 @@ def _write_file(path: Path, content: bytes) -> None:
             _write_all(stream, content)
             os.fsync(stream.fileno())
     except OSError as exc:
-        raise _fail(
-            "resource_install_failed", "Cannot write resource completion metadata"
-        ) from exc
+        raise _fail("resource_install_failed", "Cannot write resource completion metadata") from exc
 
 
 def _unidic_manifest(resource: UniDicResource) -> dict[str, object]:
@@ -338,17 +315,14 @@ def _valid_unidic_install(root: Path, resource: UniDicResource) -> bool:
         ):
             return False
         parsed = json.loads(manifest.read_text(encoding="utf-8"))
-        if parsed != _unidic_manifest(
-            resource
-        ) or marker.read_bytes() != _compatibility_marker(resource):
+        if parsed != _unidic_manifest(resource) or marker.read_bytes() != _compatibility_marker(resource):
             return False
 
         entries = list(dicdir.iterdir())
         if (
             len(entries) != resource.install.file_count
             or any(entry.is_symlink() or not entry.is_file() for entry in entries)
-            or sum(entry.stat().st_size for entry in entries)
-            != resource.install.size_bytes
+            or sum(entry.stat().st_size for entry in entries) != resource.install.size_bytes
         ):
             return False
 
@@ -374,13 +348,9 @@ def _check_free_space(parent: Path, required_bytes: int) -> None:
     try:
         available = shutil.disk_usage(parent).free
     except OSError as exc:
-        raise _fail(
-            "resource_space_unknown", "Cannot determine available storage"
-        ) from exc
+        raise _fail("resource_space_unknown", "Cannot determine available storage") from exc
     if available < required_bytes + _FREE_SPACE_RESERVE_BYTES:
-        raise _fail(
-            "insufficient_storage", "Not enough free space for this resource operation"
-        )
+        raise _fail("insufficient_storage", "Not enough free space for this resource operation")
 
 
 @contextlib.contextmanager
@@ -389,9 +359,7 @@ def _open_source(path: Path) -> Iterator[tuple[BinaryIO, os.stat_result]]:
     try:
         scanned = path.lstat()
         if stat.S_ISLNK(scanned.st_mode) or not stat.S_ISREG(scanned.st_mode):
-            raise _fail(
-                "invalid_resource_path", "Resource source must be a regular file"
-            )
+            raise _fail("invalid_resource_path", "Resource source must be a regular file")
         descriptor = os.open(path, flags)
     except BridgeProtocolError:
         raise
@@ -406,9 +374,7 @@ def _open_source(path: Path) -> Iterator[tuple[BinaryIO, os.stat_result]]:
             or opened.st_ino != scanned.st_ino
             or opened.st_size != scanned.st_size
         ):
-            raise _fail(
-                "resource_source_changed", "Resource source changed while opening"
-            )
+            raise _fail("resource_source_changed", "Resource source changed while opening")
         yield stream, opened
         final = os.fstat(stream.fileno())
         if (
@@ -418,9 +384,7 @@ def _open_source(path: Path) -> Iterator[tuple[BinaryIO, os.stat_result]]:
             or final.st_mtime_ns != opened.st_mtime_ns
             or final.st_ctime_ns != opened.st_ctime_ns
         ):
-            raise _fail(
-                "resource_source_changed", "Resource source changed while reading"
-            )
+            raise _fail("resource_source_changed", "Resource source changed while reading")
     finally:
         stream.close()
 
@@ -489,9 +453,7 @@ def _safe_archive_path(name: str, *, allow_directory_suffix: bool) -> tuple[str,
     try:
         name.encode("utf-8")
     except UnicodeEncodeError as exc:
-        raise _fail(
-            "unsafe_resource_archive", "Archive path is not valid Unicode"
-        ) from exc
+        raise _fail("unsafe_resource_archive", "Archive path is not valid Unicode") from exc
     if (
         not name
         or "\\" in name
@@ -570,10 +532,7 @@ def _extract_unidic(
                         "resource_archive_too_large",
                         "UniDic archive expands beyond its limit",
                     )
-                if (
-                    len(parts) <= len(prefix_parts)
-                    or parts[: len(prefix_parts)] != prefix_parts
-                ):
+                if len(parts) <= len(prefix_parts) or parts[: len(prefix_parts)] != prefix_parts:
                     continue
                 relative = parts[len(prefix_parts) :]
                 if len(relative) != 1:
@@ -610,11 +569,7 @@ def _extract_unidic(
                         if not chunk:
                             break
                         written += len(chunk)
-                        if (
-                            written > member.size
-                            or selected_bytes - member.size + written
-                            > install.size_bytes
-                        ):
+                        if written > member.size or selected_bytes - member.size + written > install.size_bytes:
                             raise _fail(
                                 "resource_archive_too_large",
                                 "UniDic file exceeds its declared limit",
@@ -647,9 +602,7 @@ def _extract_unidic(
     _write_file(staging / _COMPATIBILITY_MARKER_NAME, _compatibility_marker(resource))
     # The strict completion manifest is written last while the staging directory
     # is still unpublished. The final rename makes the whole valid tree visible.
-    _write_file(
-        staging / _MANIFEST_NAME, _canonical_json_bytes(_unidic_manifest(resource))
-    )
+    _write_file(staging / _MANIFEST_NAME, _canonical_json_bytes(_unidic_manifest(resource)))
     _fsync_directory(staging)
 
 
@@ -660,9 +613,7 @@ def _recover_unidic(parent: Path, final: Path, resource: UniDicResource) -> None
         for backup in backups:
             _safe_rmtree(backup)
         return
-    valid_backups = [
-        backup for backup in backups if _valid_unidic_install(backup, resource)
-    ]
+    valid_backups = [backup for backup in backups if _valid_unidic_install(backup, resource)]
     if final.exists() and valid_backups:
         _safe_rmtree(final)
     if not final.exists() and valid_backups:
@@ -736,9 +687,7 @@ def install_unidic(payload: Mapping[str, object]) -> str:
                         "fileCount": resource.install.file_count,
                         "sizeBytes": resource.install.size_bytes,
                         "alreadyInstalled": True,
-                        "attribution": [
-                            item.payload() for item in resource.attribution
-                        ],
+                        "attribution": [item.payload() for item in resource.attribution],
                     },
                 )
         operation_root = _resource_work_root(home) / "operations" / operation_id
@@ -818,9 +767,7 @@ def _validate_zip_streamed(
             has_root_index = False
             for info in infos:
                 operation.check()
-                parts = _safe_archive_path(
-                    info.filename, allow_directory_suffix=info.is_dir()
-                )
+                parts = _safe_archive_path(info.filename, allow_directory_suffix=info.is_dir())
                 if parts in seen:
                     raise _fail(
                         "unsafe_resource_archive",
@@ -879,9 +826,7 @@ def _validate_zip_streamed(
     except BridgeProtocolError:
         raise
     except (zipfile.BadZipFile, RuntimeError, OSError, EOFError) as exc:
-        raise _fail(
-            "invalid_resource_archive", "Dictionary archive is corrupt"
-        ) from exc
+        raise _fail("invalid_resource_archive", "Dictionary archive is corrupt") from exc
 
 
 def _dictionary_sidecar(
@@ -900,11 +845,7 @@ def _dictionary_sidecar(
         "catalogResourceId": catalog_resource.resource_id if catalog_resource else None,
         "sourceName": source_name,
         "sourceRevision": source_revision,
-        "attribution": (
-            [item.payload() for item in catalog_resource.attribution]
-            if catalog_resource
-            else []
-        ),
+        "attribution": ([item.payload() for item in catalog_resource.attribution] if catalog_resource else []),
     }
 
 
@@ -934,9 +875,7 @@ def _path_occupied(path: Path) -> bool:
     except FileNotFoundError:
         return False
     except OSError as exc:
-        raise _fail(
-            "resource_inventory_failed", "Cannot inspect dictionary storage"
-        ) from exc
+        raise _fail("resource_inventory_failed", "Cannot inspect dictionary storage") from exc
 
 
 def _ensure_real_directory(path: Path, *, code: str, message: str) -> None:
@@ -992,34 +931,22 @@ def _recover_dictionary_backups(home: Path) -> None:
         backups = []
         for backup in backup_root.iterdir():
             if len(backups) >= _MAX_DICTIONARY_SLOTS:
-                raise _fail(
-                    "resource_cleanup_failed", "Dictionary backup set is unbounded"
-                )
+                raise _fail("resource_cleanup_failed", "Dictionary backup set is unbounded")
             backups.append(backup)
     except OSError as exc:
-        raise _fail(
-            "resource_cleanup_failed", "Cannot inspect dictionary backups"
-        ) from exc
+        raise _fail("resource_cleanup_failed", "Cannot inspect dictionary backups") from exc
     for backup in sorted(backups):
         if not backup.name.startswith("backup-"):
             raise _fail("resource_cleanup_failed", "Dictionary backup entry is unsafe")
         remainder = backup.name.removeprefix("backup-")
         slot_id, separator, operation_id = remainder.partition("--")
-        if (
-            separator != "--"
-            or not _SLOT_ID_RE.fullmatch(slot_id)
-            or not _OPERATION_ID_RE.fullmatch(operation_id)
-        ):
+        if separator != "--" or not _SLOT_ID_RE.fullmatch(slot_id) or not _OPERATION_ID_RE.fullmatch(operation_id):
             raise _fail("resource_cleanup_failed", "Dictionary backup slot is invalid")
         try:
             backup_stat = backup.lstat()
         except OSError as exc:
-            raise _fail(
-                "resource_cleanup_failed", "Cannot inspect dictionary backup"
-            ) from exc
-        if stat.S_ISLNK(backup_stat.st_mode) or not stat.S_ISDIR(
-            backup_stat.st_mode
-        ):
+            raise _fail("resource_cleanup_failed", "Cannot inspect dictionary backup") from exc
+        if stat.S_ISLNK(backup_stat.st_mode) or not stat.S_ISDIR(backup_stat.st_mode):
             _safe_remove_dictionary_entry(backup)
             continue
         final = dicts_root / slot_id
@@ -1100,9 +1027,7 @@ def import_dictionary(payload: Mapping[str, object]) -> str:
     if raw_catalog_id is None:
         catalog_resource = None
     else:
-        catalog_id = _bounded_text(
-            raw_catalog_id, name="catalogResourceId", max_bytes=64
-        )
+        catalog_id = _bounded_text(raw_catalog_id, name="catalogResourceId", max_bytes=64)
         selected = load_resource_catalog().get(catalog_id)
         if not isinstance(selected, YomitanResource):
             raise _fail(
@@ -1119,9 +1044,7 @@ def import_dictionary(payload: Mapping[str, object]) -> str:
     home = Path(require_initialized())
     final = _dictionary_root(home) / slot_id
     if _path_occupied(final) and not overwrite:
-        raise _fail(
-            "resource_already_installed", f"Dictionary slot {slot_id!r} already exists"
-        )
+        raise _fail("resource_already_installed", f"Dictionary slot {slot_id!r} already exists")
     operation_root = _resource_work_root(home) / "operations" / operation_id
     with _OPERATIONS.begin(operation_id) as operation:
         operation.check()
@@ -1129,29 +1052,21 @@ def import_dictionary(payload: Mapping[str, object]) -> str:
         operation_root.mkdir(parents=True)
         try:
             maximum_archive = (
-                catalog_resource.archive.size_bytes
-                if catalog_resource
-                else _MAX_CUSTOM_DICTIONARY_ARCHIVE_BYTES
+                catalog_resource.archive.size_bytes if catalog_resource else _MAX_CUSTOM_DICTIONARY_ARCHIVE_BYTES
             )
             copied = _copy_archive(
                 source,
                 operation_root / "dictionary.zip",
                 operation,
                 maximum_bytes=maximum_archive,
-                expected_size=(
-                    catalog_resource.archive.size_bytes if catalog_resource else None
-                ),
-                expected_sha256=(
-                    catalog_resource.archive.sha256 if catalog_resource else None
-                ),
+                expected_size=(catalog_resource.archive.size_bytes if catalog_resource else None),
+                expected_sha256=(catalog_resource.archive.sha256 if catalog_resource else None),
             )
             identity = _validate_zip_streamed(
                 copied.path,
                 operation,
                 member_limit=(
-                    catalog_resource.dictionary.archive_member_limit
-                    if catalog_resource
-                    else _CUSTOM_ZIP_MEMBER_LIMIT
+                    catalog_resource.dictionary.archive_member_limit if catalog_resource else _CUSTOM_ZIP_MEMBER_LIMIT
                 ),
                 total_limit=(
                     catalog_resource.dictionary.uncompressed_bytes_limit
@@ -1159,15 +1074,12 @@ def import_dictionary(payload: Mapping[str, object]) -> str:
                     else _CUSTOM_ZIP_TOTAL_LIMIT
                 ),
                 file_limit=(
-                    catalog_resource.dictionary.file_bytes_limit
-                    if catalog_resource
-                    else _CUSTOM_ZIP_FILE_LIMIT
+                    catalog_resource.dictionary.file_bytes_limit if catalog_resource else _CUSTOM_ZIP_FILE_LIMIT
                 ),
             )
             if catalog_resource and (
                 identity.member_count != catalog_resource.dictionary.member_count
-                or identity.uncompressed_bytes
-                != catalog_resource.dictionary.uncompressed_bytes
+                or identity.uncompressed_bytes != catalog_resource.dictionary.uncompressed_bytes
             ):
                 raise _fail(
                     "resource_archive_mismatch",
@@ -1220,9 +1132,7 @@ def import_dictionary(payload: Mapping[str, object]) -> str:
                 source_name=result.source_name,
                 source_revision=result.source_revision,
             )
-            _write_file(
-                candidate / "android-resource.json", _canonical_json_bytes(sidecar)
-            )
+            _write_file(candidate / "android-resource.json", _canonical_json_bytes(sidecar))
             _fsync_directory(candidate)
             _publish_dictionary(
                 candidate,
@@ -1235,9 +1145,7 @@ def import_dictionary(payload: Mapping[str, object]) -> str:
                 "resource.dictionary.imported",
                 {
                     "slotId": slot_id,
-                    "catalogResourceId": (
-                        catalog_resource.resource_id if catalog_resource else None
-                    ),
+                    "catalogResourceId": (catalog_resource.resource_id if catalog_resource else None),
                     "sourceName": result.source_name,
                     "sourceRevision": result.source_revision,
                     "entryCount": result.entry_count,
@@ -1245,9 +1153,7 @@ def import_dictionary(payload: Mapping[str, object]) -> str:
                     "mediaWarnings": list(result.media_warnings),
                     "archiveSha256": copied.sha256,
                     "attribution": (
-                        [item.payload() for item in catalog_resource.attribution]
-                        if catalog_resource
-                        else []
+                        [item.payload() for item in catalog_resource.attribution] if catalog_resource else []
                     ),
                 },
             )
@@ -1307,9 +1213,7 @@ def _read_dictionary_sidecar(
             content = stream.read(_MAX_MANIFEST_BYTES + 1)
         if len(content) != sidecar_stat.st_size or len(content) > _MAX_MANIFEST_BYTES:
             return None
-        value = json.loads(
-            content.decode("utf-8"), object_pairs_hook=_sidecar_object_pairs
-        )
+        value = json.loads(content.decode("utf-8"), object_pairs_hook=_sidecar_object_pairs)
     except FileNotFoundError:
         return None
     except (OSError, UnicodeError, json.JSONDecodeError, TypeError, ValueError):
@@ -1335,16 +1239,10 @@ def _read_dictionary_sidecar(
     if archive_hash is None or not _SHA256_RE.fullmatch(archive_hash):
         return None
     archive_size = value["archiveSizeBytes"]
-    if (
-        type(archive_size) is not int
-        or archive_size <= 0
-        or archive_size > _MAX_CUSTOM_DICTIONARY_ARCHIVE_BYTES
-    ):
+    if type(archive_size) is not int or archive_size <= 0 or archive_size > _MAX_CUSTOM_DICTIONARY_ARCHIVE_BYTES:
         return None
     source_name = _sidecar_text(value["sourceName"], maximum_bytes=4096)
-    source_revision = _sidecar_text(
-        value["sourceRevision"], maximum_bytes=4096, allow_empty=True
-    )
+    source_revision = _sidecar_text(value["sourceRevision"], maximum_bytes=4096, allow_empty=True)
     if source_name is None or source_revision is None:
         return None
 
@@ -1369,8 +1267,7 @@ def _read_dictionary_sidecar(
             or selected.archive.size_bytes != archive_size
             or selected.dictionary.title != source_name
             or selected.dictionary.revision != source_revision
-            or value["attribution"]
-            != [item.payload() for item in selected.attribution]
+            or value["attribution"] != [item.payload() for item in selected.attribution]
         ):
             return None
         catalog_resource = selected
@@ -1426,10 +1323,7 @@ def _read_dictionary_meta(index: Path) -> dict[object, object]:
 
     connection = sqlite3.connect(index.resolve().as_uri() + "?mode=ro", uri=True)
     try:
-        return {
-            key: value
-            for key, value in connection.execute("SELECT key, value FROM meta")
-        }
+        return {key: value for key, value in connection.execute("SELECT key, value FROM meta")}
     finally:
         connection.close()
 
@@ -1446,11 +1340,7 @@ def _dictionary_payload(slot: Path) -> dict[str, object]:
     try:
         index = slot / "index.sqlite"
         index_stat = index.lstat()
-        if (
-            stat.S_ISLNK(index_stat.st_mode)
-            or not stat.S_ISREG(index_stat.st_mode)
-            or index_stat.st_size <= 0
-        ):
+        if stat.S_ISLNK(index_stat.st_mode) or not stat.S_ISREG(index_stat.st_mode) or index_stat.st_size <= 0:
             return _invalid_dictionary_payload(slot_id, sidecar)
     except (FileNotFoundError, OSError):
         return _invalid_dictionary_payload(slot_id, sidecar)
@@ -1464,9 +1354,7 @@ def _dictionary_payload(slot: Path) -> dict[str, object]:
         return _invalid_dictionary_payload(slot_id, sidecar)
 
     source_name = _inventory_text(values.get("source_name"), maximum_bytes=4096)
-    source_revision = _inventory_text(
-        values.get("source_revision", ""), maximum_bytes=4096, allow_empty=True
-    )
+    source_revision = _inventory_text(values.get("source_revision", ""), maximum_bytes=4096, allow_empty=True)
     resource_format = _inventory_text(values.get("format"), maximum_bytes=64)
     try:
         entry_count = int(values.get("entry_count", ""))
@@ -1481,18 +1369,13 @@ def _dictionary_payload(slot: Path) -> dict[str, object]:
         or entry_count > 2**63 - 1
     ):
         return _invalid_dictionary_payload(slot_id, sidecar)
-    if sidecar is not None and (
-        sidecar.source_name != source_name
-        or sidecar.source_revision != source_revision
-    ):
+    if sidecar is not None and (sidecar.source_name != source_name or sidecar.source_revision != source_revision):
         sidecar = None
 
     embedded = {
         key: validated
         for key in ("author", "attribution", "description")
-        if (
-            validated := _inventory_text(values.get(key), maximum_bytes=64 * 1024)
-        )
+        if (validated := _inventory_text(values.get(key), maximum_bytes=64 * 1024))
     }
     schema_ok = schema_version == _DICTIONARY_SCHEMA_VERSION
     return {
@@ -1527,14 +1410,10 @@ def list_dictionaries(payload: Mapping[str, object]) -> str:
         slots = []
         for slot in root.iterdir():
             if len(slots) >= _MAX_DICTIONARY_SLOTS:
-                raise _fail(
-                    "resource_inventory_failed", "Dictionary storage has too many slots"
-                )
+                raise _fail("resource_inventory_failed", "Dictionary storage has too many slots")
             slots.append(slot)
     except OSError as exc:
-        raise _fail(
-            "resource_inventory_failed", "Cannot inspect dictionary storage"
-        ) from exc
+        raise _fail("resource_inventory_failed", "Cannot inspect dictionary storage") from exc
     dictionaries: list[dict[str, object]] = []
     for slot in sorted(slots, key=lambda item: item.name):
         if not _SLOT_ID_RE.fullmatch(slot.name):
@@ -1550,9 +1429,7 @@ def _validate_lookup_html(html: str) -> None:
     try:
         html_size = len(html.encode("utf-8"))
     except UnicodeEncodeError as exc:
-        raise _fail(
-            "dictionary_result_invalid", "Dictionary lookup returned invalid text"
-        ) from exc
+        raise _fail("dictionary_result_invalid", "Dictionary lookup returned invalid text") from exc
     if html_size > _MAX_LOOKUP_HTML_BYTES:
         raise _fail(
             "dictionary_result_too_large",
@@ -1569,9 +1446,7 @@ def lookup_dictionary(payload: Mapping[str, object]) -> str:
     home = Path(require_initialized())
     root = _dictionary_root(home)
     if not _path_occupied(root):
-        raise _fail(
-            "dictionary_not_found", f"Dictionary slot {slot_id!r} is not installed"
-        )
+        raise _fail("dictionary_not_found", f"Dictionary slot {slot_id!r} is not installed")
     _ensure_real_directory(
         root,
         code="dictionary_unavailable",
@@ -1579,9 +1454,7 @@ def lookup_dictionary(payload: Mapping[str, object]) -> str:
     )
     slot = root / slot_id
     if not _path_occupied(slot):
-        raise _fail(
-            "dictionary_not_found", f"Dictionary slot {slot_id!r} is not installed"
-        )
+        raise _fail("dictionary_not_found", f"Dictionary slot {slot_id!r} is not installed")
     inventory = _dictionary_payload(slot)
     if not inventory["valid"]:
         raise _fail("dictionary_schema_mismatch", "Dictionary must be reimported")
@@ -1596,9 +1469,7 @@ def lookup_dictionary(payload: Mapping[str, object]) -> str:
     registry.load()
     meta = registry.get(slot_id)
     if meta is None:
-        raise _fail(
-            "dictionary_not_found", f"Dictionary slot {slot_id!r} is not installed"
-        )
+        raise _fail("dictionary_not_found", f"Dictionary slot {slot_id!r} is not installed")
     if not meta.schema_ok:
         raise _fail("dictionary_schema_mismatch", "Dictionary must be reimported")
     provider = IndexedDictProvider(meta.dict_id, meta.db_path, meta.source_name)
@@ -1645,9 +1516,7 @@ def cleanup_resources(payload: Mapping[str, object]) -> str:
         operations = _resource_work_root(home) / "operations"
         if operations.exists():
             if operations.is_symlink() or not operations.is_dir():
-                raise _fail(
-                    "resource_cleanup_failed", "Resource operation root is unsafe"
-                )
+                raise _fail("resource_cleanup_failed", "Resource operation root is unsafe")
             for child in list(operations.iterdir()):
                 _safe_rmtree(child)
         catalog = load_resource_catalog()

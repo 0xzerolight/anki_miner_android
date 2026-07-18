@@ -50,9 +50,7 @@ def test_only_renderer_marked_acknowledged_local_image_keeps_source() -> None:
 
 def test_entity_encoded_case_insensitive_remote_source_is_rejected() -> None:
     html = (
-        '<IMG class="gloss-image" '
-        'SRC="hTtPs&#58;//tracker.example.test/image.png" '
-        'title="ordinary title">visible'
+        '<IMG class="gloss-image" ' 'SRC="hTtPs&#58;//tracker.example.test/image.png" ' 'title="ordinary title">visible'
     )
 
     sanitized = sanitize_dictionary_html(
@@ -67,8 +65,7 @@ def test_entity_encoded_case_insensitive_remote_source_is_rejected() -> None:
 
 def test_duplicate_src_cannot_hide_remote_url_behind_allowed_local_name() -> None:
     html = (
-        '<img class="anki-miner-dict-media" src="dict__cat.png" '
-        'src="https://tracker.example.test/hidden.png">text'
+        '<img class="anki-miner-dict-media" src="dict__cat.png" ' 'src="https://tracker.example.test/hidden.png">text'
     )
 
     sanitized = sanitize_dictionary_html(

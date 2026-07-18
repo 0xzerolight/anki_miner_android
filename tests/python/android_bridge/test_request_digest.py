@@ -162,10 +162,7 @@ def _load_mutations() -> tuple[dict[str, Any], ...]:
         assert isinstance(mutation["base"], str)
         assert mutation["kind"] in {"replace", "append", "renameKey", "reverse"}
         assert isinstance(mutation["path"], list) and mutation["path"]
-        assert all(
-            isinstance(part, str) or (type(part) is int and part >= 0)
-            for part in mutation["path"]
-        )
+        assert all(isinstance(part, str) or (type(part) is int and part >= 0) for part in mutation["path"])
         assert isinstance(mutation["leaf"], str) and mutation["leaf"] not in leaves
         if mutation["rejectCategory"] is None:
             assert re.fullmatch(r"[0-9a-f]{64}", mutation["sha256"])
@@ -284,13 +281,7 @@ def test_shared_request_digest_vectors(vector: dict[str, Any]) -> None:
     assert version == ANKI_REQUEST_DIGEST_VERSION == 1
     assert canonical == vector["canonical"].encode("utf-8")
     assert digest == vector["sha256"] == hashlib.sha256(canonical).hexdigest()
-    assert canonical.startswith(
-        (
-            '{"domain":"'
-            + ANKI_REQUEST_DIGEST_DOMAIN
-            + '","digestVersion":1,'
-        ).encode()
-    )
+    assert canonical.startswith(('{"domain":"' + ANKI_REQUEST_DIGEST_DOMAIN + '","digestVersion":1,').encode())
     assert digest != hashlib.sha256(vector["raw"].encode()).hexdigest()
 
 
@@ -344,7 +335,5 @@ def _accepted_vector_digests() -> dict[str, str]:
     for vector in VECTORS:
         if vector["rejectCategory"] is None:
             payload = _validated_payload(vector["raw"], vector["operation"])
-            result[vector["id"]] = _validated_reference(
-                vector["operation"], payload
-            )[2]
+            result[vector["id"]] = _validated_reference(vector["operation"], payload)[2]
     return result

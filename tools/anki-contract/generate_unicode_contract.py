@@ -3,6 +3,5 @@
 
 from anki_contract_codegen.unicode_cli import main
 
-
 if __name__ == "__main__":
     raise SystemExit(main())

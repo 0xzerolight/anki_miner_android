@@ -6,7 +6,6 @@ import sys
 import tempfile
 import unittest
 
-
 SCRIPTS_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SCRIPTS_DIR))
 
@@ -38,8 +37,7 @@ class ToolchainVerificationTest(unittest.TestCase):
         )
         installed = root / "installed.txt"
         installed.write_text(
-            "Installed packages:\nPath | Version | Description\n"
-            f"platform-tools | {installed_revision} | tools\n",
+            "Installed packages:\nPath | Version | Description\n" f"platform-tools | {installed_revision} | tools\n",
             encoding="utf-8",
         )
         avd_home = root / "avd"
@@ -66,8 +64,7 @@ class ToolchainVerificationTest(unittest.TestCase):
             lock=lock,
             avd_home=avd_home,
             avd=[
-                "fixture|system-images;android-36;google_apis_ps16k;x86_64"
-                "|pixel_6|Google",
+                "fixture|system-images;android-36;google_apis_ps16k;x86_64" "|pixel_6|Google",
             ],
         )
 

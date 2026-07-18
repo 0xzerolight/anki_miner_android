@@ -16,12 +16,10 @@ from unittest import mock
 import warnings
 import zipfile
 
-
 SCRIPTS_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SCRIPTS_DIR))
 
 import check_runtime_artifact as checker  # noqa: E402
-
 
 RUNTIME_BUILD_KEY = "a" * 64
 S1A_BUILD_KEY = "b" * 64
@@ -32,12 +30,7 @@ def _sha256(data: bytes) -> str:
 
 
 def _metadata(name: str, version: str, *, extra: str = "") -> bytes:
-    return (
-        "Metadata-Version: 2.1\n"
-        f"Name: {name}\n"
-        f"Version: {version}\n"
-        f"{extra}\n"
-    ).encode()
+    return ("Metadata-Version: 2.1\n" f"Name: {name}\n" f"Version: {version}\n" f"{extra}\n").encode()
 
 
 def _elf(abi: str, marker: bytes = b"") -> bytes:
@@ -158,9 +151,7 @@ class ArtifactFixture:
         self.write_artifact()
 
     def write_runtime_manifest(self) -> None:
-        self.runtime_manifest.write_text(
-            json.dumps(self.runtime_document), encoding="utf-8"
-        )
+        self.runtime_manifest.write_text(json.dumps(self.runtime_document), encoding="utf-8")
 
     def _s1a_entries(self, abi: str, *, install: bool) -> list[dict[str, object]]:
         result: list[dict[str, object]] = []
@@ -171,22 +162,15 @@ class ArtifactFixture:
             license_path = f"{dist_name}-{version}.dist-info/{license_name}"
             license_data = f"{package} fixture license".encode()
             if install:
-                self.common[f"{dist_name}-{version}.dist-info/METADATA"] = _metadata(
-                    package, version
-                )
+                self.common[f"{dist_name}-{version}.dist-info/METADATA"] = _metadata(package, version)
                 self.common[license_path] = license_data
                 self.common[native_path] = native
             result.append(
                 {
-                    "filename": (
-                        f"{wheel_name}-{version}-0-{tags}-android_26_"
-                        f"{abi.replace('-', '_')}.whl"
-                    ),
+                    "filename": (f"{wheel_name}-{version}-0-{tags}-android_26_" f"{abi.replace('-', '_')}.whl"),
                     "sha256": "d" * 64,
                     "size": 100,
-                    "licenses": [
-                        {"path": license_path, "sha256": _sha256(license_data)}
-                    ],
+                    "licenses": [{"path": license_path, "sha256": _sha256(license_data)}],
                     "elf": {
                         "abi": abi,
                         "needed": ["libc.so"],
@@ -226,9 +210,7 @@ class ArtifactFixture:
     ) -> None:
         prefix = prefix or self._prefix()
         entries = {
-            f"{prefix}/requirements-common.imy": (
-                _zip(self.common) if common_payload is None else common_payload
-            ),
+            f"{prefix}/requirements-common.imy": (_zip(self.common) if common_payload is None else common_payload),
             f"{prefix}/requirements-{self.abi}.imy": abi_payload,
             # The auditor deliberately never opens app.imy. This required shim is allowed.
             f"{prefix}/app.imy": _zip({"PyQt6/QtCore.py": b"class QCoreApplication: pass\n"}),
@@ -264,10 +246,13 @@ class RuntimeArtifactPositiveTests(unittest.TestCase):
 
     def test_exact_runtime_inventory_passes_for_apk_and_aab(self) -> None:
         for artifact_type, abi in (("apk", "x86_64"), ("aab", "arm64-v8a")):
-            with self.subTest(artifact_type=artifact_type), fixture(
-                artifact_type=artifact_type,
-                abi=abi,
-            ) as value:
+            with (
+                self.subTest(artifact_type=artifact_type),
+                fixture(
+                    artifact_type=artifact_type,
+                    abi=abi,
+                ) as value,
+            ):
                 result = value.audit()
 
                 self.assertEqual(artifact_type, result.artifact_type)
@@ -300,9 +285,7 @@ class RuntimeArtifactInventoryTests(unittest.TestCase):
                 "requests-1.0.dist-info/METADATA",
                 _metadata("requests", "2.0"),
             ),
-            "missing metadata": lambda value: value.common.pop(
-                "requests-1.0.dist-info/METADATA"
-            ),
+            "missing metadata": lambda value: value.common.pop("requests-1.0.dist-info/METADATA"),
         }
         for label, mutate in cases.items():
             with self.subTest(label=label), fixture() as value:
@@ -316,18 +299,10 @@ class RuntimeArtifactInventoryTests(unittest.TestCase):
 
     def test_native_and_license_path_and_hash_inventory_must_be_exact(self) -> None:
         cases = {
-            "native hash": lambda value: value.common.__setitem__(
-                "PIL/_imaging.so", _elf(value.abi, b"changed")
-            ),
-            "extra native": lambda value: value.common.__setitem__(
-                "PIL/_extra.so", _elf(value.abi, b"extra")
-            ),
-            "license hash": lambda value: value.common.__setitem__(
-                "requests-1.0.dist-info/LICENSE", b"changed"
-            ),
-            "extra license": lambda value: value.common.__setitem__(
-                "requests-1.0.dist-info/NOTICE", b"extra"
-            ),
+            "native hash": lambda value: value.common.__setitem__("PIL/_imaging.so", _elf(value.abi, b"changed")),
+            "extra native": lambda value: value.common.__setitem__("PIL/_extra.so", _elf(value.abi, b"extra")),
+            "license hash": lambda value: value.common.__setitem__("requests-1.0.dist-info/LICENSE", b"changed"),
+            "extra license": lambda value: value.common.__setitem__("requests-1.0.dist-info/NOTICE", b"extra"),
         }
         for label, mutate in cases.items():
             with self.subTest(label=label), fixture() as value:
@@ -360,9 +335,7 @@ class RuntimeArtifactInventoryTests(unittest.TestCase):
             with self.subTest(path=path), fixture() as value:
                 value.common[path] = b"forbidden = True\n"
                 value.write_artifact()
-                with self.assertRaisesRegex(
-                    checker.RuntimeArtifactError, "forbidden package payload"
-                ):
+                with self.assertRaisesRegex(checker.RuntimeArtifactError, "forbidden package payload"):
                     value.audit()
 
     def test_s1a_payload_requires_manifest_and_then_must_match_it(self) -> None:
@@ -387,21 +360,13 @@ class RuntimeArtifactArchiveSafetyTests(unittest.TestCase):
                 value.audit()
 
         with fixture() as value:
-            value.write_artifact(
-                extra_outer={
-                    "assets/chaquopy/requirements-arm64-v8a.imy": checker.EMPTY_ZIP
-                }
-            )
-            with self.assertRaisesRegex(
-                checker.RuntimeArtifactError, "canonical requirements archives differ"
-            ):
+            value.write_artifact(extra_outer={"assets/chaquopy/requirements-arm64-v8a.imy": checker.EMPTY_ZIP})
+            with self.assertRaisesRegex(checker.RuntimeArtifactError, "canonical requirements archives differ"):
                 value.audit()
 
         with fixture(artifact_type="aab") as value:
             value.write_artifact(prefix="assets/chaquopy")
-            with self.assertRaisesRegex(
-                checker.RuntimeArtifactError, "canonical requirements archives differ"
-            ):
+            with self.assertRaisesRegex(checker.RuntimeArtifactError, "canonical requirements archives differ"):
                 value.audit()
 
     def test_duplicate_unsafe_symlink_and_nested_archive_entries_are_rejected(self) -> None:
@@ -444,23 +409,17 @@ class RuntimeArtifactArchiveSafetyTests(unittest.TestCase):
                 value.audit()
 
     def test_entry_count_and_size_bombs_are_rejected_without_large_fixtures(self) -> None:
-        with fixture() as value, mock.patch.object(
-            checker, "MAX_REQUIREMENT_ENTRIES", 2
-        ):
+        with fixture() as value, mock.patch.object(checker, "MAX_REQUIREMENT_ENTRIES", 2):
             with self.assertRaisesRegex(checker.RuntimeArtifactError, "too many entries"):
                 value.audit()
 
-        with fixture() as value, mock.patch.object(
-            checker, "MAX_REQUIREMENT_ENTRY_SIZE", 8
-        ):
+        with fixture() as value, mock.patch.object(checker, "MAX_REQUIREMENT_ENTRY_SIZE", 8):
             with self.assertRaisesRegex(checker.RuntimeArtifactError, "oversized"):
                 value.audit()
 
     def test_malformed_metadata_and_native_looking_non_elf_are_rejected(self) -> None:
         with fixture() as value:
-            value.common["requests-1.0.dist-info/METADATA"] = _metadata(
-                "requests", "1.0", extra="Name: duplicate\n"
-            )
+            value.common["requests-1.0.dist-info/METADATA"] = _metadata("requests", "1.0", extra="Name: duplicate\n")
             value.write_artifact()
             with self.assertRaisesRegex(checker.RuntimeArtifactError, "headers differ"):
                 value.audit()
@@ -472,9 +431,9 @@ class RuntimeArtifactArchiveSafetyTests(unittest.TestCase):
                 value.audit()
 
         with fixture() as value:
-            value.common["requests-1.0.dist-info/METADATA"] = _metadata(
-                "requests", "1.0"
-            ).replace(b"Metadata-Version: 2.1", b"Metadata-Version: invalid")
+            value.common["requests-1.0.dist-info/METADATA"] = _metadata("requests", "1.0").replace(
+                b"Metadata-Version: 2.1", b"Metadata-Version: invalid"
+            )
             value.write_artifact()
             with self.assertRaisesRegex(checker.RuntimeArtifactError, "invalid METADATA"):
                 value.audit()

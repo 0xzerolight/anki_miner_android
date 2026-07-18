@@ -227,9 +227,7 @@ def _fsync_file(path: Path) -> None:
     try:
         os.fsync(descriptor)
     except OSError as exc:
-        raise _fail(
-            "resource_install_failed", "Cannot persist imported resource"
-        ) from exc
+        raise _fail("resource_install_failed", "Cannot persist imported resource") from exc
     finally:
         os.close(descriptor)
 
@@ -242,9 +240,7 @@ def _fsync_tree_directories(root: Path) -> None:
         for name in children:
             child = current_path / name
             if child.is_symlink():
-                raise _fail(
-                    "resource_install_failed", "Imported resource contains a link"
-                )
+                raise _fail("resource_install_failed", "Imported resource contains a link")
     for directory in reversed(directories):
         core._fsync_directory(directory)
 
@@ -254,9 +250,7 @@ def _fsync_small_tree(root: Path) -> None:
         current_path = Path(current)
         for name in children:
             if (current_path / name).is_symlink():
-                raise _fail(
-                    "resource_install_failed", "Imported resource contains a link"
-                )
+                raise _fail("resource_install_failed", "Imported resource contains a link")
         for name in files:
             child = current_path / name
             if child.is_symlink() or not child.is_file():
@@ -285,9 +279,7 @@ def import_frequency(payload: Mapping[str, object]) -> str:
     source = core._absolute_path(payload["sourcePath"], name="sourcePath")
     source_id = core._slot_id(payload["sourceId"])
     source_name = _display_name(payload["sourceName"], label="sourceName")
-    source_format = _format(
-        payload["sourceFormat"], _FREQUENCY_FORMATS, label="sourceFormat"
-    )
+    source_format = _format(payload["sourceFormat"], _FREQUENCY_FORMATS, label="sourceFormat")
     overwrite = _boolean(payload["overwrite"], label="overwrite")
     home = Path(require_initialized())
     operation_root = _work_root(home, operation_id)
@@ -296,11 +288,7 @@ def import_frequency(payload: Mapping[str, object]) -> str:
         core._safe_rmtree(operation_root)
         operation_root.mkdir(parents=True)
         try:
-            maximum = (
-                _FREQUENCY_ARCHIVE_LIMIT
-                if source_format == "zip"
-                else _FREQUENCY_TEXT_LIMIT
-            )
+            maximum = _FREQUENCY_ARCHIVE_LIMIT if source_format == "zip" else _FREQUENCY_TEXT_LIMIT
             copied = core._copy_archive(
                 source,
                 operation_root / f"source.{source_format}",
@@ -426,9 +414,7 @@ def import_pitch(payload: Mapping[str, object]) -> str:
     operation_id = core._operation_id(payload["operationId"])
     source = core._absolute_path(payload["sourcePath"], name="sourcePath")
     requested_name = _display_name(payload["sourceName"], label="sourceName")
-    source_format = _format(
-        payload["sourceFormat"], _PITCH_FORMATS, label="sourceFormat"
-    )
+    source_format = _format(payload["sourceFormat"], _PITCH_FORMATS, label="sourceFormat")
     overwrite = _boolean(payload["overwrite"], label="overwrite")
     home = Path(require_initialized())
     final = home / "pitch_accent.csv"
@@ -439,9 +425,7 @@ def import_pitch(payload: Mapping[str, object]) -> str:
         core._safe_rmtree(operation_root)
         operation_root.mkdir(parents=True)
         try:
-            maximum = (
-                _PITCH_ARCHIVE_LIMIT if source_format == "zip" else _PITCH_TEXT_LIMIT
-            )
+            maximum = _PITCH_ARCHIVE_LIMIT if source_format == "zip" else _PITCH_TEXT_LIMIT
             copied = core._copy_archive(
                 source,
                 operation_root / f"source.{source_format}",
@@ -531,16 +515,10 @@ def import_pitch(payload: Mapping[str, object]) -> str:
 
 
 def _audio_member_limit(info: zipfile.ZipInfo) -> int:
-    return (
-        _AUDIO_JSON_LIMIT
-        if info.filename.lower().endswith(".json")
-        else _AUDIO_FILE_LIMIT
-    )
+    return _AUDIO_JSON_LIMIT if info.filename.lower().endswith(".json") else _AUDIO_FILE_LIMIT
 
 
-def _extract_audio_zip(
-    path: Path, destination: Path, operation: core._Operation
-) -> None:
+def _extract_audio_zip(path: Path, destination: Path, operation: core._Operation) -> None:
     try:
         with zipfile.ZipFile(path, "r") as archive:
             infos = archive.infolist()
@@ -551,18 +529,14 @@ def _extract_audio_zip(
                 )
             declared_total = sum(info.file_size for info in infos if not info.is_dir())
             if declared_total <= 0 or declared_total > _AUDIO_TOTAL_LIMIT:
-                raise _fail(
-                    "resource_archive_too_large", "Audio pack expands beyond its limit"
-                )
+                raise _fail("resource_archive_too_large", "Audio pack expands beyond its limit")
             core._check_free_space(destination.parent, declared_total)
             destination.mkdir(parents=True)
             seen: set[tuple[str, ...]] = set()
             actual_total = 0
             for info in infos:
                 operation.check()
-                parts = core._safe_archive_path(
-                    info.filename, allow_directory_suffix=info.is_dir()
-                )
+                parts = core._safe_archive_path(info.filename, allow_directory_suffix=info.is_dir())
                 if parts in seen:
                     raise _fail(
                         "unsafe_resource_archive",
@@ -593,9 +567,7 @@ def _extract_audio_zip(
                     )
                 target.parent.mkdir(parents=True, exist_ok=True)
                 written = 0
-                with archive.open(info, "r") as source, target.open(
-                    "xb", buffering=0
-                ) as output:
+                with archive.open(info, "r") as source, target.open("xb", buffering=0) as output:
                     while True:
                         operation.check()
                         chunk = source.read(core._COPY_CHUNK_BYTES)
@@ -621,15 +593,11 @@ def _extract_audio_zip(
                         "Audio pack member length is inconsistent",
                     )
             if actual_total != declared_total:
-                raise _fail(
-                    "invalid_resource_archive", "Audio pack length is inconsistent"
-                )
+                raise _fail("invalid_resource_archive", "Audio pack length is inconsistent")
     except BridgeProtocolError:
         raise
     except (zipfile.BadZipFile, RuntimeError, OSError, EOFError) as exc:
-        raise _fail(
-            "invalid_resource_archive", "Audio pack archive is corrupt"
-        ) from exc
+        raise _fail("invalid_resource_archive", "Audio pack archive is corrupt") from exc
 
 
 def _detect_audio_pack_root(extracted: Path) -> Path:
@@ -638,9 +606,7 @@ def _detect_audio_pack_root(extracted: Path) -> Path:
     if detect_pack_format(extracted) is not None:
         return extracted
     candidates = [
-        child
-        for child in extracted.iterdir()
-        if child.is_dir() and not child.is_symlink() and child.name != "__MACOSX"
+        child for child in extracted.iterdir() if child.is_dir() and not child.is_symlink() and child.name != "__MACOSX"
     ]
     matches = [child for child in candidates if detect_pack_format(child) is not None]
     if len(matches) != 1:
@@ -651,9 +617,7 @@ def _detect_audio_pack_root(extracted: Path) -> Path:
     return matches[0]
 
 
-def _validate_audio_index(
-    db_path: Path, content: Path, operation: core._Operation
-) -> None:
+def _validate_audio_index(db_path: Path, content: Path, operation: core._Operation) -> None:
     from anki_miner.services.audio_packs.formats import AUDIO_EXTENSIONS
 
     root = content.resolve()
@@ -671,9 +635,7 @@ def _validate_audio_index(
                         "Audio pack index contains an unsafe media path",
                     )
                 relative = PurePosixPath(value)
-                if relative.is_absolute() or any(
-                    part in {"", ".", ".."} for part in relative.parts
-                ):
+                if relative.is_absolute() or any(part in {"", ".", ".."} for part in relative.parts):
                     raise _fail(
                         "audio_pack_import_failed",
                         "Audio pack index contains an unsafe media path",
@@ -814,9 +776,7 @@ def import_known_words(payload: Mapping[str, object]) -> str:
     )
     operation_id = core._operation_id(payload["operationId"])
     source = core._absolute_path(payload["sourcePath"], name="sourcePath")
-    source_format = _format(
-        payload["sourceFormat"], _KNOWN_WORD_FORMATS, label="sourceFormat"
-    )
+    source_format = _format(payload["sourceFormat"], _KNOWN_WORD_FORMATS, label="sourceFormat")
     home = Path(require_initialized())
     operation_root = _work_root(home, operation_id)
     with core._OPERATIONS.begin(operation_id) as operation:
@@ -844,20 +804,13 @@ def import_known_words(payload: Mapping[str, object]) -> str:
                     "The selected file contains no supported known-word export",
                 ) from exc
             if len(parsed.words) > _MAX_KNOWN_WORDS or any(
-                not word
-                or len(word.encode("utf-8")) > _MAX_WORD_BYTES
-                or "\x00" in word
-                for word in parsed.words
+                not word or len(word.encode("utf-8")) > _MAX_WORD_BYTES or "\x00" in word for word in parsed.words
             ):
-                raise _fail(
-                    "known_words_import_failed", "Known-word import exceeds its limits"
-                )
+                raise _fail("known_words_import_failed", "Known-word import exceeds its limits")
             operation.check()
             db_path = home / "known_words.db"
             if db_path.exists() and (db_path.is_symlink() or not db_path.is_file()):
-                raise _fail(
-                    "known_words_database_unsafe", "Known-word database path is unsafe"
-                )
+                raise _fail("known_words_database_unsafe", "Known-word database path is unsafe")
             database = KnownWordDB(db_path)
             database.initialize()
             added_count = database.add_words(set(parsed.words), source="user")
@@ -989,14 +942,10 @@ def _known_words_inventory(home: Path) -> dict[str, object]:
     try:
         connection = sqlite3.connect(f"file:{database.as_posix()}?mode=ro", uri=True)
         try:
-            columns = {
-                row[1] for row in connection.execute("PRAGMA table_info(known_words)")
-            }
+            columns = {row[1] for row in connection.execute("PRAGMA table_info(known_words)")}
             if not {"lemma", "source"}.issubset(columns):
                 raise sqlite3.DatabaseError("missing known_words schema")
-            for source, count in connection.execute(
-                "SELECT source, COUNT(*) FROM known_words GROUP BY source"
-            ):
+            for source, count in connection.execute("SELECT source, COUNT(*) FROM known_words GROUP BY source"):
                 count = int(count)
                 total += count
                 if source in counts:
@@ -1025,21 +974,13 @@ def _read_index_meta(index_dir: Path) -> dict[str, str] | None:
 
     db_path = index_dir / "index.sqlite"
     try:
-        if (
-            not db_path.is_file()
-            or db_path.is_symlink()
-            or db_path.stat().st_size <= 0
-        ):
+        if not db_path.is_file() or db_path.is_symlink() or db_path.stat().st_size <= 0:
             return None
     except OSError:
         return None
     sidecar = index_dir / "meta.json"
     try:
-        if (
-            sidecar.is_file()
-            and not sidecar.is_symlink()
-            and sidecar.stat().st_size <= core._MAX_MANIFEST_BYTES
-        ):
+        if sidecar.is_file() and not sidecar.is_symlink() and sidecar.stat().st_size <= core._MAX_MANIFEST_BYTES:
             raw = json.loads(sidecar.read_text(encoding="utf-8"))
             if (
                 isinstance(raw, dict)
@@ -1179,9 +1120,7 @@ def _wordset_inventory() -> list[dict[str, object]]:
         label = fallback
         count = 0
         try:
-            with root.joinpath(f"{wordset_id}.txt").open(
-                "r", encoding="utf-8"
-            ) as stream:
+            with root.joinpath(f"{wordset_id}.txt").open("r", encoding="utf-8") as stream:
                 for line in stream:
                     stripped = line.strip()
                     if not stripped:

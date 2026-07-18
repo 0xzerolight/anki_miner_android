@@ -7,7 +7,6 @@ import tempfile
 import unittest
 import zipfile
 
-
 SCRIPT = Path(__file__).resolve().parents[1] / "verify_fallback_apk.py"
 SPEC = importlib.util.spec_from_file_location("verify_fallback_apk", SCRIPT)
 assert SPEC is not None and SPEC.loader is not None
@@ -26,9 +25,9 @@ class FallbackManifestTest(unittest.TestCase):
 
     def test_manifest_rejects_mutable_asset_url(self) -> None:
         payload = json.loads(MODULE.DEFAULT_MANIFEST.read_text(encoding="utf-8"))
-        payload["artifact"]["assetUrl"] = (
-            "https://github.com/KamWithK/AnkiconnectAndroid/releases/latest/download/app.apk"
-        )
+        payload["artifact"][
+            "assetUrl"
+        ] = "https://github.com/KamWithK/AnkiconnectAndroid/releases/latest/download/app.apk"
         with tempfile.TemporaryDirectory() as directory:
             manifest = Path(directory) / "manifest.json"
             manifest.write_text(json.dumps(payload), encoding="utf-8")

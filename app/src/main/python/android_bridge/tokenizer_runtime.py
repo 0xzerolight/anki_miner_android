@@ -41,12 +41,7 @@ def _validate_request(
     tree_sha256 = payload["treeSha256"]
     backend = payload["backend"]
 
-    if (
-        not isinstance(dic_dir, str)
-        or not dic_dir
-        or "\x00" in dic_dir
-        or not os.path.isabs(dic_dir)
-    ):
+    if not isinstance(dic_dir, str) or not dic_dir or "\x00" in dic_dir or not os.path.isabs(dic_dir):
         raise BridgeProtocolError(
             "invalid_unidic_path",
             "Tokenizer dictionary path must be a non-empty absolute string",

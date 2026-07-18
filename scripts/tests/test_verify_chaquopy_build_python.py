@@ -12,7 +12,6 @@ import sys
 import tempfile
 import unittest
 
-
 SCRIPTS_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SCRIPTS_DIR))
 
@@ -45,8 +44,7 @@ class ChaquopyBuildPythonVerificationTest(unittest.TestCase):
             sort_keys=True,
         )
         executable.write_text(
-            "#!/bin/sh\n"
-            "printf '%s\\n' " + repr(identity) + "\n",
+            "#!/bin/sh\n" "printf '%s\\n' " + repr(identity) + "\n",
             encoding="utf-8",
         )
         executable.chmod(executable.stat().st_mode | stat.S_IXUSR)

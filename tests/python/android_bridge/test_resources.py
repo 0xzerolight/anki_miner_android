@@ -29,21 +29,14 @@ from android_bridge.unidic_resource import calculate_unidic_tree_sha256
 
 def test_dictionary_schema_version_matches_vendored_engine() -> None:
     storage_source = (
-        Path(resources.__file__).resolve().parents[1]
-        / "anki_miner"
-        / "services"
-        / "dictionary"
-        / "storage.py"
+        Path(resources.__file__).resolve().parents[1] / "anki_miner" / "services" / "dictionary" / "storage.py"
     )
     module = ast.parse(storage_source.read_text(encoding="utf-8"))
     schema_versions = [
         ast.literal_eval(node.value)
         for node in module.body
         if isinstance(node, ast.Assign)
-        and any(
-            isinstance(target, ast.Name) and target.id == "SCHEMA_VERSION"
-            for target in node.targets
-        )
+        and any(isinstance(target, ast.Name) and target.id == "SCHEMA_VERSION" for target in node.targets)
     ]
 
     assert schema_versions == [resources._DICTIONARY_SCHEMA_VERSION]
@@ -92,9 +85,7 @@ def _tar_bytes(
 ) -> bytes:
     output = io.BytesIO()
     prefix = "fixture-1.0/unidic_lite/dicdir"
-    with tarfile.open(
-        fileobj=output, mode="w:gz", format=tarfile.PAX_FORMAT
-    ) as archive:
+    with tarfile.open(fileobj=output, mode="w:gz", format=tarfile.PAX_FORMAT) as archive:
         root = tarfile.TarInfo("fixture-1.0")
         root.type = tarfile.DIRTYPE
         archive.addfile(root)
@@ -144,25 +135,16 @@ def test_catalog_freezes_external_identity_and_attribution() -> None:
     jitendex = catalog.get("jitendex-2026.07.09.0")
 
     assert isinstance(unidic, UniDicResource)
-    assert (
-        unidic.archive.sha256
-        == "db9d4572d9fdd4d00a97949d4b0741ec480ee05a7e7e2e32f547500dae27b245"
-    )
+    assert unidic.archive.sha256 == "db9d4572d9fdd4d00a97949d4b0741ec480ee05a7e7e2e32f547500dae27b245"
     assert unidic.archive.size_bytes == 47_356_746
     assert unidic.install.file_count == 19
     assert unidic.install.size_bytes == 260_467_176
-    assert (
-        unidic.install.tree_sha256
-        == "bd942f1b395aa7c56fe20321dc7f021930e29107f6b2949a49f5c56caab55ea7"
-    )
+    assert unidic.install.tree_sha256 == "bd942f1b395aa7c56fe20321dc7f021930e29107f6b2949a49f5c56caab55ea7"
     assert {notice.license for notice in unidic.attribution} == {"MIT", "BSD-3-Clause"}
 
     assert isinstance(jitendex, YomitanResource)
     assert jitendex.slot_id == "jitendex"
-    assert (
-        jitendex.archive.sha256
-        == "807d911114af9d2154d270702972aafb2b6a6c2dc2400afa98db870d035c1a0b"
-    )
+    assert jitendex.archive.sha256 == "807d911114af9d2154d270702972aafb2b6a6c2dc2400afa98db870d035c1a0b"
     assert jitendex.dictionary.title == "Jitendex.org [2026-07-09]"
     assert jitendex.dictionary.revision == "2026.07.09.0"
     assert jitendex.dictionary.member_count == 473
@@ -175,9 +157,7 @@ def test_catalog_freezes_external_identity_and_attribution() -> None:
     }
 
 
-def test_catalog_parser_rejects_duplicate_keys_unknown_fields_and_mutable_urls() -> (
-    None
-):
+def test_catalog_parser_rejects_duplicate_keys_unknown_fields_and_mutable_urls() -> None:
     with pytest.raises(BridgeProtocolError, match="duplicate key"):
         parse_catalog_json('{"schemaVersion":1,"schemaVersion":1,"resources":[]}')
 
@@ -191,9 +171,7 @@ def test_catalog_parser_rejects_duplicate_keys_unknown_fields_and_mutable_urls()
     with pytest.raises(BridgeProtocolError, match="HTTPS"):
         parse_catalog_json(json.dumps(payload))
 
-    payload["resources"][0]["archive"]["url"] = load_resource_catalog().payload()[
-        "resources"
-    ][0]["archive"]["url"]
+    payload["resources"][0]["archive"]["url"] = load_resource_catalog().payload()["resources"][0]["archive"]["url"]
     payload["resources"][1]["slotId"] = "ambiguous--slot"
     with pytest.raises(BridgeProtocolError, match="slot id is invalid"):
         parse_catalog_json(json.dumps(payload))
@@ -230,9 +208,7 @@ def test_unidic_install_verifies_tree_then_publishes_completion_manifest_last(
     assert decoded.payload["alreadyInstalled"] is False
     assert decoded.payload["fileCount"] == 19
     assert resources._valid_unidic_install(final, resource)
-    assert json.loads(
-        (final / resources._MANIFEST_NAME).read_text()
-    ) == resources._unidic_manifest(resource)
+    assert json.loads((final / resources._MANIFEST_NAME).read_text()) == resources._unidic_manifest(resource)
     assert not list(final.parent.glob(".installing-*"))
 
     # A proven install is idempotent and does not need to reopen the source.
@@ -323,9 +299,7 @@ def _unsafe_tar_case(tmp_path: Path, case: str) -> tuple[bytes, UniDicResource]:
     "case",
     ["traversal", "unexpected-root", "symlink", "device", "duplicate", "count-excess"],
 )
-def test_unidic_extractor_rejects_unsafe_or_excess_members(
-    tmp_path: Path, case: str
-) -> None:
+def test_unidic_extractor_rejects_unsafe_or_excess_members(tmp_path: Path, case: str) -> None:
     archive, resource = _unsafe_tar_case(tmp_path, case)
     source = _write(tmp_path / f"{case}.tar.gz", archive)
     staging = tmp_path / f"staging-{case}"
@@ -397,12 +371,8 @@ def test_yomitan_import_list_lookup_and_stable_overwrite(
     assert imported.payload["entryCount"] == 1
     assert (home / "dicts" / "fixture" / "android-resource.json").is_file()
 
-    listed = decode_envelope(
-        resources.list_dictionaries({}), expected_type="resource.dictionary.listed"
-    )
-    listed_by_slot = {
-        item["slotId"]: item for item in listed.payload["dictionaries"]
-    }
+    listed = decode_envelope(resources.list_dictionaries({}), expected_type="resource.dictionary.listed")
+    listed_by_slot = {item["slotId"]: item for item in listed.payload["dictionaries"]}
     listed_dictionary = listed_by_slot["fixture"]
     assert listed_dictionary["occupied"] is True
     assert listed_dictionary["valid"] is True
@@ -418,9 +388,7 @@ def test_yomitan_import_list_lookup_and_stable_overwrite(
     )
     assert "cat" in lookup.payload["html"]
 
-    second = _yomitan_zip(
-        tmp_path / "second.zip", term="犬", meaning="dog", revision="2"
-    )
+    second = _yomitan_zip(tmp_path / "second.zip", term="犬", meaning="dog", revision="2")
     replaced = decode_envelope(
         resources.import_dictionary(
             {
@@ -467,13 +435,11 @@ def test_dictionary_inventory_surfaces_corrupt_occupied_catalog_slot(
         source_name=catalog_resource.dictionary.title,
         source_revision=catalog_resource.dictionary.revision,
     )
-    (slot / "android-resource.json").write_bytes(
-        resources._canonical_json_bytes(sidecar)
-    )
+    (slot / "android-resource.json").write_bytes(resources._canonical_json_bytes(sidecar))
 
-    listed = decode_envelope(
-        resources.list_dictionaries({}), expected_type="resource.dictionary.listed"
-    ).payload["dictionaries"]
+    listed = decode_envelope(resources.list_dictionaries({}), expected_type="resource.dictionary.listed").payload[
+        "dictionaries"
+    ]
 
     assert len(listed) == 1
     installed = listed[0]
@@ -482,9 +448,7 @@ def test_dictionary_inventory_surfaces_corrupt_occupied_catalog_slot(
     assert installed["valid"] is False
     assert installed["schemaOk"] is False
     assert installed["catalogResourceId"] == catalog_resource.resource_id
-    assert installed["attribution"] == [
-        item.payload() for item in catalog_resource.attribution
-    ]
+    assert installed["attribution"] == [item.payload() for item in catalog_resource.attribution]
 
 
 def test_dictionary_inventory_discards_forged_catalog_sidecar(
@@ -512,13 +476,11 @@ def test_dictionary_inventory_discards_forged_catalog_sidecar(
         source_revision=catalog_resource.dictionary.revision,
     )
     sidecar["attribution"] = []
-    (slot / "android-resource.json").write_bytes(
-        resources._canonical_json_bytes(sidecar)
-    )
+    (slot / "android-resource.json").write_bytes(resources._canonical_json_bytes(sidecar))
 
-    installed = decode_envelope(
-        resources.list_dictionaries({}), expected_type="resource.dictionary.listed"
-    ).payload["dictionaries"][0]
+    installed = decode_envelope(resources.list_dictionaries({}), expected_type="resource.dictionary.listed").payload[
+        "dictionaries"
+    ][0]
 
     assert installed["catalogResourceId"] is None
     assert installed["attribution"] == []
@@ -548,9 +510,9 @@ def test_dictionary_inventory_does_not_follow_slot_or_sidecar_symlinks(
     root.mkdir()
     (root / "linked").symlink_to(outside, target_is_directory=True)
 
-    listed = decode_envelope(
-        resources.list_dictionaries({}), expected_type="resource.dictionary.listed"
-    ).payload["dictionaries"]
+    listed = decode_envelope(resources.list_dictionaries({}), expected_type="resource.dictionary.listed").payload[
+        "dictionaries"
+    ]
 
     assert listed == [
         {
@@ -743,14 +705,10 @@ def test_cleanup_restores_crash_backup_and_removes_operation_leftovers(
     leftover.mkdir(parents=True)
     (leftover / "partial").write_bytes(b"partial")
 
-    decoded = decode_envelope(
-        resources.cleanup_resources({}), expected_type="resource.cleanup.result"
-    )
+    decoded = decode_envelope(resources.cleanup_resources({}), expected_type="resource.cleanup.result")
 
     assert decoded.payload == {"clean": True}
-    assert (
-        home / "dicts" / "recovered" / "index.sqlite"
-    ).read_bytes() == b"sqlite fixture"
+    assert (home / "dicts" / "recovered" / "index.sqlite").read_bytes() == b"sqlite fixture"
     assert not leftover.exists()
     assert not backup.exists()
 
@@ -818,9 +776,7 @@ def test_resource_cancel_is_sticky_across_pre_registration_race() -> None:
         assert registry.cancel(f"pending-{index}") is True
     with registry.begin("pending-0") as evicted:
         assert not evicted.cancelled.is_set()
-    with registry.begin(
-        f"pending-{resources._MAX_PENDING_RESOURCE_CANCELLATIONS}"
-    ) as newest:
+    with registry.begin(f"pending-{resources._MAX_PENDING_RESOURCE_CANCELLATIONS}") as newest:
         assert newest.cancelled.is_set()
 
 
@@ -868,9 +824,7 @@ def test_frequency_import_is_indexed_inventory_visible_and_no_replace_by_default
     assert imported.payload["entryCount"] == 2
     final = home / "freqs" / "fixture-freq"
     assert (final / "index.sqlite").is_file()
-    assert (final / "source.csv").read_text(encoding="utf-8") == source.read_text(
-        encoding="utf-8"
-    )
+    assert (final / "source.csv").read_text(encoding="utf-8") == source.read_text(encoding="utf-8")
     listed = decode_envelope(
         local_resources.list_local_resources({}),
         expected_type="resource.local.listed",
@@ -922,9 +876,7 @@ def test_pitch_csv_import_publishes_canonical_file_and_inventory(
 
     assert imported.payload["entryCount"] == 1
     assert imported.payload["sourceName"] == "Fixture Pitch"
-    assert (home / "pitch_accent.csv").read_text(encoding="utf-8") == source.read_text(
-        encoding="utf-8"
-    )
+    assert (home / "pitch_accent.csv").read_text(encoding="utf-8") == source.read_text(encoding="utf-8")
     listed = decode_envelope(
         local_resources.list_local_resources({}),
         expected_type="resource.local.listed",
@@ -971,9 +923,7 @@ def _ajt_audio_zip(path: Path) -> Path:
         "files": {"cat.mp3": {"kana_reading": "ねこ"}},
     }
     with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-        archive.writestr(
-            "fixture-pack/index.json", json.dumps(index, ensure_ascii=False)
-        )
+        archive.writestr("fixture-pack/index.json", json.dumps(index, ensure_ascii=False))
         archive.writestr("fixture-pack/media/cat.mp3", b"fixture mp3")
     return path
 
@@ -1204,9 +1154,7 @@ def test_cleanup_restores_frequency_and_audio_pack_backups(
         if require_content:
             (backup / "content").mkdir()
 
-    decoded = decode_envelope(
-        resources.cleanup_resources({}), expected_type="resource.cleanup.result"
-    )
+    decoded = decode_envelope(resources.cleanup_resources({}), expected_type="resource.cleanup.result")
 
     assert decoded.payload == {"clean": True}
     assert (home / "freqs" / "fixture" / "index.sqlite").is_file()

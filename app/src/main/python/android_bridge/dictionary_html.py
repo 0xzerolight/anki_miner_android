@@ -82,11 +82,7 @@ def _contains_remote_url(value: str) -> bool:
     # Attribute values may be CSS rather than a bare URL.  Scheme matching is
     # intentionally ASCII-case-insensitive and runs after HTML entity decode.
     lowered = value.lower()
-    return (
-        "http://" in lowered
-        or "https://" in lowered
-        or lowered.lstrip().startswith("//")
-    )
+    return "http://" in lowered or "https://" in lowered or lowered.lstrip().startswith("//")
 
 
 def _marked_local_image(
@@ -192,9 +188,7 @@ def sanitize_dictionary_html(
         if name is None or name.group(1).lower() != "img":
             continue
         attrs = _attribute_map(tag)
-        if "src" in attrs and not _tag_has_one_marked_local_source(
-            tag, local_source_allowed
-        ):
+        if "src" in attrs and not _tag_has_one_marked_local_source(tag, local_source_allowed):
             raise BridgeProtocolError(
                 "unsafe_dictionary_html",
                 "Dictionary HTML contains an unsafe image source",

@@ -16,9 +16,7 @@ CATALOG_SCHEMA_VERSION = 1
 _CATALOG_PATH = Path(__file__).with_name("resource_catalog_v1.json")
 _MAX_CATALOG_BYTES = 64 * 1024
 _ID_RE = re.compile(r"(?!.*\.\.)[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?")
-_SLOT_ID_RE = re.compile(
-    r"(?!.*(?:\.\.|--))[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?"
-)
+_SLOT_ID_RE = re.compile(r"(?!.*(?:\.\.|--))[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?")
 _SHA256_RE = re.compile(r"[0-9a-f]{64}")
 
 
@@ -42,11 +40,7 @@ def _exact(value: Any, keys: set[str], *, context: str) -> dict[str, Any]:
 
 
 def _text(value: Any, *, context: str, max_bytes: int = 4096) -> str:
-    if (
-        not isinstance(value, str)
-        or not value
-        or len(value.encode("utf-8")) > max_bytes
-    ):
+    if not isinstance(value, str) or not value or len(value.encode("utf-8")) > max_bytes:
         raise _error(f"{context} must be a non-empty bounded string")
     return value
 
@@ -88,9 +82,7 @@ def _https_url(value: Any, *, context: str) -> str:
         or parsed.password is not None
         or parsed.fragment
     ):
-        raise _error(
-            f"{context} must be an absolute HTTPS URL without credentials or fragment"
-        )
+        raise _error(f"{context} must be an absolute HTTPS URL without credentials or fragment")
     return candidate
 
 
@@ -110,9 +102,7 @@ class Attribution:
         )
         return cls(
             name=_text(item["name"], context="attribution name", max_bytes=256),
-            copyright=_text(
-                item["copyright"], context="attribution copyright", max_bytes=512
-            ),
+            copyright=_text(item["copyright"], context="attribution copyright", max_bytes=512),
             license=_text(item["license"], context="attribution license", max_bytes=64),
             url=_https_url(item["url"], context="attribution URL"),
         )
@@ -180,9 +170,7 @@ class UniDicInstallIdentity:
             },
             context="UniDic install identity",
         )
-        prefix = _text(
-            item["memberPrefix"], context="UniDic member prefix", max_bytes=256
-        )
+        prefix = _text(item["memberPrefix"], context="UniDic member prefix", max_bytes=256)
         path = PurePosixPath(prefix)
         if (
             not prefix.endswith("/")
@@ -193,13 +181,9 @@ class UniDicInstallIdentity:
         ):
             raise _error("UniDic member prefix is unsafe")
         file_count = _positive_int(item["fileCount"], context="UniDic file count")
-        member_limit = _positive_int(
-            item["archiveMemberLimit"], context="UniDic archive member limit"
-        )
+        member_limit = _positive_int(item["archiveMemberLimit"], context="UniDic archive member limit")
         if member_limit < file_count:
-            raise _error(
-                "UniDic archive member limit is below the installed file count"
-            )
+            raise _error("UniDic archive member limit is below the installed file count")
         return cls(
             member_prefix=prefix,
             tree_sha256=_sha256(item["treeSha256"], context="UniDic tree hash"),
@@ -246,26 +230,12 @@ class YomitanDictionaryIdentity:
             context="Yomitan dictionary identity",
         )
         format_version = _positive_int(item["format"], context="Yomitan format")
-        member_count = _positive_int(
-            item["memberCount"], context="Yomitan member count"
-        )
-        uncompressed = _positive_int(
-            item["uncompressedBytes"], context="Yomitan uncompressed size"
-        )
-        member_limit = _positive_int(
-            item["archiveMemberLimit"], context="Yomitan archive member limit"
-        )
-        total_limit = _positive_int(
-            item["uncompressedBytesLimit"], context="Yomitan uncompressed size limit"
-        )
-        file_limit = _positive_int(
-            item["fileBytesLimit"], context="Yomitan file size limit"
-        )
-        if (
-            member_count > member_limit
-            or uncompressed > total_limit
-            or file_limit > total_limit
-        ):
+        member_count = _positive_int(item["memberCount"], context="Yomitan member count")
+        uncompressed = _positive_int(item["uncompressedBytes"], context="Yomitan uncompressed size")
+        member_limit = _positive_int(item["archiveMemberLimit"], context="Yomitan archive member limit")
+        total_limit = _positive_int(item["uncompressedBytesLimit"], context="Yomitan uncompressed size limit")
+        file_limit = _positive_int(item["fileBytesLimit"], context="Yomitan file size limit")
+        if member_count > member_limit or uncompressed > total_limit or file_limit > total_limit:
             raise _error("Yomitan pinned identity exceeds its import limits")
         return cls(
             title=_text(item["title"], context="Yomitan title", max_bytes=512),
@@ -345,9 +315,7 @@ class ResourceCatalog:
         for resource in self.resources:
             if resource.resource_id == resource_id:
                 return resource
-        raise BridgeProtocolError(
-            "unknown_resource", f"Unknown pinned resource: {resource_id}"
-        )
+        raise BridgeProtocolError("unknown_resource", f"Unknown pinned resource: {resource_id}")
 
     def payload(self) -> dict[str, object]:
         return {
@@ -374,9 +342,7 @@ def _parse_resource(value: Any) -> PinnedResource:
         )
         return UniDicResource(
             resource_id=_resource_id(item["resourceId"], context="resource id"),
-            display_name=_text(
-                item["displayName"], context="display name", max_bytes=256
-            ),
+            display_name=_text(item["displayName"], context="display name", max_bytes=256),
             archive=ArchiveIdentity.parse(item["archive"], expected_format="tar.gz"),
             install=UniDicInstallIdentity.parse(item["install"]),
             attribution=_attribution(item["attribution"]),
@@ -397,9 +363,7 @@ def _parse_resource(value: Any) -> PinnedResource:
         )
         return YomitanResource(
             resource_id=_resource_id(item["resourceId"], context="resource id"),
-            display_name=_text(
-                item["displayName"], context="display name", max_bytes=256
-            ),
+            display_name=_text(item["displayName"], context="display name", max_bytes=256),
             slot_id=_slot_id(item["slotId"], context="dictionary slot id"),
             archive=ArchiveIdentity.parse(item["archive"], expected_format="zip"),
             dictionary=YomitanDictionaryIdentity.parse(item["dictionary"]),
