@@ -275,7 +275,6 @@ private fun SettingsScreen(
                 stringResource(R.string.settings_deck_name),
                 stringResource(R.string.settings_deck_default),
             )
-            Text(stringResource(R.string.settings_note_managed))
             BooleanSetting(
                 label = stringResource(R.string.settings_tags_override),
                 help = stringResource(R.string.settings_tags_override_help),
@@ -292,7 +291,12 @@ private fun SettingsScreen(
                 enabled = tagsOverride,
             )
         }
-        AnkiTargetCard(setup, setupViewModel::provisionModel)
+        AnkiTargetCard(
+            setup,
+            setupViewModel::selectNoteType,
+            setupViewModel::setFieldMapping,
+            setupViewModel::verifyNoteType,
+        )
         AnkiRecoveryCard(
             state = setup,
             onReconcile = setupViewModel::reconcileInterruptedWork,

@@ -87,21 +87,21 @@ class MiningRunAdmissionTest {
     }
 
     @Test
-    fun `first party model and remediation readiness are mandatory`() {
+    fun `note type selection and remediation readiness are mandatory`() {
         val ankiReady = AnkiProviderReadiness.Ready(2, 24L)
         val blocked =
             MiningRunAdmissionState(
                 ankiReady,
                 NotificationPermissionReadiness.READY,
                 AnkiMiningTargetReadiness.Blocked(
-                    "Create the Anki Miner note type before mining",
+                    "Select and verify a note type in Settings before mining",
                     retryable = true,
                 ),
             )
 
         assertFalse(blocked.isReady)
         assertEquals(
-            "Create the Anki Miner note type before mining",
+            "Select and verify a note type in Settings before mining",
             requireNotNull(blocked.stableFailure).message,
         )
     }

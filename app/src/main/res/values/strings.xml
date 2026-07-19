@@ -113,21 +113,26 @@
     <string name="runtime_work_settings_anki_active">Anki setup is active. Resource and other Anki setup actions are temporarily unavailable.</string>
     <string name="readiness_unidic_required">The verified UniDic tokenizer resource is required.</string>
     <string name="readiness_anki_required">Install and initialize AnkiDroid, then allow database access.</string>
-    <string name="readiness_model_required">Create or recover the verified Anki Miner note type in Settings.</string>
+    <string name="readiness_model_required">Select and verify an Anki note type in Settings.</string>
     <string name="readiness_recovery_required">Resolve pending Anki recovery items in Settings.</string>
     <string name="readiness_resource_operation">Wait for the active setup or resource operation to finish.</string>
     <string name="readiness_unknown">Readiness could not be confirmed.</string>
 
-    <string name="anki_model_title">Anki Miner note type — required</string>
-    <string name="anki_model_description">Anki Miner creates and verifies its own fields and card template. It never overwrites a different note type with the same name.</string>
-    <string name="anki_model_not_checked">The note type has not been checked yet.</string>
-    <string name="anki_model_ready">The exact first-party note type is ready.</string>
-    <string name="anki_model_missing">The first-party note type has not been created.</string>
-    <string name="anki_model_conflict_help">Rename or remove the conflicting note type in AnkiDroid, then check again. Anki Miner will not change it.</string>
-    <string name="anki_model_restart_help">An earlier completed setup can be retired only after the current note type is verified exactly or found missing. A differing same-name note type is never changed.</string>
-    <string name="anki_model_resume">Resume verified setup</string>
-    <string name="anki_model_restart">Restart verified setup</string>
-    <string name="anki_model_create">Create Anki Miner note type</string>
+    <string name="anki_note_type_title">Anki note type</string>
+    <string name="anki_note_type_description">Anki Miner writes cards into a note type you already have in AnkiDroid. It never creates a note type and never changes one — pick a note type and map its fields.</string>
+    <string name="anki_note_type_connect_first">Connect AnkiDroid first, then come back here to choose a note type.</string>
+    <string name="anki_note_type_picker">Note type</string>
+    <string name="anki_field_mapping_title">Field mapping</string>
+    <string name="anki_field_none">Not mapped</string>
+    <string name="anki_field_word_help">Word must be the note type\'s first field — AnkiDroid uses that field to detect duplicates.</string>
+    <string name="anki_note_type_verify">Re-check</string>
+    <string name="anki_note_type_status_verified">Verified. This note type and its mapped fields are ready for mining.</string>
+    <string name="anki_note_type_status_not_selected">Choose a note type to write cards into.</string>
+    <string name="anki_note_type_status_missing">The selected note type no longer exists in AnkiDroid. Choose another one.</string>
+    <string name="anki_note_type_status_fields_missing">Some required fields are not mapped to a field in this note type.</string>
+    <string name="anki_note_type_status_first_field">The Word field must be the note type\'s first field. Map it there, or choose a note type whose first field holds the word.</string>
+    <string name="anki_note_type_status_provider_error">AnkiDroid could not be read. Re-check after confirming it is open and access is granted.</string>
+    <string name="anki_note_type_guidance">This note type is missing fields Anki Miner needs. Import a Japanese mining note type into AnkiDroid, then re-check.</string>
     <string name="anki_recovery_title">Anki recovery</string>
     <string name="anki_recovery_clear">No unresolved Anki operations were found.</string>
     <string name="anki_recovery_attention">%1$d Anki operation(s) need review before mining.</string>
@@ -230,7 +235,7 @@
     <string name="readiness_python">Embedded Python: %1$s</string>
     <string name="readiness_resource_recovery">Resource recovery: %1$s</string>
     <string name="readiness_ankidroid">AnkiDroid: %1$s</string>
-    <string name="readiness_anki_model">Anki Miner note type: %1$s</string>
+    <string name="readiness_anki_model">Note type: %1$s</string>
     <string name="readiness_anki_recovery">Anki recovery: %1$s</string>
     <string name="readiness_notifications">Notifications: %1$s</string>
     <string name="readiness_unidic">UniDic: %1$s</string>
@@ -264,7 +269,7 @@
     <string name="dictionary_lookup_label">%1$s: %2$s</string>
 
     <string name="settings_title">Settings</string>
-    <string name="settings_intro">Blank processing values use the current engine defaults. Every job uses the first-party Anki Miner note type created in the Anki section below.</string>
+    <string name="settings_intro">Blank processing values use the current engine defaults.</string>
     <string name="settings_anki_target">Anki</string>
     <string name="settings_dictionaries">Dictionaries</string>
     <string name="settings_audio_section">Audio</string>
@@ -282,8 +287,10 @@
     <string name="wizard_dictionary_title">Dictionary</string>
     <string name="wizard_dictionary_body">Choose an offline dictionary for definitions on your cards. Jitendex is recommended; JMdict is a lighter alternative. You can install one, both, or none.</string>
     <string name="wizard_ankidroid_title">AnkiDroid</string>
-    <string name="wizard_ankidroid_body">Anki Miner creates notes through AnkiDroid. Grant access and create the Anki Miner note type.</string>
+    <string name="wizard_ankidroid_body">Anki Miner writes cards through AnkiDroid. Install it if you need to, then grant database access.</string>
     <string name="wizard_ankidroid_ready">AnkiDroid is ready.</string>
+    <string name="wizard_note_type_title">Note type</string>
+    <string name="wizard_note_type_body">Choose the AnkiDroid note type Anki Miner will write into, map its fields, and verify it. Anki Miner never creates or changes a note type.</string>
     <string name="wizard_done_title">All set</string>
     <string name="wizard_done_body">Review readiness below. Anything not finished here is available in Settings.</string>
     <string name="wizard_step_position">Step %1$d of %2$d</string>
@@ -295,7 +302,6 @@
     <string name="wizard_finish">Finish</string>
     <string name="settings_deck_name">Deck name</string>
     <string name="settings_deck_default">Android default: Anki Miner</string>
-    <string name="settings_note_managed">Note type: Anki Miner. Setup creates and verifies its exact fields and card template before mining.</string>
     <string name="settings_tags_override">Override note tags</string>
     <string name="settings_tags_override_help">Enable this to use the text below; an empty override adds no tags.</string>
     <string name="settings_tags">Tags</string>

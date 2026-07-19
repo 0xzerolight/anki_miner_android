@@ -1,12 +1,11 @@
 package com.ankiminer.android.vm
 
-import com.ankiminer.android.anki.provider.AnkiMinerModelProvisioningResult
-import com.ankiminer.android.anki.provider.AnkiMinerModelReadyOrigin
 import com.ankiminer.android.anki.provider.AnkiPendingRemediation
 import com.ankiminer.android.anki.provider.AnkiProviderReadiness
 import com.ankiminer.android.anki.provider.AnkiRemediationActionKind
 import com.ankiminer.android.anki.provider.AnkiRemediationInventory
 import com.ankiminer.android.anki.provider.AnkiRemediationType
+import com.ankiminer.android.anki.provider.NoteTypeSetupStatus
 import com.ankiminer.android.data.anki.AnkiSetupOperation
 import com.ankiminer.android.data.RuntimeWorkCoordinator
 import com.ankiminer.android.data.resources.ResourceStartupReadiness
@@ -26,14 +25,11 @@ class SetupUiStateTest {
                 python = PythonRuntimeReadiness.Ready("/private/runtime"),
                 resourceStartup = ResourceStartupReadiness.READY,
                 anki = AnkiProviderReadiness.Ready(2, 24L),
-                model =
-                    AnkiMinerModelProvisioningResult.Ready(
-                        7L,
-                        AnkiMinerModelReadyOrigin.EXISTING_EXACT,
-                    ),
+                noteTypeStatus = NoteTypeSetupStatus.Verified(modelId = 1L),
                 uniDicInstalled = true,
             )
 
+        assertTrue(recovered.targetReady)
         assertTrue(recovered.isMiningReady)
         assertTrue(
             recovered.copy(
@@ -41,6 +37,10 @@ class SetupUiStateTest {
             ).isMiningReady,
         )
         assertFalse(recovered.copy(uniDicInstalled = false).isMiningReady)
+        val fieldsMissing =
+            recovered.copy(noteTypeStatus = NoteTypeSetupStatus.FieldsMissing(listOf("sentence")))
+        assertFalse(fieldsMissing.targetReady)
+        assertFalse(fieldsMissing.isMiningReady)
         assertFalse(
             recovered.copy(resourceStartup = ResourceStartupReadiness.FAILED).isMiningReady,
         )

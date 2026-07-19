@@ -22,6 +22,6 @@ class OnboardingWizardTest {
         assertEquals(WizardStep.TOKENIZER, nextWizardStep(WizardStep.WELCOME))
         assertEquals(WizardStep.DONE, nextWizardStep(WizardStep.DONE))
         assertEquals(WizardStep.WELCOME, previousWizardStep(WizardStep.WELCOME))
-        assertEquals(WizardStep.ANKIDROID, previousWizardStep(WizardStep.DONE))
+        assertEquals(WizardStep.ANKIDROID_NOTE_TYPE, previousWizardStep(WizardStep.DONE))
     }
 }

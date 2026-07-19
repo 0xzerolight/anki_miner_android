@@ -58,6 +58,43 @@ internal class AnkiProviderReadService(
         return TargetSnapshot(deck, model)
     }
 
+    /** Picker read of every user note type, for the setup UI. */
+    fun listNoteTypes(cancellation: AnkiCancellation): List<ModelSummary> =
+        targets.listModelSummaries(cancellation)
+
+    /**
+     * Detect/verify a user-selected note type + field mapping. Never creates a note type; the
+     * authoritative mining gate stays the admission probe plus the Python `verify_card_target`.
+     */
+    fun verifyUserNoteType(
+        noteType: String,
+        fieldMap: Map<String, String>,
+        cancellation: AnkiCancellation,
+    ): NoteTypeSetupStatus {
+        val model =
+            try {
+                targets.readModelByNameOrNull(noteType, cancellation)
+            } catch (f: AnkiReadFailure) {
+                return NoteTypeSetupStatus.ProviderError(f.retryable, f.stableMessage)
+            } ?: return NoteTypeSetupStatus.NoteTypeMissing
+        val missing =
+            AnkiFieldKeys.REQUIRED.filter { key ->
+                val v = fieldMap[key].orEmpty()
+                v.isEmpty() || v !in model.fieldNames
+            }
+        val missingOptional =
+            fieldMap.keys.filter { key ->
+                key !in AnkiFieldKeys.REQUIRED &&
+                    fieldMap[key].orEmpty().let { it.isNotEmpty() && it !in model.fieldNames }
+            }
+        val allMissing = (missing + missingOptional).distinct().sorted()
+        if (allMissing.isNotEmpty()) return NoteTypeSetupStatus.FieldsMissing(allMissing)
+        if (fieldMap[AnkiFieldKeys.WORD] != model.fieldNames.firstOrNull()) {
+            return NoteTypeSetupStatus.FirstFieldMismatch
+        }
+        return NoteTypeSetupStatus.Verified(model.id)
+    }
+
     fun readTargetById(
         owner: AnkiRunStateRegistry.RunOwner,
         expected: TargetSnapshot,
@@ -473,6 +510,38 @@ internal class TargetSnapshotReader(private val provider: CheckedProvider) {
         if (matches.isEmpty()) return null
         if (matches.size != 1) throw targetInvalid("The selected Anki note type is ambiguous")
         return completeModel(matches.single(), cancellation)
+    }
+
+    /**
+     * Lightweight picker read: every model's id/name/field names, without completing templates.
+     * A single unsupported model (TARGET_INVALID) is skipped so it cannot break the whole list;
+     * any other read failure propagates.
+     */
+    fun listModelSummaries(cancellation: AnkiCancellation): List<ModelSummary> {
+        val summaries = ArrayList<ModelSummary>()
+        provider.queryRequired(MODEL_LIST_QUERY, cancellation).use { cursor ->
+            requireProjection(cursor, MODEL_LIST_QUERY)
+            var rows = 0
+            while (cursor.moveToNext()) {
+                ensureActive(cancellation)
+                rows += 1
+                if (rows > MAX_PROVIDER_LIST_ROWS) throw queryFailed()
+                val row =
+                    try {
+                        cursor.readModelRow()
+                    } catch (failure: AnkiReadFailure) {
+                        if (failure.code == AnkiErrorCode.TARGET_INVALID) continue
+                        throw failure
+                    }
+                summaries +=
+                    ModelSummary(
+                        id = row.id,
+                        name = row.name,
+                        fieldNames = row.fieldNames,
+                    )
+            }
+        }
+        return summaries
     }
 
     fun readModelById(

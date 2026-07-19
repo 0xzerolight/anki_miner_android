@@ -1,36 +1,12 @@
 package com.ankiminer.android.anki.provider
 
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertThrows
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ProviderMutationContractTest {
-    @Test
-    fun `model receipts accept only exact canonical positive model item URI`() {
-        val raw = "content://com.ichi2.anki.flashcards/models/42"
-        assertEquals(ModelCreateReceipt(42L, raw), ModelCreateReceiptValidator.validate(raw))
-
-        listOf<String?>(
-            null,
-            "",
-            "content://com.ichi2.anki.flashcards/models",
-            "content://com.ichi2.anki.flashcards/models/0",
-            "content://com.ichi2.anki.flashcards/models/042",
-            "content://com.ichi2.anki.flashcards/models/-1",
-            "content://com.ichi2.anki.flashcards/models/1/templates",
-            "content://com.ichi2.anki.flashcards/models/1?x=1",
-            "content://other/models/1",
-        ).forEach { assertNull(it, ModelCreateReceiptValidator.validate(it)) }
-        assertTrue(ModelTemplateUpdateReceiptValidator.validate(1))
-        listOf(Int.MIN_VALUE, -1, 0, 2, Int.MAX_VALUE).forEach { count ->
-            assertFalse(count.toString(), ModelTemplateUpdateReceiptValidator.validate(count))
-        }
-    }
-
     @Test
     fun `media receipt retains one safe canonical decoded filename`() {
         val raw = "file:///anki_miner_%E6%97%A5.mp3"

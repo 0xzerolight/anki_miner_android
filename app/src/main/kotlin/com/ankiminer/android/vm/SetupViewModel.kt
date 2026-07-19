@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.CreationExtras
 import com.ankiminer.android.anki.provider.AnkiExternalReviewOutcome
+import com.ankiminer.android.anki.provider.AnkiFieldAutoMap
 import com.ankiminer.android.anki.provider.AnkiRemediationCommand
 import com.ankiminer.android.data.anki.AnkiSetupManager
 import com.ankiminer.android.data.RuntimeWorkCoordinator
@@ -79,7 +80,10 @@ internal class SetupViewModel(
                 resourceStartup = resourceState.startupReadiness,
                 anki = admission.anki,
                 notifications = admission.notifications,
-                model = ankiState.model,
+                noteTypeStatus = ankiState.noteTypeStatus,
+                availableNoteTypes = ankiState.availableNoteTypes,
+                noteType = appSettings.noteType,
+                fieldMap = appSettings.fieldMap,
                 remediations = ankiState.remediations,
                 ankiOperation = ankiState.operation,
                 ankiFailure = ankiState.failure,
@@ -141,9 +145,33 @@ internal class SetupViewModel(
         }
     }
 
-    fun provisionModel() {
+    fun selectNoteType(name: String) {
         if (uiState.value.busy) return
-        ankiSetup.provisionModel()
+        val fields =
+            uiState.value.availableNoteTypes.firstOrNull { it.name == name }?.fieldNames
+                ?: emptyList()
+        val map = AnkiFieldAutoMap.autoMap(fields)
+        viewModelScope.launch {
+            repository.update { it.copy(noteType = name, fieldMap = map) }
+            ankiSetup.refresh(name, map)
+        }
+    }
+
+    fun setFieldMapping(key: String, field: String) {
+        if (uiState.value.busy) return
+        val current = uiState.value.fieldMap.toMutableMap()
+        if (field.isEmpty()) current.remove(key) else current[key] = field
+        val map = current.toMap()
+        val noteType = uiState.value.noteType
+        viewModelScope.launch {
+            repository.update { it.copy(fieldMap = map) }
+            ankiSetup.refresh(noteType, map)
+        }
+    }
+
+    fun verifyNoteType() {
+        if (uiState.value.busy) return
+        ankiSetup.refresh(uiState.value.noteType, uiState.value.fieldMap)
     }
 
     fun reconcileInterruptedWork() {

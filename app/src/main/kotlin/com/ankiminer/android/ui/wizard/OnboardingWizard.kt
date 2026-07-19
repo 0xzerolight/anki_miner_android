@@ -53,6 +53,7 @@ internal enum class WizardStep {
     TOKENIZER,
     DICTIONARY,
     ANKIDROID,
+    ANKIDROID_NOTE_TYPE,
     DONE,
 }
 
@@ -97,6 +98,7 @@ internal fun OnboardingWizard(
                         WizardStep.TOKENIZER -> R.string.wizard_tokenizer_title
                         WizardStep.DICTIONARY -> R.string.wizard_dictionary_title
                         WizardStep.ANKIDROID -> R.string.wizard_ankidroid_title
+                        WizardStep.ANKIDROID_NOTE_TYPE -> R.string.wizard_note_type_title
                         WizardStep.DONE -> R.string.wizard_done_title
                     },
                 ),
@@ -142,7 +144,19 @@ internal fun OnboardingWizard(
                         onInstallAnkiDroid = onInstallAnkiDroid,
                         onOpenAnkiDroid = onOpenAnkiDroid,
                     )
-                    AnkiTargetCard(state, viewModel::provisionModel)
+                    state.ankiOperation?.let { AnkiOperationCard() }
+                    state.ankiFailure?.let { failure ->
+                        AnkiFailureCard(failure, viewModel::dismissAnkiFailure)
+                    }
+                }
+                WizardStep.ANKIDROID_NOTE_TYPE -> {
+                    Text(stringResource(R.string.wizard_note_type_body))
+                    AnkiTargetCard(
+                        state,
+                        viewModel::selectNoteType,
+                        viewModel::setFieldMapping,
+                        viewModel::verifyNoteType,
+                    )
                     state.ankiOperation?.let { AnkiOperationCard() }
                     state.ankiFailure?.let { failure ->
                         AnkiFailureCard(failure, viewModel::dismissAnkiFailure)

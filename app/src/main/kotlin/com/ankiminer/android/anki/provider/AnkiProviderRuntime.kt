@@ -49,11 +49,6 @@ internal class AnkiProviderRuntime(
             registry = registry,
             journal = AnkiMutationTargetVerificationJournal(store),
         )
-    private val modelProvisioner =
-        AnkiMinerModelProvisioner(
-            gateway = gateway,
-            journal = AtomicFileAnkiMinerModelProvisioningJournal(context),
-        )
     private val remediation =
         AnkiRemediationService(
             journal = StoreAnkiRemediationJournal(store),
@@ -96,13 +91,14 @@ internal class AnkiProviderRuntime(
     fun probeReadiness(cancellation: AnkiCancellation): AnkiProviderReadiness =
         readiness.probe(cancellation)
 
-    fun inspectAnkiMinerModel(
-        cancellation: AnkiCancellation,
-    ): AnkiMinerModelProvisioningResult = modelProvisioner.inspect(cancellation)
+    fun listNoteTypes(cancellation: AnkiCancellation): List<ModelSummary> =
+        reads.listNoteTypes(cancellation)
 
-    fun provisionAnkiMinerModel(
+    fun verifyUserNoteType(
+        noteType: String,
+        fieldMap: Map<String, String>,
         cancellation: AnkiCancellation,
-    ): AnkiMinerModelProvisioningResult = modelProvisioner.provision(cancellation)
+    ): NoteTypeSetupStatus = reads.verifyUserNoteType(noteType, fieldMap, cancellation)
 
     fun remediationInventory(
         cancellation: AnkiCancellation,

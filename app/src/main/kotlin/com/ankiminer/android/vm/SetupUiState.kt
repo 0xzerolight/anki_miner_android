@@ -1,8 +1,9 @@
 package com.ankiminer.android.vm
 
 import com.ankiminer.android.anki.provider.AnkiProviderReadiness
-import com.ankiminer.android.anki.provider.AnkiMinerModelProvisioningResult
 import com.ankiminer.android.anki.provider.AnkiRemediationInventory
+import com.ankiminer.android.anki.provider.ModelSummary
+import com.ankiminer.android.anki.provider.NoteTypeSetupStatus
 import com.ankiminer.android.data.anki.AnkiSetupFailure
 import com.ankiminer.android.data.anki.AnkiSetupOperation
 import com.ankiminer.android.data.RuntimeWorkCoordinator
@@ -29,7 +30,10 @@ internal data class SetupUiState(
     val resourceStartup: ResourceStartupReadiness = ResourceStartupReadiness.PENDING,
     val anki: AnkiProviderReadiness = AnkiProviderReadiness.NotChecked,
     val notifications: NotificationPermissionReadiness = NotificationPermissionReadiness.READY,
-    val model: AnkiMinerModelProvisioningResult? = null,
+    val noteTypeStatus: NoteTypeSetupStatus = NoteTypeSetupStatus.NotSelected,
+    val availableNoteTypes: List<ModelSummary> = emptyList(),
+    val noteType: String? = null,
+    val fieldMap: Map<String, String> = emptyMap(),
     val remediations: AnkiRemediationInventory = AnkiRemediationInventory(emptyList()),
     val ankiOperation: AnkiSetupOperation? = null,
     val ankiFailure: AnkiSetupFailure? = null,
@@ -83,7 +87,7 @@ internal data class SetupUiState(
         get() = notifications == NotificationPermissionReadiness.READY
 
     val modelReady: Boolean
-        get() = model is AnkiMinerModelProvisioningResult.Ready
+        get() = noteTypeStatus is NoteTypeSetupStatus.Verified
 
     val recoveryReady: Boolean
         get() = remediations.pending.isEmpty()

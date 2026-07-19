@@ -1,9 +1,10 @@
 package com.ankiminer.android.data.anki
 
 import com.ankiminer.android.anki.provider.AnkiCancellation
-import com.ankiminer.android.anki.provider.AnkiMinerModelProvisioningResult
 import com.ankiminer.android.anki.provider.AnkiRemediationCommand
 import com.ankiminer.android.anki.provider.AnkiRemediationInventory
+import com.ankiminer.android.anki.provider.ModelSummary
+import com.ankiminer.android.anki.provider.NoteTypeSetupStatus
 import com.ankiminer.android.data.RuntimeWorkCoordinator
 import java.util.concurrent.Executor
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -13,7 +14,6 @@ import kotlinx.coroutines.flow.update
 
 internal enum class AnkiSetupOperation {
     REFRESHING,
-    PROVISIONING_MODEL,
     RECONCILING,
     RESOLVING_REMEDIATION,
 }
@@ -24,7 +24,8 @@ internal data class AnkiSetupFailure(
 )
 
 internal data class AnkiSetupManagerState(
-    val model: AnkiMinerModelProvisioningResult? = null,
+    val noteTypeStatus: NoteTypeSetupStatus = NoteTypeSetupStatus.NotSelected,
+    val availableNoteTypes: List<ModelSummary> = emptyList(),
     val remediations: AnkiRemediationInventory = AnkiRemediationInventory(emptyList()),
     val operation: AnkiSetupOperation? = null,
     val failure: AnkiSetupFailure? = null,
@@ -35,9 +36,13 @@ internal data class AnkiSetupManagerState(
 
 /** Worker-only provider surfaces kept behind one process-owned setup controller. */
 internal interface AnkiSetupBackend {
-    fun inspectModel(cancellation: AnkiCancellation): AnkiMinerModelProvisioningResult
+    fun listNoteTypes(cancellation: AnkiCancellation): List<ModelSummary>
 
-    fun provisionModel(cancellation: AnkiCancellation): AnkiMinerModelProvisioningResult
+    fun verifyNoteType(
+        noteType: String?,
+        fieldMap: Map<String, String>,
+        cancellation: AnkiCancellation,
+    ): NoteTypeSetupStatus
 
     fun remediationInventory(cancellation: AnkiCancellation): AnkiRemediationInventory
 
@@ -52,9 +57,7 @@ internal interface AnkiSetupBackend {
 internal interface AnkiSetupManager {
     val state: StateFlow<AnkiSetupManagerState>
 
-    fun refresh()
-
-    fun provisionModel()
+    fun refresh(noteType: String?, fieldMap: Map<String, String>)
 
     fun reconcileInterruptedWork()
 
@@ -82,22 +85,18 @@ internal class ProcessAnkiSetupManager(
     private val monitor = Any()
     private var active = false
 
-    override fun refresh() {
+    override fun refresh(noteType: String?, fieldMap: Map<String, String>) {
         runOperation(AnkiSetupOperation.REFRESHING) {
-            val model = backend.inspectModel(AnkiCancellation.NONE)
+            val available = backend.listNoteTypes(AnkiCancellation.NONE)
+            val status = backend.verifyNoteType(noteType, fieldMap, AnkiCancellation.NONE)
             val remediations = backend.remediationInventory(AnkiCancellation.NONE)
             mutableState.update { current ->
-                current.copy(model = model, remediations = remediations, failure = null)
-            }
-        }
-    }
-
-    override fun provisionModel() {
-        runOperation(AnkiSetupOperation.PROVISIONING_MODEL) {
-            val model = backend.provisionModel(AnkiCancellation.NONE)
-            val remediations = backend.remediationInventory(AnkiCancellation.NONE)
-            mutableState.update { current ->
-                current.copy(model = model, remediations = remediations, failure = null)
+                current.copy(
+                    availableNoteTypes = available,
+                    noteTypeStatus = status,
+                    remediations = remediations,
+                    failure = null,
+                )
             }
         }
     }
@@ -105,9 +104,8 @@ internal class ProcessAnkiSetupManager(
     override fun reconcileInterruptedWork() {
         runOperation(AnkiSetupOperation.RECONCILING) {
             val remediations = backend.reconcileInterruptedWork(AnkiCancellation.NONE)
-            val model = backend.inspectModel(AnkiCancellation.NONE)
             mutableState.update { current ->
-                current.copy(model = model, remediations = remediations, failure = null)
+                current.copy(remediations = remediations, failure = null)
             }
         }
     }

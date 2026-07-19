@@ -1,6 +1,7 @@
 package com.ankiminer.android.data.settings
 
 import com.ankiminer.android.anki.generated.UnicodeContractV151
+import com.ankiminer.android.anki.provider.AnkiFieldKeys
 import com.ankiminer.android.anki.provider.AnkiMinerNoteModel
 import com.ankiminer.android.engine.BridgeJsonValue
 import com.ankiminer.android.engine.MiningConfigSnapshot
@@ -41,6 +42,8 @@ data class AppSettings(
     val setupWizardSeen: Boolean = false,
     val theme: ThemeMode = ThemeMode.DARK,
     val deckName: String? = null,
+    val noteType: String? = null,
+    val fieldMap: Map<String, String> = emptyMap(),
     val tags: String? = null,
     val audioPaddingSeconds: Double? = null,
     val screenshotOffsetSeconds: Double? = null,
@@ -98,6 +101,8 @@ object AppSettingsValidator {
     fun validate(settings: AppSettings): AppSettings =
         settings.also {
             it.deckName?.let { value -> canonicalName("Deck name", value) }
+            it.noteType?.let { value -> canonicalName("Note type", value) }
+            fieldMap(it.fieldMap)
             it.tags?.let { value -> validScalarText("Tags", value) }
             nonNegative("Audio padding", it.audioPaddingSeconds)
             nonNegative("Screenshot offset", it.screenshotOffsetSeconds)
@@ -175,6 +180,15 @@ object AppSettingsValidator {
         if (value != null && value <= 0) invalid("$label must be positive")
     }
 
+    private fun fieldMap(values: Map<String, String>) {
+        values.forEach { (key, value) ->
+            if (key !in AnkiFieldKeys.ALL) {
+                invalid("Field map contains an unknown key")
+            }
+            if (value.isNotEmpty()) canonicalName("Field name", value)
+        }
+    }
+
     private fun resourceChain(
         label: String,
         values: List<ResourceChainSelection>,
@@ -216,16 +230,21 @@ internal object EngineSettingsSnapshotMapper {
         require(availableWordsetIds.distinct() == availableWordsetIds)
         require(availableWordsetIds.all(dictionaryId::matches))
         val values = linkedMapOf<String, BridgeJsonValue>()
-        // Android owns a complete first-party target. Always freeze its identity and mappings in
-        // the immutable job snapshot instead of inheriting the desktop Lapis default.
+        // The deck keeps an Android-owned default, but the note type and field map are the user's.
+        // Emit them fail-closed rather than inheriting the desktop Lapis default or the first-party
+        // model, so an unconfigured target can never silently mine into "Anki Miner".
         values["anki_deck_name"] =
             text(settings.deckName ?: AnkiMinerNoteModel.DEFAULT_DECK_NAME)
-        values["anki_note_type"] = text(AnkiMinerNoteModel.MODEL_NAME)
-        values["anki_fields"] = stringMap(AnkiMinerNoteModel.ENGINE_FIELD_MAPPING)
-        values["card_type_marker_fields"] =
-            stringMap(AnkiMinerNoteModel.CARD_TYPE_MARKER_FIELDS)
-        // Marker fields are reserved for future first-party card modes. Activating one now would
-        // falsely claim JP Mining Note rendering semantics which this template does not provide.
+        // No first-party fallback: an empty note type is fail-closed. config_map rejects it and
+        // mining admission blocks upstream, so a blank here never injects "Anki Miner".
+        values["anki_note_type"] = text(settings.noteType ?: "")
+        // Emit a complete map over every logical key so config_map's {**defaults, **value} overlay
+        // cannot let an unmapped key inherit a desktop default. Unmatched keys emit "".
+        values["anki_fields"] =
+            stringMap(AnkiFieldKeys.ALL.associateWith { settings.fieldMap[it] ?: "" })
+        // No first-party card modes are activated; emit an empty marker map rather than claiming
+        // JP Mining Note rendering semantics this target may not provide.
+        values["card_type_marker_fields"] = stringMap(emptyMap())
         values["card_type"] = text("")
         settings.tags?.let { values["anki_tags"] = text(it) }
         settings.audioPaddingSeconds?.let { values["audio_padding"] = decimal(it) }

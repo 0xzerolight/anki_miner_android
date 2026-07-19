@@ -1,5 +1,6 @@
 package com.ankiminer.android.data.settings
 
+import com.ankiminer.android.anki.provider.AnkiFieldKeys
 import com.ankiminer.android.anki.provider.AnkiMinerNoteModel
 import com.ankiminer.android.engine.BridgeJsonValue
 import org.junit.Assert.assertEquals
@@ -22,7 +23,7 @@ class AppSettingsTest {
     }
 
     @Test
-    fun firstPartyAnkiTargetAndAndroidConstraintsAreAlwaysExplicit() {
+    fun unconfiguredAnkiTargetFailsClosedWithAndroidConstraintsAlwaysExplicit() {
         val snapshot = EngineSettingsSnapshotMapper.map(AppSettings(), emptyList())
 
         assertEquals(
@@ -46,14 +47,39 @@ class AppSettingsTest {
             BridgeJsonValue.Text(AnkiMinerNoteModel.DEFAULT_DECK_NAME),
             snapshot.settings["anki_deck_name"],
         )
-        assertEquals(
-            BridgeJsonValue.Text(AnkiMinerNoteModel.MODEL_NAME),
-            snapshot.settings["anki_note_type"],
-        )
+        // No first-party fallback: an unset note type stays blank so mining can never silently
+        // inject "Anki Miner" as the target.
+        assertEquals(BridgeJsonValue.Text(""), snapshot.settings["anki_note_type"])
         assertEquals(BridgeJsonValue.Text(""), snapshot.settings["card_type"])
+        assertEquals(
+            BridgeJsonValue.ObjectValue(emptyMap()),
+            snapshot.settings["card_type_marker_fields"],
+        )
         val fields = snapshot.settings["anki_fields"] as BridgeJsonValue.ObjectValue
-        assertEquals(AnkiMinerNoteModel.ENGINE_FIELD_MAPPING.keys, fields.values.keys)
+        assertEquals(18, AnkiFieldKeys.ALL.size)
+        assertEquals(AnkiFieldKeys.ALL.toSet(), fields.values.keys)
+        assertTrue(fields.values.values.all { it == BridgeJsonValue.Text("") })
         assertFalse(snapshot.settings.containsKey("max_parallel_workers"))
+    }
+
+    @Test
+    fun userNoteTypeAndFieldMapPassThroughWithUnmappedKeysBlank() {
+        val snapshot =
+            EngineSettingsSnapshotMapper.map(
+                AppSettings(
+                    noteType = "Lapis",
+                    fieldMap = mapOf("word" to "Expression", "sentence" to "Sentence"),
+                ),
+                emptyList(),
+            )
+
+        assertEquals(BridgeJsonValue.Text("Lapis"), snapshot.settings["anki_note_type"])
+        val fields = snapshot.settings["anki_fields"] as BridgeJsonValue.ObjectValue
+        assertEquals(AnkiFieldKeys.ALL.toSet(), fields.values.keys)
+        assertEquals(BridgeJsonValue.Text("Expression"), fields.values["word"])
+        assertEquals(BridgeJsonValue.Text("Sentence"), fields.values["sentence"])
+        val unmapped = AnkiFieldKeys.ALL.filterNot { it == "word" || it == "sentence" }
+        assertTrue(unmapped.all { fields.values[it] == BridgeJsonValue.Text("") })
     }
 
     @Test

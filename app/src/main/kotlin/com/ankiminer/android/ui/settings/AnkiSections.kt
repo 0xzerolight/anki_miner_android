@@ -5,12 +5,17 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuAnchorType
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedCard
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -26,70 +31,128 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.ankiminer.android.R
 import com.ankiminer.android.anki.provider.AnkiExternalReviewOutcome
-import com.ankiminer.android.anki.provider.AnkiMinerModelConflictReason
-import com.ankiminer.android.anki.provider.AnkiMinerModelProvisioningResult
+import com.ankiminer.android.anki.provider.AnkiFieldKeys
 import com.ankiminer.android.anki.provider.AnkiProviderReadiness
 import com.ankiminer.android.anki.provider.AnkiRemediationActionKind
 import com.ankiminer.android.anki.provider.AnkiRemediationType
+import com.ankiminer.android.anki.provider.NoteTypeSetupStatus
 import com.ankiminer.android.data.anki.AnkiSetupFailure
 import com.ankiminer.android.vm.SetupUiState
 
 @Composable
 internal fun AnkiTargetCard(
     state: SetupUiState,
-    onProvisionModel: () -> Unit,
+    onSelectNoteType: (String) -> Unit,
+    onSetFieldMapping: (String, String) -> Unit,
+    onVerify: () -> Unit,
 ) {
-    val modelMessage =
-        when (val model = state.model) {
-            null -> stringResource(R.string.anki_model_not_checked)
-            is AnkiMinerModelProvisioningResult.Ready -> stringResource(R.string.anki_model_ready)
-            AnkiMinerModelProvisioningResult.Missing -> stringResource(R.string.anki_model_missing)
-            is AnkiMinerModelProvisioningResult.Conflict -> model.stableMessage
-            is AnkiMinerModelProvisioningResult.RecoveryRequired -> model.stableMessage
-            is AnkiMinerModelProvisioningResult.FailedBeforeEntry -> model.stableMessage
-        }
-    val actionVisible =
-        state.model == AnkiMinerModelProvisioningResult.Missing ||
-            state.model is AnkiMinerModelProvisioningResult.RecoveryRequired ||
-            state.model is AnkiMinerModelProvisioningResult.FailedBeforeEntry ||
-            (state.model as? AnkiMinerModelProvisioningResult.Conflict)?.reason in
-            setOf(
-                AnkiMinerModelConflictReason.JOURNAL_CONTRACT_CHANGED,
-                AnkiMinerModelConflictReason.JOURNALED_MODEL_ID_CHANGED,
-            )
     OutlinedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(stringResource(R.string.anki_model_title), style = MaterialTheme.typography.titleMedium)
-            Text(stringResource(R.string.anki_model_description))
-            Text(modelMessage)
-            if (state.model is AnkiMinerModelProvisioningResult.Conflict) {
-                Text(
-                    stringResource(
-                        if (actionVisible) {
-                            R.string.anki_model_restart_help
-                        } else {
-                            R.string.anki_model_conflict_help
-                        },
-                    ),
+            Text(stringResource(R.string.anki_note_type_title), style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.anki_note_type_description))
+            if (!state.ankiReady) {
+                Text(stringResource(R.string.anki_note_type_connect_first))
+            } else {
+                NoteTypeDropdown(
+                    label = stringResource(R.string.anki_note_type_picker),
+                    options = state.availableNoteTypes.map { it.name to it.name },
+                    selected = state.noteType ?: "",
+                    onSelect = onSelectNoteType,
                 )
-            }
-            if (actionVisible) {
-                Button(
-                    onClick = onProvisionModel,
-                    enabled = state.ankiReady && !state.busy,
-                ) {
+                if (state.noteType != null) {
+                    val fields =
+                        state.availableNoteTypes
+                            .firstOrNull { it.name == state.noteType }
+                            ?.fieldNames
+                            ?: emptyList()
                     Text(
-                        stringResource(
-                            if (state.model is AnkiMinerModelProvisioningResult.RecoveryRequired) {
-                                R.string.anki_model_resume
-                            } else if (state.model is AnkiMinerModelProvisioningResult.Conflict) {
-                                R.string.anki_model_restart
-                            } else {
-                                R.string.anki_model_create
-                            },
-                        ),
+                        stringResource(R.string.anki_field_mapping_title),
+                        style = MaterialTheme.typography.titleSmall,
                     )
+                    val noneLabel = stringResource(R.string.anki_field_none)
+                    AnkiFieldKeys.ALL.forEach { key ->
+                        val base = key.replace('_', ' ').replaceFirstChar { it.uppercaseChar() }
+                        val label = if (key in AnkiFieldKeys.REQUIRED) "$base *" else base
+                        NoteTypeDropdown(
+                            label = label,
+                            options = listOf("" to noneLabel) + fields.map { it to it },
+                            selected = state.fieldMap[key] ?: "",
+                            onSelect = { field -> onSetFieldMapping(key, field) },
+                        )
+                        if (key == AnkiFieldKeys.WORD) {
+                            Text(
+                                stringResource(R.string.anki_field_word_help),
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                    }
                 }
+                Text(
+                    noteTypeStatusText(state.noteTypeStatus),
+                    modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                )
+                if (state.noteTypeStatus is NoteTypeSetupStatus.FieldsMissing) {
+                    Text(stringResource(R.string.anki_note_type_guidance))
+                }
+                OutlinedButton(
+                    onClick = onVerify,
+                    enabled = state.ankiReady && !state.busy && state.noteType != null,
+                ) { Text(stringResource(R.string.anki_note_type_verify)) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun noteTypeStatusText(status: NoteTypeSetupStatus): String =
+    stringResource(
+        when (status) {
+            is NoteTypeSetupStatus.Verified -> R.string.anki_note_type_status_verified
+            NoteTypeSetupStatus.NotSelected -> R.string.anki_note_type_status_not_selected
+            NoteTypeSetupStatus.NoteTypeMissing -> R.string.anki_note_type_status_missing
+            is NoteTypeSetupStatus.FieldsMissing -> R.string.anki_note_type_status_fields_missing
+            NoteTypeSetupStatus.FirstFieldMismatch -> R.string.anki_note_type_status_first_field
+            is NoteTypeSetupStatus.ProviderError -> R.string.anki_note_type_status_provider_error
+        },
+    )
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun NoteTypeDropdown(
+    label: String,
+    options: List<Pair<String, String>>,
+    selected: String,
+    onSelect: (String) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val selectedLabel = options.firstOrNull { it.first == selected }?.second ?: selected
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { expanded = it },
+    ) {
+        OutlinedTextField(
+            value = selectedLabel,
+            onValueChange = {},
+            readOnly = true,
+            label = { Text(label) },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable),
+        )
+        ExposedDropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+        ) {
+            options.forEach { (value, display) ->
+                DropdownMenuItem(
+                    text = { Text(display) },
+                    onClick = {
+                        onSelect(value)
+                        expanded = false
+                    },
+                )
             }
         }
     }

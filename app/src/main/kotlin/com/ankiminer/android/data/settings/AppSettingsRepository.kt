@@ -64,6 +64,8 @@ class DataStoreAppSettingsRepository(context: Context) : AppSettingsRepository {
             setupWizardSeen = preferences[Keys.setupWizardSeen] ?: false,
             theme = ThemeMode.fromWire(preferences[Keys.themeMode]),
             deckName = preferences[Keys.deckName],
+            noteType = preferences[Keys.noteType],
+            fieldMap = FieldMapPreferenceCodec.decode(preferences[Keys.fieldMap]),
             tags = preferences[Keys.tags],
             audioPaddingSeconds = preferences[Keys.audioPadding],
             screenshotOffsetSeconds = preferences[Keys.screenshotOffset],
@@ -118,6 +120,8 @@ class DataStoreAppSettingsRepository(context: Context) : AppSettingsRepository {
         preferences[Keys.setupWizardSeen] = value.setupWizardSeen
         preferences[Keys.themeMode] = value.theme.wireValue
         value.deckName?.let { preferences[Keys.deckName] = it }
+        value.noteType?.let { preferences[Keys.noteType] = it }
+        FieldMapPreferenceCodec.encode(value.fieldMap)?.let { preferences[Keys.fieldMap] = it }
         value.tags?.let { preferences[Keys.tags] = it }
         value.audioPaddingSeconds?.let { preferences[Keys.audioPadding] = it }
         value.screenshotOffsetSeconds?.let { preferences[Keys.screenshotOffset] = it }
@@ -157,6 +161,8 @@ class DataStoreAppSettingsRepository(context: Context) : AppSettingsRepository {
         val setupWizardSeen = booleanPreferencesKey("setup_wizard_seen")
         val themeMode = stringPreferencesKey("theme_mode")
         val deckName = stringPreferencesKey("deck_name")
+        val noteType = stringPreferencesKey("note_type")
+        val fieldMap = stringPreferencesKey("field_map_v1")
         val tags = stringPreferencesKey("tags")
         val audioPadding = doublePreferencesKey("audio_padding_seconds")
         val screenshotOffset = doublePreferencesKey("screenshot_offset_seconds")
@@ -243,6 +249,70 @@ internal object ResourceSelectionPreferenceCodec {
             }
         if (decoded.map(ResourceChainSelection::resourceId).distinct().size != decoded.size) {
             throw InvalidAppSettingException("Saved resource choices are invalid")
+        }
+        return decoded
+    }
+}
+
+/**
+ * Canonical, bounded encoding for the user field map stored in Preferences DataStore.
+ *
+ * One `key=value` line per entry after a version header. Logical keys never contain `=` or a
+ * newline and validated field-name values never contain control characters, so splitting on the
+ * first `=` round-trips every accepted map. Key/value semantics are enforced by the validator, not
+ * here; this codec only owns the serialization.
+ */
+internal object FieldMapPreferenceCodec {
+    private const val HEADER = "field-map-v1"
+    private const val MAX_ENTRIES = 128
+    private const val MAX_BYTES = 16 * 1024
+
+    fun encode(values: Map<String, String>): String? {
+        if (values.isEmpty()) return null
+        if (values.size > MAX_ENTRIES) {
+            throw InvalidAppSettingException("Saved field map is invalid")
+        }
+        val encoded =
+            buildString {
+                append(HEADER)
+                append('\n')
+                values.forEach { (key, value) ->
+                    append(key)
+                    append('=')
+                    append(value)
+                    append('\n')
+                }
+            }
+        if (encoded.toByteArray(Charsets.UTF_8).size > MAX_BYTES) {
+            throw InvalidAppSettingException("Saved field map is invalid")
+        }
+        return encoded
+    }
+
+    fun decode(raw: String?): Map<String, String> {
+        if (raw == null) return emptyMap()
+        if (raw.toByteArray(Charsets.UTF_8).size > MAX_BYTES || !raw.endsWith('\n')) {
+            throw InvalidAppSettingException("Saved field map is invalid")
+        }
+        val lines = raw.split('\n')
+        if (lines.firstOrNull() != HEADER || lines.lastOrNull() != "") {
+            throw InvalidAppSettingException("Saved field map is invalid")
+        }
+        val entries = lines.drop(1).dropLast(1)
+        if (entries.size > MAX_ENTRIES) {
+            throw InvalidAppSettingException("Saved field map is invalid")
+        }
+        val decoded = linkedMapOf<String, String>()
+        entries.forEach { line ->
+            val separator = line.indexOf('=')
+            if (separator < 1) {
+                throw InvalidAppSettingException("Saved field map is invalid")
+            }
+            val key = line.substring(0, separator)
+            val value = line.substring(separator + 1)
+            if (decoded.put(key, value) != null) {
+                throw InvalidAppSettingException("Saved field map is invalid")
+            }
         }
         return decoded
     }

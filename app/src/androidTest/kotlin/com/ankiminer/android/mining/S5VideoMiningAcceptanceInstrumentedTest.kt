@@ -13,8 +13,9 @@ import androidx.core.content.pm.PackageInfoCompat
 import com.ankiminer.android.AnkiMinerApplication
 import com.ankiminer.android.BuildConfig
 import com.ankiminer.android.PythonInstrumentationRuntime
-import com.ankiminer.android.anki.provider.AnkiMinerModelProvisioningResult
-import com.ankiminer.android.anki.provider.AnkiMinerNoteModel
+import com.ankiminer.android.anki.provider.AnkiFieldAutoMap
+import com.ankiminer.android.anki.provider.AnkiFieldKeys
+import com.ankiminer.android.anki.provider.NoteTypeSetupStatus
 import com.ankiminer.android.data.resources.ResourceBridgeCodec
 import com.ankiminer.android.data.settings.AppSettings
 import com.ankiminer.android.debug.S3TestDocumentsProvider
@@ -31,6 +32,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.json.JSONArray
 import org.json.JSONObject
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -44,7 +46,8 @@ private const val EVIDENCE_TAG = "AnkiMinerS5"
 /**
  * Destructive, opt-in needle-thread against a pinned disposable AnkiDroid collection.
  *
- * Setup creates resources and the production model, but the accepted notes and media travel only through
+ * Setup creates resources and a USER-owned AnkiDroid note type (never a first-party "Anki Miner"
+ * model) plus its keyword-derived field map, then the accepted notes and media travel only through
  * the process-owned BridgeMiningRepository and its production durable provider callbacks.
  */
 @RunWith(AndroidJUnit4::class)
@@ -65,11 +68,14 @@ class S5VideoMiningAcceptanceInstrumentedTest {
         val python = PythonInstrumentationRuntime.awaitReady()
         assertPinnedAnkiDroid()
         prepareProductionResources(python)
-        createTarget()
+        val modelId = createTarget()
+        val fieldMap = AnkiFieldAutoMap.autoMap(USER_FIELDS.toList())
         runBlocking {
             application.settingsRepository.update(
                 AppSettings(
                     deckName = DECK_NAME,
+                    noteType = USER_NOTE_TYPE_NAME,
+                    fieldMap = fieldMap,
                     tags = PROBE_TAG,
                     audioPaddingSeconds = 8.0,
                     screenshotOffsetSeconds = 0.2,
@@ -81,12 +87,29 @@ class S5VideoMiningAcceptanceInstrumentedTest {
                 ),
             )
         }
+        // The user note type + keyword-derived field map verifies without any first-party model.
+        assertEquals(
+            NoteTypeSetupStatus.Verified(modelId),
+            refreshAndAwait(USER_NOTE_TYPE_NAME, fieldMap),
+        )
+        // A note type whose first field is not the mapped word is blocked, never mined into.
+        assertFirstFieldMismatchIsBlocked()
+        // Restore the verified selection before the real mining run.
+        assertEquals(
+            NoteTypeSetupStatus.Verified(modelId),
+            refreshAndAwait(USER_NOTE_TYPE_NAME, fieldMap),
+        )
         createSafFixtures(python)
         assertTrue(activeMediaChildren().isEmpty())
         assertForegroundServiceStopped()
 
+        val modelsBeforeMining = api.modelList.orEmpty().values.toSet()
         val success = mineOneRealNote()
         val verified = verifyCreatedNote(success)
+        // Mining lands in the user note type only: it creates no new model, and no first-party
+        // "Anki Miner" model is ever provisioned (the inverse of the retired positive assertion).
+        assertEquals(modelsBeforeMining, api.modelList.orEmpty().values.toSet())
+        assertFalse(api.modelList.orEmpty().containsValue(FIRST_PARTY_MODEL_NAME))
         awaitForegroundServiceStopped()
         assertTrue(activeMediaChildren().isEmpty())
 
@@ -139,32 +162,74 @@ class S5VideoMiningAcceptanceInstrumentedTest {
         )
     }
 
-    private fun createTarget() {
+    /** Creates the mining deck and a USER-owned note type, returning its model ID. */
+    private fun createTarget(): Long {
         assertFalse(api.deckList.orEmpty().containsValue(DECK_NAME))
-        assertFalse(api.modelList.orEmpty().containsValue(AnkiMinerNoteModel.MODEL_NAME))
+        assertFalse(api.modelList.orEmpty().containsValue(USER_NOTE_TYPE_NAME))
+        assertFalse(api.modelList.orEmpty().containsValue(FIRST_PARTY_MODEL_NAME))
         val deckId = requireNotNull(api.addNewDeck(DECK_NAME))
-        application.ankiSetupManager.refresh()
-        runBlocking {
+        val modelId =
+            requireNotNull(
+                api.addNewCustomModel(
+                    USER_NOTE_TYPE_NAME,
+                    USER_FIELDS,
+                    arrayOf("Card 1"),
+                    arrayOf("{{Expression}}"),
+                    arrayOf("{{FrontSide}}<hr id=answer>{{Sentence}}{{Definition}}{{Picture}}{{SentenceAudio}}"),
+                    ".card { font-family: sans-serif; }",
+                    deckId,
+                    0,
+                ),
+            )
+        assertEquals(DECK_NAME, api.deckList.orEmpty()[deckId])
+        assertEquals(USER_NOTE_TYPE_NAME, api.modelList.orEmpty()[modelId])
+        assertArrayEquals(USER_FIELDS, requireNotNull(api.getFieldList(modelId)))
+        return modelId
+    }
+
+    /** Refresh the setup manager against a note type + field map and return the settled status. */
+    private fun refreshAndAwait(
+        noteType: String,
+        fieldMap: Map<String, String>,
+    ): NoteTypeSetupStatus {
+        // refresh() sets operation synchronously before it returns, so awaiting the next
+        // operation==null state cannot observe the prior settled value.
+        application.ankiSetupManager.refresh(noteType, fieldMap)
+        return runBlocking {
             withTimeout(STATE_TIMEOUT_MS) {
                 application.ankiSetupManager.state.first { it.operation == null }
             }
-        }
-        application.ankiSetupManager.provisionModel()
-        val modelId =
-            runBlocking {
-                withTimeout(STATE_TIMEOUT_MS) {
-                    val state =
-                        application.ankiSetupManager.state.first {
-                            it.operation == null && it.model is AnkiMinerModelProvisioningResult.Ready
-                        }
-                    (state.model as AnkiMinerModelProvisioningResult.Ready).modelId
-                }
+        }.noteTypeStatus
+    }
+
+    /**
+     * A note type whose first field is not the mapped word must not verify: AnkiDroid dedups on
+     * field[0], so mining is blocked with [NoteTypeSetupStatus.FirstFieldMismatch] rather than
+     * silently mis-deduping into the wrong field.
+     */
+    private fun assertFirstFieldMismatchIsBlocked() {
+        assertFalse(api.modelList.orEmpty().containsValue(REVERSED_NOTE_TYPE_NAME))
+        requireNotNull(
+            api.addNewCustomModel(
+                REVERSED_NOTE_TYPE_NAME,
+                REVERSED_FIELDS,
+                arrayOf("Card 1"),
+                arrayOf("{{Reading}}"),
+                arrayOf("{{FrontSide}}<hr id=answer>{{Expression}}"),
+                null,
+                null,
+                0,
+            ),
+        )
+        // Auto-map forces word to field[0]; override it to a non-first field to model a user who
+        // mapped the word away from the dedup field.
+        val mismatchedMap =
+            AnkiFieldAutoMap.autoMap(REVERSED_FIELDS.toList()).toMutableMap().apply {
+                put(AnkiFieldKeys.WORD, "Expression")
             }
-        assertEquals(DECK_NAME, api.deckList.orEmpty()[deckId])
-        assertEquals(AnkiMinerNoteModel.MODEL_NAME, api.modelList.orEmpty()[modelId])
         assertEquals(
-            AnkiMinerNoteModel.FIELD_NAMES,
-            requireNotNull(api.getFieldList(modelId)).toList(),
+            NoteTypeSetupStatus.FirstFieldMismatch,
+            refreshAndAwait(REVERSED_NOTE_TYPE_NAME, mismatchedMap),
         )
     }
 
@@ -215,11 +280,14 @@ class S5VideoMiningAcceptanceInstrumentedTest {
         val noteId = success.result.cardIds.single()
         val note = requireNotNull(api.getNote(noteId))
         val fields = note.getFields()
-        assertEquals(AnkiMinerNoteModel.FIELD_NAMES.size, fields.size)
-        fun field(name: String) = fields[AnkiMinerNoteModel.FIELD_NAMES.indexOf(name)]
+        // The mined card lands in the user note type's mapped fields, by name, with the word
+        // in the first (Expression) field that AnkiDroid dedups on.
+        assertEquals(USER_FIELDS.size, fields.size)
+        fun field(name: String) = fields[USER_FIELDS.indexOf(name)]
         assertEquals(SUCCESS_TERM, field("Expression"))
+        assertEquals(SUCCESS_TERM, fields.first())
         assertTrue(field("Sentence").contains(SUCCESS_TERM))
-        assertTrue(field("MainDefinition").contains(SUCCESS_DEFINITION))
+        assertTrue(field("Definition").contains(SUCCESS_DEFINITION))
         assertTrue(note.getTags().contains(PROBE_TAG))
         val picture = requireNotNull(PICTURE_MARKUP.matchEntire(field("Picture"))).groupValues[1]
         val audio = requireNotNull(AUDIO_MARKUP.matchEntire(field("SentenceAudio"))).groupValues[1]
@@ -444,6 +512,37 @@ class S5VideoMiningAcceptanceInstrumentedTest {
         private const val PINNED_ANKIDROID_VERSION = "2.24.0"
         private const val PINNED_ANKIDROID_VERSION_CODE = 422400300L
         private const val DECK_NAME = "Anki Miner S5 Probe"
+
+        /** The retired first-party model name; mining must never re-create it. */
+        private const val FIRST_PARTY_MODEL_NAME = "Anki Miner"
+        private const val USER_NOTE_TYPE_NAME = "S5 User Note Type"
+        private const val REVERSED_NOTE_TYPE_NAME = "S5 Reversed Note Type"
+
+        /** Field order whose keyword names auto-map every required key, with the word at field[0]. */
+        private val USER_FIELDS =
+            arrayOf(
+                "Expression",
+                "Sentence",
+                "Definition",
+                "Picture",
+                "SentenceAudio",
+                "ExpressionFurigana",
+                "SentenceFurigana",
+            )
+
+        /** First field ("Reading") is not the word, so a word-elsewhere map cannot verify. */
+        private val REVERSED_FIELDS =
+            arrayOf(
+                "Reading",
+                "Expression",
+                "Sentence",
+                "Definition",
+                "Picture",
+                "SentenceAudio",
+                "ExpressionFurigana",
+                "SentenceFurigana",
+            )
+
         private const val PROBE_TAG = "anki_miner_s5_probe"
         private const val DICTIONARY_SLOT = "s5-fixture"
         private const val SUCCESS_TERM = "猫"

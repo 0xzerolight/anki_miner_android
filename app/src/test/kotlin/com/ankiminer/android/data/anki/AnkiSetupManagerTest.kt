@@ -1,45 +1,80 @@
 package com.ankiminer.android.data.anki
 
 import com.ankiminer.android.anki.provider.AnkiCancellation
-import com.ankiminer.android.anki.provider.AnkiMinerModelProvisioningResult
-import com.ankiminer.android.anki.provider.AnkiMinerModelReadyOrigin
+import com.ankiminer.android.anki.provider.AnkiPendingRemediation
 import com.ankiminer.android.anki.provider.AnkiRemediationCommand
 import com.ankiminer.android.anki.provider.AnkiRemediationInventory
+import com.ankiminer.android.anki.provider.AnkiRemediationType
+import com.ankiminer.android.anki.provider.ModelSummary
+import com.ankiminer.android.anki.provider.NoteTypeSetupStatus
 import com.ankiminer.android.data.RuntimeWorkCoordinator
 import java.util.ArrayDeque
 import java.util.concurrent.Executor
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AnkiSetupManagerTest {
     @Test
-    fun `read only refresh remains available while mining owns mutation exclusion`() {
+    fun `read only refresh publishes note types status and remediations while mining owns exclusion`() {
         val coordinator = RuntimeWorkCoordinator()
         val mining = requireNotNull(coordinator.tryAcquire(RuntimeWorkCoordinator.Kind.MINING))
-        val backend = FakeBackend()
+        val available = listOf(ModelSummary(24L, "Lapis", listOf("Expression", "Sentence")))
+        val remediations =
+            AnkiRemediationInventory(
+                listOf(
+                    AnkiPendingRemediation(
+                        id = 5L,
+                        type = AnkiRemediationType.MEDIA_COMMIT_UNCERTAIN,
+                        title = "Media save needs review",
+                        summary = "Review the media write",
+                        compactEvidence = null,
+                        createdAtMs = 1L,
+                        updatedAtMs = 1L,
+                        availableActions = emptySet(),
+                    ),
+                ),
+            )
+        val backend =
+            FakeBackend(
+                noteTypes = available,
+                status = NoteTypeSetupStatus.Verified(modelId = 24L),
+                remediations = remediations,
+            )
         val manager = ProcessAnkiSetupManager(backend, Executor(Runnable::run), coordinator)
 
-        manager.refresh()
+        manager.refresh("Lapis", mapOf("word" to "Expression"))
 
-        assertEquals(AnkiMinerModelProvisioningResult.Missing, manager.state.value.model)
-        assertEquals(1, backend.inspectCalls)
-        assertNull(manager.state.value.failure)
+        val state = manager.state.value
+        assertEquals(available, state.availableNoteTypes)
+        assertEquals(NoteTypeSetupStatus.Verified(24L), state.noteTypeStatus)
+        assertEquals(remediations, state.remediations)
+        assertEquals(1, backend.listCalls)
+        assertEquals(1, backend.verifyCalls)
+        assertEquals("Lapis", backend.lastNoteType)
+        assertEquals(mapOf("word" to "Expression"), backend.lastFieldMap)
+        assertNull(state.failure)
+        assertNull(state.operation)
         mining.close()
     }
 
     @Test
-    fun `model provisioning fails closed while another runtime mutation is active`() {
+    fun `explicit setup writes fail closed while another runtime mutation is active`() {
         val coordinator = RuntimeWorkCoordinator()
         val mining = requireNotNull(coordinator.tryAcquire(RuntimeWorkCoordinator.Kind.MINING))
         val backend = FakeBackend()
         val manager = ProcessAnkiSetupManager(backend, Executor(Runnable::run), coordinator)
 
-        manager.provisionModel()
+        manager.reconcileInterruptedWork()
 
         assertEquals("runtime_busy", requireNotNull(manager.state.value.failure).code)
-        assertEquals(0, backend.provisionCalls)
+        assertEquals(0, backend.reconcileCalls)
+        assertNull(manager.state.value.operation)
+
+        manager.performRemediation(AnkiRemediationCommand.RetryStagingCleanup(7L))
+
+        assertEquals("runtime_busy", requireNotNull(manager.state.value.failure).code)
+        assertEquals(0, backend.performCalls)
         assertNull(manager.state.value.operation)
         mining.close()
     }
@@ -51,17 +86,16 @@ class AnkiSetupManagerTest {
         val backend = FakeBackend()
         val manager = ProcessAnkiSetupManager(backend, executor, coordinator)
 
-        manager.provisionModel()
         manager.reconcileInterruptedWork()
+        manager.performRemediation(AnkiRemediationCommand.RetryStagingCleanup(7L))
 
-        assertEquals(AnkiSetupOperation.PROVISIONING_MODEL, manager.state.value.operation)
+        assertEquals(AnkiSetupOperation.RECONCILING, manager.state.value.operation)
         assertEquals(RuntimeWorkCoordinator.Kind.ANKI_SETUP, coordinator.activeKind.value)
         assertEquals(1, executor.queued.size)
         executor.runNext()
 
-        assertEquals(1, backend.provisionCalls)
-        assertEquals(0, backend.reconcileCalls)
-        assertTrue(manager.state.value.model is AnkiMinerModelProvisioningResult.Ready)
+        assertEquals(1, backend.reconcileCalls)
+        assertEquals(0, backend.performCalls)
         assertNull(manager.state.value.operation)
         assertNull(coordinator.activeKind.value)
     }
@@ -69,10 +103,10 @@ class AnkiSetupManagerTest {
     @Test
     fun `backend failure is UI safe and always releases setup exclusion`() {
         val coordinator = RuntimeWorkCoordinator()
-        val backend = FakeBackend(failProvision = true)
+        val backend = FakeBackend(failReconcile = true)
         val manager = ProcessAnkiSetupManager(backend, Executor(Runnable::run), coordinator)
 
-        manager.provisionModel()
+        manager.reconcileInterruptedWork()
 
         assertEquals("anki_setup_failed", requireNotNull(manager.state.value.failure).code)
         assertNull(manager.state.value.operation)
@@ -90,40 +124,52 @@ class AnkiSetupManagerTest {
     }
 
     private class FakeBackend(
-        private val failProvision: Boolean = false,
+        private val noteTypes: List<ModelSummary> = emptyList(),
+        private val status: NoteTypeSetupStatus = NoteTypeSetupStatus.NotSelected,
+        private val remediations: AnkiRemediationInventory = AnkiRemediationInventory(emptyList()),
+        private val failReconcile: Boolean = false,
     ) : AnkiSetupBackend {
-        var inspectCalls = 0
-        var provisionCalls = 0
+        var listCalls = 0
+        var verifyCalls = 0
         var reconcileCalls = 0
+        var performCalls = 0
+        var lastNoteType: String? = null
+        var lastFieldMap: Map<String, String> = emptyMap()
 
-        override fun inspectModel(cancellation: AnkiCancellation): AnkiMinerModelProvisioningResult {
-            inspectCalls += 1
-            return AnkiMinerModelProvisioningResult.Missing
+        override fun listNoteTypes(cancellation: AnkiCancellation): List<ModelSummary> {
+            listCalls += 1
+            return noteTypes
         }
 
-        override fun provisionModel(cancellation: AnkiCancellation): AnkiMinerModelProvisioningResult {
-            provisionCalls += 1
-            if (failProvision) error("provider detail must not reach UI")
-            return AnkiMinerModelProvisioningResult.Ready(
-                modelId = 9L,
-                origin = AnkiMinerModelReadyOrigin.PROVISIONED,
-            )
+        override fun verifyNoteType(
+            noteType: String?,
+            fieldMap: Map<String, String>,
+            cancellation: AnkiCancellation,
+        ): NoteTypeSetupStatus {
+            verifyCalls += 1
+            lastNoteType = noteType
+            lastFieldMap = fieldMap
+            return status
         }
 
         override fun remediationInventory(
             cancellation: AnkiCancellation,
-        ): AnkiRemediationInventory = AnkiRemediationInventory(emptyList())
+        ): AnkiRemediationInventory = remediations
 
         override fun reconcileInterruptedWork(
             cancellation: AnkiCancellation,
         ): AnkiRemediationInventory {
             reconcileCalls += 1
-            return AnkiRemediationInventory(emptyList())
+            if (failReconcile) error("provider detail must not reach UI")
+            return remediations
         }
 
         override fun performRemediation(
             command: AnkiRemediationCommand,
             cancellation: AnkiCancellation,
-        ): AnkiRemediationInventory = AnkiRemediationInventory(emptyList())
+        ): AnkiRemediationInventory {
+            performCalls += 1
+            return remediations
+        }
     }
 }

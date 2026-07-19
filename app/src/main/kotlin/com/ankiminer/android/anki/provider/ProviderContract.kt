@@ -352,12 +352,6 @@ internal interface AnkiProviderGateway {
      */
     fun createDeck(command: AnkiProviderMutationCommand.CreateDeck): String?
 
-    /** Raw first-party model insert boundary after durable provisioning-journal entry. */
-    fun createAnkiMinerModel(command: AnkiProviderMutationCommand.CreateAnkiMinerModel): String?
-
-    /** Raw first-party template update boundary after durable provisioning-journal entry. */
-    fun updateAnkiMinerTemplate(command: AnkiProviderMutationCommand.UpdateAnkiMinerTemplate): Int
-
     /** Raw media commit boundary; the returned URI is validated only after durable entry. */
     fun storeMedia(command: AnkiProviderMutationCommand.StoreMedia): String?
 

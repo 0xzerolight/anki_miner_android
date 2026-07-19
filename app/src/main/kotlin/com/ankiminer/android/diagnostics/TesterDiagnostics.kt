@@ -2,8 +2,8 @@ package com.ankiminer.android.diagnostics
 
 import android.os.Build
 import com.ankiminer.android.BuildConfig
-import com.ankiminer.android.anki.provider.AnkiMinerModelProvisioningResult
 import com.ankiminer.android.anki.provider.AnkiProviderReadiness
+import com.ankiminer.android.anki.provider.NoteTypeSetupStatus
 import com.ankiminer.android.engine.PythonRuntimeReadiness
 import com.ankiminer.android.mining.MiningRunState
 import com.ankiminer.android.ui.reading.ReadingMiningUiState
@@ -105,7 +105,7 @@ internal object TesterDiagnosticsBuilder {
                 line("resources.operation", setup.operation?.phase?.name?.lowercase(Locale.ROOT) ?: NONE)
                 line("resources.failure", safeCode(setup.failure?.code))
                 line("anki.provider", ankiReadiness(setup.anki))
-                line("anki.model", modelReadiness(setup.model))
+                line("anki.model", modelReadiness(setup.noteTypeStatus))
                 line("anki.remediations", setup.remediations.pending.size.toString())
                 line("anki.operation", setup.ankiOperation?.name?.lowercase(Locale.ROOT) ?: NONE)
                 line("anki.failure", safeCode(setup.ankiFailure?.code))
@@ -150,14 +150,14 @@ internal object TesterDiagnosticsBuilder {
             is AnkiProviderReadiness.Ready -> "ready"
         }
 
-    private fun modelReadiness(result: AnkiMinerModelProvisioningResult?): String =
-        when (result) {
-            null -> "not_checked"
-            is AnkiMinerModelProvisioningResult.Ready -> "ready"
-            AnkiMinerModelProvisioningResult.Missing -> "missing"
-            is AnkiMinerModelProvisioningResult.Conflict -> "conflict"
-            is AnkiMinerModelProvisioningResult.RecoveryRequired -> "recovery_required"
-            is AnkiMinerModelProvisioningResult.FailedBeforeEntry -> "failed_before_entry"
+    private fun modelReadiness(status: NoteTypeSetupStatus): String =
+        when (status) {
+            is NoteTypeSetupStatus.Verified -> "verified"
+            NoteTypeSetupStatus.NoteTypeMissing -> "note_type_missing"
+            is NoteTypeSetupStatus.FieldsMissing -> "fields_missing"
+            NoteTypeSetupStatus.FirstFieldMismatch -> "first_field_mismatch"
+            is NoteTypeSetupStatus.ProviderError -> "provider_error"
+            NoteTypeSetupStatus.NotSelected -> "not_selected"
         }
 
     private fun miningRun(state: MiningRunState): String =

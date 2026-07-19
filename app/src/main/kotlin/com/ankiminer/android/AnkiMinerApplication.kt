@@ -2,9 +2,9 @@ package com.ankiminer.android
 
 import android.app.Application
 import com.ankiminer.android.anki.provider.AnkiCancellation
-import com.ankiminer.android.anki.provider.AnkiMinerModelProvisioningResult
 import com.ankiminer.android.anki.provider.AnkiProviderRuntime
 import com.ankiminer.android.anki.provider.AnkiRemediationCommand
+import com.ankiminer.android.anki.provider.NoteTypeSetupStatus
 import com.ankiminer.android.data.anki.AnkiSetupBackend
 import com.ankiminer.android.data.anki.AnkiSetupManager
 import com.ankiminer.android.data.anki.ProcessAnkiSetupManager
@@ -122,11 +122,18 @@ class AnkiMinerApplication : Application() {
         ProcessAnkiSetupManager(
             backend =
                 object : AnkiSetupBackend {
-                    override fun inspectModel(cancellation: AnkiCancellation) =
-                        ankiProviderRuntime.inspectAnkiMinerModel(cancellation)
+                    override fun listNoteTypes(cancellation: AnkiCancellation) =
+                        ankiProviderRuntime.listNoteTypes(cancellation)
 
-                    override fun provisionModel(cancellation: AnkiCancellation) =
-                        ankiProviderRuntime.provisionAnkiMinerModel(cancellation)
+                    override fun verifyNoteType(
+                        noteType: String?,
+                        fieldMap: Map<String, String>,
+                        cancellation: AnkiCancellation,
+                    ) = if (noteType.isNullOrEmpty()) {
+                        NoteTypeSetupStatus.NotSelected
+                    } else {
+                        ankiProviderRuntime.verifyUserNoteType(noteType, fieldMap, cancellation)
+                    }
 
                     override fun remediationInventory(cancellation: AnkiCancellation) =
                         ankiProviderRuntime.remediationInventory(cancellation)
@@ -291,7 +298,7 @@ class AnkiMinerApplication : Application() {
         // required resource inventory fail with a synthetic busy error.
         applicationScope.launch {
             resourceManager.recoverAndRefresh()
-            ankiSetupManager.refresh()
+            refreshAnkiSetup()
             refreshMiningAdmission()
         }
     }
@@ -320,8 +327,20 @@ class AnkiMinerApplication : Application() {
 
     /** Refresh process-owned state which may change while an external Android UI is visible. */
     internal fun refreshExternalReadiness() {
-        ankiSetupManager.refresh()
+        refreshAnkiSetup()
         refreshMiningAdmission()
+    }
+
+    /**
+     * Re-verify the user-selected note type against the currently persisted settings. The DataStore
+     * read and the verify are scheduled on the setup executor, so callers on the main thread
+     * (onResume, permission return) never block on I/O.
+     */
+    private fun refreshAnkiSetup() {
+        ankiSetupExecutor.execute {
+            val settings = runBlocking { settingsRepository.settings.first() }
+            ankiSetupManager.refresh(settings.noteType, settings.fieldMap)
+        }
     }
 
     private fun probeAnkiMiningTarget(
@@ -331,29 +350,48 @@ class AnkiMinerApplication : Application() {
             return AnkiMiningTargetReadiness.Blocked("Anki target verification was cancelled", true)
         }
         return try {
-            when (val model = ankiProviderRuntime.inspectAnkiMinerModel(cancellation)) {
-            is AnkiMinerModelProvisioningResult.Ready -> {
-                val pending = ankiProviderRuntime.remediationInventory(cancellation).pending
-                if (pending.isEmpty()) {
-                    AnkiMiningTargetReadiness.Ready
-                } else {
-                    AnkiMiningTargetReadiness.Blocked(
-                        "Resolve pending Anki recovery items before mining",
-                        false,
-                    )
-                }
-            }
-            AnkiMinerModelProvisioningResult.Missing ->
-                AnkiMiningTargetReadiness.Blocked(
-                    "Create the Anki Miner note type in Settings before mining",
+            val settings = runBlocking { settingsRepository.settings.first() }
+            val noteType = settings.noteType
+            if (noteType.isNullOrEmpty()) {
+                return AnkiMiningTargetReadiness.Blocked(
+                    "Select and verify a note type in Settings before mining",
                     true,
                 )
-            is AnkiMinerModelProvisioningResult.Conflict ->
-                AnkiMiningTargetReadiness.Blocked(model.stableMessage, false)
-            is AnkiMinerModelProvisioningResult.RecoveryRequired ->
-                AnkiMiningTargetReadiness.Blocked(model.stableMessage, true)
-            is AnkiMinerModelProvisioningResult.FailedBeforeEntry ->
-                AnkiMiningTargetReadiness.Blocked(model.stableMessage, model.retryable)
+            }
+            when (val status = ankiProviderRuntime.verifyUserNoteType(noteType, settings.fieldMap, cancellation)) {
+                is NoteTypeSetupStatus.Verified -> {
+                    val pending = ankiProviderRuntime.remediationInventory(cancellation).pending
+                    if (pending.isEmpty()) {
+                        AnkiMiningTargetReadiness.Ready
+                    } else {
+                        AnkiMiningTargetReadiness.Blocked(
+                            "Resolve pending Anki recovery items before mining",
+                            false,
+                        )
+                    }
+                }
+                NoteTypeSetupStatus.NoteTypeMissing ->
+                    AnkiMiningTargetReadiness.Blocked(
+                        "The selected note type was not found in AnkiDroid. Choose one in Settings.",
+                        true,
+                    )
+                is NoteTypeSetupStatus.FieldsMissing ->
+                    AnkiMiningTargetReadiness.Blocked(
+                        "The selected note type is missing mapped fields. Fix the field mapping in Settings.",
+                        true,
+                    )
+                NoteTypeSetupStatus.FirstFieldMismatch ->
+                    AnkiMiningTargetReadiness.Blocked(
+                        "The first field of the note type must hold the word (used for duplicate detection). Fix it in Settings.",
+                        false,
+                    )
+                is NoteTypeSetupStatus.ProviderError ->
+                    AnkiMiningTargetReadiness.Blocked(status.stableMessage, status.retryable)
+                NoteTypeSetupStatus.NotSelected ->
+                    AnkiMiningTargetReadiness.Blocked(
+                        "Select and verify a note type in Settings before mining",
+                        true,
+                    )
             }
         } catch (_: RuntimeException) {
             AnkiMiningTargetReadiness.Blocked(

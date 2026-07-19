@@ -231,65 +231,6 @@ internal class ContentResolverAnkiGateway(
         return returned?.toString()
     }
 
-    override fun createAnkiMinerModel(
-        command: AnkiProviderMutationCommand.CreateAnkiMinerModel,
-    ): String? {
-        workerThreadGuard.checkWorkerThread()
-        requireAvailableAccess()
-        val values =
-            ContentValues(6).apply {
-                put(FlashCardsContract.Model.NAME, AnkiMinerNoteModel.MODEL_NAME)
-                put(
-                    FlashCardsContract.Model.FIELD_NAMES,
-                    AnkiMinerNoteModel.FIELD_NAMES.joinToString(FIELD_SEPARATOR.toString()),
-                )
-                put(FlashCardsContract.Model.NUM_CARDS, AnkiMinerNoteModel.TEMPLATE_COUNT)
-                put(FlashCardsContract.Model.CSS, AnkiMinerNoteModel.CSS)
-                put(FlashCardsContract.Model.DECK_ID, AnkiMinerNoteModel.DEFAULT_DECK_ID)
-                put(FlashCardsContract.Model.SORT_FIELD_INDEX, AnkiMinerNoteModel.SORT_FIELD_INDEX)
-            }
-        return insert(FlashCardsContract.Model.CONTENT_URI, values)?.toString()
-    }
-
-    override fun updateAnkiMinerTemplate(
-        command: AnkiProviderMutationCommand.UpdateAnkiMinerTemplate,
-    ): Int {
-        workerThreadGuard.checkWorkerThread()
-        requireAvailableAccess()
-        val modelUri =
-            Uri.withAppendedPath(
-                FlashCardsContract.Model.CONTENT_URI,
-                command.modelId.toString(),
-            )
-        val templatesUri = Uri.withAppendedPath(modelUri, "templates")
-        val templateUri =
-            Uri.withAppendedPath(
-                templatesUri,
-                AnkiMinerNoteModel.TEMPLATE_ORDINAL.toString(),
-            )
-        val values =
-            ContentValues(3).apply {
-                put(FlashCardsContract.CardTemplate.NAME, AnkiMinerNoteModel.TEMPLATE_NAME)
-                put(
-                    FlashCardsContract.CardTemplate.QUESTION_FORMAT,
-                    AnkiMinerNoteModel.QUESTION_FORMAT,
-                )
-                put(
-                    FlashCardsContract.CardTemplate.ANSWER_FORMAT,
-                    AnkiMinerNoteModel.ANSWER_FORMAT,
-                )
-            }
-        return try {
-            if (resolverUpdateOverride != null) {
-                resolverUpdateOverride.update(templateUri, values, null, null)
-            } else {
-                resolver.update(templateUri, values, null, null)
-            }
-        } catch (error: Exception) {
-            throw mapMutationFailure(error)
-        }
-    }
-
     override fun storeMedia(command: AnkiProviderMutationCommand.StoreMedia): String? {
         workerThreadGuard.checkWorkerThread()
         requireAvailableAccess()
@@ -578,7 +519,6 @@ internal class ContentResolverAnkiGateway(
         const val LEGACY_API_SPEC = 1
         const val MINIMUM_API_SPEC = 2
         const val DEFAULT_READ_TIMEOUT_MS = 30_000L
-        const val FIELD_SEPARATOR = '\u001f'
         const val PROVIDER_INFO_FLAGS =
             PackageManager.GET_META_DATA or PackageManager.MATCH_DISABLED_COMPONENTS
     }
