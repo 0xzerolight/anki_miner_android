@@ -85,7 +85,9 @@ jobs:
           "$HOST_PYTHON" -m unittest discover -s tools/dependencies/tests -v
           PYTHONPATH=tools/engine-sync \
             "$HOST_PYTHON" -m unittest discover -s tools/engine-sync/tests -v
-          "$HOST_PYTHON" tools/engine-sync/sync_engine.py --check
+          # `sync_engine.py --check` verifies the vendored engine against the
+          # desktop source, so it needs the private desktop checkout and cannot
+          # run on a secretless runner. It runs in scripts/health.sh locally.
           "$HOST_PYTHON" -m pytest -q tests/python/android_bridge
           "$HOST_PYTHON" -m compileall -q \
             app/src/main/python/android_bridge app/src/debug/python
