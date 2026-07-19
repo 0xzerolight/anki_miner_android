@@ -26,7 +26,7 @@ body:
     attributes:
       label: Anki Miner version
       description: Include version name and code from the installed app or release record.
-      placeholder: 0.1.1 (code 2)
+      placeholder: 0.1.2 (code 3)
     validations:
       required: true
 

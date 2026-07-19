@@ -2,6 +2,20 @@
 
 All notable project changes will be recorded here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and releases will use semantic versioning once a public version exists.
 
+## [0.1.2] - 2026-07-19
+
+### Changed
+
+- Anki setup now uses your own note type. Connect AnkiDroid, pick any note type you already have, and map Anki Miner's fields onto it — the same detect-and-map approach as the desktop app. Anki Miner no longer creates or manages a note type of its own.
+
+### Fixed
+
+- The Anki note-type setup no longer strands you on a dead "Resume verified setup" button when AnkiDroid cannot be read. Setup now guides you to connect AnkiDroid first, then select and verify a note type, and mining reports a clear, actionable reason when a note type is not yet ready instead of doing nothing.
+
+### Removed
+
+- First-party "Anki Miner" note-type provisioning, verification, and recovery. If an earlier build already created that note type, just select it during setup — no cards are lost.
+
 ## [0.1.1] - 2026-07-19
 
 First published release; supersedes the internal 0.1.0 test build.
