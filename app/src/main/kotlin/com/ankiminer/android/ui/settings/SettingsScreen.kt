@@ -45,6 +45,42 @@ import com.ankiminer.android.vm.SettingsViewModel
 import com.ankiminer.android.vm.SettingsDraft
 import com.ankiminer.android.vm.SetupViewModel
 
+// SAF picker MIME allowlists for the resource imports. Kept broad on purpose:
+// Android content providers type the same file inconsistently, so a `.zip` may
+// arrive as application/zip OR application/x-zip-compressed, and a `.txt` as
+// text/plain. Anything not listed here is greyed out (or returns a null URI) in
+// the OpenDocument picker, which silently drops the import.
+internal val CUSTOM_DICTIONARY_MIME_TYPES =
+    arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream")
+internal val FREQUENCY_MIME_TYPES =
+    arrayOf(
+        "application/zip",
+        "application/x-zip-compressed",
+        "text/csv",
+        "text/tab-separated-values",
+        "text/plain",
+        "application/octet-stream",
+    )
+internal val PITCH_MIME_TYPES =
+    arrayOf(
+        "application/zip",
+        "application/x-zip-compressed",
+        "text/csv",
+        "text/tab-separated-values",
+        "text/plain",
+        "application/octet-stream",
+    )
+internal val AUDIO_PACK_MIME_TYPES =
+    arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream")
+internal val KNOWN_WORDS_MIME_TYPES =
+    arrayOf(
+        "application/json",
+        "text/csv",
+        "text/tab-separated-values",
+        "text/plain",
+        "application/octet-stream",
+    )
+
 @Composable
 internal fun SettingsRoute(
     viewModel: SettingsViewModel,
@@ -112,17 +148,11 @@ internal fun SettingsRoute(
         onShareDiagnostics = onShareDiagnostics,
         onAttributions = onAttributions,
         onRunSetupWizard = onRunSetupWizard,
-        onImportCustom = { dictionaryPicker.launch(arrayOf("application/zip", "application/octet-stream")) },
-        onImportFrequency = {
-            frequencyPicker.launch(arrayOf("application/zip", "text/csv", "text/tab-separated-values", "text/plain", "application/octet-stream"))
-        },
-        onImportPitch = {
-            pitchPicker.launch(arrayOf("application/zip", "text/csv", "text/tab-separated-values", "application/octet-stream"))
-        },
-        onImportAudioPack = { audioPackPicker.launch(arrayOf("application/zip", "application/octet-stream")) },
-        onImportKnownWords = {
-            knownWordsPicker.launch(arrayOf("application/json", "text/csv", "text/tab-separated-values", "text/plain", "application/octet-stream"))
-        },
+        onImportCustom = { dictionaryPicker.launch(CUSTOM_DICTIONARY_MIME_TYPES) },
+        onImportFrequency = { frequencyPicker.launch(FREQUENCY_MIME_TYPES) },
+        onImportPitch = { pitchPicker.launch(PITCH_MIME_TYPES) },
+        onImportAudioPack = { audioPackPicker.launch(AUDIO_PACK_MIME_TYPES) },
+        onImportKnownWords = { knownWordsPicker.launch(KNOWN_WORDS_MIME_TYPES) },
         modifier = modifier,
     )
 }
