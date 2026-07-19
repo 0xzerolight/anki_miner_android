@@ -80,10 +80,6 @@ Proper-noun filtering uses bundled name wordsets derived from [JMnedict](https:/
 | Sentence audio missing or wrong | Install a Japanese text-to-speech voice in your Android system settings. |
 | Subtitles out of sync | Use the subtitle offset control on the mining screen. |
 
-## Privacy
-
-Offline-first: no accounts, analytics, or tracking. The app only reaches the network for optional Jisho.org lookups and one-time resource downloads (e.g. the UniDic tokenizer), always over HTTPS. See [PRIVACY.md](PRIVACY.md).
-
 ## Contributing
 
 Contributions of any kind are welcome.
@@ -92,7 +88,7 @@ Contributions of any kind are welcome.
 - Architecture overview: [ARCHITECTURE.md](ARCHITECTURE.md).
 - Bug reports and feature requests -> [Issues](https://github.com/0xzerolight/anki_miner_android/issues).
 
-Related project: the desktop [Anki Miner](https://github.com/0xzerolight/anki_miner).
+Main project: [Anki Miner](https://github.com/0xzerolight/anki_miner).
 
 ## License
 
