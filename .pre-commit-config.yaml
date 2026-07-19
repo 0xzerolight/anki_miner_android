@@ -1,0 +1,18 @@
+ci:
+  autofix_prs: true
+  autofix_commit_msg: "chore: auto-fixes from pre-commit hooks"
+  autoupdate_schedule: quarterly
+  autoupdate_commit_msg: "chore: pre-commit autoupdate"
+
+repos:
+  - repo: https://github.com/psf/black-pre-commit-mirror
+    rev: 4160603246a6b365d4a2af661c6d71b0a0f50478  # frozen: 26.5.1
+    hooks:
+      - id: black
+        language_version: python3
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: 2700fd5671c633760d912769c041bfcde2b9a01b  # frozen: v0.15.22
+    hooks:
+      - id: ruff
+        args: [--fix]

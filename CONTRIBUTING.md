@@ -19,6 +19,19 @@ tokenizer/runtime wheels (`app/wheels/`) and ffmpeg/ffprobe
 (`app/src/main/jniLibs/`) are vendored, so a normal Gradle build produces a
 working APK.
 
+## Code style
+
+Python is formatted with `black` and linted with `ruff` (config in
+`pyproject.toml`). To auto-fix on commit, install the hook once:
+
+```sh
+pip install pre-commit
+pre-commit install
+```
+
+CI enforces the same tools in check-only mode (`ruff check .`, `black --check .`),
+so the hook is a convenience, not a requirement.
+
 ## Signing
 
 Generate a keystore and create a `keystore.properties` at the repo root
