@@ -17,9 +17,12 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -38,7 +41,6 @@ import com.ankiminer.android.data.resources.ImportedPitchAccent
 import com.ankiminer.android.data.resources.KnownWordsSourceFormat
 import com.ankiminer.android.data.resources.LocalResourceImportResult
 import com.ankiminer.android.data.resources.PitchAccentSourceFormat
-import com.ankiminer.android.data.resources.ResourceFailure
 import com.ankiminer.android.data.resources.ResourceOperationPhase
 import com.ankiminer.android.data.resources.ResourceOperationProgress
 import com.ankiminer.android.data.resources.ResourceStartupReadiness
@@ -336,20 +338,27 @@ internal fun ResourceOperationCard(
     }
 }
 
+/**
+ * Surfaces a transient failure/error [message] as a Material snackbar in the enclosing
+ * [hostState], then calls [onDismiss] to clear the source once the snackbar disappears.
+ * Replaces the inline failure cards that rendered off-screen at the top of the settings
+ * scroll (bug #3). Keyed on [message]; the null transition between shows lets an identical
+ * consecutive message re-trigger.
+ */
 @Composable
-internal fun ResourceFailureCard(
-    failure: ResourceFailure,
+internal fun MessageSnackbarEffect(
+    message: String?,
+    hostState: SnackbarHostState,
     onDismiss: () -> Unit,
 ) {
-    OutlinedCard(
-        Modifier
-            .fillMaxWidth()
-            .semantics { liveRegion = LiveRegionMode.Polite },
-    ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(stringResource(R.string.resource_operation_stopped), style = MaterialTheme.typography.titleMedium)
-            Text(failure.message)
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.dismiss)) }
+    LaunchedEffect(message) {
+        if (message != null) {
+            hostState.showSnackbar(
+                message = message,
+                withDismissAction = true,
+                duration = SnackbarDuration.Long,
+            )
+            onDismiss()
         }
     }
 }

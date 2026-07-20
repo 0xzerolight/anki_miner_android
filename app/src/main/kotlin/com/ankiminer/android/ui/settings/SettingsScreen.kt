@@ -6,7 +6,6 @@ import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -98,7 +97,6 @@ internal fun SettingsRoute(
     LaunchedEffect(setupViewModel) { setupViewModel.refresh() }
     val draftState by viewModel.draftState.collectAsStateWithLifecycle()
     val saving by viewModel.saving.collectAsStateWithLifecycle()
-    val error by viewModel.error.collectAsStateWithLifecycle()
     val resources by viewModel.resourceState.collectAsStateWithLifecycle()
     val setup by setupViewModel.uiState.collectAsStateWithLifecycle()
     if (!draftState.loaded) {
@@ -133,11 +131,9 @@ internal fun SettingsRoute(
         setup = setup,
         setupViewModel = setupViewModel,
         saving = saving,
-        error = error,
         diagnostics = diagnostics,
         onDraftChange = viewModel::updateDraft,
         onRestoreDefaults = viewModel::restoreDefaults,
-        onDismissError = viewModel::dismissError,
         onRequestPermissions = onRequestPermissions,
         onOpenAppSettings = onOpenAppSettings,
         onInstallAnkiDroid = onInstallAnkiDroid,
@@ -167,11 +163,9 @@ private fun SettingsScreen(
     setup: SetupUiState,
     setupViewModel: SetupViewModel,
     saving: Boolean,
-    error: String?,
     diagnostics: TesterDiagnostics,
     onDraftChange: (SettingsDraft) -> Unit,
     onRestoreDefaults: () -> Unit,
-    onDismissError: () -> Unit,
     onRequestPermissions: () -> Unit,
     onOpenAppSettings: () -> Unit,
     onInstallAnkiDroid: () -> Unit,
@@ -260,9 +254,6 @@ private fun SettingsScreen(
         setup.operation?.let { operation ->
             ResourceOperationCard(operation, setupViewModel::cancelOperation)
         }
-        setup.failure?.let { failure ->
-            ResourceFailureCard(failure, setupViewModel::dismissFailure)
-        }
 
         SettingsSectionHeading(stringResource(R.string.settings_anki_target))
         SettingsSection(stringResource(R.string.settings_anki_target)) {
@@ -303,9 +294,6 @@ private fun SettingsScreen(
             onResolveReview = setupViewModel::resolveAfterExternalReview,
         )
         setup.ankiOperation?.let { AnkiOperationCard() }
-        setup.ankiFailure?.let { failure ->
-            AnkiFailureCard(failure, setupViewModel::dismissAnkiFailure)
-        }
 
         SettingsSectionHeading(stringResource(R.string.settings_media))
         SettingsSection(stringResource(R.string.settings_media)) {
@@ -557,19 +545,6 @@ private fun SettingsScreen(
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text(stringResource(R.string.settings_run_setup_wizard))
-                }
-            }
-        }
-
-        error?.let {
-            OutlinedCard(
-                Modifier
-                    .fillMaxWidth()
-                    .semantics { liveRegion = LiveRegionMode.Polite },
-            ) {
-                Row(Modifier.padding(12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.weight(1f))
-                    TextButton(onClick = onDismissError) { Text(stringResource(R.string.dismiss)) }
                 }
             }
         }
