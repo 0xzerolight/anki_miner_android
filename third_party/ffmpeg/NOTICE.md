@@ -1,12 +1,12 @@
-# FFmpeg, LAME, and Opus notice
+# FFmpeg, LAME, Opus, and dav1d notice
 
 Anki Miner Android bundles standalone position-independent `ffmpeg` and `ffprobe`
 command-line executables (shipped as `libffmpeg.so` and `libffprobe.so` in
 `app/src/main/jniLibs/{arm64-v8a,x86_64}` so the package manager extracts them
 with execute permission). They are invoked as separate subprocesses; no FFmpeg,
-LAME, or Opus code is linked into the application process. Each executable
-statically includes the FFmpeg libraries, LAME, and Opus, and retains only
-Android system-library dependencies.
+LAME, Opus, or dav1d code is linked into the application process. Each
+executable statically includes the FFmpeg libraries, LAME, Opus, and dav1d,
+and retains only Android system-library dependencies.
 
 ## Components and licenses
 
@@ -15,11 +15,12 @@ Android system-library dependencies.
 | FFmpeg | 7.1.5 | LGPL-2.1-or-later — `ffmpeg-COPYING.LGPLv2.1`, `ffmpeg-LICENSE.md` |
 | LAME (libmp3lame) | 3.100 | LGPL-2.0-or-later, GNU *Library* GPL v2 — `lame-COPYING` (`lame-LICENSE` is LAME's commercial-use FAQ, not the license text) |
 | Opus (libopus) | 1.5.2 | BSD-3-Clause — `opus-COPYING`, `opus-AUTHORS` |
+| dav1d (libdav1d) | 1.5.0 | BSD-2-Clause — `dav1d-COPYING` |
 
 The build is configured LGPL, never GPL or non-free: `--enable-gpl`,
 `--enable-nonfree`, and network protocols are disabled, and
 `tools/ffmpeg/assert-ffmpeg-config.py` fails the build unless `CONFIG_GPL=0`,
-`CONFIG_GPLV3=0`, and `CONFIG_NONFREE=0`. All three licenses are compatible with
+`CONFIG_GPLV3=0`, and `CONFIG_NONFREE=0`. All four licenses are compatible with
 the application's GPL-3.0-or-later license (the FFmpeg and LAME "or later"
 clauses permit the combination).
 
@@ -33,6 +34,8 @@ The exact upstream sources, pinned by SHA-256 in `tools/ffmpeg/sources.lock`:
   (`ddfe36cab873794038ae2c1210557ad34857a4b6bdc515785d1da9e175b1da1e`)
 - Opus 1.5.2 — <https://downloads.xiph.org/releases/opus/opus-1.5.2.tar.gz>
   (`65c1d2f78b9f2fb20082c38cbe47c951ad5839345876e46941612ee87f9a7ce1`)
+- dav1d 1.5.0 — <https://code.videolan.org/videolan/dav1d/-/archive/1.5.0/dav1d-1.5.0.tar.gz>
+  (`78b15d9954b513ea92d27f39362535ded2243e1b0924fde39f37a31ebed5f76b`)
 
 The complete build recipe lives in `tools/ffmpeg/` (`build.sh`, the pinned
 `sources.lock`, and the `overrides/` patches). The build harness itself is

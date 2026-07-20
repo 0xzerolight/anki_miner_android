@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+import logging.handlers
 import os
 import sys
 import threading
@@ -11,6 +13,40 @@ from .protocol import BridgeProtocolError, encode_message
 _LOCK = threading.Lock()
 _initialized_home: str | None = None
 _engine_modules_before_initialize: tuple[str, ...] | None = None
+
+_LOG_FILE_NAME = "anki_miner.log"
+_LOG_MAX_BYTES = 1_048_576
+_LOG_BACKUP_COUNT = 1
+_log_handler_installed = False
+
+
+def _install_file_logging(home: str) -> None:
+    """Attach one capped file handler so engine warnings become retrievable.
+
+    ffmpeg/ffprobe failures are logged by the engine at WARNING on propagating
+    module loggers; without a handler they die in logging's last-resort stderr.
+    The file path matches the engine config's ``log_path`` (both derive from
+    HOME). A logging failure must never break the load-bearing bootstrap.
+    """
+
+    global _log_handler_installed
+    if _log_handler_installed:
+        return
+    try:
+        handler = logging.handlers.RotatingFileHandler(
+            os.path.join(home, _LOG_FILE_NAME),
+            maxBytes=_LOG_MAX_BYTES,
+            backupCount=_LOG_BACKUP_COUNT,
+            encoding="utf-8",
+        )
+        handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+        root = logging.getLogger()
+        root.addHandler(handler)
+        if root.level > logging.INFO:
+            root.setLevel(logging.INFO)
+        _log_handler_installed = True
+    except Exception:
+        logging.getLogger(__name__).debug("file logging unavailable", exc_info=True)
 
 
 def _loaded_engine_modules() -> tuple[str, ...]:
@@ -60,6 +96,7 @@ def initialize(files_dir: str) -> str:
             )
         _engine_modules_before_initialize = engine_modules_before
         _initialized_home = requested
+        _install_file_logging(requested)
 
     return encode_message("bootstrap.ready", {"home": requested})
 

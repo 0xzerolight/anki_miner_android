@@ -143,6 +143,82 @@ except Exception as exc:
     assert "home_mismatch" in result.stdout
 
 
+def test_initialize_installs_capped_file_handler_capturing_engine_warnings(tmp_path: Path) -> None:
+    result = _run(
+        """
+import json, logging, logging.handlers, sys
+from android_bridge.bootstrap import initialize
+initialize(sys.argv[1])
+logging.getLogger("anki_miner.services.media_extractor").warning("ffmpeg exit code 1: probe")
+handlers = [
+    handler
+    for handler in logging.getLogger().handlers
+    if isinstance(handler, logging.handlers.RotatingFileHandler)
+]
+handler = handlers[0]
+handler.flush()
+print(json.dumps({
+    "count": len(handlers),
+    "file": handler.baseFilename,
+    "maxBytes": handler.maxBytes,
+    "backupCount": handler.backupCount,
+    "content": open(handler.baseFilename, encoding="utf-8").read(),
+}))
+""",
+        tmp_path,
+    )
+
+    assert result.returncode == 0, result.stderr
+    data = json.loads(result.stdout)
+    assert data["count"] == 1
+    assert data["file"] == str(tmp_path / "anki_miner.log")
+    assert data["maxBytes"] == 1_048_576
+    assert data["backupCount"] == 1
+    assert "ffmpeg exit code 1: probe" in data["content"]
+    assert "anki_miner.services.media_extractor" in data["content"]
+
+
+def test_initialize_twice_installs_exactly_one_handler(tmp_path: Path) -> None:
+    result = _run(
+        """
+import json, logging, logging.handlers, sys
+from android_bridge.bootstrap import initialize
+initialize(sys.argv[1])
+initialize(sys.argv[1])
+handlers = [
+    handler
+    for handler in logging.getLogger().handlers
+    if isinstance(handler, logging.handlers.RotatingFileHandler)
+]
+print(json.dumps({"count": len(handlers)}))
+""",
+        tmp_path,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == {"count": 1}
+
+
+def test_unwritable_log_destination_does_not_break_bootstrap(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    home.mkdir(mode=0o500)
+    try:
+        result = _run(
+            """
+import json, sys
+from android_bridge.bootstrap import initialize
+raw = initialize(sys.argv[1])
+print(json.dumps({"message": json.loads(raw)["type"]}))
+""",
+            home,
+        )
+    finally:
+        home.chmod(0o700)
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == {"message": "bootstrap.ready"}
+
+
 def test_bridge_modules_have_no_top_level_engine_imports() -> None:
     import ast
 

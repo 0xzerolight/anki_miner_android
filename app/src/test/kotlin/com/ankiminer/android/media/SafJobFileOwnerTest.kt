@@ -15,40 +15,20 @@ import org.junit.Test
 
 class SafJobFileOwnerTest {
     @Test
-    fun seekableDescriptorStaysOwnedUntilWholeJobCloses() {
-        val descriptor = FakeDescriptor(rawFd = 41, seekable = true, content = byteArrayOf(1))
-        val owner = ownerWith(descriptor)
-
-        val input = owner.openVideoUri("content://test/seekable")
-
-        assertEquals("/proc/self/fd/41", input.path)
-        assertEquals(PythonMediaInput.Backing.SEEKABLE_DESCRIPTOR, input.backing)
-        assertFalse(descriptor.closed)
-        assertEquals(0, descriptor.copyCount)
-
-        owner.close()
-
-        assertTrue(descriptor.closed)
-        owner.close()
-        assertTrue(descriptor.closed)
-    }
-
-    @Test
-    fun nonSeekableDescriptorCopiesOnceAndBothResourcesLiveForJob() {
-        val directory = Files.createTempDirectory("saf-owner-test").toFile()
+    fun videoDescriptorAlwaysCopiesToCacheAndCleansUpOnClose() {
+        val directory = Files.createTempDirectory("saf-video-copy-test").toFile()
         try {
-            val descriptor =
-                FakeDescriptor(rawFd = 42, seekable = false, content = "mkv".toByteArray())
+            val descriptor = FakeDescriptor(content = "mkv".toByteArray())
             val cache = File(directory, "copy.media")
             val owner = ownerWith(descriptor, cache)
 
-            val input = owner.openVideoUri("content://test/pipe")
+            val input = owner.openVideoUri("content://test/video")
 
             assertEquals(cache.absolutePath, input.path)
-            assertEquals(PythonMediaInput.Backing.CACHE_COPY, input.backing)
+            assertFalse(input.path.startsWith("/proc/self/fd/"))
             assertArrayEquals("mkv".toByteArray(), cache.readBytes())
+            assertEquals(1, descriptor.copyCount)
             assertFalse(descriptor.closed)
-            assertTrue(cache.exists())
 
             owner.close()
 
@@ -60,13 +40,29 @@ class SafJobFileOwnerTest {
     }
 
     @Test
+    fun closingTwiceIsIdempotent() {
+        val directory = Files.createTempDirectory("saf-owner-close-test").toFile()
+        try {
+            val descriptor = FakeDescriptor(content = byteArrayOf(1))
+            val owner = ownerWith(descriptor, File(directory, "copy.media"))
+            owner.openVideoUri("content://test/video")
+
+            owner.close()
+
+            assertTrue(descriptor.closed)
+            owner.close()
+            assertTrue(descriptor.closed)
+        } finally {
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test
     fun failedCopyClosesDescriptorAndDeletesPartialFile() {
         val directory = Files.createTempDirectory("saf-owner-failure").toFile()
         try {
             val descriptor =
                 FakeDescriptor(
-                    rawFd = 43,
-                    seekable = false,
                     content = byteArrayOf(1),
                     copyFailure = IOException("provider failed"),
                 )
@@ -94,7 +90,7 @@ class SafJobFileOwnerTest {
             SafJobFileOwner(
                 DescriptorOpener {
                     opens += 1
-                    FakeDescriptor(44, true, byteArrayOf())
+                    FakeDescriptor(byteArrayOf())
                 },
                 CacheFileFactory { error("cache not expected") },
             )
@@ -108,31 +104,39 @@ class SafJobFileOwnerTest {
 
     @Test
     fun closeAttemptsEveryDescriptorAndReportsAllFailures() {
-        val first = FakeDescriptor(45, true, byteArrayOf(), closeFailure = IOException("first"))
-        val second = FakeDescriptor(46, true, byteArrayOf(), closeFailure = IOException("second"))
-        val descriptors = ArrayDeque(listOf(first, second))
-        val owner =
-            SafJobFileOwner(
-                DescriptorOpener { descriptors.removeFirst() },
-                CacheFileFactory { error("cache not expected") },
-            )
-        owner.openVideoUri("content://test/one")
-        owner.openVideoUri("content://test/two")
+        val directory = Files.createTempDirectory("saf-owner-close-failures").toFile()
+        try {
+            val first = FakeDescriptor(byteArrayOf(), closeFailure = IOException("first"))
+            val second = FakeDescriptor(byteArrayOf(), closeFailure = IOException("second"))
+            val descriptors = ArrayDeque(listOf(first, second))
+            var caches = 0
+            val owner =
+                SafJobFileOwner(
+                    DescriptorOpener { descriptors.removeFirst() },
+                    CacheFileFactory { suffix ->
+                        caches += 1
+                        File(directory, "copy-$caches$suffix").apply { createNewFile() }
+                    },
+                )
+            owner.openVideoUri("content://test/one")
+            owner.openVideoUri("content://test/two")
 
-        val error = assertThrows(IOException::class.java) { owner.close() }
+            val error = assertThrows(IOException::class.java) { owner.close() }
 
-        assertEquals("second", error.message)
-        assertEquals(listOf("first"), error.suppressed.map { it.message })
-        assertTrue(first.closed)
-        assertTrue(second.closed)
+            assertEquals("second", error.message)
+            assertEquals(listOf("first"), error.suppressed.map { it.message })
+            assertTrue(first.closed)
+            assertTrue(second.closed)
+        } finally {
+            directory.deleteRecursively()
+        }
     }
 
     @Test
     fun seekableSubtitleIsStillCopiedWithNormalizedSupportedSuffix() {
         val directory = Files.createTempDirectory("saf-subtitle-test").toFile()
         try {
-            val descriptor =
-                FakeDescriptor(rawFd = 47, seekable = true, content = "subtitle".toByteArray())
+            val descriptor = FakeDescriptor(content = "subtitle".toByteArray())
             var requestedSuffix: String? = null
             val owner =
                 SafJobFileOwner(
@@ -150,7 +154,6 @@ class SafJobFileOwnerTest {
                 )
 
             assertEquals(".srt", requestedSuffix)
-            assertEquals(PythonMediaInput.Backing.CACHE_COPY, input.backing)
             assertTrue(input.path.endsWith(".srt"))
             assertEquals(1, descriptor.copyCount)
             assertFalse(descriptor.closed)
@@ -172,7 +175,7 @@ class SafJobFileOwnerTest {
             SafJobFileOwner(
                 DescriptorOpener {
                     opens += 1
-                    FakeDescriptor(48, true, byteArrayOf())
+                    FakeDescriptor(byteArrayOf())
                 },
                 CacheFileFactory {
                     cacheCreates += 1
@@ -195,8 +198,6 @@ class SafJobFileOwnerTest {
         try {
             val descriptor =
                 FakeDescriptor(
-                    rawFd = 49,
-                    seekable = true,
                     content = byteArrayOf(1),
                     copyFailure = IOException("subtitle provider failed"),
                 )
@@ -223,8 +224,6 @@ class SafJobFileOwnerTest {
         try {
             val descriptor =
                 FakeDescriptor(
-                    rawFd = 50,
-                    seekable = true,
                     content = byteArrayOf(),
                     knownSizeBytes = 32L * 1024 * 1024 + 1,
                 )
@@ -291,8 +290,6 @@ class SafJobFileOwnerTest {
         )
 
     private class FakeDescriptor(
-        override val rawFd: Int,
-        private val seekable: Boolean,
         private val content: ByteArray,
         private val copyFailure: IOException? = null,
         private val closeFailure: IOException? = null,
@@ -302,11 +299,6 @@ class SafJobFileOwnerTest {
             private set
         var copyCount = 0
             private set
-
-        override fun isSeekable(): Boolean {
-            check(!closed)
-            return seekable
-        }
 
         override fun openInputStream(): InputStream {
             check(!closed)

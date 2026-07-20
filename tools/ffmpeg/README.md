@@ -34,11 +34,18 @@ all four executables before replacing the staged `jniLibs` tree, preserving any
 unrelated native libraries and rolling back a failed swap.
 
 Android v1 deliberately supports static JPEG screenshots only. The generated
-configuration gate proves the Matroska input, JPEG, MP3, Opus, WAV, and local
-file/pipe protocol surfaces used by the engine and the S3 instrumented test.
+configuration gate proves the Matroska and MP4 inputs, AV1 decode (dav1d),
+JPEG, MP3, Opus, WAV, and local file/pipe protocol surfaces used by the engine
+and the S3 instrumented test.
 
-The source set is LGPL-compatible: FFmpeg 7.1.5, LAME 3.100, Opus 1.5.2, and
-ffmpeg-android-maker v2.12 at commit
+dav1d builds with meson/ninja, so both must be on the host PATH
+(`python3.13 -m pip install --user meson ninja` suffices). Its assembly is
+per-ABI: arm64 keeps NEON (assembled by clang), x86/x86_64 build C-only —
+consistent with the ffmpeg `--disable-x86asm` emulator stance — so the host
+needs no nasm (`overrides/libdav1d-build.sh`).
+
+The source set is LGPL/BSD-compatible: FFmpeg 7.1.5, LAME 3.100, Opus 1.5.2,
+dav1d 1.5.0 (BSD-2-Clause), and ffmpeg-android-maker v2.12 at commit
 `69bc3f2968e5335fff43123a2bef6c54428144ce`. The corresponding notices, source offer, and static-relink materials for a
 public distribution are in `third_party/ffmpeg/` (the LGPL/BSD license texts and
 `NOTICE.md`).

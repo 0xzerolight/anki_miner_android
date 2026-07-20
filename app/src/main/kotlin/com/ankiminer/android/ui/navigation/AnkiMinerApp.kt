@@ -83,6 +83,7 @@ internal fun AnkiMinerApp(
     onOpenAnkiDroid: () -> Unit,
     onOpenSpeechSettings: () -> Unit,
     onShareDiagnostics: (String) -> Unit,
+    onShareEngineLog: () -> Unit,
 ) {
     val navController = rememberNavController()
     val currentEntry by navController.currentBackStackEntryAsState()
@@ -219,6 +220,7 @@ internal fun AnkiMinerApp(
                     onOpenAnkiDroid = onOpenAnkiDroid,
                     onOpenSpeechSettings = onOpenSpeechSettings,
                     onShareDiagnostics = onShareDiagnostics,
+                    onShareEngineLog = onShareEngineLog,
                     onAttributions = { navController.navigate(Destination.ATTRIBUTION.route) },
                     onRunSetupWizard = { wizardRerunRequested = true },
                 )

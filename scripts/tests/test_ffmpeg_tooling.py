@@ -53,8 +53,9 @@ class FfmpegToolingTests(unittest.TestCase):
             self.assertTrue(url.startswith("https://"))
             rows[key] = (checksum, filename, url)
 
-        self.assertEqual(rows.keys(), {"builder", "ffmpeg", "libmp3lame", "libopus"})
+        self.assertEqual(rows.keys(), {"builder", "ffmpeg", "libdav1d", "libmp3lame", "libopus"})
         self.assertIn("7.1.5", rows["ffmpeg"][1])
+        self.assertIn("1.5.0", rows["libdav1d"][1])
         self.assertIn("69bc3f2968e5335fff43123a2bef6c54428144ce", rows["builder"][1])
 
     def test_offline_verifier_accepts_exact_files_and_rejects_corruption(self) -> None:
@@ -65,6 +66,7 @@ class FfmpegToolingTests(unittest.TestCase):
             entries = {
                 "builder": b"builder",
                 "ffmpeg": b"ffmpeg",
+                "libdav1d": b"dav1d",
                 "libmp3lame": b"lame",
                 "libopus": b"opus",
             }
@@ -95,6 +97,8 @@ class FfmpegToolingTests(unittest.TestCase):
         self.assertIn("arm64-v8a,x86_64", build)
         self.assertIn("--enable-libmp3lame", build)
         self.assertIn("--enable-libopus", build)
+        self.assertIn("--enable-libdav1d", build)
+        self.assertIn("libdav1d-build.sh", build)
         self.assertNotIn("sdkmanager", "\n".join((build, configure, maker, common)))
         self.assertNotIn("--enable-gpl", build)
         self.assertIn("--enable-static", configure)

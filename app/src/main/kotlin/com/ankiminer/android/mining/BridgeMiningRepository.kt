@@ -319,7 +319,11 @@ internal class BridgeMiningRepository(
                 if (run.cancellation.isCancelled()) return
                 subtitlePath = inputOwner.materializeSubtitle(run.input.subtitle)
             } catch (failure: Exception) {
-                recordFault(generation, "Could not prepare the selected media")
+                // A cancelled copy must terminate as Cancelled: a recorded fault would win
+                // over the cancelled flag in terminalState.
+                if (!run.cancellation.isCancelled()) {
+                    recordFault(generation, "Could not prepare the selected media")
+                }
                 throw failure
             }
             if (run.cancellation.isCancelled()) {

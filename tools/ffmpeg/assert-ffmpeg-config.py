@@ -31,6 +31,11 @@ REQUIRED_ENABLED = frozenset(
         "CONFIG_MJPEG_ENCODER",
         "CONFIG_IMAGE2_MUXER",
         "CONFIG_SCALE_FILTER",
+        # AV1 software decode via dav1d, incl. AV1-in-MP4 (mov demuxer).
+        "CONFIG_LIBDAV1D",
+        "CONFIG_LIBDAV1D_DECODER",
+        "CONFIG_AV1_PARSER",
+        "CONFIG_MOV_DEMUXER",
         # Mining audio outputs and full-audio WAV extraction.
         "CONFIG_LIBMP3LAME_ENCODER",
         "CONFIG_MP3_MUXER",
