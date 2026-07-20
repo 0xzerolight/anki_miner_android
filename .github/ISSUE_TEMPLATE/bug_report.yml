@@ -26,7 +26,7 @@ body:
     attributes:
       label: Anki Miner version
       description: Include version name and code from the installed app or release record.
-      placeholder: 0.1.3 (code 4)
+      placeholder: 0.1.4 (code 5)
     validations:
       required: true
 
@@ -99,7 +99,7 @@ body:
     id: diagnostics
     attributes:
       label: Minimal sanitized diagnostics
-      description: Optional. Paste only the smallest reviewed excerpt needed. Do not attach raw logs or source files.
+      description: Optional. Paste only the smallest reviewed excerpt needed — e.g. from the in-app "Share engine log" text, after reviewing it for private info such as file names. Do not attach unreviewed raw logs or source files.
 
   - type: checkboxes
     id: final_review

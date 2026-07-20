@@ -2,6 +2,18 @@
 
 All notable project changes will be recorded here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and releases will use semantic versioning once a public version exists.
 
+## [0.1.4] - 2026-07-20
+
+### Added
+
+- AV1 video support. The bundled FFmpeg now includes the dav1d decoder, so screenshots extract from AV1 releases (mkv, webm, and mp4) instead of failing every word.
+- The engine writes a capped log file, and Settings gains a separate "Share engine log" action so extraction failures can finally be reported with their actual FFmpeg errors. The log can include selected file names; review it before sending — the existing tester diagnostics report stays codes-and-counts only.
+
+### Fixed
+
+- **Media extraction no longer fails for every word.** Selected videos are now copied into app cache before FFmpeg runs. Android's scoped storage blocked FFmpeg child processes from reopening the picked file's descriptor (`Permission denied` on `/proc/self/fd/N`), which made every audio and screenshot extraction fail on every device since 0.1.0.
+- Cancelling a run while the video is still being prepared now ends it as "Cancelled" instead of "Mining stopped".
+
 ## [0.1.3] - 2026-07-20
 
 ### Added
