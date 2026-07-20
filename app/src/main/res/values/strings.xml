@@ -201,7 +201,7 @@
     <string name="pitch_none_installed">No pitch-accent source is installed.</string>
     <string name="pitch_choose_file">Choose pitch-accent file</string>
     <string name="audio_pack_import_title">Import expression audio</string>
-    <string name="audio_pack_import_help">Import a supported local audio-pack ZIP. Android never uses JPod101, Google TTS, or another network audio provider.</string>
+    <string name="audio_pack_import_help">Word audio comes from AnkiConnect-Android\'s on-device local audio server by default. Import a local audio-pack ZIP as an offline fallback for when that server is not running. Android never uses JPod101, Google TTS, or any network audio provider, and no audio leaves your device.</string>
     <string name="audio_pack_none_installed">No local audio pack is installed.</string>
     <string name="audio_pack_id">Stable audio-pack ID</string>
     <string name="audio_pack_choose_zip">Choose audio-pack ZIP</string>
@@ -345,7 +345,7 @@
     <string name="settings_frequency_chain_help">Enabled sources are checked in this order. Newly imported sources are enabled automatically.</string>
     <string name="settings_no_frequency_sources">No valid frequency sources are installed. Import one in Settings.</string>
     <string name="settings_audio_pack_chain">Expression audio priority</string>
-    <string name="settings_audio_pack_help">Only private local packs are supported. No network audio provider is used.</string>
+    <string name="settings_audio_pack_help">AnkiConnect-Android\'s on-device local audio server is the default word-audio source; imported local packs are the offline fallback. No network audio provider is used and no audio leaves your device.</string>
     <string name="settings_no_audio_packs">No valid local audio packs are installed. Import one in Settings.</string>
     <string name="settings_pitch_format">Pitch category labels</string>
     <string name="settings_pitch_installed">%1$s installed · %2$d entries</string>

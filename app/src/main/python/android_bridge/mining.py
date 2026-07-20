@@ -42,6 +42,10 @@ _VIDEO_REQUEST_FIELDS = frozenset(
 )
 _CONFIG_SNAPSHOT_FIELDS = frozenset({"settings", "androidTtsEnabled"})
 _SUBTITLE_SUFFIXES = frozenset({".ass", ".srt", ".ssa", ".vtt"})
+# Expression-audio kinds the Android builder can construct: imported local
+# packs plus the URL-template custom sources (the localaudio localhost server).
+# The cut network kinds (jpod101/googletts) are rejected before any allocation.
+_SUPPORTED_EXPRESSION_AUDIO_KINDS = frozenset({"pack", "custom", "custom_json"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,8 +62,14 @@ class _VideoRequest:
     android_tts_enabled: bool | None
 
 
-class _LocalAudioPackChain:
-    """Small source-priority composite containing local pack fetchers only."""
+class _ExpressionAudioSourceChain:
+    """Source-priority composite over the ordered expression-audio fetchers.
+
+    Members follow config order: the injected localaudio (localhost) source
+    first, then any imported local packs as fallback. Each member is tried in
+    turn; the first hit wins. A member raising is logged and skipped so a down
+    localaudio server falls through to the packs.
+    """
 
     def __init__(self, fetchers: Sequence[object]) -> None:
         self._fetchers = tuple(fetchers)
@@ -76,7 +86,7 @@ class _LocalAudioPackChain:
             try:
                 path = fetcher.fetch(mined_form, reading, cancelled_check)
             except Exception:
-                logger.exception("Local expression-audio pack fetch failed")
+                logger.exception("Expression-audio source fetch failed")
                 continue
             if path is not None:
                 return path
@@ -93,7 +103,7 @@ class _LocalAudioPackChain:
             try:
                 path = fetcher.fetch_candidates(candidates, cancelled_check)
             except Exception:
-                logger.exception("Local expression-audio pack fetch failed")
+                logger.exception("Expression-audio source fetch failed")
                 continue
             if path is not None:
                 return path
@@ -234,27 +244,93 @@ def _close_without_masking(resource: object | None, label: str) -> None:
         logger.exception("Failed to close %s while preserving the primary failure", label)
 
 
-def _build_local_audio_pack_chain(config: object) -> _LocalAudioPackChain | None:
+def _build_expression_audio_source_chain(config: object) -> _ExpressionAudioSourceChain | None:
+    """Compose the ordered expression-audio source chain for one run.
+
+    Mirrors the desktop ``_build_expression_audio_fetcher`` composition minus the
+    cut network kinds. Config order is source priority: the injected localaudio
+    (localhost) custom_json source is the default primary; imported local packs
+    follow as fallback.
+    """
+
     entries = tuple(getattr(config, "expression_audio_chain", ()))
-    if any(getattr(entry, "kind", None) != "pack" for entry in entries):
+
+    # Reject-before-allocate: only the cut network kinds (jpod101/googletts)
+    # raise, and BEFORE any Session/import/packs-dir scan. pack/custom/custom_json
+    # are supported. Validate every entry first so a bad kind cannot slip through
+    # after a valid one has already allocated resources.
+    if any(getattr(entry, "kind", None) not in _SUPPORTED_EXPRESSION_AUDIO_KINDS for entry in entries):
         raise BridgeProtocolError(
             "unsupported_android_feature",
-            "Android expression audio supports local packs only",
+            "Android expression audio supports local packs and on-device local audio only",
         )
+
+    # Two-part fetch-gate mirror (audio_stage.py): the expression_audio Anki
+    # field must be mapped and at least one entry enabled, else the fetcher is
+    # never consulted and building it would be wasted I/O.
     if not getattr(config, "anki_fields", {}).get("expression_audio") or not any(
         getattr(entry, "enabled", False) for entry in entries
     ):
         return None
 
     # Function-local imports are load-bearing: bootstrap and tokenizer resource
-    # registration must precede every engine service import.
+    # registration must precede every engine service import. The bridge fetcher
+    # pulls ``requests`` at its module top, so it is imported here (never at
+    # mining.py's top) to keep the requests-free host test lane importing
+    # ``mining`` cleanly.
     from anki_miner.config.paths import ANKI_MINER_HOME
     from anki_miner.services.audio_packs.registry import AudioPackRegistry
 
-    pack_registry = AudioPackRegistry(config.audio_packs_root)
-    pack_registry.load()
-    fetchers = pack_registry.build_fetcher_chain(config, ANKI_MINER_HOME / "audio_cache" / "local_packs")
-    return _LocalAudioPackChain(fetchers)
+    from .expression_audio_fetcher import CustomAudioFetcher, custom_audio_slug
+
+    # Nesting the custom cache UNDER the approved LOCAL_AUDIO_CACHE_ROOT
+    # (audio_cache/local_packs) keeps the localaudio download inside the
+    # already-approved media-staging prefix (startsWith approval), so bug 7 is
+    # independent of the media-staging approval boundary.
+    cache_root = ANKI_MINER_HOME / "audio_cache" / "local_packs"
+
+    # Lazily scan the packs dir only when an enabled pack entry is present.
+    pack_fetchers_by_id: dict[str, object] = {}
+    if any(getattr(entry, "kind", None) == "pack" and getattr(entry, "enabled", False) for entry in entries):
+        pack_registry = AudioPackRegistry(config.audio_packs_root)
+        pack_registry.load()
+        for pack_fetcher in pack_registry.build_fetcher_chain(config, cache_root):
+            pack_fetchers_by_id[pack_fetcher.pack_id] = pack_fetcher
+
+    # Config order = source priority. This loop never raises: an empty-url custom
+    # entry or an unknown/missing pack is skipped (matching desktop), so combined
+    # with the validate-all-first check the reject-before-allocate invariant holds.
+    fetchers: list[object] = []
+    for entry in entries:
+        if not getattr(entry, "enabled", False):
+            continue
+        kind = getattr(entry, "kind", None)
+        if kind in ("custom", "custom_json"):
+            url = getattr(entry, "url", None)
+            if not url:
+                continue
+            slug = custom_audio_slug(url)
+            fetchers.append(
+                CustomAudioFetcher(
+                    url_template=url,
+                    kind=kind,
+                    cache_dir=cache_root / f"custom_{slug}",
+                    file_prefix=f"custom_{slug}",
+                    # Loopback needs no throttle; delay is timing-only and never
+                    # affects fetched bytes, so desktop OUTPUT parity holds.
+                    delay=0.0,
+                )
+            )
+        elif kind == "pack":
+            pack_id = getattr(entry, "pack_id", None)
+            if pack_id is None:
+                continue
+            resolved = pack_fetchers_by_id.get(pack_id)
+            if resolved is None:
+                continue
+            fetchers.append(resolved)
+
+    return _ExpressionAudioSourceChain(fetchers)
 
 
 class _AndroidOnlineDictionaryProvider:
@@ -347,7 +423,7 @@ def _build_processor(
 
     definition_service: object | None = None
     frequency_service: object | None = None
-    expression_audio_fetcher: _LocalAudioPackChain | None = None
+    expression_audio_fetcher: _ExpressionAudioSourceChain | None = None
     try:
         dictionary_registry = DictionaryRegistry(config.dicts_root)
         try:
@@ -375,7 +451,7 @@ def _build_processor(
         )
         word_filter = WordFilterService(config, tagger=subtitle_parser.tagger)
         media_extractor = MediaExtractorService(config)
-        expression_audio_fetcher = _build_local_audio_pack_chain(config)
+        expression_audio_fetcher = _build_expression_audio_source_chain(config)
 
         pitch_accent_service = None
         if config.pitch_active:

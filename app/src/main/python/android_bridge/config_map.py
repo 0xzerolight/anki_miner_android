@@ -107,6 +107,14 @@ _EXPOSED_CONFIG_FIELDS = frozenset(
 _LEGACY_ANDROID_TTS_FIELD = "reading_tts_enabled"
 _ANDROID_BUNDLED_WORDSETS = frozenset({"surnames", "given-names", "place-names", "org-product"})
 
+# AnkiConnect-Android serves word pronunciation audio from an on-device
+# local-audio server (loopback IPC, not network egress). This custom_json
+# URL template — verbatim from the user's report — is injected as the default
+# PRIMARY expression-audio source; imported local packs remain an ordered
+# fallback. ``{term}``/``{reading}`` are substituted per word by the bridge
+# CustomAudioFetcher; the endpoint returns an ``audioSourceList`` document.
+_LOCALAUDIO_URL = "http://localhost:8765/localaudio/get/?term={term}&reading={reading}"
+
 
 @dataclass(frozen=True)
 class AndroidPaths:
@@ -503,7 +511,19 @@ def map_config_settings(
 
     # These overrides are deliberately applied after user settings.
     updates.update(_android_path_overrides(paths))
-    updates.setdefault("expression_audio_chain", ())
+    # Inject AnkiConnect-Android's on-device local-audio server as the default
+    # PRIMARY expression-audio source, ahead of any imported local packs (which
+    # stay as an ordered fallback). This deliberately widens the settled
+    # packs-only force-override per the confirmed product decision. The parser
+    # can only ever emit ``pack`` entries (untrusted-boundary guard), so the
+    # prepended localaudio source can never collide with an inbound entry, and
+    # the builder's field-mapped gate (mining.py) still suppresses every fetch
+    # when the expression_audio Anki field is unmapped — so the unconditional
+    # injection is inert unless the user actually mapped the audio field.
+    updates["expression_audio_chain"] = (
+        AudioSourceEntry(kind="custom_json", url=_LOCALAUDIO_URL, enabled=True),
+        *updates.get("expression_audio_chain", ()),
+    )
     # The compact native recipe intentionally contains the static JPEG path,
     # not the desktop-only AVIF/WebP encoders.
     updates["screenshot_animated"] = False

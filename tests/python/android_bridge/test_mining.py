@@ -850,7 +850,7 @@ def test_post_process_cleanup_failure_preserves_result_and_partial_card_ids(
     assert registry.active_run_id is None
 
 
-def test_local_audio_chain_is_source_first_cancellable_and_best_effort() -> None:
+def test_expression_audio_chain_is_source_first_cancellable_and_best_effort() -> None:
     calls: list[str] = []
     hit = Path("/cache/audio.mp3")
 
@@ -875,7 +875,9 @@ def test_local_audio_chain_is_source_first_cancellable_and_best_effort() -> None
         def close(self) -> None:
             calls.append(f"close:{self.name}")
 
-    chain = mining._LocalAudioPackChain([Fetcher("broken", None, True), Fetcher("miss", None), Fetcher("hit", hit)])
+    chain = mining._ExpressionAudioSourceChain(
+        [Fetcher("broken", None, True), Fetcher("miss", None), Fetcher("hit", hit)]
+    )
     assert chain.fetch_candidates([("猫", "ねこ")]) == hit
     assert calls == ["candidates:broken", "candidates:miss", "candidates:hit"]
 
@@ -886,14 +888,147 @@ def test_local_audio_chain_is_source_first_cancellable_and_best_effort() -> None
     assert calls == ["close:broken", "close:miss", "close:hit"]
 
 
-def test_expression_audio_builder_rejects_every_non_pack_kind_before_import() -> None:
+@pytest.mark.parametrize("kind", ["jpod101", "googletts"])
+def test_expression_audio_builder_rejects_cut_network_kinds_before_allocation(kind: str) -> None:
+    # custom/custom_json are now deliberately accepted (localaudio + local-audio-
+    # yomichan); only the CUT network kinds must still raise, and before any
+    # Session/import/packs-dir scan.
     config = SimpleNamespace(
-        expression_audio_chain=(SimpleNamespace(kind="jpod101", enabled=True),),
+        expression_audio_chain=(SimpleNamespace(kind=kind, pack_id=None, url=None, enabled=True),),
         anki_fields={"expression_audio": "Audio"},
     )
     with pytest.raises(BridgeProtocolError) as error:
-        mining._build_local_audio_pack_chain(config)
+        mining._build_expression_audio_source_chain(config)
     assert error.value.code == "unsupported_android_feature"
+
+
+def test_expression_audio_builder_rejects_cut_kind_before_any_packs_scan(
+    monkeypatch: pytest.MonkeyPatch,
+    initialized_bridge_home: Path,
+) -> None:
+    # A cut network kind AFTER a valid pack entry must still raise before the
+    # packs-dir is ever scanned (validate-all-first / reject-before-allocate).
+    # Monkeypatching the registry by path imports anki_miner.services (requests).
+    pytest.importorskip("requests", reason="runtime dependency lane")
+    scanned: list[str] = []
+
+    class RecordingRegistry:
+        def __init__(self, root: object) -> None:
+            scanned.append("constructed")
+
+        def load(self) -> None:
+            scanned.append("loaded")
+
+        def build_fetcher_chain(self, config: object, cache_dir: object) -> list[object]:
+            scanned.append("built")
+            return []
+
+    monkeypatch.setattr(
+        "anki_miner.services.audio_packs.registry.AudioPackRegistry",
+        RecordingRegistry,
+    )
+    config = SimpleNamespace(
+        expression_audio_chain=(
+            SimpleNamespace(kind="pack", pack_id="my-pack", url=None, enabled=True),
+            SimpleNamespace(kind="jpod101", pack_id=None, url=None, enabled=True),
+        ),
+        anki_fields={"expression_audio": "Audio"},
+        audio_packs_root=initialized_bridge_home / "audio_packs",
+    )
+    with pytest.raises(BridgeProtocolError) as error:
+        mining._build_expression_audio_source_chain(config)
+    assert error.value.code == "unsupported_android_feature"
+    assert scanned == []
+
+
+def test_expression_audio_builder_returns_none_when_field_unmapped() -> None:
+    # Even with the always-enabled injected localaudio entry, an unmapped
+    # expression_audio field means the fetcher is never consulted -> None.
+    config = SimpleNamespace(
+        expression_audio_chain=(
+            SimpleNamespace(kind="custom_json", pack_id=None, url="http://localhost:8765/x", enabled=True),
+        ),
+        anki_fields={"expression_audio": ""},
+    )
+    assert mining._build_expression_audio_source_chain(config) is None
+
+
+def test_expression_audio_builder_builds_localaudio_custom_json_source(
+    initialized_bridge_home: Path,
+) -> None:
+    pytest.importorskip("requests", reason="runtime dependency lane")
+    from android_bridge.config_map import _LOCALAUDIO_URL
+    from android_bridge.expression_audio_fetcher import CustomAudioFetcher, custom_audio_slug
+    from anki_miner.config.paths import ANKI_MINER_HOME
+
+    config = SimpleNamespace(
+        expression_audio_chain=(SimpleNamespace(kind="custom_json", pack_id=None, url=_LOCALAUDIO_URL, enabled=True),),
+        anki_fields={"expression_audio": "Audio"},
+        audio_packs_root=initialized_bridge_home / "audio_packs",
+    )
+    chain = mining._build_expression_audio_source_chain(config)
+    assert chain is not None
+    try:
+        fetchers = chain._fetchers
+        assert len(fetchers) == 1
+        fetcher = fetchers[0]
+        assert isinstance(fetcher, CustomAudioFetcher)
+        # Cached UNDER the approved local-pack staging root (bug-6-independent).
+        slug = custom_audio_slug(_LOCALAUDIO_URL)
+        assert fetcher._cache_dir == ANKI_MINER_HOME / "audio_cache" / "local_packs" / f"custom_{slug}"
+    finally:
+        chain.close()
+
+
+def test_expression_audio_builder_orders_localaudio_primary_pack_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+    initialized_bridge_home: Path,
+) -> None:
+    pytest.importorskip("requests", reason="runtime dependency lane")
+    from android_bridge.config_map import _LOCALAUDIO_URL
+    from android_bridge.expression_audio_fetcher import CustomAudioFetcher
+
+    class FakePackFetcher:
+        def __init__(self, pack_id: str) -> None:
+            self.pack_id = pack_id
+
+        def close(self) -> None:
+            return None
+
+    fake_pack = FakePackFetcher("my-pack")
+
+    class FakeRegistry:
+        def __init__(self, root: object) -> None:
+            return None
+
+        def load(self) -> None:
+            return None
+
+        def build_fetcher_chain(self, config: object, cache_dir: object) -> list[object]:
+            return [fake_pack]
+
+    monkeypatch.setattr(
+        "anki_miner.services.audio_packs.registry.AudioPackRegistry",
+        FakeRegistry,
+    )
+    config = SimpleNamespace(
+        expression_audio_chain=(
+            SimpleNamespace(kind="custom_json", pack_id=None, url=_LOCALAUDIO_URL, enabled=True),
+            SimpleNamespace(kind="pack", pack_id="my-pack", url=None, enabled=True),
+        ),
+        anki_fields={"expression_audio": "Audio"},
+        audio_packs_root=initialized_bridge_home / "audio_packs",
+    )
+    chain = mining._build_expression_audio_source_chain(config)
+    assert chain is not None
+    try:
+        fetchers = chain._fetchers
+        assert len(fetchers) == 2
+        # Config order == source priority: localaudio primary, pack fallback.
+        assert isinstance(fetchers[0], CustomAudioFetcher)
+        assert fetchers[1] is fake_pack
+    finally:
+        chain.close()
 
 
 def test_online_dictionary_provider_is_memoized_and_cancel_gated_per_run() -> None:
