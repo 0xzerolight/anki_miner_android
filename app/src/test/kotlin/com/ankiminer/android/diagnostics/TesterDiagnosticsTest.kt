@@ -31,7 +31,6 @@ class TesterDiagnosticsTest {
                         applicationId = "com.ankiminer.android",
                         versionName = "0.1.0-alpha.1",
                         versionCode = 100_001,
-                        releaseChannel = "github-apk-alpha",
                         sourceCommit = "0123456789abcdef0123456789abcdef01234567",
                         sdkInt = 35,
                         supportedAbis = listOf("arm64-v8a"),
@@ -91,7 +90,7 @@ class TesterDiagnosticsTest {
             )
 
         assertTrue(diagnostics.report.contains("app.version_name=0.1.0-alpha.1"))
-        assertTrue(diagnostics.report.contains("release.channel=github-apk-alpha"))
+        assertFalse(diagnostics.report.contains("release.channel"))
         assertTrue(
             diagnostics.report.contains(
                 "runtime.tokenizer_publication=sudachipy-arm64-publication",

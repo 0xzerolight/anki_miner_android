@@ -76,7 +76,6 @@ android {
         buildConfigField("boolean", "S1A_PUBLICATION_VERIFIED", "true")
         buildConfigField("boolean", "S1A_ARM64_ACCEPTED", "false")
         buildConfigField("String", "SOURCE_COMMIT", "\"$ankiMinerSourceCommit\"")
-        buildConfigField("String", "RELEASE_CHANNEL", "\"github-alpha\"")
         buildConfigField("String", "S1A_PUBLICATION_BUILD_KEY", "\"$s1aWheelBuildKey\"")
         buildConfigField(
             "String",
@@ -89,7 +88,6 @@ android {
             "\"/data/local/tmp/anki-miner-s1b-unidic.zip\"",
         )
         manifestPlaceholders["ankiMinerSourceCommit"] = ankiMinerSourceCommit
-        manifestPlaceholders["ankiMinerReleaseChannel"] = "github-alpha"
     }
 
     productFlavors {
