@@ -15,6 +15,7 @@ from android_bridge.anki_limits import (
 )
 from android_bridge.callbacks import CallbackAdapters
 from android_bridge.config_map import (
+    _LOCALAUDIO_URL,
     AndroidPaths,
     exposed_config_fields,
     map_config_json,
@@ -1135,7 +1136,11 @@ def test_representative_full_config_message_validates_and_maps(
 
     assert validated == payload
     assert mapped.engine_config.audio_format == "opus"
-    assert mapped.engine_config.expression_audio_chain[0].pack_id == "local-audio"
+    # localaudio (localhost) is injected as the default PRIMARY custom_json source
+    # ahead of the imported pack, which becomes the ordered fallback.
+    assert mapped.engine_config.expression_audio_chain[0].kind == "custom_json"
+    assert mapped.engine_config.expression_audio_chain[0].url == _LOCALAUDIO_URL
+    assert mapped.engine_config.expression_audio_chain[1].pack_id == "local-audio"
     assert mapped.android_tts_enabled is True
 
 

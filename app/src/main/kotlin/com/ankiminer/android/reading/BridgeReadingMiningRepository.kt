@@ -386,7 +386,7 @@ internal class BridgeReadingMiningRepository(
                 stagedSource.sourceKind == StagedReadingSourceKind.EPUB ||
                     stagedSource.imageArchivePath != null ||
                     requireNotNull(run.configSnapshot).androidTtsEnabled == true ||
-                    requireNotNull(run.configSnapshot).hasEnabledExpressionAudio()
+                    requireNotNull(run.configSnapshot).mapsExpressionAudioField()
             if (requireNotNull(run.configSnapshot).androidTtsEnabled == true) {
                 val synthesizer =
                     try {
@@ -1399,14 +1399,21 @@ internal class BridgeReadingMiningRepository(
             is ReadingSourceSelection.MokuroArchivePair -> listOf(sidecar, archive)
         }
 
-    private fun MiningConfigSnapshot.hasEnabledExpressionAudio(): Boolean {
-        val chain = settings["expression_audio_chain"] as? BridgeJsonValue.ArrayValue
+    /**
+     * True when the run will actually fetch expression audio, mirroring the engine's true fetch
+     * condition ([anki_miner] audio_stage: `expression_audio_fetcher is not None and
+     * anki_fields["expression_audio"]`). The bridge injects the localaudio (localhost) source as an
+     * always-enabled default, so the builder returns a non-None fetcher iff the expression_audio
+     * field is mapped; the whole gate therefore reduces to "the field is mapped." The stored
+     * expression_audio_chain is NOT consulted: localaudio is injected Python-side and never appears
+     * in this Kotlin snapshot, so a chain check would miss the localaudio-only, zero-pack case.
+     */
+    private fun MiningConfigSnapshot.mapsExpressionAudioField(): Boolean {
+        val fields = settings["anki_fields"] as? BridgeJsonValue.ObjectValue
             ?: return false
-        return chain.values.any { raw ->
-            val entry = raw as? BridgeJsonValue.ObjectValue
-                ?: return@any false
-            (entry.values["enabled"] as? BridgeJsonValue.Bool)?.value == true
-        }
+        val mapped = fields.values["expression_audio"] as? BridgeJsonValue.Text
+            ?: return false
+        return mapped.value.isNotEmpty()
     }
 
     private companion object {

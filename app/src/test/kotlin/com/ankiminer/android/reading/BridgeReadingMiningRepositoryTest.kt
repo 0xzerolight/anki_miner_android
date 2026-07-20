@@ -71,7 +71,7 @@ class BridgeReadingMiningRepositoryTest {
             harness(
                 runtimeWorkCoordinator = coordinator,
                 releases = releases,
-                expressionAudioEnabled = true,
+                expressionAudioFieldMapped = true,
             )
 
         runBlocking { harness.repository.startReading(INPUT) }
@@ -113,6 +113,36 @@ class BridgeReadingMiningRepositoryTest {
         val resourceLease = coordinator.tryAcquire(RuntimeWorkCoordinator.Kind.RESOURCE)
         assertNotNull(resourceLease)
         requireNotNull(resourceLease).close()
+    }
+
+    @Test
+    fun `localaudio expression audio with zero packs promotes media foreground`() {
+        // The user's headline scenario: the expression_audio field is mapped and NO
+        // audio packs are imported. localaudio (localhost) is injected Python-side and
+        // never appears in this Kotlin snapshot, so the reading FGS must promote on the
+        // mapped field alone — mirroring the engine's true fetch gate (audio_stage).
+        val harness = harness(expressionAudioFieldMapped = true)
+
+        runBlocking { harness.repository.startReading(INPUT) }
+        val curating =
+            awaitState(harness.repository) { it is MiningRunState.Curating } as MiningRunState.Curating
+        assertEquals(0, harness.foreground.startCount.get())
+
+        runBlocking {
+            harness.repository.confirmCuration(
+                curating.request.runId,
+                curating.request.requestId,
+                FIRST_SELECTION,
+            )
+        }
+
+        assertTrue(harness.bridge.curationSubmitted.await(2, TimeUnit.SECONDS))
+        assertEquals(FIRST_SELECTION, harness.bridge.selection)
+        assertEquals(1, harness.foreground.startCount.get())
+        harness.bridge.allowTerminal.countDown()
+
+        assertTrue(awaitState(harness.repository, MiningRunState::isTerminal) is MiningRunState.Success)
+        assertEquals(1, harness.foreground.lease.closeCount.get())
     }
 
     @Test
@@ -208,7 +238,7 @@ class BridgeReadingMiningRepositoryTest {
 
     @Test
     fun `empty media-workload selection completes without foreground promotion`() {
-        val harness = harness(expressionAudioEnabled = true)
+        val harness = harness(expressionAudioFieldMapped = true)
 
         runBlocking { harness.repository.startReading(INPUT) }
         val curating =
@@ -253,7 +283,7 @@ class BridgeReadingMiningRepositoryTest {
 
     @Test
     fun `reading curation preserves prior-page selection for one final foreground promotion`() {
-        val harness = harness(pagedCuration = true, expressionAudioEnabled = true)
+        val harness = harness(pagedCuration = true, expressionAudioFieldMapped = true)
 
         runBlocking { harness.repository.startReading(INPUT) }
         val first = awaitState(harness.repository) {
@@ -444,7 +474,7 @@ class BridgeReadingMiningRepositoryTest {
         ttsEnabled: Boolean = false,
         invokeTts: Boolean = false,
         sentenceAudioFactory: SentenceAudioSynthesizerFactory? = null,
-        expressionAudioEnabled: Boolean = false,
+        expressionAudioFieldMapped: Boolean = false,
         presenterWarning: String? = null,
         terminalErrorCount: Int = 0,
     ): Harness {
@@ -485,18 +515,16 @@ class BridgeReadingMiningRepositoryTest {
                     ReadingConfigSnapshotResolver {
                         MiningConfigSnapshot(
                             settings =
-                                if (expressionAudioEnabled) {
+                                if (expressionAudioFieldMapped) {
+                                    // Model the localaudio-only configuration: the expression_audio
+                                    // Anki field is mapped and ZERO packs are imported. The reading
+                                    // FGS predicate reads anki_fields — localaudio is injected
+                                    // Python-side and never appears in this Kotlin snapshot.
                                     mapOf(
-                                        "expression_audio_chain" to
-                                            BridgeJsonValue.ArrayValue(
-                                                listOf(
-                                                    BridgeJsonValue.ObjectValue(
-                                                        mapOf(
-                                                            "kind" to BridgeJsonValue.Text("pack"),
-                                                            "pack_id" to BridgeJsonValue.Text("local-audio-pack"),
-                                                            "enabled" to BridgeJsonValue.Bool(true),
-                                                        ),
-                                                    ),
+                                        "anki_fields" to
+                                            BridgeJsonValue.ObjectValue(
+                                                mapOf(
+                                                    "expression_audio" to BridgeJsonValue.Text("ExpressionAudio"),
                                                 ),
                                             ),
                                     )
