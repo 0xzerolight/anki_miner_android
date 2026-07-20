@@ -155,9 +155,6 @@
     <string name="anki_recovery_confirm_capacity_detail">Confirm that you made Anki media capacity available. This statement is retained as recovery evidence.</string>
     <string name="anki_recovery_confirm_action">Confirm</string>
     <string name="anki_setup_working">Updating verified Anki setup…</string>
-    <string name="anki_setup_stopped">Anki setup stopped</string>
-    <string name="resource_operation_stopped">Resource operation stopped</string>
-    <string name="dismiss">Dismiss</string>
     <string name="cancel">Cancel</string>
     <string name="progress_mebibytes">%1$d of %2$d MiB</string>
     <string name="resource_phase_preparing">preparing</string>

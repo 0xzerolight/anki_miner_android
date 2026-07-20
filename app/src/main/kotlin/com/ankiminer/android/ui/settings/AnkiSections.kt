@@ -36,7 +36,6 @@ import com.ankiminer.android.anki.provider.AnkiProviderReadiness
 import com.ankiminer.android.anki.provider.AnkiRemediationActionKind
 import com.ankiminer.android.anki.provider.AnkiRemediationType
 import com.ankiminer.android.anki.provider.NoteTypeSetupStatus
-import com.ankiminer.android.data.anki.AnkiSetupFailure
 import com.ankiminer.android.vm.SetupUiState
 
 @Composable
@@ -168,24 +167,6 @@ internal fun AnkiOperationCard() {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(stringResource(R.string.anki_setup_working), style = MaterialTheme.typography.titleMedium)
             LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-        }
-    }
-}
-
-@Composable
-internal fun AnkiFailureCard(
-    failure: AnkiSetupFailure,
-    onDismiss: () -> Unit,
-) {
-    OutlinedCard(
-        Modifier
-            .fillMaxWidth()
-            .semantics { liveRegion = LiveRegionMode.Polite },
-    ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(stringResource(R.string.anki_setup_stopped), style = MaterialTheme.typography.titleMedium)
-            Text(failure.message)
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.dismiss)) }
         }
     }
 }

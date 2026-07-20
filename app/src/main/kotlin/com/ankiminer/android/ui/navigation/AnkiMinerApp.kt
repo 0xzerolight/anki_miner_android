@@ -13,6 +13,8 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -42,6 +44,7 @@ import com.ankiminer.android.ui.attribution.AttributionScreen
 import com.ankiminer.android.ui.attribution.NoticesScreen
 import com.ankiminer.android.ui.reading.ReadingMiningRoute
 import com.ankiminer.android.ui.reading.ReadingMiningTestTags
+import com.ankiminer.android.ui.settings.MessageSnackbarEffect
 import com.ankiminer.android.ui.settings.SettingsRoute
 import com.ankiminer.android.ui.video.VideoMiningRoute
 import com.ankiminer.android.ui.video.VideoMiningTestTags
@@ -134,7 +137,14 @@ internal fun AnkiMinerApp(
         return
     }
 
+    val snackbarHostState = remember { SnackbarHostState() }
+    val settingsError by settingsViewModel.error.collectAsStateWithLifecycle()
+    MessageSnackbarEffect(settingsError, snackbarHostState, settingsViewModel::dismissError)
+    MessageSnackbarEffect(setup.failure?.message, snackbarHostState, setupViewModel::dismissFailure)
+    MessageSnackbarEffect(setup.ankiFailure?.message, snackbarHostState, setupViewModel::dismissAnkiFailure)
+
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         bottomBar = {
             if (currentRoute != Destination.ATTRIBUTION.route && currentRoute != Destination.NOTICES.route) {
                 NavigationBar {
