@@ -2,6 +2,24 @@
 
 All notable project changes will be recorded here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and releases will use semantic versioning once a public version exists.
 
+## [0.1.3] - 2026-07-20
+
+### Added
+
+- Expression audio now pulls from the on-device AnkiConnect-Android `localaudio` server by default, with your imported local audio packs kept as an ordered fallback. A run with `localaudio` and no packs still records expression audio.
+
+### Changed
+
+- Settings save automatically as you edit, matching the desktop app. The hard-to-reach Save button is gone; Restore defaults and the incomplete-number warning stay.
+
+### Fixed
+
+- Media (audio and screenshots) is no longer dropped with "N media file(s) could not be stored in Anki." App-data paths are now canonicalized on both sides so every media source matches the approved staging root.
+- A dictionary, frequency list, or audio resource installed while Settings has unsaved edits now appears in its priority list immediately instead of only after a restart.
+- Only Word/Expression is a required Anki field again. Sentence, definition, picture, audio, and the furigana fields are no longer wrongly mandatory and no longer block mining setup.
+- Large Yomitan dictionaries that previously failed as "oversized" now import, and imports that fail on an unsupported compression method report an actionable, method-named error instead of a generic "corrupt" message.
+- Import, resource, Anki, and save failures now appear as a snackbar instead of a card that could land off-screen higher up the Settings scroll and be missed.
+
 ## [0.1.2] - 2026-07-19
 
 ### Changed
