@@ -15,7 +15,6 @@ internal data class TesterBuildIdentity(
     val applicationId: String,
     val versionName: String,
     val versionCode: Long,
-    val releaseChannel: String,
     val sourceCommit: String,
     val sdkInt: Int,
     val supportedAbis: List<String>,
@@ -36,7 +35,6 @@ internal fun currentTesterBuildIdentity(): TesterBuildIdentity =
         applicationId = BuildConfig.APPLICATION_ID,
         versionName = BuildConfig.VERSION_NAME,
         versionCode = BuildConfig.VERSION_CODE.toLong(),
-        releaseChannel = BuildConfig.RELEASE_CHANNEL,
         sourceCommit = BuildConfig.SOURCE_COMMIT,
         sdkInt = Build.VERSION.SDK_INT,
         supportedAbis = Build.SUPPORTED_ABIS.toList(),
@@ -55,7 +53,6 @@ internal object TesterDiagnosticsBuilder {
         reading: ReadingMiningUiState,
     ): TesterDiagnostics {
         val versionName = safeBuildValue(build.versionName)
-        val releaseChannel = safeBuildValue(build.releaseChannel)
         val sourceCommit = safeBuildValue(build.sourceCommit)
         val report =
             buildString {
@@ -63,7 +60,6 @@ internal object TesterDiagnosticsBuilder {
                 line("app.id", safeBuildValue(build.applicationId))
                 line("app.version_name", versionName)
                 line("app.version_code", build.versionCode.coerceAtLeast(0L).toString())
-                line("release.channel", releaseChannel)
                 line("source.commit", sourceCommit)
                 line("android.sdk", build.sdkInt.coerceAtLeast(0).toString())
                 line(
@@ -119,7 +115,7 @@ internal object TesterDiagnosticsBuilder {
             }.take(MAX_REPORT_CHARS)
 
         return TesterDiagnostics(
-            versionLabel = "$versionName (${build.versionCode.coerceAtLeast(0L)}) · $releaseChannel",
+            versionLabel = "$versionName (${build.versionCode.coerceAtLeast(0L)})",
             sourceLabel = sourceCommit,
             report = report,
         )
