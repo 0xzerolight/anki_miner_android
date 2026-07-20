@@ -34,18 +34,20 @@ internal object AnkiFieldKeys {
             "expression_audio",
         )
 
-    /** Keys that MUST resolve to an existing field before a note type verifies (mirror of
-     * `config_map._REQUIRED_ANKI_FIELD_KEYS` / `anki_note_builder.REQUIRED_FIELD_KEYS`). */
-    val REQUIRED: Set<String> =
-        setOf(
-            "word",
-            "sentence",
-            "definition",
-            "picture",
-            "audio",
-            "expression_furigana",
-            "sentence_furigana",
-        )
+    /**
+     * The user must-map set: the only logical keys a user MUST resolve to an existing field before
+     * a note type verifies. It is deliberately just [WORD] (word/expression) — the AnkiDroid dedup
+     * key, which by contract must be the note type's FIRST field. Every other mapped field is
+     * optional: the user may leave it unmapped and still reach mining-ready.
+     *
+     * This is DELIBERATELY narrower than the engine's `anki_note_builder.REQUIRED_FIELD_KEYS` /
+     * `config_map._REQUIRED_ANKI_FIELD_KEYS`. Those govern which keys must be PRESENT in the emitted
+     * `anki_fields` dict — a separate concern already satisfied unconditionally, because the settings
+     * mapper emits every [ALL] key (empty when unmapped). Do NOT re-widen this to mirror the Python
+     * required-key sets: doing so would wrongly gate optional fields (reading, expression_furigana,
+     * sentence, definition, picture, audio, sentence_furigana) as mandatory in the UI and verify gate.
+     */
+    val REQUIRED: Set<String> = setOf(WORD)
 
     val OPTIONAL: List<String> = ALL.filterNot(REQUIRED::contains)
 }

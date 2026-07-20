@@ -29,19 +29,11 @@ class AnkiFieldKeysTest {
     }
 
     @Test
-    fun `REQUIRED is the exact seven keys and a subset of ALL`() {
-        val expected =
-            setOf(
-                "word",
-                "sentence",
-                "definition",
-                "picture",
-                "audio",
-                "expression_furigana",
-                "sentence_furigana",
-            )
-        assertEquals(expected, AnkiFieldKeys.REQUIRED)
-        assertEquals(7, AnkiFieldKeys.REQUIRED.size)
+    fun `REQUIRED is exactly the word key and a subset of ALL`() {
+        // Only word/expression is user-mandatory; every other field is optional (see AnkiFieldKeys
+        // KDoc). This is a self-contained value lock, NOT a mirror of the Python required-key set.
+        assertEquals(setOf("word"), AnkiFieldKeys.REQUIRED)
+        assertEquals(1, AnkiFieldKeys.REQUIRED.size)
         assertTrue(
             "REQUIRED must be a subset of ALL",
             AnkiFieldKeys.ALL.toSet().containsAll(AnkiFieldKeys.REQUIRED),
@@ -51,7 +43,7 @@ class AnkiFieldKeysTest {
     @Test
     fun `OPTIONAL is ALL minus REQUIRED and partitions ALL with REQUIRED`() {
         assertEquals(AnkiFieldKeys.ALL.toSet() - AnkiFieldKeys.REQUIRED, AnkiFieldKeys.OPTIONAL.toSet())
-        assertEquals(11, AnkiFieldKeys.OPTIONAL.size)
+        assertEquals(17, AnkiFieldKeys.OPTIONAL.size)
         assertTrue(
             "OPTIONAL must be disjoint from REQUIRED",
             AnkiFieldKeys.OPTIONAL.none { it in AnkiFieldKeys.REQUIRED },

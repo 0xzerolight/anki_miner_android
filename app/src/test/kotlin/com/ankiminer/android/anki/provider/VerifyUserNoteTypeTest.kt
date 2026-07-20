@@ -36,8 +36,27 @@ class VerifyUserNoteTypeTest {
     }
 
     @Test
-    fun `a mapping missing a required field reports FieldsMissing with that key`() {
+    fun `only word mapped verifies with every other field left unmapped`() {
         val reads = readService(lapisHandler())
+        // Regression (bug #1): only word maps to field[0]; every other key -- including the
+        // formerly over-required expression_furigana, sentence, definition, picture, audio and
+        // sentence_furigana -- is left empty, as EngineSettingsSnapshotMapper emits them. Only
+        // word is mandatory, so an all-but-word-unmapped note type still verifies.
+        val fieldMap =
+            AnkiFieldKeys.ALL.associateWith { "" }.toMutableMap().apply {
+                put(AnkiFieldKeys.WORD, lapisFields.first())
+            }
+
+        val status = reads.verifyUserNoteType(MODEL_NAME, fieldMap, AnkiCancellation.NONE)
+
+        assertEquals(NoteTypeSetupStatus.Verified(MODEL_ID), status)
+    }
+
+    @Test
+    fun `an optional field mapped to a non-existent field reports FieldsMissing with that key`() {
+        val reads = readService(lapisHandler())
+        // definition is optional now (only word is mandatory), but mapping it to a field the note
+        // type does not have must still be flagged via the missing-optional branch.
         val fieldMap =
             AnkiFieldAutoMap.autoMap(lapisFields).toMutableMap().apply {
                 put("definition", "NoSuchField")
