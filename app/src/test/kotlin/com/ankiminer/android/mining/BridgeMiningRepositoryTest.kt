@@ -10,6 +10,7 @@ import com.ankiminer.android.engine.MiningConfigSnapshot
 import com.ankiminer.android.engine.PyBridge
 import com.ankiminer.android.engine.TokenizerIdentity
 import com.ankiminer.android.engine.VideoMiningWireRequest
+import com.ankiminer.android.media.FileCopyCancelledException
 import com.ankiminer.android.service.MiningForegroundLease
 import com.ankiminer.android.service.MiningForegroundProgress
 import com.ankiminer.android.service.MiningForegroundSessionIdentity
@@ -397,6 +398,57 @@ class BridgeMiningRepositoryTest {
         assertNull(cancelled.runId)
         assertEquals(0, bridge.videoRuns.get())
         assertEquals(0, inputOwner.closeCount.get())
+    }
+
+    @Test
+    fun `cancel during media preparation terminates as cancelled without fault`() {
+        val copyStarted = CountDownLatch(1)
+        val allowCopyFailure = CountDownLatch(1)
+        val runExecutor = Executors.newSingleThreadExecutor().also(executors::add)
+        val controlExecutor = Executors.newSingleThreadExecutor().also(executors::add)
+        val repository =
+            BridgeMiningRepository(
+                pyBridge = FakePyBridge(mismatchedTerminal = false),
+                anki = FakeAnkiCallbacks(ReleaseState.ABSENT),
+                inputOwnerFactory =
+                    MiningInputOwnerFactory {
+                        object : MiningInputOwner {
+                            override fun openVideo(source: MiningSource): String {
+                                copyStarted.countDown()
+                                check(allowCopyFailure.await(2, TimeUnit.SECONDS))
+                                throw FileCopyCancelledException()
+                            }
+
+                            override fun materializeSubtitle(source: MiningSource): String =
+                                error("subtitle must not be reached after a cancelled video copy")
+
+                            override fun close() {}
+                        }
+                    },
+                tokenizerResourceProvider =
+                    InstalledTokenizerResourceProvider {
+                        InstalledTokenizerResource(
+                            File("/tmp/test-unidic"),
+                            TOKENIZER_RESOURCE_ID,
+                            TOKENIZER_SHA,
+                        )
+                    },
+                runtimePaths = MiningRuntimePaths(File("/tmp/cache"), File("/tmp/native")),
+                sourceGrantReleaser = SourceGrantReleaser { },
+                foregroundStarter = FakeForegroundStarter(fail = false),
+                runExecutor = runExecutor.asMiningTaskExecutor(),
+                controlExecutor = controlExecutor.asMiningTaskExecutor(),
+            )
+
+        runBlocking { repository.startVideo(INPUT) }
+        assertTrue(copyStarted.await(2, TimeUnit.SECONDS))
+        val token =
+            requireNotNull((repository.state.value as MiningRunState.Starting).cancellationToken)
+        runBlocking { repository.cancel(token) }
+        allowCopyFailure.countDown()
+
+        val terminal = awaitState(repository, MiningRunState::isTerminal)
+        assertTrue("expected Cancelled, was $terminal", terminal is MiningRunState.Cancelled)
     }
 
     @Test

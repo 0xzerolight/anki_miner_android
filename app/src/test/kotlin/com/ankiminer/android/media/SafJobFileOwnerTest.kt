@@ -15,6 +15,31 @@ import org.junit.Test
 
 class SafJobFileOwnerTest {
     @Test
+    fun videoDescriptorAlwaysCopiesToCacheAndCleansUpOnClose() {
+        val directory = Files.createTempDirectory("saf-video-copy-test").toFile()
+        try {
+            val descriptor = FakeDescriptor(rawFd = 41, seekable = true, content = "mkv".toByteArray())
+            val cache = File(directory, "copy.media")
+            val owner = ownerWith(descriptor, cache)
+
+            val input = owner.openVideoUri("content://test/video")
+
+            assertEquals(cache.absolutePath, input.path)
+            assertFalse(input.path.startsWith("/proc/self/fd/"))
+            assertArrayEquals("mkv".toByteArray(), cache.readBytes())
+            assertEquals(1, descriptor.copyCount)
+            assertFalse(descriptor.closed)
+
+            owner.close()
+
+            assertTrue(descriptor.closed)
+            assertFalse(cache.exists())
+        } finally {
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test
     fun seekableDescriptorStaysOwnedUntilWholeJobCloses() {
         val descriptor = FakeDescriptor(rawFd = 41, seekable = true, content = byteArrayOf(1))
         val owner = ownerWith(descriptor)
