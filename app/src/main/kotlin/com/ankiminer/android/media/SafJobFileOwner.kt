@@ -4,9 +4,6 @@ import android.content.ContentResolver
 import android.content.Context
 import android.net.Uri
 import android.os.ParcelFileDescriptor
-import android.system.ErrnoException
-import android.system.Os
-import android.system.OsConstants
 import java.io.Closeable
 import java.io.File
 import java.io.FileNotFoundException
@@ -19,13 +16,7 @@ import java.util.Locale
 @ConsistentCopyVisibility
 data class PythonMediaInput internal constructor(
     val path: String,
-    val backing: Backing,
-) {
-    enum class Backing {
-        SEEKABLE_DESCRIPTOR,
-        CACHE_COPY,
-    }
-}
+)
 
 internal enum class SafCopyRole {
     VIDEO,
@@ -50,10 +41,12 @@ internal fun interface SafCopyProgressListener {
  * Owns every SAF descriptor opened for one Python mining job.
  *
  * Keep this object alive around the complete parked Python call, including curation and every
- * ffmpeg child process. Seekable videos are passed as `/proc/self/fd/N`; non-seekable videos are
- * copied once into app cache. Subtitles are always copied because the engine's parser dispatches
- * on their filename suffix. The original [ParcelFileDescriptor] remains open until [close], so no
- * backing resource can change ownership underneath the engine.
+ * ffmpeg child process. All inputs are copied once into app cache: a SAF grant lives in the
+ * provider IPC layer, so an ffmpeg child that re-opens `/proc/self/fd/N` is denied by the
+ * FUSE-backed shared-storage permission check (the app deliberately holds no READ_MEDIA_*
+ * permission). Subtitles keep a filename suffix because the engine's parser dispatches on it.
+ * The original [ParcelFileDescriptor] remains open until [close], so no backing resource can
+ * change ownership underneath the engine.
  *
  * Opening and copying may block and must run on the mining worker, never the main thread.
  */
@@ -124,43 +117,31 @@ class SafJobFileOwner internal constructor(
             val descriptor = descriptorOpener.open(uri)
             var cacheFile: File? = null
             try {
-                val input =
-                    if (copySuffix == null && descriptor.isSeekable()) {
-                        require(descriptor.rawFd >= 0) { "SAF descriptor is invalid" }
-                        PythonMediaInput(
-                            path = "/proc/self/fd/${descriptor.rawFd}",
-                            backing = PythonMediaInput.Backing.SEEKABLE_DESCRIPTOR,
-                        )
-                    } else {
-                        val createdCacheFile = cacheFileFactory.create(copySuffix ?: VIDEO_COPY_SUFFIX)
-                        cacheFile = createdCacheFile
-                        require(createdCacheFile.isAbsolute) { "SAF cache path must be absolute" }
-                        val role = if (copySuffix == null) SafCopyRole.VIDEO else SafCopyRole.SUBTITLE
-                        fileCopier.copy(
-                            openSource = descriptor::openInputStream,
-                            destination = createdCacheFile,
-                            knownSizeBytes = descriptor.knownSizeBytes,
-                            policy = if (role == SafCopyRole.VIDEO) VIDEO_COPY_POLICY else SUBTITLE_COPY_POLICY,
-                            cancellation = cancellation,
-                            progressListener =
-                                FileCopyProgressListener { progress ->
-                                    progressListener.onProgress(
-                                        SafCopyProgress(
-                                            role = role,
-                                            copiedBytes = progress.copiedBytes,
-                                            expectedBytes = progress.expectedBytes,
-                                        ),
-                                    )
-                                },
-                        )
-                        check(createdCacheFile.isFile) { "SAF provider copy did not create a file" }
-                        PythonMediaInput(
-                            path = createdCacheFile.absolutePath,
-                            backing = PythonMediaInput.Backing.CACHE_COPY,
-                        )
-                    }
+                val createdCacheFile = cacheFileFactory.create(copySuffix ?: VIDEO_COPY_SUFFIX)
+                cacheFile = createdCacheFile
+                require(createdCacheFile.isAbsolute) { "SAF cache path must be absolute" }
+                val role = if (copySuffix == null) SafCopyRole.VIDEO else SafCopyRole.SUBTITLE
+                fileCopier.copy(
+                    openSource = descriptor::openInputStream,
+                    destination = createdCacheFile,
+                    knownSizeBytes = descriptor.knownSizeBytes,
+                    policy = if (role == SafCopyRole.VIDEO) VIDEO_COPY_POLICY else SUBTITLE_COPY_POLICY,
+                    cancellation = cancellation,
+                    progressListener =
+                        FileCopyProgressListener { progress ->
+                            progressListener.onProgress(
+                                SafCopyProgress(
+                                    role = role,
+                                    copiedBytes = progress.copiedBytes,
+                                    expectedBytes = progress.expectedBytes,
+                                ),
+                            )
+                        },
+                )
+                check(createdCacheFile.isFile) { "SAF provider copy did not create a file" }
+                val input = PythonMediaInput(path = createdCacheFile.absolutePath)
 
-                ownedInputs += OwnedInput(descriptor, cacheFile)
+                ownedInputs += OwnedInput(descriptor, createdCacheFile)
                 input
             } catch (failure: Throwable) {
                 cleanupFailedOpen(descriptor, cacheFile, failure)
@@ -275,11 +256,7 @@ internal fun interface CacheFileFactory {
 }
 
 internal interface OwnedDescriptor : Closeable {
-    val rawFd: Int
     val knownSizeBytes: Long?
-
-    @Throws(IOException::class)
-    fun isSeekable(): Boolean
 
     @Throws(IOException::class)
     fun openInputStream(): InputStream
@@ -300,23 +277,8 @@ private class AndroidDescriptorOpener(
 private class ParcelDescriptor(
     private val descriptor: ParcelFileDescriptor,
 ) : OwnedDescriptor {
-    override val rawFd: Int
-        get() = descriptor.fd
-
     override val knownSizeBytes: Long?
         get() = descriptor.statSize.takeIf { it >= 0L }
-
-    override fun isSeekable(): Boolean =
-        try {
-            Os.lseek(descriptor.fileDescriptor, 0L, OsConstants.SEEK_CUR)
-            true
-        } catch (error: ErrnoException) {
-            if (error.errno == OsConstants.ESPIPE) {
-                false
-            } else {
-                throw IOException("Could not determine SAF descriptor seekability", error)
-            }
-        }
 
     override fun openInputStream(): InputStream {
         // AutoCloseInputStream owns its PFD, so copy from a duplicate and retain the original.

@@ -20,17 +20,21 @@ class S3SafFfmpegInstrumentedTest {
     private val context = ApplicationProvider.getApplicationContext<Context>()
 
     @Test
-    fun seekableSafMkvSupportsProbeAndTwoParallelInheritedFdSpawns() {
-        val fixture = createFixture()
-        val output = File(context.cacheDir, "s3-seekable-output").resetDirectory()
+    fun safMkvCopiesToCacheProbesAndExtractsThenCleansUpAfterJob() {
+        createFixture()
+        val output = File(context.cacheDir, "s3-copy-output").resetDirectory()
+        // The seekable provider variant is the production-realistic descriptor; since the
+        // copy-always fix it must behave exactly like the pipe variant: plain cache path,
+        // no /proc/self/fd, no inherited fds.
         val uri = Uri.parse("content://${BuildConfig.APPLICATION_ID}.s3.provider/seekable")
+        var copiedPath = ""
 
         SafJobFileOwner(context).use { owner ->
             val input = owner.open(uri)
+            copiedPath = input.path
 
-            assertEquals(PythonMediaInput.Backing.SEEKABLE_DESCRIPTOR, input.backing)
-            assertTrue(input.path.startsWith("/proc/self/fd/"))
-            assertTrue(File(input.path).exists())
+            assertFalse(input.path.startsWith("/proc/self/fd/"))
+            assertTrue(File(input.path).isFile)
 
             val result = probeAndExtract(input.path, output)
             assertEquals(
@@ -38,33 +42,6 @@ class S3SafFfmpegInstrumentedTest {
                 result.getJSONArray("streams").getJSONObject(0)
                     .getJSONObject("tags").getString("language"),
             )
-            assertEquals(1, result.getInt("probeInheritedFds"))
-            assertEquals(1, result.getJSONArray("parallelInheritedFds").getInt(0))
-            assertEquals(1, result.getJSONArray("parallelInheritedFds").getInt(1))
-            assertTrue(result.getLong("screenshotBytes") > 0)
-            assertTrue(result.getLong("audioBytes") > 0)
-        }
-
-        // Unit tests assert descriptor closure without relying on process-global fd-number reuse.
-        assertTrue(fixture.exists())
-    }
-
-    @Test
-    fun nonSeekableSafMkvCopiesToCacheAndCleansUpAfterJob() {
-        createFixture()
-        val output = File(context.cacheDir, "s3-pipe-output").resetDirectory()
-        val uri = Uri.parse("content://${BuildConfig.APPLICATION_ID}.s3.provider/pipe")
-        var copiedPath = ""
-
-        SafJobFileOwner(context).use { owner ->
-            val input = owner.open(uri)
-            copiedPath = input.path
-
-            assertEquals(PythonMediaInput.Backing.CACHE_COPY, input.backing)
-            assertFalse(input.path.startsWith("/proc/self/fd/"))
-            assertTrue(File(input.path).isFile)
-
-            val result = probeAndExtract(input.path, output)
             assertEquals(0, result.getInt("probeInheritedFds"))
             assertEquals(0, result.getJSONArray("parallelInheritedFds").getInt(0))
             assertEquals(0, result.getJSONArray("parallelInheritedFds").getInt(1))
