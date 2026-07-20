@@ -44,7 +44,7 @@ class SettingsDraftStoreTest {
     }
 
     @Test
-    fun dirtyDraftSurvivesInventoryAndPersistenceEmissionsUntilSaved() {
+    fun dirtyDraftPreservesScalarEditsButMergesNewInventory() {
         val initialResources = resources("first", "second")
         val store = SettingsDraftStore(SettingsDraft.from(AppSettings(), initialResources))
         val reordered =
@@ -61,10 +61,13 @@ class SettingsDraftStoreTest {
         val expandedResources = resources("first", "second", "third")
         store.reconcile(AppSettings(deckName = "External"), expandedResources)
 
+        // Auto-save keeps the draft dirty for the whole session, so a later inventory emission must
+        // merge the newly installed "third" into the pending edit while leaving the scalar deck edit
+        // and the user's reordering untouched (the persisted "External" is ignored).
         assertTrue(store.state.value.dirty)
         assertEquals("Unsaved", store.state.value.draft.deckName)
         assertEquals(
-            listOf("second", "first"),
+            listOf("second", "first", "third"),
             store.state.value.draft.dictionarySources.map(ResourceChainSelection::resourceId),
         )
 
@@ -73,6 +76,23 @@ class SettingsDraftStoreTest {
         assertFalse(store.state.value.dirty)
         assertEquals(
             listOf("second", "first", "third"),
+            store.state.value.draft.dictionarySources.map(ResourceChainSelection::resourceId),
+        )
+    }
+
+    @Test
+    fun dirtyReconcileKeepsRawNumericTextWhileMergingInventory() {
+        val store = SettingsDraftStore(SettingsDraft.from(AppSettings(), resources("first")))
+        store.update(store.state.value.draft.copy(audioPadding = "1.50"))
+
+        store.reconcile(AppSettings(audioPaddingSeconds = 1.5), resources("first", "second"))
+
+        // Merge-while-dirty must never canonicalize in-progress text: "1.50" stays verbatim even
+        // though the persisted value round-trips to 1.5, while the new dictionary still merges in.
+        assertTrue(store.state.value.dirty)
+        assertEquals("1.50", store.state.value.draft.audioPadding)
+        assertEquals(
+            listOf("first", "second"),
             store.state.value.draft.dictionarySources.map(ResourceChainSelection::resourceId),
         )
     }

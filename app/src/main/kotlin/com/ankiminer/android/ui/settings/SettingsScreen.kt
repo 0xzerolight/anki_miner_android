@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -137,7 +136,6 @@ internal fun SettingsRoute(
         error = error,
         diagnostics = diagnostics,
         onDraftChange = viewModel::updateDraft,
-        onSave = viewModel::save,
         onRestoreDefaults = viewModel::restoreDefaults,
         onDismissError = viewModel::dismissError,
         onRequestPermissions = onRequestPermissions,
@@ -160,7 +158,7 @@ internal fun SettingsRoute(
 /**
  * Mirrors the desktop Settings organisation: Anki, Media, Dictionaries, Audio, Frequency,
  * Filtering, UI. Immediate actions (installs, imports, recovery) run instantly through
- * [SetupViewModel]; the Save button covers only the persisted [AppSettings] fields.
+ * [SetupViewModel]; edits to the persisted [AppSettings] fields auto-save on every change.
  */
 @Composable
 private fun SettingsScreen(
@@ -172,7 +170,6 @@ private fun SettingsScreen(
     error: String?,
     diagnostics: TesterDiagnostics,
     onDraftChange: (SettingsDraft) -> Unit,
-    onSave: () -> Unit,
     onRestoreDefaults: () -> Unit,
     onDismissError: () -> Unit,
     onRequestPermissions: () -> Unit,
@@ -585,13 +582,6 @@ private fun SettingsScreen(
             )
         }
 
-        Button(
-            enabled = !saving && numericDraftValid,
-            modifier = Modifier.fillMaxWidth(),
-            onClick = onSave,
-        ) {
-            Text(stringResource(if (saving) R.string.settings_saving else R.string.settings_save))
-        }
         OutlinedButton(onClick = onRestoreDefaults, enabled = !saving, modifier = Modifier.fillMaxWidth()) {
             Text(stringResource(R.string.settings_restore_defaults))
         }
