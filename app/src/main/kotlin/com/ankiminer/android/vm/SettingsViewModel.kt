@@ -94,6 +94,30 @@ internal data class SettingsDraft(
             jishoEnabled = jisho,
         )
 
+    /**
+     * Re-derive only the three resource chains against live inventory, preserving every other
+     * edit. Reuses the clean-path merge so an in-progress (dirty) draft surfaces newly installed
+     * resources and drops uninstalled ones while keeping the user's order and enable choices.
+     */
+    fun withReconciledChains(resources: ResourceManagerState): SettingsDraft =
+        copy(
+            dictionarySources =
+                EngineSettingsSnapshotMapper.resolveResourceChain(
+                    dictionarySources,
+                    usableDictionaryIds(resources),
+                ),
+            frequencySources =
+                EngineSettingsSnapshotMapper.resolveResourceChain(
+                    frequencySources,
+                    usableFrequencyIds(resources),
+                ),
+            audioPacks =
+                EngineSettingsSnapshotMapper.resolveResourceChain(
+                    audioPacks,
+                    usableAudioPackIds(resources),
+                ),
+        )
+
     companion object {
         fun from(
             settings: AppSettings,
@@ -125,21 +149,17 @@ internal data class SettingsDraft(
                 dictionarySources =
                     EngineSettingsSnapshotMapper.resolveResourceChain(
                         settings.dictionarySources,
-                        resources.dictionaries.filter { it.isUsable }.map { it.slotId },
+                        usableDictionaryIds(resources),
                     ),
                 frequencySources =
                     EngineSettingsSnapshotMapper.resolveResourceChain(
                         settings.frequencySources,
-                        resources.frequencySources
-                            .filter { it.schemaOk && it.entryCount > 0 }
-                            .map { it.sourceId },
+                        usableFrequencyIds(resources),
                     ),
                 audioPacks =
                     EngineSettingsSnapshotMapper.resolveResourceChain(
                         settings.audioPacks,
-                        resources.audioPacks
-                            .filter { it.contentAvailable && it.entryCount > 0 }
-                            .map { it.packId },
+                        usableAudioPackIds(resources),
                     ),
                 excludedWordsets =
                     settings.excludedWordsets.filter { selected ->
@@ -148,6 +168,19 @@ internal data class SettingsDraft(
                 readingTts = settings.readingTtsEnabled,
                 jisho = settings.jishoEnabled,
             )
+
+        private fun usableDictionaryIds(resources: ResourceManagerState): List<String> =
+            resources.dictionaries.filter { it.isUsable }.map { it.slotId }
+
+        private fun usableFrequencyIds(resources: ResourceManagerState): List<String> =
+            resources.frequencySources
+                .filter { it.schemaOk && it.entryCount > 0 }
+                .map { it.sourceId }
+
+        private fun usableAudioPackIds(resources: ResourceManagerState): List<String> =
+            resources.audioPacks
+                .filter { it.contentAvailable && it.entryCount > 0 }
+                .map { it.packId }
     }
 }
 
@@ -179,7 +212,9 @@ internal class SettingsDraftStore(
     ) {
         mutableState.update { current ->
             if (current.loaded && current.dirty) {
-                current
+                // Keep the user's unsaved edits, but still surface newly installed (or dropped)
+                // resources in the chains so the priority list stays reactive without a restart.
+                current.copy(draft = current.draft.withReconciledChains(resources))
             } else {
                 SettingsDraftState(
                     SettingsDraft.from(settings, resources),
