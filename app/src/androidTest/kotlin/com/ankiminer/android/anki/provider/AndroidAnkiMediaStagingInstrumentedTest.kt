@@ -30,6 +30,14 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class AndroidAnkiMediaStagingInstrumentedTest {
     private val context = ApplicationProvider.getApplicationContext<Context>()
+
+    // The staging gate canonicalizes its approved roots (toRealPath resolves the
+    // /data/user/0 -> /data/data app-data symlink) to match the canonical source paths the Python
+    // engine emits. Build test source paths under the same canonical prefix so acceptance holds
+    // whether the device returns the raw or the canonical cache/files form.
+    private val canonicalCacheDir: File = context.cacheDir.toPath().toRealPath().toFile()
+    private val canonicalFilesDir: File = context.filesDir.toPath().toRealPath().toFile()
+
     private val stagingRoot: Path
         get() = context.cacheDir.toPath().resolve(ANKI_MEDIA_STAGING_ROOT)
 
@@ -87,7 +95,7 @@ class AndroidAnkiMediaStagingInstrumentedTest {
     fun sourceOpeningRejectsOutsideFilesSymlinksAndFifosWithoutBlocking() {
         val platform = AndroidAnkiMediaStagingPlatform(context)
         val approved = cacheFile("approved.bin").apply { writeText("approved") }
-        val outside = File(context.filesDir, "$TEST_PREFIX-outside.bin").apply { writeText("outside") }
+        val outside = File(canonicalFilesDir, "$TEST_PREFIX-outside.bin").apply { writeText("outside") }
         val symlink = cacheFile("source-link")
         Files.createSymbolicLink(symlink.toPath(), approved.toPath())
         val fifo = cacheFile("source-fifo")
@@ -182,7 +190,7 @@ class AndroidAnkiMediaStagingInstrumentedTest {
     }
 
     private fun cacheFile(label: String): File =
-        File(context.cacheDir, "$TEST_PREFIX-$label")
+        File(canonicalCacheDir, "$TEST_PREFIX-$label")
 
     private class NoGrantPlatform(
         private val delegate: AnkiMediaStagingPlatform,

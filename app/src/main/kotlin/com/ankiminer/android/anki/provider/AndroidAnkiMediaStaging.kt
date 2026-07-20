@@ -62,16 +62,15 @@ internal class AndroidAnkiMediaStagingPlatform(
     context: Context,
 ) : AnkiMediaStagingPlatform {
     private val appContext = context.applicationContext
-    private val cacheRoot = appContext.cacheDir.toPath().toAbsolutePath().normalize()
-    private val filesRoot = appContext.filesDir.toPath().toAbsolutePath().normalize()
+    // Resolve the trusted /data/user/0 -> /data/data app-data symlink that cacheDir/filesDir
+    // return so these roots share the canonical form the Python engine already emits for every
+    // media source (PyBridge home realpath, anki_adapter path.resolve()). cacheDir/filesDir are
+    // framework-created and always exist, so toRealPath() cannot throw NoSuchFileException.
+    private val cacheRoot = appContext.cacheDir.toPath().toRealPath()
+    private val filesRoot = appContext.filesDir.toPath().toRealPath()
     private val stagingRoot = cacheRoot.resolve(ANKI_MEDIA_STAGING_ROOT).normalize()
     private val versionDirectory = stagingRoot.resolve(STAGING_VERSION).normalize()
-    private val approvedSourceRoots =
-        listOf(
-            cacheRoot,
-            filesRoot.resolve(DICTIONARY_MEDIA_ROOT).normalize(),
-            filesRoot.resolve(LOCAL_AUDIO_CACHE_ROOT).normalize(),
-        )
+    private val approvedSourceRoots = approvedMediaSourceRoots(cacheRoot, filesRoot)
 
     override val authority: String = "${appContext.packageName}.anki-media"
 
@@ -95,13 +94,8 @@ internal class AndroidAnkiMediaStagingPlatform(
     }
 
     override fun openSource(absolutePath: String): FileInputStream {
-        val source = Paths.get(absolutePath).toAbsolutePath().normalize()
-        require(source !in listOf(cacheRoot, filesRoot)) { "Media source must be a file" }
-        require(!source.startsWith(stagingRoot)) { "Media staging cannot read its own private copies" }
-        val approvedRoot =
-            approvedSourceRoots.firstOrNull(source::startsWith)
-                ?: throw IllegalArgumentException("Media source is outside approved app storage")
-        validateSourcePath(approvedRoot, source)
+        val source =
+            approveMediaSource(absolutePath, cacheRoot, filesRoot, stagingRoot, approvedSourceRoots)
 
         val descriptor =
             openCloseOnExec(
@@ -229,31 +223,6 @@ internal class AndroidAnkiMediaStagingPlatform(
         return true
     }
 
-    private fun validateSourcePath(
-        approvedRoot: Path,
-        source: Path,
-    ) {
-        requireSafeDirectory(approvedRoot, "approved media root")
-        val relative = approvedRoot.relativize(source)
-        check(relative.nameCount > 0) { "Media source must be below an approved root" }
-        var current = approvedRoot
-        relative.forEachIndexed { index, component ->
-            current = current.resolve(component)
-            val attributes =
-                Files.readAttributes(
-                    current,
-                    BasicFileAttributes::class.java,
-                    LinkOption.NOFOLLOW_LINKS,
-                )
-            check(!attributes.isSymbolicLink) { "Media source path contains a symbolic link" }
-            if (index == relative.nameCount - 1) {
-                check(attributes.isRegularFile) { "Media source is not a regular file" }
-            } else {
-                check(attributes.isDirectory) { "Media source parent is not a directory" }
-            }
-        }
-    }
-
     private fun resolveDestination(relativePath: String): Path {
         require(relativePath.matches(Regex("v1/[0-9a-f]{64}\\.stage"))) {
             "Unsafe media staging relative path"
@@ -263,6 +232,67 @@ internal class AndroidAnkiMediaStagingPlatform(
             "Unsafe media staging destination"
         }
         return resolved
+    }
+}
+
+/**
+ * The set of app-private roots a media source may live under. Kept Context/Os-free and
+ * top-level so the source-approval decision is JVM-unit-testable without an Android runtime.
+ */
+internal fun approvedMediaSourceRoots(
+    cacheRoot: Path,
+    filesRoot: Path,
+): List<Path> =
+    listOf(
+        cacheRoot,
+        filesRoot.resolve(DICTIONARY_MEDIA_ROOT).normalize(),
+        filesRoot.resolve(LOCAL_AUDIO_CACHE_ROOT).normalize(),
+    )
+
+/**
+ * Normalizes an incoming source path WITHOUT resolving symlinks, confines it to an approved
+ * root, and rejects any symlinked or non-regular component below that root. The roots are the
+ * canonical (symlink-resolved) forms, matching the paths the Python engine emits.
+ */
+internal fun approveMediaSource(
+    absolutePath: String,
+    cacheRoot: Path,
+    filesRoot: Path,
+    stagingRoot: Path,
+    approvedSourceRoots: List<Path>,
+): Path {
+    val source = Paths.get(absolutePath).toAbsolutePath().normalize()
+    require(source !in listOf(cacheRoot, filesRoot)) { "Media source must be a file" }
+    require(!source.startsWith(stagingRoot)) { "Media staging cannot read its own private copies" }
+    val approvedRoot =
+        approvedSourceRoots.firstOrNull(source::startsWith)
+            ?: throw IllegalArgumentException("Media source is outside approved app storage")
+    validateMediaSourcePath(approvedRoot, source)
+    return source
+}
+
+private fun validateMediaSourcePath(
+    approvedRoot: Path,
+    source: Path,
+) {
+    requireSafeDirectory(approvedRoot, "approved media root")
+    val relative = approvedRoot.relativize(source)
+    check(relative.nameCount > 0) { "Media source must be below an approved root" }
+    var current = approvedRoot
+    relative.forEachIndexed { index, component ->
+        current = current.resolve(component)
+        val attributes =
+            Files.readAttributes(
+                current,
+                BasicFileAttributes::class.java,
+                LinkOption.NOFOLLOW_LINKS,
+            )
+        check(!attributes.isSymbolicLink) { "Media source path contains a symbolic link" }
+        if (index == relative.nameCount - 1) {
+            check(attributes.isRegularFile) { "Media source is not a regular file" }
+        } else {
+            check(attributes.isDirectory) { "Media source parent is not a directory" }
+        }
     }
 }
 
