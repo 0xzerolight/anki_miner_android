@@ -39,11 +39,6 @@ _MANIFEST_NAME = "install.manifest.json"
 _COMPATIBILITY_MARKER_NAME = "install.complete"
 _MAX_MANIFEST_BYTES = 16 * 1024
 _MAX_CUSTOM_DICTIONARY_ARCHIVE_BYTES = 1024 * 1024 * 1024
-_CUSTOM_ZIP_MEMBER_LIMIT = 10_000
-_CUSTOM_ZIP_TOTAL_LIMIT = 1024 * 1024 * 1024
-# The desktop importer materializes each JSON bank at once. Keep a hostile
-# custom bank comfortably below the heap-risk range on a 3 GiB Android device.
-_CUSTOM_ZIP_FILE_LIMIT = 16 * 1024 * 1024
 _MAX_LOOKUP_HTML_BYTES = 2 * 1024 * 1024
 _MAX_DICTIONARY_SLOTS = 128
 _FREE_SPACE_RESERVE_BYTES = 32 * 1024 * 1024
@@ -732,6 +727,20 @@ def install_unidic(payload: Mapping[str, object]) -> str:
         )
 
 
+def _engine_uncompressed_limit() -> int:
+    """Return the engine's authoritative total-uncompressed zip cap.
+
+    Single source of truth for the custom (non-catalog) import paths: the bridge
+    defers to the vendored engine's ``MAX_UNCOMPRESSED_BYTES`` (2 GiB, local-user
+    threat model) instead of a divergent bridge constant. Imported
+    function-locally so ANKI_MINER_HOME bootstrap ordering and the eager-import
+    gate (import must sit after ``install_unidic``) both hold.
+    """
+    from anki_miner.services.dictionary.zip_safety import MAX_UNCOMPRESSED_BYTES
+
+    return MAX_UNCOMPRESSED_BYTES
+
+
 @dataclass(frozen=True, slots=True)
 class _ZipIdentity:
     member_count: int
@@ -750,14 +759,15 @@ def _validate_zip_streamed(
     path: Path,
     operation: _Operation,
     *,
-    member_limit: int,
+    member_limit: int | None,
     total_limit: int,
-    file_limit: int,
+    file_limit: int | None,
+    require_root_index: bool,
 ) -> _ZipIdentity:
     try:
         with zipfile.ZipFile(path, "r") as archive:
             infos = archive.infolist()
-            if not infos or len(infos) > member_limit:
+            if not infos or (member_limit is not None and len(infos) > member_limit):
                 raise _fail(
                     "resource_archive_too_large",
                     "Dictionary archive member count is outside its limit",
@@ -786,7 +796,7 @@ def _validate_zip_streamed(
                     )
                 if info.is_dir():
                     continue
-                if info.file_size < 0 or info.file_size > file_limit:
+                if info.file_size < 0 or (file_limit is not None and info.file_size > file_limit):
                     raise _fail(
                         "resource_archive_too_large",
                         "Dictionary archive contains an oversized file",
@@ -800,14 +810,31 @@ def _validate_zip_streamed(
                 if parts == ("index.json",):
                     has_root_index = True
                 actual = 0
-                with archive.open(info, "r") as stream:
+                # Building the decompressor is eager in ``ZipExtFile.__init__``,
+                # so an unsupported method (Deflate64, or a bz2/lzma module absent
+                # under Chaquopy) raises here at ``open`` — never lazily on read.
+                # Split it out of the generic "corrupt" catch-all with an
+                # actionable, method-named diagnostic. ``operation.check`` and the
+                # read loop stay OUTSIDE this narrow try so a cancellation
+                # (``BridgeProtocolError``) is never mislabeled.
+                try:
+                    stream = archive.open(info, "r")
+                except (NotImplementedError, RuntimeError) as exc:
+                    method = zipfile.compressor_names.get(info.compress_type, "unknown")
+                    raise _fail(
+                        "resource_archive_unsupported_compression",
+                        "Dictionary archive uses an unsupported compression method "
+                        f"(zip method {info.compress_type}: {method}); re-create the "
+                        ".zip with standard Deflate compression and no encryption",
+                    ) from exc
+                with stream:
                     while True:
                         operation.check()
                         chunk = stream.read(_COPY_CHUNK_BYTES)
                         if not chunk:
                             break
                         actual += len(chunk)
-                        if actual > info.file_size or actual > file_limit:
+                        if actual > info.file_size or (file_limit is not None and actual > file_limit):
                             raise _fail(
                                 "resource_archive_too_large",
                                 "Dictionary file exceeds its declared limit",
@@ -817,7 +844,7 @@ def _validate_zip_streamed(
                         "invalid_resource_archive",
                         "Dictionary member length is inconsistent",
                     )
-            if not has_root_index:
+            if require_root_index and not has_root_index:
                 raise _fail(
                     "invalid_resource_archive",
                     "Dictionary archive has no root index.json",
@@ -826,7 +853,10 @@ def _validate_zip_streamed(
     except BridgeProtocolError:
         raise
     except (zipfile.BadZipFile, RuntimeError, OSError, EOFError) as exc:
-        raise _fail("invalid_resource_archive", "Dictionary archive is corrupt") from exc
+        # Unsupported-compression errors are split off above; only genuine
+        # structural corruption reaches here. Name the exception class (PII-safe)
+        # so a screenshot-only report stays diagnosable.
+        raise _fail("invalid_resource_archive", f"Dictionary archive is corrupt ({type(exc).__name__})") from exc
 
 
 def _dictionary_sidecar(
@@ -1065,17 +1095,14 @@ def import_dictionary(payload: Mapping[str, object]) -> str:
             identity = _validate_zip_streamed(
                 copied.path,
                 operation,
-                member_limit=(
-                    catalog_resource.dictionary.archive_member_limit if catalog_resource else _CUSTOM_ZIP_MEMBER_LIMIT
-                ),
+                member_limit=(catalog_resource.dictionary.archive_member_limit if catalog_resource else None),
                 total_limit=(
                     catalog_resource.dictionary.uncompressed_bytes_limit
                     if catalog_resource
-                    else _CUSTOM_ZIP_TOTAL_LIMIT
+                    else _engine_uncompressed_limit()
                 ),
-                file_limit=(
-                    catalog_resource.dictionary.file_bytes_limit if catalog_resource else _CUSTOM_ZIP_FILE_LIMIT
-                ),
+                file_limit=(catalog_resource.dictionary.file_bytes_limit if catalog_resource else None),
+                require_root_index=catalog_resource is not None,
             )
             if catalog_resource and (
                 identity.member_count != catalog_resource.dictionary.member_count

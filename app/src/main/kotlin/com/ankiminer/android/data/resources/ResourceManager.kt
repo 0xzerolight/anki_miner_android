@@ -770,6 +770,7 @@ internal class AndroidResourceManager(
             setOf(
                 "resource_archive_mismatch",
                 "resource_archive_too_large",
+                "resource_archive_unsupported_compression",
                 "invalid_resource_archive",
                 "unsafe_resource_archive",
                 "unidic_provenance_mismatch",

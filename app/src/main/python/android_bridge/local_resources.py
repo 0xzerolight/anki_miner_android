@@ -300,9 +300,10 @@ def import_frequency(payload: Mapping[str, object]) -> str:
                 core._validate_zip_streamed(
                     copied.path,
                     operation,
-                    member_limit=core._CUSTOM_ZIP_MEMBER_LIMIT,
-                    total_limit=core._CUSTOM_ZIP_TOTAL_LIMIT,
-                    file_limit=core._CUSTOM_ZIP_FILE_LIMIT,
+                    member_limit=None,
+                    total_limit=core._engine_uncompressed_limit(),
+                    file_limit=None,
+                    require_root_index=False,
                 )
             operation.check()
             from anki_miner.exceptions import SetupError
@@ -446,9 +447,10 @@ def import_pitch(payload: Mapping[str, object]) -> str:
                     core._validate_zip_streamed(
                         copied.path,
                         operation,
-                        member_limit=core._CUSTOM_ZIP_MEMBER_LIMIT,
-                        total_limit=core._CUSTOM_ZIP_TOTAL_LIMIT,
-                        file_limit=core._CUSTOM_ZIP_FILE_LIMIT,
+                        member_limit=None,
+                        total_limit=core._engine_uncompressed_limit(),
+                        file_limit=None,
+                        require_root_index=False,
                     )
                     from anki_miner.services.pitch_accent.yomitan_pitch_importer import (
                         import_yomitan_pitch_zip,

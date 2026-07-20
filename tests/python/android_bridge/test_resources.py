@@ -343,6 +343,30 @@ def _yomitan_zip(path: Path, *, term: str, meaning: str, revision: str) -> Path:
     return path
 
 
+# > the retired 16 MiB per-file cap, so a term/meta bank of this size exercises
+# the relaxed limits and forces the importer to materialize it via json.loads.
+_OVERSIZED_MEMBER_BYTES = 17 * 1024 * 1024
+
+
+def _yomitan_meta_bank_zip(path: Path, *, entry: list, frequency_mode: str | None = None) -> Path:
+    """Build a Yomitan meta-bank zip (pitch/frequency) whose sole
+    term_meta_bank_*.json exceeds the retired 16 MiB per-file cap.
+
+    ``entry`` is the one usable ``[term, mode, data]`` triple; a padding triple
+    (arity 3, non-blank term, non-target mode) is structurally valid so
+    ``iter_banks`` yields it — the importer then skips it — while pushing the
+    bank past 16 MiB.
+    """
+    index: dict[str, object] = {"title": "Meta Fixture", "revision": "1", "format": 3}
+    if frequency_mode is not None:
+        index["frequencyMode"] = frequency_mode
+    rows = [entry, ["pad", "x", "A" * _OVERSIZED_MEMBER_BYTES]]
+    with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("index.json", json.dumps(index, ensure_ascii=False))
+        archive.writestr("term_meta_bank_1.json", json.dumps(rows, ensure_ascii=False))
+    return path
+
+
 @pytest.mark.skipif(
     importlib.util.find_spec("requests") is None,
     reason="the lean host lane intentionally excludes runtime engine dependencies",
@@ -651,6 +675,7 @@ def test_streamed_zip_validation_rejects_links_duplicates_and_cancel(
             member_limit=10,
             total_limit=1024,
             file_limit=1024,
+            require_root_index=False,
         )
 
     duplicate = tmp_path / "duplicate.zip"
@@ -665,6 +690,7 @@ def test_streamed_zip_validation_rejects_links_duplicates_and_cancel(
             member_limit=10,
             total_limit=1024,
             file_limit=1024,
+            require_root_index=False,
         )
 
     operation = resources._Operation("cancelled")
@@ -676,18 +702,191 @@ def test_streamed_zip_validation_rejects_links_duplicates_and_cancel(
             member_limit=10,
             total_limit=1024,
             file_limit=1024,
+            require_root_index=False,
         )
     assert cancelled.value.code == "resource_operation_cancelled"
 
 
-def test_dictionary_memory_and_lookup_limits_are_low_memory_safe() -> None:
-    assert resources._CUSTOM_ZIP_FILE_LIMIT == 16 * 1024 * 1024
-    assert resources._CUSTOM_ZIP_TOTAL_LIMIT == 1024 * 1024 * 1024
+def test_lookup_html_limit_is_low_memory_safe() -> None:
     assert resources._MAX_LOOKUP_HTML_BYTES == 2 * 1024 * 1024
     resources._validate_lookup_html("x" * resources._MAX_LOOKUP_HTML_BYTES)
     with pytest.raises(BridgeProtocolError) as oversized:
         resources._validate_lookup_html("x" * (resources._MAX_LOOKUP_HTML_BYTES + 1))
     assert oversized.value.code == "dictionary_result_too_large"
+
+
+# The engine's authoritative uncompressed cap, inlined so the direct
+# _validate_zip_streamed tests below stay in the lean host lane (no engine
+# import). test_engine_uncompressed_limit_is_single_source_of_truth proves the
+# production helper actually resolves to this same value.
+_ENGINE_TOTAL_LIMIT = 2 * 1024 * 1024 * 1024
+
+
+def _zip_with_members(path: Path, members: list[tuple[str, bytes]]) -> Path:
+    """Build a plain custom zip (stdlib only) from ``(name, content)`` members."""
+    with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for name, content in members:
+            archive.writestr(name, content)
+    return path
+
+
+def test_streamed_zip_accepts_oversized_member_but_keeps_total_cap(tmp_path: Path) -> None:
+    big = _zip_with_members(tmp_path / "big.zip", [("term_bank_1.json", b"A" * _OVERSIZED_MEMBER_BYTES)])
+    # The retired 16 MiB per-file cap is gone: a single >16 MiB bank is accepted.
+    identity = resources._validate_zip_streamed(
+        big,
+        resources._Operation("big-accept"),
+        member_limit=None,
+        total_limit=_ENGINE_TOTAL_LIMIT,
+        file_limit=None,
+        require_root_index=False,
+    )
+    assert isinstance(identity, resources._ZipIdentity)
+    assert identity.uncompressed_bytes == _OVERSIZED_MEMBER_BYTES
+    # The total-uncompressed cap is retained and still rejects the same archive.
+    with pytest.raises(BridgeProtocolError, match="expands beyond") as rejected:
+        resources._validate_zip_streamed(
+            big,
+            resources._Operation("big-reject"),
+            member_limit=None,
+            total_limit=16 * 1024 * 1024,
+            file_limit=None,
+            require_root_index=False,
+        )
+    assert rejected.value.code == "resource_archive_too_large"
+
+
+def test_streamed_zip_member_cap_is_opt_in(tmp_path: Path) -> None:
+    members = [(f"term_bank_{i}.json", b"") for i in range(10_001)]
+    many = _zip_with_members(tmp_path / "many.zip", members)
+    # The retired 10_000-member cap is gone under member_limit=None.
+    identity = resources._validate_zip_streamed(
+        many,
+        resources._Operation("many-accept"),
+        member_limit=None,
+        total_limit=_ENGINE_TOTAL_LIMIT,
+        file_limit=None,
+        require_root_index=False,
+    )
+    assert identity.member_count == 10_001
+    # A caller that opts back into a member cap (the catalog path) still enforces it.
+    with pytest.raises(BridgeProtocolError, match="member count") as rejected:
+        resources._validate_zip_streamed(
+            many,
+            resources._Operation("many-reject"),
+            member_limit=5,
+            total_limit=_ENGINE_TOTAL_LIMIT,
+            file_limit=None,
+            require_root_index=False,
+        )
+    assert rejected.value.code == "resource_archive_too_large"
+
+
+def test_streamed_zip_rejects_empty_archive_even_without_member_cap(tmp_path: Path) -> None:
+    empty = _zip_with_members(tmp_path / "empty.zip", [])
+    with pytest.raises(BridgeProtocolError, match="member count") as rejected:
+        resources._validate_zip_streamed(
+            empty,
+            resources._Operation("empty"),
+            member_limit=None,
+            total_limit=_ENGINE_TOTAL_LIMIT,
+            file_limit=None,
+            require_root_index=False,
+        )
+    assert rejected.value.code == "resource_archive_too_large"
+
+
+def test_streamed_zip_root_index_requirement_is_opt_in(tmp_path: Path) -> None:
+    no_index = _zip_with_members(tmp_path / "no-index.zip", [("term_bank_1.json", b"[]")])
+    # Custom imports let the engine importer own index.json validation.
+    identity = resources._validate_zip_streamed(
+        no_index,
+        resources._Operation("no-index-accept"),
+        member_limit=None,
+        total_limit=_ENGINE_TOTAL_LIMIT,
+        file_limit=None,
+        require_root_index=False,
+    )
+    assert isinstance(identity, resources._ZipIdentity)
+    # The catalog-pinned path still demands a root index.json.
+    with pytest.raises(BridgeProtocolError, match="no root index") as rejected:
+        resources._validate_zip_streamed(
+            no_index,
+            resources._Operation("no-index-reject"),
+            member_limit=None,
+            total_limit=_ENGINE_TOTAL_LIMIT,
+            file_limit=None,
+            require_root_index=True,
+        )
+    assert rejected.value.code == "invalid_resource_archive"
+
+
+def test_streamed_zip_unsupported_compression_is_distinct_from_corrupt(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Build the fixture FIRST (writestr uses ZipFile.open), then patch open() so
+    # only the validator's member read fails.
+    fixture = _zip_with_members(tmp_path / "method.zip", [("term_bank_1.json", b"[]")])
+
+    def _raise_not_implemented(*args: object, **kwargs: object) -> None:
+        raise NotImplementedError("compression type 9 (deflate64)")
+
+    monkeypatch.setattr(zipfile.ZipFile, "open", _raise_not_implemented)
+    with pytest.raises(BridgeProtocolError) as deflate64:
+        resources._validate_zip_streamed(
+            fixture,
+            resources._Operation("deflate64"),
+            member_limit=None,
+            total_limit=_ENGINE_TOTAL_LIMIT,
+            file_limit=None,
+            require_root_index=False,
+        )
+    assert deflate64.value.code == "resource_archive_unsupported_compression"
+
+    # A missing bz2/lzma module (RuntimeError under Chaquopy) maps to the same code.
+    def _raise_missing_module(*args: object, **kwargs: object) -> None:
+        raise RuntimeError("Compression requires the (missing) bz2 module")
+
+    monkeypatch.setattr(zipfile.ZipFile, "open", _raise_missing_module)
+    with pytest.raises(BridgeProtocolError) as missing_bz2:
+        resources._validate_zip_streamed(
+            fixture,
+            resources._Operation("missing-bz2"),
+            member_limit=None,
+            total_limit=_ENGINE_TOTAL_LIMIT,
+            file_limit=None,
+            require_root_index=False,
+        )
+    assert missing_bz2.value.code == "resource_archive_unsupported_compression"
+
+
+def test_streamed_zip_reports_genuine_corruption_with_exception_class(tmp_path: Path) -> None:
+    garbage = tmp_path / "garbage.zip"
+    garbage.write_bytes(b"this is definitely not a zip archive")
+    with pytest.raises(BridgeProtocolError) as corrupt:
+        resources._validate_zip_streamed(
+            garbage,
+            resources._Operation("garbage"),
+            member_limit=None,
+            total_limit=_ENGINE_TOTAL_LIMIT,
+            file_limit=None,
+            require_root_index=False,
+        )
+    assert corrupt.value.code == "invalid_resource_archive"
+    # The residual corrupt message names the exception class for diagnosability.
+    assert "BadZipFile" in str(corrupt.value)
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="importing the engine zip_safety module requires the runtime dependency set",
+)
+def test_engine_uncompressed_limit_is_single_source_of_truth() -> None:
+    from anki_miner.services.dictionary.zip_safety import MAX_UNCOMPRESSED_BYTES
+
+    assert resources._engine_uncompressed_limit() == 2 * 1024 * 1024 * 1024
+    assert resources._engine_uncompressed_limit() == MAX_UNCOMPRESSED_BYTES
 
 
 def test_cleanup_restores_crash_backup_and_removes_operation_leftovers(
@@ -1171,3 +1370,130 @@ def test_boundary_routes_local_resource_inventory(
     )
     assert decoded.payload["frequencies"] == []
     assert decoded.payload["audioPacks"] == []
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="the lean host lane intentionally excludes runtime engine dependencies",
+)
+def test_custom_dictionary_import_accepts_oversized_term_bank(
+    tmp_path: Path,
+    initialized_bridge_home: Path,
+) -> None:
+    # 大辞泉-shaped: a legitimate term_bank_*.json larger than the retired 16 MiB
+    # per-file cap must import now that the bridge defers to the engine's limits.
+    index = {"title": "Big Fixture", "revision": "1", "format": 3}
+    rows = [["猫", "", "", "", 0, ["x" * _OVERSIZED_MEMBER_BYTES], 1, ""]]
+    source = tmp_path / "big-dict.zip"
+    with zipfile.ZipFile(source, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("index.json", json.dumps(index, ensure_ascii=False))
+        archive.writestr("term_bank_1.json", json.dumps(rows, ensure_ascii=False))
+
+    imported = decode_envelope(
+        resources.import_dictionary(
+            {
+                "operationId": "big-dict",
+                "sourcePath": str(source),
+                "slotId": "bigdict",
+                "overwrite": False,
+                "catalogResourceId": None,
+            }
+        ),
+        expected_type="resource.dictionary.imported",
+    )
+    assert imported.payload["slotId"] == "bigdict"
+    assert imported.payload["entryCount"] >= 1
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="local-resource importers require the runtime engine dependency set",
+)
+def test_pitch_zip_import_accepts_oversized_meta_bank(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # NHK2016-shaped pitch route through import_pitch(zip) -> import_yomitan_pitch_zip.
+    _local_home(tmp_path, monkeypatch)
+    source = _yomitan_meta_bank_zip(
+        tmp_path / "pitch.zip",
+        entry=["猫", "pitch", {"reading": "ねこ", "pitches": [{"position": 0}]}],
+    )
+    imported = decode_envelope(
+        local_resources.import_pitch(
+            {
+                "operationId": "pitch-zip",
+                "sourcePath": str(source),
+                "sourceName": "Fixture NHK",
+                "sourceFormat": "zip",
+                "overwrite": False,
+            }
+        ),
+        expected_type="resource.pitch.imported",
+    )
+    assert imported.payload["entryCount"] >= 1
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="local-resource importers require the runtime engine dependency set",
+)
+def test_frequency_zip_import_accepts_oversized_meta_bank(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Frequency route through import_frequency(zip) -> import_frequency_source.
+    _local_home(tmp_path, monkeypatch)
+    source = _yomitan_meta_bank_zip(
+        tmp_path / "freq.zip",
+        entry=["猫", "freq", 10],
+        frequency_mode="rank",
+    )
+    imported = decode_envelope(
+        local_resources.import_frequency(
+            {
+                "operationId": "freq-zip",
+                "sourcePath": str(source),
+                "sourceId": "fixture-freq-zip",
+                "sourceName": "Fixture Freq",
+                "sourceFormat": "zip",
+                "overwrite": False,
+            }
+        ),
+        expected_type="resource.frequency.imported",
+    )
+    assert imported.payload["entryCount"] >= 1
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="local-resource importers require the runtime engine dependency set",
+)
+def test_pitch_zip_unsupported_compression_propagates_verbatim(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The bridge validator raises before import_yomitan_pitch_zip runs; the code
+    # must propagate verbatim, uncaught by the pitch (SetupError, UnicodeError,
+    # csv.Error, OSError) except -> would otherwise be relabeled pitch_import_failed.
+    _local_home(tmp_path, monkeypatch)
+    source = _yomitan_meta_bank_zip(
+        tmp_path / "pitch-method.zip",
+        entry=["猫", "pitch", {"reading": "ねこ", "pitches": [{"position": 0}]}],
+    )
+
+    def _raise_not_implemented(*args: object, **kwargs: object) -> None:
+        raise NotImplementedError("compression type 9 (deflate64)")
+
+    monkeypatch.setattr(zipfile.ZipFile, "open", _raise_not_implemented)
+    with pytest.raises(BridgeProtocolError) as failed:
+        local_resources.import_pitch(
+            {
+                "operationId": "pitch-method",
+                "sourcePath": str(source),
+                "sourceName": "Fixture NHK",
+                "sourceFormat": "zip",
+                "overwrite": False,
+            }
+        )
+    assert failed.value.code == "resource_archive_unsupported_compression"
