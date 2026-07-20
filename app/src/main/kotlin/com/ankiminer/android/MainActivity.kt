@@ -13,9 +13,11 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.ankiminer.android.anki.provider.ANKIDROID_PACKAGE
 import com.ankiminer.android.data.settings.AppSettings
+import com.ankiminer.android.diagnostics.EngineLogReader
 import com.ankiminer.android.data.settings.ThemeMode
 import com.ankiminer.android.mining.MiningRepositoryFactory
 import com.ankiminer.android.mining.MiningRuntimePermissions
@@ -25,6 +27,10 @@ import com.ankiminer.android.ui.navigation.AnkiMinerApp
 import com.ankiminer.android.ui.theme.AnkiMinerTheme
 import com.ankiminer.android.vm.ReadingMiningViewModel
 import com.ankiminer.android.vm.SettingsViewModel
+import java.io.File
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import com.ankiminer.android.vm.SetupViewModel
 import com.ankiminer.android.vm.VideoMiningViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -111,6 +117,7 @@ class MainActivity : ComponentActivity() {
                     onOpenAnkiDroid = ::openAnkiDroid,
                     onOpenSpeechSettings = ::openSpeechSettings,
                     onShareDiagnostics = ::shareDiagnostics,
+                    onShareEngineLog = ::shareEngineLog,
                 )
             }
         }
@@ -187,17 +194,33 @@ class MainActivity : ComponentActivity() {
         openAppSettings()
     }
 
+    private fun shareEngineLog() {
+        lifecycleScope.launch {
+            val tail =
+                withContext(Dispatchers.IO) {
+                    EngineLogReader(File(filesDir, "anki_miner.log")).tail()
+                }
+            if (tail.isBlank()) {
+                Toast.makeText(this@MainActivity, R.string.engine_log_empty, Toast.LENGTH_LONG).show()
+                return@launch
+            }
+            shareText(getString(R.string.engine_log_share_subject), tail)
+        }
+    }
+
     private fun shareDiagnostics(report: String) {
+        shareText(getString(R.string.diagnostics_share_subject), report)
+    }
+
+    private fun shareText(subject: String, text: String) {
         val send =
             Intent(Intent.ACTION_SEND).apply {
                 type = "text/plain"
-                putExtra(Intent.EXTRA_SUBJECT, getString(R.string.diagnostics_share_subject))
-                putExtra(Intent.EXTRA_TEXT, report)
+                putExtra(Intent.EXTRA_SUBJECT, subject)
+                putExtra(Intent.EXTRA_TEXT, text)
             }
         try {
-            startActivity(
-                Intent.createChooser(send, getString(R.string.settings_share_diagnostics)),
-            )
+            startActivity(Intent.createChooser(send, subject))
         } catch (_: ActivityNotFoundException) {
             Toast.makeText(this, R.string.diagnostics_action_unavailable, Toast.LENGTH_LONG).show()
         } catch (_: SecurityException) {

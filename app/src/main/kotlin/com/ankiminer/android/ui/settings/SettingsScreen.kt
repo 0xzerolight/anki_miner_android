@@ -90,6 +90,7 @@ internal fun SettingsRoute(
     onOpenAnkiDroid: () -> Unit,
     onOpenSpeechSettings: () -> Unit,
     onShareDiagnostics: (String) -> Unit,
+    onShareEngineLog: () -> Unit,
     onAttributions: () -> Unit,
     onRunSetupWizard: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
@@ -140,6 +141,7 @@ internal fun SettingsRoute(
         onOpenAnkiDroid = onOpenAnkiDroid,
         onOpenSpeechSettings = onOpenSpeechSettings,
         onShareDiagnostics = onShareDiagnostics,
+        onShareEngineLog = onShareEngineLog,
         onAttributions = onAttributions,
         onRunSetupWizard = onRunSetupWizard,
         onImportCustom = { dictionaryPicker.launch(CUSTOM_DICTIONARY_MIME_TYPES) },
@@ -172,6 +174,7 @@ private fun SettingsScreen(
     onOpenAnkiDroid: () -> Unit,
     onOpenSpeechSettings: () -> Unit,
     onShareDiagnostics: (String) -> Unit,
+    onShareEngineLog: () -> Unit,
     onAttributions: () -> Unit,
     onRunSetupWizard: (() -> Unit)?,
     onImportCustom: () -> Unit,
@@ -572,6 +575,16 @@ private fun SettingsScreen(
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text(stringResource(R.string.settings_share_diagnostics))
+            }
+            Text(
+                stringResource(R.string.settings_engine_log_privacy),
+                style = MaterialTheme.typography.bodySmall,
+            )
+            OutlinedButton(
+                onClick = onShareEngineLog,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(stringResource(R.string.settings_share_engine_log))
             }
         }
         HorizontalDivider()

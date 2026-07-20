@@ -101,7 +101,11 @@
     <string name="settings_source_identity">Source: %1$s</string>
     <string name="settings_diagnostics_privacy">Includes build identity, readiness categories, and resource counts only. It excludes selected file names, paths, Anki note IDs, and run IDs.</string>
     <string name="settings_share_diagnostics">Share tester diagnostics</string>
+    <string name="settings_share_engine_log">Share engine log</string>
+    <string name="settings_engine_log_privacy">The engine log can include selected file names. Review it before sending.</string>
     <string name="diagnostics_share_subject">Anki Miner tester diagnostics</string>
+    <string name="engine_log_share_subject">Anki Miner engine log</string>
+    <string name="engine_log_empty">No engine log has been written yet.</string>
     <string name="diagnostics_action_unavailable">No app is available to share tester diagnostics.</string>
     <string name="readiness_python_pending">The embedded Python engine has not finished starting.</string>
     <string name="readiness_resources_pending">Private resource recovery has not completed. Open Settings and check again.</string>
