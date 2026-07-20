@@ -365,9 +365,7 @@
     <string name="settings_tts_readiness_help">Install an offline Japanese voice in Android speech settings before enabling this option. A missing or failing voice skips sentence audio and is reported in the mining result.</string>
     <string name="settings_jisho">Jisho definition fallback</string>
     <string name="settings_jisho_disclosure">Off by default. When enabled and the engine reaches this fallback, Japanese lookup terms derived from selected subtitles or reading content are sent to jisho.org.</string>
-    <string name="settings_numeric_incomplete">Complete or clear every numeric value before saving.</string>
-    <string name="settings_saving">Saving…</string>
-    <string name="settings_save">Save settings</string>
+    <string name="settings_numeric_incomplete">Complete or clear every numeric value to save your changes.</string>
     <string name="settings_restore_defaults">Restore defaults</string>
     <string name="settings_attributions">Licenses, data sources, and privacy notices</string>
     <string name="settings_default_on">Desktop default: on</string>

@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -94,7 +95,36 @@ internal data class SettingsDraft(
             jishoEnabled = jisho,
         )
 
+    /**
+     * Re-derive the four inventory-backed resource fields against [resources] while preserving every
+     * scalar edit (including raw numeric text). [EngineSettingsSnapshotMapper.resolveResourceChain]
+     * keeps the draft's own order and enable choices and only appends newly installed resources, so
+     * merging the same inventory twice is a fixed point.
+     */
+    fun withInventory(resources: ResourceManagerState): SettingsDraft {
+        val wordsetIds = resources.availableWordsetIds()
+        return copy(
+            dictionarySources =
+                EngineSettingsSnapshotMapper.resolveResourceChain(
+                    dictionarySources,
+                    resources.usableDictionaryIds(),
+                ),
+            frequencySources =
+                EngineSettingsSnapshotMapper.resolveResourceChain(
+                    frequencySources,
+                    resources.usableFrequencyIds(),
+                ),
+            audioPacks =
+                EngineSettingsSnapshotMapper.resolveResourceChain(
+                    audioPacks,
+                    resources.usableAudioPackIds(),
+                ),
+            excludedWordsets = excludedWordsets.filter { it in wordsetIds },
+        )
+    }
+
     companion object {
+        /** Build a draft from persisted [settings], merging live [resources] into the chains. */
         fun from(
             settings: AppSettings,
             resources: ResourceManagerState,
@@ -122,34 +152,27 @@ internal data class SettingsDraft(
                 sentenceLength = settings.useSentenceLengthFilter,
                 pitchFormat = settings.pitchCategoryFormat,
                 theme = settings.theme,
-                dictionarySources =
-                    EngineSettingsSnapshotMapper.resolveResourceChain(
-                        settings.dictionarySources,
-                        resources.dictionaries.filter { it.isUsable }.map { it.slotId },
-                    ),
-                frequencySources =
-                    EngineSettingsSnapshotMapper.resolveResourceChain(
-                        settings.frequencySources,
-                        resources.frequencySources
-                            .filter { it.schemaOk && it.entryCount > 0 }
-                            .map { it.sourceId },
-                    ),
-                audioPacks =
-                    EngineSettingsSnapshotMapper.resolveResourceChain(
-                        settings.audioPacks,
-                        resources.audioPacks
-                            .filter { it.contentAvailable && it.entryCount > 0 }
-                            .map { it.packId },
-                    ),
-                excludedWordsets =
-                    settings.excludedWordsets.filter { selected ->
-                        resources.wordsets.any { it.wordsetId == selected }
-                    },
+                dictionarySources = settings.dictionarySources,
+                frequencySources = settings.frequencySources,
+                audioPacks = settings.audioPacks,
+                excludedWordsets = settings.excludedWordsets,
                 readingTts = settings.readingTtsEnabled,
                 jisho = settings.jishoEnabled,
-            )
+            ).withInventory(resources)
     }
 }
+
+private fun ResourceManagerState.usableDictionaryIds(): List<String> =
+    dictionaries.filter { it.isUsable }.map { it.slotId }
+
+private fun ResourceManagerState.usableFrequencyIds(): List<String> =
+    frequencySources.filter { it.schemaOk && it.entryCount > 0 }.map { it.sourceId }
+
+private fun ResourceManagerState.usableAudioPackIds(): List<String> =
+    audioPacks.filter { it.contentAvailable && it.entryCount > 0 }.map { it.packId }
+
+private fun ResourceManagerState.availableWordsetIds(): List<String> =
+    wordsets.map { it.wordsetId }
 
 internal data class SettingsDraftState(
     val draft: SettingsDraft,
@@ -179,7 +202,14 @@ internal class SettingsDraftStore(
     ) {
         mutableState.update { current ->
             if (current.loaded && current.dirty) {
-                current
+                // Auto-save keeps the draft dirty for the rest of the activity-scoped session, so
+                // this branch must still merge newly installed resources into the pending edit
+                // instead of hiding them; scalar edits stay authoritative and are never overwritten.
+                SettingsDraftState(
+                    current.draft.withInventory(resources),
+                    dirty = true,
+                    loaded = true,
+                )
             } else {
                 SettingsDraftState(
                     SettingsDraft.from(settings, resources),
@@ -228,15 +258,36 @@ internal class SettingsViewModel(
                     persisted?.let { draftStore.reconcile(it, inventory) }
                 }
         }
+        // Auto-save mirrors the desktop app: every valid edit persists immediately. Invalid
+        // intermediate numeric text is gated out here, and the validator throw-path inside the
+        // repository blocks any value that passes the numeric gate but fails deeper validation.
+        viewModelScope.launch {
+            draftStore.state
+                .filter { it.loaded && it.dirty && it.draft.numericValuesValid }
+                .map { it.draft }
+                .collect { persist(it) }
+        }
     }
 
     fun updateDraft(value: SettingsDraft) = draftStore.update(value)
 
-    fun save() {
-        if (!draftState.value.loaded) return
-        val persisted = settings.value ?: return
-        val value = draftState.value.draft.toSettings(persisted)
-        save(value)
+    private suspend fun persist(draft: SettingsDraft) {
+        // Skip while restoreDefaults holds the flag: its markClean supersedes any in-flight edit,
+        // and this preserves the save-vs-restore mutual exclusion without per-keystroke flicker.
+        if (saving.value) return
+        error.value = null
+        try {
+            // Transactional transform: apply draft fields onto the freshest persisted value inside
+            // the write lock, so out-of-band writes (noteType/fieldMap) are never clobbered and the
+            // validator still rejects values the numeric gate cannot catch.
+            repository.update { current -> draft.toSettings(current) }
+        } catch (failure: CancellationException) {
+            throw failure
+        } catch (failure: InvalidAppSettingException) {
+            error.value = failure.message
+        } catch (_: Exception) {
+            error.value = "Settings could not be saved"
+        }
     }
 
     private fun save(value: AppSettings) {
