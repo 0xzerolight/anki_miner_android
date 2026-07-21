@@ -29,7 +29,9 @@ Please leave a ⭐ star if Anki Miner helped you - it helps others find it :).
 
 - Extensive filtering: i+1, frequency limits, blacklist, wordsets, and more.
 - Offline Yomitan dictionary import - definitions, pitch accent, frequency - chained by priority.
-- Word audio from local audio packs; sentence audio from your device's offline Japanese text-to-speech.
+- Word audio tries AnkiConnect-Android's bounded on-device `localaudio` lookup first; imported local audio packs are the offline fallback. Sentence audio uses your device's offline Japanese text-to-speech.
+- Known-word controls include import preview, search, removal, export, reset, excluded Anki decks, and bundled proper-name wordset selection.
+- Confirmed settings resets are scoped to mining defaults, the Anki target, or resource choices; unrelated settings remain intact.
 - Optional Jisho.org online fallback for definitions (slower, rate-limited).
 - Proper-noun filtering from bundled name wordsets.
 

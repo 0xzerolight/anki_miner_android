@@ -24,8 +24,24 @@ Compose UI → ViewModels → Kotlin services → JSON bridge → vendored Pytho
 ## AnkiDroid integration
 
 Cards are written to AnkiDroid on the same device through its local
-ContentProvider, using an app-owned note model with exact readback and durable
-mutation recovery. There is no network round-trip to Anki.
+ContentProvider. The user selects an existing note type; Android verifies that
+target and may create only the selected target deck. Writes use exact readback
+and durable mutation recovery.
+
+Card and collection operations do not use a network backend. Expression audio
+is separate: it tries AnkiConnect-Android's bounded on-device loopback
+`localaudio` source first, then imported local packs as the offline fallback.
+
+Historical correction (2026-07-21): commit `99058d7` superseded the 2026-07-17
+completion checkpoint's app-owned note-model statement. The checkpoint remains
+historical evidence; the user-owned note-type behavior above is current.
+
+## Project documentation
+
+`docs/anki_miner_android_port.md`, previously named as the settled target
+design, is currently absent from this checkout and awaits restoration. Until it
+is restored, use current code, tests, this architecture overview, and
+`CHANGELOG.md` as evidence of current behavior.
 
 ## Native components
 

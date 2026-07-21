@@ -60,12 +60,12 @@ sources, and the fixture records the hashes of the actual materialized files.
 Any upstream exporter change requires an explicit rebase in
 `golden_exporter_overlay.py`.
 
-`.github/workflows/parity-nightly.yml` separately derives desktop
-HEAD and reports semantic case drift as an early warning artifact.
-`run_head_goldens_v2.py` materializes desktop HEAD's exporter outside its clean
-checkout and changes only the unique pinned-revision assignment to that exact
-HEAD. This advisory path never replaces the attested overlay or pinned fixture
-used by release gates.
+`run_head_goldens_v2.py` derives desktop HEAD and reports semantic case drift.
+It materializes desktop HEAD's exporter outside its clean checkout and changes
+only the unique pinned-revision assignment to that exact HEAD. No hosted nightly
+HEAD-parity workflow exists yet, so this remains an advisory local tool rather
+than a current CI or release gate. It never replaces the attested overlay or
+pinned fixture used by release gates.
 
 `run_reading_goldens.py` owns the separate M4 reading contract. It derives
 Aozora, subtitle, EPUB, and Mokuro loader snapshots plus a real Mokuro
