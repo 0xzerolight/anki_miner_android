@@ -5,14 +5,12 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
@@ -22,14 +20,12 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -37,11 +33,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
-import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -53,6 +47,15 @@ import com.ankiminer.android.mining.MiningProgress
 import com.ankiminer.android.mining.MiningRunState
 import com.ankiminer.android.mining.ProcessingResult
 import com.ankiminer.android.mining.RuntimeWorkConflict
+import com.ankiminer.android.ui.mining.DocumentReadKind
+import com.ankiminer.android.ui.mining.DocumentReadProgressText
+import com.ankiminer.android.ui.mining.MiningErrorMessage
+import com.ankiminer.android.ui.mining.MiningProgressPanel
+import com.ankiminer.android.ui.mining.MiningResultSource
+import com.ankiminer.android.ui.mining.MiningResultSummary
+import com.ankiminer.android.ui.mining.MiningScreenTopBar
+import com.ankiminer.android.ui.mining.StickyCurationActions
+import com.ankiminer.android.ui.mining.documentReadProgress
 
 @Composable
 fun ReadingMiningScreen(
@@ -79,20 +82,21 @@ fun ReadingMiningScreen(
             modifier
                 .fillMaxSize()
                 .testTag(ReadingMiningTestTags.SCREEN),
-        topBar = {
-            Surface(
-                color = MaterialTheme.colorScheme.surface,
-                tonalElevation = 2.dp,
-            ) {
-                Text(
-                    text = stringResource(R.string.app_name),
-                    modifier =
-                        Modifier
-                            .fillMaxWidth()
-                            .statusBarsPadding()
-                            .padding(horizontal = 20.dp, vertical = 16.dp),
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
+        topBar = { MiningScreenTopBar() },
+        bottomBar = {
+            if (state.runState is MiningRunState.Curating) {
+                val curation = state.curation
+                StickyCurationActions(
+                    selectedCount = curation?.selectedCount ?: 0,
+                    page = curation?.page,
+                    isFinalPage = curation?.isFinalPage ?: true,
+                    curationPending = state.curationPending,
+                    cancelPending = state.cancelPending,
+                    confirmTestTag = ReadingMiningTestTags.CONFIRM_CURATION,
+                    cancelTestTag = ReadingMiningTestTags.CANCEL,
+                    onConfirm = onConfirmCuration,
+                    onCancel = onCancel,
                 )
             }
         },
@@ -102,14 +106,14 @@ fun ReadingMiningScreen(
                 Modifier
                     .fillMaxSize()
                     .padding(scaffoldPadding)
-                    .navigationBarsPadding()
+                    .consumeWindowInsets(scaffoldPadding)
                     .testTag(ReadingMiningTestTags.CONTENT),
             contentPadding = PaddingValues(20.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             state.commandError?.let { commandError ->
                 item(key = "reading_command_error") {
-                    ReadingErrorMessage(
+                    MiningErrorMessage(
                         message = stringResource(commandError.messageResource()),
                         onDismiss = onDismissCommandError,
                     )
@@ -142,8 +146,6 @@ fun ReadingMiningScreen(
                         onToggleCandidate = onToggleCandidate,
                         onSelectAllCandidates = onSelectAllCandidates,
                         onSelectSentence = onSelectSentence,
-                        onConfirmCuration = onConfirmCuration,
-                        onCancel = onCancel,
                     )
                 is MiningRunState.Running ->
                     readingProgressItems(
@@ -236,13 +238,14 @@ private fun LazyListScope.setupItems(
             enabled = !state.startPending,
             pickTestTag = ReadingMiningTestTags.PICK_SOURCE,
             clearTestTag = ReadingMiningTestTags.CLEAR_SOURCE,
+            readKind = DocumentReadKind.DOCUMENT,
             onPick = onPickSource,
             onClear = onClearSource,
         )
     }
     state.source.error?.let { error ->
         item(key = "reading_source_error") {
-            ReadingErrorMessage(
+            MiningErrorMessage(
                 message = stringResource(error.messageResource()),
                 onDismiss = { onDismissDocumentError(error) },
             )
@@ -258,13 +261,14 @@ private fun LazyListScope.setupItems(
                 enabled = !state.startPending,
                 pickTestTag = ReadingMiningTestTags.PICK_ARCHIVE,
                 clearTestTag = ReadingMiningTestTags.CLEAR_ARCHIVE,
+                readKind = DocumentReadKind.DOCUMENT,
                 onPick = onPickArchive,
                 onClear = onClearArchive,
             )
         }
         state.archive.error?.let { error ->
             item(key = "reading_archive_error") {
-                ReadingErrorMessage(
+                MiningErrorMessage(
                     message = stringResource(error.messageResource()),
                     onDismiss = { onDismissDocumentError(error) },
                 )
@@ -317,7 +321,11 @@ private fun LazyListScope.readingProgressItems(
     onCancel: () -> Unit,
 ) {
     item(key = "reading_progress") {
-        ReadingProgressPanel(title = stringResource(title), progress = progress)
+        MiningProgressPanel(
+            title = stringResource(title),
+            progress = progress,
+            testTag = ReadingMiningTestTags.PROGRESS,
+        )
     }
     if (canCancel) {
         item(key = "reading_cancel") {
@@ -340,8 +348,6 @@ private fun LazyListScope.readingCurationItems(
     onToggleCandidate: (String) -> Unit,
     onSelectAllCandidates: (Boolean) -> Unit,
     onSelectSentence: (String, String) -> Unit,
-    onConfirmCuration: () -> Unit,
-    onCancel: () -> Unit,
 ) {
     val curation = state.curation
     val candidates = curation?.candidates.orEmpty()
@@ -380,7 +386,7 @@ private fun LazyListScope.readingCurationItems(
                             page.candidateStart + 1,
                             page.candidateStart + candidates.size,
                             page.totalCandidates,
-                    ),
+                        ),
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 if (page.pageIndex > 0) {
@@ -429,40 +435,6 @@ private fun LazyListScope.readingCurationItems(
             )
         }
     }
-
-    item(key = "reading_curation_actions") {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(
-                onClick = onConfirmCuration,
-                enabled = enabled,
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .testTag(ReadingMiningTestTags.CONFIRM_CURATION),
-            ) {
-                Text(
-                    stringResource(
-                        when {
-                            curation?.page == null -> R.string.confirm_curation
-                            curation?.isFinalPage == false -> R.string.confirm_curation_page
-                            else -> R.string.confirm_curation_final_page
-                        },
-                        selectedCount,
-                    ),
-                )
-            }
-            OutlinedButton(
-                onClick = onCancel,
-                enabled = !state.cancelPending,
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .testTag(ReadingMiningTestTags.CANCEL),
-            ) {
-                Text(stringResource(R.string.cancel_mining))
-            }
-        }
-    }
 }
 
 private fun LazyListScope.terminalItems(
@@ -496,11 +468,17 @@ private fun LazyListScope.terminalItems(
     }
     result?.let {
         item(key = "reading_terminal_result") {
-            ReadingResultSummary(
+            MiningResultSummary(
                 result = it,
-                sourceDisplayName = sourceDisplayName,
-                archiveDisplayName = archiveDisplayName,
+                sources =
+                    buildList {
+                        add(MiningResultSource(R.string.result_reading_source, sourceDisplayName))
+                        archiveDisplayName?.let { archive ->
+                            add(MiningResultSource(R.string.result_reading_archive, archive))
+                        }
+                    },
                 partial = partial,
+                testTag = ReadingMiningTestTags.RESULT,
             )
         }
     }
@@ -541,6 +519,7 @@ private fun ReadingDocumentCard(
     enabled: Boolean,
     pickTestTag: String,
     clearTestTag: String,
+    readKind: DocumentReadKind,
     onPick: () -> Unit,
     onClear: () -> Unit,
 ) {
@@ -551,6 +530,7 @@ private fun ReadingDocumentCard(
         ) {
             Text(
                 text = label,
+                modifier = Modifier.semantics { heading() },
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
             )
@@ -561,7 +541,9 @@ private fun ReadingDocumentCard(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     CircularProgressIndicator(modifier = Modifier.size(24.dp))
-                    Text(stringResource(R.string.reading_file))
+                    DocumentReadProgressText(
+                        documentReadProgress(readKind, displayName = document?.displayName),
+                    )
                 }
             } else {
                 Text(
@@ -594,47 +576,6 @@ private fun ReadingDocumentCard(
                 ) {
                     Text(stringResource(R.string.remove_file))
                 }
-            }
-        }
-    }
-}
-
-@Composable
-private fun ReadingProgressPanel(
-    title: String,
-    progress: MiningProgress?,
-) {
-    OutlinedCard(
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .semantics { liveRegion = LiveRegionMode.Polite }
-                .testTag(ReadingMiningTestTags.PROGRESS),
-    ) {
-        Column(
-            modifier = Modifier.padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Text(
-                text = title,
-                modifier = Modifier.semantics { heading() },
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
-            )
-            progress?.description?.takeIf(String::isNotBlank)?.let { description ->
-                Text(text = description, style = MaterialTheme.typography.bodyLarge)
-            }
-            val fraction = progress?.fraction
-            if (fraction == null) {
-                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-            } else {
-                LinearProgressIndicator(
-                    progress = { fraction },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-            if (progress != null && progress.total > 0) {
-                Text(stringResource(R.string.progress_count, progress.current, progress.total))
             }
         }
     }
@@ -766,112 +707,6 @@ private fun ReadingSentenceChoice(
     }
 }
 
-@Composable
-private fun ReadingResultSummary(
-    result: ProcessingResult,
-    sourceDisplayName: String?,
-    archiveDisplayName: String?,
-    partial: Boolean,
-) {
-    OutlinedCard(
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .testTag(ReadingMiningTestTags.RESULT),
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            if (partial) {
-                Text(
-                    text = stringResource(R.string.partial_result_title),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                )
-            }
-            Text(stringResource(R.string.result_cards_created, result.cardsCreated))
-            Text(stringResource(R.string.result_new_words, result.newWordsFound))
-            Text(stringResource(R.string.result_total_words, result.totalWordsFound))
-            Text(
-                stringResource(
-                    R.string.result_comprehension,
-                    result.comprehensionPercentage,
-                ),
-            )
-            Text(stringResource(R.string.result_elapsed, result.elapsedTime))
-            Text(
-                stringResource(
-                    R.string.result_reading_source,
-                    sourceDisplayName ?: stringResource(R.string.result_unknown_file),
-                ),
-            )
-            archiveDisplayName?.let {
-                Text(stringResource(R.string.result_reading_archive, it))
-            }
-            Text(
-                stringResource(
-                    R.string.result_mined_forms,
-                    result.minedForms.boundedSummary(),
-                ),
-            )
-            Text(
-                stringResource(
-                    R.string.result_card_ids,
-                    result.cardIds.boundedSummary(),
-                ),
-            )
-            if (result.errors.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = stringResource(R.string.result_errors_title),
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.error,
-                )
-                result.errors.take(MAX_RESULT_ERROR_LINES).forEach { error ->
-                    Text(
-                        text = stringResource(R.string.result_error_item, error),
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                }
-                if (result.errors.size > MAX_RESULT_ERROR_LINES) {
-                    Text(
-                        text =
-                            stringResource(
-                                R.string.result_more_items,
-                                result.errors.size - MAX_RESULT_ERROR_LINES,
-                            ),
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun ReadingErrorMessage(
-    message: String,
-    onDismiss: () -> Unit,
-) {
-    Surface(
-        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-        color = MaterialTheme.colorScheme.errorContainer,
-        contentColor = MaterialTheme.colorScheme.onErrorContainer,
-        shape = MaterialTheme.shapes.medium,
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Text(message)
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.dismiss_error))
-            }
-        }
-    }
-}
-
 private fun ReadingMiningUiState.hasRetryableSelection(): Boolean =
     source.document != null &&
         sourceKind != null &&
@@ -895,18 +730,3 @@ private fun ReadingMiningCommandError.messageResource(): Int =
         ReadingMiningCommandError.CANCEL -> R.string.cancel_error
         ReadingMiningCommandError.RESET -> R.string.reset_error
     }
-
-@Composable
-private fun List<*>.boundedSummary(): String {
-    if (isEmpty()) return stringResource(R.string.result_no_items)
-    val shown = take(MAX_RESULT_SUMMARY_ITEMS).joinToString()
-    val remaining = size - MAX_RESULT_SUMMARY_ITEMS
-    return if (remaining > 0) {
-        "$shown, ${stringResource(R.string.result_more_items, remaining)}"
-    } else {
-        shown
-    }
-}
-
-private const val MAX_RESULT_SUMMARY_ITEMS = 100
-private const val MAX_RESULT_ERROR_LINES = 50

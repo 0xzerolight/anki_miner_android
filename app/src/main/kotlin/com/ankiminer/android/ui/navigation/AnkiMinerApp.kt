@@ -3,6 +3,7 @@ package com.ankiminer.android.ui.navigation
 import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -191,7 +192,10 @@ internal fun AnkiMinerApp(
         NavHost(
             navController = navController,
             startDestination = Destination.VIDEO.route,
-            modifier = Modifier.padding(padding),
+            modifier =
+                Modifier
+                    .padding(padding)
+                    .consumeWindowInsets(padding),
         ) {
             composable(Destination.VIDEO.route) {
                 if (miningWorkflowVisible(setup.isMiningReady, video.runState)) {

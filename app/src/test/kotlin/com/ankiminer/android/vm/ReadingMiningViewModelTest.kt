@@ -1,5 +1,6 @@
 package com.ankiminer.android.vm
 
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
 import com.ankiminer.android.MainDispatcherRule
@@ -20,6 +21,7 @@ import com.ankiminer.android.reading.ReadingSourceSelection
 import com.ankiminer.android.ui.reading.ReadingDocumentSelectionError
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.CancellableContinuation
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -40,6 +42,78 @@ import org.junit.Test
 class ReadingMiningViewModelTest {
     @get:Rule
     val mainDispatcherRule = MainDispatcherRule()
+
+    @Test
+    fun savedMokuroPairRestoresSequentiallyAndRevalidatesBothUris() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val savedState = SavedStateHandle()
+            SavedDocumentSelectionStore(savedState, "readingMining.source").save(
+                document("content://test/restored-book.mokuro", "stale-book.txt"),
+            )
+            SavedDocumentSelectionStore(savedState, "readingMining.archive").save(
+                document("content://test/restored-book.cbz", "stale-book.zip"),
+            )
+            val broker = ImmediateSafBroker()
+
+            val viewModel =
+                ReadingMiningViewModel(
+                    repository = RecordingReadingRepository(),
+                    safBroker = broker,
+                    savedStateHandle = savedState,
+                )
+            runCurrent()
+
+            assertEquals(
+                listOf(
+                    "content://test/restored-book.mokuro",
+                    "content://test/restored-book.cbz",
+                ),
+                broker.retainedUris,
+            )
+            assertEquals("restored-book.mokuro", viewModel.uiState.value.source.document?.displayName)
+            assertEquals("restored-book.cbz", viewModel.uiState.value.archive.document?.displayName)
+            assertTrue(viewModel.uiState.value.canStart)
+        }
+
+    @Test
+    fun revokedSavedSourceGrantSurfacesAccessErrorAndClearsSavedPair() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val savedState = SavedStateHandle()
+            val sourceStore =
+                SavedDocumentSelectionStore(savedState, "readingMining.source")
+            val archiveStore =
+                SavedDocumentSelectionStore(savedState, "readingMining.archive")
+            sourceStore.save(
+                document("content://test/revoked-book.mokuro", "revoked-book.mokuro"),
+            )
+            archiveStore.save(
+                document("content://test/revoked-book.cbz", "revoked-book.cbz"),
+            )
+            val broker = ControlledSafBroker()
+
+            val viewModel =
+                ReadingMiningViewModel(
+                    repository = RecordingReadingRepository(),
+                    safBroker = broker,
+                    savedStateHandle = savedState,
+                )
+            runCurrent()
+            broker.fail("content://test/revoked-book.mokuro")
+            runCurrent()
+
+            assertEquals(
+                ReadingDocumentSelectionError.SOURCE_ACCESS,
+                viewModel.uiState.value.source.error,
+            )
+            assertFalse(viewModel.uiState.value.source.isResolving)
+            assertNull(viewModel.uiState.value.source.document)
+            assertNull(sourceStore.restore())
+            assertNull(archiveStore.restore())
+            assertNull(savedState.get<String>("readingMining.source.uri"))
+            assertNull(savedState.get<String>("readingMining.source.displayName"))
+            assertNull(savedState.get<String>("readingMining.archive.uri"))
+            assertNull(savedState.get<String>("readingMining.archive.displayName"))
+        }
 
     @Test
     fun subtitleStartUsesSingleSourceAndTrimmedOptionalSeriesName() =
@@ -199,7 +273,7 @@ class ReadingMiningViewModelTest {
             val viewModel =
                 ViewModelProvider.create(
                     store,
-                    ReadingMiningViewModel.Factory(repository, broker),
+                    factory(repository, broker),
                 )[ReadingMiningViewModel::class.java]
             viewModel.onSourcePicked("content://test/book.mokuro")
             runCurrent()
@@ -227,7 +301,7 @@ class ReadingMiningViewModelTest {
             val viewModel =
                 ViewModelProvider.create(
                     store,
-                    ReadingMiningViewModel.Factory(repository, broker),
+                    factory(repository, broker),
                 )[ReadingMiningViewModel::class.java]
             viewModel.onSourcePicked("content://test/book.mokuro")
             runCurrent()
@@ -308,16 +382,19 @@ class ReadingMiningViewModelTest {
         }
 
     private class ImmediateSafBroker : SafBroker {
+        val retainedUris = mutableListOf<String>()
         val releasedUris = mutableListOf<String>()
         val eventualReleaseUris = mutableListOf<String>()
 
-        override suspend fun retainReadAccess(uri: String): SafDocument =
-            SafDocument(
+        override suspend fun retainReadAccess(uri: String): SafDocument {
+            retainedUris += uri
+            return SafDocument(
                 uri = uri,
                 displayName = uri.substringAfterLast('/'),
                 mimeType = null,
                 sizeBytes = null,
             )
+        }
 
         override suspend fun releaseReadAccess(uri: String) {
             releasedUris += uri
@@ -351,6 +428,12 @@ class ReadingMiningViewModelTest {
                     mimeType = null,
                     sizeBytes = null,
                 ),
+            )
+        }
+
+        fun fail(uri: String) {
+            requireNotNull(pending.remove(uri)).resumeWithException(
+                IllegalStateException("revoked"),
             )
         }
     }
@@ -425,7 +508,22 @@ class ReadingMiningViewModelTest {
             is ReadingSourceSelection.MokuroArchivePair -> listOf(sidecar, archive)
         }
 
+    private fun factory(
+        repository: ReadingMiningRepository,
+        broker: SafBroker,
+    ): ReadingMiningViewModel.Factory =
+        ReadingMiningViewModel.Factory(
+            repository = repository,
+            safBroker = broker,
+            savedStateHandleFactory = { SavedStateHandle() },
+        )
+
     private companion object {
+        fun document(
+            uri: String,
+            displayName: String,
+        ): SafDocument = SafDocument(uri, displayName, mimeType = null, sizeBytes = null)
+
         fun curationRequest(page: CurationPage?): CurationRequest {
             val sentence =
                 CurationSentence(

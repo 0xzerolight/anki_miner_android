@@ -23,7 +23,12 @@
     <string name="choose_file">Choose file</string>
     <string name="replace_file">Replace</string>
     <string name="remove_file">Remove</string>
-    <string name="reading_file">Reading file…</string>
+    <string name="reading_video">Reading video…</string>
+    <string name="reading_video_named">Reading video: %1$s…</string>
+    <string name="reading_subtitles">Reading subtitles…</string>
+    <string name="reading_subtitles_named">Reading subtitles: %1$s…</string>
+    <string name="reading_document">Reading document…</string>
+    <string name="reading_document_named">Reading document: %1$s…</string>
     <string name="video_file_error">Anki Miner could not retain access to that video. Choose it again.</string>
     <string name="subtitle_file_error">Anki Miner could not retain access to that subtitle file. Choose it again.</string>
     <string name="dismiss_error">Dismiss error</string>
