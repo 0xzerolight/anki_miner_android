@@ -79,19 +79,37 @@ val releaseBuildIntegrityScript =
     rootProject.file("tools/release/validate_release_build.py")
 val validatedReleaseSourceCommit =
     providers.exec {
+        // Run via `sh -c ... 2>&1` so the validator's stderr (the actionable
+        // "requires a full lowercase Git SHA" / "SHA-256 mismatch" message) is
+        // merged into captured stdout. providers.exec exposes only stdout, so
+        // without this a fail-closed release would surface as a bare
+        // "process finished with non-zero exit value 1" and hide the reason.
         commandLine(
-            chaquopyBuildPython,
-            releaseBuildIntegrityScript.absolutePath,
-            "--build-type",
-            "release",
-            "--source-commit",
-            ankiMinerSourceCommit,
-            "--wheels-root",
-            rootProject.file("app/wheels").absolutePath,
-            "--manifest",
-            rootProject.file("app/wheels/manifest.json").absolutePath,
+            "sh",
+            "-c",
+            listOf(
+                chaquopyBuildPython,
+                releaseBuildIntegrityScript.absolutePath,
+                "--build-type",
+                "release",
+                "--source-commit",
+                ankiMinerSourceCommit,
+                "--wheels-root",
+                rootProject.file("app/wheels").absolutePath,
+                "--manifest",
+                rootProject.file("app/wheels/manifest.json").absolutePath,
+            ).joinToString(" ") { "'" + it + "'" } + " 2>&1",
         )
-    }.standardOutput.asText.map { it.trim() }
+        isIgnoreExitValue = true
+    }.standardOutput.asText.map { raw ->
+        val trimmed = raw.trim()
+        if (!Regex("^[0-9a-f]{40}$").matches(trimmed)) {
+            throw GradleException(
+                trimmed.ifBlank { "release build integrity validation failed" },
+            )
+        }
+        trimmed
+    }
 val validateReleaseSourceCommit by tasks.registering {
     group = "verification"
     description = "Fail release builds without an immutable source commit."
