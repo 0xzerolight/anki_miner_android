@@ -1,10 +1,12 @@
 package com.ankiminer.android.data.settings
 
 import android.content.Context
+import androidx.datastore.core.DataMigration
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.doublePreferencesKey
-import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -14,7 +16,11 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
-private val Context.ankiMinerSettingsDataStore by preferencesDataStore(name = "anki_miner_settings_v1")
+private val Context.ankiMinerSettingsDataStore by
+    preferencesDataStore(
+        name = "anki_miner_settings_v1",
+        produceMigrations = { listOf(AppSettingsPreferencesMigration) },
+    )
 
 interface AppSettingsRepository {
     val settings: Flow<AppSettings>
@@ -38,8 +44,10 @@ interface AppSettingsRepository {
         )
 }
 
-class DataStoreAppSettingsRepository(context: Context) : AppSettingsRepository {
-    private val store = context.applicationContext.ankiMinerSettingsDataStore
+class DataStoreAppSettingsRepository internal constructor(
+    private val store: DataStore<Preferences>,
+) : AppSettingsRepository {
+    constructor(context: Context) : this(context.applicationContext.ankiMinerSettingsDataStore)
 
     override val settings: Flow<AppSettings> =
         store.data
@@ -49,164 +57,330 @@ class DataStoreAppSettingsRepository(context: Context) : AppSettingsRepository {
 
     override suspend fun update(settings: AppSettings) {
         val validated = AppSettingsValidator.validate(settings)
-        store.edit { preferences -> encode(validated, preferences) }
+        store.updateData { preferences -> encodePreferences(validated, preferences) }
     }
 
     override suspend fun update(transform: (AppSettings) -> AppSettings) {
-        store.edit { preferences ->
-            encode(AppSettingsValidator.validate(transform(decodePreferences(preferences))), preferences)
+        store.updateData { preferences ->
+            encodePreferences(
+                AppSettingsValidator.validate(transform(decodePreferences(preferences))),
+                preferences,
+            )
         }
     }
 
     internal companion object {
+        const val CURRENT_SCHEMA_VERSION = 1
+
+        internal val persistedPreferenceKeyNames: Set<String>
+            get() = Keys.all.mapTo(linkedSetOf()) { it.name }
+
         fun decodePreferences(preferences: Preferences): AppSettings {
-            val setupWizardSeen = preferences[Keys.setupWizardSeen] ?: false
-            val theme = ThemeMode.fromWire(preferences[Keys.themeMode])
-            return try {
-                val decodedFieldMap =
-                    try {
-                        FieldMapPreferenceCodec.decode(preferences[Keys.fieldMap])
-                    } catch (_: InvalidAppSettingException) {
-                        emptyMap()
-                    }
-                val decoded =
-                    AppSettings(
-                        setupWizardSeen = setupWizardSeen,
-                        theme = theme,
-                        deckName = preferences[Keys.deckName],
-                        noteType = preferences[Keys.noteType],
-                        fieldMap = decodedFieldMap,
-                        tags = preferences[Keys.tags],
-                        audioPaddingSeconds = preferences[Keys.audioPadding],
-                        screenshotOffsetSeconds = preferences[Keys.screenshotOffset],
-                        subtitleOffsetSeconds = preferences[Keys.subtitleOffset],
-                        audioFormat =
-                            preferences[Keys.audioFormat]?.let { stored ->
-                                AudioFormat.entries.singleOrNull { it.wireValue == stored }
-                            },
-                        audioBitrateKbps = preferences[Keys.audioBitrate],
-                        useKnownWordsDatabase = preferences[Keys.useKnownWordsDatabase],
-                        excludeHiraganaOnly = preferences[Keys.excludeHiraganaOnly],
-                        excludeKatakanaOnly = preferences[Keys.excludeKatakanaOnly],
-                        boldTargetInSentence = preferences[Keys.boldTarget],
-                        deduplicateSentences = preferences[Keys.deduplicateSentences],
-                        useIPlusOneFilter = preferences[Keys.useIPlusOne],
-                        useSentenceLengthFilter = preferences[Keys.useSentenceLength],
-                        maxSentenceDurationSeconds = preferences[Keys.maxSentenceDuration],
-                        maxSentenceCharacters = preferences[Keys.maxSentenceCharacters],
-                        readingMinimumOccurrence = preferences[Keys.readingMinimumOccurrence],
-                        maxFrequencyRank = preferences[Keys.maxFrequencyRank],
-                        pitchCategoryFormat =
-                            preferences[Keys.pitchCategoryFormat]?.let { stored ->
-                                PitchCategoryFormat.entries.singleOrNull { it.wireValue == stored }
-                            },
-                        maxParallelWorkers = preferences[Keys.maxParallelWorkers],
-                        dictionarySources =
-                            ResourceSelectionPreferenceCodec.decode(preferences[Keys.dictionarySources]),
-                        frequencySources =
-                            ResourceSelectionPreferenceCodec.decode(preferences[Keys.frequencySources]),
-                        audioPacks =
-                            ResourceSelectionPreferenceCodec.decode(preferences[Keys.audioPacks]),
-                        excludedWordsets =
-                            ResourceSelectionPreferenceCodec
-                                .decode(preferences[Keys.excludedWordsets])
-                                .filter(ResourceChainSelection::enabled)
-                                .map(ResourceChainSelection::resourceId),
-                        readingTtsEnabled = preferences[Keys.readingTtsEnabled] ?: false,
-                        jishoEnabled = preferences[Keys.jishoEnabled] ?: false,
-                    )
-                try {
-                    AppSettingsValidator.validate(decoded)
-                } catch (_: InvalidAppSettingException) {
-                    // Legacy field maps may violate newer ownership rules. Quarantine only that
-                    // map; if any unrelated value is also invalid, the outer fallback remains.
-                    AppSettingsValidator.validate(decoded.copy(fieldMap = emptyMap()))
+            return decodeWithReport(preferences).settings
+        }
+
+        internal fun migratePreferences(preferences: Preferences): Preferences {
+            val decoded = decodeWithReport(preferences)
+            return stagePreferenceWrite(preferences) { candidate ->
+                decoded.invalidKeys.forEach { candidate -= it }
+                if (decoded.schemaVersion == null || decoded.schemaVersion < CURRENT_SCHEMA_VERSION) {
+                    candidate[Keys.schemaVersion] = CURRENT_SCHEMA_VERSION
                 }
-            } catch (_: InvalidAppSettingException) {
-                // Preferences are app-private, but a partial/corrupt non-field-map value must
-                // never make the settings Flow fail.
-                AppSettings(setupWizardSeen = setupWizardSeen, theme = theme)
             }
         }
-    }
 
-    private fun encode(
-        value: AppSettings,
-        preferences: androidx.datastore.preferences.core.MutablePreferences,
-    ) {
-        preferences.clear()
-        preferences[Keys.setupWizardSeen] = value.setupWizardSeen
-        preferences[Keys.themeMode] = value.theme.wireValue
-        value.deckName?.let { preferences[Keys.deckName] = it }
-        value.noteType?.let { preferences[Keys.noteType] = it }
-        FieldMapPreferenceCodec.encode(value.fieldMap)?.let { preferences[Keys.fieldMap] = it }
-        value.tags?.let { preferences[Keys.tags] = it }
-        value.audioPaddingSeconds?.let { preferences[Keys.audioPadding] = it }
-        value.screenshotOffsetSeconds?.let { preferences[Keys.screenshotOffset] = it }
-        value.subtitleOffsetSeconds?.let { preferences[Keys.subtitleOffset] = it }
-        value.audioFormat?.let { preferences[Keys.audioFormat] = it.wireValue }
-        value.audioBitrateKbps?.let { preferences[Keys.audioBitrate] = it }
-        value.useKnownWordsDatabase?.let { preferences[Keys.useKnownWordsDatabase] = it }
-        value.excludeHiraganaOnly?.let { preferences[Keys.excludeHiraganaOnly] = it }
-        value.excludeKatakanaOnly?.let { preferences[Keys.excludeKatakanaOnly] = it }
-        value.boldTargetInSentence?.let { preferences[Keys.boldTarget] = it }
-        value.deduplicateSentences?.let { preferences[Keys.deduplicateSentences] = it }
-        value.useIPlusOneFilter?.let { preferences[Keys.useIPlusOne] = it }
-        value.useSentenceLengthFilter?.let { preferences[Keys.useSentenceLength] = it }
-        value.maxSentenceDurationSeconds?.let { preferences[Keys.maxSentenceDuration] = it }
-        value.maxSentenceCharacters?.let { preferences[Keys.maxSentenceCharacters] = it }
-        value.readingMinimumOccurrence?.let { preferences[Keys.readingMinimumOccurrence] = it }
-        value.maxFrequencyRank?.let { preferences[Keys.maxFrequencyRank] = it }
-        value.pitchCategoryFormat?.let { preferences[Keys.pitchCategoryFormat] = it.wireValue }
-        value.maxParallelWorkers?.let { preferences[Keys.maxParallelWorkers] = it }
-        ResourceSelectionPreferenceCodec.encode(value.dictionarySources)?.let {
-            preferences[Keys.dictionarySources] = it
+        internal fun migrationRequired(preferences: Preferences): Boolean {
+            val decoded = decodeWithReport(preferences)
+            return decoded.invalidKeys.isNotEmpty() ||
+                decoded.schemaVersion == null ||
+                decoded.schemaVersion < CURRENT_SCHEMA_VERSION
         }
-        ResourceSelectionPreferenceCodec.encode(value.frequencySources)?.let {
-            preferences[Keys.frequencySources] = it
-        }
-        ResourceSelectionPreferenceCodec.encode(value.audioPacks)?.let {
-            preferences[Keys.audioPacks] = it
-        }
-        ResourceSelectionPreferenceCodec.encode(
-            value.excludedWordsets.map { ResourceChainSelection(it, enabled = true) },
-        )?.let { preferences[Keys.excludedWordsets] = it }
-        preferences[Keys.readingTtsEnabled] = value.readingTtsEnabled
-        preferences[Keys.jishoEnabled] = value.jishoEnabled
-    }
 
-    private object Keys {
-        val setupWizardSeen = booleanPreferencesKey("setup_wizard_seen")
-        val themeMode = stringPreferencesKey("theme_mode")
-        val deckName = stringPreferencesKey("deck_name")
-        val noteType = stringPreferencesKey("note_type")
-        val fieldMap = stringPreferencesKey("field_map_v1")
-        val tags = stringPreferencesKey("tags")
-        val audioPadding = doublePreferencesKey("audio_padding_seconds")
-        val screenshotOffset = doublePreferencesKey("screenshot_offset_seconds")
-        val subtitleOffset = doublePreferencesKey("subtitle_offset_seconds")
-        val audioFormat = stringPreferencesKey("audio_format")
-        val audioBitrate = intPreferencesKey("audio_bitrate_kbps")
-        val useKnownWordsDatabase = booleanPreferencesKey("use_known_words_database")
-        val excludeHiraganaOnly = booleanPreferencesKey("exclude_hiragana_only")
-        val excludeKatakanaOnly = booleanPreferencesKey("exclude_katakana_only")
-        val boldTarget = booleanPreferencesKey("bold_target")
-        val deduplicateSentences = booleanPreferencesKey("deduplicate_sentences")
-        val useIPlusOne = booleanPreferencesKey("use_i_plus_one")
-        val useSentenceLength = booleanPreferencesKey("use_sentence_length")
-        val maxSentenceDuration = doublePreferencesKey("max_sentence_duration_seconds")
-        val maxSentenceCharacters = intPreferencesKey("max_sentence_characters")
-        val readingMinimumOccurrence = intPreferencesKey("reading_minimum_occurrence")
-        val maxFrequencyRank = intPreferencesKey("max_frequency_rank")
-        val pitchCategoryFormat = stringPreferencesKey("pitch_category_format")
-        val maxParallelWorkers = intPreferencesKey("max_parallel_workers")
-        val dictionarySources = stringPreferencesKey("dictionary_sources_v1")
-        val frequencySources = stringPreferencesKey("frequency_sources_v1")
-        val audioPacks = stringPreferencesKey("audio_packs_v1")
-        val excludedWordsets = stringPreferencesKey("excluded_wordsets_v1")
-        val readingTtsEnabled = booleanPreferencesKey("reading_tts_enabled")
-        val jishoEnabled = booleanPreferencesKey("jisho_enabled")
+        internal inline fun stagePreferenceWrite(
+            preferences: Preferences,
+            mutate: (MutablePreferences) -> Unit,
+        ): Preferences {
+            val candidate = preferences.toMutablePreferences()
+            mutate(candidate)
+            return candidate.toPreferences()
+        }
+
+        private fun encodePreferences(
+            value: AppSettings,
+            preferences: Preferences,
+        ): Preferences =
+            stagePreferenceWrite(preferences) { candidate ->
+                candidate[Keys.schemaVersion] =
+                    maxOf(readSchemaVersion(preferences) ?: 0, CURRENT_SCHEMA_VERSION)
+                candidate[Keys.setupWizardSeen] = value.setupWizardSeen
+                candidate[Keys.themeMode] = value.theme.wireValue
+                candidate.setOrRemove(Keys.deckName, value.deckName)
+                candidate.setOrRemove(Keys.noteType, value.noteType)
+                candidate.setOrRemove(Keys.fieldMap, FieldMapPreferenceCodec.encode(value.fieldMap))
+                candidate.setOrRemove(Keys.tags, value.tags)
+                candidate.setOrRemove(Keys.audioPadding, value.audioPaddingSeconds)
+                candidate.setOrRemove(Keys.screenshotOffset, value.screenshotOffsetSeconds)
+                candidate.setOrRemove(Keys.subtitleOffset, value.subtitleOffsetSeconds)
+                candidate.setOrRemove(Keys.audioFormat, value.audioFormat?.wireValue)
+                candidate.setOrRemove(Keys.audioBitrate, value.audioBitrateKbps)
+                candidate.setOrRemove(Keys.useKnownWordsDatabase, value.useKnownWordsDatabase)
+                candidate.setOrRemove(Keys.excludeHiraganaOnly, value.excludeHiraganaOnly)
+                candidate.setOrRemove(Keys.excludeKatakanaOnly, value.excludeKatakanaOnly)
+                candidate.setOrRemove(Keys.boldTarget, value.boldTargetInSentence)
+                candidate.setOrRemove(Keys.deduplicateSentences, value.deduplicateSentences)
+                candidate.setOrRemove(Keys.useIPlusOne, value.useIPlusOneFilter)
+                candidate.setOrRemove(Keys.useSentenceLength, value.useSentenceLengthFilter)
+                candidate.setOrRemove(Keys.maxSentenceDuration, value.maxSentenceDurationSeconds)
+                candidate.setOrRemove(Keys.maxSentenceCharacters, value.maxSentenceCharacters)
+                candidate.setOrRemove(Keys.readingMinimumOccurrence, value.readingMinimumOccurrence)
+                candidate.setOrRemove(Keys.maxFrequencyRank, value.maxFrequencyRank)
+                candidate.setOrRemove(Keys.pitchCategoryFormat, value.pitchCategoryFormat?.wireValue)
+                candidate.setOrRemove(Keys.maxParallelWorkers, value.maxParallelWorkers)
+                candidate.setOrRemove(
+                    Keys.dictionarySources,
+                    ResourceSelectionPreferenceCodec.encode(value.dictionarySources),
+                )
+                candidate.setOrRemove(
+                    Keys.frequencySources,
+                    ResourceSelectionPreferenceCodec.encode(value.frequencySources),
+                )
+                candidate.setOrRemove(
+                    Keys.audioPacks,
+                    ResourceSelectionPreferenceCodec.encode(value.audioPacks),
+                )
+                candidate.setOrRemove(
+                    Keys.excludedWordsets,
+                    ResourceSelectionPreferenceCodec.encode(
+                        value.excludedWordsets.map { ResourceChainSelection(it, enabled = true) },
+                    ),
+                )
+                candidate[Keys.readingTtsEnabled] = value.readingTtsEnabled
+                candidate[Keys.jishoEnabled] = value.jishoEnabled
+            }
+
+        private fun decodeWithReport(preferences: Preferences): DecodedPreferences {
+            val decoder = IndependentPreferenceDecoder(preferences)
+            val schemaVersion =
+                decoder.read(Keys.schemaVersion, null, { it }) { version ->
+                    if (version != null && version < 1) invalidStoredPreference()
+                }
+            val settings =
+                AppSettings(
+                    setupWizardSeen = decoder.read(Keys.setupWizardSeen, false, { it }),
+                    theme =
+                        decoder.read(Keys.themeMode, ThemeMode.DARK, { stored ->
+                            ThemeMode.entries.singleOrNull { it.wireValue == stored }
+                                ?: invalidStoredPreference()
+                        }),
+                    deckName =
+                        decoder.read(Keys.deckName, null, { it }) { value ->
+                            value?.let { AppSettingsValidator.validate(AppSettings(deckName = it)) }
+                        },
+                    noteType =
+                        decoder.read(Keys.noteType, null, { it }) { value ->
+                            value?.let { AppSettingsValidator.validate(AppSettings(noteType = it)) }
+                        },
+                    fieldMap =
+                        decoder.read(Keys.fieldMap, emptyMap(), FieldMapPreferenceCodec::decode) {
+                            AppSettingsValidator.validate(AppSettings(fieldMap = it))
+                        },
+                    tags =
+                        decoder.read(Keys.tags, null, { it }) { value ->
+                            value?.let { AppSettingsValidator.validate(AppSettings(tags = it)) }
+                        },
+                    audioPaddingSeconds =
+                        decoder.validated(Keys.audioPadding) { AppSettings(audioPaddingSeconds = it) },
+                    screenshotOffsetSeconds =
+                        decoder.validated(Keys.screenshotOffset) {
+                            AppSettings(screenshotOffsetSeconds = it)
+                        },
+                    subtitleOffsetSeconds =
+                        decoder.validated(Keys.subtitleOffset) {
+                            AppSettings(subtitleOffsetSeconds = it)
+                        },
+                    audioFormat =
+                        decoder.read(Keys.audioFormat, null, { stored ->
+                            AudioFormat.entries.singleOrNull { it.wireValue == stored }
+                                ?: invalidStoredPreference()
+                        }),
+                    audioBitrateKbps =
+                        decoder.validated(Keys.audioBitrate) { AppSettings(audioBitrateKbps = it) },
+                    useKnownWordsDatabase = decoder.read(Keys.useKnownWordsDatabase, null, { it }),
+                    excludeHiraganaOnly = decoder.read(Keys.excludeHiraganaOnly, null, { it }),
+                    excludeKatakanaOnly = decoder.read(Keys.excludeKatakanaOnly, null, { it }),
+                    boldTargetInSentence = decoder.read(Keys.boldTarget, null, { it }),
+                    deduplicateSentences = decoder.read(Keys.deduplicateSentences, null, { it }),
+                    useIPlusOneFilter = decoder.read(Keys.useIPlusOne, null, { it }),
+                    useSentenceLengthFilter = decoder.read(Keys.useSentenceLength, null, { it }),
+                    maxSentenceDurationSeconds =
+                        decoder.validated(Keys.maxSentenceDuration) {
+                            AppSettings(maxSentenceDurationSeconds = it)
+                        },
+                    maxSentenceCharacters =
+                        decoder.validated(Keys.maxSentenceCharacters) {
+                            AppSettings(maxSentenceCharacters = it)
+                        },
+                    readingMinimumOccurrence =
+                        decoder.validated(Keys.readingMinimumOccurrence) {
+                            AppSettings(readingMinimumOccurrence = it)
+                        },
+                    maxFrequencyRank =
+                        decoder.validated(Keys.maxFrequencyRank) { AppSettings(maxFrequencyRank = it) },
+                    pitchCategoryFormat =
+                        decoder.read(Keys.pitchCategoryFormat, null, { stored ->
+                            PitchCategoryFormat.entries.singleOrNull { it.wireValue == stored }
+                                ?: invalidStoredPreference()
+                        }),
+                    maxParallelWorkers =
+                        decoder.validated(Keys.maxParallelWorkers) {
+                            AppSettings(maxParallelWorkers = it)
+                        },
+                    dictionarySources =
+                        decoder.read(
+                            Keys.dictionarySources,
+                            emptyList(),
+                            ResourceSelectionPreferenceCodec::decode,
+                        ) { AppSettingsValidator.validate(AppSettings(dictionarySources = it)) },
+                    frequencySources =
+                        decoder.read(
+                            Keys.frequencySources,
+                            emptyList(),
+                            ResourceSelectionPreferenceCodec::decode,
+                        ) { AppSettingsValidator.validate(AppSettings(frequencySources = it)) },
+                    audioPacks =
+                        decoder.read(
+                            Keys.audioPacks,
+                            emptyList(),
+                            ResourceSelectionPreferenceCodec::decode,
+                        ) { AppSettingsValidator.validate(AppSettings(audioPacks = it)) },
+                    excludedWordsets =
+                        decoder.read(
+                            Keys.excludedWordsets,
+                            emptyList(),
+                            { raw ->
+                                ResourceSelectionPreferenceCodec
+                                    .decode(raw)
+                                    .filter(ResourceChainSelection::enabled)
+                                    .map(ResourceChainSelection::resourceId)
+                            },
+                        ) { AppSettingsValidator.validate(AppSettings(excludedWordsets = it)) },
+                    readingTtsEnabled = decoder.read(Keys.readingTtsEnabled, false, { it }),
+                    jishoEnabled = decoder.read(Keys.jishoEnabled, false, { it }),
+                )
+            return DecodedPreferences(
+                settings = AppSettingsValidator.validate(settings),
+                invalidKeys = decoder.invalidKeys,
+                schemaVersion = schemaVersion,
+            )
+        }
+
+        private fun readSchemaVersion(preferences: Preferences): Int? =
+            try {
+                preferences[Keys.schemaVersion]
+            } catch (_: ClassCastException) {
+                null
+            }
+
+        private fun <T : Any> MutablePreferences.setOrRemove(
+            key: Preferences.Key<T>,
+            value: T?,
+        ) {
+            if (value == null) remove(key) else this[key] = value
+        }
+
+        private class IndependentPreferenceDecoder(private val preferences: Preferences) {
+            private val mutableInvalidKeys = linkedSetOf<Preferences.Key<*>>()
+            val invalidKeys: Set<Preferences.Key<*>>
+                get() = mutableInvalidKeys
+
+            fun <T : Any, R> read(
+                key: Preferences.Key<T>,
+                default: R,
+                decode: (T) -> R,
+                validate: (R) -> Unit = {},
+            ): R {
+                return try {
+                    val stored = preferences[key] ?: return default
+                    decode(stored).also(validate)
+                } catch (_: ClassCastException) {
+                    mutableInvalidKeys += key
+                    default
+                } catch (_: InvalidAppSettingException) {
+                    mutableInvalidKeys += key
+                    default
+                }
+            }
+
+            fun <T : Any> validated(
+                key: Preferences.Key<T>,
+                setting: (T) -> AppSettings,
+            ): T? =
+                read(key, null, { it }) { value ->
+                    value?.let { AppSettingsValidator.validate(setting(it)) }
+                }
+        }
+
+        private data class DecodedPreferences(
+            val settings: AppSettings,
+            val invalidKeys: Set<Preferences.Key<*>>,
+            val schemaVersion: Int?,
+        )
+
+        private fun invalidStoredPreference(): Nothing =
+            throw InvalidAppSettingException("Saved setting is invalid")
+
+        private object Keys {
+            private val registered = linkedSetOf<Preferences.Key<*>>()
+
+            private fun <T : Any> register(key: Preferences.Key<T>): Preferences.Key<T> =
+                key.also { registered += it }
+
+            val schemaVersion = register(intPreferencesKey("settings_schema_version"))
+            val setupWizardSeen = register(booleanPreferencesKey("setup_wizard_seen"))
+            val themeMode = register(stringPreferencesKey("theme_mode"))
+            val deckName = register(stringPreferencesKey("deck_name"))
+            val noteType = register(stringPreferencesKey("note_type"))
+            val fieldMap = register(stringPreferencesKey("field_map_v1"))
+            val tags = register(stringPreferencesKey("tags"))
+            val audioPadding = register(doublePreferencesKey("audio_padding_seconds"))
+            val screenshotOffset = register(doublePreferencesKey("screenshot_offset_seconds"))
+            val subtitleOffset = register(doublePreferencesKey("subtitle_offset_seconds"))
+            val audioFormat = register(stringPreferencesKey("audio_format"))
+            val audioBitrate = register(intPreferencesKey("audio_bitrate_kbps"))
+            val useKnownWordsDatabase = register(booleanPreferencesKey("use_known_words_database"))
+            val excludeHiraganaOnly = register(booleanPreferencesKey("exclude_hiragana_only"))
+            val excludeKatakanaOnly = register(booleanPreferencesKey("exclude_katakana_only"))
+            val boldTarget = register(booleanPreferencesKey("bold_target"))
+            val deduplicateSentences = register(booleanPreferencesKey("deduplicate_sentences"))
+            val useIPlusOne = register(booleanPreferencesKey("use_i_plus_one"))
+            val useSentenceLength = register(booleanPreferencesKey("use_sentence_length"))
+            val maxSentenceDuration = register(doublePreferencesKey("max_sentence_duration_seconds"))
+            val maxSentenceCharacters = register(intPreferencesKey("max_sentence_characters"))
+            val readingMinimumOccurrence = register(intPreferencesKey("reading_minimum_occurrence"))
+            val maxFrequencyRank = register(intPreferencesKey("max_frequency_rank"))
+            val pitchCategoryFormat = register(stringPreferencesKey("pitch_category_format"))
+            val maxParallelWorkers = register(intPreferencesKey("max_parallel_workers"))
+            val dictionarySources = register(stringPreferencesKey("dictionary_sources_v1"))
+            val frequencySources = register(stringPreferencesKey("frequency_sources_v1"))
+            val audioPacks = register(stringPreferencesKey("audio_packs_v1"))
+            val excludedWordsets = register(stringPreferencesKey("excluded_wordsets_v1"))
+            val readingTtsEnabled = register(booleanPreferencesKey("reading_tts_enabled"))
+            val jishoEnabled = register(booleanPreferencesKey("jisho_enabled"))
+
+            val all: Set<Preferences.Key<*>>
+                get() = registered
+        }
     }
+}
+
+private object AppSettingsPreferencesMigration : DataMigration<Preferences> {
+    override suspend fun shouldMigrate(currentData: Preferences): Boolean =
+        DataStoreAppSettingsRepository.migrationRequired(currentData)
+
+    override suspend fun migrate(currentData: Preferences): Preferences =
+        DataStoreAppSettingsRepository.migratePreferences(currentData)
+
+    override suspend fun cleanUp() = Unit
 }
 
 /** Canonical, bounded ASCII encoding for ordered resource choices stored in Preferences DataStore. */

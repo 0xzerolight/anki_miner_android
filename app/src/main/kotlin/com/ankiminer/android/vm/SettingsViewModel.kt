@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -272,7 +273,7 @@ internal class SettingsViewModel(
     fun updateDraft(value: SettingsDraft) = draftStore.update(value)
 
     private suspend fun persist(draft: SettingsDraft) {
-        // Skip while restoreDefaults holds the flag: its markClean supersedes any in-flight edit,
+        // Skip while a scoped reset holds the flag: markClean supersedes any in-flight edit,
         // and this preserves the save-vs-restore mutual exclusion without per-keystroke flicker.
         if (saving.value) return
         error.value = null
@@ -290,14 +291,14 @@ internal class SettingsViewModel(
         }
     }
 
-    private fun save(value: AppSettings) {
+    private fun save(transform: (AppSettings) -> AppSettings) {
         if (saving.value) return
         saving.value = true
         error.value = null
         viewModelScope.launch {
             try {
-                repository.update(value)
-                draftStore.markClean(value, resources.state.value)
+                repository.update(transform)
+                draftStore.markClean(repository.settings.first(), resources.state.value)
             } catch (failure: CancellationException) {
                 throw failure
             } catch (failure: InvalidAppSettingException) {
@@ -310,24 +311,26 @@ internal class SettingsViewModel(
         }
     }
 
-    fun restoreDefaults() {
+    fun restoreMiningDefaults() {
         if (!draftState.value.loaded) return
-        val current = settings.value ?: return
-        save(
-            AppSettings(
-                // Restoring mining defaults must never re-open the onboarding wizard or
-                // change the user's chosen look.
-                setupWizardSeen = current.setupWizardSeen,
-                theme = current.theme,
-                // An empty persisted chain means newly imported resources should become active.
-                // Record current installs as disabled so "restore defaults" still means no local
-                // frequency or expression-audio override at this point in time.
-                frequencySources =
-                    resources.installedFrequencyIds().map { ResourceChainSelection(it, false) },
-                audioPacks =
-                    resources.installedAudioPackIds().map { ResourceChainSelection(it, false) },
-            ),
-        )
+        save(AppSettings::restoreMiningDefaults)
+    }
+
+    fun resetAnkiTarget() {
+        if (!draftState.value.loaded) return
+        save(AppSettings::resetAnkiTarget)
+    }
+
+    fun resetResourceChoices() {
+        if (!draftState.value.loaded) return
+        val inventory = resources.state.value
+        save { current ->
+            current.resetResourceChoices(
+                dictionaryIds = inventory.usableDictionaryIds(),
+                frequencyIds = inventory.usableFrequencyIds(),
+                audioPackIds = inventory.usableAudioPackIds(),
+            )
+        }
     }
 
     fun dismissError() {
