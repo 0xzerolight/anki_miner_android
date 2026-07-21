@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.CreationExtras
+import com.ankiminer.android.R
 import com.ankiminer.android.data.resources.ResourceManager
 import com.ankiminer.android.data.resources.ResourceManagerState
 import com.ankiminer.android.data.settings.AppSettings
@@ -11,10 +12,12 @@ import com.ankiminer.android.data.settings.AppSettingsDraftParser
 import com.ankiminer.android.data.settings.AppSettingsRepository
 import com.ankiminer.android.data.settings.AudioFormat
 import com.ankiminer.android.data.settings.EngineSettingsSnapshotMapper
+import com.ankiminer.android.data.settings.InvalidAppSettingCode
 import com.ankiminer.android.data.settings.InvalidAppSettingException
 import com.ankiminer.android.data.settings.PitchCategoryFormat
 import com.ankiminer.android.data.settings.ResourceChainSelection
 import com.ankiminer.android.data.settings.ThemeMode
+import com.ankiminer.android.localization.LocalizedStringResource
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.NonCancellable
@@ -427,6 +430,64 @@ private data class ProjectedSettingsWrite(
     val value: AppSettings,
 )
 
+private fun settingsValidationError(
+    failure: InvalidAppSettingException,
+): LocalizedStringResource =
+    when (failure.code) {
+        InvalidAppSettingCode.NUMERIC_INCOMPLETE ->
+            LocalizedStringResource(R.string.settings_validation_numeric_incomplete)
+        InvalidAppSettingCode.EXCLUDED_DECKS_INVALID ->
+            LocalizedStringResource(R.string.settings_validation_excluded_decks)
+        InvalidAppSettingCode.CANONICAL_NAME_INVALID ->
+            LocalizedStringResource(
+                R.string.settings_validation_canonical_name,
+                failure.arguments,
+            )
+        InvalidAppSettingCode.INVALID_UNICODE ->
+            LocalizedStringResource(
+                R.string.settings_validation_invalid_unicode,
+                failure.arguments,
+            )
+        InvalidAppSettingCode.NON_FINITE ->
+            LocalizedStringResource(
+                R.string.settings_validation_finite,
+                failure.arguments,
+            )
+        InvalidAppSettingCode.NEGATIVE ->
+            LocalizedStringResource(
+                R.string.settings_validation_non_negative,
+                failure.arguments,
+            )
+        InvalidAppSettingCode.NOT_POSITIVE ->
+            LocalizedStringResource(
+                R.string.settings_validation_positive,
+                failure.arguments,
+            )
+        InvalidAppSettingCode.PARALLEL_WORKERS_RANGE ->
+            LocalizedStringResource(R.string.settings_validation_parallel_workers)
+        InvalidAppSettingCode.NETWORK_AUDIO_UNSUPPORTED ->
+            LocalizedStringResource(R.string.settings_validation_network_audio)
+        InvalidAppSettingCode.WORDSETS_INVALID ->
+            LocalizedStringResource(R.string.settings_validation_wordsets)
+        InvalidAppSettingCode.FIELD_MAP_UNKNOWN_KEY ->
+            LocalizedStringResource(R.string.settings_validation_field_map_unknown_key)
+        InvalidAppSettingCode.FIELD_MAP_CONFLICT ->
+            LocalizedStringResource(
+                R.string.settings_validation_field_map_conflict,
+                failure.arguments,
+            )
+        InvalidAppSettingCode.RESOURCE_IDS_INVALID ->
+            LocalizedStringResource(
+                R.string.settings_validation_resource_ids,
+                failure.arguments,
+            )
+        InvalidAppSettingCode.UNKNOWN ->
+            LocalizedStringResource(
+                R.string.settings_validation_unknown,
+                failure.arguments.ifEmpty { listOf(failure.message.orEmpty()) },
+            )
+    }
+
 internal class SettingsViewModel(
     private val repository: AppSettingsRepository,
     private val resources: ResourceManager,
@@ -436,7 +497,7 @@ internal class SettingsViewModel(
             .map<AppSettings, AppSettings?> { it }
             .stateIn(viewModelScope, SharingStarted.Eagerly, null)
     val saving = MutableStateFlow(false)
-    val error = MutableStateFlow<String?>(null)
+    val error = MutableStateFlow<LocalizedStringResource?>(null)
     val resourceState: StateFlow<ResourceManagerState> = resources.state
     private val persistenceMutex = Mutex()
     private val successfulWrites = SuccessfulSettingsWriteTracker()
@@ -525,9 +586,9 @@ internal class SettingsViewModel(
         } catch (failure: CancellationException) {
             throw failure
         } catch (failure: InvalidAppSettingException) {
-            error.value = failure.message
+            error.value = settingsValidationError(failure)
         } catch (_: Exception) {
-            error.value = "Settings could not be saved"
+            error.value = LocalizedStringResource(R.string.settings_save_failed)
         }
     }
 
@@ -560,9 +621,9 @@ internal class SettingsViewModel(
             } catch (failure: CancellationException) {
                 throw failure
             } catch (failure: InvalidAppSettingException) {
-                error.value = failure.message
+                error.value = settingsValidationError(failure)
             } catch (_: Exception) {
-                error.value = "Settings could not be saved"
+                error.value = LocalizedStringResource(R.string.settings_save_failed)
             } finally {
                 saving.value = false
                 if (draftStore.state.value.dirty) flushPendingWrites()

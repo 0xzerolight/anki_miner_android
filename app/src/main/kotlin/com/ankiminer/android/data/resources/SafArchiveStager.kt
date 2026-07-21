@@ -61,7 +61,11 @@ internal class SafArchiveStager(
             }
             val digest = MessageDigest.getInstance("SHA-256")
             val input = resolver.openInputStream(source)
-                ?: throw ResourceDownloadException("import_source_unavailable", "The selected $sourceLabel cannot be opened")
+                ?: throw ResourceDownloadException(
+                    "import_source_unavailable",
+                    "The selected $sourceLabel cannot be opened",
+                    formatArguments = listOf(sourceLabel),
+                )
             var total = 0L
             input.use { stream ->
                 FileOutputStream(destination, false).use { output ->
@@ -72,7 +76,11 @@ internal class SafArchiveStager(
                         if (count < 0) break
                         total += count
                         if (total > maximumBytes) {
-                            throw ResourceDownloadException("resource_archive_too_large", "The selected $sourceLabel exceeds its size limit")
+                            throw ResourceDownloadException(
+                                "resource_archive_too_large",
+                                "The selected $sourceLabel exceeds its size limit",
+                                formatArguments = listOf(sourceLabel),
+                            )
                         }
                         if (available - total < FREE_SPACE_RESERVE_BYTES) {
                             throw ResourceStorageException(total + FREE_SPACE_RESERVE_BYTES, available)

@@ -1,9 +1,11 @@
 package com.ankiminer.android.anki.provider
 
+import com.ankiminer.android.R
 import com.ankiminer.android.anki.journal.AnkiMutationStore
 import com.ankiminer.android.anki.journal.RemediationKind
 import com.ankiminer.android.anki.journal.RemediationRecord
 import com.ankiminer.android.anki.journal.RemediationState
+import com.ankiminer.android.localization.StringResourceResolver
 
 /** Stable, UI-facing remediation categories. Durable journal implementation details stay private. */
 internal enum class AnkiRemediationType {
@@ -17,6 +19,28 @@ internal enum class AnkiRemediationType {
     CAPACITY_EXHAUSTED,
 }
 
+/** Stable durable summaries mapped to localized copy without weakening their recorded meaning. */
+internal enum class AnkiRemediationSummary(val stableText: String?) {
+    DECK_COMMIT_UNCERTAIN("Deck creation could not be conclusively reconciled"),
+    DECK_COMMIT_UNCERTAIN_OWNER_LOSS("Deck creation could not be conclusively reconciled after owner loss"),
+    MEDIA_COMMIT_UNCERTAIN("Media provider commit could not be conclusively reconciled"),
+    MEDIA_COMMIT_UNCERTAIN_OWNER_LOSS("Media provider commit could not be confirmed after owner loss"),
+    MEDIA_STORED_UNATTACHED("Stored Anki media was not attached to a verified note"),
+    NOTE_COMMIT_UNCERTAIN("Note provider commit could not be conclusively reconciled"),
+    NOTE_COMMIT_UNCERTAIN_OWNER_LOSS("Note provider commit could not be confirmed after owner loss"),
+    NOTE_POSTCHECK_FAILED("A committed note requires review because exact postchecks failed"),
+    NOTE_POSTCHECK_UNFINISHED("A committed note requires review because postchecks did not finish"),
+    CARD_ROUTING_FAILED("Committed note card routing requires review"),
+    STAGING_CLEANUP_RETRY("Anki media staging cleanup requires retry"),
+    UNKNOWN(null),
+    ;
+
+    companion object {
+        fun fromStableText(value: String): AnkiRemediationSummary =
+            entries.firstOrNull { it.stableText == value } ?: UNKNOWN
+    }
+}
+
 /** The only per-item operations which the current journal can complete without inventing evidence. */
 internal enum class AnkiRemediationActionKind {
     RETRY_STAGING_CLEANUP,
@@ -28,6 +52,7 @@ internal enum class AnkiRemediationActionKind {
 internal data class AnkiPendingRemediation(
     val id: Long,
     val type: AnkiRemediationType,
+    val summaryReason: AnkiRemediationSummary,
     val title: String,
     val summary: String,
     val compactEvidence: String?,
@@ -209,6 +234,7 @@ internal class AnkiRemediationService(
     private val interruptedWorkRecovery: InterruptedAnkiWorkRecovery,
     private val stagingRecovery: MediaStagingRecovery,
     private val workerThreadGuard: WorkerThreadGuard,
+    private val strings: StringResourceResolver,
     private val processLock: AnkiRemediationProcessLock = AnkiRemediationProcessLock.shared,
 ) {
     fun inventory(cancellation: AnkiCancellation = AnkiCancellation.NONE): AnkiRemediationInventory =
@@ -432,11 +458,21 @@ internal class AnkiRemediationService(
     private fun toPending(record: RemediationRecord): AnkiPendingRemediation {
         validateRecord(record)
         val type = record.kind.toDomainType()
+        val summaryReason = AnkiRemediationSummary.fromStableText(record.summary)
         return AnkiPendingRemediation(
             id = record.id,
             type = type,
-            title = title(type),
-            summary = record.summary,
+            summaryReason = summaryReason,
+            title = strings.resolve(type.titleResource()),
+            summary =
+                if (summaryReason == AnkiRemediationSummary.UNKNOWN) {
+                    strings.resolve(
+                        R.string.anki_recovery_item_unknown_summary,
+                        listOf(record.summary),
+                    )
+                } else {
+                    strings.resolve(summaryReason.summaryResource())
+                },
             compactEvidence = record.compactEvidence,
             createdAtMs = record.createdAtMs,
             updatedAtMs = record.updatedAtMs,
@@ -519,6 +555,45 @@ private fun RemediationKind.toDomainType(): AnkiRemediationType =
         RemediationKind.CAPACITY_EXHAUSTED -> AnkiRemediationType.CAPACITY_EXHAUSTED
     }
 
+private fun AnkiRemediationType.titleResource(): Int =
+    when (this) {
+        AnkiRemediationType.DECK_COMMIT_UNCERTAIN -> R.string.anki_recovery_item_deck_uncertain_title
+        AnkiRemediationType.MEDIA_COMMIT_UNCERTAIN -> R.string.anki_recovery_item_media_uncertain_title
+        AnkiRemediationType.MEDIA_STORED_UNATTACHED -> R.string.anki_recovery_item_media_unattached_title
+        AnkiRemediationType.NOTE_COMMIT_UNCERTAIN -> R.string.anki_recovery_item_note_uncertain_title
+        AnkiRemediationType.NOTE_COMMITTED_FAILED -> R.string.anki_recovery_item_note_failed_title
+        AnkiRemediationType.CARD_ROUTING_FAILED -> R.string.anki_recovery_item_card_routing_title
+        AnkiRemediationType.STAGING_QUARANTINED -> R.string.anki_recovery_item_staging_title
+        AnkiRemediationType.CAPACITY_EXHAUSTED -> R.string.anki_recovery_item_capacity_title
+    }
+
+private fun AnkiRemediationSummary.summaryResource(): Int =
+    when (this) {
+        AnkiRemediationSummary.DECK_COMMIT_UNCERTAIN ->
+            R.string.anki_recovery_summary_deck_commit_uncertain
+        AnkiRemediationSummary.DECK_COMMIT_UNCERTAIN_OWNER_LOSS ->
+            R.string.anki_recovery_summary_deck_commit_uncertain_owner_loss
+        AnkiRemediationSummary.MEDIA_COMMIT_UNCERTAIN ->
+            R.string.anki_recovery_summary_media_commit_uncertain
+        AnkiRemediationSummary.MEDIA_COMMIT_UNCERTAIN_OWNER_LOSS ->
+            R.string.anki_recovery_summary_media_commit_uncertain_owner_loss
+        AnkiRemediationSummary.MEDIA_STORED_UNATTACHED ->
+            R.string.anki_recovery_summary_media_stored_unattached
+        AnkiRemediationSummary.NOTE_COMMIT_UNCERTAIN ->
+            R.string.anki_recovery_summary_note_commit_uncertain
+        AnkiRemediationSummary.NOTE_COMMIT_UNCERTAIN_OWNER_LOSS ->
+            R.string.anki_recovery_summary_note_commit_uncertain_owner_loss
+        AnkiRemediationSummary.NOTE_POSTCHECK_FAILED ->
+            R.string.anki_recovery_summary_note_postcheck_failed
+        AnkiRemediationSummary.NOTE_POSTCHECK_UNFINISHED ->
+            R.string.anki_recovery_summary_note_postcheck_unfinished
+        AnkiRemediationSummary.CARD_ROUTING_FAILED ->
+            R.string.anki_recovery_summary_card_routing_failed
+        AnkiRemediationSummary.STAGING_CLEANUP_RETRY ->
+            R.string.anki_recovery_summary_staging_cleanup_retry
+        AnkiRemediationSummary.UNKNOWN -> R.string.anki_recovery_item_unknown_summary
+    }
+
 private fun AnkiRemediationType.toJournalKind(): RemediationKind =
     when (this) {
         AnkiRemediationType.DECK_COMMIT_UNCERTAIN -> RemediationKind.DECK_COMMIT_UNCERTAIN
@@ -529,18 +604,6 @@ private fun AnkiRemediationType.toJournalKind(): RemediationKind =
         AnkiRemediationType.CARD_ROUTING_FAILED -> RemediationKind.CARD_ROUTING_FAILED
         AnkiRemediationType.STAGING_QUARANTINED -> RemediationKind.STAGING_QUARANTINED
         AnkiRemediationType.CAPACITY_EXHAUSTED -> RemediationKind.CAPACITY_EXHAUSTED
-    }
-
-private fun title(type: AnkiRemediationType): String =
-    when (type) {
-        AnkiRemediationType.DECK_COMMIT_UNCERTAIN -> "Deck creation needs review"
-        AnkiRemediationType.MEDIA_COMMIT_UNCERTAIN -> "Media save needs review"
-        AnkiRemediationType.MEDIA_STORED_UNATTACHED -> "Stored media is unattached"
-        AnkiRemediationType.NOTE_COMMIT_UNCERTAIN -> "Note creation needs review"
-        AnkiRemediationType.NOTE_COMMITTED_FAILED -> "Created note needs review"
-        AnkiRemediationType.CARD_ROUTING_FAILED -> "Card deck placement needs review"
-        AnkiRemediationType.STAGING_QUARANTINED -> "Media cleanup needs retry"
-        AnkiRemediationType.CAPACITY_EXHAUSTED -> "Media capacity needs attention"
     }
 
 private fun actions(type: AnkiRemediationType): Set<AnkiRemediationActionKind> =

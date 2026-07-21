@@ -13,6 +13,7 @@ import com.ankiminer.android.engine.ReadingMiningWireRequest
 import com.ankiminer.android.engine.ReadingMiningSourceKind
 import com.ankiminer.android.engine.TokenizerIdentity
 import com.ankiminer.android.media.SafDocument
+import com.ankiminer.android.localization.testStringResourceResolver
 import com.ankiminer.android.mining.CoordinatorAnkiCallbacks
 import com.ankiminer.android.mining.CurationSelection
 import com.ankiminer.android.mining.InstalledTokenizerResource
@@ -336,6 +337,7 @@ class BridgeReadingMiningRepositoryTest {
                 foregroundStarter = FakeForegroundStarter(),
                 runExecutor = MiningTaskExecutor { task -> queuedRun.set(task) },
                 controlExecutor = controlExecutor.asMiningTaskExecutor(),
+                strings = testStringResourceResolver,
             )
 
         runBlocking { repository.startReading(INPUT) }
@@ -510,6 +512,7 @@ class BridgeReadingMiningRepositoryTest {
                 foregroundStarter = foreground,
                 runExecutor = runExecutor.asMiningTaskExecutor(),
                 controlExecutor = controlExecutor.asMiningTaskExecutor(),
+                strings = testStringResourceResolver,
                 runtimeWorkCoordinator = runtimeWorkCoordinator,
                 configSnapshotResolver =
                     ReadingConfigSnapshotResolver {

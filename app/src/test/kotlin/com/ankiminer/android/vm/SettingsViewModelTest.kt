@@ -2,6 +2,7 @@ package com.ankiminer.android.vm
 
 import androidx.lifecycle.viewModelScope
 import com.ankiminer.android.MainDispatcherRule
+import com.ankiminer.android.R
 import com.ankiminer.android.data.resources.FrequencySourceFormat
 import com.ankiminer.android.data.resources.InstalledDictionary
 import com.ankiminer.android.data.resources.KnownWordsResetScope
@@ -123,7 +124,11 @@ class SettingsViewModelTest {
             advanceUntilIdle()
 
             assertEquals(0, repository.writeCount)
-            assertNotNull(viewModel.error.value)
+            assertEquals(
+                R.string.settings_validation_parallel_workers,
+                viewModel.error.value?.resourceId,
+            )
+            assertTrue(viewModel.error.value?.formatArguments.orEmpty().isEmpty())
             assertEquals("33", viewModel.draftState.value.draft.workers)
         }
 

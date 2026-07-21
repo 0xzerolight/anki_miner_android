@@ -2,6 +2,7 @@ package com.ankiminer.android.anki.provider
 
 import android.content.Context
 import com.ankiminer.android.anki.journal.SqliteAnkiMutationStore
+import com.ankiminer.android.localization.AndroidStringResourceResolver
 import java.io.Closeable
 
 /** Journal-backed composition root; registration cannot open until startup recovery is green. */
@@ -55,6 +56,7 @@ internal class AnkiProviderRuntime(
             interruptedWorkRecovery = InterruptedAnkiWorkRecovery(recoveryGate::ensureRecovered),
             stagingRecovery = MediaStagingRecovery(mediaStaging::recover),
             workerThreadGuard = workerThreadGuard,
+            strings = AndroidStringResourceResolver(context),
         )
 
     private val readiness =

@@ -1,11 +1,15 @@
 package com.ankiminer.android.data.anki
 
+import com.ankiminer.android.R
+import com.ankiminer.android.anki.protocol.AnkiErrorCode
 import com.ankiminer.android.anki.provider.AnkiCancellation
 import com.ankiminer.android.anki.provider.AnkiRemediationCommand
 import com.ankiminer.android.anki.provider.AnkiRemediationInventory
 import com.ankiminer.android.anki.provider.ModelSummary
+import com.ankiminer.android.anki.provider.NoteTypeProviderErrorReason
 import com.ankiminer.android.anki.provider.NoteTypeSetupStatus
 import com.ankiminer.android.data.RuntimeWorkCoordinator
+import com.ankiminer.android.localization.StringResourceResolver
 import java.util.concurrent.Executor
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -90,6 +94,7 @@ internal class ProcessAnkiSetupManager(
     private val backend: AnkiSetupBackend,
     private val executor: Executor,
     private val runtimeWorkCoordinator: RuntimeWorkCoordinator,
+    private val strings: StringResourceResolver,
 ) : AnkiSetupManager {
     private val mutableState = MutableStateFlow(AnkiSetupManagerState())
     override val state: StateFlow<AnkiSetupManagerState> = mutableState.asStateFlow()
@@ -153,7 +158,7 @@ internal class ProcessAnkiSetupManager(
                     recoveryFailure =
                         AnkiSetupFailure(
                             "anki_recovery_inventory_unavailable",
-                            "Local Anki recovery records could not be read. Check again before mining.",
+                            strings.resolve(R.string.anki_setup_recovery_read_failed),
                         ),
                 )
             }
@@ -177,13 +182,18 @@ internal class ProcessAnkiSetupManager(
                 )
             }
         } catch (_: RuntimeException) {
-            val message =
-                "AnkiDroid is unavailable. Local recovery records remain listed below."
+            val message = strings.resolve(R.string.anki_setup_provider_unavailable)
             mutableState.update { current ->
                 current.copy(
                     availableNoteTypes = emptyList(),
                     availableDeckNames = emptyList(),
-                    noteTypeStatus = NoteTypeSetupStatus.ProviderError(true, message),
+                    noteTypeStatus =
+                        NoteTypeSetupStatus.ProviderError(
+                            reason = NoteTypeProviderErrorReason.PROVIDER_UNAVAILABLE,
+                            code = AnkiErrorCode.PROVIDER_UNAVAILABLE,
+                            retryable = true,
+                            stableMessage = message,
+                        ),
                     failure = AnkiSetupFailure("anki_provider_unavailable", message),
                 )
             }
@@ -208,7 +218,7 @@ internal class ProcessAnkiSetupManager(
             synchronized(monitor) { active = false }
             recordFailure(
                 "runtime_busy",
-                "Finish or cancel the active mining or resource operation before changing Anki setup",
+                strings.resolve(R.string.anki_setup_runtime_busy),
             )
             return
         }
@@ -220,7 +230,7 @@ internal class ProcessAnkiSetupManager(
                 } catch (_: RuntimeException) {
                     recordFailure(
                         "anki_setup_failed",
-                        "Anki setup did not complete. Review the status and try again.",
+                        strings.resolve(R.string.anki_setup_failed),
                     )
                 } finally {
                     try {
@@ -240,7 +250,7 @@ internal class ProcessAnkiSetupManager(
                 synchronized(monitor) { active = false }
                 mutableState.update { it.copy(operation = null) }
             }
-            recordFailure("anki_setup_unavailable", "Anki setup could not be scheduled")
+            recordFailure("anki_setup_unavailable", strings.resolve(R.string.anki_setup_schedule_failed))
         }
     }
 

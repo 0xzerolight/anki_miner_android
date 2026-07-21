@@ -4,6 +4,7 @@ import android.app.Application
 import com.ankiminer.android.anki.provider.AnkiCancellation
 import com.ankiminer.android.anki.provider.AnkiProviderRuntime
 import com.ankiminer.android.anki.provider.AnkiRemediationCommand
+import com.ankiminer.android.anki.provider.NoteTypeProviderErrorReason
 import com.ankiminer.android.anki.provider.NoteTypeSetupStatus
 import com.ankiminer.android.data.anki.AnkiSetupBackend
 import com.ankiminer.android.data.anki.AnkiSetupManager
@@ -20,6 +21,8 @@ import com.ankiminer.android.data.settings.DataStoreAppSettingsRepository
 import com.ankiminer.android.engine.ChaquopyPyBridge
 import com.ankiminer.android.engine.ChaquopyPythonRuntime
 import com.ankiminer.android.engine.PythonRuntimeReadiness
+import com.ankiminer.android.localization.AndroidStringResourceResolver
+import com.ankiminer.android.localization.StringResourceResolver
 import com.ankiminer.android.media.AndroidSafBroker
 import com.ankiminer.android.media.SafBroker
 import com.ankiminer.android.media.SafInputCacheJanitor
@@ -61,6 +64,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 
 class AnkiMinerApplication : Application() {
+    internal val stringResourceResolver by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        AndroidStringResourceResolver(this)
+    }
+
     /** One process-wide grant ledger prevents Activity recreation from splitting SAF ownership. */
     val safBroker: SafBroker by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         AndroidSafBroker(this)
@@ -153,6 +160,7 @@ class AnkiMinerApplication : Application() {
                 },
             executor = ankiSetupExecutor,
             runtimeWorkCoordinator = runtimeWorkCoordinator,
+            strings = stringResourceResolver,
         )
     }
 
@@ -170,6 +178,7 @@ class AnkiMinerApplication : Application() {
             runtimeWorkCoordinator = runtimeWorkCoordinator,
             safStager = SafArchiveStager(contentResolver, resourceStagingRoot),
             documentWriter = AndroidResourceDocumentWriter(contentResolver),
+            strings = stringResourceResolver,
         )
     }
     internal val resourceStartupReadiness: StateFlow<ResourceStartupReadiness> by lazy(
@@ -221,6 +230,7 @@ class AnkiMinerApplication : Application() {
             resourceStartupReady = {
                 resourceManager.state.value.startupReadiness == ResourceStartupReadiness.READY
             },
+            strings = stringResourceResolver,
         )
     }
 
@@ -259,6 +269,7 @@ class AnkiMinerApplication : Application() {
                 resourceManager.state.value.startupReadiness == ResourceStartupReadiness.READY
             },
             sentenceAudioSynthesizerFactory = AndroidSentenceAudioSynthesizerFactory(this),
+            strings = stringResourceResolver,
         )
     }
 
@@ -355,14 +366,17 @@ class AnkiMinerApplication : Application() {
         cancellation: AnkiCancellation,
     ): AnkiMiningTargetReadiness {
         if (cancellation.isCancelled()) {
-            return AnkiMiningTargetReadiness.Blocked("Anki target verification was cancelled", true)
+            return AnkiMiningTargetReadiness.Blocked(
+                stringResourceResolver.resolve(R.string.mining_target_cancelled),
+                true,
+            )
         }
         return try {
             val settings = runBlocking { settingsRepository.settings.first() }
             val noteType = settings.noteType
             if (noteType.isNullOrEmpty()) {
                 return AnkiMiningTargetReadiness.Blocked(
-                    "Select and verify a note type in Settings before mining",
+                    stringResourceResolver.resolve(R.string.mining_target_select_note_type),
                     true,
                 )
             }
@@ -373,44 +387,77 @@ class AnkiMinerApplication : Application() {
                         AnkiMiningTargetReadiness.Ready
                     } else {
                         AnkiMiningTargetReadiness.Blocked(
-                            "Resolve pending Anki recovery items before mining",
+                            stringResourceResolver.resolve(R.string.mining_target_resolve_recovery),
                             false,
                         )
                     }
                 }
                 NoteTypeSetupStatus.NoteTypeMissing ->
                     AnkiMiningTargetReadiness.Blocked(
-                        "The selected note type was not found in AnkiDroid. Choose one in Settings.",
+                        stringResourceResolver.resolve(R.string.mining_target_note_type_missing),
                         true,
                     )
                 is NoteTypeSetupStatus.FieldsMissing ->
                     AnkiMiningTargetReadiness.Blocked(
-                        "The selected note type is missing mapped fields. Fix the field mapping in Settings.",
+                        stringResourceResolver.resolve(R.string.mining_target_fields_missing),
                         true,
                     )
                 is NoteTypeSetupStatus.FieldMapInvalid ->
                     AnkiMiningTargetReadiness.Blocked(
-                        "An Anki field is used by multiple field mappings. Fix the field mapping in Settings before mining.",
+                        stringResourceResolver.resolve(R.string.mining_target_field_map_invalid),
                         false,
                     )
                 NoteTypeSetupStatus.FirstFieldMismatch ->
                     AnkiMiningTargetReadiness.Blocked(
-                        "The first field of the note type must hold the word (used for duplicate detection). Fix it in Settings.",
+                        stringResourceResolver.resolve(R.string.mining_target_first_field_mismatch),
                         false,
                     )
                 is NoteTypeSetupStatus.ProviderError ->
-                    AnkiMiningTargetReadiness.Blocked(status.stableMessage, status.retryable)
+                    AnkiMiningTargetReadiness.Blocked(
+                        providerErrorMessage(status, stringResourceResolver),
+                        status.retryable,
+                    )
                 NoteTypeSetupStatus.NotSelected ->
                     AnkiMiningTargetReadiness.Blocked(
-                        "Select and verify a note type in Settings before mining",
+                        stringResourceResolver.resolve(R.string.mining_target_select_note_type),
                         true,
                     )
             }
         } catch (_: RuntimeException) {
             AnkiMiningTargetReadiness.Blocked(
-                "The Anki Miner target and recovery state could not be inspected",
+                stringResourceResolver.resolve(R.string.mining_target_inspection_failed),
                 true,
             )
         }
     }
 }
+
+internal fun providerErrorMessage(
+    status: NoteTypeSetupStatus.ProviderError,
+    strings: StringResourceResolver,
+): String =
+    when (status.reason) {
+        NoteTypeProviderErrorReason.API_DISABLED ->
+            strings.resolve(R.string.mining_target_provider_api_disabled)
+        NoteTypeProviderErrorReason.API_INCOMPATIBLE ->
+            strings.resolve(R.string.mining_target_provider_api_incompatible)
+        NoteTypeProviderErrorReason.API_DISABLED_OR_INCOMPATIBLE ->
+            strings.resolve(R.string.mining_target_provider_api_disabled_or_incompatible)
+        NoteTypeProviderErrorReason.PERMISSION_REQUIRED ->
+            strings.resolve(R.string.mining_target_provider_permission_required)
+        NoteTypeProviderErrorReason.PROVIDER_UNAVAILABLE ->
+            strings.resolve(R.string.mining_target_provider_unavailable)
+        NoteTypeProviderErrorReason.PROVIDER_BECAME_UNAVAILABLE ->
+            strings.resolve(R.string.mining_target_provider_became_unavailable)
+        NoteTypeProviderErrorReason.QUERY_FAILED ->
+            strings.resolve(R.string.mining_target_provider_query_failed)
+        NoteTypeProviderErrorReason.TIMEOUT ->
+            strings.resolve(R.string.mining_target_provider_timeout)
+        NoteTypeProviderErrorReason.CANCELLED ->
+            strings.resolve(R.string.mining_target_provider_cancelled)
+        NoteTypeProviderErrorReason.UNKNOWN ->
+            strings.resolve(
+                R.string.mining_target_provider_unknown_code,
+                listOf(status.code.wireName),
+            )
+    }

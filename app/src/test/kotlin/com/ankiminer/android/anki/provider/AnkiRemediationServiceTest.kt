@@ -1,9 +1,12 @@
 package com.ankiminer.android.anki.provider
 
+import com.ankiminer.android.R
 import com.ankiminer.android.anki.journal.RemediationKind
 import com.ankiminer.android.anki.journal.RemediationRecord
 import com.ankiminer.android.anki.journal.RemediationState
+import com.ankiminer.android.localization.StringResourceResolver
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
@@ -60,6 +63,39 @@ class AnkiRemediationServiceTest {
             pending.map(AnkiPendingRemediation::availableActions),
         )
         assertTrue(pending.all { it.title.isNotBlank() && it.summary == "summary-${it.id}" })
+    }
+
+    @Test
+    fun `failed and unfinished note postchecks retain distinct rendered semantics`() {
+        val journal =
+            FakeRemediationJournal(
+                mutableListOf(
+                    record(9, RemediationKind.NOTE_COMMITTED_FAILED).copy(
+                        summary = "A committed note requires review because exact postchecks failed",
+                    ),
+                    record(10, RemediationKind.NOTE_COMMITTED_FAILED).copy(
+                        summary = "A committed note requires review because postchecks did not finish",
+                    ),
+                ),
+            )
+
+        val pending = service(journal).inventory().pending
+
+        assertEquals(
+            listOf(
+                "A committed note requires review because exact postchecks failed",
+                "A committed note requires review because postchecks did not finish",
+            ),
+            pending.map(AnkiPendingRemediation::summary),
+        )
+        assertEquals(
+            listOf(
+                AnkiRemediationSummary.NOTE_POSTCHECK_FAILED,
+                AnkiRemediationSummary.NOTE_POSTCHECK_UNFINISHED,
+            ),
+            pending.map(AnkiPendingRemediation::summaryReason),
+        )
+        assertFalse(pending[1].summary.contains("failed", ignoreCase = true))
     }
 
     @Test
@@ -342,6 +378,18 @@ class AnkiRemediationServiceTest {
         interruptedWorkRecovery = interruptedWorkRecovery,
         stagingRecovery = stagingRecovery,
         workerThreadGuard = workerThreadGuard,
+        strings =
+            StringResourceResolver { resourceId, formatArguments ->
+                when (resourceId) {
+                    R.string.anki_recovery_item_unknown_summary ->
+                        formatArguments.single().toString()
+                    R.string.anki_recovery_summary_note_postcheck_failed ->
+                        "A committed note requires review because exact postchecks failed"
+                    R.string.anki_recovery_summary_note_postcheck_unfinished ->
+                        "A committed note requires review because postchecks did not finish"
+                    else -> "resource:$resourceId"
+                }
+            },
         processLock = AnkiRemediationProcessLock(),
     )
 

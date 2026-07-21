@@ -11,6 +11,7 @@ import com.ankiminer.android.engine.PyBridge
 import com.ankiminer.android.engine.TokenizerIdentity
 import com.ankiminer.android.engine.VideoMiningWireRequest
 import com.ankiminer.android.media.FileCopyCancelledException
+import com.ankiminer.android.localization.testStringResourceResolver
 import com.ankiminer.android.service.MiningForegroundLease
 import com.ankiminer.android.service.MiningForegroundProgress
 import com.ankiminer.android.service.MiningForegroundSessionIdentity
@@ -386,6 +387,7 @@ class BridgeMiningRepositoryTest {
                 foregroundStarter = FakeForegroundStarter(fail = false),
                 runExecutor = MiningTaskExecutor { task -> queuedRun.set(task) },
                 controlExecutor = controlExecutor.asMiningTaskExecutor(),
+                strings = testStringResourceResolver,
             )
 
         runBlocking { repository.startVideo(INPUT) }
@@ -438,6 +440,7 @@ class BridgeMiningRepositoryTest {
                 foregroundStarter = FakeForegroundStarter(fail = false),
                 runExecutor = runExecutor.asMiningTaskExecutor(),
                 controlExecutor = controlExecutor.asMiningTaskExecutor(),
+                strings = testStringResourceResolver,
             )
 
         runBlocking { repository.startVideo(INPUT) }
@@ -570,6 +573,7 @@ class BridgeMiningRepositoryTest {
                 controlExecutor = controlExecutor.asMiningTaskExecutor(),
                 runtimeWorkCoordinator = runtimeWorkCoordinator,
                 configSnapshotResolver = configSnapshotResolver,
+                strings = testStringResourceResolver,
                 foregroundStartTimeoutSeconds = 2,
             )
         return Harness(repository, bridge, anki, inputOwner, foreground)

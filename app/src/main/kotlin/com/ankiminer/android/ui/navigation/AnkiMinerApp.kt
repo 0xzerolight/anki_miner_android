@@ -149,7 +149,11 @@ internal fun AnkiMinerApp(
     }
 
     val snackbarHostState = remember { SnackbarHostState() }
-    val settingsError by settingsViewModel.error.collectAsStateWithLifecycle()
+    val settingsErrorResource by settingsViewModel.error.collectAsStateWithLifecycle()
+    val settingsError =
+        settingsErrorResource?.let {
+            stringResource(it.resourceId, *it.formatArguments.toTypedArray())
+        }
     MessageSnackbarEffect(settingsError, snackbarHostState, settingsViewModel::dismissError)
     MessageSnackbarEffect(setup.failure?.message, snackbarHostState, setupViewModel::dismissFailure)
     MessageSnackbarEffect(setup.ankiFailure?.message, snackbarHostState, setupViewModel::dismissAnkiFailure)

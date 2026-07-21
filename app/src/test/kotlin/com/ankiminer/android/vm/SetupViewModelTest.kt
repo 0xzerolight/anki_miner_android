@@ -21,6 +21,7 @@ import com.ankiminer.android.engine.PythonRuntimeReadiness
 import com.ankiminer.android.mining.AnkiMiningTargetReadiness
 import com.ankiminer.android.mining.MiningRunAdmissionState
 import com.ankiminer.android.mining.NotificationPermissionReadiness
+import com.ankiminer.android.localization.testStringResourceResolver
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -283,6 +284,7 @@ class SetupViewModelTest {
                 ),
             runtimeWorkState = MutableStateFlow<RuntimeWorkCoordinator.Kind?>(null),
             refreshExternalReadiness = {},
+            strings = testStringResourceResolver,
         )
 
     private fun model(name: String, vararg fields: String) =

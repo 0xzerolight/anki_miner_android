@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.CreationExtras
+import com.ankiminer.android.R
 import com.ankiminer.android.anki.provider.AnkiExternalReviewOutcome
 import com.ankiminer.android.anki.provider.AnkiFieldMapPolicy
 import com.ankiminer.android.anki.provider.AnkiFieldMappingChange
@@ -18,6 +19,7 @@ import com.ankiminer.android.data.resources.KnownWordsSourceFormat
 import com.ankiminer.android.data.resources.PitchAccentSourceFormat
 import com.ankiminer.android.data.settings.AppSettingsRepository
 import com.ankiminer.android.engine.PythonRuntimeReadiness
+import com.ankiminer.android.localization.StringResourceResolver
 import com.ankiminer.android.mining.MiningRunAdmissionState
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -38,6 +40,7 @@ internal class SetupViewModel(
     miningAdmission: StateFlow<MiningRunAdmissionState>,
     private val runtimeWorkState: StateFlow<RuntimeWorkCoordinator.Kind?>,
     private val refreshExternalReadiness: () -> Unit,
+    private val strings: StringResourceResolver,
 ) : ViewModel() {
     private data class LocalState(
         val lookupTerm: String = "猫",
@@ -45,10 +48,10 @@ internal class SetupViewModel(
         val customSlotId: String = "custom-dictionary",
         val customReplace: Boolean = false,
         val frequencySourceId: String = "frequency",
-        val frequencySourceName: String = "Imported frequency",
+        val frequencySourceName: String,
         val frequencyFormat: FrequencySourceFormat = FrequencySourceFormat.YOMITAN_ZIP,
         val frequencyReplace: Boolean = false,
-        val pitchSourceName: String = "Imported pitch accent",
+        val pitchSourceName: String,
         val pitchFormat: PitchAccentSourceFormat = PitchAccentSourceFormat.YOMITAN_ZIP,
         val pitchReplace: Boolean = false,
         val audioPackId: String = "audio-pack",
@@ -62,7 +65,13 @@ internal class SetupViewModel(
         val wizardCompletion: WizardCompletionStatus = WizardCompletionStatus.IDLE,
     )
 
-    private val local = MutableStateFlow(LocalState())
+    private val local =
+        MutableStateFlow(
+            LocalState(
+                frequencySourceName = strings.resolve(R.string.setup_default_frequency_name),
+                pitchSourceName = strings.resolve(R.string.setup_default_pitch_name),
+            ),
+        )
     /** In-memory only: failed persistence must re-open the wizard in a fresh ViewModel. */
     private val _wizardDismissedForSession = MutableStateFlow(false)
     val wizardDismissedForSession: StateFlow<Boolean> = _wizardDismissedForSession.asStateFlow()
@@ -535,6 +544,7 @@ internal class SetupViewModel(
         private val admission: StateFlow<MiningRunAdmissionState>,
         private val runtimeWorkState: StateFlow<RuntimeWorkCoordinator.Kind?>,
         private val refreshExternalReadiness: () -> Unit,
+        private val strings: StringResourceResolver,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>, extras: CreationExtras): T {
@@ -547,6 +557,7 @@ internal class SetupViewModel(
                 admission,
                 runtimeWorkState,
                 refreshExternalReadiness,
+                strings,
             ) as T
         }
     }

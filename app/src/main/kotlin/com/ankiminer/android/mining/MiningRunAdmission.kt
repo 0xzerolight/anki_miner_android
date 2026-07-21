@@ -5,10 +5,12 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
+import com.ankiminer.android.R
 import com.ankiminer.android.anki.provider.AnkiCancellation
 import com.ankiminer.android.anki.provider.AnkiReadinessSnapshot
 import com.ankiminer.android.anki.provider.AnkiProviderReadiness
 import com.ankiminer.android.anki.provider.AnkiRecoveryReadiness
+import com.ankiminer.android.localization.StringResourceResolver
 import com.ichi2.anki.api.BuildConfig as AnkiApiBuildConfig
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -112,36 +114,36 @@ internal data class MiningRunAdmissionState(
                 ankiRecovery == AnkiRecoveryReadiness.Ready &&
                 target == AnkiMiningTargetReadiness.Ready
 
-    val stableFailure: MiningFailure?
-        get() {
-            val ankiFailure = when (anki) {
+    fun stableFailure(strings: StringResourceResolver): MiningFailure? {
+        val ankiFailure =
+            when (anki) {
                 AnkiProviderReadiness.NotChecked ->
-                    MiningFailure("AnkiDroid readiness has not been checked", retryable = true)
+                    MiningFailure(strings.resolve(R.string.mining_admission_not_checked), retryable = true)
                 AnkiProviderReadiness.NotInstalled ->
-                    MiningFailure("Install AnkiDroid before mining", retryable = true)
+                    MiningFailure(strings.resolve(R.string.mining_admission_install_ankidroid), retryable = true)
                 AnkiProviderReadiness.Uninitialized ->
-                    MiningFailure("Open AnkiDroid and finish its initial setup before mining", retryable = true)
+                    MiningFailure(strings.resolve(R.string.mining_admission_initialize_ankidroid), retryable = true)
                 is AnkiProviderReadiness.Incompatible ->
-                    MiningFailure("The installed AnkiDroid API is incompatible", retryable = false)
+                    MiningFailure(strings.resolve(R.string.mining_admission_incompatible_ankidroid), retryable = false)
                 AnkiProviderReadiness.PermissionDenied ->
-                    MiningFailure("Allow AnkiDroid database access before mining", retryable = true)
+                    MiningFailure(strings.resolve(R.string.mining_admission_permission_required), retryable = true)
                 is AnkiProviderReadiness.Ready -> null
             }
-            if (ankiFailure != null) return ankiFailure
-            if (ankiRecovery != AnkiRecoveryReadiness.Ready) {
-                return MiningFailure(
-                    "Anki recovery must be resolved before another mining run",
-                    retryable = ankiRecovery == AnkiRecoveryReadiness.NotChecked,
-                )
-            }
-            return when (val targetState = target) {
-                AnkiMiningTargetReadiness.NotChecked ->
-                    MiningFailure("The Anki Miner note type has not been checked", retryable = true)
-                AnkiMiningTargetReadiness.Ready -> null
-                is AnkiMiningTargetReadiness.Blocked ->
-                    MiningFailure(targetState.message, retryable = targetState.retryable)
-            }
+        if (ankiFailure != null) return ankiFailure
+        if (ankiRecovery != AnkiRecoveryReadiness.Ready) {
+            return MiningFailure(
+                strings.resolve(R.string.mining_admission_recovery_required),
+                retryable = ankiRecovery == AnkiRecoveryReadiness.NotChecked,
+            )
         }
+        return when (val targetState = target) {
+            AnkiMiningTargetReadiness.NotChecked ->
+                MiningFailure(strings.resolve(R.string.mining_admission_note_type_not_checked), retryable = true)
+            AnkiMiningTargetReadiness.Ready -> null
+            is AnkiMiningTargetReadiness.Blocked ->
+                MiningFailure(targetState.message, retryable = targetState.retryable)
+        }
+    }
 
     internal companion object {
         val READY_FOR_TESTS =

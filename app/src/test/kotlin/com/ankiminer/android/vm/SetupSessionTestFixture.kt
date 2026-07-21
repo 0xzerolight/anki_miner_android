@@ -19,6 +19,7 @@ import com.ankiminer.android.engine.PythonRuntimeReadiness
 import com.ankiminer.android.mining.AnkiMiningTargetReadiness
 import com.ankiminer.android.mining.MiningRunAdmissionState
 import com.ankiminer.android.mining.NotificationPermissionReadiness
+import com.ankiminer.android.localization.testStringResourceResolver
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -45,6 +46,7 @@ internal fun setupSessionViewModel(
             ),
         runtimeWorkState = MutableStateFlow<RuntimeWorkCoordinator.Kind?>(null),
         refreshExternalReadiness = {},
+        strings = testStringResourceResolver,
     )
 
 internal class SessionSettingsRepository(initial: AppSettings) : AppSettingsRepository {

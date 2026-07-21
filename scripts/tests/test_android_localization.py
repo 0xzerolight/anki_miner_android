@@ -1,0 +1,343 @@
+from __future__ import annotations
+
+import re
+import subprocess
+import sys
+import tempfile
+import unittest
+import xml.etree.ElementTree as ET
+from pathlib import Path
+
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+AUDIT = REPO_ROOT / "tools/localization/audit_android_localizations.py"
+
+
+class AndroidLocalizationAuditTest(unittest.TestCase):
+    @staticmethod
+    def _source_strings() -> dict[str, str]:
+        root = ET.parse(REPO_ROOT / "app/src/main/res/values/strings.xml").getroot()
+        return {
+            element.attrib["name"]: "".join(element.itertext()).strip()
+            for element in root.findall("string")
+        }
+
+    def _assert_distinct_non_empty_resources(self, resources: list[str]) -> None:
+        strings = self._source_strings()
+        self.assertEqual(len(resources), len(set(resources)), resources)
+        rendered = [strings.get(resource, "") for resource in resources]
+        self.assertTrue(all(rendered), list(zip(resources, rendered)))
+        self.assertEqual(len(rendered), len(set(rendered)), list(zip(resources, rendered)))
+
+    def _run_audit(self, resource_root: Path) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [sys.executable, str(AUDIT), "--resource-root", str(resource_root)],
+            cwd=REPO_ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+
+    @staticmethod
+    def _write_catalog(resource_root: Path, directory: str, body: str) -> None:
+        catalog = resource_root / directory / "strings.xml"
+        catalog.parent.mkdir(parents=True, exist_ok=True)
+        catalog.write_text(
+            f'<?xml version="1.0" encoding="utf-8"?>\n<resources>{body}</resources>\n',
+            encoding="utf-8",
+        )
+
+    def test_repository_catalogs_are_complete_and_format_safe(self) -> None:
+        result = self._run_audit(REPO_ROOT / "app/src/main/res")
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn("locale catalog(s) verified", result.stdout)
+        self.assertIn("values-ja/strings.xml", result.stdout)
+
+    def test_missing_and_extra_keys_fail_with_exact_catalog_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            resource_root = Path(temporary)
+            self._write_catalog(
+                resource_root,
+                "values",
+                '<string name="alpha">Alpha</string><string name="beta">Beta</string>',
+            )
+            self._write_catalog(
+                resource_root,
+                "values-fr",
+                '<string name="alpha">Alpha FR</string><string name="gamma">Gamma FR</string>',
+            )
+
+            result = self._run_audit(resource_root)
+
+            self.assertNotEqual(0, result.returncode)
+            self.assertIn("values-fr/strings.xml: missing keys: beta", result.stderr)
+            self.assertIn("values-fr/strings.xml: extra keys: gamma", result.stderr)
+
+    def test_printf_placeholder_type_and_count_mismatches_fail(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            resource_root = Path(temporary)
+            self._write_catalog(
+                resource_root,
+                "values",
+                '<string name="progress">%1$d of %2$d (%3$s)</string>',
+            )
+            self._write_catalog(
+                resource_root,
+                "values-de",
+                '<string name="progress">%1$s von %2$d</string>',
+            )
+
+            result = self._run_audit(resource_root)
+
+            self.assertNotEqual(0, result.returncode)
+            self.assertIn("values-de/strings.xml: format mismatch for progress", result.stderr)
+            self.assertIn("source=", result.stderr)
+            self.assertIn("translation=", result.stderr)
+
+    def test_positional_reordering_and_escaped_percent_are_safe(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            resource_root = Path(temporary)
+            self._write_catalog(
+                resource_root,
+                "values",
+                '<string name="score">%1$.1f%% for %2$s</string>',
+            )
+            self._write_catalog(
+                resource_root,
+                "values-ja",
+                '<string name="score">%2$s：%1$.1f%%</string>',
+            )
+
+            result = self._run_audit(resource_root)
+
+            self.assertEqual(0, result.returncode, result.stderr)
+
+    def test_non_locale_values_qualifiers_are_ignored(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            resource_root = Path(temporary)
+            self._write_catalog(resource_root, "values", '<string name="alpha">Alpha</string>')
+            self._write_catalog(resource_root, "values-night", '<string name="theme_only">Dark</string>')
+
+            result = self._run_audit(resource_root)
+
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertIn("0 locale catalog(s) verified", result.stdout)
+
+    def test_user_facing_kotlin_state_does_not_assign_raw_english(self) -> None:
+        files = {
+            "application": REPO_ROOT / "app/src/main/kotlin/com/ankiminer/android/AnkiMinerApplication.kt",
+            "anki setup": REPO_ROOT / "app/src/main/kotlin/com/ankiminer/android/data/anki/AnkiSetupManager.kt",
+            "resources": REPO_ROOT / "app/src/main/kotlin/com/ankiminer/android/data/resources/ResourceManager.kt",
+            "admission": REPO_ROOT / "app/src/main/kotlin/com/ankiminer/android/mining/MiningRunAdmission.kt",
+            "video mining": REPO_ROOT / "app/src/main/kotlin/com/ankiminer/android/mining/BridgeMiningRepository.kt",
+            "reading mining": REPO_ROOT
+            / "app/src/main/kotlin/com/ankiminer/android/reading/BridgeReadingMiningRepository.kt",
+            "settings": REPO_ROOT / "app/src/main/kotlin/com/ankiminer/android/vm/SettingsViewModel.kt",
+            "setup": REPO_ROOT / "app/src/main/kotlin/com/ankiminer/android/vm/SetupViewModel.kt",
+            "Anki recovery UI": REPO_ROOT
+            / "app/src/main/kotlin/com/ankiminer/android/ui/settings/AnkiSections.kt",
+            "Anki remediation model": REPO_ROOT
+            / "app/src/main/kotlin/com/ankiminer/android/anki/provider/AnkiRemediationService.kt",
+        }
+        patterns = (
+            re.compile(r'error\.value\s*=\s*"'),
+            re.compile(r'runOperation\(\s*"'),
+            re.compile(r'(?:MiningProgress|MiningFailure|ProtocolFault|Blocked)\(\s*"'),
+            re.compile(r'(?:recordFault|recordFaultAndCancel|setRestartRequired)\([^)]*?"', re.DOTALL),
+            re.compile(r'recordFailure\(\s*"[^"]+"\s*,\s*"', re.DOTALL),
+            re.compile(r'ReadingSourceStageRole\.[A-Z_]+\s*->\s*"'),
+            re.compile(r'private fun userMessage[\s\S]*?\n\s*private fun[^\n]*\{'),
+        )
+        failures = []
+        for label, path in files.items():
+            source = path.read_text(encoding="utf-8")
+            for pattern in patterns[:-1]:
+                match = pattern.search(source)
+                if match:
+                    failures.append(f"{label}: {match.group(0)[:100]}")
+            if label == "resources":
+                user_message = patterns[-1].search(source)
+                if user_message and re.search(r'->\s*"', user_message.group(0)):
+                    failures.append("resources: userMessage returns raw text")
+        setup_source = files["setup"].read_text(encoding="utf-8")
+        for raw_default in ("Imported frequency", "Imported pitch accent"):
+            if f'"{raw_default}"' in setup_source:
+                failures.append(f"setup: raw default {raw_default}")
+        self.assertEqual([], failures)
+
+    def test_anki_recovery_preserves_every_typed_title_and_durable_summary(self) -> None:
+        remediation_path = (
+            REPO_ROOT
+            / "app/src/main/kotlin/com/ankiminer/android/anki/provider/AnkiRemediationService.kt"
+        )
+        remediation = remediation_path.read_text(encoding="utf-8")
+        recovery_ui = (
+            REPO_ROOT
+            / "app/src/main/kotlin/com/ankiminer/android/ui/settings/AnkiSections.kt"
+        ).read_text(encoding="utf-8")
+        producers = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in (
+                REPO_ROOT
+                / "app/src/main/kotlin/com/ankiminer/android/anki/journal/SqliteAnkiMutationStore.kt",
+                REPO_ROOT
+                / "app/src/main/kotlin/com/ankiminer/android/anki/provider/AndroidAnkiMediaStaging.kt",
+            )
+        )
+
+        remediation_types = set(
+            re.findall(r"^\s{4}([A-Z][A-Z0-9_]+),$", remediation.split("}", 1)[0], re.MULTILINE)
+        )
+        title_map = dict(
+            re.findall(
+                r"AnkiRemediationType\.([A-Z0-9_]+)\s*->\s*R\.string\.([a-z0-9_]+)",
+                remediation,
+            )
+        )
+        self.assertEqual(remediation_types, set(title_map))
+        self._assert_distinct_non_empty_resources(list(title_map.values()))
+
+        stable_summaries = dict(
+            re.findall(r'^\s{4}([A-Z][A-Z0-9_]+)\("([^"]+)"\),?$', remediation, re.MULTILINE)
+        )
+        produced_summaries = set(re.findall(r'summary = "([^"]+)"', producers))
+        self.assertTrue(produced_summaries, "no durable remediation summaries found")
+        self.assertEqual(produced_summaries, set(stable_summaries.values()))
+
+        summary_map = dict(
+            re.findall(
+                r"AnkiRemediationSummary\.([A-Z0-9_]+)\s*->\s*R\.string\.([a-z0-9_]+)",
+                remediation,
+            )
+        )
+        self.assertEqual(set(stable_summaries) | {"UNKNOWN"}, set(summary_map))
+        self._assert_distinct_non_empty_resources(list(summary_map.values()))
+        strings = self._source_strings()
+        self.assertNotIn("failed", strings[summary_map["NOTE_POSTCHECK_UNFINISHED"]].lower())
+        self.assertIn("did not finish", strings[summary_map["NOTE_POSTCHECK_UNFINISHED"]].lower())
+        self.assertIn("failed", strings[summary_map["NOTE_POSTCHECK_FAILED"]].lower())
+
+        self.assertIn("Text(item.title", recovery_ui)
+        self.assertIn("Text(item.summary", recovery_ui)
+        self.assertNotIn("item.type.summaryResource()", recovery_ui)
+
+    def test_resource_download_and_bridge_codes_keep_distinct_messages(self) -> None:
+        resource_manager = (
+            REPO_ROOT / "app/src/main/kotlin/com/ankiminer/android/data/resources/ResourceManager.kt"
+        ).read_text(encoding="utf-8")
+        download_sources = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in (
+                REPO_ROOT
+                / "app/src/main/kotlin/com/ankiminer/android/data/resources/PinnedResourceDownloader.kt",
+                REPO_ROOT
+                / "app/src/main/kotlin/com/ankiminer/android/data/resources/SafArchiveStager.kt",
+                REPO_ROOT
+                / "app/src/main/kotlin/com/ankiminer/android/data/resources/ResourceManager.kt",
+            )
+        )
+        emitted_codes = set(
+            re.findall(r'ResourceDownloadException\(\s*"([a-z0-9_]+)"', download_sources)
+        )
+        emitted_codes.update({"download_http_retryable", "download_http_rejected"})
+        download_message_match = re.search(
+            r"private fun downloadUserMessage\(.*?\n\s*private fun userMessage",
+            resource_manager,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(download_message_match)
+        code_map = dict(
+            re.findall(
+                r'"([a-z0-9_]+)"\s*->\s*strings\.resolve\(\s*R\.string\.([a-z0-9_]+)',
+                download_message_match.group(0),
+            )
+        )
+
+        self.assertEqual(emitted_codes, set(code_map))
+        self._assert_distinct_non_empty_resources(list(code_map.values()))
+        self.assertRegex(
+            resource_manager,
+            r"else\s*->\s*strings\.resolve\(\s*R\.string\.resource_failure_unknown_download_code,\s*listOf\(failure\.stableCode\)",
+        )
+        self.assertRegex(
+            resource_manager,
+            r"else\s*->\s*strings\.resolve\(R\.string\.resource_failure_unknown_bridge_code,\s*listOf\(code\)\)",
+        )
+
+    def test_settings_validation_codes_keep_distinct_resources_and_arguments(self) -> None:
+        settings_model = (
+            REPO_ROOT / "app/src/main/kotlin/com/ankiminer/android/data/settings/AppSettings.kt"
+        ).read_text(encoding="utf-8")
+        settings_vm = (
+            REPO_ROOT / "app/src/main/kotlin/com/ankiminer/android/vm/SettingsViewModel.kt"
+        ).read_text(encoding="utf-8")
+        code_match = re.search(
+            r"enum class InvalidAppSettingCode\s*\{(?P<body>.*?)\n\}",
+            settings_model,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(code_match)
+        codes = set(re.findall(r"^\s{4}([A-Z][A-Z0-9_]+),?$", code_match.group("body"), re.MULTILINE))
+        resource_map = dict(
+            re.findall(
+                r"InvalidAppSettingCode\.([A-Z0-9_]+)\s*->\s*LocalizedStringResource\(\s*R\.string\.([a-z0-9_]+)",
+                settings_vm,
+            )
+        )
+
+        self.assertEqual(codes, set(resource_map))
+        self._assert_distinct_non_empty_resources(list(resource_map.values()))
+        self.assertIn("failure.arguments", settings_vm)
+        self.assertNotRegex(
+            settings_vm,
+            r"catch \(_:\s*InvalidAppSettingException\)\s*\{\s*error\.value = R\.string\.settings_save_failed",
+        )
+
+    def test_provider_error_codes_keep_distinct_target_verification_messages(self) -> None:
+        status_model = (
+            REPO_ROOT / "app/src/main/kotlin/com/ankiminer/android/anki/provider/NoteTypeSetup.kt"
+        ).read_text(encoding="utf-8")
+        application = (
+            REPO_ROOT / "app/src/main/kotlin/com/ankiminer/android/AnkiMinerApplication.kt"
+        ).read_text(encoding="utf-8")
+        expected_reasons = {
+            "API_DISABLED",
+            "API_INCOMPATIBLE",
+            "API_DISABLED_OR_INCOMPATIBLE",
+            "PERMISSION_REQUIRED",
+            "PROVIDER_UNAVAILABLE",
+            "PROVIDER_BECAME_UNAVAILABLE",
+            "QUERY_FAILED",
+            "TIMEOUT",
+            "CANCELLED",
+            "UNKNOWN",
+        }
+        reason_map = dict(
+            re.findall(
+                r"NoteTypeProviderErrorReason\.([A-Z0-9_]+)\s*->\s*strings\.resolve\(\s*R\.string\.([a-z0-9_]+)",
+                application,
+            )
+        )
+
+        self.assertIn("val reason: NoteTypeProviderErrorReason", status_model)
+        self.assertIn("val code: AnkiErrorCode", status_model)
+        self.assertEqual(expected_reasons, set(reason_map))
+        self._assert_distinct_non_empty_resources(list(reason_map.values()))
+        self.assertIn("status.code.wireName", application)
+
+    def test_extracted_mokuro_progress_copy_is_exact(self) -> None:
+        strings = self._source_strings()
+
+        self.assertEqual(
+            "Preparing mokuro sidecar",
+            strings["reading_progress_preparing_mokuro_sidecar"],
+        )
+        self.assertEqual(
+            "Preparing mokuro images",
+            strings["reading_progress_preparing_mokuro_images"],
+        )
+
+
+if __name__ == "__main__":
+    unittest.main()

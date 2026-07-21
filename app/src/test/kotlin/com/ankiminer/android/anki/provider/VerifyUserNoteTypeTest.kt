@@ -1,5 +1,6 @@
 package com.ankiminer.android.anki.provider
 
+import com.ankiminer.android.anki.protocol.AnkiErrorCode
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -153,7 +154,29 @@ class VerifyUserNoteTypeTest {
             )
 
         assertTrue("expected ProviderError but was $status", status is NoteTypeSetupStatus.ProviderError)
-        assertTrue((status as NoteTypeSetupStatus.ProviderError).retryable)
+        status as NoteTypeSetupStatus.ProviderError
+        assertTrue(status.retryable)
+        assertEquals(NoteTypeProviderErrorReason.PROVIDER_UNAVAILABLE, status.reason)
+        assertEquals(AnkiErrorCode.PROVIDER_UNAVAILABLE, status.code)
+    }
+
+    @Test
+    fun `an incompatible provider retains its distinct typed reason`() {
+        val gateway = FakeAnkiProviderGateway()
+        gateway.status = ProviderAccessStatus.Incompatible(apiSpecVersion = 2)
+        gateway.queryHandler = lapisHandler()
+        val reads = AnkiProviderReadService(gateway, AnkiRunStateRegistry())
+
+        val status =
+            reads.verifyUserNoteType(
+                MODEL_NAME,
+                AnkiFieldAutoMap.autoMap(lapisFields),
+                AnkiCancellation.NONE,
+            ) as NoteTypeSetupStatus.ProviderError
+
+        assertEquals(NoteTypeProviderErrorReason.API_INCOMPATIBLE, status.reason)
+        assertEquals(AnkiErrorCode.API_DISABLED, status.code)
+        assertEquals("The installed AnkiDroid API is incompatible", status.stableMessage)
     }
 
     private fun readService(

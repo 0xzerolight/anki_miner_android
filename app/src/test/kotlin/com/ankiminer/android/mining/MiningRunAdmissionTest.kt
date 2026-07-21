@@ -6,6 +6,7 @@ import android.os.Build
 import com.ankiminer.android.anki.provider.AnkiProviderReadiness
 import com.ankiminer.android.anki.provider.AnkiReadinessSnapshot
 import com.ankiminer.android.anki.provider.AnkiRecoveryReadiness
+import com.ankiminer.android.localization.testStringResourceResolver
 import com.ichi2.anki.api.BuildConfig as AnkiApiBuildConfig
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -67,7 +68,7 @@ class MiningRunAdmissionTest {
                 )
             val evaluated = gate.evaluate(com.ankiminer.android.anki.provider.AnkiCancellation.NONE)
             assertFalse(evaluated.isReady)
-            assertTrue(requireNotNull(evaluated.stableFailure).message.isNotBlank())
+            assertTrue(requireNotNull(evaluated.stableFailure(testStringResourceResolver)).message.isNotBlank())
             assertEquals(evaluated, gate.state.value)
             assertEquals(0, targetCalls)
         }
@@ -91,7 +92,7 @@ class MiningRunAdmissionTest {
         assertFalse(recoveryBlocked.isReady)
         assertEquals(
             "Anki recovery must be resolved before another mining run",
-            requireNotNull(recoveryBlocked.stableFailure).message,
+            requireNotNull(recoveryBlocked.stableFailure(testStringResourceResolver)).message,
         )
         assertEquals(0, blockedTargetCalls)
     }
@@ -107,7 +108,7 @@ class MiningRunAdmissionTest {
                 target = AnkiMiningTargetReadiness.Ready,
             )
         assertTrue(denied.isReady)
-        assertNull(denied.stableFailure)
+        assertNull(denied.stableFailure(testStringResourceResolver))
 
         val ready =
             MiningRunAdmissionState(
@@ -117,7 +118,7 @@ class MiningRunAdmissionTest {
                 target = AnkiMiningTargetReadiness.Ready,
             )
         assertTrue(ready.isReady)
-        assertNull(ready.stableFailure)
+        assertNull(ready.stableFailure(testStringResourceResolver))
     }
 
     @Test
@@ -137,7 +138,7 @@ class MiningRunAdmissionTest {
         assertFalse(blocked.isReady)
         assertEquals(
             "Select and verify a note type in Settings before mining",
-            requireNotNull(blocked.stableFailure).message,
+            requireNotNull(blocked.stableFailure(testStringResourceResolver)).message,
         )
     }
 }

@@ -1,7 +1,9 @@
 package com.ankiminer.android.data.resources
 
+import com.ankiminer.android.R
 import com.ankiminer.android.data.RuntimeWorkCoordinator
 import com.ankiminer.android.engine.PyBridge
+import com.ankiminer.android.localization.StringResourceResolver
 import com.ankiminer.android.media.SafBroker
 import com.ankiminer.android.mining.InstalledTokenizerResourceProvider
 import java.io.File
@@ -108,6 +110,7 @@ internal class AndroidResourceManager(
     private val downloader: PinnedResourceDownloader,
     private val safStager: ResourceArchiveStager,
     private val documentWriter: ResourceDocumentWriter,
+    private val strings: StringResourceResolver,
 ) : ResourceManager {
     private data class ActiveOperation(
         val id: String,
@@ -134,7 +137,10 @@ internal class AndroidResourceManager(
         if (!startupWasReady) {
             mutableState.update { it.copy(startupReadiness = ResourceStartupReadiness.RECOVERING) }
         }
-        runOperation("Refresh resources", ResourceOperationPhase.REFRESHING) { operation ->
+        runOperation(
+            strings.resolve(R.string.resource_operation_refresh),
+            ResourceOperationPhase.REFRESHING,
+        ) { operation ->
             clearPendingKnownWordsImport()
             mutableState.update { it.copy(knownWordsImportPreview = null) }
             clearStaging()
@@ -165,7 +171,10 @@ internal class AndroidResourceManager(
     }
 
     override suspend fun installUniDic() {
-        runOperation("Install UniDic", ResourceOperationPhase.PREPARING) { operation ->
+        runOperation(
+            strings.resolve(R.string.resource_operation_install_unidic),
+            ResourceOperationPhase.PREPARING,
+        ) { operation ->
             val resource = catalog().unidic
             val staged = download(resource, operation)
             consumePinnedArchive(operation, resource.archive) {
@@ -190,7 +199,10 @@ internal class AndroidResourceManager(
     }
 
     override suspend fun installCatalogDictionary(resourceId: String, replace: Boolean) {
-        runOperation("Import catalog dictionary", ResourceOperationPhase.PREPARING) { operation ->
+        runOperation(
+            strings.resolve(R.string.resource_operation_import_catalog_dictionary),
+            ResourceOperationPhase.PREPARING,
+        ) { operation ->
             val resource =
                 catalog().dictionary(resourceId)
                     ?: throw ResourceBridgeException(
@@ -234,7 +246,10 @@ internal class AndroidResourceManager(
         slotId: String,
         replace: Boolean,
     ) {
-        runOperation("Import custom dictionary", ResourceOperationPhase.PREPARING) { operation ->
+        runOperation(
+            strings.resolve(R.string.resource_operation_import_custom_dictionary),
+            ResourceOperationPhase.PREPARING,
+        ) { operation ->
             val retained = runBlocking { safBroker.retainReadAccess(uri) }
             var staged: StagedArchive? = null
             try {
@@ -272,7 +287,10 @@ internal class AndroidResourceManager(
         format: FrequencySourceFormat,
         replace: Boolean,
     ) {
-        runOperation("Import frequency source", ResourceOperationPhase.PREPARING) { operation ->
+        runOperation(
+            strings.resolve(R.string.resource_operation_import_frequency),
+            ResourceOperationPhase.PREPARING,
+        ) { operation ->
             val retained = runBlocking { safBroker.retainReadAccess(uri) }
             var staged: StagedArchive? = null
             try {
@@ -324,7 +342,10 @@ internal class AndroidResourceManager(
         format: PitchAccentSourceFormat,
         replace: Boolean,
     ) {
-        runOperation("Import pitch accent", ResourceOperationPhase.PREPARING) { operation ->
+        runOperation(
+            strings.resolve(R.string.resource_operation_import_pitch),
+            ResourceOperationPhase.PREPARING,
+        ) { operation ->
             val retained = runBlocking { safBroker.retainReadAccess(uri) }
             var staged: StagedArchive? = null
             try {
@@ -374,7 +395,10 @@ internal class AndroidResourceManager(
         packId: String,
         replace: Boolean,
     ) {
-        runOperation("Import local audio pack", ResourceOperationPhase.PREPARING) { operation ->
+        runOperation(
+            strings.resolve(R.string.resource_operation_import_audio_pack),
+            ResourceOperationPhase.PREPARING,
+        ) { operation ->
             val retained = runBlocking { safBroker.retainReadAccess(uri) }
             var staged: StagedArchive? = null
             try {
@@ -417,7 +441,10 @@ internal class AndroidResourceManager(
         uri: String,
         format: KnownWordsSourceFormat,
     ) {
-        runOperation("Import known words", ResourceOperationPhase.PREPARING) { operation ->
+        runOperation(
+            strings.resolve(R.string.resource_operation_import_known_words),
+            ResourceOperationPhase.PREPARING,
+        ) { operation ->
             val retained = runBlocking { safBroker.retainReadAccess(uri) }
             var staged: StagedArchive? = null
             try {
@@ -456,7 +483,10 @@ internal class AndroidResourceManager(
     }
 
     override suspend fun previewKnownWords(uri: String, format: KnownWordsSourceFormat) {
-        runOperation("Preview known words", ResourceOperationPhase.PREPARING) { operation ->
+        runOperation(
+            strings.resolve(R.string.resource_operation_preview_known_words),
+            ResourceOperationPhase.PREPARING,
+        ) { operation ->
             clearPendingKnownWordsImport()
             mutableState.update { it.copy(knownWordsImportPreview = null) }
             val retained = runBlocking { safBroker.retainReadAccess(uri) }
@@ -513,7 +543,10 @@ internal class AndroidResourceManager(
 
     override suspend fun confirmKnownWordsImport() {
         val pending = pendingKnownWordsImport ?: return
-        runOperation("Import known words", ResourceOperationPhase.IMPORTING) { operation ->
+        runOperation(
+            strings.resolve(R.string.resource_operation_import_known_words),
+            ResourceOperationPhase.IMPORTING,
+        ) { operation ->
             try {
                 operation.cancellation.check()
                 operation.pythonStarted.set(true)
@@ -549,7 +582,10 @@ internal class AndroidResourceManager(
         val offset =
             if (loadMore && current?.query == query && current.hasMore) current.words.size else 0
         if (loadMore && offset == 0) return
-        runOperation("Inspect known words", ResourceOperationPhase.REFRESHING) { operation ->
+        runOperation(
+            strings.resolve(R.string.resource_operation_inspect_known_words),
+            ResourceOperationPhase.REFRESHING,
+        ) { operation ->
             operation.cancellation.check()
             operation.pythonStarted.set(true)
             val page =
@@ -579,7 +615,10 @@ internal class AndroidResourceManager(
     }
 
     override suspend fun removeKnownWords(words: List<String>) {
-        runKnownWordsMutation("Remove known words", ResourceOperationPhase.IMPORTING) { operation ->
+        runKnownWordsMutation(
+            strings.resolve(R.string.resource_operation_remove_known_words),
+            ResourceOperationPhase.IMPORTING,
+        ) { operation ->
             ResourceBridgeCodec.decodeKnownWordsRemoved(
                 bridge.dispatch(
                     ResourceBridgeCodec.encodeKnownWordsRemoveRequest(operation.id, words),
@@ -590,7 +629,10 @@ internal class AndroidResourceManager(
     }
 
     override suspend fun resetKnownWords(scope: KnownWordsResetScope) {
-        runKnownWordsMutation("Reset known words", ResourceOperationPhase.IMPORTING) { operation ->
+        runKnownWordsMutation(
+            strings.resolve(R.string.resource_operation_reset_known_words),
+            ResourceOperationPhase.IMPORTING,
+        ) { operation ->
             ResourceBridgeCodec.decodeKnownWordsReset(
                 bridge.dispatch(
                     ResourceBridgeCodec.encodeKnownWordsResetRequest(operation.id, scope),
@@ -601,7 +643,10 @@ internal class AndroidResourceManager(
     }
 
     override suspend fun exportKnownWords(uri: String) {
-        runOperation("Export known words", ResourceOperationPhase.REFRESHING) { operation ->
+        runOperation(
+            strings.resolve(R.string.resource_operation_export_known_words),
+            ResourceOperationPhase.REFRESHING,
+        ) { operation ->
             val destination =
                 try {
                     URI(uri)
@@ -668,7 +713,10 @@ internal class AndroidResourceManager(
     }
 
     override suspend fun lookup(slotId: String, term: String) {
-        runOperation("Dictionary lookup", ResourceOperationPhase.REFRESHING) { operation ->
+        runOperation(
+            strings.resolve(R.string.resource_operation_dictionary_lookup),
+            ResourceOperationPhase.REFRESHING,
+        ) { operation ->
             operation.cancellation.check()
             operation.pythonStarted.set(true)
             val result =
@@ -714,7 +762,7 @@ internal class AndroidResourceManager(
             if (workLease == null) {
                 recordFailure(
                     "resource_busy",
-                    "Finish or cancel the active mining run before changing resources",
+                    strings.resolve(R.string.resource_failure_busy),
                 )
                 return
             }
@@ -739,16 +787,16 @@ internal class AndroidResourceManager(
                 throw failure
             } catch (failure: ResourceDownloadException) {
                 if (failure.stableCode != "resource_operation_cancelled") {
-                    recordFailure(failure.stableCode, failure.message ?: "Resource download failed")
+                    recordFailure(failure.stableCode, downloadUserMessage(failure))
                 }
             } catch (failure: ResourceStorageException) {
-                recordFailure("insufficient_storage", "Not enough free private storage for this resource")
+                recordFailure("insufficient_storage", strings.resolve(R.string.resource_failure_storage))
             } catch (failure: ResourceBridgeException) {
                 if (failure.code != "resource_operation_cancelled") {
-                    recordFailure(failure.code, userMessage(failure.code, failure.message))
+                    recordFailure(failure.code, userMessage(failure.code))
                 }
             } catch (_: Exception) {
-                recordFailure("resource_operation_failed", "The resource operation did not complete")
+                recordFailure("resource_operation_failed", strings.resolve(R.string.resource_failure_operation))
             } finally {
                 try {
                     clearStaging()
@@ -924,33 +972,87 @@ internal class AndroidResourceManager(
         }
     }
 
-    private fun userMessage(code: String, fallback: String): String =
+    private fun downloadUserMessage(failure: ResourceDownloadException): String =
+        when (failure.stableCode) {
+            "resource_operation_cancelled" ->
+                strings.resolve(R.string.resource_failure_download_cancelled)
+            "download_redirect_limit" ->
+                strings.resolve(R.string.resource_failure_download_redirect_limit)
+            "download_redirect_invalid" ->
+                strings.resolve(R.string.resource_failure_download_redirect_invalid)
+            "download_url_invalid" ->
+                strings.resolve(R.string.resource_failure_download_url_invalid)
+            "download_staging_failed" ->
+                strings.resolve(R.string.resource_failure_download_staging)
+            "resource_archive_mismatch" ->
+                strings.resolve(R.string.resource_failure_download_archive_mismatch)
+            "download_publish_failed" ->
+                strings.resolve(R.string.resource_failure_download_publish)
+            "download_retry_exhausted" ->
+                strings.resolve(
+                    R.string.resource_failure_download_retry_exhausted,
+                    failure.formatArguments,
+                )
+            "download_http_retryable" ->
+                strings.resolve(
+                    R.string.resource_failure_download_http_retryable,
+                    failure.formatArguments,
+                )
+            "download_http_rejected" ->
+                strings.resolve(
+                    R.string.resource_failure_download_http_rejected,
+                    failure.formatArguments,
+                )
+            "download_incomplete" ->
+                strings.resolve(R.string.resource_failure_download_incomplete)
+            "download_resume_invalid" ->
+                strings.resolve(R.string.resource_failure_download_resume_invalid)
+            "import_staging_failed" ->
+                strings.resolve(R.string.resource_failure_import_staging)
+            "import_source_unavailable" ->
+                strings.resolve(
+                    R.string.resource_failure_import_source_unavailable,
+                    failure.formatArguments,
+                )
+            "resource_archive_too_large" ->
+                strings.resolve(
+                    R.string.resource_failure_archive_too_large,
+                    failure.formatArguments,
+                )
+            else ->
+                strings.resolve(
+                    R.string.resource_failure_unknown_download_code,
+                    listOf(failure.stableCode),
+                )
+        }
+
+    private fun userMessage(code: String): String =
         when (code) {
             "insufficient_storage", "resource_space_unknown" ->
-                "Not enough private storage is available for this resource"
+                strings.resolve(R.string.resource_failure_storage_unavailable)
             "resource_archive_mismatch" ->
-                "The downloaded archive did not match the pinned catalog"
+                strings.resolve(R.string.resource_failure_archive_mismatch)
             "resource_already_installed" ->
-                "That dictionary slot already exists; choose Replace to update it"
+                strings.resolve(R.string.resource_failure_slot_exists)
             "dictionary_import_failed" ->
-                "The selected ZIP is not a supported Yomitan dictionary"
+                strings.resolve(R.string.resource_failure_dictionary_import)
             "frequency_import_failed" ->
-                "The selected file is not a supported frequency source"
+                strings.resolve(R.string.resource_failure_frequency_import)
             "pitch_import_failed" ->
-                "The selected file is not supported pitch-accent data"
+                strings.resolve(R.string.resource_failure_pitch_import)
             "pitch_resource_invalid" ->
-                "Installed pitch-accent data is damaged; replace it before mining"
+                strings.resolve(R.string.resource_failure_pitch_invalid)
             "audio_pack_import_failed" ->
-                "The selected ZIP is not a supported local audio pack"
+                strings.resolve(R.string.resource_failure_audio_pack_import)
             "known_words_import_failed" ->
-                "The selected file contains no supported known words"
+                strings.resolve(R.string.resource_failure_known_words_import)
             "known_words_database_unsafe", "resource_inventory_failed" ->
-                "A local resource is damaged or unsafe and needs attention"
+                strings.resolve(R.string.resource_failure_inventory_unsafe)
             "dictionary_schema_mismatch" ->
-                "This dictionary must be replaced because its index schema is stale"
+                strings.resolve(R.string.resource_failure_dictionary_schema)
             "dictionary_resource_invalid" ->
-                "An occupied dictionary slot is damaged or stale; explicitly replace it before mining"
-            else -> fallback
+                strings.resolve(R.string.resource_failure_dictionary_invalid)
+            else -> strings.resolve(R.string.resource_failure_unknown_bridge_code, listOf(code))
         }
 
     private fun cancelPython(operation: ActiveOperation) {

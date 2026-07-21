@@ -20,7 +20,19 @@ internal class AnkiReadFailure(
     val code: AnkiErrorCode,
     val retryable: Boolean,
     val stableMessage: String,
+    val providerErrorReason: NoteTypeProviderErrorReason = code.defaultProviderErrorReason(),
 ) : RuntimeException(stableMessage)
+
+private fun AnkiErrorCode.defaultProviderErrorReason(): NoteTypeProviderErrorReason =
+    when (this) {
+        AnkiErrorCode.API_DISABLED -> NoteTypeProviderErrorReason.API_DISABLED
+        AnkiErrorCode.PERMISSION_REQUIRED -> NoteTypeProviderErrorReason.PERMISSION_REQUIRED
+        AnkiErrorCode.PROVIDER_UNAVAILABLE -> NoteTypeProviderErrorReason.PROVIDER_UNAVAILABLE
+        AnkiErrorCode.QUERY_FAILED -> NoteTypeProviderErrorReason.QUERY_FAILED
+        AnkiErrorCode.TIMEOUT -> NoteTypeProviderErrorReason.TIMEOUT
+        AnkiErrorCode.CANCELLED -> NoteTypeProviderErrorReason.CANCELLED
+        else -> NoteTypeProviderErrorReason.UNKNOWN
+    }
 
 internal class AnkiProviderReadService(
     private val gateway: AnkiProviderGateway,
@@ -79,7 +91,12 @@ internal class AnkiProviderReadService(
             try {
                 targets.readModelByNameOrNull(noteType, cancellation)
             } catch (f: AnkiReadFailure) {
-                return NoteTypeSetupStatus.ProviderError(f.retryable, f.stableMessage)
+                return NoteTypeSetupStatus.ProviderError(
+                    reason = f.providerErrorReason,
+                    code = f.code,
+                    retryable = f.retryable,
+                    stableMessage = f.stableMessage,
+                )
             } ?: return NoteTypeSetupStatus.NoteTypeMissing
         if (fieldMap[AnkiFieldKeys.WORD].isNullOrEmpty()) {
             return NoteTypeSetupStatus.FieldMapInvalid(
@@ -1014,6 +1031,7 @@ internal class CheckedProvider(private val gateway: AnkiProviderGateway) {
                     AnkiErrorCode.API_DISABLED,
                     retryable = false,
                     stableMessage = "The installed AnkiDroid API is incompatible",
+                    providerErrorReason = NoteTypeProviderErrorReason.API_INCOMPATIBLE,
                 )
             ProviderAccessStatus.PermissionRequired ->
                 throw AnkiReadFailure(
@@ -1061,6 +1079,7 @@ private fun ProviderGatewayException.toReadFailure(): AnkiReadFailure =
                 AnkiErrorCode.API_DISABLED,
                 retryable = false,
                 stableMessage = "The AnkiDroid API became disabled or incompatible",
+                providerErrorReason = NoteTypeProviderErrorReason.API_DISABLED_OR_INCOMPATIBLE,
             )
         ProviderFailureKind.PERMISSION_REQUIRED ->
             AnkiReadFailure(
@@ -1073,6 +1092,7 @@ private fun ProviderGatewayException.toReadFailure(): AnkiReadFailure =
                 AnkiErrorCode.PROVIDER_UNAVAILABLE,
                 retryable = true,
                 stableMessage = "AnkiDroid became unavailable",
+                providerErrorReason = NoteTypeProviderErrorReason.PROVIDER_BECAME_UNAVAILABLE,
             )
         ProviderFailureKind.QUERY_FAILED -> queryFailed()
         ProviderFailureKind.MUTATION_FAILED ->
