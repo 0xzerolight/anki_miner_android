@@ -16,6 +16,8 @@ import com.ankiminer.android.data.settings.PitchCategoryFormat
 import com.ankiminer.android.data.settings.ResourceChainSelection
 import com.ankiminer.android.data.settings.ThemeMode
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -23,11 +25,15 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChangedBy
 import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 
 internal data class SettingsDraft(
     val deckName: String,
@@ -99,6 +105,38 @@ internal data class SettingsDraft(
             jishoEnabled = jisho,
         )
 
+    /** Apply every valid field while retaining persisted values for invalid numeric text. */
+    fun toPersistableSettings(base: AppSettings): AppSettings =
+        copy(
+            audioPadding =
+                audioPadding.takeIf(AppSettingsDraftParser::isOptionalDouble)
+                    ?: base.audioPaddingSeconds?.toString().orEmpty(),
+            screenshotOffset =
+                screenshotOffset.takeIf(AppSettingsDraftParser::isOptionalDouble)
+                    ?: base.screenshotOffsetSeconds?.toString().orEmpty(),
+            subtitleOffset =
+                subtitleOffset.takeIf(AppSettingsDraftParser::isOptionalDouble)
+                    ?: base.subtitleOffsetSeconds?.toString().orEmpty(),
+            bitrate =
+                bitrate.takeIf(AppSettingsDraftParser::isOptionalInt)
+                    ?: base.audioBitrateKbps?.toString().orEmpty(),
+            maxDuration =
+                maxDuration.takeIf(AppSettingsDraftParser::isOptionalDouble)
+                    ?: base.maxSentenceDurationSeconds?.toString().orEmpty(),
+            maxCharacters =
+                maxCharacters.takeIf(AppSettingsDraftParser::isOptionalInt)
+                    ?: base.maxSentenceCharacters?.toString().orEmpty(),
+            readingOccurrence =
+                readingOccurrence.takeIf(AppSettingsDraftParser::isOptionalInt)
+                    ?: base.readingMinimumOccurrence?.toString().orEmpty(),
+            maxFrequency =
+                maxFrequency.takeIf(AppSettingsDraftParser::isOptionalInt)
+                    ?: base.maxFrequencyRank?.toString().orEmpty(),
+            workers =
+                workers.takeIf(AppSettingsDraftParser::isOptionalInt)
+                    ?: base.maxParallelWorkers?.toString().orEmpty(),
+        ).toSettings(base)
+
     /**
      * Re-derive the three ordered resource-chain fields against [resources] while preserving every
      * scalar edit (including raw numeric text). [EngineSettingsSnapshotMapper.resolveResourceChain]
@@ -165,6 +203,73 @@ internal data class SettingsDraft(
     }
 }
 
+private fun SettingsDraft.rebaseChangesSince(
+    baseline: SettingsDraft,
+    persisted: SettingsDraft,
+): SettingsDraft =
+    persisted.copy(
+        deckName = changedValue(baseline.deckName, deckName, persisted.deckName),
+        excludedDecks =
+            changedValue(baseline.excludedDecks, excludedDecks, persisted.excludedDecks),
+        tags = changedValue(baseline.tags, tags, persisted.tags),
+        tagsOverride = changedValue(baseline.tagsOverride, tagsOverride, persisted.tagsOverride),
+        audioPadding = changedValue(baseline.audioPadding, audioPadding, persisted.audioPadding),
+        screenshotOffset =
+            changedValue(baseline.screenshotOffset, screenshotOffset, persisted.screenshotOffset),
+        subtitleOffset =
+            changedValue(baseline.subtitleOffset, subtitleOffset, persisted.subtitleOffset),
+        bitrate = changedValue(baseline.bitrate, bitrate, persisted.bitrate),
+        maxDuration = changedValue(baseline.maxDuration, maxDuration, persisted.maxDuration),
+        maxCharacters =
+            changedValue(baseline.maxCharacters, maxCharacters, persisted.maxCharacters),
+        readingOccurrence =
+            changedValue(
+                baseline.readingOccurrence,
+                readingOccurrence,
+                persisted.readingOccurrence,
+            ),
+        maxFrequency = changedValue(baseline.maxFrequency, maxFrequency, persisted.maxFrequency),
+        workers = changedValue(baseline.workers, workers, persisted.workers),
+        audioFormat = changedValue(baseline.audioFormat, audioFormat, persisted.audioFormat),
+        knownWords = changedValue(baseline.knownWords, knownWords, persisted.knownWords),
+        hiragana = changedValue(baseline.hiragana, hiragana, persisted.hiragana),
+        katakana = changedValue(baseline.katakana, katakana, persisted.katakana),
+        boldTarget = changedValue(baseline.boldTarget, boldTarget, persisted.boldTarget),
+        deduplicate = changedValue(baseline.deduplicate, deduplicate, persisted.deduplicate),
+        iPlusOne = changedValue(baseline.iPlusOne, iPlusOne, persisted.iPlusOne),
+        sentenceLength =
+            changedValue(baseline.sentenceLength, sentenceLength, persisted.sentenceLength),
+        pitchFormat = changedValue(baseline.pitchFormat, pitchFormat, persisted.pitchFormat),
+        theme = changedValue(baseline.theme, theme, persisted.theme),
+        dictionarySources =
+            changedValue(
+                baseline.dictionarySources,
+                dictionarySources,
+                persisted.dictionarySources,
+            ),
+        frequencySources =
+            changedValue(
+                baseline.frequencySources,
+                frequencySources,
+                persisted.frequencySources,
+            ),
+        audioPacks = changedValue(baseline.audioPacks, audioPacks, persisted.audioPacks),
+        enabledWordsets =
+            changedValue(
+                baseline.enabledWordsets,
+                enabledWordsets,
+                persisted.enabledWordsets,
+            ),
+        readingTts = changedValue(baseline.readingTts, readingTts, persisted.readingTts),
+        jisho = changedValue(baseline.jisho, jisho, persisted.jisho),
+    )
+
+private fun <T> changedValue(
+    baseline: T,
+    current: T,
+    persisted: T,
+): T = if (current != baseline) current else persisted
+
 private fun ResourceManagerState.usableDictionaryIds(): List<String> =
     dictionaries.filter { it.isUsable }.map { it.slotId }
 
@@ -180,6 +285,7 @@ internal data class SettingsDraftState(
     val loaded: Boolean,
     val deckDirty: Boolean,
     val editRevision: Long,
+    val writeCadence: SettingsWriteCadence,
 )
 
 internal class SettingsDraftStore(
@@ -194,19 +300,21 @@ internal class SettingsDraftStore(
                 loaded = initiallyLoaded,
                 deckDirty = false,
                 editRevision = 0,
+                writeCadence = SettingsWriteCadence.IMMEDIATE,
             ),
         )
     val state: StateFlow<SettingsDraftState> = mutableState.asStateFlow()
 
     fun update(value: SettingsDraft) {
         mutableState.update { current ->
-            if (current.loaded) {
+            if (current.loaded && value != current.draft) {
                 SettingsDraftState(
                     draft = value,
                     dirty = true,
                     loaded = true,
                     deckDirty = current.deckDirty || value.deckName != current.draft.deckName,
                     editRevision = current.editRevision + 1,
+                    writeCadence = settingsWriteCadence(current.draft, value),
                 )
             } else {
                 current
@@ -238,6 +346,7 @@ internal class SettingsDraftStore(
                     loaded = true,
                     deckDirty = deckDirty,
                     editRevision = current.editRevision,
+                    writeCadence = current.writeCadence,
                 )
             } else {
                 SettingsDraftState(
@@ -246,6 +355,7 @@ internal class SettingsDraftStore(
                     loaded = true,
                     deckDirty = false,
                     editRevision = current.editRevision,
+                    writeCadence = SettingsWriteCadence.IMMEDIATE,
                 )
             }
         }
@@ -262,9 +372,60 @@ internal class SettingsDraftStore(
                 loaded = true,
                 deckDirty = false,
                 editRevision = mutableState.value.editRevision,
+                writeCadence = SettingsWriteCadence.IMMEDIATE,
             )
     }
+
+    /** Rebuild after a scoped save, carrying only edits whose revision arrived during that save. */
+    fun completeScopedSave(
+        started: SettingsDraftState,
+        settings: AppSettings,
+        resources: ResourceManagerState,
+    ) {
+        while (true) {
+            val current = mutableState.value
+            val persistedDraft = SettingsDraft.from(settings, resources)
+            val completed =
+                if (current.editRevision == started.editRevision) {
+                    SettingsDraftState(
+                        draft = persistedDraft,
+                        dirty = false,
+                        loaded = true,
+                        deckDirty = false,
+                        editRevision = current.editRevision,
+                        writeCadence = SettingsWriteCadence.IMMEDIATE,
+                    )
+                } else {
+                    val baseline = started.draft.withInventory(resources)
+                    val currentDraft = current.draft.withInventory(resources)
+                    val rebased = currentDraft.rebaseChangesSince(baseline, persistedDraft)
+                    val dirty = rebased != persistedDraft
+                    SettingsDraftState(
+                        draft = rebased,
+                        dirty = dirty,
+                        loaded = true,
+                        deckDirty =
+                            dirty &&
+                                currentDraft.deckName != baseline.deckName &&
+                                rebased.deckName != persistedDraft.deckName,
+                        editRevision = current.editRevision,
+                        writeCadence =
+                            if (dirty) {
+                                settingsWriteCadence(persistedDraft, rebased)
+                            } else {
+                                SettingsWriteCadence.IMMEDIATE
+                            },
+                    )
+                }
+            if (mutableState.compareAndSet(current, completed)) return
+        }
+    }
 }
+
+private data class ProjectedSettingsWrite(
+    val state: SettingsDraftState,
+    val value: AppSettings,
+)
 
 internal class SettingsViewModel(
     private val repository: AppSettingsRepository,
@@ -277,6 +438,8 @@ internal class SettingsViewModel(
     val saving = MutableStateFlow(false)
     val error = MutableStateFlow<String?>(null)
     val resourceState: StateFlow<ResourceManagerState> = resources.state
+    private val persistenceMutex = Mutex()
+    private val successfulWrites = SuccessfulSettingsWriteTracker()
     private val draftStore =
         SettingsDraftStore(
             SettingsDraft.from(AppSettings(), resources.state.value),
@@ -291,34 +454,74 @@ internal class SettingsViewModel(
                     persisted?.let { draftStore.reconcile(it, inventory) }
                 }
         }
-        // Auto-save mirrors the desktop app: every valid edit persists immediately. Invalid
-        // intermediate numeric text is gated out here, and the validator throw-path inside the
-        // repository blocks any value that passes the numeric gate but fails deeper validation.
+        // Invalid numeric fields are retained in the draft and omitted from the write candidate.
+        // Continuous edits coalesce; discrete actions remain immediate.
         viewModelScope.launch {
-            draftStore.state
-                .filter { it.loaded && it.dirty && it.draft.numericValuesValid }
-                .distinctUntilChangedBy(SettingsDraftState::editRevision)
+            combine(draftStore.state, settings) { state, persisted ->
+                if (state.loaded && persisted != null) {
+                    ProjectedSettingsWrite(state, applyDraft(state, persisted))
+                } else {
+                    null
+                }
+            }
+                .filterNotNull()
+                .distinctUntilChangedBy(ProjectedSettingsWrite::value)
+                .filter { it.state.dirty }
+                .map { it.state }
+                .coalesceSettingsWrites()
                 .collect { persist(it) }
         }
     }
 
     fun updateDraft(value: SettingsDraft) = draftStore.update(value)
 
-    private suspend fun persist(state: SettingsDraftState) {
-        // Skip while a scoped reset holds the flag: markClean supersedes any in-flight edit,
-        // and this preserves the save-vs-restore mutual exclusion without per-keystroke flicker.
-        if (saving.value) return
-        error.value = null
-        try {
-            // Transactional transform: apply draft fields onto the freshest persisted value inside
-            // the write lock. Deck is applied only when explicitly edited in Settings; wizard deck
-            // writes and out-of-band noteType/fieldMap writes therefore cannot be copied back from a
-            // stale dirty draft.
-            repository.update { current ->
-                state.draft.toSettings(current).let { candidate ->
-                    if (state.deckDirty) candidate else candidate.copy(deckName = current.deckName)
-                }
+    /**
+     * Start a lifecycle flush synchronously, then finish its bounded repository transaction even if
+     * ViewModel cancellation follows the stop callback.
+     */
+    fun flushPendingWrites() {
+        val current = draftStore.state.value
+        if (current.loaded && current.dirty) {
+            viewModelScope.launch(start = CoroutineStart.UNDISPATCHED) {
+                withContext(NonCancellable) { persistLatest() }
             }
+        }
+    }
+
+    private suspend fun persist(state: SettingsDraftState) {
+        persistenceMutex.withLock { persistLocked(state) }
+    }
+
+    private suspend fun persistLatest() {
+        persistenceMutex.withLock {
+            val latest = draftStore.state.value
+            if (latest.loaded && latest.dirty) persistLocked(latest)
+        }
+    }
+
+    private suspend fun persistLocked(state: SettingsDraftState) {
+        // Scoped reset completion explicitly flushes any revision skipped by this guard.
+        if (saving.value || !successfulWrites.shouldWrite(state)) return
+        val currentState = draftStore.state.value
+        if (
+            !currentState.dirty ||
+                currentState.editRevision != state.editRevision ||
+                currentState.draft != state.draft ||
+                currentState.deckDirty != state.deckDirty
+        ) {
+            return
+        }
+        error.value = null
+        val persisted = settings.value ?: return
+        if (applyDraft(state, persisted) == persisted) {
+            successfulWrites.markSuccessful(state)
+            return
+        }
+        try {
+            // Transactional transform reads the freshest persisted value. Deck is applied only
+            // when explicitly edited, so wizard and note-type writes cannot be copied back.
+            repository.update { current -> applyDraft(state, current) }
+            successfulWrites.markSuccessful(state)
         } catch (failure: CancellationException) {
             throw failure
         } catch (failure: InvalidAppSettingException) {
@@ -328,14 +531,32 @@ internal class SettingsViewModel(
         }
     }
 
+    private fun applyDraft(
+        state: SettingsDraftState,
+        current: AppSettings,
+    ): AppSettings =
+        state.draft.toPersistableSettings(current).let { candidate ->
+            if (state.deckDirty) candidate else candidate.copy(deckName = current.deckName)
+        }
+
     private fun save(transform: (AppSettings) -> AppSettings) {
         if (saving.value) return
+        val started = draftStore.state.value
         saving.value = true
         error.value = null
         viewModelScope.launch {
             try {
-                repository.update(transform)
-                draftStore.markClean(repository.settings.first(), resources.state.value)
+                // Fold all persistable draft fields into the transaction, then apply the reset.
+                persistenceMutex.withLock {
+                    repository.update { current ->
+                        transform(if (started.dirty) applyDraft(started, current) else current)
+                    }
+                }
+                draftStore.completeScopedSave(
+                    started = started,
+                    settings = repository.settings.first(),
+                    resources = resources.state.value,
+                )
             } catch (failure: CancellationException) {
                 throw failure
             } catch (failure: InvalidAppSettingException) {
@@ -344,6 +565,7 @@ internal class SettingsViewModel(
                 error.value = "Settings could not be saved"
             } finally {
                 saving.value = false
+                if (draftStore.state.value.dirty) flushPendingWrites()
             }
         }
     }
