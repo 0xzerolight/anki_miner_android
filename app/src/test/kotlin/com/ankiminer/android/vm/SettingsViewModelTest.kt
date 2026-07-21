@@ -11,6 +11,7 @@ import com.ankiminer.android.data.resources.ResourceManagerState
 import com.ankiminer.android.data.settings.AppSettings
 import com.ankiminer.android.data.settings.AppSettingsRepository
 import com.ankiminer.android.data.settings.AppSettingsValidator
+import com.ankiminer.android.engine.BridgeJsonValue
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -153,6 +154,46 @@ class SettingsViewModelTest {
             // edit never clobbers the concurrently written note type.
             assertEquals("jp-mining", repository.current.noteType)
             assertEquals("MyDeck", repository.current.deckName)
+        }
+
+    @Test
+    fun wizardDeckSelectionSurvivesDirtySettingsAutoSaveAndFeedsMiningTarget() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository = SessionSettingsRepository(AppSettings(deckName = "D0"))
+            val resources = SessionResourceManager(resources("first"))
+            val settingsViewModel = SettingsViewModel(repository, resources)
+            val setupViewModel =
+                setupSessionViewModel(
+                    repository = repository,
+                    resources = resources,
+                    deckNames = listOf("D"),
+                )
+            advanceUntilIdle()
+
+            settingsViewModel.updateDraft(
+                settingsViewModel.draftState.value.draft.copy(audioPadding = "1.50"),
+            )
+            advanceUntilIdle()
+            assertTrue(settingsViewModel.draftState.value.dirty)
+            assertEquals("D0", settingsViewModel.draftState.value.draft.deckName)
+
+            setupViewModel.selectDeck("D")
+            advanceUntilIdle()
+
+            settingsViewModel.updateDraft(
+                settingsViewModel.draftState.value.draft.copy(
+                    tags = "mined",
+                    tagsOverride = true,
+                ),
+            )
+            advanceUntilIdle()
+
+            assertEquals("D", repository.current.deckName)
+            assertEquals("D", settingsViewModel.draftState.value.draft.deckName)
+            assertEquals(
+                BridgeJsonValue.Text("D"),
+                repository.snapshot(listOf("first")).settings["anki_deck_name"],
+            )
         }
 
     @Test

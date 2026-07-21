@@ -2,11 +2,13 @@ package com.ankiminer.android.vm
 
 import com.ankiminer.android.anki.provider.AnkiPendingRemediation
 import com.ankiminer.android.anki.provider.AnkiProviderReadiness
+import com.ankiminer.android.anki.provider.AnkiRecoveryReadiness
 import com.ankiminer.android.anki.provider.AnkiRemediationActionKind
 import com.ankiminer.android.anki.provider.AnkiRemediationInventory
 import com.ankiminer.android.anki.provider.AnkiRemediationType
 import com.ankiminer.android.anki.provider.NoteTypeSetupStatus
 import com.ankiminer.android.data.anki.AnkiSetupOperation
+import com.ankiminer.android.data.anki.AnkiRecoveryInventoryStatus
 import com.ankiminer.android.data.RuntimeWorkCoordinator
 import com.ankiminer.android.data.resources.ResourceStartupReadiness
 import com.ankiminer.android.engine.PythonRuntimeReadiness
@@ -25,7 +27,9 @@ class SetupUiStateTest {
                 python = PythonRuntimeReadiness.Ready("/private/runtime"),
                 resourceStartup = ResourceStartupReadiness.READY,
                 anki = AnkiProviderReadiness.Ready(2, 24L),
+                ankiRecovery = AnkiRecoveryReadiness.Ready,
                 noteTypeStatus = NoteTypeSetupStatus.Verified(modelId = 1L),
+                recoveryInventoryStatus = AnkiRecoveryInventoryStatus.AVAILABLE,
                 uniDicInstalled = true,
             )
 
@@ -91,10 +95,6 @@ class SetupUiStateTest {
         assertEquals(
             AnkiDroidSetupAction.OPEN,
             SetupUiState(anki = AnkiProviderReadiness.Uninitialized).ankiDroidAction,
-        )
-        assertEquals(
-            AnkiDroidSetupAction.OPEN,
-            SetupUiState(anki = AnkiProviderReadiness.RecoveryBlocked).ankiDroidAction,
         )
         assertEquals(
             AnkiDroidSetupAction.REQUEST_PERMISSION,

@@ -23,6 +23,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
@@ -56,9 +57,15 @@ internal class SetupViewModel(
         val knownWordsSearch: String = "",
         val pendingReplaceResourceId: String? = null,
         val fieldMapChanges: List<AnkiFieldMappingChange> = emptyList(),
+        val deckPersistence: DeckPersistenceStatus = DeckPersistenceStatus.IDLE,
+        val failedDeckName: String? = null,
+        val wizardCompletion: WizardCompletionStatus = WizardCompletionStatus.IDLE,
     )
 
     private val local = MutableStateFlow(LocalState())
+    /** In-memory only: failed persistence must re-open the wizard in a fresh ViewModel. */
+    private val _wizardDismissedForSession = MutableStateFlow(false)
+    val wizardDismissedForSession: StateFlow<Boolean> = _wizardDismissedForSession.asStateFlow()
     private val settings = settingsRepository.settings
     private val repository = settingsRepository
     private val settingsAnkiAndRuntime =
@@ -83,18 +90,25 @@ internal class SetupViewModel(
                 python = python,
                 resourceStartup = resourceState.startupReadiness,
                 anki = admission.anki,
+                ankiRecovery = admission.ankiRecovery,
                 notifications = admission.notifications,
                 noteTypeStatus = ankiState.noteTypeStatus,
                 availableNoteTypes = ankiState.availableNoteTypes,
                 availableDeckNames = ankiState.availableDeckNames,
+                deckName = appSettings.deckName,
+                deckPersistence = localState.deckPersistence,
+                failedDeckName = localState.failedDeckName,
                 noteType = appSettings.noteType,
                 fieldMap = appSettings.fieldMap,
                 fieldMapChanges = localState.fieldMapChanges,
                 remediations = ankiState.remediations,
+                recoveryInventoryStatus = ankiState.recoveryInventoryStatus,
                 ankiOperation = ankiState.operation,
                 ankiFailure = ankiState.failure,
+                ankiRecoveryFailure = ankiState.recoveryFailure,
                 runtimeWorkKind = runtimeKind,
                 wizardSeen = appSettings.setupWizardSeen,
+                wizardCompletion = localState.wizardCompletion,
                 uniDicInstalled = resourceState.hasUniDic,
                 catalogDictionaries = resourceState.catalogDictionaries,
                 pendingReplaceResourceId = localState.pendingReplaceResourceId,
@@ -169,6 +183,48 @@ internal class SetupViewModel(
             repository.update { it.copy(noteType = name, fieldMap = merged.fieldMap) }
             local.update { it.copy(fieldMapChanges = merged.changes) }
             ankiSetup.refresh(name, merged.fieldMap)
+        }
+    }
+
+    fun selectDeck(deckName: String) {
+        val state = uiState.value
+        if (state.busy || deckName !in state.deckSelection.choices.map(DeckChoice::deckName)) return
+        if (state.deckName == deckName) return
+        persistDeckSelection(deckName)
+    }
+
+    fun retryDeckSelection() {
+        val state = uiState.value
+        if (state.busy || state.deckPersistence != DeckPersistenceStatus.FAILED) return
+        persistDeckSelection(state.failedDeckName ?: return)
+    }
+
+    private fun persistDeckSelection(deckName: String) {
+        local.update {
+            it.copy(
+                deckPersistence = DeckPersistenceStatus.SAVING,
+                failedDeckName = null,
+            )
+        }
+        viewModelScope.launch {
+            try {
+                repository.update { it.copy(deckName = deckName) }
+                local.update {
+                    it.copy(
+                        deckPersistence = DeckPersistenceStatus.IDLE,
+                        failedDeckName = null,
+                    )
+                }
+            } catch (failure: CancellationException) {
+                throw failure
+            } catch (_: Exception) {
+                local.update {
+                    it.copy(
+                        deckPersistence = DeckPersistenceStatus.FAILED,
+                        failedDeckName = deckName,
+                    )
+                }
+            }
         }
     }
 
@@ -411,16 +467,63 @@ internal class SetupViewModel(
 
     fun permissionsReturned() = refreshExternalReadiness()
 
-    /** Fire-and-forget: the wizard was completed or skipped and must not re-appear. */
+    /** Persist completion; failure remains in state so first launch can retry or escape this session. */
     fun markWizardSeen() {
+        val current = local.value.wizardCompletion
+        if (
+            current == WizardCompletionStatus.SAVING ||
+                current == WizardCompletionStatus.PERSISTED
+        ) {
+            return
+        }
+        val requested =
+            reduceWizardCompletion(
+                current,
+                WizardCompletionEvent.REQUEST_PERSISTENCE,
+            )
+        if (requested != WizardCompletionStatus.SAVING) return
+        local.update { it.copy(wizardCompletion = requested) }
         viewModelScope.launch {
             try {
                 repository.update { it.copy(setupWizardSeen = true) }
+                local.update {
+                    it.copy(
+                        wizardCompletion =
+                            reduceWizardCompletion(
+                                it.wizardCompletion,
+                                WizardCompletionEvent.PERSISTENCE_SUCCEEDED,
+                            ),
+                    )
+                }
             } catch (failure: CancellationException) {
                 throw failure
             } catch (_: Exception) {
-                // A failed write re-offers the (skippable) wizard next launch; never crash.
+                local.update {
+                    it.copy(
+                        wizardCompletion =
+                            reduceWizardCompletion(
+                                it.wizardCompletion,
+                                WizardCompletionEvent.PERSISTENCE_FAILED,
+                            ),
+                    )
+                }
             }
+        }
+    }
+
+    fun retryWizardCompletion() = markWizardSeen()
+
+    fun dismissWizardForSession() {
+        if (local.value.wizardCompletion != WizardCompletionStatus.FAILED) return
+        _wizardDismissedForSession.value = true
+        local.update {
+            it.copy(
+                wizardCompletion =
+                    reduceWizardCompletion(
+                        it.wizardCompletion,
+                        WizardCompletionEvent.DISMISS_FOR_SESSION,
+                    ),
+            )
         }
     }
 

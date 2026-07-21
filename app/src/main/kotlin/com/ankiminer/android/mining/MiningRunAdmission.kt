@@ -5,8 +5,10 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
-import com.ankiminer.android.anki.provider.AnkiProviderReadiness
 import com.ankiminer.android.anki.provider.AnkiCancellation
+import com.ankiminer.android.anki.provider.AnkiReadinessSnapshot
+import com.ankiminer.android.anki.provider.AnkiProviderReadiness
+import com.ankiminer.android.anki.provider.AnkiRecoveryReadiness
 import com.ichi2.anki.api.BuildConfig as AnkiApiBuildConfig
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -100,12 +102,14 @@ private fun applicationPermissionChecker(context: Context): (String) -> Int {
 
 internal data class MiningRunAdmissionState(
     val anki: AnkiProviderReadiness,
+    val ankiRecovery: AnkiRecoveryReadiness,
     val notifications: NotificationPermissionReadiness,
     val target: AnkiMiningTargetReadiness,
 ) {
     val isReady: Boolean
         get() =
             anki is AnkiProviderReadiness.Ready &&
+                ankiRecovery == AnkiRecoveryReadiness.Ready &&
                 target == AnkiMiningTargetReadiness.Ready
 
     val stableFailure: MiningFailure?
@@ -121,11 +125,15 @@ internal data class MiningRunAdmissionState(
                     MiningFailure("The installed AnkiDroid API is incompatible", retryable = false)
                 AnkiProviderReadiness.PermissionDenied ->
                     MiningFailure("Allow AnkiDroid database access before mining", retryable = true)
-                AnkiProviderReadiness.RecoveryBlocked ->
-                    MiningFailure("Anki recovery must be resolved before another mining run", retryable = false)
                 is AnkiProviderReadiness.Ready -> null
             }
             if (ankiFailure != null) return ankiFailure
+            if (ankiRecovery != AnkiRecoveryReadiness.Ready) {
+                return MiningFailure(
+                    "Anki recovery must be resolved before another mining run",
+                    retryable = ankiRecovery == AnkiRecoveryReadiness.NotChecked,
+                )
+            }
             return when (val targetState = target) {
                 AnkiMiningTargetReadiness.NotChecked ->
                     MiningFailure("The Anki Miner note type has not been checked", retryable = true)
@@ -139,6 +147,7 @@ internal data class MiningRunAdmissionState(
         val READY_FOR_TESTS =
             MiningRunAdmissionState(
                 anki = AnkiProviderReadiness.Ready(apiSpecVersion = 2, versionCode = null),
+                ankiRecovery = AnkiRecoveryReadiness.Ready,
                 notifications = NotificationPermissionReadiness.READY,
                 target = AnkiMiningTargetReadiness.Ready,
             )
@@ -153,24 +162,36 @@ internal interface MiningRunAdmissionGate {
 }
 
 internal class StatefulMiningRunAdmissionGate(
-    private val ankiProbe: (AnkiCancellation) -> AnkiProviderReadiness,
+    private val ankiProbe: (AnkiCancellation) -> AnkiReadinessSnapshot,
     private val notificationProbe: NotificationPermissionProbe,
     private val targetProbe: AnkiMiningTargetProbe,
 ) : MiningRunAdmissionGate {
     private val mutableState = MutableStateFlow(initialState())
     override val state: StateFlow<MiningRunAdmissionState> = mutableState.asStateFlow()
 
-    override fun evaluate(cancellation: AnkiCancellation): MiningRunAdmissionState =
-        MiningRunAdmissionState(
-            anki = ankiProbe(cancellation),
+    override fun evaluate(cancellation: AnkiCancellation): MiningRunAdmissionState {
+        val anki = ankiProbe(cancellation)
+        val canProbeTarget =
+            anki.provider is AnkiProviderReadiness.Ready &&
+                anki.recovery == AnkiRecoveryReadiness.Ready
+        return MiningRunAdmissionState(
+            anki = anki.provider,
+            ankiRecovery = anki.recovery,
             notifications = notificationProbe.probe(),
-            target = targetProbe.probe(cancellation),
+            target =
+                if (canProbeTarget) {
+                    targetProbe.probe(cancellation)
+                } else {
+                    AnkiMiningTargetReadiness.NotChecked
+                },
         ).also { mutableState.value = it }
+    }
 
     private companion object {
         fun initialState() =
             MiningRunAdmissionState(
                 anki = AnkiProviderReadiness.NotChecked,
+                ankiRecovery = AnkiRecoveryReadiness.NotChecked,
                 notifications = NotificationPermissionReadiness.READY,
                 target = AnkiMiningTargetReadiness.NotChecked,
             )

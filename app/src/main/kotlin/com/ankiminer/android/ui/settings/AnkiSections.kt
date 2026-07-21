@@ -1,5 +1,6 @@
 package com.ankiminer.android.ui.settings
 
+import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -33,11 +34,84 @@ import com.ankiminer.android.R
 import com.ankiminer.android.anki.provider.AnkiExternalReviewOutcome
 import com.ankiminer.android.anki.provider.AnkiFieldMapPolicy
 import com.ankiminer.android.anki.provider.AnkiFieldKeys
-import com.ankiminer.android.anki.provider.AnkiProviderReadiness
 import com.ankiminer.android.anki.provider.AnkiRemediationActionKind
 import com.ankiminer.android.anki.provider.AnkiRemediationType
 import com.ankiminer.android.anki.provider.NoteTypeSetupStatus
+import com.ankiminer.android.vm.DeckChoiceKind
+import com.ankiminer.android.vm.DeckPersistenceStatus
+import com.ankiminer.android.vm.RecoveryPresentationKind
 import com.ankiminer.android.vm.SetupUiState
+
+@Composable
+internal fun AnkiDeckCard(
+    state: SetupUiState,
+    onSelectDeck: (String) -> Unit,
+    onRetryDeckSelection: () -> Unit,
+) {
+    OutlinedCard(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(stringResource(R.string.anki_deck_title), style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.anki_deck_description))
+            if (!state.ankiReady) {
+                Text(stringResource(R.string.anki_deck_connect_first))
+            }
+            val resolution = state.deckSelection
+            NoteTypeDropdown(
+                label = stringResource(R.string.anki_deck_picker),
+                options =
+                    resolution.choices.map { choice ->
+                        choice.deckName to
+                            when (choice.kind) {
+                                DeckChoiceKind.CREATE_OR_USE_DEFAULT ->
+                                    stringResource(R.string.anki_deck_create_or_use_default)
+                                DeckChoiceKind.EXISTING -> choice.deckName
+                                DeckChoiceKind.SAVED_UNAVAILABLE ->
+                                    stringResource(
+                                        R.string.anki_deck_saved_unavailable,
+                                        choice.deckName,
+                                    )
+                            }
+                    },
+                selected = resolution.selectedDeckName,
+                onSelect = onSelectDeck,
+                isOptionEnabled = { !state.busy && it != resolution.selectedDeckName },
+            )
+            val selectedChoice = resolution.choices.single { it.selected }
+            Text(
+                stringResource(deckExplanationResource(selectedChoice.kind)),
+                style = MaterialTheme.typography.bodySmall,
+            )
+            when (state.deckPersistence) {
+                DeckPersistenceStatus.IDLE -> Unit
+                DeckPersistenceStatus.SAVING -> {
+                    Text(stringResource(R.string.anki_deck_saving))
+                    LinearProgressIndicator(Modifier.fillMaxWidth())
+                }
+                DeckPersistenceStatus.FAILED -> {
+                    Text(
+                        stringResource(R.string.anki_deck_save_failed),
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                    OutlinedButton(
+                        onClick = onRetryDeckSelection,
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !state.busy,
+                    ) {
+                        Text(stringResource(R.string.anki_deck_save_retry))
+                    }
+                }
+            }
+        }
+    }
+}
+
+@StringRes
+internal fun deckExplanationResource(kind: DeckChoiceKind): Int =
+    when (kind) {
+        DeckChoiceKind.CREATE_OR_USE_DEFAULT -> R.string.anki_deck_default_explanation
+        DeckChoiceKind.EXISTING -> R.string.anki_deck_existing_explanation
+        DeckChoiceKind.SAVED_UNAVAILABLE -> R.string.anki_deck_saved_unavailable_explanation
+    }
 
 @Composable
 internal fun AnkiTargetCard(
@@ -125,12 +199,67 @@ internal fun AnkiTargetCard(
                 if (state.noteTypeStatus is NoteTypeSetupStatus.FieldsMissing) {
                     Text(stringResource(R.string.anki_note_type_guidance))
                 }
+                if (state.noteType != null) {
+                    NoteTypeQualitySummary(state)
+                }
                 OutlinedButton(
                     onClick = onVerify,
                     enabled = state.ankiReady && !state.busy && state.noteType != null,
                 ) { Text(stringResource(R.string.anki_note_type_verify)) }
             }
         }
+    }
+}
+
+@Composable
+private fun NoteTypeQualitySummary(state: SetupUiState) {
+    val quality = state.noteTypeQuality
+    val none = stringResource(R.string.anki_field_none)
+    fun display(value: String): String = value.ifEmpty { none }
+    fun display(values: List<String>): String = values.joinToString().ifEmpty { none }
+
+    HorizontalDivider()
+    Text(stringResource(R.string.anki_quality_title), style = MaterialTheme.typography.titleSmall)
+    Text(
+        stringResource(
+            if (quality.writableAndDedupSafe) {
+                R.string.anki_quality_writable_yes
+            } else {
+                R.string.anki_quality_writable_no
+            },
+        ),
+    )
+    Text(
+        stringResource(
+            if (quality.usefulForMining) {
+                R.string.anki_quality_useful_yes
+            } else {
+                R.string.anki_quality_useful_no
+            },
+        ),
+    )
+    Text(
+        stringResource(
+            if (quality.fullyEnriched) {
+                R.string.anki_quality_enriched_yes
+            } else {
+                R.string.anki_quality_enriched_no
+            },
+        ),
+    )
+    Text(stringResource(R.string.anki_quality_mapped_fields), style = MaterialTheme.typography.titleSmall)
+    Text(stringResource(R.string.anki_quality_word_field, display(quality.fields.word)))
+    Text(stringResource(R.string.anki_quality_sentence_field, display(quality.fields.sentence)))
+    Text(stringResource(R.string.anki_quality_definition_fields, display(quality.fields.definitions)))
+    Text(stringResource(R.string.anki_quality_audio_fields, display(quality.fields.audio)))
+    Text(stringResource(R.string.anki_quality_image_field, display(quality.fields.image)))
+    if (quality.writableAndDedupSafe && !quality.usefulForMining) {
+        Text(
+            stringResource(R.string.anki_quality_limited_warning),
+            color = MaterialTheme.colorScheme.tertiary,
+        )
+    } else if (quality.usefulForMining && !quality.fullyEnriched) {
+        Text(stringResource(R.string.anki_quality_optional_warning))
     }
 }
 
@@ -209,6 +338,7 @@ internal fun AnkiOperationCard() {
 @Composable
 internal fun AnkiRecoveryCard(
     state: SetupUiState,
+    onRefresh: () -> Unit,
     onReconcile: () -> Unit,
     onRetryStaging: (Long) -> Unit,
     onAcknowledgeMedia: (Long) -> Unit,
@@ -216,49 +346,85 @@ internal fun AnkiRecoveryCard(
     onResolveReview: (Long, AnkiExternalReviewOutcome) -> Unit,
 ) {
     var confirmation by remember { mutableStateOf<AnkiRecoveryConfirmation?>(null) }
+    val presentation = state.recoveryPresentation
     OutlinedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(stringResource(R.string.anki_recovery_title), style = MaterialTheme.typography.titleMedium)
-            if (state.remediations.pending.isEmpty()) {
-                Text(stringResource(R.string.anki_recovery_clear))
-            } else {
-                Text(stringResource(R.string.anki_recovery_attention, state.remediations.pending.size))
+            val statusText =
+                when (presentation.kind) {
+                    RecoveryPresentationKind.CHECKING ->
+                        stringResource(R.string.anki_recovery_checking)
+                    RecoveryPresentationKind.INVENTORY_UNAVAILABLE ->
+                        stringResource(R.string.anki_recovery_inventory_unavailable)
+                    RecoveryPresentationKind.STARTUP_BLOCKED ->
+                        stringResource(R.string.anki_recovery_startup_blocked)
+                    RecoveryPresentationKind.STARTUP_BLOCKED_PROVIDER_UNAVAILABLE ->
+                        stringResource(R.string.anki_recovery_startup_blocked_provider_unavailable)
+                    RecoveryPresentationKind.PENDING ->
+                        stringResource(
+                            R.string.anki_recovery_attention,
+                            state.remediations.pending.size,
+                        )
+                    RecoveryPresentationKind.PENDING_PROVIDER_UNAVAILABLE ->
+                        stringResource(
+                            R.string.anki_recovery_attention_provider_unavailable,
+                            state.remediations.pending.size,
+                        )
+                    RecoveryPresentationKind.CLEAR ->
+                        stringResource(R.string.anki_recovery_clear)
+                }
+            Text(statusText)
+            if (
+                presentation.kind == RecoveryPresentationKind.CHECKING ||
+                    presentation.kind == RecoveryPresentationKind.INVENTORY_UNAVAILABLE
+            ) {
+                OutlinedButton(onClick = onRefresh, enabled = !state.busy) {
+                    Text(stringResource(R.string.anki_recovery_retry_inventory))
+                }
             }
-            if (state.anki == AnkiProviderReadiness.RecoveryBlocked || state.remediations.pending.isNotEmpty()) {
+            if (presentation.canReconcile) {
                 OutlinedButton(onClick = onReconcile, enabled = !state.busy) {
                     Text(stringResource(R.string.anki_recovery_reconcile))
                 }
             }
-            state.remediations.pending.forEach { item ->
-                HorizontalDivider()
-                Text(item.title, style = MaterialTheme.typography.titleSmall)
-                Text(item.summary)
-                if (AnkiRemediationActionKind.RETRY_STAGING_CLEANUP in item.availableActions) {
-                    OutlinedButton(
-                        onClick = { onRetryStaging(item.id) },
-                        enabled = !state.busy,
-                    ) { Text(stringResource(R.string.anki_recovery_retry_cleanup)) }
-                }
-                if (AnkiRemediationActionKind.ACKNOWLEDGE_UNATTACHED_MEDIA in item.availableActions) {
-                    OutlinedButton(
-                        onClick = {
-                            confirmation = AnkiRecoveryConfirmation.UnattachedMedia(item.id)
-                        },
-                        enabled = !state.busy,
-                    ) { Text(stringResource(R.string.anki_recovery_acknowledge_unattached)) }
-                }
-                if (AnkiRemediationActionKind.ACKNOWLEDGE_UNCERTAIN_MEDIA in item.availableActions) {
-                    Text(stringResource(R.string.anki_recovery_media_uncertain_help))
-                    OutlinedButton(
-                        onClick = {
-                            confirmation = AnkiRecoveryConfirmation.UncertainMedia(item.id)
-                        },
-                        enabled = !state.busy,
-                    ) { Text(stringResource(R.string.anki_recovery_abandon_uncertain_media)) }
-                }
-                if (AnkiRemediationActionKind.RESOLVE_AFTER_EXTERNAL_REVIEW in item.availableActions) {
-                    ExternalReviewActions(item.id, item.type, state.busy) { id, outcome ->
-                        confirmation = AnkiRecoveryConfirmation.ExternalReview(id, outcome)
+        }
+        if (presentation.showInventory) {
+            Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                state.remediations.pending.forEach { item ->
+                    HorizontalDivider()
+                    Text(item.title, style = MaterialTheme.typography.titleSmall)
+                    Text(item.summary)
+                    if (AnkiRemediationActionKind.RETRY_STAGING_CLEANUP in item.availableActions) {
+                        OutlinedButton(
+                            onClick = { onRetryStaging(item.id) },
+                            enabled = !state.busy,
+                        ) { Text(stringResource(R.string.anki_recovery_retry_cleanup)) }
+                    }
+                    if (AnkiRemediationActionKind.ACKNOWLEDGE_UNATTACHED_MEDIA in item.availableActions) {
+                        OutlinedButton(
+                            onClick = {
+                                confirmation = AnkiRecoveryConfirmation.UnattachedMedia(item.id)
+                            },
+                            enabled = !state.busy,
+                        ) { Text(stringResource(R.string.anki_recovery_acknowledge_unattached)) }
+                    }
+                    if (AnkiRemediationActionKind.ACKNOWLEDGE_UNCERTAIN_MEDIA in item.availableActions) {
+                        Text(stringResource(R.string.anki_recovery_media_uncertain_help))
+                        OutlinedButton(
+                            onClick = {
+                                confirmation = AnkiRecoveryConfirmation.UncertainMedia(item.id)
+                            },
+                            enabled = !state.busy,
+                        ) { Text(stringResource(R.string.anki_recovery_abandon_uncertain_media)) }
+                    }
+                    if (AnkiRemediationActionKind.RESOLVE_AFTER_EXTERNAL_REVIEW in item.availableActions) {
+                        ExternalReviewActions(
+                            item.id,
+                            item.type,
+                            state.busy || !state.ankiReady,
+                        ) { id, outcome ->
+                            confirmation = AnkiRecoveryConfirmation.ExternalReview(id, outcome)
+                        }
                     }
                 }
             }

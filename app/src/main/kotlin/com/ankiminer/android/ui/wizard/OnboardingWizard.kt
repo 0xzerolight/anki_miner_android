@@ -11,8 +11,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
@@ -33,6 +35,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.ankiminer.android.R
 import com.ankiminer.android.ui.settings.AnkiOperationCard
+import com.ankiminer.android.ui.settings.AnkiDeckCard
 import com.ankiminer.android.ui.settings.AnkiTargetCard
 import com.ankiminer.android.ui.settings.CatalogDictionaryCards
 import com.ankiminer.android.ui.settings.CatalogReplaceDialog
@@ -43,20 +46,33 @@ import com.ankiminer.android.ui.settings.SystemStatusCard
 import com.ankiminer.android.vm.AnkiDroidSetupAction
 import com.ankiminer.android.vm.SetupUiState
 import com.ankiminer.android.vm.SetupViewModel
+import com.ankiminer.android.vm.WizardCompletionStatus
 
 /**
  * The wizard shows on first launch until completed or skipped, and on demand from
- * Settings → UI. Every step is skippable — closing the wizard in any way marks it seen;
- * everything it offers stays available in Settings.
+ * Settings → UI. Every step is skippable. Normal close paths persist completion; a failed write
+ * keeps retry visible and permits only a session-level escape. Everything remains in Settings.
  */
-internal fun wizardVisible(wizardSeen: Boolean?, rerunRequested: Boolean): Boolean =
-    rerunRequested || wizardSeen == false
+internal fun wizardVisible(
+    wizardSeen: Boolean?,
+    rerunRequested: Boolean,
+    sessionDismissed: Boolean,
+    completion: WizardCompletionStatus = WizardCompletionStatus.IDLE,
+): Boolean =
+    rerunRequested ||
+        (
+            !sessionDismissed &&
+                wizardSeen == false &&
+                completion != WizardCompletionStatus.PERSISTED &&
+                completion != WizardCompletionStatus.DISMISSED_FOR_SESSION
+        )
 
 internal enum class WizardStep {
     WELCOME,
     TOKENIZER,
     DICTIONARY,
     ANKIDROID,
+    ANKIDROID_DECK,
     ANKIDROID_NOTE_TYPE,
     DONE,
 }
@@ -80,7 +96,10 @@ internal fun OnboardingWizard(
 ) {
     var step by rememberSaveable { mutableStateOf(WizardStep.WELCOME) }
     val scrollState = rememberScrollState()
-    BackHandler(onBack = onFinished)
+    BackHandler(
+        enabled = state.wizardCompletion != WizardCompletionStatus.SAVING,
+        onBack = onFinished,
+    )
     LaunchedEffect(step) { scrollState.scrollTo(0) }
     CatalogReplaceDialog(
         state = state,
@@ -90,6 +109,11 @@ internal fun OnboardingWizard(
     val snackbarHostState = remember { SnackbarHostState() }
     MessageSnackbarEffect(state.failure?.message, snackbarHostState, viewModel::dismissFailure)
     MessageSnackbarEffect(state.ankiFailure?.message, snackbarHostState, viewModel::dismissAnkiFailure)
+    MessageSnackbarEffect(
+        state.ankiRecoveryFailure?.message,
+        snackbarHostState,
+        viewModel::dismissAnkiFailure,
+    )
     Surface(modifier.fillMaxSize()) {
         Box(Modifier.fillMaxSize()) {
             Column(
@@ -106,6 +130,7 @@ internal fun OnboardingWizard(
                             WizardStep.TOKENIZER -> R.string.wizard_tokenizer_title
                             WizardStep.DICTIONARY -> R.string.wizard_dictionary_title
                             WizardStep.ANKIDROID -> R.string.wizard_ankidroid_title
+                            WizardStep.ANKIDROID_DECK -> R.string.wizard_deck_title
                             WizardStep.ANKIDROID_NOTE_TYPE -> R.string.wizard_note_type_title
                             WizardStep.DONE -> R.string.wizard_done_title
                         },
@@ -154,6 +179,15 @@ internal fun OnboardingWizard(
                         )
                         state.ankiOperation?.let { AnkiOperationCard() }
                     }
+                    WizardStep.ANKIDROID_DECK -> {
+                        Text(stringResource(R.string.wizard_deck_body))
+                        AnkiDeckCard(
+                            state,
+                            viewModel::selectDeck,
+                            viewModel::retryDeckSelection,
+                        )
+                        state.ankiOperation?.let { AnkiOperationCard() }
+                    }
                     WizardStep.ANKIDROID_NOTE_TYPE -> {
                         Text(stringResource(R.string.wizard_note_type_body))
                         AnkiTargetCard(
@@ -182,13 +216,67 @@ internal fun OnboardingWizard(
                         ResourceOperationCard(operation, viewModel::cancelOperation)
                     }
                 }
-                NavigationButtons(step, onStep = { step = it }, onFinished = onFinished)
+                WizardCompletionCard(
+                    status = state.wizardCompletion,
+                    onRetry = viewModel::retryWizardCompletion,
+                    onDismissForSession = viewModel::dismissWizardForSession,
+                )
+                NavigationButtons(
+                    step,
+                    saving = state.wizardCompletion == WizardCompletionStatus.SAVING,
+                    onStep = { step = it },
+                    onFinished = onFinished,
+                )
             }
             SnackbarHost(
                 hostState = snackbarHostState,
                 modifier = Modifier.align(Alignment.BottomCenter),
             )
         }
+    }
+}
+
+@Composable
+private fun WizardCompletionCard(
+    status: WizardCompletionStatus,
+    onRetry: () -> Unit,
+    onDismissForSession: () -> Unit,
+) {
+    when (status) {
+        WizardCompletionStatus.SAVING -> {
+            Text(stringResource(R.string.wizard_completion_saving))
+            LinearProgressIndicator(Modifier.fillMaxWidth())
+        }
+        WizardCompletionStatus.FAILED -> {
+            OutlinedCard(Modifier.fillMaxWidth()) {
+                Column(
+                    Modifier.padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text(
+                        stringResource(R.string.wizard_completion_failed),
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                    Button(onClick = onRetry, modifier = Modifier.fillMaxWidth()) {
+                        Text(stringResource(R.string.wizard_completion_retry))
+                    }
+                    OutlinedButton(
+                        onClick = onDismissForSession,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(stringResource(R.string.wizard_completion_continue_session))
+                    }
+                    Text(
+                        stringResource(R.string.wizard_completion_session_help),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            }
+        }
+        WizardCompletionStatus.IDLE,
+        WizardCompletionStatus.PERSISTED,
+        WizardCompletionStatus.DISMISSED_FOR_SESSION,
+        -> Unit
     }
 }
 
@@ -232,49 +320,56 @@ private fun AnkiDroidActionButtons(
 @Composable
 private fun NavigationButtons(
     step: WizardStep,
+    saving: Boolean,
     onStep: (WizardStep) -> Unit,
     onFinished: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            when (step) {
-                WizardStep.WELCOME -> {
-                    Button(
-                        onClick = { onStep(nextWizardStep(step)) },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) { Text(stringResource(R.string.wizard_set_up_now)) }
-                    OutlinedButton(
-                        onClick = onFinished,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) { Text(stringResource(R.string.wizard_skip_for_now)) }
-                }
-                WizardStep.DONE -> {
-                    Button(
-                        onClick = onFinished,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) { Text(stringResource(R.string.wizard_finish)) }
+        when (step) {
+            WizardStep.WELCOME -> {
+                Button(
+                    onClick = { onStep(nextWizardStep(step)) },
+                    enabled = !saving,
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text(stringResource(R.string.wizard_set_up_now)) }
+                OutlinedButton(
+                    onClick = onFinished,
+                    enabled = !saving,
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text(stringResource(R.string.wizard_skip_for_now)) }
+            }
+            WizardStep.DONE -> {
+                Button(
+                    onClick = onFinished,
+                    enabled = !saving,
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text(stringResource(R.string.wizard_finish)) }
+                OutlinedButton(
+                    onClick = { onStep(previousWizardStep(step)) },
+                    enabled = !saving,
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text(stringResource(R.string.wizard_back)) }
+            }
+            else -> {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
                     OutlinedButton(
                         onClick = { onStep(previousWizardStep(step)) },
-                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !saving,
+                        modifier = Modifier.weight(1f),
                     ) { Text(stringResource(R.string.wizard_back)) }
+                    Button(
+                        onClick = { onStep(nextWizardStep(step)) },
+                        enabled = !saving,
+                        modifier = Modifier.weight(1f),
+                    ) { Text(stringResource(R.string.wizard_next)) }
                 }
-                else -> {
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        OutlinedButton(
-                            onClick = { onStep(previousWizardStep(step)) },
-                            modifier = Modifier.weight(1f),
-                        ) { Text(stringResource(R.string.wizard_back)) }
-                        Button(
-                            onClick = { onStep(nextWizardStep(step)) },
-                            modifier = Modifier.weight(1f),
-                        ) { Text(stringResource(R.string.wizard_next)) }
-                    }
-                    TextButton(onClick = onFinished) {
-                        Text(stringResource(R.string.wizard_skip_setup))
-                    }
+                TextButton(onClick = onFinished, enabled = !saving) {
+                    Text(stringResource(R.string.wizard_skip_setup))
                 }
             }
+        }
     }
 }

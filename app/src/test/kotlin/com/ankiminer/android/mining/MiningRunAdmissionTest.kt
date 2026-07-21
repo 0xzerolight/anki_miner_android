@@ -4,6 +4,8 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
 import com.ankiminer.android.anki.provider.AnkiProviderReadiness
+import com.ankiminer.android.anki.provider.AnkiReadinessSnapshot
+import com.ankiminer.android.anki.provider.AnkiRecoveryReadiness
 import com.ichi2.anki.api.BuildConfig as AnkiApiBuildConfig
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -48,20 +50,50 @@ class MiningRunAdmissionTest {
                 AnkiProviderReadiness.Uninitialized,
                 AnkiProviderReadiness.Incompatible(1),
                 AnkiProviderReadiness.PermissionDenied,
-                AnkiProviderReadiness.RecoveryBlocked,
             )
         outcomes.forEach { outcome ->
+            var targetCalls = 0
             val gate =
                 StatefulMiningRunAdmissionGate(
-                    ankiProbe = { outcome },
+                    ankiProbe = {
+                        AnkiReadinessSnapshot(outcome, AnkiRecoveryReadiness.Ready)
+                    },
                     notificationProbe = NotificationPermissionProbe { NotificationPermissionReadiness.READY },
-                    targetProbe = AnkiMiningTargetProbe { AnkiMiningTargetReadiness.Ready },
+                    targetProbe =
+                        AnkiMiningTargetProbe {
+                            targetCalls += 1
+                            AnkiMiningTargetReadiness.Ready
+                        },
                 )
             val evaluated = gate.evaluate(com.ankiminer.android.anki.provider.AnkiCancellation.NONE)
             assertFalse(evaluated.isReady)
             assertTrue(requireNotNull(evaluated.stableFailure).message.isNotBlank())
             assertEquals(evaluated, gate.state.value)
+            assertEquals(0, targetCalls)
         }
+
+        var blockedTargetCalls = 0
+        val recoveryBlocked =
+            StatefulMiningRunAdmissionGate(
+                ankiProbe = {
+                    AnkiReadinessSnapshot(
+                        AnkiProviderReadiness.Ready(2, 24L),
+                        AnkiRecoveryReadiness.Blocked,
+                    )
+                },
+                notificationProbe = NotificationPermissionProbe { NotificationPermissionReadiness.READY },
+                targetProbe =
+                    AnkiMiningTargetProbe {
+                        blockedTargetCalls += 1
+                        AnkiMiningTargetReadiness.Ready
+                    },
+            ).evaluate(com.ankiminer.android.anki.provider.AnkiCancellation.NONE)
+        assertFalse(recoveryBlocked.isReady)
+        assertEquals(
+            "Anki recovery must be resolved before another mining run",
+            requireNotNull(recoveryBlocked.stableFailure).message,
+        )
+        assertEquals(0, blockedTargetCalls)
     }
 
     @Test
@@ -69,18 +101,20 @@ class MiningRunAdmissionTest {
         val ankiReady = AnkiProviderReadiness.Ready(2, 24L)
         val denied =
             MiningRunAdmissionState(
-                ankiReady,
-                NotificationPermissionReadiness.PERMISSION_DENIED,
-                AnkiMiningTargetReadiness.Ready,
+                anki = ankiReady,
+                ankiRecovery = AnkiRecoveryReadiness.Ready,
+                notifications = NotificationPermissionReadiness.PERMISSION_DENIED,
+                target = AnkiMiningTargetReadiness.Ready,
             )
         assertTrue(denied.isReady)
         assertNull(denied.stableFailure)
 
         val ready =
             MiningRunAdmissionState(
-                ankiReady,
-                NotificationPermissionReadiness.READY,
-                AnkiMiningTargetReadiness.Ready,
+                anki = ankiReady,
+                ankiRecovery = AnkiRecoveryReadiness.Ready,
+                notifications = NotificationPermissionReadiness.READY,
+                target = AnkiMiningTargetReadiness.Ready,
             )
         assertTrue(ready.isReady)
         assertNull(ready.stableFailure)
@@ -91,9 +125,10 @@ class MiningRunAdmissionTest {
         val ankiReady = AnkiProviderReadiness.Ready(2, 24L)
         val blocked =
             MiningRunAdmissionState(
-                ankiReady,
-                NotificationPermissionReadiness.READY,
-                AnkiMiningTargetReadiness.Blocked(
+                anki = ankiReady,
+                ankiRecovery = AnkiRecoveryReadiness.Ready,
+                notifications = NotificationPermissionReadiness.READY,
+                target = AnkiMiningTargetReadiness.Blocked(
                     "Select and verify a note type in Settings before mining",
                     retryable = true,
                 ),

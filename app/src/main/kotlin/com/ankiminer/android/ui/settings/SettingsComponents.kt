@@ -433,7 +433,6 @@ internal fun ankiStatus(value: AnkiProviderReadiness): String =
         AnkiProviderReadiness.Uninitialized -> stringResource(R.string.status_initialize_ankidroid)
         is AnkiProviderReadiness.Incompatible -> stringResource(R.string.status_incompatible_api)
         AnkiProviderReadiness.PermissionDenied -> stringResource(R.string.status_database_permission)
-        AnkiProviderReadiness.RecoveryBlocked -> stringResource(R.string.status_recovery_attention)
         is AnkiProviderReadiness.Ready -> stringResource(R.string.status_ready_api, value.apiSpecVersion)
     }
 

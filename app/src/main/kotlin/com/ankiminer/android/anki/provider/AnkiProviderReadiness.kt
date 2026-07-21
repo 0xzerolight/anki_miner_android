@@ -12,13 +12,25 @@ internal sealed interface AnkiProviderReadiness {
 
     data object PermissionDenied : AnkiProviderReadiness
 
-    data object RecoveryBlocked : AnkiProviderReadiness
-
     data class Ready(
         val apiSpecVersion: Int,
         val versionCode: Long?,
     ) : AnkiProviderReadiness
 }
+
+/** Local startup-journal recovery is independent from ContentProvider availability. */
+internal sealed interface AnkiRecoveryReadiness {
+    data object NotChecked : AnkiRecoveryReadiness
+
+    data object Ready : AnkiRecoveryReadiness
+
+    data object Blocked : AnkiRecoveryReadiness
+}
+
+internal data class AnkiReadinessSnapshot(
+    val provider: AnkiProviderReadiness,
+    val recovery: AnkiRecoveryReadiness,
+)
 
 /**
  * Worker-only readiness probe. It never stores an Activity: the production lambdas close over
@@ -30,8 +42,24 @@ internal class AnkiProviderReadinessProbe(
     private val proveCollectionOperational: (AnkiCancellation) -> Unit,
     private val recoverLocalState: () -> Unit,
 ) {
-    fun probe(cancellation: AnkiCancellation = AnkiCancellation.NONE): AnkiProviderReadiness {
+    fun probe(cancellation: AnkiCancellation = AnkiCancellation.NONE): AnkiReadinessSnapshot {
         workerThreadGuard.checkWorkerThread()
+        val provider = probeProvider(cancellation)
+        val recovery =
+            if (cancellation.isCancelled()) {
+                AnkiRecoveryReadiness.NotChecked
+            } else {
+                try {
+                    recoverLocalState()
+                    AnkiRecoveryReadiness.Ready
+                } catch (_: RuntimeException) {
+                    AnkiRecoveryReadiness.Blocked
+                }
+            }
+        return AnkiReadinessSnapshot(provider, recovery)
+    }
+
+    private fun probeProvider(cancellation: AnkiCancellation): AnkiProviderReadiness {
         val available =
             when (val access = accessStatusSafely()) {
                 ProviderAccessStatus.Absent -> return AnkiProviderReadiness.NotInstalled
@@ -61,11 +89,6 @@ internal class AnkiProviderReadinessProbe(
         }
 
         if (cancellation.isCancelled()) return AnkiProviderReadiness.Uninitialized
-        try {
-            recoverLocalState()
-        } catch (_: RuntimeException) {
-            return AnkiProviderReadiness.RecoveryBlocked
-        }
         return AnkiProviderReadiness.Ready(
             apiSpecVersion = available.apiSpecVersion,
             versionCode = available.versionCode,

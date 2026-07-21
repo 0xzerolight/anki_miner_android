@@ -2,6 +2,7 @@ package com.ankiminer.android.vm
 
 import com.ankiminer.android.MainDispatcherRule
 import com.ankiminer.android.anki.provider.AnkiProviderReadiness
+import com.ankiminer.android.anki.provider.AnkiRecoveryReadiness
 import com.ankiminer.android.anki.provider.AnkiRemediationCommand
 import com.ankiminer.android.anki.provider.ModelSummary
 import com.ankiminer.android.data.RuntimeWorkCoordinator
@@ -163,6 +164,74 @@ class SetupViewModelTest {
         }
 
     @Test
+    fun `deck selection persists explicit existing and create-or-use choices`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository = FakeSettingsRepository(AppSettings())
+            val setup = FakeAnkiSetupManager(emptyList(), deckNames = listOf("Japanese"))
+            val viewModel = viewModel(repository, setup)
+            advanceUntilIdle()
+
+            viewModel.selectDeck("Japanese")
+            advanceUntilIdle()
+            assertEquals("Japanese", repository.current.deckName)
+
+            viewModel.selectDeck("Anki Miner")
+            advanceUntilIdle()
+            assertEquals("Anki Miner", repository.current.deckName)
+            assertEquals(2, repository.writeCount)
+        }
+
+    @Test
+    fun `deck persistence failure is visible and retry eventually persists`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository = FakeSettingsRepository(AppSettings()).apply { failWrites = true }
+            val viewModel =
+                viewModel(
+                    repository,
+                    FakeAnkiSetupManager(emptyList(), deckNames = listOf("Japanese")),
+                )
+            advanceUntilIdle()
+
+            viewModel.selectDeck("Japanese")
+            advanceUntilIdle()
+
+            assertEquals(DeckPersistenceStatus.FAILED, viewModel.uiState.value.deckPersistence)
+            assertEquals("Japanese", viewModel.uiState.value.failedDeckName)
+            assertEquals(null, repository.current.deckName)
+
+            repository.failWrites = false
+            viewModel.retryDeckSelection()
+            advanceUntilIdle()
+
+            assertEquals(DeckPersistenceStatus.IDLE, viewModel.uiState.value.deckPersistence)
+            assertEquals(null, viewModel.uiState.value.failedDeckName)
+            assertEquals("Japanese", repository.current.deckName)
+            assertEquals(2, repository.writeAttempts)
+        }
+
+    @Test
+    fun `wizard persistence failure stays visible and retry eventually persists`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository = FakeSettingsRepository(AppSettings()).apply { failWrites = true }
+            val viewModel = viewModel(repository, FakeAnkiSetupManager(emptyList()))
+            advanceUntilIdle()
+
+            viewModel.markWizardSeen()
+            advanceUntilIdle()
+
+            assertEquals(WizardCompletionStatus.FAILED, viewModel.uiState.value.wizardCompletion)
+            assertEquals(false, viewModel.uiState.value.wizardSeen)
+
+            repository.failWrites = false
+            viewModel.retryWizardCompletion()
+            advanceUntilIdle()
+
+            assertEquals(WizardCompletionStatus.PERSISTED, viewModel.uiState.value.wizardCompletion)
+            assertEquals(true, viewModel.uiState.value.wizardSeen)
+            assertEquals(2, repository.writeAttempts)
+        }
+
+    @Test
     fun `known-word actions use preview and scoped management operations`() =
         runTest(mainDispatcherRule.dispatcher) {
             val repository = FakeSettingsRepository(AppSettings())
@@ -207,6 +276,7 @@ class SetupViewModelTest {
                 MutableStateFlow(
                     MiningRunAdmissionState(
                         anki = AnkiProviderReadiness.NotChecked,
+                        ankiRecovery = AnkiRecoveryReadiness.NotChecked,
                         notifications = NotificationPermissionReadiness.READY,
                         target = AnkiMiningTargetReadiness.NotChecked,
                     ),
@@ -223,23 +293,38 @@ class SetupViewModelTest {
         override val settings: Flow<AppSettings> = mutableSettings.asStateFlow()
         var writeCount = 0
             private set
+        var writeAttempts = 0
+            private set
+        var failWrites = false
         val current: AppSettings
             get() = mutableSettings.value
 
         override suspend fun update(settings: AppSettings) {
+            writeAttempts += 1
+            if (failWrites) error("settings unavailable")
             mutableSettings.value = AppSettingsValidator.validate(settings)
             writeCount += 1
         }
 
         override suspend fun update(transform: (AppSettings) -> AppSettings) {
+            writeAttempts += 1
+            if (failWrites) error("settings unavailable")
             mutableSettings.value = AppSettingsValidator.validate(transform(mutableSettings.value))
             writeCount += 1
         }
     }
 
-    private class FakeAnkiSetupManager(models: List<ModelSummary>) : AnkiSetupManager {
+    private class FakeAnkiSetupManager(
+        models: List<ModelSummary>,
+        deckNames: List<String> = emptyList(),
+    ) : AnkiSetupManager {
         private val mutableState =
-            MutableStateFlow(AnkiSetupManagerState(availableNoteTypes = models))
+            MutableStateFlow(
+                AnkiSetupManagerState(
+                    availableNoteTypes = models,
+                    availableDeckNames = deckNames,
+                ),
+            )
         override val state: StateFlow<AnkiSetupManagerState> = mutableState.asStateFlow()
         var refreshCount = 0
             private set

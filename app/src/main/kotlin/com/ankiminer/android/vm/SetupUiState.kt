@@ -2,12 +2,14 @@ package com.ankiminer.android.vm
 
 import com.ankiminer.android.anki.provider.AnkiFieldMappingChange
 import com.ankiminer.android.anki.provider.AnkiProviderReadiness
+import com.ankiminer.android.anki.provider.AnkiRecoveryReadiness
 import com.ankiminer.android.anki.provider.AnkiRemediationInventory
 import com.ankiminer.android.anki.provider.ModelSummary
 import com.ankiminer.android.anki.provider.NoteTypeSetupStatus
+import com.ankiminer.android.data.RuntimeWorkCoordinator
+import com.ankiminer.android.data.anki.AnkiRecoveryInventoryStatus
 import com.ankiminer.android.data.anki.AnkiSetupFailure
 import com.ankiminer.android.data.anki.AnkiSetupOperation
-import com.ankiminer.android.data.RuntimeWorkCoordinator
 import com.ankiminer.android.data.resources.CatalogDictionaryStatus
 import com.ankiminer.android.data.resources.DictionaryLookup
 import com.ankiminer.android.data.resources.InstalledDictionary
@@ -32,19 +34,27 @@ internal data class SetupUiState(
     val python: PythonRuntimeReadiness = PythonRuntimeReadiness.Pending,
     val resourceStartup: ResourceStartupReadiness = ResourceStartupReadiness.PENDING,
     val anki: AnkiProviderReadiness = AnkiProviderReadiness.NotChecked,
+    val ankiRecovery: AnkiRecoveryReadiness = AnkiRecoveryReadiness.NotChecked,
     val notifications: NotificationPermissionReadiness = NotificationPermissionReadiness.READY,
     val noteTypeStatus: NoteTypeSetupStatus = NoteTypeSetupStatus.NotSelected,
     val availableNoteTypes: List<ModelSummary> = emptyList(),
     val availableDeckNames: List<String> = emptyList(),
+    val deckName: String? = null,
+    val deckPersistence: DeckPersistenceStatus = DeckPersistenceStatus.IDLE,
+    val failedDeckName: String? = null,
     val noteType: String? = null,
     val fieldMap: Map<String, String> = emptyMap(),
     val fieldMapChanges: List<AnkiFieldMappingChange> = emptyList(),
     val remediations: AnkiRemediationInventory = AnkiRemediationInventory(emptyList()),
+    val recoveryInventoryStatus: AnkiRecoveryInventoryStatus =
+        AnkiRecoveryInventoryStatus.NOT_CHECKED,
     val ankiOperation: AnkiSetupOperation? = null,
     val ankiFailure: AnkiSetupFailure? = null,
+    val ankiRecoveryFailure: AnkiSetupFailure? = null,
     val runtimeWorkKind: RuntimeWorkCoordinator.Kind? = null,
     /** Tri-state startup-flash guard: null until the settings store has emitted once. */
     val wizardSeen: Boolean? = null,
+    val wizardCompletion: WizardCompletionStatus = WizardCompletionStatus.IDLE,
     val uniDicInstalled: Boolean = false,
     val catalogDictionaries: List<CatalogDictionaryStatus> = emptyList(),
     val pendingReplaceResourceId: String? = null,
@@ -97,14 +107,36 @@ internal data class SetupUiState(
     val modelReady: Boolean
         get() = noteTypeStatus is NoteTypeSetupStatus.Verified
 
+    val deckSelection: DeckSelectionResolution
+        get() = resolveDeckSelection(deckName, availableDeckNames)
+
+    val noteTypeQuality: NoteTypeQualityAssessment
+        get() = classifyNoteTypeQuality(noteTypeStatus, fieldMap)
+
+    val recoveryPresentation: RecoveryPresentationDecision
+        get() =
+            decideRecoveryPresentation(
+                provider = anki,
+                startupRecovery = ankiRecovery,
+                inventoryStatus = recoveryInventoryStatus,
+                pendingCount = remediations.pending.size,
+            )
+
     val recoveryReady: Boolean
-        get() = remediations.pending.isEmpty()
+        get() =
+            ankiRecovery == AnkiRecoveryReadiness.Ready &&
+                recoveryInventoryStatus == AnkiRecoveryInventoryStatus.AVAILABLE &&
+                remediations.pending.isEmpty()
 
     val targetReady: Boolean
         get() = modelReady
 
     val busy: Boolean
-        get() = operation != null || ankiOperation != null || runtimeWorkKind != null
+        get() =
+            operation != null ||
+                ankiOperation != null ||
+                runtimeWorkKind != null ||
+                deckPersistence == DeckPersistenceStatus.SAVING
 
     val isMiningReady: Boolean
         get() =
@@ -124,7 +156,6 @@ internal data class SetupUiState(
             when (val readiness = anki) {
                 AnkiProviderReadiness.NotInstalled -> AnkiDroidSetupAction.INSTALL
                 AnkiProviderReadiness.Uninitialized,
-                AnkiProviderReadiness.RecoveryBlocked,
                 -> AnkiDroidSetupAction.OPEN
                 is AnkiProviderReadiness.Incompatible ->
                     if (readiness.apiSpecVersion == null) {

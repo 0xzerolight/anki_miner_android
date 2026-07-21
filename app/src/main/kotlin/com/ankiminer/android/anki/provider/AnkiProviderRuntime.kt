@@ -88,7 +88,7 @@ internal class AnkiProviderRuntime(
             startupRecoveryGate = recoveryGate,
         )
 
-    fun probeReadiness(cancellation: AnkiCancellation): AnkiProviderReadiness =
+    fun probeReadiness(cancellation: AnkiCancellation): AnkiReadinessSnapshot =
         readiness.probe(cancellation)
 
     fun listNoteTypes(cancellation: AnkiCancellation): List<ModelSummary> =

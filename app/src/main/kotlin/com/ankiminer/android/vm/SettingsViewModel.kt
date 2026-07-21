@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChangedBy
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -177,6 +178,8 @@ internal data class SettingsDraftState(
     val draft: SettingsDraft,
     val dirty: Boolean,
     val loaded: Boolean,
+    val deckDirty: Boolean,
+    val editRevision: Long,
 )
 
 internal class SettingsDraftStore(
@@ -185,13 +188,29 @@ internal class SettingsDraftStore(
 ) {
     private val mutableState =
         MutableStateFlow(
-            SettingsDraftState(initial, dirty = false, loaded = initiallyLoaded),
+            SettingsDraftState(
+                initial,
+                dirty = false,
+                loaded = initiallyLoaded,
+                deckDirty = false,
+                editRevision = 0,
+            ),
         )
     val state: StateFlow<SettingsDraftState> = mutableState.asStateFlow()
 
     fun update(value: SettingsDraft) {
         mutableState.update { current ->
-            if (current.loaded) SettingsDraftState(value, dirty = true, loaded = true) else current
+            if (current.loaded) {
+                SettingsDraftState(
+                    draft = value,
+                    dirty = true,
+                    loaded = true,
+                    deckDirty = current.deckDirty || value.deckName != current.draft.deckName,
+                    editRevision = current.editRevision + 1,
+                )
+            } else {
+                current
+            }
         }
     }
 
@@ -203,17 +222,30 @@ internal class SettingsDraftStore(
             if (current.loaded && current.dirty) {
                 // Auto-save keeps the draft dirty for the rest of the activity-scoped session, so
                 // this branch must still merge newly installed resources into the pending edit
-                // instead of hiding them; scalar edits stay authoritative and are never overwritten.
+                // instead of hiding them. Only an explicit local deck edit owns that field; otherwise
+                // adopt an out-of-band wizard selection so a stale scalar cannot copy it back.
+                val persistedDeckName = settings.deckName.orEmpty()
+                val deckDirty = current.deckDirty && current.draft.deckName != persistedDeckName
+                val mergedDraft = current.draft.withInventory(resources)
                 SettingsDraftState(
-                    current.draft.withInventory(resources),
+                    draft =
+                        if (deckDirty) {
+                            mergedDraft
+                        } else {
+                            mergedDraft.copy(deckName = persistedDeckName)
+                        },
                     dirty = true,
                     loaded = true,
+                    deckDirty = deckDirty,
+                    editRevision = current.editRevision,
                 )
             } else {
                 SettingsDraftState(
-                    SettingsDraft.from(settings, resources),
+                    draft = SettingsDraft.from(settings, resources),
                     dirty = false,
                     loaded = true,
+                    deckDirty = false,
+                    editRevision = current.editRevision,
                 )
             }
         }
@@ -225,9 +257,11 @@ internal class SettingsDraftStore(
     ) {
         mutableState.value =
             SettingsDraftState(
-                SettingsDraft.from(settings, resources),
+                draft = SettingsDraft.from(settings, resources),
                 dirty = false,
                 loaded = true,
+                deckDirty = false,
+                editRevision = mutableState.value.editRevision,
             )
     }
 }
@@ -263,23 +297,28 @@ internal class SettingsViewModel(
         viewModelScope.launch {
             draftStore.state
                 .filter { it.loaded && it.dirty && it.draft.numericValuesValid }
-                .map { it.draft }
+                .distinctUntilChangedBy(SettingsDraftState::editRevision)
                 .collect { persist(it) }
         }
     }
 
     fun updateDraft(value: SettingsDraft) = draftStore.update(value)
 
-    private suspend fun persist(draft: SettingsDraft) {
+    private suspend fun persist(state: SettingsDraftState) {
         // Skip while a scoped reset holds the flag: markClean supersedes any in-flight edit,
         // and this preserves the save-vs-restore mutual exclusion without per-keystroke flicker.
         if (saving.value) return
         error.value = null
         try {
             // Transactional transform: apply draft fields onto the freshest persisted value inside
-            // the write lock, so out-of-band writes (noteType/fieldMap) are never clobbered and the
-            // validator still rejects values the numeric gate cannot catch.
-            repository.update { current -> draft.toSettings(current) }
+            // the write lock. Deck is applied only when explicitly edited in Settings; wizard deck
+            // writes and out-of-band noteType/fieldMap writes therefore cannot be copied back from a
+            // stale dirty draft.
+            repository.update { current ->
+                state.draft.toSettings(current).let { candidate ->
+                    if (state.deckDirty) candidate else candidate.copy(deckName = current.deckName)
+                }
+            }
         } catch (failure: CancellationException) {
             throw failure
         } catch (failure: InvalidAppSettingException) {

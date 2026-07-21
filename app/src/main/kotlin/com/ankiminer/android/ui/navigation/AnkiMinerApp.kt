@@ -89,6 +89,8 @@ internal fun AnkiMinerApp(
     val currentEntry by navController.currentBackStackEntryAsState()
     val currentRoute = currentEntry?.destination?.route
     val setup by setupViewModel.uiState.collectAsStateWithLifecycle()
+    val wizardDismissedForSession by
+        setupViewModel.wizardDismissedForSession.collectAsStateWithLifecycle()
     val video by videoViewModel.uiState.collectAsStateWithLifecycle()
     val reading by readingViewModel.uiState.collectAsStateWithLifecycle()
     val buildIdentity = remember { currentTesterBuildIdentity() }
@@ -121,7 +123,14 @@ internal fun AnkiMinerApp(
         onNotificationRunHandled()
     }
 
-    if (wizardVisible(setup.wizardSeen, wizardRerunRequested)) {
+    if (
+        wizardVisible(
+            wizardSeen = setup.wizardSeen,
+            rerunRequested = wizardRerunRequested,
+            sessionDismissed = wizardDismissedForSession,
+            completion = setup.wizardCompletion,
+        )
+    ) {
         LaunchedEffect(setupViewModel) { setupViewModel.refresh() }
         OnboardingWizard(
             state = setup,
@@ -132,7 +141,7 @@ internal fun AnkiMinerApp(
             onOpenAnkiDroid = onOpenAnkiDroid,
             onFinished = {
                 wizardRerunRequested = false
-                setupViewModel.markWizardSeen()
+                if (setup.wizardSeen != true) setupViewModel.markWizardSeen()
             },
         )
         return
@@ -143,6 +152,11 @@ internal fun AnkiMinerApp(
     MessageSnackbarEffect(settingsError, snackbarHostState, settingsViewModel::dismissError)
     MessageSnackbarEffect(setup.failure?.message, snackbarHostState, setupViewModel::dismissFailure)
     MessageSnackbarEffect(setup.ankiFailure?.message, snackbarHostState, setupViewModel::dismissAnkiFailure)
+    MessageSnackbarEffect(
+        setup.ankiRecoveryFailure?.message,
+        snackbarHostState,
+        setupViewModel::dismissAnkiFailure,
+    )
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },

@@ -1,6 +1,8 @@
 package com.ankiminer.android.diagnostics
 
 import com.ankiminer.android.anki.provider.AnkiProviderReadiness
+import com.ankiminer.android.anki.provider.AnkiRecoveryReadiness
+import com.ankiminer.android.data.anki.AnkiRecoveryInventoryStatus
 import com.ankiminer.android.data.anki.AnkiSetupFailure
 import com.ankiminer.android.data.resources.ResourceFailure
 import com.ankiminer.android.data.resources.ResourceOperationPhase
@@ -43,6 +45,8 @@ class TesterDiagnosticsTest {
                     SetupUiState(
                         python = PythonRuntimeReadiness.Ready("/private/python/home"),
                         anki = AnkiProviderReadiness.PermissionDenied,
+                        ankiRecovery = AnkiRecoveryReadiness.Blocked,
+                        recoveryInventoryStatus = AnkiRecoveryInventoryStatus.AVAILABLE,
                         operation =
                             ResourceOperationProgress(
                                 operationId = "secret-operation-id",
@@ -59,6 +63,11 @@ class TesterDiagnosticsTest {
                             AnkiSetupFailure(
                                 code = "provider_timeout",
                                 message = "Provider failed for secret collection",
+                            ),
+                        ankiRecoveryFailure =
+                            AnkiSetupFailure(
+                                code = "journal_read_failed",
+                                message = "Recovery failed for secret journal",
                             ),
                     ),
                 video =
@@ -104,7 +113,11 @@ class TesterDiagnosticsTest {
         assertTrue(diagnostics.report.contains("python.readiness=ready"))
         assertTrue(diagnostics.report.contains("resources.operation=downloading"))
         assertTrue(diagnostics.report.contains("resources.failure=download_retry_exhausted"))
+        assertTrue(diagnostics.report.contains("anki.provider=permission_denied"))
+        assertTrue(diagnostics.report.contains("anki.recovery_startup=blocked"))
+        assertTrue(diagnostics.report.contains("anki.recovery_inventory=available"))
         assertTrue(diagnostics.report.contains("anki.failure=provider_timeout"))
+        assertTrue(diagnostics.report.contains("anki.recovery_failure=journal_read_failed"))
         assertTrue(diagnostics.report.contains("video.run=failed"))
         assertTrue(diagnostics.report.contains("video.pending=start"))
         assertTrue(diagnostics.report.contains("reading.run=starting"))
