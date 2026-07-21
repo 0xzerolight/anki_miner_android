@@ -199,6 +199,7 @@ internal class PinnedResourceDownloader(
                 "download_retry_exhausted",
                 "Resource download failed after $MAX_ATTEMPTS bounded attempts",
                 lastFailure,
+                formatArguments = listOf(MAX_ATTEMPTS),
             )
         } catch (failure: Exception) {
             if (!shouldPreservePartial(failure)) {
@@ -250,7 +251,11 @@ internal class PinnedResourceDownloader(
                 validateContentRange(connection.getHeaderField("Content-Range"), offset, archive.sizeBytes)
             } else if (status != HttpURLConnection.HTTP_OK) {
                 val code = if (status in RETRYABLE_HTTP) "download_http_retryable" else "download_http_rejected"
-                throw ResourceDownloadException(code, "Resource host returned HTTP $status")
+                throw ResourceDownloadException(
+                    code,
+                    "Resource host returned HTTP $status",
+                    formatArguments = listOf(status),
+                )
             }
             val contentLength = connection.contentLengthLong
             val expectedRemaining = archive.sizeBytes - offset

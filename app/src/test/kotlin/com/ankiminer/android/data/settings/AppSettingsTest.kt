@@ -136,6 +136,8 @@ class AppSettingsTest {
         assertTrue(error.message.orEmpty().contains("Sentence"))
         assertTrue(error.message.orEmpty().contains("word"))
         assertTrue(error.message.orEmpty().contains("sentence"))
+        assertEquals(InvalidAppSettingCode.FIELD_MAP_CONFLICT, error.code)
+        assertEquals(listOf("Sentence", "word, sentence"), error.arguments)
         assertEquals(
             AppSettings(fieldMap = mapOf("word" to "", "sentence" to "")),
             AppSettingsValidator.validate(

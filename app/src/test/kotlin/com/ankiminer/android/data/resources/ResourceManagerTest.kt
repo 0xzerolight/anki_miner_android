@@ -4,6 +4,7 @@ import com.ankiminer.android.engine.EngineCallbacks
 import com.ankiminer.android.engine.PyBridge
 import com.ankiminer.android.media.SafBroker
 import com.ankiminer.android.media.SafDocument
+import com.ankiminer.android.localization.testStringResourceResolver
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.OutputStream
@@ -172,6 +173,7 @@ class ResourceManagerTest {
                     ),
                 safStager = stager,
                 documentWriter = writer,
+                strings = testStringResourceResolver,
             )
     }
 

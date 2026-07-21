@@ -61,6 +61,7 @@ class MainActivity : ComponentActivity() {
             admission = app.miningAdmissionState,
             runtimeWorkState = app.runtimeWorkState,
             refreshExternalReadiness = app::refreshExternalReadiness,
+            strings = app.stringResourceResolver,
         )
     }
     private val settingsViewModelFactory by lazy {

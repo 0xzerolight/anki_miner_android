@@ -130,7 +130,34 @@ data class AppSettings(
     }
 }
 
-class InvalidAppSettingException(message: String) : IllegalArgumentException(message)
+internal enum class InvalidAppSettingCode {
+    NUMERIC_INCOMPLETE,
+    EXCLUDED_DECKS_INVALID,
+    CANONICAL_NAME_INVALID,
+    INVALID_UNICODE,
+    NON_FINITE,
+    NEGATIVE,
+    NOT_POSITIVE,
+    PARALLEL_WORKERS_RANGE,
+    NETWORK_AUDIO_UNSUPPORTED,
+    WORDSETS_INVALID,
+    FIELD_MAP_UNKNOWN_KEY,
+    FIELD_MAP_CONFLICT,
+    RESOURCE_IDS_INVALID,
+    UNKNOWN,
+}
+
+internal class InvalidAppSettingException(
+    internal val code: InvalidAppSettingCode,
+    internal val arguments: List<Any>,
+    message: String,
+) : IllegalArgumentException(message) {
+    constructor(message: String) : this(
+        code = InvalidAppSettingCode.UNKNOWN,
+        arguments = listOf(message),
+        message = message,
+    )
+}
 
 /** Parsing rules for editable settings fields, kept separate from persisted-value validation. */
 internal object AppSettingsDraftParser {
@@ -144,7 +171,11 @@ internal object AppSettingsDraftParser {
             null
         } else {
             value.toDoubleOrNull()?.takeIf { it.isFinite() }
-                ?: throw InvalidAppSettingException("Complete or clear every numeric value")
+                ?: throw InvalidAppSettingException(
+                    code = InvalidAppSettingCode.NUMERIC_INCOMPLETE,
+                    arguments = emptyList(),
+                    message = "Complete or clear every numeric value",
+                )
         }
 
     fun optionalInt(value: String): Int? =
@@ -152,7 +183,11 @@ internal object AppSettingsDraftParser {
             null
         } else {
             value.toIntOrNull()
-                ?: throw InvalidAppSettingException("Complete or clear every numeric value")
+                ?: throw InvalidAppSettingException(
+                    code = InvalidAppSettingCode.NUMERIC_INCOMPLETE,
+                    arguments = emptyList(),
+                    message = "Complete or clear every numeric value",
+                )
         }
 }
 
@@ -171,7 +206,10 @@ object AppSettingsValidator {
                     it.excludedDecks.sumOf { deck -> deck.toByteArray(Charsets.UTF_8).size.toLong() } >
                     AnkiLimitsV1.Names.ExcludedDecks.MAX_TOTAL_UTF8_BYTES.toLong()
             ) {
-                invalid("Excluded Anki decks are invalid")
+                invalid(
+                    InvalidAppSettingCode.EXCLUDED_DECKS_INVALID,
+                    "Excluded Anki decks are invalid",
+                )
             }
             it.excludedDecks.forEach { deck -> canonicalName("Excluded deck name", deck) }
             it.noteType?.let { value -> canonicalName("Note type", value) }
@@ -186,20 +224,31 @@ object AppSettingsValidator {
             positive("Reading minimum occurrence", it.readingMinimumOccurrence)
             nonNegative("Maximum frequency rank", it.maxFrequencyRank)
             it.maxParallelWorkers?.let { workers ->
-                if (workers !in 1..32) invalid("Parallel workers must be between 1 and 32")
+                if (workers !in 1..32) {
+                    invalid(
+                        InvalidAppSettingCode.PARALLEL_WORKERS_RANGE,
+                        "Parallel workers must be between 1 and 32",
+                    )
+                }
             }
             resourceChain("Dictionaries", it.dictionarySources)
             resourceChain("Frequency sources", it.frequencySources)
             resourceChain("Audio packs", it.audioPacks)
             if (it.audioPacks.any { selection -> selection.resourceId == "jpod101" }) {
-                invalid("Network audio sources are not supported on Android")
+                invalid(
+                    InvalidAppSettingCode.NETWORK_AUDIO_UNSUPPORTED,
+                    "Network audio sources are not supported on Android",
+                )
             }
             if (
                 it.enabledWordsets.size > MAX_WORDSET_SELECTIONS ||
                     it.enabledWordsets.distinct().size != it.enabledWordsets.size ||
                     it.enabledWordsets.any { id -> !RESOURCE_ID.matches(id) }
             ) {
-                invalid("Selected bundled wordsets are invalid")
+                invalid(
+                    InvalidAppSettingCode.WORDSETS_INVALID,
+                    "Selected bundled wordsets are invalid",
+                )
             }
         }
 
@@ -210,14 +259,22 @@ object AppSettingsValidator {
                 !UnicodeContractV151.isNfc(value) ||
                 UnicodeContractV151.hasLeadingOrTrailingPythonWhitespace(value)
         ) {
-            invalid("$label must be non-empty, NFC text without surrounding whitespace")
+            invalid(
+                InvalidAppSettingCode.CANONICAL_NAME_INVALID,
+                "$label must be non-empty, NFC text without surrounding whitespace",
+                label,
+            )
         }
         return value
     }
 
     private fun validScalarText(label: String, value: String) {
         if (UnicodeContractV151.scalarCount(value) == null || containsCategoryC(value)) {
-            invalid("$label contains unsupported control or malformed Unicode characters")
+            invalid(
+                InvalidAppSettingCode.INVALID_UNICODE,
+                "$label contains unsupported control or malformed Unicode characters",
+                label,
+            )
         }
     }
 
@@ -237,33 +294,47 @@ object AppSettingsValidator {
     }
 
     private fun finite(label: String, value: Double?) {
-        if (value != null && !value.isFinite()) invalid("$label must be finite")
+        if (value != null && !value.isFinite()) {
+            invalid(InvalidAppSettingCode.NON_FINITE, "$label must be finite", label)
+        }
     }
 
     private fun nonNegative(label: String, value: Double?) {
         finite(label, value)
-        if (value != null && value < 0.0) invalid("$label must not be negative")
+        if (value != null && value < 0.0) {
+            invalid(InvalidAppSettingCode.NEGATIVE, "$label must not be negative", label)
+        }
     }
 
     private fun nonNegative(label: String, value: Int?) {
-        if (value != null && value < 0) invalid("$label must not be negative")
+        if (value != null && value < 0) {
+            invalid(InvalidAppSettingCode.NEGATIVE, "$label must not be negative", label)
+        }
     }
 
     private fun positive(label: String, value: Int?) {
-        if (value != null && value <= 0) invalid("$label must be positive")
+        if (value != null && value <= 0) {
+            invalid(InvalidAppSettingCode.NOT_POSITIVE, "$label must be positive", label)
+        }
     }
 
     private fun fieldMap(values: Map<String, String>) {
         values.forEach { (key, value) ->
             if (key !in AnkiFieldKeys.ALL) {
-                invalid("Field map contains an unknown key")
+                invalid(
+                    InvalidAppSettingCode.FIELD_MAP_UNKNOWN_KEY,
+                    "Field map contains an unknown key",
+                )
             }
             if (value.isNotEmpty()) canonicalName("Field name", value)
         }
         AnkiFieldMapPolicy.firstConflict(values)?.let { conflict ->
             invalid(
+                InvalidAppSettingCode.FIELD_MAP_CONFLICT,
                 "Anki field '${conflict.destination}' is mapped from multiple logical fields: " +
                     conflict.logicalKeys.joinToString(),
+                conflict.destination,
+                conflict.logicalKeys.joinToString(),
             )
         }
     }
@@ -277,11 +348,19 @@ object AppSettingsValidator {
                 values.map(ResourceChainSelection::resourceId).distinct().size != values.size ||
                 values.any { !RESOURCE_ID.matches(it.resourceId) }
         ) {
-            invalid("$label contain invalid or duplicate resource IDs")
+            invalid(
+                InvalidAppSettingCode.RESOURCE_IDS_INVALID,
+                "$label contain invalid or duplicate resource IDs",
+                label,
+            )
         }
     }
 
-    private fun invalid(message: String): Nothing = throw InvalidAppSettingException(message)
+    private fun invalid(
+        code: InvalidAppSettingCode,
+        message: String,
+        vararg arguments: Any,
+    ): Nothing = throw InvalidAppSettingException(code, arguments.toList(), message)
 
     private val RESOURCE_ID = Regex("(?!.*(?:\\.\\.|--))[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?")
     private const val MAX_CHAIN_ENTRIES = 128

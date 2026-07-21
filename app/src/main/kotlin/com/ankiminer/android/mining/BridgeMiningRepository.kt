@@ -1,5 +1,6 @@
 package com.ankiminer.android.mining
 
+import com.ankiminer.android.R
 import com.ankiminer.android.anki.protocol.ReleaseState
 import com.ankiminer.android.data.RuntimeWorkCoordinator
 import com.ankiminer.android.engine.BridgeJsonCodec
@@ -12,6 +13,7 @@ import com.ankiminer.android.engine.PresenterMessageKind
 import com.ankiminer.android.engine.PyBridge
 import com.ankiminer.android.engine.TokenizerConfiguration
 import com.ankiminer.android.engine.VideoMiningWireRequest
+import com.ankiminer.android.localization.StringResourceResolver
 import com.ankiminer.android.service.MiningForegroundCancellationReason
 import com.ankiminer.android.service.MiningForegroundLease
 import com.ankiminer.android.service.MiningForegroundProgress
@@ -54,6 +56,7 @@ internal class BridgeMiningRepository(
     private val foregroundStarter: MiningForegroundStarter,
     private val runExecutor: MiningTaskExecutor,
     private val controlExecutor: MiningTaskExecutor,
+    private val strings: StringResourceResolver,
     private val admissionGate: MiningRunAdmissionGate = AlwaysReadyMiningRunAdmissionGate,
     private val runtimeWorkCoordinator: RuntimeWorkCoordinator = RuntimeWorkCoordinator(),
     private val configSnapshotResolver: MiningConfigSnapshotResolver =
@@ -136,7 +139,7 @@ internal class BridgeMiningRepository(
         val cancellationToken = cancellationTokenFactory.next()
         synchronized(monitor) {
             if (active != null || mutableState.value != MiningRunState.Idle) {
-                throw MiningCommandException("A mining run is already active")
+                throw MiningCommandException(strings.resolve(R.string.mining_failure_run_active))
             }
             restartRequired?.let { fault ->
                 mutableState.value = fault.toFailed(runId = null, result = null)
@@ -157,14 +160,14 @@ internal class BridgeMiningRepository(
             mutableState.value =
                 MiningRunState.Starting(
                     runId = null,
-                    progress = MiningProgress(0, 0, "Preparing selected media"),
+                    progress = MiningProgress(0, 0, strings.resolve(R.string.mining_progress_preparing_media)),
                     cancellationToken = cancellationToken,
                 )
         }
         try {
             runExecutor.execute { runVideo(generation) }
         } catch (_: RuntimeException) {
-            recordFault(generation, "Could not start the mining worker")
+            recordFault(generation, strings.resolve(R.string.mining_failure_worker_start))
             finishRun(generation, terminal = null, inputOwner = null)
         }
     }
@@ -204,7 +207,9 @@ internal class BridgeMiningRepository(
                 run.hasSelectedCandidate = run.hasSelectedCandidate || selection.isNotEmpty()
                 if (request.isFinalPage) {
                     run.phase = Phase.PROMOTING
-                    val progress = run.progress ?: MiningProgress(0, 0, "Starting background mining")
+                    val progress =
+                        run.progress
+                            ?: MiningProgress(0, 0, strings.resolve(R.string.mining_progress_starting_background))
                     mutableState.value = MiningRunState.Running(runId, progress)
                 } else {
                     run.phase = Phase.ADVANCING
@@ -274,7 +279,7 @@ internal class BridgeMiningRepository(
                 try {
                     configSnapshotResolver.resolve(run.input)
                 } catch (failure: Exception) {
-                    recordFault(generation, "Could not capture an immutable settings snapshot")
+                    recordFault(generation, strings.resolve(R.string.mining_failure_settings_snapshot))
                     throw failure
                 }
             if (run.cancellation.isCancelled()) return
@@ -283,12 +288,12 @@ internal class BridgeMiningRepository(
                     admissionGate.evaluate(run.cancellation)
                 } catch (_: RuntimeException) {
                     if (run.cancellation.isCancelled()) return
-                    recordFault(generation, "Could not verify AnkiDroid readiness")
+                    recordFault(generation, strings.resolve(R.string.mining_failure_anki_readiness))
                     return
                 }
             if (run.cancellation.isCancelled()) return
             if (!admission.isReady) {
-                val failure = requireNotNull(admission.stableFailure)
+                val failure = requireNotNull(admission.stableFailure(strings))
                 recordFault(generation, failure.message, failure.retryable)
                 return
             }
@@ -296,13 +301,13 @@ internal class BridgeMiningRepository(
                 try {
                     tokenizerResourceProvider.installedResource()
                 } catch (failure: Exception) {
-                    recordFault(generation, "Could not inspect the installed tokenizer resource")
+                    recordFault(generation, strings.resolve(R.string.mining_failure_tokenizer_inspection))
                     throw failure
                 }
             if (tokenizer == null) {
                 recordFault(
                     generation,
-                    "Install the Japanese tokenizer resource before mining",
+                    strings.resolve(R.string.mining_failure_tokenizer_required),
                     retryable = true,
                 )
                 return
@@ -322,7 +327,7 @@ internal class BridgeMiningRepository(
                 // A cancelled copy must terminate as Cancelled: a recorded fault would win
                 // over the cancelled flag in terminalState.
                 if (!run.cancellation.isCancelled()) {
-                    recordFault(generation, "Could not prepare the selected media")
+                    recordFault(generation, strings.resolve(R.string.mining_failure_media_preparation))
                 }
                 throw failure
             }
@@ -350,7 +355,7 @@ internal class BridgeMiningRepository(
             terminal = reconcileTerminal(generation, rawResult)
         } catch (_: Exception) {
             if (!isCancellationRequested(generation)) {
-                recordFault(generation, "Embedded mining stopped unexpectedly")
+                recordFault(generation, strings.resolve(R.string.mining_failure_embedded_video))
             }
         } finally {
             finishRun(generation, terminal, inputOwner)
@@ -375,14 +380,14 @@ internal class BridgeMiningRepository(
                     null,
                 )
             } catch (failure: Exception) {
-                recordFault(run.generation, "Tokenizer setup failed")
+                recordFault(run.generation, strings.resolve(R.string.mining_failure_tokenizer_setup))
                 throw failure
             }
         val decoded =
             try {
                 BridgeJsonCodec.decode(raw)
             } catch (failure: RuntimeException) {
-                recordFault(run.generation, "Tokenizer setup returned an invalid response")
+                recordFault(run.generation, strings.resolve(R.string.mining_failure_tokenizer_response))
                 throw failure
             }
         when (val response = decoded) {
@@ -396,19 +401,19 @@ internal class BridgeMiningRepository(
                     identity.fileCount <= 0 ||
                     identity.totalBytes <= 0
                 ) {
-                    recordFault(run.generation, "Tokenizer identity did not match its installed resource")
+                    recordFault(run.generation, strings.resolve(R.string.mining_failure_tokenizer_identity))
                     throw MiningCommandException("Tokenizer identity did not match its installed resource")
                 }
             }
             is BridgeMessage.Error -> {
                 if (response.code == "tokenizer_restart_required") {
-                    setRestartRequired("Restart the app before retrying tokenizer setup")
+                    setRestartRequired(strings.resolve(R.string.mining_failure_tokenizer_restart))
                 }
-                recordFault(run.generation, "Installed tokenizer verification failed")
+                recordFault(run.generation, strings.resolve(R.string.mining_failure_tokenizer_verification))
                 throw MiningCommandException("Tokenizer setup was rejected")
             }
             else -> {
-                recordFault(run.generation, "Tokenizer setup returned an invalid response")
+                recordFault(run.generation, strings.resolve(R.string.mining_failure_tokenizer_response))
                 throw MiningCommandException("Tokenizer setup returned an invalid response")
             }
         }
@@ -423,24 +428,24 @@ internal class BridgeMiningRepository(
             try {
                 BridgeJsonCodec.decode(rawResult, expectedRunId = runId)
             } catch (_: RuntimeException) {
-                recordFault(generation, "Python returned an invalid terminal response")
+                recordFault(generation, strings.resolve(R.string.mining_failure_terminal_response))
                 return null
             }
         val terminal =
             when (returned) {
                 is BridgeMessage.Terminal -> returned
                 is BridgeMessage.Error -> {
-                    recordFault(generation, "Python rejected the mining request")
+                    recordFault(generation, strings.resolve(R.string.mining_failure_video_request_rejected))
                     return null
                 }
                 else -> {
-                    recordFault(generation, "Python returned a non-terminal mining response")
+                    recordFault(generation, strings.resolve(R.string.mining_failure_non_terminal_response))
                     return null
                 }
             }
         val callback = synchronized(monitor) { activeFor(generation)?.terminalCallback }
         if (callback != null && callback.rawEnvelope != terminal.rawEnvelope) {
-            recordFault(generation, "Python terminal callback and return value disagreed")
+            recordFault(generation, strings.resolve(R.string.mining_failure_terminal_disagreement))
             return terminal
         }
         return terminal
@@ -471,12 +476,12 @@ internal class BridgeMiningRepository(
             try {
                 inputOwner?.close()
             } catch (_: Exception) {
-                recordFault(generation, "Selected-media cleanup failed")
+                recordFault(generation, strings.resolve(R.string.mining_failure_selected_media_cleanup))
             }
             try {
                 lease?.close()
             } catch (_: RuntimeException) {
-                recordFault(generation, "Background mining service cleanup failed")
+                recordFault(generation, strings.resolve(R.string.mining_failure_background_cleanup))
             }
 
             val detachedInput: VideoMiningInput?
@@ -521,13 +526,13 @@ internal class BridgeMiningRepository(
             try {
                 anki.releaseRunStateFallback(runId)
             } catch (_: RuntimeException) {
-                setRestartRequired("Restart the app before starting another mining run")
-                recordFault(generation, "Anki cleanup did not complete")
+                setRestartRequired(strings.resolve(R.string.mining_failure_restart_required))
+                recordFault(generation, strings.resolve(R.string.mining_failure_anki_cleanup))
                 return
             }
         if (state != ReleaseState.RELEASED && state != ReleaseState.ABSENT) {
-            setRestartRequired("Restart the app before starting another mining run")
-            recordFault(generation, "Anki cleanup remained incomplete")
+            setRestartRequired(strings.resolve(R.string.mining_failure_restart_required))
+            recordFault(generation, strings.resolve(R.string.mining_failure_anki_cleanup_incomplete))
         }
     }
 
@@ -536,7 +541,7 @@ internal class BridgeMiningRepository(
             sourceGrantReleaser.release(uri)
             null
         } catch (_: Exception) {
-            ProtocolFault("Selected-document permission cleanup failed")
+            ProtocolFault(strings.resolve(R.string.mining_failure_document_permission_cleanup))
         }
 
     private fun terminalState(
@@ -550,7 +555,7 @@ internal class BridgeMiningRepository(
         if (fault != null) return fault.toFailed(runId, result)
         if (terminal == null && cancelled) return MiningRunState.Cancelled(runId, null)
         if (terminal == null) {
-            return ProtocolFault("Mining ended without a valid result").toFailed(runId, null)
+            return ProtocolFault(strings.resolve(R.string.mining_failure_missing_result)).toFailed(runId, null)
         }
         return when (terminal.outcome) {
             MiningOutcome.SUCCESS -> MiningRunState.Success(terminal.runId, requireNotNull(result))
@@ -563,7 +568,7 @@ internal class BridgeMiningRepository(
                             message =
                                 terminal.error?.message
                                     ?: presenterNotices.firstOrNull()
-                                    ?: "Mining failed",
+                                    ?: strings.resolve(R.string.mining_failure_generic),
                             retryable = terminal.error?.code in RETRYABLE_TERMINAL_ERRORS,
                         ),
                     result = result,
@@ -584,7 +589,7 @@ internal class BridgeMiningRepository(
             try {
                 foregroundStarter.startSession(request.runId, generation, listener)
             } catch (_: RuntimeException) {
-                recordFaultAndCancel(generation, "Could not start background mining")
+                recordFaultAndCancel(generation, strings.resolve(R.string.mining_failure_background_start))
                 return
             }
         val lease =
@@ -592,7 +597,7 @@ internal class BridgeMiningRepository(
                 future.get(foregroundStartTimeoutSeconds, TimeUnit.SECONDS)
             } catch (_: Exception) {
                 future.cancel(false)
-                recordFaultAndCancel(generation, "Background mining did not start safely")
+                recordFaultAndCancel(generation, strings.resolve(R.string.mining_failure_background_start_unsafe))
                 return
             }
 
@@ -615,7 +620,7 @@ internal class BridgeMiningRepository(
             try {
                 lease.close()
             } catch (_: RuntimeException) {
-                recordFault(generation, "Background mining service cleanup failed")
+                recordFault(generation, strings.resolve(R.string.mining_failure_background_cleanup))
             }
             sendCancellation(generation)
             return
@@ -679,7 +684,7 @@ internal class BridgeMiningRepository(
             try {
                 pyBridge.dispatch(rawResponse, null)
             } catch (_: RuntimeException) {
-                recordFaultAndCancel(generation, "Python rejected the curation response")
+                recordFaultAndCancel(generation, strings.resolve(R.string.mining_failure_curation_rejected))
                 return
             }
         val accepted =
@@ -690,7 +695,7 @@ internal class BridgeMiningRepository(
                     expectedRequestId = request.requestId,
                 )
             } catch (_: RuntimeException) {
-                recordFaultAndCancel(generation, "Python returned an invalid curation acknowledgement")
+                recordFaultAndCancel(generation, strings.resolve(R.string.mining_failure_curation_ack_invalid))
                 return
             }
         val validAcknowledgement =
@@ -701,7 +706,7 @@ internal class BridgeMiningRepository(
                 else -> false
             }
         if (!validAcknowledgement) {
-            recordFaultAndCancel(generation, "Python did not accept the final curation response")
+            recordFaultAndCancel(generation, strings.resolve(R.string.mining_failure_curation_not_accepted))
         }
     }
 
@@ -712,7 +717,7 @@ internal class BridgeMiningRepository(
     ) {
         val page = request.page
             ?: run {
-                recordFaultAndCancel(generation, "An intermediate curation page was missing metadata")
+                recordFaultAndCancel(generation, strings.resolve(R.string.mining_failure_curation_page_metadata))
                 return
             }
         val shouldSubmit =
@@ -730,7 +735,7 @@ internal class BridgeMiningRepository(
                 pyBridge.dispatch(rawResponse, null)
             } catch (_: RuntimeException) {
                 if (isCancellationRequested(generation)) return
-                recordFaultAndCancel(generation, "Python rejected the curation page response")
+                recordFaultAndCancel(generation, strings.resolve(R.string.mining_failure_curation_page_rejected))
                 return
             }
         val accepted =
@@ -742,7 +747,7 @@ internal class BridgeMiningRepository(
                 )
             } catch (_: RuntimeException) {
                 if (isCancellationRequested(generation)) return
-                recordFaultAndCancel(generation, "Python returned an invalid curation page acknowledgement")
+                recordFaultAndCancel(generation, strings.resolve(R.string.mining_failure_curation_page_ack_invalid))
                 return
             }
         if (isCancellationRequested(generation)) return
@@ -751,7 +756,7 @@ internal class BridgeMiningRepository(
             accepted.pageIndex != page.pageIndex ||
             accepted.finalPage
         ) {
-            recordFaultAndCancel(generation, "Python did not accept the curation page response")
+            recordFaultAndCancel(generation, strings.resolve(R.string.mining_failure_curation_page_not_accepted))
         }
     }
 
@@ -765,7 +770,7 @@ internal class BridgeMiningRepository(
                 if (run.runId != identity.runId || run.foregroundClosingExpected) return
                 if (reason != MiningForegroundCancellationReason.USER_REQUESTED) {
                     if (run.stickyFault == null) {
-                        run.stickyFault = ProtocolFault("Background mining stopped unexpectedly")
+                        run.stickyFault = ProtocolFault(strings.resolve(R.string.mining_failure_background_stopped))
                     }
                 }
                 markCancellationLocked(run)
@@ -788,18 +793,18 @@ internal class BridgeMiningRepository(
             try {
                 pyBridge.dispatch(BridgeJsonCodec.encodeJobCancel(runId), null)
             } catch (_: RuntimeException) {
-                recordFault(generation, "Python cancellation dispatch failed")
+                recordFault(generation, strings.resolve(R.string.mining_failure_cancellation_dispatch))
                 return
             }
         val decoded =
             try {
                 BridgeJsonCodec.decode(response, expectedRunId = runId)
             } catch (_: RuntimeException) {
-                recordFault(generation, "Python returned an invalid cancellation acknowledgement")
+                recordFault(generation, strings.resolve(R.string.mining_failure_cancellation_ack_invalid))
                 return
             }
         if (decoded !is BridgeMessage.JobCancelled) {
-            recordFault(generation, "Python did not acknowledge cancellation")
+            recordFault(generation, strings.resolve(R.string.mining_failure_cancellation_not_acknowledged))
         }
     }
 
@@ -848,7 +853,7 @@ internal class BridgeMiningRepository(
             } catch (_: RuntimeException) {
                 false
             }
-        if (!accepted) recordFaultAndCancel(generation, "Background progress session was lost")
+        if (!accepted) recordFaultAndCancel(generation, strings.resolve(R.string.mining_failure_progress_session))
         return accepted
     }
 
@@ -871,7 +876,7 @@ internal class BridgeMiningRepository(
         }
         val admitted = anki.registerRun(request.runId, cancellation)
         if (!admitted) {
-            recordFaultAndCancel(generation, "Anki is not ready for this mining run")
+            recordFaultAndCancel(generation, strings.resolve(R.string.mining_failure_anki_not_ready))
             throw IllegalStateException("Anki run registration was rejected")
         }
         val forwardCancellation = synchronized(monitor) {
@@ -1017,7 +1022,7 @@ internal class BridgeMiningRepository(
         try {
             block()
         } catch (failure: RuntimeException) {
-            recordFaultAndCancel(generation, "Python callback violated the bridge protocol")
+            recordFaultAndCancel(generation, strings.resolve(R.string.mining_failure_python_callback))
             throw IllegalStateException("Invalid Python callback", failure)
         }
     }
@@ -1029,7 +1034,7 @@ internal class BridgeMiningRepository(
             try {
                 registerJob(generation, message)
             } catch (failure: RuntimeException) {
-                recordFaultAndCancel(generation, "Python job registration violated the bridge protocol")
+                recordFaultAndCancel(generation, strings.resolve(R.string.mining_failure_job_registration))
                 throw failure
             }
 
@@ -1125,7 +1130,7 @@ internal class BridgeMiningRepository(
             }
             block()
         } catch (failure: RuntimeException) {
-            recordFaultAndCancel(generation, "Anki callback failed unexpectedly")
+            recordFaultAndCancel(generation, strings.resolve(R.string.mining_failure_anki_callback))
             throw failure
         }
 
@@ -1183,7 +1188,7 @@ internal class BridgeMiningRepository(
         try {
             controlExecutor.execute(task)
         } catch (_: RuntimeException) {
-            recordFault(generation, "Mining control worker is unavailable")
+            recordFault(generation, strings.resolve(R.string.mining_failure_control_worker))
         }
     }
 

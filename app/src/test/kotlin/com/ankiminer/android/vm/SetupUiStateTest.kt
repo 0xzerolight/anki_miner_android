@@ -5,6 +5,7 @@ import com.ankiminer.android.anki.provider.AnkiProviderReadiness
 import com.ankiminer.android.anki.provider.AnkiRecoveryReadiness
 import com.ankiminer.android.anki.provider.AnkiRemediationActionKind
 import com.ankiminer.android.anki.provider.AnkiRemediationInventory
+import com.ankiminer.android.anki.provider.AnkiRemediationSummary
 import com.ankiminer.android.anki.provider.AnkiRemediationType
 import com.ankiminer.android.anki.provider.NoteTypeSetupStatus
 import com.ankiminer.android.data.anki.AnkiSetupOperation
@@ -60,6 +61,7 @@ class SetupUiStateTest {
             AnkiPendingRemediation(
                 id = 1L,
                 type = AnkiRemediationType.MEDIA_COMMIT_UNCERTAIN,
+                summaryReason = AnkiRemediationSummary.MEDIA_COMMIT_UNCERTAIN,
                 title = "Media save needs review",
                 summary = "Review the media write",
                 compactEvidence = null,

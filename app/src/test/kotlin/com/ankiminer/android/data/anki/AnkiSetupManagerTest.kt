@@ -4,10 +4,12 @@ import com.ankiminer.android.anki.provider.AnkiCancellation
 import com.ankiminer.android.anki.provider.AnkiPendingRemediation
 import com.ankiminer.android.anki.provider.AnkiRemediationCommand
 import com.ankiminer.android.anki.provider.AnkiRemediationInventory
+import com.ankiminer.android.anki.provider.AnkiRemediationSummary
 import com.ankiminer.android.anki.provider.AnkiRemediationType
 import com.ankiminer.android.anki.provider.ModelSummary
 import com.ankiminer.android.anki.provider.NoteTypeSetupStatus
 import com.ankiminer.android.data.RuntimeWorkCoordinator
+import com.ankiminer.android.localization.testStringResourceResolver
 import java.util.ArrayDeque
 import java.util.concurrent.Executor
 import org.junit.Assert.assertEquals
@@ -26,6 +28,7 @@ class AnkiSetupManagerTest {
                     AnkiPendingRemediation(
                         id = 5L,
                         type = AnkiRemediationType.MEDIA_COMMIT_UNCERTAIN,
+                        summaryReason = AnkiRemediationSummary.MEDIA_COMMIT_UNCERTAIN,
                         title = "Media save needs review",
                         summary = "Review the media write",
                         compactEvidence = null,
@@ -42,7 +45,8 @@ class AnkiSetupManagerTest {
                 status = NoteTypeSetupStatus.Verified(modelId = 24L),
                 remediations = remediations,
             )
-        val manager = ProcessAnkiSetupManager(backend, Executor(Runnable::run), coordinator)
+        val manager =
+            ProcessAnkiSetupManager(backend, Executor(Runnable::run), coordinator, testStringResourceResolver)
 
         manager.refresh("Lapis", mapOf("word" to "Expression"))
 
@@ -70,6 +74,7 @@ class AnkiSetupManagerTest {
                 backend,
                 Executor(Runnable::run),
                 RuntimeWorkCoordinator(),
+                testStringResourceResolver,
             )
 
         manager.refresh("Lapis", mapOf("word" to "Expression"))
@@ -97,6 +102,7 @@ class AnkiSetupManagerTest {
                 backend,
                 Executor(Runnable::run),
                 RuntimeWorkCoordinator(),
+                testStringResourceResolver,
             )
 
         manager.refresh("Lapis", mapOf("word" to "Expression"))
@@ -119,7 +125,8 @@ class AnkiSetupManagerTest {
         val coordinator = RuntimeWorkCoordinator()
         val mining = requireNotNull(coordinator.tryAcquire(RuntimeWorkCoordinator.Kind.MINING))
         val backend = FakeBackend()
-        val manager = ProcessAnkiSetupManager(backend, Executor(Runnable::run), coordinator)
+        val manager =
+            ProcessAnkiSetupManager(backend, Executor(Runnable::run), coordinator, testStringResourceResolver)
 
         manager.reconcileInterruptedWork()
 
@@ -140,7 +147,7 @@ class AnkiSetupManagerTest {
         val coordinator = RuntimeWorkCoordinator()
         val executor = QueuedExecutor()
         val backend = FakeBackend()
-        val manager = ProcessAnkiSetupManager(backend, executor, coordinator)
+        val manager = ProcessAnkiSetupManager(backend, executor, coordinator, testStringResourceResolver)
 
         manager.reconcileInterruptedWork()
         manager.performRemediation(AnkiRemediationCommand.RetryStagingCleanup(7L))
@@ -160,7 +167,8 @@ class AnkiSetupManagerTest {
     fun `backend failure is UI safe and always releases setup exclusion`() {
         val coordinator = RuntimeWorkCoordinator()
         val backend = FakeBackend(failReconcile = true)
-        val manager = ProcessAnkiSetupManager(backend, Executor(Runnable::run), coordinator)
+        val manager =
+            ProcessAnkiSetupManager(backend, Executor(Runnable::run), coordinator, testStringResourceResolver)
 
         manager.reconcileInterruptedWork()
 
@@ -244,6 +252,7 @@ class AnkiSetupManagerTest {
         AnkiPendingRemediation(
             id = 5L,
             type = AnkiRemediationType.MEDIA_COMMIT_UNCERTAIN,
+            summaryReason = AnkiRemediationSummary.MEDIA_COMMIT_UNCERTAIN,
             title = "Media save needs review",
             summary = "Review the media write",
             compactEvidence = null,

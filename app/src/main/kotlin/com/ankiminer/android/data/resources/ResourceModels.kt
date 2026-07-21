@@ -360,6 +360,7 @@ class ResourceDownloadException(
     val stableCode: String,
     message: String,
     cause: Throwable? = null,
+    val formatArguments: List<Any> = emptyList(),
 ) : IOException(message, cause)
 
 class ResourceStorageException(
