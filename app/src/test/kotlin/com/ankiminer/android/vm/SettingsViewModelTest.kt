@@ -1,5 +1,6 @@
 package com.ankiminer.android.vm
 
+import androidx.lifecycle.viewModelScope
 import com.ankiminer.android.MainDispatcherRule
 import com.ankiminer.android.data.resources.FrequencySourceFormat
 import com.ankiminer.android.data.resources.InstalledDictionary
@@ -12,12 +13,17 @@ import com.ankiminer.android.data.settings.AppSettings
 import com.ankiminer.android.data.settings.AppSettingsRepository
 import com.ankiminer.android.data.settings.AppSettingsValidator
 import com.ankiminer.android.engine.BridgeJsonValue
+import java.io.IOException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -122,18 +128,158 @@ class SettingsViewModelTest {
         }
 
     @Test
-    fun rapidEditsPersistOnlyTheLatest() =
+    fun rapidTextEditsCoalesceIntoOneWrite() =
         runTest(mainDispatcherRule.dispatcher) {
             val repository = FakeAppSettingsRepository(AppSettings())
             val viewModel = SettingsViewModel(repository, FakeResourceManager(resources("first")))
             advanceUntilIdle()
 
             viewModel.updateDraft(viewModel.draftState.value.draft.copy(deckName = "A"))
-            viewModel.updateDraft(viewModel.draftState.value.draft.copy(deckName = "B"))
+            runCurrent()
+            advanceTimeBy(SETTINGS_AUTOSAVE_DEBOUNCE_MILLIS / 2)
+            viewModel.updateDraft(viewModel.draftState.value.draft.copy(deckName = "AB"))
+            runCurrent()
+            advanceTimeBy(SETTINGS_AUTOSAVE_DEBOUNCE_MILLIS / 2)
+            viewModel.updateDraft(viewModel.draftState.value.draft.copy(deckName = "ABC"))
+            runCurrent()
+
+            assertEquals(0, repository.writeCount)
+
+            advanceTimeBy(SETTINGS_AUTOSAVE_DEBOUNCE_MILLIS)
+            runCurrent()
+
+            assertEquals(1, repository.writeCount)
+            assertEquals("ABC", repository.current.deckName)
+        }
+
+    @Test
+    fun togglePersistsWithoutDebounceDelay() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository = FakeAppSettingsRepository(AppSettings())
+            val viewModel = SettingsViewModel(repository, FakeResourceManager(resources("first")))
+            advanceUntilIdle()
+
+            val toggled = !viewModel.draftState.value.draft.jisho
+            viewModel.updateDraft(viewModel.draftState.value.draft.copy(jisho = toggled))
+            runCurrent()
+
+            assertEquals(1, repository.writeCount)
+            assertEquals(toggled, repository.current.jishoEnabled)
+        }
+
+    @Test
+    fun invalidNumericDoesNotBlockImmediateTogglePersistence() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository =
+                FakeAppSettingsRepository(
+                    AppSettings(subtitleOffsetSeconds = 0.25, jishoEnabled = false),
+                )
+            val viewModel = SettingsViewModel(repository, FakeResourceManager(resources("first")))
+            advanceUntilIdle()
+
+            viewModel.updateDraft(viewModel.draftState.value.draft.copy(subtitleOffset = "-"))
+            runCurrent()
+            viewModel.updateDraft(viewModel.draftState.value.draft.copy(jisho = true))
+            runCurrent()
+
+            assertEquals(1, repository.writeCount)
+            assertTrue(repository.current.jishoEnabled)
+            assertEquals(0.25, repository.current.subtitleOffsetSeconds!!, 0.0)
+            assertEquals("-", viewModel.draftState.value.draft.subtitleOffset)
+        }
+
+    @Test
+    fun resourceReorderPersistsWithoutDebounceDelay() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository = FakeAppSettingsRepository(AppSettings())
+            val viewModel =
+                SettingsViewModel(repository, FakeResourceManager(resources("first", "second")))
+            advanceUntilIdle()
+
+            val reversed = viewModel.draftState.value.draft.dictionarySources.reversed()
+            viewModel.updateDraft(viewModel.draftState.value.draft.copy(dictionarySources = reversed))
+            runCurrent()
+
+            assertEquals(1, repository.writeCount)
+            assertEquals(reversed, repository.current.dictionarySources)
+        }
+
+    @Test
+    fun pendingTextEditFlushesOnLifecycleStop() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository = FakeAppSettingsRepository(AppSettings())
+            val viewModel = SettingsViewModel(repository, FakeResourceManager(resources("first")))
+            advanceUntilIdle()
+
+            viewModel.updateDraft(viewModel.draftState.value.draft.copy(deckName = "Before stop"))
+            runCurrent()
+            assertEquals(0, repository.writeCount)
+
+            // SettingsRoute invokes this for ON_STOP and route disposal.
+            viewModel.flushPendingWrites()
+            runCurrent()
+
+            assertEquals(1, repository.writeCount)
+            assertEquals("Before stop", repository.current.deckName)
+
+            advanceTimeBy(SETTINGS_AUTOSAVE_DEBOUNCE_MILLIS)
+            runCurrent()
+            assertEquals(1, repository.writeCount)
+        }
+
+    @Test
+    fun lifecycleFlushSurvivesViewModelScopeCancellation() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val writeStarted = CompletableDeferred<Unit>()
+            val allowWrite = CompletableDeferred<Unit>()
+            val repository =
+                FakeAppSettingsRepository(AppSettings()) { attempt ->
+                    if (attempt == 1) {
+                        writeStarted.complete(Unit)
+                        allowWrite.await()
+                    }
+                }
+            val viewModel = SettingsViewModel(repository, FakeResourceManager(resources("first")))
+            advanceUntilIdle()
+
+            viewModel.updateDraft(viewModel.draftState.value.draft.copy(deckName = "Before stop"))
+            runCurrent()
+            viewModel.flushPendingWrites()
+            runCurrent()
+            assertTrue(writeStarted.isCompleted)
+
+            viewModel.viewModelScope.cancel()
+            allowWrite.complete(Unit)
             advanceUntilIdle()
 
             assertEquals(1, repository.writeCount)
-            assertEquals("B", repository.current.deckName)
+            assertEquals("Before stop", repository.current.deckName)
+        }
+
+    @Test
+    fun failedWriteIsRetriedByLifecycleFlush() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository =
+                FakeAppSettingsRepository(
+                    initial = AppSettings(jishoEnabled = false),
+                    failuresRemaining = 1,
+                )
+            val viewModel = SettingsViewModel(repository, FakeResourceManager(resources("first")))
+            advanceUntilIdle()
+
+            viewModel.updateDraft(viewModel.draftState.value.draft.copy(jisho = true))
+            runCurrent()
+
+            assertEquals(1, repository.attemptedWriteCount)
+            assertEquals(0, repository.writeCount)
+            assertFalse(repository.current.jishoEnabled)
+
+            viewModel.flushPendingWrites()
+            advanceUntilIdle()
+
+            assertEquals(2, repository.attemptedWriteCount)
+            assertEquals(1, repository.writeCount)
+            assertTrue(repository.current.jishoEnabled)
         }
 
     @Test
@@ -222,6 +368,66 @@ class SettingsViewModelTest {
         }
 
     @Test
+    fun scopedResetFoldsInPendingTextThenSupersedesItsDebouncedWrite() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository = FakeAppSettingsRepository(AppSettings())
+            val viewModel = SettingsViewModel(repository, FakeResourceManager(resources("first")))
+            advanceUntilIdle()
+
+            viewModel.updateDraft(
+                viewModel.draftState.value.draft.copy(
+                    deckName = "Pending target",
+                    audioPadding = "1.0",
+                ),
+            )
+            runCurrent()
+            assertEquals(0, repository.writeCount)
+
+            viewModel.restoreMiningDefaults()
+            advanceUntilIdle()
+
+            // Target survives this scoped reset; mining value is reset. Stale debounce cannot
+            // replay audioPadding after markClean.
+            assertEquals(1, repository.writeCount)
+            assertEquals("Pending target", repository.current.deckName)
+            assertNull(repository.current.audioPaddingSeconds)
+        }
+
+    @Test
+    fun editDuringInFlightScopedResetPersistsAfterReset() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val writeStarted = CompletableDeferred<Unit>()
+            val allowWrite = CompletableDeferred<Unit>()
+            val repository =
+                FakeAppSettingsRepository(
+                    AppSettings(audioPaddingSeconds = 1.0, jishoEnabled = false),
+                ) { attempt ->
+                    if (attempt == 1) {
+                        writeStarted.complete(Unit)
+                        allowWrite.await()
+                    }
+                }
+            val viewModel = SettingsViewModel(repository, FakeResourceManager(resources("first")))
+            advanceUntilIdle()
+
+            viewModel.restoreMiningDefaults()
+            runCurrent()
+            assertTrue(writeStarted.isCompleted)
+
+            viewModel.updateDraft(viewModel.draftState.value.draft.copy(jisho = true))
+            runCurrent()
+            assertTrue(viewModel.draftState.value.draft.jisho)
+
+            allowWrite.complete(Unit)
+            advanceUntilIdle()
+
+            assertEquals(2, repository.writeCount)
+            assertNull(repository.current.audioPaddingSeconds)
+            assertTrue(repository.current.jishoEnabled)
+            assertTrue(viewModel.draftState.value.draft.jisho)
+        }
+
+    @Test
     fun restoreMiningDefaultsPreservesTargetAndRebuildsDraft() =
         runTest(mainDispatcherRule.dispatcher) {
             val repository =
@@ -264,9 +470,16 @@ class SettingsViewModelTest {
      * validate before committing, so a value that fails [AppSettingsValidator] throws and leaves the
      * store (and [writeCount]) untouched, and the transform reads the freshest persisted value.
      */
-    private class FakeAppSettingsRepository(initial: AppSettings) : AppSettingsRepository {
+    private class FakeAppSettingsRepository(
+        initial: AppSettings,
+        private var failuresRemaining: Int = 0,
+        private val writeGate: suspend (attempt: Int) -> Unit = {},
+    ) : AppSettingsRepository {
         private val flow = MutableStateFlow(AppSettingsValidator.validate(initial))
         override val settings: Flow<AppSettings> = flow.asStateFlow()
+
+        var attemptedWriteCount = 0
+            private set
 
         var writeCount = 0
             private set
@@ -275,15 +488,26 @@ class SettingsViewModelTest {
             get() = flow.value
 
         override suspend fun update(settings: AppSettings) {
+            prepareWrite()
             val validated = AppSettingsValidator.validate(settings)
             flow.value = validated
             writeCount += 1
         }
 
         override suspend fun update(transform: (AppSettings) -> AppSettings) {
+            prepareWrite()
             val validated = AppSettingsValidator.validate(transform(flow.value))
             flow.value = validated
             writeCount += 1
+        }
+
+        private suspend fun prepareWrite() {
+            attemptedWriteCount += 1
+            writeGate(attemptedWriteCount)
+            if (failuresRemaining > 0) {
+                failuresRemaining -= 1
+                throw IOException("transient write failure")
+            }
         }
     }
 

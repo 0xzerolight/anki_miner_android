@@ -33,6 +33,7 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.ankiminer.android.R
 import com.ankiminer.android.data.RuntimeWorkCoordinator
@@ -123,6 +124,10 @@ internal fun SettingsRoute(
     onRunSetupWizard: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
+    LifecycleStartEffect(viewModel) {
+        // Runs for lifecycle stop or route disposal while the activity remains started.
+        onStopOrDispose { viewModel.flushPendingWrites() }
+    }
     LaunchedEffect(setupViewModel) { setupViewModel.refresh() }
     val draftState by viewModel.draftState.collectAsStateWithLifecycle()
     val saving by viewModel.saving.collectAsStateWithLifecycle()
