@@ -114,6 +114,10 @@ _ANDROID_BUNDLED_WORDSETS = frozenset({"surnames", "given-names", "place-names",
 # fallback. ``{term}``/``{reading}`` are substituted per word by the bridge
 # CustomAudioFetcher; the endpoint returns an ``audioSourceList`` document.
 _LOCALAUDIO_URL = "http://localhost:8765/localaudio/get/?term={term}&reading={reading}"
+# AnkiConnect-Android documents local-audio delivery on its loopback server.
+# Remote origins stay fail-closed until a provider origin is separately reviewed
+# and added here; the fetcher still accepts loopback URLs and loopback redirects.
+_LOCALAUDIO_APPROVED_AUDIO_ORIGINS: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True)
