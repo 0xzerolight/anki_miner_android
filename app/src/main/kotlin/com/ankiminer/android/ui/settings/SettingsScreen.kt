@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -21,6 +22,9 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.res.stringResource
@@ -134,7 +138,9 @@ internal fun SettingsRoute(
         saving = saving,
         diagnostics = diagnostics,
         onDraftChange = viewModel::updateDraft,
-        onRestoreDefaults = viewModel::restoreDefaults,
+        onRestoreMiningDefaults = viewModel::restoreMiningDefaults,
+        onResetAnkiTarget = viewModel::resetAnkiTarget,
+        onResetResourceChoices = viewModel::resetResourceChoices,
         onRequestPermissions = onRequestPermissions,
         onOpenAppSettings = onOpenAppSettings,
         onInstallAnkiDroid = onInstallAnkiDroid,
@@ -167,7 +173,9 @@ private fun SettingsScreen(
     saving: Boolean,
     diagnostics: TesterDiagnostics,
     onDraftChange: (SettingsDraft) -> Unit,
-    onRestoreDefaults: () -> Unit,
+    onRestoreMiningDefaults: () -> Unit,
+    onResetAnkiTarget: () -> Unit,
+    onResetResourceChoices: () -> Unit,
     onRequestPermissions: () -> Unit,
     onOpenAppSettings: () -> Unit,
     onInstallAnkiDroid: () -> Unit,
@@ -213,6 +221,36 @@ private fun SettingsScreen(
     val readingTts = draft.readingTts
     val jisho = draft.jisho
     val numericDraftValid = draft.numericValuesValid
+    var resetConfirmation by remember { mutableStateOf(SettingsResetConfirmationState()) }
+
+    resetConfirmation.pendingAction?.let { action ->
+        AlertDialog(
+            onDismissRequest = { resetConfirmation = resetConfirmation.cancel() },
+            title = { Text(stringResource(settingsResetLabel(action))) },
+            text = { Text(stringResource(settingsResetDescription(action))) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val (nextState, confirmedAction) = resetConfirmation.confirm()
+                        resetConfirmation = nextState
+                        dispatchConfirmedSettingsReset(
+                            action = confirmedAction,
+                            onRestoreMiningDefaults = onRestoreMiningDefaults,
+                            onResetAnkiTarget = onResetAnkiTarget,
+                            onResetResourceChoices = onResetResourceChoices,
+                        )
+                    },
+                ) {
+                    Text(stringResource(settingsResetLabel(action)))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { resetConfirmation = resetConfirmation.cancel() }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            },
+        )
+    }
 
     CatalogReplaceDialog(
         state = setup,
@@ -560,8 +598,16 @@ private fun SettingsScreen(
             )
         }
 
-        OutlinedButton(onClick = onRestoreDefaults, enabled = !saving, modifier = Modifier.fillMaxWidth()) {
-            Text(stringResource(R.string.settings_restore_defaults))
+        SettingsSection(stringResource(R.string.settings_reset_section)) {
+            SettingsResetAction.entries.forEach { action ->
+                OutlinedButton(
+                    onClick = { resetConfirmation = resetConfirmation.request(action) },
+                    enabled = !saving,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(stringResource(settingsResetLabel(action)))
+                }
+            }
         }
         SettingsSection(stringResource(R.string.settings_tester_diagnostics)) {
             Text(stringResource(R.string.settings_version_identity, diagnostics.versionLabel))
@@ -598,4 +644,22 @@ private fun settingsRuntimeWorkMessage(kind: RuntimeWorkCoordinator.Kind): Int =
         RuntimeWorkCoordinator.Kind.MINING -> R.string.runtime_work_settings_mining_active
         RuntimeWorkCoordinator.Kind.RESOURCE -> R.string.runtime_work_settings_resource_active
         RuntimeWorkCoordinator.Kind.ANKI_SETUP -> R.string.runtime_work_settings_anki_active
+    }
+
+@StringRes
+private fun settingsResetLabel(action: SettingsResetAction): Int =
+    when (action) {
+        SettingsResetAction.RESTORE_MINING_DEFAULTS -> R.string.settings_restore_mining_defaults
+        SettingsResetAction.RESET_ANKI_TARGET -> R.string.settings_reset_anki_target
+        SettingsResetAction.RESET_RESOURCE_CHOICES -> R.string.settings_reset_resource_choices
+    }
+
+@StringRes
+private fun settingsResetDescription(action: SettingsResetAction): Int =
+    when (action) {
+        SettingsResetAction.RESTORE_MINING_DEFAULTS ->
+            R.string.settings_restore_mining_defaults_confirmation
+        SettingsResetAction.RESET_ANKI_TARGET -> R.string.settings_reset_anki_target_confirmation
+        SettingsResetAction.RESET_RESOURCE_CHOICES ->
+            R.string.settings_reset_resource_choices_confirmation
     }

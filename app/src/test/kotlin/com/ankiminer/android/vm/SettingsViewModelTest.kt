@@ -141,45 +141,48 @@ class SettingsViewModelTest {
         }
 
     @Test
-    fun reeditAfterRestoreDefaultsRepersists() =
+    fun reeditAfterRestoreMiningDefaultsRepersists() =
         runTest(mainDispatcherRule.dispatcher) {
             val repository = FakeAppSettingsRepository(AppSettings())
             val viewModel = SettingsViewModel(repository, FakeResourceManager(resources("first")))
             advanceUntilIdle()
 
-            viewModel.updateDraft(viewModel.draftState.value.draft.copy(deckName = "X"))
+            viewModel.updateDraft(viewModel.draftState.value.draft.copy(audioPadding = "1.0"))
             advanceUntilIdle()
-            assertEquals("X", repository.current.deckName)
+            assertEquals(1.0, repository.current.audioPaddingSeconds!!, 0.0)
 
-            viewModel.restoreDefaults()
+            viewModel.restoreMiningDefaults()
             advanceUntilIdle()
-            assertNull(repository.current.deckName)
+            assertNull(repository.current.audioPaddingSeconds)
             assertFalse(viewModel.draftState.value.dirty)
 
             // The identical re-edit must persist again. A distinctUntilChanged keyed on the draft
-            // would suppress it and silently drop the write, leaving the deck null.
-            viewModel.updateDraft(viewModel.draftState.value.draft.copy(deckName = "X"))
+            // would suppress it and silently drop the write, leaving the setting null.
+            viewModel.updateDraft(viewModel.draftState.value.draft.copy(audioPadding = "1.0"))
             advanceUntilIdle()
 
-            assertEquals("X", repository.current.deckName)
+            assertEquals(1.0, repository.current.audioPaddingSeconds!!, 0.0)
             assertTrue(viewModel.draftState.value.dirty)
         }
 
     @Test
-    fun restoreDefaultsPersistsDefaultsAndRebuildsDraft() =
+    fun restoreMiningDefaultsPreservesTargetAndRebuildsDraft() =
         runTest(mainDispatcherRule.dispatcher) {
             val repository =
-                FakeAppSettingsRepository(AppSettings(deckName = "Deck", noteType = "note"))
+                FakeAppSettingsRepository(
+                    AppSettings(deckName = "Deck", noteType = "note", tags = "mined"),
+                )
             val viewModel = SettingsViewModel(repository, FakeResourceManager(resources("first")))
             advanceUntilIdle()
 
-            viewModel.restoreDefaults()
+            viewModel.restoreMiningDefaults()
             advanceUntilIdle()
 
-            assertNull(repository.current.deckName)
-            assertNull(repository.current.noteType)
+            assertEquals("Deck", repository.current.deckName)
+            assertEquals("note", repository.current.noteType)
+            assertNull(repository.current.tags)
             assertFalse(viewModel.draftState.value.dirty)
-            assertEquals("", viewModel.draftState.value.draft.deckName)
+            assertEquals("Deck", viewModel.draftState.value.draft.deckName)
         }
 
     private fun resources(vararg ids: String): ResourceManagerState =

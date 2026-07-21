@@ -70,7 +70,56 @@ data class AppSettings(
     val excludedWordsets: List<String> = emptyList(),
     val readingTtsEnabled: Boolean = false,
     val jishoEnabled: Boolean = false,
-)
+) {
+    /** Restore processing behavior without changing onboarding, appearance, target, or resources. */
+    fun restoreMiningDefaults(): AppSettings =
+        copy(
+            tags = null,
+            audioPaddingSeconds = null,
+            screenshotOffsetSeconds = null,
+            subtitleOffsetSeconds = null,
+            audioFormat = null,
+            audioBitrateKbps = null,
+            useKnownWordsDatabase = null,
+            excludeHiraganaOnly = null,
+            excludeKatakanaOnly = null,
+            boldTargetInSentence = null,
+            deduplicateSentences = null,
+            useIPlusOneFilter = null,
+            useSentenceLengthFilter = null,
+            maxSentenceDurationSeconds = null,
+            maxSentenceCharacters = null,
+            readingMinimumOccurrence = null,
+            maxFrequencyRank = null,
+            pitchCategoryFormat = null,
+            maxParallelWorkers = null,
+            readingTtsEnabled = false,
+        )
+
+    /** Clear only the user-owned Anki destination and its mapping. */
+    fun resetAnkiTarget(): AppSettings =
+        copy(
+            deckName = null,
+            noteType = null,
+            fieldMap = emptyMap(),
+        )
+
+    /** Clear resource priority/enable choices without removing installed resource files. */
+    fun resetResourceChoices(
+        dictionaryIds: List<String> = emptyList(),
+        frequencyIds: List<String> = emptyList(),
+        audioPackIds: List<String> = emptyList(),
+    ): AppSettings =
+        copy(
+            // Empty chains mean "newly discovered and enabled". Explicit disabled entries make a
+            // user-requested reset remain visibly clear for resources already installed.
+            dictionarySources = dictionaryIds.map { ResourceChainSelection(it, enabled = false) },
+            frequencySources = frequencyIds.map { ResourceChainSelection(it, enabled = false) },
+            audioPacks = audioPackIds.map { ResourceChainSelection(it, enabled = false) },
+            excludedWordsets = emptyList(),
+            jishoEnabled = false,
+        )
+}
 
 class InvalidAppSettingException(message: String) : IllegalArgumentException(message)
 
