@@ -31,6 +31,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.ankiminer.android.R
 import com.ankiminer.android.anki.provider.AnkiExternalReviewOutcome
+import com.ankiminer.android.anki.provider.AnkiFieldMapPolicy
 import com.ankiminer.android.anki.provider.AnkiFieldKeys
 import com.ankiminer.android.anki.provider.AnkiProviderReadiness
 import com.ankiminer.android.anki.provider.AnkiRemediationActionKind
@@ -56,7 +57,10 @@ internal fun AnkiTargetCard(
                     label = stringResource(R.string.anki_note_type_picker),
                     options = state.availableNoteTypes.map { it.name to it.name },
                     selected = state.noteType ?: "",
-                    onSelect = onSelectNoteType,
+                    onSelect = { selected ->
+                        if (selected != state.noteType) onSelectNoteType(selected)
+                    },
+                    isOptionEnabled = { it != state.noteType },
                 )
                 if (state.noteType != null) {
                     val fields =
@@ -74,9 +78,22 @@ internal fun AnkiTargetCard(
                         val label = if (key in AnkiFieldKeys.REQUIRED) "$base *" else base
                         NoteTypeDropdown(
                             label = label,
-                            options = listOf("" to noneLabel) + fields.map { it to it },
+                            options =
+                                AnkiFieldMapPolicy
+                                    .destinationOptions(key, fields)
+                                    .map { destination ->
+                                        destination to destination.ifEmpty { noneLabel }
+                                    },
                             selected = state.fieldMap[key] ?: "",
                             onSelect = { field -> onSetFieldMapping(key, field) },
+                            isOptionEnabled = { field ->
+                                AnkiFieldMapPolicy.isDestinationAvailable(
+                                    currentFieldMap = state.fieldMap,
+                                    logicalKey = key,
+                                    destination = field,
+                                    fieldNames = fields,
+                                )
+                            },
                         )
                         if (key == AnkiFieldKeys.WORD) {
                             Text(
@@ -84,6 +101,21 @@ internal fun AnkiTargetCard(
                                 style = MaterialTheme.typography.bodySmall,
                             )
                         }
+                    }
+                    Text(
+                        stringResource(R.string.anki_field_unique_help),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    if (state.fieldMapChanges.isNotEmpty()) {
+                        val details =
+                            state.fieldMapChanges.joinToString { change ->
+                                val replacement = change.newDestination.ifEmpty { noneLabel }
+                                "${change.logicalKey}: ${change.previousDestination} → $replacement"
+                            }
+                        Text(
+                            stringResource(R.string.anki_field_mapping_changes, details),
+                            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                        )
                     }
                 }
                 Text(
@@ -110,6 +142,7 @@ private fun noteTypeStatusText(status: NoteTypeSetupStatus): String =
             NoteTypeSetupStatus.NotSelected -> R.string.anki_note_type_status_not_selected
             NoteTypeSetupStatus.NoteTypeMissing -> R.string.anki_note_type_status_missing
             is NoteTypeSetupStatus.FieldsMissing -> R.string.anki_note_type_status_fields_missing
+            is NoteTypeSetupStatus.FieldMapInvalid -> R.string.anki_note_type_status_field_map_invalid
             NoteTypeSetupStatus.FirstFieldMismatch -> R.string.anki_note_type_status_first_field
             is NoteTypeSetupStatus.ProviderError -> R.string.anki_note_type_status_provider_error
         },
@@ -122,6 +155,7 @@ private fun NoteTypeDropdown(
     options: List<Pair<String, String>>,
     selected: String,
     onSelect: (String) -> Unit,
+    isOptionEnabled: (String) -> Boolean = { true },
 ) {
     var expanded by remember { mutableStateOf(false) }
     val selectedLabel = options.firstOrNull { it.first == selected }?.second ?: selected
@@ -147,6 +181,7 @@ private fun NoteTypeDropdown(
             options.forEach { (value, display) ->
                 DropdownMenuItem(
                     text = { Text(display) },
+                    enabled = isOptionEnabled(value),
                     onClick = {
                         onSelect(value)
                         expanded = false

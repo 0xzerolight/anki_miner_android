@@ -892,6 +892,10 @@ class AndroidAnkiAdapter:
                     "ContentProvider verifyTarget must report deckCreated=false",
                 )
 
+            validate_anki_request_config(
+                self.config,
+                verified_field_names=fields,
+            )
             missing = required - set(fields)
             if missing:
                 from anki_miner.exceptions import SetupError

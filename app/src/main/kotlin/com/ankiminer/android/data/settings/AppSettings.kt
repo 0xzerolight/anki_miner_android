@@ -1,6 +1,7 @@
 package com.ankiminer.android.data.settings
 
 import com.ankiminer.android.anki.generated.UnicodeContractV151
+import com.ankiminer.android.anki.provider.AnkiFieldMapPolicy
 import com.ankiminer.android.anki.provider.AnkiFieldKeys
 import com.ankiminer.android.anki.provider.AnkiMinerNoteModel
 import com.ankiminer.android.engine.BridgeJsonValue
@@ -186,6 +187,12 @@ object AppSettingsValidator {
                 invalid("Field map contains an unknown key")
             }
             if (value.isNotEmpty()) canonicalName("Field name", value)
+        }
+        AnkiFieldMapPolicy.firstConflict(values)?.let { conflict ->
+            invalid(
+                "Anki field '${conflict.destination}' is mapped from multiple logical fields: " +
+                    conflict.logicalKeys.joinToString(),
+            )
         }
     }
 

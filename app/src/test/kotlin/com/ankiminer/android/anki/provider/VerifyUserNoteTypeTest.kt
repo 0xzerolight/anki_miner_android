@@ -83,6 +83,48 @@ class VerifyUserNoteTypeTest {
     }
 
     @Test
+    fun `duplicate destinations report an invalid field map before setup can verify`() {
+        val reads = readService(lapisHandler())
+        val fieldMap =
+            AnkiFieldAutoMap.autoMap(lapisFields).toMutableMap().apply {
+                put("sentence", lapisFields.first())
+            }
+
+        val status = reads.verifyUserNoteType(MODEL_NAME, fieldMap, AnkiCancellation.NONE)
+
+        assertEquals(
+            NoteTypeSetupStatus.FieldMapInvalid(
+                destination = "Expression",
+                logicalKeys = listOf("word", "sentence"),
+            ),
+            status,
+        )
+    }
+
+    @Test
+    fun `quarantined empty field map reports FieldMapInvalid before any note mutation`() {
+        val gateway = FakeAnkiProviderGateway()
+        gateway.queryHandler = lapisHandler()
+        val reads = AnkiProviderReadService(gateway, AnkiRunStateRegistry())
+
+        val status =
+            reads.verifyUserNoteType(
+                MODEL_NAME,
+                emptyMap(),
+                AnkiCancellation.NONE,
+            )
+
+        assertEquals(
+            NoteTypeSetupStatus.FieldMapInvalid(
+                destination = lapisFields.first(),
+                logicalKeys = listOf(AnkiFieldKeys.WORD),
+            ),
+            status,
+        )
+        assertTrue(gateway.noteCommands.isEmpty())
+    }
+
+    @Test
     fun `an unknown note type name reports NoteTypeMissing`() {
         val reads = readService(lapisHandler())
 

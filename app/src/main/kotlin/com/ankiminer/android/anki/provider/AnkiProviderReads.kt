@@ -77,6 +77,12 @@ internal class AnkiProviderReadService(
             } catch (f: AnkiReadFailure) {
                 return NoteTypeSetupStatus.ProviderError(f.retryable, f.stableMessage)
             } ?: return NoteTypeSetupStatus.NoteTypeMissing
+        if (fieldMap[AnkiFieldKeys.WORD].isNullOrEmpty()) {
+            return NoteTypeSetupStatus.FieldMapInvalid(
+                destination = model.fieldNames.firstOrNull().orEmpty(),
+                logicalKeys = listOf(AnkiFieldKeys.WORD),
+            )
+        }
         val missing =
             AnkiFieldKeys.REQUIRED.filter { key ->
                 val v = fieldMap[key].orEmpty()
@@ -91,6 +97,12 @@ internal class AnkiProviderReadService(
         if (allMissing.isNotEmpty()) return NoteTypeSetupStatus.FieldsMissing(allMissing)
         if (fieldMap[AnkiFieldKeys.WORD] != model.fieldNames.firstOrNull()) {
             return NoteTypeSetupStatus.FirstFieldMismatch
+        }
+        AnkiFieldMapPolicy.firstConflict(fieldMap)?.let { conflict ->
+            return NoteTypeSetupStatus.FieldMapInvalid(
+                conflict.destination,
+                conflict.logicalKeys,
+            )
         }
         return NoteTypeSetupStatus.Verified(model.id)
     }

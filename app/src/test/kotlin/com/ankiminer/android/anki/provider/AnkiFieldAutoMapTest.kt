@@ -23,6 +23,19 @@ class AnkiFieldAutoMapTest {
     }
 
     @Test
+    fun `first field is reserved for word before optional fields are auto mapped`() {
+        val map = AnkiFieldAutoMap.autoMap(listOf("Sentence", "Meaning"))
+
+        assertEquals("Sentence", map[AnkiFieldKeys.WORD])
+        assertEquals("", map["sentence"])
+        assertEquals("Meaning", map["definition"])
+        assertEquals(
+            map.values.filter(String::isNotEmpty).size,
+            map.values.filter(String::isNotEmpty).distinct().size,
+        )
+    }
+
+    @Test
     fun `a Lapis-shaped field list maps the required keys and never mis-maps sentence furigana onto sentence`() {
         val lapisFields =
             listOf(

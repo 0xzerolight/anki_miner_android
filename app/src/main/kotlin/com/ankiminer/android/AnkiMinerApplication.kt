@@ -380,6 +380,11 @@ class AnkiMinerApplication : Application() {
                         "The selected note type is missing mapped fields. Fix the field mapping in Settings.",
                         true,
                     )
+                is NoteTypeSetupStatus.FieldMapInvalid ->
+                    AnkiMiningTargetReadiness.Blocked(
+                        "An Anki field is used by multiple field mappings. Fix the field mapping in Settings before mining.",
+                        false,
+                    )
                 NoteTypeSetupStatus.FirstFieldMismatch ->
                     AnkiMiningTargetReadiness.Blocked(
                         "The first field of the note type must hold the word (used for duplicate detection). Fix it in Settings.",

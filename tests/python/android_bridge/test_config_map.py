@@ -264,6 +264,35 @@ def test_blank_field_and_active_marker_mappings_are_preserved(tmp_path: Path) ->
     assert config.card_type_marker_fields["click"] == ""
 
 
+def test_duplicate_anki_destinations_are_rejected_at_snapshot_boundary(tmp_path: Path) -> None:
+    with pytest.raises(BridgeProtocolError) as error:
+        map_config_settings(
+            {"anki_fields": {"word": "Sentence", "sentence": "Sentence"}},
+            _paths(tmp_path),
+        )
+
+    assert error.value.code == "invalid_config_field"
+    assert "Sentence" in str(error.value)
+    assert "word" in str(error.value)
+    assert "sentence" in str(error.value)
+
+
+def test_active_card_marker_cannot_overwrite_word_at_snapshot_boundary(tmp_path: Path) -> None:
+    with pytest.raises(BridgeProtocolError) as error:
+        map_config_settings(
+            {
+                "card_type": "click",
+                "card_type_marker_fields": {"click": "Expression"},
+            },
+            _paths(tmp_path),
+        )
+
+    assert error.value.code == "invalid_config_field"
+    assert "Expression" in str(error.value)
+    assert "word" in str(error.value)
+    assert "card_type_marker_fields.click" in str(error.value)
+
+
 def test_nonintegral_float_is_not_an_integer_config_field(tmp_path: Path) -> None:
     with pytest.raises(BridgeProtocolError) as error:
         map_config_settings({"audio_bitrate": 1.5}, _paths(tmp_path))

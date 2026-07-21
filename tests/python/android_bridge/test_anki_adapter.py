@@ -962,6 +962,48 @@ def _assert_fake_run_state_released(kotlin: FakeKotlinAnki) -> None:
     assert RUN_ID not in kotlin._admitted_runs
 
 
+def test_duplicate_destination_is_rejected_before_note_builder_can_overwrite_word(
+    initialized_bridge_home: Path,
+) -> None:
+    config = _config(initialized_bridge_home)
+    duplicate_fields = {**config.anki_fields, "word": "Sentence", "sentence": "Sentence"}
+    kotlin = FakeKotlinAnki()
+
+    with pytest.raises(BridgeProtocolError) as error:
+        AndroidAnkiAdapter(
+            replace(config, anki_fields=duplicate_fields),
+            AndroidAnkiCallbacks(kotlin, RUN_ID),
+        )
+
+    assert error.value.code == "invalid_config_field"
+    assert "Sentence" in str(error.value)
+    assert kotlin.requests == []
+
+
+def test_active_card_marker_cannot_overwrite_word_at_adapter_boundary(
+    initialized_bridge_home: Path,
+) -> None:
+    config = _config(initialized_bridge_home)
+    marker_fields = {**config.card_type_marker_fields, "click": "Expression"}
+    kotlin = FakeKotlinAnki()
+
+    with pytest.raises(BridgeProtocolError) as error:
+        AndroidAnkiAdapter(
+            replace(
+                config,
+                card_type="click",
+                card_type_marker_fields=marker_fields,
+            ),
+            AndroidAnkiCallbacks(kotlin, RUN_ID),
+        )
+
+    assert error.value.code == "invalid_config_field"
+    assert "Expression" in str(error.value)
+    assert "word" in str(error.value)
+    assert "card_type_marker_fields.click" in str(error.value)
+    assert kotlin.requests == []
+
+
 def _card(surface: str, *, definition: str = "definition", media: Any = None) -> Any:
     from anki_miner.models import CardPayload, MediaData, TokenizedWord
 
@@ -1217,11 +1259,9 @@ def test_verify_target_defensively_checks_returned_field_ordering_set(
         _adapter(config, kotlin, target_verified=False).verify_card_target()
 
 
-def test_blank_required_and_active_marker_mappings_match_desktop_builder(
+def test_blank_word_is_rejected_after_verify_before_any_card_creation(
     initialized_bridge_home: Path,
 ) -> None:
-    from anki_miner.services.anki_note_builder import build_note
-
     base = _config(initialized_bridge_home)
     fields = {**base.anki_fields, "word": ""}
     markers = {**base.card_type_marker_fields, "click": ""}
@@ -1231,7 +1271,6 @@ def test_blank_required_and_active_marker_mappings_match_desktop_builder(
         card_type="click",
         card_type_marker_fields=markers,
     )
-    card = _card("猫")
     kotlin = FakeKotlinAnki()
     required_fields = {value for value in config.anki_fields.values() if value}
     kotlin.verify_fields = [
@@ -1240,22 +1279,18 @@ def test_blank_required_and_active_marker_mappings_match_desktop_builder(
     ]
     adapter = _adapter(config, kotlin, target_verified=False)
 
-    adapter.verify_card_target()
-    assert adapter.create_cards_batch([card]) == 1
+    with pytest.raises(BridgeProtocolError) as error:
+        adapter.verify_card_target()
 
-    verify = kotlin.requests_for("ankiVerifyTarget")[0]["payload"]
-    assert "Expression" not in verify["requiredFields"]
-    assert "IsClickCard" not in verify["requiredFields"]
-    created = kotlin.requests_for("ankiCreateNotes")[0]["payload"]["notes"][0]
-    desktop_built = build_note(card, config, set()).note
-    assert created["fields"] == desktop_built["fields"]
-    assert "Expression" not in created["fields"]
-    assert "IsClickCard" not in created["fields"]
-    duplicate_scope = kotlin.requests_for("ankiScanFirstFields")[0]["payload"]["scope"]
-    assert duplicate_scope["candidates"] == [{"key": "猫だ", "firstField": "猫だ"}]
+    assert error.value.code == "invalid_config_field"
+    assert "word" in str(error.value)
+    assert adapter._verified_field_names is None
+    assert len(kotlin.requests_for("ankiVerifyTarget")) == 1
+    assert not kotlin.requests_for("ankiScanFirstFields")
+    assert not kotlin.requests_for("ankiCreateNotes")
 
 
-def test_all_blank_mappings_are_valid_for_target_preflight(
+def test_all_blank_mappings_are_rejected_for_target_preflight(
     initialized_bridge_home: Path,
 ) -> None:
     base = _config(initialized_bridge_home)
@@ -1266,10 +1301,15 @@ def test_all_blank_mappings_are_valid_for_target_preflight(
         card_type_marker_fields=dict.fromkeys(base.card_type_marker_fields, ""),
     )
     kotlin = FakeKotlinAnki()
+    adapter = _adapter(config, kotlin, target_verified=False)
 
-    _adapter(config, kotlin, target_verified=False).verify_card_target()
+    with pytest.raises(BridgeProtocolError) as error:
+        adapter.verify_card_target()
 
+    assert error.value.code == "invalid_config_field"
+    assert adapter._verified_field_names is None
     assert kotlin.requests_for("ankiVerifyTarget")[0]["payload"]["requiredFields"] == []
+    assert not kotlin.requests_for("ankiCreateNotes")
 
 
 def test_cancelled_target_preflight_stops_before_kotlin_callback(
@@ -2531,33 +2571,34 @@ def test_create_notes_batches_at_100_and_reports_cumulative_progress(
     ]
 
 
-def test_duplicate_identity_uses_verified_model_first_field(
+def test_non_first_word_mapping_is_rejected_after_verify_before_any_card_creation(
     initialized_bridge_home: Path,
 ) -> None:
-    config = _config(initialized_bridge_home)
-    required = {value for value in config.anki_fields.values() if value}
-    kotlin = FakeKotlinAnki()
-    kotlin.verify_fields = ["Sentence", *sorted(required - {"Sentence"})]
-    adapter = _adapter(config, kotlin)
-    assert adapter.get_existing_vocabulary() == set()
-
-    assert adapter.create_cards_batch([_card("猫")]) == 1
-
-    scan = next(
-        request["payload"]["scope"]
-        for request in kotlin.requests_for("ankiScanFirstFields")
-        if request["payload"]["scope"]["kind"] == "duplicates"
+    base = _config(initialized_bridge_home)
+    config = replace(
+        base,
+        anki_fields={
+            **base.anki_fields,
+            "word": "Sentence",
+            "sentence": "Expression",
+        },
     )
-    create = kotlin.requests_for("ankiCreateNotes")[0]["payload"]
-    assert scan["firstFieldName"] == "Sentence"
-    assert scan["candidates"] == [{"key": "猫だ", "firstField": "猫だ"}]
-    assert create["firstFieldName"] == "Sentence"
-    assert create["notes"][0]["duplicateCandidate"] == {
-        "key": "猫だ",
-        "firstField": "猫だ",
-        "occurrence": 0,
-    }
-    assert adapter.get_existing_vocabulary() == {"猫だ"}
+    kotlin = FakeKotlinAnki()
+    required = {value for value in config.anki_fields.values() if value}
+    kotlin.verify_fields = ["Expression", *sorted(required - {"Expression"})]
+    adapter = _adapter(config, kotlin, target_verified=False)
+
+    with pytest.raises(BridgeProtocolError) as error:
+        adapter.verify_card_target()
+
+    assert error.value.code == "invalid_config_field"
+    assert "word" in str(error.value)
+    assert "Sentence" in str(error.value)
+    assert "Expression" in str(error.value)
+    assert adapter._verified_field_names is None
+    assert len(kotlin.requests_for("ankiVerifyTarget")) == 1
+    assert not kotlin.requests_for("ankiScanFirstFields")
+    assert not kotlin.requests_for("ankiCreateNotes")
 
 
 def test_missing_verified_model_first_field_fails_before_duplicate_probe(

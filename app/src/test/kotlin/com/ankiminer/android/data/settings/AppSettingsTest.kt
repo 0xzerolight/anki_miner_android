@@ -113,6 +113,29 @@ class AppSettingsTest {
     }
 
     @Test
+    fun validationRejectsDuplicateNonEmptyFieldDestinations() {
+        val error =
+            assertThrows(InvalidAppSettingException::class.java) {
+                AppSettingsValidator.validate(
+                    AppSettings(
+                        noteType = "Lapis",
+                        fieldMap = mapOf("word" to "Sentence", "sentence" to "Sentence"),
+                    ),
+                )
+            }
+
+        assertTrue(error.message.orEmpty().contains("Sentence"))
+        assertTrue(error.message.orEmpty().contains("word"))
+        assertTrue(error.message.orEmpty().contains("sentence"))
+        assertEquals(
+            AppSettings(fieldMap = mapOf("word" to "", "sentence" to "")),
+            AppSettingsValidator.validate(
+                AppSettings(fieldMap = mapOf("word" to "", "sentence" to "")),
+            ),
+        )
+    }
+
+    @Test
     fun editableNumbersDistinguishBlankDefaultsFromIncompleteTokens() {
         assertEquals(null, AppSettingsDraftParser.optionalDouble(""))
         assertEquals(null, AppSettingsDraftParser.optionalInt(""))

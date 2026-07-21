@@ -24,6 +24,12 @@ internal sealed interface NoteTypeSetupStatus {
     /** One or more mapped fields (by logical key) are absent from the chosen note type. */
     data class FieldsMissing(val keys: List<String>) : NoteTypeSetupStatus
 
+    /** The map violates required field ownership or lets values overwrite one destination. */
+    data class FieldMapInvalid(
+        val destination: String,
+        val logicalKeys: List<String>,
+    ) : NoteTypeSetupStatus
+
     /**
      * The word field is not the note type's first field. AnkiDroid dedup keys on the first field,
      * so mining would silently mis-dedup or fail; block until the mapping/note type is corrected.
@@ -33,6 +39,6 @@ internal sealed interface NoteTypeSetupStatus {
     /** AnkiDroid could not be read while checking the note type. */
     data class ProviderError(val retryable: Boolean, val stableMessage: String) : NoteTypeSetupStatus
 
-    /** The note type exists, every mapped field exists, and the word field is field[0]. */
+    /** The note type exists, destinations are unique, every mapped field exists, and word is field[0]. */
     data class Verified(val modelId: Long) : NoteTypeSetupStatus
 }

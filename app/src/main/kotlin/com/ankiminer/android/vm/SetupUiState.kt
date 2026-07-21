@@ -1,5 +1,6 @@
 package com.ankiminer.android.vm
 
+import com.ankiminer.android.anki.provider.AnkiFieldMappingChange
 import com.ankiminer.android.anki.provider.AnkiProviderReadiness
 import com.ankiminer.android.anki.provider.AnkiRemediationInventory
 import com.ankiminer.android.anki.provider.ModelSummary
@@ -34,6 +35,7 @@ internal data class SetupUiState(
     val availableNoteTypes: List<ModelSummary> = emptyList(),
     val noteType: String? = null,
     val fieldMap: Map<String, String> = emptyMap(),
+    val fieldMapChanges: List<AnkiFieldMappingChange> = emptyList(),
     val remediations: AnkiRemediationInventory = AnkiRemediationInventory(emptyList()),
     val ankiOperation: AnkiSetupOperation? = null,
     val ankiFailure: AnkiSetupFailure? = null,
