@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Host health gate: toolchain presence, host Python suites, and the emulator
-# Gradle build + unit tests. Release/receipt/acceptance ceremony was removed;
-# real release verification is a local emulator-release smoke test + apksigner.
+# Host/build health gate: toolchain presence, host Python suites, JVM tests,
+# lint, APK assembly, and native inspection. This script builds the AndroidTest
+# APK but does not boot an emulator or execute instrumentation.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -121,6 +121,8 @@ emulator_apk="$REPO_ROOT/app/build/outputs/apk/emulator/debug/app-emulator-debug
 emulator_test_apk="$REPO_ROOT/app/build/outputs/apk/androidTest/emulator/debug/app-emulator-debug-androidTest.apk"
 [[ -f "$emulator_apk" ]] || fail "emulator debug APK was not produced"
 [[ -f "$emulator_test_apk" ]] || fail "emulator debug AndroidTest APK was not produced"
+echo "health: instrumentation APK built: $emulator_test_apk"
+echo "health: instrumentation executed: NO (build-only host gate)"
 
 "$SCRIPT_DIR/check-native-artifact.sh" \
     --artifact "$emulator_apk" \
@@ -131,4 +133,4 @@ emulator_test_apk="$REPO_ROOT/app/build/outputs/apk/androidTest/emulator/debug/a
     --require-entry lib/x86_64/libffmpeg.so \
     --require-entry lib/x86_64/libffprobe.so
 
-echo "health: OK"
+echo "health: host/build checks OK; instrumentation execution NOT RUN"

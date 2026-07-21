@@ -15,7 +15,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import com.ankiminer.android.ui.theme.AnkiMinerTheme
-import org.junit.Assert.assertTrue
+import org.junit.Assert.assertNull
 import org.junit.Rule
 import org.junit.Test
 
@@ -59,21 +59,17 @@ class ErrorSnackbarTest {
     }
 
     @Test
-    fun transientSnackbarClearsItsSourceOnceItDisappears() {
+    fun dismissedSnackbarClearsItsSourceAndCanRetrigger() {
         val message = "Frequency source import failed"
         var current by mutableStateOf<String?>(null)
-        var dismissed = false
+        val hostState = SnackbarHostState()
 
         composeRule.setContent {
             AnkiMinerTheme {
-                val hostState = remember { SnackbarHostState() }
                 MessageSnackbarEffect(
                     message = current,
                     hostState = hostState,
-                    onDismiss = {
-                        dismissed = true
-                        current = null
-                    },
+                    onDismiss = { current = null },
                 )
                 Scaffold(snackbarHost = { SnackbarHost(hostState) }) { padding ->
                     Box(Modifier.fillMaxSize().padding(padding)) {}
@@ -82,10 +78,19 @@ class ErrorSnackbarTest {
         }
 
         composeRule.runOnIdle { current = message }
-        // The snackbar is transient: once its duration elapses it disappears, onDismiss
-        // fires and clears the source so an identical follow-up failure can re-trigger.
-        composeRule.waitUntil(timeoutMillis = 15_000L) { dismissed }
-        composeRule.runOnIdle { assertTrue(dismissed) }
+        composeRule.onNodeWithText(message).assertIsDisplayed()
+
+        // Material owns timeout duration. Exercise this seam's contract through an explicit
+        // dismissal instead of coupling the test to Material's virtual clock and accessibility
+        // timeout policy.
+        composeRule.runOnIdle {
+            checkNotNull(hostState.currentSnackbarData).dismiss()
+        }
+        composeRule.runOnIdle { assertNull(current) }
         composeRule.onNodeWithText(message).assertDoesNotExist()
+
+        // Clearing the source permits the same later failure to start a new snackbar.
+        composeRule.runOnIdle { current = message }
+        composeRule.onNodeWithText(message).assertIsDisplayed()
     }
 }
