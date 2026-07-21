@@ -37,6 +37,8 @@ venv/
 .mypy_cache/
 .ruff_cache/
 .pytest_cache/
+# uv is not this repo's dep manager (pyproject has no [project]); lock is a stray artifact
+uv.lock
 
 # Native build outputs (CI builds/caches these; see tools/*/build scripts)
 tools/ffmpeg/out/
