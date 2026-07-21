@@ -10,7 +10,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .callbacks import CallbackAdapters
-from .config_map import AndroidPaths, map_config_settings
+from .config_map import (
+    _LOCALAUDIO_APPROVED_AUDIO_ORIGINS,
+    AndroidPaths,
+    map_config_settings,
+)
 from .jobs import JobRegistry, registry
 from .protocol import (
     BridgeProtocolError,
@@ -71,8 +75,51 @@ class _ExpressionAudioSourceChain:
     localaudio server falls through to the packs.
     """
 
-    def __init__(self, fetchers: Sequence[object]) -> None:
+    def __init__(
+        self,
+        fetchers: Sequence[object],
+        *,
+        localaudio_fetcher: object | None = None,
+        fallback_fetchers: Sequence[object] = (),
+        diagnostic_callback: Callable[[str], None] | None = None,
+    ) -> None:
         self._fetchers = tuple(fetchers)
+        self._localaudio_fetcher = localaudio_fetcher
+        self._fallback_fetchers = tuple(fallback_fetchers)
+        self._diagnostic_callback = diagnostic_callback
+        self._fallback_hits = 0
+        self._diagnostic_reported = False
+
+    def _record_fallback_hit(self, fetcher: object) -> None:
+        if any(fetcher is fallback for fallback in self._fallback_fetchers):
+            self._fallback_hits += 1
+
+    def _diagnostic_summary(self) -> str | None:
+        if self._localaudio_fetcher is None:
+            return None
+        stats = getattr(self._localaudio_fetcher, "stats", None)
+        if not callable(stats):
+            return None
+        try:
+            counts = stats()
+        except Exception:
+            return None
+        if not isinstance(counts, dict):
+            return None
+
+        unavailable = sum(int(counts.get(key, 0)) for key in ("ssl", "connection", "http_status"))
+        fields = (
+            ("localaudio unavailable", unavailable),
+            ("timeouts", int(counts.get("timeout", 0))),
+            ("rejected sources", int(counts.get("policy_rejection", 0))),
+            ("oversized responses", int(counts.get("oversized_response", 0))),
+            ("oversized lists", int(counts.get("oversized_list", 0))),
+            ("malformed JSON", int(counts.get("malformed_json", 0))),
+            ("non-audio responses", int(counts.get("non_audio", 0))),
+            ("fallback pack hits", self._fallback_hits),
+        )
+        details = [f"{label}={count}" for label, count in fields if count > 0]
+        return f"Expression audio: {'; '.join(details)}" if details else None
 
     def fetch(
         self,
@@ -89,6 +136,7 @@ class _ExpressionAudioSourceChain:
                 logger.exception("Expression-audio source fetch failed")
                 continue
             if path is not None:
+                self._record_fallback_hit(fetcher)
                 return path
         return None
 
@@ -106,10 +154,19 @@ class _ExpressionAudioSourceChain:
                 logger.exception("Expression-audio source fetch failed")
                 continue
             if path is not None:
+                self._record_fallback_hit(fetcher)
                 return path
         return None
 
     def close(self) -> None:
+        if not self._diagnostic_reported:
+            self._diagnostic_reported = True
+            summary = self._diagnostic_summary()
+            if summary is not None and self._diagnostic_callback is not None:
+                try:
+                    self._diagnostic_callback(summary)
+                except Exception:
+                    logger.exception("Failed to report expression-audio diagnostic")
         for fetcher in self._fetchers:
             close = getattr(fetcher, "close", None)
             if callable(close):
@@ -244,7 +301,10 @@ def _close_without_masking(resource: object | None, label: str) -> None:
         logger.exception("Failed to close %s while preserving the primary failure", label)
 
 
-def _build_expression_audio_source_chain(config: object) -> _ExpressionAudioSourceChain | None:
+def _build_expression_audio_source_chain(
+    config: object,
+    diagnostic_callback: Callable[[str], None] | None = None,
+) -> _ExpressionAudioSourceChain | None:
     """Compose the ordered expression-audio source chain for one run.
 
     Mirrors the desktop ``_build_expression_audio_fetcher`` composition minus the
@@ -301,6 +361,8 @@ def _build_expression_audio_source_chain(config: object) -> _ExpressionAudioSour
     # entry or an unknown/missing pack is skipped (matching desktop), so combined
     # with the validate-all-first check the reject-before-allocate invariant holds.
     fetchers: list[object] = []
+    localaudio_fetcher: object | None = None
+    fallback_fetchers: list[object] = []
     for entry in entries:
         if not getattr(entry, "enabled", False):
             continue
@@ -310,17 +372,19 @@ def _build_expression_audio_source_chain(config: object) -> _ExpressionAudioSour
             if not url:
                 continue
             slug = custom_audio_slug(url)
-            fetchers.append(
-                CustomAudioFetcher(
-                    url_template=url,
-                    kind=kind,
-                    cache_dir=cache_root / f"custom_{slug}",
-                    file_prefix=f"custom_{slug}",
-                    # Loopback needs no throttle; delay is timing-only and never
-                    # affects fetched bytes, so desktop OUTPUT parity holds.
-                    delay=0.0,
-                )
+            custom_fetcher = CustomAudioFetcher(
+                url_template=url,
+                kind=kind,
+                cache_dir=cache_root / f"custom_{slug}",
+                file_prefix=f"custom_{slug}",
+                # Loopback needs no throttle; delay is timing-only and never
+                # affects fetched bytes, so desktop OUTPUT parity holds.
+                delay=0.0,
+                approved_audio_origins=_LOCALAUDIO_APPROVED_AUDIO_ORIGINS,
             )
+            fetchers.append(custom_fetcher)
+            if kind == "custom_json":
+                localaudio_fetcher = custom_fetcher
         elif kind == "pack":
             pack_id = getattr(entry, "pack_id", None)
             if pack_id is None:
@@ -329,8 +393,14 @@ def _build_expression_audio_source_chain(config: object) -> _ExpressionAudioSour
             if resolved is None:
                 continue
             fetchers.append(resolved)
+            fallback_fetchers.append(resolved)
 
-    return _ExpressionAudioSourceChain(fetchers)
+    return _ExpressionAudioSourceChain(
+        fetchers,
+        localaudio_fetcher=localaudio_fetcher,
+        fallback_fetchers=fallback_fetchers,
+        diagnostic_callback=diagnostic_callback,
+    )
 
 
 class _AndroidOnlineDictionaryProvider:
@@ -451,7 +521,10 @@ def _build_processor(
         )
         word_filter = WordFilterService(config, tagger=subtitle_parser.tagger)
         media_extractor = MediaExtractorService(config)
-        expression_audio_fetcher = _build_expression_audio_source_chain(config)
+        expression_audio_fetcher = _build_expression_audio_source_chain(
+            config,
+            diagnostic_callback=adapters.presenter.show_warning,
+        )
 
         pitch_accent_service = None
         if config.pitch_active:

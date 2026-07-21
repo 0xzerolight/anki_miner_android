@@ -888,6 +888,57 @@ def test_expression_audio_chain_is_source_first_cancellable_and_best_effort() ->
     assert calls == ["close:broken", "close:miss", "close:hit"]
 
 
+def test_failed_localaudio_falls_through_and_reports_privacy_safe_pack_fallback() -> None:
+    hit = Path("/cache/audio.mp3")
+    notices: list[str] = []
+
+    class Localaudio:
+        def fetch(self, *_: object) -> None:
+            return None
+
+        def stats(self) -> dict[str, int]:
+            return {
+                "ssl": 0,
+                "connection": 1,
+                "timeout": 1,
+                "http_status": 0,
+                "non_audio": 1,
+                "policy_rejection": 2,
+                "oversized_response": 0,
+                "oversized_list": 1,
+                "malformed_json": 1,
+            }
+
+        def close(self) -> None:
+            return None
+
+    class Pack:
+        def fetch(self, *_: object) -> Path:
+            return hit
+
+        def close(self) -> None:
+            return None
+
+    localaudio = Localaudio()
+    pack = Pack()
+    chain = mining._ExpressionAudioSourceChain(
+        [localaudio, pack],
+        localaudio_fetcher=localaudio,
+        fallback_fetchers=(pack,),
+        diagnostic_callback=notices.append,
+    )
+
+    assert chain.fetch("猫", "ねこ") == hit
+    chain.close()
+
+    assert notices == [
+        "Expression audio: localaudio unavailable=1; timeouts=1; rejected sources=2; "
+        "oversized lists=1; malformed JSON=1; non-audio responses=1; fallback pack hits=1"
+    ]
+    assert "http" not in notices[0]
+    assert "/cache" not in notices[0]
+
+
 @pytest.mark.parametrize("kind", ["jpod101", "googletts"])
 def test_expression_audio_builder_rejects_cut_network_kinds_before_allocation(kind: str) -> None:
     # custom/custom_json are now deliberately accepted (localaudio + local-audio-
@@ -1196,7 +1247,7 @@ def test_runtime_composition_injects_only_android_video_services(
         excluded_wordsets=(),
         stats_db_path=Path("/files/stats.db"),
     )
-    presenter = object()
+    presenter = SimpleNamespace(show_warning=lambda _message: None)
     adapters = SimpleNamespace(presenter=presenter, cancel_event=threading.Event())
     anki_adapter = object()
 

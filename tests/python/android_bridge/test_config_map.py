@@ -6,6 +6,7 @@ import os
 from dataclasses import fields, replace
 from pathlib import Path
 
+import android_bridge.config_map as config_map
 import pytest
 from android_bridge.config_map import (
     _LOCALAUDIO_URL,
@@ -19,6 +20,10 @@ from android_bridge.protocol import BridgeProtocolError, encode_message
 
 def _paths(tmp_path: Path) -> AndroidPaths:
     return AndroidPaths(Path(os.environ["ANKI_MINER_HOME"]), tmp_path / "cache", tmp_path / "native")
+
+
+def test_localaudio_remote_origin_allowlist_is_fail_closed() -> None:
+    assert frozenset() == config_map._LOCALAUDIO_APPROVED_AUDIO_ORIGINS
 
 
 @pytest.fixture(autouse=True)
@@ -235,7 +240,7 @@ def test_draft_integer_floats_normalize_for_schema_and_config_fields(
     tmp_path: Path,
 ) -> None:
     paths = _paths(tmp_path)
-    raw = '{"schemaVersion":1.0,"type":"config.snapshot",' '"payload":{"settings":{"audio_bitrate":128.0}}}'
+    raw = '{"schemaVersion":1.0,"type":"config.snapshot","payload":{"settings":{"audio_bitrate":128.0}}}'
 
     mapped = map_config_json(
         raw,
