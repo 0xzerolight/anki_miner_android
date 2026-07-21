@@ -24,6 +24,10 @@ private val MOKURO_ARCHIVE_MIME_TYPES =
     arrayOf(
         "application/zip",
         "application/x-zip-compressed",
+        // OpenDocument exact-matches provider-reported MIME. .cbz is reported as the
+        // legacy application/x-cbz by most providers and the newer vnd.comicbook+zip by
+        // others; list both so the file is selectable regardless of which one is used.
+        "application/x-cbz",
         "application/vnd.comicbook+zip",
         "application/octet-stream",
     )
