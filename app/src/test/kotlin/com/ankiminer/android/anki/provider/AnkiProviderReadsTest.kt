@@ -18,6 +18,28 @@ import org.junit.Test
 
 class AnkiProviderReadsTest {
     @Test
+    fun `deck picker discovery returns every live deck in stable name order`() {
+        val gateway = FakeAnkiProviderGateway()
+        gateway.queryHandler = { query, _ ->
+            assertEquals(ProviderEndpoint.DECKS, query.endpoint)
+            FakeProviderCursor(
+                query.projection,
+                listOf(
+                    deckRow(id = 3L, name = "Japanese::Known"),
+                    deckRow(id = 1L, name = "Default"),
+                    deckRow(id = 2L, name = "Japanese"),
+                ),
+            )
+        }
+
+        val names =
+            AnkiProviderReadService(gateway, AnkiRunStateRegistry())
+                .listDeckNames(AnkiCancellation.NONE)
+
+        assertEquals(listOf("Default", "Japanese", "Japanese::Known"), names)
+    }
+
+    @Test
     fun `verify target snapshots every insertion-relevant model template and deck field`() {
         val fixture = fixture()
         fixture.gateway.queryHandler = targetQueryHandler()

@@ -1305,6 +1305,41 @@ def test_known_words_json_import_strips_words_and_reports_non_generic(
     importlib.util.find_spec("requests") is None,
     reason="local-resource importers require the runtime engine dependency set",
 )
+@pytest.mark.parametrize(
+    "separator",
+    ("\r", "\n", "\v", "\f", "\x1c", "\x1d", "\x1e", "\x85", "\u2028", "\u2029"),
+)
+def test_known_words_import_rejects_embedded_line_separators(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    separator: str,
+) -> None:
+    _local_home(tmp_path, monkeypatch)
+    source = tmp_path / "embedded-separator.json"
+    source.write_text(
+        json.dumps(
+            {"words": [{"word": f"犬{separator}猫", "status": "KNOWN"}]},
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(BridgeProtocolError) as failure:
+        local_resources.import_known_words(
+            {
+                "operationId": "known-embedded-separator",
+                "sourcePath": str(source),
+                "sourceFormat": "json",
+            }
+        )
+
+    assert failure.value.code == "known_words_import_failed"
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="local-resource importers require the runtime engine dependency set",
+)
 def test_known_words_import_accepts_cp932_generic_lists(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1336,6 +1371,188 @@ def test_known_words_import_accepts_cp932_generic_lists(
     assert KnownWordDB(home / "known_words.db").get_known_words() == {"食べる", "犬"}
 
 
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="local-resource importers require the runtime engine dependency set",
+)
+def test_known_words_preview_detects_format_without_mutating_database(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    home = _local_home(tmp_path, monkeypatch)
+    source = tmp_path / "known.txt"
+    source.write_text("# known words\n犬\n猫\n犬\n", encoding="utf-8")
+
+    preview = decode_envelope(
+        local_resources.preview_known_words(
+            {
+                "operationId": "known-preview",
+                "sourcePath": str(source),
+                "sourceFormat": "txt",
+            }
+        ),
+        expected_type="resource.knownwords.previewed",
+    )
+
+    assert preview.payload == {
+        "format": "generic",
+        "importedCount": 2,
+        "totalEntries": 3,
+        "isGeneric": True,
+        "sampleWords": ["犬", "猫"],
+    }
+    assert not (home / "known_words.db").exists()
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="known-word management uses the runtime engine database",
+)
+def test_known_words_list_search_remove_export_and_scoped_resets(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    home = _local_home(tmp_path, monkeypatch)
+    from anki_miner.services.known_word_db import KnownWordDB
+
+    database = KnownWordDB(home / "known_words.db")
+    database.initialize()
+    database.add_words({"犬", "猫", "食べる"}, source="user")
+    database.add_words({"既知"}, source="anki")
+    database.add_words({"掘る"}, source="mined")
+
+    first = decode_envelope(
+        local_resources.list_known_words(
+            {"operationId": "known-list-one", "query": "", "offset": 0, "limit": 2}
+        ),
+        expected_type="resource.knownwords.listed",
+    )
+    assert first.payload == {
+        "query": "",
+        "offset": 0,
+        "totalCount": 3,
+        "words": ["犬", "猫"],
+        "hasMore": True,
+    }
+
+    searched = decode_envelope(
+        local_resources.list_known_words(
+            {"operationId": "known-list-search", "query": "食", "offset": 0, "limit": 50}
+        ),
+        expected_type="resource.knownwords.listed",
+    )
+    assert searched.payload["words"] == ["食べる"]
+    assert searched.payload["totalCount"] == 1
+
+    removed = decode_envelope(
+        local_resources.remove_known_words(
+            {"operationId": "known-remove", "words": ["猫", "既知"]}
+        ),
+        expected_type="resource.knownwords.removed",
+    )
+    assert removed.payload == {"removedCount": 1}
+    assert database.get_words_by_source("user") == {"犬", "食べる"}
+    assert database.get_words_by_source("anki") == {"既知"}
+
+    exported = decode_envelope(
+        local_resources.export_known_words({"operationId": "known-export"}),
+        expected_type="resource.knownwords.exported",
+    )
+    export_path = Path(exported.payload["exportPath"])
+    assert export_path.read_text(encoding="utf-8") == "犬\n食べる\n"
+    assert exported.payload["exportedCount"] == 2
+    assert exported.payload["sizeBytes"] == export_path.stat().st_size
+
+    rebuilt = decode_envelope(
+        local_resources.reset_known_words(
+            {"operationId": "known-rebuild", "scope": "cache"}
+        ),
+        expected_type="resource.knownwords.reset",
+    )
+    assert rebuilt.payload == {"scope": "cache", "removedCount": 2}
+    assert database.get_known_words() == {"犬", "食べる"}
+
+    reset = decode_envelope(
+        local_resources.reset_known_words(
+            {"operationId": "known-reset-user", "scope": "user"}
+        ),
+        expected_type="resource.knownwords.reset",
+    )
+    assert reset.payload == {"scope": "user", "removedCount": 2}
+    assert database.get_known_words() == set()
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="known-word management uses the runtime engine database",
+)
+def test_known_words_export_reimport_round_trips_rows_and_counts(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    home = _local_home(tmp_path, monkeypatch)
+    source = tmp_path / "known-round-trip.txt"
+    source.write_text("犬\n猫\n食べる\n", encoding="utf-8")
+
+    first_import = decode_envelope(
+        local_resources.import_known_words(
+            {
+                "operationId": "known-round-trip-import-one",
+                "sourcePath": str(source),
+                "sourceFormat": "txt",
+            }
+        ),
+        expected_type="resource.knownwords.imported",
+    )
+    exported = decode_envelope(
+        local_resources.export_known_words(
+            {"operationId": "known-round-trip-export"}
+        ),
+        expected_type="resource.knownwords.exported",
+    )
+    export_path = Path(exported.payload["exportPath"])
+
+    assert first_import.payload["importedCount"] == 3
+    assert exported.payload["exportedCount"] == 3
+    assert export_path.read_text(encoding="utf-8").splitlines() == ["犬", "猫", "食べる"]
+
+    reset = decode_envelope(
+        local_resources.reset_known_words(
+            {"operationId": "known-round-trip-reset", "scope": "user"}
+        ),
+        expected_type="resource.knownwords.reset",
+    )
+    second_import = decode_envelope(
+        local_resources.import_known_words(
+            {
+                "operationId": "known-round-trip-import-two",
+                "sourcePath": str(export_path),
+                "sourceFormat": "txt",
+            }
+        ),
+        expected_type="resource.knownwords.imported",
+    )
+    inventory = decode_envelope(
+        local_resources.list_local_resources({}),
+        expected_type="resource.local.listed",
+    ).payload["knownWords"]
+
+    assert reset.payload["removedCount"] == 3
+    assert second_import.payload["importedCount"] == exported.payload["exportedCount"]
+    assert second_import.payload["newRowCount"] == exported.payload["exportedCount"]
+    assert second_import.payload["totalEntries"] == exported.payload["exportedCount"]
+    assert inventory["totalCount"] == exported.payload["exportedCount"]
+    assert inventory["userCount"] == exported.payload["exportedCount"]
+
+    from anki_miner.services.known_word_db import KnownWordDB
+
+    assert KnownWordDB(home / "known_words.db").get_words_by_source("user") == {
+        "犬",
+        "猫",
+        "食べる",
+    }
+
+
 def test_cleanup_restores_frequency_and_audio_pack_backups(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1360,16 +1577,26 @@ def test_cleanup_restores_frequency_and_audio_pack_backups(
 
 
 def test_boundary_routes_local_resource_inventory(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    initialized_bridge_home: Path,
 ) -> None:
-    _local_home(tmp_path, monkeypatch)
     decoded = decode_envelope(
         boundary.dispatch(encode_message("resource.local.list", {})),
         expected_type="resource.local.listed",
     )
     assert decoded.payload["frequencies"] == []
     assert decoded.payload["audioPacks"] == []
+
+    if importlib.util.find_spec("requests") is not None:
+        known = decode_envelope(
+            boundary.dispatch(
+                encode_message(
+                    "resource.knownwords.list",
+                    {"operationId": "known-boundary", "query": "", "offset": 0, "limit": 20},
+                )
+            ),
+            expected_type="resource.knownwords.listed",
+        )
+        assert known.payload["words"] == []
 
 
 @pytest.mark.skipif(

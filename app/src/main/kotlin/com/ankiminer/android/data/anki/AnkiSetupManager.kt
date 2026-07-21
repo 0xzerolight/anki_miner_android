@@ -26,6 +26,7 @@ internal data class AnkiSetupFailure(
 internal data class AnkiSetupManagerState(
     val noteTypeStatus: NoteTypeSetupStatus = NoteTypeSetupStatus.NotSelected,
     val availableNoteTypes: List<ModelSummary> = emptyList(),
+    val availableDeckNames: List<String> = emptyList(),
     val remediations: AnkiRemediationInventory = AnkiRemediationInventory(emptyList()),
     val operation: AnkiSetupOperation? = null,
     val failure: AnkiSetupFailure? = null,
@@ -37,6 +38,8 @@ internal data class AnkiSetupManagerState(
 /** Worker-only provider surfaces kept behind one process-owned setup controller. */
 internal interface AnkiSetupBackend {
     fun listNoteTypes(cancellation: AnkiCancellation): List<ModelSummary>
+
+    fun listDeckNames(cancellation: AnkiCancellation): List<String>
 
     fun verifyNoteType(
         noteType: String?,
@@ -88,11 +91,13 @@ internal class ProcessAnkiSetupManager(
     override fun refresh(noteType: String?, fieldMap: Map<String, String>) {
         runOperation(AnkiSetupOperation.REFRESHING) {
             val available = backend.listNoteTypes(AnkiCancellation.NONE)
+            val decks = backend.listDeckNames(AnkiCancellation.NONE)
             val status = backend.verifyNoteType(noteType, fieldMap, AnkiCancellation.NONE)
             val remediations = backend.remediationInventory(AnkiCancellation.NONE)
             mutableState.update { current ->
                 current.copy(
                     availableNoteTypes = available,
+                    availableDeckNames = decks,
                     noteTypeStatus = status,
                     remediations = remediations,
                     failure = null,

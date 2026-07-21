@@ -156,6 +156,71 @@ object ResourceBridgeCodec {
         }
     }
 
+    fun encodeKnownWordsPreviewRequest(
+        operation: String,
+        sourcePath: String,
+        sourceFormat: KnownWordsSourceFormat,
+    ): String {
+        requireOperationId(operation)
+        requireAbsolutePath(sourcePath)
+        return encode("resource.knownwords.preview") { generator ->
+            generator.writeStringField("operationId", operation)
+            generator.writeStringField("sourcePath", sourcePath)
+            generator.writeStringField("sourceFormat", sourceFormat.wireValue)
+        }
+    }
+
+    fun encodeKnownWordsListRequest(
+        operation: String,
+        query: String,
+        offset: Int,
+        limit: Int,
+    ): String {
+        requireOperationId(operation)
+        require(query.toByteArray(Charsets.UTF_8).size <= 1024 && '\u0000' !in query)
+        require(offset >= 0)
+        require(limit in 1..200)
+        return encode("resource.knownwords.list") { generator ->
+            generator.writeStringField("operationId", operation)
+            generator.writeStringField("query", query)
+            generator.writeNumberField("offset", offset)
+            generator.writeNumberField("limit", limit)
+        }
+    }
+
+    fun encodeKnownWordsRemoveRequest(operation: String, words: List<String>): String {
+        requireOperationId(operation)
+        require(words.size in 1..256 && words.distinct().size == words.size)
+        require(
+            words.all {
+                it.isNotEmpty() &&
+                    it.toByteArray(Charsets.UTF_8).size <= 1024 &&
+                    '\u0000' !in it
+            },
+        )
+        return encode("resource.knownwords.remove") { generator ->
+            generator.writeStringField("operationId", operation)
+            generator.writeArrayFieldStart("words")
+            words.forEach(generator::writeString)
+            generator.writeEndArray()
+        }
+    }
+
+    fun encodeKnownWordsResetRequest(operation: String, scope: KnownWordsResetScope): String {
+        requireOperationId(operation)
+        return encode("resource.knownwords.reset") { generator ->
+            generator.writeStringField("operationId", operation)
+            generator.writeStringField("scope", scope.wireValue)
+        }
+    }
+
+    fun encodeKnownWordsExportRequest(operation: String): String {
+        requireOperationId(operation)
+        return encode("resource.knownwords.export") { generator ->
+            generator.writeStringField("operationId", operation)
+        }
+    }
+
     fun encodeDictionaryLookupRequest(selectedSlotId: String, term: String): String {
         requireSlotId(selectedSlotId)
         require(term.isNotBlank() && term.toByteArray().size <= 1024)
@@ -346,6 +411,78 @@ object ResourceBridgeCodec {
                 invalid("Known-word import counts are inconsistent")
             }
         }
+    }
+
+    fun decodeKnownWordsPreview(raw: String): KnownWordsImportPreview {
+        val value = payload(raw, "resource.knownwords.previewed")
+        exact(
+            value,
+            setOf("format", "importedCount", "totalEntries", "isGeneric", "sampleWords"),
+            "known-word preview",
+        )
+        return KnownWordsImportPreview(
+            format = boundedText(value.getValue("format"), "format", 64),
+            importedCount = positive(value.getValue("importedCount"), "importedCount"),
+            totalEntries = positive(value.getValue("totalEntries"), "totalEntries"),
+            isGeneric = bool(value.getValue("isGeneric"), "isGeneric"),
+            sampleWords = strings(value.getValue("sampleWords"), "sampleWords", 1024).also {
+                if (it.size > 20 || it.distinct().size != it.size) invalid("Known-word preview is invalid")
+            },
+        ).also { preview ->
+            if (
+                preview.importedCount > preview.totalEntries ||
+                    preview.sampleWords.size.toLong() > preview.importedCount
+            ) {
+                invalid("Known-word preview counts are inconsistent")
+            }
+        }
+    }
+
+    fun decodeKnownWordsPage(raw: String): KnownWordsPage {
+        val value = payload(raw, "resource.knownwords.listed")
+        exact(value, setOf("query", "offset", "totalCount", "words", "hasMore"), "known-word page")
+        val offset = nonNegative(value.getValue("offset"), "offset")
+        if (offset > Int.MAX_VALUE) invalid("Known-word offset is too large")
+        return KnownWordsPage(
+            query = boundedText(value.getValue("query"), "query", 1024, allowEmpty = true),
+            offset = offset.toInt(),
+            totalCount = nonNegative(value.getValue("totalCount"), "totalCount"),
+            words = strings(value.getValue("words"), "words", 1024).also {
+                if (it.size > 200 || it.distinct().size != it.size) invalid("Known-word page is invalid")
+            },
+            hasMore = bool(value.getValue("hasMore"), "hasMore"),
+        ).also { page ->
+            if (page.offset.toLong() + page.words.size > page.totalCount) {
+                invalid("Known-word page counts are inconsistent")
+            }
+        }
+    }
+
+    fun decodeKnownWordsRemoved(raw: String): Long {
+        val value = payload(raw, "resource.knownwords.removed")
+        exact(value, setOf("removedCount"), "known-word removal")
+        return nonNegative(value.getValue("removedCount"), "removedCount")
+    }
+
+    fun decodeKnownWordsReset(raw: String): KnownWordsResetResult {
+        val value = payload(raw, "resource.knownwords.reset")
+        exact(value, setOf("scope", "removedCount"), "known-word reset")
+        val scope = text(value.getValue("scope"), "scope")
+        return KnownWordsResetResult(
+            scope = KnownWordsResetScope.entries.singleOrNull { it.wireValue == scope }
+                ?: invalid("Known-word reset scope is invalid"),
+            removedCount = nonNegative(value.getValue("removedCount"), "removedCount"),
+        )
+    }
+
+    fun decodeKnownWordsExport(raw: String): KnownWordsExport {
+        val value = payload(raw, "resource.knownwords.exported")
+        exact(value, setOf("exportPath", "exportedCount", "sizeBytes"), "known-word export")
+        return KnownWordsExport(
+            exportPath = requireAbsolutePath(text(value.getValue("exportPath"), "exportPath")),
+            exportedCount = nonNegative(value.getValue("exportedCount"), "exportedCount"),
+            sizeBytes = nonNegative(value.getValue("sizeBytes"), "sizeBytes"),
+        )
     }
 
     fun decodeLocalResourceList(raw: String): LocalResourceInventory {

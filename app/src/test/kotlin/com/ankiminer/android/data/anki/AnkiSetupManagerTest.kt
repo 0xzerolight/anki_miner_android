@@ -38,6 +38,7 @@ class AnkiSetupManagerTest {
         val backend =
             FakeBackend(
                 noteTypes = available,
+                deckNames = listOf("Default", "Japanese", "Japanese::Known"),
                 status = NoteTypeSetupStatus.Verified(modelId = 24L),
                 remediations = remediations,
             )
@@ -47,6 +48,7 @@ class AnkiSetupManagerTest {
 
         val state = manager.state.value
         assertEquals(available, state.availableNoteTypes)
+        assertEquals(listOf("Default", "Japanese", "Japanese::Known"), state.availableDeckNames)
         assertEquals(NoteTypeSetupStatus.Verified(24L), state.noteTypeStatus)
         assertEquals(remediations, state.remediations)
         assertEquals(1, backend.listCalls)
@@ -125,6 +127,7 @@ class AnkiSetupManagerTest {
 
     private class FakeBackend(
         private val noteTypes: List<ModelSummary> = emptyList(),
+        private val deckNames: List<String> = emptyList(),
         private val status: NoteTypeSetupStatus = NoteTypeSetupStatus.NotSelected,
         private val remediations: AnkiRemediationInventory = AnkiRemediationInventory(emptyList()),
         private val failReconcile: Boolean = false,
@@ -140,6 +143,8 @@ class AnkiSetupManagerTest {
             listCalls += 1
             return noteTypes
         }
+
+        override fun listDeckNames(cancellation: AnkiCancellation): List<String> = deckNames
 
         override fun verifyNoteType(
             noteType: String?,

@@ -13,6 +13,7 @@ import com.ankiminer.android.data.RuntimeWorkCoordinator
 import com.ankiminer.android.data.resources.ResourceManager
 import com.ankiminer.android.data.resources.ResourceStartupReadiness
 import com.ankiminer.android.data.resources.FrequencySourceFormat
+import com.ankiminer.android.data.resources.KnownWordsResetScope
 import com.ankiminer.android.data.resources.KnownWordsSourceFormat
 import com.ankiminer.android.data.resources.PitchAccentSourceFormat
 import com.ankiminer.android.data.settings.AppSettingsRepository
@@ -52,6 +53,7 @@ internal class SetupViewModel(
         val audioPackId: String = "audio-pack",
         val audioPackReplace: Boolean = false,
         val knownWordsFormat: KnownWordsSourceFormat = KnownWordsSourceFormat.JSON,
+        val knownWordsSearch: String = "",
         val pendingReplaceResourceId: String? = null,
         val fieldMapChanges: List<AnkiFieldMappingChange> = emptyList(),
     )
@@ -84,6 +86,7 @@ internal class SetupViewModel(
                 notifications = admission.notifications,
                 noteTypeStatus = ankiState.noteTypeStatus,
                 availableNoteTypes = ankiState.availableNoteTypes,
+                availableDeckNames = ankiState.availableDeckNames,
                 noteType = appSettings.noteType,
                 fieldMap = appSettings.fieldMap,
                 fieldMapChanges = localState.fieldMapChanges,
@@ -100,6 +103,8 @@ internal class SetupViewModel(
                 pitchAccent = resourceState.pitchAccent,
                 audioPacks = resourceState.audioPacks,
                 knownWords = resourceState.knownWords,
+                knownWordsImportPreview = resourceState.knownWordsImportPreview,
+                knownWordsPage = resourceState.knownWordsPage,
                 wordsets = resourceState.wordsets,
                 lastLocalImport = resourceState.lastLocalImport,
                 operation = resourceState.activeOperation,
@@ -119,6 +124,7 @@ internal class SetupViewModel(
                 audioPackId = localState.audioPackId,
                 audioPackReplace = localState.audioPackReplace,
                 knownWordsFormat = localState.knownWordsFormat,
+                knownWordsSearch = localState.knownWordsSearch,
             )
         }.stateIn(
             viewModelScope,
@@ -345,7 +351,41 @@ internal class SetupViewModel(
         val state = uiState.value
         if (state.busy) return
         val format = state.knownWordsFormat
-        viewModelScope.launch { resources.importKnownWords(uri, format) }
+        viewModelScope.launch { resources.previewKnownWords(uri, format) }
+    }
+
+    fun confirmKnownWordsImport() {
+        if (!uiState.value.busy) viewModelScope.launch { resources.confirmKnownWordsImport() }
+    }
+
+    fun dismissKnownWordsImportPreview() = resources.dismissKnownWordsImportPreview()
+
+    fun setKnownWordsSearch(value: String) {
+        if (value.toByteArray().size <= 1024) local.update { it.copy(knownWordsSearch = value) }
+    }
+
+    fun searchKnownWords() {
+        val state = uiState.value
+        if (!state.busy) viewModelScope.launch { resources.searchKnownWords(state.knownWordsSearch) }
+    }
+
+    fun loadMoreKnownWords() {
+        val state = uiState.value
+        if (!state.busy) {
+            viewModelScope.launch { resources.searchKnownWords(state.knownWordsSearch, loadMore = true) }
+        }
+    }
+
+    fun removeKnownWord(word: String) {
+        if (!uiState.value.busy) viewModelScope.launch { resources.removeKnownWords(listOf(word)) }
+    }
+
+    fun resetKnownWords(scope: KnownWordsResetScope) {
+        if (!uiState.value.busy) viewModelScope.launch { resources.resetKnownWords(scope) }
+    }
+
+    fun exportKnownWords(uri: String) {
+        if (!uiState.value.busy) viewModelScope.launch { resources.exportKnownWords(uri) }
     }
 
     fun setLookupTerm(value: String) {

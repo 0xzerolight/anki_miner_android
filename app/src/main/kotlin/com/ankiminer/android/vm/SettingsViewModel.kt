@@ -30,6 +30,7 @@ import kotlinx.coroutines.launch
 
 internal data class SettingsDraft(
     val deckName: String,
+    val excludedDecks: List<String>,
     val tags: String,
     val tagsOverride: Boolean,
     val audioPadding: String,
@@ -54,7 +55,7 @@ internal data class SettingsDraft(
     val dictionarySources: List<ResourceChainSelection>,
     val frequencySources: List<ResourceChainSelection>,
     val audioPacks: List<ResourceChainSelection>,
-    val excludedWordsets: List<String>,
+    val enabledWordsets: List<String>,
     val readingTts: Boolean,
     val jisho: Boolean,
 ) {
@@ -69,6 +70,7 @@ internal data class SettingsDraft(
         base.copy(
             theme = theme,
             deckName = deckName.takeIf(String::isNotEmpty),
+            excludedDecks = excludedDecks,
             tags = tags.takeIf { tagsOverride },
             audioPaddingSeconds = AppSettingsDraftParser.optionalDouble(audioPadding),
             screenshotOffsetSeconds = AppSettingsDraftParser.optionalDouble(screenshotOffset),
@@ -91,19 +93,18 @@ internal data class SettingsDraft(
             dictionarySources = dictionarySources,
             frequencySources = frequencySources,
             audioPacks = audioPacks,
-            excludedWordsets = excludedWordsets,
+            enabledWordsets = enabledWordsets,
             readingTtsEnabled = readingTts,
             jishoEnabled = jisho,
         )
 
     /**
-     * Re-derive the four inventory-backed resource fields against [resources] while preserving every
+     * Re-derive the three ordered resource-chain fields against [resources] while preserving every
      * scalar edit (including raw numeric text). [EngineSettingsSnapshotMapper.resolveResourceChain]
      * keeps the draft's own order and enable choices and only appends newly installed resources, so
      * merging the same inventory twice is a fixed point.
      */
     fun withInventory(resources: ResourceManagerState): SettingsDraft {
-        val wordsetIds = resources.availableWordsetIds()
         return copy(
             dictionarySources =
                 EngineSettingsSnapshotMapper.resolveResourceChain(
@@ -120,7 +121,6 @@ internal data class SettingsDraft(
                     audioPacks,
                     resources.usableAudioPackIds(),
                 ),
-            excludedWordsets = excludedWordsets.filter { it in wordsetIds },
         )
     }
 
@@ -132,6 +132,7 @@ internal data class SettingsDraft(
         ): SettingsDraft =
             SettingsDraft(
                 deckName = settings.deckName.orEmpty(),
+                excludedDecks = settings.excludedDecks,
                 tags = settings.tags.orEmpty(),
                 tagsOverride = settings.tags != null,
                 audioPadding = settings.audioPaddingSeconds?.toString().orEmpty(),
@@ -156,7 +157,7 @@ internal data class SettingsDraft(
                 dictionarySources = settings.dictionarySources,
                 frequencySources = settings.frequencySources,
                 audioPacks = settings.audioPacks,
-                excludedWordsets = settings.excludedWordsets,
+                enabledWordsets = settings.enabledWordsets,
                 readingTts = settings.readingTtsEnabled,
                 jisho = settings.jishoEnabled,
             ).withInventory(resources)
@@ -171,9 +172,6 @@ private fun ResourceManagerState.usableFrequencyIds(): List<String> =
 
 private fun ResourceManagerState.usableAudioPackIds(): List<String> =
     audioPacks.filter { it.contentAvailable && it.entryCount > 0 }.map { it.packId }
-
-private fun ResourceManagerState.availableWordsetIds(): List<String> =
-    wordsets.map { it.wordsetId }
 
 internal data class SettingsDraftState(
     val draft: SettingsDraft,

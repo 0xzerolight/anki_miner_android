@@ -3,6 +3,7 @@ package com.ankiminer.android.vm
 import com.ankiminer.android.MainDispatcherRule
 import com.ankiminer.android.data.resources.FrequencySourceFormat
 import com.ankiminer.android.data.resources.InstalledDictionary
+import com.ankiminer.android.data.resources.KnownWordsResetScope
 import com.ankiminer.android.data.resources.KnownWordsSourceFormat
 import com.ankiminer.android.data.resources.PitchAccentSourceFormat
 import com.ankiminer.android.data.resources.ResourceManager
@@ -73,6 +74,20 @@ class SettingsViewModelTest {
             // persists. A filter that dropped the dirty predicate would write on both.
             assertEquals(0, repository.writeCount)
             assertFalse(viewModel.draftState.value.dirty)
+        }
+
+    @Test
+    fun freshWordsetDefaultsSurviveAnInventoryWhichHasNotLoadedYet() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository = FakeAppSettingsRepository(AppSettings())
+            val viewModel = SettingsViewModel(repository, FakeResourceManager(ResourceManagerState()))
+            advanceUntilIdle()
+
+            assertEquals(
+                AppSettings.DEFAULT_ENABLED_WORDSETS,
+                viewModel.draftState.value.draft.enabledWordsets,
+            )
+            assertEquals(0, repository.writeCount)
         }
 
     @Test
@@ -276,6 +291,20 @@ class SettingsViewModelTest {
             uri: String,
             format: KnownWordsSourceFormat,
         ) = Unit
+
+        override suspend fun previewKnownWords(uri: String, format: KnownWordsSourceFormat) = Unit
+
+        override suspend fun confirmKnownWordsImport() = Unit
+
+        override fun dismissKnownWordsImportPreview() = Unit
+
+        override suspend fun searchKnownWords(query: String, loadMore: Boolean) = Unit
+
+        override suspend fun removeKnownWords(words: List<String>) = Unit
+
+        override suspend fun resetKnownWords(scope: KnownWordsResetScope) = Unit
+
+        override suspend fun exportKnownWords(uri: String) = Unit
 
         override suspend fun lookup(slotId: String, term: String) = Unit
 

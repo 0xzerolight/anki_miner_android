@@ -46,6 +46,65 @@ class AppSettingsRepositoryTest {
     val temporaryFolder = TemporaryFolder()
 
     @Test
+    fun `schema v2 migration enables all wordsets only for a fresh store`() {
+        val migrated =
+            DataStoreAppSettingsRepository.migratePreferences(
+                preferencesOf(),
+            )
+
+        assertEquals(2, migrated[intPreferencesKey("settings_schema_version")])
+        assertEquals("fresh-defaults-v1", migrated[stringPreferencesKey("wordset_defaults_policy")])
+        assertFalse(DataStoreAppSettingsRepository.migrationRequired(migrated))
+        assertEquals(
+            migrated.asMap(),
+            DataStoreAppSettingsRepository.migratePreferences(migrated).asMap(),
+        )
+        assertEquals(
+            AppSettings.DEFAULT_ENABLED_WORDSETS,
+            DataStoreAppSettingsRepository.decodePreferences(migrated).enabledWordsets,
+        )
+    }
+
+    @Test
+    fun `schema v2 migration preserves an upgraded user's empty wordset choice`() {
+        val migrated =
+            DataStoreAppSettingsRepository.migratePreferences(
+                preferencesOf(
+                    intPreferencesKey("settings_schema_version") to 1,
+                    booleanPreferencesKey("setup_wizard_seen") to true,
+                ),
+            )
+
+        assertEquals("preserved-existing-v1", migrated[stringPreferencesKey("wordset_defaults_policy")])
+        assertEquals(
+            "enabled-wordsets-v1\n",
+            migrated[stringPreferencesKey("enabled_wordsets_v2")],
+        )
+        assertFalse(DataStoreAppSettingsRepository.migrationRequired(migrated))
+        assertEquals(
+            emptyList<String>(),
+            DataStoreAppSettingsRepository.decodePreferences(migrated).enabledWordsets,
+        )
+    }
+
+    @Test
+    fun `schema v2 migration preserves an upgraded user's explicit wordset subset`() {
+        val migrated =
+            DataStoreAppSettingsRepository.migratePreferences(
+                preferencesOf(
+                    intPreferencesKey("settings_schema_version") to 1,
+                    stringPreferencesKey("excluded_wordsets_v1") to
+                        "resource-selection-v1\n+place-names\n",
+                ),
+            )
+
+        assertEquals(
+            listOf("place-names"),
+            DataStoreAppSettingsRepository.decodePreferences(migrated).enabledWordsets,
+        )
+    }
+
+    @Test
     fun `every persisted preference decodes and quarantines independently`() =
         runTest {
             val dataStore = createDataStore(backgroundScope, "corruption")
@@ -78,6 +137,16 @@ class AppSettingsRepositoryTest {
                     assertEquals(
                         DataStoreAppSettingsRepository.CURRENT_SCHEMA_VERSION,
                         migrated[intPreferencesKey(case.keyName)],
+                    )
+                } else if (case.keyName == "enabled_wordsets_v2") {
+                    assertEquals(
+                        "enabled-wordsets-v1\n",
+                        migrated[stringPreferencesKey(case.keyName)],
+                    )
+                } else if (case.keyName == "wordset_defaults_policy") {
+                    assertEquals(
+                        "preserved-existing-v1",
+                        migrated[stringPreferencesKey(case.keyName)],
                     )
                 } else {
                     assertFalse(
@@ -209,7 +278,7 @@ class AppSettingsRepositoryTest {
                 dictionarySources = listOf(ResourceChainSelection("jitendex", enabled = false)),
                 frequencySources = listOf(ResourceChainSelection("bccwj", enabled = false)),
                 audioPacks = listOf(ResourceChainSelection("local-audio", enabled = false)),
-                excludedWordsets = emptyList(),
+                enabledWordsets = AppSettings.DEFAULT_ENABLED_WORDSETS,
                 jishoEnabled = false,
             ),
             reset,
@@ -306,7 +375,7 @@ class AppSettingsRepositoryTest {
         )
         assertEquals(listOf(ResourceChainSelection("bccwj")), settings.frequencySources)
         assertEquals(listOf(ResourceChainSelection("local-audio")), settings.audioPacks)
-        assertEquals(listOf("place-names"), settings.excludedWordsets)
+        assertEquals(listOf("place-names"), settings.enabledWordsets)
         assertTrue(settings.readingTtsEnabled)
         assertTrue(settings.jishoEnabled)
 
@@ -346,6 +415,7 @@ class AppSettingsRepositoryTest {
             setupWizardSeen = true,
             theme = ThemeMode.LIGHT,
             deckName = "Japanese",
+            excludedDecks = listOf("Japanese::Known"),
             noteType = "Lapis",
             fieldMap =
                 mapOf(
@@ -374,7 +444,7 @@ class AppSettingsRepositoryTest {
             dictionarySources = listOf(ResourceChainSelection("jitendex")),
             frequencySources = listOf(ResourceChainSelection("bccwj")),
             audioPacks = listOf(ResourceChainSelection("local-audio")),
-            excludedWordsets = listOf("place-names"),
+            enabledWordsets = listOf("place-names"),
             readingTtsEnabled = true,
             jishoEnabled = true,
         )
@@ -395,6 +465,10 @@ class AppSettingsRepositoryTest {
             corruptBoolean("setup_wizard_seen", original.copy(setupWizardSeen = defaults.setupWizardSeen)),
             corruptString("theme_mode", original.copy(theme = defaults.theme)),
             corruptString("deck_name", original.copy(deckName = defaults.deckName)),
+            corruptString(
+                "excluded_decks_v1",
+                original.copy(excludedDecks = defaults.excludedDecks),
+            ),
             corruptString("note_type", original.copy(noteType = defaults.noteType)),
             corruptString("field_map_v1", original.copy(fieldMap = defaults.fieldMap)),
             corruptString("tags", original.copy(tags = defaults.tags)),
@@ -477,9 +551,10 @@ class AppSettingsRepositoryTest {
             ),
             corruptString("audio_packs_v1", original.copy(audioPacks = defaults.audioPacks)),
             corruptString(
-                "excluded_wordsets_v1",
-                original.copy(excludedWordsets = defaults.excludedWordsets),
+                "enabled_wordsets_v2",
+                original.copy(enabledWordsets = emptyList()),
             ),
+            corruptString("wordset_defaults_policy", original),
             corruptBoolean(
                 "reading_tts_enabled",
                 original.copy(readingTtsEnabled = defaults.readingTtsEnabled),

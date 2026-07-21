@@ -217,6 +217,70 @@ class ResourceBridgeCodecTest {
     }
 
     @Test
+    fun knownWordManagementRequestsAndResponsesAreStrictAndBounded() {
+        val previewRequest =
+            ResourceBridgeCodec.encodeKnownWordsPreviewRequest(
+                operation = "known_preview",
+                sourcePath = "/private/known.txt",
+                sourceFormat = KnownWordsSourceFormat.TEXT,
+            )
+        val listRequest =
+            ResourceBridgeCodec.encodeKnownWordsListRequest(
+                operation = "known_list",
+                query = "猫",
+                offset = 0,
+                limit = 100,
+            )
+        val removeRequest =
+            ResourceBridgeCodec.encodeKnownWordsRemoveRequest(
+                operation = "known_remove",
+                words = listOf("猫", "犬"),
+            )
+        val resetRequest =
+            ResourceBridgeCodec.encodeKnownWordsResetRequest(
+                operation = "known_reset",
+                scope = KnownWordsResetScope.USER,
+            )
+
+        assertTrue(previewRequest.contains("\"type\":\"resource.knownwords.preview\""))
+        assertTrue(listRequest.contains("\"query\":\"猫\""))
+        assertTrue(removeRequest.contains("\"words\":[\"猫\",\"犬\"]"))
+        assertTrue(resetRequest.contains("\"scope\":\"user\""))
+
+        val preview =
+            ResourceBridgeCodec.decodeKnownWordsPreview(
+                """{"schemaVersion":1,"type":"resource.knownwords.previewed","payload":{"format":"generic","importedCount":2,"totalEntries":3,"isGeneric":true,"sampleWords":["犬","猫"]}}""",
+            )
+        assertEquals(listOf("犬", "猫"), preview.sampleWords)
+
+        val page =
+            ResourceBridgeCodec.decodeKnownWordsPage(
+                """{"schemaVersion":1,"type":"resource.knownwords.listed","payload":{"query":"猫","offset":0,"totalCount":1,"words":["猫"],"hasMore":false}}""",
+            )
+        assertEquals(listOf("猫"), page.words)
+        assertTrue(!page.hasMore)
+
+        assertEquals(
+            2L,
+            ResourceBridgeCodec.decodeKnownWordsRemoved(
+                """{"schemaVersion":1,"type":"resource.knownwords.removed","payload":{"removedCount":2}}""",
+            ),
+        )
+        assertEquals(
+            KnownWordsResetResult(KnownWordsResetScope.CACHE, 4L),
+            ResourceBridgeCodec.decodeKnownWordsReset(
+                """{"schemaVersion":1,"type":"resource.knownwords.reset","payload":{"scope":"cache","removedCount":4}}""",
+            ),
+        )
+        assertEquals(
+            KnownWordsExport("/private/export.txt", 2L, 14L),
+            ResourceBridgeCodec.decodeKnownWordsExport(
+                """{"schemaVersion":1,"type":"resource.knownwords.exported","payload":{"exportPath":"/private/export.txt","exportedCount":2,"sizeBytes":14}}""",
+            ),
+        )
+    }
+
+    @Test
     fun localResourceInventoryDecodesEveryInstalledClass() {
         val raw =
             """{"schemaVersion":1,"type":"resource.local.listed","payload":{"frequencies":[{"sourceId":"jpdb","sourceName":"JPDB","format":"yomitan-freq","entryCount":100,"schemaOk":true,"schemaVersion":2,"isCategorical":false}],"pitchAccent":{"sourceName":"NHK","sourceRevision":"1","sourceFormat":"zip","entryCount":20,"fileSizeBytes":300,"schemaOk":true},"audioPacks":[{"packId":"nhk16","sourceName":"nhk16","format":"nhk16","entryCount":30,"contentAvailable":true}],"knownWords":{"totalCount":12,"userCount":2,"ankiCount":9,"minedCount":1,"schemaOk":true},"wordsets":[{"wordsetId":"surnames","displayName":"Surnames","entryCount":98406}]}}"""

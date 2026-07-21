@@ -62,6 +62,10 @@ internal class AnkiProviderReadService(
     fun listNoteTypes(cancellation: AnkiCancellation): List<ModelSummary> =
         targets.listModelSummaries(cancellation)
 
+    /** Live picker read of canonical Anki deck names for known-vocabulary exclusions. */
+    fun listDeckNames(cancellation: AnkiCancellation): List<String> =
+        targets.readAllDeckNames(cancellation).sorted()
+
     /**
      * Detect/verify a user-selected note type + field mapping. Never creates a note type; the
      * authoritative mining gate stays the admission probe plus the Python `verify_card_target`.

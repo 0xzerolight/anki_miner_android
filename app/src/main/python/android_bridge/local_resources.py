@@ -41,6 +41,10 @@ _AUDIO_FILE_LIMIT = 512 * 1024 * 1024
 _AUDIO_JSON_LIMIT = 32 * 1024 * 1024
 _MAX_KNOWN_WORDS = 500_000
 _MAX_WORD_BYTES = 1024
+_MAX_KNOWN_WORD_PAGE = 200
+_MAX_KNOWN_WORD_MUTATION = 256
+_KNOWN_WORD_EXPORT_LIMIT = 512 * 1024 * 1024
+_KNOWN_WORD_LINE_SEPARATORS = frozenset("\n\r\v\f\x1c\x1d\x1e\x85\u2028\u2029")
 _PITCH_SIDECAR = "pitch_accent.android-resource.json"
 _ANDROID_SIDECAR = "android-resource.json"
 
@@ -771,6 +775,69 @@ def import_audio_pack(payload: Mapping[str, object]) -> str:
                 core._safe_rmtree(operation_root)
 
 
+def _parse_known_words_copy(source: Path, source_format: str, operation: object, operation_root: Path):
+    copied = core._copy_archive(
+        source,
+        operation_root / f"known-words.{source_format}",
+        operation,
+        maximum_bytes=_KNOWN_WORD_FILE_LIMIT,
+    )
+    from anki_miner.services.known_words_import import (
+        KnownWordsImportError,
+        parse_known_words_file,
+    )
+
+    try:
+        parsed = parse_known_words_file(copied.path)
+    except KnownWordsImportError as exc:
+        raise _fail(
+            "known_words_import_failed",
+            "The selected file contains no supported known-word export",
+        ) from exc
+    if len(parsed.words) > _MAX_KNOWN_WORDS or any(
+        not word
+        or len(word.encode("utf-8")) > _MAX_WORD_BYTES
+        or "\x00" in word
+        or not _KNOWN_WORD_LINE_SEPARATORS.isdisjoint(word)
+        for word in parsed.words
+    ):
+        raise _fail("known_words_import_failed", "Known-word import exceeds its limits")
+    return parsed
+
+
+def preview_known_words(payload: Mapping[str, object]) -> str:
+    core._exact(
+        payload,
+        {"operationId", "sourcePath", "sourceFormat"},
+        code="invalid_resource_request",
+    )
+    operation_id = core._operation_id(payload["operationId"])
+    source = core._absolute_path(payload["sourcePath"], name="sourcePath")
+    source_format = _format(payload["sourceFormat"], _KNOWN_WORD_FORMATS, label="sourceFormat")
+    home = Path(require_initialized())
+    operation_root = _work_root(home, operation_id)
+    with core._OPERATIONS.begin(operation_id) as operation:
+        operation.check()
+        core._safe_rmtree(operation_root)
+        operation_root.mkdir(parents=True)
+        try:
+            parsed = _parse_known_words_copy(source, source_format, operation, operation_root)
+            operation.check()
+            return encode_message(
+                "resource.knownwords.previewed",
+                {
+                    "format": parsed.format_key,
+                    "importedCount": len(parsed.words),
+                    "totalEntries": parsed.total_entries,
+                    "isGeneric": parsed.format_key == "generic",
+                    "sampleWords": sorted(parsed.words)[:20],
+                },
+            )
+        finally:
+            if operation_root.exists():
+                core._safe_rmtree(operation_root)
+
+
 def import_known_words(payload: Mapping[str, object]) -> str:
     core._exact(
         payload,
@@ -787,29 +854,8 @@ def import_known_words(payload: Mapping[str, object]) -> str:
         core._safe_rmtree(operation_root)
         operation_root.mkdir(parents=True)
         try:
-            copied = core._copy_archive(
-                source,
-                operation_root / f"known-words.{source_format}",
-                operation,
-                maximum_bytes=_KNOWN_WORD_FILE_LIMIT,
-            )
             from anki_miner.services.known_word_db import KnownWordDB
-            from anki_miner.services.known_words_import import (
-                KnownWordsImportError,
-                parse_known_words_file,
-            )
-
-            try:
-                parsed = parse_known_words_file(copied.path)
-            except KnownWordsImportError as exc:
-                raise _fail(
-                    "known_words_import_failed",
-                    "The selected file contains no supported known-word export",
-                ) from exc
-            if len(parsed.words) > _MAX_KNOWN_WORDS or any(
-                not word or len(word.encode("utf-8")) > _MAX_WORD_BYTES or "\x00" in word for word in parsed.words
-            ):
-                raise _fail("known_words_import_failed", "Known-word import exceeds its limits")
+            parsed = _parse_known_words_copy(source, source_format, operation, operation_root)
             operation.check()
             db_path = home / "known_words.db"
             if db_path.exists() and (db_path.is_symlink() or not db_path.is_file()):
@@ -832,6 +878,160 @@ def import_known_words(payload: Mapping[str, object]) -> str:
         finally:
             if operation_root.exists():
                 core._safe_rmtree(operation_root)
+
+
+def _known_words_database(home: Path):
+    from anki_miner.services.known_word_db import KnownWordDB
+
+    db_path = home / "known_words.db"
+    if db_path.exists() and (db_path.is_symlink() or not db_path.is_file()):
+        raise _fail("known_words_database_unsafe", "Known-word database path is unsafe")
+    database = KnownWordDB(db_path)
+    database.initialize()
+    if not _known_words_inventory(home)["schemaOk"]:
+        raise _fail("known_words_database_unsafe", "Known-word database schema is invalid")
+    return database, db_path
+
+
+def _bounded_non_negative_int(value: object, *, label: str, maximum: int) -> int:
+    if type(value) is not int or value < 0 or value > maximum:
+        raise _fail("invalid_resource_request", f"{label} is invalid")
+    return value
+
+
+def _known_word_query(value: object) -> str:
+    if not isinstance(value, str) or "\x00" in value:
+        raise _fail("invalid_resource_request", "query is invalid")
+    try:
+        encoded = value.encode("utf-8")
+    except UnicodeEncodeError as exc:
+        raise _fail("invalid_resource_request", "query is invalid") from exc
+    if len(encoded) > _MAX_WORD_BYTES:
+        raise _fail("invalid_resource_request", "query exceeds its size limit")
+    return value
+
+
+def list_known_words(payload: Mapping[str, object]) -> str:
+    core._exact(payload, {"operationId", "query", "offset", "limit"}, code="invalid_resource_request")
+    operation_id = core._operation_id(payload["operationId"])
+    query = _known_word_query(payload["query"])
+    offset = _bounded_non_negative_int(payload["offset"], label="offset", maximum=_MAX_KNOWN_WORDS)
+    limit = _bounded_non_negative_int(payload["limit"], label="limit", maximum=_MAX_KNOWN_WORD_PAGE)
+    if limit == 0:
+        raise _fail("invalid_resource_request", "limit is invalid")
+    home = Path(require_initialized())
+    with core._OPERATIONS.begin(operation_id) as operation:
+        operation.check()
+        database, db_path = _known_words_database(home)
+        del database
+        escaped = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        where = "source = 'user'"
+        parameters: list[object] = []
+        if query:
+            where += " AND lemma LIKE ? ESCAPE '\\' COLLATE NOCASE"
+            parameters.append(f"%{escaped}%")
+        connection = sqlite3.connect(f"file:{db_path.as_posix()}?mode=ro", uri=True)
+        try:
+            total = int(connection.execute(f"SELECT COUNT(*) FROM known_words WHERE {where}", parameters).fetchone()[0])
+            rows = connection.execute(
+                f"SELECT lemma FROM known_words WHERE {where} ORDER BY lemma LIMIT ? OFFSET ?",
+                [*parameters, limit, offset],
+            ).fetchall()
+        finally:
+            connection.close()
+        operation.check()
+        words = [str(row[0]) for row in rows]
+        return encode_message(
+            "resource.knownwords.listed",
+            {
+                "query": query,
+                "offset": offset,
+                "totalCount": total,
+                "words": words,
+                "hasMore": offset + len(words) < total,
+            },
+        )
+
+
+def _known_word_list(value: object) -> list[str]:
+    if not isinstance(value, list) or not value or len(value) > _MAX_KNOWN_WORD_MUTATION:
+        raise _fail("invalid_resource_request", "words are invalid")
+    words = [_known_word_query(item) for item in value]
+    if any(not word for word in words) or len(set(words)) != len(words):
+        raise _fail("invalid_resource_request", "words are invalid")
+    return words
+
+
+def remove_known_words(payload: Mapping[str, object]) -> str:
+    core._exact(payload, {"operationId", "words"}, code="invalid_resource_request")
+    operation_id = core._operation_id(payload["operationId"])
+    words = _known_word_list(payload["words"])
+    home = Path(require_initialized())
+    with core._OPERATIONS.begin(operation_id) as operation:
+        operation.check()
+        database, db_path = _known_words_database(home)
+        removed = database.remove_words(set(words), source="user")
+        _fsync_file(db_path)
+        core._fsync_directory(home)
+        return encode_message("resource.knownwords.removed", {"removedCount": removed})
+
+
+def reset_known_words(payload: Mapping[str, object]) -> str:
+    core._exact(payload, {"operationId", "scope"}, code="invalid_resource_request")
+    operation_id = core._operation_id(payload["operationId"])
+    scope = core._bounded_text(payload["scope"], name="scope", max_bytes=8)
+    if scope not in {"user", "cache"}:
+        raise _fail("invalid_resource_request", "scope is invalid")
+    home = Path(require_initialized())
+    with core._OPERATIONS.begin(operation_id) as operation:
+        operation.check()
+        database, db_path = _known_words_database(home)
+        removed = database.clear_user() if scope == "user" else database.clear(preserve_user=True)
+        _fsync_file(db_path)
+        core._fsync_directory(home)
+        return encode_message(
+            "resource.knownwords.reset",
+            {"scope": scope, "removedCount": removed},
+        )
+
+
+def export_known_words(payload: Mapping[str, object]) -> str:
+    core._exact(payload, {"operationId"}, code="invalid_resource_request")
+    operation_id = core._operation_id(payload["operationId"])
+    home = Path(require_initialized())
+    operation_root = _work_root(home, operation_id)
+    with core._OPERATIONS.begin(operation_id) as operation:
+        operation.check()
+        core._safe_rmtree(operation_root)
+        operation_root.mkdir(parents=True)
+        database, _db_path = _known_words_database(home)
+        words = sorted(database.get_words_by_source("user"))
+        export_path = operation_root / "known_words.txt"
+        size_bytes = 0
+        try:
+            with export_path.open("xb", buffering=0) as stream:
+                for index, word in enumerate(words):
+                    if index % 1024 == 0:
+                        operation.check()
+                    encoded = f"{word}\n".encode("utf-8")
+                    size_bytes += len(encoded)
+                    if size_bytes > _KNOWN_WORD_EXPORT_LIMIT:
+                        raise _fail("known_words_export_failed", "Known-word export exceeds its limit")
+                    core._write_all(stream, encoded)
+                os.fsync(stream.fileno())
+            core._fsync_directory(operation_root)
+            return encode_message(
+                "resource.knownwords.exported",
+                {
+                    "exportPath": str(export_path),
+                    "exportedCount": len(words),
+                    "sizeBytes": size_bytes,
+                },
+            )
+        except Exception:
+            if operation_root.exists():
+                core._safe_rmtree(operation_root)
+            raise
 
 
 def _read_pitch_inventory(home: Path) -> dict[str, object] | None:
