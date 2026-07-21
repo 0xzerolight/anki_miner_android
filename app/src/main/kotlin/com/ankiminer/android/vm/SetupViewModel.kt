@@ -5,7 +5,8 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.CreationExtras
 import com.ankiminer.android.anki.provider.AnkiExternalReviewOutcome
-import com.ankiminer.android.anki.provider.AnkiFieldAutoMap
+import com.ankiminer.android.anki.provider.AnkiFieldMapPolicy
+import com.ankiminer.android.anki.provider.AnkiFieldMappingChange
 import com.ankiminer.android.anki.provider.AnkiRemediationCommand
 import com.ankiminer.android.data.anki.AnkiSetupManager
 import com.ankiminer.android.data.RuntimeWorkCoordinator
@@ -52,6 +53,7 @@ internal class SetupViewModel(
         val audioPackReplace: Boolean = false,
         val knownWordsFormat: KnownWordsSourceFormat = KnownWordsSourceFormat.JSON,
         val pendingReplaceResourceId: String? = null,
+        val fieldMapChanges: List<AnkiFieldMappingChange> = emptyList(),
     )
 
     private val local = MutableStateFlow(LocalState())
@@ -84,6 +86,7 @@ internal class SetupViewModel(
                 availableNoteTypes = ankiState.availableNoteTypes,
                 noteType = appSettings.noteType,
                 fieldMap = appSettings.fieldMap,
+                fieldMapChanges = localState.fieldMapChanges,
                 remediations = ankiState.remediations,
                 ankiOperation = ankiState.operation,
                 ankiFailure = ankiState.failure,
@@ -146,25 +149,35 @@ internal class SetupViewModel(
     }
 
     fun selectNoteType(name: String) {
-        if (uiState.value.busy) return
-        val fields =
-            uiState.value.availableNoteTypes.firstOrNull { it.name == name }?.fieldNames
-                ?: emptyList()
-        val map = AnkiFieldAutoMap.autoMap(fields)
+        val state = uiState.value
+        if (state.busy || state.noteType == name) return
+        val fields = state.availableNoteTypes.firstOrNull { it.name == name }?.fieldNames ?: return
+        val merged =
+            AnkiFieldMapPolicy.merge(
+                currentNoteType = state.noteType,
+                selectedNoteType = name,
+                fieldNames = fields,
+                currentFieldMap = state.fieldMap,
+            )
         viewModelScope.launch {
-            repository.update { it.copy(noteType = name, fieldMap = map) }
-            ankiSetup.refresh(name, map)
+            repository.update { it.copy(noteType = name, fieldMap = merged.fieldMap) }
+            local.update { it.copy(fieldMapChanges = merged.changes) }
+            ankiSetup.refresh(name, merged.fieldMap)
         }
     }
 
     fun setFieldMapping(key: String, field: String) {
-        if (uiState.value.busy) return
-        val current = uiState.value.fieldMap.toMutableMap()
-        if (field.isEmpty()) current.remove(key) else current[key] = field
-        val map = current.toMap()
-        val noteType = uiState.value.noteType
+        val state = uiState.value
+        if (state.busy) return
+        val fields =
+            state.availableNoteTypes.firstOrNull { it.name == state.noteType }?.fieldNames
+                ?: return
+        val map = AnkiFieldMapPolicy.assign(state.fieldMap, key, field, fields) ?: return
+        if (map == state.fieldMap) return
+        val noteType = state.noteType
         viewModelScope.launch {
             repository.update { it.copy(fieldMap = map) }
+            local.update { it.copy(fieldMapChanges = emptyList()) }
             ankiSetup.refresh(noteType, map)
         }
     }

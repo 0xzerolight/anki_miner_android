@@ -151,6 +151,7 @@ internal object TesterDiagnosticsBuilder {
             is NoteTypeSetupStatus.Verified -> "verified"
             NoteTypeSetupStatus.NoteTypeMissing -> "note_type_missing"
             is NoteTypeSetupStatus.FieldsMissing -> "fields_missing"
+            is NoteTypeSetupStatus.FieldMapInvalid -> "field_map_invalid"
             NoteTypeSetupStatus.FirstFieldMismatch -> "first_field_mismatch"
             is NoteTypeSetupStatus.ProviderError -> "provider_error"
             NoteTypeSetupStatus.NotSelected -> "not_selected"

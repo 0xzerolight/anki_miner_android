@@ -127,6 +127,8 @@
     <string name="anki_note_type_connect_first">Connect AnkiDroid first, then come back here to choose a note type.</string>
     <string name="anki_note_type_picker">Note type</string>
     <string name="anki_field_mapping_title">Field mapping</string>
+    <string name="anki_field_unique_help">Each Anki field can hold only one mapped value. Fields already used by another mapping are unavailable.</string>
+    <string name="anki_field_mapping_changes">Mappings changed for this note type: %1$s</string>
     <string name="anki_field_none">Not mapped</string>
     <string name="anki_field_word_help">Word must be the note type\'s first field — AnkiDroid uses that field to detect duplicates.</string>
     <string name="anki_note_type_verify">Re-check</string>
@@ -134,6 +136,7 @@
     <string name="anki_note_type_status_not_selected">Choose a note type to write cards into.</string>
     <string name="anki_note_type_status_missing">The selected note type no longer exists in AnkiDroid. Choose another one.</string>
     <string name="anki_note_type_status_fields_missing">Some required fields are not mapped to a field in this note type.</string>
+    <string name="anki_note_type_status_field_map_invalid">An Anki field is assigned to more than one mapped value. Choose a different field for each mapping.</string>
     <string name="anki_note_type_status_first_field">The Word field must be the note type\'s first field. Map it there, or choose a note type whose first field holds the word.</string>
     <string name="anki_note_type_status_provider_error">AnkiDroid could not be read. Re-check after confirming it is open and access is granted.</string>
     <string name="anki_note_type_guidance">This note type is missing fields Anki Miner needs. Import a Japanese mining note type into AnkiDroid, then re-check.</string>

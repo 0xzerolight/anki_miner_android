@@ -45,7 +45,7 @@ class DataStoreAppSettingsRepository(context: Context) : AppSettingsRepository {
         store.data
             .catch { failure ->
                 if (failure is IOException) emit(androidx.datastore.preferences.core.emptyPreferences()) else throw failure
-            }.map(::decode)
+            }.map(::decodePreferences)
 
     override suspend fun update(settings: AppSettings) {
         val validated = AppSettingsValidator.validate(settings)
@@ -54,61 +54,79 @@ class DataStoreAppSettingsRepository(context: Context) : AppSettingsRepository {
 
     override suspend fun update(transform: (AppSettings) -> AppSettings) {
         store.edit { preferences ->
-            encode(AppSettingsValidator.validate(transform(decode(preferences))), preferences)
+            encode(AppSettingsValidator.validate(transform(decodePreferences(preferences))), preferences)
         }
     }
 
-    private fun decode(preferences: Preferences): AppSettings {
-        return try {
-            AppSettings(
-            setupWizardSeen = preferences[Keys.setupWizardSeen] ?: false,
-            theme = ThemeMode.fromWire(preferences[Keys.themeMode]),
-            deckName = preferences[Keys.deckName],
-            noteType = preferences[Keys.noteType],
-            fieldMap = FieldMapPreferenceCodec.decode(preferences[Keys.fieldMap]),
-            tags = preferences[Keys.tags],
-            audioPaddingSeconds = preferences[Keys.audioPadding],
-            screenshotOffsetSeconds = preferences[Keys.screenshotOffset],
-            subtitleOffsetSeconds = preferences[Keys.subtitleOffset],
-            audioFormat = preferences[Keys.audioFormat]?.let { stored -> AudioFormat.entries.singleOrNull { it.wireValue == stored } },
-            audioBitrateKbps = preferences[Keys.audioBitrate],
-            useKnownWordsDatabase = preferences[Keys.useKnownWordsDatabase],
-            excludeHiraganaOnly = preferences[Keys.excludeHiraganaOnly],
-            excludeKatakanaOnly = preferences[Keys.excludeKatakanaOnly],
-            boldTargetInSentence = preferences[Keys.boldTarget],
-            deduplicateSentences = preferences[Keys.deduplicateSentences],
-            useIPlusOneFilter = preferences[Keys.useIPlusOne],
-            useSentenceLengthFilter = preferences[Keys.useSentenceLength],
-            maxSentenceDurationSeconds = preferences[Keys.maxSentenceDuration],
-            maxSentenceCharacters = preferences[Keys.maxSentenceCharacters],
-            readingMinimumOccurrence = preferences[Keys.readingMinimumOccurrence],
-            maxFrequencyRank = preferences[Keys.maxFrequencyRank],
-            pitchCategoryFormat =
-                preferences[Keys.pitchCategoryFormat]?.let { stored ->
-                    PitchCategoryFormat.entries.singleOrNull { it.wireValue == stored }
-                },
-            maxParallelWorkers = preferences[Keys.maxParallelWorkers],
-            dictionarySources =
-                ResourceSelectionPreferenceCodec.decode(preferences[Keys.dictionarySources]),
-            frequencySources =
-                ResourceSelectionPreferenceCodec.decode(preferences[Keys.frequencySources]),
-            audioPacks =
-                ResourceSelectionPreferenceCodec.decode(preferences[Keys.audioPacks]),
-            excludedWordsets =
-                ResourceSelectionPreferenceCodec
-                    .decode(preferences[Keys.excludedWordsets])
-                    .filter(ResourceChainSelection::enabled)
-                    .map(ResourceChainSelection::resourceId),
-            readingTtsEnabled = preferences[Keys.readingTtsEnabled] ?: false,
-            jishoEnabled = preferences[Keys.jishoEnabled] ?: false,
-            ).let(AppSettingsValidator::validate)
-        } catch (_: InvalidAppSettingException) {
-            // Preferences are app-private, but a partial/corrupt write must never make the
-            // settings Flow fail.
-            AppSettings(
-                setupWizardSeen = preferences[Keys.setupWizardSeen] ?: false,
-                theme = ThemeMode.fromWire(preferences[Keys.themeMode]),
-            )
+    internal companion object {
+        fun decodePreferences(preferences: Preferences): AppSettings {
+            val setupWizardSeen = preferences[Keys.setupWizardSeen] ?: false
+            val theme = ThemeMode.fromWire(preferences[Keys.themeMode])
+            return try {
+                val decodedFieldMap =
+                    try {
+                        FieldMapPreferenceCodec.decode(preferences[Keys.fieldMap])
+                    } catch (_: InvalidAppSettingException) {
+                        emptyMap()
+                    }
+                val decoded =
+                    AppSettings(
+                        setupWizardSeen = setupWizardSeen,
+                        theme = theme,
+                        deckName = preferences[Keys.deckName],
+                        noteType = preferences[Keys.noteType],
+                        fieldMap = decodedFieldMap,
+                        tags = preferences[Keys.tags],
+                        audioPaddingSeconds = preferences[Keys.audioPadding],
+                        screenshotOffsetSeconds = preferences[Keys.screenshotOffset],
+                        subtitleOffsetSeconds = preferences[Keys.subtitleOffset],
+                        audioFormat =
+                            preferences[Keys.audioFormat]?.let { stored ->
+                                AudioFormat.entries.singleOrNull { it.wireValue == stored }
+                            },
+                        audioBitrateKbps = preferences[Keys.audioBitrate],
+                        useKnownWordsDatabase = preferences[Keys.useKnownWordsDatabase],
+                        excludeHiraganaOnly = preferences[Keys.excludeHiraganaOnly],
+                        excludeKatakanaOnly = preferences[Keys.excludeKatakanaOnly],
+                        boldTargetInSentence = preferences[Keys.boldTarget],
+                        deduplicateSentences = preferences[Keys.deduplicateSentences],
+                        useIPlusOneFilter = preferences[Keys.useIPlusOne],
+                        useSentenceLengthFilter = preferences[Keys.useSentenceLength],
+                        maxSentenceDurationSeconds = preferences[Keys.maxSentenceDuration],
+                        maxSentenceCharacters = preferences[Keys.maxSentenceCharacters],
+                        readingMinimumOccurrence = preferences[Keys.readingMinimumOccurrence],
+                        maxFrequencyRank = preferences[Keys.maxFrequencyRank],
+                        pitchCategoryFormat =
+                            preferences[Keys.pitchCategoryFormat]?.let { stored ->
+                                PitchCategoryFormat.entries.singleOrNull { it.wireValue == stored }
+                            },
+                        maxParallelWorkers = preferences[Keys.maxParallelWorkers],
+                        dictionarySources =
+                            ResourceSelectionPreferenceCodec.decode(preferences[Keys.dictionarySources]),
+                        frequencySources =
+                            ResourceSelectionPreferenceCodec.decode(preferences[Keys.frequencySources]),
+                        audioPacks =
+                            ResourceSelectionPreferenceCodec.decode(preferences[Keys.audioPacks]),
+                        excludedWordsets =
+                            ResourceSelectionPreferenceCodec
+                                .decode(preferences[Keys.excludedWordsets])
+                                .filter(ResourceChainSelection::enabled)
+                                .map(ResourceChainSelection::resourceId),
+                        readingTtsEnabled = preferences[Keys.readingTtsEnabled] ?: false,
+                        jishoEnabled = preferences[Keys.jishoEnabled] ?: false,
+                    )
+                try {
+                    AppSettingsValidator.validate(decoded)
+                } catch (_: InvalidAppSettingException) {
+                    // Legacy field maps may violate newer ownership rules. Quarantine only that
+                    // map; if any unrelated value is also invalid, the outer fallback remains.
+                    AppSettingsValidator.validate(decoded.copy(fieldMap = emptyMap()))
+                }
+            } catch (_: InvalidAppSettingException) {
+                // Preferences are app-private, but a partial/corrupt non-field-map value must
+                // never make the settings Flow fail.
+                AppSettings(setupWizardSeen = setupWizardSeen, theme = theme)
+            }
         }
     }
 

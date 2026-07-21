@@ -274,10 +274,38 @@ def _anki_mapping_overlay(field_name: str, value: object, defaults: Mapping[str,
     for key, mapped_name in result.items():
         if mapped_name:
             _canonical_nonempty_string(f"{field_name}.{key}", mapped_name)
+    if field_name == "anki_fields":
+        _validate_unique_anki_destinations(result)
     return result
 
 
-def validate_anki_request_config(config: object) -> None:
+def _validate_unique_anki_destinations(
+    fields: Mapping[str, str],
+    active_marker: tuple[str, str] | None = None,
+) -> None:
+    """Mirror Kotlin AnkiFieldMapPolicy at both Python pre-builder entry points."""
+
+    owners: dict[str, list[str]] = {}
+    for key, destination in fields.items():
+        if destination:
+            owners.setdefault(destination, []).append(key)
+    if active_marker is not None:
+        marker_owner, marker_destination = active_marker
+        if marker_destination:
+            owners.setdefault(marker_destination, []).append(marker_owner)
+    for destination, logical_keys in owners.items():
+        if len(logical_keys) > 1:
+            raise _invalid(
+                "anki_fields",
+                f"destination {destination!r} is mapped by multiple logical fields: {logical_keys!r}",
+            )
+
+
+def validate_anki_request_config(
+    config: object,
+    *,
+    verified_field_names: Sequence[str] | None = None,
+) -> None:
     """Validate every config value emitted by the Anki callback adapter."""
 
     _canonical_nonempty_string("anki_deck_name", getattr(config, "anki_deck_name", None))
@@ -294,7 +322,6 @@ def validate_anki_request_config(config: object) -> None:
     for key, mapped_name in fields.items():
         if mapped_name:
             _canonical_nonempty_string(f"anki_fields.{key}", mapped_name)
-
     marker_fields = getattr(config, "card_type_marker_fields", None)
     if not isinstance(marker_fields, Mapping) or any(
         not isinstance(key, str) or not isinstance(value, str) for key, value in marker_fields.items()
@@ -303,6 +330,21 @@ def validate_anki_request_config(config: object) -> None:
     for key, mapped_name in marker_fields.items():
         if mapped_name:
             _canonical_nonempty_string(f"card_type_marker_fields.{key}", mapped_name)
+    card_type = getattr(config, "card_type", "")
+    active_marker = None
+    if isinstance(card_type, str) and card_type:
+        marker_destination = marker_fields.get(card_type, "")
+        active_marker = (f"card_type_marker_fields.{card_type}", marker_destination)
+    _validate_unique_anki_destinations(fields, active_marker)
+
+    if verified_field_names is not None:
+        first_field = verified_field_names[0] if verified_field_names else ""
+        word_destination = fields["word"]
+        if not first_field or word_destination != first_field:
+            raise _invalid(
+                "anki_fields.word",
+                f"must map to the note type's first field {first_field!r}; got {word_destination!r}",
+            )
     excluded = getattr(config, "excluded_decks", None)
     _excluded_decks(excluded)
 

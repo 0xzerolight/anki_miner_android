@@ -52,25 +52,38 @@ internal object AnkiFieldAutoMap {
      * - [AnkiFieldKeys.WORD] is forced to the FIRST field (or `""` when [fieldNames] is empty). This
      *   is the AnkiDroid dedup contract: dedup keys on field[0], so the word key must be field[0]
      *   regardless of keyword matches, overriding any keyword-based pick.
-     * - Every other key is keyword-matched against [FIELD_KEYWORDS]: the first field (in
-     *   [fieldNames] order) whose normalized name exactly matches one of the key's keywords wins.
+     * - Every other key is keyword-matched against [FIELD_KEYWORDS]: the first still-unowned field
+     *   (in [fieldNames] order) whose normalized name exactly matches one of the key's keywords
+     *   wins. This keeps all non-empty destinations unique and reserves field[0] for word.
      */
     fun autoMap(fieldNames: List<String>): Map<String, String> {
         val mapping = LinkedHashMap<String, String>(AnkiFieldKeys.ALL.size)
+        val usedDestinations = mutableSetOf<String>()
         for (key in AnkiFieldKeys.ALL) {
             mapping[key] =
                 if (key == AnkiFieldKeys.WORD) {
-                    fieldNames.firstOrNull().orEmpty()
+                    fieldNames.firstOrNull().orEmpty().also { destination ->
+                        if (destination.isNotEmpty()) usedDestinations += destination
+                    }
                 } else {
-                    matchKeyword(key, fieldNames)
+                    firstAvailableMatch(key, fieldNames, usedDestinations).also { destination ->
+                        if (destination.isNotEmpty()) usedDestinations += destination
+                    }
                 }
         }
         return mapping
     }
 
-    private fun matchKeyword(key: String, fieldNames: List<String>): String {
+    internal fun firstAvailableMatch(
+        key: String,
+        fieldNames: List<String>,
+        usedDestinations: Set<String>,
+    ): String {
         val keywords = FIELD_KEYWORDS[key] ?: return ""
-        return fieldNames.firstOrNull { normalize(it) in keywords }.orEmpty()
+        return fieldNames
+            .firstOrNull { fieldName ->
+                fieldName !in usedDestinations && normalize(fieldName) in keywords
+            }.orEmpty()
     }
 
     private fun normalize(fieldName: String): String =
