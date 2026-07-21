@@ -2,6 +2,17 @@
 
 All notable project changes will be recorded here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and releases will use semantic versioning once a public version exists.
 
+## [Unreleased]
+
+### Added
+
+- Known-word management now supports previewed imports, search, removal, export, confirmed reset, excluded Anki decks, and bundled proper-name wordset selection.
+
+### Changed
+
+- Settings reset is split into confirmed mining-default, Anki-target, and resource-choice scopes. Each scope preserves unrelated configuration, and malformed stored settings recover per key instead of clearing the whole store.
+- AnkiConnect-Android `localaudio` remains the primary expression-audio source, ahead of imported-pack fallback. Loopback directory access, JSON size, source count, URL length, redirects, total attempts, and redirect destinations are now bounded and policy-checked.
+
 ## [0.1.4] - 2026-07-20
 
 ### Added
@@ -70,6 +81,12 @@ First published release; supersedes the internal 0.1.0 test build.
 - The legacy "Lapis" note-type migration path.
 
 ### Initial alpha implementation
+
+Historical state: note-model provisioning below was superseded by
+[0.1.2](#012---2026-07-19), which requires a user-selected existing note type
+and permits only target-deck creation. The local-pack-only expression-audio
+design was superseded by [0.1.3](#013---2026-07-20); current safety bounds are
+recorded under [Unreleased](#unreleased).
 
 #### Capabilities
 
