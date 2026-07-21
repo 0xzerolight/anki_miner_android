@@ -67,7 +67,7 @@ class ReleaseBuildIntegrityTests(unittest.TestCase):
         self.assertNotIn("validateReleaseSourceCommit", provider)
         self.assertNotIn("verifyVendoredWheelManifest", provider)
         self.assertIn('selector().withBuildType("release")', variants)
-        self.assertIn("variant.buildConfigFields.put", variants)
+        self.assertIn("variant.buildConfigFields!!.put", variants)
         self.assertIn("variant.manifestPlaceholders.put", variants)
         self.assertGreaterEqual(variants.count("validatedReleaseSourceCommit"), 2)
 

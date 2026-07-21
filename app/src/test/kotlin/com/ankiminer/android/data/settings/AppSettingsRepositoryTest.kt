@@ -350,7 +350,7 @@ class AppSettingsRepositoryTest {
             fieldMap =
                 mapOf(
                     AnkiFieldKeys.WORD to "Expression",
-                    AnkiFieldKeys.SENTENCE to "Sentence",
+                    "sentence" to "Sentence",
                 ),
             tags = "mined japanese",
             audioPaddingSeconds = 0.1,

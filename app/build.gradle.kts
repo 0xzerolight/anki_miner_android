@@ -243,7 +243,7 @@ androidComponents {
         // Artifact prerequisites consume this provider directly. `-x` can skip the named
         // lifecycle checks above, but cannot remove validation from release manifest and
         // BuildConfig evaluation without also excluding inputs required to package the app.
-        variant.buildConfigFields.put(
+        variant.buildConfigFields!!.put(
             "SOURCE_COMMIT",
             validatedReleaseSourceCommit.map { commit ->
                 BuildConfigField("String", "\"$commit\"", "Validated release source commit")
