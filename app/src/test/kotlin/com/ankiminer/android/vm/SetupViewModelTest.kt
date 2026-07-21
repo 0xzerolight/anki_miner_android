@@ -8,6 +8,7 @@ import com.ankiminer.android.data.RuntimeWorkCoordinator
 import com.ankiminer.android.data.anki.AnkiSetupManager
 import com.ankiminer.android.data.anki.AnkiSetupManagerState
 import com.ankiminer.android.data.resources.FrequencySourceFormat
+import com.ankiminer.android.data.resources.KnownWordsResetScope
 import com.ankiminer.android.data.resources.KnownWordsSourceFormat
 import com.ankiminer.android.data.resources.PitchAccentSourceFormat
 import com.ankiminer.android.data.resources.ResourceManager
@@ -161,12 +162,44 @@ class SetupViewModelTest {
             assertEquals("", repository.current.fieldMap["source"])
         }
 
+    @Test
+    fun `known-word actions use preview and scoped management operations`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository = FakeSettingsRepository(AppSettings())
+            val setup = FakeAnkiSetupManager(emptyList())
+            val resources = FakeResourceManager()
+            val viewModel = viewModel(repository, setup, resources)
+            advanceUntilIdle()
+
+            viewModel.importKnownWords("content://known")
+            viewModel.confirmKnownWordsImport()
+            viewModel.setKnownWordsSearch("猫")
+            advanceUntilIdle()
+            viewModel.searchKnownWords()
+            viewModel.loadMoreKnownWords()
+            viewModel.removeKnownWord("犬")
+            viewModel.resetKnownWords(KnownWordsResetScope.USER)
+            viewModel.exportKnownWords("content://export")
+            viewModel.dismissKnownWordsImportPreview()
+            advanceUntilIdle()
+
+            assertEquals(listOf("content://known" to KnownWordsSourceFormat.JSON), resources.previewCalls)
+            assertEquals(emptyList<Pair<String, KnownWordsSourceFormat>>(), resources.importCalls)
+            assertEquals(1, resources.confirmCount)
+            assertEquals(listOf("猫" to false, "猫" to true), resources.searchCalls)
+            assertEquals(listOf(listOf("犬")), resources.removeCalls)
+            assertEquals(listOf(KnownWordsResetScope.USER), resources.resetCalls)
+            assertEquals(listOf("content://export"), resources.exportCalls)
+            assertEquals(1, resources.dismissCount)
+        }
+
     private fun viewModel(
         repository: FakeSettingsRepository,
         setup: FakeAnkiSetupManager,
+        resources: FakeResourceManager = FakeResourceManager(),
     ): SetupViewModel =
         SetupViewModel(
-            resources = FakeResourceManager(),
+            resources = resources,
             settingsRepository = repository,
             ankiSetup = setup,
             pythonReadiness = MutableStateFlow(PythonRuntimeReadiness.Pending),
@@ -223,6 +256,15 @@ class SetupViewModelTest {
     }
 
     private class FakeResourceManager : ResourceManager {
+        val previewCalls = mutableListOf<Pair<String, KnownWordsSourceFormat>>()
+        val importCalls = mutableListOf<Pair<String, KnownWordsSourceFormat>>()
+        var confirmCount = 0
+        var dismissCount = 0
+        val searchCalls = mutableListOf<Pair<String, Boolean>>()
+        val removeCalls = mutableListOf<List<String>>()
+        val resetCalls = mutableListOf<KnownWordsResetScope>()
+        val exportCalls = mutableListOf<String>()
+
         override val state: StateFlow<ResourceManagerState> =
             MutableStateFlow(ResourceManagerState()).asStateFlow()
 
@@ -251,7 +293,37 @@ class SetupViewModelTest {
 
         override suspend fun importAudioPack(uri: String, packId: String, replace: Boolean) = Unit
 
-        override suspend fun importKnownWords(uri: String, format: KnownWordsSourceFormat) = Unit
+        override suspend fun importKnownWords(uri: String, format: KnownWordsSourceFormat) {
+            importCalls += uri to format
+        }
+
+        override suspend fun previewKnownWords(uri: String, format: KnownWordsSourceFormat) {
+            previewCalls += uri to format
+        }
+
+        override suspend fun confirmKnownWordsImport() {
+            confirmCount += 1
+        }
+
+        override fun dismissKnownWordsImportPreview() {
+            dismissCount += 1
+        }
+
+        override suspend fun searchKnownWords(query: String, loadMore: Boolean) {
+            searchCalls += query to loadMore
+        }
+
+        override suspend fun removeKnownWords(words: List<String>) {
+            removeCalls += words
+        }
+
+        override suspend fun resetKnownWords(scope: KnownWordsResetScope) {
+            resetCalls += scope
+        }
+
+        override suspend fun exportKnownWords(uri: String) {
+            exportCalls += uri
+        }
 
         override suspend fun lookup(slotId: String, term: String) = Unit
 

@@ -83,6 +83,30 @@ internal val KNOWN_WORDS_MIME_TYPES =
         "application/octet-stream",
     )
 
+internal data class ExcludedDeckChoice(
+    val name: String,
+    val checked: Boolean,
+    val discovered: Boolean,
+)
+
+internal fun excludedDeckChoices(
+    availableDecks: List<String>,
+    excludedDecks: List<String>,
+): List<ExcludedDeckChoice> {
+    val discovered = availableDecks.toSet()
+    val checked = excludedDecks.toSet()
+    return (availableDecks + excludedDecks)
+        .distinct()
+        .sorted()
+        .map { name ->
+            ExcludedDeckChoice(
+                name = name,
+                checked = name in checked,
+                discovered = name in discovered,
+            )
+        }
+}
+
 @Composable
 internal fun SettingsRoute(
     viewModel: SettingsViewModel,
@@ -130,6 +154,10 @@ internal fun SettingsRoute(
         rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             uri?.let { setupViewModel.importKnownWords(it.toString()) }
         }
+    val knownWordsExportPicker =
+        rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri ->
+            uri?.let { setupViewModel.exportKnownWords(it.toString()) }
+        }
     SettingsScreen(
         draft = draftState.draft,
         resources = resources,
@@ -155,6 +183,7 @@ internal fun SettingsRoute(
         onImportPitch = { pitchPicker.launch(PITCH_MIME_TYPES) },
         onImportAudioPack = { audioPackPicker.launch(AUDIO_PACK_MIME_TYPES) },
         onImportKnownWords = { knownWordsPicker.launch(KNOWN_WORDS_MIME_TYPES) },
+        onExportKnownWords = { knownWordsExportPicker.launch("known_words.txt") },
         modifier = modifier,
     )
 }
@@ -190,9 +219,11 @@ private fun SettingsScreen(
     onImportPitch: () -> Unit,
     onImportAudioPack: () -> Unit,
     onImportKnownWords: () -> Unit,
+    onExportKnownWords: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val deckName = draft.deckName
+    val excludedDecks = draft.excludedDecks
     val tags = draft.tags
     val tagsOverride = draft.tagsOverride
     val audioPadding = draft.audioPadding
@@ -217,7 +248,7 @@ private fun SettingsScreen(
     val dictionarySources = draft.dictionarySources
     val frequencySources = draft.frequencySources
     val audioPacks = draft.audioPacks
-    val excludedWordsets = draft.excludedWordsets
+    val enabledWordsets = draft.enabledWordsets
     val readingTts = draft.readingTts
     val jisho = draft.jisho
     val numericDraftValid = draft.numericValuesValid
@@ -304,6 +335,37 @@ private fun SettingsScreen(
                 stringResource(R.string.settings_deck_name),
                 stringResource(R.string.settings_deck_default),
             )
+            Text(stringResource(R.string.settings_excluded_decks), style = MaterialTheme.typography.titleSmall)
+            Text(stringResource(R.string.settings_excluded_decks_help), style = MaterialTheme.typography.bodySmall)
+            val deckChoices = excludedDeckChoices(setup.availableDeckNames, excludedDecks)
+            if (deckChoices.isEmpty()) {
+                Text(stringResource(R.string.settings_no_anki_decks), color = MaterialTheme.colorScheme.error)
+            } else {
+                deckChoices.forEach { deck ->
+                    BooleanSetting(
+                        label = deck.name,
+                        help =
+                            if (deck.discovered) {
+                                ""
+                            } else {
+                                stringResource(R.string.settings_anki_deck_not_discovered)
+                            },
+                        checked = deck.checked,
+                        onCheckedChange = { checked ->
+                            onDraftChange(
+                                draft.copy(
+                                    excludedDecks =
+                                        if (checked) {
+                                            (excludedDecks + deck.name).distinct()
+                                        } else {
+                                            excludedDecks - deck.name
+                                        },
+                                ),
+                            )
+                        },
+                    )
+                }
+            }
             BooleanSetting(
                 label = stringResource(R.string.settings_tags_override),
                 help = stringResource(R.string.settings_tags_override_help),
@@ -540,15 +602,15 @@ private fun SettingsScreen(
                     BooleanSetting(
                         label = wordset.displayName,
                         help = stringResource(R.string.settings_resource_entries, wordset.entryCount),
-                        checked = wordset.wordsetId in excludedWordsets,
+                        checked = wordset.wordsetId in enabledWordsets,
                         onCheckedChange = { checked ->
                             onDraftChange(
                                 draft.copy(
-                                    excludedWordsets =
+                                    enabledWordsets =
                                         if (checked) {
-                                            (excludedWordsets + wordset.wordsetId).distinct()
+                                            (enabledWordsets + wordset.wordsetId).distinct()
                                         } else {
-                                            excludedWordsets - wordset.wordsetId
+                                            enabledWordsets - wordset.wordsetId
                                         },
                                 ),
                             )
@@ -561,6 +623,14 @@ private fun SettingsScreen(
             state = setup,
             onFormatChanged = setupViewModel::setKnownWordsFormat,
             onImport = onImportKnownWords,
+            onConfirmImport = setupViewModel::confirmKnownWordsImport,
+            onDismissImport = setupViewModel::dismissKnownWordsImportPreview,
+            onSearchChanged = setupViewModel::setKnownWordsSearch,
+            onSearch = setupViewModel::searchKnownWords,
+            onLoadMore = setupViewModel::loadMoreKnownWords,
+            onRemove = setupViewModel::removeKnownWord,
+            onExport = onExportKnownWords,
+            onReset = setupViewModel::resetKnownWords,
         )
         setup.lastLocalImport?.let { imported -> LocalImportResultCard(imported) }
 

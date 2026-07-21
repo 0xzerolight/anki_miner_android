@@ -1,12 +1,11 @@
 package com.ankiminer.android.data.resources
 
-import android.content.ContentResolver
-import android.net.Uri
 import com.ankiminer.android.data.RuntimeWorkCoordinator
 import com.ankiminer.android.engine.PyBridge
 import com.ankiminer.android.media.SafBroker
 import com.ankiminer.android.mining.InstalledTokenizerResourceProvider
 import java.io.File
+import java.net.URI
 import java.util.UUID
 import java.util.concurrent.Executor
 import java.util.concurrent.atomic.AtomicBoolean
@@ -62,6 +61,20 @@ interface ResourceManager {
         format: KnownWordsSourceFormat,
     )
 
+    suspend fun previewKnownWords(uri: String, format: KnownWordsSourceFormat)
+
+    suspend fun confirmKnownWordsImport()
+
+    fun dismissKnownWordsImportPreview()
+
+    suspend fun searchKnownWords(query: String, loadMore: Boolean = false)
+
+    suspend fun removeKnownWords(words: List<String>)
+
+    suspend fun resetKnownWords(scope: KnownWordsResetScope)
+
+    suspend fun exportKnownWords(uri: String)
+
     suspend fun lookup(
         slotId: String,
         term: String,
@@ -84,16 +97,17 @@ interface ResourceManager {
 }
 
 internal class AndroidResourceManager(
-    private val resolver: ContentResolver,
     private val safBroker: SafBroker,
     private val bridge: PyBridge,
     private val tokenizerResources: InstalledTokenizerResourceProvider,
+    private val bridgeFilesRoot: File,
     private val stagingRoot: File,
     private val resourceExecutor: Executor,
     private val controlExecutor: Executor,
     private val runtimeWorkCoordinator: RuntimeWorkCoordinator = RuntimeWorkCoordinator(),
     private val downloader: PinnedResourceDownloader,
-    private val safStager: SafArchiveStager = SafArchiveStager(resolver, stagingRoot),
+    private val safStager: ResourceArchiveStager,
+    private val documentWriter: ResourceDocumentWriter,
 ) : ResourceManager {
     private data class ActiveOperation(
         val id: String,
@@ -102,11 +116,18 @@ internal class AndroidResourceManager(
         val pythonStarted: AtomicBoolean = AtomicBoolean(false),
     )
 
+    private data class PendingKnownWordsImport(
+        val staged: StagedArchive,
+        val format: KnownWordsSourceFormat,
+    )
+
     private val mutableState = MutableStateFlow(ResourceManagerState())
     override val state: StateFlow<ResourceManagerState> = mutableState.asStateFlow()
     private val operationMutex = Mutex()
     private val activeMonitor = Any()
+    private val pendingKnownWordsRoot = File(stagingRoot.parentFile, "resource-pending-known-words")
     private var active: ActiveOperation? = null
+    private var pendingKnownWordsImport: PendingKnownWordsImport? = null
 
     override suspend fun recoverAndRefresh() {
         val startupWasReady = mutableState.value.startupReadiness == ResourceStartupReadiness.READY
@@ -114,6 +135,8 @@ internal class AndroidResourceManager(
             mutableState.update { it.copy(startupReadiness = ResourceStartupReadiness.RECOVERING) }
         }
         runOperation("Refresh resources", ResourceOperationPhase.REFRESHING) { operation ->
+            clearPendingKnownWordsImport()
+            mutableState.update { it.copy(knownWordsImportPreview = null) }
             clearStaging()
             downloader.reconcile(FrozenResourceCatalog.value.resources.map { it.archive })
             operation.cancellation.check()
@@ -216,7 +239,7 @@ internal class AndroidResourceManager(
             var staged: StagedArchive? = null
             try {
                 staged =
-                    safStager.stage(Uri.parse(retained.uri), operation.id, operation.cancellation) { current, total ->
+                    safStager.stage(retained.uri, operation.id, operation.cancellation) { current, total ->
                         updateProgress(operation, ResourceOperationPhase.PREPARING, current, total)
                     }
                 updateProgress(operation, ResourceOperationPhase.IMPORTING, staged.sizeBytes, staged.sizeBytes)
@@ -255,7 +278,7 @@ internal class AndroidResourceManager(
             try {
                 staged =
                     safStager.stage(
-                        source = Uri.parse(retained.uri),
+                        sourceUri = retained.uri,
                         operationId = operation.id,
                         cancellation = operation.cancellation,
                         fileSuffix = format.fileSuffix,
@@ -307,7 +330,7 @@ internal class AndroidResourceManager(
             try {
                 staged =
                     safStager.stage(
-                        source = Uri.parse(retained.uri),
+                        sourceUri = retained.uri,
                         operationId = operation.id,
                         cancellation = operation.cancellation,
                         fileSuffix = format.fileSuffix,
@@ -357,7 +380,7 @@ internal class AndroidResourceManager(
             try {
                 staged =
                     safStager.stage(
-                        source = Uri.parse(retained.uri),
+                        sourceUri = retained.uri,
                         operationId = operation.id,
                         cancellation = operation.cancellation,
                         fileSuffix = ".zip",
@@ -400,12 +423,12 @@ internal class AndroidResourceManager(
             try {
                 staged =
                     safStager.stage(
-                        source = Uri.parse(retained.uri),
+                        sourceUri = retained.uri,
                         operationId = operation.id,
                         cancellation = operation.cancellation,
                         fileSuffix = format.fileSuffix,
                         maximumBytes = KNOWN_WORDS_FILE_LIMIT,
-                        sourceLabel = "known-word export",
+                        sourceLabel = "known-word file",
                     ) { current, total ->
                         updateProgress(operation, ResourceOperationPhase.PREPARING, current, total)
                     }
@@ -430,6 +453,218 @@ internal class AndroidResourceManager(
                 runBlocking { safBroker.releaseReadAccess(retained.uri) }
             }
         }
+    }
+
+    override suspend fun previewKnownWords(uri: String, format: KnownWordsSourceFormat) {
+        runOperation("Preview known words", ResourceOperationPhase.PREPARING) { operation ->
+            clearPendingKnownWordsImport()
+            mutableState.update { it.copy(knownWordsImportPreview = null) }
+            val retained = runBlocking { safBroker.retainReadAccess(uri) }
+            var staged: StagedArchive? = null
+            try {
+                staged =
+                    safStager.stage(
+                        sourceUri = retained.uri,
+                        operationId = operation.id,
+                        cancellation = operation.cancellation,
+                        fileSuffix = format.fileSuffix,
+                        maximumBytes = KNOWN_WORDS_FILE_LIMIT,
+                        sourceLabel = "known-word file",
+                    ) { current, total ->
+                        updateProgress(operation, ResourceOperationPhase.PREPARING, current, total)
+                    }
+                operation.cancellation.check()
+                operation.pythonStarted.set(true)
+                val preview =
+                    ResourceBridgeCodec.decodeKnownWordsPreview(
+                        bridge.dispatch(
+                            ResourceBridgeCodec.encodeKnownWordsPreviewRequest(
+                                operation.id,
+                                staged.file.canonicalPath,
+                                format,
+                            ),
+                            null,
+                        ),
+                    )
+                if (!pendingKnownWordsRoot.exists() && !pendingKnownWordsRoot.mkdirs()) {
+                    throw ResourceDownloadException(
+                        "import_staging_failed",
+                        "Could not retain the known-word preview",
+                    )
+                }
+                val retainedFile = File(pendingKnownWordsRoot, "${operation.id}${format.fileSuffix}")
+                retainedFile.delete()
+                if (!staged.file.renameTo(retainedFile)) {
+                    throw ResourceDownloadException(
+                        "import_staging_failed",
+                        "Could not retain the known-word preview",
+                    )
+                }
+                pendingKnownWordsImport =
+                    PendingKnownWordsImport(staged.copy(file = retainedFile), format)
+                staged = null
+                mutableState.update { it.copy(knownWordsImportPreview = preview) }
+            } finally {
+                staged?.file?.delete()
+                runBlocking { safBroker.releaseReadAccess(retained.uri) }
+            }
+        }
+    }
+
+    override suspend fun confirmKnownWordsImport() {
+        val pending = pendingKnownWordsImport ?: return
+        runOperation("Import known words", ResourceOperationPhase.IMPORTING) { operation ->
+            try {
+                operation.cancellation.check()
+                operation.pythonStarted.set(true)
+                val imported =
+                    ResourceBridgeCodec.decodeImportedKnownWords(
+                        bridge.dispatch(
+                            ResourceBridgeCodec.encodeKnownWordsImportRequest(
+                                operation.id,
+                                pending.staged.file.canonicalPath,
+                                pending.format,
+                            ),
+                            null,
+                        ),
+                    )
+                mutableState.update {
+                    it.copy(lastLocalImport = imported, knownWordsImportPreview = null)
+                }
+                refreshFromPython()
+            } finally {
+                clearPendingKnownWordsImport()
+                mutableState.update { it.copy(knownWordsImportPreview = null) }
+            }
+        }
+    }
+
+    override fun dismissKnownWordsImportPreview() {
+        clearPendingKnownWordsImport()
+        mutableState.update { it.copy(knownWordsImportPreview = null) }
+    }
+
+    override suspend fun searchKnownWords(query: String, loadMore: Boolean) {
+        val current = mutableState.value.knownWordsPage
+        val offset =
+            if (loadMore && current?.query == query && current.hasMore) current.words.size else 0
+        if (loadMore && offset == 0) return
+        runOperation("Inspect known words", ResourceOperationPhase.REFRESHING) { operation ->
+            operation.cancellation.check()
+            operation.pythonStarted.set(true)
+            val page =
+                ResourceBridgeCodec.decodeKnownWordsPage(
+                    bridge.dispatch(
+                        ResourceBridgeCodec.encodeKnownWordsListRequest(
+                            operation.id,
+                            query,
+                            offset,
+                            KNOWN_WORD_PAGE_SIZE,
+                        ),
+                        null,
+                    ),
+                )
+            mutableState.update { state ->
+                val previous = state.knownWordsPage
+                state.copy(
+                    knownWordsPage =
+                        if (offset > 0 && previous?.query == query) {
+                            page.copy(words = previous.words + page.words)
+                        } else {
+                            page
+                        },
+                )
+            }
+        }
+    }
+
+    override suspend fun removeKnownWords(words: List<String>) {
+        runKnownWordsMutation("Remove known words", ResourceOperationPhase.IMPORTING) { operation ->
+            ResourceBridgeCodec.decodeKnownWordsRemoved(
+                bridge.dispatch(
+                    ResourceBridgeCodec.encodeKnownWordsRemoveRequest(operation.id, words),
+                    null,
+                ),
+            )
+        }
+    }
+
+    override suspend fun resetKnownWords(scope: KnownWordsResetScope) {
+        runKnownWordsMutation("Reset known words", ResourceOperationPhase.IMPORTING) { operation ->
+            ResourceBridgeCodec.decodeKnownWordsReset(
+                bridge.dispatch(
+                    ResourceBridgeCodec.encodeKnownWordsResetRequest(operation.id, scope),
+                    null,
+                ),
+            )
+        }
+    }
+
+    override suspend fun exportKnownWords(uri: String) {
+        runOperation("Export known words", ResourceOperationPhase.REFRESHING) { operation ->
+            val destination =
+                try {
+                    URI(uri)
+                } catch (_: Exception) {
+                    throw ResourceBridgeException("known_words_export_failed", "Export destination is invalid")
+                }
+            if (destination.scheme != "content") {
+                throw ResourceBridgeException("known_words_export_failed", "Export destination is invalid")
+            }
+            operation.cancellation.check()
+            operation.pythonStarted.set(true)
+            val exported =
+                ResourceBridgeCodec.decodeKnownWordsExport(
+                    bridge.dispatch(ResourceBridgeCodec.encodeKnownWordsExportRequest(operation.id), null),
+                )
+            val rawSource = File(exported.exportPath)
+            val source = rawSource.canonicalFile
+            val exportRoot = File(bridgeFilesRoot, "resource-work/operations").canonicalFile
+            val operationRoot = File(exportRoot, operation.id).canonicalFile
+            val expectedSource = File(operationRoot, "known_words.txt").canonicalFile
+            if (
+                source != expectedSource ||
+                !source.isFile ||
+                java.nio.file.Files.isSymbolicLink(rawSource.toPath()) ||
+                source.length() != exported.sizeBytes ||
+                source.length() > KNOWN_WORD_EXPORT_LIMIT
+            ) {
+                throw ResourceBridgeException("known_words_export_failed", "Known-word export is invalid")
+            }
+            try {
+                documentWriter.open(uri)?.use { output ->
+                    source.inputStream().use { input -> input.copyTo(output) }
+                    output.flush()
+                } ?: throw ResourceBridgeException(
+                    "known_words_export_failed",
+                    "The selected export document could not be opened",
+                )
+            } finally {
+                source.delete()
+                operationRoot.delete()
+            }
+        }
+    }
+
+    private suspend fun runKnownWordsMutation(
+        label: String,
+        phase: ResourceOperationPhase,
+        mutate: (ActiveOperation) -> Unit,
+    ) {
+        runOperation(label, phase) { operation ->
+            operation.cancellation.check()
+            operation.pythonStarted.set(true)
+            mutate(operation)
+            refreshFromPython()
+            mutableState.update { it.copy(knownWordsPage = null) }
+        }
+    }
+
+    private fun clearPendingKnownWordsImport() {
+        pendingKnownWordsImport?.staged?.file?.delete()
+        pendingKnownWordsImport = null
+        pendingKnownWordsRoot.listFiles()?.forEach { it.delete() }
+        pendingKnownWordsRoot.delete()
     }
 
     override suspend fun lookup(slotId: String, term: String) {
@@ -783,5 +1018,7 @@ internal class AndroidResourceManager(
         const val PITCH_TEXT_LIMIT = 64L * 1024 * 1024
         const val AUDIO_ARCHIVE_LIMIT = 2L * 1024 * 1024 * 1024
         const val KNOWN_WORDS_FILE_LIMIT = 32L * 1024 * 1024
+        const val KNOWN_WORD_EXPORT_LIMIT = 512L * 1024 * 1024
+        const val KNOWN_WORD_PAGE_SIZE = 100
     }
 }

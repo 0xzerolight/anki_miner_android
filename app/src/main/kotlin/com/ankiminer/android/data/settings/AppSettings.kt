@@ -1,5 +1,6 @@
 package com.ankiminer.android.data.settings
 
+import com.ankiminer.android.anki.generated.AnkiLimitsV1
 import com.ankiminer.android.anki.generated.UnicodeContractV151
 import com.ankiminer.android.anki.provider.AnkiFieldMapPolicy
 import com.ankiminer.android.anki.provider.AnkiFieldKeys
@@ -43,6 +44,8 @@ data class AppSettings(
     val setupWizardSeen: Boolean = false,
     val theme: ThemeMode = ThemeMode.DARK,
     val deckName: String? = null,
+    /** Anki deck scopes omitted while collecting known vocabulary. Parent names cover children. */
+    val excludedDecks: List<String> = emptyList(),
     val noteType: String? = null,
     val fieldMap: Map<String, String> = emptyMap(),
     val tags: String? = null,
@@ -67,7 +70,8 @@ data class AppSettings(
     val dictionarySources: List<ResourceChainSelection> = emptyList(),
     val frequencySources: List<ResourceChainSelection> = emptyList(),
     val audioPacks: List<ResourceChainSelection> = emptyList(),
-    val excludedWordsets: List<String> = emptyList(),
+    /** Bundled proper-noun rejection sets enabled for mining. Wire name stays excluded_wordsets. */
+    val enabledWordsets: List<String> = DEFAULT_ENABLED_WORDSETS,
     val readingTtsEnabled: Boolean = false,
     val jishoEnabled: Boolean = false,
 ) {
@@ -116,9 +120,14 @@ data class AppSettings(
             dictionarySources = dictionaryIds.map { ResourceChainSelection(it, enabled = false) },
             frequencySources = frequencyIds.map { ResourceChainSelection(it, enabled = false) },
             audioPacks = audioPackIds.map { ResourceChainSelection(it, enabled = false) },
-            excludedWordsets = emptyList(),
+            enabledWordsets = DEFAULT_ENABLED_WORDSETS,
             jishoEnabled = false,
         )
+
+    companion object {
+        val DEFAULT_ENABLED_WORDSETS =
+            listOf("surnames", "given-names", "place-names", "org-product")
+    }
 }
 
 class InvalidAppSettingException(message: String) : IllegalArgumentException(message)
@@ -151,6 +160,20 @@ object AppSettingsValidator {
     fun validate(settings: AppSettings): AppSettings =
         settings.also {
             it.deckName?.let { value -> canonicalName("Deck name", value) }
+            if (
+                it.excludedDecks.size > AnkiLimitsV1.Names.ExcludedDecks.MAX_ITEM_COUNT ||
+                    it.excludedDecks.distinct().size != it.excludedDecks.size ||
+                    it.excludedDecks.any { deck ->
+                        deck.toByteArray(Charsets.UTF_8).size > AnkiLimitsV1.Names.Deck.MAX_UTF8_BYTES ||
+                            (UnicodeContractV151.scalarCount(deck) ?: Int.MAX_VALUE) >
+                            AnkiLimitsV1.Names.Deck.MAX_CODE_POINTS
+                    } ||
+                    it.excludedDecks.sumOf { deck -> deck.toByteArray(Charsets.UTF_8).size.toLong() } >
+                    AnkiLimitsV1.Names.ExcludedDecks.MAX_TOTAL_UTF8_BYTES.toLong()
+            ) {
+                invalid("Excluded Anki decks are invalid")
+            }
+            it.excludedDecks.forEach { deck -> canonicalName("Excluded deck name", deck) }
             it.noteType?.let { value -> canonicalName("Note type", value) }
             fieldMap(it.fieldMap)
             it.tags?.let { value -> validScalarText("Tags", value) }
@@ -172,9 +195,9 @@ object AppSettingsValidator {
                 invalid("Network audio sources are not supported on Android")
             }
             if (
-                it.excludedWordsets.size > MAX_WORDSET_SELECTIONS ||
-                    it.excludedWordsets.distinct().size != it.excludedWordsets.size ||
-                    it.excludedWordsets.any { id -> !RESOURCE_ID.matches(id) }
+                it.enabledWordsets.size > MAX_WORDSET_SELECTIONS ||
+                    it.enabledWordsets.distinct().size != it.enabledWordsets.size ||
+                    it.enabledWordsets.any { id -> !RESOURCE_ID.matches(id) }
             ) {
                 invalid("Selected bundled wordsets are invalid")
             }
@@ -291,6 +314,7 @@ internal object EngineSettingsSnapshotMapper {
         // model, so an unconfigured target can never silently mine into "Anki Miner".
         values["anki_deck_name"] =
             text(settings.deckName ?: AnkiMinerNoteModel.DEFAULT_DECK_NAME)
+        values["excluded_decks"] = BridgeJsonValue.ArrayValue(settings.excludedDecks.map(::text))
         // No first-party fallback: an empty note type is fail-closed. config_map rejects it and
         // mining admission blocks upstream, so a blank here never injects "Anki Miner".
         values["anki_note_type"] = text(settings.noteType ?: "")
@@ -325,7 +349,7 @@ internal object EngineSettingsSnapshotMapper {
         settings.maxParallelWorkers?.let { values["max_parallel_workers"] = integer(it) }
         values["excluded_wordsets"] =
             BridgeJsonValue.ArrayValue(
-                settings.excludedWordsets
+                settings.enabledWordsets
                     .filter { it in availableWordsetIds }
                     .map(::text),
             )

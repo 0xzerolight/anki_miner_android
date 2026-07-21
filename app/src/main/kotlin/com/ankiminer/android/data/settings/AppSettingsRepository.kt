@@ -70,7 +70,10 @@ class DataStoreAppSettingsRepository internal constructor(
     }
 
     internal companion object {
-        const val CURRENT_SCHEMA_VERSION = 1
+        const val CURRENT_SCHEMA_VERSION = 2
+
+        private const val FRESH_WORDSET_POLICY = "fresh-defaults-v1"
+        private const val PRESERVED_WORDSET_POLICY = "preserved-existing-v1"
 
         internal val persistedPreferenceKeyNames: Set<String>
             get() = Keys.all.mapTo(linkedSetOf()) { it.name }
@@ -81,8 +84,41 @@ class DataStoreAppSettingsRepository internal constructor(
 
         internal fun migratePreferences(preferences: Preferences): Preferences {
             val decoded = decodeWithReport(preferences)
+            val freshStore = preferences.asMap().isEmpty()
+            val needsWordsetMigration =
+                decoded.schemaVersion == null ||
+                    decoded.schemaVersion < 2 ||
+                    !preferences.contains(Keys.enabledWordsets) ||
+                    !preferences.contains(Keys.wordsetDefaultsPolicy) ||
+                    Keys.enabledWordsets in decoded.invalidKeys ||
+                    Keys.wordsetDefaultsPolicy in decoded.invalidKeys
+            val migratedWordsets =
+                if (freshStore) {
+                    AppSettings.DEFAULT_ENABLED_WORDSETS
+                } else if (
+                    preferences.contains(Keys.enabledWordsets) &&
+                    Keys.enabledWordsets !in decoded.invalidKeys
+                ) {
+                    decoded.settings.enabledWordsets
+                } else {
+                    try {
+                        ResourceSelectionPreferenceCodec
+                            .decode(preferences[Keys.legacyExcludedWordsets])
+                            .filter(ResourceChainSelection::enabled)
+                            .map(ResourceChainSelection::resourceId)
+                    } catch (_: RuntimeException) {
+                        emptyList()
+                    }
+                }
             return stagePreferenceWrite(preferences) { candidate ->
                 decoded.invalidKeys.forEach { candidate -= it }
+                if (needsWordsetMigration) {
+                    candidate[Keys.enabledWordsets] =
+                        EnabledWordsetPreferenceCodec.encode(migratedWordsets)
+                    candidate[Keys.wordsetDefaultsPolicy] =
+                        if (freshStore) FRESH_WORDSET_POLICY else PRESERVED_WORDSET_POLICY
+                    candidate -= Keys.legacyExcludedWordsets
+                }
                 if (decoded.schemaVersion == null || decoded.schemaVersion < CURRENT_SCHEMA_VERSION) {
                     candidate[Keys.schemaVersion] = CURRENT_SCHEMA_VERSION
                 }
@@ -93,7 +129,9 @@ class DataStoreAppSettingsRepository internal constructor(
             val decoded = decodeWithReport(preferences)
             return decoded.invalidKeys.isNotEmpty() ||
                 decoded.schemaVersion == null ||
-                decoded.schemaVersion < CURRENT_SCHEMA_VERSION
+                decoded.schemaVersion < CURRENT_SCHEMA_VERSION ||
+                !preferences.contains(Keys.enabledWordsets) ||
+                !preferences.contains(Keys.wordsetDefaultsPolicy)
         }
 
         internal inline fun stagePreferenceWrite(
@@ -115,6 +153,7 @@ class DataStoreAppSettingsRepository internal constructor(
                 candidate[Keys.setupWizardSeen] = value.setupWizardSeen
                 candidate[Keys.themeMode] = value.theme.wireValue
                 candidate.setOrRemove(Keys.deckName, value.deckName)
+                candidate.setOrRemove(Keys.excludedDecks, DeckListPreferenceCodec.encode(value.excludedDecks))
                 candidate.setOrRemove(Keys.noteType, value.noteType)
                 candidate.setOrRemove(Keys.fieldMap, FieldMapPreferenceCodec.encode(value.fieldMap))
                 candidate.setOrRemove(Keys.tags, value.tags)
@@ -149,11 +188,12 @@ class DataStoreAppSettingsRepository internal constructor(
                     ResourceSelectionPreferenceCodec.encode(value.audioPacks),
                 )
                 candidate.setOrRemove(
-                    Keys.excludedWordsets,
-                    ResourceSelectionPreferenceCodec.encode(
-                        value.excludedWordsets.map { ResourceChainSelection(it, enabled = true) },
-                    ),
+                    Keys.enabledWordsets,
+                    EnabledWordsetPreferenceCodec.encode(value.enabledWordsets),
                 )
+                candidate[Keys.wordsetDefaultsPolicy] =
+                    readWordsetPolicy(preferences) ?: PRESERVED_WORDSET_POLICY
+                candidate -= Keys.legacyExcludedWordsets
                 candidate[Keys.readingTtsEnabled] = value.readingTtsEnabled
                 candidate[Keys.jishoEnabled] = value.jishoEnabled
             }
@@ -164,6 +204,10 @@ class DataStoreAppSettingsRepository internal constructor(
                 decoder.read(Keys.schemaVersion, null, { it }) { version ->
                     if (version != null && version < 1) invalidStoredPreference()
                 }
+            decoder.read(Keys.wordsetDefaultsPolicy, null, { stored ->
+                stored.takeIf { it == FRESH_WORDSET_POLICY || it == PRESERVED_WORDSET_POLICY }
+                    ?: invalidStoredPreference()
+            })
             val settings =
                 AppSettings(
                     setupWizardSeen = decoder.read(Keys.setupWizardSeen, false, { it }),
@@ -175,6 +219,10 @@ class DataStoreAppSettingsRepository internal constructor(
                     deckName =
                         decoder.read(Keys.deckName, null, { it }) { value ->
                             value?.let { AppSettingsValidator.validate(AppSettings(deckName = it)) }
+                        },
+                    excludedDecks =
+                        decoder.read(Keys.excludedDecks, emptyList(), DeckListPreferenceCodec::decode) {
+                            AppSettingsValidator.validate(AppSettings(excludedDecks = it))
                         },
                     noteType =
                         decoder.read(Keys.noteType, null, { it }) { value ->
@@ -253,17 +301,7 @@ class DataStoreAppSettingsRepository internal constructor(
                             emptyList(),
                             ResourceSelectionPreferenceCodec::decode,
                         ) { AppSettingsValidator.validate(AppSettings(audioPacks = it)) },
-                    excludedWordsets =
-                        decoder.read(
-                            Keys.excludedWordsets,
-                            emptyList(),
-                            { raw ->
-                                ResourceSelectionPreferenceCodec
-                                    .decode(raw)
-                                    .filter(ResourceChainSelection::enabled)
-                                    .map(ResourceChainSelection::resourceId)
-                            },
-                        ) { AppSettingsValidator.validate(AppSettings(excludedWordsets = it)) },
+                    enabledWordsets = decodeEnabledWordsets(preferences, decoder),
                     readingTtsEnabled = decoder.read(Keys.readingTtsEnabled, false, { it }),
                     jishoEnabled = decoder.read(Keys.jishoEnabled, false, { it }),
                 )
@@ -280,6 +318,45 @@ class DataStoreAppSettingsRepository internal constructor(
             } catch (_: ClassCastException) {
                 null
             }
+
+        private fun readWordsetPolicy(preferences: Preferences): String? =
+            try {
+                preferences[Keys.wordsetDefaultsPolicy]?.takeIf {
+                    it == FRESH_WORDSET_POLICY || it == PRESERVED_WORDSET_POLICY
+                }
+            } catch (_: ClassCastException) {
+                null
+            }
+
+        private fun decodeEnabledWordsets(
+            preferences: Preferences,
+            decoder: IndependentPreferenceDecoder,
+        ): List<String> {
+            val decoded =
+                when {
+                    preferences.contains(Keys.enabledWordsets) ->
+                        decoder.read(
+                            Keys.enabledWordsets,
+                            emptyList(),
+                            EnabledWordsetPreferenceCodec::decode,
+                        )
+                    preferences.contains(Keys.legacyExcludedWordsets) ->
+                        decoder.read(
+                            Keys.legacyExcludedWordsets,
+                            emptyList(),
+                            { raw ->
+                                ResourceSelectionPreferenceCodec
+                                    .decode(raw)
+                                    .filter(ResourceChainSelection::enabled)
+                                    .map(ResourceChainSelection::resourceId)
+                            },
+                        )
+                    preferences.asMap().isEmpty() -> AppSettings.DEFAULT_ENABLED_WORDSETS
+                    else -> emptyList()
+                }
+            AppSettingsValidator.validate(AppSettings(enabledWordsets = decoded))
+            return decoded
+        }
 
         private fun <T : Any> MutablePreferences.setOrRemove(
             key: Preferences.Key<T>,
@@ -339,6 +416,7 @@ class DataStoreAppSettingsRepository internal constructor(
             val setupWizardSeen = register(booleanPreferencesKey("setup_wizard_seen"))
             val themeMode = register(stringPreferencesKey("theme_mode"))
             val deckName = register(stringPreferencesKey("deck_name"))
+            val excludedDecks = register(stringPreferencesKey("excluded_decks_v1"))
             val noteType = register(stringPreferencesKey("note_type"))
             val fieldMap = register(stringPreferencesKey("field_map_v1"))
             val tags = register(stringPreferencesKey("tags"))
@@ -363,7 +441,9 @@ class DataStoreAppSettingsRepository internal constructor(
             val dictionarySources = register(stringPreferencesKey("dictionary_sources_v1"))
             val frequencySources = register(stringPreferencesKey("frequency_sources_v1"))
             val audioPacks = register(stringPreferencesKey("audio_packs_v1"))
-            val excludedWordsets = register(stringPreferencesKey("excluded_wordsets_v1"))
+            val enabledWordsets = register(stringPreferencesKey("enabled_wordsets_v2"))
+            val wordsetDefaultsPolicy = register(stringPreferencesKey("wordset_defaults_policy"))
+            val legacyExcludedWordsets = stringPreferencesKey("excluded_wordsets_v1")
             val readingTtsEnabled = register(booleanPreferencesKey("reading_tts_enabled"))
             val jishoEnabled = register(booleanPreferencesKey("jisho_enabled"))
 
@@ -381,6 +461,71 @@ private object AppSettingsPreferencesMigration : DataMigration<Preferences> {
         DataStoreAppSettingsRepository.migratePreferences(currentData)
 
     override suspend fun cleanUp() = Unit
+}
+
+/** Canonical storage for Anki deck names. Newlines/control characters are rejected upstream. */
+internal object DeckListPreferenceCodec {
+    private const val HEADER = "deck-list-v1"
+    private const val MAX_ENTRIES = 256
+    private const val MAX_BYTES = 65_805
+
+    fun encode(values: List<String>): String? {
+        if (values.isEmpty()) return null
+        AppSettingsValidator.validate(AppSettings(excludedDecks = values))
+        val encoded = HEADER + "\n" + values.joinToString(separator = "\n", postfix = "\n")
+        if (values.size > MAX_ENTRIES || encoded.toByteArray(Charsets.UTF_8).size > MAX_BYTES) {
+            throw InvalidAppSettingException("Saved excluded decks are invalid")
+        }
+        return encoded
+    }
+
+    fun decode(raw: String?): List<String> {
+        if (raw == null) return emptyList()
+        if (raw.toByteArray(Charsets.UTF_8).size > MAX_BYTES || !raw.endsWith('\n')) {
+            throw InvalidAppSettingException("Saved excluded decks are invalid")
+        }
+        val lines = raw.split('\n')
+        if (lines.firstOrNull() != HEADER || lines.lastOrNull() != "") {
+            throw InvalidAppSettingException("Saved excluded decks are invalid")
+        }
+        return lines.drop(1).dropLast(1).also { values ->
+            if (values.size !in 1..MAX_ENTRIES) {
+                throw InvalidAppSettingException("Saved excluded decks are invalid")
+            }
+            AppSettingsValidator.validate(AppSettings(excludedDecks = values))
+        }
+    }
+}
+
+/** Explicit empty-capable v2 storage; absence is never overloaded as a user choice. */
+internal object EnabledWordsetPreferenceCodec {
+    private const val HEADER = "enabled-wordsets-v1"
+    private const val MAX_ENTRIES = 32
+    private val RESOURCE_ID = Regex("(?!.*(?:\\.\\.|--))[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?")
+
+    fun encode(values: List<String>): String {
+        if (
+            values.size > MAX_ENTRIES ||
+                values.distinct().size != values.size ||
+                values.any { !RESOURCE_ID.matches(it) }
+        ) {
+            throw InvalidAppSettingException("Saved enabled wordsets are invalid")
+        }
+        return HEADER + "\n" + values.joinToString(separator = "\n", postfix = if (values.isEmpty()) "" else "\n")
+    }
+
+    fun decode(raw: String): List<String> {
+        if (raw.toByteArray(Charsets.US_ASCII).size > 4096 || !raw.startsWith("$HEADER\n")) {
+            throw InvalidAppSettingException("Saved enabled wordsets are invalid")
+        }
+        val body = raw.removePrefix("$HEADER\n")
+        val values = if (body.isEmpty()) emptyList() else body.removeSuffix("\n").split('\n')
+        if (body.isNotEmpty() && !body.endsWith('\n')) {
+            throw InvalidAppSettingException("Saved enabled wordsets are invalid")
+        }
+        AppSettingsValidator.validate(AppSettings(enabledWordsets = values))
+        return values
+    }
 }
 
 /** Canonical, bounded ASCII encoding for ordered resource choices stored in Preferences DataStore. */

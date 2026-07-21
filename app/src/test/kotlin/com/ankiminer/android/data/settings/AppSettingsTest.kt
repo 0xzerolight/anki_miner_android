@@ -11,6 +11,14 @@ import org.junit.Test
 
 class AppSettingsTest {
     @Test
+    fun freshSettingsEnableAllBundledNameWordsets() {
+        assertEquals(
+            listOf("surnames", "given-names", "place-names", "org-product"),
+            AppSettings().enabledWordsets,
+        )
+    }
+
+    @Test
     fun themeDefaultsToDarkAndWireCodecRoundTrips() {
         assertEquals(ThemeMode.DARK, AppSettings().theme)
         assertFalse(AppSettings().setupWizardSeen)
@@ -29,6 +37,7 @@ class AppSettingsTest {
         assertEquals(
             setOf(
                 "anki_deck_name",
+                "excluded_decks",
                 "anki_note_type",
                 "anki_fields",
                 "card_type_marker_fields",
@@ -177,7 +186,7 @@ class AppSettingsTest {
                                 ResourceChainSelection("freq-a", enabled = true),
                             ),
                         audioPacks = listOf(ResourceChainSelection("audio-a", enabled = false)),
-                        excludedWordsets = listOf("given-names"),
+                        enabledWordsets = listOf("given-names"),
                         readingTtsEnabled = true,
                     ),
                 installedDictionaryIds = listOf("jitendex", "custom"),
@@ -239,6 +248,34 @@ class AppSettingsTest {
     }
 
     @Test
+    fun snapshotEmitsSelectedDeckExclusionsAndEnabledWordsets() {
+        val snapshot =
+            EngineSettingsSnapshotMapper.map(
+                rawSettings =
+                    AppSettings(
+                        excludedDecks = listOf("Japanese::Known", "Mining"),
+                        enabledWordsets = listOf("surnames", "place-names"),
+                    ),
+                installedDictionaryIds = emptyList(),
+                availableWordsetIds =
+                    listOf("surnames", "given-names", "place-names", "org-product"),
+            )
+
+        assertEquals(
+            BridgeJsonValue.ArrayValue(
+                listOf(BridgeJsonValue.Text("Japanese::Known"), BridgeJsonValue.Text("Mining")),
+            ),
+            snapshot.settings["excluded_decks"],
+        )
+        assertEquals(
+            BridgeJsonValue.ArrayValue(
+                listOf(BridgeJsonValue.Text("surnames"), BridgeJsonValue.Text("place-names")),
+            ),
+            snapshot.settings["excluded_wordsets"],
+        )
+    }
+
+    @Test
     fun resourceSettingsRejectDuplicateUnsafeAndNetworkChoices() {
         assertThrows(InvalidAppSettingException::class.java) {
             AppSettingsValidator.validate(
@@ -257,7 +294,13 @@ class AppSettingsTest {
             )
         }
         assertThrows(InvalidAppSettingException::class.java) {
-            AppSettingsValidator.validate(AppSettings(excludedWordsets = listOf("../escape")))
+            AppSettingsValidator.validate(AppSettings(enabledWordsets = listOf("../escape")))
+        }
+        assertThrows(InvalidAppSettingException::class.java) {
+            AppSettingsValidator.validate(AppSettings(excludedDecks = listOf("Known", "Known")))
+        }
+        assertThrows(InvalidAppSettingException::class.java) {
+            AppSettingsValidator.validate(AppSettings(excludedDecks = listOf("x".repeat(1025))))
         }
     }
 

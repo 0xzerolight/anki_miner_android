@@ -9,10 +9,12 @@ import com.ankiminer.android.data.anki.AnkiSetupBackend
 import com.ankiminer.android.data.anki.AnkiSetupManager
 import com.ankiminer.android.data.anki.ProcessAnkiSetupManager
 import com.ankiminer.android.data.RuntimeWorkCoordinator
+import com.ankiminer.android.data.resources.AndroidResourceDocumentWriter
 import com.ankiminer.android.data.resources.AndroidResourceManager
 import com.ankiminer.android.data.resources.PinnedResourceDownloader
 import com.ankiminer.android.data.resources.ResourceManager
 import com.ankiminer.android.data.resources.ResourceStartupReadiness
+import com.ankiminer.android.data.resources.SafArchiveStager
 import com.ankiminer.android.data.settings.AppSettingsRepository
 import com.ankiminer.android.data.settings.DataStoreAppSettingsRepository
 import com.ankiminer.android.engine.ChaquopyPyBridge
@@ -125,6 +127,9 @@ class AnkiMinerApplication : Application() {
                     override fun listNoteTypes(cancellation: AnkiCancellation) =
                         ankiProviderRuntime.listNoteTypes(cancellation)
 
+                    override fun listDeckNames(cancellation: AnkiCancellation) =
+                        ankiProviderRuntime.listDeckNames(cancellation)
+
                     override fun verifyNoteType(
                         noteType: String?,
                         fieldMap: Map<String, String>,
@@ -152,16 +157,19 @@ class AnkiMinerApplication : Application() {
     }
 
     internal val resourceManager: ResourceManager by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        val resourceStagingRoot = File(noBackupFilesDir, "resource-staging")
         AndroidResourceManager(
-            resolver = contentResolver,
             safBroker = safBroker,
             bridge = pyBridge,
             tokenizerResources = tokenizerResourceProvider,
-            stagingRoot = File(noBackupFilesDir, "resource-staging"),
+            bridgeFilesRoot = filesDir,
+            stagingRoot = resourceStagingRoot,
             downloader = PinnedResourceDownloader(File(noBackupFilesDir, "resource-downloads")),
             resourceExecutor = resourceExecutor,
             controlExecutor = resourceControlExecutor,
             runtimeWorkCoordinator = runtimeWorkCoordinator,
+            safStager = SafArchiveStager(contentResolver, resourceStagingRoot),
+            documentWriter = AndroidResourceDocumentWriter(contentResolver),
         )
     }
     internal val resourceStartupReadiness: StateFlow<ResourceStartupReadiness> by lazy(

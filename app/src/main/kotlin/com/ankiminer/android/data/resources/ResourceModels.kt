@@ -211,6 +211,38 @@ data class ImportedKnownWords(
     val isGeneric: Boolean,
 ) : LocalResourceImportResult
 
+data class KnownWordsImportPreview(
+    val format: String,
+    val importedCount: Long,
+    val totalEntries: Long,
+    val isGeneric: Boolean,
+    val sampleWords: List<String>,
+)
+
+data class KnownWordsPage(
+    val query: String,
+    val offset: Int,
+    val totalCount: Long,
+    val words: List<String>,
+    val hasMore: Boolean,
+)
+
+enum class KnownWordsResetScope(val wireValue: String) {
+    USER("user"),
+    CACHE("cache"),
+}
+
+data class KnownWordsResetResult(
+    val scope: KnownWordsResetScope,
+    val removedCount: Long,
+)
+
+data class KnownWordsExport(
+    val exportPath: String,
+    val exportedCount: Long,
+    val sizeBytes: Long,
+)
+
 data class KnownWordsInventory(
     val totalCount: Long,
     val userCount: Long,
@@ -284,6 +316,8 @@ data class ResourceManagerState(
     val knownWords: KnownWordsInventory = KnownWordsInventory(0, 0, 0, 0, schemaOk = true),
     val wordsets: List<BundledWordset> = emptyList(),
     val lastLocalImport: LocalResourceImportResult? = null,
+    val knownWordsImportPreview: KnownWordsImportPreview? = null,
+    val knownWordsPage: KnownWordsPage? = null,
     val activeOperation: ResourceOperationProgress? = null,
     val failure: ResourceFailure? = null,
     val lastLookup: DictionaryLookup? = null,
