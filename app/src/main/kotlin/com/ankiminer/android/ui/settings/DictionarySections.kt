@@ -193,7 +193,11 @@ internal fun DictionaryLookupCard(
 ) {
     OutlinedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(stringResource(R.string.dictionary_test_title), style = MaterialTheme.typography.titleMedium)
+            Text(
+                stringResource(R.string.dictionary_test_title),
+                modifier = Modifier.semantics { heading() },
+                style = MaterialTheme.typography.titleMedium,
+            )
             FlowRow(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),

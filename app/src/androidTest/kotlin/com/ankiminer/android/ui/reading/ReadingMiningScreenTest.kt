@@ -3,6 +3,7 @@ package com.ankiminer.android.ui.reading
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasTestTag
@@ -53,6 +54,34 @@ class ReadingMiningScreenTest {
             assertTrue(pickedSource)
             assertTrue(started)
         }
+    }
+
+    @Test
+    fun resolvingReadingSourceShowsSafeValidatedFilename() {
+        setScreen(
+            state =
+                ReadingMiningUiState(
+                    source =
+                        ReadingDocumentSlotState(
+                            document("source", "novel.epub"),
+                            isResolving = true,
+                        ),
+                ),
+        )
+
+        composeRule.onNodeWithText("Reading document: novel.epub…").assertExists()
+    }
+
+    @Test
+    fun resolvingReadingSourceUsesGenericCopyWithoutMetadata() {
+        setScreen(
+            state =
+                ReadingMiningUiState(
+                    source = ReadingDocumentSlotState(isResolving = true),
+                ),
+        )
+
+        composeRule.onNodeWithText("Reading document…").assertExists()
     }
 
     @Test
@@ -136,10 +165,7 @@ class ReadingMiningScreenTest {
         composeRule
             .onNodeWithText("Selections from earlier pages are already saved.")
             .assertExists()
-        composeRule
-            .onNodeWithTag(ReadingMiningTestTags.CONTENT)
-            .performScrollToNode(hasTestTag(ReadingMiningTestTags.CONFIRM_CURATION))
-        composeRule.onNodeWithText("Finish with 2 selected on this page").assertExists()
+        composeRule.onNodeWithText("Finish with 2 selected on this page").assertIsDisplayed()
     }
 
     @Test
@@ -171,6 +197,32 @@ class ReadingMiningScreenTest {
     }
 
     @Test
+    fun hugeProcessingResultIsCappedBySharedSummary() {
+        val result = hugeResult()
+        setScreen(
+            state =
+                ReadingMiningUiState(
+                    runState = MiningRunState.Success("run", result),
+                ),
+        )
+
+        composeRule
+            .onNodeWithTag(ReadingMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(ReadingMiningTestTags.RESULT))
+        composeRule
+            .onNodeWithText(
+                "Mined forms: ${result.minedForms.take(100).joinToString()}, +150 more",
+            ).assertExists()
+        composeRule
+            .onNodeWithText(
+                "Anki note IDs: ${result.cardIds.take(100).joinToString()}, +150 more",
+            ).assertExists()
+        composeRule.onNodeWithText("• error-50").assertExists()
+        composeRule.onNodeWithText("• error-51").assertDoesNotExist()
+        composeRule.onNodeWithText("+75 more").assertExists()
+    }
+
+    @Test
     fun pendingReadingPageSubmissionKeepsCancelEnabled() {
         val request = request(CurationPage(0, 2, 0, 3))
         setScreen(
@@ -195,9 +247,6 @@ class ReadingMiningScreenTest {
                 ),
         )
 
-        composeRule
-            .onNodeWithTag(ReadingMiningTestTags.CONTENT)
-            .performScrollToNode(hasTestTag(ReadingMiningTestTags.CANCEL))
         composeRule.onNodeWithTag(ReadingMiningTestTags.CANCEL).assertIsEnabled()
     }
 
@@ -311,5 +360,12 @@ class ReadingMiningScreenTest {
             videoFile = "archive.cbz",
             subtitleFile = "source.mokuro",
             minedForms = listOf("食べる", "懐かしい"),
+        )
+
+    private fun hugeResult(): ProcessingResult =
+        result().copy(
+            minedForms = (1..250).map { "form-$it" },
+            cardIds = (1L..250L).toList(),
+            errors = (1..125).map { "error-$it" },
         )
 }

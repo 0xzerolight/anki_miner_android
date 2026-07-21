@@ -1,5 +1,6 @@
 package com.ankiminer.android.vm
 
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
 import com.ankiminer.android.MainDispatcherRule
@@ -18,6 +19,7 @@ import com.ankiminer.android.mining.MiningRepository
 import com.ankiminer.android.mining.MiningRunState
 import com.ankiminer.android.mining.ProcessingResult
 import com.ankiminer.android.mining.VideoMiningInput
+import com.ankiminer.android.ui.video.DocumentSelectionError
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
@@ -42,6 +44,70 @@ import org.junit.Test
 class VideoMiningViewModelTest {
     @get:Rule
     val mainDispatcherRule = MainDispatcherRule()
+
+    @Test
+    fun savedIdleSelectionsRestoreByRevalidatingBothUris() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val savedState = SavedStateHandle()
+            SavedDocumentSelectionStore(savedState, "videoMining.video").save(
+                document("content://test/restored-video.mkv", "stale-video-name.mkv"),
+            )
+            SavedDocumentSelectionStore(savedState, "videoMining.subtitle").save(
+                document("content://test/restored-subtitle.srt", "stale-subtitle-name.srt"),
+            )
+            val broker = ImmediateSafBroker()
+
+            val viewModel =
+                VideoMiningViewModel(
+                    repository = RecordingRepository(),
+                    safBroker = broker,
+                    savedStateHandle = savedState,
+                )
+            runCurrent()
+
+            assertEquals(
+                listOf(
+                    "content://test/restored-video.mkv",
+                    "content://test/restored-subtitle.srt",
+                ),
+                broker.retainedUris,
+            )
+            assertEquals("restored-video.mkv", viewModel.uiState.value.video.document?.displayName)
+            assertEquals(
+                "restored-subtitle.srt",
+                viewModel.uiState.value.subtitle.document?.displayName,
+            )
+            assertTrue(viewModel.uiState.value.canStart)
+        }
+
+    @Test
+    fun revokedSavedVideoGrantSurfacesAccessErrorAndClearsMetadata() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val savedState = SavedStateHandle()
+            val selectionStore =
+                SavedDocumentSelectionStore(savedState, "videoMining.video")
+            selectionStore.save(
+                document("content://test/revoked-video.mkv", "revoked-video.mkv"),
+            )
+            val broker = ControlledSafBroker()
+
+            val viewModel =
+                VideoMiningViewModel(
+                    repository = RecordingRepository(),
+                    safBroker = broker,
+                    savedStateHandle = savedState,
+                )
+            runCurrent()
+            broker.fail("content://test/revoked-video.mkv")
+            runCurrent()
+
+            assertEquals(DocumentSelectionError.VIDEO, viewModel.uiState.value.video.error)
+            assertFalse(viewModel.uiState.value.video.isResolving)
+            assertNull(viewModel.uiState.value.video.document)
+            assertNull(selectionStore.restore())
+            assertNull(savedState.get<String>("videoMining.video.uri"))
+            assertNull(savedState.get<String>("videoMining.video.displayName"))
+        }
 
     @Test
     fun defaultCurationSelectsEverythingAndKeepsAlternateSentenceIdentity() =
@@ -490,7 +556,7 @@ class VideoMiningViewModelTest {
             val viewModel =
                 ViewModelProvider.create(
                     store,
-                    VideoMiningViewModel.Factory(RecordingRepository(), broker),
+                    factory(RecordingRepository(), broker),
                 )[VideoMiningViewModel::class.java]
             selectDocuments(viewModel)
             runCurrent()
@@ -512,7 +578,7 @@ class VideoMiningViewModelTest {
             val viewModel =
                 ViewModelProvider.create(
                     store,
-                    VideoMiningViewModel.Factory(RecordingRepository(), broker),
+                    factory(RecordingRepository(), broker),
                 )[VideoMiningViewModel::class.java]
             selectDocuments(viewModel)
             runCurrent()
@@ -534,7 +600,7 @@ class VideoMiningViewModelTest {
             val viewModel =
                 ViewModelProvider.create(
                     store,
-                    VideoMiningViewModel.Factory(repository, broker),
+                    factory(repository, broker),
                 )[VideoMiningViewModel::class.java]
             selectDocuments(viewModel)
             runCurrent()
@@ -559,7 +625,7 @@ class VideoMiningViewModelTest {
             val viewModel =
                 ViewModelProvider.create(
                     store,
-                    VideoMiningViewModel.Factory(repository, broker),
+                    factory(repository, broker),
                 )[VideoMiningViewModel::class.java]
             selectDocuments(viewModel)
             runCurrent()
@@ -584,7 +650,7 @@ class VideoMiningViewModelTest {
             val viewModel =
                 ViewModelProvider.create(
                     store,
-                    VideoMiningViewModel.Factory(repository, broker),
+                    factory(repository, broker),
                 )[VideoMiningViewModel::class.java]
             viewModel.onVideoPicked("content://test/shared")
             viewModel.onSubtitlePicked("content://test/shared")
@@ -611,7 +677,7 @@ class VideoMiningViewModelTest {
             val viewModel =
                 ViewModelProvider.create(
                     store,
-                    VideoMiningViewModel.Factory(repository, broker),
+                    factory(repository, broker),
                 )[VideoMiningViewModel::class.java]
             selectDocuments(viewModel)
             runCurrent()
@@ -628,6 +694,16 @@ class VideoMiningViewModelTest {
         viewModel.onVideoPicked("content://test/video")
         viewModel.onSubtitlePicked("content://test/subtitle")
     }
+
+    private fun factory(
+        repository: MiningRepository,
+        broker: SafBroker,
+    ): VideoMiningViewModel.Factory =
+        VideoMiningViewModel.Factory(
+            repository = repository,
+            safBroker = broker,
+            savedStateHandleFactory = { SavedStateHandle() },
+        )
 
     private class ImmediateSafBroker : SafBroker {
         val retainedUris = mutableListOf<String>()
@@ -758,6 +834,11 @@ class VideoMiningViewModelTest {
     }
 
     private companion object {
+        fun document(
+            uri: String,
+            displayName: String,
+        ): SafDocument = SafDocument(uri, displayName, mimeType = null, sizeBytes = null)
+
         fun curationRequest(): CurationRequest {
             val sentence =
                 CurationSentence(
