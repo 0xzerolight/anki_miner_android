@@ -3,6 +3,7 @@ package com.ankiminer.android.diagnostics
 import android.os.Build
 import com.ankiminer.android.BuildConfig
 import com.ankiminer.android.anki.provider.AnkiProviderReadiness
+import com.ankiminer.android.anki.provider.AnkiRecoveryReadiness
 import com.ankiminer.android.anki.provider.NoteTypeSetupStatus
 import com.ankiminer.android.engine.PythonRuntimeReadiness
 import com.ankiminer.android.mining.MiningRunState
@@ -101,10 +102,16 @@ internal object TesterDiagnosticsBuilder {
                 line("resources.operation", setup.operation?.phase?.name?.lowercase(Locale.ROOT) ?: NONE)
                 line("resources.failure", safeCode(setup.failure?.code))
                 line("anki.provider", ankiReadiness(setup.anki))
+                line("anki.recovery_startup", ankiRecoveryReadiness(setup.ankiRecovery))
+                line(
+                    "anki.recovery_inventory",
+                    setup.recoveryInventoryStatus.name.lowercase(Locale.ROOT),
+                )
                 line("anki.model", modelReadiness(setup.noteTypeStatus))
                 line("anki.remediations", setup.remediations.pending.size.toString())
                 line("anki.operation", setup.ankiOperation?.name?.lowercase(Locale.ROOT) ?: NONE)
                 line("anki.failure", safeCode(setup.ankiFailure?.code))
+                line("anki.recovery_failure", safeCode(setup.ankiRecoveryFailure?.code))
                 line("permissions.notifications", setup.notifications.name.lowercase(Locale.ROOT))
                 line("video.run", miningRun(video.runState))
                 line("video.pending", videoPending(video))
@@ -142,8 +149,14 @@ internal object TesterDiagnosticsBuilder {
             AnkiProviderReadiness.Uninitialized -> "uninitialized"
             is AnkiProviderReadiness.Incompatible -> "incompatible"
             AnkiProviderReadiness.PermissionDenied -> "permission_denied"
-            AnkiProviderReadiness.RecoveryBlocked -> "recovery_blocked"
             is AnkiProviderReadiness.Ready -> "ready"
+        }
+
+    private fun ankiRecoveryReadiness(readiness: AnkiRecoveryReadiness): String =
+        when (readiness) {
+            AnkiRecoveryReadiness.NotChecked -> "not_checked"
+            AnkiRecoveryReadiness.Ready -> "ready"
+            AnkiRecoveryReadiness.Blocked -> "blocked"
         }
 
     private fun modelReadiness(status: NoteTypeSetupStatus): String =

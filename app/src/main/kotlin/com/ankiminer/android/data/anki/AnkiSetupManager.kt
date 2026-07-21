@@ -23,13 +23,22 @@ internal data class AnkiSetupFailure(
     val message: String,
 )
 
+internal enum class AnkiRecoveryInventoryStatus {
+    NOT_CHECKED,
+    AVAILABLE,
+    UNAVAILABLE,
+}
+
 internal data class AnkiSetupManagerState(
     val noteTypeStatus: NoteTypeSetupStatus = NoteTypeSetupStatus.NotSelected,
     val availableNoteTypes: List<ModelSummary> = emptyList(),
     val availableDeckNames: List<String> = emptyList(),
     val remediations: AnkiRemediationInventory = AnkiRemediationInventory(emptyList()),
+    val recoveryInventoryStatus: AnkiRecoveryInventoryStatus =
+        AnkiRecoveryInventoryStatus.NOT_CHECKED,
     val operation: AnkiSetupOperation? = null,
     val failure: AnkiSetupFailure? = null,
+    val recoveryFailure: AnkiSetupFailure? = null,
 ) {
     val busy: Boolean
         get() = operation != null
@@ -90,19 +99,8 @@ internal class ProcessAnkiSetupManager(
 
     override fun refresh(noteType: String?, fieldMap: Map<String, String>) {
         runOperation(AnkiSetupOperation.REFRESHING) {
-            val available = backend.listNoteTypes(AnkiCancellation.NONE)
-            val decks = backend.listDeckNames(AnkiCancellation.NONE)
-            val status = backend.verifyNoteType(noteType, fieldMap, AnkiCancellation.NONE)
-            val remediations = backend.remediationInventory(AnkiCancellation.NONE)
-            mutableState.update { current ->
-                current.copy(
-                    availableNoteTypes = available,
-                    availableDeckNames = decks,
-                    noteTypeStatus = status,
-                    remediations = remediations,
-                    failure = null,
-                )
-            }
+            refreshRecoveryInventory()
+            refreshProviderSetup(noteType, fieldMap)
         }
     }
 
@@ -110,7 +108,12 @@ internal class ProcessAnkiSetupManager(
         runOperation(AnkiSetupOperation.RECONCILING) {
             val remediations = backend.reconcileInterruptedWork(AnkiCancellation.NONE)
             mutableState.update { current ->
-                current.copy(remediations = remediations, failure = null)
+                current.copy(
+                    remediations = remediations,
+                    recoveryInventoryStatus = AnkiRecoveryInventoryStatus.AVAILABLE,
+                    failure = null,
+                    recoveryFailure = null,
+                )
             }
         }
     }
@@ -119,13 +122,72 @@ internal class ProcessAnkiSetupManager(
         runOperation(AnkiSetupOperation.RESOLVING_REMEDIATION) {
             val remediations = backend.performRemediation(command, AnkiCancellation.NONE)
             mutableState.update { current ->
-                current.copy(remediations = remediations, failure = null)
+                current.copy(
+                    remediations = remediations,
+                    recoveryInventoryStatus = AnkiRecoveryInventoryStatus.AVAILABLE,
+                    failure = null,
+                    recoveryFailure = null,
+                )
             }
         }
     }
 
     override fun dismissFailure() {
-        mutableState.update { it.copy(failure = null) }
+        mutableState.update { it.copy(failure = null, recoveryFailure = null) }
+    }
+
+    private fun refreshRecoveryInventory() {
+        try {
+            val remediations = backend.remediationInventory(AnkiCancellation.NONE)
+            mutableState.update { current ->
+                current.copy(
+                    remediations = remediations,
+                    recoveryInventoryStatus = AnkiRecoveryInventoryStatus.AVAILABLE,
+                    recoveryFailure = null,
+                )
+            }
+        } catch (_: RuntimeException) {
+            mutableState.update { current ->
+                current.copy(
+                    recoveryInventoryStatus = AnkiRecoveryInventoryStatus.UNAVAILABLE,
+                    recoveryFailure =
+                        AnkiSetupFailure(
+                            "anki_recovery_inventory_unavailable",
+                            "Local Anki recovery records could not be read. Check again before mining.",
+                        ),
+                )
+            }
+        }
+    }
+
+    private fun refreshProviderSetup(
+        noteType: String?,
+        fieldMap: Map<String, String>,
+    ) {
+        try {
+            val available = backend.listNoteTypes(AnkiCancellation.NONE)
+            val decks = backend.listDeckNames(AnkiCancellation.NONE)
+            val status = backend.verifyNoteType(noteType, fieldMap, AnkiCancellation.NONE)
+            mutableState.update { current ->
+                current.copy(
+                    availableNoteTypes = available,
+                    availableDeckNames = decks,
+                    noteTypeStatus = status,
+                    failure = null,
+                )
+            }
+        } catch (_: RuntimeException) {
+            val message =
+                "AnkiDroid is unavailable. Local recovery records remain listed below."
+            mutableState.update { current ->
+                current.copy(
+                    availableNoteTypes = emptyList(),
+                    availableDeckNames = emptyList(),
+                    noteTypeStatus = NoteTypeSetupStatus.ProviderError(true, message),
+                    failure = AnkiSetupFailure("anki_provider_unavailable", message),
+                )
+            }
+        }
     }
 
     private fun runOperation(

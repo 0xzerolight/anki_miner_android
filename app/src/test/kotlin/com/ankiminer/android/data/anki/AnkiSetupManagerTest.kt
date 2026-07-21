@@ -51,6 +51,7 @@ class AnkiSetupManagerTest {
         assertEquals(listOf("Default", "Japanese", "Japanese::Known"), state.availableDeckNames)
         assertEquals(NoteTypeSetupStatus.Verified(24L), state.noteTypeStatus)
         assertEquals(remediations, state.remediations)
+        assertEquals(AnkiRecoveryInventoryStatus.AVAILABLE, state.recoveryInventoryStatus)
         assertEquals(1, backend.listCalls)
         assertEquals(1, backend.verifyCalls)
         assertEquals("Lapis", backend.lastNoteType)
@@ -58,6 +59,59 @@ class AnkiSetupManagerTest {
         assertNull(state.failure)
         assertNull(state.operation)
         mining.close()
+    }
+
+    @Test
+    fun `provider discovery failure keeps local remediation inventory visible`() {
+        val remediations = AnkiRemediationInventory(listOf(pendingRemediation()))
+        val backend = FakeBackend(remediations = remediations, failList = true)
+        val manager =
+            ProcessAnkiSetupManager(
+                backend,
+                Executor(Runnable::run),
+                RuntimeWorkCoordinator(),
+            )
+
+        manager.refresh("Lapis", mapOf("word" to "Expression"))
+
+        assertEquals(remediations, manager.state.value.remediations)
+        assertEquals(
+            AnkiRecoveryInventoryStatus.AVAILABLE,
+            manager.state.value.recoveryInventoryStatus,
+        )
+        assertEquals("anki_provider_unavailable", requireNotNull(manager.state.value.failure).code)
+        assertEquals(1, backend.inventoryCalls)
+    }
+
+    @Test
+    fun `local inventory failure does not hide provider discovery`() {
+        val available = listOf(ModelSummary(24L, "Lapis", listOf("Expression")))
+        val backend =
+            FakeBackend(
+                noteTypes = available,
+                status = NoteTypeSetupStatus.Verified(24L),
+                failInventory = true,
+            )
+        val manager =
+            ProcessAnkiSetupManager(
+                backend,
+                Executor(Runnable::run),
+                RuntimeWorkCoordinator(),
+            )
+
+        manager.refresh("Lapis", mapOf("word" to "Expression"))
+
+        assertEquals(available, manager.state.value.availableNoteTypes)
+        assertEquals(NoteTypeSetupStatus.Verified(24L), manager.state.value.noteTypeStatus)
+        assertEquals(
+            AnkiRecoveryInventoryStatus.UNAVAILABLE,
+            manager.state.value.recoveryInventoryStatus,
+        )
+        assertEquals(
+            "anki_recovery_inventory_unavailable",
+            requireNotNull(manager.state.value.recoveryFailure).code,
+        )
+        assertEquals(1, backend.listCalls)
     }
 
     @Test
@@ -131,8 +185,11 @@ class AnkiSetupManagerTest {
         private val status: NoteTypeSetupStatus = NoteTypeSetupStatus.NotSelected,
         private val remediations: AnkiRemediationInventory = AnkiRemediationInventory(emptyList()),
         private val failReconcile: Boolean = false,
+        private val failList: Boolean = false,
+        private val failInventory: Boolean = false,
     ) : AnkiSetupBackend {
         var listCalls = 0
+        var inventoryCalls = 0
         var verifyCalls = 0
         var reconcileCalls = 0
         var performCalls = 0
@@ -141,6 +198,7 @@ class AnkiSetupManagerTest {
 
         override fun listNoteTypes(cancellation: AnkiCancellation): List<ModelSummary> {
             listCalls += 1
+            if (failList) error("provider unavailable")
             return noteTypes
         }
 
@@ -159,7 +217,11 @@ class AnkiSetupManagerTest {
 
         override fun remediationInventory(
             cancellation: AnkiCancellation,
-        ): AnkiRemediationInventory = remediations
+        ): AnkiRemediationInventory {
+            inventoryCalls += 1
+            if (failInventory) error("journal unavailable")
+            return remediations
+        }
 
         override fun reconcileInterruptedWork(
             cancellation: AnkiCancellation,
@@ -177,4 +239,16 @@ class AnkiSetupManagerTest {
             return remediations
         }
     }
+
+    private fun pendingRemediation() =
+        AnkiPendingRemediation(
+            id = 5L,
+            type = AnkiRemediationType.MEDIA_COMMIT_UNCERTAIN,
+            title = "Media save needs review",
+            summary = "Review the media write",
+            compactEvidence = null,
+            createdAtMs = 1L,
+            updatedAtMs = 1L,
+            availableActions = emptySet(),
+        )
 }

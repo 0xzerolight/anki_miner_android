@@ -390,6 +390,7 @@ private fun SettingsScreen(
         )
         AnkiRecoveryCard(
             state = setup,
+            onRefresh = setupViewModel::refresh,
             onReconcile = setupViewModel::reconcileInterruptedWork,
             onRetryStaging = setupViewModel::retryStagingCleanup,
             onAcknowledgeMedia = setupViewModel::acknowledgeUnattachedMedia,
