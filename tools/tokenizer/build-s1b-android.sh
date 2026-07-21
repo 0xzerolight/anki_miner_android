@@ -24,7 +24,9 @@ source "$REPO_ROOT/scripts/android-env.sh"
 
 python3 "$SCRIPT_DIR/vendor_s1b_mecab.py" --check
 cd "$REPO_ROOT"
+source_commit="$(git rev-parse HEAD)"
 anki_miner_run_gradle ./gradlew \
+    -PankiMinerSourceCommit="$source_commit" \
     :app:assembleEmulatorDebug \
     :app:assembleDeviceRelease
 

@@ -54,16 +54,30 @@ repository root `README.md`), then:
 
 ```bash
 source scripts/android-env.sh
-./gradlew :app:assembleDeviceRelease        # signed arm64 release APK
-./gradlew :app:assembleEmulatorRelease      # x86_64, same release code + R8 (for local testing)
+source_commit="$(git rev-parse HEAD)"
+# Signed arm64 release APK.
+./gradlew -PankiMinerSourceCommit="$source_commit" :app:assembleDeviceRelease
+# x86_64 with the same release code and R8, for local testing.
+./gradlew -PankiMinerSourceCommit="$source_commit" :app:assembleEmulatorRelease
 ```
 
 The signed APK is at `app/build/outputs/apk/device/release/`. Publish it on a
-GitHub Release together with a `SHA256SUMS` and `NOTICE.md`.
+GitHub Release together with a `SHA256SUMS` and `NOTICE.md`. Release variants
+fail before compilation unless `ankiMinerSourceCommit` is a full lowercase Git
+SHA. Debug variants may use `development`.
 
 ## Regenerating the vendored wheels
 
 The wheels are built once and committed. Rebuild them (e.g. on a version bump)
 with `tools/runtime-wheels/build-runtime-wheels.sh` and
 `tools/wheels/build-s1a-wheels.sh`, then copy the closure into `app/wheels/` and
-update the two build-key literals in `app/build.gradle.kts`.
+update the two build-key literals in `app/build.gradle.kts`. Regenerate and
+verify the committed provenance manifest:
+
+```bash
+python3.13 tools/wheels/vendored_wheel_manifest.py generate
+python3.13 tools/wheels/vendored_wheel_manifest.py check
+```
+
+Every Gradle build runs the manifest check before `preBuild` and fails if a
+wheel is added, removed, renamed, or changed without regenerating the manifest.

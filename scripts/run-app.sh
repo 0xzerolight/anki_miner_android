@@ -18,10 +18,13 @@ case "${1:-debug}" in
     debug)
         VARIANT=EmulatorDebug
         APK="$REPO_ROOT/app/build/outputs/apk/emulator/debug/app-emulator-debug.apk"
+        gradle_args=()
         ;;
     release)
         VARIANT=EmulatorRelease
         APK="$REPO_ROOT/app/build/outputs/apk/emulator/release/app-emulator-release.apk"
+        source_commit="$(git rev-parse HEAD)"
+        gradle_args=(-PankiMinerSourceCommit="$source_commit")
         ;;
     *) echo "usage: scripts/run-app.sh [debug|release]" >&2; exit 2 ;;
 esac
@@ -30,7 +33,7 @@ SERIAL="$ANDROID_EMULATOR_API26_SERIAL"
 APP_ID="com.ankiminer.android"
 
 echo "Building $VARIANT before starting an emulator ..."
-anki_miner_run_gradle ./gradlew ":app:assemble$VARIANT"
+anki_miner_run_gradle ./gradlew "${gradle_args[@]}" ":app:assemble$VARIANT"
 [[ -f "$APK" ]] || {
     echo "Expected APK was not produced: $APK" >&2
     exit 1

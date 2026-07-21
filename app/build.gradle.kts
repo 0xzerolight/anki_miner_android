@@ -1,3 +1,5 @@
+import com.android.build.api.variant.BuildConfigField
+import org.gradle.api.tasks.Exec
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import java.util.Properties
 
@@ -37,6 +39,27 @@ val commonWheels = wheelsIn("common")
 val deviceWheels = commonWheels + wheelsIn("arm64-v8a")
 val emulatorWheels = commonWheels + wheelsIn("x86_64")
 
+val verifyVendoredWheelManifest by tasks.registering(Exec::class) {
+    group = "verification"
+    description = "Verify the exact provenance and SHA-256 of app/wheels."
+    val manifest = rootProject.file("app/wheels/manifest.json")
+    val verifier = rootProject.file("tools/wheels/vendored_wheel_manifest.py")
+    inputs.file(manifest)
+    inputs.file(verifier)
+    inputs.file(rootProject.file("tools/runtime-wheels/sources.lock"))
+    inputs.file(rootProject.file("tools/wheels/sources.lock"))
+    inputs.files(rootProject.fileTree("app/wheels") { include("**/*.whl") })
+    commandLine(
+        chaquopyBuildPython,
+        verifier.absolutePath,
+        "check",
+        "--wheels-root",
+        rootProject.file("app/wheels").absolutePath,
+        "--manifest",
+        manifest.absolutePath,
+    )
+}
+
 // Optional local release-signing config (never committed). See keystore.properties.example.
 val keystorePropsFile = rootProject.file("keystore.properties")
 val keystoreProps =
@@ -52,6 +75,41 @@ val ankiMinerSourceCommit: String =
     (project.findProperty("ankiMinerSourceCommit") as String?)
         ?: System.getenv("ANKI_MINER_SOURCE_COMMIT")
         ?: "development"
+val releaseBuildIntegrityScript =
+    rootProject.file("tools/release/validate_release_build.py")
+val validatedReleaseSourceCommit =
+    providers.exec {
+        commandLine(
+            chaquopyBuildPython,
+            releaseBuildIntegrityScript.absolutePath,
+            "--build-type",
+            "release",
+            "--source-commit",
+            ankiMinerSourceCommit,
+            "--wheels-root",
+            rootProject.file("app/wheels").absolutePath,
+            "--manifest",
+            rootProject.file("app/wheels/manifest.json").absolutePath,
+        )
+    }.standardOutput.asText.map { it.trim() }
+val validateReleaseSourceCommit by tasks.registering {
+    group = "verification"
+    description = "Fail release builds without an immutable source commit."
+    doLast {
+        if (!Regex("^[0-9a-f]{40}$").matches(ankiMinerSourceCommit)) {
+            throw GradleException(
+                "Release builds require a full lowercase Git SHA via " +
+                    "-PankiMinerSourceCommit=<sha> or ANKI_MINER_SOURCE_COMMIT.",
+            )
+        }
+    }
+}
+
+tasks.configureEach {
+    if (name.startsWith("pre") && name.endsWith("ReleaseBuild")) {
+        dependsOn(validateReleaseSourceCommit)
+    }
+}
 
 android {
     namespace = "com.ankiminer.android"
@@ -180,12 +238,35 @@ android {
     }
 }
 
+androidComponents {
+    onVariants(selector().withBuildType("release")) { variant ->
+        // Artifact prerequisites consume this provider directly. `-x` can skip the named
+        // lifecycle checks above, but cannot remove validation from release manifest and
+        // BuildConfig evaluation without also excluding inputs required to package the app.
+        variant.buildConfigFields.put(
+            "SOURCE_COMMIT",
+            validatedReleaseSourceCommit.map { commit ->
+                BuildConfigField("String", "\"$commit\"", "Validated release source commit")
+            },
+        )
+        variant.manifestPlaceholders.put(
+            "ankiMinerSourceCommit",
+            validatedReleaseSourceCommit,
+        )
+    }
+}
+
 kotlin {
     compilerOptions {
         jvmTarget = JvmTarget.JVM_17
     }
 }
 
+// Upstream warning from Gradle plugin `com.chaquo.python` 17.0.0, not this build script:
+// `product/gradle-plugin/src/main/kotlin/com/chaquo/python/PythonTasks.kt` createSrcTask
+// accesses Task.project inside merge*PythonSources doLast (lines 148, 166, 173). The plugin
+// binary owns those actions, so fixing the warning locally requires upgrading or forking
+// Chaquopy. Keep it visible until upstream fixes it; do not suppress Gradle warnings globally.
 chaquopy {
     defaultConfig {
         buildPython(chaquopyBuildPython)
@@ -207,6 +288,10 @@ chaquopy {
             }
         }
     }
+}
+
+tasks.named("preBuild") {
+    dependsOn(verifyVendoredWheelManifest)
 }
 
 dependencies {

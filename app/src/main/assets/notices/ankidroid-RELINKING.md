@@ -48,7 +48,9 @@ will intentionally fail because those bytes are no longer the pinned upstream
 component; it is not a restriction on compiling them. Build the variants with:
 
 ```bash
+source_commit="$(git rev-parse HEAD)"
 ./gradlew --dependency-verification strict \
+  -PankiMinerSourceCommit="$source_commit" \
   :app:assembleEmulatorDebug :app:assembleDeviceRelease
 ```
 

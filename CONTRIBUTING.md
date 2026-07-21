@@ -11,13 +11,18 @@ Requires a Linux x86_64 host with the provisioned Android toolchain. See
 ```sh
 source scripts/android-env.sh
 scripts/health.sh                        # host checks + emulator build + unit tests
-./gradlew :app:assembleDeviceRelease     # signed arm64 release APK (needs keystore.properties)
+source_commit="$(git rev-parse HEAD)"
+# Signed arm64 release APK; requires keystore.properties.
+./gradlew -PankiMinerSourceCommit="$source_commit" :app:assembleDeviceRelease
 ```
 
 The signed APK lands in `app/build/outputs/apk/device/release/`. The Python
 tokenizer/runtime wheels (`app/wheels/`) and ffmpeg/ffprobe
 (`app/src/main/jniLibs/`) are vendored, so a normal Gradle build produces a
 working APK.
+
+Release builds reject a missing or non-full source SHA. Debug builds retain the
+`development` identity when no SHA is supplied.
 
 ## Code style
 
