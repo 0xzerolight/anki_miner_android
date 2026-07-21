@@ -1,0 +1,395 @@
+{
+  "schema": 1,
+  "wheels": [
+    {
+      "abi": "arm64-v8a",
+      "filename": "chaquopy_freetype-2.14.1-0-py3-none-android_26_arm64_v8a.whl",
+      "license": "FTL",
+      "package": "chaquopy-freetype",
+      "path": "arm64-v8a/chaquopy_freetype-2.14.1-0-py3-none-android_26_arm64_v8a.whl",
+      "sha256": "492348b856e790a906852e5df38140a498babeab15866ffee19600de4567aa3b",
+      "source": {
+        "filename": "freetype-2.14.1.tar.xz",
+        "kind": "runtime-source",
+        "sha256": "32427e8c471ac095853212a37aef816c60b42052d4d9e48230bab3bdf2936ccc",
+        "url": "https://download.savannah.gnu.org/releases/freetype/freetype-2.14.1.tar.xz"
+      },
+      "version": "2.14.1"
+    },
+    {
+      "abi": "arm64-v8a",
+      "filename": "chaquopy_libcxx-190000-0-py3-none-android_26_arm64_v8a.whl",
+      "license": "Apache-2.0 WITH LLVM-exception",
+      "package": "chaquopy-libcxx",
+      "path": "arm64-v8a/chaquopy_libcxx-190000-0-py3-none-android_26_arm64_v8a.whl",
+      "sha256": "bf913b7ff8336687b4dbf7dbc2547f56ddd65a18df0f21aa6f29d16400cab9c0",
+      "source": {
+        "kind": "android-ndk",
+        "path": "toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/libc++_shared.so",
+        "revision": "28.2.13676358",
+        "url": "https://github.com/android/ndk/releases/tag/r28c"
+      },
+      "version": "190000"
+    },
+    {
+      "abi": "arm64-v8a",
+      "filename": "chaquopy_libjpeg-1.5.3-3-py3-none-android_26_arm64_v8a.whl",
+      "license": "BSD-3-Clause AND IJG AND Zlib",
+      "package": "chaquopy-libjpeg",
+      "path": "arm64-v8a/chaquopy_libjpeg-1.5.3-3-py3-none-android_26_arm64_v8a.whl",
+      "sha256": "7f2194917bfc8d3e9353948927494c6c1fd1c686150c28f3d81056582a0f3621",
+      "source": {
+        "filename": "libjpeg-turbo-1.5.3.tar.gz",
+        "kind": "runtime-source",
+        "sha256": "b24890e2bb46e12e72a79f7e965f409f4e16466d00e1dd15d93d73ee6b592523",
+        "url": "https://downloads.sourceforge.net/project/libjpeg-turbo/1.5.3/libjpeg-turbo-1.5.3.tar.gz"
+      },
+      "version": "1.5.3"
+    },
+    {
+      "abi": "arm64-v8a",
+      "filename": "chaquopy_libmecab-0.996-0-py3-none-android_26_arm64_v8a.whl",
+      "license": "BSD-3-Clause",
+      "package": "chaquopy-libmecab",
+      "path": "arm64-v8a/chaquopy_libmecab-0.996-0-py3-none-android_26_arm64_v8a.whl",
+      "sha256": "1f177bf32cade9543e19f2b2047d6970a0816eaa11fad50dbf3eaa29465ea6cc",
+      "source": {
+        "filename": "mecab-61b90ba6e669dc2d7d533d4a80d206f3b31d52b1.tar.gz",
+        "kind": "source-build",
+        "sha256": "7ad44f987ae0b7fd345c72a4b67e14dbe0f4bd1669d247a8aaeb0f15218a3fd1",
+        "url": "https://github.com/taku910/mecab/archive/61b90ba6e669dc2d7d533d4a80d206f3b31d52b1.tar.gz"
+      },
+      "version": "0.996"
+    },
+    {
+      "abi": "arm64-v8a",
+      "filename": "chaquopy_libwebp-1.6.0-0-py3-none-android_26_arm64_v8a.whl",
+      "license": "BSD-3-Clause",
+      "package": "chaquopy-libwebp",
+      "path": "arm64-v8a/chaquopy_libwebp-1.6.0-0-py3-none-android_26_arm64_v8a.whl",
+      "sha256": "7df42968ba2ca4a36d1607f1d88388c6819643b2cc10090a372e4047c5f7a982",
+      "source": {
+        "filename": "libwebp-1.6.0.tar.gz",
+        "kind": "runtime-source",
+        "sha256": "e4ab7009bf0629fd11982d4c2aa83964cf244cffba7347ecd39019a9e38c4564",
+        "url": "https://storage.googleapis.com/downloads.webmproject.org/releases/webp/libwebp-1.6.0.tar.gz"
+      },
+      "version": "1.6.0"
+    },
+    {
+      "abi": "arm64-v8a",
+      "filename": "chaquopy_libxml2-2.14.6-0-py3-none-android_26_arm64_v8a.whl",
+      "license": "MIT",
+      "package": "chaquopy-libxml2",
+      "path": "arm64-v8a/chaquopy_libxml2-2.14.6-0-py3-none-android_26_arm64_v8a.whl",
+      "sha256": "684891bea5cdf0c2186f1bf4f035923e4cf4ec6681d95cfdf39387620e44ad49",
+      "source": {
+        "filename": "libxml2-2.14.6.tar.xz",
+        "kind": "runtime-source",
+        "sha256": "7ce458a0affeb83f0b55f1f4f9e0e55735dbfc1a9de124ee86fb4a66b597203a",
+        "url": "https://download.gnome.org/sources/libxml2/2.14/libxml2-2.14.6.tar.xz"
+      },
+      "version": "2.14.6"
+    },
+    {
+      "abi": "arm64-v8a",
+      "filename": "chaquopy_libxslt-1.1.43-0-py3-none-android_26_arm64_v8a.whl",
+      "license": "MIT",
+      "package": "chaquopy-libxslt",
+      "path": "arm64-v8a/chaquopy_libxslt-1.1.43-0-py3-none-android_26_arm64_v8a.whl",
+      "sha256": "af6e513b8d6ea0e8f5e437edbb98e5e92380bad8753be8e4f27d1e668f1cb7d0",
+      "source": {
+        "filename": "libxslt-1.1.43.tar.xz",
+        "kind": "runtime-source",
+        "sha256": "5a3d6b383ca5afc235b171118e90f5ff6aa27e9fea3303065231a6d403f0183a",
+        "url": "https://download.gnome.org/sources/libxslt/1.1/libxslt-1.1.43.tar.xz"
+      },
+      "version": "1.1.43"
+    },
+    {
+      "abi": "arm64-v8a",
+      "filename": "fugashi-1.5.2-0-cp312-cp312-android_26_arm64_v8a.whl",
+      "license": "MIT AND BSD-3-Clause",
+      "package": "fugashi",
+      "path": "arm64-v8a/fugashi-1.5.2-0-cp312-cp312-android_26_arm64_v8a.whl",
+      "sha256": "810b3a837fe03a8b1576d70ac84e35b32d664d52415b7e118ce10ce2abb49810",
+      "source": {
+        "filename": "fugashi-1.5.2.tar.gz",
+        "kind": "source-build",
+        "sha256": "a7959eab95bb37a6a934fc2314d3ff888664d11b88d0e1c596260a5785d5880e",
+        "url": "https://files.pythonhosted.org/packages/source/f/fugashi/fugashi-1.5.2.tar.gz"
+      },
+      "version": "1.5.2"
+    },
+    {
+      "abi": "arm64-v8a",
+      "filename": "lxml-6.1.1-0-cp312-cp312-android_26_arm64_v8a.whl",
+      "license": "BSD-3-Clause",
+      "package": "lxml",
+      "path": "arm64-v8a/lxml-6.1.1-0-cp312-cp312-android_26_arm64_v8a.whl",
+      "sha256": "9b84c45c95f7ebde6b1f8d42d6272520ff89d5bdab19fe546a450f90e5c228df",
+      "source": {
+        "filename": "lxml-6.1.1.tar.gz",
+        "kind": "runtime-source",
+        "sha256": "ba96ae44888e0185281e937633a743ea90d5a196c6000f82565ebb0580012d40",
+        "url": "https://files.pythonhosted.org/packages/05/3b/aab6728cae887456f409b4d75e8a01856e4f04bd510de38052a47768b680/lxml-6.1.1.tar.gz"
+      },
+      "version": "6.1.1"
+    },
+    {
+      "abi": "arm64-v8a",
+      "filename": "pillow-12.2.0-0-cp312-cp312-android_26_arm64_v8a.whl",
+      "license": "MIT-CMU",
+      "package": "pillow",
+      "path": "arm64-v8a/pillow-12.2.0-0-cp312-cp312-android_26_arm64_v8a.whl",
+      "sha256": "245f13549b62423e12c4b1d2b69ac042284ba0fed1aebc8bff13f8c043aca9d8",
+      "source": {
+        "filename": "pillow-12.2.0.tar.gz",
+        "kind": "runtime-source",
+        "sha256": "a830b1a40919539d07806aa58e1b114df53ddd43213d9c8b75847eee6c0182b5",
+        "url": "https://files.pythonhosted.org/packages/8c/21/c2bcdd5906101a30244eaffc1b6e6ce71a31bd0742a01eb89e660ebfac2d/pillow-12.2.0.tar.gz"
+      },
+      "version": "12.2.0"
+    },
+    {
+      "abi": "common",
+      "filename": "certifi-2026.6.17-py3-none-any.whl",
+      "license": "MPL-2.0",
+      "package": "certifi",
+      "path": "common/certifi-2026.6.17-py3-none-any.whl",
+      "sha256": "2227dcbaafe0d2f59279d1762ddddc37783ed4354594f194ffc31d20f41fc3db",
+      "source": {
+        "filename": "certifi-2026.6.17-py3-none-any.whl",
+        "kind": "prebuilt-wheel",
+        "sha256": "2227dcbaafe0d2f59279d1762ddddc37783ed4354594f194ffc31d20f41fc3db",
+        "url": "https://files.pythonhosted.org/packages/ef/2f/c5464532e965badff2f4c4c1a3a83f5697f0d7c407ed0cda44aaa99bb451/certifi-2026.6.17-py3-none-any.whl"
+      },
+      "version": "2026.6.17"
+    },
+    {
+      "abi": "common",
+      "filename": "charset_normalizer-3.4.7-py3-none-any.whl",
+      "license": "MIT",
+      "package": "charset-normalizer",
+      "path": "common/charset_normalizer-3.4.7-py3-none-any.whl",
+      "sha256": "3dce51d0f5e7951f8bb4900c257dad282f49190fdbebecd4ba99bcc41fef404d",
+      "source": {
+        "filename": "charset_normalizer-3.4.7-py3-none-any.whl",
+        "kind": "prebuilt-wheel",
+        "sha256": "3dce51d0f5e7951f8bb4900c257dad282f49190fdbebecd4ba99bcc41fef404d",
+        "url": "https://files.pythonhosted.org/packages/db/8f/61959034484a4a7c527811f4721e75d02d653a35afb0b6054474d8185d4c/charset_normalizer-3.4.7-py3-none-any.whl"
+      },
+      "version": "3.4.7"
+    },
+    {
+      "abi": "common",
+      "filename": "idna-3.18-py3-none-any.whl",
+      "license": "BSD-3-Clause",
+      "package": "idna",
+      "path": "common/idna-3.18-py3-none-any.whl",
+      "sha256": "7f952cbe720b688055e3f87de14f5c3e5fdaa8bc3928985c4077ca689de849a2",
+      "source": {
+        "filename": "idna-3.18-py3-none-any.whl",
+        "kind": "prebuilt-wheel",
+        "sha256": "7f952cbe720b688055e3f87de14f5c3e5fdaa8bc3928985c4077ca689de849a2",
+        "url": "https://files.pythonhosted.org/packages/1e/5e/d4e9f1a599fb8e573b7b87160658329fbf28d19eac2718f51fc3def3aa5a/idna-3.18-py3-none-any.whl"
+      },
+      "version": "3.18"
+    },
+    {
+      "abi": "common",
+      "filename": "pysubs2-1.8.1-py3-none-any.whl",
+      "license": "MIT",
+      "package": "pysubs2",
+      "path": "common/pysubs2-1.8.1-py3-none-any.whl",
+      "sha256": "eb5d8872b7f87208070dd6f0d85fc110b7ad6cc2a7ec422f5b12363e9194e4e4",
+      "source": {
+        "filename": "pysubs2-1.8.1-py3-none-any.whl",
+        "kind": "prebuilt-wheel",
+        "sha256": "eb5d8872b7f87208070dd6f0d85fc110b7ad6cc2a7ec422f5b12363e9194e4e4",
+        "url": "https://files.pythonhosted.org/packages/0b/bb/0dc8b9a38609701ca3f107dc516300b317641bed9b2ef1c964a9ad37ae9e/pysubs2-1.8.1-py3-none-any.whl"
+      },
+      "version": "1.8.1"
+    },
+    {
+      "abi": "common",
+      "filename": "requests-2.34.2-py3-none-any.whl",
+      "license": "Apache-2.0",
+      "package": "requests",
+      "path": "common/requests-2.34.2-py3-none-any.whl",
+      "sha256": "2a0d60c172f83ac6ab31e4554906c0f3b3588d37b5cb939b1c061f4907e278e0",
+      "source": {
+        "filename": "requests-2.34.2-py3-none-any.whl",
+        "kind": "prebuilt-wheel",
+        "sha256": "2a0d60c172f83ac6ab31e4554906c0f3b3588d37b5cb939b1c061f4907e278e0",
+        "url": "https://files.pythonhosted.org/packages/a0/f4/c67b0b3f1b9245e8d266f0f112c500d50e5b4e83cb6f3b71b6528104182a/requests-2.34.2-py3-none-any.whl"
+      },
+      "version": "2.34.2"
+    },
+    {
+      "abi": "common",
+      "filename": "urllib3-2.7.0-py3-none-any.whl",
+      "license": "MIT",
+      "package": "urllib3",
+      "path": "common/urllib3-2.7.0-py3-none-any.whl",
+      "sha256": "9fb4c81ebbb1ce9531cce37674bbc6f1360472bc18ca9a553ede278ef7276897",
+      "source": {
+        "filename": "urllib3-2.7.0-py3-none-any.whl",
+        "kind": "prebuilt-wheel",
+        "sha256": "9fb4c81ebbb1ce9531cce37674bbc6f1360472bc18ca9a553ede278ef7276897",
+        "url": "https://files.pythonhosted.org/packages/7f/3e/5db95bcf282c52709639744ca2a8b149baccf648e39c8cc87553df9eae0c/urllib3-2.7.0-py3-none-any.whl"
+      },
+      "version": "2.7.0"
+    },
+    {
+      "abi": "x86_64",
+      "filename": "chaquopy_freetype-2.14.1-0-py3-none-android_26_x86_64.whl",
+      "license": "FTL",
+      "package": "chaquopy-freetype",
+      "path": "x86_64/chaquopy_freetype-2.14.1-0-py3-none-android_26_x86_64.whl",
+      "sha256": "9157924bf5b927af77001356db1b657f0ba39dec57a093ca502aed9c6f4c745d",
+      "source": {
+        "filename": "freetype-2.14.1.tar.xz",
+        "kind": "runtime-source",
+        "sha256": "32427e8c471ac095853212a37aef816c60b42052d4d9e48230bab3bdf2936ccc",
+        "url": "https://download.savannah.gnu.org/releases/freetype/freetype-2.14.1.tar.xz"
+      },
+      "version": "2.14.1"
+    },
+    {
+      "abi": "x86_64",
+      "filename": "chaquopy_libcxx-190000-0-py3-none-android_26_x86_64.whl",
+      "license": "Apache-2.0 WITH LLVM-exception",
+      "package": "chaquopy-libcxx",
+      "path": "x86_64/chaquopy_libcxx-190000-0-py3-none-android_26_x86_64.whl",
+      "sha256": "8e38532ed1ec7559b0acf0d3a5979ab7604768d68b6e7102354fc30ce5cc32e0",
+      "source": {
+        "kind": "android-ndk",
+        "path": "toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/x86_64-linux-android/libc++_shared.so",
+        "revision": "28.2.13676358",
+        "url": "https://github.com/android/ndk/releases/tag/r28c"
+      },
+      "version": "190000"
+    },
+    {
+      "abi": "x86_64",
+      "filename": "chaquopy_libjpeg-1.5.3-3-py3-none-android_26_x86_64.whl",
+      "license": "BSD-3-Clause AND IJG AND Zlib",
+      "package": "chaquopy-libjpeg",
+      "path": "x86_64/chaquopy_libjpeg-1.5.3-3-py3-none-android_26_x86_64.whl",
+      "sha256": "467b22c9ccdef80b44dbbc2744a02da414b5721e12f7da8809c48a643609531a",
+      "source": {
+        "filename": "libjpeg-turbo-1.5.3.tar.gz",
+        "kind": "runtime-source",
+        "sha256": "b24890e2bb46e12e72a79f7e965f409f4e16466d00e1dd15d93d73ee6b592523",
+        "url": "https://downloads.sourceforge.net/project/libjpeg-turbo/1.5.3/libjpeg-turbo-1.5.3.tar.gz"
+      },
+      "version": "1.5.3"
+    },
+    {
+      "abi": "x86_64",
+      "filename": "chaquopy_libmecab-0.996-0-py3-none-android_26_x86_64.whl",
+      "license": "BSD-3-Clause",
+      "package": "chaquopy-libmecab",
+      "path": "x86_64/chaquopy_libmecab-0.996-0-py3-none-android_26_x86_64.whl",
+      "sha256": "cee6d22a66819fd59b4f1e8bd60ff4192a38dc96b58b3db0904d7d378df9fcf1",
+      "source": {
+        "filename": "mecab-61b90ba6e669dc2d7d533d4a80d206f3b31d52b1.tar.gz",
+        "kind": "source-build",
+        "sha256": "7ad44f987ae0b7fd345c72a4b67e14dbe0f4bd1669d247a8aaeb0f15218a3fd1",
+        "url": "https://github.com/taku910/mecab/archive/61b90ba6e669dc2d7d533d4a80d206f3b31d52b1.tar.gz"
+      },
+      "version": "0.996"
+    },
+    {
+      "abi": "x86_64",
+      "filename": "chaquopy_libwebp-1.6.0-0-py3-none-android_26_x86_64.whl",
+      "license": "BSD-3-Clause",
+      "package": "chaquopy-libwebp",
+      "path": "x86_64/chaquopy_libwebp-1.6.0-0-py3-none-android_26_x86_64.whl",
+      "sha256": "912df82cc4efe691fd39dcdf4568ac713f3aac8f0461741e77d92e34d435a6cd",
+      "source": {
+        "filename": "libwebp-1.6.0.tar.gz",
+        "kind": "runtime-source",
+        "sha256": "e4ab7009bf0629fd11982d4c2aa83964cf244cffba7347ecd39019a9e38c4564",
+        "url": "https://storage.googleapis.com/downloads.webmproject.org/releases/webp/libwebp-1.6.0.tar.gz"
+      },
+      "version": "1.6.0"
+    },
+    {
+      "abi": "x86_64",
+      "filename": "chaquopy_libxml2-2.14.6-0-py3-none-android_26_x86_64.whl",
+      "license": "MIT",
+      "package": "chaquopy-libxml2",
+      "path": "x86_64/chaquopy_libxml2-2.14.6-0-py3-none-android_26_x86_64.whl",
+      "sha256": "a1b1f88a9596d433456966eeeda1c4c5151f0af5006975a893e74d050bc82e8b",
+      "source": {
+        "filename": "libxml2-2.14.6.tar.xz",
+        "kind": "runtime-source",
+        "sha256": "7ce458a0affeb83f0b55f1f4f9e0e55735dbfc1a9de124ee86fb4a66b597203a",
+        "url": "https://download.gnome.org/sources/libxml2/2.14/libxml2-2.14.6.tar.xz"
+      },
+      "version": "2.14.6"
+    },
+    {
+      "abi": "x86_64",
+      "filename": "chaquopy_libxslt-1.1.43-0-py3-none-android_26_x86_64.whl",
+      "license": "MIT",
+      "package": "chaquopy-libxslt",
+      "path": "x86_64/chaquopy_libxslt-1.1.43-0-py3-none-android_26_x86_64.whl",
+      "sha256": "6306db4b3282738acb131d6242d25bdb4832601a4bf5ac6a7469ef98e1981715",
+      "source": {
+        "filename": "libxslt-1.1.43.tar.xz",
+        "kind": "runtime-source",
+        "sha256": "5a3d6b383ca5afc235b171118e90f5ff6aa27e9fea3303065231a6d403f0183a",
+        "url": "https://download.gnome.org/sources/libxslt/1.1/libxslt-1.1.43.tar.xz"
+      },
+      "version": "1.1.43"
+    },
+    {
+      "abi": "x86_64",
+      "filename": "fugashi-1.5.2-0-cp312-cp312-android_26_x86_64.whl",
+      "license": "MIT AND BSD-3-Clause",
+      "package": "fugashi",
+      "path": "x86_64/fugashi-1.5.2-0-cp312-cp312-android_26_x86_64.whl",
+      "sha256": "084b7370c8b1dd29d8b28b8d048e794706153f737c02535428137cad69152806",
+      "source": {
+        "filename": "fugashi-1.5.2.tar.gz",
+        "kind": "source-build",
+        "sha256": "a7959eab95bb37a6a934fc2314d3ff888664d11b88d0e1c596260a5785d5880e",
+        "url": "https://files.pythonhosted.org/packages/source/f/fugashi/fugashi-1.5.2.tar.gz"
+      },
+      "version": "1.5.2"
+    },
+    {
+      "abi": "x86_64",
+      "filename": "lxml-6.1.1-0-cp312-cp312-android_26_x86_64.whl",
+      "license": "BSD-3-Clause",
+      "package": "lxml",
+      "path": "x86_64/lxml-6.1.1-0-cp312-cp312-android_26_x86_64.whl",
+      "sha256": "b515b14bf5663eca25ebc39ddf40db4d9a01eb2a8851549b6491878e8f446cca",
+      "source": {
+        "filename": "lxml-6.1.1.tar.gz",
+        "kind": "runtime-source",
+        "sha256": "ba96ae44888e0185281e937633a743ea90d5a196c6000f82565ebb0580012d40",
+        "url": "https://files.pythonhosted.org/packages/05/3b/aab6728cae887456f409b4d75e8a01856e4f04bd510de38052a47768b680/lxml-6.1.1.tar.gz"
+      },
+      "version": "6.1.1"
+    },
+    {
+      "abi": "x86_64",
+      "filename": "pillow-12.2.0-0-cp312-cp312-android_26_x86_64.whl",
+      "license": "MIT-CMU",
+      "package": "pillow",
+      "path": "x86_64/pillow-12.2.0-0-cp312-cp312-android_26_x86_64.whl",
+      "sha256": "5b0e81ea560242968ffd2ef81dd9be4ce8cd6536113404694dec288a84f557f7",
+      "source": {
+        "filename": "pillow-12.2.0.tar.gz",
+        "kind": "runtime-source",
+        "sha256": "a830b1a40919539d07806aa58e1b114df53ddd43213d9c8b75847eee6c0182b5",
+        "url": "https://files.pythonhosted.org/packages/8c/21/c2bcdd5906101a30244eaffc1b6e6ce71a31bd0742a01eb89e660ebfac2d/pillow-12.2.0.tar.gz"
+      },
+      "version": "12.2.0"
+    }
+  ]
+}

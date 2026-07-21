@@ -56,7 +56,7 @@ import com.ankiminer.android.vm.SetupViewModel
 import com.ankiminer.android.vm.ReadingMiningViewModel
 import com.ankiminer.android.vm.VideoMiningViewModel
 
-private enum class Destination(val route: String, @StringRes val label: Int) {
+private enum class Destination(val route: String, @param:StringRes val label: Int) {
     VIDEO("video", R.string.nav_video),
     READING("reading", R.string.nav_reading),
     SETTINGS("settings", R.string.nav_settings),
