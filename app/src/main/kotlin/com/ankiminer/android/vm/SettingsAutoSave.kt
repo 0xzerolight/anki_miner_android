@@ -44,6 +44,9 @@ private data class SettingsWriteKey(
     val editRevision: Long,
     val draft: SettingsDraft,
     val deckDirty: Boolean,
+    val dictionarySourcesDirty: Boolean,
+    val frequencySourcesDirty: Boolean,
+    val audioPacksDirty: Boolean,
 )
 
 /** Tracks completed writes. Failed or skipped attempts never suppress a retry of the same state. */
@@ -61,6 +64,9 @@ internal class SuccessfulSettingsWriteTracker {
             editRevision = state.editRevision,
             draft = state.draft,
             deckDirty = state.deckDirty,
+            dictionarySourcesDirty = state.dictionarySourcesDirty,
+            frequencySourcesDirty = state.frequencySourcesDirty,
+            audioPacksDirty = state.audioPacksDirty,
         )
 }
 

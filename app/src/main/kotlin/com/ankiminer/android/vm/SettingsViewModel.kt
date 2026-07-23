@@ -399,6 +399,9 @@ internal data class SettingsDraftState(
     val dirty: Boolean,
     val loaded: Boolean,
     val deckDirty: Boolean,
+    val dictionarySourcesDirty: Boolean,
+    val frequencySourcesDirty: Boolean,
+    val audioPacksDirty: Boolean,
     val editRevision: Long,
     val writeCadence: SettingsWriteCadence,
 )
@@ -414,6 +417,9 @@ internal class SettingsDraftStore(
                 dirty = false,
                 loaded = initiallyLoaded,
                 deckDirty = false,
+                dictionarySourcesDirty = false,
+                frequencySourcesDirty = false,
+                audioPacksDirty = false,
                 editRevision = 0,
                 writeCadence = SettingsWriteCadence.IMMEDIATE,
             ),
@@ -428,6 +434,15 @@ internal class SettingsDraftStore(
                     dirty = true,
                     loaded = true,
                     deckDirty = current.deckDirty || value.deckName != current.draft.deckName,
+                    dictionarySourcesDirty =
+                        current.dictionarySourcesDirty ||
+                            value.dictionarySources != current.draft.dictionarySources,
+                    frequencySourcesDirty =
+                        current.frequencySourcesDirty ||
+                            value.frequencySources != current.draft.frequencySources,
+                    audioPacksDirty =
+                        current.audioPacksDirty ||
+                            value.audioPacks != current.draft.audioPacks,
                     editRevision = current.editRevision + 1,
                     writeCadence = settingsWriteCadence(current.draft, value),
                 )
@@ -445,9 +460,11 @@ internal class SettingsDraftStore(
             if (current.loaded && current.dirty) {
                 // Auto-save keeps the draft dirty for the rest of the activity-scoped session, so
                 // this branch must still merge newly installed resources into the pending edit
-                // instead of hiding them. Only an explicit local deck edit owns that field; otherwise
-                // adopt an out-of-band wizard selection so a stale scalar cannot copy it back.
-                val persistedDeckName = settings.deckName.orEmpty()
+                // instead of hiding them. Only explicit local edits own the deck or resource-chain
+                // fields; otherwise adopt persisted state so projections cannot copy display-only
+                // inventory merges or out-of-band wizard selections back into storage.
+                val persistedDraft = SettingsDraft.from(settings, resources)
+                val persistedDeckName = persistedDraft.deckName
                 val deckDirty = current.deckDirty && current.draft.deckName != persistedDeckName
                 val mergedDraft = current.draft.withInventory(resources)
                 SettingsDraftState(
@@ -460,6 +477,15 @@ internal class SettingsDraftStore(
                     dirty = true,
                     loaded = true,
                     deckDirty = deckDirty,
+                    dictionarySourcesDirty =
+                        current.dictionarySourcesDirty &&
+                            mergedDraft.dictionarySources != persistedDraft.dictionarySources,
+                    frequencySourcesDirty =
+                        current.frequencySourcesDirty &&
+                            mergedDraft.frequencySources != persistedDraft.frequencySources,
+                    audioPacksDirty =
+                        current.audioPacksDirty &&
+                            mergedDraft.audioPacks != persistedDraft.audioPacks,
                     editRevision = current.editRevision,
                     writeCadence = current.writeCadence,
                 )
@@ -469,6 +495,9 @@ internal class SettingsDraftStore(
                     dirty = false,
                     loaded = true,
                     deckDirty = false,
+                    dictionarySourcesDirty = false,
+                    frequencySourcesDirty = false,
+                    audioPacksDirty = false,
                     editRevision = current.editRevision,
                     writeCadence = SettingsWriteCadence.IMMEDIATE,
                 )
@@ -486,6 +515,9 @@ internal class SettingsDraftStore(
                 dirty = false,
                 loaded = true,
                 deckDirty = false,
+                dictionarySourcesDirty = false,
+                frequencySourcesDirty = false,
+                audioPacksDirty = false,
                 editRevision = mutableState.value.editRevision,
                 writeCadence = SettingsWriteCadence.IMMEDIATE,
             )
@@ -507,6 +539,9 @@ internal class SettingsDraftStore(
                         dirty = false,
                         loaded = true,
                         deckDirty = false,
+                        dictionarySourcesDirty = false,
+                        frequencySourcesDirty = false,
+                        audioPacksDirty = false,
                         editRevision = current.editRevision,
                         writeCadence = SettingsWriteCadence.IMMEDIATE,
                     )
@@ -523,6 +558,18 @@ internal class SettingsDraftStore(
                             dirty &&
                                 currentDraft.deckName != baseline.deckName &&
                                 rebased.deckName != persistedDraft.deckName,
+                        dictionarySourcesDirty =
+                            dirty &&
+                                currentDraft.dictionarySources != baseline.dictionarySources &&
+                                rebased.dictionarySources != persistedDraft.dictionarySources,
+                        frequencySourcesDirty =
+                            dirty &&
+                                currentDraft.frequencySources != baseline.frequencySources &&
+                                rebased.frequencySources != persistedDraft.frequencySources,
+                        audioPacksDirty =
+                            dirty &&
+                                currentDraft.audioPacks != baseline.audioPacks &&
+                                rebased.audioPacks != persistedDraft.audioPacks,
                         editRevision = current.editRevision,
                         writeCadence =
                             if (dirty) {
@@ -692,7 +739,10 @@ internal class SettingsViewModel(
             !currentState.dirty ||
                 currentState.editRevision != state.editRevision ||
                 currentState.draft != state.draft ||
-                currentState.deckDirty != state.deckDirty
+                currentState.deckDirty != state.deckDirty ||
+                currentState.dictionarySourcesDirty != state.dictionarySourcesDirty ||
+                currentState.frequencySourcesDirty != state.frequencySourcesDirty ||
+                currentState.audioPacksDirty != state.audioPacksDirty
         ) {
             return
         }
@@ -740,7 +790,27 @@ internal class SettingsViewModel(
         current: AppSettings,
     ): AppSettings =
         state.draft.toPersistableSettings(current).let { candidate ->
-            if (state.deckDirty) candidate else candidate.copy(deckName = current.deckName)
+            candidate.copy(
+                deckName = if (state.deckDirty) candidate.deckName else current.deckName,
+                dictionarySources =
+                    if (state.dictionarySourcesDirty) {
+                        candidate.dictionarySources
+                    } else {
+                        current.dictionarySources
+                    },
+                frequencySources =
+                    if (state.frequencySourcesDirty) {
+                        candidate.frequencySources
+                    } else {
+                        current.frequencySources
+                    },
+                audioPacks =
+                    if (state.audioPacksDirty) {
+                        candidate.audioPacks
+                    } else {
+                        current.audioPacks
+                    },
+            )
         }
 
     private fun save(transform: (AppSettings) -> AppSettings) {

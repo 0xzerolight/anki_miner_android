@@ -127,9 +127,9 @@ internal fun NumericField(
             KeyboardOptions(
                 keyboardType =
                     when {
-                        integer && allowNegative -> KeyboardType.NumberSigned
+                        integer && allowNegative -> KeyboardType.Number
                         integer -> KeyboardType.Number
-                        allowNegative -> KeyboardType.DecimalSigned
+                        allowNegative -> KeyboardType.Decimal
                         else -> KeyboardType.Decimal
                     },
                 imeAction = imeAction,
