@@ -109,12 +109,24 @@ jobs:
   android-api-26:
     name: Android API 26
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
     steps:
       - name: Checkout source
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
+
+      # Runs before the build: this depends on nothing above it, and a runner
+      # without KVM should fail in seconds rather than after the Gradle leg.
+      - name: Enable KVM
+        shell: bash
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          test -r /dev/kvm
+          test -w /dev/kvm
 
       - name: Set up exact Chaquopy build Python
         id: build_python
@@ -132,7 +144,18 @@ jobs:
         with:
           distribution: temurin
           java-version: "17.0.19+10"
-          cache: gradle
+          # No `cache: gradle`. This job runs `--dependency-verification strict`,
+          # and a partially-restored cache makes verification failures
+          # non-reproducible between runs. The ~2.5 GB NDK download dominates the
+          # job cost anyway, so the Gradle cache buys little here.
+
+      # The hosted runner image sets ANDROID_HOME and unpacks the command-line
+      # tools to cmdline-tools/latest, but never puts that bin dir on PATH.
+      - name: Put Android command-line tools on PATH
+        shell: bash
+        run: |
+          test -x "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          echo "$ANDROID_HOME/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
 
       - name: Install exact Android build packages
         shell: bash
@@ -164,7 +187,6 @@ jobs:
       - name: Inspect emulator native artifact
         shell: bash
         run: |
-          export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$PATH"
           toolchain_root="$RUNNER_TEMP/anki-miner-ci-toolchain"
           mkdir -p "$toolchain_root"
           ln -s "$ANDROID_HOME" "$toolchain_root/sdk"
@@ -178,16 +200,6 @@ jobs:
               --require-entry lib/x86_64/libanki_miner_mecab.so \
               --require-entry lib/x86_64/libffmpeg.so \
               --require-entry lib/x86_64/libffprobe.so
-
-      - name: Enable KVM
-        shell: bash
-        run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
-            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
-          test -r /dev/kvm
-          test -w /dev/kvm
 
       - name: Execute API 26 instrumentation
         uses: reactivecircus/android-emulator-runner@e89f39f1abbbd05b1113a29cf4db69e7540cae5a # v2.37.0
