@@ -125,8 +125,13 @@ jobs:
             | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
-          test -r /dev/kvm
-          test -w /dev/kvm
+          # `udevadm trigger` only queues the event; without settle the mode
+          # change races the assertions below.
+          sudo udevadm settle
+          echo "id: $(id)"
+          ls -l /dev/kvm || echo "/dev/kvm is absent"
+          test -r /dev/kvm || { echo "::error::/dev/kvm not readable"; exit 1; }
+          test -w /dev/kvm || { echo "::error::/dev/kvm not writable"; exit 1; }
 
       - name: Set up exact Chaquopy build Python
         id: build_python
