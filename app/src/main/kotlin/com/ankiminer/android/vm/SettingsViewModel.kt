@@ -38,6 +38,74 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
+internal enum class SettingsFieldKey {
+    AUDIO_PADDING,
+    SCREENSHOT_OFFSET,
+    SUBTITLE_OFFSET,
+    BITRATE,
+    MAX_DURATION,
+    MAX_CHARACTERS,
+    READING_OCCURRENCE,
+    MAX_FREQUENCY,
+    WORKERS,
+}
+
+internal sealed interface SettingsSaveState {
+    val revision: Long
+
+    data class Pending(
+        override val revision: Long,
+    ) : SettingsSaveState
+
+    data class Saving(
+        override val revision: Long,
+    ) : SettingsSaveState
+
+    data class Saved(
+        override val revision: Long,
+    ) : SettingsSaveState
+
+    data class Failed(
+        override val revision: Long,
+    ) : SettingsSaveState
+}
+
+private fun validateOptionalDouble(
+    value: String,
+    nonNegative: Boolean = false,
+): LocalizedStringResource? {
+    if (value.isEmpty()) return null
+    val parsed =
+        value.toDoubleOrNull()
+            ?: return LocalizedStringResource(R.string.b3_validation_numeric_incomplete)
+    if (!parsed.isFinite()) {
+        return LocalizedStringResource(R.string.b3_validation_finite)
+    }
+    return if (nonNegative && parsed < 0) {
+        LocalizedStringResource(R.string.b3_validation_non_negative)
+    } else {
+        null
+    }
+}
+
+private fun validateOptionalInt(
+    value: String,
+    nonNegative: Boolean = false,
+    positive: Boolean = false,
+): LocalizedStringResource? {
+    if (value.isEmpty()) return null
+    val parsed =
+        value.toIntOrNull()
+            ?: return LocalizedStringResource(R.string.b3_validation_numeric_incomplete)
+    return when {
+        positive && parsed <= 0 ->
+            LocalizedStringResource(R.string.b3_validation_positive)
+        nonNegative && parsed < 0 ->
+            LocalizedStringResource(R.string.b3_validation_non_negative)
+        else -> null
+    }
+}
+
 internal data class SettingsDraft(
     val deckName: String,
     val excludedDecks: List<String>,
@@ -69,12 +137,54 @@ internal data class SettingsDraft(
     val readingTts: Boolean,
     val jisho: Boolean,
 ) {
-    val numericValuesValid: Boolean
+    val validation: Map<SettingsFieldKey, LocalizedStringResource>
         get() =
-            listOf(audioPadding, screenshotOffset, subtitleOffset, maxDuration)
-                .all(AppSettingsDraftParser::isOptionalDouble) &&
-                listOf(bitrate, maxCharacters, readingOccurrence, maxFrequency, workers)
-                    .all(AppSettingsDraftParser::isOptionalInt)
+            buildMap {
+                validateOptionalDouble(
+                    audioPadding,
+                    nonNegative = true,
+                )?.let { put(SettingsFieldKey.AUDIO_PADDING, it) }
+                validateOptionalDouble(
+                    screenshotOffset,
+                    nonNegative = true,
+                )?.let { put(SettingsFieldKey.SCREENSHOT_OFFSET, it) }
+                validateOptionalDouble(
+                    subtitleOffset,
+                )?.let { put(SettingsFieldKey.SUBTITLE_OFFSET, it) }
+                validateOptionalInt(bitrate, positive = true)
+                    ?.let { put(SettingsFieldKey.BITRATE, it) }
+                validateOptionalDouble(
+                    maxDuration,
+                    nonNegative = true,
+                )?.let { put(SettingsFieldKey.MAX_DURATION, it) }
+                validateOptionalInt(
+                    maxCharacters,
+                    nonNegative = true,
+                )?.let { put(SettingsFieldKey.MAX_CHARACTERS, it) }
+                validateOptionalInt(
+                    readingOccurrence,
+                    positive = true,
+                )?.let { put(SettingsFieldKey.READING_OCCURRENCE, it) }
+                validateOptionalInt(
+                    maxFrequency,
+                    nonNegative = true,
+                )?.let { put(SettingsFieldKey.MAX_FREQUENCY, it) }
+                validateOptionalInt(workers)
+                    ?.let { put(SettingsFieldKey.WORKERS, it) }
+                workers.toIntOrNull()
+                    ?.takeIf { it !in 1..32 }
+                    ?.let {
+                        put(
+                            SettingsFieldKey.WORKERS,
+                            LocalizedStringResource(
+                                R.string.b3_validation_parallel_workers,
+                            ),
+                        )
+                    }
+            }
+
+    val numericValuesValid: Boolean
+        get() = validation.isEmpty()
 
     fun toSettings(base: AppSettings): AppSettings =
         base.copy(
@@ -112,31 +222,33 @@ internal data class SettingsDraft(
     fun toPersistableSettings(base: AppSettings): AppSettings =
         copy(
             audioPadding =
-                audioPadding.takeIf(AppSettingsDraftParser::isOptionalDouble)
+                audioPadding.takeIf { SettingsFieldKey.AUDIO_PADDING !in validation }
                     ?: base.audioPaddingSeconds?.toString().orEmpty(),
             screenshotOffset =
-                screenshotOffset.takeIf(AppSettingsDraftParser::isOptionalDouble)
+                screenshotOffset.takeIf { SettingsFieldKey.SCREENSHOT_OFFSET !in validation }
                     ?: base.screenshotOffsetSeconds?.toString().orEmpty(),
             subtitleOffset =
-                subtitleOffset.takeIf(AppSettingsDraftParser::isOptionalDouble)
+                subtitleOffset.takeIf { SettingsFieldKey.SUBTITLE_OFFSET !in validation }
                     ?: base.subtitleOffsetSeconds?.toString().orEmpty(),
             bitrate =
-                bitrate.takeIf(AppSettingsDraftParser::isOptionalInt)
+                bitrate.takeIf { SettingsFieldKey.BITRATE !in validation }
                     ?: base.audioBitrateKbps?.toString().orEmpty(),
             maxDuration =
-                maxDuration.takeIf(AppSettingsDraftParser::isOptionalDouble)
+                maxDuration.takeIf { SettingsFieldKey.MAX_DURATION !in validation }
                     ?: base.maxSentenceDurationSeconds?.toString().orEmpty(),
             maxCharacters =
-                maxCharacters.takeIf(AppSettingsDraftParser::isOptionalInt)
+                maxCharacters.takeIf { SettingsFieldKey.MAX_CHARACTERS !in validation }
                     ?: base.maxSentenceCharacters?.toString().orEmpty(),
             readingOccurrence =
-                readingOccurrence.takeIf(AppSettingsDraftParser::isOptionalInt)
+                readingOccurrence.takeIf {
+                    SettingsFieldKey.READING_OCCURRENCE !in validation
+                }
                     ?: base.readingMinimumOccurrence?.toString().orEmpty(),
             maxFrequency =
-                maxFrequency.takeIf(AppSettingsDraftParser::isOptionalInt)
+                maxFrequency.takeIf { SettingsFieldKey.MAX_FREQUENCY !in validation }
                     ?: base.maxFrequencyRank?.toString().orEmpty(),
             workers =
-                workers.takeIf(AppSettingsDraftParser::isOptionalInt)
+                workers.takeIf { SettingsFieldKey.WORKERS !in validation }
                     ?: base.maxParallelWorkers?.toString().orEmpty(),
         ).toSettings(base)
 
@@ -498,6 +610,9 @@ internal class SettingsViewModel(
             .stateIn(viewModelScope, SharingStarted.Eagerly, null)
     val saving = MutableStateFlow(false)
     val error = MutableStateFlow<LocalizedStringResource?>(null)
+    private val mutableSaveState =
+        MutableStateFlow<SettingsSaveState>(SettingsSaveState.Saved(0))
+    val saveState: StateFlow<SettingsSaveState> = mutableSaveState.asStateFlow()
     val resourceState: StateFlow<ResourceManagerState> = resources.state
     private val persistenceMutex = Mutex()
     private val successfulWrites = SuccessfulSettingsWriteTracker()
@@ -526,7 +641,9 @@ internal class SettingsViewModel(
                 }
             }
                 .filterNotNull()
-                .distinctUntilChangedBy(ProjectedSettingsWrite::value)
+                .distinctUntilChangedBy { projected ->
+                    projected.value to projected.state.editRevision
+                }
                 .filter { it.state.dirty }
                 .map { it.state }
                 .coalesceSettingsWrites()
@@ -534,7 +651,14 @@ internal class SettingsViewModel(
         }
     }
 
-    fun updateDraft(value: SettingsDraft) = draftStore.update(value)
+    fun updateDraft(value: SettingsDraft) {
+        val before = draftStore.state.value.editRevision
+        draftStore.update(value)
+        val after = draftStore.state.value.editRevision
+        if (after != before) {
+            mutableSaveState.value = SettingsSaveState.Pending(after)
+        }
+    }
 
     /**
      * Start a lifecycle flush synchronously, then finish its bounded repository transaction even if
@@ -576,19 +700,38 @@ internal class SettingsViewModel(
         val persisted = settings.value ?: return
         if (applyDraft(state, persisted) == persisted) {
             successfulWrites.markSuccessful(state)
+            mutableSaveState.value =
+                if (state.draft.validation.isEmpty()) {
+                    SettingsSaveState.Saved(state.editRevision)
+                } else {
+                    SettingsSaveState.Pending(state.editRevision)
+                }
             return
         }
+        saving.value = true
+        mutableSaveState.value = SettingsSaveState.Saving(state.editRevision)
         try {
             // Transactional transform reads the freshest persisted value. Deck is applied only
             // when explicitly edited, so wizard and note-type writes cannot be copied back.
             repository.update { current -> applyDraft(state, current) }
             successfulWrites.markSuccessful(state)
+            mutableSaveState.value =
+                if (state.draft.validation.isEmpty()) {
+                    SettingsSaveState.Saved(state.editRevision)
+                } else {
+                    // Unrelated valid edits were saved, but malformed numeric text remains local.
+                    SettingsSaveState.Pending(state.editRevision)
+                }
         } catch (failure: CancellationException) {
             throw failure
         } catch (failure: InvalidAppSettingException) {
             error.value = settingsValidationError(failure)
+            mutableSaveState.value = SettingsSaveState.Failed(state.editRevision)
         } catch (_: Exception) {
-            error.value = LocalizedStringResource(R.string.settings_save_failed)
+            error.value = LocalizedStringResource(R.string.b3_settings_save_failed)
+            mutableSaveState.value = SettingsSaveState.Failed(state.editRevision)
+        } finally {
+            saving.value = false
         }
     }
 
@@ -604,6 +747,7 @@ internal class SettingsViewModel(
         if (saving.value) return
         val started = draftStore.state.value
         saving.value = true
+        mutableSaveState.value = SettingsSaveState.Saving(started.editRevision)
         error.value = null
         viewModelScope.launch {
             try {
@@ -618,12 +762,18 @@ internal class SettingsViewModel(
                     settings = repository.settings.first(),
                     resources = resources.state.value,
                 )
+                val completedRevision = draftStore.state.value.editRevision
+                if (completedRevision == started.editRevision) {
+                    mutableSaveState.value = SettingsSaveState.Saved(completedRevision)
+                }
             } catch (failure: CancellationException) {
                 throw failure
             } catch (failure: InvalidAppSettingException) {
                 error.value = settingsValidationError(failure)
+                mutableSaveState.value = SettingsSaveState.Failed(started.editRevision)
             } catch (_: Exception) {
-                error.value = LocalizedStringResource(R.string.settings_save_failed)
+                error.value = LocalizedStringResource(R.string.b3_settings_save_failed)
+                mutableSaveState.value = SettingsSaveState.Failed(started.editRevision)
             } finally {
                 saving.value = false
                 if (draftStore.state.value.dirty) flushPendingWrites()
@@ -651,6 +801,11 @@ internal class SettingsViewModel(
                 audioPackIds = inventory.usableAudioPackIds(),
             )
         }
+    }
+
+    fun retrySave() {
+        if (saving.value) return
+        viewModelScope.launch { persistLatest() }
     }
 
     fun dismissError() {

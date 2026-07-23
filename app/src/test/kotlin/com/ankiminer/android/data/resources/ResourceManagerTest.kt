@@ -1,5 +1,6 @@
 package com.ankiminer.android.data.resources
 
+import com.ankiminer.android.data.RuntimeWorkCoordinator
 import com.ankiminer.android.engine.EngineCallbacks
 import com.ankiminer.android.engine.PyBridge
 import com.ankiminer.android.media.SafBroker
@@ -21,6 +22,34 @@ import org.junit.rules.TemporaryFolder
 class ResourceManagerTest {
     @get:Rule
     val temporary = TemporaryFolder()
+
+    @Test
+    fun busyFailuresKeepStableOriginAndRetryMetadataUntilDismissed() =
+        runTest {
+            val coordinator = RuntimeWorkCoordinator()
+            val lease =
+                requireNotNull(
+                    coordinator.tryAcquire(RuntimeWorkCoordinator.Kind.MINING),
+                )
+            val harness = Harness(runtimeWorkCoordinator = coordinator)
+
+            harness.manager.installUniDic()
+            assertEquals(ResourceFailureOrigin.UNIDIC, harness.manager.state.value.failure?.origin)
+            assertEquals(
+                ResourceFailureAction.RETRY,
+                harness.manager.state.value.failure?.retry?.action,
+            )
+
+            harness.manager.dismissFailure()
+            assertNull(harness.manager.state.value.failure)
+            harness.manager.searchKnownWords("")
+            assertEquals(
+                ResourceFailureOrigin.KNOWN_WORDS,
+                harness.manager.state.value.failure?.origin,
+            )
+
+            lease.close()
+        }
 
     @Test
     fun previewLifecycleRetainsOneCopyAndConfirmRefreshesInventory() =
@@ -147,7 +176,10 @@ class ResourceManagerTest {
             assertNull(harness.manager.state.value.failure)
         }
 
-    private inner class Harness(initialUserCount: Int = 0) {
+    private inner class Harness(
+        initialUserCount: Int = 0,
+        runtimeWorkCoordinator: RuntimeWorkCoordinator = RuntimeWorkCoordinator(),
+    ) {
         private val root = temporary.newFolder("manager")
         val bridgeRoot = File(root, "bridge").apply { mkdirs() }
         val stagingRoot = File(root, "staging").apply { mkdirs() }
@@ -165,6 +197,7 @@ class ResourceManagerTest {
                 stagingRoot = stagingRoot,
                 resourceExecutor = DIRECT_EXECUTOR,
                 controlExecutor = DIRECT_EXECUTOR,
+                runtimeWorkCoordinator = runtimeWorkCoordinator,
                 downloader =
                     PinnedResourceDownloader(
                         File(root, "downloads"),

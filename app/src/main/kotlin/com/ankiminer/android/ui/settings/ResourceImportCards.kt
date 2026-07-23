@@ -2,7 +2,6 @@ package com.ankiminer.android.ui.settings
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
@@ -13,17 +12,12 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.ankiminer.android.R
 import com.ankiminer.android.data.resources.FrequencySourceFormat
 import com.ankiminer.android.data.resources.KnownWordsSourceFormat
-import com.ankiminer.android.data.resources.KnownWordsResetScope
 import com.ankiminer.android.data.resources.PitchAccentSourceFormat
 import com.ankiminer.android.vm.SetupUiState
 
@@ -35,6 +29,7 @@ internal fun FrequencyImportCard(
     onFormatChanged: (FrequencySourceFormat) -> Unit,
     onReplaceChanged: (Boolean) -> Unit,
     onImport: () -> Unit,
+    inlineFailure: (@Composable () -> Unit)? = null,
 ) {
     OutlinedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -88,6 +83,7 @@ internal fun FrequencyImportCard(
                 enabled = !state.busy,
             )
             ReplaceToggle(state.frequencyReplace, !state.busy, onReplaceChanged)
+            inlineFailure?.invoke()
             OutlinedButton(
                 onClick = onImport,
                 enabled = !state.busy && state.frequencySourceIdValid && state.frequencySourceName.isNotBlank(),
@@ -103,6 +99,7 @@ internal fun PitchImportCard(
     onFormatChanged: (PitchAccentSourceFormat) -> Unit,
     onReplaceChanged: (Boolean) -> Unit,
     onImport: () -> Unit,
+    inlineFailure: (@Composable () -> Unit)? = null,
 ) {
     OutlinedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -144,6 +141,7 @@ internal fun PitchImportCard(
                 enabled = !state.busy,
             )
             ReplaceToggle(state.pitchReplace, !state.busy, onReplaceChanged)
+            inlineFailure?.invoke()
             OutlinedButton(
                 onClick = onImport,
                 enabled = !state.busy && state.pitchSourceName.isNotBlank(),
@@ -158,6 +156,7 @@ internal fun AudioPackImportCard(
     onIdChanged: (String) -> Unit,
     onReplaceChanged: (Boolean) -> Unit,
     onImport: () -> Unit,
+    inlineFailure: (@Composable () -> Unit)? = null,
 ) {
     OutlinedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -195,6 +194,7 @@ internal fun AudioPackImportCard(
                 modifier = Modifier.fillMaxWidth(),
             )
             ReplaceToggle(state.audioPackReplace, !state.busy, onReplaceChanged)
+            inlineFailure?.invoke()
             OutlinedButton(
                 onClick = onImport,
                 enabled = !state.busy && state.audioPackIdValid,
@@ -224,14 +224,9 @@ internal fun KnownWordsImportCard(
     onImport: () -> Unit,
     onConfirmImport: () -> Unit,
     onDismissImport: () -> Unit,
-    onSearchChanged: (String) -> Unit,
-    onSearch: () -> Unit,
-    onLoadMore: () -> Unit,
-    onRemove: (String) -> Unit,
-    onExport: () -> Unit,
-    onReset: (KnownWordsResetScope) -> Unit,
+    onManage: () -> Unit,
+    inlineFailure: (@Composable () -> Unit)? = null,
 ) {
-    var pendingReset by remember { mutableStateOf<KnownWordsResetScope?>(null) }
     state.knownWordsImportPreview?.let { preview ->
         AlertDialog(
             onDismissRequest = { if (!state.busy) onDismissImport() },
@@ -260,44 +255,6 @@ internal fun KnownWordsImportCard(
                 TextButton(onClick = onDismissImport, enabled = !state.busy) {
                     Text(stringResource(R.string.cancel))
                 }
-            },
-        )
-    }
-    pendingReset?.let { scope ->
-        AlertDialog(
-            onDismissRequest = { pendingReset = null },
-            title = {
-                Text(
-                    stringResource(
-                        if (scope == KnownWordsResetScope.USER) {
-                            R.string.known_words_reset_user
-                        } else {
-                            R.string.known_words_rebuild_cache
-                        },
-                    ),
-                )
-            },
-            text = {
-                Text(
-                    stringResource(
-                        if (scope == KnownWordsResetScope.USER) {
-                            R.string.known_words_reset_user_confirmation
-                        } else {
-                            R.string.known_words_rebuild_cache_confirmation
-                        },
-                    ),
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        pendingReset = null
-                        onReset(scope)
-                    },
-                ) { Text(stringResource(R.string.confirm)) }
-            },
-            dismissButton = {
-                TextButton(onClick = { pendingReset = null }) { Text(stringResource(R.string.cancel)) }
             },
         )
     }
@@ -334,49 +291,12 @@ internal fun KnownWordsImportCard(
             OutlinedButton(onClick = onImport, enabled = !state.busy) {
                 Text(stringResource(R.string.known_words_choose_file))
             }
-            Text(stringResource(R.string.known_words_manage_title), style = MaterialTheme.typography.titleMedium)
-            Text(stringResource(R.string.known_words_manage_help))
-            OutlinedTextField(
-                value = state.knownWordsSearch,
-                onValueChange = onSearchChanged,
-                label = { Text(stringResource(R.string.known_words_search)) },
-                enabled = !state.busy,
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            OutlinedButton(onClick = onSearch, enabled = !state.busy) {
-                Text(stringResource(R.string.known_words_search_action))
-            }
-            state.knownWordsPage?.let { page ->
-                page.words.forEach { word ->
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text(word, Modifier.weight(1f))
-                        TextButton(onClick = { onRemove(word) }, enabled = !state.busy) {
-                            Text(stringResource(R.string.known_words_remove))
-                        }
-                    }
-                }
-                if (page.hasMore) {
-                    OutlinedButton(onClick = onLoadMore, enabled = !state.busy) {
-                        Text(stringResource(R.string.known_words_load_more))
-                    }
-                }
-            }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = onExport, enabled = !state.busy, modifier = Modifier.weight(1f)) {
-                    Text(stringResource(R.string.known_words_export))
-                }
-                OutlinedButton(
-                    onClick = { pendingReset = KnownWordsResetScope.USER },
-                    enabled = !state.busy && state.knownWords.userCount > 0,
-                    modifier = Modifier.weight(1f),
-                ) { Text(stringResource(R.string.known_words_reset_user)) }
-            }
+            inlineFailure?.invoke()
             OutlinedButton(
-                onClick = { pendingReset = KnownWordsResetScope.CACHE },
-                enabled = !state.busy && state.knownWords.ankiCount + state.knownWords.minedCount > 0,
+                onClick = onManage,
+                enabled = !state.busy,
                 modifier = Modifier.fillMaxWidth(),
-            ) { Text(stringResource(R.string.known_words_rebuild_cache)) }
+            ) { Text(stringResource(R.string.b3_known_words_manage)) }
         }
     }
 }

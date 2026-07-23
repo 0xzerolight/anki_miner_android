@@ -70,12 +70,61 @@ class OnboardingWizardTest {
 
     @Test
     fun wizardStepNavigationIsBounded() {
-        assertEquals(WizardStep.TOKENIZER, nextWizardStep(WizardStep.WELCOME))
+        assertEquals(WizardStep.ANKIDROID, nextWizardStep(WizardStep.WELCOME))
         assertEquals(WizardStep.ANKIDROID_DECK, nextWizardStep(WizardStep.ANKIDROID))
         assertEquals(WizardStep.ANKIDROID_NOTE_TYPE, nextWizardStep(WizardStep.ANKIDROID_DECK))
+        assertEquals(WizardStep.TOKENIZER, nextWizardStep(WizardStep.ANKIDROID_NOTE_TYPE))
+        assertEquals(WizardStep.DICTIONARY, nextWizardStep(WizardStep.TOKENIZER))
         assertEquals(WizardStep.DONE, nextWizardStep(WizardStep.DONE))
         assertEquals(WizardStep.WELCOME, previousWizardStep(WizardStep.WELCOME))
-        assertEquals(WizardStep.ANKIDROID_NOTE_TYPE, previousWizardStep(WizardStep.DONE))
+        assertEquals(WizardStep.DICTIONARY, previousWizardStep(WizardStep.DONE))
+    }
+
+    @Test
+    fun wizardOrderAndRequirementLabelsMatchMiningGates() {
+        assertEquals(
+            listOf(
+                WizardStep.WELCOME,
+                WizardStep.ANKIDROID,
+                WizardStep.ANKIDROID_DECK,
+                WizardStep.ANKIDROID_NOTE_TYPE,
+                WizardStep.TOKENIZER,
+                WizardStep.DICTIONARY,
+                WizardStep.DONE,
+            ),
+            WizardStep.entries,
+        )
+        assertEquals(WizardStepRequirement.REQUIRED, wizardStepRequirement(WizardStep.ANKIDROID))
+        assertEquals(WizardStepRequirement.OPTIONAL, wizardStepRequirement(WizardStep.ANKIDROID_DECK))
+        assertEquals(
+            WizardStepRequirement.REQUIRED,
+            wizardStepRequirement(WizardStep.ANKIDROID_NOTE_TYPE),
+        )
+        assertEquals(WizardStepRequirement.REQUIRED, wizardStepRequirement(WizardStep.TOKENIZER))
+        assertEquals(WizardStepRequirement.OPTIONAL, wizardStepRequirement(WizardStep.DICTIONARY))
+        assertEquals(null, wizardStepRequirement(WizardStep.WELCOME))
+        assertEquals(null, wizardStepRequirement(WizardStep.DONE))
+    }
+
+    @Test
+    fun systemBackMovesToPreviousStepAndRequestsConfirmationAtWelcome() {
+        assertEquals(
+            WizardBackAction.Previous(WizardStep.ANKIDROID_DECK),
+            wizardBackAction(WizardStep.ANKIDROID_NOTE_TYPE),
+        )
+        assertEquals(WizardBackAction.ConfirmSkip, wizardBackAction(WizardStep.WELCOME))
+    }
+
+    @Test
+    fun finalReadinessCopyNeverClaimsReadyForIncompleteSetup() {
+        assertEquals(
+            WizardFinalState.READY,
+            wizardFinalState(isMiningReady = true),
+        )
+        assertEquals(
+            WizardFinalState.INCOMPLETE,
+            wizardFinalState(isMiningReady = false),
+        )
     }
 
     @Test

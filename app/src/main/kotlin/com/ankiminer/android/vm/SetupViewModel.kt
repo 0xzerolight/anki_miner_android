@@ -12,6 +12,7 @@ import com.ankiminer.android.anki.provider.AnkiRemediationCommand
 import com.ankiminer.android.data.anki.AnkiSetupManager
 import com.ankiminer.android.data.RuntimeWorkCoordinator
 import com.ankiminer.android.data.resources.ResourceManager
+import com.ankiminer.android.data.resources.ResourceFailureOrigin
 import com.ankiminer.android.data.resources.ResourceStartupReadiness
 import com.ankiminer.android.data.resources.FrequencySourceFormat
 import com.ankiminer.android.data.resources.KnownWordsResetScope
@@ -473,6 +474,33 @@ internal class SetupViewModel(
     fun cancelOperation() = resources.cancelActive()
 
     fun dismissFailure() = resources.dismissFailure()
+
+    fun retryResourceFailure() {
+        val state = uiState.value
+        val failure = state.failure ?: return
+        if (state.busy) return
+        when (failure.origin) {
+            ResourceFailureOrigin.SETUP -> refresh()
+            ResourceFailureOrigin.UNIDIC ->
+                viewModelScope.launch { resources.installUniDic() }
+            ResourceFailureOrigin.CATALOG_DICTIONARY -> {
+                val resourceId = failure.retry.targetId ?: return
+                viewModelScope.launch {
+                    resources.installCatalogDictionary(
+                        resourceId,
+                        replace = failure.retry.replace,
+                    )
+                }
+            }
+            ResourceFailureOrigin.DICTIONARY_LOOKUP -> lookup()
+            ResourceFailureOrigin.KNOWN_WORDS -> searchKnownWords()
+            ResourceFailureOrigin.CUSTOM_DICTIONARY,
+            ResourceFailureOrigin.PITCH,
+            ResourceFailureOrigin.AUDIO,
+            ResourceFailureOrigin.FREQUENCY,
+            -> Unit
+        }
+    }
 
     fun permissionsReturned() = refreshExternalReadiness()
 

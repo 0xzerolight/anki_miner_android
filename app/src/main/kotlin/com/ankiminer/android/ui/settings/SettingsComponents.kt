@@ -6,8 +6,11 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.selection.toggleable
-import androidx.compose.material3.Button
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -19,17 +22,26 @@ import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.ankiminer.android.R
 import com.ankiminer.android.anki.provider.AnkiProviderReadiness
@@ -46,6 +58,8 @@ import com.ankiminer.android.data.resources.ResourceOperationProgress
 import com.ankiminer.android.data.resources.ResourceStartupReadiness
 import com.ankiminer.android.data.settings.ResourceChainSelection
 import com.ankiminer.android.engine.PythonRuntimeReadiness
+import com.ankiminer.android.vm.SettingsSaveState
+import kotlinx.coroutines.launch
 
 @Composable
 internal fun SettingsSection(title: String, content: @Composable () -> Unit) {
@@ -62,30 +76,28 @@ internal fun SettingsSection(title: String, content: @Composable () -> Unit) {
 }
 
 @Composable
-internal fun SettingsSectionHeading(title: String) {
-    Text(
-        title,
-        modifier = Modifier.semantics { heading() },
-        style = MaterialTheme.typography.titleLarge,
-    )
-}
-
-@Composable
 internal fun SettingTextField(
     value: String,
     onChange: (String) -> Unit,
     label: String,
     supporting: String,
     enabled: Boolean = true,
+    modifier: Modifier = Modifier,
+    error: String? = null,
+    keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
+    keyboardActions: KeyboardActions = KeyboardActions.Default,
 ) {
     OutlinedTextField(
         value = value,
         onValueChange = onChange,
         label = { Text(label) },
-        supportingText = { Text(supporting) },
+        supportingText = { Text(error ?: supporting) },
         enabled = enabled,
+        isError = error != null,
+        keyboardOptions = keyboardOptions,
+        keyboardActions = keyboardActions,
         singleLine = true,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
     )
 }
 
@@ -96,21 +108,45 @@ internal fun NumericField(
     label: String,
     supporting: String,
     allowNegative: Boolean = false,
+    integer: Boolean = false,
+    error: String? = null,
+    imeAction: ImeAction = ImeAction.Done,
 ) {
+    val focusManager = LocalFocusManager.current
+    val bringIntoViewRequester = remember { BringIntoViewRequester() }
+    val coroutineScope = rememberCoroutineScope()
     SettingTextField(
         value = value,
-        onChange = { candidate ->
-            if (
-                candidate.isEmpty() ||
-                candidate.toDoubleOrNull() != null ||
-                candidate == "." ||
-                (allowNegative && candidate in setOf("-", "-."))
-            ) {
-                onChange(candidate)
-            }
-        },
+        // The numeric keyboard is a hint, not validation. Paste and hardware keyboards can still
+        // enter malformed text; keep it visible so field-keyed validation can explain the problem.
+        onChange = onChange,
         label = label,
         supporting = supporting,
+        error = error,
+        keyboardOptions =
+            KeyboardOptions(
+                keyboardType =
+                    when {
+                        integer && allowNegative -> KeyboardType.NumberSigned
+                        integer -> KeyboardType.Number
+                        allowNegative -> KeyboardType.DecimalSigned
+                        else -> KeyboardType.Decimal
+                    },
+                imeAction = imeAction,
+            ),
+        keyboardActions =
+            KeyboardActions(
+                onNext = { focusManager.moveFocus(FocusDirection.Next) },
+                onDone = { focusManager.clearFocus() },
+            ),
+        modifier =
+            Modifier
+                .bringIntoViewRequester(bringIntoViewRequester)
+                .onFocusChanged { state ->
+                    if (state.isFocused) {
+                        coroutineScope.launch { bringIntoViewRequester.bringIntoView() }
+                    }
+                },
     )
 }
 
@@ -136,15 +172,14 @@ internal fun NullableToggle(
                 Text(label)
                 Text(
                     stringResource(
-                        if (value == null) {
-                            if (desktopDefault) {
-                                R.string.settings_default_on
+                        R.string.b3_settings_resolved_value,
+                        stringResource(
+                            if (value ?: desktopDefault) {
+                                R.string.b3_settings_value_on
                             } else {
-                                R.string.settings_default_off
-                            }
-                        } else {
-                            R.string.settings_android_override
-                        },
+                                R.string.b3_settings_value_off
+                            },
+                        ),
                     ),
                     style = MaterialTheme.typography.bodySmall,
                 )
@@ -153,7 +188,73 @@ internal fun NullableToggle(
         }
         if (value != null) {
             TextButton(onClick = { onChange(null) }) {
-                Text(stringResource(R.string.settings_default_action))
+                Text(stringResource(R.string.b3_settings_use_recommended_default))
+            }
+        }
+    }
+}
+
+@Composable
+internal fun SettingsSaveStatus(
+    state: SettingsSaveState,
+    error: String?,
+    onRetry: () -> Unit,
+) {
+    val label =
+        when (state) {
+            is SettingsSaveState.Pending -> stringResource(R.string.b3_settings_save_pending)
+            is SettingsSaveState.Saving -> stringResource(R.string.b3_settings_save_saving)
+            is SettingsSaveState.Saved -> stringResource(R.string.b3_settings_save_saved)
+            is SettingsSaveState.Failed ->
+                error ?: stringResource(R.string.b3_settings_save_failed)
+        }
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color =
+            if (state is SettingsSaveState.Failed) {
+                MaterialTheme.colorScheme.errorContainer
+            } else {
+                MaterialTheme.colorScheme.surfaceVariant
+            },
+        shape = MaterialTheme.shapes.small,
+    ) {
+        Row(
+            Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text(label, style = MaterialTheme.typography.labelLarge)
+            if (state is SettingsSaveState.Failed) {
+                TextButton(onClick = onRetry) {
+                    Text(stringResource(R.string.b3_retry))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+internal fun InlineFailureContainer(
+    message: String,
+    actionLabel: String,
+    onAction: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.errorContainer,
+        contentColor = MaterialTheme.colorScheme.onErrorContainer,
+        shape = MaterialTheme.shapes.medium,
+    ) {
+        Column(
+            Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(message)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(onClick = onAction) { Text(actionLabel) }
+                TextButton(onClick = onDismiss) {
+                    Text(stringResource(R.string.b3_dismiss))
+                }
             }
         }
     }
@@ -277,13 +378,19 @@ internal fun ResourceCard(
     busy: Boolean,
     action: () -> Unit,
     actionLabel: String,
+    inlineFailure: (@Composable () -> Unit)? = null,
 ) {
     OutlinedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(title, style = MaterialTheme.typography.titleMedium)
-            Text(description)
-            Text(stringResource(if (installed) R.string.resource_installed else R.string.resource_not_installed))
-            Button(onClick = action, enabled = !busy) { Text(actionLabel) }
+            if (installed) {
+                Text(stringResource(R.string.resource_installed))
+            } else {
+                Text(description)
+                Text(stringResource(R.string.resource_not_installed))
+            }
+            inlineFailure?.invoke()
+            OutlinedButton(onClick = action, enabled = !busy) { Text(actionLabel) }
         }
     }
 }
@@ -339,26 +446,31 @@ internal fun ResourceOperationCard(
 }
 
 /**
- * Surfaces a transient failure/error [message] as a Material snackbar in the enclosing
- * [hostState], then calls [onDismiss] to clear the source once the snackbar disappears.
- * Replaces the inline failure cards that rendered off-screen at the top of the settings
- * scroll (bug #3). Keyed on [message]; the null transition between shows lets an identical
- * consecutive message re-trigger.
+ * Shows an optional linked summary without owning the persistent source failure. Callers decide
+ * whether timeout/dismiss clears anything; origin-card failures pass the default no-op.
  */
 @Composable
 internal fun MessageSnackbarEffect(
     message: String?,
     hostState: SnackbarHostState,
-    onDismiss: () -> Unit,
+    actionLabel: String? = null,
+    onAction: () -> Unit = {},
+    onDismiss: () -> Unit = {},
 ) {
     LaunchedEffect(message) {
         if (message != null) {
-            hostState.showSnackbar(
-                message = message,
-                withDismissAction = true,
-                duration = SnackbarDuration.Long,
-            )
-            onDismiss()
+            val result =
+                hostState.showSnackbar(
+                    message = message,
+                    actionLabel = actionLabel,
+                    withDismissAction = true,
+                    duration = SnackbarDuration.Long,
+                )
+            if (result == SnackbarResult.ActionPerformed) {
+                onAction()
+            } else {
+                onDismiss()
+            }
         }
     }
 }
