@@ -2,7 +2,9 @@ package com.ankiminer.android.ui.mining
 
 import android.content.ClipData
 import androidx.annotation.StringRes
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -81,14 +83,17 @@ import com.ankiminer.android.mining.CurationSentence
 import com.ankiminer.android.mining.MiningProgress
 import com.ankiminer.android.mining.ProcessingResult
 import com.ankiminer.android.ui.theme.AdaptiveActionGroup
+import com.ankiminer.android.ui.theme.AdaptivePairedActions
 import com.ankiminer.android.ui.theme.CompactLayoutWidthDp
 import com.ankiminer.android.ui.theme.MetricTile
 import com.ankiminer.android.ui.theme.actionBorder
+import com.ankiminer.android.ui.theme.disabledActionContentColor
 import com.ankiminer.android.ui.theme.forwardButtonColors
 import com.ankiminer.android.ui.theme.outlinedActionButtonColors
 import kotlinx.coroutines.launch
 
 internal const val MINING_FAILURE_TEST_TAG = "mining_failure"
+internal const val MINING_PHASE_HEADING_TEST_TAG = "mining_phase_heading"
 internal const val CURATION_SEARCH_TEST_TAG = "curation_search"
 
 internal data class MiningResultSource(
@@ -151,6 +156,8 @@ internal fun MiningProgressPanel(
     progress: MiningProgress?,
     testTag: String,
     modifier: Modifier = Modifier,
+    headingModifier: Modifier = Modifier,
+    @StringRes title: Int = R.string.running_title,
 ) {
     val fraction = progress?.fraction?.coerceIn(0f, 1f)
     val animatedFraction by
@@ -181,8 +188,8 @@ internal fun MiningProgressPanel(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(
-                text = stringResource(R.string.running_title),
-                modifier = Modifier.semantics { heading() },
+                text = stringResource(title),
+                modifier = headingModifier.semantics { heading() },
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
             )
@@ -244,7 +251,7 @@ internal fun MiningFailureCard(
     val actionColors =
         ButtonDefaults.textButtonColors(
             contentColor = MaterialTheme.colorScheme.onErrorContainer,
-            disabledContentColor = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.65f),
+            disabledContentColor = disabledActionContentColor(),
         )
     Surface(
         modifier =
@@ -270,57 +277,89 @@ internal fun MiningFailureCard(
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                if (diagnosticDetails != null) {
+            if (diagnosticDetails != null) {
+                if (detailsExpanded) {
+                    AdaptivePairedActions(
+                        first = { actionModifier ->
+                            TextButton(
+                                onClick = { detailsExpanded = false },
+                                modifier = actionModifier,
+                                colors = actionColors,
+                            ) {
+                                Text(stringResource(R.string.hide_details))
+                            }
+                        },
+                        second = { actionModifier ->
+                            CopyDiagnosticsButton(
+                                diagnostics = diagnosticDetails,
+                                modifier = actionModifier,
+                                colors = actionColors,
+                            )
+                        },
+                    )
+                } else {
                     TextButton(
-                        onClick = { detailsExpanded = !detailsExpanded },
+                        onClick = { detailsExpanded = true },
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
                         colors = actionColors,
                     ) {
-                        Text(
-                            stringResource(
-                                if (detailsExpanded) R.string.hide_details else R.string.details,
-                            ),
-                        )
-                    }
-                    if (detailsExpanded) {
-                        CopyDiagnosticsButton(
-                            diagnostics = diagnosticDetails,
-                            colors = actionColors,
-                        )
+                        Text(stringResource(R.string.details))
                     }
                 }
             }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                secondaryAction?.let { action ->
-                    TextButton(
-                        onClick = action.onClick,
-                        enabled = action.enabled,
-                        modifier = action.testTag?.let { Modifier.testTag(it) } ?: Modifier,
-                        colors = actionColors,
-                    ) {
-                        Text(action.label)
-                    }
-                }
-                primaryAction?.let { action ->
-                    TextButton(
-                        onClick = action.onClick,
-                        enabled = action.enabled,
-                        modifier = action.testTag?.let { Modifier.testTag(it) } ?: Modifier,
-                        colors = actionColors,
-                    ) {
-                        Text(action.label)
-                    }
+            val mainAction = primaryAction ?: secondaryAction
+            val alternateAction = secondaryAction.takeIf { primaryAction != null }
+            if (mainAction != null) {
+                if (alternateAction != null) {
+                    AdaptiveActionGroup(
+                        primary = { actionModifier ->
+                            MiningFailureButton(
+                                action = mainAction,
+                                modifier = actionModifier,
+                            )
+                        },
+                        secondary = { actionModifier ->
+                            MiningFailureButton(
+                                action = alternateAction,
+                                modifier = actionModifier,
+                            )
+                        },
+                    )
+                } else {
+                    AdaptiveActionGroup(
+                        primary = { actionModifier ->
+                            MiningFailureButton(
+                                action = mainAction,
+                                modifier = actionModifier,
+                            )
+                        },
+                    )
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun MiningFailureButton(
+    action: MiningFailureAction,
+    modifier: Modifier,
+) {
+    OutlinedButton(
+        onClick = action.onClick,
+        enabled = action.enabled,
+        modifier =
+            modifier.then(
+                action.testTag?.let { Modifier.testTag(it) } ?: Modifier,
+            ),
+        colors =
+            ButtonDefaults.outlinedButtonColors(
+                contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                disabledContentColor = disabledActionContentColor(),
+            ),
+        border = actionBorder(enabled = action.enabled),
+    ) {
+        Text(action.label)
     }
 }
 
@@ -385,8 +424,6 @@ internal fun StickyCurationActions(
                                     },
                                     selectedCount,
                                 ),
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
                         )
                     }
                 },
@@ -415,12 +452,10 @@ internal fun StickyCurationActions(
                             Text(
                                 text = stringResource(R.string.cancelling),
                                 modifier = Modifier.padding(start = 8.dp),
-                                maxLines = 2,
                             )
                         } else {
                             Text(
                                 text = stringResource(R.string.cancel_mining),
-                                maxLines = 2,
                             )
                         }
                     }
@@ -459,106 +494,157 @@ internal fun SourcesCard(
     modifier: Modifier = Modifier,
 ) {
     OutlinedCard(modifier.fillMaxWidth()) {
-        sources.forEachIndexed { index, source ->
-            ListItem(
-                modifier = Modifier.fillMaxWidth(),
-                supportingContent = {
-                    if (source.isResolving) {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val stack =
+                maxWidth < CompactLayoutWidthDp.dp || LocalDensity.current.fontScale >= 1.3f
+            Column {
+                sources.forEachIndexed { index, source ->
+                    if (stack) {
+                        Column(
+                            modifier = Modifier.fillMaxWidth().padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(18.dp),
-                                strokeWidth = 2.dp,
+                            Text(
+                                text = source.label,
+                                style = MaterialTheme.typography.titleMedium,
                             )
-                            DocumentReadProgressText(
-                                documentReadProgress(
-                                    source.readKind,
-                                    source.document?.displayName,
-                                ),
+                            SourceSupportingContent(source)
+                            SourceRowActions(
+                                source = source,
+                                stack = true,
+                                modifier = Modifier.fillMaxWidth(),
                             )
                         }
                     } else {
-                        Text(
-                            source.document?.displayName
-                                ?: stringResource(R.string.no_file_selected),
-                            style = MaterialTheme.typography.bodyMedium,
+                        ListItem(
+                            modifier = Modifier.fillMaxWidth(),
+                            supportingContent = { SourceSupportingContent(source) },
+                            trailingContent = {
+                                SourceRowActions(source = source, stack = false)
+                            },
+                            headlineContent = {
+                                Text(
+                                    text = source.label,
+                                    style = MaterialTheme.typography.titleMedium,
+                                )
+                            },
                         )
                     }
-                },
-                trailingContent = {
-                    SourceRowActions(source)
-                },
-                headlineContent = {
-                    Text(
-                        text = source.label,
-                        style = MaterialTheme.typography.titleMedium,
-                    )
-                },
-            )
-            if (index != sources.lastIndex) HorizontalDivider()
+                    if (index != sources.lastIndex) HorizontalDivider()
+                }
+            }
         }
     }
 }
 
 @Composable
-private fun SourceRowActions(source: MiningSourceItem) {
-    val stack = LocalDensity.current.fontScale >= 1.3f
-    val content: @Composable () -> Unit = {
+private fun SourceSupportingContent(source: MiningSourceItem) {
+    if (source.isResolving) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(18.dp),
+                strokeWidth = 2.dp,
+            )
+            DocumentReadProgressText(
+                documentReadProgress(
+                    source.readKind,
+                    source.document?.displayName,
+                ),
+            )
+        }
+    } else {
+        Text(
+            source.document?.displayName ?: stringResource(R.string.no_file_selected),
+            style = MaterialTheme.typography.bodyMedium,
+        )
+    }
+}
+
+@Composable
+private fun SourceRowActions(
+    source: MiningSourceItem,
+    stack: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val actionEnabled = source.enabled && !source.isResolving
+    val pickButton: @Composable (Modifier) -> Unit = { actionModifier ->
         OutlinedButton(
             onClick = source.onPick,
-            enabled = source.enabled && !source.isResolving,
+            enabled = actionEnabled,
             modifier =
-                Modifier
+                actionModifier
                     .heightIn(min = 48.dp)
                     .testTag(source.pickTestTag),
             colors = outlinedActionButtonColors(),
-            border = actionBorder(enabled = source.enabled && !source.isResolving),
+            border = actionBorder(enabled = actionEnabled),
             contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
         ) {
             Text(
                 stringResource(
                     if (source.document == null) R.string.choose_file else R.string.replace_file,
                 ),
-                maxLines = 2,
             )
-        }
-        if (source.document != null) {
-            IconButton(
-                onClick = source.onClear,
-                enabled = source.enabled && !source.isResolving,
-                modifier =
-                    Modifier
-                        .size(48.dp)
-                        .testTag(source.clearTestTag),
-                colors =
-                    IconButtonDefaults.iconButtonColors(
-                        contentColor = MaterialTheme.colorScheme.error,
-                        disabledContentColor =
-                            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f),
-                    ),
-            ) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_remove),
-                    contentDescription = stringResource(R.string.remove_file),
-                )
-            }
         }
     }
     if (stack) {
         Column(
-            horizontalAlignment = Alignment.End,
-            verticalArrangement = Arrangement.spacedBy(4.dp),
+            modifier = modifier,
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            content()
+            pickButton(Modifier.fillMaxWidth())
+            if (source.document != null) {
+                OutlinedButton(
+                    onClick = source.onClear,
+                    enabled = actionEnabled,
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 48.dp)
+                            .testTag(source.clearTestTag),
+                    colors = outlinedActionButtonColors(),
+                    border = actionBorder(enabled = actionEnabled),
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_remove),
+                        contentDescription = null,
+                    )
+                    Text(
+                        text = stringResource(R.string.remove_file),
+                        modifier = Modifier.padding(start = 8.dp),
+                    )
+                }
+            }
         }
     } else {
         Row(
+            modifier = modifier,
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            content()
+            pickButton(Modifier)
+            if (source.document != null) {
+                IconButton(
+                    onClick = source.onClear,
+                    enabled = actionEnabled,
+                    modifier =
+                        Modifier
+                            .size(48.dp)
+                            .testTag(source.clearTestTag),
+                    colors =
+                        IconButtonDefaults.iconButtonColors(
+                            contentColor = MaterialTheme.colorScheme.error,
+                            disabledContentColor = disabledActionContentColor(),
+                        ),
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_remove),
+                        contentDescription = stringResource(R.string.remove_file),
+                    )
+                }
+            }
         }
     }
 }
@@ -659,6 +745,17 @@ internal fun CurationCandidateHeader(
         } else {
             MaterialTheme.shapes.medium
         }
+    val containerColor by
+        animateColorAsState(
+            targetValue =
+                if (selected) {
+                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
+                } else {
+                    MaterialTheme.colorScheme.surfaceContainerLow
+                },
+            animationSpec = tween(durationMillis = 150),
+            label = "candidate selection",
+        )
     Surface(
         modifier =
             Modifier
@@ -672,12 +769,7 @@ internal fun CurationCandidateHeader(
                 ).semantics(mergeDescendants = true) {
                     stateDescription = stateText
                 },
-        color =
-            if (selected) {
-                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
-            } else {
-                MaterialTheme.colorScheme.surfaceContainerLow
-            },
+        color = containerColor,
         contentColor = MaterialTheme.colorScheme.onSurface,
         shape = shape,
     ) {
@@ -1069,6 +1161,7 @@ private fun ResultIssueRow(
 @Composable
 private fun CopyDiagnosticsButton(
     diagnostics: String,
+    modifier: Modifier = Modifier,
     colors: androidx.compose.material3.ButtonColors = ButtonDefaults.textButtonColors(),
 ) {
     val clipboard = LocalClipboard.current
@@ -1083,6 +1176,7 @@ private fun CopyDiagnosticsButton(
                 )
             }
         },
+        modifier = modifier,
         colors = colors,
     ) {
         Text(stringResource(R.string.copy_diagnostics))

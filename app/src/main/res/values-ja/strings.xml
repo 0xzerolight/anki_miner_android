@@ -3,15 +3,17 @@
     <!-- Scaffold: untranslated values intentionally remain in English pending the full translation pass. -->
     <string name="app_name">Anki Miner</string>
     <string name="video_mining_title">ローカル動画からマイニング</string>
-    <string name="video_mining_intro">Choose a video and its subtitle file. Anki Miner will pause before creating cards so you can curate the vocabulary.</string>
+    <string name="video_mining_intro">動画と字幕ファイルを選択してください。語彙を選別できるよう、Ankiノートを作成する前に一時停止します。</string>
+    <string name="video_phase_setup_title">動画ソースを選択</string>
     <string name="reading_mining_title">読書素材からマイニング</string>
-    <string name="reading_mining_intro">Choose local Japanese text, an EPUB, subtitles, or a Mokuro sidecar. Anki Miner pauses before creating notes so you can curate the vocabulary.</string>
+    <string name="reading_mining_intro">端末内の日本語テキスト、EPUB、字幕、またはMokuroサイドカーを選択してください。語彙を選別できるよう、Ankiノートを作成する前に一時停止します。</string>
+    <string name="reading_phase_setup_title">読書ソースを選択</string>
     <string name="reading_source_label">Reading source</string>
     <string name="reading_source_help">TXT (including Aozora text), EPUB, SRT, ASS, SSA, VTT, or MOKURO</string>
     <string name="reading_archive_label">Mokuro image archive</string>
-    <string name="reading_archive_help">Optional for card screenshots. Choose a same-name ZIP or CBZ; sibling image folders are not accessible and must be zipped first. Without an archive, mining is text-only.</string>
+    <string name="reading_archive_help">復習カードのスクリーンショットに使用します（任意）。同名のZIPまたはCBZを選択してください。同じ階層の画像フォルダーにはアクセスできないため、先に圧縮する必要があります。アーカイブがない場合はテキストのみをマイニングします。</string>
     <string name="reading_series_label">Series name (optional)</string>
-    <string name="reading_series_help">Used to group cards mined from subtitle files.</string>
+    <string name="reading_series_help">字幕ファイルから作成したAnkiノートをシリーズごとにまとめるために使用します。</string>
     <string name="reading_sentence_prompt">Choose the sentence for this word</string>
     <string name="reading_source_access_error">Anki Miner could not retain access to that reading source. Choose it again.</string>
     <string name="reading_source_type_error">Choose a TXT, EPUB, SRT, ASS, SSA, VTT, or MOKURO file.</string>
@@ -34,7 +36,7 @@
     <string name="subtitle_file_error">Anki Miner could not retain access to that subtitle file. Choose it again.</string>
     <string name="dismiss_error">Dismiss error</string>
     <string name="start_mining">マイニングを開始</string>
-    <string name="starting_title">Preparing your mining run</string>
+    <string name="starting_title">マイニングを準備中</string>
     <string name="running_title">マイニング中</string>
     <string name="progress_count">%1$d / %2$d</string>
     <string name="progress_count_with_percent">%1$d / %2$d · %3$d%%</string>
@@ -45,9 +47,9 @@
     <string name="cancel_mining_confirmation_body">このページまたは前のページで選んだ語彙は破棄されます。</string>
     <string name="cancel_mining_confirm">実行をキャンセル</string>
     <string name="cancel_mining_keep">マイニングを続ける</string>
-    <string name="curation_title">Choose vocabulary</string>
-    <string name="curation_selected_count">%1$d of %2$d selected</string>
-    <string name="curation_selected_count_page">%1$d of %2$d selected on this page</string>
+    <string name="curation_title">語彙を選択</string>
+    <string name="curation_selected_count">%2$d件中%1$d件を選択</string>
+    <string name="curation_selected_count_page">このページで%2$d件中%1$d件を選択</string>
     <string name="curation_page_position">Page %1$d of %2$d · items %3$d–%4$d of %5$d</string>
     <string name="curation_previous_pages_saved">Selections from earlier pages are already saved.</string>
     <string name="select_all">Select all</string>
@@ -75,8 +77,8 @@
     <string name="candidate_occurrences">Occurrences: %1$d</string>
     <string name="sentence_selection_description">Use sentence: %1$s</string>
     <string name="success_title">マイニング完了</string>
-    <string name="cancelled_title">Mining cancelled</string>
-    <string name="failed_title">Mining stopped</string>
+    <string name="cancelled_title">マイニングをキャンセルしました</string>
+    <string name="failed_title">マイニングを停止しました</string>
     <string name="partial_result_title">Notes added before the run stopped</string>
     <string name="result_cards_created">Anki notes created: %1$d</string>
     <string name="result_new_words">New words: %1$d</string>
@@ -257,7 +259,7 @@
     <string name="readiness_wait_action">セットアップ処理中です。完了するまでお待ちください。</string>
 
     <string name="anki_note_type_title">Anki note type</string>
-    <string name="anki_note_type_description">Anki Miner writes cards into a note type you already have in AnkiDroid. It never creates a note type and never changes one — pick a note type and map its fields.</string>
+    <string name="anki_note_type_description">Anki Minerは、AnkiDroidにある既存のノートタイプでAnkiノートを作成します。ノートタイプの作成や変更は行いません。使用するノートタイプを選び、フィールドを割り当ててください。</string>
     <string name="anki_note_type_connect_first">Connect AnkiDroid first, then come back here to choose a note type.</string>
     <string name="anki_deck_title">Target deck</string>
     <string name="anki_deck_description">Choose an existing AnkiDroid deck, or explicitly choose Anki Miner. Deck creation is normal; target verification creates that deck only when it is missing.</string>
@@ -266,7 +268,7 @@
     <string name="anki_deck_create_or_use_default">Create or use Anki Miner</string>
     <string name="anki_deck_saved_unavailable">%1$s (saved; not currently found)</string>
     <string name="anki_deck_default_explanation">Target verification will reuse this deck if it exists, or create it if needed.</string>
-    <string name="anki_deck_existing_explanation">Cards will be written into this existing deck. No note type is created or changed.</string>
+    <string name="anki_deck_existing_explanation">Ankiノートの復習カードは、この既存デッキに追加されます。ノートタイプの作成や変更は行いません。</string>
     <string name="anki_deck_saved_unavailable_explanation">This saved deck is not currently found. Target verification will use it if it exists or create it if needed.</string>
     <string name="anki_deck_saving">Saving deck choice…</string>
     <string name="anki_deck_save_failed">Deck choice could not be saved. Retry the local settings write.</string>
@@ -278,15 +280,15 @@
     <string name="anki_field_none">Not mapped</string>
     <string name="anki_field_word_help">Word must be the note type\'s first field — AnkiDroid uses that field to detect duplicates.</string>
     <string name="anki_note_type_verify">Re-check</string>
-    <string name="anki_note_type_status_verified">Verified writable and dedup-safe. Optional mappings still control how useful and enriched each card can be.</string>
-    <string name="anki_note_type_status_not_selected">Choose a note type to write cards into.</string>
+    <string name="anki_note_type_status_verified">書き込み可能で、重複を安全に防げることを確認しました。任意フィールドの割り当てによって、各Ankiノートに保存できる情報量が変わります。</string>
+    <string name="anki_note_type_status_not_selected">作成するAnkiノートのノートタイプを選択してください。</string>
     <string name="anki_note_type_status_missing">The selected note type no longer exists in AnkiDroid. Choose another one.</string>
     <string name="anki_note_type_status_fields_missing">Some required fields are not mapped to a field in this note type.</string>
     <string name="anki_note_type_status_field_map_invalid">An Anki field is assigned to more than one mapped value. Choose a different field for each mapping.</string>
     <string name="anki_note_type_status_first_field">The Word field must be the note type\'s first field. Map it there, or choose a note type whose first field holds the word.</string>
     <string name="anki_note_type_status_provider_error">AnkiDroid could not be read. Re-check after confirming it is open and access is granted.</string>
     <string name="anki_note_type_guidance">This note type is missing fields Anki Miner needs. Import a Japanese mining note type into AnkiDroid, then re-check.</string>
-    <string name="anki_quality_title">Card quality</string>
+    <string name="anki_quality_title">Ankiノートの品質</string>
     <string name="anki_quality_writable_yes">Writable and dedup-safe: yes</string>
     <string name="anki_quality_writable_no">Writable and dedup-safe: not verified</string>
     <string name="anki_quality_useful_yes">Useful for video and reading mining: yes</string>
@@ -299,7 +301,7 @@
     <string name="anki_quality_definition_fields">Definition/glossary: %1$s</string>
     <string name="anki_quality_audio_fields">Sentence/word audio: %1$s</string>
     <string name="anki_quality_image_field">Image: %1$s</string>
-    <string name="anki_quality_limited_warning">Nonblocking warning: this note type can accept cards, but it cannot retain both sentence context and a definition or glossary. Mining remains allowed.</string>
+    <string name="anki_quality_limited_warning">警告（続行可能）：このノートタイプにはAnkiノートを作成できますが、例文の文脈と定義または用語集を両方保存できません。マイニングは続行できます。</string>
     <string name="anki_quality_optional_warning">Optional enrichment is missing. Mining remains allowed; map audio and image fields if this note type should retain them.</string>
     <string name="anki_recovery_title">Anki recovery</string>
     <string name="anki_recovery_clear">No unresolved Anki operations were found.</string>
@@ -325,7 +327,7 @@
     <string name="anki_recovery_confirm_uncertain_detail">This abandons the unknown media claim and unblocks mining. One unused file may remain in AnkiDroid if the provider write committed.</string>
     <string name="anki_recovery_confirm_exists_detail">Confirm that you reviewed AnkiDroid and the exact deck or note exists. This statement is retained as recovery evidence.</string>
     <string name="anki_recovery_confirm_missing_detail">Confirm that you reviewed AnkiDroid and the exact deck or note was not created. This statement is retained as recovery evidence.</string>
-    <string name="anki_recovery_confirm_corrected_detail">Confirm that you corrected or explicitly accept the current AnkiDroid note/card state. This statement is retained as recovery evidence.</string>
+    <string name="anki_recovery_confirm_corrected_detail">AnkiDroidのノートと復習カードの現在の状態を修正した、または明示的に受け入れることを確認してください。この確認は復旧記録として保持されます。</string>
     <string name="anki_recovery_confirm_capacity_detail">Confirm that you made Anki media capacity available. This statement is retained as recovery evidence.</string>
     <string name="anki_recovery_confirm_action">Confirm</string>
     <string name="anki_recovery_item_deck_uncertain_title">Deck creation needs review</string>
@@ -338,8 +340,8 @@
     <string name="anki_recovery_item_note_uncertain_summary">Anki Miner could not confirm whether note creation committed. Review the exact note in AnkiDroid.</string>
     <string name="anki_recovery_item_note_failed_title">Created note needs review</string>
     <string name="anki_recovery_item_note_failed_summary">A committed note failed an exact postcheck and needs review in AnkiDroid.</string>
-    <string name="anki_recovery_item_card_routing_title">Card deck placement needs review</string>
-    <string name="anki_recovery_item_card_routing_summary">A committed note card may not be in the intended deck. Review it in AnkiDroid.</string>
+    <string name="anki_recovery_item_card_routing_title">復習カードのデッキ配置を確認してください</string>
+    <string name="anki_recovery_item_card_routing_summary">保存済みノートの復習カードが意図したデッキにない可能性があります。AnkiDroidで確認してください。</string>
     <string name="anki_recovery_item_staging_title">Media cleanup needs retry</string>
     <string name="anki_recovery_item_staging_summary">Private media staging cleanup did not finish.</string>
     <string name="anki_recovery_item_capacity_title">Media capacity needs attention</string>
@@ -353,7 +355,7 @@
     <string name="anki_recovery_summary_note_commit_uncertain_owner_loss">Note provider commit could not be confirmed after owner loss</string>
     <string name="anki_recovery_summary_note_postcheck_failed">A committed note requires review because exact postchecks failed</string>
     <string name="anki_recovery_summary_note_postcheck_unfinished">A committed note requires review because postchecks did not finish</string>
-    <string name="anki_recovery_summary_card_routing_failed">Committed note card routing requires review</string>
+    <string name="anki_recovery_summary_card_routing_failed">保存済みノートの復習カードの配置を確認する必要があります</string>
     <string name="anki_recovery_summary_staging_cleanup_retry">Anki media staging cleanup requires retry</string>
     <string name="anki_recovery_item_unknown_summary">%1$s</string>
     <string name="anki_setup_working">Updating verified Anki setup…</string>
@@ -541,19 +543,19 @@
     <string name="settings_theme_light">Light</string>
     <string name="settings_theme_dark">Dark</string>
     <string name="settings_run_setup_wizard">Run setup wizard</string>
-    <string name="wizard_welcome_title">Welcome to Anki Miner</string>
-    <string name="wizard_welcome_body">Anki Miner mines Japanese vocabulary from your local videos and reading material into Anki flashcards via AnkiDroid. A few resources make mining work best — this short setup walks through them.</string>
+    <string name="wizard_welcome_title">Anki Minerへようこそ</string>
+    <string name="wizard_welcome_body">Anki Minerは、端末内の動画や読書素材から日本語の語彙を抽出し、AnkiDroid経由でAnkiのフラッシュカードを作成します。マイニングに必要なリソースを、この短いセットアップで順に確認します。</string>
     <string name="wizard_welcome_settings_note">Every step is optional and everything here can be done later in Settings.</string>
-    <string name="wizard_tokenizer_title">Tokenizer</string>
+    <string name="wizard_tokenizer_title">トークナイザー</string>
     <string name="wizard_tokenizer_body">The UniDic tokenizer dictionary is required for mining. It is a one-time download stored privately on this device.</string>
-    <string name="wizard_dictionary_title">Dictionary</string>
-    <string name="wizard_dictionary_body">Choose an offline dictionary for definitions on your cards. Jitendex is recommended; JMdict is a lighter alternative. You can install one, both, or none.</string>
+    <string name="wizard_dictionary_title">辞書</string>
+    <string name="wizard_dictionary_body">Ankiノートに保存する定義用のオフライン辞書を選択します。Jitendexを推奨します。JMdictはより軽量です。片方、両方、またはどちらもインストールしない設定を選べます。</string>
     <string name="wizard_ankidroid_title">AnkiDroid</string>
-    <string name="wizard_ankidroid_body">Anki Miner writes cards through AnkiDroid. Install it if you need to, then grant database access.</string>
+    <string name="wizard_ankidroid_body">Anki MinerはAnkiDroid経由でAnkiノートを作成します。必要ならAnkiDroidをインストールし、データベースへのアクセスを許可してください。</string>
     <string name="wizard_ankidroid_ready">AnkiDroid is ready.</string>
-    <string name="wizard_deck_title">Deck</string>
-    <string name="wizard_deck_body">Choose where mined cards go. Pick a discovered deck, or choose Create or use Anki Miner. Missing decks may be created; note types never are.</string>
-    <string name="wizard_note_type_title">Note type</string>
+    <string name="wizard_deck_title">デッキ</string>
+    <string name="wizard_deck_body">マイニングしたAnkiノートから生成される復習カードのデッキを選択します。検出済みのデッキ、または「Anki Minerを作成または使用」を選んでください。存在しないデッキは作成される場合がありますが、ノートタイプは作成されません。</string>
+    <string name="wizard_note_type_title">ノートタイプ</string>
     <string name="wizard_note_type_body">Choose the AnkiDroid note type Anki Miner will write into, map its fields, and verify it. Anki Miner never creates or changes a note type.</string>
     <string name="wizard_done_title">All set</string>
     <string name="wizard_done_body">Review readiness below. Anything not finished here is available in Settings.</string>
@@ -675,6 +677,7 @@
     <string name="attribution_unidic">UniDic tokenizer data</string>
     <string name="attribution_unidic_lite_license">unidic-lite — MIT</string>
     <string name="attribution_unidic_license">UniDic 2.1.2 — BSD 3-Clause</string>
+    <string name="attribution_license_in_notices">ライセンス全文は「サードパーティ通知」で確認できます。</string>
     <string name="attribution_icon_title">App icon</string>
     <string name="attribution_icon_text">The app icon\'s 鉱 glyph outline is derived from Shippori Mincho B1 (700), licensed under the SIL Open Font License 1.1.</string>
     <string name="attribution_installed_dictionaries">Installed dictionaries</string>
@@ -710,6 +713,7 @@
     <string name="anki_setup_schedule_failed">Anki setup could not be scheduled</string>
     <string name="notices_title">Third-party notices</string>
     <string name="notices_intro">Full license texts and provenance for the third-party components bundled in this app. The corresponding source is available from the source repository.</string>
+    <string name="notices_documents_heading">収録されている通知文書</string>
 
     <!-- Batch 3: Settings and wizard -->
     <string name="b3_settings_category_setup">セットアップ</string>

@@ -3,8 +3,14 @@ package com.ankiminer.android.ui.wizard
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import com.ankiminer.android.data.anki.AnkiSetupFailure
@@ -146,5 +152,37 @@ class OnboardingWizardBehaviorTest {
         composeRule.onNodeWithText("Recovery failed").assertIsDisplayed()
         composeRule.onNodeWithText("Resolve").performClick()
         composeRule.runOnIdle { assertEquals(1, recoveryActions) }
+    }
+
+    @Test
+    fun stepChangeSetsPaneTitleAndMovesFocusToTheAppBarHeadingOnce() {
+        var step by mutableStateOf(WizardStep.WELCOME)
+        composeRule.setContent {
+            AnkiMinerTheme {
+                OnboardingWizardContent(
+                    state = SetupUiState(),
+                    step = step,
+                    callbacks = OnboardingWizardCallbacks(),
+                )
+            }
+        }
+
+        composeRule.runOnIdle { step = WizardStep.ANKIDROID }
+        composeRule.waitForIdle()
+
+        composeRule
+            .onAllNodes(
+                SemanticsMatcher.expectValue(
+                    SemanticsProperties.PaneTitle,
+                    "AnkiDroid",
+                ),
+                useUnmergedTree = true,
+            ).assertCountEquals(1)
+        composeRule
+            .onNodeWithTag(WIZARD_STEP_HEADING_TEST_TAG, useUnmergedTree = true)
+            .assertIsFocused()
+            .assert(
+                SemanticsMatcher.expectValue(SemanticsProperties.Heading, Unit),
+            )
     }
 }

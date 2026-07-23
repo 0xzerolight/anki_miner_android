@@ -2,11 +2,12 @@ package com.ankiminer.android.ui.attribution
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedCard
@@ -16,11 +17,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.ankiminer.android.R
 import com.ankiminer.android.data.resources.FrozenResourceCatalog
 import com.ankiminer.android.data.resources.InstalledDictionary
 import com.ankiminer.android.data.resources.ResourceAttribution
+import com.ankiminer.android.ui.theme.SectionTitle
 
 @Composable
 internal fun AttributionScreen(
@@ -33,91 +37,119 @@ internal fun AttributionScreen(
     val occupiedDictionaries = attributionDictionaries(installedDictionaries)
     val installedCatalogAttribution = installedCatalogAttributions(occupiedDictionaries)
     val jitendexInstalled = hasInstalledJitendex(occupiedDictionaries)
-    Column(
-        modifier =
-            modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp),
+    LazyColumn(
+        modifier = modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Text(stringResource(R.string.attribution_intro))
+        item(key = "attribution:intro", contentType = "intro") {
+            Text(stringResource(R.string.attribution_intro))
+        }
 
-        AttributionGroup(stringResource(R.string.attribution_unidic), catalog.unidic.attribution)
-        LicenseText(stringResource(R.string.attribution_unidic_lite_license), MIT_LICENSE)
-        LicenseText(stringResource(R.string.attribution_unidic_license), BSD_3_CLAUSE)
+        item(key = "attribution:unidic", contentType = "attribution-group") {
+            AttributionGroup(stringResource(R.string.attribution_unidic), catalog.unidic.attribution)
+        }
+        item(key = "license:unidic-lite", contentType = "license-link") {
+            LicenseLinkCard(
+                title = stringResource(R.string.attribution_unidic_lite_license),
+                onOpenNotices = onOpenNotices,
+            )
+        }
+        item(key = "license:unidic", contentType = "license-link") {
+            LicenseLinkCard(
+                title = stringResource(R.string.attribution_unidic_license),
+                onOpenNotices = onOpenNotices,
+            )
+        }
 
-        OutlinedCard(Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(stringResource(R.string.attribution_icon_title), style = MaterialTheme.typography.titleMedium)
-                Text(stringResource(R.string.attribution_icon_text))
-                TextButton(onClick = { uriHandler.openUri(SHIPPORI_URL) }) {
-                    Text(SHIPPORI_URL, style = MaterialTheme.typography.bodySmall)
+        item(key = "attribution:icon", contentType = "attribution-card") {
+            OutlinedCard(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    CardHeading(stringResource(R.string.attribution_icon_title))
+                    Text(stringResource(R.string.attribution_icon_text))
+                    TextButton(onClick = { uriHandler.openUri(SHIPPORI_URL) }) {
+                        Text(SHIPPORI_URL, style = MaterialTheme.typography.bodySmall)
+                    }
                 }
             }
         }
 
-        Text(
-            stringResource(R.string.attribution_installed_dictionaries),
-            style = MaterialTheme.typography.titleLarge,
-        )
+        item(key = "attribution:dictionaries", contentType = "section-heading") {
+            SectionTitle(stringResource(R.string.attribution_installed_dictionaries))
+        }
         if (occupiedDictionaries.isEmpty()) {
-            OutlinedCard(Modifier.fillMaxWidth()) {
-                Text(
-                    stringResource(R.string.attribution_no_installed_dictionaries),
-                    modifier = Modifier.padding(16.dp),
-                )
+            item(key = "dictionary:none", contentType = "empty-state") {
+                OutlinedCard(Modifier.fillMaxWidth()) {
+                    Text(
+                        stringResource(R.string.attribution_no_installed_dictionaries),
+                        modifier = Modifier.padding(16.dp),
+                    )
+                }
             }
         } else {
-            occupiedDictionaries.forEach { dictionary ->
+            items(
+                items = occupiedDictionaries,
+                key = { dictionary -> "dictionary:${dictionary.slotId}" },
+                contentType = { "dictionary" },
+            ) { dictionary ->
                 InstalledDictionaryAttribution(dictionary)
             }
         }
         if (installedCatalogAttribution.isNotEmpty()) {
-            AttributionGroup(
-                stringResource(R.string.attribution_installed_catalog_notices),
-                installedCatalogAttribution,
-            )
+            item(key = "attribution:installed-catalog", contentType = "attribution-group") {
+                AttributionGroup(
+                    stringResource(R.string.attribution_installed_catalog_notices),
+                    installedCatalogAttribution,
+                )
+            }
         }
         if (jitendexInstalled) {
+            item(key = "attribution:derived-terms", contentType = "attribution-card") {
+                OutlinedCard(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        CardHeading(stringResource(R.string.attribution_derived_terms_title))
+                        Text(stringResource(R.string.attribution_derived_terms))
+                    }
+                }
+            }
+        }
+
+        item(key = "attribution:divider", contentType = "divider") { HorizontalDivider() }
+        item(key = "attribution:jisho", contentType = "attribution-card") {
             OutlinedCard(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(stringResource(R.string.attribution_derived_terms_title), style = MaterialTheme.typography.titleMedium)
-                    Text(stringResource(R.string.attribution_derived_terms))
+                    CardHeading(stringResource(R.string.attribution_jisho_title))
+                    Text(stringResource(R.string.attribution_jisho_disclosure))
+                    Text(stringResource(R.string.attribution_jisho_rate_limit))
                 }
             }
         }
 
-        HorizontalDivider()
-        OutlinedCard(Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(stringResource(R.string.attribution_jisho_title), style = MaterialTheme.typography.titleMedium)
-                Text(stringResource(R.string.attribution_jisho_disclosure))
-                Text(stringResource(R.string.attribution_jisho_rate_limit))
-            }
-        }
-
-        OutlinedCard(Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(stringResource(R.string.privacy_title), style = MaterialTheme.typography.titleMedium)
-                Text(stringResource(R.string.privacy_local_processing))
-                Text(stringResource(R.string.privacy_network_processing))
-                Text(stringResource(R.string.privacy_retention))
-                TextButton(onClick = { uriHandler.openUri(PRIVACY_POLICY_URL) }) {
-                    Text(stringResource(R.string.privacy_open_policy))
+        item(key = "attribution:privacy", contentType = "attribution-card") {
+            OutlinedCard(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    CardHeading(stringResource(R.string.privacy_title))
+                    Text(stringResource(R.string.privacy_local_processing))
+                    Text(stringResource(R.string.privacy_network_processing))
+                    Text(stringResource(R.string.privacy_retention))
+                    TextButton(onClick = { uriHandler.openUri(PRIVACY_POLICY_URL) }) {
+                        Text(stringResource(R.string.privacy_open_policy))
+                    }
                 }
             }
         }
 
-        OutlinedCard(Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(stringResource(R.string.source_notices_title), style = MaterialTheme.typography.titleMedium)
-                Text(stringResource(R.string.source_notices_help))
-                TextButton(onClick = onOpenNotices) {
-                    Text(stringResource(R.string.source_open_notices))
-                }
-                TextButton(onClick = { uriHandler.openUri(SOURCE_URL) }) {
-                    Text(stringResource(R.string.source_open_repository))
+        item(key = "attribution:notices", contentType = "attribution-card") {
+            OutlinedCard(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    CardHeading(stringResource(R.string.source_notices_title))
+                    Text(stringResource(R.string.source_notices_help))
+                    TextButton(onClick = onOpenNotices) {
+                        Text(stringResource(R.string.source_open_notices))
+                    }
+                    TextButton(onClick = { uriHandler.openUri(SOURCE_URL) }) {
+                        Text(stringResource(R.string.source_open_repository))
+                    }
                 }
             }
         }
@@ -165,6 +197,7 @@ private fun InstalledDictionaryAttribution(dictionary: InstalledDictionary) {
                     dictionary.sourceName,
                     dictionary.slotId,
                 ),
+                modifier = Modifier.semantics { heading() },
                 style = MaterialTheme.typography.titleMedium,
             )
             Text(
@@ -178,6 +211,7 @@ private fun InstalledDictionaryAttribution(dictionary: InstalledDictionary) {
             )
             Text(
                 stringResource(R.string.attribution_embedded_metadata),
+                modifier = Modifier.semantics { heading() },
                 style = MaterialTheme.typography.titleSmall,
             )
             val labels =
@@ -209,10 +243,14 @@ private fun AttributionGroup(title: String, entries: List<ResourceAttribution>) 
     val uriHandler = LocalUriHandler.current
     OutlinedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text(title, style = MaterialTheme.typography.titleMedium)
+            CardHeading(title)
             entries.forEachIndexed { index, entry ->
                 if (index > 0) HorizontalDivider()
-                Text(entry.name, style = MaterialTheme.typography.titleSmall)
+                Text(
+                    entry.name,
+                    modifier = Modifier.semantics { heading() },
+                    style = MaterialTheme.typography.titleSmall,
+                )
                 Text(entry.copyright)
                 Text(stringResource(R.string.attribution_license, entry.license))
                 TextButton(onClick = { uriHandler.openUri(entry.url) }) {
@@ -224,36 +262,29 @@ private fun AttributionGroup(title: String, entries: List<ResourceAttribution>) 
 }
 
 @Composable
-private fun LicenseText(title: String, license: String) {
+private fun LicenseLinkCard(
+    title: String,
+    onOpenNotices: () -> Unit,
+) {
     OutlinedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(title, style = MaterialTheme.typography.titleMedium)
-            Text(license, style = MaterialTheme.typography.bodySmall)
+            CardHeading(title)
+            Text(stringResource(R.string.attribution_license_in_notices))
+            TextButton(onClick = onOpenNotices) {
+                Text(stringResource(R.string.source_open_notices))
+            }
         }
     }
 }
 
-private const val MIT_LICENSE =
-    """Copyright 2020 Paul McCann
-
-Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the “Software”), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE."""
-
-private const val BSD_3_CLAUSE =
-    """Copyright (c) 2011-2017, The UniDic Consortium. All rights reserved.
-
-Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
-
-1. Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
-
-2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.
-
-3. Neither the name of the copyright holder nor the names of its contributors may be used to endorse or promote products derived from this software without specific prior written permission.
-
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS “AS IS” AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE."""
+@Composable
+private fun CardHeading(text: String) {
+    Text(
+        text = text,
+        modifier = Modifier.semantics { heading() },
+        style = MaterialTheme.typography.titleMedium,
+    )
+}
 
 private const val SHIPPORI_URL = "https://fonts.google.com/specimen/Shippori+Mincho+B1"
 private const val SOURCE_URL = "https://github.com/0xzerolight/anki_miner_android"

@@ -105,9 +105,15 @@ class DesignSystemTest {
 
     @Test
     fun disabledActionContentAndBordersMeetReadableContrastTarget() {
-        listOf(LightDisabledActionColors, DarkDisabledActionColors).forEach { colors ->
+        listOf(
+            LightDisabledActionColors to LightColors,
+            DarkDisabledActionColors to DarkColors,
+        ).forEach { (colors, scheme) ->
             assertTrue(contrast(colors.content, colors.container) >= 4.5)
             assertTrue(contrast(colors.border, colors.container) >= 4.5)
+            assertTrue(contrast(colors.content, scheme.background) >= 4.5)
+            assertTrue(contrast(colors.content, scheme.errorContainer) >= 4.5)
+            assertTrue(contrast(colors.border, scheme.background) >= 3.0)
             assertTrue(colors.container != colors.enabledContainer)
         }
     }

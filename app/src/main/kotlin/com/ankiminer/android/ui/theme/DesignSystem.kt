@@ -6,11 +6,16 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ButtonColors
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.RadioButtonColors
+import androidx.compose.material3.RadioButtonDefaults
+import androidx.compose.material3.SegmentedButtonColors
+import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -181,16 +186,46 @@ internal fun AdaptiveActionGroup(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                primary(Modifier.fillMaxWidth())
-                secondary?.invoke(Modifier.fillMaxWidth())
+                primary(Modifier.fillMaxWidth().heightIn(min = 48.dp))
+                secondary?.invoke(Modifier.fillMaxWidth().heightIn(min = 48.dp))
             }
         } else {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                secondary?.invoke(Modifier.weight(1f))
-                primary(Modifier.weight(1f))
+                secondary?.invoke(Modifier.weight(1f).heightIn(min = 48.dp))
+                primary(Modifier.weight(1f).heightIn(min = 48.dp))
+            }
+        }
+    }
+}
+
+/** Same breakpoint as [AdaptiveActionGroup], preserving first/second order for peer actions. */
+@Composable
+internal fun AdaptivePairedActions(
+    first: @Composable (Modifier) -> Unit,
+    second: @Composable (Modifier) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    BoxWithConstraints(modifier) {
+        val stack =
+            maxWidth < CompactLayoutWidthDp.dp || LocalDensity.current.fontScale >= 1.3f
+        if (stack) {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                first(Modifier.fillMaxWidth().heightIn(min = 48.dp))
+                second(Modifier.fillMaxWidth().heightIn(min = 48.dp))
+            }
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                first(Modifier.weight(1f).heightIn(min = 48.dp))
+                second(Modifier.weight(1f).heightIn(min = 48.dp))
             }
         }
     }
@@ -244,6 +279,42 @@ internal fun exitActionButtonColors(isError: Boolean = false): ButtonColors {
         disabledContentColor = disabled.content,
     )
 }
+
+/** Segmented controls retain readable content plus an explicit fill and border when disabled. */
+@Composable
+internal fun segmentedActionColors(): SegmentedButtonColors {
+    val disabled = disabledActionColors()
+    return SegmentedButtonDefaults.colors(
+        activeContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+        activeContentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+        activeBorderColor = MaterialTheme.colorScheme.outline,
+        inactiveContainerColor = MaterialTheme.colorScheme.surface,
+        inactiveContentColor = MaterialTheme.colorScheme.onSurface,
+        inactiveBorderColor = MaterialTheme.colorScheme.outline,
+        disabledActiveContainerColor = disabled.container,
+        disabledActiveContentColor = disabled.content,
+        disabledActiveBorderColor = disabled.border,
+        disabledInactiveContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        disabledInactiveContentColor = disabled.content,
+        disabledInactiveBorderColor = disabled.border,
+    )
+}
+
+/** Radio shape plus these colors keeps selected/disabled state distinguishable without alpha. */
+@Composable
+internal fun radioActionColors(): RadioButtonColors {
+    val disabled = disabledActionColors()
+    return RadioButtonDefaults.colors(
+        selectedColor = MaterialTheme.colorScheme.primary,
+        unselectedColor = MaterialTheme.colorScheme.onSurfaceVariant,
+        disabledSelectedColor = disabled.content,
+        disabledUnselectedColor = disabled.border,
+    )
+}
+
+/** Shared readable disabled icon/content token for non-button Material controls. */
+@Composable
+internal fun disabledActionContentColor(): Color = disabledActionColors().content
 
 /** Border token matching [outlinedActionButtonColors] disabled contrast. */
 @Composable

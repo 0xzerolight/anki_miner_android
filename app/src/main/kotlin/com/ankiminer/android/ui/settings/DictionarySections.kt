@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -25,6 +26,9 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.ankiminer.android.R
+import com.ankiminer.android.ui.theme.actionBorder
+import com.ankiminer.android.ui.theme.forwardButtonColors
+import com.ankiminer.android.ui.theme.outlinedActionButtonColors
 import com.ankiminer.android.vm.SetupUiState
 
 @Composable
@@ -145,6 +149,9 @@ internal fun CustomDictionaryImportCard(
             OutlinedButton(
                 onClick = onImport,
                 enabled = !state.busy && state.customSlotValid,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                colors = outlinedActionButtonColors(),
+                border = actionBorder(enabled = !state.busy && state.customSlotValid),
             ) {
                 Text(stringResource(R.string.custom_dictionary_choose))
             }
@@ -228,6 +235,8 @@ internal fun DictionaryLookupCard(
             Button(
                 onClick = onLookup,
                 enabled = state.lookupSlotId != null && state.lookupTerm.isNotBlank() && !state.busy,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                colors = forwardButtonColors(),
             ) { Text(stringResource(R.string.dictionary_render_html)) }
             inlineFailure?.invoke()
             state.lookup?.let { result ->

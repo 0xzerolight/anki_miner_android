@@ -24,13 +24,14 @@ import com.ankiminer.android.R
 internal fun AppChrome(
     title: String,
     modifier: Modifier = Modifier,
+    titleModifier: Modifier = Modifier,
     onNavigateBack: (() -> Unit)? = null,
 ) {
     TopAppBar(
         title = {
             Text(
                 text = title,
-                modifier = Modifier.semantics { heading() },
+                modifier = titleModifier.semantics { heading() },
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 style = MaterialTheme.typography.titleLarge,

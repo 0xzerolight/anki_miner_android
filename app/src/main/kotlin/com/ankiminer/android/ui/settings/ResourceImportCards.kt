@@ -3,14 +3,15 @@ package com.ankiminer.android.ui.settings
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -20,6 +21,9 @@ import com.ankiminer.android.data.resources.FrequencySourceFormat
 import com.ankiminer.android.data.resources.KnownWordsSourceFormat
 import com.ankiminer.android.data.resources.PitchAccentSourceFormat
 import com.ankiminer.android.vm.SetupUiState
+import com.ankiminer.android.ui.theme.actionBorder
+import com.ankiminer.android.ui.theme.forwardButtonColors
+import com.ankiminer.android.ui.theme.outlinedActionButtonColors
 
 @Composable
 internal fun FrequencyImportCard(
@@ -75,7 +79,7 @@ internal fun FrequencyImportCard(
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
-            ChoiceSegmentedButtons(
+            AdaptiveChoiceSelector(
                 values = FrequencySourceFormat.entries,
                 selected = state.frequencyFormat,
                 label = { frequencyFormatLabel(it) },
@@ -87,6 +91,14 @@ internal fun FrequencyImportCard(
             OutlinedButton(
                 onClick = onImport,
                 enabled = !state.busy && state.frequencySourceIdValid && state.frequencySourceName.isNotBlank(),
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                colors = outlinedActionButtonColors(),
+                border =
+                    actionBorder(
+                        !state.busy &&
+                            state.frequencySourceIdValid &&
+                            state.frequencySourceName.isNotBlank(),
+                    ),
             ) { Text(stringResource(R.string.frequency_choose_file)) }
         }
     }
@@ -133,7 +145,7 @@ internal fun PitchImportCard(
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
-            ChoiceSegmentedButtons(
+            AdaptiveChoiceSelector(
                 values = PitchAccentSourceFormat.entries,
                 selected = state.pitchFormat,
                 label = { pitchFormatLabel(it) },
@@ -145,6 +157,9 @@ internal fun PitchImportCard(
             OutlinedButton(
                 onClick = onImport,
                 enabled = !state.busy && state.pitchSourceName.isNotBlank(),
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                colors = outlinedActionButtonColors(),
+                border = actionBorder(!state.busy && state.pitchSourceName.isNotBlank()),
             ) { Text(stringResource(R.string.pitch_choose_file)) }
         }
     }
@@ -198,6 +213,9 @@ internal fun AudioPackImportCard(
             OutlinedButton(
                 onClick = onImport,
                 enabled = !state.busy && state.audioPackIdValid,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                colors = outlinedActionButtonColors(),
+                border = actionBorder(!state.busy && state.audioPackIdValid),
             ) { Text(stringResource(R.string.audio_pack_choose_zip)) }
         }
     }
@@ -247,12 +265,21 @@ internal fun KnownWordsImportCard(
                 }
             },
             confirmButton = {
-                TextButton(onClick = onConfirmImport, enabled = !state.busy) {
+                Button(
+                    onClick = onConfirmImport,
+                    enabled = !state.busy,
+                    colors = forwardButtonColors(),
+                ) {
                     Text(stringResource(R.string.known_words_import_confirm))
                 }
             },
             dismissButton = {
-                TextButton(onClick = onDismissImport, enabled = !state.busy) {
+                OutlinedButton(
+                    onClick = onDismissImport,
+                    enabled = !state.busy,
+                    colors = outlinedActionButtonColors(),
+                    border = actionBorder(!state.busy),
+                ) {
                     Text(stringResource(R.string.cancel))
                 }
             },
@@ -281,21 +308,29 @@ internal fun KnownWordsImportCard(
                         MaterialTheme.colorScheme.error
                     },
             )
-            ChoiceSegmentedButtons(
+            AdaptiveChoiceSelector(
                 values = KnownWordsSourceFormat.entries,
                 selected = state.knownWordsFormat,
                 label = { knownWordsFormatLabel(it) },
                 onSelect = onFormatChanged,
                 enabled = !state.busy,
             )
-            OutlinedButton(onClick = onImport, enabled = !state.busy) {
+            OutlinedButton(
+                onClick = onImport,
+                enabled = !state.busy,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                colors = outlinedActionButtonColors(),
+                border = actionBorder(!state.busy),
+            ) {
                 Text(stringResource(R.string.known_words_choose_file))
             }
             inlineFailure?.invoke()
             OutlinedButton(
                 onClick = onManage,
                 enabled = !state.busy,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                colors = outlinedActionButtonColors(),
+                border = actionBorder(!state.busy),
             ) { Text(stringResource(R.string.b3_known_words_manage)) }
         }
     }

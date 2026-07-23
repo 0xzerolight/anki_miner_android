@@ -1,7 +1,14 @@
 package com.ankiminer.android.ui.wizard
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ScrollState
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
@@ -34,7 +41,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.paneTitle
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.ankiminer.android.R
 import com.ankiminer.android.data.anki.AnkiSetupFailureOrigin
@@ -51,10 +63,15 @@ import com.ankiminer.android.ui.settings.ResourceOperationCard
 import com.ankiminer.android.ui.settings.SystemStatusCard
 import com.ankiminer.android.ui.settings.WizardAnkiTargetCard
 import com.ankiminer.android.ui.theme.AdaptiveActionGroup
+import com.ankiminer.android.ui.theme.actionBorder
+import com.ankiminer.android.ui.theme.forwardButtonColors
+import com.ankiminer.android.ui.theme.outlinedActionButtonColors
 import com.ankiminer.android.vm.AnkiDroidSetupAction
 import com.ankiminer.android.vm.SetupUiState
 import com.ankiminer.android.vm.SetupViewModel
 import com.ankiminer.android.vm.WizardCompletionStatus
+
+internal const val WIZARD_STEP_HEADING_TEST_TAG = "wizard_step_heading"
 
 internal fun wizardVisible(
     wizardSeen: Boolean?,
@@ -224,7 +241,11 @@ internal fun OnboardingWizardContent(
         enabled = state.wizardCompletion != WizardCompletionStatus.SAVING,
         onBack = requestBack,
     )
-    LaunchedEffect(step) { scrollState.scrollTo(0) }
+    val headingFocusRequester = remember { FocusRequester() }
+    LaunchedEffect(step) {
+        scrollState.scrollTo(0)
+        headingFocusRequester.requestFocus()
+    }
     CatalogReplaceDialog(
         state = state,
         onConfirm = callbacks.onConfirmCatalogDictionaryReplace,
@@ -253,6 +274,12 @@ internal fun OnboardingWizardContent(
 
     val snackbarHostState = remember { SnackbarHostState() }
     val title = wizardTitle(step, state.isMiningReady)
+    val animatedProgress by
+        animateFloatAsState(
+            targetValue = (step.ordinal + 1).toFloat() / WizardStep.entries.size.toFloat(),
+            animationSpec = tween(durationMillis = 150),
+            label = "wizard progress",
+        )
     Scaffold(
         modifier = modifier.fillMaxSize(),
         contentWindowInsets = WindowInsets.safeDrawing,
@@ -260,6 +287,11 @@ internal fun OnboardingWizardContent(
             Column {
                 AppChrome(
                     title = title,
+                    titleModifier =
+                        Modifier
+                            .focusRequester(headingFocusRequester)
+                            .focusable()
+                            .testTag(WIZARD_STEP_HEADING_TEST_TAG),
                     onNavigateBack =
                         if (state.wizardCompletion == WizardCompletionStatus.SAVING) {
                             null
@@ -268,9 +300,7 @@ internal fun OnboardingWizardContent(
                         },
                 )
                 LinearProgressIndicator(
-                    progress = {
-                        (step.ordinal + 1).toFloat() / WizardStep.entries.size.toFloat()
-                    },
+                    progress = { animatedProgress },
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
@@ -307,30 +337,49 @@ internal fun OnboardingWizardContent(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Text(
-                stringResource(
-                    R.string.wizard_step_position,
-                    step.ordinal + 1,
-                    WizardStep.entries.size,
-                ),
-                style = MaterialTheme.typography.bodySmall,
-            )
-            wizardStepRequirement(step)?.let { requirement ->
-                Text(
-                    stringResource(
-                        if (requirement == WizardStepRequirement.REQUIRED) {
-                            R.string.b3_wizard_required
-                        } else {
-                            R.string.b3_wizard_optional
-                        },
-                    ),
-                    style = MaterialTheme.typography.labelLarge,
-                )
-            }
-            WizardStepBody(state, step, callbacks)
-            if (step != WizardStep.WELCOME && step != WizardStep.DONE) {
-                state.operation?.let { operation ->
-                    ResourceOperationCard(operation, callbacks.onCancelOperation)
+            AnimatedContent(
+                targetState = step,
+                transitionSpec = {
+                    fadeIn(tween(durationMillis = 150)) togetherWith
+                        fadeOut(tween(durationMillis = 90))
+                },
+                contentKey = { targetStep -> targetStep },
+                label = "wizard step",
+            ) { targetStep ->
+                val targetTitle = wizardTitle(targetStep, state.isMiningReady)
+                Column(
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .semantics { paneTitle = targetTitle },
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
+                    Text(
+                        stringResource(
+                            R.string.wizard_step_position,
+                            targetStep.ordinal + 1,
+                            WizardStep.entries.size,
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    wizardStepRequirement(targetStep)?.let { requirement ->
+                        Text(
+                            stringResource(
+                                if (requirement == WizardStepRequirement.REQUIRED) {
+                                    R.string.b3_wizard_required
+                                } else {
+                                    R.string.b3_wizard_optional
+                                },
+                            ),
+                            style = MaterialTheme.typography.labelLarge,
+                        )
+                    }
+                    WizardStepBody(state, targetStep, callbacks)
+                    if (targetStep != WizardStep.WELCOME && targetStep != WizardStep.DONE) {
+                        state.operation?.let { operation ->
+                            ResourceOperationCard(operation, callbacks.onCancelOperation)
+                        }
+                    }
                 }
             }
             WizardCompletionCard(
@@ -651,13 +700,16 @@ private fun WizardNavigation(
                         onClick = { onStep(nextWizardStep(step)) },
                         enabled = !saving,
                         modifier = actionModifier,
+                        colors = forwardButtonColors(),
                     ) { Text(stringResource(R.string.wizard_set_up_now)) }
                 },
                 secondary = { actionModifier ->
-                    TextButton(
+                    OutlinedButton(
                         onClick = onRequestSkip,
                         enabled = !saving,
                         modifier = actionModifier,
+                        colors = outlinedActionButtonColors(),
+                        border = actionBorder(enabled = !saving),
                     ) { Text(stringResource(R.string.wizard_skip_for_now)) }
                 },
                 modifier = modifier,
@@ -669,13 +721,16 @@ private fun WizardNavigation(
                         onClick = onFinished,
                         enabled = !saving,
                         modifier = actionModifier,
+                        colors = forwardButtonColors(),
                     ) { Text(stringResource(R.string.wizard_finish)) }
                 },
                 secondary = { actionModifier ->
-                    TextButton(
+                    OutlinedButton(
                         onClick = { onStep(previousWizardStep(step)) },
                         enabled = !saving,
                         modifier = actionModifier,
+                        colors = outlinedActionButtonColors(),
+                        border = actionBorder(enabled = !saving),
                     ) { Text(stringResource(R.string.wizard_back)) }
                 },
                 modifier = modifier,
@@ -687,13 +742,16 @@ private fun WizardNavigation(
                         onClick = { onStep(nextWizardStep(step)) },
                         enabled = !saving,
                         modifier = actionModifier,
+                        colors = forwardButtonColors(),
                     ) { Text(stringResource(R.string.wizard_next)) }
                 },
                 secondary = { actionModifier ->
-                    TextButton(
+                    OutlinedButton(
                         onClick = { onStep(previousWizardStep(step)) },
                         enabled = !saving,
                         modifier = actionModifier,
+                        colors = outlinedActionButtonColors(),
+                        border = actionBorder(enabled = !saving),
                     ) { Text(stringResource(R.string.wizard_back)) }
                 },
                 modifier = modifier,

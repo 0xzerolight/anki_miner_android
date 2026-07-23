@@ -5,8 +5,13 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.hasTestTag
@@ -26,6 +31,7 @@ import com.ankiminer.android.mining.MiningFailure
 import com.ankiminer.android.mining.MiningRunState
 import com.ankiminer.android.mining.ProcessingResult
 import com.ankiminer.android.ui.mining.MINING_FAILURE_TEST_TAG
+import com.ankiminer.android.ui.mining.MINING_PHASE_HEADING_TEST_TAG
 import com.ankiminer.android.ui.theme.AnkiMinerTheme
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -272,6 +278,41 @@ class ReadingMiningScreenTest {
         composeRule.runOnIdle { assertEquals(false, cancelled) }
         composeRule.onNodeWithText("Cancel run").performClick()
         composeRule.runOnIdle { assertEquals(true, cancelled) }
+    }
+
+    @Test
+    fun readingCurationExposesPaneFocusedHeadingAndOneSelectionAnnouncement() {
+        val request = request(CurationPage(0, 1, 0, 2))
+        setScreen(
+            state =
+                ReadingMiningUiState(
+                    runState = MiningRunState.Curating(request),
+                    curation = curationState(request),
+                ),
+        )
+
+        composeRule
+            .onAllNodes(
+                SemanticsMatcher.expectValue(
+                    SemanticsProperties.PaneTitle,
+                    "Choose vocabulary",
+                ),
+                useUnmergedTree = true,
+            ).assertCountEquals(1)
+        composeRule
+            .onNodeWithTag(MINING_PHASE_HEADING_TEST_TAG, useUnmergedTree = true)
+            .assertIsFocused()
+            .assert(
+                SemanticsMatcher.expectValue(SemanticsProperties.Heading, Unit),
+            )
+        composeRule
+            .onAllNodes(
+                SemanticsMatcher.expectValue(
+                    SemanticsProperties.LiveRegion,
+                    LiveRegionMode.Polite,
+                ),
+                useUnmergedTree = true,
+            ).assertCountEquals(1)
     }
 
     @Test

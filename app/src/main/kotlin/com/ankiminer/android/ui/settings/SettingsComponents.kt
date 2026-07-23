@@ -2,12 +2,16 @@ package com.ankiminer.android.ui.settings
 
 import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -17,6 +21,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
@@ -30,9 +35,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -58,6 +65,13 @@ import com.ankiminer.android.data.resources.ResourceOperationProgress
 import com.ankiminer.android.data.resources.ResourceStartupReadiness
 import com.ankiminer.android.data.settings.ResourceChainSelection
 import com.ankiminer.android.engine.PythonRuntimeReadiness
+import com.ankiminer.android.ui.theme.AdaptiveActionGroup
+import com.ankiminer.android.ui.theme.AdaptivePairedActions
+import com.ankiminer.android.ui.theme.CompactLayoutWidthDp
+import com.ankiminer.android.ui.theme.actionBorder
+import com.ankiminer.android.ui.theme.outlinedActionButtonColors
+import com.ankiminer.android.ui.theme.radioActionColors
+import com.ankiminer.android.ui.theme.segmentedActionColors
 import com.ankiminer.android.vm.SettingsSaveState
 import kotlinx.coroutines.launch
 
@@ -250,12 +264,22 @@ internal fun InlineFailureContainer(
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             Text(message)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TextButton(onClick = onAction) { Text(actionLabel) }
-                TextButton(onClick = onDismiss) {
-                    Text(stringResource(R.string.b3_dismiss))
-                }
-            }
+            AdaptiveActionGroup(
+                primary = { actionModifier ->
+                    TextButton(
+                        onClick = onAction,
+                        modifier = actionModifier,
+                    ) { Text(actionLabel) }
+                },
+                secondary = { actionModifier ->
+                    TextButton(
+                        onClick = onDismiss,
+                        modifier = actionModifier,
+                    ) {
+                        Text(stringResource(R.string.b3_dismiss))
+                    }
+                },
+            )
         }
     }
 }
@@ -285,7 +309,72 @@ internal fun BooleanSetting(
     }
 }
 
-/** Single-choice selector shared by every setting that used to fake radios with "✓" buttons. */
+/** Segments when they fit; full-width radio rows at compact width or large text. */
+@Composable
+internal fun <T> AdaptiveChoiceSelector(
+    values: List<T>,
+    selected: T,
+    label: @Composable (T) -> String,
+    onSelect: (T) -> Unit,
+    enabled: Boolean = true,
+    modifier: Modifier = Modifier,
+) {
+    BoxWithConstraints(modifier.fillMaxWidth()) {
+        val useSegments =
+            maxWidth >= CompactLayoutWidthDp.dp && LocalDensity.current.fontScale < 1.3f
+        if (useSegments) {
+            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                values.forEachIndexed { index, value ->
+                    SegmentedButton(
+                        selected = value == selected,
+                        onClick = { onSelect(value) },
+                        shape =
+                            SegmentedButtonDefaults.itemShape(
+                                index = index,
+                                count = values.size,
+                            ),
+                        modifier = Modifier.heightIn(min = 48.dp),
+                        enabled = enabled,
+                        colors = segmentedActionColors(),
+                    ) { Text(label(value), maxLines = 2) }
+                }
+            }
+        } else {
+            Column(
+                modifier = Modifier.fillMaxWidth().selectableGroup(),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                values.forEach { value ->
+                    val isSelected = value == selected
+                    Row(
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 48.dp)
+                                .selectable(
+                                    selected = isSelected,
+                                    enabled = enabled,
+                                    role = Role.RadioButton,
+                                    onClick = { onSelect(value) },
+                                ).padding(horizontal = 12.dp, vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RadioButton(
+                            selected = isSelected,
+                            onClick = null,
+                            enabled = enabled,
+                            colors = radioActionColors(),
+                        )
+                        Text(label(value), modifier = Modifier.weight(1f))
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** Compatibility entry point for settings sections migrated before the adaptive selector existed. */
 @Composable
 internal fun <T> ChoiceSegmentedButtons(
     values: List<T>,
@@ -293,17 +382,16 @@ internal fun <T> ChoiceSegmentedButtons(
     label: @Composable (T) -> String,
     onSelect: (T) -> Unit,
     enabled: Boolean = true,
+    modifier: Modifier = Modifier,
 ) {
-    SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-        values.forEachIndexed { index, value ->
-            SegmentedButton(
-                selected = value == selected,
-                onClick = { onSelect(value) },
-                shape = SegmentedButtonDefaults.itemShape(index = index, count = values.size),
-                enabled = enabled,
-            ) { Text(label(value)) }
-        }
-    }
+    AdaptiveChoiceSelector(
+        values = values,
+        selected = selected,
+        label = label,
+        onSelect = onSelect,
+        enabled = enabled,
+        modifier = modifier,
+    )
 }
 
 @Composable
@@ -344,18 +432,28 @@ internal fun ResourceChainEditor(
                     Text(choice.resourceId, style = MaterialTheme.typography.bodySmall)
                 }
             }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(
-                    enabled = index > 0,
-                    onClick = { onChange(choices.swap(index, index - 1)) },
-                    modifier = Modifier.weight(1f),
-                ) { Text(stringResource(R.string.settings_move_up)) }
-                OutlinedButton(
-                    enabled = index < choices.lastIndex,
-                    onClick = { onChange(choices.swap(index, index + 1)) },
-                    modifier = Modifier.weight(1f),
-                ) { Text(stringResource(R.string.settings_move_down)) }
-            }
+            AdaptivePairedActions(
+                first = { actionModifier ->
+                    val moveEnabled = index > 0
+                    OutlinedButton(
+                        enabled = moveEnabled,
+                        onClick = { onChange(choices.swap(index, index - 1)) },
+                        modifier = actionModifier,
+                        colors = outlinedActionButtonColors(),
+                        border = actionBorder(moveEnabled),
+                    ) { Text(stringResource(R.string.settings_move_up)) }
+                },
+                second = { actionModifier ->
+                    val moveEnabled = index < choices.lastIndex
+                    OutlinedButton(
+                        enabled = moveEnabled,
+                        onClick = { onChange(choices.swap(index, index + 1)) },
+                        modifier = actionModifier,
+                        colors = outlinedActionButtonColors(),
+                        border = actionBorder(moveEnabled),
+                    ) { Text(stringResource(R.string.settings_move_down)) }
+                },
+            )
         }
     }
 }
@@ -390,7 +488,12 @@ internal fun ResourceCard(
                 Text(stringResource(R.string.resource_not_installed))
             }
             inlineFailure?.invoke()
-            OutlinedButton(onClick = action, enabled = !busy) { Text(actionLabel) }
+            OutlinedButton(
+                onClick = action,
+                enabled = !busy,
+                colors = outlinedActionButtonColors(),
+                border = actionBorder(enabled = !busy),
+            ) { Text(actionLabel) }
         }
     }
 }
@@ -440,7 +543,11 @@ internal fun ResourceOperationCard(
                     ),
                 )
             } ?: LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-            OutlinedButton(onClick = onCancel) { Text(stringResource(R.string.cancel)) }
+            OutlinedButton(
+                onClick = onCancel,
+                colors = outlinedActionButtonColors(),
+                border = actionBorder(enabled = true),
+            ) { Text(stringResource(R.string.cancel)) }
         }
     }
 }

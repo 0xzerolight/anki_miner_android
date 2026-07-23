@@ -34,6 +34,10 @@ import com.ankiminer.android.data.resources.KnownWordsResetScope
 import com.ankiminer.android.data.resources.ResourceFailureAction
 import com.ankiminer.android.data.resources.ResourceFailureOrigin
 import com.ankiminer.android.ui.theme.AdaptiveActionGroup
+import com.ankiminer.android.ui.theme.actionBorder
+import com.ankiminer.android.ui.theme.exitActionButtonColors
+import com.ankiminer.android.ui.theme.forwardButtonColors
+import com.ankiminer.android.ui.theme.outlinedActionButtonColors
 import com.ankiminer.android.vm.SetupUiState
 import com.ankiminer.android.vm.SetupViewModel
 
@@ -163,6 +167,7 @@ internal fun KnownWordsManagerScreen(
             Button(
                 onClick = callbacks.onSearch,
                 enabled = !state.busy,
+                colors = forwardButtonColors(),
             ) { Text(stringResource(R.string.known_words_search_action)) }
             state.failure
                 ?.takeIf { it.origin == ResourceFailureOrigin.KNOWN_WORDS }
@@ -213,10 +218,12 @@ internal fun KnownWordsManagerScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                     ) {
                         Text(word, Modifier.weight(1f))
-                        TextButton(
+                        OutlinedButton(
                             onClick = { callbacks.onRemove(word) },
                             enabled = !state.busy,
                             modifier = Modifier.testTag(KnownWordsManagerTestTags.remove(word)),
+                            colors = exitActionButtonColors(isError = true),
+                            border = actionBorder(enabled = !state.busy),
                         ) {
                             Text(stringResource(R.string.known_words_remove))
                         }
@@ -227,6 +234,8 @@ internal fun KnownWordsManagerScreen(
                         OutlinedButton(
                             onClick = callbacks.onLoadMore,
                             enabled = !state.busy,
+                            colors = outlinedActionButtonColors(),
+                            border = actionBorder(enabled = !state.busy),
                         ) {
                             Text(stringResource(R.string.known_words_load_more))
                         }
@@ -245,6 +254,8 @@ internal fun KnownWordsManagerScreen(
                         onClick = callbacks.onExport,
                         enabled = !state.busy,
                         modifier = actionModifier,
+                        colors = outlinedActionButtonColors(),
+                        border = actionBorder(enabled = !state.busy),
                     ) { Text(stringResource(R.string.known_words_export)) }
                 },
                 secondary = { actionModifier ->
@@ -252,15 +263,27 @@ internal fun KnownWordsManagerScreen(
                         onClick = { pendingReset = KnownWordsResetScope.USER },
                         enabled = !state.busy && state.knownWords.userCount > 0,
                         modifier = actionModifier,
+                        colors = outlinedActionButtonColors(),
+                        border =
+                            actionBorder(
+                                enabled = !state.busy && state.knownWords.userCount > 0,
+                            ),
                     ) { Text(stringResource(R.string.known_words_reset_user)) }
                 },
             )
-            TextButton(
+            OutlinedButton(
                 onClick = { pendingReset = KnownWordsResetScope.CACHE },
                 enabled =
                     !state.busy &&
                         state.knownWords.ankiCount + state.knownWords.minedCount > 0,
                 modifier = Modifier.fillMaxWidth(),
+                colors = outlinedActionButtonColors(),
+                border =
+                    actionBorder(
+                        enabled =
+                            !state.busy &&
+                                state.knownWords.ankiCount + state.knownWords.minedCount > 0,
+                    ),
             ) { Text(stringResource(R.string.known_words_rebuild_cache)) }
         }
     }

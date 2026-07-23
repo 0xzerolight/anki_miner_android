@@ -28,6 +28,8 @@ import com.ankiminer.android.data.settings.ThemeMode
 import com.ankiminer.android.diagnostics.TesterDiagnosticsIdentity
 import com.ankiminer.android.localization.LocalizedStringResource
 import com.ankiminer.android.ui.mining.RuntimeConflictNotice
+import com.ankiminer.android.ui.theme.actionBorder
+import com.ankiminer.android.ui.theme.outlinedActionButtonColors
 import com.ankiminer.android.vm.SettingsDraft
 import com.ankiminer.android.vm.SettingsFieldKey
 import com.ankiminer.android.vm.SetupUiState
@@ -869,6 +871,11 @@ private fun LazyListScope.diagnosticsSettings(
                     onClick = { callbacks.onRequestReset(action) },
                     enabled = callbacks.resetEnabled && !setup.busy,
                     modifier = Modifier.fillMaxWidth(),
+                    colors = outlinedActionButtonColors(),
+                    border =
+                        actionBorder(
+                            enabled = callbacks.resetEnabled && !setup.busy,
+                        ),
                 ) {
                     Text(stringResource(settingsResetLabel(action)))
                 }
