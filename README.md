@@ -56,7 +56,6 @@ Please leave a ⭐ star if Anki Miner helped you - it helps others find it :).
 1. Install **AnkiDroid** and open it once.
 2. Download `anki-miner-android-<version>-arm64-v8a.apk` from the [latest release](https://github.com/0xzerolight/anki_miner_android/releases/latest).
 3. Allow installing from unknown sources, then open the APK to install.
-4. Optionally verify the download against the published `SHA256SUMS`.
 
 The app does not update itself; install a newer APK over the old one to update.
 

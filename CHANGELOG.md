@@ -2,16 +2,33 @@
 
 All notable project changes will be recorded here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and releases will use semantic versioning once a public version exists.
 
-## [Unreleased]
+## [0.1.5] - 2026-07-23
 
 ### Added
 
 - Known-word management now supports previewed imports, search, removal, export, confirmed reset, excluded Anki decks, and bundled proper-name wordset selection.
+- Setup gains a deck step that discovers existing AnkiDroid decks and offers an explicit create-or-use "Anki Miner" choice, instead of assuming a deck name.
+- The selected note type is classified as writable and dedup-safe, useful, or fully enriched, with a nonblocking quality warning and a summary of which Anki field each mapped value writes to.
+- Mining progress names its source (video, subtitles, or document) and includes the file name when the metadata is trusted, and mining screen titles carry heading semantics for TalkBack.
+- A run that queried the `localaudio` server ends with a privacy-safe expression-audio summary — counts of unavailable, timeout, policy-rejected, oversized, malformed, and non-audio results plus fallback-pack hits, never any URLs.
 
 ### Changed
 
 - Settings reset is split into confirmed mining-default, Anki-target, and resource-choice scopes. Each scope preserves unrelated configuration, and malformed stored settings recover per key instead of clearing the whole store.
-- AnkiConnect-Android `localaudio` remains the primary expression-audio source, ahead of imported-pack fallback. Loopback directory access, JSON size, source count, URL length, redirects, total attempts, and redirect destinations are now bounded and policy-checked.
+- AnkiConnect-Android `localaudio` remains the primary expression-audio source, ahead of imported-pack fallback. Loopback directory access, JSON size, source count, URL length, redirects, total attempts, and redirect destinations are now bounded and policy-checked. A rejected or failed query still falls through to imported packs, and no request is made when the expression-audio field is unmapped.
+- The four bundled proper-name wordsets are enabled by default on fresh installs. A one-time settings migration preserves existing users' effective choices, so upgrading never silently changes filtering.
+- Settings text and number fields coalesce edits with a short debounce instead of writing on every keystroke; toggles and reordering still save immediately, and pending edits flush when the app stops.
+- The curation confirm/cancel row is a sticky bottom bar that respects the keyboard and navigation-bar insets, and the post-run result summary is length-bounded on both video and reading.
+
+### Fixed
+
+- Two Anki Miner fields can no longer be mapped to the same Anki field. Duplicate destinations are rejected in Settings, at verification, and at the engine boundary, instead of letting one value silently overwrite the word field.
+- Re-selecting the same note type leaves the field mapping unchanged, and switching to a different note type keeps every still-valid mapping, auto-fills only the rest without collisions, and reports which mappings were discarded.
+- Mokuro image archives with a `.cbz` extension can be selected again. Most Android file providers report them as `application/x-cbz`, which the picker did not accept.
+- Status-bar and navigation-bar icons follow the app's theme rather than the system theme and re-apply on theme change, so bar icons stay visible when the two differ.
+- Dictionary selector chips wrap onto multiple lines instead of being clipped on narrow screens or at large font scales.
+- File selections on the mining screens survive rotation and process death, with access revalidated on restore, and system insets are owned by a single scaffold layer instead of being applied twice.
+- A failure to persist wizard completion is now recoverable, with a visible error, a retry, and a clearly labelled continue-for-this-session escape; pending interrupted Anki work stays visible in recovery even when AnkiDroid is absent or unreadable.
 
 ## [0.1.4] - 2026-07-20
 
@@ -86,7 +103,7 @@ Historical state: note-model provisioning below was superseded by
 [0.1.2](#012---2026-07-19), which requires a user-selected existing note type
 and permits only target-deck creation. The local-pack-only expression-audio
 design was superseded by [0.1.3](#013---2026-07-20); current safety bounds are
-recorded under [Unreleased](#unreleased).
+recorded under [0.1.5](#015---2026-07-23).
 
 #### Capabilities
 
