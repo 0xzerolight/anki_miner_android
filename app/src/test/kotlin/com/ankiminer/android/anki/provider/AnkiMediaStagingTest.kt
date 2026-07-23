@@ -44,6 +44,52 @@ class AnkiMediaStagingTest {
     }
 
     @Test
+    fun `stage names the private copy after the real media extension`() {
+        val harness = harness("audio bytes".toByteArray())
+
+        val audio = harness.staging.stage(harness.request(extension = "opus"))
+        assertTrue("expected .opus path, got ${audio.relativePath}", audio.relativePath.endsWith(".opus"))
+        assertTrue(AnkiMediaExtensions.STAGED_PATH_REGEX.matches(audio.relativePath))
+
+        val image = harness.staging.stage(harness.request(extension = "jpg"))
+        assertTrue("expected .jpg path, got ${image.relativePath}", image.relativePath.endsWith(".jpg"))
+    }
+
+    @Test
+    fun `stage falls back to the neutral suffix when no extension is provided`() {
+        val harness = harness("neutral bytes".toByteArray())
+
+        val record = harness.staging.stage(harness.request(extension = null))
+
+        assertTrue(record.relativePath.endsWith(".stage"))
+        assertTrue(AnkiMediaExtensions.STAGED_PATH_REGEX.matches(record.relativePath))
+    }
+
+    @Test
+    fun `stage rejects an extension outside the allowlist`() {
+        val harness = harness("rejected bytes".toByteArray())
+
+        expectFailure(AnkiMediaStagingFailure.INVALID_REQUEST) {
+            harness.staging.stage(harness.request(extension = "bin"))
+        }
+        assertTrue(harness.journal.records.isEmpty())
+    }
+
+    @Test
+    fun `recovery round-trips a real-extension private copy`() {
+        val harness = harness("recover opus".toByteArray())
+        val staged = harness.staging.stage(harness.request(extension = "opus"))
+        harness.staging.grantRead(staged)
+        harness.events.clear()
+
+        val report = harness.staging.recover()
+
+        assertEquals(AnkiMediaRecoveryReport(1, 0, 1), report)
+        assertTrue(harness.journal.records.isEmpty())
+        assertFalse(harness.platform.destination(staged).exists())
+    }
+
+    @Test
     fun `stage rejects an exact size mismatch and removes its private copy`() {
         val harness = harness("four".toByteArray())
 
@@ -376,6 +422,7 @@ class AnkiMediaStagingTest {
             expectedSizeBytes: Long = sourceBytes.size.toLong(),
             expectedSha256: String = sha256(sourceBytes),
             aggregateRemainingBytes: Long = sourceBytes.size.toLong(),
+            extension: String? = null,
         ) =
             AnkiMediaStagingRequest(
                 runId = TEST_RUN_ID,
@@ -385,6 +432,7 @@ class AnkiMediaStagingTest {
                 expectedSizeBytes = expectedSizeBytes,
                 expectedSha256 = expectedSha256,
                 aggregateRemainingBytes = aggregateRemainingBytes,
+                extension = extension,
             )
     }
 }
