@@ -1,6 +1,7 @@
 package com.ankiminer.android.ui.wizard
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -83,6 +84,30 @@ internal fun nextWizardStep(step: WizardStep): WizardStep =
 internal fun previousWizardStep(step: WizardStep): WizardStep =
     WizardStep.entries.getOrElse(step.ordinal - 1) { step }
 
+internal data class OnboardingWizardCallbacks(
+    val onStep: (WizardStep) -> Unit = {},
+    val onFinished: () -> Unit = {},
+    val onRequestPermissions: () -> Unit = {},
+    val onOpenAppSettings: () -> Unit = {},
+    val onInstallAnkiDroid: () -> Unit = {},
+    val onOpenAnkiDroid: () -> Unit = {},
+    val onConfirmCatalogDictionaryReplace: () -> Unit = {},
+    val onDismissCatalogDictionaryReplace: () -> Unit = {},
+    val onDismissFailure: () -> Unit = {},
+    val onDismissAnkiFailure: () -> Unit = {},
+    val onInstallUniDic: () -> Unit = {},
+    val onInstallCatalogDictionary: (String) -> Unit = {},
+    val onSelectDeck: (String) -> Unit = {},
+    val onRetryDeckSelection: () -> Unit = {},
+    val onSelectNoteType: (String) -> Unit = {},
+    val onSetFieldMapping: (String, String) -> Unit = { _, _ -> },
+    val onVerifyNoteType: () -> Unit = {},
+    val onRefresh: () -> Unit = {},
+    val onCancelOperation: () -> Unit = {},
+    val onRetryWizardCompletion: () -> Unit = {},
+    val onDismissWizardForSession: () -> Unit = {},
+)
+
 @Composable
 internal fun OnboardingWizard(
     state: SetupUiState,
@@ -100,19 +125,69 @@ internal fun OnboardingWizard(
         enabled = state.wizardCompletion != WizardCompletionStatus.SAVING,
         onBack = onFinished,
     )
+    OnboardingWizardContent(
+        state = state,
+        step = step,
+        callbacks =
+            OnboardingWizardCallbacks(
+                onStep = { step = it },
+                onFinished = onFinished,
+                onRequestPermissions = onRequestPermissions,
+                onOpenAppSettings = onOpenAppSettings,
+                onInstallAnkiDroid = onInstallAnkiDroid,
+                onOpenAnkiDroid = onOpenAnkiDroid,
+                onConfirmCatalogDictionaryReplace =
+                    viewModel::confirmCatalogDictionaryReplace,
+                onDismissCatalogDictionaryReplace =
+                    viewModel::dismissCatalogDictionaryReplace,
+                onDismissFailure = viewModel::dismissFailure,
+                onDismissAnkiFailure = viewModel::dismissAnkiFailure,
+                onInstallUniDic = viewModel::installUniDic,
+                onInstallCatalogDictionary = viewModel::installCatalogDictionary,
+                onSelectDeck = viewModel::selectDeck,
+                onRetryDeckSelection = viewModel::retryDeckSelection,
+                onSelectNoteType = viewModel::selectNoteType,
+                onSetFieldMapping = viewModel::setFieldMapping,
+                onVerifyNoteType = viewModel::verifyNoteType,
+                onRefresh = viewModel::refresh,
+                onCancelOperation = viewModel::cancelOperation,
+                onRetryWizardCompletion = viewModel::retryWizardCompletion,
+                onDismissWizardForSession = viewModel::dismissWizardForSession,
+            ),
+        modifier = modifier,
+        scrollState = scrollState,
+    )
+}
+
+@Composable
+internal fun OnboardingWizardContent(
+    state: SetupUiState,
+    step: WizardStep,
+    callbacks: OnboardingWizardCallbacks,
+    modifier: Modifier = Modifier,
+    scrollState: ScrollState = rememberScrollState(),
+) {
     LaunchedEffect(step) { scrollState.scrollTo(0) }
     CatalogReplaceDialog(
         state = state,
-        onConfirm = viewModel::confirmCatalogDictionaryReplace,
-        onDismiss = viewModel::dismissCatalogDictionaryReplace,
+        onConfirm = callbacks.onConfirmCatalogDictionaryReplace,
+        onDismiss = callbacks.onDismissCatalogDictionaryReplace,
     )
     val snackbarHostState = remember { SnackbarHostState() }
-    MessageSnackbarEffect(state.failure?.message, snackbarHostState, viewModel::dismissFailure)
-    MessageSnackbarEffect(state.ankiFailure?.message, snackbarHostState, viewModel::dismissAnkiFailure)
+    MessageSnackbarEffect(
+        state.failure?.message,
+        snackbarHostState,
+        callbacks.onDismissFailure,
+    )
+    MessageSnackbarEffect(
+        state.ankiFailure?.message,
+        snackbarHostState,
+        callbacks.onDismissAnkiFailure,
+    )
     MessageSnackbarEffect(
         state.ankiRecoveryFailure?.message,
         snackbarHostState,
-        viewModel::dismissAnkiFailure,
+        callbacks.onDismissAnkiFailure,
     )
     Surface(modifier.fillMaxSize()) {
         Box(Modifier.fillMaxSize()) {
@@ -159,7 +234,7 @@ internal fun OnboardingWizard(
                             description = stringResource(R.string.unidic_resource_description),
                             installed = state.uniDicInstalled,
                             busy = state.busy,
-                            action = viewModel::installUniDic,
+                            action = callbacks.onInstallUniDic,
                             actionLabel = stringResource(
                                 if (state.uniDicInstalled) R.string.unidic_repair else R.string.unidic_install,
                             ),
@@ -167,15 +242,18 @@ internal fun OnboardingWizard(
                     }
                     WizardStep.DICTIONARY -> {
                         Text(stringResource(R.string.wizard_dictionary_body))
-                        CatalogDictionaryCards(state, viewModel::installCatalogDictionary)
+                        CatalogDictionaryCards(
+                            state,
+                            callbacks.onInstallCatalogDictionary,
+                        )
                     }
                     WizardStep.ANKIDROID -> {
                         Text(stringResource(R.string.wizard_ankidroid_body))
                         AnkiDroidActionButtons(
                             state = state,
-                            onRequestPermissions = onRequestPermissions,
-                            onInstallAnkiDroid = onInstallAnkiDroid,
-                            onOpenAnkiDroid = onOpenAnkiDroid,
+                            onRequestPermissions = callbacks.onRequestPermissions,
+                            onInstallAnkiDroid = callbacks.onInstallAnkiDroid,
+                            onOpenAnkiDroid = callbacks.onOpenAnkiDroid,
                         )
                         state.ankiOperation?.let { AnkiOperationCard() }
                     }
@@ -183,8 +261,8 @@ internal fun OnboardingWizard(
                         Text(stringResource(R.string.wizard_deck_body))
                         AnkiDeckCard(
                             state,
-                            viewModel::selectDeck,
-                            viewModel::retryDeckSelection,
+                            callbacks.onSelectDeck,
+                            callbacks.onRetryDeckSelection,
                         )
                         state.ankiOperation?.let { AnkiOperationCard() }
                     }
@@ -192,9 +270,9 @@ internal fun OnboardingWizard(
                         Text(stringResource(R.string.wizard_note_type_body))
                         AnkiTargetCard(
                             state,
-                            viewModel::selectNoteType,
-                            viewModel::setFieldMapping,
-                            viewModel::verifyNoteType,
+                            callbacks.onSelectNoteType,
+                            callbacks.onSetFieldMapping,
+                            callbacks.onVerifyNoteType,
                         )
                         state.ankiOperation?.let { AnkiOperationCard() }
                     }
@@ -202,30 +280,30 @@ internal fun OnboardingWizard(
                         Text(stringResource(R.string.wizard_done_body))
                         SystemStatusCard(
                             state = state,
-                            onRefresh = viewModel::refresh,
-                            onRequestPermissions = onRequestPermissions,
-                            onOpenAppSettings = onOpenAppSettings,
-                            onInstallAnkiDroid = onInstallAnkiDroid,
-                            onOpenAnkiDroid = onOpenAnkiDroid,
+                            onRefresh = callbacks.onRefresh,
+                            onRequestPermissions = callbacks.onRequestPermissions,
+                            onOpenAppSettings = callbacks.onOpenAppSettings,
+                            onInstallAnkiDroid = callbacks.onInstallAnkiDroid,
+                            onOpenAnkiDroid = callbacks.onOpenAnkiDroid,
                         )
                     }
                 }
 
                 if (step != WizardStep.WELCOME && step != WizardStep.DONE) {
                     state.operation?.let { operation ->
-                        ResourceOperationCard(operation, viewModel::cancelOperation)
+                        ResourceOperationCard(operation, callbacks.onCancelOperation)
                     }
                 }
                 WizardCompletionCard(
                     status = state.wizardCompletion,
-                    onRetry = viewModel::retryWizardCompletion,
-                    onDismissForSession = viewModel::dismissWizardForSession,
+                    onRetry = callbacks.onRetryWizardCompletion,
+                    onDismissForSession = callbacks.onDismissWizardForSession,
                 )
                 NavigationButtons(
                     step,
                     saving = state.wizardCompletion == WizardCompletionStatus.SAVING,
-                    onStep = { step = it },
-                    onFinished = onFinished,
+                    onStep = callbacks.onStep,
+                    onFinished = callbacks.onFinished,
                 )
             }
             SnackbarHost(

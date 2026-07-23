@@ -18,7 +18,7 @@ EXTERNAL_UNIDIC_TESTS = (
 
 
 class Api26InstrumentationScriptTest(unittest.TestCase):
-    def test_excludes_only_external_unidic_tests_and_requires_133_passes(self) -> None:
+    def test_excludes_only_external_unidic_tests_and_requires_142_results(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             script = root / ".github" / "scripts" / SCRIPT.name
@@ -44,7 +44,7 @@ class Api26InstrumentationScriptTest(unittest.TestCase):
                 "set -euo pipefail\n"
                 'printf \'%s\\n\' "$*" >> "$ADB_LOG"\n'
                 'if [[ "$*" == "shell am instrument"* ]]; then\n'
-                "    printf 'OK (133 tests)\\nINSTRUMENTATION_CODE: -1\\n'\n"
+                "    printf 'OK (142 tests)\\nINSTRUMENTATION_CODE: -1\\n'\n"
                 "fi\n",
                 encoding="utf-8",
             )
@@ -63,7 +63,7 @@ class Api26InstrumentationScriptTest(unittest.TestCase):
 
             self.assertEqual(0, result.returncode, result.stderr)
             self.assertIn(
-                "instrumentation: API 26 executed: PASS (133 tests)",
+                "instrumentation: API 26 executed: PASS (142 tests)",
                 result.stdout,
             )
             instrumentation_command = adb_log.read_text(encoding="utf-8").splitlines()[-1]

@@ -57,18 +57,63 @@ import com.ankiminer.android.vm.SetupViewModel
 import com.ankiminer.android.vm.ReadingMiningViewModel
 import com.ankiminer.android.vm.VideoMiningViewModel
 
-private enum class Destination(val route: String, @param:StringRes val label: Int) {
-    VIDEO("video", R.string.nav_video),
-    READING("reading", R.string.nav_reading),
-    SETTINGS("settings", R.string.nav_settings),
-    ATTRIBUTION("attribution", R.string.nav_licenses),
-    NOTICES("notices", R.string.nav_notices),
+internal enum class AnkiMinerDestination(
+    val route: String,
+    @param:StringRes val label: Int,
+    val showsBottomBar: Boolean,
+) {
+    VIDEO("video", R.string.nav_video, true),
+    READING("reading", R.string.nav_reading, true),
+    SETTINGS("settings", R.string.nav_settings, true),
+    ATTRIBUTION("attribution", R.string.nav_licenses, false),
+    NOTICES("notices", R.string.nav_notices, false),
 }
 
 internal fun miningWorkflowVisible(
     setupReady: Boolean,
     runState: MiningRunState,
 ): Boolean = setupReady || runState != MiningRunState.Idle
+
+/**
+ * Production app chrome shared with instrumented UI capture. Legal routes intentionally hide the
+ * bottom navigation, matching their production presentation.
+ */
+@Composable
+internal fun AnkiMinerAppShell(
+    currentDestination: AnkiMinerDestination?,
+    snackbarHostState: SnackbarHostState,
+    onDestinationSelected: (AnkiMinerDestination) -> Unit,
+    content: @Composable (Modifier) -> Unit,
+) {
+    Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+        bottomBar = {
+            if (currentDestination?.showsBottomBar != false) {
+                NavigationBar {
+                    listOf(
+                        AnkiMinerDestination.VIDEO,
+                        AnkiMinerDestination.READING,
+                        AnkiMinerDestination.SETTINGS,
+                    ).forEach { destination ->
+                        NavigationBarItem(
+                            selected = currentDestination == destination,
+                            onClick = { onDestinationSelected(destination) },
+                            // Text-only tabs mirror the desktop app; the label lives in the
+                            // icon slot because Material3 requires an icon composable.
+                            icon = { Text(stringResource(destination.label)) },
+                        )
+                    }
+                }
+            }
+        },
+    ) { padding ->
+        content(
+            Modifier
+                .padding(padding)
+                .consumeWindowInsets(padding),
+        )
+    }
+}
 
 @Composable
 internal fun AnkiMinerApp(
@@ -89,6 +134,10 @@ internal fun AnkiMinerApp(
     val navController = rememberNavController()
     val currentEntry by navController.currentBackStackEntryAsState()
     val currentRoute = currentEntry?.destination?.route
+    val currentDestination =
+        AnkiMinerDestination.entries.firstOrNull { destination ->
+            destination.route == currentRoute
+        }
     val setup by setupViewModel.uiState.collectAsStateWithLifecycle()
     val wizardDismissedForSession by
         setupViewModel.wizardDismissedForSession.collectAsStateWithLifecycle()
@@ -109,8 +158,8 @@ internal fun AnkiMinerApp(
         if (notificationRunId == null) return@LaunchedEffect
         val destination =
             when (notificationRunId) {
-                video.runState.runId -> Destination.VIDEO
-                reading.runState.runId -> Destination.READING
+                video.runState.runId -> AnkiMinerDestination.VIDEO
+                reading.runState.runId -> AnkiMinerDestination.READING
                 else -> null
             }
         if (destination != null) {
@@ -163,45 +212,25 @@ internal fun AnkiMinerApp(
         setupViewModel::dismissAnkiFailure,
     )
 
-    Scaffold(
-        snackbarHost = { SnackbarHost(snackbarHostState) },
-        bottomBar = {
-            if (currentRoute != Destination.ATTRIBUTION.route && currentRoute != Destination.NOTICES.route) {
-                NavigationBar {
-                    listOf(
-                        Destination.VIDEO,
-                        Destination.READING,
-                        Destination.SETTINGS,
-                    ).forEach { destination ->
-                        NavigationBarItem(
-                            selected = currentRoute == destination.route,
-                            onClick = {
-                                navController.navigate(destination.route) {
-                                    popUpTo(navController.graph.findStartDestination().id) {
-                                        saveState = true
-                                    }
-                                    launchSingleTop = true
-                                    restoreState = true
-                                }
-                            },
-                            // Text-only tabs mirror the desktop app; the label lives in the
-                            // icon slot because Material3 requires an icon composable.
-                            icon = { Text(stringResource(destination.label)) },
-                        )
-                    }
+    AnkiMinerAppShell(
+        currentDestination = currentDestination,
+        snackbarHostState = snackbarHostState,
+        onDestinationSelected = { destination ->
+            navController.navigate(destination.route) {
+                popUpTo(navController.graph.findStartDestination().id) {
+                    saveState = true
                 }
+                launchSingleTop = true
+                restoreState = true
             }
         },
-    ) { padding ->
+    ) { shellModifier ->
         NavHost(
             navController = navController,
-            startDestination = Destination.VIDEO.route,
-            modifier =
-                Modifier
-                    .padding(padding)
-                    .consumeWindowInsets(padding),
+            startDestination = AnkiMinerDestination.VIDEO.route,
+            modifier = shellModifier,
         ) {
-            composable(Destination.VIDEO.route) {
+            composable(AnkiMinerDestination.VIDEO.route) {
                 if (miningWorkflowVisible(setup.isMiningReady, video.runState)) {
                     VideoMiningRoute(
                         viewModel = videoViewModel,
@@ -212,11 +241,13 @@ internal fun AnkiMinerApp(
                         message = stringResource(miningReadinessMessage(setup)),
                         onRequestPermissions = onRequestPermissions,
                         onOpenAppSettings = onOpenAppSettings,
-                        onOpenSettings = { navController.navigate(Destination.SETTINGS.route) },
+                        onOpenSettings = {
+                            navController.navigate(AnkiMinerDestination.SETTINGS.route)
+                        },
                     )
                 }
             }
-            composable(Destination.READING.route) {
+            composable(AnkiMinerDestination.READING.route) {
                 if (miningWorkflowVisible(setup.isMiningReady, reading.runState)) {
                     ReadingMiningRoute(
                         viewModel = readingViewModel,
@@ -227,11 +258,13 @@ internal fun AnkiMinerApp(
                         message = stringResource(miningReadinessMessage(setup)),
                         onRequestPermissions = onRequestPermissions,
                         onOpenAppSettings = onOpenAppSettings,
-                        onOpenSettings = { navController.navigate(Destination.SETTINGS.route) },
+                        onOpenSettings = {
+                            navController.navigate(AnkiMinerDestination.SETTINGS.route)
+                        },
                     )
                 }
             }
-            composable(Destination.SETTINGS.route) {
+            composable(AnkiMinerDestination.SETTINGS.route) {
                 SettingsRoute(
                     viewModel = settingsViewModel,
                     setupViewModel = setupViewModel,
@@ -243,18 +276,22 @@ internal fun AnkiMinerApp(
                     onOpenSpeechSettings = onOpenSpeechSettings,
                     onShareDiagnostics = onShareDiagnostics,
                     onShareEngineLog = onShareEngineLog,
-                    onAttributions = { navController.navigate(Destination.ATTRIBUTION.route) },
+                    onAttributions = {
+                        navController.navigate(AnkiMinerDestination.ATTRIBUTION.route)
+                    },
                     onRunSetupWizard = { wizardRerunRequested = true },
                 )
             }
-            composable(Destination.ATTRIBUTION.route) {
+            composable(AnkiMinerDestination.ATTRIBUTION.route) {
                 AttributionScreen(
                     installedDictionaries = setup.dictionaries,
                     onBack = { navController.popBackStack() },
-                    onOpenNotices = { navController.navigate(Destination.NOTICES.route) },
+                    onOpenNotices = {
+                        navController.navigate(AnkiMinerDestination.NOTICES.route)
+                    },
                 )
             }
-            composable(Destination.NOTICES.route) {
+            composable(AnkiMinerDestination.NOTICES.route) {
                 NoticesScreen(onBack = { navController.popBackStack() })
             }
         }

@@ -13,8 +13,10 @@ test_apk="$REPO_ROOT/app/build/outputs/apk/androidTest/emulator/debug/app-emulat
 readonly s1a_fixture_test="com.ankiminer.android.TokenizerS1aInstrumentedTest#externalUniDicMatchesDesktopGoldens"
 readonly s1b_fixture_test="com.ankiminer.android.tokenizer.MecabNativeTokenizerInstrumentedTest#externalUniDicMatchesAllGoldensThroughPythonKotlinAndJni"
 readonly external_unidic_tests="$s1a_fixture_test,$s1b_fixture_test"
-# Full discovery is 135 tests. Keep the remaining count exact so discovery regressions fail closed.
-readonly expected_test_count=133
+# Full discovery is 144 tests. Nine UI-audit tests are discovered but skip by JUnit assumption
+# unless -e uiAudit true is present; assumption-skipped tests still count in runner arithmetic.
+# Keep the remaining count exact so discovery regressions fail closed.
+readonly expected_test_count=142
 
 [[ -f "$app_apk" ]] || {
     echo "instrumentation: app APK was not built: $app_apk" >&2
