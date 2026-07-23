@@ -1,5 +1,6 @@
 package com.ankiminer.android.ui.reading
 
+import androidx.compose.runtime.Immutable
 import com.ankiminer.android.media.SafDocument
 import com.ankiminer.android.mining.CurationCandidate
 import com.ankiminer.android.mining.CurationPage
@@ -37,23 +38,25 @@ data class ReadingDocumentSlotState(
     val error: ReadingDocumentSelectionError? = null,
 )
 
-data class ReadingCurationCandidateUiState(
-    val candidate: CurationCandidate,
-    val selected: Boolean,
-    val sentenceId: String,
-)
-
+@Immutable
 data class ReadingCurationUiState(
     val runId: String,
     val requestId: String,
-    val candidates: List<ReadingCurationCandidateUiState>,
+    val candidates: List<CurationCandidate>,
+    val selectedCandidateIds: Set<String>,
+    val sentenceIds: Map<String, String>,
+    val focusedCandidateId: String?,
+    val previousPageSelectedCount: Int = 0,
     val page: CurationPage? = null,
 ) {
     val selectedCount: Int
-        get() = candidates.count { it.selected }
+        get() = selectedCandidateIds.size
 
     val isFinalPage: Boolean
         get() = page?.let { it.pageIndex == it.pageCount - 1 } ?: true
+
+    val hasSelectionToLose: Boolean
+        get() = selectedCount > 0 || previousPageSelectedCount > 0
 }
 
 data class ReadingMiningUiState(

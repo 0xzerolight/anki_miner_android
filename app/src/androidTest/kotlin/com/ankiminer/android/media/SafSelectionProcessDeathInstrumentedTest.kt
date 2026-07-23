@@ -1,0 +1,183 @@
+package com.ankiminer.android.media
+
+import android.content.Context
+import androidx.lifecycle.SavedStateHandle
+import androidx.test.core.app.ApplicationProvider
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
+import com.ankiminer.android.mining.CurationSelection
+import com.ankiminer.android.mining.MiningCancellationToken
+import com.ankiminer.android.mining.MiningRepository
+import com.ankiminer.android.mining.MiningRunState
+import com.ankiminer.android.mining.VideoMiningInput
+import com.ankiminer.android.reading.ReadingMiningInput
+import com.ankiminer.android.reading.ReadingMiningRepository
+import com.ankiminer.android.vm.ReadingMiningViewModel
+import com.ankiminer.android.vm.VideoMiningViewModel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import org.junit.runner.RunWith
+
+@RunWith(AndroidJUnit4::class)
+class SafSelectionProcessDeathInstrumentedTest {
+    private val context = ApplicationProvider.getApplicationContext<Context>()
+
+    @Test
+    fun freshViewModelsRestoreDurableSelectionsStartThenClearAllGrants() {
+        val inventory =
+            AndroidSafSelectionInventory(
+                context = context,
+                preferencesName = "saf-selection-process-death-test",
+            ).also(::clearInventory)
+        inventory.putSelection(
+            SafSelectionSlot.VIDEO,
+            SafSelectionRecord(VIDEO_URI, "episode.mkv"),
+        )
+        inventory.putSelection(
+            SafSelectionSlot.VIDEO_SUBTITLE,
+            SafSelectionRecord(SUBTITLE_URI, "episode.srt"),
+        )
+        inventory.putSelection(
+            SafSelectionSlot.READING_SOURCE,
+            SafSelectionRecord(READING_URI, "reading.srt"),
+        )
+        inventory.putText(SafSelectionSlot.READING_SUBTITLE_SERIES, "Restored series")
+        val broker = RecordingSafBroker()
+        val videoRepository = RecordingVideoRepository()
+        val readingRepository = RecordingReadingRepository()
+
+        InstrumentationRegistry.getInstrumentation().runOnMainSync {
+            val video =
+                VideoMiningViewModel(
+                    repository = videoRepository,
+                    safBroker = broker,
+                    savedStateHandle = SavedStateHandle(),
+                    selectionInventory = inventory,
+                )
+            val reading =
+                ReadingMiningViewModel(
+                    repository = readingRepository,
+                    safBroker = broker,
+                    savedStateHandle = SavedStateHandle(),
+                    selectionInventory = inventory,
+                )
+
+            assertEquals("episode.mkv", video.uiState.value.video.document?.displayName)
+            assertEquals("episode.srt", video.uiState.value.subtitle.document?.displayName)
+            assertEquals("reading.srt", reading.uiState.value.source.document?.displayName)
+            assertEquals("Restored series", reading.uiState.value.subtitleSeriesName)
+            assertTrue(video.uiState.value.canStart)
+            assertTrue(reading.uiState.value.canStart)
+            assertEquals(
+                setOf(VIDEO_URI, SUBTITLE_URI, READING_URI),
+                broker.retainedUris.toSet(),
+            )
+
+            video.start()
+            reading.start()
+            assertEquals(1, videoRepository.started.size)
+            assertEquals("Restored series", readingRepository.started.single().subtitleSeriesName)
+
+            video.clearVideo()
+            video.clearSubtitle()
+            reading.clearSource()
+        }
+
+        assertEquals(
+            setOf(VIDEO_URI, SUBTITLE_URI, READING_URI),
+            broker.eventualReleases.toSet(),
+        )
+        assertTrue(inventory.ownedUris().isEmpty())
+        assertEquals(null, inventory.text(SafSelectionSlot.READING_SUBTITLE_SERIES))
+        clearInventory(inventory)
+    }
+
+    private fun clearInventory(inventory: SafSelectionInventory) {
+        SafSelectionSlot.entries.forEach { slot ->
+            inventory.putSelection(slot, null)
+            inventory.putText(slot, null)
+        }
+    }
+
+    private class RecordingSafBroker : SafBroker {
+        val retainedUris = mutableListOf<String>()
+        val eventualReleases = mutableListOf<String>()
+
+        override suspend fun retainReadAccess(uri: String): SafDocument {
+            retainedUris += uri
+            return SafDocument(
+                uri = uri,
+                displayName =
+                    when (uri) {
+                        VIDEO_URI -> "episode.mkv"
+                        SUBTITLE_URI -> "episode.srt"
+                        READING_URI -> "reading.srt"
+                        else -> error("unexpected URI: $uri")
+                    },
+                mimeType = null,
+                sizeBytes = null,
+            )
+        }
+
+        override suspend fun releaseReadAccess(uri: String) {
+            eventualReleases += uri
+        }
+
+        override fun releaseReadAccessEventually(uri: String) {
+            eventualReleases += uri
+        }
+    }
+
+    private class RecordingVideoRepository : MiningRepository {
+        override val state: StateFlow<MiningRunState> = MutableStateFlow(MiningRunState.Idle)
+        val started = mutableListOf<VideoMiningInput>()
+
+        override suspend fun startVideo(input: VideoMiningInput) {
+            started += input
+        }
+
+        override suspend fun confirmCuration(
+            runId: String,
+            requestId: String,
+            selection: List<CurationSelection>,
+            pageIndex: Long?,
+        ) = Unit
+
+        override suspend fun cancel(runId: String) = Unit
+
+        override suspend fun cancel(token: MiningCancellationToken) = Unit
+
+        override suspend fun reset() = Unit
+    }
+
+    private class RecordingReadingRepository : ReadingMiningRepository {
+        override val state: StateFlow<MiningRunState> = MutableStateFlow(MiningRunState.Idle)
+        val started = mutableListOf<ReadingMiningInput>()
+
+        override suspend fun startReading(input: ReadingMiningInput) {
+            started += input
+        }
+
+        override suspend fun confirmCuration(
+            runId: String,
+            requestId: String,
+            selection: List<CurationSelection>,
+            pageIndex: Long?,
+        ) = Unit
+
+        override suspend fun cancel(runId: String) = Unit
+
+        override suspend fun cancel(token: MiningCancellationToken) = Unit
+
+        override suspend fun reset() = Unit
+    }
+
+    private companion object {
+        const val VIDEO_URI = "content://provider/video"
+        const val SUBTITLE_URI = "content://provider/subtitle"
+        const val READING_URI = "content://provider/reading"
+    }
+}

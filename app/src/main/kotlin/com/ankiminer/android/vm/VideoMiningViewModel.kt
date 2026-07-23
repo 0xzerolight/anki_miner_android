@@ -9,6 +9,8 @@ import androidx.lifecycle.viewmodel.CreationExtras
 import com.ankiminer.android.data.RuntimeWorkCoordinator
 import com.ankiminer.android.media.SafBroker
 import com.ankiminer.android.media.SafDocument
+import com.ankiminer.android.media.SafSelectionInventory
+import com.ankiminer.android.media.SafSelectionSlot
 import com.ankiminer.android.mining.CurationRequest
 import com.ankiminer.android.mining.CurationSelection
 import com.ankiminer.android.mining.MiningRepository
@@ -23,7 +25,6 @@ import com.ankiminer.android.ui.mining.MiningPendingAction
 import com.ankiminer.android.ui.mining.MiningPendingState
 import com.ankiminer.android.ui.mining.SharedCurationDraft
 import com.ankiminer.android.ui.mining.defaultCurationDraft
-import com.ankiminer.android.ui.video.CurationCandidateUiState
 import com.ankiminer.android.ui.video.CurationUiState
 import com.ankiminer.android.ui.video.DocumentSelectionError
 import com.ankiminer.android.ui.video.DocumentSlotState
@@ -48,11 +49,13 @@ class VideoMiningViewModel internal constructor(
     private val safBroker: SafBroker,
     private val runtimeWorkState: StateFlow<RuntimeWorkCoordinator.Kind?> = MutableStateFlow(null),
     savedStateHandle: SavedStateHandle = SavedStateHandle(),
+    selectionInventory: SafSelectionInventory? = null,
 ) : ViewModel() {
     private data class LocalState(
         val video: DocumentSlotState = DocumentSlotState(),
         val subtitle: DocumentSlotState = DocumentSlotState(),
         val curationDraft: SharedCurationDraft? = null,
+        val previousPageSelectedCount: Int = 0,
         val pending: MiningPendingState = MiningPendingState(),
         val commandError: MiningCommandError? = null,
     )
@@ -67,8 +70,20 @@ class VideoMiningViewModel internal constructor(
     private var subtitleDocumentRequest = 0L
     private var videoDocumentJob: Job? = null
     private var subtitleDocumentJob: Job? = null
-    private val videoSelection = SavedDocumentSelectionStore(savedStateHandle, "videoMining.video")
-    private val subtitleSelection = SavedDocumentSelectionStore(savedStateHandle, "videoMining.subtitle")
+    private val videoSelection =
+        SavedDocumentSelectionStore(
+            savedStateHandle = savedStateHandle,
+            keyPrefix = "videoMining.video",
+            inventory = selectionInventory,
+            inventorySlot = SafSelectionSlot.VIDEO,
+        )
+    private val subtitleSelection =
+        SavedDocumentSelectionStore(
+            savedStateHandle = savedStateHandle,
+            keyPrefix = "videoMining.subtitle",
+            inventory = selectionInventory,
+            inventorySlot = SafSelectionSlot.VIDEO_SUBTITLE,
+        )
 
     /** Small app-shell state; progress-only repository updates are filtered before composition. */
     internal val navigationWorkflowState: StateFlow<NavigationWorkflowState> =
@@ -85,7 +100,10 @@ class VideoMiningViewModel internal constructor(
         combine(repository.state, localState, runtimeWorkState) { runState, local, activeKind ->
             val curation =
                 (runState as? MiningRunState.Curating)?.request?.let { request ->
-                    request.toUiState(local.curationDraft)
+                    request.toUiState(
+                        draft = local.curationDraft,
+                        previousPageSelectedCount = local.previousPageSelectedCount,
+                    )
                 }
             val repositoryCurationPending =
                 (runState as? MiningRunState.Curating)?.pageSubmissionPending == true
@@ -116,13 +134,20 @@ class VideoMiningViewModel internal constructor(
                         if (local.curationDraft?.matches(runState.request) == true) {
                             local
                         } else {
-                            local.copy(curationDraft = runState.request.defaultCurationDraft())
+                            local.copy(
+                                curationDraft = runState.request.defaultCurationDraft(),
+                                previousPageSelectedCount =
+                                    local.previousPageSelectedCount.takeIf {
+                                        local.curationDraft?.runId == runState.request.runId
+                                    } ?: 0,
+                            )
                         }
                     }
                 } else if (runState.isTerminal) {
                     localState.update { local ->
                         local.copy(
                             curationDraft = null,
+                            previousPageSelectedCount = 0,
                             pending = local.pending.afterTerminalState(),
                         )
                     }
@@ -197,6 +222,7 @@ class VideoMiningViewModel internal constructor(
                     local.copy(
                         pending = local.pending.begin(MiningPendingAction.START),
                         commandError = null,
+                        previousPageSelectedCount = 0,
                     ),
                 )
             ) {
@@ -268,6 +294,17 @@ class VideoMiningViewModel internal constructor(
                     selection = selection,
                     pageIndex = runState.request.page?.pageIndex,
                 )
+                if (!runState.request.isFinalPage) {
+                    localState.update { local ->
+                        local.copy(
+                            previousPageSelectedCount =
+                                Math.addExact(
+                                    local.previousPageSelectedCount,
+                                    selection.size,
+                                ),
+                        )
+                    }
+                }
             } catch (failure: CancellationException) {
                 throw failure
             } catch (_: RuntimeException) {
@@ -436,12 +473,16 @@ class VideoMiningViewModel internal constructor(
                             safBroker.retainReadAccess(uri)
                         }
                     if (isCurrentDocumentRequest(kind, sequence)) {
+                        if (!selectionStore(kind).save(document)) {
+                            releaseDocumentNow(document)
+                            localState.update { local -> local.withDocumentFailure(kind) }
+                            return@launch
+                        }
                         var replaced: SafDocument? = null
                         localState.update { local ->
                             replaced = local.document(kind)
                             local.withDocument(kind, document)
                         }
-                        selectionStore(kind).save(document)
                         replaced?.let(::releaseDocument)
                     } else {
                         // A non-cooperative provider can finish after cancellation. Its newly
@@ -579,20 +620,20 @@ class VideoMiningViewModel internal constructor(
             RuntimeWorkCoordinator.Kind.ANKI_SETUP -> RuntimeWorkConflict.ANKI_SETUP
         }
 
-    private fun CurationRequest.toUiState(draft: SharedCurationDraft?): CurationUiState {
+    private fun CurationRequest.toUiState(
+        draft: SharedCurationDraft?,
+        previousPageSelectedCount: Int,
+    ): CurationUiState {
         val current = draft?.forRequest(this) ?: defaultCurationDraft()
         return CurationUiState(
             runId = runId,
             requestId = requestId,
             page = page,
-            candidates =
-                candidates.map { candidate ->
-                    CurationCandidateUiState(
-                        candidate = candidate,
-                        selected = candidate.candidateId in current.selectedCandidateIds,
-                        sentenceId = current.sentenceIds.getValue(candidate.candidateId),
-                    )
-                },
+            candidates = candidates,
+            selectedCandidateIds = current.selectedCandidateIds,
+            sentenceIds = current.sentenceIds,
+            focusedCandidateId = current.focusedCandidateId,
+            previousPageSelectedCount = previousPageSelectedCount,
         )
     }
 
@@ -600,6 +641,7 @@ class VideoMiningViewModel internal constructor(
         private val repository: MiningRepository,
         private val safBroker: SafBroker,
         private val runtimeWorkState: StateFlow<RuntimeWorkCoordinator.Kind?> = MutableStateFlow(null),
+        private val selectionInventory: SafSelectionInventory? = null,
         private val savedStateHandleFactory: (CreationExtras) -> SavedStateHandle =
             { extras -> extras.createSavedStateHandle() },
     ) : ViewModelProvider.Factory {
@@ -614,6 +656,7 @@ class VideoMiningViewModel internal constructor(
                 safBroker = safBroker,
                 runtimeWorkState = runtimeWorkState,
                 savedStateHandle = savedStateHandleFactory(extras),
+                selectionInventory = selectionInventory,
             ) as T
         }
     }

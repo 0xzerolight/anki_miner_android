@@ -1,5 +1,7 @@
 package com.ankiminer.android.mining
 
+import androidx.compose.runtime.Immutable
+
 enum class RuntimeWorkConflict {
     MINING,
     RESOURCE,
@@ -67,6 +69,7 @@ data class ProcessingResult(
     val minedForms: List<String>,
 )
 
+@Immutable
 data class CurationSentence(
     val sentenceId: String,
     val sentence: String,
@@ -81,6 +84,7 @@ data class CurationSentence(
     }
 }
 
+@Immutable
 data class CurationCandidate(
     val candidateId: String,
     val minedForm: String,

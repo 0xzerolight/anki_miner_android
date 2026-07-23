@@ -57,6 +57,7 @@ class MainActivity : ComponentActivity() {
             repository = MiningRepositoryFactory.create(app),
             safBroker = app.safBroker,
             runtimeWorkState = app.runtimeWorkState,
+            selectionInventory = app.safSelectionInventory,
         )
     }
     private val setupViewModelFactory by lazy {
@@ -82,6 +83,7 @@ class MainActivity : ComponentActivity() {
             repository = ReadingRepositoryFactory.create(app),
             safBroker = app.safBroker,
             runtimeWorkState = app.runtimeWorkState,
+            selectionInventory = app.safSelectionInventory,
         )
     }
 

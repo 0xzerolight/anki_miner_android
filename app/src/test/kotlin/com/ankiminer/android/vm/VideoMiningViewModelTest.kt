@@ -256,6 +256,32 @@ class VideoMiningViewModelTest {
         }
 
     @Test
+    fun pagedCurationCarriesSubmittedSelectionCountAcrossRequestIdsInSameRun() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val first =
+                curationRequest().copy(
+                    requestId = "page-1",
+                    page = CurationPage(0, 2, 0, 2),
+                )
+            val second =
+                first.copy(
+                    requestId = "page-2",
+                    page = CurationPage(1, 2, 1, 2),
+                )
+            val repository = RecordingRepository(MiningRunState.Curating(first))
+            val viewModel = VideoMiningViewModel(repository, ImmediateSafBroker())
+            runCurrent()
+
+            viewModel.confirmCuration()
+            runCurrent()
+            repository.transitionTo(MiningRunState.Curating(second))
+            runCurrent()
+
+            assertEquals(1, viewModel.uiState.value.curation?.previousPageSelectedCount)
+            assertTrue(viewModel.uiState.value.curation?.hasSelectionToLose == true)
+        }
+
+    @Test
     fun repositoryPageSubmissionPendingDisablesDuplicateConfirmation() =
         runTest(mainDispatcherRule.dispatcher) {
             val request = curationRequest().copy(page = CurationPage(0, 2, 0, 2))

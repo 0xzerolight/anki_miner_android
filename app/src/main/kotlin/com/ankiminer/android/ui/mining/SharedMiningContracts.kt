@@ -1,11 +1,14 @@
 package com.ankiminer.android.ui.mining
 
+import com.ankiminer.android.mining.CurationCandidate
 import com.ankiminer.android.mining.CurationRequest
 import com.ankiminer.android.mining.CurationSelection
 import java.nio.charset.StandardCharsets
+import java.util.Locale
 
 internal const val MAX_RESULT_SUMMARY_ITEMS = 100
 internal const val MAX_RESULT_ERROR_LINES = 50
+internal const val RESULT_ISSUE_PREVIEW_COUNT = 3
 
 internal data class BoundedResultItems<T>(
     val items: List<T>,
@@ -21,16 +24,20 @@ internal fun <T> List<T>.boundedResultItems(maximum: Int): BoundedResultItems<T>
 }
 
 internal data class SharedCurationDraft(
+    val runId: String,
     val requestId: String,
     val pageIndex: Long?,
     val selectedCandidateIds: Set<String>,
     val sentenceIds: Map<String, String>,
+    val focusedCandidateId: String?,
 ) {
     val selectedCount: Int
         get() = selectedCandidateIds.size
 
     fun matches(request: CurationRequest): Boolean =
-        requestId == request.requestId && pageIndex == request.page?.pageIndex
+        runId == request.runId &&
+            requestId == request.requestId &&
+            pageIndex == request.page?.pageIndex
 
     fun forRequest(request: CurationRequest): SharedCurationDraft =
         if (matches(request)) this else request.defaultCurationDraft()
@@ -42,22 +49,39 @@ internal data class SharedCurationDraft(
         require(request.candidates.any { it.candidateId == candidateId })
         val current = forRequest(request)
         val selected = current.selectedCandidateIds.toMutableSet()
-        if (!selected.add(candidateId)) selected.remove(candidateId)
-        return current.copy(selectedCandidateIds = selected)
+        val added = selected.add(candidateId)
+        if (!added) selected.remove(candidateId)
+        return current.copy(
+            selectedCandidateIds = selected,
+            focusedCandidateId =
+                if (added) {
+                    candidateId
+                } else {
+                    current.focusedCandidateId.takeUnless { it == candidateId }
+                },
+        )
     }
 
     fun selectAll(
         request: CurationRequest,
         selected: Boolean,
-    ): SharedCurationDraft =
-        forRequest(request).copy(
+    ): SharedCurationDraft {
+        val current = forRequest(request)
+        return current.copy(
             selectedCandidateIds =
                 if (selected) {
                     request.candidates.mapTo(linkedSetOf()) { it.candidateId }
                 } else {
                     emptySet()
                 },
+            focusedCandidateId =
+                if (selected) {
+                    current.focusedCandidateId ?: request.candidates.firstOrNull()?.candidateId
+                } else {
+                    null
+                },
         )
+    }
 
     fun selectSentence(
         request: CurationRequest,
@@ -88,11 +112,75 @@ internal data class SharedCurationDraft(
 
 internal fun CurationRequest.defaultCurationDraft(): SharedCurationDraft =
     SharedCurationDraft(
+        runId = runId,
         requestId = requestId,
         pageIndex = page?.pageIndex,
         selectedCandidateIds = candidates.mapTo(linkedSetOf()) { it.candidateId },
         sentenceIds = candidates.associate { it.candidateId to it.defaultSentenceId },
+        focusedCandidateId = candidates.firstOrNull()?.candidateId,
     )
+
+internal enum class CurationFilter {
+    ALL,
+    SELECTED,
+    EXCLUDED,
+}
+
+internal enum class CurationSort {
+    FREQUENCY,
+    OCCURRENCES,
+}
+
+/**
+ * Pure presentation projection. Candidate identity and selection storage stay untouched while
+ * local search/filter/sort state changes.
+ */
+internal fun curateCandidates(
+    candidates: List<CurationCandidate>,
+    selectedCandidateIds: Set<String>,
+    query: String,
+    filter: CurationFilter,
+    sort: CurationSort,
+): List<CurationCandidate> {
+    val normalizedQuery = query.trim().lowercase(Locale.ROOT)
+    val filtered =
+        candidates.asSequence()
+            .filter { candidate ->
+                when (filter) {
+                    CurationFilter.ALL -> true
+                    CurationFilter.SELECTED -> candidate.candidateId in selectedCandidateIds
+                    CurationFilter.EXCLUDED -> candidate.candidateId !in selectedCandidateIds
+                }
+            }.filter { candidate ->
+                normalizedQuery.isEmpty() ||
+                    candidate.searchableCurationText().contains(normalizedQuery)
+            }
+    val comparator =
+        when (sort) {
+            CurationSort.FREQUENCY ->
+                compareBy<CurationCandidate>(
+                    { it.frequencyRank == null },
+                    { it.frequencyRank ?: Long.MAX_VALUE },
+                    { it.minedForm },
+                )
+            CurationSort.OCCURRENCES ->
+                compareByDescending<CurationCandidate> { it.occurrenceCount }
+                    .thenBy { it.frequencyRank ?: Long.MAX_VALUE }
+                    .thenBy { it.minedForm }
+        }
+    return filtered.sortedWith(comparator).toList()
+}
+
+private fun CurationCandidate.searchableCurationText(): String =
+    listOfNotNull(
+        minedForm,
+        surface,
+        lemma,
+        reading,
+        expressionReading,
+        partOfSpeech,
+    ).joinToString(separator = "\n")
+        .lowercase(Locale.ROOT)
 
 internal enum class MiningPendingAction {
     START,

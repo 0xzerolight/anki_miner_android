@@ -237,7 +237,6 @@ class ReadingMiningViewModelTest {
                 viewModel.uiState.value.curation
                     ?.candidates
                     ?.single()
-                    ?.candidate
                     ?.candidateId,
             )
             assertEquals(1, viewModel.uiState.value.curation?.selectedCount)
@@ -246,6 +245,30 @@ class ReadingMiningViewModelTest {
 
             assertEquals(1L, repository.confirmedPageIndex)
             assertEquals("candidate-2", repository.confirmedSelection?.single()?.candidateId)
+        }
+
+    @Test
+    fun pagedReadingCurationCarriesSubmittedCountAcrossRequestIdsInSameRun() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val first =
+                curationRequest(page = CurationPage(0, 2, 0, 2))
+                    .copy(requestId = "page-1")
+            val second =
+                first.copy(
+                    requestId = "page-2",
+                    page = CurationPage(1, 2, 1, 2),
+                )
+            val repository = RecordingReadingRepository(MiningRunState.Curating(first))
+            val viewModel = ReadingMiningViewModel(repository, ImmediateSafBroker())
+            runCurrent()
+
+            viewModel.confirmCuration()
+            runCurrent()
+            repository.transitionTo(MiningRunState.Curating(second))
+            runCurrent()
+
+            assertEquals(1, viewModel.uiState.value.curation?.previousPageSelectedCount)
+            assertTrue(viewModel.uiState.value.curation?.hasSelectionToLose == true)
         }
 
     @Test

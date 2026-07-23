@@ -1,14 +1,18 @@
 package com.ankiminer.android.ui.reading
 
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -18,9 +22,12 @@ import com.ankiminer.android.mining.CurationCandidate
 import com.ankiminer.android.mining.CurationPage
 import com.ankiminer.android.mining.CurationRequest
 import com.ankiminer.android.mining.CurationSentence
+import com.ankiminer.android.mining.MiningFailure
 import com.ankiminer.android.mining.MiningRunState
 import com.ankiminer.android.mining.ProcessingResult
+import com.ankiminer.android.ui.mining.MINING_FAILURE_TEST_TAG
 import com.ankiminer.android.ui.theme.AnkiMinerTheme
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -144,20 +151,7 @@ class ReadingMiningScreenTest {
             state =
                 ReadingMiningUiState(
                     runState = MiningRunState.Curating(request),
-                    curation =
-                        ReadingCurationUiState(
-                            runId = request.runId,
-                            requestId = request.requestId,
-                            candidates =
-                                request.candidates.map {
-                                    ReadingCurationCandidateUiState(
-                                        candidate = it,
-                                        selected = true,
-                                        sentenceId = it.defaultSentenceId,
-                                    )
-                                },
-                            page = request.page,
-                        ),
+                    curation = curationState(request),
                 ),
         )
 
@@ -165,7 +159,7 @@ class ReadingMiningScreenTest {
         composeRule
             .onNodeWithText("Selections from earlier pages are already saved.")
             .assertExists()
-        composeRule.onNodeWithText("Finish with 2 selected on this page").assertIsDisplayed()
+        composeRule.onNodeWithText("Finish (2)").assertIsDisplayed()
     }
 
     @Test
@@ -210,15 +204,20 @@ class ReadingMiningScreenTest {
             .onNodeWithTag(ReadingMiningTestTags.CONTENT)
             .performScrollToNode(hasTestTag(ReadingMiningTestTags.RESULT))
         composeRule
-            .onNodeWithText(
-                "Mined forms: ${result.minedForms.take(100).joinToString()}, +150 more",
-            ).assertExists()
+            .onNodeWithText("• error-1")
+            .assertExists()
+        composeRule.onNodeWithText("• error-3").assertExists()
+        composeRule.onNodeWithText("• error-4").assertDoesNotExist()
+
+        composeRule.onNodeWithText("Details").performClick()
         composeRule
-            .onNodeWithText(
-                "Anki note IDs: ${result.cardIds.take(100).joinToString()}, +150 more",
-            ).assertExists()
+            .onNodeWithTag(ReadingMiningTestTags.CONTENT)
+            .performScrollToNode(hasText("• error-50"))
         composeRule.onNodeWithText("• error-50").assertExists()
         composeRule.onNodeWithText("• error-51").assertDoesNotExist()
+        composeRule
+            .onNodeWithTag(ReadingMiningTestTags.CONTENT)
+            .performScrollToNode(hasText("+75 more"))
         composeRule.onNodeWithText("+75 more").assertExists()
     }
 
@@ -230,24 +229,129 @@ class ReadingMiningScreenTest {
                 ReadingMiningUiState(
                     runState = MiningRunState.Curating(request, pageSubmissionPending = true),
                     curationPending = true,
-                    curation =
-                        ReadingCurationUiState(
-                            runId = request.runId,
-                            requestId = request.requestId,
-                            candidates =
-                                request.candidates.map {
-                                    ReadingCurationCandidateUiState(
-                                        candidate = it,
-                                        selected = true,
-                                        sentenceId = it.defaultSentenceId,
-                                    )
-                                },
-                            page = request.page,
-                        ),
+                    curation = curationState(request),
                 ),
         )
 
         composeRule.onNodeWithTag(ReadingMiningTestTags.CANCEL).assertIsEnabled()
+    }
+
+    @Test
+    fun selectedReadingCurationRequiresConfirmationBeforeCancellation() {
+        val request = request(CurationPage(0, 2, 0, 4))
+        var cancelled = false
+
+        composeRule.setContent {
+            AnkiMinerTheme {
+                ReadingMiningScreen(
+                    state =
+                        ReadingMiningUiState(
+                            runState = MiningRunState.Curating(request),
+                            curation = curationState(request),
+                        ),
+                    onPickSource = {},
+                    onPickArchive = {},
+                    onClearSource = {},
+                    onClearArchive = {},
+                    onSeriesNameChanged = {},
+                    onDismissDocumentError = {},
+                    onDismissCommandError = {},
+                    onStart = {},
+                    onToggleCandidate = {},
+                    onSelectAllCandidates = {},
+                    onSelectSentence = { _, _ -> },
+                    onConfirmCuration = {},
+                    onCancel = { cancelled = true },
+                    onRetry = {},
+                    onReset = {},
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag(ReadingMiningTestTags.CANCEL).performClick()
+        composeRule.runOnIdle { assertEquals(false, cancelled) }
+        composeRule.onNodeWithText("Cancel run").performClick()
+        composeRule.runOnIdle { assertEquals(true, cancelled) }
+    }
+
+    @Test
+    fun terminalReadingFailureSuppressesCommandError() {
+        setScreen(
+            state =
+                ReadingMiningUiState(
+                    source = ReadingDocumentSlotState(document("source", "book.epub")),
+                    sourceKind = ReadingSourceKindUi.EPUB,
+                    runState =
+                        MiningRunState.Failed(
+                            runId = "run",
+                            failure = MiningFailure("Private protocol detail", retryable = true),
+                            result = null,
+                        ),
+                    commandError = ReadingMiningCommandError.START,
+                ),
+        )
+
+        composeRule.onAllNodesWithTag(MINING_FAILURE_TEST_TAG).assertCountEquals(1)
+        composeRule.onNodeWithText("Private protocol detail").assertDoesNotExist()
+        composeRule.onNodeWithText("Details").performClick()
+        composeRule.onNodeWithText("Private protocol detail").assertExists()
+    }
+
+    @Test
+    fun readingFailureTransitionResetsDeepCurationScroll() {
+        val candidates =
+            (0 until 100).map { index ->
+                candidate(
+                    id = "candidate-$index",
+                    form = "語彙$index",
+                    sentenceId = "sentence-$index",
+                    text = "Sentence $index",
+                )
+            }
+        val request =
+            CurationRequest(
+                runId = "run",
+                requestId = "reading-scroll",
+                candidates = candidates,
+            )
+        lateinit var listState: LazyListState
+        var state by
+            mutableStateOf(
+                ReadingMiningUiState(
+                    runState = MiningRunState.Curating(request),
+                    curation = curationState(request),
+                ),
+            )
+        composeRule.setContent {
+            AnkiMinerTheme {
+                listState = rememberLazyListState()
+                ScreenUnderTest(state = state, listState = listState)
+            }
+        }
+
+        composeRule
+            .onNodeWithTag(ReadingMiningTestTags.CONTENT)
+            .performScrollToNode(
+                hasTestTag(ReadingMiningTestTags.candidate(candidates.last().candidateId)),
+            )
+        composeRule.runOnIdle {
+            state =
+                state.copy(
+                    runState =
+                        MiningRunState.Failed(
+                            runId = "run",
+                            failure = MiningFailure("details", retryable = false),
+                            result = null,
+                        ),
+                    curation = null,
+                )
+        }
+        composeRule.waitForIdle()
+
+        composeRule.runOnIdle { assertEquals(0, listState.firstVisibleItemIndex) }
+        composeRule
+            .onNodeWithText("This mining run stopped before it could finish.")
+            .assertIsDisplayed()
     }
 
     private fun setScreen(
@@ -273,6 +377,7 @@ class ReadingMiningScreenTest {
         onPickSource: () -> Unit = {},
         onPickArchive: () -> Unit = {},
         onStart: () -> Unit = {},
+        listState: LazyListState = rememberLazyListState(),
     ) {
         ReadingMiningScreen(
             state = state,
@@ -291,6 +396,7 @@ class ReadingMiningScreenTest {
             onCancel = {},
             onRetry = {},
             onReset = {},
+            listState = listState,
         )
     }
 
@@ -304,6 +410,27 @@ class ReadingMiningScreenTest {
                     candidate("candidate-2", "懐かしい", "sentence-2", "懐かしい歌だ。"),
                 ),
             page = page,
+        )
+
+    private fun curationState(
+        request: CurationRequest,
+        selectedCandidateIds: Set<String> =
+            request.candidates.mapTo(linkedSetOf(), CurationCandidate::candidateId),
+        focusedCandidateId: String? = selectedCandidateIds.firstOrNull(),
+        previousPageSelectedCount: Int = 0,
+    ): ReadingCurationUiState =
+        ReadingCurationUiState(
+            runId = request.runId,
+            requestId = request.requestId,
+            candidates = request.candidates,
+            selectedCandidateIds = selectedCandidateIds,
+            sentenceIds =
+                request.candidates.associate {
+                    it.candidateId to it.defaultSentenceId
+                },
+            focusedCandidateId = focusedCandidateId,
+            previousPageSelectedCount = previousPageSelectedCount,
+            page = request.page,
         )
 
     private fun candidate(

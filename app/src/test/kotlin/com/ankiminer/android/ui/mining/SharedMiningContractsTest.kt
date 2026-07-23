@@ -62,6 +62,68 @@ class SharedMiningContractsTest {
     }
 
     @Test
+    fun deselectingFocusedCandidateCollapsesItsSentences() {
+        val request = curationRequest(page = CurationPage(0, 2, 0, 2))
+        val initial = request.defaultCurationDraft()
+
+        val deselected = initial.toggleCandidate(request, request.candidates.single().candidateId)
+
+        assertTrue(deselected.selectedCandidateIds.isEmpty())
+        assertNull(deselected.focusedCandidateId)
+    }
+
+    @Test
+    fun selectingExcludedCandidateFocusesOnlyThatCandidate() {
+        val request = curationRequest(page = CurationPage(0, 2, 0, 2))
+        val excluded = request.defaultCurationDraft().selectAll(request, selected = false)
+
+        val selected = excluded.toggleCandidate(request, request.candidates.single().candidateId)
+
+        assertEquals(setOf("candidate-1"), selected.selectedCandidateIds)
+        assertEquals("candidate-1", selected.focusedCandidateId)
+    }
+
+    @Test
+    fun candidateSearchFilterAndSortNeverMutateSelection() {
+        val selected = candidate("selected", "猫", frequency = 10, occurrences = 2)
+        val excluded = candidate("excluded", "犬", frequency = 2, occurrences = 8)
+        val unknown = candidate("unknown", "鳥", frequency = null, occurrences = 1)
+        val selectedIds = setOf(selected.candidateId, unknown.candidateId)
+
+        assertEquals(
+            listOf("excluded", "selected", "unknown"),
+            curateCandidates(
+                candidates = listOf(selected, excluded, unknown),
+                selectedCandidateIds = selectedIds,
+                query = "",
+                filter = CurationFilter.ALL,
+                sort = CurationSort.FREQUENCY,
+            ).map(CurationCandidate::candidateId),
+        )
+        assertEquals(
+            listOf("selected", "unknown"),
+            curateCandidates(
+                candidates = listOf(selected, excluded, unknown),
+                selectedCandidateIds = selectedIds,
+                query = "",
+                filter = CurationFilter.SELECTED,
+                sort = CurationSort.OCCURRENCES,
+            ).map(CurationCandidate::candidateId),
+        )
+        assertEquals(
+            listOf("excluded"),
+            curateCandidates(
+                candidates = listOf(selected, excluded, unknown),
+                selectedCandidateIds = selectedIds,
+                query = "いぬ",
+                filter = CurationFilter.EXCLUDED,
+                sort = CurationSort.OCCURRENCES,
+            ).map(CurationCandidate::candidateId),
+        )
+        assertEquals(setOf("selected", "unknown"), selectedIds)
+    }
+
+    @Test
     fun pendingReducerClearsTerminalWorkWithoutClearingIndependentReset() {
         val pending =
             MiningPendingState(reset = true)
@@ -112,36 +174,51 @@ class SharedMiningContractsTest {
     }
 
     private fun curationRequest(page: CurationPage): CurationRequest {
-        val sentence =
-            CurationSentence(
-                sentenceId = "sentence-1",
-                sentence = "猫だ。",
-                sentenceFurigana = "猫だ。",
-                sentenceReading = "ねこだ",
-                startTime = 0.0,
-                endTime = 1.0,
-                duration = 1.0,
-            )
         return CurationRequest(
             runId = "run",
             requestId = "request",
             candidates =
                 listOf(
-                    CurationCandidate(
-                        candidateId = "candidate-1",
-                        minedForm = "猫",
-                        surface = "猫",
-                        lemma = "猫",
-                        reading = "ねこ",
-                        expressionReading = "ねこ",
-                        partOfSpeech = "名詞",
-                        frequencyRank = 1,
-                        occurrenceCount = 1,
-                        defaultSentenceId = sentence.sentenceId,
-                        sentences = listOf(sentence),
-                    ),
+                    candidate("candidate-1", "猫", frequency = 1, occurrences = 1),
                 ),
             page = page,
+        )
+    }
+
+    private fun candidate(
+        id: String,
+        form: String,
+        frequency: Long?,
+        occurrences: Long,
+    ): CurationCandidate {
+        val reading =
+            when (form) {
+                "犬" -> "いぬ"
+                "鳥" -> "とり"
+                else -> "ねこ"
+            }
+        val sentence =
+            CurationSentence(
+                sentenceId = "sentence-$id",
+                sentence = "$form だ。",
+                sentenceFurigana = "$form だ。",
+                sentenceReading = "${reading}だ",
+                startTime = 0.0,
+                endTime = 1.0,
+                duration = 1.0,
+            )
+        return CurationCandidate(
+            candidateId = id,
+            minedForm = form,
+            surface = form,
+            lemma = form,
+            reading = reading,
+            expressionReading = reading,
+            partOfSpeech = "名詞",
+            frequencyRank = frequency,
+            occurrenceCount = occurrences,
+            defaultSentenceId = sentence.sentenceId,
+            sentences = listOf(sentence),
         )
     }
 }

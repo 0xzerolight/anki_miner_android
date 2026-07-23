@@ -24,6 +24,7 @@ import com.ankiminer.android.engine.PythonRuntimeReadiness
 import com.ankiminer.android.localization.AndroidStringResourceResolver
 import com.ankiminer.android.localization.StringResourceResolver
 import com.ankiminer.android.media.AndroidSafBroker
+import com.ankiminer.android.media.AndroidSafSelectionInventory
 import com.ankiminer.android.media.SafBroker
 import com.ankiminer.android.media.SafInputCacheJanitor
 import com.ankiminer.android.mining.AndroidMiningInputOwnerFactory
@@ -68,9 +69,13 @@ class AnkiMinerApplication : Application() {
         AndroidStringResourceResolver(this)
     }
 
+    internal val safSelectionInventory by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        AndroidSafSelectionInventory(this)
+    }
+
     /** One process-wide grant ledger prevents Activity recreation from splitting SAF ownership. */
     val safBroker: SafBroker by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
-        AndroidSafBroker(this)
+        AndroidSafBroker(this, selectionInventory = safSelectionInventory)
     }
 
     private val miningRunExecutor by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
@@ -302,8 +307,7 @@ class AnkiMinerApplication : Application() {
                     }
                 }
         }
-        // M3 has no durable job/selection inventory. Reconcile process-orphaned grants now so a
-        // user who never opens a picker again does not leak provider quota indefinitely.
+        // Keep durable selections and release only grants no longer owned by a saved slot.
         applicationScope.launch {
             try {
                 safBroker.reconcileStartup()

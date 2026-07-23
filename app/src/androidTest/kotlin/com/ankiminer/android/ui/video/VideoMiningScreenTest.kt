@@ -1,20 +1,27 @@
 package com.ankiminer.android.ui.video
 
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.performTextInput
 import com.ankiminer.android.media.SafDocument
 import com.ankiminer.android.mining.CurationCandidate
 import com.ankiminer.android.mining.CurationPage
@@ -24,6 +31,8 @@ import com.ankiminer.android.mining.MiningFailure
 import com.ankiminer.android.mining.MiningProgress
 import com.ankiminer.android.mining.MiningRunState
 import com.ankiminer.android.mining.ProcessingResult
+import com.ankiminer.android.ui.mining.CURATION_SEARCH_TEST_TAG
+import com.ankiminer.android.ui.mining.MINING_FAILURE_TEST_TAG
 import com.ankiminer.android.ui.theme.AnkiMinerTheme
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -132,19 +141,7 @@ class VideoMiningScreenTest {
         val state =
             VideoMiningUiState(
                 runState = MiningRunState.Curating(request),
-                curation =
-                    CurationUiState(
-                        runId = request.runId,
-                        requestId = request.requestId,
-                        candidates =
-                            request.candidates.map {
-                                CurationCandidateUiState(
-                                    candidate = it,
-                                    selected = true,
-                                    sentenceId = it.defaultSentenceId,
-                                )
-                            },
-                    ),
+                curation = curationState(request),
             )
 
         setScreen(
@@ -187,35 +184,127 @@ class VideoMiningScreenTest {
     }
 
     @Test
+    fun wholeCandidateHeaderTogglesAndDeselectionCollapsesSentences() {
+        val request = request()
+        val candidate = request.candidates.first()
+        var state by
+            mutableStateOf(
+                VideoMiningUiState(
+                    runState = MiningRunState.Curating(request),
+                    curation = curationState(request),
+                ),
+            )
+        composeRule.setContent {
+            AnkiMinerTheme {
+                ScreenUnderTest(
+                    state = state,
+                    onToggleCandidate = { candidateId ->
+                        val curation = requireNotNull(state.curation)
+                        state =
+                            state.copy(
+                                curation =
+                                    curation.copy(
+                                        selectedCandidateIds =
+                                            curation.selectedCandidateIds - candidateId,
+                                        focusedCandidateId = null,
+                                    ),
+                            )
+                    },
+                )
+            }
+        }
+        val sentenceTag =
+            VideoMiningTestTags.sentence(candidate.candidateId, candidate.defaultSentenceId)
+
+        composeRule.onNodeWithTag(sentenceTag).assertExists()
+        composeRule.onNodeWithTag(VideoMiningTestTags.candidate(candidate.candidateId)).performClick()
+
+        composeRule.onNodeWithTag(sentenceTag).assertDoesNotExist()
+        composeRule.onNodeWithText("1 of 2 selected").assertExists()
+    }
+
+    @Test
+    fun zeroSelectionCancelsImmediatelyButSelectedCurationRequiresConfirmation() {
+        val request = request()
+        var cancelCount = 0
+        var state by
+            mutableStateOf(
+                VideoMiningUiState(
+                    runState = MiningRunState.Curating(request),
+                    curation =
+                        curationState(
+                            request = request,
+                            selectedCandidateIds = emptySet(),
+                            focusedCandidateId = null,
+                        ),
+                ),
+            )
+        composeRule.setContent {
+            AnkiMinerTheme {
+                ScreenUnderTest(
+                    state = state,
+                    onCancel = { cancelCount += 1 },
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag(VideoMiningTestTags.CANCEL).performClick()
+        composeRule.runOnIdle { assertEquals(1, cancelCount) }
+
+        composeRule.runOnIdle { state = state.copy(curation = curationState(request)) }
+        composeRule.onNodeWithTag(VideoMiningTestTags.CANCEL).performClick()
+        composeRule.onNodeWithText("Cancel mining?").assertIsDisplayed()
+        composeRule.onNodeWithText("Keep mining").performClick()
+        composeRule.runOnIdle { assertEquals(1, cancelCount) }
+
+        composeRule.onNodeWithTag(VideoMiningTestTags.CANCEL).performClick()
+        composeRule.onNodeWithText("Cancel run").performClick()
+        composeRule.runOnIdle { assertEquals(2, cancelCount) }
+    }
+
+    @Test
+    fun priorPageSelectionRequiresCancellationConfirmationWhenCurrentPageIsEmpty() {
+        val request = request().copy(page = CurationPage(1, 2, 2, 4))
+        var cancelled = false
+        setScreen(
+            state =
+                VideoMiningUiState(
+                    runState = MiningRunState.Curating(request),
+                    curation =
+                        curationState(
+                            request = request,
+                            selectedCandidateIds = emptySet(),
+                            focusedCandidateId = null,
+                            previousPageSelectedCount = 1,
+                        ),
+                ),
+            onCancel = { cancelled = true },
+        )
+
+        composeRule.onNodeWithTag(VideoMiningTestTags.CANCEL).performClick()
+
+        composeRule.onNodeWithText("Cancel mining?").assertIsDisplayed()
+        composeRule.runOnIdle { assertFalse(cancelled) }
+    }
+
+    @Test
     fun pendingCancellationFreezesCurationChoicesAndConfirmation() {
         val request = request()
         setScreen(
             state =
                 VideoMiningUiState(
                     runState = MiningRunState.Curating(request),
-                    curation =
-                        CurationUiState(
-                            runId = request.runId,
-                            requestId = request.requestId,
-                            candidates =
-                                request.candidates.map {
-                                    CurationCandidateUiState(
-                                        candidate = it,
-                                        selected = true,
-                                        sentenceId = it.defaultSentenceId,
-                                    )
-                                },
-                        ),
+                    curation = curationState(request),
                     cancelPending = true,
                 ),
         )
 
         composeRule.onNodeWithTag(VideoMiningTestTags.SELECT_ALL).assertIsNotEnabled()
         composeRule
-            .onNodeWithTag(
-                VideoMiningTestTags.candidateToggle(request.candidates.first().candidateId),
-            ).assertIsNotEnabled()
+            .onNodeWithTag(VideoMiningTestTags.candidate(request.candidates.first().candidateId))
+            .assertIsNotEnabled()
         composeRule.onNodeWithTag(VideoMiningTestTags.CONFIRM_CURATION).assertIsNotEnabled()
+        composeRule.onNodeWithText("Cancelling…").assertIsDisplayed()
     }
 
     @Test
@@ -226,19 +315,7 @@ class VideoMiningScreenTest {
                 VideoMiningUiState(
                     runState = MiningRunState.Curating(request, pageSubmissionPending = true),
                     curationPending = true,
-                    curation =
-                        CurationUiState(
-                            runId = request.runId,
-                            requestId = request.requestId,
-                            candidates =
-                                request.candidates.map {
-                                    CurationCandidateUiState(
-                                        candidate = it,
-                                        selected = true,
-                                        sentenceId = it.defaultSentenceId,
-                                    )
-                                },
-                        ),
+                    curation = curationState(request),
                 ),
         )
 
@@ -264,19 +341,7 @@ class VideoMiningScreenTest {
             state =
                 VideoMiningUiState(
                     runState = MiningRunState.Curating(request),
-                    curation =
-                        CurationUiState(
-                            runId = request.runId,
-                            requestId = request.requestId,
-                            candidates =
-                                listOf(
-                                    CurationCandidateUiState(
-                                        candidate = candidate,
-                                        selected = true,
-                                        sentenceId = candidate.defaultSentenceId,
-                                    ),
-                                ),
-                        ),
+                    curation = curationState(request),
                 ),
             onSelectSentence = { selectedCandidateId, sentenceId ->
                 selection = selectedCandidateId to sentenceId
@@ -297,31 +362,47 @@ class VideoMiningScreenTest {
     }
 
     @Test
+    fun searchFiltersCandidateHeadersWithoutComposingOffscreenCandidates() {
+        val candidates =
+            (0 until 100).map { index ->
+                candidate(
+                    id = "candidate-$index",
+                    form = if (index == 99) "懐かしい" else "語彙$index",
+                    sentences = listOf(sentence("sentence-$index", "Sentence $index")),
+                )
+            }
+        val request = CurationRequest("run", "request-search", candidates)
+        setScreen(
+            state =
+                VideoMiningUiState(
+                    runState = MiningRunState.Curating(request),
+                    curation = curationState(request),
+                ),
+        )
+        val tailTag = VideoMiningTestTags.candidate(candidates.last().candidateId)
+
+        composeRule.onNodeWithTag(tailTag).assertDoesNotExist()
+        composeRule.onNodeWithTag(CURATION_SEARCH_TEST_TAG).performTextInput("懐かしい")
+
+        composeRule.onNodeWithTag(tailTag).assertIsDisplayed()
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.candidate(candidates.first().candidateId))
+            .assertDoesNotExist()
+    }
+
+    @Test
     fun nonFinalCurationPageShowsPositionAndNextPageAction() {
         val request = request().copy(page = CurationPage(0, 2, 0, 4))
         setScreen(
             state =
                 VideoMiningUiState(
                     runState = MiningRunState.Curating(request),
-                    curation =
-                        CurationUiState(
-                            runId = request.runId,
-                            requestId = request.requestId,
-                            candidates =
-                                request.candidates.map {
-                                    CurationCandidateUiState(
-                                        candidate = it,
-                                        selected = true,
-                                        sentenceId = it.defaultSentenceId,
-                                    )
-                                },
-                            page = request.page,
-                        ),
+                    curation = curationState(request),
                 ),
         )
 
         composeRule.onNodeWithText("Page 1 of 2 · items 1–2 of 4").assertExists()
-        composeRule.onNodeWithText("Continue to next page with 2 selected on this page").assertExists()
+        composeRule.onNodeWithText("Next (2)").assertExists()
     }
 
     @Test
@@ -403,6 +484,63 @@ class VideoMiningScreenTest {
     }
 
     @Test
+    fun terminalFailureSuppressesMatchingCommandErrorAndKeepsDiagnosticsBehindDetails() {
+        setScreen(
+            state =
+                VideoMiningUiState(
+                    video = DocumentSlotState(document("video", "episode.mkv")),
+                    subtitle = DocumentSlotState(document("subtitle", "episode.srt")),
+                    runState =
+                        MiningRunState.Failed(
+                            runId = "run",
+                            failure = MiningFailure("Protocol detail 37", retryable = true),
+                            result = null,
+                        ),
+                    commandError = MiningCommandError.START,
+                ),
+        )
+
+        composeRule.onAllNodesWithTag(MINING_FAILURE_TEST_TAG).assertCountEquals(1)
+        composeRule.onNodeWithText("Protocol detail 37").assertDoesNotExist()
+        composeRule.onNodeWithText("Details").performClick()
+        composeRule.onNodeWithText("Protocol detail 37").assertIsDisplayed()
+        composeRule.onNodeWithText("Retry").assertExists()
+        composeRule.onNodeWithText("Start over").assertExists()
+    }
+
+    @Test
+    fun curationCommandFailureStaysVisibleInFixedFooterWhileListIsDeep() {
+        val candidates =
+            (0 until 100).map { index ->
+                candidate(
+                    id = "candidate-$index",
+                    form = "語彙$index",
+                    sentences = listOf(sentence("sentence-$index", "Sentence $index")),
+                )
+            }
+        val request = CurationRequest("run", "request-deep", candidates)
+        setScreen(
+            state =
+                VideoMiningUiState(
+                    runState = MiningRunState.Curating(request),
+                    curation = curationState(request),
+                    commandError = MiningCommandError.CURATION,
+                ),
+        )
+
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(
+                hasTestTag(VideoMiningTestTags.candidate(candidates.last().candidateId)),
+            )
+
+        composeRule.onAllNodesWithTag(MINING_FAILURE_TEST_TAG).assertCountEquals(1)
+        composeRule
+            .onNodeWithText("Your vocabulary choices could not be submitted.")
+            .assertIsDisplayed()
+    }
+
+    @Test
     fun resultUsesRetainedNamesWithoutExposingEnginePaths() {
         val rawVideoPath = "/proc/self/fd/41"
         val rawSubtitlePath = "/data/user/0/com.ankiminer.android/cache/run/subtitle.srt"
@@ -461,7 +599,107 @@ class VideoMiningScreenTest {
         )
 
         composeRule.onNodeWithTag(VideoMiningTestTags.PROGRESS).assertExists()
-        composeRule.onNodeWithText("100 of 100").assertExists()
+        composeRule.onNodeWithText("100 of 100 · 100%").assertExists()
+    }
+
+    @Test
+    fun progressHasOneConciseLiveRegionAndOneContinuousCount() {
+        setScreen(
+            state =
+                VideoMiningUiState(
+                    runState =
+                        MiningRunState.Running(
+                            "run",
+                            MiningProgress(
+                                current = 47,
+                                total = 100,
+                                description = "Analyzing subtitles",
+                            ),
+                        ),
+                ),
+        )
+
+        composeRule
+            .onAllNodes(
+                SemanticsMatcher.keyIsDefined(SemanticsProperties.LiveRegion),
+            ).assertCountEquals(1)
+        composeRule.onNodeWithText("47 of 100 · 47%").assertExists()
+        composeRule.onNodeWithText("Mining in progress").assertExists()
+    }
+
+    @Test
+    fun pageAndFailureTransitionsResetDeepScrollToTheHeading() {
+        val candidates =
+            (0 until 100).map { index ->
+                candidate(
+                    id = "candidate-$index",
+                    form = "語彙$index",
+                    sentences = listOf(sentence("sentence-$index", "Sentence $index")),
+                )
+            }
+        val firstRequest =
+            CurationRequest(
+                runId = "run",
+                requestId = "request-scroll",
+                candidates = candidates,
+                page = CurationPage(0, 2, 0, 200),
+            )
+        lateinit var listState: LazyListState
+        var state by
+            mutableStateOf(
+                VideoMiningUiState(
+                    runState = MiningRunState.Curating(firstRequest),
+                    curation = curationState(firstRequest),
+                ),
+            )
+        composeRule.setContent {
+            AnkiMinerTheme {
+                listState = rememberLazyListState()
+                ScreenUnderTest(state = state, listState = listState)
+            }
+        }
+
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(
+                hasTestTag(VideoMiningTestTags.candidate(candidates.last().candidateId)),
+            )
+        val secondRequest =
+            firstRequest.copy(page = CurationPage(1, 2, 100, 200))
+        composeRule.runOnIdle {
+            state =
+                state.copy(
+                    runState = MiningRunState.Curating(secondRequest),
+                    curation = curationState(secondRequest),
+                )
+        }
+        composeRule.waitForIdle()
+        composeRule.runOnIdle { assertEquals(0, listState.firstVisibleItemIndex) }
+        composeRule.onNodeWithText("Choose vocabulary").assertIsDisplayed()
+
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(
+                hasTestTag(VideoMiningTestTags.candidate(candidates.last().candidateId)),
+            )
+        composeRule.runOnIdle {
+            state =
+                state.copy(
+                    runState =
+                        MiningRunState.Failed(
+                            runId = "run",
+                            failure = MiningFailure("details", retryable = false),
+                            result = null,
+                        ),
+                    curation = null,
+                )
+        }
+        composeRule.waitForIdle()
+
+        composeRule.runOnIdle { assertEquals(0, listState.firstVisibleItemIndex) }
+        composeRule
+            .onNodeWithText("This mining run stopped before it could finish.")
+            .assertIsDisplayed()
     }
 
     @Test
@@ -473,7 +711,10 @@ class VideoMiningScreenTest {
                 ),
         )
 
-        composeRule.onNodeWithText("Anki notes created: 2").assertExists()
+        composeRule.onNodeWithText("Created").assertExists()
+        composeRule.onNodeWithText("Anki notes created: 2").assertDoesNotExist()
+        composeRule.onNodeWithText("Anki note IDs: 10, 11").assertDoesNotExist()
+        composeRule.onNodeWithText("Details").performClick()
         composeRule.onNodeWithText("Anki note IDs: 10, 11").assertExists()
         composeRule.onNodeWithText("Anki card IDs", substring = true).assertDoesNotExist()
     }
@@ -492,15 +733,24 @@ class VideoMiningScreenTest {
             .onNodeWithTag(VideoMiningTestTags.CONTENT)
             .performScrollToNode(hasTestTag(VideoMiningTestTags.RESULT))
         composeRule
-            .onNodeWithText(
-                "Mined forms: ${result.minedForms.take(100).joinToString()}, +150 more",
-            ).assertExists()
+            .onNodeWithText("• error-1")
+            .assertExists()
+        composeRule.onNodeWithText("• error-3").assertExists()
+        composeRule.onNodeWithText("• error-4").assertDoesNotExist()
         composeRule
-            .onNodeWithText(
-                "Anki note IDs: ${result.cardIds.take(100).joinToString()}, +150 more",
-            ).assertExists()
+            .onNodeWithText("Mined forms:", substring = true)
+            .assertDoesNotExist()
+        composeRule.onNodeWithText("Anki note IDs:", substring = true).assertDoesNotExist()
+
+        composeRule.onNodeWithText("Details").performClick()
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(hasText("• error-50"))
         composeRule.onNodeWithText("• error-50").assertExists()
         composeRule.onNodeWithText("• error-51").assertDoesNotExist()
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(hasText("+75 more"))
         composeRule.onNodeWithText("+75 more").assertExists()
     }
 
@@ -527,6 +777,7 @@ class VideoMiningScreenTest {
         onSelectAllCandidates: (Boolean) -> Unit = {},
         onSelectSentence: (String, String) -> Unit = { _, _ -> },
         onConfirmCuration: () -> Unit = {},
+        onCancel: () -> Unit = {},
     ) {
         composeRule.setContent {
             AnkiMinerTheme {
@@ -538,6 +789,7 @@ class VideoMiningScreenTest {
                     onSelectAllCandidates = onSelectAllCandidates,
                     onSelectSentence = onSelectSentence,
                     onConfirmCuration = onConfirmCuration,
+                    onCancel = onCancel,
                 )
             }
         }
@@ -556,6 +808,8 @@ class VideoMiningScreenTest {
         onCancel: () -> Unit = {},
         onRetry: () -> Unit = {},
         onReset: () -> Unit = {},
+        onToggleCandidate: (String) -> Unit = {},
+        listState: LazyListState = rememberLazyListState(),
     ) {
         VideoMiningScreen(
             state = state,
@@ -566,7 +820,7 @@ class VideoMiningScreenTest {
             onDismissDocumentError = {},
             onDismissCommandError = {},
             onStart = onStart,
-            onToggleCandidate = {},
+            onToggleCandidate = onToggleCandidate,
             onSelectAllCandidates = onSelectAllCandidates,
             onSelectSentence = onSelectSentence,
             onConfirmCuration = onConfirmCuration,
@@ -574,6 +828,7 @@ class VideoMiningScreenTest {
             onRetry = onRetry,
             onReset = onReset,
             modifier = Modifier.testTag(VideoMiningTestTags.SCREEN),
+            listState = listState,
         )
     }
 
@@ -594,6 +849,27 @@ class VideoMiningScreenTest {
                 ),
         )
     }
+
+    private fun curationState(
+        request: CurationRequest,
+        selectedCandidateIds: Set<String> =
+            request.candidates.mapTo(linkedSetOf(), CurationCandidate::candidateId),
+        focusedCandidateId: String? = selectedCandidateIds.firstOrNull(),
+        previousPageSelectedCount: Int = 0,
+    ): CurationUiState =
+        CurationUiState(
+            runId = request.runId,
+            requestId = request.requestId,
+            candidates = request.candidates,
+            selectedCandidateIds = selectedCandidateIds,
+            sentenceIds =
+                request.candidates.associate {
+                    it.candidateId to it.defaultSentenceId
+                },
+            focusedCandidateId = focusedCandidateId,
+            previousPageSelectedCount = previousPageSelectedCount,
+            page = request.page,
+        )
 
     private fun candidate(
         id: String,

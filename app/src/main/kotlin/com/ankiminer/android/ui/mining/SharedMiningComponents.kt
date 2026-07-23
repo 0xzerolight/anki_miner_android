@@ -1,48 +1,125 @@
 package com.ankiminer.android.ui.mining
 
+import android.content.ClipData
 import androidx.annotation.StringRes
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedCard
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.ProgressIndicatorDefaults
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.error
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import com.ankiminer.android.R
+import com.ankiminer.android.media.SafDocument
+import com.ankiminer.android.mining.CurationCandidate
 import com.ankiminer.android.mining.CurationPage
+import com.ankiminer.android.mining.CurationSentence
 import com.ankiminer.android.mining.MiningProgress
 import com.ankiminer.android.mining.ProcessingResult
+import com.ankiminer.android.ui.theme.AdaptiveActionGroup
+import com.ankiminer.android.ui.theme.CompactLayoutWidthDp
+import com.ankiminer.android.ui.theme.MetricTile
 import com.ankiminer.android.ui.theme.actionBorder
+import com.ankiminer.android.ui.theme.forwardButtonColors
 import com.ankiminer.android.ui.theme.outlinedActionButtonColors
+import kotlinx.coroutines.launch
+
+internal const val MINING_FAILURE_TEST_TAG = "mining_failure"
+internal const val CURATION_SEARCH_TEST_TAG = "curation_search"
 
 internal data class MiningResultSource(
     @param:StringRes val label: Int,
     val displayName: String?,
 )
 
-/**
- * Shared runtime-conflict card. Mining conflicts expose direct navigation back to owning run.
- */
+internal data class MiningFailureAction(
+    val label: String,
+    val testTag: String? = null,
+    val enabled: Boolean = true,
+    val onClick: () -> Unit,
+)
+
+internal data class MiningSourceItem(
+    val label: String,
+    val document: SafDocument?,
+    val isResolving: Boolean,
+    val enabled: Boolean,
+    val pickTestTag: String,
+    val clearTestTag: String,
+    val readKind: DocumentReadKind,
+    val onPick: () -> Unit,
+    val onClear: () -> Unit,
+)
+
+internal enum class ResultIssueTone {
+    WARNING,
+    FAILURE,
+}
+
 @Composable
 internal fun RuntimeConflictNotice(
     text: String,
@@ -68,18 +145,35 @@ internal fun RuntimeConflictNotice(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun MiningProgressPanel(
-    title: String,
     progress: MiningProgress?,
     testTag: String,
     modifier: Modifier = Modifier,
 ) {
+    val fraction = progress?.fraction?.coerceIn(0f, 1f)
+    val animatedFraction by
+        animateFloatAsState(
+            targetValue = fraction ?: 0f,
+            animationSpec = ProgressIndicatorDefaults.ProgressAnimationSpec,
+            label = "mining progress",
+        )
+    val percentage = fraction?.let { (it * 100).toInt().coerceIn(0, 100) }
+    val coarsePercentage = percentage?.let { (it / 10) * 10 }
+    val stage =
+        progress?.description
+            ?.takeIf(String::isNotBlank)
+            ?: stringResource(R.string.mining_progress_working)
+    val announcement =
+        remember(stage, coarsePercentage) {
+            coarsePercentage?.let { "$stage, $it%" } ?: stage
+        }
+
     OutlinedCard(
         modifier =
             modifier
                 .fillMaxWidth()
-                .semantics { liveRegion = LiveRegionMode.Polite }
                 .testTag(testTag),
     ) {
         Column(
@@ -87,38 +181,80 @@ internal fun MiningProgressPanel(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(
-                text = title,
+                text = stringResource(R.string.running_title),
                 modifier = Modifier.semantics { heading() },
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
             )
-            progress?.description?.takeIf(String::isNotBlank)?.let { description ->
-                Text(text = description, style = MaterialTheme.typography.bodyLarge)
-            }
-            val fraction = progress?.fraction
+            Text(
+                text = stage,
+                modifier =
+                    Modifier.clearAndSetSemantics {
+                        liveRegion = LiveRegionMode.Polite
+                        contentDescription = announcement
+                    },
+                style = MaterialTheme.typography.bodyLarge,
+            )
             if (fraction == null) {
-                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                LinearProgressIndicator(
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .height(6.dp)
+                            .clip(RoundedCornerShape(3.dp)),
+                    strokeCap = StrokeCap.Round,
+                    gapSize = 0.dp,
+                )
             } else {
                 LinearProgressIndicator(
-                    progress = { fraction },
-                    modifier = Modifier.fillMaxWidth(),
+                    progress = { animatedFraction },
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .height(6.dp)
+                            .clip(RoundedCornerShape(3.dp)),
+                    strokeCap = StrokeCap.Round,
+                    gapSize = 0.dp,
+                    drawStopIndicator = {},
                 )
             }
             if (progress != null && progress.total > 0) {
-                Text(stringResource(R.string.progress_count, progress.current, progress.total))
+                Text(
+                    stringResource(
+                        R.string.progress_count_with_percent,
+                        progress.current,
+                        progress.total,
+                        requireNotNull(percentage),
+                    ),
+                )
             }
         }
     }
 }
 
 @Composable
-internal fun MiningErrorMessage(
+internal fun MiningFailureCard(
     message: String,
-    onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
+    diagnosticDetails: String? = null,
+    primaryAction: MiningFailureAction? = null,
+    secondaryAction: MiningFailureAction? = null,
 ) {
+    var detailsExpanded by rememberSaveable(diagnosticDetails) { mutableStateOf(false) }
+    val actionColors =
+        ButtonDefaults.textButtonColors(
+            contentColor = MaterialTheme.colorScheme.onErrorContainer,
+            disabledContentColor = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.65f),
+        )
     Surface(
-        modifier = modifier.semantics { liveRegion = LiveRegionMode.Polite },
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .semantics {
+                    liveRegion = LiveRegionMode.Polite
+                    error(message)
+                }
+                .testTag(MINING_FAILURE_TEST_TAG),
         color = MaterialTheme.colorScheme.errorContainer,
         contentColor = MaterialTheme.colorScheme.onErrorContainer,
         shape = MaterialTheme.shapes.medium,
@@ -127,9 +263,62 @@ internal fun MiningErrorMessage(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Text(message)
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.dismiss_error))
+            Text(message, style = MaterialTheme.typography.bodyLarge)
+            if (detailsExpanded && diagnosticDetails != null) {
+                Text(
+                    text = diagnosticDetails,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (diagnosticDetails != null) {
+                    TextButton(
+                        onClick = { detailsExpanded = !detailsExpanded },
+                        colors = actionColors,
+                    ) {
+                        Text(
+                            stringResource(
+                                if (detailsExpanded) R.string.hide_details else R.string.details,
+                            ),
+                        )
+                    }
+                    if (detailsExpanded) {
+                        CopyDiagnosticsButton(
+                            diagnostics = diagnosticDetails,
+                            colors = actionColors,
+                        )
+                    }
+                }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                secondaryAction?.let { action ->
+                    TextButton(
+                        onClick = action.onClick,
+                        enabled = action.enabled,
+                        modifier = action.testTag?.let { Modifier.testTag(it) } ?: Modifier,
+                        colors = actionColors,
+                    ) {
+                        Text(action.label)
+                    }
+                }
+                primaryAction?.let { action ->
+                    TextButton(
+                        onClick = action.onClick,
+                        enabled = action.enabled,
+                        modifier = action.testTag?.let { Modifier.testTag(it) } ?: Modifier,
+                        colors = actionColors,
+                    ) {
+                        Text(action.label)
+                    }
+                }
             }
         }
     }
@@ -142,52 +331,308 @@ internal fun StickyCurationActions(
     isFinalPage: Boolean,
     curationPending: Boolean,
     cancelPending: Boolean,
+    requiresCancelConfirmation: Boolean,
+    commandErrorMessage: String?,
     confirmTestTag: String,
     cancelTestTag: String,
+    onDismissCommandError: () -> Unit,
     onConfirm: () -> Unit,
     onCancel: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    var showCancelConfirmation by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(cancelPending) {
+        if (cancelPending) showCancelConfirmation = false
+    }
+
     Surface(
-        modifier =
-            modifier
-                .fillMaxWidth()
-                .imePadding(),
+        modifier = modifier.fillMaxWidth(),
         color = MaterialTheme.colorScheme.surface,
         shadowElevation = 6.dp,
     ) {
-        Row(
+        Column(
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            OutlinedButton(
-                onClick = onCancel,
-                enabled = !cancelPending,
-                modifier =
-                    Modifier
-                        .weight(1f)
-                        .testTag(cancelTestTag),
-            ) {
-                Text(stringResource(R.string.cancel_mining))
+            commandErrorMessage?.let { error ->
+                MiningFailureCard(
+                    message = error,
+                    primaryAction =
+                        MiningFailureAction(
+                            label = stringResource(R.string.dismiss_error),
+                            onClick = onDismissCommandError,
+                        ),
+                )
             }
-            Button(
-                onClick = onConfirm,
-                enabled = !curationPending && !cancelPending,
+            AdaptiveActionGroup(
+                primary = { actionModifier ->
+                    Button(
+                        onClick = onConfirm,
+                        enabled = !curationPending && !cancelPending,
+                        modifier =
+                            actionModifier
+                                .heightIn(min = 48.dp)
+                                .testTag(confirmTestTag),
+                        colors = forwardButtonColors(),
+                    ) {
+                        Text(
+                            text =
+                                stringResource(
+                                    when {
+                                        page == null -> R.string.confirm_curation
+                                        !isFinalPage -> R.string.confirm_curation_page
+                                        else -> R.string.confirm_curation_final_page
+                                    },
+                                    selectedCount,
+                                ),
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                },
+                secondary = { actionModifier ->
+                    OutlinedButton(
+                        onClick = {
+                            if (requiresCancelConfirmation) {
+                                showCancelConfirmation = true
+                            } else {
+                                onCancel()
+                            }
+                        },
+                        enabled = !cancelPending,
+                        modifier =
+                            actionModifier
+                                .heightIn(min = 48.dp)
+                                .testTag(cancelTestTag),
+                        colors = outlinedActionButtonColors(),
+                        border = actionBorder(enabled = !cancelPending),
+                    ) {
+                        if (cancelPending) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                strokeWidth = 2.dp,
+                            )
+                            Text(
+                                text = stringResource(R.string.cancelling),
+                                modifier = Modifier.padding(start = 8.dp),
+                                maxLines = 2,
+                            )
+                        } else {
+                            Text(
+                                text = stringResource(R.string.cancel_mining),
+                                maxLines = 2,
+                            )
+                        }
+                    }
+                },
+            )
+        }
+    }
+
+    if (showCancelConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showCancelConfirmation = false },
+            title = { Text(stringResource(R.string.cancel_mining_confirmation_title)) },
+            text = { Text(stringResource(R.string.cancel_mining_confirmation_body)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showCancelConfirmation = false
+                        onCancel()
+                    },
+                ) {
+                    Text(stringResource(R.string.cancel_mining_confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCancelConfirmation = false }) {
+                    Text(stringResource(R.string.cancel_mining_keep))
+                }
+            },
+        )
+    }
+}
+
+@Composable
+internal fun SourcesCard(
+    sources: List<MiningSourceItem>,
+    modifier: Modifier = Modifier,
+) {
+    OutlinedCard(modifier.fillMaxWidth()) {
+        sources.forEachIndexed { index, source ->
+            ListItem(
+                modifier = Modifier.fillMaxWidth(),
+                supportingContent = {
+                    if (source.isResolving) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                strokeWidth = 2.dp,
+                            )
+                            DocumentReadProgressText(
+                                documentReadProgress(
+                                    source.readKind,
+                                    source.document?.displayName,
+                                ),
+                            )
+                        }
+                    } else {
+                        Text(
+                            source.document?.displayName
+                                ?: stringResource(R.string.no_file_selected),
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                },
+                trailingContent = {
+                    SourceRowActions(source)
+                },
+                headlineContent = {
+                    Text(
+                        text = source.label,
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                },
+            )
+            if (index != sources.lastIndex) HorizontalDivider()
+        }
+    }
+}
+
+@Composable
+private fun SourceRowActions(source: MiningSourceItem) {
+    val stack = LocalDensity.current.fontScale >= 1.3f
+    val content: @Composable () -> Unit = {
+        OutlinedButton(
+            onClick = source.onPick,
+            enabled = source.enabled && !source.isResolving,
+            modifier =
+                Modifier
+                    .heightIn(min = 48.dp)
+                    .testTag(source.pickTestTag),
+            colors = outlinedActionButtonColors(),
+            border = actionBorder(enabled = source.enabled && !source.isResolving),
+            contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
+        ) {
+            Text(
+                stringResource(
+                    if (source.document == null) R.string.choose_file else R.string.replace_file,
+                ),
+                maxLines = 2,
+            )
+        }
+        if (source.document != null) {
+            IconButton(
+                onClick = source.onClear,
+                enabled = source.enabled && !source.isResolving,
                 modifier =
                     Modifier
-                        .weight(2f)
-                        .testTag(confirmTestTag),
-            ) {
-                Text(
-                    stringResource(
-                        when {
-                            page == null -> R.string.confirm_curation
-                            !isFinalPage -> R.string.confirm_curation_page
-                            else -> R.string.confirm_curation_final_page
-                        },
-                        selectedCount,
+                        .size(48.dp)
+                        .testTag(source.clearTestTag),
+                colors =
+                    IconButtonDefaults.iconButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error,
+                        disabledContentColor =
+                            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f),
                     ),
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_remove),
+                    contentDescription = stringResource(R.string.remove_file),
+                )
+            }
+        }
+    }
+    if (stack) {
+        Column(
+            horizontalAlignment = Alignment.End,
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            content()
+        }
+    } else {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            content()
+        }
+    }
+}
+
+@Composable
+internal fun CurationControls(
+    query: String,
+    filter: CurationFilter,
+    sort: CurationSort,
+    enabled: Boolean,
+    onQueryChanged: (String) -> Unit,
+    onFilterChanged: (CurationFilter) -> Unit,
+    onSortChanged: (CurationSort) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        OutlinedTextField(
+            value = query,
+            onValueChange = onQueryChanged,
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .testTag(CURATION_SEARCH_TEST_TAG),
+            enabled = enabled,
+            singleLine = true,
+            label = { Text(stringResource(R.string.curation_search)) },
+        )
+        Row(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            CurationFilter.entries.forEach { option ->
+                FilterChip(
+                    selected = filter == option,
+                    onClick = { onFilterChanged(option) },
+                    enabled = enabled,
+                    label = {
+                        Text(
+                            stringResource(
+                                when (option) {
+                                    CurationFilter.ALL -> R.string.curation_filter_all
+                                    CurationFilter.SELECTED -> R.string.curation_filter_selected
+                                    CurationFilter.EXCLUDED -> R.string.curation_filter_excluded
+                                },
+                            ),
+                        )
+                    },
+                )
+            }
+        }
+        Row(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            CurationSort.entries.forEach { option ->
+                FilterChip(
+                    selected = sort == option,
+                    onClick = { onSortChanged(option) },
+                    enabled = enabled,
+                    label = {
+                        Text(
+                            stringResource(
+                                when (option) {
+                                    CurationSort.FREQUENCY -> R.string.curation_sort_frequency
+                                    CurationSort.OCCURRENCES -> R.string.curation_sort_occurrences
+                                },
+                            ),
+                        )
+                    },
                 )
             }
         }
@@ -195,26 +640,269 @@ internal fun StickyCurationActions(
 }
 
 @Composable
-internal fun MiningResultSummary(
+internal fun CurationCandidateHeader(
+    candidate: CurationCandidate,
+    selected: Boolean,
+    expanded: Boolean,
+    enabled: Boolean,
+    candidateTestTag: String,
+    toggleTestTag: String,
+    onToggle: () -> Unit,
+) {
+    val stateText =
+        stringResource(
+            if (selected) R.string.candidate_state_selected else R.string.candidate_state_excluded,
+        )
+    val shape =
+        if (expanded) {
+            RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)
+        } else {
+            MaterialTheme.shapes.medium
+        }
+    Surface(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .testTag(candidateTestTag)
+                .toggleable(
+                    value = selected,
+                    enabled = enabled,
+                    role = Role.Checkbox,
+                    onValueChange = { onToggle() },
+                ).semantics(mergeDescendants = true) {
+                    stateDescription = stateText
+                },
+        color =
+            if (selected) {
+                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
+            } else {
+                MaterialTheme.colorScheme.surfaceContainerLow
+            },
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        shape = shape,
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Checkbox(
+                checked = selected,
+                onCheckedChange = null,
+                enabled = enabled,
+                modifier =
+                    Modifier
+                        .clearAndSetSemantics {}
+                        .testTag(toggleTestTag),
+            )
+            Text(
+                text =
+                    buildAnnotatedString {
+                        withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
+                            append(candidate.minedForm)
+                        }
+                        candidate.expressionReading.takeIf {
+                            it.isNotBlank() && it != candidate.minedForm
+                        }?.let { reading ->
+                            append(" · ")
+                            append(reading)
+                        }
+                        append(" · ")
+                        append(
+                            buildCandidateMetadata(
+                                partOfSpeech = candidate.partOfSpeech,
+                                frequencyRank = candidate.frequencyRank,
+                                occurrenceCount = candidate.occurrenceCount,
+                            ),
+                        )
+                    },
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+@Composable
+private fun buildCandidateMetadata(
+    partOfSpeech: String?,
+    frequencyRank: Long?,
+    occurrenceCount: Long,
+): String =
+    listOf(
+        partOfSpeech?.takeIf(String::isNotBlank)
+            ?: stringResource(R.string.candidate_part_of_speech_unknown),
+        frequencyRank?.let { stringResource(R.string.candidate_frequency_compact, it) }
+            ?: stringResource(R.string.candidate_frequency_unknown_compact),
+        stringResource(R.string.candidate_occurrences_compact, occurrenceCount),
+    ).joinToString(" · ")
+
+@Composable
+internal fun CurationSentenceChoice(
+    candidate: CurationCandidate,
+    sentence: CurationSentence,
+    selected: Boolean,
+    enabled: Boolean,
+    isLast: Boolean,
+    testTag: String,
+    onClick: () -> Unit,
+) {
+    val sentenceDescription =
+        stringResource(R.string.sentence_selection_description, sentence.sentence)
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        shape =
+            if (isLast) {
+                RoundedCornerShape(bottomStart = 12.dp, bottomEnd = 12.dp)
+            } else {
+                RoundedCornerShape(0.dp)
+            },
+    ) {
+        Column {
+            HorizontalDivider()
+            Row(
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .selectable(
+                            selected = selected,
+                            enabled = enabled,
+                            role = Role.RadioButton,
+                            onClick = onClick,
+                        ).testTag(testTag)
+                        .semantics { contentDescription = sentenceDescription }
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.Top,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                RadioButton(
+                    selected = selected,
+                    onClick = null,
+                    enabled = enabled,
+                )
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        text = candidate.minedForm,
+                        style = MaterialTheme.typography.labelMedium,
+                    )
+                    Text(text = sentence.sentence, style = MaterialTheme.typography.bodyMedium)
+                    if (
+                        sentence.sentenceFurigana.isNotBlank() &&
+                        sentence.sentenceFurigana != sentence.sentence
+                    ) {
+                        Text(
+                            text = sentence.sentenceFurigana,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+internal fun LazyListScope.miningResultItems(
     result: ProcessingResult,
     sources: List<MiningResultSource>,
     partial: Boolean,
+    failed: Boolean,
+    detailsExpanded: Boolean,
     testTag: String,
-    modifier: Modifier = Modifier,
+    keyPrefix: String,
+    onToggleDetails: () -> Unit,
 ) {
     val minedForms = result.minedForms.boundedResultItems(MAX_RESULT_SUMMARY_ITEMS)
-    val cardIds = result.cardIds.boundedResultItems(MAX_RESULT_SUMMARY_ITEMS)
-    val errors = result.errors.boundedResultItems(MAX_RESULT_ERROR_LINES)
+    val noteIds = result.cardIds.boundedResultItems(MAX_RESULT_SUMMARY_ITEMS)
+    val issues = result.errors.boundedResultItems(MAX_RESULT_ERROR_LINES)
+    item(
+        key = "$keyPrefix:summary",
+        contentType = "header",
+    ) {
+        MiningResultSummary(
+            result = result,
+            sources = sources,
+            partial = partial,
+            issuePreview =
+                if (detailsExpanded) emptyList() else issues.items.take(RESULT_ISSUE_PREVIEW_COUNT),
+            issueTone = if (failed) ResultIssueTone.FAILURE else ResultIssueTone.WARNING,
+            detailsExpanded = detailsExpanded,
+            hasDetails =
+                minedForms.items.isNotEmpty() ||
+                    noteIds.items.isNotEmpty() ||
+                    issues.items.isNotEmpty(),
+            onToggleDetails = onToggleDetails,
+            testTag = testTag,
+        )
+    }
+    if (!detailsExpanded) return
+
+    item(
+        key = "$keyPrefix:details",
+        contentType = "candidate",
+    ) {
+        ResultDetailsCard(
+            result = result,
+            sources = sources,
+            minedForms = minedForms,
+            noteIds = noteIds,
+        )
+    }
+    items(
+        count = issues.items.size,
+        key = { index -> "$keyPrefix:issue:$index:${issues.items[index].hashCode()}" },
+        contentType = { "sentence" },
+    ) { index ->
+        ResultIssueRow(
+            message = issues.items[index],
+            tone = if (failed) ResultIssueTone.FAILURE else ResultIssueTone.WARNING,
+        )
+    }
+    if (issues.remainingCount > 0) {
+        item(
+            key = "$keyPrefix:issues_remaining",
+            contentType = "actions",
+        ) {
+            Text(
+                text = stringResource(R.string.result_more_items, issues.remainingCount),
+                color =
+                    if (failed) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.onTertiaryContainer
+                    },
+            )
+        }
+    }
+}
+
+@Composable
+private fun MiningResultSummary(
+    result: ProcessingResult,
+    sources: List<MiningResultSource>,
+    partial: Boolean,
+    issuePreview: List<String>,
+    issueTone: ResultIssueTone,
+    detailsExpanded: Boolean,
+    hasDetails: Boolean,
+    onToggleDetails: () -> Unit,
+    testTag: String,
+) {
     OutlinedCard(
         modifier =
-            modifier
+            Modifier
                 .fillMaxWidth()
                 .testTag(testTag),
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            ResultMetricGrid(result)
             if (partial) {
                 Text(
                     text = stringResource(R.string.partial_result_title),
@@ -222,52 +910,182 @@ internal fun MiningResultSummary(
                     fontWeight = FontWeight.Bold,
                 )
             }
-            Text(stringResource(R.string.result_cards_created, result.cardsCreated))
-            Text(stringResource(R.string.result_new_words, result.newWordsFound))
-            Text(stringResource(R.string.result_total_words, result.totalWordsFound))
-            Text(stringResource(R.string.result_comprehension, result.comprehensionPercentage))
-            Text(stringResource(R.string.result_elapsed, result.elapsedTime))
             sources.forEach { source ->
                 Text(
                     stringResource(
                         source.label,
                         source.displayName ?: stringResource(R.string.result_unknown_file),
                     ),
+                    style = MaterialTheme.typography.bodyMedium,
                 )
             }
-            Text(
-                stringResource(
-                    R.string.result_mined_forms,
-                    minedForms.summaryText(),
-                ),
-            )
-            Text(
-                stringResource(
-                    R.string.result_card_ids,
-                    cardIds.summaryText(),
-                ),
-            )
-            if (errors.items.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = stringResource(R.string.result_errors_title),
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.error,
-                )
-                errors.items.forEach { error ->
+            issuePreview.forEach { issue ->
+                ResultIssueRow(message = issue, tone = issueTone)
+            }
+            if (hasDetails) {
+                TextButton(
+                    onClick = onToggleDetails,
+                    modifier = Modifier.align(Alignment.End),
+                ) {
                     Text(
-                        text = stringResource(R.string.result_error_item, error),
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                }
-                if (errors.remainingCount > 0) {
-                    Text(
-                        text = stringResource(R.string.result_more_items, errors.remainingCount),
-                        color = MaterialTheme.colorScheme.error,
+                        stringResource(
+                            if (detailsExpanded) R.string.hide_details else R.string.details,
+                        ),
                     )
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun ResultMetricGrid(result: ProcessingResult) {
+    val skipped = (result.newWordsFound - result.cardsCreated).coerceAtLeast(0)
+    val metrics =
+        listOf(
+            result.cardsCreated.toString() to stringResource(R.string.result_metric_created),
+            stringResource(R.string.result_metric_skipped_new_value, skipped, result.newWordsFound) to
+                stringResource(R.string.result_metric_skipped_new),
+            stringResource(
+                R.string.result_metric_percent_value,
+                result.comprehensionPercentage,
+            ) to stringResource(R.string.result_metric_comprehension),
+            stringResource(R.string.result_metric_elapsed_value, result.elapsedTime) to
+                stringResource(R.string.result_metric_elapsed),
+        )
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val stack =
+            maxWidth < CompactLayoutWidthDp.dp || LocalDensity.current.fontScale >= 1.3f
+        if (stack) {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                metrics.forEach { (value, label) ->
+                    MetricTile(value = value, label = label, modifier = Modifier.fillMaxWidth())
+                }
+            }
+        } else {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                metrics.chunked(2).forEach { row ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        row.forEach { (value, label) ->
+                            MetricTile(
+                                value = value,
+                                label = label,
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ResultDetailsCard(
+    result: ProcessingResult,
+    sources: List<MiningResultSource>,
+    minedForms: BoundedResultItems<String>,
+    noteIds: BoundedResultItems<Long>,
+) {
+    val formsText = minedForms.summaryText()
+    val idsText = noteIds.summaryText()
+    val diagnostics =
+        buildString {
+            appendLine("created=${result.cardsCreated}")
+            appendLine("new=${result.newWordsFound}")
+            appendLine("total=${result.totalWordsFound}")
+            appendLine("comprehension=${result.comprehensionPercentage}")
+            appendLine("elapsed=${result.elapsedTime}")
+            sources.forEach { source ->
+                appendLine("source=${source.displayName ?: "unknown"}")
+            }
+            appendLine("forms=$formsText")
+            appendLine("note_ids=$idsText")
+            result.errors.boundedResultItems(MAX_RESULT_ERROR_LINES).items.forEach { issue ->
+                appendLine("issue=$issue")
+            }
+        }.trim()
+    OutlinedCard(Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.details),
+                modifier = Modifier.semantics { heading() },
+                style = MaterialTheme.typography.titleMedium,
+            )
+            Text(stringResource(R.string.result_mined_forms, formsText))
+            Text(stringResource(R.string.result_card_ids, idsText))
+            CopyDiagnosticsButton(diagnostics = diagnostics)
+        }
+    }
+}
+
+@Composable
+private fun ResultIssueRow(
+    message: String,
+    tone: ResultIssueTone,
+) {
+    val container =
+        when (tone) {
+            ResultIssueTone.WARNING -> MaterialTheme.colorScheme.tertiaryContainer
+            ResultIssueTone.FAILURE -> MaterialTheme.colorScheme.errorContainer
+        }
+    val content =
+        when (tone) {
+            ResultIssueTone.WARNING -> MaterialTheme.colorScheme.onTertiaryContainer
+            ResultIssueTone.FAILURE -> MaterialTheme.colorScheme.onErrorContainer
+        }
+    Surface(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .then(
+                    if (tone == ResultIssueTone.FAILURE) {
+                        Modifier.semantics { error(message) }
+                    } else {
+                        Modifier
+                    },
+                ),
+        color = container,
+        contentColor = content,
+        shape = MaterialTheme.shapes.small,
+    ) {
+        Text(
+            text = stringResource(R.string.result_error_item, message),
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            style = MaterialTheme.typography.bodyMedium,
+        )
+    }
+}
+
+@Composable
+private fun CopyDiagnosticsButton(
+    diagnostics: String,
+    colors: androidx.compose.material3.ButtonColors = ButtonDefaults.textButtonColors(),
+) {
+    val clipboard = LocalClipboard.current
+    val scope = rememberCoroutineScope()
+    TextButton(
+        onClick = {
+            scope.launch {
+                clipboard.setClipEntry(
+                    ClipEntry(
+                        ClipData.newPlainText("Anki Miner diagnostics", diagnostics),
+                    ),
+                )
+            }
+        },
+        colors = colors,
+    ) {
+        Text(stringResource(R.string.copy_diagnostics))
     }
 }
 

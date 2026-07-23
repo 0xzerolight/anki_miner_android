@@ -46,7 +46,6 @@ import com.ankiminer.android.mining.MiningProgress
 import com.ankiminer.android.mining.MiningRunState
 import com.ankiminer.android.mining.NotificationPermissionReadiness
 import com.ankiminer.android.mining.ProcessingResult
-import com.ankiminer.android.ui.reading.ReadingCurationCandidateUiState
 import com.ankiminer.android.ui.reading.ReadingCurationUiState
 import com.ankiminer.android.ui.reading.ReadingDocumentSlotState
 import com.ankiminer.android.ui.reading.ReadingMiningCommandError
@@ -71,7 +70,6 @@ import com.ankiminer.android.ui.settings.SettingTextField
 import com.ankiminer.android.ui.settings.SettingsSection
 import com.ankiminer.android.ui.settings.SettingsSectionHeading
 import com.ankiminer.android.ui.settings.SystemStatusCard
-import com.ankiminer.android.ui.video.CurationCandidateUiState
 import com.ankiminer.android.ui.video.CurationUiState
 import com.ankiminer.android.ui.video.DocumentSlotState
 import com.ankiminer.android.ui.video.MiningCommandError
@@ -146,19 +144,22 @@ internal fun videoAuditState(
                     CurationUiState(
                         runId = request.runId,
                         requestId = request.requestId,
-                        candidates =
-                            candidates.mapIndexed { index, candidate ->
-                                CurationCandidateUiState(
-                                    candidate = candidate,
-                                    selected = index % 3 != 0,
-                                    sentenceId =
-                                        if (index % 4 == 0) {
-                                            candidate.sentences.last().sentenceId
-                                        } else {
-                                            candidate.defaultSentenceId
-                                        },
-                                )
+                        candidates = candidates,
+                        selectedCandidateIds =
+                            candidates.mapIndexedNotNull { index, candidate ->
+                                candidate.candidateId.takeIf { index % 3 != 0 }
+                            }.toSet(),
+                        sentenceIds =
+                            candidates.associate { candidate ->
+                                val index = candidate.candidateId.substringAfterLast("-").toInt()
+                                candidate.candidateId to
+                                    if (index % 4 == 0) {
+                                        candidate.sentences.last().sentenceId
+                                    } else {
+                                        candidate.defaultSentenceId
+                                    }
                             },
+                        focusedCandidateId = candidates.getOrNull(1)?.candidateId,
                     ),
             )
         }
@@ -237,19 +238,22 @@ internal fun readingAuditState(
                     ReadingCurationUiState(
                         runId = request.runId,
                         requestId = request.requestId,
-                        candidates =
-                            candidates.mapIndexed { index, candidate ->
-                                ReadingCurationCandidateUiState(
-                                    candidate = candidate,
-                                    selected = index % 4 != 0,
-                                    sentenceId =
-                                        if (index % 3 == 0) {
-                                            candidate.sentences.last().sentenceId
-                                        } else {
-                                            candidate.defaultSentenceId
-                                        },
-                                )
+                        candidates = candidates,
+                        selectedCandidateIds =
+                            candidates.mapIndexedNotNull { index, candidate ->
+                                candidate.candidateId.takeIf { index % 4 != 0 }
+                            }.toSet(),
+                        sentenceIds =
+                            candidates.associate { candidate ->
+                                val index = candidate.candidateId.substringAfterLast("-").toInt()
+                                candidate.candidateId to
+                                    if (index % 3 == 0) {
+                                        candidate.sentences.last().sentenceId
+                                    } else {
+                                        candidate.defaultSentenceId
+                                    }
                             },
+                        focusedCandidateId = candidates.getOrNull(1)?.candidateId,
                     ),
             )
         }

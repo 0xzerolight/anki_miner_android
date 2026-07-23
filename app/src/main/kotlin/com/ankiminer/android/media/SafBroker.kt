@@ -48,17 +48,17 @@ interface SafBroker {
 
 class SafAccessException(message: String, cause: Throwable? = null) : Exception(message, cause)
 
-class AndroidSafBroker(
+internal class AndroidSafBroker(
     context: Context,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val selectionInventory: SafSelectionInventory =
+        AndroidSafSelectionInventory(context),
 ) : SafBroker {
     private val resolver: ContentResolver = context.applicationContext.contentResolver
     private val grantMonitor = Any()
     private val grantLedger = SafGrantLedger()
     private val cleanupScope = CoroutineScope(SupervisorJob() + ioDispatcher)
 
-    // M3 has no durable selection inventory, so every grant surviving a process restart is
-    // orphaned. The process-wide broker removes those grants before accepting a new owner.
     private val startupReconciler =
         OrphanedSafGrantReconciler(
             object : PersistedSafGrantAccess {
@@ -78,6 +78,7 @@ class AndroidSafBroker(
                     }
                 }
             },
+            selectionInventory,
         )
 
     override suspend fun reconcileStartup() =
@@ -143,7 +144,9 @@ class AndroidSafBroker(
             val parsed = Uri.parse(uri)
             if (parsed.scheme != ContentResolver.SCHEME_CONTENT) return@withContext
             synchronized(grantMonitor) {
+                val durablyOwned = uri in selectionInventory.ownedUris()
                 if (!grantLedger.release(uri)) return@synchronized
+                if (durablyOwned) return@synchronized
                 try {
                     resolver.releasePersistableUriPermission(
                         parsed,
@@ -197,13 +200,16 @@ internal interface PersistedSafGrantAccess {
 /** One-shot process-start reconciliation; a failed pass remains retryable on the next retain. */
 internal class OrphanedSafGrantReconciler(
     private val access: PersistedSafGrantAccess,
+    private val selectionInventory: SafSelectionInventory = TransientSafSelectionInventory(),
 ) {
     private var reconciled = false
 
     fun reconcile() {
         if (reconciled) return
-        val grants = access.readGrantUris()
-        grants.forEach(access::releaseReadGrant)
+        val grants = access.readGrantUris().toSet()
+        selectionInventory.pruneMissingGrants(grants)
+        val ownedUris = selectionInventory.ownedUris()
+        grants.filterNot(ownedUris::contains).forEach(access::releaseReadGrant)
         reconciled = true
     }
 

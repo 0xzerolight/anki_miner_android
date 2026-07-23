@@ -9,6 +9,8 @@ import androidx.lifecycle.viewmodel.CreationExtras
 import com.ankiminer.android.data.RuntimeWorkCoordinator
 import com.ankiminer.android.media.SafBroker
 import com.ankiminer.android.media.SafDocument
+import com.ankiminer.android.media.SafSelectionInventory
+import com.ankiminer.android.media.SafSelectionSlot
 import com.ankiminer.android.mining.CurationRequest
 import com.ankiminer.android.mining.CurationSelection
 import com.ankiminer.android.mining.MiningRunState
@@ -23,7 +25,6 @@ import com.ankiminer.android.ui.mining.MiningPendingAction
 import com.ankiminer.android.ui.mining.MiningPendingState
 import com.ankiminer.android.ui.mining.SharedCurationDraft
 import com.ankiminer.android.ui.mining.defaultCurationDraft
-import com.ankiminer.android.ui.reading.ReadingCurationCandidateUiState
 import com.ankiminer.android.ui.reading.ReadingCurationUiState
 import com.ankiminer.android.ui.reading.ReadingDocumentSelectionError
 import com.ankiminer.android.ui.reading.ReadingDocumentSlotState
@@ -53,6 +54,7 @@ class ReadingMiningViewModel internal constructor(
     private val safBroker: SafBroker,
     private val runtimeWorkState: StateFlow<RuntimeWorkCoordinator.Kind?> = MutableStateFlow(null),
     savedStateHandle: SavedStateHandle = SavedStateHandle(),
+    selectionInventory: SafSelectionInventory? = null,
 ) : ViewModel() {
     private data class LocalState(
         val source: ReadingDocumentSlotState = ReadingDocumentSlotState(),
@@ -60,6 +62,7 @@ class ReadingMiningViewModel internal constructor(
         val sourceKind: ReadingSourceKindUi? = null,
         val subtitleSeriesName: String = "",
         val curationDraft: SharedCurationDraft? = null,
+        val previousPageSelectedCount: Int = 0,
         val pending: MiningPendingState = MiningPendingState(),
         val commandError: ReadingMiningCommandError? = null,
     )
@@ -69,13 +72,35 @@ class ReadingMiningViewModel internal constructor(
         ARCHIVE,
     }
 
-    private val localState = MutableStateFlow(LocalState())
     private var sourceDocumentRequest = 0L
     private var archiveDocumentRequest = 0L
     private var sourceDocumentJob: Job? = null
     private var archiveDocumentJob: Job? = null
-    private val sourceSelection = SavedDocumentSelectionStore(savedStateHandle, "readingMining.source")
-    private val archiveSelection = SavedDocumentSelectionStore(savedStateHandle, "readingMining.archive")
+    private val sourceSelection =
+        SavedDocumentSelectionStore(
+            savedStateHandle = savedStateHandle,
+            keyPrefix = "readingMining.source",
+            inventory = selectionInventory,
+            inventorySlot = SafSelectionSlot.READING_SOURCE,
+        )
+    private val archiveSelection =
+        SavedDocumentSelectionStore(
+            savedStateHandle = savedStateHandle,
+            keyPrefix = "readingMining.archive",
+            inventory = selectionInventory,
+            inventorySlot = SafSelectionSlot.READING_ARCHIVE,
+        )
+    private val subtitleSeriesSelection =
+        SavedTextValueStore(
+            savedStateHandle = savedStateHandle,
+            savedStateKey = "readingMining.subtitleSeriesName",
+            inventory = selectionInventory,
+            inventorySlot = SafSelectionSlot.READING_SUBTITLE_SERIES,
+        )
+    private val localState =
+        MutableStateFlow(
+            LocalState(subtitleSeriesName = subtitleSeriesSelection.restore()),
+        )
 
     /** Small app-shell state; progress-only repository updates are filtered before composition. */
     internal val navigationWorkflowState: StateFlow<NavigationWorkflowState> =
@@ -92,7 +117,10 @@ class ReadingMiningViewModel internal constructor(
         combine(repository.state, localState, runtimeWorkState) { runState, local, activeKind ->
             val curation =
                 (runState as? MiningRunState.Curating)?.request?.let { request ->
-                    request.toUiState(local.curationDraft)
+                    request.toUiState(
+                        draft = local.curationDraft,
+                        previousPageSelectedCount = local.previousPageSelectedCount,
+                    )
                 }
             val repositoryCurationPending =
                 (runState as? MiningRunState.Curating)?.pageSubmissionPending == true
@@ -125,13 +153,20 @@ class ReadingMiningViewModel internal constructor(
                         if (local.curationDraft?.matches(runState.request) == true) {
                             local
                         } else {
-                            local.copy(curationDraft = runState.request.defaultCurationDraft())
+                            local.copy(
+                                curationDraft = runState.request.defaultCurationDraft(),
+                                previousPageSelectedCount =
+                                    local.previousPageSelectedCount.takeIf {
+                                        local.curationDraft?.runId == runState.request.runId
+                                    } ?: 0,
+                            )
                         }
                     }
                 } else if (runState.isTerminal) {
                     localState.update { local ->
                         local.copy(
                             curationDraft = null,
+                            previousPageSelectedCount = 0,
                             pending = local.pending.afterTerminalState(),
                         )
                     }
@@ -150,9 +185,11 @@ class ReadingMiningViewModel internal constructor(
 
     fun onSubtitleSeriesNameChanged(value: String) {
         if (repository.state.value != MiningRunState.Idle || localState.value.pending.start) return
+        val bounded = value.takeCodePoints(MAX_SERIES_NAME_CODE_POINTS)
         localState.update {
-            it.copy(subtitleSeriesName = value.takeCodePoints(MAX_SERIES_NAME_CODE_POINTS))
+            it.copy(subtitleSeriesName = bounded)
         }
+        subtitleSeriesSelection.save(bounded)
     }
 
     fun clearSource() {
@@ -167,10 +204,12 @@ class ReadingMiningViewModel internal constructor(
                 source = ReadingDocumentSlotState(),
                 archive = ReadingDocumentSlotState(),
                 sourceKind = null,
+                subtitleSeriesName = "",
             )
         }
         sourceSelection.clear()
         archiveSelection.clear()
+        subtitleSeriesSelection.clear()
         local.source.document?.let(::releaseDocument)
         local.archive.document?.let(::releaseDocument)
     }
@@ -223,6 +262,7 @@ class ReadingMiningViewModel internal constructor(
                     local.copy(
                         pending = local.pending.begin(MiningPendingAction.START),
                         commandError = null,
+                        previousPageSelectedCount = 0,
                     ),
                 )
             ) {
@@ -295,6 +335,17 @@ class ReadingMiningViewModel internal constructor(
                     selection = selection,
                     pageIndex = runState.request.page?.pageIndex,
                 )
+                if (!runState.request.isFinalPage) {
+                    localState.update { local ->
+                        local.copy(
+                            previousPageSelectedCount =
+                                Math.addExact(
+                                    local.previousPageSelectedCount,
+                                    selection.size,
+                                ),
+                        )
+                    }
+                }
             } catch (failure: CancellationException) {
                 throw failure
             } catch (_: RuntimeException) {
@@ -427,6 +478,7 @@ class ReadingMiningViewModel internal constructor(
         if (source == null) {
             sourceSelection.clear()
             archiveSelection.clear()
+            subtitleSeriesSelection.clear()
             return
         }
         resolveDocument(
@@ -486,7 +538,14 @@ class ReadingMiningViewModel internal constructor(
                             DocumentKind.SOURCE -> acceptResolvedSource(document)
                             DocumentKind.ARCHIVE -> acceptResolvedArchive(document)
                         }
-                    if (!accepted && restoring) selectionStore(kind).clear()
+                    if (!accepted && restoring) {
+                        selectionStore(kind).clear()
+                        if (kind == DocumentKind.SOURCE) {
+                            archiveSelection.clear()
+                            subtitleSeriesSelection.clear()
+                            localState.update { it.copy(subtitleSeriesName = "") }
+                        }
+                    }
                     onResolved?.invoke()
                 } catch (failure: CancellationException) {
                     throw failure
@@ -495,7 +554,10 @@ class ReadingMiningViewModel internal constructor(
                         localState.update { local -> local.withAccessFailure(kind) }
                         if (restoring) {
                             selectionStore(kind).clear()
-                            if (kind == DocumentKind.SOURCE) archiveSelection.clear()
+                            if (kind == DocumentKind.SOURCE) {
+                                archiveSelection.clear()
+                                subtitleSeriesSelection.clear()
+                            }
                         }
                     }
                 }
@@ -515,6 +577,11 @@ class ReadingMiningViewModel internal constructor(
                         ),
                 )
             }
+            releaseDocumentNow(document)
+            return false
+        }
+        if (!sourceSelection.save(document)) {
+            localState.update { local -> local.withAccessFailure(DocumentKind.SOURCE) }
             releaseDocumentNow(document)
             return false
         }
@@ -539,9 +606,12 @@ class ReadingMiningViewModel internal constructor(
         // currently installed archive remains compatible, a late picker result must go stale.
         archiveDocumentRequest += 1
         archiveDocumentJob?.cancel()
-        sourceSelection.save(document)
         if (removedArchive != null || newKind != ReadingSourceKindUi.MOKURO) {
             archiveSelection.clear()
+        }
+        if (newKind != ReadingSourceKindUi.SUBTITLE) {
+            subtitleSeriesSelection.clear()
+            localState.update { it.copy(subtitleSeriesName = "") }
         }
         replacedSource?.let(::releaseDocument)
         removedArchive?.let(::releaseDocument)
@@ -574,12 +644,16 @@ class ReadingMiningViewModel internal constructor(
             releaseDocumentNow(document)
             return false
         }
+        if (!archiveSelection.save(document)) {
+            localState.update { current -> current.withAccessFailure(DocumentKind.ARCHIVE) }
+            releaseDocumentNow(document)
+            return false
+        }
         var replaced: SafDocument? = null
         localState.update { current ->
             replaced = current.archive.document
             current.copy(archive = ReadingDocumentSlotState(document = document))
         }
-        archiveSelection.save(document)
         replaced?.let(::releaseDocument)
         return true
     }
@@ -715,20 +789,20 @@ class ReadingMiningViewModel internal constructor(
         )
     }
 
-    private fun CurationRequest.toUiState(draft: SharedCurationDraft?): ReadingCurationUiState {
+    private fun CurationRequest.toUiState(
+        draft: SharedCurationDraft?,
+        previousPageSelectedCount: Int,
+    ): ReadingCurationUiState {
         val current = draft?.forRequest(this) ?: defaultCurationDraft()
         return ReadingCurationUiState(
             runId = runId,
             requestId = requestId,
             page = page,
-            candidates =
-                candidates.map { candidate ->
-                    ReadingCurationCandidateUiState(
-                        candidate = candidate,
-                        selected = candidate.candidateId in current.selectedCandidateIds,
-                        sentenceId = current.sentenceIds.getValue(candidate.candidateId),
-                    )
-                },
+            candidates = candidates,
+            selectedCandidateIds = current.selectedCandidateIds,
+            sentenceIds = current.sentenceIds,
+            focusedCandidateId = current.focusedCandidateId,
+            previousPageSelectedCount = previousPageSelectedCount,
         )
     }
 
@@ -753,6 +827,7 @@ class ReadingMiningViewModel internal constructor(
         private val repository: ReadingMiningRepository,
         private val safBroker: SafBroker,
         private val runtimeWorkState: StateFlow<RuntimeWorkCoordinator.Kind?> = MutableStateFlow(null),
+        private val selectionInventory: SafSelectionInventory? = null,
         private val savedStateHandleFactory: (CreationExtras) -> SavedStateHandle =
             { extras -> extras.createSavedStateHandle() },
     ) : ViewModelProvider.Factory {
@@ -767,6 +842,7 @@ class ReadingMiningViewModel internal constructor(
                 safBroker = safBroker,
                 runtimeWorkState = runtimeWorkState,
                 savedStateHandle = savedStateHandleFactory(extras),
+                selectionInventory = selectionInventory,
             ) as T
         }
     }
