@@ -6,12 +6,54 @@ import com.ankiminer.android.data.resources.InstalledFrequencySource
 import com.ankiminer.android.data.resources.ResourceManagerState
 import com.ankiminer.android.data.settings.AppSettings
 import com.ankiminer.android.data.settings.ResourceChainSelection
+import com.ankiminer.android.R
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SettingsDraftStoreTest {
+    @Test
+    fun numericValidationIsKeyedToTheEditedField() {
+        val draft =
+            SettingsDraft
+                .from(AppSettings(), resources())
+                .copy(
+                    audioPadding = ".",
+                    subtitleOffset = "-",
+                    workers = "33",
+                )
+
+        assertEquals(
+            R.string.b3_validation_numeric_incomplete,
+            draft.validation[SettingsFieldKey.AUDIO_PADDING]?.resourceId,
+        )
+        assertEquals(
+            R.string.b3_validation_numeric_incomplete,
+            draft.validation[SettingsFieldKey.SUBTITLE_OFFSET]?.resourceId,
+        )
+        assertEquals(
+            R.string.b3_validation_parallel_workers,
+            draft.validation[SettingsFieldKey.WORKERS]?.resourceId,
+        )
+        assertFalse(draft.numericValuesValid)
+    }
+
+    @Test
+    fun validNumericFieldsHaveNoFieldValidationResult() {
+        val draft =
+            SettingsDraft
+                .from(AppSettings(), resources())
+                .copy(
+                    audioPadding = "0.3",
+                    subtitleOffset = "-0.25",
+                    workers = "32",
+                )
+
+        assertTrue(draft.validation.isEmpty())
+        assertTrue(draft.numericValuesValid)
+    }
+
     @Test
     fun editsAreIgnoredUntilTheFirstPersistedSettingsValueLoads() {
         val resources = resources("first")

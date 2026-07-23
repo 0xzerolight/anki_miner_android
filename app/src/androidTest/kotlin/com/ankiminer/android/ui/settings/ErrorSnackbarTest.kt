@@ -11,57 +11,59 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.test.assertDoesNotExist
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import com.ankiminer.android.ui.theme.AnkiMinerTheme
-import org.junit.Assert.assertNull
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Rule
 import org.junit.Test
 
-/**
- * Bug #3 regression guard: import/resource/save failures must surface as a transient
- * Material snackbar via [MessageSnackbarEffect] — the reusable seam that replaced the
- * inline failure cards rendered off-screen at the top of the settings scroll. Exercises
- * the seam directly (no scrolling), so the failure text appearing at all proves it is no
- * longer buried in a top-of-column card.
- */
+/** Batch 3 contract: failures remain at their origin; snackbar is only a linked summary. */
 class ErrorSnackbarTest {
     @get:Rule
     val composeRule = createComposeRule()
 
     @Test
-    fun failureMessageSurfacesInTheSnackbarHostWithoutScrolling() {
+    fun originFailureRemainsVisibleAcrossIdenticalRecompositionsUntilDismissed() {
         val message = "Dictionary archive contains an oversized file"
-        var current by mutableStateOf<String?>(null)
+        var current by mutableStateOf<String?>(message)
+        var unrelatedRevision by mutableStateOf(0)
 
         composeRule.setContent {
             AnkiMinerTheme {
-                val hostState = remember { SnackbarHostState() }
-                MessageSnackbarEffect(
-                    message = current,
-                    hostState = hostState,
-                    onDismiss = { current = null },
-                )
-                Scaffold(snackbarHost = { SnackbarHost(hostState) }) { padding ->
-                    Box(Modifier.fillMaxSize().padding(padding)) {}
+                Box {
+                    unrelatedRevision
+                    current?.let { failure ->
+                        InlineFailureContainer(
+                            message = failure,
+                            actionLabel = "Choose another",
+                            onAction = {},
+                            onDismiss = { current = null },
+                        )
+                    }
                 }
             }
         }
 
-        // A null message shows nothing.
-        composeRule.onNodeWithText(message).assertDoesNotExist()
-
-        // Raising the message surfaces it in the snackbar host — a transient popup, not an
-        // off-screen card that the user has to scroll to the very top to notice.
-        composeRule.runOnIdle { current = message }
         composeRule.onNodeWithText(message).assertIsDisplayed()
+        repeat(10) {
+            composeRule.runOnIdle { unrelatedRevision += 1 }
+            composeRule.onNodeWithText(message).assertIsDisplayed()
+        }
+
+        composeRule.onNodeWithText("Dismiss").performClick()
+        composeRule.onNodeWithText(message).assertDoesNotExist()
     }
 
     @Test
-    fun dismissedSnackbarClearsItsSourceAndCanRetrigger() {
-        val message = "Frequency source import failed"
-        var current by mutableStateOf<String?>(null)
+    fun linkedSnackbarViewActionDoesNotClearPersistentOriginFailure() {
+        val message = "Known-word import failed"
+        var current by mutableStateOf<String?>(message)
+        var viewed = 0
         val hostState = SnackbarHostState()
 
         composeRule.setContent {
@@ -69,7 +71,8 @@ class ErrorSnackbarTest {
                 MessageSnackbarEffect(
                     message = current,
                     hostState = hostState,
-                    onDismiss = { current = null },
+                    actionLabel = "View",
+                    onAction = { viewed += 1 },
                 )
                 Scaffold(snackbarHost = { SnackbarHost(hostState) }) { padding ->
                     Box(Modifier.fillMaxSize().padding(padding)) {}
@@ -77,20 +80,11 @@ class ErrorSnackbarTest {
             }
         }
 
-        composeRule.runOnIdle { current = message }
         composeRule.onNodeWithText(message).assertIsDisplayed()
-
-        // Material owns timeout duration. Exercise this seam's contract through an explicit
-        // dismissal instead of coupling the test to Material's virtual clock and accessibility
-        // timeout policy.
+        composeRule.onNodeWithText("View").performClick()
         composeRule.runOnIdle {
-            checkNotNull(hostState.currentSnackbarData).dismiss()
+            assertEquals(1, viewed)
+            assertNotNull(current)
         }
-        composeRule.runOnIdle { assertNull(current) }
-        composeRule.onNodeWithText(message).assertDoesNotExist()
-
-        // Clearing the source permits the same later failure to start a new snackbar.
-        composeRule.runOnIdle { current = message }
-        composeRule.onNodeWithText(message).assertIsDisplayed()
     }
 }

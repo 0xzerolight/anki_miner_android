@@ -53,7 +53,11 @@ import com.ankiminer.android.ui.attribution.NoticesScreen
 import com.ankiminer.android.ui.reading.ReadingMiningRoute
 import com.ankiminer.android.ui.reading.ReadingMiningTestTags
 import com.ankiminer.android.ui.settings.MessageSnackbarEffect
+import com.ankiminer.android.ui.settings.KnownWordsManagerRoute
+import com.ankiminer.android.ui.settings.SettingsCategory
 import com.ankiminer.android.ui.settings.SettingsRoute
+import com.ankiminer.android.ui.settings.settingsCategoryFor
+import com.ankiminer.android.ui.settings.settingsCardIndexFor
 import com.ankiminer.android.ui.theme.ScreenTitle
 import com.ankiminer.android.ui.theme.SupportingText
 import com.ankiminer.android.ui.theme.actionBorder
@@ -102,6 +106,14 @@ internal enum class AnkiMinerDestination(
         R.drawable.ic_nav_settings,
         R.string.nav_settings_description,
         true,
+    ),
+    KNOWN_WORDS_MANAGER(
+        "known-words-manager",
+        R.string.b3_known_words_title,
+        R.string.b3_known_words_title,
+        null,
+        null,
+        false,
     ),
     ATTRIBUTION(
         "attribution",
@@ -317,6 +329,20 @@ internal fun AnkiMinerApp(
             )
         }
     var wizardRerunRequested by rememberSaveable { mutableStateOf(false) }
+    var wizardRedirectedToSettings by rememberSaveable { mutableStateOf(false) }
+    var requestedSettingsCategory by
+        rememberSaveable { mutableStateOf<SettingsCategory?>(null) }
+    var requestedSettingsItemIndex by rememberSaveable { mutableStateOf(2) }
+
+    fun navigateTo(destination: AnkiMinerDestination) {
+        navController.navigate(destination.route) {
+            popUpTo(navController.graph.findStartDestination().id) {
+                saveState = true
+            }
+            launchSingleTop = true
+            restoreState = true
+        }
+    }
 
     LaunchedEffect(notificationRunId) {
         if (notificationRunId == null) return@LaunchedEffect
@@ -343,7 +369,7 @@ internal fun AnkiMinerApp(
         wizardVisible(
             wizardSeen = setup.wizardSeen,
             rerunRequested = wizardRerunRequested,
-            sessionDismissed = wizardDismissedForSession,
+            sessionDismissed = wizardDismissedForSession || wizardRedirectedToSettings,
             completion = setup.wizardCompletion,
         )
     ) {
@@ -357,36 +383,51 @@ internal fun AnkiMinerApp(
             onOpenAnkiDroid = onOpenAnkiDroid,
             onFinished = {
                 wizardRerunRequested = false
+                wizardRedirectedToSettings = false
                 if (setup.wizardSeen != true) setupViewModel.markWizardSeen()
+            },
+            onCustomizeFields = {
+                wizardRerunRequested = false
+                wizardRedirectedToSettings = true
+                requestedSettingsCategory = SettingsCategory.ANKI
+                requestedSettingsItemIndex = 3
+                navigateTo(AnkiMinerDestination.SETTINGS)
+            },
+            onResolveRecovery = {
+                wizardRerunRequested = false
+                wizardRedirectedToSettings = true
+                requestedSettingsCategory = SettingsCategory.ANKI
+                requestedSettingsItemIndex = 4
+                navigateTo(AnkiMinerDestination.SETTINGS)
             },
         )
         return
     }
 
     val snackbarHostState = remember { SnackbarHostState() }
-    val settingsErrorResource by settingsViewModel.error.collectAsStateWithLifecycle()
-    val settingsError =
-        settingsErrorResource?.let {
-            stringResource(it.resourceId, *it.formatArguments.toTypedArray())
-        }
-    MessageSnackbarEffect(settingsError, snackbarHostState, settingsViewModel::dismissError)
-    MessageSnackbarEffect(setup.failure?.message, snackbarHostState, setupViewModel::dismissFailure)
-    MessageSnackbarEffect(setup.ankiFailure?.message, snackbarHostState, setupViewModel::dismissAnkiFailure)
+    val linkedFailureMessage =
+        setup.failure?.message
+            ?: setup.ankiRecoveryFailure?.message
+            ?: setup.ankiFailure?.message
+    val linkedFailureCategory =
+        setup.failure?.let { settingsCategoryFor(it.origin) }
+            ?: setup.ankiRecoveryFailure?.let { settingsCategoryFor(it.origin) }
+            ?: setup.ankiFailure?.let { settingsCategoryFor(it.origin) }
+    val linkedFailureItemIndex =
+        setup.failure?.let { settingsCardIndexFor(it.origin) }
+            ?: setup.ankiRecoveryFailure?.let { settingsCardIndexFor(it.origin) }
+            ?: setup.ankiFailure?.let { settingsCardIndexFor(it.origin) }
+            ?: 2
     MessageSnackbarEffect(
-        setup.ankiRecoveryFailure?.message,
-        snackbarHostState,
-        setupViewModel::dismissAnkiFailure,
+        message = linkedFailureMessage,
+        hostState = snackbarHostState,
+        actionLabel = stringResource(R.string.b3_view),
+        onAction = {
+            requestedSettingsCategory = linkedFailureCategory
+            requestedSettingsItemIndex = linkedFailureItemIndex
+            navigateTo(AnkiMinerDestination.SETTINGS)
+        },
     )
-
-    fun navigateTo(destination: AnkiMinerDestination) {
-        navController.navigate(destination.route) {
-            popUpTo(navController.graph.findStartDestination().id) {
-                saveState = true
-            }
-            launchSingleTop = true
-            restoreState = true
-        }
-    }
 
     val activeWorkflowDestination =
         activeWorkflowDestination(
@@ -477,7 +518,21 @@ internal fun AnkiMinerApp(
                         navController.navigate(AnkiMinerDestination.ATTRIBUTION.route)
                     },
                     onRunSetupWizard = { wizardRerunRequested = true },
+                    onManageKnownWords = {
+                        navController.navigate(
+                            AnkiMinerDestination.KNOWN_WORDS_MANAGER.route,
+                        )
+                    },
+                    requestedCategory = requestedSettingsCategory,
+                    requestedCategoryItemIndex = requestedSettingsItemIndex,
+                    onCategoryRequestConsumed = {
+                        requestedSettingsCategory = null
+                        requestedSettingsItemIndex = 2
+                    },
                 )
+            }
+            composable(AnkiMinerDestination.KNOWN_WORDS_MANAGER.route) {
+                KnownWordsManagerRoute(setupViewModel)
             }
             composable(AnkiMinerDestination.ATTRIBUTION.route) {
                 AttributionScreen(

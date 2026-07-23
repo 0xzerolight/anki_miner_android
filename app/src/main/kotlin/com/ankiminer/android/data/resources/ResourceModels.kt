@@ -299,10 +299,44 @@ data class ResourceOperationProgress(
         get() = if (totalBytes <= 0L) null else (completedBytes.toDouble() / totalBytes).toFloat()
 }
 
+enum class ResourceFailureOrigin {
+    SETUP,
+    UNIDIC,
+    CATALOG_DICTIONARY,
+    CUSTOM_DICTIONARY,
+    PITCH,
+    DICTIONARY_LOOKUP,
+    AUDIO,
+    FREQUENCY,
+    KNOWN_WORDS,
+}
+
+enum class ResourceFailureAction {
+    RETRY,
+    CHOOSE_ANOTHER,
+    RESOLVE,
+}
+
+data class ResourceFailureRetry(
+    val action: ResourceFailureAction,
+    val targetId: String? = null,
+    val replace: Boolean = false,
+)
+
 data class ResourceFailure(
     val code: String,
     val message: String,
     val retryable: Boolean,
+    val origin: ResourceFailureOrigin = ResourceFailureOrigin.SETUP,
+    val retry: ResourceFailureRetry =
+        ResourceFailureRetry(
+            action =
+                if (retryable) {
+                    ResourceFailureAction.RETRY
+                } else {
+                    ResourceFailureAction.RESOLVE
+                },
+        ),
 )
 
 data class ResourceManagerState(

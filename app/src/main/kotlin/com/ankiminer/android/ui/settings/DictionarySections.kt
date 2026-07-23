@@ -1,5 +1,6 @@
 package com.ankiminer.android.ui.settings
 
+import android.content.Context
 import android.webkit.WebView
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -75,6 +76,7 @@ internal fun CatalogReplaceDialog(
 internal fun CatalogDictionaryCards(
     state: SetupUiState,
     onInstall: (String) -> Unit,
+    inlineFailure: @Composable (String) -> Unit = {},
 ) {
     state.catalogDictionaries.forEach { status ->
         ResourceCard(
@@ -104,6 +106,7 @@ internal fun CatalogDictionaryCards(
                     else -> R.string.dictionary_install
                 },
             ),
+            inlineFailure = { inlineFailure(status.resource.resourceId) },
         )
     }
 }
@@ -114,6 +117,7 @@ internal fun CustomDictionaryImportCard(
     onSlotChanged: (String) -> Unit,
     onReplaceChanged: (Boolean) -> Unit,
     onImport: () -> Unit,
+    inlineFailure: (@Composable () -> Unit)? = null,
 ) {
     OutlinedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -137,6 +141,7 @@ internal fun CustomDictionaryImportCard(
                 modifier = Modifier.fillMaxWidth(),
             )
             ReplaceToggle(state.customReplace, !state.busy, onReplaceChanged)
+            inlineFailure?.invoke()
             OutlinedButton(
                 onClick = onImport,
                 enabled = !state.busy && state.customSlotValid,
@@ -190,6 +195,7 @@ internal fun DictionaryLookupCard(
     onTermChanged: (String) -> Unit,
     onSelectSlot: (String) -> Unit,
     onLookup: () -> Unit,
+    inlineFailure: (@Composable () -> Unit)? = null,
 ) {
     OutlinedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -223,20 +229,30 @@ internal fun DictionaryLookupCard(
                 onClick = onLookup,
                 enabled = state.lookupSlotId != null && state.lookupTerm.isNotBlank() && !state.busy,
             ) { Text(stringResource(R.string.dictionary_render_html)) }
+            inlineFailure?.invoke()
             state.lookup?.let { result ->
                 Text(stringResource(R.string.dictionary_lookup_label, result.slotId, result.term))
-                DictionaryHtml(result.html, Modifier.fillMaxWidth().height(360.dp))
+                DictionaryHtml(
+                    html = result.html,
+                    modifier = Modifier.fillMaxWidth().height(360.dp),
+                    updateKey = state.lookupTerm,
+                )
             }
         }
     }
 }
 
 @Composable
-private fun DictionaryHtml(html: String, modifier: Modifier = Modifier) {
+internal fun DictionaryHtml(
+    html: String,
+    modifier: Modifier = Modifier,
+    updateKey: Any? = null,
+    webViewFactory: (Context) -> WebView = { context -> WebView(context) },
+) {
     AndroidView(
         modifier = modifier,
         factory = { context ->
-            WebView(context).apply {
+            webViewFactory(context).apply {
                 settings.javaScriptEnabled = false
                 settings.allowFileAccess = false
                 settings.allowContentAccess = false
@@ -247,9 +263,15 @@ private fun DictionaryHtml(html: String, modifier: Modifier = Modifier) {
             }
         },
         update = { webView ->
+            // Keep unrelated lookup edits observable to this update block without reloading the
+            // rendered result. AndroidView may update for any captured state change.
+            updateKey?.hashCode()
             // The engine renderer's HTML is loaded byte-for-byte; JavaScript, file/content access,
             // and all network subresources remain disabled for user-imported dictionaries.
-            webView.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null)
+            if (webView.tag != html) {
+                webView.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null)
+                webView.tag = html
+            }
         },
         onRelease = WebView::destroy,
     )

@@ -1,12 +1,12 @@
 package com.ankiminer.android.uiaudit
 
-import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -34,6 +34,10 @@ import com.ankiminer.android.data.resources.InstalledFrequencySource
 import com.ankiminer.android.data.resources.InstalledPitchAccent
 import com.ankiminer.android.data.resources.KnownWordsInventory
 import com.ankiminer.android.data.resources.KnownWordsPage
+import com.ankiminer.android.data.resources.ResourceFailure
+import com.ankiminer.android.data.resources.ResourceFailureAction
+import com.ankiminer.android.data.resources.ResourceFailureOrigin
+import com.ankiminer.android.data.resources.ResourceFailureRetry
 import com.ankiminer.android.data.resources.ResourceStartupReadiness
 import com.ankiminer.android.data.settings.ResourceChainSelection
 import com.ankiminer.android.engine.PythonRuntimeReadiness
@@ -54,23 +58,24 @@ import com.ankiminer.android.ui.reading.ReadingMiningUiState
 import com.ankiminer.android.ui.reading.ReadingSourceKindUi
 import com.ankiminer.android.ui.settings.AnkiRecoveryCard
 import com.ankiminer.android.ui.settings.AnkiTargetCard
-import com.ankiminer.android.ui.settings.AudioPackImportCard
 import com.ankiminer.android.ui.settings.BooleanSetting
-import com.ankiminer.android.ui.settings.BundledWordsetInventoryCard
 import com.ankiminer.android.ui.settings.CatalogDictionaryCards
 import com.ankiminer.android.ui.settings.CustomDictionaryImportCard
 import com.ankiminer.android.ui.settings.DictionaryInventoryCard
 import com.ankiminer.android.ui.settings.DictionaryLookupCard
-import com.ankiminer.android.ui.settings.FrequencyImportCard
+import com.ankiminer.android.ui.settings.InlineFailureContainer
 import com.ankiminer.android.ui.settings.KnownWordsImportCard
+import com.ankiminer.android.ui.settings.NullableToggle
 import com.ankiminer.android.ui.settings.NumericField
 import com.ankiminer.android.ui.settings.PitchImportCard
 import com.ankiminer.android.ui.settings.ResourceCard
 import com.ankiminer.android.ui.settings.ResourceChainEditor
 import com.ankiminer.android.ui.settings.SettingTextField
 import com.ankiminer.android.ui.settings.SettingsSection
-import com.ankiminer.android.ui.settings.SettingsSectionHeading
+import com.ankiminer.android.ui.settings.SettingsCategory
+import com.ankiminer.android.ui.settings.SettingsCategoryLayout
 import com.ankiminer.android.ui.settings.SystemStatusCard
+import com.ankiminer.android.ui.settings.settingsCard
 import com.ankiminer.android.ui.video.CurationCandidateUiState
 import com.ankiminer.android.ui.video.CurationUiState
 import com.ankiminer.android.ui.video.DocumentSlotState
@@ -468,37 +473,81 @@ internal fun setupAuditState(): SetupUiState {
 internal fun UiAuditSettingsFixture(
     focus: SettingsAuditState,
     modifier: Modifier = Modifier,
-    scrollState: ScrollState = rememberScrollState(),
+    listState: LazyListState = rememberLazyListState(),
 ) {
-    val setup = setupAuditState()
-    Column(
-        modifier =
-            modifier
-                .fillMaxSize()
-                .verticalScroll(scrollState)
-                .testTag(UiAuditTags.SETTINGS_SCROLL)
-                .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
+    val baseSetup = setupAuditState()
+    val setup =
+        if (focus == SettingsAuditState.ERROR_SNACKBAR) {
+            val targetId = baseSetup.catalogDictionaries.first().resource.resourceId
+            baseSetup.copy(
+                failure =
+                    ResourceFailure(
+                        code = "resource_archive_too_large",
+                        message = "Dictionary archive contains an oversized file",
+                        retryable = true,
+                        origin = ResourceFailureOrigin.CATALOG_DICTIONARY,
+                        retry =
+                            ResourceFailureRetry(
+                                action = ResourceFailureAction.RETRY,
+                                targetId = targetId,
+                            ),
+                    ),
+            )
+        } else {
+            baseSetup
+        }
+    val category =
         when (focus) {
-            SettingsAuditState.TOP,
+            SettingsAuditState.TOP -> SettingsCategory.SETUP
+            SettingsAuditState.ANKI -> SettingsCategory.ANKI
+            SettingsAuditState.RESOURCES,
             SettingsAuditState.ERROR_SNACKBAR,
-            -> SettingsTopFixture(setup)
-            SettingsAuditState.ANKI -> SettingsAnkiFixture(setup)
-            SettingsAuditState.RESOURCES -> SettingsResourcesFixture(setup)
-            SettingsAuditState.FULL -> {
-                SettingsTopFixture(setup)
-                SettingsAnkiFixture(setup)
-                SettingsResourcesFixture(setup)
-                SettingsExtraFixture()
+            -> SettingsCategory.DICTIONARIES
+            SettingsAuditState.FULL -> SettingsCategory.FILTERING
+        }
+    SettingsCategoryLayout(
+        selectedCategory = category,
+        onSelectedCategory = {},
+        header = { SettingsTopFixture(setup) },
+        modifier = modifier.testTag(UiAuditTags.SETTINGS_SCROLL),
+        listStates = mapOf(category to listState),
+    ) { selected ->
+        when (selected) {
+            SettingsCategory.SETUP ->
+                settingsCard("audit-unidic") {
+                    ResourceCard(
+                        title = stringResource(R.string.unidic_resource_title),
+                        description = stringResource(R.string.unidic_resource_description),
+                        installed = setup.uniDicInstalled,
+                        busy = false,
+                        action = {},
+                        actionLabel = stringResource(R.string.unidic_repair),
+                    )
+                }
+            SettingsCategory.ANKI ->
+                settingsCard("audit-anki") { SettingsAnkiFixture(setup) }
+            SettingsCategory.DICTIONARIES ->
+                settingsCard("audit-resources") { SettingsResourcesFixture(setup) }
+            SettingsCategory.FILTERING -> {
+                settingsCard("audit-filtering") { SettingsFilteringFixture() }
+                settingsCard("audit-known-words") {
+                    KnownWordsImportCard(
+                        state = setup,
+                        onFormatChanged = {},
+                        onImport = {},
+                        onConfirmImport = {},
+                        onDismissImport = {},
+                        onManage = {},
+                    )
+                }
             }
+            else -> settingsCard("audit-placeholder") { Text(stringResource(selected.label)) }
         }
     }
 }
 
 @Composable
 private fun SettingsTopFixture(setup: SetupUiState) {
-    Text(stringResource(R.string.settings_intro))
     SystemStatusCard(
         state = setup,
         onRefresh = {},
@@ -506,6 +555,7 @@ private fun SettingsTopFixture(setup: SetupUiState) {
         onOpenAppSettings = {},
         onInstallAnkiDroid = {},
         onOpenAnkiDroid = {},
+        compact = true,
     )
 }
 
@@ -515,7 +565,6 @@ private fun SettingsAnkiFixture(setup: SetupUiState) {
         modifier = Modifier.testTag("ui_audit_settings_anki"),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        SettingsSectionHeading(stringResource(R.string.settings_anki_target))
         SettingsSection(stringResource(R.string.settings_anki_target)) {
             SettingTextField(
                 value = "Japanese::Mining",
@@ -576,16 +625,20 @@ private fun SettingsResourcesFixture(setup: SetupUiState) {
         modifier = Modifier.testTag("ui_audit_settings_resources"),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        SettingsSectionHeading(stringResource(R.string.settings_dictionaries))
-        ResourceCard(
-            title = stringResource(R.string.unidic_resource_title),
-            description = stringResource(R.string.unidic_resource_description),
-            installed = true,
-            busy = false,
-            action = {},
-            actionLabel = stringResource(R.string.unidic_repair),
-        )
-        CatalogDictionaryCards(setup, onInstall = {})
+        CatalogDictionaryCards(setup, onInstall = {}) { resourceId ->
+            val failure = setup.failure
+            if (
+                failure?.origin == ResourceFailureOrigin.CATALOG_DICTIONARY &&
+                failure.retry.targetId == resourceId
+            ) {
+                InlineFailureContainer(
+                    message = failure.message,
+                    actionLabel = stringResource(R.string.b3_retry),
+                    onAction = {},
+                    onDismiss = {},
+                )
+            }
+        }
         CustomDictionaryImportCard(
             state = setup,
             onSlotChanged = {},
@@ -625,82 +678,43 @@ private fun SettingsResourcesFixture(setup: SetupUiState) {
             onSelectSlot = {},
             onLookup = {},
         )
-        SettingsSectionHeading(stringResource(R.string.settings_frequency_section))
-        FrequencyImportCard(
-            state = setup,
-            onIdChanged = {},
-            onNameChanged = {},
-            onFormatChanged = {},
-            onReplaceChanged = {},
-            onImport = {},
-        )
-        SettingsSectionHeading(stringResource(R.string.settings_audio_section))
-        AudioPackImportCard(
-            state = setup,
-            onIdChanged = {},
-            onReplaceChanged = {},
-            onImport = {},
-        )
-        BundledWordsetInventoryCard(setup)
-        KnownWordsImportCard(
-            state = setup,
-            onFormatChanged = {},
-            onImport = {},
-            onConfirmImport = {},
-            onDismissImport = {},
-            onSearchChanged = {},
-            onSearch = {},
-            onLoadMore = {},
-            onRemove = {},
-            onExport = {},
-            onReset = {},
-        )
     }
 }
 
 @Composable
-private fun SettingsExtraFixture() {
-    SettingsSectionHeading(stringResource(R.string.settings_media))
-    SettingsSection(stringResource(R.string.settings_media)) {
-        NumericField(
-            value = "0.25",
-            onChange = {},
-            label = stringResource(R.string.settings_audio_padding),
-            supporting = stringResource(R.string.settings_audio_padding_default),
-        )
-        NumericField(
-            value = "-0.15",
-            onChange = {},
-            label = stringResource(R.string.settings_subtitle_offset),
-            supporting = stringResource(R.string.settings_subtitle_offset_default),
-            allowNegative = true,
-        )
-    }
-    SettingsSectionHeading(stringResource(R.string.settings_filtering))
+private fun SettingsFilteringFixture() {
     SettingsSection(stringResource(R.string.settings_filtering)) {
-        BooleanSetting(
+        NullableToggle(
             label = stringResource(R.string.settings_known_words),
-            help = stringResource(R.string.settings_known_words_inventory, 1_208, 4_917, 717),
-            checked = true,
-            onCheckedChange = {},
+            value = true,
+            desktopDefault = false,
+            onChange = {},
         )
-        BooleanSetting(
+        NullableToggle(
             label = stringResource(R.string.settings_deduplicate),
-            help = stringResource(R.string.settings_android_override),
-            checked = true,
-            onCheckedChange = {},
+            value = true,
+            desktopDefault = true,
+            onChange = {},
         )
-        BooleanSetting(
+        NullableToggle(
             label = stringResource(R.string.settings_i_plus_one),
-            help = stringResource(R.string.settings_default_off),
-            checked = false,
-            onCheckedChange = {},
+            value = false,
+            desktopDefault = false,
+            onChange = {},
         )
-    }
-    SettingsSectionHeading(stringResource(R.string.settings_ui_section))
-    SettingsSection(stringResource(R.string.settings_ui_section)) {
-        Text(stringResource(R.string.settings_theme))
-        Text(stringResource(R.string.settings_theme_dark))
+        NumericField(
+            value = "12",
+            onChange = {},
+            label = stringResource(R.string.settings_max_duration),
+            supporting = stringResource(R.string.settings_zero_default),
+        )
+        NumericField(
+            value = "160",
+            onChange = {},
+            label = stringResource(R.string.settings_max_characters),
+            supporting = stringResource(R.string.settings_zero_default),
+            integer = true,
+        )
     }
 }
 

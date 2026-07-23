@@ -97,14 +97,14 @@ class UiAuditJankFlowTest {
     @Test
     fun settingsFullScrollsDownThenUp() {
         runRealTimeFlow("settings-full") { onComplete ->
-            val scrollState = rememberScrollState()
+            val listState = rememberLazyListState()
             AuditShell(AnkiMinerDestination.SETTINGS) {
                 UiAuditSettingsFixture(
                     focus = SettingsAuditState.FULL,
-                    scrollState = scrollState,
+                    listState = listState,
                 )
             }
-            MarkedScrollFlow("settings-full", scrollState, onComplete)
+            MarkedScrollFlow("settings-full", listState, onComplete)
         }
     }
 

@@ -22,9 +22,21 @@ internal enum class AnkiSetupOperation {
     RESOLVING_REMEDIATION,
 }
 
+internal enum class AnkiSetupFailureOrigin {
+    TARGET,
+    RECOVERY,
+}
+
+internal enum class AnkiSetupFailureAction {
+    RETRY,
+    RESOLVE,
+}
+
 internal data class AnkiSetupFailure(
     val code: String,
     val message: String,
+    val origin: AnkiSetupFailureOrigin = AnkiSetupFailureOrigin.TARGET,
+    val action: AnkiSetupFailureAction = AnkiSetupFailureAction.RETRY,
 )
 
 internal enum class AnkiRecoveryInventoryStatus {
@@ -159,6 +171,8 @@ internal class ProcessAnkiSetupManager(
                         AnkiSetupFailure(
                             "anki_recovery_inventory_unavailable",
                             strings.resolve(R.string.anki_setup_recovery_read_failed),
+                            origin = AnkiSetupFailureOrigin.RECOVERY,
+                            action = AnkiSetupFailureAction.RETRY,
                         ),
                 )
             }
@@ -194,7 +208,13 @@ internal class ProcessAnkiSetupManager(
                             retryable = true,
                             stableMessage = message,
                         ),
-                    failure = AnkiSetupFailure("anki_provider_unavailable", message),
+                    failure =
+                        AnkiSetupFailure(
+                            "anki_provider_unavailable",
+                            message,
+                            origin = AnkiSetupFailureOrigin.TARGET,
+                            action = AnkiSetupFailureAction.RETRY,
+                        ),
                 )
             }
         }
@@ -219,10 +239,11 @@ internal class ProcessAnkiSetupManager(
             recordFailure(
                 "runtime_busy",
                 strings.resolve(R.string.anki_setup_runtime_busy),
+                operation,
             )
             return
         }
-        mutableState.update { it.copy(operation = operation, failure = null) }
+        mutableState.update { it.copy(operation = operation) }
         try {
             executor.execute {
                 try {
@@ -231,6 +252,7 @@ internal class ProcessAnkiSetupManager(
                     recordFailure(
                         "anki_setup_failed",
                         strings.resolve(R.string.anki_setup_failed),
+                        operation,
                     )
                 } finally {
                     try {
@@ -250,14 +272,40 @@ internal class ProcessAnkiSetupManager(
                 synchronized(monitor) { active = false }
                 mutableState.update { it.copy(operation = null) }
             }
-            recordFailure("anki_setup_unavailable", strings.resolve(R.string.anki_setup_schedule_failed))
+            recordFailure(
+                "anki_setup_unavailable",
+                strings.resolve(R.string.anki_setup_schedule_failed),
+                operation,
+            )
         }
     }
 
     private fun recordFailure(
         code: String,
         message: String,
+        operation: AnkiSetupOperation,
     ) {
-        mutableState.update { it.copy(failure = AnkiSetupFailure(code, message)) }
+        val origin =
+            if (operation == AnkiSetupOperation.REFRESHING) {
+                AnkiSetupFailureOrigin.TARGET
+            } else {
+                AnkiSetupFailureOrigin.RECOVERY
+            }
+        mutableState.update {
+            it.copy(
+                failure =
+                    AnkiSetupFailure(
+                        code = code,
+                        message = message,
+                        origin = origin,
+                        action =
+                            if (origin == AnkiSetupFailureOrigin.RECOVERY) {
+                                AnkiSetupFailureAction.RESOLVE
+                            } else {
+                                AnkiSetupFailureAction.RETRY
+                            },
+                    ),
+            )
+        }
     }
 }

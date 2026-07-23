@@ -47,11 +47,13 @@ internal fun AnkiDeckCard(
     state: SetupUiState,
     onSelectDeck: (String) -> Unit,
     onRetryDeckSelection: () -> Unit,
+    inlineFailure: (@Composable () -> Unit)? = null,
 ) {
     OutlinedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(stringResource(R.string.anki_deck_title), style = MaterialTheme.typography.titleMedium)
             Text(stringResource(R.string.anki_deck_description))
+            inlineFailure?.invoke()
             if (!state.ankiReady) {
                 Text(stringResource(R.string.anki_deck_connect_first))
             }
@@ -119,11 +121,13 @@ internal fun AnkiTargetCard(
     onSelectNoteType: (String) -> Unit,
     onSetFieldMapping: (String, String) -> Unit,
     onVerify: () -> Unit,
+    inlineFailure: (@Composable () -> Unit)? = null,
 ) {
     OutlinedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(stringResource(R.string.anki_note_type_title), style = MaterialTheme.typography.titleMedium)
             Text(stringResource(R.string.anki_note_type_description))
+            inlineFailure?.invoke()
             if (!state.ankiReady) {
                 Text(stringResource(R.string.anki_note_type_connect_first))
             } else {
@@ -206,6 +210,58 @@ internal fun AnkiTargetCard(
                     onClick = onVerify,
                     enabled = state.ankiReady && !state.busy && state.noteType != null,
                 ) { Text(stringResource(R.string.anki_note_type_verify)) }
+            }
+        }
+    }
+}
+
+@Composable
+internal fun WizardAnkiTargetCard(
+    state: SetupUiState,
+    onSelectNoteType: (String) -> Unit,
+    onVerify: () -> Unit,
+    onCustomizeFields: () -> Unit,
+    inlineFailure: (@Composable () -> Unit)? = null,
+) {
+    OutlinedCard(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(
+                stringResource(R.string.anki_note_type_title),
+                style = MaterialTheme.typography.titleMedium,
+            )
+            inlineFailure?.invoke()
+            if (!state.ankiReady) {
+                Text(stringResource(R.string.anki_note_type_connect_first))
+            } else {
+                NoteTypeDropdown(
+                    label = stringResource(R.string.anki_note_type_picker),
+                    options = state.availableNoteTypes.map { it.name to it.name },
+                    selected = state.noteType.orEmpty(),
+                    onSelect = onSelectNoteType,
+                    isOptionEnabled = { !state.busy && it != state.noteType },
+                )
+                if (state.noteType != null) {
+                    Text(
+                        stringResource(
+                            R.string.b3_wizard_mapping_summary,
+                            state.fieldMap.values.count(String::isNotEmpty),
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                Text(
+                    noteTypeStatusText(state.noteTypeStatus),
+                    modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                )
+                OutlinedButton(
+                    onClick = onVerify,
+                    enabled = state.ankiReady && !state.busy && state.noteType != null,
+                ) {
+                    Text(stringResource(R.string.anki_note_type_verify))
+                }
+                TextButton(onClick = onCustomizeFields) {
+                    Text(stringResource(R.string.b3_wizard_customize_fields))
+                }
             }
         }
     }
@@ -344,6 +400,7 @@ internal fun AnkiRecoveryCard(
     onAcknowledgeMedia: (Long) -> Unit,
     onAcknowledgeUncertainMedia: (Long) -> Unit,
     onResolveReview: (Long, AnkiExternalReviewOutcome) -> Unit,
+    inlineFailure: (@Composable () -> Unit)? = null,
 ) {
     var confirmation by remember { mutableStateOf<AnkiRecoveryConfirmation?>(null) }
     val presentation = state.recoveryPresentation
@@ -374,6 +431,7 @@ internal fun AnkiRecoveryCard(
                         stringResource(R.string.anki_recovery_clear)
                 }
             Text(statusText)
+            inlineFailure?.invoke()
             if (
                 presentation.kind == RecoveryPresentationKind.CHECKING ||
                     presentation.kind == RecoveryPresentationKind.INVENTORY_UNAVAILABLE

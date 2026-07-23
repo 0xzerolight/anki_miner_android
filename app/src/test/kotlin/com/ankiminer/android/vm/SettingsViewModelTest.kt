@@ -113,7 +113,7 @@ class SettingsViewModelTest {
         }
 
     @Test
-    fun validatorRejectedEditSetsErrorAndPersistsNothing() =
+    fun outOfRangeWorkersRemainPendingBesideTheFieldAndPersistNothing() =
         runTest(mainDispatcherRule.dispatcher) {
             val repository = FakeAppSettingsRepository(AppSettings())
             val viewModel = SettingsViewModel(repository, FakeResourceManager(resources("first")))
@@ -125,11 +125,12 @@ class SettingsViewModelTest {
 
             assertEquals(0, repository.writeCount)
             assertEquals(
-                R.string.settings_validation_parallel_workers,
-                viewModel.error.value?.resourceId,
+                R.string.b3_validation_parallel_workers,
+                viewModel.draftState.value.draft.validation[SettingsFieldKey.WORKERS]?.resourceId,
             )
-            assertTrue(viewModel.error.value?.formatArguments.orEmpty().isEmpty())
+            assertTrue(viewModel.error.value == null)
             assertEquals("33", viewModel.draftState.value.draft.workers)
+            assertEquals(SettingsSaveState.Pending(1), viewModel.saveState.value)
         }
 
     @Test
@@ -191,6 +192,81 @@ class SettingsViewModelTest {
             assertTrue(repository.current.jishoEnabled)
             assertEquals(0.25, repository.current.subtitleOffsetSeconds!!, 0.0)
             assertEquals("-", viewModel.draftState.value.draft.subtitleOffset)
+        }
+
+    @Test
+    fun outOfRangeWorkersDoNotBlockConcurrentValidTogglePersistence() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository =
+                FakeAppSettingsRepository(
+                    AppSettings(maxParallelWorkers = 6, jishoEnabled = false),
+                )
+            val viewModel = SettingsViewModel(repository, FakeResourceManager(resources("first")))
+            advanceUntilIdle()
+
+            viewModel.updateDraft(viewModel.draftState.value.draft.copy(workers = "33"))
+            runCurrent()
+            viewModel.updateDraft(viewModel.draftState.value.draft.copy(jisho = true))
+            runCurrent()
+
+            assertEquals(1, repository.writeCount)
+            assertEquals(6, repository.current.maxParallelWorkers)
+            assertTrue(repository.current.jishoEnabled)
+            assertEquals("33", viewModel.draftState.value.draft.workers)
+            assertEquals(SettingsSaveState.Pending(2), viewModel.saveState.value)
+        }
+
+    @Test
+    fun ordinaryAutosavePublishesSavingThenSavedForTheSameRevision() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val writeStarted = CompletableDeferred<Unit>()
+            val allowWrite = CompletableDeferred<Unit>()
+            val repository =
+                FakeAppSettingsRepository(AppSettings()) { attempt ->
+                    if (attempt == 1) {
+                        writeStarted.complete(Unit)
+                        allowWrite.await()
+                    }
+                }
+            val viewModel = SettingsViewModel(repository, FakeResourceManager(resources("first")))
+            advanceUntilIdle()
+
+            viewModel.updateDraft(viewModel.draftState.value.draft.copy(jisho = true))
+            runCurrent()
+
+            assertTrue(writeStarted.isCompleted)
+            assertEquals(SettingsSaveState.Saving(1), viewModel.saveState.value)
+            assertTrue(viewModel.saving.value)
+
+            allowWrite.complete(Unit)
+            advanceUntilIdle()
+
+            assertEquals(SettingsSaveState.Saved(1), viewModel.saveState.value)
+            assertFalse(viewModel.saving.value)
+        }
+
+    @Test
+    fun failedAutosavePublishesFailedAndExplicitRetryPublishesSaved() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository =
+                FakeAppSettingsRepository(
+                    initial = AppSettings(jishoEnabled = false),
+                    failuresRemaining = 1,
+                )
+            val viewModel = SettingsViewModel(repository, FakeResourceManager(resources("first")))
+            advanceUntilIdle()
+
+            viewModel.updateDraft(viewModel.draftState.value.draft.copy(jisho = true))
+            advanceUntilIdle()
+
+            assertEquals(SettingsSaveState.Failed(1), viewModel.saveState.value)
+            assertFalse(repository.current.jishoEnabled)
+
+            viewModel.retrySave()
+            advanceUntilIdle()
+
+            assertEquals(SettingsSaveState.Saved(1), viewModel.saveState.value)
+            assertTrue(repository.current.jishoEnabled)
         }
 
     @Test

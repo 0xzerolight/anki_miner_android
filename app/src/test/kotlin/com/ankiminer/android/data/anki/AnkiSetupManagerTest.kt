@@ -84,7 +84,10 @@ class AnkiSetupManagerTest {
             AnkiRecoveryInventoryStatus.AVAILABLE,
             manager.state.value.recoveryInventoryStatus,
         )
-        assertEquals("anki_provider_unavailable", requireNotNull(manager.state.value.failure).code)
+        val failure = requireNotNull(manager.state.value.failure)
+        assertEquals("anki_provider_unavailable", failure.code)
+        assertEquals(AnkiSetupFailureOrigin.TARGET, failure.origin)
+        assertEquals(AnkiSetupFailureAction.RETRY, failure.action)
         assertEquals(1, backend.inventoryCalls)
     }
 
@@ -117,6 +120,10 @@ class AnkiSetupManagerTest {
             "anki_recovery_inventory_unavailable",
             requireNotNull(manager.state.value.recoveryFailure).code,
         )
+        assertEquals(
+            AnkiSetupFailureOrigin.RECOVERY,
+            requireNotNull(manager.state.value.recoveryFailure).origin,
+        )
         assertEquals(1, backend.listCalls)
     }
 
@@ -131,6 +138,14 @@ class AnkiSetupManagerTest {
         manager.reconcileInterruptedWork()
 
         assertEquals("runtime_busy", requireNotNull(manager.state.value.failure).code)
+        assertEquals(
+            AnkiSetupFailureOrigin.RECOVERY,
+            requireNotNull(manager.state.value.failure).origin,
+        )
+        assertEquals(
+            AnkiSetupFailureAction.RESOLVE,
+            requireNotNull(manager.state.value.failure).action,
+        )
         assertEquals(0, backend.reconcileCalls)
         assertNull(manager.state.value.operation)
 

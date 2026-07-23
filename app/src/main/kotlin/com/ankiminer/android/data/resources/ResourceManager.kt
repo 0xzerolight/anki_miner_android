@@ -116,6 +116,8 @@ internal class AndroidResourceManager(
         val id: String,
         val label: String,
         val cancellation: ResourceCancellationSignal,
+        val failureOrigin: ResourceFailureOrigin,
+        val failureRetry: ResourceFailureRetry,
         val pythonStarted: AtomicBoolean = AtomicBoolean(false),
     )
 
@@ -140,6 +142,7 @@ internal class AndroidResourceManager(
         runOperation(
             strings.resolve(R.string.resource_operation_refresh),
             ResourceOperationPhase.REFRESHING,
+            failureOrigin = ResourceFailureOrigin.SETUP,
         ) { operation ->
             clearPendingKnownWordsImport()
             mutableState.update { it.copy(knownWordsImportPreview = null) }
@@ -174,6 +177,7 @@ internal class AndroidResourceManager(
         runOperation(
             strings.resolve(R.string.resource_operation_install_unidic),
             ResourceOperationPhase.PREPARING,
+            failureOrigin = ResourceFailureOrigin.UNIDIC,
         ) { operation ->
             val resource = catalog().unidic
             val staged = download(resource, operation)
@@ -202,6 +206,13 @@ internal class AndroidResourceManager(
         runOperation(
             strings.resolve(R.string.resource_operation_import_catalog_dictionary),
             ResourceOperationPhase.PREPARING,
+            failureOrigin = ResourceFailureOrigin.CATALOG_DICTIONARY,
+            failureRetry =
+                ResourceFailureRetry(
+                    action = ResourceFailureAction.RETRY,
+                    targetId = resourceId,
+                    replace = replace,
+                ),
         ) { operation ->
             val resource =
                 catalog().dictionary(resourceId)
@@ -249,6 +260,8 @@ internal class AndroidResourceManager(
         runOperation(
             strings.resolve(R.string.resource_operation_import_custom_dictionary),
             ResourceOperationPhase.PREPARING,
+            failureOrigin = ResourceFailureOrigin.CUSTOM_DICTIONARY,
+            failureRetry = ResourceFailureRetry(ResourceFailureAction.CHOOSE_ANOTHER),
         ) { operation ->
             val retained = runBlocking { safBroker.retainReadAccess(uri) }
             var staged: StagedArchive? = null
@@ -290,6 +303,8 @@ internal class AndroidResourceManager(
         runOperation(
             strings.resolve(R.string.resource_operation_import_frequency),
             ResourceOperationPhase.PREPARING,
+            failureOrigin = ResourceFailureOrigin.FREQUENCY,
+            failureRetry = ResourceFailureRetry(ResourceFailureAction.CHOOSE_ANOTHER),
         ) { operation ->
             val retained = runBlocking { safBroker.retainReadAccess(uri) }
             var staged: StagedArchive? = null
@@ -345,6 +360,8 @@ internal class AndroidResourceManager(
         runOperation(
             strings.resolve(R.string.resource_operation_import_pitch),
             ResourceOperationPhase.PREPARING,
+            failureOrigin = ResourceFailureOrigin.PITCH,
+            failureRetry = ResourceFailureRetry(ResourceFailureAction.CHOOSE_ANOTHER),
         ) { operation ->
             val retained = runBlocking { safBroker.retainReadAccess(uri) }
             var staged: StagedArchive? = null
@@ -398,6 +415,8 @@ internal class AndroidResourceManager(
         runOperation(
             strings.resolve(R.string.resource_operation_import_audio_pack),
             ResourceOperationPhase.PREPARING,
+            failureOrigin = ResourceFailureOrigin.AUDIO,
+            failureRetry = ResourceFailureRetry(ResourceFailureAction.CHOOSE_ANOTHER),
         ) { operation ->
             val retained = runBlocking { safBroker.retainReadAccess(uri) }
             var staged: StagedArchive? = null
@@ -444,6 +463,8 @@ internal class AndroidResourceManager(
         runOperation(
             strings.resolve(R.string.resource_operation_import_known_words),
             ResourceOperationPhase.PREPARING,
+            failureOrigin = ResourceFailureOrigin.KNOWN_WORDS,
+            failureRetry = ResourceFailureRetry(ResourceFailureAction.CHOOSE_ANOTHER),
         ) { operation ->
             val retained = runBlocking { safBroker.retainReadAccess(uri) }
             var staged: StagedArchive? = null
@@ -486,6 +507,8 @@ internal class AndroidResourceManager(
         runOperation(
             strings.resolve(R.string.resource_operation_preview_known_words),
             ResourceOperationPhase.PREPARING,
+            failureOrigin = ResourceFailureOrigin.KNOWN_WORDS,
+            failureRetry = ResourceFailureRetry(ResourceFailureAction.CHOOSE_ANOTHER),
         ) { operation ->
             clearPendingKnownWordsImport()
             mutableState.update { it.copy(knownWordsImportPreview = null) }
@@ -546,6 +569,7 @@ internal class AndroidResourceManager(
         runOperation(
             strings.resolve(R.string.resource_operation_import_known_words),
             ResourceOperationPhase.IMPORTING,
+            ResourceFailureOrigin.KNOWN_WORDS,
         ) { operation ->
             try {
                 operation.cancellation.check()
@@ -585,6 +609,7 @@ internal class AndroidResourceManager(
         runOperation(
             strings.resolve(R.string.resource_operation_inspect_known_words),
             ResourceOperationPhase.REFRESHING,
+            ResourceFailureOrigin.KNOWN_WORDS,
         ) { operation ->
             operation.cancellation.check()
             operation.pythonStarted.set(true)
@@ -646,6 +671,8 @@ internal class AndroidResourceManager(
         runOperation(
             strings.resolve(R.string.resource_operation_export_known_words),
             ResourceOperationPhase.REFRESHING,
+            ResourceFailureOrigin.KNOWN_WORDS,
+            ResourceFailureRetry(ResourceFailureAction.CHOOSE_ANOTHER),
         ) { operation ->
             val destination =
                 try {
@@ -696,7 +723,12 @@ internal class AndroidResourceManager(
         phase: ResourceOperationPhase,
         mutate: (ActiveOperation) -> Unit,
     ) {
-        runOperation(label, phase) { operation ->
+        runOperation(
+            label,
+            phase,
+            ResourceFailureOrigin.KNOWN_WORDS,
+            ResourceFailureRetry(ResourceFailureAction.RESOLVE),
+        ) { operation ->
             operation.cancellation.check()
             operation.pythonStarted.set(true)
             mutate(operation)
@@ -716,6 +748,7 @@ internal class AndroidResourceManager(
         runOperation(
             strings.resolve(R.string.resource_operation_dictionary_lookup),
             ResourceOperationPhase.REFRESHING,
+            ResourceFailureOrigin.DICTIONARY_LOOKUP,
         ) { operation ->
             operation.cancellation.check()
             operation.pythonStarted.set(true)
@@ -751,6 +784,9 @@ internal class AndroidResourceManager(
     private suspend fun runOperation(
         label: String,
         initialPhase: ResourceOperationPhase,
+        failureOrigin: ResourceFailureOrigin,
+        failureRetry: ResourceFailureRetry =
+            ResourceFailureRetry(ResourceFailureAction.RETRY),
         block: (ActiveOperation) -> Unit,
     ) {
         if (!operationMutex.tryLock()) {
@@ -763,6 +799,8 @@ internal class AndroidResourceManager(
                 recordFailure(
                     "resource_busy",
                     strings.resolve(R.string.resource_failure_busy),
+                    failureOrigin,
+                    failureRetry,
                 )
                 return
             }
@@ -771,33 +809,53 @@ internal class AndroidResourceManager(
                     id = "resource_${UUID.randomUUID().toString().replace("-", "")}",
                     label = label,
                     cancellation = ResourceCancellationSignal(),
+                    failureOrigin = failureOrigin,
+                    failureRetry = failureRetry,
                 )
             synchronized(activeMonitor) { active = operation }
             mutableState.update {
                 it.copy(
                     activeOperation = ResourceOperationProgress(operation.id, label, initialPhase),
-                    failure = null,
                 )
             }
+            var completed = false
             try {
                 runOnExecutor(resourceExecutor) { block(operation) }
+                completed = true
             } catch (failure: CancellationException) {
                 operation.cancellation.cancel()
                 cancelPython(operation)
                 throw failure
             } catch (failure: ResourceDownloadException) {
                 if (failure.stableCode != "resource_operation_cancelled") {
-                    recordFailure(failure.stableCode, downloadUserMessage(failure))
+                    recordFailure(operation, failure.stableCode, downloadUserMessage(failure))
                 }
             } catch (failure: ResourceStorageException) {
-                recordFailure("insufficient_storage", strings.resolve(R.string.resource_failure_storage))
+                recordFailure(
+                    operation,
+                    "insufficient_storage",
+                    strings.resolve(R.string.resource_failure_storage),
+                )
             } catch (failure: ResourceBridgeException) {
                 if (failure.code != "resource_operation_cancelled") {
-                    recordFailure(failure.code, userMessage(failure.code))
+                    recordFailure(operation, failure.code, userMessage(failure.code))
                 }
             } catch (_: Exception) {
-                recordFailure("resource_operation_failed", strings.resolve(R.string.resource_failure_operation))
+                recordFailure(
+                    operation,
+                    "resource_operation_failed",
+                    strings.resolve(R.string.resource_failure_operation),
+                )
             } finally {
+                if (completed) {
+                    mutableState.update { current ->
+                        if (current.failure?.origin == operation.failureOrigin) {
+                            current.copy(failure = null)
+                        } else {
+                            current
+                        }
+                    }
+                }
                 try {
                     clearStaging()
                 } finally {
@@ -959,7 +1017,47 @@ internal class AndroidResourceManager(
         }
     }
 
-    private fun recordFailure(code: String, message: String) {
+    private fun recordFailure(
+        operation: ActiveOperation,
+        code: String,
+        message: String,
+    ) {
+        val invalidDictionary =
+            mutableState.value.dictionaries.firstOrNull { it.occupied && !it.isUsable }
+        val (origin, retry) =
+            when (code) {
+                "dictionary_resource_invalid" ->
+                    invalidDictionary
+                        ?.catalogResourceId
+                        ?.let { resourceId ->
+                            ResourceFailureOrigin.CATALOG_DICTIONARY to
+                                ResourceFailureRetry(
+                                    action = ResourceFailureAction.RETRY,
+                                    targetId = resourceId,
+                                    replace = true,
+                                )
+                        }
+                        ?: (
+                            ResourceFailureOrigin.CUSTOM_DICTIONARY to
+                                ResourceFailureRetry(ResourceFailureAction.CHOOSE_ANOTHER)
+                        )
+                "pitch_resource_invalid" ->
+                    ResourceFailureOrigin.PITCH to
+                        ResourceFailureRetry(ResourceFailureAction.CHOOSE_ANOTHER)
+                "known_words_resource_invalid" ->
+                    ResourceFailureOrigin.KNOWN_WORDS to
+                        ResourceFailureRetry(ResourceFailureAction.RESOLVE)
+                else -> operation.failureOrigin to operation.failureRetry
+            }
+        recordFailure(code, message, origin, retry)
+    }
+
+    private fun recordFailure(
+        code: String,
+        message: String,
+        origin: ResourceFailureOrigin,
+        retry: ResourceFailureRetry,
+    ) {
         mutableState.update {
             it.copy(
                 failure =
@@ -967,6 +1065,8 @@ internal class AndroidResourceManager(
                         code = code,
                         message = message,
                         retryable = code in RETRYABLE_FAILURES,
+                        origin = origin,
+                        retry = retry,
                     ),
             )
         }
