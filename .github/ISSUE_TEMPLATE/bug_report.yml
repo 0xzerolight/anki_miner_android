@@ -1,31 +1,42 @@
 name: Bug report
-description: Report one reproducible, non-security problem in an official Anki Miner Android release.
+description: Report a bug to help improve Anki Miner for Android.
 title: "[Bug]: "
+labels:
+  - bug
 body:
   - type: markdown
     attributes:
       value: |
-        Thanks for testing Anki Miner. Search existing issues first.
+        Thank you for taking the time to file a bug report.
+        Please fill in as much detail as you can — it makes the fix faster.
 
-        Do not submit private video, audio, subtitles, books, dictionary content, Anki collection/export data, note contents, recovery databases, raw logcat, document URIs, device serials, account details, credentials, signing material, or access tokens. Use synthetic inputs and sanitized excerpts. Report vulnerabilities through GitHub private vulnerability reporting instead.
-
-  - type: checkboxes
-    id: safety
+  - type: textarea
+    id: description
     attributes:
-      label: Privacy and scope checks
-      options:
-        - label: This is not a security vulnerability or suspected privacy leak.
-          required: true
-        - label: I removed private user content, personal identifiers, credentials, document URIs, and unreviewed logs.
-          required: true
-        - label: I am testing an official GitHub release APK with the expected signing certificate, not a fork, debug build, or workflow artifact.
-          required: true
+      label: Description
+      description: What went wrong? Include what you expected to happen and what actually happened.
+      placeholder: When I do X, Y happens instead of Z.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Minimal steps that reliably trigger the bug.
+      placeholder: |
+        1. Open Anki Miner.
+        2. Load video `…` and subtitle `…`.
+        3. Tap `Mine`.
+        4. Observe error.
+    validations:
+      required: true
 
   - type: input
-    id: anki_miner_version
+    id: version
     attributes:
       label: Anki Miner version
-      description: Include version name and code from the installed app or release record.
+      description: Shown in Settings → About (version name and code). Please update to the latest release first to see if it is already fixed.
       placeholder: 0.1.5 (code 6)
     validations:
       required: true
@@ -34,77 +45,33 @@ body:
     id: ankidroid_version
     attributes:
       label: AnkiDroid version
-      placeholder: 2.x.y from the AnkiDroid About screen
+      description: From the AnkiDroid About screen.
+      placeholder: 2.x.y
     validations:
       required: true
 
   - type: input
-    id: android_device
+    id: device
     attributes:
-      label: Android and device
-      description: Give Android/API, manufacturer/model, and RAM class if known. Do not include a serial, account, or private build identifier.
-      placeholder: Android 16 / API 36, Example Model, 4 GiB RAM
-    validations:
-      required: true
-
-  - type: dropdown
-    id: area
-    attributes:
-      label: Affected area
-      options:
-        - First-run setup or permissions
-        - UniDic or resource download/import/repair
-        - Video and subtitle mining
-        - TXT/Aozora reading
-        - Subtitle reading
-        - EPUB reading
-        - Mokuro reading
-        - Curation
-        - AnkiDroid note/media creation or recovery
-        - Offline TTS or local audio
-        - Settings, navigation, accessibility, or theme
-        - Installation or update
-        - Other non-security behavior
+      label: Android version and device
+      description: Android/API level, manufacturer and model.
+      placeholder: Android 14 / API 34, Pixel 7
     validations:
       required: true
 
   - type: textarea
-    id: steps
+    id: logs
     attributes:
-      label: Reproduction steps
-      description: Use synthetic or privacy-safe input descriptions. Include whether the app was backgrounded, rotated, force-stopped, offline, or low on storage.
-      placeholder: |
-        1. Start with ...
-        2. Select a synthetic 10-second MKV and SRT ...
-        3. Tap ...
+      label: Logs / error output
+      description: Use Settings → Share engine log to grab the log text. Review it for private information (file names, paths) before pasting.
+      render: shell
     validations:
-      required: true
+      required: false
 
   - type: textarea
-    id: expected
+    id: context
     attributes:
-      label: Expected result
+      label: Additional context
+      description: Subtitle format, video container, reading format, dictionary in use, anything else that may be relevant.
     validations:
-      required: true
-
-  - type: textarea
-    id: actual
-    attributes:
-      label: Actual result
-      description: State whether any note/media was committed to AnkiDroid and whether retry, repair, or relaunch changed the result.
-    validations:
-      required: true
-
-  - type: textarea
-    id: diagnostics
-    attributes:
-      label: Minimal sanitized diagnostics
-      description: Optional. Paste only the smallest reviewed excerpt needed — e.g. from the in-app "Share engine log" text, after reviewing it for private info such as file names. Do not attach unreviewed raw logs or source files.
-
-  - type: checkboxes
-    id: final_review
-    attributes:
-      label: Final review
-      options:
-        - label: I reviewed every field and attachment again and confirm it is safe to publish.
-          required: true
+      required: false
