@@ -8,6 +8,8 @@ source "$SCRIPT_DIR/android-env.sh"
 
 HOST_TEST_VENV="$ANKI_MINER_ANDROID_TOOLCHAIN_ROOT/host-tests"
 LOCK_FILE="$REPO_ROOT/requirements-host-test.lock"
+# ruff/black live in this venv too, so health.sh can run the same lint CI runs.
+LINT_LOCK_FILE="$REPO_ROOT/requirements-lint.lock"
 LOCK_MARKER_NAME=".anki-miner-lock-sha256"
 
 if [[ "$(uname -s)" != "Linux" || "$(uname -m)" != "x86_64" ]]; then
@@ -19,7 +21,10 @@ command -v python3.13 >/dev/null || {
     exit 1
 }
 
-lock_sha256="$(sha256sum "$LOCK_FILE" | awk '{ print $1 }')"
+# Hash file CONTENT, never `sha256sum FILE1 FILE2` output: that embeds absolute
+# paths, and this marker is shared with every linked worktree (the toolchain root
+# is derived from git-common-dir). health.sh recomputes this exact expression.
+lock_sha256="$(cat "$LOCK_FILE" "$LINT_LOCK_FILE" | sha256sum | awk '{ print $1 }')"
 if [[ -x "$HOST_TEST_VENV/bin/python" && \
     -f "$HOST_TEST_VENV/$LOCK_MARKER_NAME" && \
     "$(<"$HOST_TEST_VENV/$LOCK_MARKER_NAME")" == "$lock_sha256" ]]; then
@@ -44,7 +49,8 @@ PIP_NO_CACHE_DIR=1 "$staging/bin/python" -m pip install \
     --disable-pip-version-check \
     --only-binary=:all: \
     --require-hashes \
-    -r "$LOCK_FILE"
+    -r "$LOCK_FILE" \
+    -r "$LINT_LOCK_FILE"
 PIP_NO_CACHE_DIR=1 "$staging/bin/python" -m pip check
 printf '%s\n' "$lock_sha256" >"$staging/$LOCK_MARKER_NAME"
 

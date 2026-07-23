@@ -4,6 +4,19 @@ set -euo pipefail
 # Host/build health gate: toolchain presence, host Python suites, JVM tests,
 # lint, APK assembly, and native inspection. This script builds the AndroidTest
 # APK but does not boot an emulator or execute instrumentation.
+#
+# Invariant: this script is a SUPERSET of the CI "Secretless host checks" job.
+# health.sh green => that job green. Anything added there must be added here.
+
+# Mirrors the job-wide env block in .github/workflows/pull-request.yml so
+# locale- and hash-order-sensitive suites behave identically to CI.
+export LANG=C.UTF-8
+export LC_ALL=C.UTF-8
+export PYTHONDONTWRITEBYTECODE=1
+export PYTHONHASHSEED=0
+export PYTHONIOENCODING=utf-8
+export PYTHONUTF8=1
+export TZ=UTC
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -37,11 +50,13 @@ python3.13 "$SCRIPT_DIR/verify_chaquopy_build_python.py" verify \
     --python "$ANKI_MINER_CHAQUOPY_BUILD_PYTHON" >/dev/null \
     || fail "pinned Chaquopy build Python is missing or stale; run scripts/provision-chaquopy-build-python.sh"
 
-for script in "$SCRIPT_DIR"/*.sh; do
+# .github/scripts is included because CI syntax-checks it too; without it that
+# directory is checked by CI and by nothing local.
+for script in "$SCRIPT_DIR"/*.sh "$REPO_ROOT"/.github/scripts/*.sh; do
     bash -n "$script" || fail "shell syntax check failed: $script"
 done
 if command -v shellcheck >/dev/null; then
-    shellcheck -x -P "$SCRIPT_DIR" "$SCRIPT_DIR"/*.sh \
+    shellcheck -x -P "$SCRIPT_DIR" "$SCRIPT_DIR"/*.sh "$REPO_ROOT"/.github/scripts/*.sh \
         || fail "ShellCheck failed"
 fi
 python3.13 -m unittest discover -s "$SCRIPT_DIR/tests" -v
@@ -68,13 +83,36 @@ PYTHONDONTWRITEBYTECODE=1 python3.13 -m unittest discover \
 host_test_python="$ANKI_MINER_ANDROID_TOOLCHAIN_ROOT/host-tests/bin/python"
 [[ -x "$host_test_python" ]] \
     || fail "host test environment is missing; run scripts/provision-host-tests.sh"
-expected_host_lock="$(sha256sum "$REPO_ROOT/requirements-host-test.lock" | awk '{ print $1 }')"
+# Must stay byte-identical to the expression in provision-host-tests.sh: hash the
+# file CONTENT, not `sha256sum FILE1 FILE2` output (which embeds absolute paths
+# and would false-report "stale" whenever a worktree and the main checkout share
+# this marker, as they do -- the toolchain root comes from git-common-dir).
+expected_host_lock="$(cat \
+    "$REPO_ROOT/requirements-host-test.lock" \
+    "$REPO_ROOT/requirements-lint.lock" | sha256sum | awk '{ print $1 }')"
 host_lock_marker="$ANKI_MINER_ANDROID_TOOLCHAIN_ROOT/host-tests/.anki-miner-lock-sha256"
 [[ -f "$host_lock_marker" && "$(<"$host_lock_marker")" == "$expected_host_lock" ]] \
     || fail "host test environment is stale; run scripts/provision-host-tests.sh"
 PIP_NO_CACHE_DIR=1 "$host_test_python" -m pip check
+
+# Same lint CI runs, from the same pinned venv. Pass "$REPO_ROOT" explicitly:
+# health.sh does not cd until the Gradle leg, and `black --check .` on an
+# unrelated cwd exits 0 ("no Python files"), which would be a false green.
+"$host_test_python" -m ruff check "$REPO_ROOT" || fail "ruff check failed"
+"$host_test_python" -m black --check "$REPO_ROOT" || fail "black --check failed"
+
 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$REPO_ROOT/tools/engine-sync" \
     "$host_test_python" -m unittest discover -s "$REPO_ROOT/tools/engine-sync/tests" -v
+PYTHONPATH="$REPO_ROOT/tools/engine-sync" ANKI_MINER_REPO_ROOT="$REPO_ROOT" \
+    "$host_test_python" - <<'PY' || fail "immutable engine v2 fixture validation failed"
+import os
+from pathlib import Path
+
+from engine_sync.golden_contract_v2 import validate_committed_fixture
+
+validate_committed_fixture(Path(os.environ["ANKI_MINER_REPO_ROOT"]))
+print("immutable engine v2 fixture: OK")
+PY
 "$host_test_python" "$REPO_ROOT/tools/engine-sync/sync_engine.py" --check
 PYTHONDONTWRITEBYTECODE=1 "$host_test_python" -m pytest \
     -q "$REPO_ROOT/tests/python/android_bridge"
