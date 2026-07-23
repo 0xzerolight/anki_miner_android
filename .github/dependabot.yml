@@ -1,0 +1,26 @@
+version: 2
+updates:
+  # github-actions only, deliberately.
+  #
+  # pip is excluded: Dependabot would find requirements-*.in and bump those,
+  # while leaving the hash-pinned requirements-*.lock files it cannot regenerate
+  # untouched. The resulting .in/.lock pair fails the workflow's
+  # `--require-hashes` install step. Regenerate locks by hand instead:
+  #   uv pip compile requirements-<name>.in --generate-hashes --python-version 3.13
+  #
+  # gradle is excluded: every bump invalidates gradle/verification-metadata.xml
+  # and fails the `--dependency-verification strict` build until the checksums
+  # are regenerated.
+  #
+  # Action SHAs are pinned, so this is what keeps them from going stale.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    labels:
+      - dependencies
+      - ci
+    groups:
+      gh-actions:
+        patterns:
+          - "*"

@@ -1,0 +1,62 @@
+name: Feature request
+description: Suggest one capability or change for Anki Miner Android.
+title: "[Feature]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the suggestion. Search existing issues and the roadmap first.
+
+        Do not submit private video, audio, subtitles, books, dictionary content, Anki collection/export data, note contents, recovery databases, raw logcat, document URIs, device serials, account details, credentials, signing material, or access tokens. Describe the need with synthetic examples and sanitized excerpts. Report vulnerabilities through GitHub private vulnerability reporting instead.
+
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Privacy and scope checks
+      options:
+        - label: This is not a security vulnerability or suspected privacy leak.
+          required: true
+        - label: I removed private user content, personal identifiers, credentials, document URIs, and unreviewed logs.
+          required: true
+        - label: This is one focused request, not a list of unrelated ideas.
+          required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to do today, and where does the app get in the way?
+      placeholder: When mining a long video, I have to ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+      description: What should the app do instead? Describe the behavior, not the implementation.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Existing settings, workarounds, or other approaches you tried.
+    validations:
+      required: false
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Video mining
+        - Reading mining
+        - Anki / AnkiDroid integration
+        - Dictionaries and audio
+        - Setup and onboarding
+        - Settings
+        - Other
+    validations:
+      required: true
