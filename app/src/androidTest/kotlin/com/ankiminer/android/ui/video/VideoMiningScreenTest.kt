@@ -55,6 +55,9 @@ class VideoMiningScreenTest {
 
         composeRule.onNodeWithTag(VideoMiningTestTags.PICK_VIDEO).performClick()
         composeRule.onNodeWithTag(VideoMiningTestTags.PICK_SUBTITLE).performClick()
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(VideoMiningTestTags.START))
         composeRule.onNodeWithTag(VideoMiningTestTags.START).assertIsEnabled().performClick()
 
         composeRule.runOnIdle {
@@ -79,6 +82,10 @@ class VideoMiningScreenTest {
         composeRule.onNodeWithTag(VideoMiningTestTags.CLEAR_VIDEO).assertIsNotEnabled()
         composeRule.onNodeWithTag(VideoMiningTestTags.PICK_SUBTITLE).assertIsNotEnabled()
         composeRule.onNodeWithTag(VideoMiningTestTags.CLEAR_SUBTITLE).assertIsNotEnabled()
+        // START is asserted last: scrolling to it can dispose the slot actions above.
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(VideoMiningTestTags.START))
         composeRule.onNodeWithTag(VideoMiningTestTags.START).assertIsNotEnabled()
     }
 
@@ -385,6 +392,9 @@ class VideoMiningScreenTest {
             .onNodeWithTag(VideoMiningTestTags.CONTENT)
             .performScrollToNode(hasTestTag(VideoMiningTestTags.RETRY))
         composeRule.onNodeWithTag(VideoMiningTestTags.RETRY).performClick()
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(VideoMiningTestTags.RESET))
         composeRule.onNodeWithTag(VideoMiningTestTags.RESET).performClick()
         composeRule.runOnIdle {
             assertTrue(retried)
