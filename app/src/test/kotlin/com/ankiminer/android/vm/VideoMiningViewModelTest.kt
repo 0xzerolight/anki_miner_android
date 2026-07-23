@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
 import com.ankiminer.android.MainDispatcherRule
 import com.ankiminer.android.data.RuntimeWorkCoordinator
+import com.ankiminer.android.diagnostics.TesterDiagnosticsShareAction
 import com.ankiminer.android.media.SafBroker
 import com.ankiminer.android.media.SafDocument
 import com.ankiminer.android.mining.CurationCandidate
@@ -29,7 +30,9 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -44,6 +47,53 @@ import org.junit.Test
 class VideoMiningViewModelTest {
     @get:Rule
     val mainDispatcherRule = MainDispatcherRule()
+
+    @Test
+    fun navigationWorkflowIgnoresFineGrainedProgressUpdates() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository = RecordingRepository()
+            val viewModel = VideoMiningViewModel(repository, ImmediateSafBroker())
+            val observed = mutableListOf<NavigationWorkflowState>()
+            var diagnosticBuilds = 0
+            val diagnostics =
+                TesterDiagnosticsShareAction(
+                    buildReport = {
+                        diagnosticBuilds += 1
+                        "report"
+                    },
+                    shareReport = {},
+                )
+            val collection =
+                backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+                    viewModel.navigationWorkflowState.collect { observed += it }
+                }
+            runCurrent()
+
+            repository.transitionTo(
+                MiningRunState.Running("run", MiningProgress(0, 100, "Starting")),
+            )
+            runCurrent()
+            repeat(100) { progress ->
+                repository.transitionTo(
+                    MiningRunState.Running(
+                        "run",
+                        MiningProgress(progress.toLong(), 100, "Progress $progress"),
+                    ),
+                )
+            }
+            runCurrent()
+
+            assertEquals(
+                listOf(NavigationWorkflowState.IDLE, NavigationWorkflowState.RUNNING),
+                observed,
+            )
+            assertEquals(0, diagnosticBuilds)
+
+            diagnostics.share()
+
+            assertEquals(1, diagnosticBuilds)
+            collection.cancel()
+        }
 
     @Test
     fun savedIdleSelectionsRestoreByRevalidatingBothUris() =

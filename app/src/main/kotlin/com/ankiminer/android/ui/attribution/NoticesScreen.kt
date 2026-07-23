@@ -11,7 +11,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
@@ -33,7 +32,6 @@ private const val NOTICES_ASSET_DIR = "notices"
  */
 @Composable
 internal fun NoticesScreen(
-    onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -47,12 +45,6 @@ internal fun NoticesScreen(
                 .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        item {
-            TextButton(onClick = onBack) { Text(stringResource(R.string.attribution_back)) }
-        }
-        item {
-            Text(stringResource(R.string.notices_title), style = MaterialTheme.typography.headlineSmall)
-        }
         item { Text(stringResource(R.string.notices_intro)) }
         items(documents, key = { it.name }) { document ->
             OutlinedCard(Modifier.fillMaxWidth()) {

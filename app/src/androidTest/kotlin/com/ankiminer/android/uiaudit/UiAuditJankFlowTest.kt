@@ -32,6 +32,7 @@ import com.ankiminer.android.ui.video.VideoMiningTestTags
 import com.ankiminer.android.ui.wizard.OnboardingWizardCallbacks
 import com.ankiminer.android.ui.wizard.OnboardingWizardContent
 import com.ankiminer.android.ui.wizard.WizardStep
+import com.ankiminer.android.vm.NavigationWorkflowState
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
@@ -61,7 +62,10 @@ class UiAuditJankFlowTest {
     fun curationList200CandidatesScrollsBottomThenTop() {
         runRealTimeFlow("curation-200") { onComplete ->
             val listState = rememberLazyListState()
-            AuditShell(AnkiMinerDestination.VIDEO) {
+            AuditShell(
+                destination = AnkiMinerDestination.VIDEO,
+                videoWorkflow = NavigationWorkflowState.REVIEW,
+            ) {
                 VideoMiningScreen(
                     state =
                         videoAuditState(
@@ -203,11 +207,15 @@ class UiAuditJankFlowTest {
     @Composable
     private fun AuditShell(
         destination: AnkiMinerDestination,
+        videoWorkflow: NavigationWorkflowState = NavigationWorkflowState.IDLE,
+        readingWorkflow: NavigationWorkflowState = NavigationWorkflowState.IDLE,
         content: @Composable () -> Unit,
     ) {
         val snackbarHostState = remember { SnackbarHostState() }
         AnkiMinerAppShell(
             currentDestination = destination,
+            videoWorkflow = videoWorkflow,
+            readingWorkflow = readingWorkflow,
             snackbarHostState = snackbarHostState,
             onDestinationSelected = {},
         ) { shellModifier ->

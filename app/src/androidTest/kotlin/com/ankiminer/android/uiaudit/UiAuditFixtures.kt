@@ -498,11 +498,6 @@ internal fun UiAuditSettingsFixture(
 
 @Composable
 private fun SettingsTopFixture(setup: SetupUiState) {
-    Text(
-        stringResource(R.string.settings_title),
-        modifier = Modifier.semantics { heading() },
-        style = MaterialTheme.typography.headlineSmall,
-    )
     Text(stringResource(R.string.settings_intro))
     SystemStatusCard(
         state = setup,

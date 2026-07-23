@@ -35,6 +35,7 @@ private val MOKURO_ARCHIVE_MIME_TYPES =
 @Composable
 fun ReadingMiningRoute(
     viewModel: ReadingMiningViewModel,
+    onReturnToActiveRun: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -64,6 +65,7 @@ fun ReadingMiningRoute(
         onCancel = viewModel::cancel,
         onRetry = viewModel::retry,
         onReset = viewModel::reset,
+        onReturnToActiveRun = onReturnToActiveRun,
         modifier = modifier,
     )
 }

@@ -18,10 +18,36 @@ import com.ankiminer.android.vm.SetupUiState
 import com.ankiminer.android.ui.video.DocumentSlotState
 import com.ankiminer.android.ui.video.VideoMiningUiState
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class TesterDiagnosticsTest {
+    @Test
+    fun reportIsBuiltOnlyWhenShareIsPressed() {
+        var builds = 0
+        var sharedReport: String? = null
+        val shareAction =
+            TesterDiagnosticsShareAction(
+                buildReport = {
+                    builds += 1
+                    "diagnostics-$builds"
+                },
+                shareReport = { sharedReport = it },
+            )
+
+        repeat(100) { progressUpdate ->
+            assertEquals(progressUpdate, progressUpdate)
+            assertEquals(0, builds)
+            assertEquals(null, sharedReport)
+        }
+
+        shareAction.share()
+
+        assertEquals(1, builds)
+        assertEquals("diagnostics-1", sharedReport)
+    }
+
     @Test
     fun reportUsesOnlyBuildIdentityStableCategoriesAndCounts() {
         val privateVideoName = "private-video-title.mkv"

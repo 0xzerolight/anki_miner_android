@@ -24,7 +24,6 @@ import com.ankiminer.android.data.resources.ResourceAttribution
 
 @Composable
 internal fun AttributionScreen(
-    onBack: () -> Unit,
     onOpenNotices: () -> Unit,
     modifier: Modifier = Modifier,
     installedDictionaries: List<InstalledDictionary> = emptyList(),
@@ -42,8 +41,6 @@ internal fun AttributionScreen(
                 .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        TextButton(onClick = onBack) { Text(stringResource(R.string.attribution_back)) }
-        Text(stringResource(R.string.attribution_title), style = MaterialTheme.typography.headlineSmall)
         Text(stringResource(R.string.attribution_intro))
 
         AttributionGroup(stringResource(R.string.attribution_unidic), catalog.unidic.attribution)

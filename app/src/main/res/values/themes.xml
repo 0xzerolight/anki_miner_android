@@ -2,8 +2,9 @@
 <resources>
     <style name="Theme.AnkiMiner" parent="android:style/Theme.Material.Light.NoActionBar">
         <item name="android:fontFamily">sans</item>
-        <item name="android:windowLightStatusBar">true</item>
-        <item name="android:navigationBarColor">@android:color/transparent</item>
-        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:windowBackground">@color/launch_neutral</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:navigationBarColor">@color/launch_neutral</item>
+        <item name="android:statusBarColor">@color/launch_neutral</item>
     </style>
 </resources>

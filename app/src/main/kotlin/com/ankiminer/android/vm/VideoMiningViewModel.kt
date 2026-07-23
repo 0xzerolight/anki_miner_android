@@ -36,6 +36,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -67,6 +69,17 @@ class VideoMiningViewModel internal constructor(
     private var subtitleDocumentJob: Job? = null
     private val videoSelection = SavedDocumentSelectionStore(savedStateHandle, "videoMining.video")
     private val subtitleSelection = SavedDocumentSelectionStore(savedStateHandle, "videoMining.subtitle")
+
+    /** Small app-shell state; progress-only repository updates are filtered before composition. */
+    internal val navigationWorkflowState: StateFlow<NavigationWorkflowState> =
+        repository.state
+            .map { it.toNavigationWorkflowState() }
+            .distinctUntilChanged()
+            .stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.Eagerly,
+                initialValue = repository.state.value.toNavigationWorkflowState(),
+            )
 
     val uiState: StateFlow<VideoMiningUiState> =
         combine(repository.state, localState, runtimeWorkState) { runState, local, activeKind ->

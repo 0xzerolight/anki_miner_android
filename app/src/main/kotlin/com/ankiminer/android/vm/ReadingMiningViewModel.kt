@@ -40,6 +40,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -74,6 +76,17 @@ class ReadingMiningViewModel internal constructor(
     private var archiveDocumentJob: Job? = null
     private val sourceSelection = SavedDocumentSelectionStore(savedStateHandle, "readingMining.source")
     private val archiveSelection = SavedDocumentSelectionStore(savedStateHandle, "readingMining.archive")
+
+    /** Small app-shell state; progress-only repository updates are filtered before composition. */
+    internal val navigationWorkflowState: StateFlow<NavigationWorkflowState> =
+        repository.state
+            .map { it.toNavigationWorkflowState() }
+            .distinctUntilChanged()
+            .stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.Eagerly,
+                initialValue = repository.state.value.toNavigationWorkflowState(),
+            )
 
     val uiState: StateFlow<ReadingMiningUiState> =
         combine(repository.state, localState, runtimeWorkState) { runState, local, activeKind ->

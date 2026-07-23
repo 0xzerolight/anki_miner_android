@@ -31,6 +31,21 @@ internal data class TesterDiagnostics(
     val report: String,
 )
 
+internal data class TesterDiagnosticsIdentity(
+    val versionLabel: String,
+    val sourceLabel: String,
+)
+
+/** Defers report construction until the explicit Share diagnostics action. */
+internal class TesterDiagnosticsShareAction(
+    private val buildReport: () -> String,
+    private val shareReport: (String) -> Unit,
+) {
+    fun share() {
+        shareReport(buildReport())
+    }
+}
+
 internal fun currentTesterBuildIdentity(): TesterBuildIdentity =
     TesterBuildIdentity(
         applicationId = BuildConfig.APPLICATION_ID,
@@ -47,14 +62,22 @@ internal fun currentTesterBuildIdentity(): TesterBuildIdentity =
 
 /** Builds a bounded report from build identity, stable error codes, categories, and counts only. */
 internal object TesterDiagnosticsBuilder {
+    fun identity(build: TesterBuildIdentity): TesterDiagnosticsIdentity =
+        TesterDiagnosticsIdentity(
+            versionLabel =
+                "${safeBuildValue(build.versionName)} (${build.versionCode.coerceAtLeast(0L)})",
+            sourceLabel = safeBuildValue(build.sourceCommit),
+        )
+
     fun build(
         build: TesterBuildIdentity,
         setup: SetupUiState,
         video: VideoMiningUiState,
         reading: ReadingMiningUiState,
     ): TesterDiagnostics {
-        val versionName = safeBuildValue(build.versionName)
-        val sourceCommit = safeBuildValue(build.sourceCommit)
+        val identity = identity(build)
+        val versionName = identity.versionLabel.substringBeforeLast(" (")
+        val sourceCommit = identity.sourceLabel
         val report =
             buildString {
                 appendLine("Anki Miner tester diagnostics v1")
@@ -122,8 +145,8 @@ internal object TesterDiagnosticsBuilder {
             }.take(MAX_REPORT_CHARS)
 
         return TesterDiagnostics(
-            versionLabel = "$versionName (${build.versionCode.coerceAtLeast(0L)})",
-            sourceLabel = sourceCommit,
+            versionLabel = identity.versionLabel,
+            sourceLabel = identity.sourceLabel,
             report = report,
         )
     }

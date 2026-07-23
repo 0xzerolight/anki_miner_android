@@ -32,29 +32,39 @@ import com.ankiminer.android.R
 import com.ankiminer.android.mining.CurationPage
 import com.ankiminer.android.mining.MiningProgress
 import com.ankiminer.android.mining.ProcessingResult
+import com.ankiminer.android.ui.theme.actionBorder
+import com.ankiminer.android.ui.theme.outlinedActionButtonColors
 
 internal data class MiningResultSource(
     @param:StringRes val label: Int,
     val displayName: String?,
 )
 
+/**
+ * Shared runtime-conflict card. Mining conflicts expose direct navigation back to owning run.
+ */
 @Composable
-internal fun MiningScreenTopBar(modifier: Modifier = Modifier) {
-    Surface(
-        modifier = modifier,
-        color = MaterialTheme.colorScheme.surface,
-        tonalElevation = 2.dp,
-    ) {
-        Text(
-            text = stringResource(R.string.app_name),
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .semantics { heading() }
-                    .padding(horizontal = 20.dp, vertical = 16.dp),
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold,
-        )
+internal fun RuntimeConflictNotice(
+    text: String,
+    modifier: Modifier = Modifier,
+    onReturnToActiveRun: (() -> Unit)? = null,
+) {
+    OutlinedCard(modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(text = text, color = MaterialTheme.colorScheme.onSurface)
+            if (onReturnToActiveRun != null) {
+                OutlinedButton(
+                    onClick = onReturnToActiveRun,
+                    colors = outlinedActionButtonColors(),
+                    border = actionBorder(enabled = true),
+                ) {
+                    Text(stringResource(R.string.return_to_active_run))
+                }
+            }
+        }
     }
 }
 

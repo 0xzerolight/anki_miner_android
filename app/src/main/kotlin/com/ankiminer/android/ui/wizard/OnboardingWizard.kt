@@ -3,9 +3,9 @@ package com.ankiminer.android.ui.wizard
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -16,9 +16,9 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedCard
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -28,13 +28,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.heading
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.ankiminer.android.R
+import com.ankiminer.android.ui.navigation.AppChrome
 import com.ankiminer.android.ui.settings.AnkiOperationCard
 import com.ankiminer.android.ui.settings.AnkiDeckCard
 import com.ankiminer.android.ui.settings.AnkiTargetCard
@@ -189,126 +187,136 @@ internal fun OnboardingWizardContent(
         snackbarHostState,
         callbacks.onDismissAnkiFailure,
     )
-    Surface(modifier.fillMaxSize()) {
-        Box(Modifier.fillMaxSize()) {
-            Column(
-                Modifier
-                    .fillMaxSize()
-                    .verticalScroll(scrollState)
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-            ) {
-                Text(
-                    stringResource(
-                        when (step) {
-                            WizardStep.WELCOME -> R.string.wizard_welcome_title
-                            WizardStep.TOKENIZER -> R.string.wizard_tokenizer_title
-                            WizardStep.DICTIONARY -> R.string.wizard_dictionary_title
-                            WizardStep.ANKIDROID -> R.string.wizard_ankidroid_title
-                            WizardStep.ANKIDROID_DECK -> R.string.wizard_deck_title
-                            WizardStep.ANKIDROID_NOTE_TYPE -> R.string.wizard_note_type_title
-                            WizardStep.DONE -> R.string.wizard_done_title
-                        },
-                    ),
-                    modifier = Modifier.semantics { heading() },
-                    style = MaterialTheme.typography.headlineSmall,
-                )
-                Text(
-                    stringResource(
-                        R.string.wizard_step_position,
-                        step.ordinal + 1,
-                        WizardStep.entries.size,
-                    ),
-                    style = MaterialTheme.typography.bodySmall,
-                )
+    val title =
+        stringResource(
+            when (step) {
+                WizardStep.WELCOME -> R.string.wizard_welcome_title
+                WizardStep.TOKENIZER -> R.string.wizard_tokenizer_title
+                WizardStep.DICTIONARY -> R.string.wizard_dictionary_title
+                WizardStep.ANKIDROID -> R.string.wizard_ankidroid_title
+                WizardStep.ANKIDROID_DECK -> R.string.wizard_deck_title
+                WizardStep.ANKIDROID_NOTE_TYPE -> R.string.wizard_note_type_title
+                WizardStep.DONE -> R.string.wizard_done_title
+            },
+        )
+    Scaffold(
+        modifier = modifier.fillMaxSize(),
+        topBar = {
+            AppChrome(
+                title = title,
+                onNavigateBack =
+                    if (
+                        step == WizardStep.WELCOME ||
+                        state.wizardCompletion == WizardCompletionStatus.SAVING
+                    ) {
+                        null
+                    } else {
+                        { callbacks.onStep(previousWizardStep(step)) }
+                    },
+            )
+        },
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+    ) { scaffoldPadding ->
+        Column(
+            Modifier
+                .fillMaxSize()
+                .padding(scaffoldPadding)
+                .consumeWindowInsets(scaffoldPadding)
+                .verticalScroll(scrollState)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Text(
+                stringResource(
+                    R.string.wizard_step_position,
+                    step.ordinal + 1,
+                    WizardStep.entries.size,
+                ),
+                style = MaterialTheme.typography.bodySmall,
+            )
 
-                when (step) {
-                    WizardStep.WELCOME -> {
-                        Text(stringResource(R.string.wizard_welcome_body))
-                        Text(stringResource(R.string.wizard_welcome_settings_note))
-                    }
-                    WizardStep.TOKENIZER -> {
-                        Text(stringResource(R.string.wizard_tokenizer_body))
-                        ResourceCard(
-                            title = stringResource(R.string.unidic_resource_title),
-                            description = stringResource(R.string.unidic_resource_description),
-                            installed = state.uniDicInstalled,
-                            busy = state.busy,
-                            action = callbacks.onInstallUniDic,
-                            actionLabel = stringResource(
-                                if (state.uniDicInstalled) R.string.unidic_repair else R.string.unidic_install,
-                            ),
-                        )
-                    }
-                    WizardStep.DICTIONARY -> {
-                        Text(stringResource(R.string.wizard_dictionary_body))
-                        CatalogDictionaryCards(
-                            state,
-                            callbacks.onInstallCatalogDictionary,
-                        )
-                    }
-                    WizardStep.ANKIDROID -> {
-                        Text(stringResource(R.string.wizard_ankidroid_body))
-                        AnkiDroidActionButtons(
-                            state = state,
-                            onRequestPermissions = callbacks.onRequestPermissions,
-                            onInstallAnkiDroid = callbacks.onInstallAnkiDroid,
-                            onOpenAnkiDroid = callbacks.onOpenAnkiDroid,
-                        )
-                        state.ankiOperation?.let { AnkiOperationCard() }
-                    }
-                    WizardStep.ANKIDROID_DECK -> {
-                        Text(stringResource(R.string.wizard_deck_body))
-                        AnkiDeckCard(
-                            state,
-                            callbacks.onSelectDeck,
-                            callbacks.onRetryDeckSelection,
-                        )
-                        state.ankiOperation?.let { AnkiOperationCard() }
-                    }
-                    WizardStep.ANKIDROID_NOTE_TYPE -> {
-                        Text(stringResource(R.string.wizard_note_type_body))
-                        AnkiTargetCard(
-                            state,
-                            callbacks.onSelectNoteType,
-                            callbacks.onSetFieldMapping,
-                            callbacks.onVerifyNoteType,
-                        )
-                        state.ankiOperation?.let { AnkiOperationCard() }
-                    }
-                    WizardStep.DONE -> {
-                        Text(stringResource(R.string.wizard_done_body))
-                        SystemStatusCard(
-                            state = state,
-                            onRefresh = callbacks.onRefresh,
-                            onRequestPermissions = callbacks.onRequestPermissions,
-                            onOpenAppSettings = callbacks.onOpenAppSettings,
-                            onInstallAnkiDroid = callbacks.onInstallAnkiDroid,
-                            onOpenAnkiDroid = callbacks.onOpenAnkiDroid,
-                        )
-                    }
+            when (step) {
+                WizardStep.WELCOME -> {
+                    Text(stringResource(R.string.wizard_welcome_body))
+                    Text(stringResource(R.string.wizard_welcome_settings_note))
                 }
-
-                if (step != WizardStep.WELCOME && step != WizardStep.DONE) {
-                    state.operation?.let { operation ->
-                        ResourceOperationCard(operation, callbacks.onCancelOperation)
-                    }
+                WizardStep.TOKENIZER -> {
+                    Text(stringResource(R.string.wizard_tokenizer_body))
+                    ResourceCard(
+                        title = stringResource(R.string.unidic_resource_title),
+                        description = stringResource(R.string.unidic_resource_description),
+                        installed = state.uniDicInstalled,
+                        busy = state.busy,
+                        action = callbacks.onInstallUniDic,
+                        actionLabel = stringResource(
+                            if (state.uniDicInstalled) R.string.unidic_repair else R.string.unidic_install,
+                        ),
+                    )
                 }
-                WizardCompletionCard(
-                    status = state.wizardCompletion,
-                    onRetry = callbacks.onRetryWizardCompletion,
-                    onDismissForSession = callbacks.onDismissWizardForSession,
-                )
-                NavigationButtons(
-                    step,
-                    saving = state.wizardCompletion == WizardCompletionStatus.SAVING,
-                    onStep = callbacks.onStep,
-                    onFinished = callbacks.onFinished,
-                )
+                WizardStep.DICTIONARY -> {
+                    Text(stringResource(R.string.wizard_dictionary_body))
+                    CatalogDictionaryCards(
+                        state,
+                        callbacks.onInstallCatalogDictionary,
+                    )
+                }
+                WizardStep.ANKIDROID -> {
+                    Text(stringResource(R.string.wizard_ankidroid_body))
+                    AnkiDroidActionButtons(
+                        state = state,
+                        onRequestPermissions = callbacks.onRequestPermissions,
+                        onInstallAnkiDroid = callbacks.onInstallAnkiDroid,
+                        onOpenAnkiDroid = callbacks.onOpenAnkiDroid,
+                    )
+                    state.ankiOperation?.let { AnkiOperationCard() }
+                }
+                WizardStep.ANKIDROID_DECK -> {
+                    Text(stringResource(R.string.wizard_deck_body))
+                    AnkiDeckCard(
+                        state,
+                        callbacks.onSelectDeck,
+                        callbacks.onRetryDeckSelection,
+                    )
+                    state.ankiOperation?.let { AnkiOperationCard() }
+                }
+                WizardStep.ANKIDROID_NOTE_TYPE -> {
+                    Text(stringResource(R.string.wizard_note_type_body))
+                    AnkiTargetCard(
+                        state,
+                        callbacks.onSelectNoteType,
+                        callbacks.onSetFieldMapping,
+                        callbacks.onVerifyNoteType,
+                    )
+                    state.ankiOperation?.let { AnkiOperationCard() }
+                }
+                WizardStep.DONE -> {
+                    Text(stringResource(R.string.wizard_done_body))
+                    SystemStatusCard(
+                        state = state,
+                        onRefresh = callbacks.onRefresh,
+                        onRequestPermissions = callbacks.onRequestPermissions,
+                        onOpenAppSettings = callbacks.onOpenAppSettings,
+                        onInstallAnkiDroid = callbacks.onInstallAnkiDroid,
+                        onOpenAnkiDroid = callbacks.onOpenAnkiDroid,
+                    )
+                }
             }
-            SnackbarHost(
-                hostState = snackbarHostState,
-                modifier = Modifier.align(Alignment.BottomCenter),
+
+            if (step != WizardStep.WELCOME && step != WizardStep.DONE) {
+                state.operation?.let { operation ->
+                    ResourceOperationCard(operation, callbacks.onCancelOperation)
+                }
+            }
+            WizardCompletionCard(
+                status = state.wizardCompletion,
+                onRetry = callbacks.onRetryWizardCompletion,
+                onDismissForSession = callbacks.onDismissWizardForSession,
+            )
+            NavigationButtons(
+                step,
+                saving = state.wizardCompletion == WizardCompletionStatus.SAVING,
+                onStep = callbacks.onStep,
+                onFinished = callbacks.onFinished,
             )
         }
     }

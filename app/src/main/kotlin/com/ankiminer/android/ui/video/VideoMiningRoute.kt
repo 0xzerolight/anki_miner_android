@@ -19,6 +19,7 @@ private val SUBTITLE_MIME_TYPES =
 @Composable
 fun VideoMiningRoute(
     viewModel: VideoMiningViewModel,
+    onReturnToActiveRun: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -47,6 +48,7 @@ fun VideoMiningRoute(
         onCancel = viewModel::cancel,
         onRetry = viewModel::retry,
         onReset = viewModel::reset,
+        onReturnToActiveRun = onReturnToActiveRun,
         modifier = modifier,
     )
 }

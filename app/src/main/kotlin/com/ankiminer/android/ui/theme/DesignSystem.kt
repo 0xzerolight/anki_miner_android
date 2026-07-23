@@ -1,0 +1,262 @@
+package com.ankiminer.android.ui.theme
+
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ButtonColors
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Shapes
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.Typography
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+
+/** Shared breakpoint used by action groups and other width-sensitive controls. */
+const val CompactLayoutWidthDp = 360
+
+/** Readable disabled colors. Fill remains distinct from every enabled action fill. */
+internal data class DisabledActionColors(
+    val content: Color,
+    val border: Color,
+    val container: Color,
+    val enabledContainer: Color,
+)
+
+internal val LightDisabledActionColors =
+    DisabledActionColors(
+        content = Color(0xFF59625F),
+        border = Color(0xFF59625F),
+        container = Color(0xFFE3EAE7),
+        enabledContainer = Color(0xFF006A61),
+    )
+
+internal val DarkDisabledActionColors =
+    DisabledActionColors(
+        content = Color(0xFFAFB9B5),
+        border = Color(0xFFAFB9B5),
+        container = Color(0xFF28312F),
+        enabledContainer = Color(0xFF53DBCC),
+    )
+
+private val BaseFontFamily = FontFamily.SansSerif
+
+/** Explicit type scale. System font scaling remains uncapped. */
+internal val AnkiMinerTypography =
+    Typography(
+        displayLarge = textStyle(57, 64, FontWeight.Normal, -0.25),
+        displayMedium = textStyle(45, 52),
+        displaySmall = textStyle(36, 44),
+        headlineLarge = textStyle(32, 40),
+        headlineMedium = textStyle(28, 36),
+        headlineSmall = textStyle(24, 32, FontWeight.SemiBold),
+        titleLarge = textStyle(22, 28, FontWeight.SemiBold),
+        titleMedium = textStyle(16, 24, FontWeight.SemiBold, 0.15),
+        titleSmall = textStyle(14, 20, FontWeight.SemiBold, 0.1),
+        bodyLarge = textStyle(16, 24, FontWeight.Normal, 0.5),
+        bodyMedium = textStyle(14, 20, FontWeight.Normal, 0.25),
+        bodySmall = textStyle(12, 16, FontWeight.Normal, 0.4),
+        labelLarge = textStyle(14, 20, FontWeight.SemiBold, 0.1),
+        labelMedium = textStyle(12, 16, FontWeight.SemiBold, 0.5),
+        labelSmall = textStyle(11, 16, FontWeight.SemiBold, 0.5),
+    )
+
+/** Shape scale shared by cards, fields, dialogs, and large containers. */
+internal val AnkiMinerShapes =
+    Shapes(
+        extraSmall = RoundedCornerShape(4.dp),
+        small = RoundedCornerShape(8.dp),
+        medium = RoundedCornerShape(12.dp),
+        large = RoundedCornerShape(16.dp),
+        extraLarge = RoundedCornerShape(28.dp),
+    )
+
+private fun textStyle(
+    sizeSp: Int,
+    lineHeightSp: Int,
+    weight: FontWeight = FontWeight.Normal,
+    letterSpacingSp: Double = 0.0,
+): TextStyle =
+    TextStyle(
+        fontFamily = BaseFontFamily,
+        fontWeight = weight,
+        fontSize = sizeSp.sp,
+        lineHeight = lineHeightSp.sp,
+        letterSpacing = letterSpacingSp.toFloat().sp,
+    )
+
+/** Page-level heading for content that is not already named by app chrome. */
+@Composable
+internal fun ScreenTitle(
+    text: String,
+    modifier: Modifier = Modifier,
+) {
+    Text(
+        text = text,
+        modifier = modifier.semantics { heading() },
+        style = MaterialTheme.typography.headlineSmall,
+    )
+}
+
+/** Section heading with consistent hierarchy and accessibility semantics. */
+@Composable
+internal fun SectionTitle(
+    text: String,
+    modifier: Modifier = Modifier,
+) {
+    Text(
+        text = text,
+        modifier = modifier.semantics { heading() },
+        style = MaterialTheme.typography.titleLarge,
+    )
+}
+
+/** Low-emphasis explanatory text used beneath controls and section labels. */
+@Composable
+internal fun SupportingText(
+    text: String,
+    modifier: Modifier = Modifier,
+) {
+    Text(
+        text = text,
+        modifier = modifier,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        style = MaterialTheme.typography.bodySmall,
+    )
+}
+
+/** Compact result/status metric for later mining result layouts. */
+@Composable
+internal fun MetricTile(
+    value: String,
+    label: String,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        shape = MaterialTheme.shapes.medium,
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(value, style = MaterialTheme.typography.titleLarge)
+            SupportingText(label)
+        }
+    }
+}
+
+/**
+ * Places the primary action first and full-width when width is compact or text scale is large.
+ * Wider layouts keep actions on one row with the primary action in the trailing position.
+ */
+@Composable
+internal fun AdaptiveActionGroup(
+    primary: @Composable (Modifier) -> Unit,
+    modifier: Modifier = Modifier,
+    secondary: (@Composable (Modifier) -> Unit)? = null,
+) {
+    BoxWithConstraints(modifier) {
+        val stack =
+            maxWidth < CompactLayoutWidthDp.dp || LocalDensity.current.fontScale >= 1.3f
+        if (stack) {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                primary(Modifier.fillMaxWidth())
+                secondary?.invoke(Modifier.fillMaxWidth())
+            }
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                secondary?.invoke(Modifier.weight(1f))
+                primary(Modifier.weight(1f))
+            }
+        }
+    }
+}
+
+/** Filled colors reserved for forward workflow actions. */
+@Composable
+internal fun forwardButtonColors(): ButtonColors {
+    val disabled = disabledActionColors()
+    return ButtonDefaults.buttonColors(
+        containerColor = MaterialTheme.colorScheme.primary,
+        contentColor = MaterialTheme.colorScheme.onPrimary,
+        disabledContainerColor = disabled.container,
+        disabledContentColor = disabled.content,
+    )
+}
+
+/** Tonal colors for choose, install, and repair actions. */
+@Composable
+internal fun tonalActionButtonColors(): ButtonColors {
+    val disabled = disabledActionColors()
+    return ButtonDefaults.filledTonalButtonColors(
+        containerColor = MaterialTheme.colorScheme.secondaryContainer,
+        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+        disabledContainerColor = disabled.container,
+        disabledContentColor = disabled.content,
+    )
+}
+
+/** Outlined colors for choose, install, and repair actions. */
+@Composable
+internal fun outlinedActionButtonColors(): ButtonColors {
+    val disabled = disabledActionColors()
+    return ButtonDefaults.outlinedButtonColors(
+        contentColor = MaterialTheme.colorScheme.primary,
+        disabledContentColor = disabled.content,
+    )
+}
+
+/** Text colors for back, skip, remove, and cancel actions. */
+@Composable
+internal fun exitActionButtonColors(isError: Boolean = false): ButtonColors {
+    val disabled = disabledActionColors()
+    return ButtonDefaults.textButtonColors(
+        contentColor =
+            if (isError) {
+                MaterialTheme.colorScheme.error
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
+        disabledContentColor = disabled.content,
+    )
+}
+
+/** Border token matching [outlinedActionButtonColors] disabled contrast. */
+@Composable
+internal fun actionBorder(enabled: Boolean): BorderStroke =
+    BorderStroke(
+        1.dp,
+        if (enabled) MaterialTheme.colorScheme.outline else disabledActionColors().border,
+    )
+
+@Composable
+private fun disabledActionColors(): DisabledActionColors =
+    if (MaterialTheme.colorScheme.background == DarkColors.background) {
+        DarkDisabledActionColors
+    } else {
+        LightDisabledActionColors
+    }

@@ -177,6 +177,12 @@
     <string name="nav_video">動画</string>
     <string name="nav_reading">読書</string>
     <string name="nav_settings">設定</string>
+    <string name="nav_video_description">動画マイニング</string>
+    <string name="nav_reading_description">読書マイニング</string>
+    <string name="nav_settings_description">設定</string>
+    <string name="nav_workflow_running">実行中</string>
+    <string name="nav_workflow_review">レビュー</string>
+    <string name="navigate_back">戻る</string>
     <string name="nav_licenses">Licences</string>
     <string name="nav_notices">Third-party notices</string>
     <string name="mining_not_ready">Mining is not ready</string>
@@ -186,6 +192,7 @@
     <string name="open_app_settings">Open app settings</string>
     <string name="install_or_update_ankidroid">Install or update AnkiDroid</string>
     <string name="open_ankidroid">Open AnkiDroid</string>
+    <string name="return_to_active_run">実行中のマイニングに戻る</string>
     <string name="ankidroid_action_unavailable">No app is available to open AnkiDroid or its official releases page.</string>
     <string name="settings_tester_diagnostics">Tester diagnostics</string>
     <string name="settings_version_identity">Version: %1$s</string>
@@ -212,6 +219,12 @@
     <string name="readiness_recovery_required">Resolve pending Anki recovery items in Settings.</string>
     <string name="readiness_resource_operation">Wait for the active setup or resource operation to finish.</string>
     <string name="readiness_unknown">Readiness could not be confirmed.</string>
+    <string name="readiness_install_unidic">UniDicをインストール</string>
+    <string name="readiness_connect_ankidroid">AnkiDroidに接続</string>
+    <string name="readiness_choose_note_type">ノートタイプを選択</string>
+    <string name="readiness_resolve_recovery">復旧項目を解決</string>
+    <string name="readiness_check_again">もう一度確認</string>
+    <string name="readiness_wait_action">セットアップ処理中です。完了するまでお待ちください。</string>
 
     <string name="anki_note_type_title">Anki note type</string>
     <string name="anki_note_type_description">Anki Miner writes cards into a note type you already have in AnkiDroid. It never creates a note type and never changes one — pick a note type and map its fields.</string>

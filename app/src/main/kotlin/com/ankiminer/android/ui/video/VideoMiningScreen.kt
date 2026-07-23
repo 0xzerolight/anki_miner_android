@@ -54,7 +54,7 @@ import com.ankiminer.android.ui.mining.MiningErrorMessage
 import com.ankiminer.android.ui.mining.MiningProgressPanel
 import com.ankiminer.android.ui.mining.MiningResultSource
 import com.ankiminer.android.ui.mining.MiningResultSummary
-import com.ankiminer.android.ui.mining.MiningScreenTopBar
+import com.ankiminer.android.ui.mining.RuntimeConflictNotice
 import com.ankiminer.android.ui.mining.StickyCurationActions
 import com.ankiminer.android.ui.mining.documentReadProgress
 
@@ -75,13 +75,13 @@ fun VideoMiningScreen(
     onCancel: () -> Unit,
     onRetry: () -> Unit,
     onReset: () -> Unit,
+    onReturnToActiveRun: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
     listState: LazyListState = rememberLazyListState(),
 ) {
     Scaffold(
         modifier = modifier.fillMaxSize(),
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        topBar = { MiningScreenTopBar() },
         bottomBar = {
             if (state.runState is MiningRunState.Curating) {
                 val curation = state.curation
@@ -129,6 +129,7 @@ fun VideoMiningScreen(
                         onClearSubtitle = onClearSubtitle,
                         onDismissDocumentError = onDismissDocumentError,
                         onStart = onStart,
+                        onReturnToActiveRun = onReturnToActiveRun,
                     )
                 is MiningRunState.Starting ->
                     progressItems(
@@ -208,23 +209,21 @@ private fun LazyListScope.setupItems(
     onClearSubtitle: () -> Unit,
     onDismissDocumentError: (DocumentSelectionError) -> Unit,
     onStart: () -> Unit,
+    onReturnToActiveRun: (() -> Unit)?,
 ) {
     item(key = "setup_header") {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(
-                text = stringResource(R.string.video_mining_title),
-                modifier = Modifier.semantics { heading() },
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold,
-            )
             Text(
                 text = stringResource(R.string.video_mining_intro),
                 style = MaterialTheme.typography.bodyLarge,
             )
             state.runtimeConflict?.let { conflict ->
-                Text(
+                RuntimeConflictNotice(
                     text = stringResource(runtimeConflictMessage(conflict)),
-                    color = MaterialTheme.colorScheme.error,
+                    onReturnToActiveRun =
+                        onReturnToActiveRun.takeIf {
+                            conflict == RuntimeWorkConflict.MINING
+                        },
                 )
             }
         }

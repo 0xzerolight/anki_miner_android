@@ -55,7 +55,7 @@ import com.ankiminer.android.ui.mining.MiningErrorMessage
 import com.ankiminer.android.ui.mining.MiningProgressPanel
 import com.ankiminer.android.ui.mining.MiningResultSource
 import com.ankiminer.android.ui.mining.MiningResultSummary
-import com.ankiminer.android.ui.mining.MiningScreenTopBar
+import com.ankiminer.android.ui.mining.RuntimeConflictNotice
 import com.ankiminer.android.ui.mining.StickyCurationActions
 import com.ankiminer.android.ui.mining.documentReadProgress
 
@@ -77,6 +77,7 @@ fun ReadingMiningScreen(
     onCancel: () -> Unit,
     onRetry: () -> Unit,
     onReset: () -> Unit,
+    onReturnToActiveRun: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
     listState: LazyListState = rememberLazyListState(),
 ) {
@@ -86,7 +87,6 @@ fun ReadingMiningScreen(
                 .fillMaxSize()
                 .testTag(ReadingMiningTestTags.SCREEN),
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        topBar = { MiningScreenTopBar() },
         bottomBar = {
             if (state.runState is MiningRunState.Curating) {
                 val curation = state.curation
@@ -135,6 +135,7 @@ fun ReadingMiningScreen(
                         onSeriesNameChanged = onSeriesNameChanged,
                         onDismissDocumentError = onDismissDocumentError,
                         onStart = onStart,
+                        onReturnToActiveRun = onReturnToActiveRun,
                     )
                 is MiningRunState.Starting ->
                     readingProgressItems(
@@ -212,23 +213,21 @@ private fun LazyListScope.setupItems(
     onSeriesNameChanged: (String) -> Unit,
     onDismissDocumentError: (ReadingDocumentSelectionError) -> Unit,
     onStart: () -> Unit,
+    onReturnToActiveRun: (() -> Unit)?,
 ) {
     item(key = "reading_setup_header") {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(
-                text = stringResource(R.string.reading_mining_title),
-                modifier = Modifier.semantics { heading() },
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold,
-            )
             Text(
                 text = stringResource(R.string.reading_mining_intro),
                 style = MaterialTheme.typography.bodyLarge,
             )
             state.runtimeConflict?.let { conflict ->
-                Text(
+                RuntimeConflictNotice(
                     text = stringResource(readingRuntimeConflictMessage(conflict)),
-                    color = MaterialTheme.colorScheme.error,
+                    onReturnToActiveRun =
+                        onReturnToActiveRun.takeIf {
+                            conflict == RuntimeWorkConflict.MINING
+                        },
                 )
             }
         }

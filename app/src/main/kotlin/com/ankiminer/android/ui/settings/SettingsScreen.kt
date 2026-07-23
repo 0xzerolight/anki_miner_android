@@ -25,11 +25,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
-import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -42,10 +41,11 @@ import com.ankiminer.android.data.settings.AppSettings
 import com.ankiminer.android.data.settings.AudioFormat
 import com.ankiminer.android.data.settings.PitchCategoryFormat
 import com.ankiminer.android.data.settings.ThemeMode
-import com.ankiminer.android.diagnostics.TesterDiagnostics
-import com.ankiminer.android.vm.SetupUiState
-import com.ankiminer.android.vm.SettingsViewModel
+import com.ankiminer.android.diagnostics.TesterDiagnosticsIdentity
+import com.ankiminer.android.ui.mining.RuntimeConflictNotice
 import com.ankiminer.android.vm.SettingsDraft
+import com.ankiminer.android.vm.SettingsViewModel
+import com.ankiminer.android.vm.SetupUiState
 import com.ankiminer.android.vm.SetupViewModel
 
 // SAF picker MIME allowlists for the resource imports. Kept broad on purpose:
@@ -112,14 +112,15 @@ internal fun excludedDeckChoices(
 internal fun SettingsRoute(
     viewModel: SettingsViewModel,
     setupViewModel: SetupViewModel,
-    diagnostics: TesterDiagnostics,
+    diagnostics: TesterDiagnosticsIdentity,
     onRequestPermissions: () -> Unit,
     onOpenAppSettings: () -> Unit,
     onInstallAnkiDroid: () -> Unit,
     onOpenAnkiDroid: () -> Unit,
     onOpenSpeechSettings: () -> Unit,
-    onShareDiagnostics: (String) -> Unit,
+    onShareDiagnostics: () -> Unit,
     onShareEngineLog: () -> Unit,
+    onReturnToActiveRun: (() -> Unit)? = null,
     onAttributions: () -> Unit,
     onRunSetupWizard: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
@@ -181,6 +182,7 @@ internal fun SettingsRoute(
         onOpenSpeechSettings = onOpenSpeechSettings,
         onShareDiagnostics = onShareDiagnostics,
         onShareEngineLog = onShareEngineLog,
+        onReturnToActiveRun = onReturnToActiveRun,
         onAttributions = onAttributions,
         onRunSetupWizard = onRunSetupWizard,
         onImportCustom = { dictionaryPicker.launch(CUSTOM_DICTIONARY_MIME_TYPES) },
@@ -205,7 +207,7 @@ private fun SettingsScreen(
     setup: SetupUiState,
     setupViewModel: SetupViewModel,
     saving: Boolean,
-    diagnostics: TesterDiagnostics,
+    diagnostics: TesterDiagnosticsIdentity,
     onDraftChange: (SettingsDraft) -> Unit,
     onRestoreMiningDefaults: () -> Unit,
     onResetAnkiTarget: () -> Unit,
@@ -215,8 +217,9 @@ private fun SettingsScreen(
     onInstallAnkiDroid: () -> Unit,
     onOpenAnkiDroid: () -> Unit,
     onOpenSpeechSettings: () -> Unit,
-    onShareDiagnostics: (String) -> Unit,
+    onShareDiagnostics: () -> Unit,
     onShareEngineLog: () -> Unit,
+    onReturnToActiveRun: (() -> Unit)?,
     onAttributions: () -> Unit,
     onRunSetupWizard: (() -> Unit)?,
     onImportCustom: () -> Unit,
@@ -302,21 +305,23 @@ private fun SettingsScreen(
                 .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Text(
-            stringResource(R.string.settings_title),
-            modifier = Modifier.semantics { heading() },
-            style = MaterialTheme.typography.headlineSmall,
-        )
         Text(stringResource(R.string.settings_intro))
         setup.runtimeWorkKind?.let { kind ->
-            OutlinedCard(Modifier.fillMaxWidth()) {
-                Text(
+            if (kind == RuntimeWorkCoordinator.Kind.MINING) {
+                RuntimeConflictNotice(
                     text = stringResource(settingsRuntimeWorkMessage(kind)),
-                    modifier =
-                        Modifier
-                            .padding(12.dp)
-                            .semantics { liveRegion = LiveRegionMode.Polite },
+                    onReturnToActiveRun = onReturnToActiveRun,
                 )
+            } else {
+                OutlinedCard(Modifier.fillMaxWidth()) {
+                    Text(
+                        text = stringResource(settingsRuntimeWorkMessage(kind)),
+                        modifier =
+                            Modifier
+                                .padding(12.dp)
+                                .semantics { liveRegion = LiveRegionMode.Polite },
+                    )
+                }
             }
         }
 
@@ -693,7 +698,7 @@ private fun SettingsScreen(
                 style = MaterialTheme.typography.bodySmall,
             )
             OutlinedButton(
-                onClick = { onShareDiagnostics(diagnostics.report) },
+                onClick = onShareDiagnostics,
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text(stringResource(R.string.settings_share_diagnostics))

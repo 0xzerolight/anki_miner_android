@@ -5,6 +5,7 @@ import com.ankiminer.android.anki.provider.AnkiProviderReadiness
 import com.ankiminer.android.anki.provider.AnkiRecoveryReadiness
 import com.ankiminer.android.anki.provider.AnkiRemediationInventory
 import com.ankiminer.android.anki.provider.ModelSummary
+import com.ankiminer.android.anki.provider.NoteTypeProviderErrorReason
 import com.ankiminer.android.anki.provider.NoteTypeSetupStatus
 import com.ankiminer.android.data.RuntimeWorkCoordinator
 import com.ankiminer.android.data.anki.AnkiRecoveryInventoryStatus
@@ -170,14 +171,89 @@ internal data class SetupUiState(
                 -> null
             }
 
+    /**
+     * One corrective action for the first blocking mining-readiness condition.
+     * Active startup/setup work wins so UI never offers an action that cannot run.
+     */
+    val miningReadinessAction: MiningReadinessAction
+        get() =
+            when {
+                busy -> MiningReadinessAction.WAIT
+                python == PythonRuntimeReadiness.Pending ||
+                    python == PythonRuntimeReadiness.Starting ->
+                    MiningReadinessAction.WAIT
+                python == PythonRuntimeReadiness.Failed ->
+                    MiningReadinessAction.CHECK_AGAIN
+                resourceStartup == ResourceStartupReadiness.PENDING ||
+                    resourceStartup == ResourceStartupReadiness.RECOVERING ->
+                    MiningReadinessAction.WAIT
+                resourceStartup == ResourceStartupReadiness.FAILED ->
+                    MiningReadinessAction.CHECK_AGAIN
+                !uniDicInstalled -> MiningReadinessAction.INSTALL_UNIDIC
+                anki == AnkiProviderReadiness.NotInstalled ->
+                    MiningReadinessAction.INSTALL_ANKIDROID
+                anki == AnkiProviderReadiness.Uninitialized ->
+                    MiningReadinessAction.OPEN_ANKIDROID
+                anki == AnkiProviderReadiness.PermissionDenied ->
+                    MiningReadinessAction.CONNECT_ANKIDROID
+                anki is AnkiProviderReadiness.Incompatible ->
+                    if (anki.apiSpecVersion == null) {
+                        MiningReadinessAction.OPEN_ANKIDROID
+                    } else {
+                        MiningReadinessAction.INSTALL_ANKIDROID
+                    }
+                anki == AnkiProviderReadiness.NotChecked ->
+                    MiningReadinessAction.CHECK_AGAIN
+                noteTypeStatus is NoteTypeSetupStatus.ProviderError ->
+                    noteTypeStatus.readinessAction()
+                !targetReady -> MiningReadinessAction.CHOOSE_NOTE_TYPE
+                ankiRecovery == AnkiRecoveryReadiness.Blocked ->
+                    MiningReadinessAction.RESOLVE_RECOVERY
+                recoveryInventoryStatus == AnkiRecoveryInventoryStatus.AVAILABLE &&
+                    remediations.pending.isNotEmpty() ->
+                    MiningReadinessAction.RESOLVE_RECOVERY
+                !recoveryReady -> MiningReadinessAction.CHECK_AGAIN
+                else -> MiningReadinessAction.CHECK_AGAIN
+            }
+
     private companion object {
         val CUSTOM_SLOT_ID = Regex("(?!.*(?:\\.\\.|--))[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?")
     }
 }
+
+private fun NoteTypeSetupStatus.ProviderError.readinessAction(): MiningReadinessAction =
+    when (reason) {
+        NoteTypeProviderErrorReason.API_DISABLED,
+        NoteTypeProviderErrorReason.API_DISABLED_OR_INCOMPATIBLE,
+        NoteTypeProviderErrorReason.PROVIDER_UNAVAILABLE,
+        NoteTypeProviderErrorReason.PROVIDER_BECAME_UNAVAILABLE,
+        -> MiningReadinessAction.OPEN_ANKIDROID
+        NoteTypeProviderErrorReason.API_INCOMPATIBLE ->
+            MiningReadinessAction.INSTALL_ANKIDROID
+        NoteTypeProviderErrorReason.PERMISSION_REQUIRED ->
+            MiningReadinessAction.CONNECT_ANKIDROID
+        NoteTypeProviderErrorReason.QUERY_FAILED,
+        NoteTypeProviderErrorReason.TIMEOUT,
+        NoteTypeProviderErrorReason.CANCELLED,
+        NoteTypeProviderErrorReason.UNKNOWN,
+        -> MiningReadinessAction.CHECK_AGAIN
+    }
 
 internal enum class AnkiDroidSetupAction {
     INSTALL,
     OPEN,
     OPEN_OR_INSTALL,
     REQUEST_PERMISSION,
+}
+
+/** Corrective action rendered by a mining destination when setup is not ready. */
+internal enum class MiningReadinessAction {
+    INSTALL_UNIDIC,
+    INSTALL_ANKIDROID,
+    OPEN_ANKIDROID,
+    CONNECT_ANKIDROID,
+    CHOOSE_NOTE_TYPE,
+    RESOLVE_RECOVERY,
+    CHECK_AGAIN,
+    WAIT,
 }

@@ -11,34 +11,42 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.toArgb
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.ankiminer.android.anki.provider.ANKIDROID_PACKAGE
 import com.ankiminer.android.data.settings.AppSettings
-import com.ankiminer.android.diagnostics.EngineLogReader
 import com.ankiminer.android.data.settings.ThemeMode
+import com.ankiminer.android.diagnostics.EngineLogReader
 import com.ankiminer.android.mining.MiningRepositoryFactory
 import com.ankiminer.android.mining.MiningRuntimePermissions
 import com.ankiminer.android.reading.ReadingRepositoryFactory
 import com.ankiminer.android.service.MiningForegroundService
 import com.ankiminer.android.ui.navigation.AnkiMinerApp
 import com.ankiminer.android.ui.theme.AnkiMinerTheme
+import com.ankiminer.android.ui.theme.LaunchNeutral
 import com.ankiminer.android.ui.theme.SystemBarIconAppearance
 import com.ankiminer.android.ui.theme.systemBarIconAppearance
 import com.ankiminer.android.vm.ReadingMiningViewModel
 import com.ankiminer.android.vm.SettingsViewModel
-import java.io.File
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import com.ankiminer.android.vm.SetupViewModel
 import com.ankiminer.android.vm.VideoMiningViewModel
+import java.io.File
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
     private val notificationRunId = MutableStateFlow<String?>(null)
@@ -81,12 +89,30 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         notificationRunId.value = MiningForegroundService.consumeOpenedRunId(intent)
         setContent {
+            val app = application as AnkiMinerApplication
+            val nullableSettings =
+                remember(app) {
+                    app.settingsRepository.settings.map<AppSettings, AppSettings?> { it }
+                }
             val appSettings =
-                (application as AnkiMinerApplication)
-                    .settingsRepository
-                    .settings
-                    .collectAsStateWithLifecycle(initialValue = AppSettings())
+                nullableSettings
+                    .collectAsStateWithLifecycle(initialValue = null)
                     .value
+            if (appSettings == null) {
+                LaunchedEffect(Unit) {
+                    val launchStyle = SystemBarStyle.dark(LaunchNeutral.toArgb())
+                    enableEdgeToEdge(
+                        statusBarStyle = launchStyle,
+                        navigationBarStyle = launchStyle,
+                    )
+                }
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .background(LaunchNeutral),
+                )
+                return@setContent
+            }
             val darkTheme = appSettings.theme == ThemeMode.DARK
             val iconAppearance = systemBarIconAppearance(darkTheme)
             LaunchedEffect(iconAppearance) {
@@ -109,7 +135,6 @@ class MainActivity : ComponentActivity() {
                 val setupViewModel: SetupViewModel = viewModel(factory = setupViewModelFactory)
                 val settingsViewModel: SettingsViewModel = viewModel(factory = settingsViewModelFactory)
                 val openedRunId = notificationRunId.collectAsStateWithLifecycle().value
-                val app = application as AnkiMinerApplication
                 val permissions =
                     MiningRuntimePermissions.requestableFor(android.os.Build.VERSION.SDK_INT)
                         .map { it.permission }

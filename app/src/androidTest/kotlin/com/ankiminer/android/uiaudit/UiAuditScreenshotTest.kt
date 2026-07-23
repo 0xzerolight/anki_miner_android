@@ -17,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
@@ -26,10 +27,13 @@ import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performScrollToKey
 import androidx.compose.ui.unit.Density
 import androidx.test.platform.app.InstrumentationRegistry
+import com.ankiminer.android.R
+import com.ankiminer.android.anki.provider.NoteTypeSetupStatus
 import com.ankiminer.android.ui.attribution.AttributionScreen
 import com.ankiminer.android.ui.attribution.NoticesScreen
 import com.ankiminer.android.ui.navigation.AnkiMinerAppShell
 import com.ankiminer.android.ui.navigation.AnkiMinerDestination
+import com.ankiminer.android.ui.navigation.MiningReadinessNotice
 import com.ankiminer.android.ui.reading.ReadingMiningScreen
 import com.ankiminer.android.ui.reading.ReadingMiningTestTags
 import com.ankiminer.android.ui.theme.AnkiMinerTheme
@@ -38,6 +42,7 @@ import com.ankiminer.android.ui.video.VideoMiningTestTags
 import com.ankiminer.android.ui.wizard.OnboardingWizardCallbacks
 import com.ankiminer.android.ui.wizard.OnboardingWizardContent
 import com.ankiminer.android.ui.wizard.WizardStep
+import com.ankiminer.android.vm.NavigationWorkflowState
 import java.io.File
 import java.io.FileOutputStream
 import org.junit.Assume.assumeTrue
@@ -148,6 +153,49 @@ class UiAuditScreenshotTest {
     }
 
     @Test
+    fun captureReadinessActionsAcrossThemeAndFontScaleMatrix() {
+        captureMatrix(
+            listOf(
+                CaptureTarget(
+                    screen = "readiness",
+                    state = "unidic-missing",
+                    destination = AnkiMinerDestination.VIDEO,
+                ) {
+                    MiningReadinessNotice(
+                        state = setupAuditState().copy(uniDicInstalled = false),
+                        message = stringResource(R.string.readiness_unidic_required),
+                        onRequestPermissions = {},
+                        onInstallUniDic = {},
+                        onInstallAnkiDroid = {},
+                        onOpenAnkiDroid = {},
+                        onCheckAgain = {},
+                        onOpenSettings = {},
+                    )
+                },
+                CaptureTarget(
+                    screen = "readiness",
+                    state = "note-type-missing",
+                    destination = AnkiMinerDestination.VIDEO,
+                ) {
+                    MiningReadinessNotice(
+                        state =
+                            setupAuditState().copy(
+                                noteTypeStatus = NoteTypeSetupStatus.NotSelected,
+                            ),
+                        message = stringResource(R.string.readiness_model_required),
+                        onRequestPermissions = {},
+                        onInstallUniDic = {},
+                        onInstallAnkiDroid = {},
+                        onOpenAnkiDroid = {},
+                        onCheckAgain = {},
+                        onOpenSettings = {},
+                    )
+                },
+            ),
+        )
+    }
+
+    @Test
     fun captureEveryWizardStepAcrossThemeAndFontScaleMatrix() {
         captureMatrix(
             WizardStep.entries.map { step ->
@@ -177,7 +225,6 @@ class UiAuditScreenshotTest {
                 ) {
                     AttributionScreen(
                         installedDictionaries = attributionAuditDictionaries(),
-                        onBack = {},
                         onOpenNotices = {},
                     )
                 },
@@ -189,7 +236,6 @@ class UiAuditScreenshotTest {
                     lazyListTag = NOTICES_LIST_TAG,
                 ) {
                     NoticesScreen(
-                        onBack = {},
                         modifier = Modifier.testTag(NOTICES_LIST_TAG),
                     )
                 },
@@ -301,6 +347,8 @@ class UiAuditScreenshotTest {
                         }
                         AnkiMinerAppShell(
                             currentDestination = target.destination,
+                            videoWorkflow = target.videoWorkflow,
+                            readingWorkflow = target.readingWorkflow,
                             snackbarHostState = snackbarHostState,
                             onDestinationSelected = {},
                         ) { shellModifier ->
@@ -342,7 +390,31 @@ class UiAuditScreenshotTest {
         val waitForLazyListKey: String? = null,
         val lazyListTag: String? = null,
         val content: @Composable () -> Unit,
-    )
+    ) {
+        val videoWorkflow: NavigationWorkflowState
+            get() =
+                if (screen == "video") {
+                    when (state) {
+                        MiningAuditState.CURATION.fileName -> NavigationWorkflowState.REVIEW
+                        MiningAuditState.RUNNING.fileName -> NavigationWorkflowState.RUNNING
+                        else -> NavigationWorkflowState.IDLE
+                    }
+                } else {
+                    NavigationWorkflowState.IDLE
+                }
+
+        val readingWorkflow: NavigationWorkflowState
+            get() =
+                if (screen == "reading") {
+                    when (state) {
+                        MiningAuditState.CURATION.fileName -> NavigationWorkflowState.REVIEW
+                        MiningAuditState.RUNNING.fileName -> NavigationWorkflowState.RUNNING
+                        else -> NavigationWorkflowState.IDLE
+                    }
+                } else {
+                    NavigationWorkflowState.IDLE
+                }
+    }
 
     private companion object {
         const val UI_AUDIT_ARGUMENT = "uiAudit"
