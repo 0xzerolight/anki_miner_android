@@ -17,7 +17,6 @@ internal const val ANKIDROID_PACKAGE = "com.ichi2.anki"
 internal const val ANKI_MEDIA_STAGING_ROOT = "anki-media-staging"
 
 private const val STAGING_VERSION_DIRECTORY = "v1"
-private const val STAGING_FILE_SUFFIX = ".stage"
 private const val PATH_ALLOCATION_ATTEMPTS = 16
 
 private val RUN_ID_PATTERN = Regex("run_[0-9a-f]{32}")
@@ -25,7 +24,10 @@ private val REQUEST_ID_PATTERN = Regex("anki_[0-9a-f]{32}")
 private val ASSET_ID_PATTERN = Regex("asset_[0-9a-f]{32}")
 private val SHA256_PATTERN = Regex("[0-9a-f]{64}")
 private val NONCE_PATTERN = Regex("[0-9a-f]{32}")
-private val GENERATED_PATH_PATTERN = Regex("v1/[0-9a-f]{64}\\.stage")
+
+// The staged-path shape is owned by AnkiMediaExtensions so this regex and the on-device
+// resolveDestination check are built from one allowlist and can never drift.
+private val GENERATED_PATH_PATTERN = AnkiMediaExtensions.STAGED_PATH_REGEX
 
 internal data class AnkiMediaStagingRequest(
     val runId: String,
@@ -35,6 +37,9 @@ internal data class AnkiMediaStagingRequest(
     val expectedSizeBytes: Long,
     val expectedSha256: String,
     val aggregateRemainingBytes: Long,
+    // The real media extension for the staged copy, or null to fall back to the neutral ".stage"
+    // suffix. Carries the media type to AnkiDroid's getType() so it stops storing every file as ".bin".
+    val extension: String? = null,
 )
 
 internal enum class AnkiMediaStagingFailure {
@@ -364,7 +369,8 @@ internal class AnkiMediaStaging(
                     .joinToString("\u0000")
                     .toByteArray(StandardCharsets.UTF_8)
             val token = MessageDigest.getInstance("SHA-256").digest(identity).toLowerHex()
-            val relativePath = "$STAGING_VERSION_DIRECTORY/$token$STAGING_FILE_SUFFIX"
+            val extension = request.extension ?: AnkiMediaExtensions.STAGE_FALLBACK_EXTENSION
+            val relativePath = "$STAGING_VERSION_DIRECTORY/$token.$extension"
             val exists =
                 try {
                     platform.destinationExists(relativePath)
@@ -385,7 +391,8 @@ internal class AnkiMediaStaging(
             request.expectedSizeBytes !in 0L..AnkiLimitsV1.StoreMedia.MAX_ASSET_BYTES.toLong() ||
             request.aggregateRemainingBytes !in
                 0L..AnkiLimitsV1.StoreMedia.MAX_TOTAL_BYTES.toLong() ||
-            !SHA256_PATTERN.matches(request.expectedSha256)
+            !SHA256_PATTERN.matches(request.expectedSha256) ||
+            (request.extension != null && request.extension !in AnkiMediaExtensions.ALLOWED_EXTENSIONS)
         ) {
             throw invalidRequest()
         }

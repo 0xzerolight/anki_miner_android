@@ -744,6 +744,7 @@ private fun MediaAsset.toStagingRequest(
         expectedSizeBytes = expectedSizeBytes,
         expectedSha256 = expectedSha256,
         aggregateRemainingBytes = request.assets.drop(index).sumOf(MediaAsset::expectedSizeBytes),
+        extension = AnkiMediaExtensions.sanitizedExtension(requestedFilename, mediaKind),
     )
 
 private fun requireReservationBatch(
