@@ -855,6 +855,7 @@ def import_known_words(payload: Mapping[str, object]) -> str:
         operation_root.mkdir(parents=True)
         try:
             from anki_miner.services.known_word_db import KnownWordDB
+
             parsed = _parse_known_words_copy(source, source_format, operation, operation_root)
             operation.check()
             db_path = home / "known_words.db"
@@ -1013,7 +1014,7 @@ def export_known_words(payload: Mapping[str, object]) -> str:
                 for index, word in enumerate(words):
                     if index % 1024 == 0:
                         operation.check()
-                    encoded = f"{word}\n".encode("utf-8")
+                    encoded = f"{word}\n".encode()
                     size_bytes += len(encoded)
                     if size_bytes > _KNOWN_WORD_EXPORT_LIMIT:
                         raise _fail("known_words_export_failed", "Known-word export exceeds its limit")

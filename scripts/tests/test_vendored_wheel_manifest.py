@@ -9,7 +9,6 @@ import unittest
 import zipfile
 from pathlib import Path
 
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = REPO_ROOT / "tools/wheels/vendored_wheel_manifest.py"
 WHEELS_ROOT = REPO_ROOT / "app/wheels"

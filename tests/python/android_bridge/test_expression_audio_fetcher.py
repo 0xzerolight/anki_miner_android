@@ -18,12 +18,12 @@ pytest.importorskip("requests", reason="runtime dependency lane")
 import requests  # noqa: E402
 from android_bridge import expression_audio_fetcher as expression_audio_fetcher_module  # noqa: E402
 from android_bridge.expression_audio_fetcher import (  # noqa: E402
-    CustomAudioFetcher,
     _MAX_AUDIO_SOURCES,
     _MAX_JSON_BYTES,
     _MAX_REDIRECTS,
     _MAX_TOTAL_ATTEMPTS,
     _MAX_URL_BYTES,
+    CustomAudioFetcher,
     _substitute_custom_url,
     custom_audio_slug,
 )
@@ -363,9 +363,7 @@ class TestCustomAudioFetcherJson:
         def payload(count: int) -> dict[str, object]:
             return {
                 "type": "audioSourceList",
-                "audioSources": [
-                    {"url": f"http://localhost:8765/{index}.mp3"} for index in range(count)
-                ],
+                "audioSources": [{"url": f"http://localhost:8765/{index}.mp3"} for index in range(count)],
             }
 
         at_cap = self._fetcher(tmp_path)
@@ -461,9 +459,7 @@ class TestCustomAudioFetcherJson:
         redirects = []
         for hop in range(pivot_hop):
             location = remote_url if hop == pivot_hop - 1 else f"/audio-{hop + 1}.mp3"
-            redirects.append(
-                _redirect_response(location, url=f"http://localhost:8765/audio-{hop}.mp3")
-            )
+            redirects.append(_redirect_response(location, url=f"http://localhost:8765/audio-{hop}.mp3"))
         f._session.get.side_effect = [_json_response(payload), *redirects]
 
         assert f.fetch("食べる", "たべる") is None
@@ -651,9 +647,7 @@ class TestCustomAudioFetcherJson:
         f = self._fetcher(tmp_path)
         payload = {
             "type": "audioSourceList",
-            "audioSources": [
-                {"url": f"http://localhost:8765/{index}-a.mp3"} for index in range(_MAX_AUDIO_SOURCES)
-            ],
+            "audioSources": [{"url": f"http://localhost:8765/{index}-a.mp3"} for index in range(_MAX_AUDIO_SOURCES)],
         }
         responses: list[MagicMock] = [_json_response(payload)]
         for index in range(_MAX_AUDIO_SOURCES):
@@ -676,9 +670,7 @@ class TestCustomAudioFetcherJson:
         f = self._fetcher(tmp_path)
         payload = {
             "type": "audioSourceList",
-            "audioSources": [
-                {"url": f"http://localhost:8765/{index}-a.mp3"} for index in range(_MAX_AUDIO_SOURCES)
-            ],
+            "audioSources": [{"url": f"http://localhost:8765/{index}-a.mp3"} for index in range(_MAX_AUDIO_SOURCES)],
         }
 
         def respond(url: str, **_: object) -> MagicMock:

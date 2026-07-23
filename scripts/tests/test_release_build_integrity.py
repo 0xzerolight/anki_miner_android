@@ -5,7 +5,6 @@ import sys
 import unittest
 from pathlib import Path
 
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 VALIDATOR = REPO_ROOT / "tools/release/validate_release_build.py"
 BUILD_SCRIPT = REPO_ROOT / "app/build.gradle.kts"
@@ -96,9 +95,9 @@ class ReleaseBuildIntegrityTests(unittest.TestCase):
         self.assertIn("--dry-run", harness)
         self.assertIn("-x validateReleaseSourceCommit", harness)
         self.assertIn("-x verifyVendoredWheelManifest", harness)
-        self.assertIn('invalid release SHA', harness)
-        self.assertIn('missing release SHA', harness)
-        self.assertIn('manifest drift', harness)
+        self.assertIn("invalid release SHA", harness)
+        self.assertIn("missing release SHA", harness)
+        self.assertIn("manifest drift", harness)
 
     def test_release_callers_pass_current_source_commit(self) -> None:
         tokenizer = (REPO_ROOT / "tools/tokenizer/build-s1b-android.sh").read_text(
@@ -108,9 +107,9 @@ class ReleaseBuildIntegrityTests(unittest.TestCase):
         relinking = (REPO_ROOT / "third_party/ankidroid-api/RELINKING.md").read_text(
             encoding="utf-8",
         )
-        packaged_relinking = (
-            REPO_ROOT / "app/src/main/assets/notices/ankidroid-RELINKING.md"
-        ).read_text(encoding="utf-8")
+        packaged_relinking = (REPO_ROOT / "app/src/main/assets/notices/ankidroid-RELINKING.md").read_text(
+            encoding="utf-8"
+        )
 
         for content in (tokenizer, launcher, relinking, packaged_relinking):
             self.assertIn('source_commit="$(git rev-parse HEAD)"', content)

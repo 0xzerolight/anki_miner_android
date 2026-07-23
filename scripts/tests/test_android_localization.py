@@ -8,7 +8,6 @@ import unittest
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 AUDIT = REPO_ROOT / "tools/localization/audit_android_localizations.py"
 
@@ -17,17 +16,14 @@ class AndroidLocalizationAuditTest(unittest.TestCase):
     @staticmethod
     def _source_strings() -> dict[str, str]:
         root = ET.parse(REPO_ROOT / "app/src/main/res/values/strings.xml").getroot()
-        return {
-            element.attrib["name"]: "".join(element.itertext()).strip()
-            for element in root.findall("string")
-        }
+        return {element.attrib["name"]: "".join(element.itertext()).strip() for element in root.findall("string")}
 
     def _assert_distinct_non_empty_resources(self, resources: list[str]) -> None:
         strings = self._source_strings()
         self.assertEqual(len(resources), len(set(resources)), resources)
         rendered = [strings.get(resource, "") for resource in resources]
-        self.assertTrue(all(rendered), list(zip(resources, rendered)))
-        self.assertEqual(len(rendered), len(set(rendered)), list(zip(resources, rendered)))
+        self.assertTrue(all(rendered), list(zip(resources, rendered, strict=True)))
+        self.assertEqual(len(rendered), len(set(rendered)), list(zip(resources, rendered, strict=True)))
 
     def _run_audit(self, resource_root: Path) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
@@ -135,8 +131,7 @@ class AndroidLocalizationAuditTest(unittest.TestCase):
             / "app/src/main/kotlin/com/ankiminer/android/reading/BridgeReadingMiningRepository.kt",
             "settings": REPO_ROOT / "app/src/main/kotlin/com/ankiminer/android/vm/SettingsViewModel.kt",
             "setup": REPO_ROOT / "app/src/main/kotlin/com/ankiminer/android/vm/SetupViewModel.kt",
-            "Anki recovery UI": REPO_ROOT
-            / "app/src/main/kotlin/com/ankiminer/android/ui/settings/AnkiSections.kt",
+            "Anki recovery UI": REPO_ROOT / "app/src/main/kotlin/com/ankiminer/android/ui/settings/AnkiSections.kt",
             "Anki remediation model": REPO_ROOT
             / "app/src/main/kotlin/com/ankiminer/android/anki/provider/AnkiRemediationService.kt",
         }
@@ -147,7 +142,7 @@ class AndroidLocalizationAuditTest(unittest.TestCase):
             re.compile(r'(?:recordFault|recordFaultAndCancel|setRestartRequired)\([^)]*?"', re.DOTALL),
             re.compile(r'recordFailure\(\s*"[^"]+"\s*,\s*"', re.DOTALL),
             re.compile(r'ReadingSourceStageRole\.[A-Z_]+\s*->\s*"'),
-            re.compile(r'private fun userMessage[\s\S]*?\n\s*private fun[^\n]*\{'),
+            re.compile(r"private fun userMessage[\s\S]*?\n\s*private fun[^\n]*\{"),
         )
         failures = []
         for label, path in files.items():
@@ -168,27 +163,21 @@ class AndroidLocalizationAuditTest(unittest.TestCase):
 
     def test_anki_recovery_preserves_every_typed_title_and_durable_summary(self) -> None:
         remediation_path = (
-            REPO_ROOT
-            / "app/src/main/kotlin/com/ankiminer/android/anki/provider/AnkiRemediationService.kt"
+            REPO_ROOT / "app/src/main/kotlin/com/ankiminer/android/anki/provider/AnkiRemediationService.kt"
         )
         remediation = remediation_path.read_text(encoding="utf-8")
-        recovery_ui = (
-            REPO_ROOT
-            / "app/src/main/kotlin/com/ankiminer/android/ui/settings/AnkiSections.kt"
-        ).read_text(encoding="utf-8")
+        recovery_ui = (REPO_ROOT / "app/src/main/kotlin/com/ankiminer/android/ui/settings/AnkiSections.kt").read_text(
+            encoding="utf-8"
+        )
         producers = "\n".join(
             path.read_text(encoding="utf-8")
             for path in (
-                REPO_ROOT
-                / "app/src/main/kotlin/com/ankiminer/android/anki/journal/SqliteAnkiMutationStore.kt",
-                REPO_ROOT
-                / "app/src/main/kotlin/com/ankiminer/android/anki/provider/AndroidAnkiMediaStaging.kt",
+                REPO_ROOT / "app/src/main/kotlin/com/ankiminer/android/anki/journal/SqliteAnkiMutationStore.kt",
+                REPO_ROOT / "app/src/main/kotlin/com/ankiminer/android/anki/provider/AndroidAnkiMediaStaging.kt",
             )
         )
 
-        remediation_types = set(
-            re.findall(r"^\s{4}([A-Z][A-Z0-9_]+),$", remediation.split("}", 1)[0], re.MULTILINE)
-        )
+        remediation_types = set(re.findall(r"^\s{4}([A-Z][A-Z0-9_]+),$", remediation.split("}", 1)[0], re.MULTILINE))
         title_map = dict(
             re.findall(
                 r"AnkiRemediationType\.([A-Z0-9_]+)\s*->\s*R\.string\.([a-z0-9_]+)",
@@ -198,9 +187,7 @@ class AndroidLocalizationAuditTest(unittest.TestCase):
         self.assertEqual(remediation_types, set(title_map))
         self._assert_distinct_non_empty_resources(list(title_map.values()))
 
-        stable_summaries = dict(
-            re.findall(r'^\s{4}([A-Z][A-Z0-9_]+)\("([^"]+)"\),?$', remediation, re.MULTILINE)
-        )
+        stable_summaries = dict(re.findall(r'^\s{4}([A-Z][A-Z0-9_]+)\("([^"]+)"\),?$', remediation, re.MULTILINE))
         produced_summaries = set(re.findall(r'summary = "([^"]+)"', producers))
         self.assertTrue(produced_summaries, "no durable remediation summaries found")
         self.assertEqual(produced_summaries, set(stable_summaries.values()))
@@ -229,17 +216,12 @@ class AndroidLocalizationAuditTest(unittest.TestCase):
         download_sources = "\n".join(
             path.read_text(encoding="utf-8")
             for path in (
-                REPO_ROOT
-                / "app/src/main/kotlin/com/ankiminer/android/data/resources/PinnedResourceDownloader.kt",
-                REPO_ROOT
-                / "app/src/main/kotlin/com/ankiminer/android/data/resources/SafArchiveStager.kt",
-                REPO_ROOT
-                / "app/src/main/kotlin/com/ankiminer/android/data/resources/ResourceManager.kt",
+                REPO_ROOT / "app/src/main/kotlin/com/ankiminer/android/data/resources/PinnedResourceDownloader.kt",
+                REPO_ROOT / "app/src/main/kotlin/com/ankiminer/android/data/resources/SafArchiveStager.kt",
+                REPO_ROOT / "app/src/main/kotlin/com/ankiminer/android/data/resources/ResourceManager.kt",
             )
         )
-        emitted_codes = set(
-            re.findall(r'ResourceDownloadException\(\s*"([a-z0-9_]+)"', download_sources)
-        )
+        emitted_codes = set(re.findall(r'ResourceDownloadException\(\s*"([a-z0-9_]+)"', download_sources))
         emitted_codes.update({"download_http_retryable", "download_http_rejected"})
         download_message_match = re.search(
             r"private fun downloadUserMessage\(.*?\n\s*private fun userMessage",
@@ -269,9 +251,9 @@ class AndroidLocalizationAuditTest(unittest.TestCase):
         settings_model = (
             REPO_ROOT / "app/src/main/kotlin/com/ankiminer/android/data/settings/AppSettings.kt"
         ).read_text(encoding="utf-8")
-        settings_vm = (
-            REPO_ROOT / "app/src/main/kotlin/com/ankiminer/android/vm/SettingsViewModel.kt"
-        ).read_text(encoding="utf-8")
+        settings_vm = (REPO_ROOT / "app/src/main/kotlin/com/ankiminer/android/vm/SettingsViewModel.kt").read_text(
+            encoding="utf-8"
+        )
         code_match = re.search(
             r"enum class InvalidAppSettingCode\s*\{(?P<body>.*?)\n\}",
             settings_model,
@@ -298,9 +280,9 @@ class AndroidLocalizationAuditTest(unittest.TestCase):
         status_model = (
             REPO_ROOT / "app/src/main/kotlin/com/ankiminer/android/anki/provider/NoteTypeSetup.kt"
         ).read_text(encoding="utf-8")
-        application = (
-            REPO_ROOT / "app/src/main/kotlin/com/ankiminer/android/AnkiMinerApplication.kt"
-        ).read_text(encoding="utf-8")
+        application = (REPO_ROOT / "app/src/main/kotlin/com/ankiminer/android/AnkiMinerApplication.kt").read_text(
+            encoding="utf-8"
+        )
         expected_reasons = {
             "API_DISABLED",
             "API_INCOMPATIBLE",

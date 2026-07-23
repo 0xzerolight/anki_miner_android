@@ -10,7 +10,6 @@ import re
 import sys
 from pathlib import Path
 
-
 TOOL_ROOT = Path(__file__).resolve().parent
 REPO_ROOT = TOOL_ROOT.parents[1]
 WHEEL_TOOL_ROOT = REPO_ROOT / "tools/wheels"
@@ -20,9 +19,10 @@ from vendored_wheel_manifest import (  # noqa: E402
     DEFAULT_MANIFEST,
     DEFAULT_WHEELS_ROOT,
     ManifestError,
+)
+from vendored_wheel_manifest import (  # noqa: E402
     check as check_wheel_manifest,
 )
-
 
 FULL_GIT_SHA = re.compile(r"^[0-9a-f]{40}$")
 

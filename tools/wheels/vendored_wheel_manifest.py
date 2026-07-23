@@ -13,7 +13,6 @@ from email.policy import compat32
 from pathlib import Path
 from typing import Any
 
-
 TOOL_ROOT = Path(__file__).resolve().parent
 REPO_ROOT = TOOL_ROOT.parents[1]
 DEFAULT_WHEELS_ROOT = REPO_ROOT / "app/wheels"
@@ -119,9 +118,7 @@ def _provenance(
     s1a_sources: dict[str, dict[str, Any]],
 ) -> tuple[str, dict[str, str]]:
     runtime_matches = [
-        entry
-        for entry in runtime_sources.values()
-        if _normalize_package(str(entry.get("package", ""))) == package
+        entry for entry in runtime_sources.values() if _normalize_package(str(entry.get("package", ""))) == package
     ]
     if len(runtime_matches) == 1:
         entry = runtime_matches[0]

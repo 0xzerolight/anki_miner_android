@@ -7,13 +7,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = REPO_ROOT / ".github" / "scripts" / "run-api26-instrumentation.sh"
 RESULT_HELPER = REPO_ROOT / "scripts" / "instrumentation-result.sh"
 EXTERNAL_UNIDIC_TESTS = (
-    "com.ankiminer.android.TokenizerS1aInstrumentedTest"
-    "#externalUniDicMatchesDesktopGoldens",
+    "com.ankiminer.android.TokenizerS1aInstrumentedTest" "#externalUniDicMatchesDesktopGoldens",
     "com.ankiminer.android.tokenizer.MecabNativeTokenizerInstrumentedTest"
     "#externalUniDicMatchesAllGoldensThroughPythonKotlinAndJni",
 )
@@ -32,9 +30,7 @@ class Api26InstrumentationScriptTest(unittest.TestCase):
 
             for apk in (
                 root / "app/build/outputs/apk/emulator/debug/app-emulator-debug.apk",
-                root
-                / "app/build/outputs/apk/androidTest/emulator/debug/"
-                "app-emulator-debug-androidTest.apk",
+                root / "app/build/outputs/apk/androidTest/emulator/debug/" "app-emulator-debug-androidTest.apk",
             ):
                 apk.parent.mkdir(parents=True, exist_ok=True)
                 apk.touch()

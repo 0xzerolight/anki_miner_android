@@ -11,7 +11,6 @@ from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_RESOURCE_ROOT = REPO_ROOT / "app/src/main/res"
 LOCALE_DIRECTORY = re.compile(

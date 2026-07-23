@@ -1422,9 +1422,7 @@ def test_known_words_list_search_remove_export_and_scoped_resets(
     database.add_words({"掘る"}, source="mined")
 
     first = decode_envelope(
-        local_resources.list_known_words(
-            {"operationId": "known-list-one", "query": "", "offset": 0, "limit": 2}
-        ),
+        local_resources.list_known_words({"operationId": "known-list-one", "query": "", "offset": 0, "limit": 2}),
         expected_type="resource.knownwords.listed",
     )
     assert first.payload == {
@@ -1436,18 +1434,14 @@ def test_known_words_list_search_remove_export_and_scoped_resets(
     }
 
     searched = decode_envelope(
-        local_resources.list_known_words(
-            {"operationId": "known-list-search", "query": "食", "offset": 0, "limit": 50}
-        ),
+        local_resources.list_known_words({"operationId": "known-list-search", "query": "食", "offset": 0, "limit": 50}),
         expected_type="resource.knownwords.listed",
     )
     assert searched.payload["words"] == ["食べる"]
     assert searched.payload["totalCount"] == 1
 
     removed = decode_envelope(
-        local_resources.remove_known_words(
-            {"operationId": "known-remove", "words": ["猫", "既知"]}
-        ),
+        local_resources.remove_known_words({"operationId": "known-remove", "words": ["猫", "既知"]}),
         expected_type="resource.knownwords.removed",
     )
     assert removed.payload == {"removedCount": 1}
@@ -1464,18 +1458,14 @@ def test_known_words_list_search_remove_export_and_scoped_resets(
     assert exported.payload["sizeBytes"] == export_path.stat().st_size
 
     rebuilt = decode_envelope(
-        local_resources.reset_known_words(
-            {"operationId": "known-rebuild", "scope": "cache"}
-        ),
+        local_resources.reset_known_words({"operationId": "known-rebuild", "scope": "cache"}),
         expected_type="resource.knownwords.reset",
     )
     assert rebuilt.payload == {"scope": "cache", "removedCount": 2}
     assert database.get_known_words() == {"犬", "食べる"}
 
     reset = decode_envelope(
-        local_resources.reset_known_words(
-            {"operationId": "known-reset-user", "scope": "user"}
-        ),
+        local_resources.reset_known_words({"operationId": "known-reset-user", "scope": "user"}),
         expected_type="resource.knownwords.reset",
     )
     assert reset.payload == {"scope": "user", "removedCount": 2}
@@ -1505,9 +1495,7 @@ def test_known_words_export_reimport_round_trips_rows_and_counts(
         expected_type="resource.knownwords.imported",
     )
     exported = decode_envelope(
-        local_resources.export_known_words(
-            {"operationId": "known-round-trip-export"}
-        ),
+        local_resources.export_known_words({"operationId": "known-round-trip-export"}),
         expected_type="resource.knownwords.exported",
     )
     export_path = Path(exported.payload["exportPath"])
@@ -1517,9 +1505,7 @@ def test_known_words_export_reimport_round_trips_rows_and_counts(
     assert export_path.read_text(encoding="utf-8").splitlines() == ["犬", "猫", "食べる"]
 
     reset = decode_envelope(
-        local_resources.reset_known_words(
-            {"operationId": "known-round-trip-reset", "scope": "user"}
-        ),
+        local_resources.reset_known_words({"operationId": "known-round-trip-reset", "scope": "user"}),
         expected_type="resource.knownwords.reset",
     )
     second_import = decode_envelope(
