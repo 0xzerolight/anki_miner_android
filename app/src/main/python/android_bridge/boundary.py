@@ -166,7 +166,7 @@ def dispatch(raw_request: str, callbacks: object | None = None) -> str:
     machine code. Any other ordinary Python exception is logged locally and
     becomes a generic ``internal_error``; its type and text never cross into
     Kotlin. Process-control exceptions derived directly from ``BaseException``
-    are intentionally not swallowed.
+    are logged, then re-raised rather than swallowed.
     """
 
     request_type: str | None = None
@@ -186,3 +186,6 @@ def dispatch(raw_request: str, callbacks: object | None = None) -> str:
             BridgeProtocolError("internal_error", "Internal bridge failure"),
             request_type=request_type,
         )
+    except BaseException:
+        logger.exception("Process-control exception escaping Android bridge operation %r", request_type)
+        raise

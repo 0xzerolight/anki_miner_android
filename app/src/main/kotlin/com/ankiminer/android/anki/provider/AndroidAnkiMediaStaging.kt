@@ -224,7 +224,7 @@ internal class AndroidAnkiMediaStagingPlatform(
     }
 
     private fun resolveDestination(relativePath: String): Path {
-        require(relativePath.matches(Regex("v1/[0-9a-f]{64}\\.stage"))) {
+        require(relativePath.matches(AnkiMediaExtensions.STAGED_PATH_REGEX)) {
             "Unsafe media staging relative path"
         }
         val resolved = stagingRoot.resolve(relativePath).normalize()

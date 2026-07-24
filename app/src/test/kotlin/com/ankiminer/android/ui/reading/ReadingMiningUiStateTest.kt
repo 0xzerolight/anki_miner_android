@@ -13,9 +13,25 @@ class ReadingMiningUiStateTest {
         assertTrue(readingSourceKind("book.epub") == ReadingSourceKindUi.EPUB)
         assertTrue(readingSourceKind("episode.SRT") == ReadingSourceKindUi.SUBTITLE)
         assertTrue(readingSourceKind("page.mokuro") == ReadingSourceKindUi.MOKURO)
-        assertNull(readingSourceKind("images.cbz"))
+        assertTrue(readingSourceKind("images.cbz") == ReadingSourceKindUi.MOKURO_ARCHIVE)
+        assertTrue(readingSourceKind("images.ZIP") == ReadingSourceKindUi.MOKURO_ARCHIVE)
         assertNull(readingSourceKind("notes.pdf"))
         assertNull(readingSourceKind("folder/novel.txt"))
+    }
+
+    @Test
+    fun mokuroArchiveSourceStartsWithoutArchiveSlotAndHidesIt() {
+        val state =
+            ReadingMiningUiState(
+                source =
+                    ReadingDocumentSlotState(
+                        document = document("content://test/self-contained", "volume.cbz"),
+                    ),
+                sourceKind = ReadingSourceKindUi.MOKURO_ARCHIVE,
+            )
+
+        assertTrue(state.canStart)
+        assertFalse(state.acceptsArchive)
     }
 
     @Test

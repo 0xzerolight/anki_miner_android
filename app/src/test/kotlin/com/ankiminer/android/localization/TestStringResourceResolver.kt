@@ -3,7 +3,7 @@ package com.ankiminer.android.localization
 import com.ankiminer.android.R
 
 internal val testStringResourceResolver =
-    StringResourceResolver { resourceId, _ ->
+    StringResourceResolver { resourceId, formatArguments ->
         when (resourceId) {
             R.string.mining_failure_background_start_unsafe ->
                 "Background mining did not start safely"
@@ -19,6 +19,11 @@ internal val testStringResourceResolver =
                 "Anki recovery must be resolved before another mining run"
             R.string.setup_default_frequency_name -> "Imported frequency"
             R.string.setup_default_pitch_name -> "Imported pitch accent"
-            else -> "resource:$resourceId"
+            else ->
+                if (formatArguments.isEmpty()) {
+                    "resource:$resourceId"
+                } else {
+                    "resource:$resourceId:" + formatArguments.joinToString(",")
+                }
         }
     }

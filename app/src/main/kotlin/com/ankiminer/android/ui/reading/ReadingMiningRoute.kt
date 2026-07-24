@@ -8,7 +8,7 @@ import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.ankiminer.android.vm.ReadingMiningViewModel
 
-private val READING_SOURCE_MIME_TYPES =
+internal val READING_SOURCE_MIME_TYPES =
     arrayOf(
         "text/plain",
         "text/*",
@@ -18,9 +18,16 @@ private val READING_SOURCE_MIME_TYPES =
         "application/x-ssa",
         "application/json",
         "application/octet-stream",
+        // A self-contained Mokuro archive (.cbz/.zip with its .mokuro inside)
+        // is a valid single reading source; mirror the archive picker's MIME
+        // set so those files are selectable here too.
+        "application/zip",
+        "application/x-zip-compressed",
+        "application/x-cbz",
+        "application/vnd.comicbook+zip",
     )
 
-private val MOKURO_ARCHIVE_MIME_TYPES =
+internal val MOKURO_ARCHIVE_MIME_TYPES =
     arrayOf(
         "application/zip",
         "application/x-zip-compressed",

@@ -15,6 +15,7 @@ enum class ReadingSourceKindUi {
     EPUB,
     SUBTITLE,
     MOKURO,
+    MOKURO_ARCHIVE,
 }
 
 enum class ReadingDocumentSelectionError {
@@ -102,6 +103,9 @@ internal fun readingSourceKind(displayName: String): ReadingSourceKindUi? =
         "epub" -> ReadingSourceKindUi.EPUB
         "ass", "srt", "ssa", "vtt" -> ReadingSourceKindUi.SUBTITLE
         "mokuro" -> ReadingSourceKindUi.MOKURO
+        // A lone cbz/zip is a self-contained Mokuro volume; its .mokuro sidecar
+        // is extracted from the archive during staging, so no archive slot.
+        "cbz", "zip" -> ReadingSourceKindUi.MOKURO_ARCHIVE
         else -> null
     }
 

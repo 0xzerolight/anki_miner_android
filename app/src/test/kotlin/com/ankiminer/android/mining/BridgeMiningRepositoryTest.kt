@@ -526,6 +526,23 @@ class BridgeMiningRepositoryTest {
         assertFalse("terminal error 255" in errors)
     }
 
+    @Test
+    fun `last-resort failure carries a message-free exception digest in the fault`() {
+        val harness =
+            harness(
+                videoRunFailure = IllegalStateException("secret /storage/emulated/0/episode.mkv"),
+            )
+
+        runBlocking { harness.repository.startVideo(INPUT) }
+
+        val failed =
+            awaitState(harness.repository, MiningRunState::isTerminal) as MiningRunState.Failed
+        val message = failed.failure.message
+        assertTrue(message, "IllegalStateException" in message)
+        assertFalse(message, "secret" in message)
+        assertFalse(message, "episode.mkv" in message)
+    }
+
     private fun harness(
         foregroundFailure: Boolean = false,
         mismatchedTerminal: Boolean = false,
@@ -535,6 +552,7 @@ class BridgeMiningRepositoryTest {
         pagedCuration: Boolean = false,
         presenterWarning: String? = null,
         terminalErrorCount: Int = 0,
+        videoRunFailure: RuntimeException? = null,
         tokenizerResourceProvider: InstalledTokenizerResourceProvider =
             InstalledTokenizerResourceProvider {
                 InstalledTokenizerResource(
@@ -556,6 +574,7 @@ class BridgeMiningRepositoryTest {
                 pagedCuration = pagedCuration,
                 presenterWarning = presenterWarning,
                 terminalErrorCount = terminalErrorCount,
+                videoRunFailure = videoRunFailure,
             )
         val anki = FakeAnkiCallbacks(fallbackState)
         val inputOwner = FakeInputOwner()
@@ -689,6 +708,7 @@ class BridgeMiningRepositoryTest {
         private val pagedCuration: Boolean = false,
         private val presenterWarning: String? = null,
         private val terminalErrorCount: Int = 0,
+        private val videoRunFailure: RuntimeException? = null,
     ) : PyBridge {
         val videoRuns = AtomicInteger()
         val videoRequest = AtomicReference<VideoMiningWireRequest?>()
@@ -720,7 +740,10 @@ class BridgeMiningRepositoryTest {
                             totalBytes = 1024,
                         ),
                     )
-                is BridgeMessage.VideoRun -> runVideo(request.request, requireNotNull(callbacks))
+                is BridgeMessage.VideoRun -> {
+                    videoRunFailure?.let { throw it }
+                    runVideo(request.request, requireNotNull(callbacks))
+                }
                 is BridgeMessage.CurationResponse -> {
                     selection = request.selection
                     curationSubmitted.countDown()

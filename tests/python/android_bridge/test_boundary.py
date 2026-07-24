@@ -57,15 +57,22 @@ def test_dispatch_serializes_internal_errors_without_leaking_exception(
 
 def test_dispatch_does_not_swallow_process_control_exceptions(
     monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     def stop(*_: object) -> str:
         raise SystemExit(7)
 
     monkeypatch.setattr(boundary, "_dispatch_validated", stop)
 
-    with pytest.raises(SystemExit) as stopped:
-        boundary.dispatch(encode_message("job.cancel", {"runId": "run_" + "0" * 32}))
+    with caplog.at_level("ERROR", logger=boundary.logger.name):
+        with pytest.raises(SystemExit) as stopped:
+            boundary.dispatch(encode_message("job.cancel", {"runId": "run_" + "0" * 32}))
     assert stopped.value.code == 7
+
+    escaping = [record for record in caplog.records if record.exc_info]
+    assert len(escaping) == 1
+    assert "job.cancel" in escaping[0].getMessage()
+    assert escaping[0].exc_info[0] is SystemExit
 
 
 @pytest.mark.parametrize(
