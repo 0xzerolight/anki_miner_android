@@ -119,6 +119,9 @@ class KnownWordsManagerScreenTest {
         }
 
         composeRule.onNodeWithText("Search").performClick()
+        composeRule
+            .onNodeWithTag(KnownWordsManagerTestTags.LIST)
+            .performScrollToNode(hasText("Load more"))
         composeRule.onNodeWithText("Load more").performClick()
         composeRule.runOnIdle {
             assertEquals(1, searches)

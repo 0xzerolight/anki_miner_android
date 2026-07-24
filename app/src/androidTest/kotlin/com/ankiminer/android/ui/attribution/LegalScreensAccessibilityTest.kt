@@ -59,18 +59,26 @@ class LegalScreensAccessibilityTest {
         var noticesOpened = 0
         composeRule.setContent {
             AnkiMinerTheme {
-                AttributionScreen(onOpenNotices = { noticesOpened += 1 })
+                AttributionScreen(
+                    onOpenNotices = { noticesOpened += 1 },
+                    modifier = Modifier.testTag(ATTRIBUTION_CONTENT_TEST_TAG),
+                )
             }
         }
 
-        assertTrue(
-            composeRule
-                .onAllNodes(
-                    SemanticsMatcher.expectValue(SemanticsProperties.Heading, Unit),
-                    useUnmergedTree = true,
-                ).fetchSemanticsNodes()
-                .size >= 5,
-        )
+        listOf(
+            "UniDic tokenizer data",
+            "unidic-lite — MIT",
+            "UniDic 2.1.2 — BSD 3-Clause",
+            "App icon",
+            "Installed dictionaries",
+            "Jisho network privacy notice",
+            "Privacy and data handling",
+            "Source and third-party notices",
+        ).forEach(::assertAttributionHeading)
+        composeRule
+            .onNodeWithTag(ATTRIBUTION_CONTENT_TEST_TAG)
+            .performScrollToNode(hasText("View third-party notices"))
         composeRule
             .onAllNodesWithText("View third-party notices")
             .onFirst()
@@ -87,7 +95,17 @@ class LegalScreensAccessibilityTest {
             .assert(SemanticsMatcher.expectValue(SemanticsProperties.Heading, Unit))
     }
 
+    private fun assertAttributionHeading(text: String) {
+        composeRule
+            .onNodeWithTag(ATTRIBUTION_CONTENT_TEST_TAG)
+            .performScrollToNode(hasText(text))
+        composeRule
+            .onNodeWithText(text, useUnmergedTree = true)
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.Heading, Unit))
+    }
+
     private companion object {
+        const val ATTRIBUTION_CONTENT_TEST_TAG = "attribution_content"
         const val NOTICES_CONTENT_TEST_TAG = "notices_content"
     }
 }

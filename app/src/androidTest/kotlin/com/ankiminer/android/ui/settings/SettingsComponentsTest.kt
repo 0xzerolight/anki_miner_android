@@ -2,6 +2,7 @@ package com.ankiminer.android.ui.settings
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
@@ -145,7 +146,7 @@ class SettingsComponentsTest {
 
     @Test
     fun adaptiveChoiceSelectorKeepsWideNormalTextInOneSegmentedRow() {
-        setChoiceSelector(width = 360.dp, fontScale = 1f)
+        setChoiceSelector(width = 480.dp, fontScale = 1f)
 
         val tops =
             OPTIONS.map { label ->
@@ -210,7 +211,7 @@ class SettingsComponentsTest {
                 LocalDensity provides Density(baseDensity, fontScale),
             ) {
                 AnkiMinerTheme {
-                    Box(Modifier.width(width)) {
+                    Box(Modifier.requiredWidth(width)) {
                         AdaptiveChoiceSelector(
                             values = OPTIONS,
                             selected = OPTIONS.first(),
