@@ -19,6 +19,8 @@ import com.ankiminer.android.R
 import com.ankiminer.android.data.RuntimeWorkCoordinator
 import com.ankiminer.android.data.anki.AnkiSetupFailureOrigin
 import com.ankiminer.android.data.anki.AnkiSetupFailureAction
+import com.ankiminer.android.data.resources.KnownWordsFailureOperation
+import com.ankiminer.android.data.resources.ResourceFailure
 import com.ankiminer.android.data.resources.ResourceFailureAction
 import com.ankiminer.android.data.resources.ResourceFailureOrigin
 import com.ankiminer.android.data.resources.ResourceManagerState
@@ -54,8 +56,30 @@ internal data class SettingsScreenCallbacks(
     val onImportPitch: () -> Unit,
     val onImportAudioPack: () -> Unit,
     val onImportKnownWords: () -> Unit,
+    val onExportKnownWords: () -> Unit,
     val onManageKnownWords: () -> Unit,
 )
+
+internal enum class KnownWordsFailureTarget {
+    IMPORT,
+    EXPORT,
+}
+
+internal fun knownWordsFailureTarget(failure: ResourceFailure): KnownWordsFailureTarget? {
+    if (
+        failure.origin != ResourceFailureOrigin.KNOWN_WORDS ||
+        failure.retry.action != ResourceFailureAction.CHOOSE_ANOTHER
+    ) {
+        return null
+    }
+    return when (failure.knownWordsOperation) {
+        KnownWordsFailureOperation.IMPORT,
+        KnownWordsFailureOperation.PREVIEW,
+        -> KnownWordsFailureTarget.IMPORT
+        KnownWordsFailureOperation.EXPORT -> KnownWordsFailureTarget.EXPORT
+        null -> null
+    }
+}
 
 internal fun LazyListScope.settingsCategoryContent(
     category: SettingsCategory,
@@ -955,7 +979,12 @@ private fun ResourceOriginFailure(
             failure.origin == ResourceFailureOrigin.KNOWN_WORDS &&
                 failure.retry.action == ResourceFailureAction.RETRY ->
                 setupViewModel::retryResourceFailure
-            failure.origin == ResourceFailureOrigin.KNOWN_WORDS -> callbacks.onImportKnownWords
+            failure.origin == ResourceFailureOrigin.KNOWN_WORDS ->
+                when (knownWordsFailureTarget(failure)) {
+                    KnownWordsFailureTarget.IMPORT -> callbacks.onImportKnownWords
+                    KnownWordsFailureTarget.EXPORT -> callbacks.onExportKnownWords
+                    null -> setupViewModel::retryResourceFailure
+                }
             else -> setupViewModel::retryResourceFailure
         }
     InlineFailureContainer(

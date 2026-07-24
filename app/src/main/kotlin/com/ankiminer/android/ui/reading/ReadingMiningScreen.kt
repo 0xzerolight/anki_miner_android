@@ -47,6 +47,7 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.ankiminer.android.R
@@ -64,6 +65,7 @@ import com.ankiminer.android.ui.mining.DocumentReadKind
 import com.ankiminer.android.ui.mining.MiningFailureAction
 import com.ankiminer.android.ui.mining.MiningFailureCard
 import com.ankiminer.android.ui.mining.MINING_PHASE_HEADING_TEST_TAG
+import com.ankiminer.android.ui.mining.MiningPhaseTarget
 import com.ankiminer.android.ui.mining.MiningProgressPanel
 import com.ankiminer.android.ui.mining.MiningResultSource
 import com.ankiminer.android.ui.mining.MiningSourceItem
@@ -72,6 +74,7 @@ import com.ankiminer.android.ui.mining.SourcesCard
 import com.ankiminer.android.ui.mining.StickyCurationActions
 import com.ankiminer.android.ui.mining.curateCandidates
 import com.ankiminer.android.ui.mining.miningResultItems
+import com.ankiminer.android.ui.mining.rememberCurationCandidateHeaderTexts
 import com.ankiminer.android.ui.theme.actionBorder
 import com.ankiminer.android.ui.theme.forwardButtonColors
 import com.ankiminer.android.ui.theme.outlinedActionButtonColors
@@ -120,6 +123,14 @@ fun ReadingMiningScreen(
         remember(sortName) {
             CurationSort.entries.firstOrNull { it.name == sortName } ?: CurationSort.FREQUENCY
         }
+    val phaseKey = state.phaseKey()
+    val phaseTarget =
+        remember(phaseKey) {
+            MiningPhaseTarget(
+                key = phaseKey,
+                initialState = state,
+            )
+        }
     ResetMiningScrollOnTransition(state = state, listState = listState)
 
     Scaffold(
@@ -153,15 +164,23 @@ fun ReadingMiningScreen(
         },
     ) { scaffoldPadding ->
         AnimatedContent(
-            targetState = state,
+            targetState = phaseTarget,
             modifier = Modifier.fillMaxSize(),
             transitionSpec = {
-                fadeIn(tween(durationMillis = 150)) togetherWith
-                    fadeOut(tween(durationMillis = 90))
+                (
+                    fadeIn(tween(durationMillis = 150)) togetherWith
+                        fadeOut(tween(durationMillis = 90))
+                ) using null
             },
-            contentKey = { targetState -> targetState.phaseKey() },
+            contentKey = { target -> target.key },
             label = "reading mining phase",
-        ) { targetState ->
+        ) { target ->
+            val targetState =
+                if (target === phaseTarget) {
+                    state
+                } else {
+                    target.initialState
+                }
             val targetCuration = targetState.curation
             val selectionProjectionKey =
                 if (filter == CurationFilter.ALL) {
@@ -185,6 +204,10 @@ fun ReadingMiningScreen(
                         sort = sort,
                     )
                 }
+            val candidateHeaderTexts =
+                rememberCurationCandidateHeaderTexts(visibleCandidates)
+            val selectedCandidateStateText = stringResource(R.string.candidate_state_selected)
+            val excludedCandidateStateText = stringResource(R.string.candidate_state_excluded)
             val selectedCandidateIds = targetCuration?.selectedCandidateIds.orEmpty()
             val expandedCandidateId =
                 targetCuration?.focusedCandidateId
@@ -194,15 +217,14 @@ fun ReadingMiningScreen(
                     } ?: visibleCandidates.firstOrNull {
                     it.candidateId in selectedCandidateIds
                 }?.candidateId
-            val phaseKey = targetState.phaseKey()
             val phaseTitle = stringResource(targetState.phaseTitle())
-            val headingFocusRequester = remember(phaseKey) { FocusRequester() }
+            val headingFocusRequester = remember(target.key) { FocusRequester() }
             val headingModifier =
                 Modifier
                     .focusRequester(headingFocusRequester)
                     .focusable()
                     .testTag(MINING_PHASE_HEADING_TEST_TAG)
-            LaunchedEffect(phaseKey) {
+            LaunchedEffect(target.key) {
                 headingFocusRequester.requestFocus()
             }
 
@@ -251,6 +273,9 @@ fun ReadingMiningScreen(
                             state = targetState,
                             headingModifier = headingModifier,
                             visibleCandidates = visibleCandidates,
+                            candidateHeaderTexts = candidateHeaderTexts,
+                            selectedCandidateStateText = selectedCandidateStateText,
+                            excludedCandidateStateText = excludedCandidateStateText,
                             expandedCandidateId = expandedCandidateId,
                             query = query,
                             filter = filter,
@@ -534,6 +559,9 @@ private fun LazyListScope.curationItems(
     state: ReadingMiningUiState,
     headingModifier: Modifier,
     visibleCandidates: List<CurationCandidate>,
+    candidateHeaderTexts: Map<String, AnnotatedString>,
+    selectedCandidateStateText: String,
+    excludedCandidateStateText: String,
     expandedCandidateId: String?,
     query: String,
     filter: CurationFilter,
@@ -627,22 +655,43 @@ private fun LazyListScope.curationItems(
     visibleCandidates.forEach { candidate ->
         val selected = candidate.candidateId in curation.selectedCandidateIds
         val expanded = selected && candidate.candidateId == expandedCandidateId
+        val animateSelection = candidate.candidateId == curation.focusedCandidateId
+        val headline = candidateHeaderTexts.getValue(candidate.candidateId)
+        val stateText =
+            if (selected) {
+                selectedCandidateStateText
+            } else {
+                excludedCandidateStateText
+            }
+        val candidateTestTag = ReadingMiningTestTags.candidate(candidate.candidateId)
+        val toggleTestTag = ReadingMiningTestTags.candidateToggle(candidate.candidateId)
+        val onToggle: (Boolean) -> Unit = { onToggleCandidate(candidate.candidateId) }
         item(
             key = "reading_candidate:${candidate.candidateId}",
             contentType = "candidate",
         ) {
             CurationCandidateHeader(
-                candidate = candidate,
+                headline = headline,
+                stateText = stateText,
                 selected = selected,
                 expanded = expanded,
+                animateSelection = animateSelection,
                 enabled = enabled,
-                candidateTestTag = ReadingMiningTestTags.candidate(candidate.candidateId),
-                toggleTestTag = ReadingMiningTestTags.candidateToggle(candidate.candidateId),
-                onToggle = { onToggleCandidate(candidate.candidateId) },
+                candidateTestTag = candidateTestTag,
+                toggleTestTag = toggleTestTag,
+                onToggle = onToggle,
             )
         }
         if (expanded) {
             candidate.sentences.forEachIndexed { index, sentence ->
+                val sentenceTestTag =
+                    ReadingMiningTestTags.sentence(
+                        candidate.candidateId,
+                        sentence.sentenceId,
+                    )
+                val onClick = {
+                    onSelectSentence(candidate.candidateId, sentence.sentenceId)
+                }
                 item(
                     key = "reading_sentence:${candidate.candidateId}:${sentence.sentenceId}",
                     contentType = "sentence",
@@ -654,14 +703,8 @@ private fun LazyListScope.curationItems(
                             sentence.sentenceId == curation.sentenceIds[candidate.candidateId],
                         enabled = enabled,
                         isLast = index == candidate.sentences.lastIndex,
-                        testTag =
-                            ReadingMiningTestTags.sentence(
-                                candidate.candidateId,
-                                sentence.sentenceId,
-                            ),
-                        onClick = {
-                            onSelectSentence(candidate.candidateId, sentence.sentenceId)
-                        },
+                        testTag = sentenceTestTag,
+                        onClick = onClick,
                     )
                 }
             }

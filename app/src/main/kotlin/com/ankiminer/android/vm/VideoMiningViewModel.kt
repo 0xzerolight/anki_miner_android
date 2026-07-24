@@ -346,10 +346,11 @@ class VideoMiningViewModel internal constructor(
             } catch (failure: CancellationException) {
                 throw failure
             } catch (_: RuntimeException) {
-                localState.update { it.copy(commandError = MiningCommandError.CANCEL) }
-            } finally {
                 localState.update {
-                    it.copy(pending = it.pending.complete(MiningPendingAction.CANCEL))
+                    it.copy(
+                        pending = it.pending.complete(MiningPendingAction.CANCEL),
+                        commandError = MiningCommandError.CANCEL,
+                    )
                 }
             }
         }

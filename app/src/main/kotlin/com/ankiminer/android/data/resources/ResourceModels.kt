@@ -317,6 +317,12 @@ enum class ResourceFailureAction {
     RESOLVE,
 }
 
+enum class KnownWordsFailureOperation {
+    IMPORT,
+    PREVIEW,
+    EXPORT,
+}
+
 data class ResourceFailureRetry(
     val action: ResourceFailureAction,
     val targetId: String? = null,
@@ -337,6 +343,7 @@ data class ResourceFailure(
                     ResourceFailureAction.RESOLVE
                 },
         ),
+    val knownWordsOperation: KnownWordsFailureOperation? = null,
 )
 
 data class ResourceManagerState(

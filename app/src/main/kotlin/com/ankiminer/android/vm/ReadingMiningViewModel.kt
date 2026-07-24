@@ -388,10 +388,11 @@ class ReadingMiningViewModel internal constructor(
             } catch (failure: CancellationException) {
                 throw failure
             } catch (_: RuntimeException) {
-                localState.update { it.copy(commandError = ReadingMiningCommandError.CANCEL) }
-            } finally {
                 localState.update {
-                    it.copy(pending = it.pending.complete(MiningPendingAction.CANCEL))
+                    it.copy(
+                        pending = it.pending.complete(MiningPendingAction.CANCEL),
+                        commandError = ReadingMiningCommandError.CANCEL,
+                    )
                 }
             }
         }

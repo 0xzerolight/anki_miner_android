@@ -52,6 +52,39 @@ class ResourceManagerTest {
         }
 
     @Test
+    fun knownWordsPickerFailuresPreserveOperationIdentity() =
+        runTest {
+            val coordinator = RuntimeWorkCoordinator()
+            val lease =
+                requireNotNull(
+                    coordinator.tryAcquire(RuntimeWorkCoordinator.Kind.MINING),
+                )
+            val harness = Harness(runtimeWorkCoordinator = coordinator)
+
+            harness.manager.importKnownWords(INPUT_URI, KnownWordsSourceFormat.JSON)
+            assertEquals(
+                KnownWordsFailureOperation.IMPORT,
+                harness.manager.state.value.failure?.knownWordsOperation,
+            )
+
+            harness.manager.dismissFailure()
+            harness.manager.previewKnownWords(INPUT_URI, KnownWordsSourceFormat.JSON)
+            assertEquals(
+                KnownWordsFailureOperation.PREVIEW,
+                harness.manager.state.value.failure?.knownWordsOperation,
+            )
+
+            harness.manager.dismissFailure()
+            harness.manager.exportKnownWords(EXPORT_URI)
+            assertEquals(
+                KnownWordsFailureOperation.EXPORT,
+                harness.manager.state.value.failure?.knownWordsOperation,
+            )
+
+            lease.close()
+        }
+
+    @Test
     fun previewLifecycleRetainsOneCopyAndConfirmRefreshesInventory() =
         runTest {
             val harness = Harness()

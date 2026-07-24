@@ -338,16 +338,18 @@ class ReadingMiningViewModelTest {
         }
 
     @Test
-    fun startingCancellationUsesPreRegistrationToken() =
+    fun startingCancellationUsesTokenAndWaitsForRepositoryAcknowledgement() =
         runTest(mainDispatcherRule.dispatcher) {
             val token = MiningCancellationToken("cancel_0123456789abcdef0123456789abcdef")
             val repository =
                 RecordingReadingRepository(
-                    MiningRunState.Starting(
-                        runId = null,
-                        progress = MiningProgress(0, 0, "Preparing"),
-                        cancellationToken = token,
-                    ),
+                    initialState =
+                        MiningRunState.Starting(
+                            runId = null,
+                            progress = MiningProgress(0, 0, "Preparing"),
+                            cancellationToken = token,
+                        ),
+                    acknowledgeCancellationImmediately = false,
                 )
             val viewModel = ReadingMiningViewModel(repository, ImmediateSafBroker())
 
@@ -355,6 +357,11 @@ class ReadingMiningViewModelTest {
             runCurrent()
 
             assertEquals(listOf(token), repository.cancelledTokens)
+            assertTrue(viewModel.uiState.value.cancelPending)
+
+            repository.transitionTo(MiningRunState.Cancelled(null, null))
+            runCurrent()
+
             assertFalse(viewModel.uiState.value.cancelPending)
         }
 
@@ -465,6 +472,7 @@ class ReadingMiningViewModelTest {
         initialState: MiningRunState = MiningRunState.Idle,
         private val detachResult: Boolean = false,
         private val confirmGate: CompletableDeferred<Unit>? = null,
+        private val acknowledgeCancellationImmediately: Boolean = true,
     ) : ReadingMiningRepository {
         private val mutableState = MutableStateFlow(initialState)
         override val state: StateFlow<MiningRunState> = mutableState.asStateFlow()
@@ -508,12 +516,16 @@ class ReadingMiningViewModelTest {
 
         override suspend fun cancel(runId: String) {
             cancelledRunIds += runId
-            mutableState.value = MiningRunState.Cancelled(runId, null)
+            if (acknowledgeCancellationImmediately) {
+                mutableState.value = MiningRunState.Cancelled(runId, null)
+            }
         }
 
         override suspend fun cancel(token: MiningCancellationToken) {
             cancelledTokens += token
-            mutableState.value = MiningRunState.Cancelled(null, null)
+            if (acknowledgeCancellationImmediately) {
+                mutableState.value = MiningRunState.Cancelled(null, null)
+            }
         }
 
         override suspend fun reset() {

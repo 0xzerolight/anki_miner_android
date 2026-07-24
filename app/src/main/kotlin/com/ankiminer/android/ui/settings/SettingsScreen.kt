@@ -148,6 +148,12 @@ internal fun SettingsRoute(
         rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             uri?.let { setupViewModel.importKnownWords(it.toString()) }
         }
+    val knownWordsExportPicker =
+        rememberLauncherForActivityResult(
+            ActivityResultContracts.CreateDocument("text/plain"),
+        ) { uri ->
+            uri?.let { setupViewModel.exportKnownWords(it.toString()) }
+        }
     SettingsScreen(
         draft = draftState.draft,
         resources = resources,
@@ -181,6 +187,7 @@ internal fun SettingsRoute(
         onImportPitch = { pitchPicker.launch(PITCH_MIME_TYPES) },
         onImportAudioPack = { audioPackPicker.launch(AUDIO_PACK_MIME_TYPES) },
         onImportKnownWords = { knownWordsPicker.launch(KNOWN_WORDS_MIME_TYPES) },
+        onExportKnownWords = { knownWordsExportPicker.launch("known_words.txt") },
         modifier = modifier,
     )
 }
@@ -219,6 +226,7 @@ private fun SettingsScreen(
     onImportPitch: () -> Unit,
     onImportAudioPack: () -> Unit,
     onImportKnownWords: () -> Unit,
+    onExportKnownWords: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var selectedCategory by rememberSaveable { mutableStateOf(SettingsCategory.SETUP) }
@@ -289,6 +297,7 @@ private fun SettingsScreen(
             onImportPitch = onImportPitch,
             onImportAudioPack = onImportAudioPack,
             onImportKnownWords = onImportKnownWords,
+            onExportKnownWords = onExportKnownWords,
             onManageKnownWords = onManageKnownWords,
         )
     SettingsCategoryLayout(

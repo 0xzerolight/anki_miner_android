@@ -52,6 +52,7 @@ internal data class KnownWordsManagerCallbacks(
     val onSearch: () -> Unit = {},
     val onLoadMore: () -> Unit = {},
     val onRemove: (String) -> Unit = {},
+    val onImport: () -> Unit = {},
     val onExport: () -> Unit = {},
     val onReset: (KnownWordsResetScope) -> Unit = {},
     val onDismissFailure: () -> Unit = {},
@@ -63,6 +64,10 @@ internal fun KnownWordsManagerRoute(
     modifier: Modifier = Modifier,
 ) {
     val state by setupViewModel.uiState.collectAsStateWithLifecycle()
+    val importPicker =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            uri?.let { setupViewModel.importKnownWords(it.toString()) }
+        }
     val exportPicker =
         rememberLauncherForActivityResult(
             ActivityResultContracts.CreateDocument("text/plain"),
@@ -78,6 +83,7 @@ internal fun KnownWordsManagerRoute(
                 onSearch = setupViewModel::searchKnownWords,
                 onLoadMore = setupViewModel::loadMoreKnownWords,
                 onRemove = setupViewModel::removeKnownWord,
+                onImport = { importPicker.launch(KNOWN_WORDS_MIME_TYPES) },
                 onExport = { exportPicker.launch("known_words.txt") },
                 onReset = setupViewModel::resetKnownWords,
                 onDismissFailure = setupViewModel::dismissFailure,
@@ -183,10 +189,10 @@ internal fun KnownWordsManagerScreen(
                                 },
                             ),
                         onAction =
-                            if (failure.retry.action == ResourceFailureAction.CHOOSE_ANOTHER) {
-                                callbacks.onExport
-                            } else {
-                                callbacks.onSearch
+                            when (knownWordsFailureTarget(failure)) {
+                                KnownWordsFailureTarget.IMPORT -> callbacks.onImport
+                                KnownWordsFailureTarget.EXPORT -> callbacks.onExport
+                                null -> callbacks.onSearch
                             },
                         onDismiss = callbacks.onDismissFailure,
                     )

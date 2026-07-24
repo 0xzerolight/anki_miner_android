@@ -9,7 +9,11 @@ import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import com.ankiminer.android.data.anki.AnkiSetupFailureOrigin
+import com.ankiminer.android.data.resources.KnownWordsFailureOperation
+import com.ankiminer.android.data.resources.ResourceFailure
+import com.ankiminer.android.data.resources.ResourceFailureAction
 import com.ankiminer.android.data.resources.ResourceFailureOrigin
+import com.ankiminer.android.data.resources.ResourceFailureRetry
 import com.ankiminer.android.ui.theme.AnkiMinerTheme
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -72,5 +76,28 @@ class FailureOriginRoutingTest {
             composeRule.onNodeWithText("Resolve test failure").performClick()
             composeRule.runOnIdle { assertEquals(index + 1, actions) }
         }
+
+        assertEquals(
+            KnownWordsFailureTarget.IMPORT,
+            knownWordsFailureTarget(knownWordsFailure(KnownWordsFailureOperation.IMPORT)),
+        )
+        assertEquals(
+            KnownWordsFailureTarget.IMPORT,
+            knownWordsFailureTarget(knownWordsFailure(KnownWordsFailureOperation.PREVIEW)),
+        )
+        assertEquals(
+            KnownWordsFailureTarget.EXPORT,
+            knownWordsFailureTarget(knownWordsFailure(KnownWordsFailureOperation.EXPORT)),
+        )
     }
+
+    private fun knownWordsFailure(operation: KnownWordsFailureOperation): ResourceFailure =
+        ResourceFailure(
+            code = "known_words_failed",
+            message = "Known words failed",
+            retryable = false,
+            origin = ResourceFailureOrigin.KNOWN_WORDS,
+            retry = ResourceFailureRetry(ResourceFailureAction.CHOOSE_ANOTHER),
+            knownWordsOperation = operation,
+        )
 }

@@ -232,7 +232,7 @@ class UiAuditScreenshotTest {
                     screen = "notices",
                     state = "bundled",
                     destination = AnkiMinerDestination.NOTICES,
-                    waitForLazyListKey = "document:NOTICE.md",
+                    waitForLazyListKey = "block:NOTICE.md:0",
                     lazyListTag = NOTICES_LIST_TAG,
                 ) {
                     NoticesScreen(

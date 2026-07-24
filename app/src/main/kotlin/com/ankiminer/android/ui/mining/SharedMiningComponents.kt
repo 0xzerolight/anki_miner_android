@@ -56,6 +56,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
@@ -69,6 +71,7 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -95,6 +98,15 @@ import kotlinx.coroutines.launch
 internal const val MINING_FAILURE_TEST_TAG = "mining_failure"
 internal const val MINING_PHASE_HEADING_TEST_TAG = "mining_phase_heading"
 internal const val CURATION_SEARCH_TEST_TAG = "curation_search"
+
+/**
+ * Referential animation target. Same-phase state changes update live content without making the
+ * whole UI state (including long result/candidate lists) the AnimatedContent transition target.
+ */
+internal class MiningPhaseTarget<S>(
+    val key: String,
+    val initialState: S,
+)
 
 internal data class MiningResultSource(
     @param:StringRes val label: Int,
@@ -726,36 +738,86 @@ internal fun CurationControls(
 }
 
 @Composable
+internal fun rememberCurationCandidateHeaderTexts(
+    candidates: List<CurationCandidate>,
+): Map<String, AnnotatedString> {
+    val context = LocalContext.current
+    val configuration = LocalConfiguration.current
+    return remember(candidates, context, configuration) {
+        val resources = context.resources
+        buildMap(candidates.size) {
+            candidates.forEach { candidate ->
+                val partOfSpeech =
+                    candidate.partOfSpeech?.takeIf(String::isNotBlank)
+                        ?: resources.getString(R.string.candidate_part_of_speech_unknown)
+                val frequency =
+                    candidate.frequencyRank?.let { rank ->
+                        resources.getString(R.string.candidate_frequency_compact, rank)
+                    } ?: resources.getString(R.string.candidate_frequency_unknown_compact)
+                val occurrences =
+                    resources.getString(
+                        R.string.candidate_occurrences_compact,
+                        candidate.occurrenceCount,
+                    )
+                put(
+                    candidate.candidateId,
+                    buildAnnotatedString {
+                        withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
+                            append(candidate.minedForm)
+                        }
+                        candidate.expressionReading.takeIf {
+                            it.isNotBlank() && it != candidate.minedForm
+                        }?.let { reading ->
+                            append(" · ")
+                            append(reading)
+                        }
+                        append(" · ")
+                        append(partOfSpeech)
+                        append(" · ")
+                        append(frequency)
+                        append(" · ")
+                        append(occurrences)
+                    },
+                )
+            }
+        }
+    }
+}
+
+@Composable
 internal fun CurationCandidateHeader(
-    candidate: CurationCandidate,
+    headline: AnnotatedString,
+    stateText: String,
     selected: Boolean,
     expanded: Boolean,
+    animateSelection: Boolean,
     enabled: Boolean,
     candidateTestTag: String,
     toggleTestTag: String,
-    onToggle: () -> Unit,
+    onToggle: (Boolean) -> Unit,
 ) {
-    val stateText =
-        stringResource(
-            if (selected) R.string.candidate_state_selected else R.string.candidate_state_excluded,
-        )
     val shape =
         if (expanded) {
             RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)
         } else {
             MaterialTheme.shapes.medium
         }
-    val containerColor by
-        animateColorAsState(
-            targetValue =
-                if (selected) {
-                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
-                } else {
-                    MaterialTheme.colorScheme.surfaceContainerLow
-                },
-            animationSpec = tween(durationMillis = 150),
-            label = "candidate selection",
-        )
+    val targetContainerColor =
+        if (selected) {
+            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
+        } else {
+            MaterialTheme.colorScheme.surfaceContainerLow
+        }
+    val containerColor =
+        if (animateSelection) {
+            animateColorAsState(
+                targetValue = targetContainerColor,
+                animationSpec = tween(durationMillis = 150),
+                label = "focused candidate selection",
+            ).value
+        } else {
+            targetContainerColor
+        }
     Surface(
         modifier =
             Modifier
@@ -765,7 +827,7 @@ internal fun CurationCandidateHeader(
                     value = selected,
                     enabled = enabled,
                     role = Role.Checkbox,
-                    onValueChange = { onToggle() },
+                    onValueChange = onToggle,
                 ).semantics(mergeDescendants = true) {
                     stateDescription = stateText
                 },
@@ -788,26 +850,7 @@ internal fun CurationCandidateHeader(
                         .testTag(toggleTestTag),
             )
             Text(
-                text =
-                    buildAnnotatedString {
-                        withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
-                            append(candidate.minedForm)
-                        }
-                        candidate.expressionReading.takeIf {
-                            it.isNotBlank() && it != candidate.minedForm
-                        }?.let { reading ->
-                            append(" · ")
-                            append(reading)
-                        }
-                        append(" · ")
-                        append(
-                            buildCandidateMetadata(
-                                partOfSpeech = candidate.partOfSpeech,
-                                frequencyRank = candidate.frequencyRank,
-                                occurrenceCount = candidate.occurrenceCount,
-                            ),
-                        )
-                    },
+                text = headline,
                 modifier = Modifier.weight(1f),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -817,20 +860,6 @@ internal fun CurationCandidateHeader(
         }
     }
 }
-
-@Composable
-private fun buildCandidateMetadata(
-    partOfSpeech: String?,
-    frequencyRank: Long?,
-    occurrenceCount: Long,
-): String =
-    listOf(
-        partOfSpeech?.takeIf(String::isNotBlank)
-            ?: stringResource(R.string.candidate_part_of_speech_unknown),
-        frequencyRank?.let { stringResource(R.string.candidate_frequency_compact, it) }
-            ?: stringResource(R.string.candidate_frequency_unknown_compact),
-        stringResource(R.string.candidate_occurrences_compact, occurrenceCount),
-    ).joinToString(" · ")
 
 @Composable
 internal fun CurationSentenceChoice(
@@ -1033,18 +1062,19 @@ private fun MiningResultSummary(
 @Composable
 private fun ResultMetricGrid(result: ProcessingResult) {
     val skipped = (result.newWordsFound - result.cardsCreated).coerceAtLeast(0)
-    val metrics =
-        listOf(
-            result.cardsCreated.toString() to stringResource(R.string.result_metric_created),
-            stringResource(R.string.result_metric_skipped_new_value, skipped, result.newWordsFound) to
-                stringResource(R.string.result_metric_skipped_new),
-            stringResource(
-                R.string.result_metric_percent_value,
-                result.comprehensionPercentage,
-            ) to stringResource(R.string.result_metric_comprehension),
-            stringResource(R.string.result_metric_elapsed_value, result.elapsedTime) to
-                stringResource(R.string.result_metric_elapsed),
+    val createdValue = result.cardsCreated.toString()
+    val createdLabel = stringResource(R.string.result_metric_created)
+    val skippedValue =
+        stringResource(R.string.result_metric_skipped_new_value, skipped, result.newWordsFound)
+    val skippedLabel = stringResource(R.string.result_metric_skipped_new)
+    val comprehensionValue =
+        stringResource(
+            R.string.result_metric_percent_value,
+            result.comprehensionPercentage,
         )
+    val comprehensionLabel = stringResource(R.string.result_metric_comprehension)
+    val elapsedValue = stringResource(R.string.result_metric_elapsed_value, result.elapsedTime)
+    val elapsedLabel = stringResource(R.string.result_metric_elapsed)
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         val stack =
             maxWidth < CompactLayoutWidthDp.dp || LocalDensity.current.fontScale >= 1.3f
@@ -1053,28 +1083,67 @@ private fun ResultMetricGrid(result: ProcessingResult) {
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                metrics.forEach { (value, label) ->
-                    MetricTile(value = value, label = label, modifier = Modifier.fillMaxWidth())
-                }
+                MetricTile(
+                    value = createdValue,
+                    label = createdLabel,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                MetricTile(
+                    value = skippedValue,
+                    label = skippedLabel,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                MetricTile(
+                    value = comprehensionValue,
+                    label = comprehensionLabel,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                MetricTile(
+                    value = elapsedValue,
+                    label = elapsedLabel,
+                    modifier = Modifier.fillMaxWidth(),
+                )
             }
         } else {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                metrics.chunked(2).forEach { row ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        row.forEach { (value, label) ->
-                            MetricTile(
-                                value = value,
-                                label = label,
-                                modifier = Modifier.weight(1f),
-                            )
-                        }
-                    }
-                }
+                ResultMetricRow(
+                    firstValue = createdValue,
+                    firstLabel = createdLabel,
+                    secondValue = skippedValue,
+                    secondLabel = skippedLabel,
+                )
+                ResultMetricRow(
+                    firstValue = comprehensionValue,
+                    firstLabel = comprehensionLabel,
+                    secondValue = elapsedValue,
+                    secondLabel = elapsedLabel,
+                )
             }
         }
+    }
+}
+
+@Composable
+private fun ResultMetricRow(
+    firstValue: String,
+    firstLabel: String,
+    secondValue: String,
+    secondLabel: String,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        MetricTile(
+            value = firstValue,
+            label = firstLabel,
+            modifier = Modifier.weight(1f),
+        )
+        MetricTile(
+            value = secondValue,
+            label = secondLabel,
+            modifier = Modifier.weight(1f),
+        )
     }
 }
 

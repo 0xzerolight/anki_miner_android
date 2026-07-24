@@ -1,5 +1,8 @@
 package com.ankiminer.android.ui.settings
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createComposeRule
@@ -7,8 +10,13 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
+import com.ankiminer.android.data.resources.KnownWordsFailureOperation
 import com.ankiminer.android.data.resources.KnownWordsInventory
 import com.ankiminer.android.data.resources.KnownWordsPage
+import com.ankiminer.android.data.resources.ResourceFailure
+import com.ankiminer.android.data.resources.ResourceFailureAction
+import com.ankiminer.android.data.resources.ResourceFailureOrigin
+import com.ankiminer.android.data.resources.ResourceFailureRetry
 import com.ankiminer.android.ui.theme.AnkiMinerTheme
 import com.ankiminer.android.vm.SetupUiState
 import org.junit.Assert.assertEquals
@@ -70,6 +78,9 @@ class KnownWordsManagerScreenTest {
     fun loadMoreAndSearchUseSeparateCallbacks() {
         var searches = 0
         var loads = 0
+        var imports = 0
+        var exports = 0
+        var failureOperation by mutableStateOf(KnownWordsFailureOperation.PREVIEW)
         composeRule.setContent {
             AnkiMinerTheme {
                 KnownWordsManagerScreen(
@@ -83,11 +94,25 @@ class KnownWordsManagerScreenTest {
                                     words = listOf("猫"),
                                     hasMore = true,
                                 ),
+                            failure =
+                                ResourceFailure(
+                                    code = "known_words_failed",
+                                    message = "Known words failed",
+                                    retryable = false,
+                                    origin = ResourceFailureOrigin.KNOWN_WORDS,
+                                    retry =
+                                        ResourceFailureRetry(
+                                            ResourceFailureAction.CHOOSE_ANOTHER,
+                                        ),
+                                    knownWordsOperation = failureOperation,
+                                ),
                         ),
                     callbacks =
                         KnownWordsManagerCallbacks(
                             onSearch = { searches += 1 },
                             onLoadMore = { loads += 1 },
+                            onImport = { imports += 1 },
+                            onExport = { exports += 1 },
                         ),
                 )
             }
@@ -98,6 +123,24 @@ class KnownWordsManagerScreenTest {
         composeRule.runOnIdle {
             assertEquals(1, searches)
             assertEquals(1, loads)
+        }
+
+        composeRule.onNodeWithText("Choose another").performClick()
+        composeRule.runOnIdle {
+            assertEquals(1, imports)
+            assertEquals(0, exports)
+            failureOperation = KnownWordsFailureOperation.IMPORT
+        }
+        composeRule.onNodeWithText("Choose another").performClick()
+        composeRule.runOnIdle {
+            assertEquals(2, imports)
+            assertEquals(0, exports)
+            failureOperation = KnownWordsFailureOperation.EXPORT
+        }
+        composeRule.onNodeWithText("Choose another").performClick()
+        composeRule.runOnIdle {
+            assertEquals(2, imports)
+            assertEquals(1, exports)
         }
     }
 }

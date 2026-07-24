@@ -118,6 +118,7 @@ internal class AndroidResourceManager(
         val cancellation: ResourceCancellationSignal,
         val failureOrigin: ResourceFailureOrigin,
         val failureRetry: ResourceFailureRetry,
+        val knownWordsOperation: KnownWordsFailureOperation?,
         val pythonStarted: AtomicBoolean = AtomicBoolean(false),
     )
 
@@ -465,6 +466,7 @@ internal class AndroidResourceManager(
             ResourceOperationPhase.PREPARING,
             failureOrigin = ResourceFailureOrigin.KNOWN_WORDS,
             failureRetry = ResourceFailureRetry(ResourceFailureAction.CHOOSE_ANOTHER),
+            knownWordsOperation = KnownWordsFailureOperation.IMPORT,
         ) { operation ->
             val retained = runBlocking { safBroker.retainReadAccess(uri) }
             var staged: StagedArchive? = null
@@ -509,6 +511,7 @@ internal class AndroidResourceManager(
             ResourceOperationPhase.PREPARING,
             failureOrigin = ResourceFailureOrigin.KNOWN_WORDS,
             failureRetry = ResourceFailureRetry(ResourceFailureAction.CHOOSE_ANOTHER),
+            knownWordsOperation = KnownWordsFailureOperation.PREVIEW,
         ) { operation ->
             clearPendingKnownWordsImport()
             mutableState.update { it.copy(knownWordsImportPreview = null) }
@@ -570,6 +573,7 @@ internal class AndroidResourceManager(
             strings.resolve(R.string.resource_operation_import_known_words),
             ResourceOperationPhase.IMPORTING,
             ResourceFailureOrigin.KNOWN_WORDS,
+            knownWordsOperation = KnownWordsFailureOperation.IMPORT,
         ) { operation ->
             try {
                 operation.cancellation.check()
@@ -673,6 +677,7 @@ internal class AndroidResourceManager(
             ResourceOperationPhase.REFRESHING,
             ResourceFailureOrigin.KNOWN_WORDS,
             ResourceFailureRetry(ResourceFailureAction.CHOOSE_ANOTHER),
+            knownWordsOperation = KnownWordsFailureOperation.EXPORT,
         ) { operation ->
             val destination =
                 try {
@@ -787,6 +792,7 @@ internal class AndroidResourceManager(
         failureOrigin: ResourceFailureOrigin,
         failureRetry: ResourceFailureRetry =
             ResourceFailureRetry(ResourceFailureAction.RETRY),
+        knownWordsOperation: KnownWordsFailureOperation? = null,
         block: (ActiveOperation) -> Unit,
     ) {
         if (!operationMutex.tryLock()) {
@@ -801,6 +807,7 @@ internal class AndroidResourceManager(
                     strings.resolve(R.string.resource_failure_busy),
                     failureOrigin,
                     failureRetry,
+                    knownWordsOperation,
                 )
                 return
             }
@@ -811,6 +818,7 @@ internal class AndroidResourceManager(
                     cancellation = ResourceCancellationSignal(),
                     failureOrigin = failureOrigin,
                     failureRetry = failureRetry,
+                    knownWordsOperation = knownWordsOperation,
                 )
             synchronized(activeMonitor) { active = operation }
             mutableState.update {
@@ -1049,7 +1057,7 @@ internal class AndroidResourceManager(
                         ResourceFailureRetry(ResourceFailureAction.RESOLVE)
                 else -> operation.failureOrigin to operation.failureRetry
             }
-        recordFailure(code, message, origin, retry)
+        recordFailure(code, message, origin, retry, operation.knownWordsOperation)
     }
 
     private fun recordFailure(
@@ -1057,6 +1065,7 @@ internal class AndroidResourceManager(
         message: String,
         origin: ResourceFailureOrigin,
         retry: ResourceFailureRetry,
+        knownWordsOperation: KnownWordsFailureOperation? = null,
     ) {
         mutableState.update {
             it.copy(
@@ -1067,6 +1076,7 @@ internal class AndroidResourceManager(
                         retryable = code in RETRYABLE_FAILURES,
                         origin = origin,
                         retry = retry,
+                        knownWordsOperation = knownWordsOperation,
                     ),
             )
         }

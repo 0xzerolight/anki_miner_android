@@ -501,6 +501,30 @@ class VideoMiningViewModelTest {
         }
 
     @Test
+    fun cancelPendingWaitsForTerminalRepositoryAcknowledgement() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val request = curationRequest()
+            val repository =
+                RecordingRepository(
+                    initialState = MiningRunState.Curating(request),
+                    acknowledgeCancellationImmediately = false,
+                )
+            val viewModel = VideoMiningViewModel(repository, ImmediateSafBroker())
+            runCurrent()
+
+            viewModel.cancel()
+            runCurrent()
+
+            assertEquals(1, repository.cancelCalls)
+            assertTrue(viewModel.uiState.value.cancelPending)
+
+            repository.transitionTo(MiningRunState.Cancelled(request.runId, null))
+            runCurrent()
+
+            assertFalse(viewModel.uiState.value.cancelPending)
+        }
+
+    @Test
     fun pendingCurationConfirmationStillAllowsPromptCancellation() =
         runTest(mainDispatcherRule.dispatcher) {
             val request = curationRequest()
@@ -843,6 +867,7 @@ class VideoMiningViewModelTest {
         private val cancelGate: CompletableDeferred<Unit>? = null,
         private val confirmGate: CompletableDeferred<Unit>? = null,
         private val detachActiveSourcesResult: Boolean = false,
+        private val acknowledgeCancellationImmediately: Boolean = true,
     ) : MiningRepository {
         private val mutableState = MutableStateFlow(initialState)
         override val state: StateFlow<MiningRunState> = mutableState.asStateFlow()
@@ -895,7 +920,9 @@ class VideoMiningViewModelTest {
         override suspend fun cancel(runId: String) {
             cancelCalls += 1
             cancelGate?.await()
-            mutableState.value = MiningRunState.Cancelled(runId, null)
+            if (acknowledgeCancellationImmediately) {
+                mutableState.value = MiningRunState.Cancelled(runId, null)
+            }
         }
 
         override suspend fun reset() {
