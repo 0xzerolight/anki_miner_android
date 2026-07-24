@@ -19,9 +19,7 @@ EXTERNAL_UNIDIC_TESTS = (
 )
 TEST_ANNOTATION = re.compile(r"^\s*@Test\b", re.MULTILINE)
 EXPECTED_COUNT = re.compile(r"readonly expected_test_count=(\d+)")
-DISCOVERY_COMMENT = re.compile(
-    r"# Full discovery is (\d+) tests\. (\d+) UI-audit tests are discovered"
-)
+DISCOVERY_COMMENT = re.compile(r"# Full discovery is (\d+) tests\. (\d+) UI-audit tests are discovered")
 
 
 class Api26InstrumentationScriptTest(unittest.TestCase):
@@ -44,9 +42,7 @@ class Api26InstrumentationScriptTest(unittest.TestCase):
 
         discovery_match = DISCOVERY_COMMENT.search(script_source)
         self.assertIsNotNone(discovery_match)
-        documented_discovery, documented_ui_audit = (
-            int(value) for value in discovery_match.groups()
-        )
+        documented_discovery, documented_ui_audit = (int(value) for value in discovery_match.groups())
         self.assertEqual(discovered_test_count, documented_discovery)
         self.assertEqual(ui_audit_test_count, documented_ui_audit)
 

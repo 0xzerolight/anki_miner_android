@@ -2,15 +2,11 @@ import re
 import unittest
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[2]
 SHARED = ROOT / "app/src/main/kotlin/com/ankiminer/android/ui/mining/SharedMiningComponents.kt"
 READING = ROOT / "app/src/main/kotlin/com/ankiminer/android/ui/reading/ReadingMiningScreen.kt"
 VIDEO = ROOT / "app/src/main/kotlin/com/ankiminer/android/ui/video/VideoMiningScreen.kt"
-SCREENSHOTS = (
-    ROOT
-    / "app/src/androidTest/kotlin/com/ankiminer/android/uiaudit/UiAuditScreenshotTest.kt"
-)
+SCREENSHOTS = ROOT / "app/src/androidTest/kotlin/com/ankiminer/android/uiaudit/UiAuditScreenshotTest.kt"
 NOTICES = ROOT / "app/src/main/kotlin/com/ankiminer/android/ui/attribution/NoticesScreen.kt"
 
 
@@ -27,7 +23,9 @@ class UiScrollHotPathTest(unittest.TestCase):
             self.assertIn("val phaseTarget =", source, path)
             self.assertIn("targetState = phaseTarget", source, path)
             self.assertIn("contentKey = { target -> target.key }", source, path)
-            self.assertIn("sizeTransform = null", source, path)
+            # `using null` is the public ContentTransform infix for disabling the
+            # size animation; the property setter is internal in Compose 1.11.
+            self.assertIn("using null", source, path)
             self.assertNotIn("targetState = state,", source, path)
 
     def test_passive_candidate_headers_have_no_animation_state_or_text_builds(self) -> None:
@@ -42,8 +40,7 @@ class UiScrollHotPathTest(unittest.TestCase):
         self.assertRegex(
             header,
             re.compile(
-                r"if \(animateSelection\) \{\s+"
-                r"animateColorAsState\(",
+                r"if \(animateSelection\) \{\s+" r"animateColorAsState\(",
                 re.DOTALL,
             ),
         )
@@ -55,8 +52,7 @@ class UiScrollHotPathTest(unittest.TestCase):
 
     def test_lazy_row_functions_contain_no_content_or_elevation_animation(self) -> None:
         forbidden = re.compile(
-            r"AnimatedContent|animate(?:Color|Float|Dp).*AsState|"
-            r"(?:shadow|tonal)Elevation|\.shadow\("
+            r"AnimatedContent|animate(?:Color|Float|Dp).*AsState|" r"(?:shadow|tonal)Elevation|\.shadow\("
         )
         for path in (READING, VIDEO):
             source = path.read_text(encoding="utf-8")
@@ -87,7 +83,7 @@ class UiScrollHotPathTest(unittest.TestCase):
                 source,
                 path,
             )
-            self.assertIn("contentType = \"candidate\"", source, path)
+            self.assertIn('contentType = "candidate"', source, path)
             self.assertRegex(
                 source,
                 re.compile(r'key = "[^"]*candidate:\$\{candidate\.candidateId\}"'),
