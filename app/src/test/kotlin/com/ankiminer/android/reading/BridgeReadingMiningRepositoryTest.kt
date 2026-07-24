@@ -1,5 +1,6 @@
 package com.ankiminer.android.reading
 
+import com.ankiminer.android.R
 import com.ankiminer.android.anki.protocol.ReleaseState
 import com.ankiminer.android.anki.provider.AnkiCancellation
 import com.ankiminer.android.data.RuntimeWorkCoordinator
@@ -468,6 +469,62 @@ class BridgeReadingMiningRepositoryTest {
         assertFalse("terminal error 255" in errors)
     }
 
+    @Test
+    fun `last-resort failure carries a message-free exception digest in the fault`() {
+        val harness =
+            harness(
+                readingRunFailure = IllegalStateException("secret /storage/emulated/0/user.cbz"),
+            )
+
+        runBlocking { harness.repository.startReading(INPUT) }
+
+        val failed =
+            awaitState(harness.repository, MiningRunState::isTerminal) as MiningRunState.Failed
+        val message = failed.failure.message
+        assertTrue(message, "IllegalStateException" in message)
+        assertFalse(message, "secret" in message)
+        assertFalse(message, "user.cbz" in message)
+    }
+
+    @Test
+    fun `a self-contained archive with no mokuro member fails with the no-member fault`() {
+        val archive =
+            SafDocument(
+                uri = "content://reading/lone",
+                displayName = "Volume.cbz",
+                mimeType = "application/x-cbz",
+                sizeBytes = null,
+            )
+        val archiveBytes = zipBytes("Volume/001.jpg" to "jpeg".toByteArray())
+        val harness =
+            harness(inputBytes = mapOf(archive.uri to archiveBytes))
+
+        runBlocking {
+            harness.repository.startReading(
+                ReadingMiningInput(ReadingSourceSelection.Single(archive)),
+            )
+        }
+
+        val failed =
+            awaitState(harness.repository, MiningRunState::isTerminal) as MiningRunState.Failed
+        assertEquals(
+            "resource:${R.string.mining_failure_reading_archive_no_mokuro}",
+            failed.failure.message,
+        )
+    }
+
+    private fun zipBytes(vararg members: Pair<String, ByteArray>): ByteArray {
+        val bytes = java.io.ByteArrayOutputStream()
+        java.util.zip.ZipOutputStream(bytes).use { zip ->
+            members.forEach { (name, content) ->
+                zip.putNextEntry(java.util.zip.ZipEntry(name))
+                zip.write(content)
+                zip.closeEntry()
+            }
+        }
+        return bytes.toByteArray()
+    }
+
     private fun harness(
         runtimeWorkCoordinator: RuntimeWorkCoordinator = RuntimeWorkCoordinator(),
         releases: MutableList<String> = Collections.synchronizedList(mutableListOf()),
@@ -479,6 +536,7 @@ class BridgeReadingMiningRepositoryTest {
         expressionAudioFieldMapped: Boolean = false,
         presenterWarning: String? = null,
         terminalErrorCount: Int = 0,
+        readingRunFailure: RuntimeException? = null,
     ): Harness {
         val runExecutor = Executors.newSingleThreadExecutor().also(executors::add)
         val controlExecutor = Executors.newSingleThreadExecutor().also(executors::add)
@@ -490,6 +548,7 @@ class BridgeReadingMiningRepositoryTest {
                 invokeTts = invokeTts,
                 presenterWarning = presenterWarning,
                 terminalErrorCount = terminalErrorCount,
+                readingRunFailure = readingRunFailure,
             )
         val anki = FakeAnkiCallbacks()
         val foreground = FakeForegroundStarter()
@@ -679,6 +738,7 @@ class BridgeReadingMiningRepositoryTest {
         private val invokeTts: Boolean = false,
         private val presenterWarning: String? = null,
         private val terminalErrorCount: Int = 0,
+        private val readingRunFailure: RuntimeException? = null,
     ) : PyBridge {
         val readingRequest = AtomicReference<ReadingMiningWireRequest?>()
         val curationSubmitted = CountDownLatch(1)
@@ -709,7 +769,10 @@ class BridgeReadingMiningRepositoryTest {
                             totalBytes = 1024,
                         ),
                     )
-                is BridgeMessage.ReadingRun -> runReading(request.request, requireNotNull(callbacks))
+                is BridgeMessage.ReadingRun -> {
+                    readingRunFailure?.let { throw it }
+                    runReading(request.request, requireNotNull(callbacks))
+                }
                 is BridgeMessage.CurationResponse -> {
                     selection = request.selection
                     curationSubmitted.countDown()

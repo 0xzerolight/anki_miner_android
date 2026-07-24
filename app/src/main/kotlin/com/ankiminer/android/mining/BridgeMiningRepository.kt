@@ -3,6 +3,7 @@ package com.ankiminer.android.mining
 import com.ankiminer.android.R
 import com.ankiminer.android.anki.protocol.ReleaseState
 import com.ankiminer.android.data.RuntimeWorkCoordinator
+import com.ankiminer.android.diagnostics.exceptionDigest
 import com.ankiminer.android.engine.BridgeJsonCodec
 import com.ankiminer.android.engine.BridgeMessage
 import com.ankiminer.android.engine.EngineCallbacks
@@ -353,9 +354,15 @@ internal class BridgeMiningRepository(
                     RunCallbacks(generation),
                 )
             terminal = reconcileTerminal(generation, rawResult)
-        } catch (_: Exception) {
+        } catch (failure: Exception) {
             if (!isCancellationRequested(generation)) {
-                recordFault(generation, strings.resolve(R.string.mining_failure_embedded_video))
+                recordFault(
+                    generation,
+                    strings.resolve(
+                        R.string.mining_failure_embedded_video_detailed,
+                        listOf(exceptionDigest(failure)),
+                    ),
+                )
             }
         } finally {
             finishRun(generation, terminal, inputOwner)

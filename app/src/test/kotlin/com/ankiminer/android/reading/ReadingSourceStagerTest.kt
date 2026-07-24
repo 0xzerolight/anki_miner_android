@@ -142,8 +142,6 @@ class ReadingSourceStagerTest {
                     ReadingSourceSelectionFailure.INVALID_DISPLAY_NAME,
                 ReadingSourceSelection.Single(document("content://reading/pdf", "book.pdf", 1L)) to
                     ReadingSourceSelectionFailure.UNSUPPORTED_EXTENSION,
-                ReadingSourceSelection.Single(document("content://reading/archive", "volume.cbz", 1L)) to
-                    ReadingSourceSelectionFailure.ARCHIVE_REQUIRES_MOKURO_SIDECAR,
                 ReadingSourceSelection.MokuroArchivePair(
                     document("content://reading/a", "one.mokuro", 1L),
                     document("content://reading/b", "two.cbz", 1L),
@@ -431,9 +429,11 @@ class ReadingSourceStagerTest {
 
         val removed = ReadingSourceStageJanitor(root).removeOrphans()
 
-        assertEquals(4, removed)
-        listOf(empty, single, pair, linkedFileStage).forEach { assertFalse(it.exists()) }
-        listOf(nearName, invalidFile, archiveOnly, noncanonical, mismatch, inexactPair, nested, linked, outside)
+        // archiveOnly is now an owned orphan: a crash between the archive copy
+        // and the embedded-sidecar extraction legitimately leaves a lone archive.
+        assertEquals(5, removed)
+        listOf(empty, single, pair, archiveOnly, linkedFileStage).forEach { assertFalse(it.exists()) }
+        listOf(nearName, invalidFile, noncanonical, mismatch, inexactPair, nested, linked, outside)
             .forEach { assertTrue(it.exists()) }
         assertTrue(outsideFile.isFile)
     }
@@ -450,6 +450,240 @@ class ReadingSourceStagerTest {
         }
 
         assertTrue(marker.isDirectory)
+    }
+
+    @Test
+    fun `lone archive stages a sidecar extracted from its single embedded mokuro member`() {
+        listOf("cbz", "zip").forEachIndexed { index, extension ->
+            val root = File(temporary.root, "lone-archive-$extension")
+            val archiveBytes =
+                zipBytes(
+                    "manga_volume/001.jpg" to "jpeg-one".toByteArray(),
+                    "manga_volume/002.jpg" to "jpeg-two".toByteArray(),
+                    "manga_volume.mokuro" to "{\"pages\":[]}".toByteArray(),
+                )
+            val document =
+                document("content://reading/lone-$index", "Manga Volume.$extension", archiveBytes.size.toLong())
+            val opener = FakeReadingSourceOpener(mapOf(document.uri to archiveBytes))
+
+            val staged =
+                stager(root, opener, limits = archiveLimits())
+                    .stage(ReadingSourceSelection.Single(document))
+
+            val files = staged.files.associateBy(StagedReadingFile::role)
+            val sidecar = checkNotNull(files[ReadingSourceStageRole.MOKURO_SIDECAR]).file
+            val archive = checkNotNull(files[ReadingSourceStageRole.MOKURO_ARCHIVE]).file
+            assertEquals(StagedReadingSourceKind.MOKURO, staged.sourceKind)
+            assertEquals("Manga Volume.mokuro", sidecar.name)
+            assertEquals("Manga Volume.$extension", archive.name)
+            assertEquals(sidecar.absolutePath, staged.detectorPath)
+            assertEquals(archive.absolutePath, staged.imageArchivePath)
+            assertArrayEquals("{\"pages\":[]}".toByteArray(), sidecar.readBytes())
+            assertEquals(2, checkNotNull(archive.parentFile).listFiles().orEmpty().size)
+
+            staged.close()
+            assertTrue(root.listFiles().orEmpty().isEmpty())
+        }
+    }
+
+    @Test
+    fun `embedded sidecar member stem may differ from the archive stem`() {
+        val root = File(temporary.root, "stem-mismatch")
+        val archiveBytes =
+            zipBytes(
+                "scans/whatever.mokuro" to "ocr".toByteArray(),
+                "scans/001.jpg" to "jpeg".toByteArray(),
+            )
+        val document = document("content://reading/stem", "本.cbz", archiveBytes.size.toLong())
+        val opener = FakeReadingSourceOpener(mapOf(document.uri to archiveBytes))
+
+        val staged =
+            stager(root, opener, limits = archiveLimits())
+                .stage(ReadingSourceSelection.Single(document))
+
+        assertEquals("本.mokuro", File(staged.detectorPath).name)
+        staged.close()
+    }
+
+    @Test
+    fun `top level embedded sidecar wins over nested duplicates`() {
+        val root = File(temporary.root, "top-level-wins")
+        val archiveBytes =
+            zipBytes(
+                "volume.mokuro" to "top".toByteArray(),
+                "backup/volume.mokuro" to "nested".toByteArray(),
+            )
+        val document = document("content://reading/top", "volume.cbz", archiveBytes.size.toLong())
+        val opener = FakeReadingSourceOpener(mapOf(document.uri to archiveBytes))
+
+        val staged =
+            stager(root, opener, limits = archiveLimits())
+                .stage(ReadingSourceSelection.Single(document))
+
+        assertArrayEquals("top".toByteArray(), File(staged.detectorPath).readBytes())
+        staged.close()
+    }
+
+    @Test
+    fun `archive without any mokuro member fails with a no-member reason and removes the stage`() {
+        val root = File(temporary.root, "no-member")
+        val archiveBytes = zipBytes("manga_volume/001.jpg" to "jpeg".toByteArray())
+        val document = document("content://reading/none", "volume.cbz", archiveBytes.size.toLong())
+        val opener = FakeReadingSourceOpener(mapOf(document.uri to archiveBytes))
+
+        val failure =
+            assertThrows(EmbeddedSidecarException::class.java) {
+                stager(root, opener, limits = archiveLimits())
+                    .stage(ReadingSourceSelection.Single(document))
+            }
+
+        assertEquals(EmbeddedSidecarFailure.NO_MOKURO_MEMBER, failure.failure)
+        assertTrue(root.listFiles().orEmpty().isEmpty())
+    }
+
+    @Test
+    fun `archive with multiple ambiguous mokuro members fails with a multiple-member reason`() {
+        val root = File(temporary.root, "multi-member")
+        val archiveBytes =
+            zipBytes(
+                "a/volume.mokuro" to "one".toByteArray(),
+                "b/volume.mokuro" to "two".toByteArray(),
+            )
+        val document = document("content://reading/multi", "volume.cbz", archiveBytes.size.toLong())
+        val opener = FakeReadingSourceOpener(mapOf(document.uri to archiveBytes))
+
+        val failure =
+            assertThrows(EmbeddedSidecarException::class.java) {
+                stager(root, opener, limits = archiveLimits())
+                    .stage(ReadingSourceSelection.Single(document))
+            }
+
+        assertEquals(EmbeddedSidecarFailure.MULTIPLE_MOKURO_MEMBERS, failure.failure)
+        assertTrue(root.listFiles().orEmpty().isEmpty())
+    }
+
+    @Test
+    fun `zip slip and junk members are never candidates and never escape the stage`() {
+        val root = File(temporary.root, "junk-members")
+        val archiveBytes =
+            zipBytes(
+                "../evil.mokuro" to "evil".toByteArray(),
+                "__MACOSX/resource.mokuro" to "junk".toByteArray(),
+                ".hidden.mokuro" to "hidden".toByteArray(),
+                "nested/.also-hidden.mokuro" to "hidden".toByteArray(),
+            )
+        val document = document("content://reading/junk", "volume.cbz", archiveBytes.size.toLong())
+        val opener = FakeReadingSourceOpener(mapOf(document.uri to archiveBytes))
+
+        val failure =
+            assertThrows(EmbeddedSidecarException::class.java) {
+                stager(root, opener, limits = archiveLimits())
+                    .stage(ReadingSourceSelection.Single(document))
+            }
+
+        assertEquals(EmbeddedSidecarFailure.NO_MOKURO_MEMBER, failure.failure)
+        assertTrue(root.listFiles().orEmpty().isEmpty())
+        assertFalse(File(temporary.root, "evil.mokuro").exists())
+    }
+
+    @Test
+    fun `oversized embedded sidecar member fails the sidecar byte cap and removes the stage`() {
+        val root = File(temporary.root, "oversized-member")
+        val archiveBytes =
+            zipBytes("volume.mokuro" to ByteArray(64) { 'x'.code.toByte() })
+        val document = document("content://reading/oversized", "volume.cbz", archiveBytes.size.toLong())
+        val opener = FakeReadingSourceOpener(mapOf(document.uri to archiveBytes))
+
+        assertThrows(FileCopyLimitExceededException::class.java) {
+            stager(
+                root,
+                opener,
+                limits = archiveLimits(mokuroSidecarMaxBytes = 16L),
+            ).stage(ReadingSourceSelection.Single(document))
+        }
+
+        assertTrue(root.listFiles().orEmpty().isEmpty())
+    }
+
+    @Test
+    fun `empty embedded sidecar member fails as an empty source and removes the stage`() {
+        val root = File(temporary.root, "empty-member")
+        val archiveBytes = zipBytes("volume.mokuro" to ByteArray(0))
+        val document = document("content://reading/empty-member", "volume.cbz", archiveBytes.size.toLong())
+        val opener = FakeReadingSourceOpener(mapOf(document.uri to archiveBytes))
+
+        val failure =
+            assertThrows(EmptyReadingSourceException::class.java) {
+                stager(root, opener, limits = archiveLimits())
+                    .stage(ReadingSourceSelection.Single(document))
+            }
+
+        assertEquals(ReadingSourceStageRole.MOKURO_SIDECAR, failure.role)
+        assertTrue(root.listFiles().orEmpty().isEmpty())
+    }
+
+    @Test
+    fun `corrupt archive fails with an unreadable-archive reason and removes the stage`() {
+        val root = File(temporary.root, "corrupt-archive")
+        val document = document("content://reading/corrupt", "volume.cbz", 24L)
+        val opener =
+            FakeReadingSourceOpener(mapOf(document.uri to "this is not a zip file..").mapValues { it.value.toByteArray() })
+
+        val failure =
+            assertThrows(EmbeddedSidecarException::class.java) {
+                stager(root, opener, limits = archiveLimits())
+                    .stage(ReadingSourceSelection.Single(document))
+            }
+
+        assertEquals(EmbeddedSidecarFailure.UNREADABLE_ARCHIVE, failure.failure)
+        assertTrue(root.listFiles().orEmpty().isEmpty())
+    }
+
+    @Test
+    fun `cancellation during embedded sidecar extraction removes the whole stage`() {
+        val root = File(temporary.root, "cancel-extraction")
+        val archiveBytes =
+            zipBytes(
+                "volume.mokuro" to "ocr-data".toByteArray(),
+                "001.jpg" to "jpeg".toByteArray(),
+            )
+        val document = document("content://reading/cancel", "volume.cbz", archiveBytes.size.toLong())
+        val opener = FakeReadingSourceOpener(mapOf(document.uri to archiveBytes))
+        val cancelled = AtomicBoolean(false)
+
+        assertThrows(FileCopyCancelledException::class.java) {
+            stager(root, opener, limits = archiveLimits()).stage(
+                ReadingSourceSelection.Single(document),
+                cancellation = FileCopyCancellation(cancelled::get),
+                progressListener =
+                    ReadingSourceStageProgressListener { progress ->
+                        if (progress.role == ReadingSourceStageRole.MOKURO_SIDECAR) {
+                            cancelled.set(true)
+                        }
+                    },
+            )
+        }
+
+        assertTrue(root.listFiles().orEmpty().isEmpty())
+    }
+
+    private fun archiveLimits(mokuroSidecarMaxBytes: Long = 64L) =
+        limits(
+            mokuroSidecarMaxBytes = mokuroSidecarMaxBytes,
+            mokuroArchiveMaxBytes = 4096L,
+            jobMaxBytes = 8192L,
+        )
+
+    private fun zipBytes(vararg members: Pair<String, ByteArray>): ByteArray {
+        val bytes = java.io.ByteArrayOutputStream()
+        java.util.zip.ZipOutputStream(bytes).use { zip ->
+            members.forEach { (name, content) ->
+                zip.putNextEntry(java.util.zip.ZipEntry(name))
+                zip.write(content)
+                zip.closeEntry()
+            }
+        }
+        return bytes.toByteArray()
     }
 
     private fun stager(

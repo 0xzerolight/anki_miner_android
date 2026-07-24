@@ -19,7 +19,10 @@ import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.security.SecureRandom
 import java.text.Normalizer
+import java.util.Collections
 import java.util.Locale
+import java.util.zip.ZipException
+import java.util.zip.ZipFile
 
 internal enum class ReadingSourceStageRole {
     TEXT,
@@ -67,9 +70,20 @@ internal enum class ReadingSourceSelectionFailure {
     INVALID_URI,
     INVALID_DISPLAY_NAME,
     UNSUPPORTED_EXTENSION,
-    ARCHIVE_REQUIRES_MOKURO_SIDECAR,
     INVALID_MOKURO_PAIR,
 }
+
+internal enum class EmbeddedSidecarFailure {
+    NO_MOKURO_MEMBER,
+    MULTIPLE_MOKURO_MEMBERS,
+    UNREADABLE_ARCHIVE,
+}
+
+internal class EmbeddedSidecarException(
+    val failure: EmbeddedSidecarFailure,
+    message: String,
+    cause: Throwable? = null,
+) : IOException(message, cause)
 
 internal class ReadingSourceSelectionException(
     val failure: ReadingSourceSelectionFailure,
@@ -277,6 +291,36 @@ internal class ReadingSourceStager(
                 }
                 stagedFiles += StagedReadingFile(entry.role, destination, copied)
             }
+            if (plan.extractEmbeddedSidecar) {
+                checkCancellation(cancellation)
+                val archiveStaged =
+                    stagedFiles.single { it.role == ReadingSourceStageRole.MOKURO_ARCHIVE }
+                val destination = File(stageDirectory, plan.detectorName)
+                require(destination.parentFile == stageDirectory && !destination.exists()) {
+                    "Reading stage destination is not a new direct child"
+                }
+                val remaining = limits.jobMaxBytes - copiedForJob
+                if (remaining <= 0L) {
+                    throw ReadingSourceTotalLimitExceededException(
+                        limits.jobMaxBytes,
+                        checkedAdd(copiedForJob, 1L),
+                    )
+                }
+                val copied =
+                    extractEmbeddedSidecar(
+                        archive = archiveStaged.file,
+                        destination = destination,
+                        remainingJobBytes = remaining,
+                        cancellation = cancellation,
+                        progressListener = progressListener,
+                    )
+                copiedForJob = checkedAdd(copiedForJob, copied)
+                if (copiedForJob > limits.jobMaxBytes) {
+                    throw ReadingSourceTotalLimitExceededException(limits.jobMaxBytes, copiedForJob)
+                }
+                stagedFiles +=
+                    StagedReadingFile(ReadingSourceStageRole.MOKURO_SIDECAR, destination, copied)
+            }
             checkCancellation(cancellation)
             val detectorFile = File(stageDirectory, plan.detectorName)
             check(detectorFile.isFile) { "Reading detector entry was not materialized" }
@@ -294,10 +338,87 @@ internal class ReadingSourceStager(
         } catch (failure: Throwable) {
             cleanupFailedStage(
                 stageDirectory,
-                plan.entries.map { entry -> File(stageDirectory, entry.outputName) },
+                buildList {
+                    plan.entries.forEach { entry -> add(File(stageDirectory, entry.outputName)) }
+                    if (plan.extractEmbeddedSidecar) add(File(stageDirectory, plan.detectorName))
+                },
                 failure,
             )
             throw failure
+        }
+    }
+
+    private fun extractEmbeddedSidecar(
+        archive: File,
+        destination: File,
+        remainingJobBytes: Long,
+        cancellation: FileCopyCancellation,
+        progressListener: ReadingSourceStageProgressListener,
+    ): Long {
+        val zip =
+            try {
+                ZipFile(archive)
+            } catch (failure: IOException) {
+                throw embeddedSidecarUnreadable(failure)
+            } catch (failure: RuntimeException) {
+                throw embeddedSidecarUnreadable(failure)
+            }
+        zip.use { open ->
+            val members = Collections.list(open.entries())
+            if (members.size > MAX_ARCHIVE_MEMBER_SCAN) {
+                throw EmbeddedSidecarException(
+                    EmbeddedSidecarFailure.UNREADABLE_ARCHIVE,
+                    "Mokuro image archive lists too many members",
+                )
+            }
+            val candidates =
+                members.filter { member ->
+                    !member.isDirectory && isSafeSidecarMemberName(member.name)
+                }
+            val selected =
+                when {
+                    candidates.isEmpty() ->
+                        throw EmbeddedSidecarException(
+                            EmbeddedSidecarFailure.NO_MOKURO_MEMBER,
+                            "Mokuro image archive contains no .mokuro member",
+                        )
+                    candidates.size == 1 -> candidates.single()
+                    else ->
+                        candidates.singleOrNull { member -> '/' !in member.name }
+                            ?: throw EmbeddedSidecarException(
+                                EmbeddedSidecarFailure.MULTIPLE_MOKURO_MEMBERS,
+                                "Mokuro image archive contains multiple .mokuro members",
+                            )
+                }
+            if (selected.size == 0L) {
+                throw EmptyReadingSourceException(ReadingSourceStageRole.MOKURO_SIDECAR)
+            }
+            val policy =
+                BoundedFileCopyPolicy(
+                    maxBytes = minOf(limits.mokuroSidecarMaxBytes, remainingJobBytes),
+                    freeSpaceReserveBytes = limits.freeSpaceReserveBytes,
+                    bufferBytes = limits.bufferBytes,
+                )
+            val copied =
+                try {
+                    fileCopier.copy(
+                        openSource = { open.getInputStream(selected) },
+                        destination = destination,
+                        knownSizeBytes = selected.size.takeIf { it >= 0L },
+                        policy = policy,
+                        cancellation = cancellation,
+                        progressListener =
+                            FileCopyProgressListener { progress ->
+                                progressListener.onProgress(
+                                    progress.forRole(ReadingSourceStageRole.MOKURO_SIDECAR),
+                                )
+                            },
+                    )
+                } catch (failure: ZipException) {
+                    throw embeddedSidecarUnreadable(failure)
+                }
+            if (copied == 0L) throw EmptyReadingSourceException(ReadingSourceStageRole.MOKURO_SIDECAR)
+            return copied
         }
     }
 
@@ -367,16 +488,28 @@ internal class ReadingSourceStager(
     private fun singlePlan(document: SafDocument): StagePlan {
         validateContentUri(document)
         val name = parseDisplayName(document.displayName)
+        if (name.extension in ARCHIVE_EXTENSIONS) {
+            // A lone archive is a self-contained Mokuro volume: its .mokuro
+            // sidecar is extracted from the archive after the copy, restoring
+            // the exact two-file layout the Python detector requires.
+            val archiveOutput = name.outputName
+            return StagePlan(
+                sourceKind = StagedReadingSourceKind.MOKURO,
+                entries =
+                    listOf(
+                        StageEntry(document, ReadingSourceStageRole.MOKURO_ARCHIVE, archiveOutput),
+                    ),
+                detectorName = "${name.normalizedStem}.mokuro",
+                imageArchiveName = archiveOutput,
+                extractEmbeddedSidecar = true,
+            )
+        }
         val role =
             when (name.extension) {
                 "txt" -> ReadingSourceStageRole.TEXT
                 "epub" -> ReadingSourceStageRole.EPUB
                 in SUBTITLE_EXTENSIONS -> ReadingSourceStageRole.SUBTITLE
                 "mokuro" -> ReadingSourceStageRole.MOKURO_SIDECAR
-                in ARCHIVE_EXTENSIONS -> throw selectionFailure(
-                    ReadingSourceSelectionFailure.ARCHIVE_REQUIRES_MOKURO_SIDECAR,
-                    "A Mokuro archive must be selected with its .mokuro sidecar",
-                )
                 else -> throw unsupportedExtension()
             }
         val outputName = name.outputName
@@ -462,6 +595,7 @@ internal class ReadingSourceStager(
         val entries: List<StageEntry>,
         val detectorName: String,
         val imageArchiveName: String?,
+        val extractEmbeddedSidecar: Boolean = false,
     )
 
     private data class StageEntry(
@@ -472,8 +606,29 @@ internal class ReadingSourceStager(
 
     private companion object {
         const val STAGE_DIRECTORY_ATTEMPTS = 16
+
+        // Cheap defense-in-depth mirroring android_bridge.reading_limits
+        // MOKURO_ARCHIVE_LIMITS.max_members; Python re-validates the archive.
+        const val MAX_ARCHIVE_MEMBER_SCAN = 4096
     }
 }
+
+private fun isSafeSidecarMemberName(name: String): Boolean {
+    if (name.isEmpty() || !name.lowercase(Locale.ROOT).endsWith(".mokuro")) return false
+    if (name.contains('\\') || name.startsWith("/")) return false
+    if (name.any { Character.isISOControl(it) }) return false
+    val segments = name.split('/')
+    return segments.none { segment ->
+        segment.isEmpty() || segment.startsWith(".") || segment == "__MACOSX"
+    }
+}
+
+private fun embeddedSidecarUnreadable(cause: Exception) =
+    EmbeddedSidecarException(
+        EmbeddedSidecarFailure.UNREADABLE_ARCHIVE,
+        "Mokuro image archive could not be read",
+        cause,
+    )
 
 /**
  * Removes only direct, structurally valid orphan directories created by [ReadingSourceStager].
@@ -522,7 +677,11 @@ internal class ReadingSourceStageJanitor(
         }
         return when (names.size) {
             0 -> true
-            1 -> names.single().extension in SINGLE_EXTENSIONS
+            // A lone staged archive is a legitimate orphan: a crash between the
+            // archive copy and the embedded-sidecar extraction leaves it behind.
+            1 ->
+                names.single().extension in SINGLE_EXTENSIONS ||
+                    names.single().extension in ARCHIVE_EXTENSIONS
             2 -> {
                 val sidecars = names.filter { it.extension == "mokuro" }
                 val archives = names.filter { it.extension in ARCHIVE_EXTENSIONS }

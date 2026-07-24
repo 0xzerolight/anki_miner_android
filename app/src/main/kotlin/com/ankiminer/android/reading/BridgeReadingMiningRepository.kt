@@ -3,6 +3,7 @@ package com.ankiminer.android.reading
 import com.ankiminer.android.R
 import com.ankiminer.android.anki.protocol.ReleaseState
 import com.ankiminer.android.data.RuntimeWorkCoordinator
+import com.ankiminer.android.diagnostics.exceptionDigest
 import com.ankiminer.android.engine.BridgeJsonCodec
 import com.ankiminer.android.engine.BridgeJsonValue
 import com.ankiminer.android.engine.BridgeMessage
@@ -387,7 +388,7 @@ internal class BridgeReadingMiningRepository(
                     )
                 } catch (failure: Exception) {
                     if (!run.cancellation.isCancelled()) {
-                        recordFault(generation, strings.resolve(R.string.mining_failure_reading_source_preparation))
+                        recordFault(generation, strings.resolve(stagingFaultMessage(failure)))
                     }
                     throw failure
                 }
@@ -433,14 +434,31 @@ internal class BridgeReadingMiningRepository(
                     RunCallbacks(generation),
                 )
             terminal = reconcileTerminal(generation, rawResult)
-        } catch (_: Exception) {
+        } catch (failure: Exception) {
             if (!isCancellationRequested(generation)) {
-                recordFault(generation, strings.resolve(R.string.mining_failure_embedded_reading))
+                recordFault(
+                    generation,
+                    strings.resolve(
+                        R.string.mining_failure_embedded_reading_detailed,
+                        listOf(exceptionDigest(failure)),
+                    ),
+                )
             }
         } finally {
             finishRun(generation, terminal, stagedSource)
         }
     }
+
+    private fun stagingFaultMessage(failure: Throwable): Int =
+        when ((failure as? EmbeddedSidecarException)?.failure) {
+            EmbeddedSidecarFailure.NO_MOKURO_MEMBER ->
+                R.string.mining_failure_reading_archive_no_mokuro
+            EmbeddedSidecarFailure.MULTIPLE_MOKURO_MEMBERS ->
+                R.string.mining_failure_reading_archive_multiple_mokuro
+            EmbeddedSidecarFailure.UNREADABLE_ARCHIVE ->
+                R.string.mining_failure_reading_archive_unreadable
+            null -> R.string.mining_failure_reading_source_preparation
+        }
 
     private fun configureTokenizer(
         run: ActiveRun,
