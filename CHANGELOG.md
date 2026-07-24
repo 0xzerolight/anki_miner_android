@@ -2,6 +2,30 @@
 
 All notable project changes will be recorded here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and releases will use semantic versioning once a public version exists.
 
+## [0.1.6] - 2026-07-24
+
+### Changed
+
+- The interface has been reworked end to end. A shared visual system (colour, typography, shape, spacing, and motion tokens) now drives every screen, the bottom navigation uses real icons instead of text in the icon slot, and all screens share one destination-aware app bar instead of each owning its own chrome and titles.
+- Vocabulary curation is compact and navigable: candidates render as searchable, filterable, sortable rows; the whole candidate card toggles selection; only the focused candidate expands its sentence choices; and the sticky confirm/cancel actions stay reachable and stack full-width at large font scales or narrow widths instead of collapsing.
+- Settings is split into categories behind a sticky tab row, composes only the selected category, restores each category's scroll position, validates each field in place with keyboard navigation, and renders resource or setup failures on their originating card rather than a detached snackbar.
+- The onboarding wizard uses an inset-safe scaffold with fixed navigation and a step indicator, treats system back as "previous step", labels required versus optional steps truthfully, orders AnkiDroid setup before large downloads, and presents note-type mapping as a compact summary.
+- Results lead with outcome counts and fold details away, and mining progress derives its title from the current stage instead of always reading "Adding notes to Anki".
+
+### Added
+
+- A `.cbz` or `.zip` whose `.mokuro` sidecar is contained inside the archive can be mined directly as the reading source, without a separate image archive.
+- Known-word management moved to a dedicated screen that stays lazy and responsive with large lists.
+- Restrained fade-through motion on coarse phase and step changes, animated progress and selection, and TalkBack pane-title and selection-count announcements on state changes.
+
+### Fixed
+
+- Screens hold their layout at font scale 2.0 and on narrow (480 dp) widths: no clipped or character-wrapped labels, no controls squeezed off screen, and adaptive controls fall back from horizontal to stacked or radio layouts when space is tight.
+- Long deck names and readiness/status text wrap or ellipsize instead of being clipped.
+- Mining file selections survive rotation and process death, with SAF access revalidated on restore and grants reconciled rather than released at startup.
+- Generic "stopped unexpectedly" failures now carry a PII-safe digest (exception class plus first in-app frame, never the message or file paths) so opaque failures name where they came from.
+- The wizard "all set" screen no longer shows a duplicate recovery action, and a single error is no longer rendered twice as competing banners.
+
 ## [0.1.5] - 2026-07-23
 
 ### Added
