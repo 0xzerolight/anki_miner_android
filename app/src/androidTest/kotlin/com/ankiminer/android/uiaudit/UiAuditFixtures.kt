@@ -575,6 +575,8 @@ private fun SettingsAnkiFixture(setup: SetupUiState) {
                 onChange = {},
                 label = stringResource(R.string.settings_deck_name),
                 supporting = stringResource(R.string.settings_deck_default),
+                singleLine = false,
+                maxLines = 2,
             )
             Text(
                 stringResource(R.string.settings_excluded_decks),

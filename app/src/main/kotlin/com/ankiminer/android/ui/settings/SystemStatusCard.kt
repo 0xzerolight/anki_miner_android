@@ -148,6 +148,7 @@ internal fun SystemStatusCard(
     onInstallUniDic: () -> Unit = {},
     onChooseNoteType: () -> Unit = {},
     onResolveRecovery: () -> Unit = onRefresh,
+    inlineFailureTaskId: SetupTaskId? = null,
     inlineFailure: (@Composable () -> Unit)? = null,
 ) {
     val status = setupTaskStatus(state.taskFacts())
@@ -172,6 +173,7 @@ internal fun SystemStatusCard(
                         onInstallUniDic = onInstallUniDic,
                         onChooseNoteType = onChooseNoteType,
                         onResolveRecovery = onResolveRecovery,
+                        showAction = row.id != inlineFailureTaskId,
                     )
                 }
             }
@@ -206,6 +208,7 @@ private fun SetupStatusRow(
     onInstallUniDic: () -> Unit,
     onChooseNoteType: () -> Unit,
     onResolveRecovery: () -> Unit,
+    showAction: Boolean,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(
@@ -235,7 +238,7 @@ private fun SetupStatusRow(
                 )
             }
         }
-        if (row.role == SetupTaskRole.REQUIRED_ACTION) {
+        if (row.role == SetupTaskRole.REQUIRED_ACTION && showAction) {
             SetupTaskAction(
                 id = row.id,
                 state = state,

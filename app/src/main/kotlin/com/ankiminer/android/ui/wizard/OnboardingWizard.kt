@@ -60,6 +60,7 @@ import com.ankiminer.android.ui.settings.CatalogReplaceDialog
 import com.ankiminer.android.ui.settings.InlineFailureContainer
 import com.ankiminer.android.ui.settings.ResourceCard
 import com.ankiminer.android.ui.settings.ResourceOperationCard
+import com.ankiminer.android.ui.settings.SetupTaskId
 import com.ankiminer.android.ui.settings.SystemStatusCard
 import com.ankiminer.android.ui.settings.WizardAnkiTargetCard
 import com.ankiminer.android.ui.theme.AdaptiveActionGroup
@@ -492,6 +493,9 @@ private fun WizardStepBody(
             }
         }
         WizardStep.DONE -> {
+            val hasRecoveryFailure =
+                state.ankiFailure?.origin == AnkiSetupFailureOrigin.RECOVERY ||
+                    state.ankiRecoveryFailure?.origin == AnkiSetupFailureOrigin.RECOVERY
             Text(
                 stringResource(
                     if (state.isMiningReady) {
@@ -513,13 +517,19 @@ private fun WizardStepBody(
                     callbacks.onStep(WizardStep.ANKIDROID_NOTE_TYPE)
                 },
                 onResolveRecovery = callbacks.onResolveRecovery,
-                inlineFailure = {
-                    WizardAnkiFailure(
-                        state,
-                        callbacks,
-                        origin = AnkiSetupFailureOrigin.RECOVERY,
-                    )
-                },
+                inlineFailureTaskId = SetupTaskId.RECOVERY.takeIf { hasRecoveryFailure },
+                inlineFailure =
+                    if (hasRecoveryFailure) {
+                        {
+                            WizardAnkiFailure(
+                                state,
+                                callbacks,
+                                origin = AnkiSetupFailureOrigin.RECOVERY,
+                            )
+                        }
+                    } else {
+                        null
+                    },
             )
         }
     }

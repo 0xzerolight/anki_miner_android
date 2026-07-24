@@ -1,12 +1,18 @@
 package com.ankiminer.android.ui.attribution
 
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onFirst
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToNode
 import com.ankiminer.android.ui.theme.AnkiMinerTheme
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -21,28 +27,21 @@ class LegalScreensAccessibilityTest {
     fun noticesExposeStructuredHeadingsWithoutMarkdownChrome() {
         composeRule.setContent {
             AnkiMinerTheme {
-                NoticesScreen()
+                NoticesScreen(modifier = Modifier.testTag(NOTICES_CONTENT_TEST_TAG))
             }
         }
         composeRule.waitUntil(timeoutMillis = 10_000) {
             composeRule
-                .onAllNodes(
-                    SemanticsMatcher.expectValue(SemanticsProperties.Heading, Unit),
-                    useUnmergedTree = true,
-                ).fetchSemanticsNodes()
+                .onAllNodesWithText("NOTICE.md", useUnmergedTree = true)
+                .fetchSemanticsNodes()
                 .isNotEmpty()
         }
 
+        assertNoticeHeading("Bundled notice documents")
+        assertNoticeHeading("NOTICE.md")
+        assertNoticeHeading("Third-party notices")
         composeRule.onNodeWithText("# Third-party notices").assertDoesNotExist()
         composeRule.onNodeWithText("```", substring = true).assertDoesNotExist()
-        assertTrue(
-            composeRule
-                .onAllNodes(
-                    SemanticsMatcher.expectValue(SemanticsProperties.Heading, Unit),
-                    useUnmergedTree = true,
-                ).fetchSemanticsNodes()
-                .size >= 3,
-        )
         val longestTextNode =
             composeRule
                 .onAllNodes(
@@ -77,5 +76,18 @@ class LegalScreensAccessibilityTest {
             .onFirst()
             .performClick()
         composeRule.runOnIdle { assertEquals(1, noticesOpened) }
+    }
+
+    private fun assertNoticeHeading(text: String) {
+        composeRule
+            .onNodeWithTag(NOTICES_CONTENT_TEST_TAG)
+            .performScrollToNode(hasText(text))
+        composeRule
+            .onNodeWithText(text, useUnmergedTree = true)
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.Heading, Unit))
+    }
+
+    private companion object {
+        const val NOTICES_CONTENT_TEST_TAG = "notices_content"
     }
 }

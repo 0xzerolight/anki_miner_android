@@ -3,11 +3,9 @@ package com.ankiminer.android.uiaudit
 import android.graphics.Bitmap
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -36,6 +34,7 @@ import com.ankiminer.android.ui.navigation.AnkiMinerDestination
 import com.ankiminer.android.ui.navigation.MiningReadinessNotice
 import com.ankiminer.android.ui.reading.ReadingMiningScreen
 import com.ankiminer.android.ui.reading.ReadingMiningTestTags
+import com.ankiminer.android.ui.settings.MessageSnackbarEffect
 import com.ankiminer.android.ui.theme.AnkiMinerTheme
 import com.ankiminer.android.ui.video.VideoMiningScreen
 import com.ankiminer.android.ui.video.VideoMiningTestTags
@@ -130,6 +129,11 @@ class UiAuditScreenshotTest {
     @Test
     fun captureSettingsStatesAcrossThemeAndFontScaleMatrix() {
         val snackbarMessage = "Dictionary archive contains an oversized file"
+        val snackbarAction =
+            InstrumentationRegistry
+                .getInstrumentation()
+                .targetContext
+                .getString(R.string.b3_view)
         captureMatrix(
             listOf(
                 SettingsAuditState.TOP,
@@ -144,7 +148,7 @@ class UiAuditScreenshotTest {
                     snackbarMessage =
                         snackbarMessage.takeIf { state == SettingsAuditState.ERROR_SNACKBAR },
                     waitForText =
-                        snackbarMessage.takeIf { state == SettingsAuditState.ERROR_SNACKBAR },
+                        snackbarAction.takeIf { state == SettingsAuditState.ERROR_SNACKBAR },
                 ) {
                     UiAuditSettingsFixture(focus = state)
                 }
@@ -289,6 +293,10 @@ class UiAuditScreenshotTest {
                                 true
                             } catch (_: AssertionError) {
                                 false
+                            } catch (_: IllegalArgumentException) {
+                                // Async-parsed lazy content (e.g. notice blocks) may not have
+                                // produced the key yet.
+                                false
                             }
                         }
                         composeRule.onNodeWithTag(listTag).performScrollToIndex(0)
@@ -336,15 +344,11 @@ class UiAuditScreenshotTest {
                         target.content()
                     } else {
                         val snackbarHostState = remember { SnackbarHostState() }
-                        target.snackbarMessage?.let { message ->
-                            LaunchedEffect(message) {
-                                snackbarHostState.showSnackbar(
-                                    message = message,
-                                    withDismissAction = true,
-                                    duration = SnackbarDuration.Indefinite,
-                                )
-                            }
-                        }
+                        MessageSnackbarEffect(
+                            message = target.snackbarMessage,
+                            hostState = snackbarHostState,
+                            actionLabel = stringResource(R.string.b3_view),
+                        )
                         AnkiMinerAppShell(
                             currentDestination = target.destination,
                             videoWorkflow = target.videoWorkflow,

@@ -282,7 +282,7 @@ class ReadingMiningScreenTest {
 
     @Test
     fun readingCurationExposesPaneFocusedHeadingAndOneSelectionAnnouncement() {
-        val request = request(CurationPage(0, 1, 0, 2))
+        val request = request(CurationPage(0, 2, 0, 4))
         setScreen(
             state =
                 ReadingMiningUiState(

@@ -48,23 +48,29 @@ class SafSelectionProcessDeathInstrumentedTest {
         val broker = RecordingSafBroker()
         val videoRepository = RecordingVideoRepository()
         val readingRepository = RecordingReadingRepository()
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        lateinit var video: VideoMiningViewModel
+        lateinit var reading: ReadingMiningViewModel
 
-        InstrumentationRegistry.getInstrumentation().runOnMainSync {
-            val video =
+        instrumentation.runOnMainSync {
+            video =
                 VideoMiningViewModel(
                     repository = videoRepository,
                     safBroker = broker,
                     savedStateHandle = SavedStateHandle(),
                     selectionInventory = inventory,
                 )
-            val reading =
+            reading =
                 ReadingMiningViewModel(
                     repository = readingRepository,
                     safBroker = broker,
                     savedStateHandle = SavedStateHandle(),
                     selectionInventory = inventory,
                 )
+        }
+        instrumentation.waitForIdleSync()
 
+        instrumentation.runOnMainSync {
             assertEquals("episode.mkv", video.uiState.value.video.document?.displayName)
             assertEquals("episode.srt", video.uiState.value.subtitle.document?.displayName)
             assertEquals("reading.srt", reading.uiState.value.source.document?.displayName)
@@ -78,6 +84,10 @@ class SafSelectionProcessDeathInstrumentedTest {
 
             video.start()
             reading.start()
+        }
+        instrumentation.waitForIdleSync()
+
+        instrumentation.runOnMainSync {
             assertEquals(1, videoRepository.started.size)
             assertEquals("Restored series", readingRepository.started.single().subtitleSeriesName)
 
@@ -85,6 +95,7 @@ class SafSelectionProcessDeathInstrumentedTest {
             video.clearSubtitle()
             reading.clearSource()
         }
+        instrumentation.waitForIdleSync()
 
         assertEquals(
             setOf(VIDEO_URI, SUBTITLE_URI, READING_URI),

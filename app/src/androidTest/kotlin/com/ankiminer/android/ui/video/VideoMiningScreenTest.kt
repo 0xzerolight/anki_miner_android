@@ -373,7 +373,7 @@ class VideoMiningScreenTest {
                     id = "candidate-$index",
                     form = if (index == 99) "懐かしい" else "語彙$index",
                     sentences = listOf(sentence("sentence-$index", "Sentence $index")),
-                )
+                ).copy(frequencyRank = index.toLong())
             }
         val request = CurationRequest("run", "request-search", candidates)
         setScreen(

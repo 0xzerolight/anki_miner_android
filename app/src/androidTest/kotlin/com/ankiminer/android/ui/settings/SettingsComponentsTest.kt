@@ -187,13 +187,13 @@ class SettingsComponentsTest {
 
         val moveUp =
             composeRule
-                .onNodeWithText("Move up")
+                .onNodeWithText("Up")
                 .assertHeightIsAtLeast(48.dp)
                 .fetchSemanticsNode()
                 .boundsInRoot
         val moveDown =
             composeRule
-                .onNodeWithText("Move down")
+                .onNodeWithText("Down")
                 .assertHeightIsAtLeast(48.dp)
                 .fetchSemanticsNode()
                 .boundsInRoot
