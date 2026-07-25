@@ -828,8 +828,15 @@ private fun selectionFailure(
     message: String,
 ) = ReadingSourceSelectionException(failure, message)
 
+/**
+ * Resolves the `/data/user/0 -> /data/data` app-data symlink that `Context.getCacheDir()` returns,
+ * so every staged reading path matches the canonical `cacheDir` the bridge sends and the codec's
+ * lexical containment check ([com.ankiminer.android.engine.BridgeJsonCodec]) holds. Only the
+ * framework-created parent is resolved: the staging directory itself stays unresolved so the
+ * stager's and janitor's symlink guards keep rejecting a tampered root.
+ */
 internal fun readingSourceStagingRoot(cacheDirectory: File): File =
-    File(cacheDirectory, READING_SOURCE_STAGING_ROOT)
+    File(cacheDirectory.canonicalFile, READING_SOURCE_STAGING_ROOT)
 
 private const val READING_SOURCE_STAGING_ROOT = "reading-sources-v1"
 private const val STAGE_DIRECTORY_PREFIX = "reading-job-v1-"

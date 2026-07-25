@@ -719,6 +719,25 @@ class ReadingSourceStagerTest {
         bufferBytes = 2,
     )
 
+    /**
+     * Android's `Context.getCacheDir()` traverses the `/data/user/0 -> /data/data` app-data symlink,
+     * while the bridge sends `cacheDir.canonicalPath`. The staging root has to resolve the same way
+     * or every staged reading path lands outside the cacheDir the codec compares against.
+     */
+    @Test
+    fun `staging root resolves a cache directory reached through a symlinked ancestor`() {
+        val root = temporary.newFolder("app-storage").toPath()
+        val real = Files.createDirectory(root.resolve("real"))
+        Files.createDirectory(real.resolve("cache"))
+        val link = Files.createSymbolicLink(root.resolve("link"), real)
+        val cacheDir = link.resolve("cache").toFile()
+
+        val stagingRoot = readingSourceStagingRoot(cacheDir)
+
+        assertEquals(real.resolve("cache").toFile().canonicalFile, requireNotNull(stagingRoot.parentFile))
+        assertEquals(stagingRoot.canonicalFile, stagingRoot)
+    }
+
     private fun document(
         uri: String,
         displayName: String,
