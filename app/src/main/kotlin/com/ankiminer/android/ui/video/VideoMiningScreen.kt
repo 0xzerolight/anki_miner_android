@@ -209,6 +209,9 @@ fun VideoMiningScreen(
                 rememberCurationCandidateHeaderTexts(visibleCandidates)
             val selectedCandidateStateText = stringResource(R.string.candidate_state_selected)
             val excludedCandidateStateText = stringResource(R.string.candidate_state_excluded)
+            // Raw templates: formatting per row is cheap, a resource lookup per row is not.
+            val includeWordTemplate = stringResource(R.string.curation_include_word)
+            val excludeWordTemplate = stringResource(R.string.curation_exclude_word)
             val selectedCandidateIds = targetCuration?.selectedCandidateIds.orEmpty()
             val visibleCandidateIds =
                 remember(visibleCandidates) { visibleCandidates.map { it.candidateId } }
@@ -278,6 +281,8 @@ fun VideoMiningScreen(
                             candidateHeaderTexts = candidateHeaderTexts,
                             selectedCandidateStateText = selectedCandidateStateText,
                             excludedCandidateStateText = excludedCandidateStateText,
+                            includeWordTemplate = includeWordTemplate,
+                            excludeWordTemplate = excludeWordTemplate,
                             expandedCandidateId = expandedCandidateId,
                             query = query,
                             filter = filter,
@@ -533,6 +538,8 @@ private fun LazyListScope.curationItems(
     candidateHeaderTexts: Map<String, AnnotatedString>,
     selectedCandidateStateText: String,
     excludedCandidateStateText: String,
+    includeWordTemplate: String,
+    excludeWordTemplate: String,
     expandedCandidateId: String?,
     query: String,
     filter: CurationFilter,
@@ -668,19 +675,15 @@ private fun LazyListScope.curationItems(
             key = "candidate:${candidate.candidateId}",
             contentType = "candidate",
         ) {
-            val includeLabel =
-                stringResource(
-                    if (selected) {
-                        R.string.curation_exclude_word
-                    } else {
-                        R.string.curation_include_word
-                    },
-                    candidate.minedForm,
-                )
             CurationCandidateHeader(
                 headline = headline,
                 stateText = stateText,
-                includeLabel = includeLabel,
+                includeLabel =
+                    if (selected) {
+                        excludeWordTemplate.format(candidate.minedForm)
+                    } else {
+                        includeWordTemplate.format(candidate.minedForm)
+                    },
                 selected = selected,
                 expanded = expanded,
                 animateSelection = animateSelection,

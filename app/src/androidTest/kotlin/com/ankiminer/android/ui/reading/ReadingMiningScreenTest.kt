@@ -99,9 +99,7 @@ class ReadingMiningScreenTest {
 
     @Test
     fun mokuroArchiveRequiresAValidSameStemArchive() {
-        val mismatchMessage =
-            "The image archive and .mokuro sidecar must have the same filename " +
-                "before their extensions."
+        val mismatchMessage = "Archive and .mokuro names must match."
         var pickedArchive = false
         var state by
             mutableStateOf(

@@ -178,11 +178,13 @@ class VideoMiningScreenTest {
         composeRule.onNodeWithTag(VideoMiningTestTags.CONFIRM_CURATION).performClick()
 
         composeRule.runOnIdle {
-            // Scoped to the visible projection, not silently to the whole page.
+            // Scoped to the visible projection, not silently to the whole page. Compared as a set:
+            // the projection is ordered by the active sort, which is not part of this contract.
             assertEquals(
-                request.candidates.map { it.candidateId } to false,
-                bulkChange,
+                request.candidates.mapTo(mutableSetOf()) { it.candidateId },
+                bulkChange?.first?.toSet(),
             )
+            assertEquals(false, bulkChange?.second)
             assertEquals(
                 request.candidates.first().candidateId to alternate.sentenceId,
                 sentenceSelection,
