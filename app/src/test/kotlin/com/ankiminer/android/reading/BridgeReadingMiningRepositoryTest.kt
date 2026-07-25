@@ -34,6 +34,7 @@ import com.ankiminer.android.tts.SentenceAudioSynthesizer
 import com.ankiminer.android.tts.SentenceAudioSynthesizerFactory
 import java.io.ByteArrayInputStream
 import java.io.File
+import java.nio.file.Files
 import java.util.Collections
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CopyOnWriteArrayList
@@ -118,7 +119,7 @@ class BridgeReadingMiningRepositoryTest {
 
         assertTrue(stagedFile.isFile)
         assertEquals("Novel.txt", stagedFile.name)
-        assertTrue(stagedFile.toPath().startsWith(harness.cacheDir.toPath()))
+        assertTrue(stagedFile.toPath().startsWith(harness.cacheDir.toPath().toRealPath()))
         assertNull(wire.imageArchivePath)
         assertNull(wire.seriesName)
         assertEquals(0, harness.foreground.startCount.get())
@@ -547,6 +548,123 @@ class BridgeReadingMiningRepositoryTest {
         )
     }
 
+    @Test
+    fun `a lone archive mines through a cache reached by a symlinked ancestor`() {
+        val cache = symlinkedCache()
+        val archive =
+            SafDocument(
+                uri = "content://reading/lone-linked",
+                displayName = "Volume.cbz",
+                mimeType = "application/x-cbz",
+                sizeBytes = null,
+            )
+        val harness =
+            harness(
+                inputBytes =
+                    mapOf(
+                        archive.uri to
+                            zipBytes(
+                                "Volume/001.jpg" to "jpeg".toByteArray(),
+                                "Volume.mokuro" to "{}".toByteArray(),
+                            ),
+                    ),
+                cache = cache,
+            )
+
+        runBlocking {
+            harness.repository.startReading(
+                ReadingMiningInput(ReadingSourceSelection.Single(archive)),
+            )
+        }
+
+        val curating = awaitCuratingOrFailure(harness)
+        val wire = requireNotNull(harness.bridge.readingRequest.get())
+        assertTrue(
+            wire.sourcePath,
+            File(wire.sourcePath).toPath().startsWith(cache.toPath().toRealPath()),
+        )
+        assertEquals(ReadingMiningSourceKind.MOKURO, wire.sourceKind)
+        assertNotNull(wire.imageArchivePath)
+        drain(harness, curating.request.runId)
+    }
+
+    @Test
+    fun `a sidecar and archive pair mines through a cache reached by a symlinked ancestor`() {
+        val cache = symlinkedCache()
+        val sidecar =
+            SafDocument(
+                uri = "content://reading/pair-sidecar",
+                displayName = "Volume.mokuro",
+                mimeType = "application/json",
+                sizeBytes = null,
+            )
+        val archive =
+            SafDocument(
+                uri = "content://reading/pair-archive",
+                displayName = "Volume.cbz",
+                mimeType = "application/x-cbz",
+                sizeBytes = null,
+            )
+        val harness =
+            harness(
+                inputBytes =
+                    mapOf(
+                        sidecar.uri to "{}".toByteArray(),
+                        archive.uri to zipBytes("Volume/001.jpg" to "jpeg".toByteArray()),
+                    ),
+                cache = cache,
+            )
+
+        runBlocking {
+            harness.repository.startReading(
+                ReadingMiningInput(ReadingSourceSelection.MokuroArchivePair(sidecar, archive)),
+            )
+        }
+
+        val curating = awaitCuratingOrFailure(harness)
+        val wire = requireNotNull(harness.bridge.readingRequest.get())
+        assertTrue(
+            wire.sourcePath,
+            File(wire.sourcePath).toPath().startsWith(cache.toPath().toRealPath()),
+        )
+        drain(harness, curating.request.runId)
+    }
+
+    /**
+     * Mirrors Android's `/data/user/0 -> /data/data` app-data symlink: the cache directory itself is
+     * a real directory, reached through a symlinked ancestor, exactly as `Context.getCacheDir()`
+     * returns it on the affected devices.
+     */
+    private fun symlinkedCache(): File {
+        val root = temporary.newFolder("app-storage-${executors.size}").toPath()
+        val real = Files.createDirectory(root.resolve("real"))
+        Files.createDirectory(real.resolve("cache"))
+        val link = Files.createSymbolicLink(root.resolve("link"), real)
+        return link.resolve("cache").toFile()
+    }
+
+    /**
+     * Fails with the run's own fault message rather than a bare timeout, so a staging or encode
+     * rejection names itself (the digest reaches the message through [testStringResourceResolver]).
+     */
+    private fun awaitCuratingOrFailure(harness: Harness): MiningRunState.Curating {
+        val state =
+            awaitState(harness.repository) {
+                it is MiningRunState.Curating || it is MiningRunState.Failed
+            }
+        assertTrue("$state", state is MiningRunState.Curating)
+        return state as MiningRunState.Curating
+    }
+
+    private fun drain(
+        harness: Harness,
+        runId: String,
+    ) {
+        runBlocking { harness.repository.cancel(runId) }
+        harness.bridge.allowTerminal.countDown()
+        awaitState(harness.repository, MiningRunState::isTerminal)
+    }
+
     private fun zipBytes(vararg members: Pair<String, ByteArray>): ByteArray {
         val bytes = java.io.ByteArrayOutputStream()
         java.util.zip.ZipOutputStream(bytes).use { zip ->
@@ -571,11 +689,12 @@ class BridgeReadingMiningRepositoryTest {
         presenterWarning: String? = null,
         terminalErrorCount: Int = 0,
         readingRunFailure: RuntimeException? = null,
+        cache: File? = null,
     ): Harness {
         val runExecutor = Executors.newSingleThreadExecutor().also(executors::add)
         val controlExecutor = Executors.newSingleThreadExecutor().also(executors::add)
-        val cacheDir = temporary.newFolder("cache-${executors.size}")
-        val stageRoot = File(cacheDir, "reading")
+        val cacheDir = cache ?: temporary.newFolder("cache-${executors.size}")
+        val stageRoot = readingSourceStagingRoot(cacheDir)
         val bridge =
             FakeReadingPyBridge(
                 pagedCuration = pagedCuration,
