@@ -24,6 +24,7 @@ import com.ankiminer.android.R
 import com.ankiminer.android.data.resources.FrozenResourceCatalog
 import com.ankiminer.android.data.resources.InstalledDictionary
 import com.ankiminer.android.data.resources.ResourceAttribution
+import com.ankiminer.android.ui.theme.AnkiMinerTokens
 import com.ankiminer.android.ui.theme.SectionTitle
 
 @Composable
@@ -40,7 +41,7 @@ internal fun AttributionScreen(
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+        verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.content),
     ) {
         item(key = "attribution:intro", contentType = "intro") {
             Text(stringResource(R.string.attribution_intro))
@@ -64,7 +65,7 @@ internal fun AttributionScreen(
 
         item(key = "attribution:icon", contentType = "attribution-card") {
             OutlinedCard(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(Modifier.padding(AnkiMinerTokens.Space.content), verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
                     CardHeading(stringResource(R.string.attribution_icon_title))
                     Text(stringResource(R.string.attribution_icon_text))
                     TextButton(onClick = { uriHandler.openUri(SHIPPORI_URL) }) {
@@ -82,7 +83,7 @@ internal fun AttributionScreen(
                 OutlinedCard(Modifier.fillMaxWidth()) {
                     Text(
                         stringResource(R.string.attribution_no_installed_dictionaries),
-                        modifier = Modifier.padding(16.dp),
+                        modifier = Modifier.padding(AnkiMinerTokens.Space.content),
                     )
                 }
             }
@@ -106,7 +107,7 @@ internal fun AttributionScreen(
         if (jitendexInstalled) {
             item(key = "attribution:derived-terms", contentType = "attribution-card") {
                 OutlinedCard(Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Column(Modifier.padding(AnkiMinerTokens.Space.content), verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
                         CardHeading(stringResource(R.string.attribution_derived_terms_title))
                         Text(stringResource(R.string.attribution_derived_terms))
                     }
@@ -117,7 +118,7 @@ internal fun AttributionScreen(
         item(key = "attribution:divider", contentType = "divider") { HorizontalDivider() }
         item(key = "attribution:jisho", contentType = "attribution-card") {
             OutlinedCard(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(Modifier.padding(AnkiMinerTokens.Space.content), verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
                     CardHeading(stringResource(R.string.attribution_jisho_title))
                     Text(stringResource(R.string.attribution_jisho_disclosure))
                     Text(stringResource(R.string.attribution_jisho_rate_limit))
@@ -127,7 +128,7 @@ internal fun AttributionScreen(
 
         item(key = "attribution:privacy", contentType = "attribution-card") {
             OutlinedCard(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(Modifier.padding(AnkiMinerTokens.Space.content), verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
                     CardHeading(stringResource(R.string.privacy_title))
                     Text(stringResource(R.string.privacy_local_processing))
                     Text(stringResource(R.string.privacy_network_processing))
@@ -141,7 +142,7 @@ internal fun AttributionScreen(
 
         item(key = "attribution:notices", contentType = "attribution-card") {
             OutlinedCard(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(Modifier.padding(AnkiMinerTokens.Space.content), verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
                     CardHeading(stringResource(R.string.source_notices_title))
                     TextButton(onClick = onOpenNotices) {
                         Text(stringResource(R.string.source_open_notices))
@@ -189,7 +190,7 @@ internal fun installedCatalogAttributions(
 @Composable
 private fun InstalledDictionaryAttribution(dictionary: InstalledDictionary) {
     OutlinedCard(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(Modifier.padding(AnkiMinerTokens.Space.content), verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
             Text(
                 stringResource(
                     R.string.attribution_dictionary_title,
@@ -241,7 +242,7 @@ private fun InstalledDictionaryAttribution(dictionary: InstalledDictionary) {
 private fun AttributionGroup(title: String, entries: List<ResourceAttribution>) {
     val uriHandler = LocalUriHandler.current
     OutlinedCard(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(Modifier.padding(AnkiMinerTokens.Space.content), verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.group)) {
             CardHeading(title)
             entries.forEachIndexed { index, entry ->
                 if (index > 0) HorizontalDivider()
@@ -266,7 +267,7 @@ private fun LicenseLinkCard(
     onOpenNotices: () -> Unit,
 ) {
     OutlinedCard(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(Modifier.padding(AnkiMinerTokens.Space.content), verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
             CardHeading(title)
             Text(stringResource(R.string.attribution_license_in_notices))
             TextButton(onClick = onOpenNotices) {

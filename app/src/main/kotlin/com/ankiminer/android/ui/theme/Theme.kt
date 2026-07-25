@@ -4,6 +4,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.graphics.Color
 
 /** Neutral launch color shared with both XML starting-window themes. */
@@ -120,6 +121,13 @@ fun AnkiMinerTheme(darkTheme: Boolean = true, content: @Composable () -> Unit) {
         colorScheme = if (darkTheme) DarkColors else LightColors,
         typography = AnkiMinerTypography,
         shapes = AnkiMinerShapes,
-        content = content,
-    )
+    ) {
+        // Published explicitly so disabled tokens never have to infer the active theme by
+        // comparing a color against DarkColors.background.
+        CompositionLocalProvider(
+            LocalDisabledActionColors provides
+                if (darkTheme) DarkDisabledActionColors else LightDisabledActionColors,
+            content = content,
+        )
+    }
 }

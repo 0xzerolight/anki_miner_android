@@ -69,6 +69,7 @@ import com.ankiminer.android.data.settings.ResourceChainSelection
 import com.ankiminer.android.engine.PythonRuntimeReadiness
 import com.ankiminer.android.ui.theme.AdaptiveActionGroup
 import com.ankiminer.android.ui.theme.AdaptivePairedActions
+import com.ankiminer.android.ui.theme.AnkiMinerTokens
 import com.ankiminer.android.ui.theme.CompactLayoutWidthDp
 import com.ankiminer.android.ui.theme.actionBorder
 import com.ankiminer.android.ui.theme.outlinedActionButtonColors
@@ -80,7 +81,7 @@ import kotlinx.coroutines.launch
 @Composable
 internal fun SettingsSection(title: String, content: @Composable () -> Unit) {
     OutlinedCard(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column(Modifier.padding(AnkiMinerTokens.Space.content), verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.group)) {
             Text(
                 title,
                 modifier = Modifier.semantics { heading() },
@@ -176,7 +177,7 @@ internal fun NullableToggle(
     desktopDefault: Boolean,
     onChange: (Boolean?) -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.line)) {
         Row(
             Modifier
                 .fillMaxWidth()
@@ -184,7 +185,7 @@ internal fun NullableToggle(
                     value = value ?: desktopDefault,
                     role = Role.Checkbox,
                     onValueChange = { onChange(it) },
-                ).padding(vertical = 4.dp),
+                ).padding(vertical = AnkiMinerTokens.Space.line),
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             Column(Modifier.weight(1f)) {
@@ -238,7 +239,7 @@ internal fun SettingsSaveStatus(
         shape = MaterialTheme.shapes.small,
     ) {
         Row(
-            Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            Modifier.padding(horizontal = AnkiMinerTokens.Space.group, vertical = AnkiMinerTokens.Space.related),
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             Text(label, style = MaterialTheme.typography.labelLarge)
@@ -265,8 +266,8 @@ internal fun InlineFailureContainer(
         shape = MaterialTheme.shapes.medium,
     ) {
         Column(
-            Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
+            Modifier.padding(AnkiMinerTokens.Space.group),
+            verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.line),
         ) {
             Text(message)
             AdaptiveActionGroup(
@@ -303,7 +304,7 @@ internal fun BooleanSetting(
                 value = checked,
                 role = Role.Checkbox,
                 onValueChange = onCheckedChange,
-            ).padding(vertical = 4.dp),
+            ).padding(vertical = AnkiMinerTokens.Space.line),
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
         Column(Modifier.weight(1f)) {
@@ -347,7 +348,7 @@ internal fun <T> AdaptiveChoiceSelector(
         } else {
             Column(
                 modifier = Modifier.fillMaxWidth().selectableGroup(),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
+                verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.line),
             ) {
                 values.forEach { value ->
                     val isSelected = value == selected
@@ -361,8 +362,8 @@ internal fun <T> AdaptiveChoiceSelector(
                                     enabled = enabled,
                                     role = Role.RadioButton,
                                     onClick = { onSelect(value) },
-                                ).padding(horizontal = 12.dp, vertical = 4.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                ).padding(horizontal = AnkiMinerTokens.Space.group, vertical = AnkiMinerTokens.Space.line),
+                        horizontalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         RadioButton(
@@ -411,7 +412,7 @@ internal fun ResourceChainEditor(
         return
     }
     choices.forEachIndexed { index, choice ->
-        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.line)) {
             Row(
                 Modifier
                     .fillMaxWidth()
@@ -425,8 +426,8 @@ internal fun ResourceChainEditor(
                                 },
                             )
                         },
-                    ).padding(vertical = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ).padding(vertical = AnkiMinerTokens.Space.line),
+                horizontalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
             ) {
                 Checkbox(
                     checked = choice.enabled,
@@ -494,7 +495,7 @@ internal fun ResourceCard(
             .fillMaxWidth()
             .semantics { stateDescription = state },
     ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(Modifier.padding(AnkiMinerTokens.Space.content), verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
             Text(
                 text = title,
                 maxLines = 1,
@@ -529,11 +530,11 @@ internal fun ReplaceToggle(
                 enabled = enabled,
                 role = Role.Checkbox,
                 onValueChange = onChange,
-            ).padding(vertical = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ).padding(vertical = AnkiMinerTokens.Space.line),
+        horizontalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
     ) {
         Checkbox(checked = checked, onCheckedChange = null, enabled = enabled)
-        Text(stringResource(R.string.local_resource_replace), Modifier.padding(top = 12.dp))
+        Text(stringResource(R.string.local_resource_replace), Modifier.padding(top = AnkiMinerTokens.Space.group))
     }
 }
 
@@ -547,7 +548,7 @@ internal fun ResourceOperationCard(
             .fillMaxWidth()
             .semantics { liveRegion = LiveRegionMode.Polite },
     ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(Modifier.padding(AnkiMinerTokens.Space.content), verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
             Text(operation.label, style = MaterialTheme.typography.titleMedium)
             Text(stringResource(resourcePhaseLabel(operation.phase)))
             operation.fraction?.let { fraction ->
@@ -613,7 +614,7 @@ internal fun LocalImportResultCard(result: LocalResourceImportResult) {
                 stringResource(R.string.known_words_import_result, result.importedCount, result.newRowCount, result.totalEntries)
         }
     OutlinedCard(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(Modifier.padding(AnkiMinerTokens.Space.content), verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
             Text(stringResource(R.string.local_import_complete), style = MaterialTheme.typography.titleMedium)
             Text(summary)
         }

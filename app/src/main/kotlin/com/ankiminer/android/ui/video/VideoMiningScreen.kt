@@ -47,7 +47,6 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.ankiminer.android.R
 import com.ankiminer.android.mining.CurationCandidate
@@ -74,6 +73,8 @@ import com.ankiminer.android.ui.mining.StickyCurationActions
 import com.ankiminer.android.ui.mining.curateCandidates
 import com.ankiminer.android.ui.mining.miningResultItems
 import com.ankiminer.android.ui.mining.rememberCurationCandidateHeaderTexts
+import com.ankiminer.android.ui.theme.AnkiMinerTokens
+import com.ankiminer.android.ui.theme.PhaseTitle
 import com.ankiminer.android.ui.theme.actionBorder
 import com.ankiminer.android.ui.theme.forwardButtonColors
 import com.ankiminer.android.ui.theme.outlinedActionButtonColors
@@ -232,8 +233,8 @@ fun VideoMiningScreen(
                         .consumeWindowInsets(scaffoldPadding)
                         .testTag(VideoMiningTestTags.CONTENT)
                         .semantics { paneTitle = phaseTitle },
-                contentPadding = PaddingValues(20.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+                contentPadding = PaddingValues(AnkiMinerTokens.Space.content),
+                verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.group),
             ) {
                 when (val runState = targetState.runState) {
                     MiningRunState.Idle ->
@@ -376,12 +377,10 @@ private fun LazyListScope.setupItems(
     onReturnToActiveRun: (() -> Unit)?,
 ) {
     item(key = "setup_header", contentType = "header") {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(
+        Column(verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
+            PhaseTitle(
                 text = stringResource(R.string.video_phase_setup_title),
-                modifier = headingModifier.semantics { heading() },
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold,
+                modifier = headingModifier,
             )
             state.runtimeConflict?.let { conflict ->
                 RuntimeConflictNotice(
@@ -448,7 +447,7 @@ private fun LazyListScope.setupItems(
         }
     }
     item(key = "start", contentType = "actions") {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
             Button(
                 onClick = onStart,
                 enabled = state.canStart,
@@ -495,7 +494,7 @@ private fun LazyListScope.progressItems(
     }
     if (canCancel) {
         item(key = "cancel", contentType = "actions") {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
                 MiningCancelButton(
                     cancelPending = cancelPending,
                     testTag = VideoMiningTestTags.CANCEL,
@@ -541,12 +540,10 @@ private fun LazyListScope.curationItems(
             curation.selectedCandidateIds.size == curation.candidates.size
 
     item(key = "curation_header", contentType = "header") {
-        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(
+        Column(verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
+            PhaseTitle(
                 text = stringResource(R.string.curation_title),
-                modifier = headingModifier.semantics { heading() },
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold,
+                modifier = headingModifier,
             )
             Text(
                 text =
@@ -585,7 +582,7 @@ private fun LazyListScope.curationItems(
         }
     }
     item(key = "curation_controls", contentType = "actions") {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
             OutlinedButton(
                 onClick = { onSelectAllCandidates(!allSelected) },
                 enabled = curation.candidates.isNotEmpty() && enabled,
@@ -692,11 +689,9 @@ private fun LazyListScope.terminalItems(
     onReset: () -> Unit,
 ) {
     item(key = "terminal_header", contentType = "header") {
-        Text(
+        PhaseTitle(
             text = stringResource(title),
-            modifier = headingModifier.semantics { heading() },
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold,
+            modifier = headingModifier,
         )
     }
     if (failed) {
@@ -748,7 +743,7 @@ private fun LazyListScope.terminalItems(
     }
     if (!failed) {
         item(key = "terminal_actions", contentType = "actions") {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
                 OutlinedButton(
                     onClick = onReset,
                     enabled = !busy,
@@ -796,7 +791,7 @@ private fun MiningCancelButton(
     ) {
         if (cancelPending) {
             Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)

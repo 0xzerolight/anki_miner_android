@@ -37,6 +37,7 @@ import com.ankiminer.android.anki.provider.AnkiFieldKeys
 import com.ankiminer.android.anki.provider.AnkiRemediationActionKind
 import com.ankiminer.android.anki.provider.AnkiRemediationType
 import com.ankiminer.android.anki.provider.NoteTypeSetupStatus
+import com.ankiminer.android.ui.theme.AnkiMinerTokens
 import com.ankiminer.android.ui.theme.actionBorder
 import com.ankiminer.android.ui.theme.outlinedActionButtonColors
 import com.ankiminer.android.vm.DeckChoiceKind
@@ -52,7 +53,7 @@ internal fun AnkiDeckCard(
     inlineFailure: (@Composable () -> Unit)? = null,
 ) {
     OutlinedCard(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(Modifier.padding(AnkiMinerTokens.Space.content), verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
             Text(stringResource(R.string.anki_deck_title), style = MaterialTheme.typography.titleMedium)
             inlineFailure?.invoke()
             if (!state.ankiReady) {
@@ -114,7 +115,7 @@ internal fun AnkiTargetCard(
     inlineFailure: (@Composable () -> Unit)? = null,
 ) {
     OutlinedCard(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(Modifier.padding(AnkiMinerTokens.Space.content), verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
             Text(stringResource(R.string.anki_note_type_title), style = MaterialTheme.typography.titleMedium)
             inlineFailure?.invoke()
             if (!state.ankiReady) {
@@ -211,7 +212,7 @@ internal fun WizardAnkiTargetCard(
     inlineFailure: (@Composable () -> Unit)? = null,
 ) {
     OutlinedCard(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(Modifier.padding(AnkiMinerTokens.Space.content), verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
             Text(
                 stringResource(R.string.anki_note_type_title),
                 style = MaterialTheme.typography.titleMedium,
@@ -342,7 +343,7 @@ internal fun AnkiOperationCard() {
             .fillMaxWidth()
             .semantics { liveRegion = LiveRegionMode.Polite },
     ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(Modifier.padding(AnkiMinerTokens.Space.content), verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
             Text(stringResource(R.string.anki_setup_working), style = MaterialTheme.typography.titleMedium)
             LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
         }
@@ -363,7 +364,7 @@ internal fun AnkiRecoveryCard(
     var confirmation by remember { mutableStateOf<AnkiRecoveryConfirmation?>(null) }
     val presentation = state.recoveryPresentation
     OutlinedCard(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(Modifier.padding(AnkiMinerTokens.Space.content), verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.group)) {
             Text(stringResource(R.string.anki_recovery_title), style = MaterialTheme.typography.titleMedium)
             val statusText =
                 when (presentation.kind) {
@@ -415,7 +416,7 @@ internal fun AnkiRecoveryCard(
             }
         }
         if (presentation.showInventory) {
-            Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+            Column(Modifier.padding(horizontal = AnkiMinerTokens.Space.content, vertical = AnkiMinerTokens.Space.related)) {
                 state.remediations.pending.forEach { item ->
                     HorizontalDivider()
                     Text(item.title, style = MaterialTheme.typography.titleSmall)

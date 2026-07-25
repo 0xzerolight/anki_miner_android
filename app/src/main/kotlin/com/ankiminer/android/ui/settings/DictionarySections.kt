@@ -26,6 +26,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.ankiminer.android.R
+import com.ankiminer.android.ui.theme.AnkiMinerTokens
 import com.ankiminer.android.ui.theme.actionBorder
 import com.ankiminer.android.ui.theme.forwardButtonColors
 import com.ankiminer.android.ui.theme.outlinedActionButtonColors
@@ -124,7 +125,7 @@ internal fun CustomDictionaryImportCard(
     inlineFailure: (@Composable () -> Unit)? = null,
 ) {
     OutlinedCard(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(Modifier.padding(AnkiMinerTokens.Space.content), verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
             Text(stringResource(R.string.custom_dictionary_title), style = MaterialTheme.typography.titleMedium)
             OutlinedTextField(
                 value = state.customSlotId,
@@ -162,7 +163,7 @@ internal fun CustomDictionaryImportCard(
 @Composable
 internal fun DictionaryInventoryCard(state: SetupUiState) {
     OutlinedCard(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(Modifier.padding(AnkiMinerTokens.Space.content), verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
             Text(
                 stringResource(R.string.dictionary_inventory_title),
                 modifier = Modifier.semantics { heading() },
@@ -205,7 +206,7 @@ internal fun DictionaryLookupCard(
     inlineFailure: (@Composable () -> Unit)? = null,
 ) {
     OutlinedCard(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(Modifier.padding(AnkiMinerTokens.Space.content), verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
             Text(
                 stringResource(R.string.dictionary_test_title),
                 modifier = Modifier.semantics { heading() },
@@ -213,8 +214,8 @@ internal fun DictionaryLookupCard(
             )
             FlowRow(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
+                verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
             ) {
                 state.dictionaries.filter { it.isUsable }.forEach { dictionary ->
                     FilterChip(

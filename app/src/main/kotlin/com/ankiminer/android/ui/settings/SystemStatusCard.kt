@@ -21,6 +21,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.ankiminer.android.R
 import com.ankiminer.android.data.resources.ResourceStartupReadiness
+import com.ankiminer.android.ui.theme.AnkiMinerTokens
 import com.ankiminer.android.vm.AnkiDroidSetupAction
 import com.ankiminer.android.vm.SetupUiState
 
@@ -153,7 +154,7 @@ internal fun SystemStatusCard(
 ) {
     val status = setupTaskStatus(state.taskFacts())
     OutlinedCard(modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(Modifier.padding(AnkiMinerTokens.Space.content), verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
             Text(
                 setupSummary(status),
                 modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
@@ -210,10 +211,10 @@ private fun SetupStatusRow(
     onResolveRecovery: () -> Unit,
     showAction: Boolean,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.line)) {
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
@@ -233,7 +234,7 @@ private fun SetupStatusRow(
             ) {
                 Text(
                     stringResource(setupRoleLabel(row.role)),
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    modifier = Modifier.padding(horizontal = AnkiMinerTokens.Space.related, vertical = AnkiMinerTokens.Space.line),
                     style = MaterialTheme.typography.labelMedium,
                 )
             }

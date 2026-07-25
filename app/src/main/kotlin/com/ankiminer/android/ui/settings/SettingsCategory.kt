@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.dp
 import com.ankiminer.android.R
 import com.ankiminer.android.data.anki.AnkiSetupFailureOrigin
 import com.ankiminer.android.data.resources.ResourceFailureOrigin
+import com.ankiminer.android.ui.theme.AnkiMinerTokens
 
 internal enum class SettingsCategory(
     @param:StringRes val label: Int,
@@ -129,7 +130,7 @@ internal fun SettingsCategoryLayout(
     ) {
         item(key = "settings-header", contentType = "header") {
             Column(
-                Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                Modifier.padding(horizontal = AnkiMinerTokens.Space.content, vertical = AnkiMinerTokens.Space.related),
             ) {
                 header()
             }
@@ -168,7 +169,7 @@ internal fun LazyListScope.settingsCard(
     content: @Composable () -> Unit,
 ) {
     item(key = key, contentType = "card") {
-        Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+        Column(Modifier.padding(horizontal = AnkiMinerTokens.Space.content, vertical = AnkiMinerTokens.Space.related)) {
             content()
         }
     }

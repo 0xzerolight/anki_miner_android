@@ -5,13 +5,18 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonColors
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.RadioButtonColors
 import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.SegmentedButtonColors
@@ -21,6 +26,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.Typography
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
@@ -34,6 +40,46 @@ import androidx.compose.ui.unit.sp
 
 /** Shared breakpoint used by action groups and other width-sensitive controls. */
 const val CompactLayoutWidthDp = 360
+
+/**
+ * Named layout and motion values. Spacing mirrors the desktop app's 4/8/12/16/24 scale so the two
+ * clients read as one product. Stroke widths, corner radii, elevations, and indicator dimensions
+ * are component dimensions and deliberately stay outside the spacing scale.
+ */
+internal object AnkiMinerTokens {
+    object Space {
+        /** Furigana and ruby pairs only. */
+        val micro = 2.dp
+
+        /** Between lines of a single thought. */
+        val line = 4.dp
+
+        /** Between rows, and inside a control's own internals. */
+        val related = 8.dp
+
+        /** Title to body, and between grouped actions. */
+        val group = 12.dp
+
+        /** Screen inset, and padding inside a container. */
+        val content = 16.dp
+
+        /** Between distinct sections. */
+        val section = 24.dp
+    }
+
+    object Layout {
+        val minTouchTarget = 48.dp
+        val rowContentInset = 12.dp
+    }
+
+    /** One motion vocabulary. Compose still applies the system duration scale on top of these. */
+    object Motion {
+        const val ExitMs = 90
+        const val ProgressMs = 100
+        const val StateMs = 150
+        const val LayoutMs = 250
+    }
+}
 
 /** Readable disabled colors. Fill remains distinct from every enabled action fill. */
 internal data class DisabledActionColors(
@@ -58,6 +104,14 @@ internal val DarkDisabledActionColors =
         container = Color(0xFF28312F),
         enabledContainer = Color(0xFF53DBCC),
     )
+
+/**
+ * Set by [AnkiMinerTheme]. These stay hand-tuned rather than mapping onto scheme roles: the nearest
+ * candidates (`outline` on `surfaceContainerHighest`) measure 3.48:1 light and 3.90:1 dark, below
+ * the 4.5:1 that `DesignSystemTest` holds these values to.
+ */
+internal val LocalDisabledActionColors =
+    staticCompositionLocalOf { DarkDisabledActionColors }
 
 private val BaseFontFamily = FontFamily.SansSerif
 
@@ -115,6 +169,23 @@ internal fun ScreenTitle(
         text = text,
         modifier = modifier.semantics { heading() },
         style = MaterialTheme.typography.headlineSmall,
+    )
+}
+
+/**
+ * Heading for a mining phase. Replaces six copies of `headlineMedium` overridden inline to Bold,
+ * which both fought the type scale and set the phase above the app bar that already names the
+ * screen.
+ */
+@Composable
+internal fun PhaseTitle(
+    text: String,
+    modifier: Modifier = Modifier,
+) {
+    Text(
+        text = text,
+        modifier = modifier.semantics { heading() },
+        style = MaterialTheme.typography.titleLarge,
     )
 }
 
@@ -231,6 +302,79 @@ internal fun AdaptivePairedActions(
     }
 }
 
+/**
+ * Actions choose meaning, not a component plus a color table. Before these existed, 42 of 53
+ * helper uses were outlined, so choose, import, cancel, and back all looked identical.
+ */
+@Composable
+internal fun PrimaryActionButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    content: @Composable RowScope.() -> Unit,
+) {
+    Button(
+        onClick = onClick,
+        modifier = modifier.heightIn(min = AnkiMinerTokens.Layout.minTouchTarget),
+        enabled = enabled,
+        colors = forwardButtonColors(),
+        content = content,
+    )
+}
+
+/** Choose, import, install, repair, open: supporting work, not the forward step. */
+@Composable
+internal fun UtilityActionButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    content: @Composable RowScope.() -> Unit,
+) {
+    FilledTonalButton(
+        onClick = onClick,
+        modifier = modifier.heightIn(min = AnkiMinerTokens.Layout.minTouchTarget),
+        enabled = enabled,
+        colors = tonalActionButtonColors(),
+        content = content,
+    )
+}
+
+/** A neutral peer of another action, never the primary one. */
+@Composable
+internal fun SecondaryActionButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    content: @Composable RowScope.() -> Unit,
+) {
+    OutlinedButton(
+        onClick = onClick,
+        modifier = modifier.heightIn(min = AnkiMinerTokens.Layout.minTouchTarget),
+        enabled = enabled,
+        colors = outlinedActionButtonColors(),
+        border = actionBorder(enabled = enabled),
+        content = content,
+    )
+}
+
+/** Back, skip, cancel, dismiss: leaving without completing. */
+@Composable
+internal fun ExitActionButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    isError: Boolean = false,
+    content: @Composable RowScope.() -> Unit,
+) {
+    TextButton(
+        onClick = onClick,
+        modifier = modifier.heightIn(min = AnkiMinerTokens.Layout.minTouchTarget),
+        enabled = enabled,
+        colors = exitActionButtonColors(isError = isError),
+        content = content,
+    )
+}
+
 /** Filled colors reserved for forward workflow actions. */
 @Composable
 internal fun forwardButtonColors(): ButtonColors {
@@ -325,9 +469,4 @@ internal fun actionBorder(enabled: Boolean): BorderStroke =
     )
 
 @Composable
-private fun disabledActionColors(): DisabledActionColors =
-    if (MaterialTheme.colorScheme.background == DarkColors.background) {
-        DarkDisabledActionColors
-    } else {
-        LightDisabledActionColors
-    }
+private fun disabledActionColors(): DisabledActionColors = LocalDisabledActionColors.current

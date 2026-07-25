@@ -2,6 +2,9 @@ package com.ankiminer.android.ui.navigation
 
 import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -33,8 +36,8 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -52,12 +55,13 @@ import com.ankiminer.android.ui.attribution.AttributionScreen
 import com.ankiminer.android.ui.attribution.NoticesScreen
 import com.ankiminer.android.ui.reading.ReadingMiningRoute
 import com.ankiminer.android.ui.reading.ReadingMiningTestTags
-import com.ankiminer.android.ui.settings.MessageSnackbarEffect
 import com.ankiminer.android.ui.settings.KnownWordsManagerRoute
+import com.ankiminer.android.ui.settings.MessageSnackbarEffect
 import com.ankiminer.android.ui.settings.SettingsCategory
 import com.ankiminer.android.ui.settings.SettingsRoute
-import com.ankiminer.android.ui.settings.settingsCategoryFor
 import com.ankiminer.android.ui.settings.settingsCardIndexFor
+import com.ankiminer.android.ui.settings.settingsCategoryFor
+import com.ankiminer.android.ui.theme.AnkiMinerTokens
 import com.ankiminer.android.ui.theme.ScreenTitle
 import com.ankiminer.android.ui.theme.SupportingText
 import com.ankiminer.android.ui.theme.actionBorder
@@ -447,6 +451,12 @@ internal fun AnkiMinerApp(
             navController = navController,
             startDestination = AnkiMinerDestination.VIDEO.route,
             modifier = shellModifier,
+            // Left unset, Navigation Compose applies a 700ms cross-fade — by a wide margin the
+            // slowest motion in the app, on its most frequent transition.
+            enterTransition = { fadeIn(tween(AnkiMinerTokens.Motion.StateMs)) },
+            exitTransition = { fadeOut(tween(AnkiMinerTokens.Motion.ExitMs)) },
+            popEnterTransition = { fadeIn(tween(AnkiMinerTokens.Motion.StateMs)) },
+            popExitTransition = { fadeOut(tween(AnkiMinerTokens.Motion.ExitMs)) },
         ) {
             composable(AnkiMinerDestination.VIDEO.route) {
                 if (miningWorkflowVisible(setup.isMiningReady, videoWorkflow)) {
@@ -561,12 +571,12 @@ internal fun MiningReadinessNotice(
     onOpenSettings: () -> Unit,
 ) {
     Column(
-        Modifier.fillMaxSize().padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+        Modifier.fillMaxSize().padding(AnkiMinerTokens.Space.content),
+        verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.content),
     ) {
         ScreenTitle(stringResource(R.string.mining_not_ready))
         OutlinedCard(Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(Modifier.padding(AnkiMinerTokens.Space.content), verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.group)) {
                 Text(message)
                 when (state.miningReadinessAction) {
                     MiningReadinessAction.WAIT ->

@@ -30,6 +30,7 @@ import com.ankiminer.android.data.RuntimeWorkCoordinator
 import com.ankiminer.android.data.resources.ResourceManagerState
 import com.ankiminer.android.diagnostics.TesterDiagnosticsIdentity
 import com.ankiminer.android.localization.LocalizedStringResource
+import com.ankiminer.android.ui.theme.AnkiMinerTokens
 import com.ankiminer.android.vm.SettingsDraft
 import com.ankiminer.android.vm.SettingsSaveState
 import com.ankiminer.android.vm.SettingsViewModel
@@ -308,7 +309,7 @@ private fun SettingsScreen(
         listStates = listStates,
         modifier = modifier,
         header = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
                 SystemStatusCard(
                     state = setup,
                     onRefresh = setupViewModel::refresh,
