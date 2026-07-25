@@ -48,6 +48,7 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
@@ -71,6 +72,7 @@ import com.ankiminer.android.ui.theme.AdaptiveActionGroup
 import com.ankiminer.android.ui.theme.AdaptivePairedActions
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
 import com.ankiminer.android.ui.theme.CompactLayoutWidthDp
+import com.ankiminer.android.ui.theme.SupportingText
 import com.ankiminer.android.ui.theme.actionBorder
 import com.ankiminer.android.ui.theme.outlinedActionButtonColors
 import com.ankiminer.android.ui.theme.radioActionColors
@@ -78,17 +80,22 @@ import com.ankiminer.android.ui.theme.segmentedActionColors
 import com.ankiminer.android.vm.SettingsSaveState
 import kotlinx.coroutines.launch
 
+/**
+ * A heading and its rows, with no border. Twelve of these wrapped an OutlinedCard inside an already
+ * padded item, so every section — even a single status line — read as a boxed aside.
+ */
 @Composable
 internal fun SettingsSection(title: String, content: @Composable () -> Unit) {
-    OutlinedCard(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(AnkiMinerTokens.Space.content), verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.group)) {
-            Text(
-                title,
-                modifier = Modifier.semantics { heading() },
-                style = MaterialTheme.typography.titleMedium,
-            )
-            content()
-        }
+    Column(
+        Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
+    ) {
+        Text(
+            title,
+            modifier = Modifier.semantics { heading() },
+            style = MaterialTheme.typography.titleMedium,
+        )
+        content()
     }
 }
 
@@ -97,7 +104,6 @@ internal fun SettingTextField(
     value: String,
     onChange: (String) -> Unit,
     label: String,
-    supporting: String,
     enabled: Boolean = true,
     modifier: Modifier = Modifier,
     error: String? = null,
@@ -110,7 +116,9 @@ internal fun SettingTextField(
         value = value,
         onValueChange = onChange,
         label = { Text(label) },
-        supportingText = { Text(error ?: supporting) },
+        // Only when the value is actually wrong. A permanent hint line under every field cost a
+        // row each and said nothing the label did not.
+        supportingText = error?.let { { Text(it) } },
         enabled = enabled,
         isError = error != null,
         keyboardOptions = keyboardOptions,
@@ -126,7 +134,6 @@ internal fun NumericField(
     value: String,
     onChange: (String) -> Unit,
     label: String,
-    supporting: String,
     allowNegative: Boolean = false,
     integer: Boolean = false,
     error: String? = null,
@@ -141,7 +148,6 @@ internal fun NumericField(
         // enter malformed text; keep it visible so field-keyed validation can explain the problem.
         onChange = onChange,
         label = label,
-        supporting = supporting,
         error = error,
         keyboardOptions =
             KeyboardOptions(
@@ -170,6 +176,11 @@ internal fun NumericField(
     )
 }
 
+/**
+ * One line. The checkbox already shows the resolved value, so the "Resolved value: On" caption is
+ * gone; an override is marked on the label instead of costing a second row and a reset button.
+ * Returning to the default is the category's Restore defaults action.
+ */
 @Composable
 internal fun NullableToggle(
     label: String,
@@ -177,40 +188,28 @@ internal fun NullableToggle(
     desktopDefault: Boolean,
     onChange: (Boolean?) -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.line)) {
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .toggleable(
-                    value = value ?: desktopDefault,
-                    role = Role.Checkbox,
-                    onValueChange = { onChange(it) },
-                ).padding(vertical = AnkiMinerTokens.Space.line),
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-            Column(Modifier.weight(1f)) {
-                Text(label)
-                Text(
-                    stringResource(
-                        R.string.b3_settings_resolved_value,
-                        stringResource(
-                            if (value ?: desktopDefault) {
-                                R.string.b3_settings_value_on
-                            } else {
-                                R.string.b3_settings_value_off
-                            },
-                        ),
-                    ),
-                    style = MaterialTheme.typography.bodySmall,
-                )
-            }
-            Checkbox(checked = value ?: desktopDefault, onCheckedChange = null)
-        }
-        if (value != null) {
-            TextButton(onClick = { onChange(null) }) {
-                Text(stringResource(R.string.b3_settings_use_recommended_default))
-            }
-        }
+    val resolved = value ?: desktopDefault
+    val overridden = value != null
+    val overrideState = stringResource(R.string.b3_settings_android_override_state)
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .heightIn(min = AnkiMinerTokens.Layout.minTouchTarget)
+            .toggleable(
+                value = resolved,
+                role = Role.Checkbox,
+                onValueChange = { onChange(it) },
+            ).padding(vertical = AnkiMinerTokens.Space.line)
+            .semantics { if (overridden) stateDescription = overrideState },
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = label,
+            modifier = Modifier.weight(1f),
+            fontWeight = if (overridden) FontWeight.Medium else null,
+        )
+        Checkbox(checked = resolved, onCheckedChange = null)
     }
 }
 
@@ -290,27 +289,37 @@ internal fun InlineFailureContainer(
     }
 }
 
+/**
+ * [detail] is for per-item facts the label cannot carry on its own — an entry count, a deck that is
+ * no longer discoverable. It rides on the same line, so a row stays a row. It is not a slot for
+ * explanatory copy.
+ */
 @Composable
 internal fun BooleanSetting(
     label: String,
-    help: String,
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
+    detail: String? = null,
 ) {
     Row(
         Modifier
             .fillMaxWidth()
+            .heightIn(min = AnkiMinerTokens.Layout.minTouchTarget)
             .toggleable(
                 value = checked,
                 role = Role.Checkbox,
                 onValueChange = onCheckedChange,
             ).padding(vertical = AnkiMinerTokens.Space.line),
-        horizontalArrangement = Arrangement.SpaceBetween,
+        horizontalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(Modifier.weight(1f)) {
-            Text(label)
-            Text(help, style = MaterialTheme.typography.bodySmall)
-        }
+        Text(
+            text = label,
+            modifier = Modifier.weight(1f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        detail?.takeIf(String::isNotBlank)?.let { SupportingText(it) }
         Checkbox(checked = checked, onCheckedChange = null)
     }
 }

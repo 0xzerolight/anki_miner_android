@@ -31,6 +31,7 @@ import com.ankiminer.android.diagnostics.TesterDiagnosticsIdentity
 import com.ankiminer.android.localization.LocalizedStringResource
 import com.ankiminer.android.ui.mining.RuntimeConflictNotice
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
+import com.ankiminer.android.ui.theme.SupportingText
 import com.ankiminer.android.ui.theme.actionBorder
 import com.ankiminer.android.ui.theme.outlinedActionButtonColors
 import com.ankiminer.android.vm.SettingsDraft
@@ -230,7 +231,6 @@ private fun LazyListScope.ankiSettings(
                 value = draft.deckName,
                 onChange = { callbacks.onDraftChange(draft.copy(deckName = it)) },
                 label = stringResource(R.string.settings_deck_name),
-                supporting = stringResource(R.string.settings_deck_default),
                 singleLine = false,
                 maxLines = 2,
             )
@@ -248,9 +248,9 @@ private fun LazyListScope.ankiSettings(
                 choices.forEach { deck ->
                     BooleanSetting(
                         label = deck.name,
-                        help =
+                        detail =
                             if (deck.discovered) {
-                                ""
+                                null
                             } else {
                                 stringResource(R.string.settings_anki_deck_not_discovered)
                             },
@@ -272,7 +272,6 @@ private fun LazyListScope.ankiSettings(
             }
             BooleanSetting(
                 label = stringResource(R.string.settings_tags_override),
-                help = stringResource(R.string.settings_tags_override_help),
                 checked = draft.tagsOverride,
                 onCheckedChange = {
                     callbacks.onDraftChange(draft.copy(tagsOverride = it))
@@ -282,14 +281,6 @@ private fun LazyListScope.ankiSettings(
                 value = draft.tags,
                 onChange = { callbacks.onDraftChange(draft.copy(tags = it)) },
                 label = stringResource(R.string.settings_tags),
-                supporting =
-                    stringResource(
-                        if (draft.tagsOverride) {
-                            R.string.settings_tags_help
-                        } else {
-                            R.string.settings_tags_default
-                        },
-                    ),
                 enabled = draft.tagsOverride,
             )
         }
@@ -342,7 +333,6 @@ private fun LazyListScope.mediaSettings(
                 draft.audioPadding,
                 { onDraftChange(draft.copy(audioPadding = it)) },
                 stringResource(R.string.settings_audio_padding),
-                stringResource(R.string.settings_audio_padding_default),
                 error = validationMessage(draft, SettingsFieldKey.AUDIO_PADDING),
                 imeAction = ImeAction.Next,
             )
@@ -350,7 +340,6 @@ private fun LazyListScope.mediaSettings(
                 draft.screenshotOffset,
                 { onDraftChange(draft.copy(screenshotOffset = it)) },
                 stringResource(R.string.settings_screenshot_offset),
-                stringResource(R.string.settings_screenshot_offset_default),
                 error = validationMessage(draft, SettingsFieldKey.SCREENSHOT_OFFSET),
                 imeAction = ImeAction.Next,
             )
@@ -358,7 +347,6 @@ private fun LazyListScope.mediaSettings(
                 draft.subtitleOffset,
                 { onDraftChange(draft.copy(subtitleOffset = it)) },
                 stringResource(R.string.settings_subtitle_offset),
-                stringResource(R.string.settings_subtitle_offset_default),
                 allowNegative = true,
                 error = validationMessage(draft, SettingsFieldKey.SUBTITLE_OFFSET),
                 imeAction = ImeAction.Next,
@@ -367,7 +355,6 @@ private fun LazyListScope.mediaSettings(
                 draft.bitrate,
                 { onDraftChange(draft.copy(bitrate = it)) },
                 stringResource(R.string.settings_audio_bitrate),
-                stringResource(R.string.settings_audio_bitrate_default),
                 integer = true,
                 error = validationMessage(draft, SettingsFieldKey.BITRATE),
             )
@@ -478,12 +465,12 @@ private fun LazyListScope.dictionarySettings(
             HorizontalDivider()
             BooleanSetting(
                 label = stringResource(R.string.settings_jisho),
-                help = stringResource(R.string.settings_jisho_disclosure),
                 checked = draft.jisho,
                 onCheckedChange = {
                     callbacks.onDraftChange(draft.copy(jisho = it))
                 },
             )
+            SupportingText(stringResource(R.string.settings_jisho_disclosure))
             HorizontalDivider()
             Text(
                 stringResource(R.string.settings_pitch_format),
@@ -601,7 +588,6 @@ private fun LazyListScope.audioSettings(
         SettingsSection(stringResource(R.string.settings_reading_audio)) {
             BooleanSetting(
                 label = stringResource(R.string.settings_reading_tts),
-                help = stringResource(R.string.settings_reading_tts_help),
                 checked = draft.readingTts,
                 onCheckedChange = {
                     callbacks.onDraftChange(draft.copy(readingTts = it))
@@ -707,7 +693,6 @@ private fun LazyListScope.filteringSettings(
                 draft.maxDuration,
                 { callbacks.onDraftChange(draft.copy(maxDuration = it)) },
                 stringResource(R.string.settings_max_duration),
-                stringResource(R.string.settings_zero_default),
                 error = validationMessage(draft, SettingsFieldKey.MAX_DURATION),
                 imeAction = ImeAction.Next,
             )
@@ -715,7 +700,6 @@ private fun LazyListScope.filteringSettings(
                 draft.maxCharacters,
                 { callbacks.onDraftChange(draft.copy(maxCharacters = it)) },
                 stringResource(R.string.settings_max_characters),
-                stringResource(R.string.settings_zero_default),
                 integer = true,
                 error = validationMessage(draft, SettingsFieldKey.MAX_CHARACTERS),
                 imeAction = ImeAction.Next,
@@ -724,7 +708,6 @@ private fun LazyListScope.filteringSettings(
                 draft.readingOccurrence,
                 { callbacks.onDraftChange(draft.copy(readingOccurrence = it)) },
                 stringResource(R.string.settings_reading_occurrence),
-                stringResource(R.string.settings_reading_occurrence_default),
                 integer = true,
                 error = validationMessage(draft, SettingsFieldKey.READING_OCCURRENCE),
                 imeAction = ImeAction.Next,
@@ -733,7 +716,6 @@ private fun LazyListScope.filteringSettings(
                 draft.maxFrequency,
                 { callbacks.onDraftChange(draft.copy(maxFrequency = it)) },
                 stringResource(R.string.settings_max_frequency),
-                stringResource(R.string.settings_max_frequency_default),
                 integer = true,
                 error = validationMessage(draft, SettingsFieldKey.MAX_FREQUENCY),
                 imeAction = ImeAction.Next,
@@ -742,7 +724,6 @@ private fun LazyListScope.filteringSettings(
                 draft.workers,
                 { callbacks.onDraftChange(draft.copy(workers = it)) },
                 stringResource(R.string.settings_workers),
-                stringResource(R.string.settings_workers_default),
                 integer = true,
                 error = validationMessage(draft, SettingsFieldKey.WORKERS),
             )
@@ -760,7 +741,7 @@ private fun LazyListScope.filteringSettings(
                 resources.wordsets.forEach { wordset ->
                     BooleanSetting(
                         label = wordset.displayName,
-                        help =
+                        detail =
                             stringResource(
                                 R.string.settings_resource_entries,
                                 wordset.entryCount,

@@ -23,17 +23,20 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import com.ankiminer.android.R
 import com.ankiminer.android.anki.provider.AnkiExternalReviewOutcome
-import com.ankiminer.android.anki.provider.AnkiFieldMapPolicy
 import com.ankiminer.android.anki.provider.AnkiFieldKeys
+import com.ankiminer.android.anki.provider.AnkiFieldMapPolicy
 import com.ankiminer.android.anki.provider.AnkiRemediationActionKind
 import com.ankiminer.android.anki.provider.AnkiRemediationType
 import com.ankiminer.android.anki.provider.NoteTypeSetupStatus
@@ -136,11 +139,38 @@ internal fun AnkiTargetCard(
                             .firstOrNull { it.name == state.noteType }
                             ?.fieldNames
                             ?: emptyList()
-                    Text(
-                        stringResource(R.string.anki_field_mapping_title),
-                        style = MaterialTheme.typography.titleSmall,
-                    )
                     val noneLabel = stringResource(R.string.anki_field_none)
+                    val expandedLabel = stringResource(R.string.disclosure_expanded)
+                    val collapsedLabel = stringResource(R.string.disclosure_collapsed)
+                    val mappedCount = AnkiFieldKeys.ALL.count { !state.fieldMap[it].isNullOrEmpty() }
+                    // Only `word` is actually required, so a partial map is a valid setup. Force the
+                    // mapper open for real blockers only; otherwise 18 dropdowns sit collapsed.
+                    val mappingBlocked =
+                        state.noteTypeStatus is NoteTypeSetupStatus.FieldsMissing ||
+                            state.noteTypeStatus is NoteTypeSetupStatus.FieldMapInvalid ||
+                            state.noteTypeStatus == NoteTypeSetupStatus.FirstFieldMismatch
+                    var mappingExpanded by
+                        rememberSaveable(state.noteType) { mutableStateOf(false) }
+                    val showMapping = mappingExpanded || mappingBlocked
+                    TextButton(
+                        onClick = { mappingExpanded = !mappingExpanded },
+                        enabled = !mappingBlocked,
+                        modifier =
+                            Modifier.semantics {
+                                heading()
+                                stateDescription =
+                                    if (showMapping) expandedLabel else collapsedLabel
+                            },
+                    ) {
+                        Text(
+                            stringResource(
+                                R.string.anki_field_mapping_summary,
+                                mappedCount,
+                                AnkiFieldKeys.ALL.size,
+                            ),
+                        )
+                    }
+                    if (showMapping) {
                     AnkiFieldKeys.ALL.forEach { key ->
                         val base = key.replace('_', ' ').replaceFirstChar { it.uppercaseChar() }
                         val label = if (key in AnkiFieldKeys.REQUIRED) "$base *" else base
@@ -176,6 +206,7 @@ internal fun AnkiTargetCard(
                             stringResource(R.string.anki_field_mapping_changes, details),
                             modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
                         )
+                    }
                     }
                 }
                 Text(

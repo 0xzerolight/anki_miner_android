@@ -164,12 +164,21 @@ internal fun SettingsCategoryLayout(
     }
 }
 
+/**
+ * One screen inset, one section gap. This wrapper used to pad and [SettingsSection] then added a
+ * border plus a second inset, so setting text started at x=32dp behind two competing edges.
+ */
 internal fun LazyListScope.settingsCard(
     key: String,
     content: @Composable () -> Unit,
 ) {
     item(key = key, contentType = "card") {
-        Column(Modifier.padding(horizontal = AnkiMinerTokens.Space.content, vertical = AnkiMinerTokens.Space.related)) {
+        Column(
+            Modifier.padding(
+                horizontal = AnkiMinerTokens.Space.content,
+                vertical = AnkiMinerTokens.Space.group,
+            ),
+        ) {
             content()
         }
     }
