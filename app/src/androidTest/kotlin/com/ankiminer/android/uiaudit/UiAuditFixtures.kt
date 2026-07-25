@@ -574,7 +574,6 @@ private fun SettingsAnkiFixture(setup: SetupUiState) {
                 value = "Japanese::Mining",
                 onChange = {},
                 label = stringResource(R.string.settings_deck_name),
-                supporting = stringResource(R.string.settings_deck_default),
                 singleLine = false,
                 maxLines = 2,
             )
@@ -589,14 +588,12 @@ private fun SettingsAnkiFixture(setup: SetupUiState) {
             setup.availableDeckNames.forEachIndexed { index, deck ->
                 BooleanSetting(
                     label = deck,
-                    help = "",
                     checked = index == 1,
                     onCheckedChange = {},
                 )
             }
             BooleanSetting(
                 label = stringResource(R.string.settings_tags_override),
-                help = stringResource(R.string.settings_tags_override_help),
                 checked = true,
                 onCheckedChange = {},
             )
@@ -604,7 +601,6 @@ private fun SettingsAnkiFixture(setup: SetupUiState) {
                 value = "ankiminer japanese subs2srs",
                 onChange = {},
                 label = stringResource(R.string.settings_tags),
-                supporting = stringResource(R.string.settings_tags_help),
             )
         }
         AnkiTargetCard(
@@ -712,13 +708,11 @@ private fun SettingsFilteringFixture() {
             value = "12",
             onChange = {},
             label = stringResource(R.string.settings_max_duration),
-            supporting = stringResource(R.string.settings_zero_default),
         )
         NumericField(
             value = "160",
             onChange = {},
             label = stringResource(R.string.settings_max_characters),
-            supporting = stringResource(R.string.settings_zero_default),
             integer = true,
         )
     }

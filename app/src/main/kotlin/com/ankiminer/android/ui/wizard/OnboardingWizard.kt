@@ -401,8 +401,19 @@ private fun WizardStepBody(
 ) {
     when (step) {
         WizardStep.WELCOME -> {
-            Text(stringResource(R.string.wizard_welcome_body))
-            Text(stringResource(R.string.wizard_welcome_settings_note))
+            SystemStatusCard(
+                state = state,
+                onRefresh = callbacks.onRefresh,
+                onRequestPermissions = callbacks.onRequestPermissions,
+                onOpenAppSettings = callbacks.onOpenAppSettings,
+                onInstallAnkiDroid = callbacks.onInstallAnkiDroid,
+                onOpenAnkiDroid = callbacks.onOpenAnkiDroid,
+                onInstallUniDic = callbacks.onInstallUniDic,
+                onChooseNoteType = {
+                    callbacks.onStep(WizardStep.ANKIDROID_NOTE_TYPE)
+                },
+                onResolveRecovery = callbacks.onResolveRecovery,
+            )
             WizardResourceFailure(
                 state,
                 ResourceFailureOrigin.SETUP,
@@ -411,7 +422,6 @@ private fun WizardStepBody(
             )
         }
         WizardStep.ANKIDROID -> {
-            Text(stringResource(R.string.wizard_ankidroid_body))
             OutlinedCard(Modifier.fillMaxWidth()) {
                 Column(
                     Modifier.padding(AnkiMinerTokens.Space.content),
@@ -429,7 +439,6 @@ private fun WizardStepBody(
             state.ankiOperation?.let { AnkiOperationCard() }
         }
         WizardStep.ANKIDROID_DECK -> {
-            Text(stringResource(R.string.wizard_deck_body))
             AnkiDeckCard(
                 state,
                 callbacks.onSelectDeck,
@@ -438,7 +447,6 @@ private fun WizardStepBody(
             state.ankiOperation?.let { AnkiOperationCard() }
         }
         WizardStep.ANKIDROID_NOTE_TYPE -> {
-            Text(stringResource(R.string.wizard_note_type_body))
             WizardAnkiTargetCard(
                 state = state,
                 onSelectNoteType = callbacks.onSelectNoteType,
@@ -448,7 +456,6 @@ private fun WizardStepBody(
             state.ankiOperation?.let { AnkiOperationCard() }
         }
         WizardStep.TOKENIZER -> {
-            Text(stringResource(R.string.wizard_tokenizer_body))
             ResourceCard(
                 title = stringResource(R.string.unidic_resource_title),
                 description = stringResource(R.string.unidic_resource_description),
@@ -474,7 +481,6 @@ private fun WizardStepBody(
             )
         }
         WizardStep.DICTIONARY -> {
-            Text(stringResource(R.string.wizard_dictionary_body))
             CatalogDictionaryCards(
                 state,
                 callbacks.onInstallCatalogDictionary,
@@ -497,15 +503,6 @@ private fun WizardStepBody(
             val hasRecoveryFailure =
                 state.ankiFailure?.origin == AnkiSetupFailureOrigin.RECOVERY ||
                     state.ankiRecoveryFailure?.origin == AnkiSetupFailureOrigin.RECOVERY
-            Text(
-                stringResource(
-                    if (state.isMiningReady) {
-                        R.string.b3_wizard_ready_body
-                    } else {
-                        R.string.b3_wizard_incomplete_body
-                    },
-                ),
-            )
             SystemStatusCard(
                 state = state,
                 onRefresh = callbacks.onRefresh,

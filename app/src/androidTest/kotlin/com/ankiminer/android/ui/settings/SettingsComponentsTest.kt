@@ -51,14 +51,12 @@ class SettingsComponentsTest {
                         value = first,
                         onChange = { first = it },
                         label = "First value",
-                        supporting = "Optional",
                         imeAction = ImeAction.Next,
                     )
                     NumericField(
                         value = second,
                         onChange = { second = it },
                         label = "Final value",
-                        supporting = "Optional",
                         imeAction = ImeAction.Done,
                     )
                 }
@@ -75,21 +73,24 @@ class SettingsComponentsTest {
     }
 
     @Test
-    fun fieldErrorReplacesSupportingTextAtTheEditedField() {
+    fun fieldsCarryASupportingLineOnlyWhileInvalid() {
+        var error by mutableStateOf<String?>("Complete or clear this number")
         composeRule.setContent {
             AnkiMinerTheme {
                 NumericField(
                     value = ".",
                     onChange = {},
                     label = "Audio padding",
-                    supporting = "Recommended: 0.25",
-                    error = "Complete or clear this number",
+                    error = error,
                 )
             }
         }
 
         composeRule.onNodeWithText("Complete or clear this number").assertIsDisplayed()
-        composeRule.onNodeWithText("Recommended: 0.25").assertDoesNotExist()
+
+        // A valid field is one line: no permanent hint underneath it.
+        error = null
+        composeRule.onNodeWithText("Complete or clear this number").assertDoesNotExist()
     }
 
     @Test
@@ -101,7 +102,6 @@ class SettingsComponentsTest {
                     value = value,
                     onChange = { value = it },
                     label = "Workers",
-                    supporting = "Recommended: 4",
                     integer = true,
                     error =
                         value

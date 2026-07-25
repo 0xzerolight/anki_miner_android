@@ -284,6 +284,9 @@
     <string name="anki_deck_save_failed">Deck choice could not be saved. Retry the local settings write.</string>
     <string name="anki_deck_save_retry">Retry saving deck</string>
     <string name="anki_note_type_picker">Note type</string>
+    <string name="anki_field_mapping_summary">Field mapping (%1$d of %2$d)</string>
+    <string name="disclosure_expanded">Expanded</string>
+    <string name="disclosure_collapsed">Collapsed</string>
     <string name="anki_field_mapping_title">Field mapping</string>
     <string name="anki_field_unique_help">Each Anki field can hold only one mapped value. Fields already used by another mapping are unavailable.</string>
     <string name="anki_field_mapping_changes">Mappings changed for this note type: %1$s</string>
@@ -742,6 +745,7 @@
     <string name="b3_settings_resolved_value">現在の適用値: %1$s</string>
     <string name="b3_settings_value_on">オン</string>
     <string name="b3_settings_value_off">オフ</string>
+    <string name="b3_settings_android_override_state">Custom override</string>
     <string name="b3_settings_use_recommended_default">推奨設定を使用</string>
     <string name="b3_validation_numeric_incomplete">数値を最後まで入力するか、空欄にしてください</string>
     <string name="b3_validation_finite">有限の数値を入力してください</string>
