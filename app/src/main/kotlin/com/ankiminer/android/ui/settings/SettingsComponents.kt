@@ -47,6 +47,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
@@ -482,7 +483,17 @@ internal fun ResourceCard(
     actionLabel: String,
     inlineFailure: (@Composable () -> Unit)? = null,
 ) {
-    OutlinedCard(Modifier.fillMaxWidth()) {
+    // Install/Repair on the button already says which state the resource is in, so the state line
+    // is announced rather than drawn. The description is what the download actually is.
+    val state =
+        stringResource(
+            if (installed) R.string.resource_installed else R.string.resource_not_installed,
+        )
+    OutlinedCard(
+        Modifier
+            .fillMaxWidth()
+            .semantics { stateDescription = state },
+    ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(
                 text = title,
@@ -490,11 +501,8 @@ internal fun ResourceCard(
                 overflow = TextOverflow.Ellipsis,
                 style = MaterialTheme.typography.titleMedium,
             )
-            if (installed) {
-                Text(stringResource(R.string.resource_installed))
-            } else {
+            if (!installed) {
                 Text(description)
-                Text(stringResource(R.string.resource_not_installed))
             }
             inlineFailure?.invoke()
             OutlinedButton(

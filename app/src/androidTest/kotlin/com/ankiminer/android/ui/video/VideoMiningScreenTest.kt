@@ -646,7 +646,7 @@ class VideoMiningScreenTest {
             .onAllNodes(
                 SemanticsMatcher.expectValue(
                     SemanticsProperties.PaneTitle,
-                    "Choose vocabulary",
+                    "Word Curation",
                 ),
                 useUnmergedTree = true,
             ).assertCountEquals(1)
@@ -714,7 +714,7 @@ class VideoMiningScreenTest {
         }
         composeRule.waitForIdle()
         composeRule.runOnIdle { assertEquals(0, listState.firstVisibleItemIndex) }
-        composeRule.onNodeWithText("Choose vocabulary").assertIsDisplayed()
+        composeRule.onNodeWithText("Word Curation").assertIsDisplayed()
 
         composeRule
             .onNodeWithTag(VideoMiningTestTags.CONTENT)

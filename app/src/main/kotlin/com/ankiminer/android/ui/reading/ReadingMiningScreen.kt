@@ -394,10 +394,6 @@ private fun LazyListScope.setupItems(
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold,
             )
-            Text(
-                text = stringResource(R.string.reading_mining_intro),
-                style = MaterialTheme.typography.bodyLarge,
-            )
             state.runtimeConflict?.let { conflict ->
                 RuntimeConflictNotice(
                     text = stringResource(readingRuntimeConflictMessage(conflict)),
@@ -482,7 +478,6 @@ private fun LazyListScope.setupItems(
                 enabled = !state.startPending,
                 singleLine = true,
                 label = { Text(stringResource(R.string.reading_series_label)) },
-                supportingText = { Text(stringResource(R.string.reading_series_help)) },
             )
         }
     }

@@ -511,9 +511,18 @@ internal fun SourcesCard(
                 maxWidth < CompactLayoutWidthDp.dp || LocalDensity.current.fontScale >= 1.3f
             Column {
                 sources.forEachIndexed { index, source ->
+                    // "No file selected" is no longer drawn; it stays here so the empty slot is
+                    // still announced.
+                    val emptyState = stringResource(R.string.no_file_selected)
+                    val rowState =
+                        if (source.document == null) {
+                            Modifier.semantics { stateDescription = emptyState }
+                        } else {
+                            Modifier
+                        }
                     if (stack) {
                         Column(
-                            modifier = Modifier.fillMaxWidth().padding(16.dp),
+                            modifier = Modifier.fillMaxWidth().padding(16.dp).then(rowState),
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
                             Text(
@@ -529,7 +538,7 @@ internal fun SourcesCard(
                         }
                     } else {
                         ListItem(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier.fillMaxWidth().then(rowState),
                             supportingContent = { SourceSupportingContent(source) },
                             trailingContent = {
                                 SourceRowActions(source = source, stack = false)
@@ -568,10 +577,11 @@ private fun SourceSupportingContent(source: MiningSourceItem) {
             )
         }
     } else {
-        Text(
-            source.document?.displayName ?: stringResource(R.string.no_file_selected),
-            style = MaterialTheme.typography.bodyMedium,
-        )
+        // An empty slot needs no visible caption; the Choose button already says so. The state
+        // still reaches TalkBack through the row's stateDescription.
+        source.document?.displayName?.let { displayName ->
+            Text(displayName, style = MaterialTheme.typography.bodyMedium)
+        }
     }
 }
 
@@ -583,13 +593,25 @@ private fun SourceRowActions(
 ) {
     val actionEnabled = source.enabled && !source.isResolving
     val pickButton: @Composable (Modifier) -> Unit = { actionModifier ->
+        // The visible label is a bare verb; the target lives in semantics so a screen reader still
+        // distinguishes "Choose video" from "Choose subtitles".
+        val pickDescription =
+            stringResource(
+                if (source.document == null) {
+                    R.string.choose_file_description
+                } else {
+                    R.string.replace_file_description
+                },
+                source.label,
+            )
         OutlinedButton(
             onClick = source.onPick,
             enabled = actionEnabled,
             modifier =
                 actionModifier
                     .heightIn(min = 48.dp)
-                    .testTag(source.pickTestTag),
+                    .testTag(source.pickTestTag)
+                    .semantics { contentDescription = pickDescription },
             colors = outlinedActionButtonColors(),
             border = actionBorder(enabled = actionEnabled),
             contentPadding = ButtonDefaults.ButtonWithIconContentPadding,

@@ -146,10 +146,6 @@ internal fun KnownWordsManagerScreen(
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text(
-                stringResource(R.string.known_words_manage_help),
-                style = MaterialTheme.typography.bodySmall,
-            )
-            Text(
                 stringResource(
                     if (state.knownWords.schemaOk) {
                         R.string.known_words_inventory
