@@ -272,21 +272,70 @@ class ReadingMiningViewModel internal constructor(
         }
     }
 
-    fun toggleCandidate(candidateId: String) {
+    /** Row taps: move the detail, leave inclusion alone. */
+    fun focusCandidate(candidateId: String?) {
         val request = (repository.state.value as? MiningRunState.Curating)?.request ?: return
         if (isCurationSubmissionPending() || localState.value.pending.cancel) return
         localState.update { local ->
             val draft = local.curationDraft?.forRequest(request) ?: request.defaultCurationDraft()
-            local.copy(curationDraft = draft.toggleCandidate(request, candidateId))
+            local.copy(curationDraft = draft.focusCandidate(request, candidateId))
         }
     }
 
-    fun selectAllCandidates(selected: Boolean) {
+    /** Checkbox: change inclusion, leave the detail where it is. */
+    fun setCandidateSelected(
+        candidateId: String,
+        selected: Boolean,
+    ) {
         val request = (repository.state.value as? MiningRunState.Curating)?.request ?: return
         if (isCurationSubmissionPending() || localState.value.pending.cancel) return
         localState.update { local ->
             val draft = local.curationDraft?.forRequest(request) ?: request.defaultCurationDraft()
-            local.copy(curationDraft = draft.selectAll(request, selected))
+            local.copy(curationDraft = draft.setCandidateSelected(request, candidateId, selected))
+        }
+    }
+
+    /**
+     * Bulk change over the rows the user can actually see. Hidden selections survive, and focus is
+     * reconciled against the projection the caller supplies.
+     */
+    fun setSelectionForVisible(
+        visibleCandidateIds: List<String>,
+        selected: Boolean,
+    ) {
+        val request = (repository.state.value as? MiningRunState.Curating)?.request ?: return
+        if (isCurationSubmissionPending() || localState.value.pending.cancel) return
+        localState.update { local ->
+            val draft = local.curationDraft?.forRequest(request) ?: request.defaultCurationDraft()
+            local.copy(
+                curationDraft =
+                    draft
+                        .setSelectionForVisible(request, visibleCandidateIds, selected)
+                        .reconcileFocus(visibleCandidateIds),
+            )
+        }
+    }
+
+    /**
+     * Page-wide selection, kept distinct from the visible-scope action so the UI can label each
+     * one for what it actually reaches.
+     */
+    fun setSelectionForPage(selected: Boolean) {
+        val request = (repository.state.value as? MiningRunState.Curating)?.request ?: return
+        setSelectionForVisible(request.candidates.map { it.candidateId }, selected)
+    }
+
+    /** Called when search, filter, or sort changes which candidates remain on screen. */
+    fun reconcileCurationFocus(
+        visibleCandidateIds: List<String>,
+        previousVisibleIds: List<String>,
+    ) {
+        val request = (repository.state.value as? MiningRunState.Curating)?.request ?: return
+        localState.update { local ->
+            val draft = local.curationDraft?.forRequest(request) ?: return@update local
+            local.copy(
+                curationDraft = draft.reconcileFocus(visibleCandidateIds, previousVisibleIds),
+            )
         }
     }
 

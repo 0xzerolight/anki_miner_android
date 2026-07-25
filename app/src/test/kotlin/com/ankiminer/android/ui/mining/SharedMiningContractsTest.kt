@@ -40,7 +40,12 @@ class SharedMiningContractsTest {
     @Test
     fun curationReducerPreservesPageAndEmptySelectionSemantics() {
         val request = curationRequest(page = CurationPage(1, 3, 2, 6))
-        val draft = request.defaultCurationDraft().selectAll(request, selected = false)
+        val draft =
+            request.defaultCurationDraft().setSelectionForVisible(
+                request,
+                request.candidates.map { it.candidateId },
+                selected = false,
+            )
 
         assertTrue(draft.matches(request))
         assertEquals(0, draft.selectedCount)
@@ -52,7 +57,12 @@ class SharedMiningContractsTest {
     fun curationReducerStartsFreshWhenPagedRequestAdvances() {
         val first = curationRequest(page = CurationPage(0, 2, 0, 2))
         val second = first.copy(page = CurationPage(1, 2, 1, 2))
-        val deselected = first.defaultCurationDraft().selectAll(first, selected = false)
+        val deselected =
+            first.defaultCurationDraft().setSelectionForVisible(
+                first,
+                first.candidates.map { it.candidateId },
+                selected = false,
+            )
 
         val advanced = deselected.forRequest(second)
 
@@ -62,25 +72,68 @@ class SharedMiningContractsTest {
     }
 
     @Test
-    fun deselectingFocusedCandidateCollapsesItsSentences() {
+    fun deselectingACandidateLeavesItsDetailOpen() {
         val request = curationRequest(page = CurationPage(0, 2, 0, 2))
-        val initial = request.defaultCurationDraft()
+        val candidateId = request.candidates.single().candidateId
+        val initial = request.defaultCurationDraft().focusCandidate(request, candidateId)
 
-        val deselected = initial.toggleCandidate(request, request.candidates.single().candidateId)
+        val deselected = initial.setCandidateSelected(request, candidateId, selected = false)
 
         assertTrue(deselected.selectedCandidateIds.isEmpty())
-        assertNull(deselected.focusedCandidateId)
+        assertEquals(candidateId, deselected.focusedCandidateId)
     }
 
     @Test
-    fun selectingExcludedCandidateFocusesOnlyThatCandidate() {
+    fun focusingACandidateDoesNotChangeInclusion() {
         val request = curationRequest(page = CurationPage(0, 2, 0, 2))
-        val excluded = request.defaultCurationDraft().selectAll(request, selected = false)
+        val candidateId = request.candidates.single().candidateId
+        val excluded =
+            request.defaultCurationDraft().setSelectionForVisible(
+                request,
+                listOf(candidateId),
+                selected = false,
+            )
 
-        val selected = excluded.toggleCandidate(request, request.candidates.single().candidateId)
+        val focused = excluded.focusCandidate(request, candidateId)
 
-        assertEquals(setOf("candidate-1"), selected.selectedCandidateIds)
-        assertEquals("candidate-1", selected.focusedCandidateId)
+        assertTrue(focused.selectedCandidateIds.isEmpty())
+        assertEquals(candidateId, focused.focusedCandidateId)
+    }
+
+    @Test
+    fun bulkChangeAppliesOnlyToVisibleCandidatesAndKeepsHiddenSelections() {
+        val request =
+            curationRequest(
+                candidates =
+                    listOf(
+                        candidate("visible", "\u732b", frequency = 1, occurrences = 1),
+                        candidate("hidden", "\u72ac", frequency = 2, occurrences = 1),
+                    ),
+            )
+        val all = request.defaultCurationDraft()
+
+        val deselected =
+            all.setSelectionForVisible(request, listOf("visible"), selected = false)
+
+        assertEquals(setOf("hidden"), deselected.selectedCandidateIds)
+    }
+
+    @Test
+    fun focusFallsForwardThenBackThenClearsWhenItLeavesTheProjection() {
+        val ids = listOf("a", "b", "c")
+        val draft =
+            SharedCurationDraft(
+                runId = "run",
+                requestId = "request",
+                pageIndex = null,
+                selectedCandidateIds = emptySet(),
+                sentenceIds = emptyMap(),
+                focusedCandidateId = "b",
+            )
+
+        assertEquals("c", draft.reconcileFocus(listOf("a", "c"), ids).focusedCandidateId)
+        assertEquals("a", draft.reconcileFocus(listOf("a"), ids).focusedCandidateId)
+        assertNull(draft.reconcileFocus(emptyList(), ids).focusedCandidateId)
     }
 
     @Test
@@ -173,14 +226,15 @@ class SharedMiningContractsTest {
         )
     }
 
-    private fun curationRequest(page: CurationPage): CurationRequest {
+    private fun curationRequest(
+        page: CurationPage? = null,
+        candidates: List<CurationCandidate> =
+            listOf(candidate("candidate-1", "猫", frequency = 1, occurrences = 1)),
+    ): CurationRequest {
         return CurationRequest(
             runId = "run",
             requestId = "request",
-            candidates =
-                listOf(
-                    candidate("candidate-1", "猫", frequency = 1, occurrences = 1),
-                ),
+            candidates = candidates,
             page = page,
         )
     }

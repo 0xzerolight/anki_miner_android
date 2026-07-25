@@ -42,45 +42,72 @@ internal data class SharedCurationDraft(
     fun forRequest(request: CurationRequest): SharedCurationDraft =
         if (matches(request)) this else request.defaultCurationDraft()
 
-    fun toggleCandidate(
+    /** Moves the detail without touching inclusion. Row taps land here. */
+    fun focusCandidate(
+        request: CurationRequest,
+        candidateId: String?,
+    ): SharedCurationDraft {
+        require(candidateId == null || request.candidates.any { it.candidateId == candidateId })
+        return forRequest(request).copy(focusedCandidateId = candidateId)
+    }
+
+    /**
+     * Changes inclusion without touching focus. The checkbox lands here, so inspecting a candidate
+     * can no longer exclude it as a side effect.
+     */
+    fun setCandidateSelected(
         request: CurationRequest,
         candidateId: String,
+        selected: Boolean,
     ): SharedCurationDraft {
         require(request.candidates.any { it.candidateId == candidateId })
         val current = forRequest(request)
-        val selected = current.selectedCandidateIds.toMutableSet()
-        val added = selected.add(candidateId)
-        if (!added) selected.remove(candidateId)
-        return current.copy(
-            selectedCandidateIds = selected,
-            focusedCandidateId =
-                if (added) {
-                    candidateId
-                } else {
-                    current.focusedCandidateId.takeUnless { it == candidateId }
-                },
-        )
+        val ids = current.selectedCandidateIds.toMutableSet()
+        if (selected) ids.add(candidateId) else ids.remove(candidateId)
+        return current.copy(selectedCandidateIds = ids)
     }
 
-    fun selectAll(
+    /**
+     * Applies a bulk change to exactly the candidates the user can see. Selections outside
+     * [visibleCandidateIds] are preserved: a filtered "Deselect all" must never silently discard
+     * work on rows the current search or filter is hiding.
+     */
+    fun setSelectionForVisible(
         request: CurationRequest,
+        visibleCandidateIds: Collection<String>,
         selected: Boolean,
     ): SharedCurationDraft {
+        val known = request.candidates.mapTo(mutableSetOf()) { it.candidateId }
+        val subset = visibleCandidateIds.filterTo(linkedSetOf()) { it in known }
         val current = forRequest(request)
         return current.copy(
             selectedCandidateIds =
                 if (selected) {
-                    request.candidates.mapTo(linkedSetOf()) { it.candidateId }
+                    current.selectedCandidateIds + subset
                 } else {
-                    emptySet()
-                },
-            focusedCandidateId =
-                if (selected) {
-                    current.focusedCandidateId ?: request.candidates.firstOrNull()?.candidateId
-                } else {
-                    null
+                    current.selectedCandidateIds - subset
                 },
         )
+    }
+
+    /**
+     * Restores `focusedCandidateId == null || focusedCandidateId in visibleCandidateIds`.
+     *
+     * [previousVisibleIds] is the ordering captured *before* the change, because once a row leaves
+     * the projection there is no anchor left to search from. Falls back to the next visible
+     * candidate, then the previous one, then null — never silently back to the first row.
+     */
+    fun reconcileFocus(
+        visibleCandidateIds: List<String>,
+        previousVisibleIds: List<String> = visibleCandidateIds,
+    ): SharedCurationDraft {
+        val focused = focusedCandidateId ?: return this
+        if (focused in visibleCandidateIds) return this
+        val anchor = previousVisibleIds.indexOf(focused)
+        if (anchor < 0) return copy(focusedCandidateId = null)
+        val next = previousVisibleIds.drop(anchor + 1).firstOrNull { it in visibleCandidateIds }
+        val previous = previousVisibleIds.take(anchor).lastOrNull { it in visibleCandidateIds }
+        return copy(focusedCandidateId = next ?: previous)
     }
 
     fun selectSentence(

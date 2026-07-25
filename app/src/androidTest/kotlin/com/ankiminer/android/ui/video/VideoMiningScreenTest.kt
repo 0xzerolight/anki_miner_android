@@ -139,7 +139,7 @@ class VideoMiningScreenTest {
     fun curationSupportsDeselectAllAlternateSentenceAndEmptyConfirmation() {
         val request = request()
         val alternate = request.candidates.first().sentences.last()
-        var selectAllValue: Boolean? = null
+        var bulkChange: Pair<List<String>, Boolean>? = null
         var sentenceSelection: Pair<String, String>? = null
         var confirmed = false
         val state =
@@ -150,7 +150,7 @@ class VideoMiningScreenTest {
 
         setScreen(
             state = state,
-            onSelectAllCandidates = { selectAllValue = it },
+            onSetSelectionForVisible = { ids, selected -> bulkChange = ids to selected },
             onSelectSentence = { candidateId, sentenceId ->
                 sentenceSelection = candidateId to sentenceId
             },
@@ -178,7 +178,11 @@ class VideoMiningScreenTest {
         composeRule.onNodeWithTag(VideoMiningTestTags.CONFIRM_CURATION).performClick()
 
         composeRule.runOnIdle {
-            assertEquals(false, selectAllValue)
+            // Scoped to the visible projection, not silently to the whole page.
+            assertEquals(
+                request.candidates.map { it.candidateId } to false,
+                bulkChange,
+            )
             assertEquals(
                 request.candidates.first().candidateId to alternate.sentenceId,
                 sentenceSelection,
@@ -188,29 +192,37 @@ class VideoMiningScreenTest {
     }
 
     @Test
-    fun wholeCandidateHeaderTogglesAndDeselectionCollapsesSentences() {
+    fun rowTapOpensDetailAndCheckboxAloneChangesInclusion() {
         val request = request()
         val candidate = request.candidates.first()
+        val other = request.candidates.last()
         var state by
             mutableStateOf(
                 VideoMiningUiState(
                     runState = MiningRunState.Curating(request),
-                    curation = curationState(request),
+                    curation = curationState(request).copy(focusedCandidateId = other.candidateId),
                 ),
             )
         composeRule.setContent {
             AnkiMinerTheme {
                 ScreenUnderTest(
                     state = state,
-                    onToggleCandidate = { candidateId ->
+                    onFocusCandidate = { candidateId ->
+                        val curation = requireNotNull(state.curation)
+                        state = state.copy(curation = curation.copy(focusedCandidateId = candidateId))
+                    },
+                    onSetCandidateSelected = { candidateId, selected ->
                         val curation = requireNotNull(state.curation)
                         state =
                             state.copy(
                                 curation =
                                     curation.copy(
                                         selectedCandidateIds =
-                                            curation.selectedCandidateIds - candidateId,
-                                        focusedCandidateId = null,
+                                            if (selected) {
+                                                curation.selectedCandidateIds + candidateId
+                                            } else {
+                                                curation.selectedCandidateIds - candidateId
+                                            },
                                     ),
                             )
                     },
@@ -220,11 +232,18 @@ class VideoMiningScreenTest {
         val sentenceTag =
             VideoMiningTestTags.sentence(candidate.candidateId, candidate.defaultSentenceId)
 
-        composeRule.onNodeWithTag(sentenceTag).assertExists()
-        composeRule.onNodeWithTag(VideoMiningTestTags.candidate(candidate.candidateId)).performClick()
-
+        // Inspecting must not exclude: the row opens the detail and leaves the count alone.
         composeRule.onNodeWithTag(sentenceTag).assertDoesNotExist()
+        composeRule.onNodeWithTag(VideoMiningTestTags.candidate(candidate.candidateId)).performClick()
+        composeRule.onNodeWithTag(sentenceTag).assertExists()
+        composeRule.onNodeWithText("2 of 2 selected").assertExists()
+
+        // The checkbox excludes, and the detail stays open.
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.candidateToggle(candidate.candidateId))
+            .performClick()
         composeRule.onNodeWithText("1 of 2 selected").assertExists()
+        composeRule.onNodeWithTag(sentenceTag).assertExists()
     }
 
     @Test
@@ -813,7 +832,7 @@ class VideoMiningScreenTest {
         onPickVideo: () -> Unit = {},
         onPickSubtitle: () -> Unit = {},
         onStart: () -> Unit = {},
-        onSelectAllCandidates: (Boolean) -> Unit = {},
+        onSetSelectionForVisible: (List<String>, Boolean) -> Unit = { _, _ -> },
         onSelectSentence: (String, String) -> Unit = { _, _ -> },
         onConfirmCuration: () -> Unit = {},
         onCancel: () -> Unit = {},
@@ -825,7 +844,7 @@ class VideoMiningScreenTest {
                     onPickVideo = onPickVideo,
                     onPickSubtitle = onPickSubtitle,
                     onStart = onStart,
-                    onSelectAllCandidates = onSelectAllCandidates,
+                    onSetSelectionForVisible = onSetSelectionForVisible,
                     onSelectSentence = onSelectSentence,
                     onConfirmCuration = onConfirmCuration,
                     onCancel = onCancel,
@@ -841,13 +860,14 @@ class VideoMiningScreenTest {
         onPickVideo: () -> Unit = {},
         onPickSubtitle: () -> Unit = {},
         onStart: () -> Unit = {},
-        onSelectAllCandidates: (Boolean) -> Unit = {},
+        onSetSelectionForVisible: (List<String>, Boolean) -> Unit = { _, _ -> },
         onSelectSentence: (String, String) -> Unit = { _, _ -> },
         onConfirmCuration: () -> Unit = {},
         onCancel: () -> Unit = {},
         onRetry: () -> Unit = {},
         onReset: () -> Unit = {},
-        onToggleCandidate: (String) -> Unit = {},
+        onFocusCandidate: (String) -> Unit = {},
+        onSetCandidateSelected: (String, Boolean) -> Unit = { _, _ -> },
         listState: LazyListState = rememberLazyListState(),
     ) {
         VideoMiningScreen(
@@ -859,8 +879,11 @@ class VideoMiningScreenTest {
             onDismissDocumentError = {},
             onDismissCommandError = {},
             onStart = onStart,
-            onToggleCandidate = onToggleCandidate,
-            onSelectAllCandidates = onSelectAllCandidates,
+            onFocusCandidate = onFocusCandidate,
+            onSetCandidateSelected = onSetCandidateSelected,
+            onSetSelectionForVisible = onSetSelectionForVisible,
+            onSetSelectionForPage = {},
+            onReconcileFocus = { _, _ -> },
             onSelectSentence = onSelectSentence,
             onConfirmCuration = onConfirmCuration,
             onCancel = onCancel,

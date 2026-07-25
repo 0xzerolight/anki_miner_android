@@ -225,7 +225,7 @@ class ReadingMiningViewModelTest {
             val viewModel = ReadingMiningViewModel(repository, ImmediateSafBroker())
             runCurrent()
 
-            viewModel.toggleCandidate(first.candidates.single().candidateId)
+            viewModel.setCandidateSelected(first.candidates.single().candidateId, false)
             runCurrent()
             assertEquals(0, viewModel.uiState.value.curation?.selectedCount)
             repository.transitionTo(MiningRunState.Curating(second))
@@ -279,7 +279,7 @@ class ReadingMiningViewModelTest {
             val viewModel = ReadingMiningViewModel(repository, ImmediateSafBroker())
             runCurrent()
 
-            viewModel.selectAllCandidates(false)
+            viewModel.setSelectionForPage(false)
             viewModel.confirmCuration()
             runCurrent()
 
