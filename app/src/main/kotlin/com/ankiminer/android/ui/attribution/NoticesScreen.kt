@@ -22,6 +22,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import com.ankiminer.android.R
+import com.ankiminer.android.ui.theme.AnkiMinerTokens
 import com.ankiminer.android.ui.theme.SectionTitle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -43,7 +44,7 @@ internal fun NoticesScreen(
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+        verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.content),
     ) {
         item(key = "notices:documents", contentType = "section-heading") {
             SectionTitle(stringResource(R.string.notices_documents_heading))
@@ -93,7 +94,7 @@ private fun NoticeBlockItem(block: NoticeBlock) {
             SelectionContainer {
                 Text(
                     text = text,
-                    modifier = Modifier.padding(12.dp),
+                    modifier = Modifier.padding(AnkiMinerTokens.Space.group),
                     style =
                         MaterialTheme.typography.bodySmall.copy(
                             fontFamily = FontFamily.Monospace,

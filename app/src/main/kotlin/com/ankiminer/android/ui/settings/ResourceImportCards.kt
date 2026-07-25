@@ -20,6 +20,7 @@ import com.ankiminer.android.R
 import com.ankiminer.android.data.resources.FrequencySourceFormat
 import com.ankiminer.android.data.resources.KnownWordsSourceFormat
 import com.ankiminer.android.data.resources.PitchAccentSourceFormat
+import com.ankiminer.android.ui.theme.AnkiMinerTokens
 import com.ankiminer.android.vm.SetupUiState
 import com.ankiminer.android.ui.theme.actionBorder
 import com.ankiminer.android.ui.theme.forwardButtonColors
@@ -36,7 +37,7 @@ internal fun FrequencyImportCard(
     inlineFailure: (@Composable () -> Unit)? = null,
 ) {
     OutlinedCard(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(Modifier.padding(AnkiMinerTokens.Space.content), verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
             Text(stringResource(R.string.frequency_import_title), style = MaterialTheme.typography.titleMedium)
             state.frequencySources.forEach { source ->
                 Text(
@@ -112,7 +113,7 @@ internal fun PitchImportCard(
     inlineFailure: (@Composable () -> Unit)? = null,
 ) {
     OutlinedCard(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(Modifier.padding(AnkiMinerTokens.Space.content), verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
             Text(stringResource(R.string.pitch_import_title), style = MaterialTheme.typography.titleMedium)
             state.pitchAccent?.let { pitch ->
                 Text(
@@ -171,7 +172,7 @@ internal fun AudioPackImportCard(
     inlineFailure: (@Composable () -> Unit)? = null,
 ) {
     OutlinedCard(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(Modifier.padding(AnkiMinerTokens.Space.content), verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
             Text(stringResource(R.string.audio_pack_import_title), style = MaterialTheme.typography.titleMedium)
             state.audioPacks.forEach { pack ->
                 Text(
@@ -219,7 +220,7 @@ internal fun AudioPackImportCard(
 @Composable
 internal fun BundledWordsetInventoryCard(state: SetupUiState) {
     OutlinedCard(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(Modifier.padding(AnkiMinerTokens.Space.content), verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
             Text(stringResource(R.string.bundled_wordsets_title), style = MaterialTheme.typography.titleMedium)
             state.wordsets.forEach { wordset ->
                 Text(stringResource(R.string.bundled_wordset_item, wordset.displayName, wordset.entryCount))
@@ -244,7 +245,7 @@ internal fun KnownWordsImportCard(
             onDismissRequest = { if (!state.busy) onDismissImport() },
             title = { Text(stringResource(R.string.known_words_preview_title)) },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
                     Text(
                         stringResource(
                             R.string.known_words_preview_summary,
@@ -280,7 +281,7 @@ internal fun KnownWordsImportCard(
         )
     }
     OutlinedCard(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(Modifier.padding(AnkiMinerTokens.Space.content), verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
             Text(stringResource(R.string.known_words_import_title), style = MaterialTheme.typography.titleMedium)
             Text(
                 stringResource(

@@ -87,8 +87,11 @@ import com.ankiminer.android.mining.MiningProgress
 import com.ankiminer.android.mining.ProcessingResult
 import com.ankiminer.android.ui.theme.AdaptiveActionGroup
 import com.ankiminer.android.ui.theme.AdaptivePairedActions
+import com.ankiminer.android.ui.theme.AnkiMinerTokens
 import com.ankiminer.android.ui.theme.CompactLayoutWidthDp
+import com.ankiminer.android.ui.theme.ExitActionButton
 import com.ankiminer.android.ui.theme.MetricTile
+import com.ankiminer.android.ui.theme.PhaseTitle
 import com.ankiminer.android.ui.theme.actionBorder
 import com.ankiminer.android.ui.theme.disabledActionContentColor
 import com.ankiminer.android.ui.theme.forwardButtonColors
@@ -143,18 +146,21 @@ internal fun RuntimeConflictNotice(
     modifier: Modifier = Modifier,
     onReturnToActiveRun: (() -> Unit)? = null,
 ) {
-    OutlinedCard(modifier.fillMaxWidth()) {
+    // A conflict is a warning state, so fill earns its place here. A plain outlined box would have
+    // read like every other section on the screen.
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.tertiaryContainer,
+        contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+        shape = MaterialTheme.shapes.medium,
+    ) {
         Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.padding(AnkiMinerTokens.Space.content),
+            verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
         ) {
-            Text(text = text, color = MaterialTheme.colorScheme.onSurface)
+            Text(text = text)
             if (onReturnToActiveRun != null) {
-                OutlinedButton(
-                    onClick = onReturnToActiveRun,
-                    colors = outlinedActionButtonColors(),
-                    border = actionBorder(enabled = true),
-                ) {
+                ExitActionButton(onClick = onReturnToActiveRun) {
                     Text(stringResource(R.string.return_to_active_run))
                 }
             }
@@ -189,66 +195,62 @@ internal fun MiningProgressPanel(
             coarsePercentage?.let { "$stage, $it%" } ?: stage
         }
 
-    OutlinedCard(
+    // Progress is the whole content of this phase, not an aside, so it needs no container of its
+    // own; the list's inset already positions it.
+    Column(
         modifier =
             modifier
                 .fillMaxWidth()
                 .testTag(testTag),
+        verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.group),
     ) {
-        Column(
-            modifier = Modifier.padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Text(
-                text = stringResource(title),
-                modifier = headingModifier.semantics { heading() },
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
-            )
-            Text(
-                text = stage,
+        PhaseTitle(
+            text = stringResource(title),
+            modifier = headingModifier,
+        )
+        Text(
+            text = stage,
+            modifier =
+                Modifier.clearAndSetSemantics {
+                    liveRegion = LiveRegionMode.Polite
+                    contentDescription = announcement
+                },
+            style = MaterialTheme.typography.bodyLarge,
+        )
+        if (fraction == null) {
+            LinearProgressIndicator(
                 modifier =
-                    Modifier.clearAndSetSemantics {
-                        liveRegion = LiveRegionMode.Polite
-                        contentDescription = announcement
-                    },
-                style = MaterialTheme.typography.bodyLarge,
+                    Modifier
+                        .fillMaxWidth()
+                        .height(6.dp)
+                        .clip(RoundedCornerShape(3.dp)),
+                strokeCap = StrokeCap.Round,
+                gapSize = 0.dp,
             )
-            if (fraction == null) {
-                LinearProgressIndicator(
-                    modifier =
-                        Modifier
-                            .fillMaxWidth()
-                            .height(6.dp)
-                            .clip(RoundedCornerShape(3.dp)),
-                    strokeCap = StrokeCap.Round,
-                    gapSize = 0.dp,
-                )
-            } else {
-                LinearProgressIndicator(
-                    progress = { animatedFraction },
-                    modifier =
-                        Modifier
-                            .fillMaxWidth()
-                            .height(6.dp)
-                            .clip(RoundedCornerShape(3.dp)),
-                    strokeCap = StrokeCap.Round,
-                    gapSize = 0.dp,
-                    drawStopIndicator = {},
-                )
-            }
-            if (progress != null && progress.total > 0) {
-                Text(
-                    stringResource(
-                        R.string.progress_count_with_percent,
-                        progress.current,
-                        progress.total,
-                        requireNotNull(percentage),
-                    ),
-                )
-            }
+        } else {
+            LinearProgressIndicator(
+                progress = { animatedFraction },
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .height(6.dp)
+                        .clip(RoundedCornerShape(3.dp)),
+                strokeCap = StrokeCap.Round,
+                gapSize = 0.dp,
+                drawStopIndicator = {},
+            )
         }
-    }
+        if (progress != null && progress.total > 0) {
+            Text(
+                stringResource(
+                    R.string.progress_count_with_percent,
+                    progress.current,
+                    progress.total,
+                    requireNotNull(percentage),
+                ),
+            )
+        }
+        }
 }
 
 @Composable
@@ -279,8 +281,8 @@ internal fun MiningFailureCard(
         shape = MaterialTheme.shapes.medium,
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.padding(AnkiMinerTokens.Space.content),
+            verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
         ) {
             Text(message, style = MaterialTheme.typography.bodyLarge)
             if (detailsExpanded && diagnosticDetails != null) {
@@ -402,8 +404,8 @@ internal fun StickyCurationActions(
         shadowElevation = 6.dp,
     ) {
         Column(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.padding(horizontal = AnkiMinerTokens.Space.content, vertical = AnkiMinerTokens.Space.group),
+            verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
         ) {
             commandErrorMessage?.let { error ->
                 MiningFailureCard(
@@ -463,7 +465,7 @@ internal fun StickyCurationActions(
                             )
                             Text(
                                 text = stringResource(R.string.cancelling),
-                                modifier = Modifier.padding(start = 8.dp),
+                                modifier = Modifier.padding(start = AnkiMinerTokens.Space.related),
                             )
                         } else {
                             Text(
@@ -505,54 +507,54 @@ internal fun SourcesCard(
     sources: List<MiningSourceItem>,
     modifier: Modifier = Modifier,
 ) {
-    OutlinedCard(modifier.fillMaxWidth()) {
-        BoxWithConstraints(Modifier.fillMaxWidth()) {
-            val stack =
-                maxWidth < CompactLayoutWidthDp.dp || LocalDensity.current.fontScale >= 1.3f
-            Column {
-                sources.forEachIndexed { index, source ->
-                    // "No file selected" is no longer drawn; it stays here so the empty slot is
-                    // still announced.
-                    val emptyState = stringResource(R.string.no_file_selected)
-                    val rowState =
-                        if (source.document == null) {
-                            Modifier.semantics { stateDescription = emptyState }
-                        } else {
-                            Modifier
-                        }
-                    if (stack) {
-                        Column(
-                            modifier = Modifier.fillMaxWidth().padding(16.dp).then(rowState),
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
+    // Dividers already group these rows; a border around them only added a second edge inside the
+    // list's own inset.
+    BoxWithConstraints(modifier.fillMaxWidth()) {
+        val stack =
+            maxWidth < CompactLayoutWidthDp.dp || LocalDensity.current.fontScale >= 1.3f
+        Column {
+            sources.forEachIndexed { index, source ->
+                // "No file selected" is no longer drawn; it stays here so the empty slot is
+                // still announced.
+                val emptyState = stringResource(R.string.no_file_selected)
+                val rowState =
+                    if (source.document == null) {
+                        Modifier.semantics { stateDescription = emptyState }
+                    } else {
+                        Modifier
+                    }
+                if (stack) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth().padding(AnkiMinerTokens.Space.content).then(rowState),
+                        verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
+                    ) {
+                        Text(
+                            text = source.label,
+                            style = MaterialTheme.typography.titleMedium,
+                        )
+                        SourceSupportingContent(source)
+                        SourceRowActions(
+                            source = source,
+                            stack = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                } else {
+                    ListItem(
+                        modifier = Modifier.fillMaxWidth().then(rowState),
+                        supportingContent = { SourceSupportingContent(source) },
+                        trailingContent = {
+                            SourceRowActions(source = source, stack = false)
+                        },
+                        headlineContent = {
                             Text(
                                 text = source.label,
                                 style = MaterialTheme.typography.titleMedium,
                             )
-                            SourceSupportingContent(source)
-                            SourceRowActions(
-                                source = source,
-                                stack = true,
-                                modifier = Modifier.fillMaxWidth(),
-                            )
-                        }
-                    } else {
-                        ListItem(
-                            modifier = Modifier.fillMaxWidth().then(rowState),
-                            supportingContent = { SourceSupportingContent(source) },
-                            trailingContent = {
-                                SourceRowActions(source = source, stack = false)
-                            },
-                            headlineContent = {
-                                Text(
-                                    text = source.label,
-                                    style = MaterialTheme.typography.titleMedium,
-                                )
-                            },
-                        )
-                    }
-                    if (index != sources.lastIndex) HorizontalDivider()
+                        },
+                    )
                 }
+                if (index != sources.lastIndex) HorizontalDivider()
             }
         }
     }
@@ -562,7 +564,7 @@ internal fun SourcesCard(
 private fun SourceSupportingContent(source: MiningSourceItem) {
     if (source.isResolving) {
         Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             CircularProgressIndicator(
@@ -626,7 +628,7 @@ private fun SourceRowActions(
     if (stack) {
         Column(
             modifier = modifier,
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
         ) {
             pickButton(Modifier.fillMaxWidth())
             if (source.document != null) {
@@ -647,7 +649,7 @@ private fun SourceRowActions(
                     )
                     Text(
                         text = stringResource(R.string.remove_file),
-                        modifier = Modifier.padding(start = 8.dp),
+                        modifier = Modifier.padding(start = AnkiMinerTokens.Space.related),
                     )
                 }
             }
@@ -656,7 +658,7 @@ private fun SourceRowActions(
         Row(
             modifier = modifier,
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.line),
         ) {
             pickButton(Modifier)
             if (source.document != null) {
@@ -693,7 +695,7 @@ internal fun CurationControls(
     onFilterChanged: (CurationFilter) -> Unit,
     onSortChanged: (CurationSort) -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
         OutlinedTextField(
             value = query,
             onValueChange = onQueryChanged,
@@ -710,7 +712,7 @@ internal fun CurationControls(
                 Modifier
                     .fillMaxWidth()
                     .horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
         ) {
             CurationFilter.entries.forEach { option ->
                 FilterChip(
@@ -736,7 +738,7 @@ internal fun CurationControls(
                 Modifier
                     .fillMaxWidth()
                     .horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
         ) {
             CurationSort.entries.forEach { option ->
                 FilterChip(
@@ -858,8 +860,8 @@ internal fun CurationCandidateHeader(
         shape = shape,
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.padding(horizontal = AnkiMinerTokens.Space.group, vertical = AnkiMinerTokens.Space.group),
+            horizontalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Checkbox(
@@ -918,16 +920,16 @@ internal fun CurationSentenceChoice(
                             onClick = onClick,
                         ).testTag(testTag)
                         .semantics { contentDescription = sentenceDescription }
-                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                        .padding(horizontal = AnkiMinerTokens.Space.group, vertical = AnkiMinerTokens.Space.group),
                 verticalAlignment = Alignment.Top,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
             ) {
                 RadioButton(
                     selected = selected,
                     onClick = null,
                     enabled = enabled,
                 )
-                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.micro)) {
                     Text(
                         text = candidate.minedForm,
                         style = MaterialTheme.typography.labelMedium,
@@ -1042,8 +1044,8 @@ private fun MiningResultSummary(
                 .testTag(testTag),
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.padding(AnkiMinerTokens.Space.content),
+            verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.group),
         ) {
             ResultMetricGrid(result)
             if (partial) {
@@ -1103,7 +1105,7 @@ private fun ResultMetricGrid(result: ProcessingResult) {
         if (stack) {
             Column(
                 modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
             ) {
                 MetricTile(
                     value = createdValue,
@@ -1127,7 +1129,7 @@ private fun ResultMetricGrid(result: ProcessingResult) {
                 )
             }
         } else {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
                 ResultMetricRow(
                     firstValue = createdValue,
                     firstLabel = createdLabel,
@@ -1154,7 +1156,7 @@ private fun ResultMetricRow(
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
     ) {
         MetricTile(
             value = firstValue,
@@ -1196,8 +1198,8 @@ private fun ResultDetailsCard(
         }.trim()
     OutlinedCard(Modifier.fillMaxWidth()) {
         Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.padding(AnkiMinerTokens.Space.content),
+            verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
         ) {
             Text(
                 text = stringResource(R.string.details),
@@ -1243,7 +1245,7 @@ private fun ResultIssueRow(
     ) {
         Text(
             text = stringResource(R.string.result_error_item, message),
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            modifier = Modifier.padding(horizontal = AnkiMinerTokens.Space.group, vertical = AnkiMinerTokens.Space.group),
             style = MaterialTheme.typography.bodyMedium,
         )
     }

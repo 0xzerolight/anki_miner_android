@@ -34,6 +34,7 @@ import com.ankiminer.android.data.resources.KnownWordsResetScope
 import com.ankiminer.android.data.resources.ResourceFailureAction
 import com.ankiminer.android.data.resources.ResourceFailureOrigin
 import com.ankiminer.android.ui.theme.AdaptiveActionGroup
+import com.ankiminer.android.ui.theme.AnkiMinerTokens
 import com.ankiminer.android.ui.theme.actionBorder
 import com.ankiminer.android.ui.theme.exitActionButtonColors
 import com.ankiminer.android.ui.theme.forwardButtonColors
@@ -142,8 +143,8 @@ internal fun KnownWordsManagerScreen(
 
     Column(modifier.fillMaxSize()) {
         Column(
-            Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            Modifier.padding(horizontal = AnkiMinerTokens.Space.content, vertical = AnkiMinerTokens.Space.group),
+            verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
         ) {
             Text(
                 stringResource(
@@ -202,7 +203,7 @@ internal fun KnownWordsManagerScreen(
                     .fillMaxWidth()
                     .testTag(KnownWordsManagerTestTags.LIST),
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
+            verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.line),
         ) {
             val page = state.knownWordsPage
             if (page == null || page.words.isEmpty()) {
@@ -247,8 +248,8 @@ internal fun KnownWordsManagerScreen(
         }
 
         Column(
-            Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            Modifier.padding(AnkiMinerTokens.Space.content),
+            verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
         ) {
             AdaptiveActionGroup(
                 primary = { actionModifier ->

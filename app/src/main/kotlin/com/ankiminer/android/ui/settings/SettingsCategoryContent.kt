@@ -30,6 +30,7 @@ import com.ankiminer.android.data.settings.ThemeMode
 import com.ankiminer.android.diagnostics.TesterDiagnosticsIdentity
 import com.ankiminer.android.localization.LocalizedStringResource
 import com.ankiminer.android.ui.mining.RuntimeConflictNotice
+import com.ankiminer.android.ui.theme.AnkiMinerTokens
 import com.ankiminer.android.ui.theme.actionBorder
 import com.ankiminer.android.ui.theme.outlinedActionButtonColors
 import com.ankiminer.android.vm.SettingsDraft
@@ -183,7 +184,7 @@ private fun LazyListScope.setupSettings(
                 OutlinedCard(Modifier.fillMaxWidth()) {
                     Text(
                         stringResource(settingsRuntimeWorkMessage(kind)),
-                        Modifier.padding(12.dp),
+                        Modifier.padding(AnkiMinerTokens.Space.group),
                     )
                 }
             }

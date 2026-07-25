@@ -172,6 +172,23 @@ internal fun ScreenTitle(
     )
 }
 
+/**
+ * Heading for a mining phase. Replaces six copies of `headlineMedium` overridden inline to Bold,
+ * which both fought the type scale and set the phase above the app bar that already names the
+ * screen.
+ */
+@Composable
+internal fun PhaseTitle(
+    text: String,
+    modifier: Modifier = Modifier,
+) {
+    Text(
+        text = text,
+        modifier = modifier.semantics { heading() },
+        style = MaterialTheme.typography.titleLarge,
+    )
+}
+
 /** Section heading with consistent hierarchy and accessibility semantics. */
 @Composable
 internal fun SectionTitle(

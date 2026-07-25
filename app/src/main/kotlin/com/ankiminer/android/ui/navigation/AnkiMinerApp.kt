@@ -58,6 +58,7 @@ import com.ankiminer.android.ui.settings.SettingsCategory
 import com.ankiminer.android.ui.settings.SettingsRoute
 import com.ankiminer.android.ui.settings.settingsCategoryFor
 import com.ankiminer.android.ui.settings.settingsCardIndexFor
+import com.ankiminer.android.ui.theme.AnkiMinerTokens
 import com.ankiminer.android.ui.theme.ScreenTitle
 import com.ankiminer.android.ui.theme.SupportingText
 import com.ankiminer.android.ui.theme.actionBorder
@@ -561,12 +562,12 @@ internal fun MiningReadinessNotice(
     onOpenSettings: () -> Unit,
 ) {
     Column(
-        Modifier.fillMaxSize().padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+        Modifier.fillMaxSize().padding(AnkiMinerTokens.Space.content),
+        verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.content),
     ) {
         ScreenTitle(stringResource(R.string.mining_not_ready))
         OutlinedCard(Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(Modifier.padding(AnkiMinerTokens.Space.content), verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.group)) {
                 Text(message)
                 when (state.miningReadinessAction) {
                     MiningReadinessAction.WAIT ->

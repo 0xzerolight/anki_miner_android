@@ -64,6 +64,7 @@ import com.ankiminer.android.ui.settings.SetupTaskId
 import com.ankiminer.android.ui.settings.SystemStatusCard
 import com.ankiminer.android.ui.settings.WizardAnkiTargetCard
 import com.ankiminer.android.ui.theme.AdaptiveActionGroup
+import com.ankiminer.android.ui.theme.AnkiMinerTokens
 import com.ankiminer.android.ui.theme.actionBorder
 import com.ankiminer.android.ui.theme.forwardButtonColors
 import com.ankiminer.android.ui.theme.outlinedActionButtonColors
@@ -317,7 +318,7 @@ internal fun OnboardingWizardContent(
                     onStep = callbacks.onStep,
                     onRequestSkip = { showSkipConfirmation = true },
                     onFinished = callbacks.onFinished,
-                    modifier = Modifier.padding(16.dp),
+                    modifier = Modifier.padding(AnkiMinerTokens.Space.content),
                 )
             }
         },
@@ -335,8 +336,8 @@ internal fun OnboardingWizardContent(
                 .consumeWindowInsets(scaffoldPadding)
                 .verticalScroll(scrollState)
                 .imePadding()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+                .padding(AnkiMinerTokens.Space.content),
+            verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.content),
         ) {
             AnimatedContent(
                 targetState = step,
@@ -353,7 +354,7 @@ internal fun OnboardingWizardContent(
                         Modifier
                             .fillMaxWidth()
                             .semantics { paneTitle = targetTitle },
-                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.content),
                 ) {
                     Text(
                         stringResource(
@@ -413,8 +414,8 @@ private fun WizardStepBody(
             Text(stringResource(R.string.wizard_ankidroid_body))
             OutlinedCard(Modifier.fillMaxWidth()) {
                 Column(
-                    Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    Modifier.padding(AnkiMinerTokens.Space.content),
+                    verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
                 ) {
                     WizardAnkiFailure(state, callbacks)
                     AnkiDroidActionButtons(
@@ -626,8 +627,8 @@ private fun WizardCompletionCard(
         WizardCompletionStatus.FAILED -> {
             OutlinedCard(Modifier.fillMaxWidth()) {
                 Column(
-                    Modifier.padding(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    Modifier.padding(AnkiMinerTokens.Space.group),
+                    verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
                 ) {
                     Text(
                         stringResource(R.string.wizard_completion_failed),
