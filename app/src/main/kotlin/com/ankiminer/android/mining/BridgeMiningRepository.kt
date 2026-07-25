@@ -15,6 +15,7 @@ import com.ankiminer.android.engine.PyBridge
 import com.ankiminer.android.engine.TokenizerConfiguration
 import com.ankiminer.android.engine.VideoMiningWireRequest
 import com.ankiminer.android.localization.StringResourceResolver
+import com.ankiminer.android.media.SafCopyRole
 import com.ankiminer.android.service.MiningForegroundCancellationReason
 import com.ankiminer.android.service.MiningForegroundLease
 import com.ankiminer.android.service.MiningForegroundProgress
@@ -319,7 +320,24 @@ internal class BridgeMiningRepository(
             val videoPath: String
             val subtitlePath: String
             try {
-                inputOwner = inputOwnerFactory.create(run.cancellation)
+                inputOwner =
+                    inputOwnerFactory.create(run.cancellation) { copy ->
+                        updateProgress(
+                            generation,
+                            MiningProgress(
+                                current = copy.copiedBytes,
+                                total = copy.expectedBytes ?: 0L,
+                                description =
+                                    strings.resolve(
+                                        when (copy.role) {
+                                            SafCopyRole.VIDEO -> R.string.mining_progress_copying_video
+                                            SafCopyRole.SUBTITLE -> R.string.mining_progress_copying_subtitle
+                                        },
+                                    ),
+                                unit = MiningProgressUnit.BYTES,
+                            ),
+                        )
+                    }
                 if (run.cancellation.isCancelled()) return
                 videoPath = inputOwner.openVideo(run.input.video)
                 if (run.cancellation.isCancelled()) return

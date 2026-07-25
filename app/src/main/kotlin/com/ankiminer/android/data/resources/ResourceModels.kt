@@ -277,6 +277,12 @@ enum class ResourceOperationPhase {
     VERIFYING,
     INSTALLING,
     IMPORTING,
+
+    /**
+     * Commit, publish, and sidecar work after the last countable step. Reaching the final term bank
+     * is not the end of an import, so the bar must stop being determinate here rather than sit full.
+     */
+    FINALIZING,
     REFRESHING,
     CANCELLING,
 }
@@ -288,15 +294,53 @@ enum class ResourceStartupReadiness {
     FAILED,
 }
 
+/** What [ResourceOperationProgress.completed] counts, so term banks never render as megabytes. */
+enum class ResourceProgressUnit {
+    BYTES,
+    ITEMS,
+}
+
+/**
+ * Counts are phase-local. A phase that cannot count reports `0/0` and renders as indeterminate
+ * motion; carrying the previous phase's total forward is what left a full bar sitting motionless
+ * over an import that had barely started.
+ */
 data class ResourceOperationProgress(
     val operationId: String,
     val label: String,
     val phase: ResourceOperationPhase,
-    val completedBytes: Long = 0,
-    val totalBytes: Long = 0,
+    val completed: Long = 0,
+    val total: Long = 0,
+    val unit: ResourceProgressUnit = ResourceProgressUnit.BYTES,
 ) {
     val fraction: Float?
-        get() = if (totalBytes <= 0L) null else (completedBytes.toDouble() / totalBytes).toFloat()
+        get() = if (total <= 0L) null else (completed.toDouble() / total).toFloat()
+}
+
+/**
+ * Advances an operation to [phase], keeping counts only while the phase is unchanged.
+ *
+ * Entering a new phase with no numbers of its own yields `0/0`, which renders as indeterminate
+ * motion. Inheriting the previous phase's completed total is what produced a full, motionless bar
+ * over an import that had not started.
+ */
+internal fun ResourceOperationProgress?.advancedTo(
+    operationId: String,
+    label: String,
+    phase: ResourceOperationPhase,
+    completed: Long? = null,
+    total: Long? = null,
+    unit: ResourceProgressUnit = ResourceProgressUnit.BYTES,
+): ResourceOperationProgress {
+    val carried = this?.takeIf { it.phase == phase && it.operationId == operationId }
+    return ResourceOperationProgress(
+        operationId = operationId,
+        label = label,
+        phase = phase,
+        completed = (completed ?: carried?.completed ?: 0L).coerceAtLeast(0),
+        total = (total ?: carried?.total ?: 0L).coerceAtLeast(0),
+        unit = unit,
+    )
 }
 
 enum class ResourceFailureOrigin {

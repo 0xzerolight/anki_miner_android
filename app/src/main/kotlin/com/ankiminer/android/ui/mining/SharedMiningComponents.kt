@@ -86,6 +86,7 @@ import com.ankiminer.android.mining.CurationCandidate
 import com.ankiminer.android.mining.CurationPage
 import com.ankiminer.android.mining.CurationSentence
 import com.ankiminer.android.mining.MiningProgress
+import com.ankiminer.android.mining.MiningProgressUnit
 import com.ankiminer.android.mining.ProcessingResult
 import com.ankiminer.android.ui.theme.AdaptiveActionGroup
 import com.ankiminer.android.ui.theme.AdaptivePairedActions
@@ -244,16 +245,28 @@ internal fun MiningProgressPanel(
         }
         if (progress != null && progress.total > 0) {
             Text(
-                stringResource(
-                    R.string.progress_count_with_percent,
-                    progress.current,
-                    progress.total,
-                    requireNotNull(percentage),
-                ),
+                when (progress.unit) {
+                    MiningProgressUnit.ITEMS ->
+                        stringResource(
+                            R.string.progress_count_with_percent,
+                            progress.current,
+                            progress.total,
+                            requireNotNull(percentage),
+                        )
+                    // Raw byte counts read as nonsense next to an item count.
+                    MiningProgressUnit.BYTES ->
+                        stringResource(
+                            R.string.progress_mebibytes,
+                            progress.current / MEBIBYTE_F,
+                            progress.total / MEBIBYTE_F,
+                        )
+                },
             )
         }
-        }
+    }
 }
+
+private const val MEBIBYTE_F = 1024f * 1024f
 
 @Composable
 internal fun MiningFailureCard(

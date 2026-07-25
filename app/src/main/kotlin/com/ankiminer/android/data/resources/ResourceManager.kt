@@ -183,7 +183,7 @@ internal class AndroidResourceManager(
             val resource = catalog().unidic
             val staged = download(resource, operation)
             consumePinnedArchive(operation, resource.archive) {
-                updateProgress(operation, ResourceOperationPhase.INSTALLING, resource.archive.sizeBytes, resource.archive.sizeBytes)
+                updateProgress(operation, ResourceOperationPhase.INSTALLING)
                 operation.cancellation.check()
                 operation.pythonStarted.set(true)
                 val installed =
@@ -233,7 +233,7 @@ internal class AndroidResourceManager(
             }
             val staged = download(resource, operation)
             consumePinnedArchive(operation, resource.archive) {
-                updateProgress(operation, ResourceOperationPhase.IMPORTING, resource.archive.sizeBytes, resource.archive.sizeBytes)
+                updateProgress(operation, ResourceOperationPhase.IMPORTING)
                 operation.cancellation.check()
                 operation.pythonStarted.set(true)
                 ResourceBridgeCodec.decodeImportedDictionary(
@@ -271,7 +271,7 @@ internal class AndroidResourceManager(
                     safStager.stage(retained.uri, operation.id, operation.cancellation) { current, total ->
                         updateProgress(operation, ResourceOperationPhase.PREPARING, current, total)
                     }
-                updateProgress(operation, ResourceOperationPhase.IMPORTING, staged.sizeBytes, staged.sizeBytes)
+                updateProgress(operation, ResourceOperationPhase.IMPORTING)
                 operation.cancellation.check()
                 operation.pythonStarted.set(true)
                 ResourceBridgeCodec.decodeImportedDictionary(
@@ -326,7 +326,7 @@ internal class AndroidResourceManager(
                     ) { current, total ->
                         updateProgress(operation, ResourceOperationPhase.PREPARING, current, total)
                     }
-                updateProgress(operation, ResourceOperationPhase.IMPORTING, staged.sizeBytes, staged.sizeBytes)
+                updateProgress(operation, ResourceOperationPhase.IMPORTING)
                 operation.cancellation.check()
                 operation.pythonStarted.set(true)
                 val imported =
@@ -383,7 +383,7 @@ internal class AndroidResourceManager(
                     ) { current, total ->
                         updateProgress(operation, ResourceOperationPhase.PREPARING, current, total)
                     }
-                updateProgress(operation, ResourceOperationPhase.IMPORTING, staged.sizeBytes, staged.sizeBytes)
+                updateProgress(operation, ResourceOperationPhase.IMPORTING)
                 operation.cancellation.check()
                 operation.pythonStarted.set(true)
                 val imported =
@@ -433,7 +433,7 @@ internal class AndroidResourceManager(
                     ) { current, total ->
                         updateProgress(operation, ResourceOperationPhase.PREPARING, current, total)
                     }
-                updateProgress(operation, ResourceOperationPhase.IMPORTING, staged.sizeBytes, staged.sizeBytes)
+                updateProgress(operation, ResourceOperationPhase.IMPORTING)
                 operation.cancellation.check()
                 operation.pythonStarted.set(true)
                 val imported =
@@ -482,7 +482,7 @@ internal class AndroidResourceManager(
                     ) { current, total ->
                         updateProgress(operation, ResourceOperationPhase.PREPARING, current, total)
                     }
-                updateProgress(operation, ResourceOperationPhase.IMPORTING, staged.sizeBytes, staged.sizeBytes)
+                updateProgress(operation, ResourceOperationPhase.IMPORTING)
                 operation.cancellation.check()
                 operation.pythonStarted.set(true)
                 val imported =
@@ -1002,23 +1002,30 @@ internal class AndroidResourceManager(
         fatalInventoryFailure?.let { throw it }
     }
 
+    /**
+     * Counts belong to the phase that reported them. Entering a new phase without its own numbers
+     * resets to `0/0`, so the bar goes indeterminate instead of inheriting the previous phase's
+     * completed total and sitting full while the real work runs.
+     */
     private fun updateProgress(
         operation: ActiveOperation,
         phase: ResourceOperationPhase,
-        current: Long = mutableState.value.activeOperation?.completedBytes ?: 0,
-        total: Long = mutableState.value.activeOperation?.totalBytes ?: 0,
+        current: Long? = null,
+        total: Long? = null,
+        unit: ResourceProgressUnit = ResourceProgressUnit.BYTES,
     ) {
         synchronized(activeMonitor) {
             if (active !== operation) return
-            mutableState.update {
-                it.copy(
+            mutableState.update { state ->
+                state.copy(
                     activeOperation =
-                        ResourceOperationProgress(
-                            operation.id,
-                            operation.label,
-                            phase,
-                            current.coerceAtLeast(0),
-                            total.coerceAtLeast(0),
+                        state.activeOperation.advancedTo(
+                            operationId = operation.id,
+                            label = operation.label,
+                            phase = phase,
+                            completed = current,
+                            total = total,
+                            unit = unit,
                         ),
                 )
             }
