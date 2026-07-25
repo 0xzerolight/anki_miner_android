@@ -7,6 +7,7 @@ import com.ankiminer.android.anki.provider.AnkiProviderCallbacks
 import com.ankiminer.android.anki.provider.CancellationRegistration
 import com.ankiminer.android.media.FileCopyCancellation
 import com.ankiminer.android.media.SafBroker
+import com.ankiminer.android.media.SafCopyProgressListener
 import com.ankiminer.android.media.SafJobFileOwner
 import java.io.File
 import java.nio.file.Files
@@ -104,6 +105,16 @@ internal fun interface MiningInputOwnerFactory {
 
     /** Production overload; test and alternate factories may keep the non-cancellable default. */
     fun create(cancellation: AnkiCancellation): MiningInputOwner = create()
+
+    /**
+     * Production overload that also reports copy bytes. A 16 GiB video used to stage behind a
+     * static "Preparing selected media", because SafJobFileOwner produced this progress and the
+     * factory dropped it.
+     */
+    fun create(
+        cancellation: AnkiCancellation,
+        progressListener: SafCopyProgressListener,
+    ): MiningInputOwner = create(cancellation)
 }
 
 internal class AndroidMiningInputOwnerFactory(context: Context) : MiningInputOwnerFactory {
@@ -112,11 +123,18 @@ internal class AndroidMiningInputOwnerFactory(context: Context) : MiningInputOwn
     override fun create(): MiningInputOwner = create(AnkiCancellation.NONE)
 
     override fun create(cancellation: AnkiCancellation): MiningInputOwner =
+        create(cancellation, SafCopyProgressListener.NONE)
+
+    override fun create(
+        cancellation: AnkiCancellation,
+        progressListener: SafCopyProgressListener,
+    ): MiningInputOwner =
         object : MiningInputOwner {
             private val owner =
                 SafJobFileOwner(
                     applicationContext,
                     cancellation = FileCopyCancellation(cancellation::isCancelled),
+                    progressListener = progressListener,
                 )
 
             override fun openVideo(source: MiningSource): String =

@@ -169,6 +169,12 @@ internal class AndroidSafSelectionInventory(
             preferences.getString(slot.textKey, null)?.takeIf(String::isNotBlank)
         }
 
+    /**
+     * Written with `apply`, unlike [putSelection]. The series name arrives one keystroke at a time
+     * straight off the UI thread, and a synchronous `commit` per character put a disk write in
+     * front of a frame. `apply` still updates the in-memory map synchronously — a read immediately
+     * after a write sees it — and persists on a background thread.
+     */
     override fun putText(
         slot: SafSelectionSlot,
         value: String?,
@@ -176,7 +182,7 @@ internal class AndroidSafSelectionInventory(
         synchronized(monitor) {
             val editor = preferences.edit()
             if (value.isNullOrBlank()) editor.remove(slot.textKey) else editor.putString(slot.textKey, value)
-            check(editor.commit()) { "Could not persist SAF text inventory" }
+            editor.apply()
         }
     }
 

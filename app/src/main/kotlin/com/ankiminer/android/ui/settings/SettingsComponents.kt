@@ -1,6 +1,7 @@
 package com.ankiminer.android.ui.settings
 
 import androidx.annotation.StringRes
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -21,6 +22,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.ProgressIndicatorDefaults
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
@@ -32,6 +34,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -65,6 +68,7 @@ import com.ankiminer.android.data.resources.LocalResourceImportResult
 import com.ankiminer.android.data.resources.PitchAccentSourceFormat
 import com.ankiminer.android.data.resources.ResourceOperationPhase
 import com.ankiminer.android.data.resources.ResourceOperationProgress
+import com.ankiminer.android.data.resources.ResourceProgressUnit
 import com.ankiminer.android.data.resources.ResourceStartupReadiness
 import com.ankiminer.android.data.settings.ResourceChainSelection
 import com.ankiminer.android.engine.PythonRuntimeReadiness
@@ -560,14 +564,34 @@ internal fun ResourceOperationCard(
         Column(Modifier.padding(AnkiMinerTokens.Space.content), verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
             Text(operation.label, style = MaterialTheme.typography.titleMedium)
             Text(stringResource(resourcePhaseLabel(operation.phase)))
-            operation.fraction?.let { fraction ->
-                LinearProgressIndicator(progress = { fraction }, modifier = Modifier.fillMaxWidth())
+            val animatedFraction by
+                animateFloatAsState(
+                    targetValue = operation.fraction ?: 0f,
+                    animationSpec = ProgressIndicatorDefaults.ProgressAnimationSpec,
+                    label = "resource progress",
+                )
+            operation.fraction?.let {
+                LinearProgressIndicator(
+                    progress = { animatedFraction },
+                    modifier = Modifier.fillMaxWidth(),
+                )
                 Text(
-                    stringResource(
-                        R.string.progress_mebibytes,
-                        operation.completedBytes / (1024 * 1024),
-                        operation.totalBytes / (1024 * 1024),
-                    ),
+                    when (operation.unit) {
+                        // Whole MiB floors to "14 of 14" well before the transfer ends, so the
+                        // count has to keep a decimal.
+                        ResourceProgressUnit.BYTES ->
+                            stringResource(
+                                R.string.progress_mebibytes,
+                                operation.completed / MEBIBYTE_F,
+                                operation.total / MEBIBYTE_F,
+                            )
+                        ResourceProgressUnit.ITEMS ->
+                            stringResource(
+                                R.string.progress_count,
+                                operation.completed,
+                                operation.total,
+                            )
+                    },
                 )
             } ?: LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
             OutlinedButton(
@@ -701,6 +725,9 @@ private fun resourcePhaseLabel(value: ResourceOperationPhase): Int =
         ResourceOperationPhase.VERIFYING -> R.string.resource_phase_verifying
         ResourceOperationPhase.INSTALLING -> R.string.resource_phase_installing
         ResourceOperationPhase.IMPORTING -> R.string.resource_phase_importing
+        ResourceOperationPhase.FINALIZING -> R.string.resource_phase_finalizing
         ResourceOperationPhase.REFRESHING -> R.string.resource_phase_refreshing
         ResourceOperationPhase.CANCELLING -> R.string.resource_phase_cancelling
     }
+
+private const val MEBIBYTE_F = 1024f * 1024f

@@ -34,10 +34,17 @@ data class VideoMiningInput(
     val subtitle: MiningSource,
 )
 
+/** What [MiningProgress.current] counts, so a byte count never renders as an item count. */
+enum class MiningProgressUnit {
+    ITEMS,
+    BYTES,
+}
+
 data class MiningProgress(
     val current: Long,
     val total: Long,
     val description: String,
+    val unit: MiningProgressUnit = MiningProgressUnit.ITEMS,
 ) {
     init {
         require(total >= 0)
