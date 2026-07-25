@@ -36,6 +36,7 @@ import java.io.ByteArrayInputStream
 import java.io.File
 import java.util.Collections
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -63,6 +64,39 @@ class BridgeReadingMiningRepositoryTest {
     @After
     fun stopExecutors() {
         executors.forEach(ExecutorService::shutdownNow)
+    }
+
+    @Test
+    fun `engine progress descriptions never reach the foreground notification`() {
+        val harness = harness(expressionAudioFieldMapped = true)
+
+        runBlocking { harness.repository.startReading(INPUT) }
+        val curating =
+            awaitState(harness.repository) { it is MiningRunState.Curating } as MiningRunState.Curating
+        runBlocking {
+            harness.repository.confirmCuration(
+                curating.request.runId,
+                curating.request.requestId,
+                FIRST_SELECTION,
+            )
+        }
+        assertTrue(harness.bridge.curationSubmitted.await(2, TimeUnit.SECONDS))
+        assertEquals(1, harness.foreground.startCount.get())
+
+        harness.bridge.runCallbacks!!.onProgress(HOSTILE_PROGRESS)
+
+        val published = harness.foreground.lease.published
+        assertTrue("expected the hostile progress event to be published", published.isNotEmpty())
+        assertEquals(MiningForegroundProgress(completed = 2, total = 3), published.last())
+        published.forEach { progress ->
+            assertFalse(
+                "mined term leaked into foreground progress: $progress",
+                progress.toString().contains(MINED_TERM),
+            )
+        }
+
+        harness.bridge.allowTerminal.countDown()
+        awaitState(harness.repository, MiningRunState::isTerminal)
     }
 
     @Test
@@ -704,8 +738,12 @@ class BridgeReadingMiningRepositoryTest {
         override val identity: MiningForegroundSessionIdentity
             get() = sessionIdentity
         val closeCount = AtomicInteger()
+        val published = CopyOnWriteArrayList<MiningForegroundProgress>()
 
-        override fun updateProgress(progress: MiningForegroundProgress): Boolean = true
+        override fun updateProgress(progress: MiningForegroundProgress): Boolean {
+            published += progress
+            return true
+        }
 
         override fun close() {
             closeCount.incrementAndGet()
@@ -749,7 +787,7 @@ class BridgeReadingMiningRepositoryTest {
         val ttsResult = AtomicReference<String?>()
         private val cancelled = AtomicBoolean()
         @Volatile
-        private var runCallbacks: EngineCallbacks? = null
+        var runCallbacks: EngineCallbacks? = null
         @Volatile
         var selection: List<CurationSelection>? = null
 
@@ -881,6 +919,11 @@ class BridgeReadingMiningRepositoryTest {
             """{"schemaVersion":1,"type":"job.registration.request","payload":{"runId":"$RUN_ID"}}"""
         val PROGRESS_START =
             """{"schemaVersion":1,"type":"progress.start","payload":{"runId":"$RUN_ID","total":3,"description":"Preparing curation"}}"""
+        const val MINED_TERM = "猫"
+
+        /** Shaped like a real phase-4 event: the engine names the term it just looked up. */
+        val HOSTILE_PROGRESS =
+            """{"schemaVersion":1,"type":"progress.update","payload":{"runId":"$RUN_ID","current":2,"description":"Definition found: $MINED_TERM"}}"""
         const val PRESENTER_WARNING_MESSAGE = "Offline sentence audio is unavailable"
         const val PRESENTER_WARNING_PLACEHOLDER = "__WARNING__"
         val PRESENTER_WARNING =

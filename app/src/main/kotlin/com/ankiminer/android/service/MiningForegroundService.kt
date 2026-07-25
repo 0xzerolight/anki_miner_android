@@ -212,16 +212,15 @@ class MiningForegroundService : Service() {
         progress: MiningForegroundProgress,
     ): Notification {
         val text =
-            progress.message?.let(::sanitizeNotificationProgressMessage)?.takeIf(String::isNotBlank)
-                ?: if (progress.completed != null && progress.total != null) {
-                    getString(
-                        R.string.mining_notification_count,
-                        progress.completed,
-                        progress.total,
-                    )
-                } else {
-                    getString(R.string.mining_notification_preparing)
-                }
+            if (progress.completed != null && progress.total != null) {
+                getString(
+                    R.string.mining_notification_count,
+                    progress.completed,
+                    progress.total,
+                )
+            } else {
+                getString(R.string.mining_notification_preparing)
+            }
         return baseNotification(identity, text)
             .setProgress(
                 progress.total ?: 0,
