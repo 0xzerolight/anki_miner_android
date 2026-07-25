@@ -182,7 +182,7 @@ class VideoMiningViewModelTest {
             assertEquals(request.candidates.size, viewModel.uiState.value.curation?.selectedCount)
 
             viewModel.selectSentence(first.candidateId, alternateSentence.sentenceId)
-            viewModel.toggleCandidate(request.candidates.last().candidateId)
+            viewModel.setCandidateSelected(request.candidates.last().candidateId, false)
             viewModel.confirmCuration()
             runCurrent()
 
@@ -206,7 +206,7 @@ class VideoMiningViewModelTest {
             viewModel.start()
             runCurrent()
 
-            viewModel.selectAllCandidates(false)
+            viewModel.setSelectionForPage(false)
             viewModel.confirmCuration()
             runCurrent()
 
@@ -239,7 +239,7 @@ class VideoMiningViewModelTest {
             runCurrent()
 
             assertEquals(0L, viewModel.uiState.value.curation?.page?.pageIndex)
-            viewModel.toggleCandidate(firstCandidate.candidateId)
+            viewModel.setCandidateSelected(firstCandidate.candidateId, false)
             runCurrent()
             assertEquals(0, viewModel.uiState.value.curation?.selectedCount)
 
@@ -486,7 +486,7 @@ class VideoMiningViewModelTest {
             runCurrent()
 
             viewModel.cancel()
-            viewModel.toggleCandidate(request.candidates.first().candidateId)
+            viewModel.setCandidateSelected(request.candidates.first().candidateId, false)
             viewModel.confirmCuration()
             runCurrent()
 

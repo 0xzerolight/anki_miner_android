@@ -5,6 +5,7 @@ import androidx.annotation.StringRes
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -42,6 +43,7 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -808,16 +810,40 @@ internal fun rememberCurationCandidateHeaderTexts(
     }
 }
 
+/**
+ * Keeps focus inside the visible projection when search, filter, or sort changes it.
+ *
+ * The previous ordering is captured here rather than in the reducer: once a row leaves the
+ * projection there is no anchor left to pick a neighbour from.
+ */
+@Composable
+internal fun ReconcileCurationFocus(
+    visibleCandidateIds: List<String>,
+    focusedCandidateId: String?,
+    onReconcile: (visible: List<String>, previous: List<String>) -> Unit,
+) {
+    val previous = remember { mutableStateOf(visibleCandidateIds) }
+    LaunchedEffect(visibleCandidateIds, focusedCandidateId) {
+        val before = previous.value
+        previous.value = visibleCandidateIds
+        if (focusedCandidateId != null && focusedCandidateId !in visibleCandidateIds) {
+            onReconcile(visibleCandidateIds, before)
+        }
+    }
+}
+
 @Composable
 internal fun CurationCandidateHeader(
     headline: AnnotatedString,
     stateText: String,
+    includeLabel: String,
     selected: Boolean,
     expanded: Boolean,
     animateSelection: Boolean,
     enabled: Boolean,
     candidateTestTag: String,
     toggleTestTag: String,
+    onFocus: () -> Unit,
     onToggle: (Boolean) -> Unit,
 ) {
     val shape =
@@ -842,17 +868,15 @@ internal fun CurationCandidateHeader(
         } else {
             targetContainerColor
         }
+    // Two targets, not one. The row opens the detail; only the checkbox includes or excludes. The
+    // merged whole-row checkbox meant inspecting an included candidate silently dropped it.
     Surface(
         modifier =
             Modifier
                 .fillMaxWidth()
                 .testTag(candidateTestTag)
-                .toggleable(
-                    value = selected,
-                    enabled = enabled,
-                    role = Role.Checkbox,
-                    onValueChange = onToggle,
-                ).semantics(mergeDescendants = true) {
+                .clickable(enabled = enabled, onClick = onFocus)
+                .semantics(mergeDescendants = true) {
                     stateDescription = stateText
                 },
         color = containerColor,
@@ -860,18 +884,23 @@ internal fun CurationCandidateHeader(
         shape = shape,
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = AnkiMinerTokens.Space.group, vertical = AnkiMinerTokens.Space.group),
+            modifier =
+                Modifier.padding(
+                    horizontal = AnkiMinerTokens.Space.group,
+                    vertical = AnkiMinerTokens.Space.line,
+                ),
             horizontalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Checkbox(
                 checked = selected,
-                onCheckedChange = null,
+                onCheckedChange = onToggle,
                 enabled = enabled,
                 modifier =
                     Modifier
-                        .clearAndSetSemantics {}
-                        .testTag(toggleTestTag),
+                        .minimumInteractiveComponentSize()
+                        .testTag(toggleTestTag)
+                        .semantics { contentDescription = includeLabel },
             )
             Text(
                 text = headline,

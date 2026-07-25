@@ -47,7 +47,11 @@ class UiScrollHotPathTest(unittest.TestCase):
         self.assertNotIn("buildAnnotatedString", header)
         self.assertNotIn("buildCandidateMetadata", header)
         self.assertIn("headline: AnnotatedString", header)
-        self.assertIn("onValueChange = onToggle", header)
+        # Focus and inclusion are separate targets: the row opens the detail, the checkbox alone
+        # includes or excludes. One whole-row toggleable made inspecting a candidate exclude it.
+        self.assertIn("clickable(enabled = enabled, onClick = onFocus)", header)
+        self.assertIn("onCheckedChange = onToggle", header)
+        self.assertNotIn("onValueChange = onToggle", header)
         self.assertNotRegex(header, re.compile(r"(shadow|tonal)Elevation|\.shadow\("))
 
     def test_lazy_row_functions_contain_no_content_or_elevation_animation(self) -> None:

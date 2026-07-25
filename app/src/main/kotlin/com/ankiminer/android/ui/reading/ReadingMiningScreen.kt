@@ -67,6 +67,7 @@ import com.ankiminer.android.ui.mining.MINING_PHASE_HEADING_TEST_TAG
 import com.ankiminer.android.ui.mining.MiningPhaseTarget
 import com.ankiminer.android.ui.mining.MiningProgressPanel
 import com.ankiminer.android.ui.mining.MiningResultSource
+import com.ankiminer.android.ui.mining.ReconcileCurationFocus
 import com.ankiminer.android.ui.mining.MiningSourceItem
 import com.ankiminer.android.ui.mining.RuntimeConflictNotice
 import com.ankiminer.android.ui.mining.SourcesCard
@@ -75,6 +76,7 @@ import com.ankiminer.android.ui.mining.curateCandidates
 import com.ankiminer.android.ui.mining.miningResultItems
 import com.ankiminer.android.ui.mining.rememberCurationCandidateHeaderTexts
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
+import com.ankiminer.android.ui.theme.ExitActionButton
 import com.ankiminer.android.ui.theme.PhaseTitle
 import com.ankiminer.android.ui.theme.actionBorder
 import com.ankiminer.android.ui.theme.forwardButtonColors
@@ -91,8 +93,11 @@ fun ReadingMiningScreen(
     onDismissDocumentError: (ReadingDocumentSelectionError) -> Unit,
     onDismissCommandError: () -> Unit,
     onStart: () -> Unit,
-    onToggleCandidate: (String) -> Unit,
-    onSelectAllCandidates: (Boolean) -> Unit,
+    onFocusCandidate: (String) -> Unit,
+    onSetCandidateSelected: (String, Boolean) -> Unit,
+    onSetSelectionForVisible: (List<String>, Boolean) -> Unit,
+    onSetSelectionForPage: (Boolean) -> Unit,
+    onReconcileFocus: (List<String>, List<String>) -> Unit,
     onSelectSentence: (String, String) -> Unit,
     onConfirmCuration: () -> Unit,
     onCancel: () -> Unit,
@@ -210,14 +215,17 @@ fun ReadingMiningScreen(
             val selectedCandidateStateText = stringResource(R.string.candidate_state_selected)
             val excludedCandidateStateText = stringResource(R.string.candidate_state_excluded)
             val selectedCandidateIds = targetCuration?.selectedCandidateIds.orEmpty()
+            val visibleCandidateIds =
+                remember(visibleCandidates) { visibleCandidates.map { it.candidateId } }
+            // Detail follows focus only. Requiring selection too is what made inspecting an
+            // included candidate exclude it.
             val expandedCandidateId =
-                targetCuration?.focusedCandidateId
-                    ?.takeIf { focused ->
-                        focused in selectedCandidateIds &&
-                            visibleCandidates.any { it.candidateId == focused }
-                    } ?: visibleCandidates.firstOrNull {
-                    it.candidateId in selectedCandidateIds
-                }?.candidateId
+                targetCuration?.focusedCandidateId?.takeIf { it in visibleCandidateIds }
+            ReconcileCurationFocus(
+                visibleCandidateIds = visibleCandidateIds,
+                focusedCandidateId = targetCuration?.focusedCandidateId,
+                onReconcile = onReconcileFocus,
+            )
             val phaseTitle = stringResource(targetState.phaseTitle())
             val headingFocusRequester = remember(target.key) { FocusRequester() }
             val headingModifier =
@@ -284,8 +292,11 @@ fun ReadingMiningScreen(
                             onQueryChanged = { query = it },
                             onFilterChanged = { filterName = it.name },
                             onSortChanged = { sortName = it.name },
-                            onToggleCandidate = onToggleCandidate,
-                            onSelectAllCandidates = onSelectAllCandidates,
+                            onFocusCandidate = onFocusCandidate,
+                            onSetCandidateSelected = onSetCandidateSelected,
+                            onSetSelectionForVisible = onSetSelectionForVisible,
+                            onSetSelectionForPage = onSetSelectionForPage,
+                            onReconcileFocus = onReconcileFocus,
                             onSelectSentence = onSelectSentence,
                         )
                     is MiningRunState.Running ->
@@ -563,15 +574,21 @@ private fun LazyListScope.curationItems(
     onQueryChanged: (String) -> Unit,
     onFilterChanged: (CurationFilter) -> Unit,
     onSortChanged: (CurationSort) -> Unit,
-    onToggleCandidate: (String) -> Unit,
-    onSelectAllCandidates: (Boolean) -> Unit,
+    onFocusCandidate: (String) -> Unit,
+    onSetCandidateSelected: (String, Boolean) -> Unit,
+    onSetSelectionForVisible: (List<String>, Boolean) -> Unit,
+    onSetSelectionForPage: (Boolean) -> Unit,
+    onReconcileFocus: (List<String>, List<String>) -> Unit,
     onSelectSentence: (String, String) -> Unit,
 ) {
     val curation = state.curation ?: return
     val enabled = !state.curationPending && !state.cancelPending
-    val allSelected =
-        curation.candidates.isNotEmpty() &&
-            curation.selectedCandidateIds.size == curation.candidates.size
+    // Scoped to the projection, not the whole protocol page: a filtered bulk action must not
+    // silently reach rows the search is hiding.
+    val visibleCandidateIds = visibleCandidates.map { it.candidateId }
+    val allVisibleSelected =
+        visibleCandidateIds.isNotEmpty() &&
+            curation.selectedCandidateIds.containsAll(visibleCandidateIds)
 
     item(key = "reading_curation_header", contentType = "header") {
         Column(verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
@@ -618,20 +635,42 @@ private fun LazyListScope.curationItems(
     item(key = "reading_curation_controls", contentType = "actions") {
         Column(verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
             OutlinedButton(
-                onClick = { onSelectAllCandidates(!allSelected) },
-                enabled = curation.candidates.isNotEmpty() && enabled,
+                onClick = {
+                    onSetSelectionForVisible(visibleCandidateIds, !allVisibleSelected)
+                },
+                enabled = visibleCandidateIds.isNotEmpty() && enabled,
                 modifier =
                     Modifier
                         .heightIn(min = 48.dp)
                         .testTag(ReadingMiningTestTags.SELECT_ALL),
                 colors = outlinedActionButtonColors(),
-                border = actionBorder(curation.candidates.isNotEmpty() && enabled),
+                border = actionBorder(visibleCandidateIds.isNotEmpty() && enabled),
             ) {
                 Text(
                     stringResource(
-                        if (allSelected) R.string.deselect_all else R.string.select_all,
+                        if (allVisibleSelected) {
+                            R.string.deselect_visible
+                        } else {
+                            R.string.select_visible
+                        },
+                        visibleCandidates.size,
                     ),
                 )
+            }
+            // Page-wide selection stays reachable, but named for the scope it actually reaches
+            // rather than hiding behind the same "Select all" the filtered action used to use.
+            if (visibleCandidateIds.size < curation.candidates.size) {
+                ExitActionButton(
+                    onClick = { onSetSelectionForPage(true) },
+                    enabled = enabled,
+                ) {
+                    Text(
+                        stringResource(
+                            R.string.curation_select_whole_page,
+                            curation.candidates.size,
+                        ),
+                    )
+                }
             }
             CurationControls(
                 query = query,
@@ -646,7 +685,7 @@ private fun LazyListScope.curationItems(
     }
     visibleCandidates.forEach { candidate ->
         val selected = candidate.candidateId in curation.selectedCandidateIds
-        val expanded = selected && candidate.candidateId == expandedCandidateId
+        val expanded = candidate.candidateId == expandedCandidateId
         val animateSelection = candidate.candidateId == curation.focusedCandidateId
         val headline = candidateHeaderTexts.getValue(candidate.candidateId)
         val stateText =
@@ -657,20 +696,32 @@ private fun LazyListScope.curationItems(
             }
         val candidateTestTag = ReadingMiningTestTags.candidate(candidate.candidateId)
         val toggleTestTag = ReadingMiningTestTags.candidateToggle(candidate.candidateId)
-        val onToggle: (Boolean) -> Unit = { onToggleCandidate(candidate.candidateId) }
+        val onToggle: (Boolean) -> Unit = { onSetCandidateSelected(candidate.candidateId, it) }
+        val onFocus: () -> Unit = { onFocusCandidate(candidate.candidateId) }
         item(
             key = "reading_candidate:${candidate.candidateId}",
             contentType = "candidate",
         ) {
+            val includeLabel =
+                stringResource(
+                    if (selected) {
+                        R.string.curation_exclude_word
+                    } else {
+                        R.string.curation_include_word
+                    },
+                    candidate.minedForm,
+                )
             CurationCandidateHeader(
                 headline = headline,
                 stateText = stateText,
+                includeLabel = includeLabel,
                 selected = selected,
                 expanded = expanded,
                 animateSelection = animateSelection,
                 enabled = enabled,
                 candidateTestTag = candidateTestTag,
                 toggleTestTag = toggleTestTag,
+                onFocus = onFocus,
                 onToggle = onToggle,
             )
         }
