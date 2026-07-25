@@ -581,10 +581,6 @@ private fun SettingsAnkiFixture(setup: SetupUiState) {
                 stringResource(R.string.settings_excluded_decks),
                 style = MaterialTheme.typography.titleSmall,
             )
-            Text(
-                stringResource(R.string.settings_excluded_decks_help),
-                style = MaterialTheme.typography.bodySmall,
-            )
             setup.availableDeckNames.forEachIndexed { index, deck ->
                 BooleanSetting(
                     label = deck,
@@ -655,10 +651,6 @@ private fun SettingsResourcesFixture(setup: SetupUiState) {
             onImport = {},
         )
         SettingsSection(stringResource(R.string.settings_dictionary_chain)) {
-            Text(
-                stringResource(R.string.settings_dictionary_chain_help),
-                style = MaterialTheme.typography.bodySmall,
-            )
             ResourceChainEditor(
                 choices =
                     setup.dictionaries.map { dictionary ->
