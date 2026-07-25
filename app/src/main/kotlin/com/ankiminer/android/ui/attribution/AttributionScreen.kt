@@ -143,7 +143,6 @@ internal fun AttributionScreen(
             OutlinedCard(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     CardHeading(stringResource(R.string.source_notices_title))
-                    Text(stringResource(R.string.source_notices_help))
                     TextButton(onClick = onOpenNotices) {
                         Text(stringResource(R.string.source_open_notices))
                     }

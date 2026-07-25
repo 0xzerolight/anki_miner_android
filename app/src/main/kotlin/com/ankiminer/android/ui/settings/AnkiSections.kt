@@ -54,7 +54,6 @@ internal fun AnkiDeckCard(
     OutlinedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(stringResource(R.string.anki_deck_title), style = MaterialTheme.typography.titleMedium)
-            Text(stringResource(R.string.anki_deck_description))
             inlineFailure?.invoke()
             if (!state.ankiReady) {
                 Text(stringResource(R.string.anki_deck_connect_first))
@@ -79,11 +78,6 @@ internal fun AnkiDeckCard(
                 selected = resolution.selectedDeckName,
                 onSelect = onSelectDeck,
                 isOptionEnabled = { !state.busy && it != resolution.selectedDeckName },
-            )
-            val selectedChoice = resolution.choices.single { it.selected }
-            Text(
-                stringResource(deckExplanationResource(selectedChoice.kind)),
-                style = MaterialTheme.typography.bodySmall,
             )
             when (state.deckPersistence) {
                 DeckPersistenceStatus.IDLE -> Unit
@@ -111,14 +105,6 @@ internal fun AnkiDeckCard(
     }
 }
 
-@StringRes
-internal fun deckExplanationResource(kind: DeckChoiceKind): Int =
-    when (kind) {
-        DeckChoiceKind.CREATE_OR_USE_DEFAULT -> R.string.anki_deck_default_explanation
-        DeckChoiceKind.EXISTING -> R.string.anki_deck_existing_explanation
-        DeckChoiceKind.SAVED_UNAVAILABLE -> R.string.anki_deck_saved_unavailable_explanation
-    }
-
 @Composable
 internal fun AnkiTargetCard(
     state: SetupUiState,
@@ -130,7 +116,6 @@ internal fun AnkiTargetCard(
     OutlinedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(stringResource(R.string.anki_note_type_title), style = MaterialTheme.typography.titleMedium)
-            Text(stringResource(R.string.anki_note_type_description))
             inlineFailure?.invoke()
             if (!state.ankiReady) {
                 Text(stringResource(R.string.anki_note_type_connect_first))
@@ -177,17 +162,9 @@ internal fun AnkiTargetCard(
                                 )
                             },
                         )
-                        if (key == AnkiFieldKeys.WORD) {
-                            Text(
-                                stringResource(R.string.anki_field_word_help),
-                                style = MaterialTheme.typography.bodySmall,
-                            )
-                        }
                     }
-                    Text(
-                        stringResource(R.string.anki_field_unique_help),
-                        style = MaterialTheme.typography.bodySmall,
-                    )
+                    // The uniqueness rule is enforced by isDestinationAvailable disabling taken
+                    // fields, and the first-field rule surfaces as a verification status.
                     if (state.fieldMapChanges.isNotEmpty()) {
                         val details =
                             state.fieldMapChanges.joinToString { change ->
@@ -283,48 +260,13 @@ internal fun WizardAnkiTargetCard(
     }
 }
 
+/**
+ * Warnings only. The yes/no grading and the mapped-field recap that used to live here restated the
+ * field dropdowns rendered directly above it.
+ */
 @Composable
 private fun NoteTypeQualitySummary(state: SetupUiState) {
     val quality = state.noteTypeQuality
-    val none = stringResource(R.string.anki_field_none)
-    fun display(value: String): String = value.ifEmpty { none }
-    fun display(values: List<String>): String = values.joinToString().ifEmpty { none }
-
-    HorizontalDivider()
-    Text(stringResource(R.string.anki_quality_title), style = MaterialTheme.typography.titleSmall)
-    Text(
-        stringResource(
-            if (quality.writableAndDedupSafe) {
-                R.string.anki_quality_writable_yes
-            } else {
-                R.string.anki_quality_writable_no
-            },
-        ),
-    )
-    Text(
-        stringResource(
-            if (quality.usefulForMining) {
-                R.string.anki_quality_useful_yes
-            } else {
-                R.string.anki_quality_useful_no
-            },
-        ),
-    )
-    Text(
-        stringResource(
-            if (quality.fullyEnriched) {
-                R.string.anki_quality_enriched_yes
-            } else {
-                R.string.anki_quality_enriched_no
-            },
-        ),
-    )
-    Text(stringResource(R.string.anki_quality_mapped_fields), style = MaterialTheme.typography.titleSmall)
-    Text(stringResource(R.string.anki_quality_word_field, display(quality.fields.word)))
-    Text(stringResource(R.string.anki_quality_sentence_field, display(quality.fields.sentence)))
-    Text(stringResource(R.string.anki_quality_definition_fields, display(quality.fields.definitions)))
-    Text(stringResource(R.string.anki_quality_audio_fields, display(quality.fields.audio)))
-    Text(stringResource(R.string.anki_quality_image_field, display(quality.fields.image)))
     if (quality.writableAndDedupSafe && !quality.usefulForMining) {
         Text(
             stringResource(R.string.anki_quality_limited_warning),

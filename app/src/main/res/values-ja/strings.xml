@@ -25,6 +25,8 @@
     <string name="no_file_selected">No file selected</string>
     <string name="choose_file">Choose file</string>
     <string name="replace_file">Replace</string>
+    <string name="choose_file_description">Choose %1$s</string>
+    <string name="replace_file_description">Replace %1$s</string>
     <string name="remove_file">Remove</string>
     <string name="reading_video">Reading video…</string>
     <string name="reading_video_named">Reading video: %1$s…</string>

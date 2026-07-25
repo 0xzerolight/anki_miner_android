@@ -38,7 +38,6 @@ internal fun FrequencyImportCard(
     OutlinedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(stringResource(R.string.frequency_import_title), style = MaterialTheme.typography.titleMedium)
-            Text(stringResource(R.string.frequency_import_help))
             state.frequencySources.forEach { source ->
                 Text(
                     stringResource(
@@ -64,7 +63,6 @@ internal fun FrequencyImportCard(
                 value = state.frequencySourceId,
                 onValueChange = onIdChanged,
                 label = { Text(stringResource(R.string.frequency_source_id)) },
-                supportingText = { Text(stringResource(R.string.local_resource_id_help)) },
                 isError = !state.frequencySourceIdValid,
                 enabled = !state.busy,
                 singleLine = true,
@@ -116,7 +114,6 @@ internal fun PitchImportCard(
     OutlinedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(stringResource(R.string.pitch_import_title), style = MaterialTheme.typography.titleMedium)
-            Text(stringResource(R.string.pitch_import_help))
             state.pitchAccent?.let { pitch ->
                 Text(
                     stringResource(
@@ -176,7 +173,6 @@ internal fun AudioPackImportCard(
     OutlinedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(stringResource(R.string.audio_pack_import_title), style = MaterialTheme.typography.titleMedium)
-            Text(stringResource(R.string.audio_pack_import_help))
             state.audioPacks.forEach { pack ->
                 Text(
                     stringResource(
@@ -202,7 +198,6 @@ internal fun AudioPackImportCard(
                 value = state.audioPackId,
                 onValueChange = onIdChanged,
                 label = { Text(stringResource(R.string.audio_pack_id)) },
-                supportingText = { Text(stringResource(R.string.local_resource_id_help)) },
                 isError = !state.audioPackIdValid,
                 enabled = !state.busy,
                 singleLine = true,
@@ -226,7 +221,6 @@ internal fun BundledWordsetInventoryCard(state: SetupUiState) {
     OutlinedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(stringResource(R.string.bundled_wordsets_title), style = MaterialTheme.typography.titleMedium)
-            Text(stringResource(R.string.bundled_wordsets_help))
             state.wordsets.forEach { wordset ->
                 Text(stringResource(R.string.bundled_wordset_item, wordset.displayName, wordset.entryCount))
             }
@@ -288,7 +282,6 @@ internal fun KnownWordsImportCard(
     OutlinedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(stringResource(R.string.known_words_import_title), style = MaterialTheme.typography.titleMedium)
-            Text(stringResource(R.string.known_words_import_help))
             Text(
                 stringResource(
                     if (state.knownWords.schemaOk) {

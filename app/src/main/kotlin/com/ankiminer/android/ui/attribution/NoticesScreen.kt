@@ -45,9 +45,6 @@ internal fun NoticesScreen(
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        item(key = "notices:intro", contentType = "intro") {
-            Text(stringResource(R.string.notices_intro))
-        }
         item(key = "notices:documents", contentType = "section-heading") {
             SectionTitle(stringResource(R.string.notices_documents_heading))
         }

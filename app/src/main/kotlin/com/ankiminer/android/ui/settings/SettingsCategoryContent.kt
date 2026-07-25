@@ -237,10 +237,6 @@ private fun LazyListScope.ankiSettings(
                 stringResource(R.string.settings_excluded_decks),
                 style = MaterialTheme.typography.titleSmall,
             )
-            Text(
-                stringResource(R.string.settings_excluded_decks_help),
-                style = MaterialTheme.typography.bodySmall,
-            )
             val choices = excludedDeckChoices(setup.availableDeckNames, draft.excludedDecks)
             if (choices.isEmpty()) {
                 Text(
@@ -467,10 +463,6 @@ private fun LazyListScope.dictionarySettings(
     }
     settingsCard("dictionary-chain") {
         SettingsSection(stringResource(R.string.settings_dictionary_chain)) {
-            Text(
-                stringResource(R.string.settings_dictionary_chain_help),
-                style = MaterialTheme.typography.bodySmall,
-            )
             ResourceChainEditor(
                 choices = draft.dictionarySources,
                 labels =
@@ -575,10 +567,6 @@ private fun LazyListScope.audioSettings(
 ) {
     settingsCard("audio-chain") {
         SettingsSection(stringResource(R.string.settings_audio_pack_chain)) {
-            Text(
-                stringResource(R.string.settings_audio_pack_help),
-                style = MaterialTheme.typography.bodySmall,
-            )
             ResourceChainEditor(
                 choices = draft.audioPacks,
                 labels =
@@ -624,10 +612,6 @@ private fun LazyListScope.audioSettings(
             ) {
                 Text(stringResource(R.string.settings_open_speech_services))
             }
-            Text(
-                stringResource(R.string.settings_tts_readiness_help),
-                style = MaterialTheme.typography.bodySmall,
-            )
         }
     }
 }
@@ -641,10 +625,6 @@ private fun LazyListScope.frequencySettings(
 ) {
     settingsCard("frequency-chain") {
         SettingsSection(stringResource(R.string.settings_frequency_chain)) {
-            Text(
-                stringResource(R.string.settings_frequency_chain_help),
-                style = MaterialTheme.typography.bodySmall,
-            )
             ResourceChainEditor(
                 choices = draft.frequencySources,
                 labels =
@@ -769,10 +749,6 @@ private fun LazyListScope.filteringSettings(
             Text(
                 stringResource(R.string.settings_wordsets),
                 style = MaterialTheme.typography.titleSmall,
-            )
-            Text(
-                stringResource(R.string.settings_wordsets_help),
-                style = MaterialTheme.typography.bodySmall,
             )
             if (resources.wordsets.isEmpty()) {
                 Text(

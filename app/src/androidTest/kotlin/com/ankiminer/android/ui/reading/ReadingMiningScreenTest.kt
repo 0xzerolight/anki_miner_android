@@ -295,7 +295,7 @@ class ReadingMiningScreenTest {
             .onAllNodes(
                 SemanticsMatcher.expectValue(
                     SemanticsProperties.PaneTitle,
-                    "Choose vocabulary",
+                    "Word Curation",
                 ),
                 useUnmergedTree = true,
             ).assertCountEquals(1)

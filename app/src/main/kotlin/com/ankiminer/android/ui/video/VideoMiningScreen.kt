@@ -383,10 +383,6 @@ private fun LazyListScope.setupItems(
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold,
             )
-            Text(
-                text = stringResource(R.string.video_mining_intro),
-                style = MaterialTheme.typography.bodyLarge,
-            )
             state.runtimeConflict?.let { conflict ->
                 RuntimeConflictNotice(
                     text = stringResource(runtimeConflictMessage(conflict)),
