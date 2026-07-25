@@ -1,25 +1,28 @@
 package com.ankiminer.android.service
 
+import java.lang.reflect.Modifier
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
 import org.junit.Test
 
 class MiningForegroundSessionTest {
     @Test
-    fun `notification message replaces control and format characters`() {
+    fun `foreground progress carries counts only`() {
+        // Static fields are compiler-generated (Compose adds `$stable`); only instance state matters.
+        val fieldTypes =
+            MiningForegroundProgress::class.java.declaredFields
+                .filterNot { it.isSynthetic || Modifier.isStatic(it.modifiers) }
+                .associate { it.name to it.type }
+
         assertEquals(
-            "phase  details",
-            sanitizeNotificationProgressMessage("phase\n\u202edetails"),
+            "MiningForegroundProgress must not gain a text channel; engine descriptions name " +
+                "mined terms and notifications can appear on a locked device",
+            mapOf(
+                "completed" to Integer::class.java,
+                "total" to Integer::class.java,
+            ),
+            fieldTypes,
         )
-    }
-
-    @Test
-    fun `notification message truncation never splits a surrogate pair`() {
-        val sanitized = sanitizeNotificationProgressMessage("a".repeat(511) + "\ud83d\ude80")
-
-        assertEquals(511, sanitized.length)
-        assertFalse(Character.isSurrogate(sanitized.last()))
     }
 
     @Test

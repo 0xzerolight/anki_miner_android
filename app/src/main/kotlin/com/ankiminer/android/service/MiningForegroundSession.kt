@@ -49,10 +49,14 @@ fun interface MiningForegroundSessionListener {
     )
 }
 
+/**
+ * Counts only. Engine progress descriptions embed mined terms, and a notification can be surfaced
+ * on a locked device, so this type deliberately carries no channel for engine-supplied text.
+ * Notification bodies are built from app-owned string resources.
+ */
 data class MiningForegroundProgress(
     val completed: Int? = null,
     val total: Int? = null,
-    val message: String? = null,
 ) {
     init {
         require((completed == null) == (total == null)) {
@@ -74,28 +78,3 @@ interface MiningForegroundLease : AutoCloseable {
     /** Marks this as an expected shutdown before asking Android to stop the service. */
     override fun close()
 }
-
-internal fun sanitizeNotificationProgressMessage(message: String): String {
-    val sanitized = StringBuilder(minOf(message.length, MAX_NOTIFICATION_MESSAGE_LENGTH))
-    var offset = 0
-    while (offset < message.length && sanitized.length < MAX_NOTIFICATION_MESSAGE_LENGTH) {
-        val codePoint = message.codePointAt(offset)
-        val replacement =
-            when (Character.getType(codePoint)) {
-                Character.CONTROL.toInt(),
-                Character.FORMAT.toInt(),
-                Character.LINE_SEPARATOR.toInt(),
-                Character.PARAGRAPH_SEPARATOR.toInt(),
-                -> ' '.code
-
-                else -> codePoint
-            }
-        val replacementWidth = Character.charCount(replacement)
-        if (sanitized.length + replacementWidth > MAX_NOTIFICATION_MESSAGE_LENGTH) break
-        sanitized.appendCodePoint(replacement)
-        offset += Character.charCount(codePoint)
-    }
-    return sanitized.toString().trim()
-}
-
-private const val MAX_NOTIFICATION_MESSAGE_LENGTH = 512

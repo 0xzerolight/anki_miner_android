@@ -974,11 +974,12 @@ internal class BridgeReadingMiningRepository(
         val determinate =
             progress.total in 1..Int.MAX_VALUE.toLong() &&
                 progress.current <= Int.MAX_VALUE.toLong()
+        // progress.description is engine-authored and can name mined terms; it stays out of the
+        // notification entirely. Only the counts cross this boundary.
         val converted =
             MiningForegroundProgress(
                 completed = progress.current.takeIf { determinate }?.toInt(),
                 total = progress.total.takeIf { determinate }?.toInt(),
-                message = notificationMessage(progress.description),
             )
         val accepted =
             try {
@@ -1381,13 +1382,6 @@ internal class BridgeReadingMiningRepository(
 
     private fun ProcessingResult?.withPresenterNotices(notices: List<String>): ProcessingResult? =
         this?.copy(errors = (notices + errors).distinct().take(MAX_RESULT_ERRORS))
-
-    private fun notificationMessage(raw: String): String? {
-        val canonical = canonicalLabel(raw).takeIf(String::isNotEmpty) ?: return null
-        if (canonical.length <= 512) return canonical
-        val end = if (canonical[511].isHighSurrogate()) 511 else 512
-        return canonical.substring(0, end).trimEnd().takeIf(String::isNotEmpty)
-    }
 
     private fun canonicalLabel(raw: String): String {
         val filtered =
