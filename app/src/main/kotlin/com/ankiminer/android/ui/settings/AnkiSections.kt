@@ -26,6 +26,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.heading
@@ -408,13 +409,15 @@ internal fun AnkiRecoveryCard(
                     RecoveryPresentationKind.STARTUP_BLOCKED_PROVIDER_UNAVAILABLE ->
                         stringResource(R.string.anki_recovery_startup_blocked_provider_unavailable)
                     RecoveryPresentationKind.PENDING ->
-                        stringResource(
-                            R.string.anki_recovery_attention,
+                        pluralStringResource(
+                            R.plurals.anki_recovery_attention,
+                            state.remediations.pending.size,
                             state.remediations.pending.size,
                         )
                     RecoveryPresentationKind.PENDING_PROVIDER_UNAVAILABLE ->
-                        stringResource(
-                            R.string.anki_recovery_attention_provider_unavailable,
+                        pluralStringResource(
+                            R.plurals.anki_recovery_attention_provider_unavailable,
+                            state.remediations.pending.size,
                             state.remediations.pending.size,
                         )
                     RecoveryPresentationKind.CLEAR ->

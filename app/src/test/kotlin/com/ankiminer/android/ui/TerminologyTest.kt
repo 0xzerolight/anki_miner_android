@@ -9,16 +9,14 @@ class TerminologyTest {
     @Test
     fun miningCreationCopyUsesAnkiNotesInsteadOfCards() {
         val strings = stringResources()
+        // Only copy the app still renders. The intros, help lines, and wizard bodies this used
+        // to police were deleted, not reworded.
         val creationKeys =
             listOf(
-                "video_mining_intro",
-                "reading_mining_intro",
-                "reading_series_help",
-                "anki_note_type_description",
                 "anki_note_type_status_not_selected",
                 "anki_quality_limited_warning",
-                "wizard_ankidroid_body",
-                "wizard_deck_body",
+                "anki_quality_optional_warning",
+                "mining_notification_channel_description",
             )
 
         creationKeys.forEach { key ->
@@ -39,7 +37,8 @@ class TerminologyTest {
                 .filterValues { it.contains("flashcard", ignoreCase = true) }
                 .keys
 
-        assertEquals(setOf("wizard_welcome_body"), flashcardKeys)
+        // The one introductory string that used the word is gone; nothing may reintroduce it.
+        assertEquals(emptySet<String>(), flashcardKeys)
     }
 
     private fun stringResources(): Map<String, String> {
