@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.system.Os
+import android.webkit.MimeTypeMap
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.ankiminer.android.anki.journal.SqliteAnkiMutationStore
@@ -21,6 +22,8 @@ import org.junit.After
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -89,7 +92,71 @@ class AndroidAnkiMediaStagingInstrumentedTest {
         }
         platform.deleteDestination(relativePath)
         assertFalse(platform.destinationExists(relativePath))
+
+        assertEveryAllowedExtensionSurvivesTheMimeRoundTrip(platform)
     }
+
+    /**
+     * AnkiDroid names a stored media file after `getExtensionFromMimeType(getType(uri))` — it accepts
+     * no MIME on the insert. An extension whose MIME does not reverse-map lands as `.bin`, which is
+     * the whole of Issue #2. This is the only place that observes that round trip, and it runs on
+     * API 26 where the platform tables are thinnest: API 26 registers no `opus` extension and no
+     * `audio/ogg` type at all, which is why [AnkiMediaFileProvider] fills those gaps itself.
+     *
+     * Asserted inside the existing test rather than as a new `@Test` so the pinned instrumentation
+     * count in `run-api26-instrumentation.sh` stays put.
+     */
+    private fun assertEveryAllowedExtensionSurvivesTheMimeRoundTrip(platform: AndroidAnkiMediaStagingPlatform) {
+        val mimeTypes = MimeTypeMap.getSingleton()
+
+        // The formats v0.1.7 already stored correctly. Pinning them on the thinnest tables proves the
+        // provider's table never overrides a lookup the platform can answer. `opus` is deliberately
+        // absent: API 26 has no entry for it, which is the gap the provider fills.
+        listOf("mp3", "jpg", "jpeg", "png", "webp").forEach { extension ->
+            assertNotNull(
+                "API 26 is expected to map .$extension itself",
+                mimeTypes.getMimeTypeFromExtension(extension),
+            )
+        }
+
+        AnkiMediaExtensions.DEVICE_UNMAPPABLE_EXTENSIONS.forEach { extension ->
+            assertFalse(
+                "$extension is device-unmappable and must not be staged under its real name",
+                extension in AnkiMediaExtensions.ALLOWED_EXTENSIONS,
+            )
+        }
+
+        AnkiMediaExtensions.ALLOWED_EXTENSIONS.forEachIndexed { index, extension ->
+            val token = index.toString(16).padStart(64, '0')
+            val path = "v1/$token.$extension"
+            val uri = Uri.parse(platform.contentUriFor(path))
+            platform.createDestination(path).use { destination ->
+                destination.stream.write(sourceBytes(extension))
+                destination.stream.flush()
+                destination.sync()
+            }
+            try {
+                val resolved = context.contentResolver.getType(uri)
+                val stock = mimeTypes.getMimeTypeFromExtension(extension)
+                if (stock != null) {
+                    assertEquals("the provider must not override the platform for .$extension", stock, resolved)
+                }
+                assertNotEquals(
+                    ".$extension must not resolve to the MIME AnkiDroid stores as .bin",
+                    "application/octet-stream",
+                    resolved,
+                )
+                assertNotNull(
+                    ".$extension resolves to $resolved, which AnkiDroid cannot name a file after",
+                    mimeTypes.getExtensionFromMimeType(requireNotNull(resolved)),
+                )
+            } finally {
+                platform.deleteDestination(path)
+            }
+        }
+    }
+
+    private fun sourceBytes(extension: String) = "staged $extension".toByteArray()
 
     @Test
     fun sourceOpeningRejectsOutsideFilesSymlinksAndFifosWithoutBlocking() {

@@ -46,7 +46,7 @@
             android:foregroundServiceType="mediaProcessing" />
 
         <provider
-            android:name="androidx.core.content.FileProvider"
+            android:name=".anki.provider.AnkiMediaFileProvider"
             android:authorities="${applicationId}.anki-media"
             android:exported="false"
             android:grantUriPermissions="true">

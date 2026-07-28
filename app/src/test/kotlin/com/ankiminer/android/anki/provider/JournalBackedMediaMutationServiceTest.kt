@@ -107,6 +107,30 @@ class JournalBackedMediaMutationServiceTest {
     }
 
     @Test
+    fun `staging is asked for the requested filename's real extension`() {
+        // The requestedFilename -> MediaKind -> extension step lives only here, and every one of these
+        // formats used to arrive with extension=null: staged as ".stage", whose MIME is
+        // application/octet-stream, which AnkiDroid stores as ".bin" (Issue #2).
+        //
+        // .wav is the anchor case: Android offline TTS publishes reading-mode sentence audio as WAV,
+        // so it needs no assumption about any server's behaviour. .ogg covers downloaded expression
+        // audio (the extension comes from the localaudio server's Content-Type) and .svg covers
+        // Yomitan dictionary media, which arrives as MediaKind.IMAGE with its own basename.
+        val request =
+            requestOfKinds(
+                "wav" to MediaKind.AUDIO,
+                "ogg" to MediaKind.AUDIO,
+                "svg" to MediaKind.IMAGE,
+            )
+        val fixture = Fixture(request)
+        fixture.provider.receipts += listOf("file:///media0.wav", "file:///media1.ogg", "file:///media2.svg")
+
+        fixture.execute()
+
+        assertEquals(listOf("wav", "ogg", "svg"), fixture.staging.stagedRequests.map { it.extension })
+    }
+
+    @Test
     fun `multi asset success reserves first and returns exact claim acknowledgements`() {
         val request = request(3)
         val fixture = Fixture(request)
@@ -639,6 +663,7 @@ class JournalBackedMediaMutationServiceTest {
         private val events: MutableList<String>,
     ) : MediaMutationStaging {
         var stageCalls = 0
+        val stagedRequests = mutableListOf<AnkiMediaStagingRequest>()
         val failStage = mutableSetOf<Int>()
         val failGrant = mutableSetOf<Int>()
         val failCleanup = mutableSetOf<Int>()
@@ -648,6 +673,7 @@ class JournalBackedMediaMutationServiceTest {
             val index = request.assetId.index()
             events += "stage:$index"
             stageCalls += 1
+            stagedRequests += request
             if (index in failStage) throw stagingFailure(AnkiMediaStagingFailure.VERIFICATION_FAILED)
             return record(request, index, StagingState.STAGED)
         }
@@ -740,6 +766,26 @@ private fun request(count: Int): StoreMediaRequest =
                     requestedFilename = "clip$index.mp3",
                     purpose = MediaPurpose.CARD,
                     mediaKind = MediaKind.AUDIO,
+                    expectedSizeBytes = (index + 1).toLong(),
+                    expectedSha256 = index.toString(16).padStart(64, '0'),
+                )
+            },
+    )
+
+/** A request whose assets carry the given `(suffix, kind)` pairs, one asset each. */
+private fun requestOfKinds(vararg formats: Pair<String, MediaKind>): StoreMediaRequest =
+    StoreMediaRequest(
+        runId = MEDIA_RUN_ID,
+        requestId = MEDIA_REQUEST_ID,
+        assets =
+            formats.mapIndexed { index, (suffix, kind) ->
+                MediaAsset(
+                    assetId = "asset_${index.toString(16).padStart(32, '0')}",
+                    sourcePath = "/tmp/media$index.$suffix",
+                    preferredName = "media$index",
+                    requestedFilename = "media$index.$suffix",
+                    purpose = MediaPurpose.CARD,
+                    mediaKind = kind,
                     expectedSizeBytes = (index + 1).toLong(),
                     expectedSha256 = index.toString(16).padStart(64, '0'),
                 )
