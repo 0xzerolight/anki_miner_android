@@ -686,7 +686,9 @@ private fun SettingsFilteringFixture() {
         )
         NullableToggle(
             label = stringResource(R.string.settings_deduplicate),
-            value = true,
+            // Android defaults this off against the desktop engine's true, so the screenshot lane
+            // shows the override styling a fresh install actually gets.
+            value = false,
             desktopDefault = true,
             onChange = {},
         )

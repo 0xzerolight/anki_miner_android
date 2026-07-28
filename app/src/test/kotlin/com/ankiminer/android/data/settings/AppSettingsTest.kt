@@ -47,9 +47,13 @@ class AppSettingsTest {
                 "expression_audio_chain",
                 "excluded_wordsets",
                 "screenshot_animated",
+                // Android defaults sentence dedup off, against the desktop engine's True, so it is
+                // emitted rather than omitted. Every other processing field stays absent.
+                "deduplicate_sentences",
             ),
             snapshot.settings.keys,
         )
+        assertEquals(BridgeJsonValue.Bool(false), snapshot.settings["deduplicate_sentences"])
         assertEquals(BridgeJsonValue.ArrayValue(emptyList()), snapshot.settings["dictionary_chain"])
         assertEquals(false, snapshot.androidTtsEnabled)
         assertEquals(
