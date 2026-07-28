@@ -471,7 +471,11 @@ private fun LazyListScope.dictionarySettings(
             )
         }
     }
-    settingsCard("dictionary-inventory") { DictionaryInventoryCard(setup) }
+    // Last card in the category, so gating it shifts no deep-link index. Gated here as well as
+    // inside the composable because an empty settingsCard still contributes its own padding.
+    if (setup.dictionaries.any { !it.isUsable }) {
+        settingsCard("dictionary-inventory") { DictionaryInventoryCard(setup) }
+    }
     // No operation card here: the shared header renders the one ResourceOperationCard for
     // setup.operation, and a second copy on this tab meant two Cancel buttons for one operation.
 }

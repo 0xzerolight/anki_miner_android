@@ -447,9 +447,7 @@
     <string name="bundled_wordsets_unavailable">同梱の単語リストを一覧化できませんでした。</string>
     <string name="local_resource_display_name">表示名</string>
     <string name="local_resource_replace">このIDの既存リソースを置き換え</string>
-    <string name="local_resource_inventory_ok">%1$s [%2$s] · エントリ%3$d件</string>
     <string name="local_resource_inventory_invalid">%1$s [%2$s] · 無効な一覧（エントリ%3$d件）。採掘前に置き換えてください</string>
-    <string name="pitch_inventory_ok">%1$s · エントリ%2$d件</string>
     <string name="pitch_inventory_invalid">%1$s · 無効な一覧（エントリ%2$d件）。採掘前に置き換えてください</string>
     <string name="resource_format_yomitan_zip">Yomitan ZIP</string>
     <string name="resource_format_csv">CSV</string>
@@ -481,9 +479,7 @@
     <string name="status_database_permission">データベース権限が必要</string>
     <string name="status_ready_api">準備完了 (API %1$d)</string>
     <string name="dictionary_test_title">オフライン辞書テスト</string>
-    <string name="dictionary_inventory_title">インストール済み辞書</string>
-    <string name="dictionary_inventory_empty">使用中の辞書スロットはありません。</string>
-    <string name="dictionary_inventory_valid">%1$s [%2$s] · エントリ%3$d件</string>
+    <string name="dictionary_inventory_broken_title">修復が必要な辞書スロット</string>
     <string name="dictionary_inventory_invalid">%1$s [%2$s] · 無効または不完全（エントリ%3$d件）。採掘前にこのスロットを置き換えてください</string>
     <string name="dictionary_term">日本語の語</string>
     <string name="dictionary_render_html">辞書HTMLをそのまま表示</string>

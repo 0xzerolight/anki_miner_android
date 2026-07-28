@@ -196,38 +196,34 @@ internal fun CustomDictionaryImportCard(
     }
 }
 
+/**
+ * Broken dictionary slots only. A healthy inventory is already listed, with the same names, entry
+ * counts and slot ids, by the Dictionary priority editor on this same tab.
+ *
+ * The unique thing this card says is *which* slot is broken: an unusable dictionary raises a fatal
+ * `dictionary_resource_invalid` inventory failure, and that message does not name the slot.
+ */
 @Composable
 internal fun DictionaryInventoryCard(state: SetupUiState) {
+    val broken = state.dictionaries.filterNot { it.isUsable }
+    if (broken.isEmpty()) return
     OutlinedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(AnkiMinerTokens.Space.content), verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
             Text(
-                stringResource(R.string.dictionary_inventory_title),
+                stringResource(R.string.dictionary_inventory_broken_title),
                 modifier = Modifier.semantics { heading() },
                 style = MaterialTheme.typography.titleMedium,
             )
-            if (state.dictionaries.isEmpty()) {
-                Text(stringResource(R.string.dictionary_inventory_empty))
-            } else {
-                state.dictionaries.forEach { dictionary ->
-                    Text(
-                        stringResource(
-                            if (dictionary.isUsable) {
-                                R.string.dictionary_inventory_valid
-                            } else {
-                                R.string.dictionary_inventory_invalid
-                            },
-                            dictionary.sourceName,
-                            dictionary.slotId,
-                            dictionary.entryCount,
-                        ),
-                        color =
-                            if (dictionary.isUsable) {
-                                MaterialTheme.colorScheme.onSurface
-                            } else {
-                                MaterialTheme.colorScheme.error
-                            },
-                    )
-                }
+            broken.forEach { dictionary ->
+                Text(
+                    stringResource(
+                        R.string.dictionary_inventory_invalid,
+                        dictionary.sourceName,
+                        dictionary.slotId,
+                        dictionary.entryCount,
+                    ),
+                    color = MaterialTheme.colorScheme.error,
+                )
             }
         }
     }

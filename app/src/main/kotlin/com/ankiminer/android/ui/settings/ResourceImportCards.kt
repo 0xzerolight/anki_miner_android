@@ -39,26 +39,22 @@ internal fun FrequencyImportCard(
     OutlinedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(AnkiMinerTokens.Space.content), verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
             Text(stringResource(R.string.frequency_import_title), style = MaterialTheme.typography.titleMedium)
-            state.frequencySources.forEach { source ->
-                Text(
-                    stringResource(
-                        if (source.schemaOk && source.entryCount > 0) {
-                            R.string.local_resource_inventory_ok
-                        } else {
-                            R.string.local_resource_inventory_invalid
-                        },
-                        source.sourceName,
-                        source.sourceId,
-                        source.entryCount,
-                    ),
-                    color =
-                        if (source.schemaOk && source.entryCount > 0) {
-                            MaterialTheme.colorScheme.onSurface
-                        } else {
-                            MaterialTheme.colorScheme.error
-                        },
-                )
-            }
+            // Healthy sources are already listed by the Frequency priority editor. Broken ones are
+            // not: unlike dictionaries, an unusable frequency source raises no fatal inventory
+            // failure and is silently dropped from the chain, so this line is the only signal.
+            state.frequencySources
+                .filterNot { it.schemaOk && it.entryCount > 0 }
+                .forEach { source ->
+                    Text(
+                        stringResource(
+                            R.string.local_resource_inventory_invalid,
+                            source.sourceName,
+                            source.sourceId,
+                            source.entryCount,
+                        ),
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
             if (state.frequencySources.isEmpty()) Text(stringResource(R.string.frequency_none_installed))
             OutlinedTextField(
                 value = state.frequencySourceId,
@@ -115,25 +111,17 @@ internal fun PitchImportCard(
     OutlinedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(AnkiMinerTokens.Space.content), verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
             Text(stringResource(R.string.pitch_import_title), style = MaterialTheme.typography.titleMedium)
-            state.pitchAccent?.let { pitch ->
+            // A healthy pitch source's name and entry count are already printed by the pitch
+            // section of the Dictionaries tab, so only the invalid case says anything new.
+            val pitch = state.pitchAccent
+            if (pitch == null) {
+                Text(stringResource(R.string.pitch_none_installed))
+            } else if (!pitch.schemaOk || pitch.entryCount <= 0) {
                 Text(
-                    stringResource(
-                        if (pitch.schemaOk && pitch.entryCount > 0) {
-                            R.string.pitch_inventory_ok
-                        } else {
-                            R.string.pitch_inventory_invalid
-                        },
-                        pitch.sourceName,
-                        pitch.entryCount,
-                    ),
-                    color =
-                        if (pitch.schemaOk && pitch.entryCount > 0) {
-                            MaterialTheme.colorScheme.onSurface
-                        } else {
-                            MaterialTheme.colorScheme.error
-                        },
+                    stringResource(R.string.pitch_inventory_invalid, pitch.sourceName, pitch.entryCount),
+                    color = MaterialTheme.colorScheme.error,
                 )
-            } ?: Text(stringResource(R.string.pitch_none_installed))
+            }
             OutlinedTextField(
                 value = state.pitchSourceName,
                 onValueChange = onNameChanged,
@@ -174,26 +162,21 @@ internal fun AudioPackImportCard(
     OutlinedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(AnkiMinerTokens.Space.content), verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
             Text(stringResource(R.string.audio_pack_import_title), style = MaterialTheme.typography.titleMedium)
-            state.audioPacks.forEach { pack ->
-                Text(
-                    stringResource(
-                        if (pack.contentAvailable && pack.entryCount > 0) {
-                            R.string.local_resource_inventory_ok
-                        } else {
-                            R.string.local_resource_inventory_invalid
-                        },
-                        pack.sourceName,
-                        pack.packId,
-                        pack.entryCount,
-                    ),
-                    color =
-                        if (pack.contentAvailable && pack.entryCount > 0) {
-                            MaterialTheme.colorScheme.onSurface
-                        } else {
-                            MaterialTheme.colorScheme.error
-                        },
-                )
-            }
+            // Same as frequency: healthy packs are listed by the audio priority editor, and an
+            // unusable pack raises no fatal inventory failure, so only broken ones are printed.
+            state.audioPacks
+                .filterNot { it.contentAvailable && it.entryCount > 0 }
+                .forEach { pack ->
+                    Text(
+                        stringResource(
+                            R.string.local_resource_inventory_invalid,
+                            pack.sourceName,
+                            pack.packId,
+                            pack.entryCount,
+                        ),
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
             if (state.audioPacks.isEmpty()) Text(stringResource(R.string.audio_pack_none_installed))
             OutlinedTextField(
                 value = state.audioPackId,
