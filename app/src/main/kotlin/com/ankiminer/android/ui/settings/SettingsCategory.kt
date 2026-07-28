@@ -67,7 +67,13 @@ internal fun settingsCategoryFor(origin: AnkiSetupFailureOrigin): SettingsCatego
         -> SettingsCategory.ANKI
     }
 
-/** Lazy-list index for the card that owns a linked failure (header and tabs occupy 0 and 1). */
+/**
+ * Lazy-list index for the card that owns a linked failure (header and tabs occupy 0 and 1).
+ *
+ * These stay constants only because each category emits its conditional cards *after* the last
+ * card any failure origin deep-links to. Adding a conditional card ahead of a target, or
+ * reordering one behind it, silently sends the deep link to the wrong card.
+ */
 internal fun settingsCardIndexFor(origin: ResourceFailureOrigin): Int =
     when (origin) {
         ResourceFailureOrigin.SETUP,
@@ -76,7 +82,7 @@ internal fun settingsCardIndexFor(origin: ResourceFailureOrigin): Int =
         -> 2
         ResourceFailureOrigin.CUSTOM_DICTIONARY -> 3
         ResourceFailureOrigin.PITCH -> 4
-        ResourceFailureOrigin.DICTIONARY_LOOKUP -> 7
+        ResourceFailureOrigin.DICTIONARY_LOOKUP -> 6
         ResourceFailureOrigin.AUDIO,
         ResourceFailureOrigin.FREQUENCY,
         ResourceFailureOrigin.KNOWN_WORDS,

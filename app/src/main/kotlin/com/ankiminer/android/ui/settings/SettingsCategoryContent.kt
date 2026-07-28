@@ -520,7 +520,9 @@ private fun LazyListScope.dictionarySettings(
             )
         }
     }
-    settingsCard("dictionary-inventory") { DictionaryInventoryCard(setup) }
+    // Conditional cards trail the deep-link targets so settingsCardIndexFor stays a table of
+    // constants. Moving dictionary-inventory back above dictionary-lookup silently shifts the
+    // DICTIONARY_LOOKUP index whenever the inventory is hidden.
     if (setup.dictionaries.any { it.isUsable }) {
         settingsCard("dictionary-lookup") {
             DictionaryLookupCard(
@@ -539,6 +541,7 @@ private fun LazyListScope.dictionarySettings(
             )
         }
     }
+    settingsCard("dictionary-inventory") { DictionaryInventoryCard(setup) }
     setup.operation?.let { operation ->
         settingsCard("dictionary-operation") {
             ResourceOperationCard(operation, setupViewModel::cancelOperation)

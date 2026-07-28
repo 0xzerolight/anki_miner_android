@@ -57,9 +57,16 @@ class SettingsScreenModelTest {
         )
         assertEquals(SettingsCategory.ANKI, settingsCategoryFor(AnkiSetupFailureOrigin.TARGET))
         assertEquals(SettingsCategory.ANKI, settingsCategoryFor(AnkiSetupFailureOrigin.RECOVERY))
+        // These are constants only because every conditional card is emitted after the last
+        // deep-link target in its category. dictionary-lookup precedes dictionary-inventory for
+        // exactly that reason; swapping them back makes this index depend on inventory visibility.
+        assertEquals(2, settingsCardIndexFor(ResourceFailureOrigin.CATALOG_DICTIONARY))
         assertEquals(3, settingsCardIndexFor(ResourceFailureOrigin.CUSTOM_DICTIONARY))
         assertEquals(4, settingsCardIndexFor(ResourceFailureOrigin.PITCH))
-        assertEquals(7, settingsCardIndexFor(ResourceFailureOrigin.DICTIONARY_LOOKUP))
+        assertEquals(6, settingsCardIndexFor(ResourceFailureOrigin.DICTIONARY_LOOKUP))
+        assertEquals(3, settingsCardIndexFor(ResourceFailureOrigin.AUDIO))
+        assertEquals(3, settingsCardIndexFor(ResourceFailureOrigin.FREQUENCY))
+        assertEquals(3, settingsCardIndexFor(ResourceFailureOrigin.KNOWN_WORDS))
         assertEquals(3, settingsCardIndexFor(AnkiSetupFailureOrigin.TARGET))
         assertEquals(4, settingsCardIndexFor(AnkiSetupFailureOrigin.RECOVERY))
     }
