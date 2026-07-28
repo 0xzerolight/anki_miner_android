@@ -19,6 +19,10 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
@@ -26,7 +30,9 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.ankiminer.android.R
+import com.ankiminer.android.data.resources.ResourceFailureOrigin
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
+import com.ankiminer.android.ui.theme.SecondaryActionButton
 import com.ankiminer.android.ui.theme.actionBorder
 import com.ankiminer.android.ui.theme.forwardButtonColors
 import com.ankiminer.android.ui.theme.outlinedActionButtonColors
@@ -77,13 +83,43 @@ internal fun CatalogReplaceDialog(
     )
 }
 
+/**
+ * Bundled dictionary install cards. An installed dictionary has nothing to offer, so its card is
+ * hidden behind a disclosure rather than sitting permanently at the top of the tab.
+ *
+ * The disclosure and its state live here, not in the caller, because the onboarding wizard's
+ * dictionary step is a bare call to this composable — without it that step renders empty on a
+ * re-run with both dictionaries already installed.
+ */
 @Composable
 internal fun CatalogDictionaryCards(
     state: SetupUiState,
     onInstall: (String) -> Unit,
     inlineFailure: @Composable (String) -> Unit = {},
 ) {
-    state.catalogDictionaries.forEach { status ->
+    var showInstalled by rememberSaveable { mutableStateOf(false) }
+    // A failed *replace* leaves the dictionary installed, so filtering on installed alone would
+    // hide the card that owns the failure message.
+    val failureTargetId =
+        state.failure
+            ?.takeIf { it.origin == ResourceFailureOrigin.CATALOG_DICTIONARY }
+            ?.retry
+            ?.targetId
+    val visible =
+        state.catalogDictionaries.filter {
+            showInstalled || !it.installed || it.resource.resourceId == failureTargetId
+        }
+    if (visible.isEmpty()) {
+        SecondaryActionButton(
+            onClick = { showInstalled = true },
+            enabled = !state.busy,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(stringResource(R.string.dictionary_catalog_reinstall))
+        }
+        return
+    }
+    visible.forEach { status ->
         ResourceCard(
             title =
                 stringResource(

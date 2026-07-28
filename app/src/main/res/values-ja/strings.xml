@@ -402,6 +402,7 @@
     <string name="unidic_repair">修復</string>
     <string name="dictionary_install">インストール</string>
     <string name="dictionary_replace">安全に置き換え</string>
+    <string name="dictionary_catalog_reinstall">同梱辞書を再インストールまたは置き換え</string>
     <string name="dictionary_repair">辞書スロットを修復</string>
     <string name="dictionary_replace_confirm_title">インストール済み辞書を置き換えますか？</string>
     <string name="dictionary_repair_confirm_title">使用中の辞書スロットを修復しますか？</string>

@@ -410,6 +410,7 @@
     <string name="unidic_repair">Repair</string>
     <string name="dictionary_install">Install</string>
     <string name="dictionary_replace">Replace safely</string>
+    <string name="dictionary_catalog_reinstall">Reinstall or replace a bundled dictionary</string>
     <string name="dictionary_repair">Repair dictionary slot</string>
     <string name="dictionary_replace_confirm_title">Replace the installed dictionary?</string>
     <string name="dictionary_repair_confirm_title">Repair the occupied dictionary slot?</string>
