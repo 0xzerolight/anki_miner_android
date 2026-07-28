@@ -19,6 +19,10 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
@@ -26,64 +30,51 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.ankiminer.android.R
+import com.ankiminer.android.data.resources.ResourceFailureOrigin
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
+import com.ankiminer.android.ui.theme.SecondaryActionButton
 import com.ankiminer.android.ui.theme.actionBorder
 import com.ankiminer.android.ui.theme.forwardButtonColors
 import com.ankiminer.android.ui.theme.outlinedActionButtonColors
 import com.ankiminer.android.vm.SetupUiState
 
-@Composable
-internal fun CatalogReplaceDialog(
-    state: SetupUiState,
-    onConfirm: () -> Unit,
-    onDismiss: () -> Unit,
-) {
-    val pendingReplace =
-        state.pendingReplaceResourceId?.let { pending ->
-            state.catalogDictionaries.firstOrNull { it.resource.resourceId == pending }
-        } ?: return
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Text(
-                stringResource(
-                    if (pendingReplace.needsRepair) {
-                        R.string.dictionary_repair_confirm_title
-                    } else {
-                        R.string.dictionary_replace_confirm_title
-                    },
-                ),
-            )
-        },
-        text = { Text(stringResource(R.string.dictionary_replace_confirm_message)) },
-        confirmButton = {
-            Button(onClick = onConfirm) {
-                Text(
-                    stringResource(
-                        if (pendingReplace.needsRepair) {
-                            R.string.dictionary_repair_confirm
-                        } else {
-                            R.string.dictionary_replace_confirm
-                        },
-                    ),
-                )
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.cancel))
-            }
-        },
-    )
-}
-
+/**
+ * Bundled dictionary install cards. An installed dictionary has nothing to offer, so its card is
+ * hidden behind a disclosure rather than sitting permanently at the top of the tab.
+ *
+ * The disclosure and its state live here, not in the caller, because the onboarding wizard's
+ * dictionary step is a bare call to this composable — without it that step renders empty on a
+ * re-run with both dictionaries already installed.
+ */
 @Composable
 internal fun CatalogDictionaryCards(
     state: SetupUiState,
     onInstall: (String) -> Unit,
     inlineFailure: @Composable (String) -> Unit = {},
 ) {
-    state.catalogDictionaries.forEach { status ->
+    var showInstalled by rememberSaveable { mutableStateOf(false) }
+    // A failed *replace* leaves the dictionary installed, so filtering on installed alone would
+    // hide the card that owns the failure message.
+    val failureTargetId =
+        state.failure
+            ?.takeIf { it.origin == ResourceFailureOrigin.CATALOG_DICTIONARY }
+            ?.retry
+            ?.targetId
+    val visible =
+        state.catalogDictionaries.filter {
+            showInstalled || !it.installed || it.resource.resourceId == failureTargetId
+        }
+    if (visible.isEmpty()) {
+        SecondaryActionButton(
+            onClick = { showInstalled = true },
+            enabled = !state.busy,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(stringResource(R.string.dictionary_catalog_reinstall))
+        }
+        return
+    }
+    visible.forEach { status ->
         ResourceCard(
             title =
                 stringResource(
@@ -120,7 +111,6 @@ internal fun CatalogDictionaryCards(
 internal fun CustomDictionaryImportCard(
     state: SetupUiState,
     onSlotChanged: (String) -> Unit,
-    onReplaceChanged: (Boolean) -> Unit,
     onImport: () -> Unit,
     inlineFailure: (@Composable () -> Unit)? = null,
 ) {
@@ -145,7 +135,6 @@ internal fun CustomDictionaryImportCard(
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
-            ReplaceToggle(state.customReplace, !state.busy, onReplaceChanged)
             inlineFailure?.invoke()
             OutlinedButton(
                 onClick = onImport,
@@ -160,38 +149,34 @@ internal fun CustomDictionaryImportCard(
     }
 }
 
+/**
+ * Broken dictionary slots only. A healthy inventory is already listed, with the same names, entry
+ * counts and slot ids, by the Dictionary priority editor on this same tab.
+ *
+ * The unique thing this card says is *which* slot is broken: an unusable dictionary raises a fatal
+ * `dictionary_resource_invalid` inventory failure, and that message does not name the slot.
+ */
 @Composable
 internal fun DictionaryInventoryCard(state: SetupUiState) {
+    val broken = state.dictionaries.filterNot { it.isUsable }
+    if (broken.isEmpty()) return
     OutlinedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(AnkiMinerTokens.Space.content), verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
             Text(
-                stringResource(R.string.dictionary_inventory_title),
+                stringResource(R.string.dictionary_inventory_broken_title),
                 modifier = Modifier.semantics { heading() },
                 style = MaterialTheme.typography.titleMedium,
             )
-            if (state.dictionaries.isEmpty()) {
-                Text(stringResource(R.string.dictionary_inventory_empty))
-            } else {
-                state.dictionaries.forEach { dictionary ->
-                    Text(
-                        stringResource(
-                            if (dictionary.isUsable) {
-                                R.string.dictionary_inventory_valid
-                            } else {
-                                R.string.dictionary_inventory_invalid
-                            },
-                            dictionary.sourceName,
-                            dictionary.slotId,
-                            dictionary.entryCount,
-                        ),
-                        color =
-                            if (dictionary.isUsable) {
-                                MaterialTheme.colorScheme.onSurface
-                            } else {
-                                MaterialTheme.colorScheme.error
-                            },
-                    )
-                }
+            broken.forEach { dictionary ->
+                Text(
+                    stringResource(
+                        R.string.dictionary_inventory_invalid,
+                        dictionary.sourceName,
+                        dictionary.slotId,
+                        dictionary.entryCount,
+                    ),
+                    color = MaterialTheme.colorScheme.error,
+                )
             }
         }
     }

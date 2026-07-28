@@ -38,6 +38,13 @@ data class ResourceChainSelection(
 /**
  * Android-owned preferences. Nullable processing fields mean "use the current engine default";
  * the Android-owned Anki model contract is always emitted explicitly by the snapshot mapper.
+ *
+ * [deduplicateSentences] is the one deliberate exception: Android defaults it off while the desktop
+ * engine defaults it on. See the field for why.
+ *
+ * Defaults here are NOT the defaults the app reads. [AppSettingsRepository] names every constructor
+ * parameter and supplies each value from `decoder.read(key, <literal>, …)`, which returns that
+ * literal when the key is absent — so a default only takes effect once both sites agree.
  */
 data class AppSettings(
     /** The onboarding wizard was offered once and completed or skipped. */
@@ -58,7 +65,13 @@ data class AppSettings(
     val excludeHiraganaOnly: Boolean? = null,
     val excludeKatakanaOnly: Boolean? = null,
     val boldTargetInSentence: Boolean? = null,
-    val deduplicateSentences: Boolean? = null,
+    /**
+     * Off by default on Android, against the desktop engine's `deduplicate_sentences = True`.
+     * The filter keeps only the first word per sentence and runs BEFORE curation, so on a phone —
+     * where curation is the whole interaction — it silently withholds candidates the user never
+     * sees. Keep in sync with the decode fallback in [AppSettingsRepository].
+     */
+    val deduplicateSentences: Boolean? = false,
     val useIPlusOneFilter: Boolean? = null,
     val useSentenceLengthFilter: Boolean? = null,
     val maxSentenceDurationSeconds: Double? = null,
@@ -88,7 +101,7 @@ data class AppSettings(
             excludeHiraganaOnly = null,
             excludeKatakanaOnly = null,
             boldTargetInSentence = null,
-            deduplicateSentences = null,
+            deduplicateSentences = false,
             useIPlusOneFilter = null,
             useSentenceLengthFilter = null,
             maxSentenceDurationSeconds = null,

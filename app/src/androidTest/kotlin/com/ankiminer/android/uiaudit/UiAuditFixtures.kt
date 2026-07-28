@@ -465,7 +465,6 @@ internal fun setupAuditState(): SetupUiState {
         lookupTerm = "掛ける",
         lookupSlotId = dictionaries.first().slotId,
         customSlotId = "custom-classical-japanese",
-        frequencySourceId = "jpdb-v2",
         frequencySourceName = "JPDB frequency 2025",
         pitchSourceName = "Kanjium pitch accents",
         audioPackId = "jpod101-extra",
@@ -502,7 +501,7 @@ internal fun UiAuditSettingsFixture(
         }
     val category =
         when (focus) {
-            SettingsAuditState.TOP -> SettingsCategory.SETUP
+            SettingsAuditState.TOP -> SettingsCategory.DIAGNOSTICS
             SettingsAuditState.ANKI -> SettingsCategory.ANKI
             SettingsAuditState.RESOURCES,
             SettingsAuditState.ERROR_SNACKBAR,
@@ -517,15 +516,18 @@ internal fun UiAuditSettingsFixture(
         listStates = mapOf(category to listState),
     ) { selected ->
         when (selected) {
-            SettingsCategory.SETUP ->
+            SettingsCategory.DIAGNOSTICS ->
+                // The UniDic card lives in Diagnostics now and only appears when the tokenizer
+                // is missing or failing, so the fixture captures that state rather than the
+                // installed one, which renders nothing.
                 settingsCard("audit-unidic") {
                     ResourceCard(
                         title = stringResource(R.string.unidic_resource_title),
                         description = stringResource(R.string.unidic_resource_description),
-                        installed = setup.uniDicInstalled,
+                        installed = false,
                         busy = false,
                         action = {},
-                        actionLabel = stringResource(R.string.unidic_repair),
+                        actionLabel = stringResource(R.string.unidic_install),
                     )
                 }
             SettingsCategory.ANKI ->
@@ -640,14 +642,12 @@ private fun SettingsResourcesFixture(setup: SetupUiState) {
         CustomDictionaryImportCard(
             state = setup,
             onSlotChanged = {},
-            onReplaceChanged = {},
             onImport = {},
         )
         PitchImportCard(
             state = setup,
             onNameChanged = {},
             onFormatChanged = {},
-            onReplaceChanged = {},
             onImport = {},
         )
         SettingsSection(stringResource(R.string.settings_dictionary_chain)) {
@@ -686,7 +686,9 @@ private fun SettingsFilteringFixture() {
         )
         NullableToggle(
             label = stringResource(R.string.settings_deduplicate),
-            value = true,
+            // Android defaults this off against the desktop engine's true, so the screenshot lane
+            // shows the override styling a fresh install actually gets.
+            value = false,
             desktopDefault = true,
             onChange = {},
         )

@@ -7,7 +7,6 @@ import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -16,7 +15,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.ankiminer.android.R
-import com.ankiminer.android.data.RuntimeWorkCoordinator
 import com.ankiminer.android.data.anki.AnkiSetupFailureOrigin
 import com.ankiminer.android.data.anki.AnkiSetupFailureAction
 import com.ankiminer.android.data.resources.KnownWordsFailureOperation
@@ -29,7 +27,6 @@ import com.ankiminer.android.data.settings.PitchCategoryFormat
 import com.ankiminer.android.data.settings.ThemeMode
 import com.ankiminer.android.diagnostics.TesterDiagnosticsIdentity
 import com.ankiminer.android.localization.LocalizedStringResource
-import com.ankiminer.android.ui.mining.RuntimeConflictNotice
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
 import com.ankiminer.android.ui.theme.SupportingText
 import com.ankiminer.android.ui.theme.actionBorder
@@ -93,12 +90,6 @@ internal fun LazyListScope.settingsCategoryContent(
     callbacks: SettingsScreenCallbacks,
 ) {
     when (category) {
-        SettingsCategory.SETUP ->
-            setupSettings(
-                setup,
-                setupViewModel,
-                callbacks,
-            )
         SettingsCategory.ANKI ->
             ankiSettings(
                 draft,
@@ -151,71 +142,10 @@ internal fun LazyListScope.settingsCategoryContent(
         SettingsCategory.DIAGNOSTICS ->
             diagnosticsSettings(
                 setup,
+                setupViewModel,
                 diagnostics,
                 callbacks,
             )
-    }
-}
-
-private fun LazyListScope.setupSettings(
-    setup: SetupUiState,
-    setupViewModel: SetupViewModel,
-    callbacks: SettingsScreenCallbacks,
-) {
-    if (setup.failure?.origin == ResourceFailureOrigin.SETUP) {
-        settingsCard("setup-failure") {
-            SettingsSection(stringResource(R.string.b3_settings_category_setup)) {
-                ResourceOriginFailure(
-                    setup,
-                    setOf(ResourceFailureOrigin.SETUP),
-                    setupViewModel,
-                    callbacks,
-                )
-            }
-        }
-    }
-    setup.runtimeWorkKind?.let { kind ->
-        settingsCard("runtime-conflict") {
-            if (kind == RuntimeWorkCoordinator.Kind.MINING) {
-                RuntimeConflictNotice(
-                    text = stringResource(settingsRuntimeWorkMessage(kind)),
-                    onReturnToActiveRun = callbacks.onReturnToActiveRun,
-                )
-            } else {
-                OutlinedCard(Modifier.fillMaxWidth()) {
-                    Text(
-                        stringResource(settingsRuntimeWorkMessage(kind)),
-                        Modifier.padding(AnkiMinerTokens.Space.group),
-                    )
-                }
-            }
-        }
-    }
-    settingsCard("unidic") {
-        ResourceCard(
-            title = stringResource(R.string.unidic_resource_title),
-            description = stringResource(R.string.unidic_resource_description),
-            installed = setup.uniDicInstalled,
-            busy = setup.busy,
-            action = setupViewModel::installUniDic,
-            actionLabel =
-                stringResource(
-                    if (setup.uniDicInstalled) R.string.unidic_repair else R.string.unidic_install,
-                ),
-            inlineFailure = {
-                ResourceOriginFailure(
-                    setup,
-                    setOf(ResourceFailureOrigin.UNIDIC),
-                    setupViewModel,
-                    callbacks,
-                )
-            },
-        )
-    }
-    setup.operation?.let { operation ->
-        settingsCard("setup-operation") {
-            ResourceOperationCard(operation, setupViewModel::cancelOperation)
-        }
     }
 }
 
@@ -358,33 +288,20 @@ private fun LazyListScope.mediaSettings(
                 integer = true,
                 error = validationMessage(draft, SettingsFieldKey.BITRATE),
             )
-            Text(stringResource(R.string.settings_audio_format))
-            ChoiceSegmentedButtons(
-                values = listOf(null, AudioFormat.MP3, AudioFormat.OPUS),
-                selected = draft.audioFormat,
-                label = { value ->
+            NullableChoice(
+                label = stringResource(R.string.settings_audio_format),
+                value = draft.audioFormat,
+                engineDefault = AudioFormat.MP3,
+                values = listOf(AudioFormat.MP3, AudioFormat.OPUS),
+                optionLabel = { value ->
                     stringResource(
                         when (value) {
-                            null -> R.string.b3_settings_use_recommended_default
                             AudioFormat.MP3 -> R.string.settings_mp3
                             AudioFormat.OPUS -> R.string.settings_opus
                         },
                     )
                 },
-                onSelect = { onDraftChange(draft.copy(audioFormat = it)) },
-            )
-            Text(
-                stringResource(
-                    R.string.b3_settings_resolved_value,
-                    stringResource(
-                        if ((draft.audioFormat ?: AudioFormat.MP3) == AudioFormat.MP3) {
-                            R.string.settings_mp3
-                        } else {
-                            R.string.settings_opus
-                        },
-                    ),
-                ),
-                style = MaterialTheme.typography.bodySmall,
+                onChange = { onDraftChange(draft.copy(audioFormat = it)) },
             )
         }
     }
@@ -420,7 +337,6 @@ private fun LazyListScope.dictionarySettings(
         CustomDictionaryImportCard(
             state = setup,
             onSlotChanged = setupViewModel::setCustomSlotId,
-            onReplaceChanged = setupViewModel::setCustomReplace,
             onImport = callbacks.onImportCustom,
             inlineFailure = {
                 ResourceOriginFailure(
@@ -437,7 +353,6 @@ private fun LazyListScope.dictionarySettings(
             state = setup,
             onNameChanged = setupViewModel::setPitchSourceName,
             onFormatChanged = setupViewModel::setPitchFormat,
-            onReplaceChanged = setupViewModel::setPitchReplace,
             onImport = callbacks.onImportPitch,
             inlineFailure = {
                 ResourceOriginFailure(
@@ -473,10 +388,6 @@ private fun LazyListScope.dictionarySettings(
             SupportingText(stringResource(R.string.settings_jisho_disclosure))
             HorizontalDivider()
             Text(
-                stringResource(R.string.settings_pitch_format),
-                style = MaterialTheme.typography.titleSmall,
-            )
-            Text(
                 resources.pitchAccent?.let {
                     stringResource(
                         R.string.settings_pitch_installed,
@@ -486,41 +397,28 @@ private fun LazyListScope.dictionarySettings(
                 } ?: stringResource(R.string.settings_pitch_not_installed),
                 style = MaterialTheme.typography.bodySmall,
             )
-            ChoiceSegmentedButtons(
-                values = listOf(null, PitchCategoryFormat.JAPANESE, PitchCategoryFormat.ROMAJI),
-                selected = draft.pitchFormat,
-                label = { value ->
+            NullableChoice(
+                label = stringResource(R.string.settings_pitch_format),
+                value = draft.pitchFormat,
+                engineDefault = PitchCategoryFormat.JAPANESE,
+                values = listOf(PitchCategoryFormat.JAPANESE, PitchCategoryFormat.ROMAJI),
+                optionLabel = { value ->
                     stringResource(
                         when (value) {
-                            null -> R.string.b3_settings_use_recommended_default
                             PitchCategoryFormat.JAPANESE -> R.string.settings_pitch_japanese
                             PitchCategoryFormat.ROMAJI -> R.string.settings_pitch_romaji
                         },
                     )
                 },
-                onSelect = {
+                onChange = {
                     callbacks.onDraftChange(draft.copy(pitchFormat = it))
                 },
             )
-            Text(
-                stringResource(
-                    R.string.b3_settings_resolved_value,
-                    stringResource(
-                        if (
-                            (draft.pitchFormat ?: PitchCategoryFormat.JAPANESE) ==
-                            PitchCategoryFormat.JAPANESE
-                        ) {
-                            R.string.settings_pitch_japanese
-                        } else {
-                            R.string.settings_pitch_romaji
-                        },
-                    ),
-                ),
-                style = MaterialTheme.typography.bodySmall,
-            )
         }
     }
-    settingsCard("dictionary-inventory") { DictionaryInventoryCard(setup) }
+    // Conditional cards trail the deep-link targets so settingsCardIndexFor stays a table of
+    // constants. Moving dictionary-inventory back above dictionary-lookup silently shifts the
+    // DICTIONARY_LOOKUP index whenever the inventory is hidden.
     if (setup.dictionaries.any { it.isUsable }) {
         settingsCard("dictionary-lookup") {
             DictionaryLookupCard(
@@ -539,11 +437,13 @@ private fun LazyListScope.dictionarySettings(
             )
         }
     }
-    setup.operation?.let { operation ->
-        settingsCard("dictionary-operation") {
-            ResourceOperationCard(operation, setupViewModel::cancelOperation)
-        }
+    // Last card in the category, so gating it shifts no deep-link index. Gated here as well as
+    // inside the composable because an empty settingsCard still contributes its own padding.
+    if (setup.dictionaries.any { !it.isUsable }) {
+        settingsCard("dictionary-inventory") { DictionaryInventoryCard(setup) }
     }
+    // No operation card here: the shared header renders the one ResourceOperationCard for
+    // setup.operation, and a second copy on this tab meant two Cancel buttons for one operation.
 }
 
 private fun LazyListScope.audioSettings(
@@ -572,7 +472,6 @@ private fun LazyListScope.audioSettings(
         AudioPackImportCard(
             state = setup,
             onIdChanged = setupViewModel::setAudioPackId,
-            onReplaceChanged = setupViewModel::setAudioPackReplace,
             onImport = callbacks.onImportAudioPack,
             inlineFailure = {
                 ResourceOriginFailure(
@@ -628,10 +527,8 @@ private fun LazyListScope.frequencySettings(
     settingsCard("frequency-import") {
         FrequencyImportCard(
             state = setup,
-            onIdChanged = setupViewModel::setFrequencySourceId,
             onNameChanged = setupViewModel::setFrequencySourceName,
             onFormatChanged = setupViewModel::setFrequencyFormat,
-            onReplaceChanged = setupViewModel::setFrequencyReplace,
             onImport = callbacks.onImportFrequency,
             inlineFailure = {
                 ResourceOriginFailure(
@@ -794,7 +691,7 @@ private fun LazyListScope.uiSettings(
     settingsCard("ui-options") {
         SettingsSection(stringResource(R.string.settings_ui_section)) {
             Text(stringResource(R.string.settings_theme))
-            ChoiceSegmentedButtons(
+            AdaptiveChoiceSelector(
                 values = ThemeMode.entries,
                 selected = draft.theme,
                 label = { value ->
@@ -821,6 +718,7 @@ private fun LazyListScope.uiSettings(
 
 private fun LazyListScope.diagnosticsSettings(
     setup: SetupUiState,
+    setupViewModel: SetupViewModel,
     diagnostics: TesterDiagnosticsIdentity,
     callbacks: SettingsScreenCallbacks,
 ) {
@@ -845,6 +743,32 @@ private fun LazyListScope.diagnosticsSettings(
                         },
                     ),
                 ),
+            )
+        }
+    }
+    // Only shown when the tokenizer needs something. A healthy install has nothing to say here,
+    // and a permanently visible "Japanese tokenizer - required" card with a Repair button reads
+    // as a fault report. Repair re-downloads ~45 MiB and then no-ops when nothing is wrong.
+    if (!setup.uniDicInstalled || setup.failure?.origin == ResourceFailureOrigin.UNIDIC) {
+        settingsCard("unidic") {
+            ResourceCard(
+                title = stringResource(R.string.unidic_resource_title),
+                description = stringResource(R.string.unidic_resource_description),
+                installed = setup.uniDicInstalled,
+                busy = setup.busy,
+                action = setupViewModel::installUniDic,
+                actionLabel =
+                    stringResource(
+                        if (setup.uniDicInstalled) R.string.unidic_repair else R.string.unidic_install,
+                    ),
+                inlineFailure = {
+                    ResourceOriginFailure(
+                        setup,
+                        setOf(ResourceFailureOrigin.UNIDIC),
+                        setupViewModel,
+                        callbacks,
+                    )
+                },
             )
         }
     }
@@ -909,8 +833,9 @@ private fun LazyListScope.diagnosticsSettings(
     }
 }
 
+/** Internal rather than private: the shared Settings header renders the SETUP-origin failure. */
 @Composable
-private fun ResourceOriginFailure(
+internal fun ResourceOriginFailure(
     setup: SetupUiState,
     origins: Set<ResourceFailureOrigin>,
     setupViewModel: SetupViewModel,

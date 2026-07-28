@@ -410,10 +410,14 @@
     <string name="unidic_repair">Repair</string>
     <string name="dictionary_install">Install</string>
     <string name="dictionary_replace">Replace safely</string>
+    <string name="dictionary_catalog_reinstall">Reinstall or replace a bundled dictionary</string>
     <string name="dictionary_repair">Repair dictionary slot</string>
     <string name="dictionary_replace_confirm_title">Replace the installed dictionary?</string>
-    <string name="dictionary_repair_confirm_title">Repair the occupied dictionary slot?</string>
-    <string name="dictionary_replace_confirm_message">The current contents of the Jitendex slot will be replaced transactionally. This may be a custom dictionary. If the new verified import fails, Anki Miner restores the current slot.</string>
+    <string name="dictionary_repair_confirm_title">Repair the slot holding %1$s?</string>
+    <string name="resource_replace_confirm_title">Replace %1$s?</string>
+    <string name="resource_replace_confirm_message">%1$s is replaced transactionally. If the new import fails verification, Anki Miner restores what is installed now.</string>
+    <string name="pitch_replace_confirm_message">%1$s is removed as soon as the new file is verified. No backup of it is kept.</string>
+    <string name="pitch_replaces_installed">Importing replaces the installed pitch-accent data.</string>
     <string name="dictionary_replace_confirm">Replace</string>
     <string name="dictionary_repair_confirm">Repair slot</string>
     <string name="custom_dictionary_title">Import another Yomitan ZIP</string>
@@ -453,10 +457,7 @@
     <string name="bundled_wordset_item">%1$s · %2$d entries</string>
     <string name="bundled_wordsets_unavailable">Bundled wordsets could not be inventoried.</string>
     <string name="local_resource_display_name">Display name</string>
-    <string name="local_resource_replace">Replace an existing resource with this ID</string>
-    <string name="local_resource_inventory_ok">%1$s [%2$s] · %3$d entries</string>
     <string name="local_resource_inventory_invalid">%1$s [%2$s] · invalid inventory (%3$d entries); replace it before mining</string>
-    <string name="pitch_inventory_ok">%1$s · %2$d entries</string>
     <string name="pitch_inventory_invalid">%1$s · invalid inventory (%2$d entries); replace it before mining</string>
     <string name="resource_format_yomitan_zip">Yomitan ZIP</string>
     <string name="resource_format_csv">CSV</string>
@@ -488,9 +489,7 @@
     <string name="status_database_permission">database permission needed</string>
     <string name="status_ready_api">ready (API %1$d)</string>
     <string name="dictionary_test_title">Offline dictionary test</string>
-    <string name="dictionary_inventory_title">Installed dictionaries</string>
-    <string name="dictionary_inventory_empty">No dictionary slot is occupied.</string>
-    <string name="dictionary_inventory_valid">%1$s [%2$s] · %3$d entries</string>
+    <string name="dictionary_inventory_broken_title">Dictionary slots needing repair</string>
     <string name="dictionary_inventory_invalid">%1$s [%2$s] · invalid or incomplete (%3$d entries); replace this exact slot before mining</string>
     <string name="dictionary_term">Japanese term</string>
     <string name="dictionary_render_html">Render exact dictionary HTML</string>
@@ -633,7 +632,6 @@
     <string name="notices_documents_heading">Bundled notice documents</string>
 
     <!-- Batch 3: Settings and wizard -->
-    <string name="b3_settings_category_setup">Setup</string>
     <string name="b3_settings_category_anki">Anki</string>
     <string name="b3_settings_category_media">Media</string>
     <string name="b3_settings_category_dictionaries">Dictionaries</string>
@@ -646,9 +644,7 @@
     <string name="b3_settings_save_saving">Saving…</string>
     <string name="b3_settings_save_saved">Saved</string>
     <string name="b3_settings_save_failed">Save failed</string>
-    <string name="b3_settings_resolved_value">Resolved value: %1$s</string>
     <string name="b3_settings_android_override_state">Custom override</string>
-    <string name="b3_settings_use_recommended_default">Use recommended default</string>
     <string name="b3_validation_numeric_incomplete">Complete or clear this number</string>
     <string name="b3_validation_finite">Enter a finite number</string>
     <string name="b3_validation_non_negative">Enter zero or a positive number</string>

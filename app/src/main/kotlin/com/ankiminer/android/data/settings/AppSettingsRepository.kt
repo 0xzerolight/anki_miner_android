@@ -257,7 +257,10 @@ class DataStoreAppSettingsRepository internal constructor(
                     excludeHiraganaOnly = decoder.read(Keys.excludeHiraganaOnly, null, { it }),
                     excludeKatakanaOnly = decoder.read(Keys.excludeKatakanaOnly, null, { it }),
                     boldTargetInSentence = decoder.read(Keys.boldTarget, null, { it }),
-                    deduplicateSentences = decoder.read(Keys.deduplicateSentences, null, { it }),
+                    // Android-only default; keep in sync with AppSettings.deduplicateSentences.
+                    // The literal here is what a fresh install actually gets — the data-class
+                    // default is never consulted on this path.
+                    deduplicateSentences = decoder.read(Keys.deduplicateSentences, false, { it }),
                     useIPlusOneFilter = decoder.read(Keys.useIPlusOne, null, { it }),
                     useSentenceLengthFilter = decoder.read(Keys.useSentenceLength, null, { it }),
                     maxSentenceDurationSeconds =

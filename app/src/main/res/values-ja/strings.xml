@@ -402,10 +402,14 @@
     <string name="unidic_repair">修復</string>
     <string name="dictionary_install">インストール</string>
     <string name="dictionary_replace">安全に置き換え</string>
+    <string name="dictionary_catalog_reinstall">同梱辞書を再インストールまたは置き換え</string>
     <string name="dictionary_repair">辞書スロットを修復</string>
     <string name="dictionary_replace_confirm_title">インストール済み辞書を置き換えますか？</string>
-    <string name="dictionary_repair_confirm_title">使用中の辞書スロットを修復しますか？</string>
-    <string name="dictionary_replace_confirm_message">Jitendexスロットの現在の内容はトランザクション処理で置き換えられます。カスタム辞書である可能性があります。新しい検証済みインポートが失敗した場合、Anki Minerは現在のスロットを復元します。</string>
+    <string name="dictionary_repair_confirm_title">%1$sのスロットを修復しますか？</string>
+    <string name="resource_replace_confirm_title">%1$sを置き換えますか？</string>
+    <string name="resource_replace_confirm_message">%1$sはトランザクション処理で置き換えられます。新しいインポートの検証が失敗した場合、Anki Minerは現在インストールされているものを復元します。</string>
+    <string name="pitch_replace_confirm_message">%1$sは新しいファイルの検証後ただちに削除されます。バックアップは保持されません。</string>
+    <string name="pitch_replaces_installed">インポートするとインストール済みの高低アクセントデータが置き換えられます。</string>
     <string name="dictionary_replace_confirm">置き換え</string>
     <string name="dictionary_repair_confirm">スロットを修復</string>
     <string name="custom_dictionary_title">別のYomitan ZIPをインポート</string>
@@ -445,10 +449,7 @@
     <string name="bundled_wordset_item">%1$s · エントリ%2$d件</string>
     <string name="bundled_wordsets_unavailable">同梱の単語リストを一覧化できませんでした。</string>
     <string name="local_resource_display_name">表示名</string>
-    <string name="local_resource_replace">このIDの既存リソースを置き換え</string>
-    <string name="local_resource_inventory_ok">%1$s [%2$s] · エントリ%3$d件</string>
     <string name="local_resource_inventory_invalid">%1$s [%2$s] · 無効な一覧（エントリ%3$d件）。採掘前に置き換えてください</string>
-    <string name="pitch_inventory_ok">%1$s · エントリ%2$d件</string>
     <string name="pitch_inventory_invalid">%1$s · 無効な一覧（エントリ%2$d件）。採掘前に置き換えてください</string>
     <string name="resource_format_yomitan_zip">Yomitan ZIP</string>
     <string name="resource_format_csv">CSV</string>
@@ -480,9 +481,7 @@
     <string name="status_database_permission">データベース権限が必要</string>
     <string name="status_ready_api">準備完了 (API %1$d)</string>
     <string name="dictionary_test_title">オフライン辞書テスト</string>
-    <string name="dictionary_inventory_title">インストール済み辞書</string>
-    <string name="dictionary_inventory_empty">使用中の辞書スロットはありません。</string>
-    <string name="dictionary_inventory_valid">%1$s [%2$s] · エントリ%3$d件</string>
+    <string name="dictionary_inventory_broken_title">修復が必要な辞書スロット</string>
     <string name="dictionary_inventory_invalid">%1$s [%2$s] · 無効または不完全（エントリ%3$d件）。採掘前にこのスロットを置き換えてください</string>
     <string name="dictionary_term">日本語の語</string>
     <string name="dictionary_render_html">辞書HTMLをそのまま表示</string>
@@ -625,7 +624,6 @@
     <string name="notices_documents_heading">収録されている通知文書</string>
 
     <!-- Batch 3: Settings and wizard -->
-    <string name="b3_settings_category_setup">セットアップ</string>
     <string name="b3_settings_category_anki">Anki</string>
     <string name="b3_settings_category_media">メディア</string>
     <string name="b3_settings_category_dictionaries">辞書</string>
@@ -638,9 +636,7 @@
     <string name="b3_settings_save_saving">保存中…</string>
     <string name="b3_settings_save_saved">保存済み</string>
     <string name="b3_settings_save_failed">保存できませんでした</string>
-    <string name="b3_settings_resolved_value">現在の適用値: %1$s</string>
     <string name="b3_settings_android_override_state">カスタム上書き</string>
-    <string name="b3_settings_use_recommended_default">推奨設定を使用</string>
     <string name="b3_validation_numeric_incomplete">数値を最後まで入力するか、空欄にしてください</string>
     <string name="b3_validation_finite">有限の数値を入力してください</string>
     <string name="b3_validation_non_negative">0 以上の数値を入力してください</string>

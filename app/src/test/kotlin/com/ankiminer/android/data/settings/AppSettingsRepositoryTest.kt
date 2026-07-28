@@ -19,6 +19,7 @@ import com.ankiminer.android.anki.provider.NoteTypeSetupStatus
 import com.ankiminer.android.anki.provider.ProviderEndpoint
 import com.ankiminer.android.anki.provider.modelRow
 import com.ankiminer.android.anki.provider.templateRow
+import com.ankiminer.android.engine.BridgeJsonValue
 import com.ankiminer.android.ui.settings.SettingsResetAction
 import com.ankiminer.android.ui.settings.SettingsResetConfirmationState
 import com.ankiminer.android.ui.settings.dispatchConfirmedSettingsReset
@@ -44,6 +45,23 @@ import org.junit.rules.TemporaryFolder
 class AppSettingsRepositoryTest {
     @get:Rule
     val temporaryFolder = TemporaryFolder()
+
+    @Test
+    fun `a fresh store defaults sentence deduplication off and emits it to the engine`() {
+        val fresh = DataStoreAppSettingsRepository.migratePreferences(preferencesOf())
+
+        val settings = DataStoreAppSettingsRepository.decodePreferences(fresh)
+
+        // Decoded from an actual empty store rather than constructed as AppSettings(). The
+        // data-class default is dead on this path — decodePreferences names every parameter and
+        // takes each value from a `decoder.read(key, <literal>, …)` fallback — so only a
+        // store-backed assertion proves a fresh install really gets dedup off.
+        assertEquals(false, settings.deduplicateSentences)
+        assertEquals(
+            BridgeJsonValue.Bool(false),
+            EngineSettingsSnapshotMapper.map(settings, emptyList()).settings["deduplicate_sentences"],
+        )
+    }
 
     @Test
     fun `schema v2 migration enables all wordsets only for a fresh store`() {
@@ -231,7 +249,7 @@ class AppSettingsRepositoryTest {
                 excludeHiraganaOnly = null,
                 excludeKatakanaOnly = null,
                 boldTargetInSentence = null,
-                deduplicateSentences = null,
+                deduplicateSentences = false,
                 useIPlusOneFilter = null,
                 useSentenceLengthFilter = null,
                 maxSentenceDurationSeconds = null,

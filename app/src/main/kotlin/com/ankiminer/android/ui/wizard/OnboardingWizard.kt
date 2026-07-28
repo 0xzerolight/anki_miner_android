@@ -56,7 +56,7 @@ import com.ankiminer.android.ui.navigation.AppChrome
 import com.ankiminer.android.ui.settings.AnkiDeckCard
 import com.ankiminer.android.ui.settings.AnkiOperationCard
 import com.ankiminer.android.ui.settings.CatalogDictionaryCards
-import com.ankiminer.android.ui.settings.CatalogReplaceDialog
+import com.ankiminer.android.ui.settings.ResourceReplaceDialog
 import com.ankiminer.android.ui.settings.InlineFailureContainer
 import com.ankiminer.android.ui.settings.ResourceCard
 import com.ankiminer.android.ui.settings.ResourceOperationCard
@@ -154,8 +154,8 @@ internal data class OnboardingWizardCallbacks(
     val onOpenAppSettings: () -> Unit = {},
     val onInstallAnkiDroid: () -> Unit = {},
     val onOpenAnkiDroid: () -> Unit = {},
-    val onConfirmCatalogDictionaryReplace: () -> Unit = {},
-    val onDismissCatalogDictionaryReplace: () -> Unit = {},
+    val onConfirmResourceReplace: () -> Unit = {},
+    val onDismissResourceReplace: () -> Unit = {},
     val onDismissFailure: () -> Unit = {},
     val onDismissAnkiFailure: () -> Unit = {},
     val onInstallUniDic: () -> Unit = {},
@@ -199,10 +199,8 @@ internal fun OnboardingWizard(
                 onOpenAppSettings = onOpenAppSettings,
                 onInstallAnkiDroid = onInstallAnkiDroid,
                 onOpenAnkiDroid = onOpenAnkiDroid,
-                onConfirmCatalogDictionaryReplace =
-                    viewModel::confirmCatalogDictionaryReplace,
-                onDismissCatalogDictionaryReplace =
-                    viewModel::dismissCatalogDictionaryReplace,
+                onConfirmResourceReplace = viewModel::confirmPendingReplace,
+                onDismissResourceReplace = viewModel::dismissPendingReplace,
                 onDismissFailure = viewModel::dismissFailure,
                 onDismissAnkiFailure = viewModel::dismissAnkiFailure,
                 onInstallUniDic = viewModel::installUniDic,
@@ -248,10 +246,11 @@ internal fun OnboardingWizardContent(
         scrollState.scrollTo(0)
         headingFocusRequester.requestFocus()
     }
-    CatalogReplaceDialog(
-        state = state,
-        onConfirm = callbacks.onConfirmCatalogDictionaryReplace,
-        onDismiss = callbacks.onDismissCatalogDictionaryReplace,
+    ResourceReplaceDialog(
+        pending = state.pendingReplace,
+        busy = state.busy,
+        onConfirm = callbacks.onConfirmResourceReplace,
+        onDismiss = callbacks.onDismissResourceReplace,
     )
     if (showSkipConfirmation) {
         AlertDialog(

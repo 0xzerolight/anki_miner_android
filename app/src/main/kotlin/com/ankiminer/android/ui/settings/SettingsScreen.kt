@@ -7,9 +7,11 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -27,9 +29,11 @@ import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.ankiminer.android.R
 import com.ankiminer.android.data.RuntimeWorkCoordinator
+import com.ankiminer.android.data.resources.ResourceFailureOrigin
 import com.ankiminer.android.data.resources.ResourceManagerState
 import com.ankiminer.android.diagnostics.TesterDiagnosticsIdentity
 import com.ankiminer.android.localization.LocalizedStringResource
+import com.ankiminer.android.ui.mining.RuntimeConflictNotice
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
 import com.ankiminer.android.vm.SettingsDraft
 import com.ankiminer.android.vm.SettingsSaveState
@@ -230,7 +234,7 @@ private fun SettingsScreen(
     onExportKnownWords: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    var selectedCategory by rememberSaveable { mutableStateOf(SettingsCategory.SETUP) }
+    var selectedCategory by rememberSaveable { mutableStateOf(SettingsCategory.ANKI) }
     val listStates = rememberSettingsCategoryListStates()
     var resetConfirmation by remember {
         mutableStateOf(SettingsResetConfirmationState())
@@ -272,10 +276,13 @@ private fun SettingsScreen(
             },
         )
     }
-    CatalogReplaceDialog(
-        state = setup,
-        onConfirm = setupViewModel::confirmCatalogDictionaryReplace,
-        onDismiss = setupViewModel::dismissCatalogDictionaryReplace,
+    // Hosted outside the LazyColumn so it survives the target card scrolling away, and so no
+    // deep-link card index shifts.
+    ResourceReplaceDialog(
+        pending = setup.pendingReplace,
+        busy = setup.busy,
+        onConfirm = setupViewModel::confirmPendingReplace,
+        onDismiss = setupViewModel::dismissPendingReplace,
     )
 
     val callbacks =
@@ -325,7 +332,44 @@ private fun SettingsScreen(
                     onResolveRecovery = {
                         selectedCategory = SettingsCategory.ANKI
                     },
+                    // SETUP is the default failure origin and what resource-startup recovery
+                    // records, so it has no owning card. The slot renders above the compact
+                    // cutoff, and ResourceOriginFailure draws nothing when the origin does not
+                    // match, so passing it unconditionally is free.
+                    inlineFailure = {
+                        ResourceOriginFailure(
+                            setup,
+                            setOf(ResourceFailureOrigin.SETUP),
+                            setupViewModel,
+                            callbacks,
+                        )
+                    },
                 )
+                // Both conditions gate controls in every category, so they live where every
+                // category can see them rather than on a tab the user may never open.
+                // The conflict notice yields to the operation card: the RESOURCE work lease is
+                // taken before activeOperation is set and released after it clears, so ungated
+                // it would sit above the live progress card for the whole of every import.
+                if (setup.operation == null) {
+                    setup.runtimeWorkKind?.let { kind ->
+                        if (kind == RuntimeWorkCoordinator.Kind.MINING) {
+                            RuntimeConflictNotice(
+                                text = stringResource(settingsRuntimeWorkMessage(kind)),
+                                onReturnToActiveRun = onReturnToActiveRun,
+                            )
+                        } else {
+                            OutlinedCard(Modifier.fillMaxWidth()) {
+                                Text(
+                                    stringResource(settingsRuntimeWorkMessage(kind)),
+                                    Modifier.padding(AnkiMinerTokens.Space.group),
+                                )
+                            }
+                        }
+                    }
+                }
+                setup.operation?.let { operation ->
+                    ResourceOperationCard(operation, setupViewModel::cancelOperation)
+                }
                 SettingsSaveStatus(
                     state = saveState,
                     error = saveError?.localized(),
