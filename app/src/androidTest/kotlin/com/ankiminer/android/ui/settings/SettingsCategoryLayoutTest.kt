@@ -20,7 +20,7 @@ class SettingsCategoryLayoutTest {
 
     @Test
     fun onlySelectedCategoryExistsAndEachCategoryRestoresItsPosition() {
-        var selected by mutableStateOf(SettingsCategory.SETUP)
+        var selected by mutableStateOf(SettingsCategory.ANKI)
         val rows = List(100) { it }
 
         composeRule.setContent {
@@ -41,23 +41,23 @@ class SettingsCategoryLayoutTest {
             }
         }
 
-        composeRule.onNodeWithText("SETUP row 0").assertIsDisplayed()
+        composeRule.onNodeWithText("ANKI row 0").assertIsDisplayed()
         composeRule.onNodeWithText("MEDIA row 0").assertDoesNotExist()
 
         composeRule
             .onNodeWithTag(SettingsCategoryTestTags.LIST)
             .performScrollToIndex(52)
-        composeRule.onNodeWithText("SETUP row 50").assertIsDisplayed()
+        composeRule.onNodeWithText("ANKI row 50").assertIsDisplayed()
         composeRule.onNodeWithText("Media").performClick()
 
-        composeRule.onNodeWithText("SETUP row 50").assertDoesNotExist()
+        composeRule.onNodeWithText("ANKI row 50").assertDoesNotExist()
         composeRule
             .onNodeWithTag(SettingsCategoryTestTags.LIST)
             .performScrollToIndex(22)
         composeRule.onNodeWithText("MEDIA row 20").assertIsDisplayed()
 
-        composeRule.onNodeWithText("Setup").performClick()
-        composeRule.onNodeWithText("SETUP row 50").assertIsDisplayed()
+        composeRule.onNodeWithText("Anki").performClick()
+        composeRule.onNodeWithText("ANKI row 50").assertIsDisplayed()
         composeRule.onNodeWithText("MEDIA row 20").assertDoesNotExist()
     }
 }

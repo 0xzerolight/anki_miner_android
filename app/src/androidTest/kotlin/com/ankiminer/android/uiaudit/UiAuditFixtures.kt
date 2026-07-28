@@ -502,7 +502,7 @@ internal fun UiAuditSettingsFixture(
         }
     val category =
         when (focus) {
-            SettingsAuditState.TOP -> SettingsCategory.SETUP
+            SettingsAuditState.TOP -> SettingsCategory.DIAGNOSTICS
             SettingsAuditState.ANKI -> SettingsCategory.ANKI
             SettingsAuditState.RESOURCES,
             SettingsAuditState.ERROR_SNACKBAR,
@@ -517,15 +517,18 @@ internal fun UiAuditSettingsFixture(
         listStates = mapOf(category to listState),
     ) { selected ->
         when (selected) {
-            SettingsCategory.SETUP ->
+            SettingsCategory.DIAGNOSTICS ->
+                // The UniDic card lives in Diagnostics now and only appears when the tokenizer
+                // is missing or failing, so the fixture captures that state rather than the
+                // installed one, which renders nothing.
                 settingsCard("audit-unidic") {
                     ResourceCard(
                         title = stringResource(R.string.unidic_resource_title),
                         description = stringResource(R.string.unidic_resource_description),
-                        installed = setup.uniDicInstalled,
+                        installed = false,
                         busy = false,
                         action = {},
-                        actionLabel = stringResource(R.string.unidic_repair),
+                        actionLabel = stringResource(R.string.unidic_install),
                     )
                 }
             SettingsCategory.ANKI ->

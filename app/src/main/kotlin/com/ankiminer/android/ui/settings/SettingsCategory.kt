@@ -30,7 +30,6 @@ import com.ankiminer.android.ui.theme.AnkiMinerTokens
 internal enum class SettingsCategory(
     @param:StringRes val label: Int,
 ) {
-    SETUP(R.string.b3_settings_category_setup),
     ANKI(R.string.b3_settings_category_anki),
     MEDIA(R.string.b3_settings_category_media),
     DICTIONARIES(R.string.b3_settings_category_dictionaries),
@@ -47,9 +46,11 @@ internal object SettingsCategoryTestTags {
 
 internal fun settingsCategoryFor(origin: ResourceFailureOrigin): SettingsCategory =
     when (origin) {
+        // SETUP renders in the shared header, so any category works; DIAGNOSTICS is where the
+        // resource-startup status it contradicts is printed. UNIDIC owns a card there.
         ResourceFailureOrigin.SETUP,
         ResourceFailureOrigin.UNIDIC,
-        -> SettingsCategory.SETUP
+        -> SettingsCategory.DIAGNOSTICS
         ResourceFailureOrigin.CATALOG_DICTIONARY,
         ResourceFailureOrigin.CUSTOM_DICTIONARY,
         ResourceFailureOrigin.PITCH,
@@ -76,10 +77,11 @@ internal fun settingsCategoryFor(origin: AnkiSetupFailureOrigin): SettingsCatego
  */
 internal fun settingsCardIndexFor(origin: ResourceFailureOrigin): Int =
     when (origin) {
-        ResourceFailureOrigin.SETUP,
-        ResourceFailureOrigin.UNIDIC,
-        ResourceFailureOrigin.CATALOG_DICTIONARY,
-        -> 2
+        // Rendered in the header, which is item 0.
+        ResourceFailureOrigin.SETUP -> 0
+        ResourceFailureOrigin.CATALOG_DICTIONARY -> 2
+        // Diagnostics: diagnostic-runtime(2), unidic(3).
+        ResourceFailureOrigin.UNIDIC -> 3
         ResourceFailureOrigin.CUSTOM_DICTIONARY -> 3
         ResourceFailureOrigin.PITCH -> 4
         ResourceFailureOrigin.DICTIONARY_LOOKUP -> 6

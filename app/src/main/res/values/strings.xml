@@ -633,7 +633,6 @@
     <string name="notices_documents_heading">Bundled notice documents</string>
 
     <!-- Batch 3: Settings and wizard -->
-    <string name="b3_settings_category_setup">Setup</string>
     <string name="b3_settings_category_anki">Anki</string>
     <string name="b3_settings_category_media">Media</string>
     <string name="b3_settings_category_dictionaries">Dictionaries</string>

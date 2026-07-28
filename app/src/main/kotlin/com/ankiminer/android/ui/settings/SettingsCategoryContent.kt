@@ -7,7 +7,6 @@ import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -16,7 +15,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.ankiminer.android.R
-import com.ankiminer.android.data.RuntimeWorkCoordinator
 import com.ankiminer.android.data.anki.AnkiSetupFailureOrigin
 import com.ankiminer.android.data.anki.AnkiSetupFailureAction
 import com.ankiminer.android.data.resources.KnownWordsFailureOperation
@@ -29,7 +27,6 @@ import com.ankiminer.android.data.settings.PitchCategoryFormat
 import com.ankiminer.android.data.settings.ThemeMode
 import com.ankiminer.android.diagnostics.TesterDiagnosticsIdentity
 import com.ankiminer.android.localization.LocalizedStringResource
-import com.ankiminer.android.ui.mining.RuntimeConflictNotice
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
 import com.ankiminer.android.ui.theme.SupportingText
 import com.ankiminer.android.ui.theme.actionBorder
@@ -93,12 +90,6 @@ internal fun LazyListScope.settingsCategoryContent(
     callbacks: SettingsScreenCallbacks,
 ) {
     when (category) {
-        SettingsCategory.SETUP ->
-            setupSettings(
-                setup,
-                setupViewModel,
-                callbacks,
-            )
         SettingsCategory.ANKI ->
             ankiSettings(
                 draft,
@@ -151,71 +142,10 @@ internal fun LazyListScope.settingsCategoryContent(
         SettingsCategory.DIAGNOSTICS ->
             diagnosticsSettings(
                 setup,
+                setupViewModel,
                 diagnostics,
                 callbacks,
             )
-    }
-}
-
-private fun LazyListScope.setupSettings(
-    setup: SetupUiState,
-    setupViewModel: SetupViewModel,
-    callbacks: SettingsScreenCallbacks,
-) {
-    if (setup.failure?.origin == ResourceFailureOrigin.SETUP) {
-        settingsCard("setup-failure") {
-            SettingsSection(stringResource(R.string.b3_settings_category_setup)) {
-                ResourceOriginFailure(
-                    setup,
-                    setOf(ResourceFailureOrigin.SETUP),
-                    setupViewModel,
-                    callbacks,
-                )
-            }
-        }
-    }
-    setup.runtimeWorkKind?.let { kind ->
-        settingsCard("runtime-conflict") {
-            if (kind == RuntimeWorkCoordinator.Kind.MINING) {
-                RuntimeConflictNotice(
-                    text = stringResource(settingsRuntimeWorkMessage(kind)),
-                    onReturnToActiveRun = callbacks.onReturnToActiveRun,
-                )
-            } else {
-                OutlinedCard(Modifier.fillMaxWidth()) {
-                    Text(
-                        stringResource(settingsRuntimeWorkMessage(kind)),
-                        Modifier.padding(AnkiMinerTokens.Space.group),
-                    )
-                }
-            }
-        }
-    }
-    settingsCard("unidic") {
-        ResourceCard(
-            title = stringResource(R.string.unidic_resource_title),
-            description = stringResource(R.string.unidic_resource_description),
-            installed = setup.uniDicInstalled,
-            busy = setup.busy,
-            action = setupViewModel::installUniDic,
-            actionLabel =
-                stringResource(
-                    if (setup.uniDicInstalled) R.string.unidic_repair else R.string.unidic_install,
-                ),
-            inlineFailure = {
-                ResourceOriginFailure(
-                    setup,
-                    setOf(ResourceFailureOrigin.UNIDIC),
-                    setupViewModel,
-                    callbacks,
-                )
-            },
-        )
-    }
-    setup.operation?.let { operation ->
-        settingsCard("setup-operation") {
-            ResourceOperationCard(operation, setupViewModel::cancelOperation)
-        }
     }
 }
 
@@ -542,11 +472,8 @@ private fun LazyListScope.dictionarySettings(
         }
     }
     settingsCard("dictionary-inventory") { DictionaryInventoryCard(setup) }
-    setup.operation?.let { operation ->
-        settingsCard("dictionary-operation") {
-            ResourceOperationCard(operation, setupViewModel::cancelOperation)
-        }
-    }
+    // No operation card here: the shared header renders the one ResourceOperationCard for
+    // setup.operation, and a second copy on this tab meant two Cancel buttons for one operation.
 }
 
 private fun LazyListScope.audioSettings(
@@ -824,6 +751,7 @@ private fun LazyListScope.uiSettings(
 
 private fun LazyListScope.diagnosticsSettings(
     setup: SetupUiState,
+    setupViewModel: SetupViewModel,
     diagnostics: TesterDiagnosticsIdentity,
     callbacks: SettingsScreenCallbacks,
 ) {
@@ -848,6 +776,32 @@ private fun LazyListScope.diagnosticsSettings(
                         },
                     ),
                 ),
+            )
+        }
+    }
+    // Only shown when the tokenizer needs something. A healthy install has nothing to say here,
+    // and a permanently visible "Japanese tokenizer - required" card with a Repair button reads
+    // as a fault report. Repair re-downloads ~45 MiB and then no-ops when nothing is wrong.
+    if (!setup.uniDicInstalled || setup.failure?.origin == ResourceFailureOrigin.UNIDIC) {
+        settingsCard("unidic") {
+            ResourceCard(
+                title = stringResource(R.string.unidic_resource_title),
+                description = stringResource(R.string.unidic_resource_description),
+                installed = setup.uniDicInstalled,
+                busy = setup.busy,
+                action = setupViewModel::installUniDic,
+                actionLabel =
+                    stringResource(
+                        if (setup.uniDicInstalled) R.string.unidic_repair else R.string.unidic_install,
+                    ),
+                inlineFailure = {
+                    ResourceOriginFailure(
+                        setup,
+                        setOf(ResourceFailureOrigin.UNIDIC),
+                        setupViewModel,
+                        callbacks,
+                    )
+                },
             )
         }
     }
@@ -912,8 +866,9 @@ private fun LazyListScope.diagnosticsSettings(
     }
 }
 
+/** Internal rather than private: the shared Settings header renders the SETUP-origin failure. */
 @Composable
-private fun ResourceOriginFailure(
+internal fun ResourceOriginFailure(
     setup: SetupUiState,
     origins: Set<ResourceFailureOrigin>,
     setupViewModel: SetupViewModel,

@@ -36,7 +36,7 @@ class FailureOriginRoutingTest {
                 "Recovery failed" to settingsCategoryFor(AnkiSetupFailureOrigin.RECOVERY),
             )
         var selected by mutableStateOf(SettingsCategory.UI)
-        var expected by mutableStateOf(SettingsCategory.SETUP)
+        var expected by mutableStateOf(SettingsCategory.ANKI)
         var message by mutableStateOf("not shown")
         var actions by mutableIntStateOf(0)
 
