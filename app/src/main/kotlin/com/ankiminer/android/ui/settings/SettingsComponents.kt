@@ -393,24 +393,46 @@ internal fun <T> AdaptiveChoiceSelector(
     }
 }
 
-/** Compatibility entry point for settings sections migrated before the adaptive selector existed. */
+/**
+ * Choice peer of [NullableToggle] for a setting whose null means "use the engine default".
+ *
+ * Renders the resolved value as the selection instead of offering a separate "use recommended
+ * default" segment, which named an implementation detail and cost a third of the control's width.
+ * As with [NullableToggle], an override is marked on the label and the way back is the category's
+ * Restore defaults action.
+ */
 @Composable
-internal fun <T> ChoiceSegmentedButtons(
+internal fun <T> NullableChoice(
+    label: String,
+    value: T?,
+    engineDefault: T,
     values: List<T>,
-    selected: T,
-    label: @Composable (T) -> String,
-    onSelect: (T) -> Unit,
+    optionLabel: @Composable (T) -> String,
+    onChange: (T) -> Unit,
     enabled: Boolean = true,
-    modifier: Modifier = Modifier,
 ) {
-    AdaptiveChoiceSelector(
-        values = values,
-        selected = selected,
-        label = label,
-        onSelect = onSelect,
-        enabled = enabled,
-        modifier = modifier,
-    )
+    val overridden = value != null
+    val overrideState = stringResource(R.string.b3_settings_android_override_state)
+    Column(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .semantics { if (overridden) stateDescription = overrideState },
+        verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.line),
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = if (overridden) FontWeight.Medium else null,
+        )
+        AdaptiveChoiceSelector(
+            values = values,
+            selected = value ?: engineDefault,
+            label = optionLabel,
+            onSelect = onChange,
+            enabled = enabled,
+        )
+    }
 }
 
 @Composable

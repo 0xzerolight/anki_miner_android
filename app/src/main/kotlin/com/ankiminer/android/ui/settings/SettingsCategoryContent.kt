@@ -288,33 +288,20 @@ private fun LazyListScope.mediaSettings(
                 integer = true,
                 error = validationMessage(draft, SettingsFieldKey.BITRATE),
             )
-            Text(stringResource(R.string.settings_audio_format))
-            ChoiceSegmentedButtons(
-                values = listOf(null, AudioFormat.MP3, AudioFormat.OPUS),
-                selected = draft.audioFormat,
-                label = { value ->
+            NullableChoice(
+                label = stringResource(R.string.settings_audio_format),
+                value = draft.audioFormat,
+                engineDefault = AudioFormat.MP3,
+                values = listOf(AudioFormat.MP3, AudioFormat.OPUS),
+                optionLabel = { value ->
                     stringResource(
                         when (value) {
-                            null -> R.string.b3_settings_use_recommended_default
                             AudioFormat.MP3 -> R.string.settings_mp3
                             AudioFormat.OPUS -> R.string.settings_opus
                         },
                     )
                 },
-                onSelect = { onDraftChange(draft.copy(audioFormat = it)) },
-            )
-            Text(
-                stringResource(
-                    R.string.b3_settings_resolved_value,
-                    stringResource(
-                        if ((draft.audioFormat ?: AudioFormat.MP3) == AudioFormat.MP3) {
-                            R.string.settings_mp3
-                        } else {
-                            R.string.settings_opus
-                        },
-                    ),
-                ),
-                style = MaterialTheme.typography.bodySmall,
+                onChange = { onDraftChange(draft.copy(audioFormat = it)) },
             )
         }
     }
@@ -403,10 +390,6 @@ private fun LazyListScope.dictionarySettings(
             SupportingText(stringResource(R.string.settings_jisho_disclosure))
             HorizontalDivider()
             Text(
-                stringResource(R.string.settings_pitch_format),
-                style = MaterialTheme.typography.titleSmall,
-            )
-            Text(
                 resources.pitchAccent?.let {
                     stringResource(
                         R.string.settings_pitch_installed,
@@ -416,37 +399,22 @@ private fun LazyListScope.dictionarySettings(
                 } ?: stringResource(R.string.settings_pitch_not_installed),
                 style = MaterialTheme.typography.bodySmall,
             )
-            ChoiceSegmentedButtons(
-                values = listOf(null, PitchCategoryFormat.JAPANESE, PitchCategoryFormat.ROMAJI),
-                selected = draft.pitchFormat,
-                label = { value ->
+            NullableChoice(
+                label = stringResource(R.string.settings_pitch_format),
+                value = draft.pitchFormat,
+                engineDefault = PitchCategoryFormat.JAPANESE,
+                values = listOf(PitchCategoryFormat.JAPANESE, PitchCategoryFormat.ROMAJI),
+                optionLabel = { value ->
                     stringResource(
                         when (value) {
-                            null -> R.string.b3_settings_use_recommended_default
                             PitchCategoryFormat.JAPANESE -> R.string.settings_pitch_japanese
                             PitchCategoryFormat.ROMAJI -> R.string.settings_pitch_romaji
                         },
                     )
                 },
-                onSelect = {
+                onChange = {
                     callbacks.onDraftChange(draft.copy(pitchFormat = it))
                 },
-            )
-            Text(
-                stringResource(
-                    R.string.b3_settings_resolved_value,
-                    stringResource(
-                        if (
-                            (draft.pitchFormat ?: PitchCategoryFormat.JAPANESE) ==
-                            PitchCategoryFormat.JAPANESE
-                        ) {
-                            R.string.settings_pitch_japanese
-                        } else {
-                            R.string.settings_pitch_romaji
-                        },
-                    ),
-                ),
-                style = MaterialTheme.typography.bodySmall,
             )
         }
     }
@@ -728,7 +696,7 @@ private fun LazyListScope.uiSettings(
     settingsCard("ui-options") {
         SettingsSection(stringResource(R.string.settings_ui_section)) {
             Text(stringResource(R.string.settings_theme))
-            ChoiceSegmentedButtons(
+            AdaptiveChoiceSelector(
                 values = ThemeMode.entries,
                 selected = draft.theme,
                 label = { value ->
