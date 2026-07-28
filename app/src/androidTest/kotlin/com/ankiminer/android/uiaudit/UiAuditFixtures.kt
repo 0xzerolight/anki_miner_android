@@ -465,7 +465,6 @@ internal fun setupAuditState(): SetupUiState {
         lookupTerm = "掛ける",
         lookupSlotId = dictionaries.first().slotId,
         customSlotId = "custom-classical-japanese",
-        frequencySourceId = "jpdb-v2",
         frequencySourceName = "JPDB frequency 2025",
         pitchSourceName = "Kanjium pitch accents",
         audioPackId = "jpod101-extra",
@@ -643,14 +642,12 @@ private fun SettingsResourcesFixture(setup: SetupUiState) {
         CustomDictionaryImportCard(
             state = setup,
             onSlotChanged = {},
-            onReplaceChanged = {},
             onImport = {},
         )
         PitchImportCard(
             state = setup,
             onNameChanged = {},
             onFormatChanged = {},
-            onReplaceChanged = {},
             onImport = {},
         )
         SettingsSection(stringResource(R.string.settings_dictionary_chain)) {

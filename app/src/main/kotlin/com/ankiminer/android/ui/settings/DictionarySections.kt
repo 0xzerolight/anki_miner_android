@@ -38,51 +38,6 @@ import com.ankiminer.android.ui.theme.forwardButtonColors
 import com.ankiminer.android.ui.theme.outlinedActionButtonColors
 import com.ankiminer.android.vm.SetupUiState
 
-@Composable
-internal fun CatalogReplaceDialog(
-    state: SetupUiState,
-    onConfirm: () -> Unit,
-    onDismiss: () -> Unit,
-) {
-    val pendingReplace =
-        state.pendingReplaceResourceId?.let { pending ->
-            state.catalogDictionaries.firstOrNull { it.resource.resourceId == pending }
-        } ?: return
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Text(
-                stringResource(
-                    if (pendingReplace.needsRepair) {
-                        R.string.dictionary_repair_confirm_title
-                    } else {
-                        R.string.dictionary_replace_confirm_title
-                    },
-                ),
-            )
-        },
-        text = { Text(stringResource(R.string.dictionary_replace_confirm_message)) },
-        confirmButton = {
-            Button(onClick = onConfirm) {
-                Text(
-                    stringResource(
-                        if (pendingReplace.needsRepair) {
-                            R.string.dictionary_repair_confirm
-                        } else {
-                            R.string.dictionary_replace_confirm
-                        },
-                    ),
-                )
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.cancel))
-            }
-        },
-    )
-}
-
 /**
  * Bundled dictionary install cards. An installed dictionary has nothing to offer, so its card is
  * hidden behind a disclosure rather than sitting permanently at the top of the tab.
@@ -156,7 +111,6 @@ internal fun CatalogDictionaryCards(
 internal fun CustomDictionaryImportCard(
     state: SetupUiState,
     onSlotChanged: (String) -> Unit,
-    onReplaceChanged: (Boolean) -> Unit,
     onImport: () -> Unit,
     inlineFailure: (@Composable () -> Unit)? = null,
 ) {
@@ -181,7 +135,6 @@ internal fun CustomDictionaryImportCard(
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
-            ReplaceToggle(state.customReplace, !state.busy, onReplaceChanged)
             inlineFailure?.invoke()
             OutlinedButton(
                 onClick = onImport,

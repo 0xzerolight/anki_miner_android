@@ -58,7 +58,7 @@ internal data class SetupUiState(
     val wizardCompletion: WizardCompletionStatus = WizardCompletionStatus.IDLE,
     val uniDicInstalled: Boolean = false,
     val catalogDictionaries: List<CatalogDictionaryStatus> = emptyList(),
-    val pendingReplaceResourceId: String? = null,
+    val pendingReplace: PendingResourceReplace? = null,
     val dictionaries: List<InstalledDictionary> = emptyList(),
     val frequencySources: List<InstalledFrequencySource> = emptyList(),
     val pitchAccent: InstalledPitchAccent? = null,
@@ -74,24 +74,16 @@ internal data class SetupUiState(
     val lookupTerm: String = "猫",
     val lookupSlotId: String? = null,
     val customSlotId: String = "custom-dictionary",
-    val customReplace: Boolean = false,
-    val frequencySourceId: String = "frequency",
     val frequencySourceName: String = "Imported frequency",
     val frequencyFormat: FrequencySourceFormat = FrequencySourceFormat.YOMITAN_ZIP,
-    val frequencyReplace: Boolean = false,
     val pitchSourceName: String = "Imported pitch accent",
     val pitchFormat: PitchAccentSourceFormat = PitchAccentSourceFormat.YOMITAN_ZIP,
-    val pitchReplace: Boolean = false,
     val audioPackId: String = "audio-pack",
-    val audioPackReplace: Boolean = false,
     val knownWordsFormat: KnownWordsSourceFormat = KnownWordsSourceFormat.JSON,
     val knownWordsSearch: String = "",
 ) {
     val customSlotValid: Boolean
         get() = CUSTOM_SLOT_ID.matches(customSlotId)
-
-    val frequencySourceIdValid: Boolean
-        get() = CUSTOM_SLOT_ID.matches(frequencySourceId)
 
     val audioPackIdValid: Boolean
         get() = CUSTOM_SLOT_ID.matches(audioPackId) && audioPackId != "jpod101"

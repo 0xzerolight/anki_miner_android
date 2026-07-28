@@ -16,6 +16,8 @@ import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -78,9 +80,12 @@ import com.ankiminer.android.ui.theme.AnkiMinerTokens
 import com.ankiminer.android.ui.theme.CompactLayoutWidthDp
 import com.ankiminer.android.ui.theme.SupportingText
 import com.ankiminer.android.ui.theme.actionBorder
+import com.ankiminer.android.ui.theme.forwardButtonColors
 import com.ankiminer.android.ui.theme.outlinedActionButtonColors
 import com.ankiminer.android.ui.theme.radioActionColors
 import com.ankiminer.android.ui.theme.segmentedActionColors
+import com.ankiminer.android.vm.PendingResourceReplace
+import com.ankiminer.android.vm.ResourceReplaceKind
 import com.ankiminer.android.vm.SettingsSaveState
 import kotlinx.coroutines.launch
 
@@ -551,26 +556,68 @@ internal fun ResourceCard(
     }
 }
 
+/**
+ * Confirms an import that would overwrite something already installed.
+ *
+ * Replaces the "Replace an existing resource with this ID" checkbox, which asked about a collision
+ * the user could not see, described an ID the pitch card never had, and - left unticked - failed
+ * only after the file had been staged, copied, validated and indexed, with no retry.
+ */
 @Composable
-internal fun ReplaceToggle(
-    checked: Boolean,
-    enabled: Boolean,
-    onChange: (Boolean) -> Unit,
+internal fun ResourceReplaceDialog(
+    pending: PendingResourceReplace?,
+    busy: Boolean,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
 ) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .toggleable(
-                value = checked,
-                enabled = enabled,
-                role = Role.Checkbox,
-                onValueChange = onChange,
-            ).padding(vertical = AnkiMinerTokens.Space.line),
-        horizontalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
-    ) {
-        Checkbox(checked = checked, onCheckedChange = null, enabled = enabled)
-        Text(stringResource(R.string.local_resource_replace), Modifier.padding(top = AnkiMinerTokens.Space.group))
-    }
+    if (pending == null) return
+    AlertDialog(
+        onDismissRequest = { if (!busy) onDismiss() },
+        title = {
+            Text(
+                stringResource(
+                    if (pending.repair) {
+                        R.string.dictionary_repair_confirm_title
+                    } else {
+                        R.string.resource_replace_confirm_title
+                    },
+                    pending.installedLabel,
+                ),
+            )
+        },
+        text = {
+            Text(
+                stringResource(
+                    // Pitch is promoted with a bare file replace and keeps no backup, unlike every
+                    // other kind, so it must not promise a restore.
+                    if (pending.kind == ResourceReplaceKind.PITCH) {
+                        R.string.pitch_replace_confirm_message
+                    } else {
+                        R.string.resource_replace_confirm_message
+                    },
+                    pending.installedLabel,
+                ),
+            )
+        },
+        confirmButton = {
+            Button(onClick = onConfirm, enabled = !busy, colors = forwardButtonColors()) {
+                Text(
+                    stringResource(
+                        if (pending.repair) {
+                            R.string.dictionary_repair_confirm
+                        } else {
+                            R.string.dictionary_replace_confirm
+                        },
+                    ),
+                )
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, enabled = !busy) {
+                Text(stringResource(R.string.cancel))
+            }
+        },
+    )
 }
 
 @Composable

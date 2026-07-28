@@ -405,8 +405,11 @@
     <string name="dictionary_catalog_reinstall">同梱辞書を再インストールまたは置き換え</string>
     <string name="dictionary_repair">辞書スロットを修復</string>
     <string name="dictionary_replace_confirm_title">インストール済み辞書を置き換えますか？</string>
-    <string name="dictionary_repair_confirm_title">使用中の辞書スロットを修復しますか？</string>
-    <string name="dictionary_replace_confirm_message">Jitendexスロットの現在の内容はトランザクション処理で置き換えられます。カスタム辞書である可能性があります。新しい検証済みインポートが失敗した場合、Anki Minerは現在のスロットを復元します。</string>
+    <string name="dictionary_repair_confirm_title">%1$sのスロットを修復しますか？</string>
+    <string name="resource_replace_confirm_title">%1$sを置き換えますか？</string>
+    <string name="resource_replace_confirm_message">%1$sはトランザクション処理で置き換えられます。新しいインポートの検証が失敗した場合、Anki Minerは現在インストールされているものを復元します。</string>
+    <string name="pitch_replace_confirm_message">%1$sは新しいファイルの検証後ただちに削除されます。バックアップは保持されません。</string>
+    <string name="pitch_replaces_installed">インポートするとインストール済みの高低アクセントデータが置き換えられます。</string>
     <string name="dictionary_replace_confirm">置き換え</string>
     <string name="dictionary_repair_confirm">スロットを修復</string>
     <string name="custom_dictionary_title">別のYomitan ZIPをインポート</string>
@@ -446,7 +449,6 @@
     <string name="bundled_wordset_item">%1$s · エントリ%2$d件</string>
     <string name="bundled_wordsets_unavailable">同梱の単語リストを一覧化できませんでした。</string>
     <string name="local_resource_display_name">表示名</string>
-    <string name="local_resource_replace">このIDの既存リソースを置き換え</string>
     <string name="local_resource_inventory_invalid">%1$s [%2$s] · 無効な一覧（エントリ%3$d件）。採掘前に置き換えてください</string>
     <string name="pitch_inventory_invalid">%1$s · 無効な一覧（エントリ%2$d件）。採掘前に置き換えてください</string>
     <string name="resource_format_yomitan_zip">Yomitan ZIP</string>

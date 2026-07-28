@@ -337,7 +337,6 @@ private fun LazyListScope.dictionarySettings(
         CustomDictionaryImportCard(
             state = setup,
             onSlotChanged = setupViewModel::setCustomSlotId,
-            onReplaceChanged = setupViewModel::setCustomReplace,
             onImport = callbacks.onImportCustom,
             inlineFailure = {
                 ResourceOriginFailure(
@@ -354,7 +353,6 @@ private fun LazyListScope.dictionarySettings(
             state = setup,
             onNameChanged = setupViewModel::setPitchSourceName,
             onFormatChanged = setupViewModel::setPitchFormat,
-            onReplaceChanged = setupViewModel::setPitchReplace,
             onImport = callbacks.onImportPitch,
             inlineFailure = {
                 ResourceOriginFailure(
@@ -474,7 +472,6 @@ private fun LazyListScope.audioSettings(
         AudioPackImportCard(
             state = setup,
             onIdChanged = setupViewModel::setAudioPackId,
-            onReplaceChanged = setupViewModel::setAudioPackReplace,
             onImport = callbacks.onImportAudioPack,
             inlineFailure = {
                 ResourceOriginFailure(
@@ -530,10 +527,8 @@ private fun LazyListScope.frequencySettings(
     settingsCard("frequency-import") {
         FrequencyImportCard(
             state = setup,
-            onIdChanged = setupViewModel::setFrequencySourceId,
             onNameChanged = setupViewModel::setFrequencySourceName,
             onFormatChanged = setupViewModel::setFrequencyFormat,
-            onReplaceChanged = setupViewModel::setFrequencyReplace,
             onImport = callbacks.onImportFrequency,
             inlineFailure = {
                 ResourceOriginFailure(

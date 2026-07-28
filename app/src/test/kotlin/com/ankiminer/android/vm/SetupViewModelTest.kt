@@ -9,6 +9,8 @@ import com.ankiminer.android.data.RuntimeWorkCoordinator
 import com.ankiminer.android.data.anki.AnkiSetupManager
 import com.ankiminer.android.data.anki.AnkiSetupManagerState
 import com.ankiminer.android.data.resources.FrequencySourceFormat
+import com.ankiminer.android.data.resources.InstalledFrequencySource
+import com.ankiminer.android.data.resources.InstalledPitchAccent
 import com.ankiminer.android.data.resources.KnownWordsResetScope
 import com.ankiminer.android.data.resources.KnownWordsSourceFormat
 import com.ankiminer.android.data.resources.PitchAccentSourceFormat
@@ -263,6 +265,140 @@ class SetupViewModelTest {
             assertEquals(1, resources.dismissCount)
         }
 
+    @Test
+    fun `a fresh frequency name imports immediately under its derived id`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val resources = FakeResourceManager()
+            val model = viewModel(FakeSettingsRepository(AppSettings()), FakeAnkiSetupManager(emptyList()), resources)
+            advanceUntilIdle()
+
+            model.setFrequencySourceName("JPDB v2.1")
+            advanceUntilIdle()
+            model.importFrequencySource("content://import.zip")
+            advanceUntilIdle()
+
+            assertEquals(listOf(Triple("content://import.zip", "jpdb-v2-1", false)), resources.frequencyImports)
+            assertEquals(null, model.uiState.value.pendingReplace)
+        }
+
+    @Test
+    fun `a colliding frequency name asks before importing and dispatches nothing`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val resources = FakeResourceManager()
+            resources.setInstalledFrequencySources(listOf(installedFrequency("jpdb-v2-1", "JPDB v2.1")))
+            val model = viewModel(FakeSettingsRepository(AppSettings()), FakeAnkiSetupManager(emptyList()), resources)
+            advanceUntilIdle()
+
+            model.setFrequencySourceName("JPDB v2.1")
+            advanceUntilIdle()
+            model.importFrequencySource("content://import.zip")
+            advanceUntilIdle()
+
+            assertEquals(emptyList<Triple<String, String, Boolean>>(), resources.frequencyImports)
+            val pending = requireNotNull(model.uiState.value.pendingReplace)
+            assertEquals(ResourceReplaceKind.FREQUENCY, pending.kind)
+            assertEquals("JPDB v2.1", pending.installedLabel)
+        }
+
+    /**
+     * The migration case. A source installed before ids were derived lives under a fixed id the
+     * current derivation would never produce, so confirming must write under *its* id - otherwise
+     * the old directory is orphaned and its priority-chain entry is dropped.
+     */
+    @Test
+    fun `confirming a name-matched frequency replace writes under the existing id`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val resources = FakeResourceManager()
+            resources.setInstalledFrequencySources(
+                listOf(installedFrequency("frequency", "Imported frequency")),
+            )
+            val model = viewModel(FakeSettingsRepository(AppSettings()), FakeAnkiSetupManager(emptyList()), resources)
+            advanceUntilIdle()
+
+            model.setFrequencySourceName("Imported frequency")
+            advanceUntilIdle()
+            model.importFrequencySource("content://import.zip")
+            advanceUntilIdle()
+            model.confirmPendingReplace()
+            advanceUntilIdle()
+
+            assertEquals(listOf(Triple("content://import.zip", "frequency", true)), resources.frequencyImports)
+            assertEquals(null, model.uiState.value.pendingReplace)
+        }
+
+    @Test
+    fun `dismissing a pending replace imports nothing and clears the prompt`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val resources = FakeResourceManager()
+            resources.setInstalledFrequencySources(listOf(installedFrequency("jpdb-v2-1", "JPDB v2.1")))
+            val model = viewModel(FakeSettingsRepository(AppSettings()), FakeAnkiSetupManager(emptyList()), resources)
+            advanceUntilIdle()
+
+            model.setFrequencySourceName("JPDB v2.1")
+            advanceUntilIdle()
+            model.importFrequencySource("content://import.zip")
+            advanceUntilIdle()
+            model.dismissPendingReplace()
+            advanceUntilIdle()
+
+            assertEquals(emptyList<Triple<String, String, Boolean>>(), resources.frequencyImports)
+            assertEquals(null, model.uiState.value.pendingReplace)
+        }
+
+    @Test
+    fun `pitch imports directly when nothing is installed and asks once something is`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val resources = FakeResourceManager()
+            val model = viewModel(FakeSettingsRepository(AppSettings()), FakeAnkiSetupManager(emptyList()), resources)
+            advanceUntilIdle()
+
+            model.importPitchAccent("content://first.csv")
+            advanceUntilIdle()
+            assertEquals(listOf("content://first.csv" to false), resources.pitchImports)
+
+            // Pitch is a single fixed file, so a second import always collides.
+            resources.setInstalledPitchAccent(installedPitch("Kanjium"))
+            advanceUntilIdle()
+            model.importPitchAccent("content://second.csv")
+            advanceUntilIdle()
+
+            assertEquals(listOf("content://first.csv" to false), resources.pitchImports)
+            assertEquals("Kanjium", model.uiState.value.pendingReplace?.installedLabel)
+        }
+
+    @Test
+    fun `display names are trimmed and stripped of control characters for the bridge`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val model = viewModel(FakeSettingsRepository(AppSettings()), FakeAnkiSetupManager(emptyList()))
+            advanceUntilIdle()
+
+            model.setFrequencySourceName("  JPDB\tv2  ")
+            advanceUntilIdle()
+
+            assertEquals("JPDBv2", model.uiState.value.frequencySourceName)
+        }
+
+    private fun installedFrequency(sourceId: String, sourceName: String) =
+        InstalledFrequencySource(
+            sourceId = sourceId,
+            sourceName = sourceName,
+            format = "zip",
+            entryCount = 100,
+            schemaOk = true,
+            schemaVersion = 1,
+            isCategorical = false,
+        )
+
+    private fun installedPitch(sourceName: String) =
+        InstalledPitchAccent(
+            sourceName = sourceName,
+            sourceRevision = "2026-07-17",
+            sourceFormat = "csv",
+            entryCount = 1000,
+            fileSizeBytes = 2048,
+            schemaOk = true,
+        )
+
     private fun viewModel(
         repository: FakeSettingsRepository,
         setup: FakeAnkiSetupManager,
@@ -352,8 +488,19 @@ class SetupViewModelTest {
         val resetCalls = mutableListOf<KnownWordsResetScope>()
         val exportCalls = mutableListOf<String>()
 
-        override val state: StateFlow<ResourceManagerState> =
-            MutableStateFlow(ResourceManagerState()).asStateFlow()
+        val frequencyImports = mutableListOf<Triple<String, String, Boolean>>()
+        val pitchImports = mutableListOf<Pair<String, Boolean>>()
+        private val mutableState = MutableStateFlow(ResourceManagerState())
+
+        override val state: StateFlow<ResourceManagerState> = mutableState.asStateFlow()
+
+        fun setInstalledFrequencySources(sources: List<InstalledFrequencySource>) {
+            mutableState.value = mutableState.value.copy(frequencySources = sources)
+        }
+
+        fun setInstalledPitchAccent(pitch: InstalledPitchAccent?) {
+            mutableState.value = mutableState.value.copy(pitchAccent = pitch)
+        }
 
         override suspend fun recoverAndRefresh() = Unit
 
@@ -369,14 +516,18 @@ class SetupViewModelTest {
             sourceName: String,
             format: FrequencySourceFormat,
             replace: Boolean,
-        ) = Unit
+        ) {
+            frequencyImports += Triple(uri, sourceId, replace)
+        }
 
         override suspend fun importPitchAccent(
             uri: String,
             sourceName: String,
             format: PitchAccentSourceFormat,
             replace: Boolean,
-        ) = Unit
+        ) {
+            pitchImports += uri to replace
+        }
 
         override suspend fun importAudioPack(uri: String, packId: String, replace: Boolean) = Unit
 

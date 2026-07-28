@@ -21,6 +21,7 @@ import com.ankiminer.android.data.resources.FrequencySourceFormat
 import com.ankiminer.android.data.resources.KnownWordsSourceFormat
 import com.ankiminer.android.data.resources.PitchAccentSourceFormat
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
+import com.ankiminer.android.ui.theme.SupportingText
 import com.ankiminer.android.vm.SetupUiState
 import com.ankiminer.android.ui.theme.actionBorder
 import com.ankiminer.android.ui.theme.forwardButtonColors
@@ -29,10 +30,8 @@ import com.ankiminer.android.ui.theme.outlinedActionButtonColors
 @Composable
 internal fun FrequencyImportCard(
     state: SetupUiState,
-    onIdChanged: (String) -> Unit,
     onNameChanged: (String) -> Unit,
     onFormatChanged: (FrequencySourceFormat) -> Unit,
-    onReplaceChanged: (Boolean) -> Unit,
     onImport: () -> Unit,
     inlineFailure: (@Composable () -> Unit)? = null,
 ) {
@@ -57,15 +56,6 @@ internal fun FrequencyImportCard(
                 }
             if (state.frequencySources.isEmpty()) Text(stringResource(R.string.frequency_none_installed))
             OutlinedTextField(
-                value = state.frequencySourceId,
-                onValueChange = onIdChanged,
-                label = { Text(stringResource(R.string.frequency_source_id)) },
-                isError = !state.frequencySourceIdValid,
-                enabled = !state.busy,
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            OutlinedTextField(
                 value = state.frequencySourceName,
                 onValueChange = onNameChanged,
                 label = { Text(stringResource(R.string.local_resource_display_name)) },
@@ -81,19 +71,13 @@ internal fun FrequencyImportCard(
                 onSelect = onFormatChanged,
                 enabled = !state.busy,
             )
-            ReplaceToggle(state.frequencyReplace, !state.busy, onReplaceChanged)
             inlineFailure?.invoke()
             OutlinedButton(
                 onClick = onImport,
-                enabled = !state.busy && state.frequencySourceIdValid && state.frequencySourceName.isNotBlank(),
+                enabled = !state.busy && state.frequencySourceName.isNotBlank(),
                 modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
                 colors = outlinedActionButtonColors(),
-                border =
-                    actionBorder(
-                        !state.busy &&
-                            state.frequencySourceIdValid &&
-                            state.frequencySourceName.isNotBlank(),
-                    ),
+                border = actionBorder(!state.busy && state.frequencySourceName.isNotBlank()),
             ) { Text(stringResource(R.string.frequency_choose_file)) }
         }
     }
@@ -104,7 +88,6 @@ internal fun PitchImportCard(
     state: SetupUiState,
     onNameChanged: (String) -> Unit,
     onFormatChanged: (PitchAccentSourceFormat) -> Unit,
-    onReplaceChanged: (Boolean) -> Unit,
     onImport: () -> Unit,
     inlineFailure: (@Composable () -> Unit)? = null,
 ) {
@@ -138,7 +121,11 @@ internal fun PitchImportCard(
                 onSelect = onFormatChanged,
                 enabled = !state.busy,
             )
-            ReplaceToggle(state.pitchReplace, !state.busy, onReplaceChanged)
+            // Pitch is one fixed file, so a second import always replaces the first. Say so on the
+            // card rather than only in the confirmation that follows the picker.
+            if (state.pitchAccent != null) {
+                SupportingText(stringResource(R.string.pitch_replaces_installed))
+            }
             inlineFailure?.invoke()
             OutlinedButton(
                 onClick = onImport,
@@ -155,7 +142,6 @@ internal fun PitchImportCard(
 internal fun AudioPackImportCard(
     state: SetupUiState,
     onIdChanged: (String) -> Unit,
-    onReplaceChanged: (Boolean) -> Unit,
     onImport: () -> Unit,
     inlineFailure: (@Composable () -> Unit)? = null,
 ) {
@@ -187,7 +173,6 @@ internal fun AudioPackImportCard(
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
-            ReplaceToggle(state.audioPackReplace, !state.busy, onReplaceChanged)
             inlineFailure?.invoke()
             OutlinedButton(
                 onClick = onImport,

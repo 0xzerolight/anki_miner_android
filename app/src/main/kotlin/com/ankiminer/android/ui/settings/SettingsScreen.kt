@@ -276,10 +276,13 @@ private fun SettingsScreen(
             },
         )
     }
-    CatalogReplaceDialog(
-        state = setup,
-        onConfirm = setupViewModel::confirmCatalogDictionaryReplace,
-        onDismiss = setupViewModel::dismissCatalogDictionaryReplace,
+    // Hosted outside the LazyColumn so it survives the target card scrolling away, and so no
+    // deep-link card index shifts.
+    ResourceReplaceDialog(
+        pending = setup.pendingReplace,
+        busy = setup.busy,
+        onConfirm = setupViewModel::confirmPendingReplace,
+        onDismiss = setupViewModel::dismissPendingReplace,
     )
 
     val callbacks =

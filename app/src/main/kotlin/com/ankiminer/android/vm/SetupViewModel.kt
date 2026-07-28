@@ -11,6 +11,8 @@ import com.ankiminer.android.anki.provider.AnkiFieldMappingChange
 import com.ankiminer.android.anki.provider.AnkiRemediationCommand
 import com.ankiminer.android.data.anki.AnkiSetupManager
 import com.ankiminer.android.data.RuntimeWorkCoordinator
+import com.ankiminer.android.data.resources.ResourceIdentity
+import com.ankiminer.android.data.resources.ResourceImportTarget
 import com.ankiminer.android.data.resources.ResourceManager
 import com.ankiminer.android.data.resources.ResourceFailureOrigin
 import com.ankiminer.android.data.resources.ResourceStartupReadiness
@@ -47,19 +49,14 @@ internal class SetupViewModel(
         val lookupTerm: String = "猫",
         val lookupSlotId: String? = null,
         val customSlotId: String = "custom-dictionary",
-        val customReplace: Boolean = false,
-        val frequencySourceId: String = "frequency",
         val frequencySourceName: String,
         val frequencyFormat: FrequencySourceFormat = FrequencySourceFormat.YOMITAN_ZIP,
-        val frequencyReplace: Boolean = false,
         val pitchSourceName: String,
         val pitchFormat: PitchAccentSourceFormat = PitchAccentSourceFormat.YOMITAN_ZIP,
-        val pitchReplace: Boolean = false,
         val audioPackId: String = "audio-pack",
-        val audioPackReplace: Boolean = false,
         val knownWordsFormat: KnownWordsSourceFormat = KnownWordsSourceFormat.JSON,
         val knownWordsSearch: String = "",
-        val pendingReplaceResourceId: String? = null,
+        val pendingReplace: PendingResourceReplace? = null,
         val fieldMapChanges: List<AnkiFieldMappingChange> = emptyList(),
         val deckPersistence: DeckPersistenceStatus = DeckPersistenceStatus.IDLE,
         val failedDeckName: String? = null,
@@ -121,7 +118,7 @@ internal class SetupViewModel(
                 wizardCompletion = localState.wizardCompletion,
                 uniDicInstalled = resourceState.hasUniDic,
                 catalogDictionaries = resourceState.catalogDictionaries,
-                pendingReplaceResourceId = localState.pendingReplaceResourceId,
+                pendingReplace = localState.pendingReplace,
                 dictionaries = resourceState.dictionaries,
                 frequencySources = resourceState.frequencySources,
                 pitchAccent = resourceState.pitchAccent,
@@ -137,16 +134,11 @@ internal class SetupViewModel(
                 lookupTerm = localState.lookupTerm,
                 lookupSlotId = selectedSlot,
                 customSlotId = localState.customSlotId,
-                customReplace = localState.customReplace,
-                frequencySourceId = localState.frequencySourceId,
                 frequencySourceName = localState.frequencySourceName,
                 frequencyFormat = localState.frequencyFormat,
-                frequencyReplace = localState.frequencyReplace,
                 pitchSourceName = localState.pitchSourceName,
                 pitchFormat = localState.pitchFormat,
-                pitchReplace = localState.pitchReplace,
                 audioPackId = localState.audioPackId,
-                audioPackReplace = localState.audioPackReplace,
                 knownWordsFormat = localState.knownWordsFormat,
                 knownWordsSearch = localState.knownWordsSearch,
             )
@@ -305,28 +297,81 @@ internal class SetupViewModel(
             uiState.value.catalogDictionaries.firstOrNull { it.resource.resourceId == resourceId }
                 ?: return
         if (status.slotOccupied) {
-            local.update { it.copy(pendingReplaceResourceId = resourceId) }
+            val occupant =
+                uiState.value.dictionaries
+                    .firstOrNull { it.occupied && it.slotId == status.resource.slotId }
+                    ?.sourceName
+                    ?: status.resource.slotId
+            local.update {
+                it.copy(
+                    pendingReplace =
+                        PendingResourceReplace(
+                            kind = ResourceReplaceKind.CATALOG_DICTIONARY,
+                            identity = resourceId,
+                            installedLabel = occupant,
+                            repair = status.needsRepair,
+                        ),
+                )
+            }
         } else {
             viewModelScope.launch { resources.installCatalogDictionary(resourceId, replace = false) }
         }
     }
 
-    fun confirmCatalogDictionaryReplace() {
-        if (uiState.value.busy) return
-        val resourceId = uiState.value.pendingReplaceResourceId ?: return
-        local.update { it.copy(pendingReplaceResourceId = null) }
-        viewModelScope.launch { resources.installCatalogDictionary(resourceId, replace = true) }
+    /** Dispatches the import the pending record describes, this time authorised to overwrite. */
+    fun confirmPendingReplace() {
+        val state = uiState.value
+        if (state.busy) return
+        val pending = state.pendingReplace ?: return
+        local.update { it.copy(pendingReplace = null) }
+        viewModelScope.launch {
+            when (pending.kind) {
+                ResourceReplaceKind.CATALOG_DICTIONARY ->
+                    resources.installCatalogDictionary(pending.identity, replace = true)
+                ResourceReplaceKind.CUSTOM_DICTIONARY ->
+                    resources.importCustomDictionary(
+                        requireNotNull(pending.uri),
+                        pending.identity,
+                        replace = true,
+                    )
+                ResourceReplaceKind.FREQUENCY ->
+                    resources.importFrequencySource(
+                        uri = requireNotNull(pending.uri),
+                        // The record's identity, not a freshly derived one: a name match targets
+                        // the id already on disk so the priority chain entry survives.
+                        sourceId = pending.identity,
+                        sourceName = state.frequencySourceName,
+                        format = state.frequencyFormat,
+                        replace = true,
+                    )
+                ResourceReplaceKind.PITCH ->
+                    resources.importPitchAccent(
+                        uri = requireNotNull(pending.uri),
+                        sourceName = state.pitchSourceName,
+                        format = state.pitchFormat,
+                        replace = true,
+                    )
+                ResourceReplaceKind.AUDIO_PACK ->
+                    resources.importAudioPack(
+                        requireNotNull(pending.uri),
+                        pending.identity,
+                        replace = true,
+                    )
+            }
+        }
     }
 
-    fun dismissCatalogDictionaryReplace() {
-        local.update { it.copy(pendingReplaceResourceId = null) }
+    fun dismissPendingReplace() {
+        local.update { it.copy(pendingReplace = null) }
     }
 
     fun importCustomDictionary(uri: String) {
         val state = uiState.value
         if (state.busy || !SLOT_ID.matches(state.customSlotId)) return
+        val target = ResourceIdentity.customDictionaryTarget(state.customSlotId, state.dictionaries)
+        if (stagePendingReplace(ResourceReplaceKind.CUSTOM_DICTIONARY, target, uri)) return
         viewModelScope.launch {
-            resources.importCustomDictionary(uri, state.customSlotId, state.customReplace)
+            resources.importCustomDictionary(uri, target.identity, replace = false)
         }
     }
 
@@ -334,61 +379,51 @@ internal class SetupViewModel(
         if (value.length <= 64) local.update { it.copy(customSlotId = value.lowercase()) }
     }
 
-    fun setCustomReplace(value: Boolean) {
-        local.update { it.copy(customReplace = value) }
-    }
-
-    fun setFrequencySourceId(value: String) {
-        if (value.length <= 64) local.update { it.copy(frequencySourceId = value.lowercase()) }
-    }
-
     fun setFrequencySourceName(value: String) {
-        if (value.toByteArray().size <= 1024) local.update { it.copy(frequencySourceName = value) }
+        local.update { it.copy(frequencySourceName = sanitizeDisplayName(value)) }
     }
 
     fun setFrequencyFormat(value: FrequencySourceFormat) {
         local.update { it.copy(frequencyFormat = value) }
     }
 
-    fun setFrequencyReplace(value: Boolean) {
-        local.update { it.copy(frequencyReplace = value) }
-    }
-
     fun importFrequencySource(uri: String) {
         val state = uiState.value
-        if (state.busy || !state.frequencySourceIdValid || state.frequencySourceName.isBlank()) return
+        if (state.busy || state.frequencySourceName.isBlank()) return
+        val target =
+            ResourceIdentity.frequencyTarget(state.frequencySourceName, state.frequencySources)
+        if (stagePendingReplace(ResourceReplaceKind.FREQUENCY, target, uri)) return
         viewModelScope.launch {
             resources.importFrequencySource(
                 uri = uri,
-                sourceId = state.frequencySourceId,
+                sourceId = target.identity,
                 sourceName = state.frequencySourceName,
                 format = state.frequencyFormat,
-                replace = state.frequencyReplace,
+                replace = false,
             )
         }
     }
 
     fun setPitchSourceName(value: String) {
-        if (value.toByteArray().size <= 1024) local.update { it.copy(pitchSourceName = value) }
+        local.update { it.copy(pitchSourceName = sanitizeDisplayName(value)) }
     }
 
     fun setPitchFormat(value: PitchAccentSourceFormat) {
         local.update { it.copy(pitchFormat = value) }
     }
 
-    fun setPitchReplace(value: Boolean) {
-        local.update { it.copy(pitchReplace = value) }
-    }
-
     fun importPitchAccent(uri: String) {
         val state = uiState.value
         if (state.busy || state.pitchSourceName.isBlank()) return
+        // Pitch is one fixed file with no id, so anything installed always collides.
+        val target = ResourceIdentity.pitchTarget(state.pitchAccent)
+        if (stagePendingReplace(ResourceReplaceKind.PITCH, target, uri)) return
         viewModelScope.launch {
             resources.importPitchAccent(
                 uri = uri,
                 sourceName = state.pitchSourceName,
                 format = state.pitchFormat,
-                replace = state.pitchReplace,
+                replace = false,
             )
         }
     }
@@ -397,16 +432,52 @@ internal class SetupViewModel(
         if (value.length <= 64) local.update { it.copy(audioPackId = value.lowercase()) }
     }
 
-    fun setAudioPackReplace(value: Boolean) {
-        local.update { it.copy(audioPackReplace = value) }
-    }
-
     fun importAudioPack(uri: String) {
         val state = uiState.value
         if (state.busy || !state.audioPackIdValid) return
+        val target = ResourceIdentity.audioPackTarget(state.audioPackId, state.audioPacks)
+        if (stagePendingReplace(ResourceReplaceKind.AUDIO_PACK, target, uri)) return
         viewModelScope.launch {
-            resources.importAudioPack(uri, state.audioPackId, state.audioPackReplace)
+            resources.importAudioPack(uri, target.identity, replace = false)
         }
+    }
+
+    /**
+     * Holds the import for confirmation when [target] collides. Returns true when it did, so the
+     * caller must not also dispatch.
+     */
+    private fun stagePendingReplace(
+        kind: ResourceReplaceKind,
+        target: ResourceImportTarget,
+        uri: String,
+    ): Boolean {
+        val installedLabel = target.installedName ?: return false
+        local.update {
+            it.copy(
+                pendingReplace =
+                    PendingResourceReplace(
+                        kind = kind,
+                        identity = target.identity,
+                        installedLabel = installedLabel,
+                        uri = uri,
+                    ),
+            )
+        }
+        return true
+    }
+
+    /**
+     * Trim and cap to what [ResourceBridgeCodec] accepts. It requires a trimmed, non-blank name of
+     * at most 512 bytes with no control characters, and trim() alone leaves interior ones - the
+     * resulting IllegalArgumentException would surface as a generic operation failure.
+     */
+    private fun sanitizeDisplayName(value: String): String {
+        val stripped = value.filter { it.code >= 0x20 }.trim()
+        var candidate = stripped
+        while (candidate.toByteArray(Charsets.UTF_8).size > 512) {
+            candidate = candidate.dropLast(1)
+        }
+        return candidate.trim()
     }
 
     fun setKnownWordsFormat(value: KnownWordsSourceFormat) {
