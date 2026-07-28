@@ -2,6 +2,34 @@
 
 All notable project changes will be recorded here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and releases will use semantic versioning once a public version exists.
 
+## [0.1.7] - 2026-07-28
+
+### Changed
+
+- The mining, Anki, and resource screens drop their explanatory prose and keep only what a control does not itself convey; headings name the screen they belong to, using the desktop application's terms.
+- Settings rows are a single line with a 48 dp target, supporting text appears only while a field is invalid, and the eighteen-field note-type mapping collapses behind a summary that opens itself when the mapping is wrong.
+- Passive containers are flattened: section, panel, and card borders are gone from groupings that carried no meaning, and six phase headings share one style instead of six.
+- Spacing, layout, and motion come from shared tokens, action buttons are styled by what they do rather than all alike, and navigation transitions use the 150 ms/90 ms motion pair instead of the framework's 700 ms cross-fade default.
+- The Japanese catalogue is complete apart from brands, file formats, and format-only templates; strings no source referenced are deleted from both catalogues together, and two "(s)" pseudo-plurals became real plural resources.
+- The subtitle series field no longer performs a synchronous disk write on every keystroke.
+- Candidate rows resolve their include and exclude labels once per composition, restoring the per-row scroll cost that splitting the row had regressed.
+
+### Added
+
+- Resource progress gains a finalizing phase for commit and publish work, and both progress models carry a unit, so term-bank counts no longer render as megabytes.
+- Staging a file over the storage picker reports bytes copied, so a large video shows its copy progress instead of a static preparation message.
+
+### Fixed
+
+- The reading staging root sent the canonicalised cache path while the framework hands out the `/data/user/0` symlink, so every staged reading path failed the bridge's containment check and the run died encoding its own request. This affected text, EPUB, subtitle, and Mokuro sources alike, not only `.cbz` (#3, #4).
+- Local audio packs were rejected by a fixed 2 GiB import cap that sat below every large pack. The cap is now free space, checked against the size the picker already reports rather than after streaming multiple gigabytes, and the archive reads in place, dropping the import peak from roughly three times the archive to twice.
+- Archives that are too large, damaged, unsafe, or in an unsupported compression format report an actionable message instead of an internal code.
+- Engine progress descriptions embed mined terms and were forwarded verbatim into the foreground notification, which the system can surface on a locked device. The text channel is removed rather than filtered, so no future call site can reintroduce it; notification bodies come from application resources and trusted counts.
+- The whole candidate surface was a single checkbox-role toggle, so tapping a word to read its sentences excluded it. The row now opens the detail, the checkbox alone includes and excludes, and each is a separate 48 dp labelled target.
+- Select all and deselect all silently spanned the entire page even while a search showed one row. The visible action is now scoped to what is shown and preserves hidden selections, with page-wide selection kept as a separately named action.
+- Resource progress published a completed phase's size as the next phase's completed and total, so a 15 MB archive expanding into 170 MB sat behind a full, motionless bar. Counts are now phase-local and render as indeterminate motion until a phase has numbers of its own.
+- Code shrinking renames application classes, so fault digests named a lambda and needed a mapping file to read. The digest now reports the topmost frame whatever its package, and bridge failures name the invariant that was rejected.
+
 ## [0.1.6] - 2026-07-24
 
 ### Changed
