@@ -11,17 +11,51 @@ class AnkiMediaExtensionsTest {
     private val token = "a".repeat(64)
 
     @Test
-    fun `sanitizes audio extensions the engine emits`() {
-        assertEquals("mp3", AnkiMediaExtensions.sanitizedExtension("word_ab12cd.mp3", MediaKind.AUDIO))
-        assertEquals("opus", AnkiMediaExtensions.sanitizedExtension("word_ab12cd.opus", MediaKind.AUDIO))
+    fun `sanitizes the audio extensions real producers emit`() {
+        // Downloaded expression audio (extension chosen from the response Content-Type), local audio
+        // packs, and Android offline TTS. Everything past mp3/opus staged as ".stage" until now,
+        // which AnkiDroid stores as ".bin".
+        listOf("mp3", "opus", "ogg", "oga", "aac", "m4a", "mp4", "wav", "flac", "webm").forEach {
+            assertEquals(it, AnkiMediaExtensions.sanitizedExtension("word_ab12cd.$it", MediaKind.AUDIO))
+        }
     }
 
     @Test
-    fun `sanitizes image extensions the engine emits`() {
-        assertEquals("jpg", AnkiMediaExtensions.sanitizedExtension("shot_ab12cd.jpg", MediaKind.IMAGE))
-        assertEquals("jpeg", AnkiMediaExtensions.sanitizedExtension("shot_ab12cd.jpeg", MediaKind.IMAGE))
-        assertEquals("png", AnkiMediaExtensions.sanitizedExtension("shot_ab12cd.png", MediaKind.IMAGE))
-        assertEquals("webp", AnkiMediaExtensions.sanitizedExtension("cover_ab12cd.webp", MediaKind.IMAGE))
+    fun `sanitizes the image extensions real producers emit`() {
+        // Screenshots are jpg/png, but Yomitan dictionary media also arrives as MediaKind.IMAGE and
+        // ships anything in the importer's whitelist — svg pitch-accent graphics most notably.
+        listOf("jpg", "jpeg", "png", "webp", "svg", "gif", "bmp", "tif", "tiff", "ico").forEach {
+            assertEquals(it, AnkiMediaExtensions.sanitizedExtension("shot_ab12cd.$it", MediaKind.IMAGE))
+        }
+    }
+
+    @Test
+    fun `every allowed extension belongs to exactly one media kind`() {
+        // Behavioural partition: AUDIO_EXTENSIONS and IMAGE_EXTENSIONS are private, and asserting the
+        // split this way also proves it is total and disjoint. Replaces a hand-listed set that could
+        // silently fall behind the allowlist.
+        AnkiMediaExtensions.ALLOWED_EXTENSIONS.forEach { extension ->
+            val resolved =
+                listOfNotNull(
+                    AnkiMediaExtensions.sanitizedExtension("x.$extension", MediaKind.AUDIO),
+                    AnkiMediaExtensions.sanitizedExtension("x.$extension", MediaKind.IMAGE),
+                )
+            assertEquals("extension $extension must resolve for exactly one kind", 1, resolved.size)
+            assertEquals(extension, resolved.single())
+            assertTrue(AnkiMediaExtensions.STAGED_PATH_REGEX.matches("v1/$token.${resolved.single()}"))
+        }
+    }
+
+    @Test
+    fun `device-unmappable extensions reach neither the allowlist nor a staged name`() {
+        // An extension parked there has no MIME this platform reverse-maps, so naming the staged copy
+        // after it would still yield .bin. It must sanitize to null for BOTH kinds, or staging would
+        // reject the request outright instead of degrading to .stage.
+        AnkiMediaExtensions.DEVICE_UNMAPPABLE_EXTENSIONS.forEach { extension ->
+            assertFalse(extension in AnkiMediaExtensions.ALLOWED_EXTENSIONS)
+            assertNull(AnkiMediaExtensions.sanitizedExtension("x.$extension", MediaKind.AUDIO))
+            assertNull(AnkiMediaExtensions.sanitizedExtension("x.$extension", MediaKind.IMAGE))
+        }
     }
 
     @Test
@@ -38,9 +72,8 @@ class AnkiMediaExtensionsTest {
 
     @Test
     fun `rejects unknown or missing suffixes`() {
-        assertNull(AnkiMediaExtensions.sanitizedExtension("word.wav", MediaKind.AUDIO))
-        assertNull(AnkiMediaExtensions.sanitizedExtension("word.flac", MediaKind.AUDIO))
-        assertNull(AnkiMediaExtensions.sanitizedExtension("shot.gif", MediaKind.IMAGE))
+        assertNull(AnkiMediaExtensions.sanitizedExtension("word.txt", MediaKind.AUDIO))
+        assertNull(AnkiMediaExtensions.sanitizedExtension("shot.txt", MediaKind.IMAGE))
         assertNull(AnkiMediaExtensions.sanitizedExtension("noextension", MediaKind.AUDIO))
         assertNull(AnkiMediaExtensions.sanitizedExtension("trailingdot.", MediaKind.AUDIO))
         assertNull(AnkiMediaExtensions.sanitizedExtension(".opus", MediaKind.AUDIO))
@@ -53,23 +86,6 @@ class AnkiMediaExtensionsTest {
                 "extension $extension must match STAGED_PATH_REGEX",
                 AnkiMediaExtensions.STAGED_PATH_REGEX.matches("v1/$token.$extension"),
             )
-        }
-    }
-
-    @Test
-    fun `every sanitized output is a path-legal extension`() {
-        // Guards against the object and the path regex drifting: any extension the sanitizer can
-        // return must be nameable, or staging would fail the asset instead of storing it.
-        listOf(
-            "x.mp3" to MediaKind.AUDIO,
-            "x.opus" to MediaKind.AUDIO,
-            "x.jpg" to MediaKind.IMAGE,
-            "x.jpeg" to MediaKind.IMAGE,
-            "x.png" to MediaKind.IMAGE,
-            "x.webp" to MediaKind.IMAGE,
-        ).forEach { (name, kind) ->
-            val extension = requireNotNull(AnkiMediaExtensions.sanitizedExtension(name, kind))
-            assertTrue(AnkiMediaExtensions.STAGED_PATH_REGEX.matches("v1/$token.$extension"))
         }
     }
 
