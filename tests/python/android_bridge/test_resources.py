@@ -1710,3 +1710,98 @@ def test_pitch_zip_unsupported_compression_propagates_verbatim(
             }
         )
     assert failed.value.code == "resource_archive_unsupported_compression"
+
+
+def test_hash_archive_matches_a_copy_without_writing_one(tmp_path: Path) -> None:
+    source = tmp_path / "pack.zip"
+    payload = b"local audio pack bytes" * 4096
+    source.write_bytes(payload)
+    destination = tmp_path / "copied.zip"
+
+    copied = resources._copy_archive(
+        source,
+        destination,
+        resources._Operation("copy"),
+        maximum_bytes=len(payload),
+    )
+    measured = resources._hash_archive(
+        source,
+        resources._Operation("hash"),
+        maximum_bytes=len(payload),
+    )
+
+    assert measured.sha256 == copied.sha256 == hashlib.sha256(payload).hexdigest()
+    assert measured.size_bytes == copied.size_bytes == len(payload)
+    # The point of the whole change: no second multi-gigabyte tree on disk.
+    assert measured.path == source
+    assert sorted(child.name for child in tmp_path.iterdir()) == ["copied.zip", "pack.zip"]
+
+
+def test_hash_archive_rejects_an_oversized_source(tmp_path: Path) -> None:
+    source = tmp_path / "pack.zip"
+    source.write_bytes(b"x" * 4096)
+
+    with pytest.raises(BridgeProtocolError, match="outside its limit") as rejected:
+        resources._hash_archive(
+            source,
+            resources._Operation("too-big"),
+            maximum_bytes=1024,
+        )
+    assert rejected.value.code == "resource_archive_too_large"
+
+
+def test_hash_archive_rejects_a_symlinked_source(tmp_path: Path) -> None:
+    real = tmp_path / "real.zip"
+    real.write_bytes(b"y" * 64)
+    link = tmp_path / "link.zip"
+    link.symlink_to(real)
+
+    with pytest.raises(BridgeProtocolError) as rejected:
+        resources._hash_archive(
+            link,
+            resources._Operation("symlink"),
+            maximum_bytes=1024,
+        )
+    assert rejected.value.code == "invalid_resource_path"
+
+
+def test_hash_archive_honours_cancellation(tmp_path: Path) -> None:
+    source = tmp_path / "pack.zip"
+    source.write_bytes(b"z" * 4096)
+    operation = resources._Operation("cancelled")
+    operation.cancelled.set()
+
+    with pytest.raises(BridgeProtocolError) as rejected:
+        resources._hash_archive(source, operation, maximum_bytes=8192)
+    assert rejected.value.code == "resource_operation_cancelled"
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="local-resource importers require the runtime engine dependency set",
+)
+def test_audio_pack_import_reads_the_staged_zip_without_copying_it(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _local_home(tmp_path, monkeypatch)
+    source = _ajt_audio_zip(tmp_path / "audio.zip")
+
+    def refuse(*args: object, **kwargs: object) -> None:
+        raise AssertionError("import_audio_pack must not copy the staged archive")
+
+    monkeypatch.setattr(resources, "_copy_archive", refuse)
+
+    imported = decode_envelope(
+        local_resources.import_audio_pack(
+            {
+                "operationId": "audio-no-copy",
+                "sourcePath": str(source),
+                "packId": "fixture-pack",
+                "overwrite": False,
+            }
+        ),
+        expected_type="resource.audiopack.imported",
+    )
+
+    assert imported.payload["archiveSha256"] == hashlib.sha256(source.read_bytes()).hexdigest()

@@ -111,6 +111,7 @@ internal class AndroidResourceManager(
     private val safStager: ResourceArchiveStager,
     private val documentWriter: ResourceDocumentWriter,
     private val strings: StringResourceResolver,
+    private val stagingAvailableBytes: (File) -> Long = ::usableSpaceForStaging,
 ) : ResourceManager {
     private data class ActiveOperation(
         val id: String,
@@ -422,14 +423,21 @@ internal class AndroidResourceManager(
             val retained = runBlocking { safBroker.retainReadAccess(uri) }
             var staged: StagedArchive? = null
             try {
+                // Audio packs are multi-gigabyte. Reject on the size the picker
+                // already reported rather than after streaming the whole ZIP.
+                val budget = audioArchiveBudget(stagingAvailableBytes(stagingRoot))
+                val reported = retained.sizeBytes
+                if (reported != null && reported > budget) {
+                    throw archiveTooLarge(AUDIO_SOURCE_LABEL, reported, budget)
+                }
                 staged =
                     safStager.stage(
                         sourceUri = retained.uri,
                         operationId = operation.id,
                         cancellation = operation.cancellation,
                         fileSuffix = ".zip",
-                        maximumBytes = AUDIO_ARCHIVE_LIMIT,
-                        sourceLabel = "audio-pack ZIP",
+                        maximumBytes = budget,
+                        sourceLabel = AUDIO_SOURCE_LABEL,
                     ) { current, total ->
                         updateProgress(operation, ResourceOperationPhase.PREPARING, current, total)
                     }
@@ -1149,6 +1157,14 @@ internal class AndroidResourceManager(
                 strings.resolve(R.string.resource_failure_storage_unavailable)
             "resource_archive_mismatch" ->
                 strings.resolve(R.string.resource_failure_archive_mismatch)
+            "resource_archive_too_large" ->
+                strings.resolve(R.string.resource_failure_bridge_archive_too_large)
+            "invalid_resource_archive" ->
+                strings.resolve(R.string.resource_failure_archive_invalid)
+            "unsafe_resource_archive" ->
+                strings.resolve(R.string.resource_failure_archive_unsafe)
+            "resource_archive_unsupported_compression" ->
+                strings.resolve(R.string.resource_failure_archive_compression)
             "resource_already_installed" ->
                 strings.resolve(R.string.resource_failure_slot_exists)
             "dictionary_import_failed" ->
@@ -1235,7 +1251,7 @@ internal class AndroidResourceManager(
         const val FREQUENCY_TEXT_LIMIT = 64L * 1024 * 1024
         const val PITCH_ARCHIVE_LIMIT = 512L * 1024 * 1024
         const val PITCH_TEXT_LIMIT = 64L * 1024 * 1024
-        const val AUDIO_ARCHIVE_LIMIT = 2L * 1024 * 1024 * 1024
+        const val AUDIO_SOURCE_LABEL = "audio-pack ZIP"
         const val KNOWN_WORDS_FILE_LIMIT = 32L * 1024 * 1024
         const val KNOWN_WORD_EXPORT_LIMIT = 512L * 1024 * 1024
         const val KNOWN_WORD_PAGE_SIZE = 100
