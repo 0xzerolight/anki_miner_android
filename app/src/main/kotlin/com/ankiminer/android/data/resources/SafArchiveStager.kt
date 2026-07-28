@@ -76,11 +76,7 @@ internal class SafArchiveStager(
                         if (count < 0) break
                         total += count
                         if (total > maximumBytes) {
-                            throw ResourceDownloadException(
-                                "resource_archive_too_large",
-                                "The selected $sourceLabel exceeds its size limit",
-                                formatArguments = listOf(sourceLabel),
-                            )
+                            throw archiveTooLarge(sourceLabel, total, maximumBytes)
                         }
                         if (available - total < FREE_SPACE_RESERVE_BYTES) {
                             throw ResourceStorageException(total + FREE_SPACE_RESERVE_BYTES, available)
@@ -111,8 +107,8 @@ internal class SafArchiveStager(
 
     private companion object {
         const val BUFFER_BYTES = 256 * 1024
-        const val MAXIMUM_SUPPORTED_BYTES = 2L * 1024 * 1024 * 1024
-        const val FREE_SPACE_RESERVE_BYTES = 32L * 1024 * 1024
+        const val MAXIMUM_SUPPORTED_BYTES = AUDIO_ARCHIVE_CEILING_BYTES
+        const val FREE_SPACE_RESERVE_BYTES = ARCHIVE_BUDGET_RESERVE_BYTES
         val FILE_SUFFIX = Regex("\\.[a-z0-9]{1,8}")
     }
 }

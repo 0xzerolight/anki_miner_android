@@ -216,6 +216,7 @@ class AndroidLocalizationAuditTest(unittest.TestCase):
         download_sources = "\n".join(
             path.read_text(encoding="utf-8")
             for path in (
+                REPO_ROOT / "app/src/main/kotlin/com/ankiminer/android/data/resources/ArchiveSizeBudget.kt",
                 REPO_ROOT / "app/src/main/kotlin/com/ankiminer/android/data/resources/PinnedResourceDownloader.kt",
                 REPO_ROOT / "app/src/main/kotlin/com/ankiminer/android/data/resources/SafArchiveStager.kt",
                 REPO_ROOT / "app/src/main/kotlin/com/ankiminer/android/data/resources/ResourceManager.kt",

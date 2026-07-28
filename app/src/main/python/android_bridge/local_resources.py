@@ -34,9 +34,13 @@ _FREQUENCY_TEXT_LIMIT = 64 * 1024 * 1024
 _PITCH_ARCHIVE_LIMIT = 512 * 1024 * 1024
 _PITCH_TEXT_LIMIT = 64 * 1024 * 1024
 _KNOWN_WORD_FILE_LIMIT = 32 * 1024 * 1024
-_AUDIO_ARCHIVE_LIMIT = 2 * 1024 * 1024 * 1024
+# Absolute ceilings only. Local audio packs are stored (uncompressed) media in
+# the multi-gigabyte range, so what a device can actually take is decided by
+# core._check_free_space during extraction, not by a fixed number here. Keep
+# these in step with AUDIO_ARCHIVE_CEILING_BYTES on the Kotlin side.
+_AUDIO_ARCHIVE_LIMIT = 16 * 1024 * 1024 * 1024
 _AUDIO_MEMBER_LIMIT = 200_000
-_AUDIO_TOTAL_LIMIT = 8 * 1024 * 1024 * 1024
+_AUDIO_TOTAL_LIMIT = 16 * 1024 * 1024 * 1024
 _AUDIO_FILE_LIMIT = 512 * 1024 * 1024
 _AUDIO_JSON_LIMIT = 32 * 1024 * 1024
 _MAX_KNOWN_WORDS = 500_000
@@ -527,7 +531,9 @@ def _audio_member_limit(info: zipfile.ZipInfo) -> int:
 
 def _extract_audio_zip(path: Path, destination: Path, operation: core._Operation) -> None:
     try:
-        with zipfile.ZipFile(path, "r") as archive:
+        # Open through _open_source so the staged ZIP keeps the no-symlink and
+        # changed-underneath-us guards it had when it was copied first.
+        with core._open_source(path) as (stream, _), zipfile.ZipFile(stream, "r") as archive:
             infos = archive.infolist()
             if not infos or len(infos) > _AUDIO_MEMBER_LIMIT:
                 raise _fail(
@@ -689,9 +695,12 @@ def import_audio_pack(payload: Mapping[str, object]) -> str:
         core._safe_rmtree(operation_root)
         operation_root.mkdir(parents=True)
         try:
-            copied = core._copy_archive(
+            # The caller already staged this ZIP into private storage, so read it
+            # where it lies. A second copy would put three multi-gigabyte trees on
+            # disk at once (staged, copy, extracted) for a digest we can take in
+            # one pass.
+            copied = core._hash_archive(
                 source,
-                operation_root / "source.zip",
                 operation,
                 maximum_bytes=_AUDIO_ARCHIVE_LIMIT,
             )

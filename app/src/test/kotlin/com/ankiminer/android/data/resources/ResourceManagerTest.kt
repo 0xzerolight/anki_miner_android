@@ -209,16 +209,80 @@ class ResourceManagerTest {
             assertNull(harness.manager.state.value.failure)
         }
 
+    @Test
+    fun audioPackBudgetTracksFreeSpaceInsteadOfAFixedTwoGigabyteCap() =
+        runTest {
+            val harness =
+                Harness(
+                    sourceLabel = "audio-pack ZIP",
+                    reportedSourceSizeBytes = 3L * 1024 * 1024 * 1024,
+                    stagingAvailableBytes = 64L * 1024 * 1024 * 1024,
+                )
+
+            harness.manager.importAudioPack(INPUT_URI, "jpod", replace = false)
+
+            assertNull(harness.manager.state.value.failure)
+            assertEquals(1, harness.bridge.requestsOfType("resource.audiopack.import").size)
+            assertTrue(harness.stager.lastMaximumBytes!! > 3L * 1024 * 1024 * 1024)
+            assertEquals(listOf(INPUT_URI), harness.broker.released)
+        }
+
+    @Test
+    fun audioPackTooBigForTheDeviceIsRejectedBeforeAnythingIsCopied() =
+        runTest {
+            val harness =
+                Harness(
+                    sourceLabel = "audio-pack ZIP",
+                    reportedSourceSizeBytes = 8L * 1024 * 1024 * 1024,
+                    stagingAvailableBytes = 4L * 1024 * 1024 * 1024,
+                )
+
+            harness.manager.importAudioPack(INPUT_URI, "jpod", replace = false)
+
+            val failure = harness.manager.state.value.failure
+            assertEquals(ResourceFailureOrigin.AUDIO, failure?.origin)
+            assertEquals(ResourceFailureAction.CHOOSE_ANOTHER, failure?.retry?.action)
+            // The staged copy never starts, and the message carries both sizes.
+            assertTrue(harness.stager.stagedFiles.isEmpty())
+            assertNull(harness.stager.lastMaximumBytes)
+            assertTrue(harness.bridge.requestTypes.none { it == "resource.audiopack.import" })
+            assertTrue(failure!!.message.contains("audio-pack ZIP,8.0 GB,2.0 GB"))
+            assertEquals(listOf(INPUT_URI), harness.broker.released)
+        }
+
+    @Test
+    fun audioPackWithNoReportedSizeStillReachesTheStreamingLimit() =
+        runTest {
+            val harness =
+                Harness(
+                    sourceLabel = "audio-pack ZIP",
+                    reportedSourceSizeBytes = null,
+                    stagingAvailableBytes = 4L * 1024 * 1024 * 1024,
+                )
+
+            harness.manager.importAudioPack(INPUT_URI, "jpod", replace = false)
+
+            assertNull(harness.manager.state.value.failure)
+            assertEquals(1, harness.stager.stagedFiles.size)
+            assertEquals(
+                audioArchiveBudget(4L * 1024 * 1024 * 1024),
+                harness.stager.lastMaximumBytes,
+            )
+        }
+
     private inner class Harness(
         initialUserCount: Int = 0,
         runtimeWorkCoordinator: RuntimeWorkCoordinator = RuntimeWorkCoordinator(),
+        sourceLabel: String = "known-word file",
+        reportedSourceSizeBytes: Long? = 16,
+        stagingAvailableBytes: Long = Long.MAX_VALUE / 2,
     ) {
         private val root = temporary.newFolder("manager")
         val bridgeRoot = File(root, "bridge").apply { mkdirs() }
         val stagingRoot = File(root, "staging").apply { mkdirs() }
         val pendingRoot = File(root, "resource-pending-known-words")
-        val broker = RecordingSafBroker()
-        val stager = RecordingArchiveStager(stagingRoot)
+        val broker = RecordingSafBroker(reportedSourceSizeBytes)
+        val stager = RecordingArchiveStager(stagingRoot, sourceLabel)
         val writer = RecordingDocumentWriter()
         val bridge = FakeResourceBridge(bridgeRoot, initialUserCount)
         val manager =
@@ -240,16 +304,19 @@ class ResourceManagerTest {
                 safStager = stager,
                 documentWriter = writer,
                 strings = testStringResourceResolver,
+                stagingAvailableBytes = { stagingAvailableBytes },
             )
     }
 
-    private class RecordingSafBroker : SafBroker {
+    private class RecordingSafBroker(
+        private val reportedSizeBytes: Long? = 16,
+    ) : SafBroker {
         val retained = mutableListOf<String>()
         val released = mutableListOf<String>()
 
         override suspend fun retainReadAccess(uri: String): SafDocument {
             retained += uri
-            return SafDocument(uri, "known-words.json", "application/json", 16)
+            return SafDocument(uri, "known-words.json", "application/json", reportedSizeBytes)
         }
 
         override suspend fun releaseReadAccess(uri: String) {
@@ -261,8 +328,10 @@ class ResourceManagerTest {
 
     private class RecordingArchiveStager(
         private val stagingRoot: File,
+        private val expectedSourceLabel: String = "known-word file",
     ) : ResourceArchiveStager {
         val stagedFiles = mutableListOf<File>()
+        var lastMaximumBytes: Long? = null
 
         override fun stage(
             sourceUri: String,
@@ -274,7 +343,8 @@ class ResourceManagerTest {
             onProgress: (Long, Long) -> Unit,
         ): StagedArchive {
             assertEquals(INPUT_URI, sourceUri)
-            assertEquals("known-word file", sourceLabel)
+            assertEquals(expectedSourceLabel, sourceLabel)
+            lastMaximumBytes = maximumBytes
             cancellation.check()
             val file = File(stagingRoot, "$operationId-custom$fileSuffix")
             file.writeText("fixture", Charsets.UTF_8)
@@ -342,6 +412,11 @@ class ResourceManagerTest {
                     )
                 }
                 "resource.knownwords.export" -> exportResponse(rawRequest)
+                "resource.audiopack.import" ->
+                    envelope(
+                        "resource.audiopack.imported",
+                        """{"packId":"jpod","sourceName":"jpod_files","format":"jpod_legacy","entryCount":12,"archiveSha256":"${"0".repeat(64)}"}""",
+                    )
                 else -> error("Unexpected request: $rawRequest")
             }
         }

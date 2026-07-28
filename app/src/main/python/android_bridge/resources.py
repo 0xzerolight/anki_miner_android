@@ -444,6 +444,48 @@ def _copy_archive(
         raise
 
 
+def _hash_archive(
+    source: Path,
+    operation: _Operation,
+    *,
+    maximum_bytes: int,
+) -> _ArchiveCopy:
+    """Measure *source* in place, with the guarantees :func:`_copy_archive` gives.
+
+    Used when the caller already owns *source* as a private staged file and only
+    needs its digest and size. Copying it again would double the peak footprint
+    of a multi-gigabyte import for no added safety: ``_open_source`` refuses
+    symlinks and non-regular files and re-stats the descriptor afterwards, so a
+    source swapped mid-read is still rejected.
+    """
+    digest = hashlib.sha256()
+    read = 0
+    with _open_source(source) as (input_stream, source_stat):
+        if source_stat.st_size <= 0 or source_stat.st_size > maximum_bytes:
+            raise _fail(
+                "resource_archive_too_large",
+                "Resource archive size is outside its limit",
+            )
+        while True:
+            operation.check()
+            chunk = input_stream.read(_COPY_CHUNK_BYTES)
+            if not chunk:
+                break
+            read += len(chunk)
+            if read > maximum_bytes:
+                raise _fail(
+                    "resource_archive_too_large",
+                    "Resource archive exceeds its limit",
+                )
+            digest.update(chunk)
+    if read != source_stat.st_size:
+        raise _fail(
+            "resource_archive_mismatch",
+            "Resource archive length changed while reading",
+        )
+    return _ArchiveCopy(source, digest.hexdigest(), read)
+
+
 def _safe_archive_path(name: str, *, allow_directory_suffix: bool) -> tuple[str, ...]:
     try:
         name.encode("utf-8")
