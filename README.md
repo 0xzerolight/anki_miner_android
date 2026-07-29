@@ -59,6 +59,10 @@ Please leave a ⭐ star if Anki Miner helped you - it helps others find it :).
 
 The app does not update itself; install a newer APK over the old one to update.
 
+On first run the app downloads the Japanese tokenizer dictionary (UniDic Lite):
+about 47 MB over the network, expanding to about 260 MB of private storage. Do
+it on Wi-Fi, and keep the space free before starting.
+
 ## Recommended Resources
 
 | Type | Resource | Download | Add via |
