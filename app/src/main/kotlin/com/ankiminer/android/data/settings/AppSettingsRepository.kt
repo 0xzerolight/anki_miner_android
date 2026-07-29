@@ -160,6 +160,8 @@ class DataStoreAppSettingsRepository internal constructor(
                 candidate.setOrRemove(Keys.excludedDecks, DeckListPreferenceCodec.encode(value.excludedDecks))
                 candidate.setOrRemove(Keys.noteType, value.noteType)
                 candidate.setOrRemove(Keys.fieldMap, FieldMapPreferenceCodec.encode(value.fieldMap))
+                candidate.setOrRemove(Keys.cardType, value.cardType?.wireValue)
+                candidate.setOrRemove(Keys.cardTypeMarkerField, value.cardTypeMarkerField)
                 candidate.setOrRemove(Keys.tags, value.tags)
                 candidate.setOrRemove(Keys.allowDuplicateCards, value.allowDuplicateCards)
                 candidate.setOrRemove(Keys.audioPadding, value.audioPaddingSeconds)
@@ -229,6 +231,12 @@ class DataStoreAppSettingsRepository internal constructor(
             // against a pattern, so the pair is validated together under the replacement's own key.
             // A corrupt combination is then quarantined like any other key instead of throwing out
             // of the read path.
+            // Read ahead for the same reason: the marker's conflict rule is only meaningful against
+            // the field map it must not collide with.
+            val storedFieldMap =
+                decoder.read(Keys.fieldMap, emptyMap(), FieldMapPreferenceCodec::decode) {
+                    AppSettingsValidator.validate(AppSettings(fieldMap = it))
+                }
             val storedSubtitleRegex =
                 decoder.read(Keys.subtitleRegexFilter, null, { it }) { value ->
                     value?.let {
@@ -255,9 +263,21 @@ class DataStoreAppSettingsRepository internal constructor(
                         decoder.read(Keys.noteType, null, { it }) { value ->
                             value?.let { AppSettingsValidator.validate(AppSettings(noteType = it)) }
                         },
-                    fieldMap =
-                        decoder.read(Keys.fieldMap, emptyMap(), FieldMapPreferenceCodec::decode) {
-                            AppSettingsValidator.validate(AppSettings(fieldMap = it))
+                    fieldMap = storedFieldMap,
+                    cardType =
+                        decoder.read(Keys.cardType, null, { stored ->
+                            CardType.fromWire(stored) ?: invalidStoredPreference()
+                        }),
+                    cardTypeMarkerField =
+                        decoder.read(Keys.cardTypeMarkerField, null, { it }) { value ->
+                            value?.let {
+                                AppSettingsValidator.validate(
+                                    AppSettings(
+                                        fieldMap = storedFieldMap,
+                                        cardTypeMarkerField = it,
+                                    ),
+                                )
+                            }
                         },
                     tags =
                         decoder.read(Keys.tags, null, { it }) { value ->
@@ -468,6 +488,8 @@ class DataStoreAppSettingsRepository internal constructor(
             val excludedDecks = register(stringPreferencesKey("excluded_decks_v1"))
             val noteType = register(stringPreferencesKey("note_type"))
             val fieldMap = register(stringPreferencesKey("field_map_v1"))
+            val cardType = register(stringPreferencesKey("card_type"))
+            val cardTypeMarkerField = register(stringPreferencesKey("card_type_marker_field"))
             val tags = register(stringPreferencesKey("tags"))
             val allowDuplicateCards = register(booleanPreferencesKey("allow_duplicate_cards"))
             val audioPadding = register(doublePreferencesKey("audio_padding_seconds"))

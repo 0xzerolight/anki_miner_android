@@ -13,6 +13,25 @@ enum class AudioFormat(val wireValue: String) {
     OPUS("opus"),
 }
 
+/**
+ * JP Mining Note card modes. The engine stamps `"x"` into the field mapped for the active mode, and
+ * the note type's own templates render that as the card type.
+ *
+ * [conventionalField] is the name JP Mining Note itself uses, offered as the default pick when the
+ * chosen note type has it.
+ */
+enum class CardType(val wireValue: String, val conventionalField: String) {
+    WORD_AND_SENTENCE("word_and_sentence", "IsWordAndSentenceCard"),
+    CLICK("click", "IsClickCard"),
+    SENTENCE("sentence", "IsSentenceCard"),
+    AUDIO("audio", "IsAudioCard"),
+    ;
+
+    companion object {
+        fun fromWire(stored: String?): CardType? = entries.singleOrNull { it.wireValue == stored }
+    }
+}
+
 enum class PitchCategoryFormat(val wireValue: String) {
     JAPANESE("jp"),
     ROMAJI("romaji"),
@@ -55,6 +74,13 @@ data class AppSettings(
     val excludedDecks: List<String> = emptyList(),
     val noteType: String? = null,
     val fieldMap: Map<String, String> = emptyMap(),
+    /**
+     * Card mode and the note-type field that marks it. Desktop keeps a name per mode as a rename
+     * escape hatch, but only the active mode's field is ever read, so one destination is enough.
+     * Both must be set for either to reach the engine.
+     */
+    val cardType: CardType? = null,
+    val cardTypeMarkerField: String? = null,
     val tags: String? = null,
     /**
      * Card the user already has elsewhere in the collection stops being a reason to skip a word:
@@ -148,6 +174,8 @@ data class AppSettings(
             deckName = null,
             noteType = null,
             fieldMap = emptyMap(),
+            cardType = null,
+            cardTypeMarkerField = null,
         )
 
     /** Clear resource priority/enable choices without removing installed resource files. */
@@ -186,6 +214,7 @@ internal enum class InvalidAppSettingCode {
     FIELD_MAP_UNKNOWN_KEY,
     FIELD_MAP_CONFLICT,
     RESOURCE_IDS_INVALID,
+    CARD_TYPE_MARKER_CONFLICT,
     SUBTITLE_REGEX_TOO_LONG,
     SUBTITLE_REGEX_REPLACEMENT_TOO_LONG,
     SUBTITLE_REGEX_UNBOUNDED_REPEAT,
@@ -260,6 +289,7 @@ object AppSettingsValidator {
             it.excludedDecks.forEach { deck -> canonicalName("Excluded deck name", deck) }
             it.noteType?.let { value -> canonicalName("Note type", value) }
             fieldMap(it.fieldMap)
+            cardTypeMarker(it.cardTypeMarkerField, it.fieldMap)
             it.tags?.let { value -> validScalarText("Tags", value) }
             it.subtitleRegexFilter?.let { value -> validScalarText("Subtitle regex filter", value) }
             it.subtitleRegexReplacement?.let { value ->
@@ -391,6 +421,29 @@ object AppSettingsValidator {
     }
 
     /**
+     * The marker destination is not part of `anki_fields`, so the field-map uniqueness rule does not
+     * cover it. Python enforces the combined uniqueness at the snapshot boundary; reject it here
+     * first so the collision surfaces as a settings error rather than a failed run.
+     */
+    private fun cardTypeMarker(
+        marker: String?,
+        fieldMap: Map<String, String>,
+    ) {
+        val destination = marker?.takeIf { it.isNotEmpty() } ?: return
+        canonicalName("Card type marker field", destination)
+        fieldMap.entries
+            .firstOrNull { (_, mapped) -> mapped == destination }
+            ?.let { (key, _) ->
+                invalid(
+                    InvalidAppSettingCode.CARD_TYPE_MARKER_CONFLICT,
+                    "Anki field '$destination' is already mapped from '$key'",
+                    destination,
+                    key,
+                )
+            }
+    }
+
+    /**
      * The two size caps, the nested-repeat reject, and the replacement's group references. Checked
      * even when the filter is switched off, so a stored pattern can never become dangerous by
      * flipping one toggle — the same reason desktop validates the trio together.
@@ -485,10 +538,18 @@ internal object EngineSettingsSnapshotMapper {
         // cannot let an unmapped key inherit a desktop default. Unmatched keys emit "".
         values["anki_fields"] =
             stringMap(AnkiFieldKeys.ALL.associateWith { settings.fieldMap[it] ?: "" })
-        // No first-party card modes are activated; emit an empty marker map rather than claiming
-        // JP Mining Note rendering semantics this target may not provide.
-        values["card_type_marker_fields"] = stringMap(emptyMap())
-        values["card_type"] = text("")
+        // Emit all four modes explicitly, blank unless the user picked one. An absent key would let
+        // config_map's overlay reinstate the engine's JP Mining Note field names on a note type that
+        // may not have them.
+        val marker = settings.cardTypeMarkerField?.takeIf { it.isNotEmpty() }
+        val activeCardType = settings.cardType?.takeIf { marker != null }
+        values["card_type_marker_fields"] =
+            stringMap(
+                CardType.entries.associate { type ->
+                    type.wireValue to if (type == activeCardType) marker.orEmpty() else ""
+                },
+            )
+        values["card_type"] = text(activeCardType?.wireValue ?: "")
         settings.tags?.let { values["anki_tags"] = text(it) }
         settings.allowDuplicateCards?.let { values["allow_duplicate_cards"] = bool(it) }
         settings.audioPaddingSeconds?.let { values["audio_padding"] = decimal(it) }

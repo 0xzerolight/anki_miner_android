@@ -699,6 +699,11 @@ private fun settingsValidationError(
                 R.string.settings_validation_resource_ids,
                 failure.arguments,
             )
+        InvalidAppSettingCode.CARD_TYPE_MARKER_CONFLICT ->
+            LocalizedStringResource(
+                R.string.settings_validation_card_type_marker,
+                failure.arguments,
+            )
         InvalidAppSettingCode.SUBTITLE_REGEX_TOO_LONG,
         InvalidAppSettingCode.SUBTITLE_REGEX_REPLACEMENT_TOO_LONG,
         InvalidAppSettingCode.SUBTITLE_REGEX_UNBOUNDED_REPEAT,

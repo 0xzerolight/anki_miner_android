@@ -22,6 +22,7 @@ import com.ankiminer.android.data.resources.KnownWordsSourceFormat
 import com.ankiminer.android.data.resources.WordListKind
 import com.ankiminer.android.data.resources.PitchAccentSourceFormat
 import com.ankiminer.android.data.settings.AppSettingsRepository
+import com.ankiminer.android.data.settings.CardType
 import com.ankiminer.android.engine.PythonRuntimeReadiness
 import com.ankiminer.android.localization.StringResourceResolver
 import com.ankiminer.android.mining.MiningRunAdmissionState
@@ -110,6 +111,8 @@ internal class SetupViewModel(
                 failedDeckName = localState.failedDeckName,
                 noteType = appSettings.noteType,
                 fieldMap = appSettings.fieldMap,
+                cardType = appSettings.cardType,
+                cardTypeMarkerField = appSettings.cardTypeMarkerField,
                 fieldMapChanges = localState.fieldMapChanges,
                 remediations = ankiState.remediations,
                 recoveryInventoryStatus = ankiState.recoveryInventoryStatus,
@@ -249,6 +252,47 @@ internal class SetupViewModel(
             local.update { it.copy(fieldMapChanges = emptyList()) }
             ankiSetup.refresh(noteType, map)
         }
+    }
+
+    /**
+     * Pick a card mode. The conventional JP Mining Note field is preselected when the note type has
+     * it and nothing else is mapped to it; otherwise the marker stays unset and the mode stays off
+     * until the user chooses a field.
+     */
+    fun selectCardType(cardType: CardType?) {
+        val state = uiState.value
+        if (state.busy) return
+        if (cardType == null) {
+            viewModelScope.launch {
+                repository.update { it.copy(cardType = null, cardTypeMarkerField = null) }
+            }
+            return
+        }
+        val fields =
+            state.availableNoteTypes.firstOrNull { it.name == state.noteType }?.fieldNames.orEmpty()
+        val conventional =
+            cardType.conventionalField.takeIf { candidate ->
+                candidate in fields && state.fieldMap.none { (_, mapped) -> mapped == candidate }
+            }
+        // A marker belongs to one mode, so switching modes re-derives it instead of carrying the
+        // previous mode's field over.
+        val marker =
+            if (state.cardType == cardType) {
+                state.cardTypeMarkerField?.takeIf { it in fields }
+            } else {
+                conventional
+            }
+        viewModelScope.launch {
+            repository.update { it.copy(cardType = cardType, cardTypeMarkerField = marker) }
+        }
+    }
+
+    fun setCardTypeMarkerField(field: String) {
+        val state = uiState.value
+        if (state.busy) return
+        val destination = field.takeIf { it.isNotEmpty() }
+        if (destination != null && state.fieldMap.any { (_, mapped) -> mapped == destination }) return
+        viewModelScope.launch { repository.update { it.copy(cardTypeMarkerField = destination) } }
     }
 
     fun verifyNoteType() {

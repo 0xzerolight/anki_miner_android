@@ -41,7 +41,9 @@ import com.ankiminer.android.anki.provider.AnkiFieldMapPolicy
 import com.ankiminer.android.anki.provider.AnkiRemediationActionKind
 import com.ankiminer.android.anki.provider.AnkiRemediationType
 import com.ankiminer.android.anki.provider.NoteTypeSetupStatus
+import com.ankiminer.android.data.settings.CardType
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
+import com.ankiminer.android.ui.theme.SupportingText
 import com.ankiminer.android.ui.theme.actionBorder
 import com.ankiminer.android.ui.theme.outlinedActionButtonColors
 import com.ankiminer.android.vm.DeckChoiceKind
@@ -115,6 +117,8 @@ internal fun AnkiTargetCard(
     state: SetupUiState,
     onSelectNoteType: (String) -> Unit,
     onSetFieldMapping: (String, String) -> Unit,
+    onSelectCardType: (CardType?) -> Unit,
+    onSelectCardTypeMarker: (String) -> Unit,
     onVerify: () -> Unit,
     inlineFailure: (@Composable () -> Unit)? = null,
 ) {
@@ -209,6 +213,13 @@ internal fun AnkiTargetCard(
                         )
                     }
                     }
+                    CardTypeMarkerSection(
+                        state = state,
+                        fields = fields,
+                        noneLabel = noneLabel,
+                        onSelectCardType = onSelectCardType,
+                        onSelectCardTypeMarker = onSelectCardTypeMarker,
+                    )
                 }
                 Text(
                     noteTypeStatusText(state.noteTypeStatus),
@@ -234,6 +245,68 @@ internal fun AnkiTargetCard(
         }
     }
 }
+
+/**
+ * JP Mining Note support: pick a card mode, then the note-type field that marks it. The engine writes
+ * `"x"` into that field on every mined note; anything else about mining is unchanged.
+ *
+ * Both dropdowns list only the note type's real fields, so the marker can never name a field the
+ * note type lacks — which the Anki verification step would reject at the start of a run.
+ */
+@Composable
+private fun CardTypeMarkerSection(
+    state: SetupUiState,
+    fields: List<String>,
+    noneLabel: String,
+    onSelectCardType: (CardType?) -> Unit,
+    onSelectCardTypeMarker: (String) -> Unit,
+) {
+    Text(
+        stringResource(R.string.anki_card_type_title),
+        modifier = Modifier.semantics { heading() },
+        style = MaterialTheme.typography.titleSmall,
+    )
+    SupportingText(stringResource(R.string.anki_card_type_explainer))
+    NoteTypeDropdown(
+        label = stringResource(R.string.anki_card_type_picker),
+        options =
+            listOf("" to noneLabel) +
+                CardType.entries.map { it.wireValue to cardTypeLabel(it) },
+        selected = state.cardType?.wireValue ?: "",
+        onSelect = { selected -> onSelectCardType(CardType.fromWire(selected)) },
+        isOptionEnabled = { it != (state.cardType?.wireValue ?: "") },
+    )
+    if (state.cardType != null) {
+        NoteTypeDropdown(
+            label = stringResource(R.string.anki_card_type_marker_field),
+            options = (listOf("") + fields).map { it to it.ifEmpty { noneLabel } },
+            selected = state.cardTypeMarkerField ?: "",
+            onSelect = onSelectCardTypeMarker,
+            // A marker sharing a destination with a mapped field is rejected at the snapshot
+            // boundary, so those fields are not offered.
+            isOptionEnabled = { field ->
+                field.isEmpty() || state.fieldMap.none { (_, mapped) -> mapped == field }
+            },
+        )
+        if (state.cardTypeMarkerField.isNullOrEmpty()) {
+            Text(
+                stringResource(R.string.anki_card_type_marker_missing),
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
+    }
+}
+
+@Composable
+private fun cardTypeLabel(cardType: CardType): String =
+    stringResource(
+        when (cardType) {
+            CardType.WORD_AND_SENTENCE -> R.string.anki_card_type_word_and_sentence
+            CardType.CLICK -> R.string.anki_card_type_click
+            CardType.SENTENCE -> R.string.anki_card_type_sentence
+            CardType.AUDIO -> R.string.anki_card_type_audio
+        },
+    )
 
 @Composable
 internal fun WizardAnkiTargetCard(

@@ -282,7 +282,14 @@ class AppSettingsRepositoryTest {
         val reset = original.resetAnkiTarget()
 
         assertEquals(
-            original.copy(deckName = null, noteType = null, fieldMap = emptyMap()),
+            original.copy(
+                deckName = null,
+                noteType = null,
+                fieldMap = emptyMap(),
+                // The marker names a field of the note type being cleared, so it cannot outlive it.
+                cardType = null,
+                cardTypeMarkerField = null,
+            ),
             reset,
         )
     }
@@ -447,6 +454,8 @@ class AppSettingsRepositoryTest {
                     AnkiFieldKeys.WORD to "Expression",
                     "sentence" to "Sentence",
                 ),
+            cardType = CardType.CLICK,
+            cardTypeMarkerField = "IsClickCard",
             tags = "mined japanese",
             allowDuplicateCards = true,
             audioPaddingSeconds = 0.1,
@@ -503,6 +512,11 @@ class AppSettingsRepositoryTest {
             ),
             corruptString("note_type", original.copy(noteType = defaults.noteType)),
             corruptString("field_map_v1", original.copy(fieldMap = defaults.fieldMap)),
+            corruptString("card_type", original.copy(cardType = defaults.cardType)),
+            corruptString(
+                "card_type_marker_field",
+                original.copy(cardTypeMarkerField = defaults.cardTypeMarkerField),
+            ),
             corruptString("tags", original.copy(tags = defaults.tags)),
             corruptBoolean(
                 "allow_duplicate_cards",

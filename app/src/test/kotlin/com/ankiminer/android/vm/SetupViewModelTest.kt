@@ -20,6 +20,7 @@ import com.ankiminer.android.data.resources.ResourceManagerState
 import com.ankiminer.android.data.settings.AppSettings
 import com.ankiminer.android.data.settings.AppSettingsRepository
 import com.ankiminer.android.data.settings.AppSettingsValidator
+import com.ankiminer.android.data.settings.CardType
 import com.ankiminer.android.engine.PythonRuntimeReadiness
 import com.ankiminer.android.mining.AnkiMiningTargetReadiness
 import com.ankiminer.android.mining.MiningRunAdmissionState
@@ -165,6 +166,60 @@ class SetupViewModelTest {
             )
             assertEquals("Expression", repository.current.fieldMap["word"])
             assertEquals("", repository.current.fieldMap["source"])
+        }
+
+    @Test
+    fun `card type preselects the conventional marker only when the note type has it`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository =
+                FakeSettingsRepository(
+                    AppSettings(noteType = "JPMN", fieldMap = mapOf("word" to "Word")),
+                )
+            val viewModel =
+                viewModel(
+                    repository,
+                    FakeAnkiSetupManager(listOf(model("JPMN", "Word", "IsClickCard"))),
+                )
+            advanceUntilIdle()
+
+            viewModel.selectCardType(CardType.CLICK)
+            advanceUntilIdle()
+
+            assertEquals(CardType.CLICK, repository.current.cardType)
+            assertEquals("IsClickCard", repository.current.cardTypeMarkerField)
+
+            // No IsAudioCard on this note type: the mode is stored with no marker, which the
+            // snapshot mapper emits as off until the user picks a field.
+            viewModel.selectCardType(CardType.AUDIO)
+            advanceUntilIdle()
+
+            assertEquals(CardType.AUDIO, repository.current.cardType)
+            assertEquals(null, repository.current.cardTypeMarkerField)
+        }
+
+    @Test
+    fun `a marker field already taken by the field map is not persisted`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository =
+                FakeSettingsRepository(
+                    AppSettings(
+                        noteType = "JPMN",
+                        fieldMap = mapOf("word" to "Word", "sentence" to "IsClickCard"),
+                        cardType = CardType.CLICK,
+                    ),
+                )
+            val viewModel =
+                viewModel(
+                    repository,
+                    FakeAnkiSetupManager(listOf(model("JPMN", "Word", "IsClickCard"))),
+                )
+            advanceUntilIdle()
+
+            viewModel.setCardTypeMarkerField("IsClickCard")
+            advanceUntilIdle()
+
+            assertEquals(0, repository.writeCount)
+            assertEquals(null, repository.current.cardTypeMarkerField)
         }
 
     @Test

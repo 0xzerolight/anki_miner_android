@@ -64,10 +64,14 @@ class AppSettingsTest {
         // inject "Anki Miner" as the target.
         assertEquals(BridgeJsonValue.Text(""), snapshot.settings["anki_note_type"])
         assertEquals(BridgeJsonValue.Text(""), snapshot.settings["card_type"])
+        // Every mode is named with a blank destination rather than omitted, so config_map's overlay
+        // cannot reinstate the engine's JP Mining Note field names on a note type without them.
+        val markers = snapshot.settings["card_type_marker_fields"] as BridgeJsonValue.ObjectValue
         assertEquals(
-            BridgeJsonValue.ObjectValue(emptyMap()),
-            snapshot.settings["card_type_marker_fields"],
+            CardType.entries.map { it.wireValue }.toSet(),
+            markers.values.keys,
         )
+        assertTrue(markers.values.values.all { it == BridgeJsonValue.Text("") })
         val fields = snapshot.settings["anki_fields"] as BridgeJsonValue.ObjectValue
         assertEquals(18, AnkiFieldKeys.ALL.size)
         assertEquals(AnkiFieldKeys.ALL.toSet(), fields.values.keys)
@@ -169,6 +173,56 @@ class AppSettingsTest {
 
         assertFalse(defaultSnapshot.settings.containsKey("anki_tags"))
         assertEquals(BridgeJsonValue.Text(""), noTagsSnapshot.settings["anki_tags"])
+    }
+
+    @Test
+    fun cardTypeMarkerReachesOnlyTheActiveModeAndNeedsBothHalves() {
+        val active =
+            EngineSettingsSnapshotMapper.map(
+                AppSettings(cardType = CardType.CLICK, cardTypeMarkerField = "IsClickCard"),
+                emptyList(),
+            )
+        // A mode without a marker field would let config_map's overlay reinstate the engine's own
+        // JP Mining Note names, so it is emitted as off.
+        val halfConfigured =
+            EngineSettingsSnapshotMapper.map(AppSettings(cardType = CardType.CLICK), emptyList())
+
+        assertEquals(BridgeJsonValue.Text("click"), active.settings["card_type"])
+        assertEquals(
+            BridgeJsonValue.ObjectValue(
+                mapOf(
+                    "word_and_sentence" to BridgeJsonValue.Text(""),
+                    "click" to BridgeJsonValue.Text("IsClickCard"),
+                    "sentence" to BridgeJsonValue.Text(""),
+                    "audio" to BridgeJsonValue.Text(""),
+                ),
+            ),
+            active.settings["card_type_marker_fields"],
+        )
+        assertEquals(BridgeJsonValue.Text(""), halfConfigured.settings["card_type"])
+        val markers =
+            halfConfigured.settings["card_type_marker_fields"] as BridgeJsonValue.ObjectValue
+        assertTrue(markers.values.values.all { it == BridgeJsonValue.Text("") })
+    }
+
+    @Test
+    fun cardTypeMarkerCannotShareADestinationWithAMappedField() {
+        assertThrows(InvalidAppSettingException::class.java) {
+            AppSettingsValidator.validate(
+                AppSettings(
+                    fieldMap = mapOf("word" to "Expression", "sentence" to "IsClickCard"),
+                    cardType = CardType.CLICK,
+                    cardTypeMarkerField = "IsClickCard",
+                ),
+            )
+        }
+        AppSettingsValidator.validate(
+            AppSettings(
+                fieldMap = mapOf("word" to "Expression"),
+                cardType = CardType.CLICK,
+                cardTypeMarkerField = "IsClickCard",
+            ),
+        )
     }
 
     @Test

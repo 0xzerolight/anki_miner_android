@@ -280,6 +280,29 @@ def test_blank_field_and_active_marker_mappings_are_preserved(tmp_path: Path) ->
     assert config.card_type_marker_fields["click"] == ""
 
 
+def test_android_marker_map_shuts_out_the_engine_jpmn_defaults(tmp_path: Path) -> None:
+    # What Kotlin emits once the user picks a mode: every mode named, only the active one filled.
+    # An omitted key would let the overlay reinstate IsClickCard and friends on a note type that
+    # may not have them.
+    mapped = map_config_settings(
+        {
+            "card_type": "click",
+            "card_type_marker_fields": {
+                "word_and_sentence": "",
+                "click": "MyClickMarker",
+                "sentence": "",
+                "audio": "",
+            },
+        },
+        _paths(tmp_path),
+    )
+    config = mapped.engine_config
+
+    assert config.card_type == "click"
+    assert config.card_type_marker_fields["click"] == "MyClickMarker"
+    assert config.card_type_marker_fields["audio"] == ""
+
+
 def test_duplicate_anki_destinations_are_rejected_at_snapshot_boundary(tmp_path: Path) -> None:
     with pytest.raises(BridgeProtocolError) as error:
         map_config_settings(

@@ -266,6 +266,15 @@
     <string name="anki_field_mapping_changes">このノートタイプのフィールドの対応付けが変更されました：%1$s</string>
     <string name="anki_field_none">未対応付け</string>
     <string name="anki_note_type_verify">再確認</string>
+    <string name="anki_card_type_title">カードタイプ</string>
+    <string name="anki_card_type_explainer">JP Mining Note系のノートタイプ向け:マーカーフィールドに\"x\"が書き込まれ、マイニングした全ノートが選択したタイプで表示されます。</string>
+    <string name="anki_card_type_picker">カードタイプ</string>
+    <string name="anki_card_type_marker_field">マーカーフィールド</string>
+    <string name="anki_card_type_marker_missing">マーカーフィールドを選択しないとカードタイプは無効のままです。</string>
+    <string name="anki_card_type_word_and_sentence">単語と文</string>
+    <string name="anki_card_type_click">クリック</string>
+    <string name="anki_card_type_sentence">文</string>
+    <string name="anki_card_type_audio">音声</string>
     <string name="anki_note_type_status_verified">書き込み可能で、重複を安全に防げることを確認しました。任意フィールドの割り当てによって、各Ankiノートに保存できる情報量が変わります。</string>
     <string name="anki_note_type_status_not_selected">作成するAnkiノートのノートタイプを選択してください。</string>
     <string name="anki_note_type_status_missing">選択したノートタイプはAnkiDroidに存在しません。別のものを選択してください。</string>
@@ -597,6 +606,7 @@
     <string name="settings_validation_field_map_unknown_key">フィールドマップに不明なキーが含まれています</string>
     <string name="settings_validation_field_map_conflict">Ankiフィールド\'%1$s\'が複数の論理フィールドからマッピングされています: %2$s</string>
     <string name="settings_validation_resource_ids">%1$sに無効または重複したリソースIDが含まれています</string>
+    <string name="settings_validation_card_type_marker">Ankiフィールド\'%1$s\'はすでに\'%2$s\'に対応付けられています</string>
     <string name="settings_validation_subtitle_regex_length">フィルターは%1$d文字までです</string>
     <string name="settings_validation_subtitle_replacement_length">置換文字列は%1$d文字までです</string>
     <string name="settings_validation_subtitle_regex_repeat">入れ子の無制限繰り返しは使用できません</string>

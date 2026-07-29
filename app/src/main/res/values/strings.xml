@@ -272,6 +272,15 @@
     <string name="anki_field_mapping_changes">Mappings changed for this note type: %1$s</string>
     <string name="anki_field_none">Not mapped</string>
     <string name="anki_note_type_verify">Re-check</string>
+    <string name="anki_card_type_title">Card type</string>
+    <string name="anki_card_type_explainer">For JP Mining Note-style note types: an \"x\" is written into the marker field so every mined note renders as the chosen type.</string>
+    <string name="anki_card_type_picker">Card type</string>
+    <string name="anki_card_type_marker_field">Marker field</string>
+    <string name="anki_card_type_marker_missing">Pick a marker field, or the card type stays off.</string>
+    <string name="anki_card_type_word_and_sentence">Word and sentence</string>
+    <string name="anki_card_type_click">Click</string>
+    <string name="anki_card_type_sentence">Sentence</string>
+    <string name="anki_card_type_audio">Audio</string>
     <string name="anki_note_type_status_verified">Verified writable and dedup-safe. Optional mappings still control how useful and enriched each Anki note can be.</string>
     <string name="anki_note_type_status_not_selected">Choose a note type for created Anki notes.</string>
     <string name="anki_note_type_status_missing">The selected note type no longer exists in AnkiDroid. Choose another one.</string>
@@ -592,6 +601,7 @@
     <string name="settings_open_speech_services">Manage speech services</string>
     <string name="settings_jisho">Jisho definition fallback</string>
     <string name="settings_jisho_disclosure">Off by default. When enabled and the engine reaches this fallback, Japanese lookup terms derived from selected subtitles or reading content are sent to jisho.org.</string>
+    <string name="settings_validation_card_type_marker">Anki field \'%1$s\' is already mapped from \'%2$s\'</string>
     <string name="settings_validation_numeric_incomplete">Complete or clear every numeric value</string>
     <string name="settings_validation_excluded_decks">Excluded Anki decks are invalid</string>
     <string name="settings_validation_canonical_name">%1$s must be non-empty, NFC text without surrounding whitespace</string>

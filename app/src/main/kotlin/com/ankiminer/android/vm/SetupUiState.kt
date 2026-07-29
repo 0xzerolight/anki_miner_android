@@ -30,6 +30,7 @@ import com.ankiminer.android.data.resources.ResourceFailure
 import com.ankiminer.android.data.resources.ResourceOperationProgress
 import com.ankiminer.android.data.resources.ResourceStartupReadiness
 import com.ankiminer.android.data.resources.WordListKind
+import com.ankiminer.android.data.settings.CardType
 import com.ankiminer.android.engine.PythonRuntimeReadiness
 import com.ankiminer.android.mining.NotificationPermissionReadiness
 
@@ -47,6 +48,8 @@ internal data class SetupUiState(
     val failedDeckName: String? = null,
     val noteType: String? = null,
     val fieldMap: Map<String, String> = emptyMap(),
+    val cardType: CardType? = null,
+    val cardTypeMarkerField: String? = null,
     val fieldMapChanges: List<AnkiFieldMappingChange> = emptyList(),
     val remediations: AnkiRemediationInventory = AnkiRemediationInventory(emptyList()),
     val recoveryInventoryStatus: AnkiRecoveryInventoryStatus =
