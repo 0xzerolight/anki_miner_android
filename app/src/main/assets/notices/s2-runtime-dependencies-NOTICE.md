@@ -6,12 +6,13 @@ enforced by Gradle dependency verification. Device release uses the same
 production versions but omits the debug-only Compose tooling entries.
 
 Direct dependencies are AndroidX Core 1.18.0, Activity Compose 1.13.0,
-Lifecycle runtime/viewmodel Compose 2.10.0, the Compose 2026.06.00 BOM,
-Material 3, Compose tooling preview, Jackson Core 2.21.5, and
-kotlinx-coroutines-core 1.11.0. Debug additionally includes Compose UI tooling
-and the UI test manifest. All AndroidX, Kotlin, coroutines, serialization, JetBrains
-Annotations, JSpecify, Guava ListenableFuture, and Jackson components in this
-closure are Apache-2.0. Guava ListenableFuture inherits its declaration from
+Lifecycle runtime/viewmodel Compose 2.10.0, DataStore Preferences 1.2.1,
+Navigation Compose 2.9.8, the Compose 2026.06.00 BOM, Material 3, Compose
+tooling preview, Jackson Core 2.21.5, and kotlinx-coroutines-core 1.11.0.
+Debug additionally includes Compose UI tooling and the UI test manifest. All
+AndroidX, Kotlin, coroutines, serialization, JetBrains Annotations, JSpecify,
+Guava ListenableFuture, and Jackson components in this closure are Apache-2.0.
+Guava ListenableFuture inherits its declaration from
 `guava-parent:26.0-android`.
 
 Jackson Core's packaged `META-INF/NOTICE` also records code bundled into the
