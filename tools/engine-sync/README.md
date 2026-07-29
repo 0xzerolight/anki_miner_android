@@ -62,10 +62,30 @@ Any upstream exporter change requires an explicit rebase in
 
 `run_head_goldens_v2.py` derives desktop HEAD and reports semantic case drift.
 It materializes desktop HEAD's exporter outside its clean checkout and changes
-only the unique pinned-revision assignment to that exact HEAD. No hosted nightly
-HEAD-parity workflow exists yet, so this remains an advisory local tool rather
-than a current CI or release gate. It never replaces the attested overlay or
-pinned fixture used by release gates.
+only the unique pinned-revision assignment to that exact HEAD. Unlike every
+sibling runner it takes `--desktop-root` and a required `--output`, not
+`--engine-root`/`--exporter`:
+
+```bash
+PYTHONPATH=tools/engine-sync python tools/engine-sync/run_head_goldens_v2.py \
+  --python /path/to/desktop/.venv/bin/python \
+  --desktop-root /path/to/desktop/checkout \
+  --dicdir /path/to/unidic_lite/dicdir \
+  --output /tmp/head-goldens-v2.json
+```
+
+No hosted nightly HEAD-parity workflow exists yet, so this remains an advisory
+local tool rather than a current CI or release gate. It never replaces the
+attested overlay or pinned fixture used by release gates.
+
+Hosted derivation is not absent altogether: the desktop repository carries
+`.github/workflows/android-engine-goldens.yml`, which derives the v2 contract in
+a hash-frozen runtime and byte-compares it against the desktop-side committed
+fixture. It is paths-scoped push/PR plus `workflow_dispatch`, deliberately not
+nightly and deliberately never a required status check. It derives a pinned
+revision (dispatch can override it), not desktop HEAD, and it verifies the
+desktop copy of the fixture — which currently pins an earlier revision than this
+repository's `engine.lock`. It is therefore not a check on the Android fixture.
 
 `run_reading_goldens.py` owns the separate M4 reading contract. It derives
 Aozora, subtitle, EPUB, and Mokuro loader snapshots plus a real Mokuro

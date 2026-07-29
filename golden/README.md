@@ -60,7 +60,37 @@ PYTHONPATH=tools/engine-sync python tools/engine-sync/run_reading_goldens.py \
 The fixture separately pins the engine tree, corpus, exporter, contract, and
 support-tool hashes. `ReadingGoldenInstrumentedTest` reconstructs the sources
 inside app-private storage, loads them through the packaged Android bridge, and
-replays the Mokuro card in an isolated connected-test invocation on every lane.
+replays the Mokuro card. Like the v2 replay it is assumption-gated, here on
+`-e ankiMinerRunReadingGolden true`, and no lane passes it — the API 26 runner
+passes only `-e notClass`, and that argument name appears nowhere else in the
+repository. So it too is an opt-in manual step, not a per-push gate.
+
+## Bridge fixtures and reviewed inputs
+
+`bridge/` holds the Anki bridge-boundary corpora. They are not engine goldens:
+no exporter derives them, and no provenance block pins them.
+
+- `bridge/anki-protocol-v1.jsonl` — 118 envelope cases (45 request, 73
+  response; 41 accept, 77 reject) across the five Anki callbacks. Read by
+  `tests/python/android_bridge/test_anki_protocol_corpus.py` and
+  `app/src/test/kotlin/com/ankiminer/android/anki/AnkiJsonCodecBoundaryTest.kt`,
+  so one corpus pins both decoders. `AnkiRequestDigestTest.kt` also probes for
+  it, but only to locate the project root.
+- `bridge/anki-request-digest-v1.jsonl` — 19 raw-request/canonical-form/digest
+  vectors; `bridge/anki-request-digest-mutations-v1.jsonl` — 56 single-leaf
+  mutations of those vectors with the digest each must produce. Both are read by
+  `tests/python/android_bridge/test_request_digest.py` and
+  `app/src/test/kotlin/com/ankiminer/android/anki/AnkiRequestDigestTest.kt`.
+
+Two further files under `corpus/` are reviewed inputs rather than generated
+output: `corpus/reading-v1-input.json` is the default `--corpus` of
+`run_reading_goldens.py`, and `corpus/s4-engine-smoke-v1.json` is the default
+`--corpus` of `run_s4_engine_smoke.py` — distinct from the derived
+`s4-engine-smoke-v1.json` at this directory's root, which shares its name.
+
+`app/build.gradle.kts:247` adds this entire directory as `androidTest` assets,
+so every file here — inputs and schemas included — ships in the instrumentation
+APK.
 
 ## Historical v1 and bounded S4 fixtures
 
@@ -87,13 +117,22 @@ working directory, and rejects an imported engine outside the requested root.
 This prevents a developer's editable install or current checkout from silently
 supplying the fixtures.
 
-Run the desktop exporter through the Android-side verifier:
+Run the desktop exporter through the Android-side verifier. `engine-v1.json` is
+frozen at desktop revision `ba3b3cf`, which predates the `420ce23` recorded in
+`tools/engine-sync/engine.lock`. `run_goldens.py` takes its expected revision
+from `--lock` (default: that file), so reproducing v1 means pointing both
+`--engine-root` and `--lock` at `ba3b3cf` — against the current lock the run
+fails the revision check. Always pass `--check` as well: `--output` defaults to
+the committed `golden/engine-v1.json`, so a run without it rewrites the frozen
+fixture instead of verifying it.
 
 ```bash
 python tools/engine-sync/run_goldens.py \
   --python /path/to/desktop/.venv/bin/python \
   --exporter /path/to/desktop/scripts/dump_engine_goldens.py \
-  --engine-root /path/to/clean/pinned-desktop-checkout
+  --engine-root /path/to/clean/ba3b3cf-desktop-checkout \
+  --lock /path/to/lockfile-containing-ba3b3cf \
+  --check
 ```
 
 The bounded S4 fixture is derived separately because the v1 engine golden still

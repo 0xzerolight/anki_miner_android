@@ -6,8 +6,9 @@ and their native libraries for `arm64-v8a` and `x86_64`.
 
 The build is fixed to Chaquopy CPython 3.12, Android API 26, NDK 28.2, and 16 KiB
 ELF load alignment. UniDic, tokenizer packages, PyQt6, gTTS, and yt-dlp are outside
-this artifact boundary. The optional Fugashi tokenizer has its own publication under
-`tools/wheels`.
+this artifact boundary. Fugashi is separately published under `tools/wheels`; it is
+optional to this artifact, not to the app, and its wheel is vendored into both ABI
+groups of `app/wheels/`.
 
 Run:
 
