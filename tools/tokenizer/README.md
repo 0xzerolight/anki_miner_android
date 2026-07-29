@@ -88,15 +88,18 @@ or the engine from the shared contract modules.
 
 ## M0 decision status
 
-S1a is the leading implementation candidate based on host and x86 emulator
-correctness evidence. No tokenizer is selected for M0 or release until physical
-ARM64 parity, cold-init, throughput, and RSS gates pass. Failure reopens S1b or
-mitigation evaluation. The process-immutable shared-tagger selector remains in
-place so both production seams can be tested against the same contract.
+S1a is the selected production backend. The Kotlin bridge rejects any other
+value: `BridgeJsonCodec.kt` fails an `INVALID_VALUE` on
+`configuration.backend != "s1a"`, and `mining/MiningRuntimeContracts.kt` both
+defaults to `"s1a"` and `require`s it. The process-immutable shared-tagger
+selector in `android_bridge/tokenizer_selection.py` still accepts `s1b`, so both
+production seams can be tested against the same contract. The physical-ARM64
+parity, cold-init, throughput, and RSS gates remain outstanding; failure there
+reopens S1b or mitigation evaluation.
 
 | Gate | S1a result | Evidence |
 | --- | --- | --- |
-| Host contract and engine regression | pass | `scripts/health.sh` with S1a publication `95f6024a…`: health OK |
+| Host contract and engine regression | pass | `scripts/health.sh` with S1a publication `fcebd049…` (`s1aWheelBuildKey`, `app/build.gradle.kts`): health OK |
 | x86_64, 4 KiB | pass | API 36 `anki_miner_api36`: 6 connected tests passed |
 | x86_64, 16 KiB | pass | API 36 `anki_miner_api36_ps16k`: 6 connected tests passed |
 | arm64 build/package/static ELF | pass | reproducible wheel, APK and AAB artifact gates |
