@@ -57,6 +57,10 @@ class AnkiMediaFileProvider : FileProvider() {
          *   never reaches this map.
          * * `jfif`/`pjpeg`/`pjp` — JPEG aliases Yomitan dictionaries may ship that no Android
          *   release registers; `image/jpeg` reverse-maps to `jpg`.
+         * * `apng` — API 26 registers no `apng` extension and `image/apng` reverse-maps to null. An
+         *   APNG *is* a PNG stream, so `image/png` is a truthful label here rather than a lossy one:
+         *   AnkiDroid stores the bytes unchanged as `.png`, and a viewer that understands APNG
+         *   animates it while one that does not shows the first frame.
          */
         private val FILL =
             mapOf(
@@ -64,6 +68,7 @@ class AnkiMediaFileProvider : FileProvider() {
                 "jfif" to "image/jpeg",
                 "pjpeg" to "image/jpeg",
                 "pjp" to "image/jpeg",
+                "apng" to "image/png",
             )
     }
 }

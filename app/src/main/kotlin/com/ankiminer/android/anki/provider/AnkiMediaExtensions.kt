@@ -47,10 +47,21 @@ internal object AnkiMediaExtensions {
      * device reports: API 26 carries no `opus` extension at all, and excluding it would reintroduce
      * Issue #2 for the exact format local-audio-yomichan's default collection ships.
      *
+     * `apng` is missing at API 26 as well but is NOT here: an APNG is a valid PNG stream, so
+     * [AnkiMediaFileProvider] names it `image/png` and AnkiDroid stores a `.png` that renders. An
+     * extension belongs here only when no compatible MIME exists for it at all.
+     *
      * Entries move in and out ONLY on evidence from the instrumented API 26 gate, with the measured
-     * value recorded alongside.
+     * value recorded alongside. The exclusion is compile-time, so it also applies on API levels that
+     * resolve the extension natively. Accepted for now: the alternative is a device-resolved
+     * predicate threaded through the staging seam, and `.avif` dictionary media is rare.
      */
-    internal val DEVICE_UNMAPPABLE_EXTENSIONS: Set<String> = linkedSetOf()
+    internal val DEVICE_UNMAPPABLE_EXTENSIONS: Set<String> =
+        linkedSetOf(
+            // API 26 registers no `avif` extension, and `image/avif` reverse-maps to null, so there
+            // is no value the provider could answer with that AnkiDroid can name a file after.
+            "avif",
+        )
 
     /** Every real media extension, ordered for a stable regex alternation. */
     val ALLOWED_EXTENSIONS: List<String> =
