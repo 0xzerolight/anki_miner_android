@@ -103,11 +103,20 @@ UniDic from `unidic-lite` unless `--dicdir` is supplied, always passes the
 resolved directory to the exporter, and records it under the reserved
 `unidic_dicdir` asset name.
 
+`engine-v1.json` is frozen at desktop revision `ba3b3cf`, which predates the
+`420ce23` in `engine.lock`. `run_goldens.py` takes its expected revision from
+`--lock`, so reproducing v1 means pointing both `--engine-root` and `--lock` at
+`ba3b3cf`; against the current lock the run fails the revision check. Pass
+`--check` too — `--output` defaults to the committed fixture, so a run without
+it rewrites the frozen file instead of verifying it.
+
 ```bash
 python tools/engine-sync/run_goldens.py \
   --python /path/to/desktop/.venv/bin/python \
   --exporter /path/to/desktop/scripts/dump_engine_goldens.py \
-  --engine-root /path/to/clean/pinned/desktop/checkout
+  --engine-root /path/to/ba3b3cf/desktop/checkout \
+  --lock /path/to/ba3b3cf.lock \
+  --check
 ```
 
 The runner uses a scrubbed home and environment, disables user-site and unsafe
