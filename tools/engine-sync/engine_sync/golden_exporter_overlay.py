@@ -35,7 +35,7 @@ SCHEMA_ATTESTATION = (
 MATERIALIZED_SHA256 = {
     "dump_engine_goldens.py": SOURCE_ATTESTATIONS["dump_engine_goldens.py"][0],
     "engine_golden_contract_v2.py": (
-        "a6fba4c51ffc3fafdab14f47bd0b227d7f08fa4f716dc8ef779fd1381d6c9d86"
+        "5c8f3cc73aa42fac2d68f9980eb8888275ccdb5b874e220d9c9847f1419eef47"
     ),
     "prepare_golden_unidic.py": SOURCE_ATTESTATIONS["prepare_golden_unidic.py"][0],
 }
@@ -43,7 +43,7 @@ DESKTOP_REVISION_LINE = (
     b'PINNED_ENGINE_REVISION = "ba3b3cfbcc53e57a440c8b9f157209851408c62a"'
 )
 ANDROID_REVISION_LINE = (
-    b'PINNED_ENGINE_REVISION = "edad8e503ded5b33e56a33822693b239a057b88d"'
+    b'PINNED_ENGINE_REVISION = "420ce234b01b845a3766f2cee4638c1cde64f059"'
 )
 
 

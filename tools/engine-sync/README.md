@@ -55,7 +55,7 @@ command at a newer desktop exporter fails rather than silently changing the
 contract. The frozen desktop v2 contract still names the earlier Android
 engine revision. Before derivation, the runner therefore materializes an
 attested exporter trio and changes only that revision constant to `engine.lock`'s
-reviewed `edad8e5` pin. Both SHA-256 and Git-blob identities bind the desktop
+reviewed `420ce23` pin. Both SHA-256 and Git-blob identities bind the desktop
 sources, and the fixture records the hashes of the actual materialized files.
 Any upstream exporter change requires an explicit rebase in
 `golden_exporter_overlay.py`.

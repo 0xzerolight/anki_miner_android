@@ -23,9 +23,14 @@ PYTHONPATH=tools/engine-sync python tools/engine-sync/run_goldens_v2.py \
 ```
 
 The debug instrumentation APK packages the exact v2 fixture and replays every
-section through the vendored Android engine in one fresh process. The connected
-runner selects `EngineGoldenV2InstrumentedTest` explicitly after the bounded S4
-smoke whenever an S1a publication is present.
+section through the vendored Android engine in one fresh process.
+`EngineGoldenV2InstrumentedTest` is assumption-gated on
+`-e ankiMinerRunGoldenV2 true`, and no lane passes it — the API 26 runner
+(`.github/scripts/run-api26-instrumentation.sh`) passes only `-e notClass`. So
+that replay is opt-in, not a per-push gate. Neither CI nor `scripts/health.sh`
+re-derives either; both run only `validate_committed_fixture`, a hash-pin check
+that any self-consistent fixture passes. After an `engine.lock` bump the
+re-derivation above is therefore a manual step, and its output is the evidence.
 
 ## Reading-source parity
 
