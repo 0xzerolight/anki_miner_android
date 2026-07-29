@@ -3,6 +3,7 @@ package com.ankiminer.android.anki.provider
 import android.content.Context
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.system.Os
 import android.webkit.MimeTypeMap
 import androidx.test.core.app.ApplicationProvider
@@ -22,10 +23,10 @@ import org.junit.After
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -105,6 +106,11 @@ class AndroidAnkiMediaStagingInstrumentedTest {
      *
      * Asserted inside the existing test rather than as a new `@Test` so the pinned instrumentation
      * count in `run-api26-instrumentation.sh` stays put.
+     *
+     * Every extension is measured before anything is asserted, and a failure prints the whole table.
+     * Failing at the first bad extension hides the rest, and the only way to observe them is another
+     * emulator run — which is what [AnkiMediaExtensions.DEVICE_UNMAPPABLE_EXTENSIONS] has to be
+     * populated from.
      */
     private fun assertEveryAllowedExtensionSurvivesTheMimeRoundTrip(platform: AndroidAnkiMediaStagingPlatform) {
         val mimeTypes = MimeTypeMap.getSingleton()
@@ -126,33 +132,42 @@ class AndroidAnkiMediaStagingInstrumentedTest {
             )
         }
 
-        AnkiMediaExtensions.ALLOWED_EXTENSIONS.forEachIndexed { index, extension ->
-            val token = index.toString(16).padStart(64, '0')
-            val path = "v1/$token.$extension"
-            val uri = Uri.parse(platform.contentUriFor(path))
-            platform.createDestination(path).use { destination ->
-                destination.stream.write(sourceBytes(extension))
-                destination.stream.flush()
-                destination.sync()
-            }
-            try {
-                val resolved = context.contentResolver.getType(uri)
-                val stock = mimeTypes.getMimeTypeFromExtension(extension)
-                if (stock != null) {
-                    assertEquals("the provider must not override the platform for .$extension", stock, resolved)
+        val table =
+            AnkiMediaExtensions.ALLOWED_EXTENSIONS.mapIndexed { index, extension ->
+                val token = index.toString(16).padStart(64, '0')
+                val path = "v1/$token.$extension"
+                val uri = Uri.parse(platform.contentUriFor(path))
+                platform.createDestination(path).use { destination ->
+                    destination.stream.write(sourceBytes(extension))
+                    destination.stream.flush()
+                    destination.sync()
                 }
-                assertNotEquals(
-                    ".$extension must not resolve to the MIME AnkiDroid stores as .bin",
-                    "application/octet-stream",
-                    resolved,
-                )
-                assertNotNull(
-                    ".$extension resolves to $resolved, which AnkiDroid cannot name a file after",
-                    mimeTypes.getExtensionFromMimeType(requireNotNull(resolved)),
-                )
-            } finally {
-                platform.deleteDestination(path)
+                try {
+                    val stock = mimeTypes.getMimeTypeFromExtension(extension)
+                    val resolved = context.contentResolver.getType(uri)
+                    val named = resolved?.let(mimeTypes::getExtensionFromMimeType)
+                    val fault =
+                        when {
+                            stock != null && stock != resolved -> "the provider overrode the platform"
+                            resolved == null || resolved == OCTET_STREAM_MIME -> "AnkiDroid stores this as .bin"
+                            named == null -> "AnkiDroid cannot name a file after this MIME"
+                            else -> null
+                        }
+                    "${if (fault == null) "ok  " else "FAIL"} .$extension" +
+                        " stock=$stock resolved=$resolved names=$named" +
+                        (fault?.let { " <- $it" } ?: "") to (fault == null)
+                } finally {
+                    platform.deleteDestination(path)
+                }
             }
+
+        if (table.any { !it.second }) {
+            fail(
+                "staged media extensions AnkiDroid cannot name, on API ${Build.VERSION.SDK_INT}. " +
+                    "Park each FAIL row in AnkiMediaExtensions.DEVICE_UNMAPPABLE_EXTENSIONS, or give it " +
+                    "an AnkiMediaFileProvider.FILL value that reverse-maps and names the same format:\n" +
+                    table.joinToString("\n") { it.first },
+            )
         }
     }
 
@@ -270,6 +285,9 @@ class AndroidAnkiMediaStagingInstrumentedTest {
 
     private companion object {
         const val TEST_PREFIX = "anki-media-staging-test"
+
+        /** Stock `FileProvider`'s fallback, and the MIME AnkiDroid names `.bin`. */
+        const val OCTET_STREAM_MIME = "application/octet-stream"
     }
 }
 
