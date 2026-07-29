@@ -172,6 +172,16 @@ class AppSettingsTest {
     }
 
     @Test
+    fun duplicateCardsStayCollectionScopedUntilTheUserOptsIn() {
+        val inherited = EngineSettingsSnapshotMapper.map(AppSettings(), emptyList())
+        val allowed =
+            EngineSettingsSnapshotMapper.map(AppSettings(allowDuplicateCards = true), emptyList())
+
+        assertFalse(inherited.settings.containsKey("allow_duplicate_cards"))
+        assertEquals(BridgeJsonValue.Bool(true), allowed.settings["allow_duplicate_cards"])
+    }
+
+    @Test
     fun subtitleAnnotationStripIsOnlyEmittedWhenOverridden() {
         val inherited = EngineSettingsSnapshotMapper.map(AppSettings(), emptyList())
         val disabled =

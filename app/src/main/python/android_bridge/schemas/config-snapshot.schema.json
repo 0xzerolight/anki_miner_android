@@ -154,6 +154,7 @@
           "uniqueItems": true,
           "items": {"$ref": "#/$defs/frequencySource"}
         },
+        "allow_duplicate_cards": {"type": "boolean"},
         "use_known_words_db": {"type": "boolean"},
         "exclude_hiragana_only_words": {"type": "boolean"},
         "exclude_katakana_only_words": {"type": "boolean"},

@@ -50,6 +50,7 @@ _STRING_FIELDS = frozenset(
 )
 _BOOL_FIELDS = frozenset(
     {
+        "allow_duplicate_cards",
         "use_known_words_db",
         "exclude_hiragana_only_words",
         "exclude_katakana_only_words",

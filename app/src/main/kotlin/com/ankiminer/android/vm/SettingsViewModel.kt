@@ -114,6 +114,7 @@ internal data class SettingsDraft(
     val excludedDecks: List<String>,
     val tags: String,
     val tagsOverride: Boolean,
+    val allowDuplicates: Boolean?,
     val audioPadding: String,
     val screenshotOffset: String,
     val subtitleOffset: String,
@@ -209,6 +210,7 @@ internal data class SettingsDraft(
             deckName = deckName.takeIf(String::isNotEmpty),
             excludedDecks = excludedDecks,
             tags = tags.takeIf { tagsOverride },
+            allowDuplicateCards = allowDuplicates,
             audioPaddingSeconds = AppSettingsDraftParser.optionalDouble(audioPadding),
             screenshotOffsetSeconds = AppSettingsDraftParser.optionalDouble(screenshotOffset),
             subtitleOffsetSeconds = AppSettingsDraftParser.optionalDouble(subtitleOffset),
@@ -320,6 +322,7 @@ internal data class SettingsDraft(
                 excludedDecks = settings.excludedDecks,
                 tags = settings.tags.orEmpty(),
                 tagsOverride = settings.tags != null,
+                allowDuplicates = settings.allowDuplicateCards,
                 audioPadding = settings.audioPaddingSeconds?.toString().orEmpty(),
                 screenshotOffset = settings.screenshotOffsetSeconds?.toString().orEmpty(),
                 subtitleOffset = settings.subtitleOffsetSeconds?.toString().orEmpty(),
@@ -363,6 +366,8 @@ private fun SettingsDraft.rebaseChangesSince(
             changedValue(baseline.excludedDecks, excludedDecks, persisted.excludedDecks),
         tags = changedValue(baseline.tags, tags, persisted.tags),
         tagsOverride = changedValue(baseline.tagsOverride, tagsOverride, persisted.tagsOverride),
+        allowDuplicates =
+            changedValue(baseline.allowDuplicates, allowDuplicates, persisted.allowDuplicates),
         audioPadding = changedValue(baseline.audioPadding, audioPadding, persisted.audioPadding),
         screenshotOffset =
             changedValue(baseline.screenshotOffset, screenshotOffset, persisted.screenshotOffset),

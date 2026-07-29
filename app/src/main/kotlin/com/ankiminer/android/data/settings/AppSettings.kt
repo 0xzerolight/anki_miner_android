@@ -56,6 +56,12 @@ data class AppSettings(
     val noteType: String? = null,
     val fieldMap: Map<String, String> = emptyMap(),
     val tags: String? = null,
+    /**
+     * Card the user already has elsewhere in the collection stops being a reason to skip a word:
+     * the duplicate scope narrows from the whole collection to the target deck, and the within-run
+     * collapse of two surfaces sharing one expression is skipped.
+     */
+    val allowDuplicateCards: Boolean? = null,
     val audioPaddingSeconds: Double? = null,
     val screenshotOffsetSeconds: Double? = null,
     val subtitleOffsetSeconds: Double? = null,
@@ -102,6 +108,7 @@ data class AppSettings(
     fun restoreMiningDefaults(): AppSettings =
         copy(
             tags = null,
+            allowDuplicateCards = null,
             audioPaddingSeconds = null,
             screenshotOffsetSeconds = null,
             subtitleOffsetSeconds = null,
@@ -473,6 +480,7 @@ internal object EngineSettingsSnapshotMapper {
         values["card_type_marker_fields"] = stringMap(emptyMap())
         values["card_type"] = text("")
         settings.tags?.let { values["anki_tags"] = text(it) }
+        settings.allowDuplicateCards?.let { values["allow_duplicate_cards"] = bool(it) }
         settings.audioPaddingSeconds?.let { values["audio_padding"] = decimal(it) }
         settings.screenshotOffsetSeconds?.let { values["screenshot_offset"] = decimal(it) }
         settings.subtitleOffsetSeconds?.let { values["subtitle_offset"] = decimal(it) }

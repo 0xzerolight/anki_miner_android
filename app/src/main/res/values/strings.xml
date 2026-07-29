@@ -525,6 +525,7 @@
     <string name="settings_anki_deck_not_discovered">Saved choice; not currently discovered</string>
     <string name="settings_tags_override">Override note tags</string>
     <string name="settings_tags">Tags</string>
+    <string name="settings_allow_duplicates">Mine words that already have a note elsewhere in the collection</string>
     <string name="settings_media">Media</string>
     <string name="settings_audio_padding">Audio padding (seconds)</string>
     <string name="settings_screenshot_offset">Screenshot offset (seconds)</string>

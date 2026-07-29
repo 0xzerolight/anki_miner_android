@@ -157,6 +157,7 @@ class DataStoreAppSettingsRepository internal constructor(
                 candidate.setOrRemove(Keys.noteType, value.noteType)
                 candidate.setOrRemove(Keys.fieldMap, FieldMapPreferenceCodec.encode(value.fieldMap))
                 candidate.setOrRemove(Keys.tags, value.tags)
+                candidate.setOrRemove(Keys.allowDuplicateCards, value.allowDuplicateCards)
                 candidate.setOrRemove(Keys.audioPadding, value.audioPaddingSeconds)
                 candidate.setOrRemove(Keys.screenshotOffset, value.screenshotOffsetSeconds)
                 candidate.setOrRemove(Keys.subtitleOffset, value.subtitleOffsetSeconds)
@@ -256,6 +257,7 @@ class DataStoreAppSettingsRepository internal constructor(
                         decoder.read(Keys.tags, null, { it }) { value ->
                             value?.let { AppSettingsValidator.validate(AppSettings(tags = it)) }
                         },
+                    allowDuplicateCards = decoder.read(Keys.allowDuplicateCards, null, { it }),
                     audioPaddingSeconds =
                         decoder.validated(Keys.audioPadding) { AppSettings(audioPaddingSeconds = it) },
                     screenshotOffsetSeconds =
@@ -459,6 +461,7 @@ class DataStoreAppSettingsRepository internal constructor(
             val noteType = register(stringPreferencesKey("note_type"))
             val fieldMap = register(stringPreferencesKey("field_map_v1"))
             val tags = register(stringPreferencesKey("tags"))
+            val allowDuplicateCards = register(booleanPreferencesKey("allow_duplicate_cards"))
             val audioPadding = register(doublePreferencesKey("audio_padding_seconds"))
             val screenshotOffset = register(doublePreferencesKey("screenshot_offset_seconds"))
             val subtitleOffset = register(doublePreferencesKey("subtitle_offset_seconds"))

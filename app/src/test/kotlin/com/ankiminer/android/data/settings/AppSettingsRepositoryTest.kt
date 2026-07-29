@@ -240,6 +240,7 @@ class AppSettingsRepositoryTest {
         assertEquals(
             original.copy(
                 tags = null,
+                allowDuplicateCards = null,
                 audioPaddingSeconds = null,
                 screenshotOffsetSeconds = null,
                 subtitleOffsetSeconds = null,
@@ -445,6 +446,7 @@ class AppSettingsRepositoryTest {
                     "sentence" to "Sentence",
                 ),
             tags = "mined japanese",
+            allowDuplicateCards = true,
             audioPaddingSeconds = 0.1,
             screenshotOffsetSeconds = 0.2,
             subtitleOffsetSeconds = -0.3,
@@ -498,6 +500,10 @@ class AppSettingsRepositoryTest {
             corruptString("note_type", original.copy(noteType = defaults.noteType)),
             corruptString("field_map_v1", original.copy(fieldMap = defaults.fieldMap)),
             corruptString("tags", original.copy(tags = defaults.tags)),
+            corruptBoolean(
+                "allow_duplicate_cards",
+                original.copy(allowDuplicateCards = defaults.allowDuplicateCards),
+            ),
             corruptDouble(
                 "audio_padding_seconds",
                 original.copy(audioPaddingSeconds = defaults.audioPaddingSeconds),

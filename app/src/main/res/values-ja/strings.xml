@@ -517,6 +517,7 @@
     <string name="settings_anki_deck_not_discovered">保存済み(現在未検出)</string>
     <string name="settings_tags_override">ノートタグを上書き</string>
     <string name="settings_tags">タグ</string>
+    <string name="settings_allow_duplicates">コレクション内の他の場所に既にノートがある単語もマイニング</string>
     <string name="settings_media">メディア</string>
     <string name="settings_audio_padding">音声パディング(秒)</string>
     <string name="settings_screenshot_offset">スクリーンショットのオフセット(秒)</string>
