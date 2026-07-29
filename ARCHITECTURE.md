@@ -16,6 +16,9 @@ Compose UI → ViewModels → Kotlin services → JSON bridge → vendored Pytho
   foreground service for post-curation media processing.
 - **JSON bridge** — a string-in/string-out boundary that hands work to Python
   and adapts engine callbacks (progress, curation, Anki I/O) back to Kotlin.
+  Curation has two distinct outcomes: a `None` result cancels the whole run,
+  while an empty list means the user selected zero words and the run continues
+  to a zero-card result.
 - **Python engine** — the vendored desktop engine under
   `app/src/main/python/anki_miner/`, generated from
   `tools/engine-sync/engine.lock`. **Do not edit it directly** — fix upstream in
@@ -29,8 +32,11 @@ target and may create only the selected target deck. Writes use exact readback
 and durable mutation recovery.
 
 Card and collection operations do not use a network backend. Expression audio
-is separate: it tries AnkiConnect-Android's bounded on-device loopback
-`localaudio` source first, then imported local packs as the offline fallback.
+is separate: AnkiConnect-Android's bounded on-device loopback `localaudio`
+source is the default primary, with imported local packs as the offline
+fallback. That order is not owned by the fetcher — `android_bridge/config_map.py`
+prepends the `localaudio` entry to `expression_audio_chain`, and
+`android_bridge/mining.py` builds the fetchers in config order.
 
 Historical correction (2026-07-21): commit `99058d7` superseded the 2026-07-17
 completion checkpoint's app-owned note-model statement. The checkpoint remains

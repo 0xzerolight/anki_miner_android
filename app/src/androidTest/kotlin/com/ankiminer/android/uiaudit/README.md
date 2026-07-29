@@ -13,7 +13,8 @@ adb shell am instrument -w -r \
   com.ankiminer.android.test/androidx.test.runner.AndroidJUnitRunner
 ```
 
-The suite writes 150 PNGs:
+The suite writes one PNG per screen-state, theme and font-scale combination
+(currently 27 x 2 themes x 3 font scales = 162):
 
 ```text
 /sdcard/Android/data/com.ankiminer.android/files/ui-audit/
