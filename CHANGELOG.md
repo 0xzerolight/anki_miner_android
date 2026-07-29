@@ -2,6 +2,23 @@
 
 All notable project changes will be recorded here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and releases will use semantic versioning once a public version exists.
 
+## [0.1.8] - 2026-07-29
+
+### Fixed
+
+- Pitch accent overlines covered every mora on note types that draw the mora box unconditionally and hide low mora with `border-color: transparent`, because the engine inlined a colour on low-mora lines and an inline style beats an author declaration. Nothing is declared on those lines now, so no note type's own styling can be defeated by it (#5).
+- Mined media keeps its real extension for the remaining formats a run can produce: downloaded expression audio beyond mp3 and opus, every local audio pack format, Android speech synthesis output, and dictionary media such as pitch accent graphics. Two formats the platform cannot name a file after are staged neutrally rather than under a name that would still land as `.bin`, which extends the fix released in 0.1.6 (#2).
+- Settings deep links land on the card they name; a conditional card appearing above the target no longer shifts it.
+
+### Changed
+
+- Sentence deduplication is off by default. It keeps one word per sentence and runs before curation, so it withheld candidates that were never shown.
+- The Setup category is gone. The Japanese tokenizer card moved to Diagnostics and appears only when it is missing or failing, instead of a healthy install presenting itself as a fault report with a repair button.
+- Installed bundled dictionaries and healthy resource inventories are hidden, leaving the dictionary, frequency, audio, and pitch cards to show only what is missing or broken. Inventories duplicated what the priority editor already listed; the broken case is the only one that added anything.
+- A frequency import derives its identifier from the display name instead of asking for a lowercase slug.
+- Replacing an existing resource is confirmed in a dialog raised before the import starts, rather than by a checkbox about a collision that was not visible and, on the pitch card, named an identifier that does not exist.
+- The settings category tabs are denser, with fades marking the tabs off screen.
+
 ## [0.1.7] - 2026-07-28
 
 ### Changed
