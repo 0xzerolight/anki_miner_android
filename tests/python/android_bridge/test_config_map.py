@@ -118,6 +118,17 @@ def test_typed_fields_and_entries_are_reconstructed(tmp_path: Path) -> None:
     assert config.anki_fields["word"] == "Expression"
 
 
+def test_subtitle_annotation_strip_can_be_turned_off(tmp_path: Path) -> None:
+    inherited = map_config_settings({}, _paths(tmp_path)).engine_config
+    overridden = map_config_settings(
+        {"strip_subtitle_annotations": False},
+        _paths(tmp_path),
+    ).engine_config
+
+    assert inherited.strip_subtitle_annotations is True
+    assert overridden.strip_subtitle_annotations is False
+
+
 @pytest.mark.parametrize("kind", ["jpod101", "googletts", "custom", "custom_json"])
 def test_network_expression_audio_kinds_are_rejected(kind: str, tmp_path: Path) -> None:
     with pytest.raises(BridgeProtocolError) as error:

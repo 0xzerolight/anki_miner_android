@@ -305,6 +305,17 @@ private fun LazyListScope.mediaSettings(
             )
         }
     }
+    // Its own card, after media-options: no failure origin deep-links into MEDIA, so appending here
+    // cannot shift the hardcoded item indices in settingsCardIndexFor.
+    settingsCard("subtitle-text") {
+        SettingsSection(stringResource(R.string.settings_subtitle_text)) {
+            NullableToggle(
+                stringResource(R.string.settings_strip_annotations),
+                draft.stripAnnotations,
+                true,
+            ) { onDraftChange(draft.copy(stripAnnotations = it)) }
+        }
+    }
 }
 
 private fun LazyListScope.dictionarySettings(

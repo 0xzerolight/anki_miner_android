@@ -162,6 +162,10 @@ class DataStoreAppSettingsRepository internal constructor(
                 candidate.setOrRemove(Keys.subtitleOffset, value.subtitleOffsetSeconds)
                 candidate.setOrRemove(Keys.audioFormat, value.audioFormat?.wireValue)
                 candidate.setOrRemove(Keys.audioBitrate, value.audioBitrateKbps)
+                candidate.setOrRemove(
+                    Keys.stripSubtitleAnnotations,
+                    value.stripSubtitleAnnotations,
+                )
                 candidate.setOrRemove(Keys.useKnownWordsDatabase, value.useKnownWordsDatabase)
                 candidate.setOrRemove(Keys.excludeHiraganaOnly, value.excludeHiraganaOnly)
                 candidate.setOrRemove(Keys.excludeKatakanaOnly, value.excludeKatakanaOnly)
@@ -253,6 +257,8 @@ class DataStoreAppSettingsRepository internal constructor(
                         }),
                     audioBitrateKbps =
                         decoder.validated(Keys.audioBitrate) { AppSettings(audioBitrateKbps = it) },
+                    stripSubtitleAnnotations =
+                        decoder.read(Keys.stripSubtitleAnnotations, null, { it }),
                     useKnownWordsDatabase = decoder.read(Keys.useKnownWordsDatabase, null, { it }),
                     excludeHiraganaOnly = decoder.read(Keys.excludeHiraganaOnly, null, { it }),
                     excludeKatakanaOnly = decoder.read(Keys.excludeKatakanaOnly, null, { it }),
@@ -428,6 +434,8 @@ class DataStoreAppSettingsRepository internal constructor(
             val subtitleOffset = register(doublePreferencesKey("subtitle_offset_seconds"))
             val audioFormat = register(stringPreferencesKey("audio_format"))
             val audioBitrate = register(intPreferencesKey("audio_bitrate_kbps"))
+            val stripSubtitleAnnotations =
+                register(booleanPreferencesKey("strip_subtitle_annotations"))
             val useKnownWordsDatabase = register(booleanPreferencesKey("use_known_words_database"))
             val excludeHiraganaOnly = register(booleanPreferencesKey("exclude_hiragana_only"))
             val excludeKatakanaOnly = register(booleanPreferencesKey("exclude_katakana_only"))

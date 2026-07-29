@@ -172,6 +172,22 @@ class AppSettingsTest {
     }
 
     @Test
+    fun subtitleAnnotationStripIsOnlyEmittedWhenOverridden() {
+        val inherited = EngineSettingsSnapshotMapper.map(AppSettings(), emptyList())
+        val disabled =
+            EngineSettingsSnapshotMapper.map(
+                AppSettings(stripSubtitleAnnotations = false),
+                emptyList(),
+            )
+
+        assertFalse(inherited.settings.containsKey("strip_subtitle_annotations"))
+        assertEquals(
+            BridgeJsonValue.Bool(false),
+            disabled.settings["strip_subtitle_annotations"],
+        )
+    }
+
+    @Test
     fun snapshotFreezesReadingAndLocalResourceChoicesWithoutNetworkAudio() {
         val snapshot =
             EngineSettingsSnapshotMapper.map(

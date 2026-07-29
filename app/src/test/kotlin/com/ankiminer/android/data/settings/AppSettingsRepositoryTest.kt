@@ -245,6 +245,7 @@ class AppSettingsRepositoryTest {
                 subtitleOffsetSeconds = null,
                 audioFormat = null,
                 audioBitrateKbps = null,
+                stripSubtitleAnnotations = null,
                 useKnownWordsDatabase = null,
                 excludeHiraganaOnly = null,
                 excludeKatakanaOnly = null,
@@ -446,6 +447,7 @@ class AppSettingsRepositoryTest {
             subtitleOffsetSeconds = -0.3,
             audioFormat = AudioFormat.OPUS,
             audioBitrateKbps = 96,
+            stripSubtitleAnnotations = false,
             useKnownWordsDatabase = true,
             excludeHiraganaOnly = true,
             excludeKatakanaOnly = true,
@@ -506,6 +508,10 @@ class AppSettingsRepositoryTest {
             corruptInt(
                 "audio_bitrate_kbps",
                 original.copy(audioBitrateKbps = defaults.audioBitrateKbps),
+            ),
+            corruptBoolean(
+                "strip_subtitle_annotations",
+                original.copy(stripSubtitleAnnotations = defaults.stripSubtitleAnnotations),
             ),
             corruptBoolean(
                 "use_known_words_database",

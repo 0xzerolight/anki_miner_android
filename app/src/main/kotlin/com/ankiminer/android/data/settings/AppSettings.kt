@@ -61,6 +61,11 @@ data class AppSettings(
     val subtitleOffsetSeconds: Double? = null,
     val audioFormat: AudioFormat? = null,
     val audioBitrateKbps: Int? = null,
+    /**
+     * Structural subtitle-annotation strip: whole-line sound-effect captions, leading speaker tags,
+     * and inline furigana. Engine default is on, and it runs before the user regex filter.
+     */
+    val stripSubtitleAnnotations: Boolean? = null,
     val useKnownWordsDatabase: Boolean? = null,
     val excludeHiraganaOnly: Boolean? = null,
     val excludeKatakanaOnly: Boolean? = null,
@@ -97,6 +102,7 @@ data class AppSettings(
             subtitleOffsetSeconds = null,
             audioFormat = null,
             audioBitrateKbps = null,
+            stripSubtitleAnnotations = null,
             useKnownWordsDatabase = null,
             excludeHiraganaOnly = null,
             excludeKatakanaOnly = null,
@@ -424,6 +430,7 @@ internal object EngineSettingsSnapshotMapper {
         settings.subtitleOffsetSeconds?.let { values["subtitle_offset"] = decimal(it) }
         settings.audioFormat?.let { values["audio_format"] = text(it.wireValue) }
         settings.audioBitrateKbps?.let { values["audio_bitrate"] = integer(it) }
+        settings.stripSubtitleAnnotations?.let { values["strip_subtitle_annotations"] = bool(it) }
         settings.useKnownWordsDatabase?.let { values["use_known_words_db"] = bool(it) }
         settings.excludeHiraganaOnly?.let { values["exclude_hiragana_only_words"] = bool(it) }
         settings.excludeKatakanaOnly?.let { values["exclude_katakana_only_words"] = bool(it) }

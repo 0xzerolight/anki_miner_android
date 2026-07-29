@@ -525,6 +525,8 @@
     <string name="settings_audio_format">音声フォーマット</string>
     <string name="settings_mp3">MP3</string>
     <string name="settings_opus">Opus</string>
+    <string name="settings_subtitle_text">字幕テキスト</string>
+    <string name="settings_strip_annotations">注記を除去(効果音・話者名・ふりがな)</string>
     <string name="settings_filtering">フィルタリング</string>
     <string name="settings_known_words">ローカル既知単語データベースを使用</string>
     <string name="settings_exclude_hiragana">ひらがなのみの単語を除外</string>

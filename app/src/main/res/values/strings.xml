@@ -533,6 +533,8 @@
     <string name="settings_audio_format">Audio format</string>
     <string name="settings_mp3">MP3</string>
     <string name="settings_opus">Opus</string>
+    <string name="settings_subtitle_text">Subtitle text</string>
+    <string name="settings_strip_annotations">Strip annotations (sound effects, speaker tags, furigana)</string>
     <string name="settings_filtering">Filtering</string>
     <string name="settings_known_words">Use the local known-words database</string>
     <string name="settings_exclude_hiragana">Exclude hiragana-only words</string>
