@@ -1,7 +1,10 @@
 package com.ankiminer.android.ui.settings
 
 import android.os.Build
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.material3.HorizontalDivider
@@ -12,6 +15,8 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.ankiminer.android.R
@@ -314,6 +319,66 @@ private fun LazyListScope.mediaSettings(
                 draft.stripAnnotations,
                 true,
             ) { onDraftChange(draft.copy(stripAnnotations = it)) }
+            SettingTextField(
+                value = draft.subtitleRegex,
+                onChange = { onDraftChange(draft.copy(subtitleRegex = it)) },
+                label = stringResource(R.string.settings_subtitle_regex),
+                error = validationMessage(draft, SettingsFieldKey.SUBTITLE_REGEX),
+            )
+            // Not an error: the engine compiles with Python's regex dialect, so a pattern this
+            // platform cannot parse may still be valid there.
+            if (draft.subtitleRegexWarning) {
+                SupportingText(stringResource(R.string.settings_subtitle_regex_uncompilable))
+            }
+            SettingTextField(
+                value = draft.subtitleRegexReplacement,
+                onChange = { onDraftChange(draft.copy(subtitleRegexReplacement = it)) },
+                label = stringResource(R.string.settings_subtitle_replacement),
+                error = validationMessage(draft, SettingsFieldKey.SUBTITLE_REGEX_REPLACEMENT),
+            )
+            NullableToggle(
+                stringResource(R.string.settings_use_subtitle_regex),
+                draft.useSubtitleRegex,
+                false,
+            ) { onDraftChange(draft.copy(useSubtitleRegex = it)) }
+            Text(
+                stringResource(R.string.settings_subtitle_presets),
+                style = MaterialTheme.typography.titleSmall,
+            )
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
+                verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
+            ) {
+                SUBTITLE_REGEX_PRESETS.forEach { preset ->
+                    val label = stringResource(preset.label)
+                    val description =
+                        stringResource(
+                            R.string.settings_subtitle_preset_description,
+                            label,
+                            preset.pattern,
+                        )
+                    OutlinedButton(
+                        onClick = {
+                            onDraftChange(
+                                draft.copy(
+                                    subtitleRegex =
+                                        appendSubtitleRegexPreset(
+                                            draft.subtitleRegex,
+                                            preset.pattern,
+                                        ),
+                                ),
+                            )
+                        },
+                        border = actionBorder(enabled = true),
+                        colors = outlinedActionButtonColors(),
+                        modifier =
+                            Modifier
+                                .heightIn(min = AnkiMinerTokens.Layout.minTouchTarget)
+                                .semantics { contentDescription = description },
+                    ) { Text(label) }
+                }
+            }
         }
     }
 }

@@ -66,6 +66,11 @@ data class AppSettings(
      * and inline furigana. Engine default is on, and it runs before the user regex filter.
      */
     val stripSubtitleAnnotations: Boolean? = null,
+    /** Python `re` pattern removed from subtitle text before mining. See [SubtitleRegexCheck]. */
+    val subtitleRegexFilter: String? = null,
+    /** Inserted in place of each match. Python backreferences (`\1`), not `$1`. */
+    val subtitleRegexReplacement: String? = null,
+    val useSubtitleRegexFilter: Boolean? = null,
     val useKnownWordsDatabase: Boolean? = null,
     val excludeHiraganaOnly: Boolean? = null,
     val excludeKatakanaOnly: Boolean? = null,
@@ -103,6 +108,9 @@ data class AppSettings(
             audioFormat = null,
             audioBitrateKbps = null,
             stripSubtitleAnnotations = null,
+            subtitleRegexFilter = null,
+            subtitleRegexReplacement = null,
+            useSubtitleRegexFilter = null,
             useKnownWordsDatabase = null,
             excludeHiraganaOnly = null,
             excludeKatakanaOnly = null,
@@ -163,6 +171,10 @@ internal enum class InvalidAppSettingCode {
     FIELD_MAP_UNKNOWN_KEY,
     FIELD_MAP_CONFLICT,
     RESOURCE_IDS_INVALID,
+    SUBTITLE_REGEX_TOO_LONG,
+    SUBTITLE_REGEX_REPLACEMENT_TOO_LONG,
+    SUBTITLE_REGEX_UNBOUNDED_REPEAT,
+    SUBTITLE_REGEX_BACKREFERENCE,
     UNKNOWN,
 }
 
@@ -234,6 +246,11 @@ object AppSettingsValidator {
             it.noteType?.let { value -> canonicalName("Note type", value) }
             fieldMap(it.fieldMap)
             it.tags?.let { value -> validScalarText("Tags", value) }
+            it.subtitleRegexFilter?.let { value -> validScalarText("Subtitle regex filter", value) }
+            it.subtitleRegexReplacement?.let { value ->
+                validScalarText("Subtitle regex replacement", value)
+            }
+            subtitleRegex(it.subtitleRegexFilter, it.subtitleRegexReplacement)
             nonNegative("Audio padding", it.audioPaddingSeconds)
             nonNegative("Screenshot offset", it.screenshotOffsetSeconds)
             finite("Subtitle offset", it.subtitleOffsetSeconds)
@@ -358,6 +375,37 @@ object AppSettingsValidator {
         }
     }
 
+    /**
+     * The two size caps, the nested-repeat reject, and the replacement's group references. Checked
+     * even when the filter is switched off, so a stored pattern can never become dangerous by
+     * flipping one toggle — the same reason desktop validates the trio together.
+     */
+    private fun subtitleRegex(
+        pattern: String?,
+        replacement: String?,
+    ) {
+        if (pattern == null && replacement == null) return
+        when (val code = SubtitleRegexCheck.rejection(pattern, replacement.orEmpty())) {
+            null -> Unit
+            InvalidAppSettingCode.SUBTITLE_REGEX_TOO_LONG ->
+                invalid(
+                    code,
+                    "Subtitle filter exceeds ${SubtitleRegexCheck.MAX_PATTERN_CHARS} characters",
+                    SubtitleRegexCheck.MAX_PATTERN_CHARS,
+                )
+            InvalidAppSettingCode.SUBTITLE_REGEX_REPLACEMENT_TOO_LONG ->
+                invalid(
+                    code,
+                    "Replacement exceeds ${SubtitleRegexCheck.MAX_REPLACEMENT_CHARS} characters",
+                    SubtitleRegexCheck.MAX_REPLACEMENT_CHARS,
+                )
+            InvalidAppSettingCode.SUBTITLE_REGEX_UNBOUNDED_REPEAT ->
+                invalid(code, "Subtitle filter must not nest unbounded repeats")
+            else ->
+                invalid(code, "Replacement references a group the subtitle filter does not capture")
+        }
+    }
+
     private fun resourceChain(
         label: String,
         values: List<ResourceChainSelection>,
@@ -431,6 +479,9 @@ internal object EngineSettingsSnapshotMapper {
         settings.audioFormat?.let { values["audio_format"] = text(it.wireValue) }
         settings.audioBitrateKbps?.let { values["audio_bitrate"] = integer(it) }
         settings.stripSubtitleAnnotations?.let { values["strip_subtitle_annotations"] = bool(it) }
+        settings.subtitleRegexFilter?.let { values["subtitle_regex_filter"] = text(it) }
+        settings.subtitleRegexReplacement?.let { values["subtitle_regex_replacement"] = text(it) }
+        settings.useSubtitleRegexFilter?.let { values["use_subtitle_regex_filter"] = bool(it) }
         settings.useKnownWordsDatabase?.let { values["use_known_words_db"] = bool(it) }
         settings.excludeHiraganaOnly?.let { values["exclude_hiragana_only_words"] = bool(it) }
         settings.excludeKatakanaOnly?.let { values["exclude_katakana_only_words"] = bool(it) }

@@ -535,6 +535,16 @@
     <string name="settings_opus">Opus</string>
     <string name="settings_subtitle_text">Subtitle text</string>
     <string name="settings_strip_annotations">Strip annotations (sound effects, speaker tags, furigana)</string>
+    <string name="settings_subtitle_regex">Regex filter</string>
+    <string name="settings_subtitle_replacement">Replacement (empty deletes the match)</string>
+    <string name="settings_use_subtitle_regex">Apply the regex filter to video subtitles</string>
+    <string name="settings_subtitle_presets">Add a preset</string>
+    <string name="settings_subtitle_preset_parens">Parentheses</string>
+    <string name="settings_subtitle_preset_brackets">Brackets</string>
+    <string name="settings_subtitle_preset_music">Music signs</string>
+    <string name="settings_subtitle_preset_speaker">Speaker prefix</string>
+    <string name="settings_subtitle_preset_description">%1$s: %2$s</string>
+    <string name="settings_subtitle_regex_uncompilable">This pattern may not be valid. Mining skips the filter if the engine rejects it.</string>
     <string name="settings_filtering">Filtering</string>
     <string name="settings_known_words">Use the local known-words database</string>
     <string name="settings_exclude_hiragana">Exclude hiragana-only words</string>
@@ -581,6 +591,10 @@
     <string name="settings_validation_field_map_unknown_key">Field map contains an unknown key</string>
     <string name="settings_validation_field_map_conflict">Anki field \'%1$s\' is mapped from multiple logical fields: %2$s</string>
     <string name="settings_validation_resource_ids">%1$s contain invalid or duplicate resource IDs</string>
+    <string name="settings_validation_subtitle_regex_length">Filter is limited to %1$d characters</string>
+    <string name="settings_validation_subtitle_replacement_length">Replacement is limited to %1$d characters</string>
+    <string name="settings_validation_subtitle_regex_repeat">Nested unbounded repeats are not allowed</string>
+    <string name="settings_validation_subtitle_backreference">Replacement refers to a group the filter does not capture</string>
     <string name="settings_validation_unknown">%1$s</string>
     <string name="setup_default_frequency_name">Imported frequency</string>
     <string name="setup_default_pitch_name">Imported pitch accent</string>

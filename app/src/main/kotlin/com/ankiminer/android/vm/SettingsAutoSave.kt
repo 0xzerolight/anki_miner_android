@@ -32,6 +32,8 @@ internal fun settingsWriteCadence(
             readingOccurrence = previous.readingOccurrence,
             maxFrequency = previous.maxFrequency,
             workers = previous.workers,
+            subtitleRegex = previous.subtitleRegex,
+            subtitleRegexReplacement = previous.subtitleRegexReplacement,
         )
     return if (withoutContinuousEdits == previous) {
         SettingsWriteCadence.DEBOUNCED

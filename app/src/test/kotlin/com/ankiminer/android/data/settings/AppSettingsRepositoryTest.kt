@@ -246,6 +246,9 @@ class AppSettingsRepositoryTest {
                 audioFormat = null,
                 audioBitrateKbps = null,
                 stripSubtitleAnnotations = null,
+                subtitleRegexFilter = null,
+                subtitleRegexReplacement = null,
+                useSubtitleRegexFilter = null,
                 useKnownWordsDatabase = null,
                 excludeHiraganaOnly = null,
                 excludeKatakanaOnly = null,
@@ -448,6 +451,9 @@ class AppSettingsRepositoryTest {
             audioFormat = AudioFormat.OPUS,
             audioBitrateKbps = 96,
             stripSubtitleAnnotations = false,
+            subtitleRegexFilter = """\[[^\]]*\]""",
+            subtitleRegexReplacement = "",
+            useSubtitleRegexFilter = true,
             useKnownWordsDatabase = true,
             excludeHiraganaOnly = true,
             excludeKatakanaOnly = true,
@@ -512,6 +518,18 @@ class AppSettingsRepositoryTest {
             corruptBoolean(
                 "strip_subtitle_annotations",
                 original.copy(stripSubtitleAnnotations = defaults.stripSubtitleAnnotations),
+            ),
+            corruptString(
+                "subtitle_regex_filter",
+                original.copy(subtitleRegexFilter = defaults.subtitleRegexFilter),
+            ),
+            corruptString(
+                "subtitle_regex_replacement",
+                original.copy(subtitleRegexReplacement = defaults.subtitleRegexReplacement),
+            ),
+            corruptBoolean(
+                "use_subtitle_regex_filter",
+                original.copy(useSubtitleRegexFilter = defaults.useSubtitleRegexFilter),
             ),
             corruptBoolean(
                 "use_known_words_database",

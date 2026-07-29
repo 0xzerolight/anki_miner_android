@@ -527,6 +527,16 @@
     <string name="settings_opus">Opus</string>
     <string name="settings_subtitle_text">字幕テキスト</string>
     <string name="settings_strip_annotations">注記を除去(効果音・話者名・ふりがな)</string>
+    <string name="settings_subtitle_regex">正規表現フィルター</string>
+    <string name="settings_subtitle_replacement">置換文字列(空欄で削除)</string>
+    <string name="settings_use_subtitle_regex">動画字幕に正規表現フィルターを適用</string>
+    <string name="settings_subtitle_presets">プリセットを追加</string>
+    <string name="settings_subtitle_preset_parens">丸括弧</string>
+    <string name="settings_subtitle_preset_brackets">角括弧</string>
+    <string name="settings_subtitle_preset_music">音符記号</string>
+    <string name="settings_subtitle_preset_speaker">話者名の接頭辞</string>
+    <string name="settings_subtitle_preset_description">%1$s: %2$s</string>
+    <string name="settings_subtitle_regex_uncompilable">このパターンは無効な可能性があります。エンジンが拒否した場合、マイニングはフィルターを適用しません。</string>
     <string name="settings_filtering">フィルタリング</string>
     <string name="settings_known_words">ローカル既知単語データベースを使用</string>
     <string name="settings_exclude_hiragana">ひらがなのみの単語を除外</string>
@@ -573,6 +583,10 @@
     <string name="settings_validation_field_map_unknown_key">フィールドマップに不明なキーが含まれています</string>
     <string name="settings_validation_field_map_conflict">Ankiフィールド\'%1$s\'が複数の論理フィールドからマッピングされています: %2$s</string>
     <string name="settings_validation_resource_ids">%1$sに無効または重複したリソースIDが含まれています</string>
+    <string name="settings_validation_subtitle_regex_length">フィルターは%1$d文字までです</string>
+    <string name="settings_validation_subtitle_replacement_length">置換文字列は%1$d文字までです</string>
+    <string name="settings_validation_subtitle_regex_repeat">入れ子の無制限繰り返しは使用できません</string>
+    <string name="settings_validation_subtitle_backreference">置換文字列がフィルターに存在しないグループを参照しています</string>
     <string name="settings_validation_unknown">%1$s</string>
     <string name="setup_default_frequency_name">インポート済み頻度</string>
     <string name="setup_default_pitch_name">インポート済みアクセント</string>

@@ -188,6 +188,47 @@ class AppSettingsTest {
     }
 
     @Test
+    fun subtitleRegexTrioIsEmittedOnlyWhenSet() {
+        val snapshot =
+            EngineSettingsSnapshotMapper.map(
+                AppSettings(
+                    subtitleRegexFilter = """\[[^\]]*\]""",
+                    useSubtitleRegexFilter = true,
+                ),
+                emptyList(),
+            )
+
+        assertEquals(
+            BridgeJsonValue.Text("""\[[^\]]*\]"""),
+            snapshot.settings["subtitle_regex_filter"],
+        )
+        assertEquals(BridgeJsonValue.Bool(true), snapshot.settings["use_subtitle_regex_filter"])
+        // An unset replacement inherits the engine's empty string, which already deletes the match.
+        assertFalse(snapshot.settings.containsKey("subtitle_regex_replacement"))
+    }
+
+    @Test
+    fun subtitleRegexValidationRejectsRunawayPatternsAndBadGroupReferences() {
+        assertThrows(InvalidAppSettingException::class.java) {
+            AppSettingsValidator.validate(AppSettings(subtitleRegexFilter = "(a+)+"))
+        }
+        assertThrows(InvalidAppSettingException::class.java) {
+            AppSettingsValidator.validate(
+                AppSettings(
+                    subtitleRegexFilter = "a".repeat(SubtitleRegexCheck.MAX_PATTERN_CHARS + 1),
+                ),
+            )
+        }
+        assertThrows(InvalidAppSettingException::class.java) {
+            AppSettingsValidator.validate(
+                AppSettings(subtitleRegexFilter = "[0-9]", subtitleRegexReplacement = """\1"""),
+            )
+        }
+        // Python-only syntax stays savable: the engine's own compiler is the authority.
+        AppSettingsValidator.validate(AppSettings(subtitleRegexFilter = "(?P=name)"))
+    }
+
+    @Test
     fun snapshotFreezesReadingAndLocalResourceChoicesWithoutNetworkAudio() {
         val snapshot =
             EngineSettingsSnapshotMapper.map(

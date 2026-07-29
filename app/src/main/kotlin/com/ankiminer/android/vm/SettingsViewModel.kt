@@ -16,6 +16,7 @@ import com.ankiminer.android.data.settings.InvalidAppSettingCode
 import com.ankiminer.android.data.settings.InvalidAppSettingException
 import com.ankiminer.android.data.settings.PitchCategoryFormat
 import com.ankiminer.android.data.settings.ResourceChainSelection
+import com.ankiminer.android.data.settings.SubtitleRegexCheck
 import com.ankiminer.android.data.settings.ThemeMode
 import com.ankiminer.android.localization.LocalizedStringResource
 import kotlinx.coroutines.CancellationException
@@ -48,6 +49,8 @@ internal enum class SettingsFieldKey {
     READING_OCCURRENCE,
     MAX_FREQUENCY,
     WORKERS,
+    SUBTITLE_REGEX,
+    SUBTITLE_REGEX_REPLACEMENT,
 }
 
 internal sealed interface SettingsSaveState {
@@ -122,6 +125,9 @@ internal data class SettingsDraft(
     val workers: String,
     val audioFormat: AudioFormat?,
     val stripAnnotations: Boolean?,
+    val subtitleRegex: String,
+    val subtitleRegexReplacement: String,
+    val useSubtitleRegex: Boolean?,
     val knownWords: Boolean?,
     val hiragana: Boolean?,
     val katakana: Boolean?,
@@ -182,7 +188,17 @@ internal data class SettingsDraft(
                             ),
                         )
                     }
+                SubtitleRegexCheck
+                    .rejection(subtitleRegex.takeIf(String::isNotEmpty), subtitleRegexReplacement)
+                    ?.let { code -> put(subtitleRegexField(code), subtitleRegexMessage(code)) }
             }
+
+    /** Java rejected the pattern. Python `re` still decides, so this warns instead of blocking. */
+    val subtitleRegexWarning: Boolean
+        get() =
+            subtitleRegex.isNotEmpty() &&
+                SettingsFieldKey.SUBTITLE_REGEX !in validation &&
+                !SubtitleRegexCheck.compiles(subtitleRegex)
 
     val numericValuesValid: Boolean
         get() = validation.isEmpty()
@@ -199,6 +215,11 @@ internal data class SettingsDraft(
             audioFormat = audioFormat,
             audioBitrateKbps = AppSettingsDraftParser.optionalInt(bitrate),
             stripSubtitleAnnotations = stripAnnotations,
+            // Blank text inherits the engine default, which is the empty pattern and the empty
+            // replacement — so an explicit empty override would mean exactly the same thing.
+            subtitleRegexFilter = subtitleRegex.takeIf(String::isNotEmpty),
+            subtitleRegexReplacement = subtitleRegexReplacement.takeIf(String::isNotEmpty),
+            useSubtitleRegexFilter = useSubtitleRegex,
             useKnownWordsDatabase = knownWords,
             excludeHiraganaOnly = hiragana,
             excludeKatakanaOnly = katakana,
@@ -252,6 +273,14 @@ internal data class SettingsDraft(
             workers =
                 workers.takeIf { SettingsFieldKey.WORKERS !in validation }
                     ?: base.maxParallelWorkers?.toString().orEmpty(),
+            subtitleRegex =
+                subtitleRegex.takeIf { SettingsFieldKey.SUBTITLE_REGEX !in validation }
+                    ?: base.subtitleRegexFilter.orEmpty(),
+            subtitleRegexReplacement =
+                subtitleRegexReplacement.takeIf {
+                    SettingsFieldKey.SUBTITLE_REGEX_REPLACEMENT !in validation
+                }
+                    ?: base.subtitleRegexReplacement.orEmpty(),
         ).toSettings(base)
 
     /**
@@ -302,6 +331,9 @@ internal data class SettingsDraft(
                 workers = settings.maxParallelWorkers?.toString().orEmpty(),
                 audioFormat = settings.audioFormat,
                 stripAnnotations = settings.stripSubtitleAnnotations,
+                subtitleRegex = settings.subtitleRegexFilter.orEmpty(),
+                subtitleRegexReplacement = settings.subtitleRegexReplacement.orEmpty(),
+                useSubtitleRegex = settings.useSubtitleRegexFilter,
                 knownWords = settings.useKnownWordsDatabase,
                 hiragana = settings.excludeHiraganaOnly,
                 katakana = settings.excludeKatakanaOnly,
@@ -351,6 +383,15 @@ private fun SettingsDraft.rebaseChangesSince(
         audioFormat = changedValue(baseline.audioFormat, audioFormat, persisted.audioFormat),
         stripAnnotations =
             changedValue(baseline.stripAnnotations, stripAnnotations, persisted.stripAnnotations),
+        subtitleRegex = changedValue(baseline.subtitleRegex, subtitleRegex, persisted.subtitleRegex),
+        subtitleRegexReplacement =
+            changedValue(
+                baseline.subtitleRegexReplacement,
+                subtitleRegexReplacement,
+                persisted.subtitleRegexReplacement,
+            ),
+        useSubtitleRegex =
+            changedValue(baseline.useSubtitleRegex, useSubtitleRegex, persisted.useSubtitleRegex),
         knownWords = changedValue(baseline.knownWords, knownWords, persisted.knownWords),
         hiragana = changedValue(baseline.hiragana, hiragana, persisted.hiragana),
         katakana = changedValue(baseline.katakana, katakana, persisted.katakana),
@@ -645,11 +686,42 @@ private fun settingsValidationError(
                 R.string.settings_validation_resource_ids,
                 failure.arguments,
             )
+        InvalidAppSettingCode.SUBTITLE_REGEX_TOO_LONG,
+        InvalidAppSettingCode.SUBTITLE_REGEX_REPLACEMENT_TOO_LONG,
+        InvalidAppSettingCode.SUBTITLE_REGEX_UNBOUNDED_REPEAT,
+        InvalidAppSettingCode.SUBTITLE_REGEX_BACKREFERENCE,
+        -> subtitleRegexMessage(failure.code)
         InvalidAppSettingCode.UNKNOWN ->
             LocalizedStringResource(
                 R.string.settings_validation_unknown,
                 failure.arguments.ifEmpty { listOf(failure.message.orEmpty()) },
             )
+    }
+
+/** Which field owns [code]: the two replacement rules point at the replacement, the rest at the pattern. */
+private fun subtitleRegexField(code: InvalidAppSettingCode): SettingsFieldKey =
+    when (code) {
+        InvalidAppSettingCode.SUBTITLE_REGEX_REPLACEMENT_TOO_LONG,
+        InvalidAppSettingCode.SUBTITLE_REGEX_BACKREFERENCE,
+        -> SettingsFieldKey.SUBTITLE_REGEX_REPLACEMENT
+        else -> SettingsFieldKey.SUBTITLE_REGEX
+    }
+
+private fun subtitleRegexMessage(code: InvalidAppSettingCode): LocalizedStringResource =
+    when (code) {
+        InvalidAppSettingCode.SUBTITLE_REGEX_TOO_LONG ->
+            LocalizedStringResource(
+                R.string.settings_validation_subtitle_regex_length,
+                listOf(SubtitleRegexCheck.MAX_PATTERN_CHARS),
+            )
+        InvalidAppSettingCode.SUBTITLE_REGEX_REPLACEMENT_TOO_LONG ->
+            LocalizedStringResource(
+                R.string.settings_validation_subtitle_replacement_length,
+                listOf(SubtitleRegexCheck.MAX_REPLACEMENT_CHARS),
+            )
+        InvalidAppSettingCode.SUBTITLE_REGEX_UNBOUNDED_REPEAT ->
+            LocalizedStringResource(R.string.settings_validation_subtitle_regex_repeat)
+        else -> LocalizedStringResource(R.string.settings_validation_subtitle_backreference)
     }
 
 internal class SettingsViewModel(

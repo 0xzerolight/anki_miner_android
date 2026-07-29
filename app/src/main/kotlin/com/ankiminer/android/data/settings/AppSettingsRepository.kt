@@ -166,6 +166,12 @@ class DataStoreAppSettingsRepository internal constructor(
                     Keys.stripSubtitleAnnotations,
                     value.stripSubtitleAnnotations,
                 )
+                candidate.setOrRemove(Keys.subtitleRegexFilter, value.subtitleRegexFilter)
+                candidate.setOrRemove(
+                    Keys.subtitleRegexReplacement,
+                    value.subtitleRegexReplacement,
+                )
+                candidate.setOrRemove(Keys.useSubtitleRegexFilter, value.useSubtitleRegexFilter)
                 candidate.setOrRemove(Keys.useKnownWordsDatabase, value.useKnownWordsDatabase)
                 candidate.setOrRemove(Keys.excludeHiraganaOnly, value.excludeHiraganaOnly)
                 candidate.setOrRemove(Keys.excludeKatakanaOnly, value.excludeKatakanaOnly)
@@ -212,6 +218,16 @@ class DataStoreAppSettingsRepository internal constructor(
                 stored.takeIf { it == FRESH_WORDSET_POLICY || it == PRESERVED_WORDSET_POLICY }
                     ?: invalidStoredPreference()
             })
+            // Read ahead of the constructor: the replacement's group references are only meaningful
+            // against a pattern, so the pair is validated together under the replacement's own key.
+            // A corrupt combination is then quarantined like any other key instead of throwing out
+            // of the read path.
+            val storedSubtitleRegex =
+                decoder.read(Keys.subtitleRegexFilter, null, { it }) { value ->
+                    value?.let {
+                        AppSettingsValidator.validate(AppSettings(subtitleRegexFilter = it))
+                    }
+                }
             val settings =
                 AppSettings(
                     setupWizardSeen = decoder.read(Keys.setupWizardSeen, false, { it }),
@@ -259,6 +275,20 @@ class DataStoreAppSettingsRepository internal constructor(
                         decoder.validated(Keys.audioBitrate) { AppSettings(audioBitrateKbps = it) },
                     stripSubtitleAnnotations =
                         decoder.read(Keys.stripSubtitleAnnotations, null, { it }),
+                    subtitleRegexFilter = storedSubtitleRegex,
+                    subtitleRegexReplacement =
+                        decoder.read(Keys.subtitleRegexReplacement, null, { it }) { value ->
+                            value?.let {
+                                AppSettingsValidator.validate(
+                                    AppSettings(
+                                        subtitleRegexFilter = storedSubtitleRegex,
+                                        subtitleRegexReplacement = it,
+                                    ),
+                                )
+                            }
+                        },
+                    useSubtitleRegexFilter =
+                        decoder.read(Keys.useSubtitleRegexFilter, null, { it }),
                     useKnownWordsDatabase = decoder.read(Keys.useKnownWordsDatabase, null, { it }),
                     excludeHiraganaOnly = decoder.read(Keys.excludeHiraganaOnly, null, { it }),
                     excludeKatakanaOnly = decoder.read(Keys.excludeKatakanaOnly, null, { it }),
@@ -436,6 +466,11 @@ class DataStoreAppSettingsRepository internal constructor(
             val audioBitrate = register(intPreferencesKey("audio_bitrate_kbps"))
             val stripSubtitleAnnotations =
                 register(booleanPreferencesKey("strip_subtitle_annotations"))
+            val subtitleRegexFilter = register(stringPreferencesKey("subtitle_regex_filter"))
+            val subtitleRegexReplacement =
+                register(stringPreferencesKey("subtitle_regex_replacement"))
+            val useSubtitleRegexFilter =
+                register(booleanPreferencesKey("use_subtitle_regex_filter"))
             val useKnownWordsDatabase = register(booleanPreferencesKey("use_known_words_database"))
             val excludeHiraganaOnly = register(booleanPreferencesKey("exclude_hiragana_only"))
             val excludeKatakanaOnly = register(booleanPreferencesKey("exclude_katakana_only"))
