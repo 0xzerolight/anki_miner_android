@@ -387,6 +387,8 @@
     <string name="resource_failure_download_incomplete">Resource response ended before its catalog size</string>
     <string name="resource_failure_download_resume_invalid">Resource host returned an invalid byte range</string>
     <string name="resource_failure_import_staging">Could not prepare private import staging</string>
+    <string name="resource_failure_word_list_not_utf8">That word list is not UTF-8 text</string>
+    <string name="resource_failure_word_list_remove">Could not remove the word list</string>
     <string name="resource_failure_import_source_unavailable">The selected %1$s cannot be opened</string>
     <string name="resource_failure_archive_too_large">The selected %1$s is %2$s. This device can take %3$s here.</string>
     <string name="resource_failure_unknown_download_code">Resource download failed (%1$s)</string>

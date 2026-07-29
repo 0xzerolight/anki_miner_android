@@ -739,7 +739,9 @@ private fun subtitleRegexMessage(code: InvalidAppSettingCode): LocalizedStringRe
             )
         InvalidAppSettingCode.SUBTITLE_REGEX_UNBOUNDED_REPEAT ->
             LocalizedStringResource(R.string.settings_validation_subtitle_regex_repeat)
-        else -> LocalizedStringResource(R.string.settings_validation_subtitle_backreference)
+        InvalidAppSettingCode.SUBTITLE_REGEX_BACKREFERENCE ->
+            LocalizedStringResource(R.string.settings_validation_subtitle_backreference)
+        else -> LocalizedStringResource(R.string.settings_validation_unknown, listOf(code.name))
     }
 
 internal class SettingsViewModel(

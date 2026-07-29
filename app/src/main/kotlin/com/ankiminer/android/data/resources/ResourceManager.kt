@@ -1255,6 +1255,10 @@ internal class AndroidResourceManager(
                 strings.resolve(R.string.resource_failure_download_resume_invalid)
             "import_staging_failed" ->
                 strings.resolve(R.string.resource_failure_import_staging)
+            "word_list_not_utf8" ->
+                strings.resolve(R.string.resource_failure_word_list_not_utf8)
+            "word_list_remove_failed" ->
+                strings.resolve(R.string.resource_failure_word_list_remove)
             "import_source_unavailable" ->
                 strings.resolve(
                     R.string.resource_failure_import_source_unavailable,

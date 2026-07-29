@@ -379,6 +379,8 @@
     <string name="resource_failure_download_incomplete">リソース応答がカタログサイズに達する前に終了しました</string>
     <string name="resource_failure_download_resume_invalid">リソースホストが無効なバイト範囲を返しました</string>
     <string name="resource_failure_import_staging">非公開インポートの一時領域を準備できませんでした</string>
+    <string name="resource_failure_word_list_not_utf8">この単語リストはUTF-8テキストではありません</string>
+    <string name="resource_failure_word_list_remove">単語リストを削除できませんでした</string>
     <string name="resource_failure_import_source_unavailable">選択した%1$sを開けません</string>
     <string name="resource_failure_archive_too_large">選択した%1$sは%2$sです。この端末でここに取り込めるのは%3$sまでです。</string>
     <string name="resource_failure_unknown_download_code">リソースのダウンロードが失敗しました（%1$s）</string>
