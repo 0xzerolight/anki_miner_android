@@ -27,6 +27,7 @@ import com.ankiminer.android.data.resources.ResourceFailure
 import com.ankiminer.android.data.resources.ResourceFailureAction
 import com.ankiminer.android.data.resources.ResourceFailureOrigin
 import com.ankiminer.android.data.resources.ResourceManagerState
+import com.ankiminer.android.data.resources.WordListKind
 import com.ankiminer.android.data.settings.AudioFormat
 import com.ankiminer.android.data.settings.PitchCategoryFormat
 import com.ankiminer.android.data.settings.ThemeMode
@@ -60,6 +61,7 @@ internal data class SettingsScreenCallbacks(
     val onImportPitch: () -> Unit,
     val onImportAudioPack: () -> Unit,
     val onImportKnownWords: () -> Unit,
+    val onImportWordList: (WordListKind) -> Unit,
     val onExportKnownWords: () -> Unit,
     val onManageKnownWords: () -> Unit,
 )
@@ -762,6 +764,29 @@ private fun LazyListScope.filteringSettings(
             },
         )
     }
+    settingsCard("word-lists") {
+        WordListImportCard(
+            state = setup,
+            blacklistEnabled = draft.useBlacklist,
+            whitelistEnabled = draft.useWhitelist,
+            onImport = callbacks.onImportWordList,
+            onRemove = setupViewModel::removeWordList,
+            onBlacklistEnabledChange = {
+                callbacks.onDraftChange(draft.copy(useBlacklist = it))
+            },
+            onWhitelistEnabledChange = {
+                callbacks.onDraftChange(draft.copy(useWhitelist = it))
+            },
+            inlineFailure = {
+                ResourceOriginFailure(
+                    setup,
+                    setOf(ResourceFailureOrigin.WORD_LIST),
+                    setupViewModel,
+                    callbacks,
+                )
+            },
+        )
+    }
     setup.lastLocalImport?.let { imported ->
         settingsCard("filtering-import-result") { LocalImportResultCard(imported) }
     }
@@ -940,6 +965,9 @@ internal fun ResourceOriginFailure(
             failure.origin == ResourceFailureOrigin.DICTIONARY_LOOKUP ->
                 setupViewModel::retryResourceFailure
             failure.origin == ResourceFailureOrigin.AUDIO -> callbacks.onImportAudioPack
+            failure.origin == ResourceFailureOrigin.WORD_LIST -> {
+                { callbacks.onImportWordList(setup.wordListTarget) }
+            }
             failure.origin == ResourceFailureOrigin.FREQUENCY -> callbacks.onImportFrequency
             failure.origin == ResourceFailureOrigin.KNOWN_WORDS &&
                 failure.retry.action == ResourceFailureAction.RESOLVE ->

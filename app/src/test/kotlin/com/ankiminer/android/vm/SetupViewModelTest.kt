@@ -13,6 +13,7 @@ import com.ankiminer.android.data.resources.InstalledFrequencySource
 import com.ankiminer.android.data.resources.InstalledPitchAccent
 import com.ankiminer.android.data.resources.KnownWordsResetScope
 import com.ankiminer.android.data.resources.KnownWordsSourceFormat
+import com.ankiminer.android.data.resources.WordListKind
 import com.ankiminer.android.data.resources.PitchAccentSourceFormat
 import com.ankiminer.android.data.resources.ResourceManager
 import com.ankiminer.android.data.resources.ResourceManagerState
@@ -538,6 +539,19 @@ class SetupViewModelTest {
         override suspend fun previewKnownWords(uri: String, format: KnownWordsSourceFormat) {
             previewCalls += uri to format
         }
+
+        val wordListImports = mutableListOf<Pair<String, WordListKind>>()
+        val wordListRemovals = mutableListOf<WordListKind>()
+
+        override suspend fun importWordList(uri: String, kind: WordListKind) {
+            wordListImports += uri to kind
+        }
+
+        override suspend fun removeWordList(kind: WordListKind) {
+            wordListRemovals += kind
+        }
+
+        override fun wordListPath(kind: WordListKind): String? = null
 
         override suspend fun confirmKnownWordsImport() {
             confirmCount += 1

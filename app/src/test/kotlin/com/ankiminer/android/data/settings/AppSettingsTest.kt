@@ -172,6 +172,35 @@ class AppSettingsTest {
     }
 
     @Test
+    fun wordListTogglesOnlyReachTheEngineWithAnInstalledFile() {
+        val withFiles =
+            EngineSettingsSnapshotMapper.map(
+                AppSettings(useBlacklist = true, useWhitelist = true),
+                emptyList(),
+                blacklistPath = "/data/user/0/com.ankiminer.android/no_backup/w/blacklist.txt",
+                whitelistPath = "/data/user/0/com.ankiminer.android/no_backup/w/whitelist.txt",
+            )
+        // The engine raises when an enabled list has no readable file, so a toggle without an
+        // import must reach it switched off rather than pointing at nothing.
+        val withoutFiles =
+            EngineSettingsSnapshotMapper.map(
+                AppSettings(useBlacklist = true, useWhitelist = true),
+                emptyList(),
+            )
+        val untouched = EngineSettingsSnapshotMapper.map(AppSettings(), emptyList())
+
+        assertEquals(BridgeJsonValue.Bool(true), withFiles.settings["use_blacklist"])
+        assertEquals(
+            BridgeJsonValue.Text("/data/user/0/com.ankiminer.android/no_backup/w/whitelist.txt"),
+            withFiles.settings["whitelist_path"],
+        )
+        assertEquals(BridgeJsonValue.Bool(false), withoutFiles.settings["use_blacklist"])
+        assertFalse(withoutFiles.settings.containsKey("blacklist_path"))
+        assertFalse(untouched.settings.containsKey("use_whitelist"))
+        assertFalse(untouched.settings.containsKey("whitelist_path"))
+    }
+
+    @Test
     fun duplicateCardsStayCollectionScopedUntilTheUserOptsIn() {
         val inherited = EngineSettingsSnapshotMapper.map(AppSettings(), emptyList())
         val allowed =

@@ -347,6 +347,8 @@
     <string name="resource_operation_import_pitch">アクセントをインポート</string>
     <string name="resource_operation_import_audio_pack">ローカル音声パックをインポート</string>
     <string name="resource_operation_import_known_words">既知単語をインポート</string>
+    <string name="resource_operation_import_word_list">単語リストをインポート</string>
+    <string name="resource_operation_remove_word_list">単語リストを削除</string>
     <string name="resource_operation_preview_known_words">既知単語をプレビュー</string>
     <string name="resource_operation_inspect_known_words">既知単語を確認</string>
     <string name="resource_operation_remove_known_words">既知単語を削除</string>
@@ -428,6 +430,17 @@
     <string name="audio_pack_none_installed">ローカル音声パックがインストールされていません。</string>
     <string name="audio_pack_id">固定音声パックID</string>
     <string name="audio_pack_choose_zip">音声パックZIPを選択</string>
+    <string name="word_lists_title">単語リスト</string>
+    <string name="word_lists_format">プレーンテキスト形式、1行に1単語。空行と#で始まる行は無視されます。</string>
+    <string name="word_list_blacklist">ブラックリスト</string>
+    <string name="word_list_whitelist">ホワイトリスト</string>
+    <string name="word_list_absent">ファイルは未インポート</string>
+    <string name="word_list_installed">%1$d単語</string>
+    <string name="word_list_choose_file">ファイルを選択</string>
+    <string name="word_list_remove">削除</string>
+    <string name="word_list_whitelist_scope">ホワイトリストの単語は任意フィルターを回避しますが、辞書エントリーが必要で、既知単語であってはいけません。</string>
+    <string name="settings_use_blacklist">ブラックリストの単語をスキップ</string>
+    <string name="settings_use_whitelist">ホワイトリストの単語は常にマイニング</string>
     <string name="known_words_import_title">既知単語をインポート</string>
     <string name="known_words_choose_file">既知単語ファイルを選択</string>
     <string name="known_words_search">ユーザー単語を検索</string>

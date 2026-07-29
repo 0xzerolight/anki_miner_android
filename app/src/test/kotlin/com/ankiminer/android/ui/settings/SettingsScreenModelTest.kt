@@ -54,6 +54,10 @@ class SettingsScreenModelTest {
             SettingsCategory.FILTERING,
             settingsCategoryFor(ResourceFailureOrigin.KNOWN_WORDS),
         )
+        assertEquals(
+            SettingsCategory.FILTERING,
+            settingsCategoryFor(ResourceFailureOrigin.WORD_LIST),
+        )
         assertEquals(SettingsCategory.ANKI, settingsCategoryFor(AnkiSetupFailureOrigin.TARGET))
         assertEquals(SettingsCategory.ANKI, settingsCategoryFor(AnkiSetupFailureOrigin.RECOVERY))
         // These are constants only because every conditional card is emitted after the last
@@ -70,6 +74,9 @@ class SettingsScreenModelTest {
         assertEquals(3, settingsCardIndexFor(ResourceFailureOrigin.AUDIO))
         assertEquals(3, settingsCardIndexFor(ResourceFailureOrigin.FREQUENCY))
         assertEquals(3, settingsCardIndexFor(ResourceFailureOrigin.KNOWN_WORDS))
+        // Filtering: word-lists sits after known-words-import, ahead of the conditional
+        // filtering-import-result card.
+        assertEquals(4, settingsCardIndexFor(ResourceFailureOrigin.WORD_LIST))
         assertEquals(3, settingsCardIndexFor(AnkiSetupFailureOrigin.TARGET))
         assertEquals(4, settingsCardIndexFor(AnkiSetupFailureOrigin.RECOVERY))
     }

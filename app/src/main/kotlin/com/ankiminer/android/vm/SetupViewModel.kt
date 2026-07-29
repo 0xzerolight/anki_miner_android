@@ -19,6 +19,7 @@ import com.ankiminer.android.data.resources.ResourceStartupReadiness
 import com.ankiminer.android.data.resources.FrequencySourceFormat
 import com.ankiminer.android.data.resources.KnownWordsResetScope
 import com.ankiminer.android.data.resources.KnownWordsSourceFormat
+import com.ankiminer.android.data.resources.WordListKind
 import com.ankiminer.android.data.resources.PitchAccentSourceFormat
 import com.ankiminer.android.data.settings.AppSettingsRepository
 import com.ankiminer.android.engine.PythonRuntimeReadiness
@@ -55,6 +56,8 @@ internal class SetupViewModel(
         val pitchFormat: PitchAccentSourceFormat = PitchAccentSourceFormat.YOMITAN_ZIP,
         val audioPackId: String = "audio-pack",
         val knownWordsFormat: KnownWordsSourceFormat = KnownWordsSourceFormat.JSON,
+        // Which list the last word-list operation touched, so a failed import can offer the right picker.
+        val wordListTarget: WordListKind = WordListKind.BLACKLIST,
         val knownWordsSearch: String = "",
         val pendingReplace: PendingResourceReplace? = null,
         val fieldMapChanges: List<AnkiFieldMappingChange> = emptyList(),
@@ -127,6 +130,7 @@ internal class SetupViewModel(
                 knownWordsImportPreview = resourceState.knownWordsImportPreview,
                 knownWordsPage = resourceState.knownWordsPage,
                 wordsets = resourceState.wordsets,
+                wordLists = resourceState.wordLists,
                 lastLocalImport = resourceState.lastLocalImport,
                 operation = resourceState.activeOperation,
                 failure = resourceState.failure,
@@ -140,6 +144,7 @@ internal class SetupViewModel(
                 pitchFormat = localState.pitchFormat,
                 audioPackId = localState.audioPackId,
                 knownWordsFormat = localState.knownWordsFormat,
+                wordListTarget = localState.wordListTarget,
                 knownWordsSearch = localState.knownWordsSearch,
             )
         }.stateIn(
@@ -491,6 +496,18 @@ internal class SetupViewModel(
         viewModelScope.launch { resources.previewKnownWords(uri, format) }
     }
 
+    fun importWordList(uri: String, kind: WordListKind) {
+        if (uiState.value.busy) return
+        local.update { it.copy(wordListTarget = kind) }
+        viewModelScope.launch { resources.importWordList(uri, kind) }
+    }
+
+    fun removeWordList(kind: WordListKind) {
+        if (uiState.value.busy) return
+        local.update { it.copy(wordListTarget = kind) }
+        viewModelScope.launch { resources.removeWordList(kind) }
+    }
+
     fun confirmKnownWordsImport() {
         if (!uiState.value.busy) viewModelScope.launch { resources.confirmKnownWordsImport() }
     }
@@ -565,10 +582,12 @@ internal class SetupViewModel(
             }
             ResourceFailureOrigin.DICTIONARY_LOOKUP -> lookup()
             ResourceFailureOrigin.KNOWN_WORDS -> searchKnownWords()
+            // Both offer a file picker instead, which only the composable can open.
             ResourceFailureOrigin.CUSTOM_DICTIONARY,
             ResourceFailureOrigin.PITCH,
             ResourceFailureOrigin.AUDIO,
             ResourceFailureOrigin.FREQUENCY,
+            ResourceFailureOrigin.WORD_LIST,
             -> Unit
         }
     }

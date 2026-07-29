@@ -17,6 +17,7 @@ import com.ankiminer.android.data.resources.InstalledDictionary
 import com.ankiminer.android.data.resources.InstalledAudioPack
 import com.ankiminer.android.data.resources.InstalledFrequencySource
 import com.ankiminer.android.data.resources.InstalledPitchAccent
+import com.ankiminer.android.data.resources.InstalledWordList
 import com.ankiminer.android.data.resources.KnownWordsInventory
 import com.ankiminer.android.data.resources.KnownWordsImportPreview
 import com.ankiminer.android.data.resources.KnownWordsPage
@@ -28,6 +29,7 @@ import com.ankiminer.android.data.resources.PitchAccentSourceFormat
 import com.ankiminer.android.data.resources.ResourceFailure
 import com.ankiminer.android.data.resources.ResourceOperationProgress
 import com.ankiminer.android.data.resources.ResourceStartupReadiness
+import com.ankiminer.android.data.resources.WordListKind
 import com.ankiminer.android.engine.PythonRuntimeReadiness
 import com.ankiminer.android.mining.NotificationPermissionReadiness
 
@@ -67,6 +69,7 @@ internal data class SetupUiState(
     val knownWordsImportPreview: KnownWordsImportPreview? = null,
     val knownWordsPage: KnownWordsPage? = null,
     val wordsets: List<BundledWordset> = emptyList(),
+    val wordLists: List<InstalledWordList> = emptyList(),
     val lastLocalImport: LocalResourceImportResult? = null,
     val operation: ResourceOperationProgress? = null,
     val failure: ResourceFailure? = null,
@@ -80,6 +83,7 @@ internal data class SetupUiState(
     val pitchFormat: PitchAccentSourceFormat = PitchAccentSourceFormat.YOMITAN_ZIP,
     val audioPackId: String = "audio-pack",
     val knownWordsFormat: KnownWordsSourceFormat = KnownWordsSourceFormat.JSON,
+    val wordListTarget: WordListKind = WordListKind.BLACKLIST,
     val knownWordsSearch: String = "",
 ) {
     val customSlotValid: Boolean

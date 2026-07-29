@@ -9,6 +9,7 @@ import com.ankiminer.android.data.anki.AnkiSetupManagerState
 import com.ankiminer.android.data.resources.FrequencySourceFormat
 import com.ankiminer.android.data.resources.KnownWordsResetScope
 import com.ankiminer.android.data.resources.KnownWordsSourceFormat
+import com.ankiminer.android.data.resources.WordListKind
 import com.ankiminer.android.data.resources.PitchAccentSourceFormat
 import com.ankiminer.android.data.resources.ResourceManager
 import com.ankiminer.android.data.resources.ResourceManagerState
@@ -104,6 +105,12 @@ internal class SessionResourceManager(
     override suspend fun importAudioPack(uri: String, packId: String, replace: Boolean) = Unit
 
     override suspend fun importKnownWords(uri: String, format: KnownWordsSourceFormat) = Unit
+
+    override suspend fun importWordList(uri: String, kind: WordListKind) = Unit
+
+    override suspend fun removeWordList(kind: WordListKind) = Unit
+
+    override fun wordListPath(kind: WordListKind): String? = null
 
     override suspend fun previewKnownWords(uri: String, format: KnownWordsSourceFormat) = Unit
 

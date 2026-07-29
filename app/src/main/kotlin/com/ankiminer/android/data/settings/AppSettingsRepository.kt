@@ -34,6 +34,8 @@ interface AppSettingsRepository {
         installedFrequencyIds: List<String> = emptyList(),
         installedAudioPackIds: List<String> = emptyList(),
         availableWordsetIds: List<String> = emptyList(),
+        blacklistPath: String? = null,
+        whitelistPath: String? = null,
     ) =
         EngineSettingsSnapshotMapper.map(
             settings.first(),
@@ -41,6 +43,8 @@ interface AppSettingsRepository {
             installedFrequencyIds,
             installedAudioPackIds,
             availableWordsetIds,
+            blacklistPath,
+            whitelistPath,
         )
 }
 
@@ -173,6 +177,8 @@ class DataStoreAppSettingsRepository internal constructor(
                     value.subtitleRegexReplacement,
                 )
                 candidate.setOrRemove(Keys.useSubtitleRegexFilter, value.useSubtitleRegexFilter)
+                candidate.setOrRemove(Keys.useBlacklist, value.useBlacklist)
+                candidate.setOrRemove(Keys.useWhitelist, value.useWhitelist)
                 candidate.setOrRemove(Keys.useKnownWordsDatabase, value.useKnownWordsDatabase)
                 candidate.setOrRemove(Keys.excludeHiraganaOnly, value.excludeHiraganaOnly)
                 candidate.setOrRemove(Keys.excludeKatakanaOnly, value.excludeKatakanaOnly)
@@ -291,6 +297,8 @@ class DataStoreAppSettingsRepository internal constructor(
                         },
                     useSubtitleRegexFilter =
                         decoder.read(Keys.useSubtitleRegexFilter, null, { it }),
+                    useBlacklist = decoder.read(Keys.useBlacklist, null, { it }),
+                    useWhitelist = decoder.read(Keys.useWhitelist, null, { it }),
                     useKnownWordsDatabase = decoder.read(Keys.useKnownWordsDatabase, null, { it }),
                     excludeHiraganaOnly = decoder.read(Keys.excludeHiraganaOnly, null, { it }),
                     excludeKatakanaOnly = decoder.read(Keys.excludeKatakanaOnly, null, { it }),
@@ -474,6 +482,8 @@ class DataStoreAppSettingsRepository internal constructor(
                 register(stringPreferencesKey("subtitle_regex_replacement"))
             val useSubtitleRegexFilter =
                 register(booleanPreferencesKey("use_subtitle_regex_filter"))
+            val useBlacklist = register(booleanPreferencesKey("use_blacklist"))
+            val useWhitelist = register(booleanPreferencesKey("use_whitelist"))
             val useKnownWordsDatabase = register(booleanPreferencesKey("use_known_words_database"))
             val excludeHiraganaOnly = register(booleanPreferencesKey("exclude_hiragana_only"))
             val excludeKatakanaOnly = register(booleanPreferencesKey("exclude_katakana_only"))

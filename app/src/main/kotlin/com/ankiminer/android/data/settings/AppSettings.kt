@@ -77,6 +77,12 @@ data class AppSettings(
     /** Inserted in place of each match. Python backreferences (`\1`), not `$1`. */
     val subtitleRegexReplacement: String? = null,
     val useSubtitleRegexFilter: Boolean? = null,
+    /**
+     * Word-list toggles. The paths are not persisted: the files live at a fixed location owned by
+     * the resource manager, so a stored absolute path could only go stale.
+     */
+    val useBlacklist: Boolean? = null,
+    val useWhitelist: Boolean? = null,
     val useKnownWordsDatabase: Boolean? = null,
     val excludeHiraganaOnly: Boolean? = null,
     val excludeKatakanaOnly: Boolean? = null,
@@ -118,6 +124,8 @@ data class AppSettings(
             subtitleRegexFilter = null,
             subtitleRegexReplacement = null,
             useSubtitleRegexFilter = null,
+            useBlacklist = null,
+            useWhitelist = null,
             useKnownWordsDatabase = null,
             excludeHiraganaOnly = null,
             excludeKatakanaOnly = null,
@@ -450,6 +458,8 @@ internal object EngineSettingsSnapshotMapper {
         installedFrequencyIds: List<String> = emptyList(),
         installedAudioPackIds: List<String> = emptyList(),
         availableWordsetIds: List<String> = emptyList(),
+        blacklistPath: String? = null,
+        whitelistPath: String? = null,
     ): MiningConfigSnapshot {
         val settings = AppSettingsValidator.validate(rawSettings)
         require(installedDictionaryIds.distinct() == installedDictionaryIds)
@@ -490,6 +500,10 @@ internal object EngineSettingsSnapshotMapper {
         settings.subtitleRegexFilter?.let { values["subtitle_regex_filter"] = text(it) }
         settings.subtitleRegexReplacement?.let { values["subtitle_regex_replacement"] = text(it) }
         settings.useSubtitleRegexFilter?.let { values["use_subtitle_regex_filter"] = bool(it) }
+        // Fail closed: a toggle without an installed file would make the engine raise on every run,
+        // so the toggle only reaches the engine once the path it needs exists.
+        wordList(values, "blacklist_path", "use_blacklist", blacklistPath, settings.useBlacklist)
+        wordList(values, "whitelist_path", "use_whitelist", whitelistPath, settings.useWhitelist)
         settings.useKnownWordsDatabase?.let { values["use_known_words_db"] = bool(it) }
         settings.excludeHiraganaOnly?.let { values["exclude_hiragana_only_words"] = bool(it) }
         settings.excludeKatakanaOnly?.let { values["exclude_katakana_only_words"] = bool(it) }
@@ -574,6 +588,18 @@ internal object EngineSettingsSnapshotMapper {
             settings = values,
             androidTtsEnabled = settings.readingTtsEnabled,
         )
+    }
+
+    private fun wordList(
+        values: MutableMap<String, BridgeJsonValue>,
+        pathKey: String,
+        toggleKey: String,
+        path: String?,
+        enabled: Boolean?,
+    ) {
+        val usable = path != null && enabled == true
+        if (usable) values[pathKey] = text(path)
+        enabled?.let { values[toggleKey] = bool(usable) }
     }
 
     /** Preserve saved order/disable choices and append only newly installed resources enabled. */

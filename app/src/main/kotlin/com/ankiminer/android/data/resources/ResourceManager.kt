@@ -7,7 +7,9 @@ import com.ankiminer.android.localization.StringResourceResolver
 import com.ankiminer.android.media.SafBroker
 import com.ankiminer.android.mining.InstalledTokenizerResourceProvider
 import java.io.File
+import java.io.IOException
 import java.net.URI
+import java.nio.charset.CharacterCodingException
 import java.util.UUID
 import java.util.concurrent.Executor
 import java.util.concurrent.atomic.AtomicBoolean
@@ -62,6 +64,13 @@ interface ResourceManager {
         uri: String,
         format: KnownWordsSourceFormat,
     )
+
+    suspend fun importWordList(uri: String, kind: WordListKind)
+
+    suspend fun removeWordList(kind: WordListKind)
+
+    /** Absolute path the engine should read for [kind], or null when no file is installed. */
+    fun wordListPath(kind: WordListKind): String?
 
     suspend fun previewKnownWords(uri: String, format: KnownWordsSourceFormat)
 
@@ -133,6 +142,12 @@ internal class AndroidResourceManager(
     private val operationMutex = Mutex()
     private val activeMonitor = Any()
     private val pendingKnownWordsRoot = File(stagingRoot.parentFile, "resource-pending-known-words")
+
+    /**
+     * Sibling of the staging root, so the retention rename stays on one volume and [clearStaging]
+     * never sweeps a file the engine is expected to keep reading.
+     */
+    private val wordListRoot = File(stagingRoot.parentFile, "resource-word-lists")
     private var active: ActiveOperation? = null
     private var pendingKnownWordsImport: PendingKnownWordsImport? = null
 
@@ -156,6 +171,7 @@ internal class AndroidResourceManager(
                 bridge.dispatch(ResourceBridgeCodec.encodeCleanupRequest(), null),
             )
             refreshFromPython()
+            refreshWordLists()
             discardInstalledCatalogDownloads()
         }
         if (!startupWasReady) {
@@ -511,6 +527,111 @@ internal class AndroidResourceManager(
                 runBlocking { safBroker.releaseReadAccess(retained.uri) }
             }
         }
+    }
+
+    override suspend fun importWordList(uri: String, kind: WordListKind) {
+        runOperation(
+            strings.resolve(R.string.resource_operation_import_word_list),
+            ResourceOperationPhase.PREPARING,
+            failureOrigin = ResourceFailureOrigin.WORD_LIST,
+            failureRetry = ResourceFailureRetry(ResourceFailureAction.CHOOSE_ANOTHER),
+        ) { operation ->
+            val retained = runBlocking { safBroker.retainReadAccess(uri) }
+            var staged: StagedArchive? = null
+            try {
+                staged =
+                    safStager.stage(
+                        sourceUri = retained.uri,
+                        operationId = operation.id,
+                        cancellation = operation.cancellation,
+                        fileSuffix = ".txt",
+                        maximumBytes = WORD_LIST_FILE_LIMIT,
+                        sourceLabel = "word-list file",
+                    ) { current, total ->
+                        updateProgress(operation, ResourceOperationPhase.PREPARING, current, total)
+                    }
+                operation.cancellation.check()
+                // Read it the way the engine will, before the file becomes the one every later run
+                // depends on. A non-UTF-8 file would otherwise fail at the start of every mine.
+                val entryCount =
+                    try {
+                        WordListFileFormat.entryCount(staged.file)
+                    } catch (_: CharacterCodingException) {
+                        throw ResourceDownloadException(
+                            "word_list_not_utf8",
+                            "The word-list file is not UTF-8 text",
+                        )
+                    }
+                if (!wordListRoot.exists() && !wordListRoot.mkdirs()) {
+                    throw ResourceDownloadException(
+                        "import_staging_failed",
+                        "Could not store the word-list file",
+                    )
+                }
+                val target = File(wordListRoot, kind.fileName)
+                target.delete()
+                if (!staged.file.renameTo(target)) {
+                    throw ResourceDownloadException(
+                        "import_staging_failed",
+                        "Could not store the word-list file",
+                    )
+                }
+                staged = null
+                publishWordList(InstalledWordList(kind, entryCount, target.length()))
+            } finally {
+                staged?.file?.delete()
+                runBlocking { safBroker.releaseReadAccess(retained.uri) }
+            }
+        }
+    }
+
+    override suspend fun removeWordList(kind: WordListKind) {
+        runOperation(
+            strings.resolve(R.string.resource_operation_remove_word_list),
+            ResourceOperationPhase.PREPARING,
+            failureOrigin = ResourceFailureOrigin.WORD_LIST,
+        ) {
+            val target = File(wordListRoot, kind.fileName)
+            if (target.exists() && !target.delete()) {
+                throw ResourceDownloadException(
+                    "word_list_remove_failed",
+                    "Could not remove the word-list file",
+                )
+            }
+            mutableState.update { state ->
+                state.copy(wordLists = state.wordLists.filterNot { it.kind == kind })
+            }
+        }
+    }
+
+    override fun wordListPath(kind: WordListKind): String? =
+        File(wordListRoot, kind.fileName).takeIf { it.isFile }?.canonicalPath
+
+    private fun publishWordList(installed: InstalledWordList) {
+        mutableState.update { state ->
+            state.copy(
+                wordLists =
+                    state.wordLists.filterNot { it.kind == installed.kind } + installed,
+            )
+        }
+    }
+
+    /** Re-derive the inventory from disk: nothing about a word list is persisted anywhere else. */
+    private fun refreshWordLists() {
+        val installed =
+            WordListKind.entries.mapNotNull { kind ->
+                val file = File(wordListRoot, kind.fileName).takeIf { it.isFile } ?: return@mapNotNull null
+                val entryCount =
+                    try {
+                        WordListFileFormat.entryCount(file)
+                    } catch (_: CharacterCodingException) {
+                        return@mapNotNull null
+                    } catch (_: IOException) {
+                        return@mapNotNull null
+                    }
+                InstalledWordList(kind, entryCount, file.length())
+            }
+        mutableState.update { it.copy(wordLists = installed) }
     }
 
     override suspend fun previewKnownWords(uri: String, format: KnownWordsSourceFormat) {
@@ -1253,6 +1374,12 @@ internal class AndroidResourceManager(
         const val PITCH_TEXT_LIMIT = 64L * 1024 * 1024
         const val AUDIO_SOURCE_LABEL = "audio-pack ZIP"
         const val KNOWN_WORDS_FILE_LIMIT = 32L * 1024 * 1024
+
+        /**
+         * The engine loads a word list into a set on every run, so this is a working-memory bound,
+         * not a storage one. 8 MiB of one-word lines is far past any hand-curated list.
+         */
+        const val WORD_LIST_FILE_LIMIT = 8L * 1024 * 1024
         const val KNOWN_WORD_EXPORT_LIMIT = 512L * 1024 * 1024
         const val KNOWN_WORD_PAGE_SIZE = 100
     }

@@ -68,7 +68,9 @@ internal fun settingsCategoryFor(origin: ResourceFailureOrigin): SettingsCategor
         -> SettingsCategory.DICTIONARIES
         ResourceFailureOrigin.AUDIO -> SettingsCategory.AUDIO
         ResourceFailureOrigin.FREQUENCY -> SettingsCategory.FREQUENCY
-        ResourceFailureOrigin.KNOWN_WORDS -> SettingsCategory.FILTERING
+        ResourceFailureOrigin.KNOWN_WORDS,
+        ResourceFailureOrigin.WORD_LIST,
+        -> SettingsCategory.FILTERING
     }
 
 internal fun settingsCategoryFor(origin: AnkiSetupFailureOrigin): SettingsCategory =
@@ -99,6 +101,8 @@ internal fun settingsCardIndexFor(origin: ResourceFailureOrigin): Int =
         ResourceFailureOrigin.FREQUENCY,
         ResourceFailureOrigin.KNOWN_WORDS,
         -> 3
+        // Filtering: filtering-options(2), known-words-import(3), word-lists(4).
+        ResourceFailureOrigin.WORD_LIST -> 4
     }
 
 internal fun settingsCardIndexFor(origin: AnkiSetupFailureOrigin): Int =

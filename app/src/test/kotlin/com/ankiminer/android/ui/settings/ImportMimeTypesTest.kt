@@ -27,6 +27,13 @@ class ImportMimeTypesTest {
     }
 
     @Test
+    fun wordListsAcceptPlainTextAndUntypedFiles() {
+        // A hand-written list often arrives as application/octet-stream from cloud providers.
+        assertTrue(WORD_LIST_MIME_TYPES.contains("text/plain"))
+        assertTrue(WORD_LIST_MIME_TYPES.contains("application/octet-stream"))
+    }
+
+    @Test
     fun everyZipPickerAcceptsBothZipMimeTypes() {
         for ((name, types) in zipPickers) {
             assertTrue("$name picker missing application/zip", types.contains("application/zip"))

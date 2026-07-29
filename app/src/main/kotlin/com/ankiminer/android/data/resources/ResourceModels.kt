@@ -143,6 +143,23 @@ enum class KnownWordsSourceFormat(
     TEXT("txt", ".txt"),
 }
 
+/**
+ * A plain-text word list the engine reads by path at the start of every run.
+ *
+ * Unlike dictionaries and known words, Python never ingests these into a store of its own, so the
+ * imported file is kept rather than deleted once the operation ends.
+ */
+enum class WordListKind(val fileName: String) {
+    BLACKLIST("blacklist.txt"),
+    WHITELIST("whitelist.txt"),
+}
+
+data class InstalledWordList(
+    val kind: WordListKind,
+    val entryCount: Int,
+    val sizeBytes: Long,
+)
+
 sealed interface LocalResourceImportResult
 
 data class ImportedFrequencySource(
@@ -353,6 +370,7 @@ enum class ResourceFailureOrigin {
     AUDIO,
     FREQUENCY,
     KNOWN_WORDS,
+    WORD_LIST,
 }
 
 enum class ResourceFailureAction {
@@ -400,6 +418,7 @@ data class ResourceManagerState(
     val audioPacks: List<InstalledAudioPack> = emptyList(),
     val knownWords: KnownWordsInventory = KnownWordsInventory(0, 0, 0, 0, schemaOk = true),
     val wordsets: List<BundledWordset> = emptyList(),
+    val wordLists: List<InstalledWordList> = emptyList(),
     val lastLocalImport: LocalResourceImportResult? = null,
     val knownWordsImportPreview: KnownWordsImportPreview? = null,
     val knownWordsPage: KnownWordsPage? = null,
@@ -409,6 +428,8 @@ data class ResourceManagerState(
 ) {
     val hasUniDic: Boolean
         get() = installedUniDic != null
+
+    fun wordList(kind: WordListKind): InstalledWordList? = wordLists.firstOrNull { it.kind == kind }
 
     val catalogDictionaries: List<CatalogDictionaryStatus>
         get() =

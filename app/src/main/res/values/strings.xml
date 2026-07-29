@@ -355,6 +355,8 @@
     <string name="resource_operation_import_pitch">Import pitch accent</string>
     <string name="resource_operation_import_audio_pack">Import local audio pack</string>
     <string name="resource_operation_import_known_words">Import known words</string>
+    <string name="resource_operation_import_word_list">Import word list</string>
+    <string name="resource_operation_remove_word_list">Remove word list</string>
     <string name="resource_operation_preview_known_words">Preview known words</string>
     <string name="resource_operation_inspect_known_words">Inspect known words</string>
     <string name="resource_operation_remove_known_words">Remove known words</string>
@@ -436,6 +438,17 @@
     <string name="audio_pack_none_installed">No local audio pack is installed.</string>
     <string name="audio_pack_id">Stable audio-pack ID</string>
     <string name="audio_pack_choose_zip">Choose audio-pack ZIP</string>
+    <string name="word_lists_title">Word lists</string>
+    <string name="word_lists_format">Plain text, one word per line. Blank lines and lines starting with # are ignored.</string>
+    <string name="word_list_blacklist">Blacklist</string>
+    <string name="word_list_whitelist">Whitelist</string>
+    <string name="word_list_absent">No file imported</string>
+    <string name="word_list_installed">%1$d words</string>
+    <string name="word_list_choose_file">Choose file</string>
+    <string name="word_list_remove">Remove</string>
+    <string name="word_list_whitelist_scope">A whitelisted word skips the optional filters, but it still needs a dictionary entry and must not already be known.</string>
+    <string name="settings_use_blacklist">Skip blacklisted words</string>
+    <string name="settings_use_whitelist">Always mine whitelisted words</string>
     <string name="known_words_import_title">Import known words</string>
     <string name="known_words_choose_file">Choose known-words file</string>
     <string name="known_words_search">Search user words</string>
