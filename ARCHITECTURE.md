@@ -38,10 +38,8 @@ historical evidence; the user-owned note-type behavior above is current.
 
 ## Project documentation
 
-`docs/anki_miner_android_port.md`, previously named as the settled target
-design, is currently absent from this checkout and awaits restoration. Until it
-is restored, use current code, tests, this architecture overview, and
-`CHANGELOG.md` as evidence of current behavior.
+Use current code, tests, this architecture overview, and `CHANGELOG.md` as
+evidence of current behavior.
 
 ## Native components
 
