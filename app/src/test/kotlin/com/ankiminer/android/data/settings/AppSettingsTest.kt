@@ -64,10 +64,14 @@ class AppSettingsTest {
         // inject "Anki Miner" as the target.
         assertEquals(BridgeJsonValue.Text(""), snapshot.settings["anki_note_type"])
         assertEquals(BridgeJsonValue.Text(""), snapshot.settings["card_type"])
+        // Every mode is named with a blank destination rather than omitted, so config_map's overlay
+        // cannot reinstate the engine's JP Mining Note field names on a note type without them.
+        val markers = snapshot.settings["card_type_marker_fields"] as BridgeJsonValue.ObjectValue
         assertEquals(
-            BridgeJsonValue.ObjectValue(emptyMap()),
-            snapshot.settings["card_type_marker_fields"],
+            CardType.entries.map { it.wireValue }.toSet(),
+            markers.values.keys,
         )
+        assertTrue(markers.values.values.all { it == BridgeJsonValue.Text("") })
         val fields = snapshot.settings["anki_fields"] as BridgeJsonValue.ObjectValue
         assertEquals(18, AnkiFieldKeys.ALL.size)
         assertEquals(AnkiFieldKeys.ALL.toSet(), fields.values.keys)
@@ -169,6 +173,152 @@ class AppSettingsTest {
 
         assertFalse(defaultSnapshot.settings.containsKey("anki_tags"))
         assertEquals(BridgeJsonValue.Text(""), noTagsSnapshot.settings["anki_tags"])
+    }
+
+    @Test
+    fun cardTypeMarkerReachesOnlyTheActiveModeAndNeedsBothHalves() {
+        val active =
+            EngineSettingsSnapshotMapper.map(
+                AppSettings(cardType = CardType.CLICK, cardTypeMarkerField = "IsClickCard"),
+                emptyList(),
+            )
+        // A mode without a marker field would let config_map's overlay reinstate the engine's own
+        // JP Mining Note names, so it is emitted as off.
+        val halfConfigured =
+            EngineSettingsSnapshotMapper.map(AppSettings(cardType = CardType.CLICK), emptyList())
+
+        assertEquals(BridgeJsonValue.Text("click"), active.settings["card_type"])
+        assertEquals(
+            BridgeJsonValue.ObjectValue(
+                mapOf(
+                    "word_and_sentence" to BridgeJsonValue.Text(""),
+                    "click" to BridgeJsonValue.Text("IsClickCard"),
+                    "sentence" to BridgeJsonValue.Text(""),
+                    "audio" to BridgeJsonValue.Text(""),
+                ),
+            ),
+            active.settings["card_type_marker_fields"],
+        )
+        assertEquals(BridgeJsonValue.Text(""), halfConfigured.settings["card_type"])
+        val markers =
+            halfConfigured.settings["card_type_marker_fields"] as BridgeJsonValue.ObjectValue
+        assertTrue(markers.values.values.all { it == BridgeJsonValue.Text("") })
+    }
+
+    @Test
+    fun cardTypeMarkerCannotShareADestinationWithAMappedField() {
+        assertThrows(InvalidAppSettingException::class.java) {
+            AppSettingsValidator.validate(
+                AppSettings(
+                    fieldMap = mapOf("word" to "Expression", "sentence" to "IsClickCard"),
+                    cardType = CardType.CLICK,
+                    cardTypeMarkerField = "IsClickCard",
+                ),
+            )
+        }
+        AppSettingsValidator.validate(
+            AppSettings(
+                fieldMap = mapOf("word" to "Expression"),
+                cardType = CardType.CLICK,
+                cardTypeMarkerField = "IsClickCard",
+            ),
+        )
+    }
+
+    @Test
+    fun wordListTogglesOnlyReachTheEngineWithAnInstalledFile() {
+        val withFiles =
+            EngineSettingsSnapshotMapper.map(
+                AppSettings(useBlacklist = true, useWhitelist = true),
+                emptyList(),
+                blacklistPath = "/data/user/0/com.ankiminer.android/no_backup/w/blacklist.txt",
+                whitelistPath = "/data/user/0/com.ankiminer.android/no_backup/w/whitelist.txt",
+            )
+        // The engine raises when an enabled list has no readable file, so a toggle without an
+        // import must reach it switched off rather than pointing at nothing.
+        val withoutFiles =
+            EngineSettingsSnapshotMapper.map(
+                AppSettings(useBlacklist = true, useWhitelist = true),
+                emptyList(),
+            )
+        val untouched = EngineSettingsSnapshotMapper.map(AppSettings(), emptyList())
+
+        assertEquals(BridgeJsonValue.Bool(true), withFiles.settings["use_blacklist"])
+        assertEquals(
+            BridgeJsonValue.Text("/data/user/0/com.ankiminer.android/no_backup/w/whitelist.txt"),
+            withFiles.settings["whitelist_path"],
+        )
+        assertEquals(BridgeJsonValue.Bool(false), withoutFiles.settings["use_blacklist"])
+        assertFalse(withoutFiles.settings.containsKey("blacklist_path"))
+        assertFalse(untouched.settings.containsKey("use_whitelist"))
+        assertFalse(untouched.settings.containsKey("whitelist_path"))
+    }
+
+    @Test
+    fun duplicateCardsStayCollectionScopedUntilTheUserOptsIn() {
+        val inherited = EngineSettingsSnapshotMapper.map(AppSettings(), emptyList())
+        val allowed =
+            EngineSettingsSnapshotMapper.map(AppSettings(allowDuplicateCards = true), emptyList())
+
+        assertFalse(inherited.settings.containsKey("allow_duplicate_cards"))
+        assertEquals(BridgeJsonValue.Bool(true), allowed.settings["allow_duplicate_cards"])
+    }
+
+    @Test
+    fun subtitleAnnotationStripIsOnlyEmittedWhenOverridden() {
+        val inherited = EngineSettingsSnapshotMapper.map(AppSettings(), emptyList())
+        val disabled =
+            EngineSettingsSnapshotMapper.map(
+                AppSettings(stripSubtitleAnnotations = false),
+                emptyList(),
+            )
+
+        assertFalse(inherited.settings.containsKey("strip_subtitle_annotations"))
+        assertEquals(
+            BridgeJsonValue.Bool(false),
+            disabled.settings["strip_subtitle_annotations"],
+        )
+    }
+
+    @Test
+    fun subtitleRegexTrioIsEmittedOnlyWhenSet() {
+        val snapshot =
+            EngineSettingsSnapshotMapper.map(
+                AppSettings(
+                    subtitleRegexFilter = """\[[^\]]*\]""",
+                    useSubtitleRegexFilter = true,
+                ),
+                emptyList(),
+            )
+
+        assertEquals(
+            BridgeJsonValue.Text("""\[[^\]]*\]"""),
+            snapshot.settings["subtitle_regex_filter"],
+        )
+        assertEquals(BridgeJsonValue.Bool(true), snapshot.settings["use_subtitle_regex_filter"])
+        // An unset replacement inherits the engine's empty string, which already deletes the match.
+        assertFalse(snapshot.settings.containsKey("subtitle_regex_replacement"))
+    }
+
+    @Test
+    fun subtitleRegexValidationRejectsRunawayPatternsAndBadGroupReferences() {
+        assertThrows(InvalidAppSettingException::class.java) {
+            AppSettingsValidator.validate(AppSettings(subtitleRegexFilter = "(a+)+"))
+        }
+        assertThrows(InvalidAppSettingException::class.java) {
+            AppSettingsValidator.validate(
+                AppSettings(
+                    subtitleRegexFilter = "a".repeat(SubtitleRegexCheck.MAX_PATTERN_CHARS + 1),
+                ),
+            )
+        }
+        assertThrows(InvalidAppSettingException::class.java) {
+            AppSettingsValidator.validate(
+                AppSettings(subtitleRegexFilter = "[0-9]", subtitleRegexReplacement = """\1"""),
+            )
+        }
+        // Python-only syntax stays savable: the engine's own compiler is the authority.
+        AppSettingsValidator.validate(AppSettings(subtitleRegexFilter = "(?P=name)"))
     }
 
     @Test

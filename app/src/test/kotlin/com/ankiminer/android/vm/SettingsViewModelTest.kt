@@ -7,6 +7,7 @@ import com.ankiminer.android.data.resources.FrequencySourceFormat
 import com.ankiminer.android.data.resources.InstalledDictionary
 import com.ankiminer.android.data.resources.KnownWordsResetScope
 import com.ankiminer.android.data.resources.KnownWordsSourceFormat
+import com.ankiminer.android.data.resources.WordListKind
 import com.ankiminer.android.data.resources.PitchAccentSourceFormat
 import com.ankiminer.android.data.resources.ResourceManager
 import com.ankiminer.android.data.resources.ResourceManagerState
@@ -637,6 +638,12 @@ class SettingsViewModelTest {
             uri: String,
             format: KnownWordsSourceFormat,
         ) = Unit
+
+        override suspend fun importWordList(uri: String, kind: WordListKind) = Unit
+
+        override suspend fun removeWordList(kind: WordListKind) = Unit
+
+        override fun wordListPath(kind: WordListKind): String? = null
 
         override suspend fun previewKnownWords(uri: String, format: KnownWordsSourceFormat) = Unit
 

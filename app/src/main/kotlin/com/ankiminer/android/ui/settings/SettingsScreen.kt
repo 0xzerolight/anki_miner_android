@@ -31,6 +31,7 @@ import com.ankiminer.android.R
 import com.ankiminer.android.data.RuntimeWorkCoordinator
 import com.ankiminer.android.data.resources.ResourceFailureOrigin
 import com.ankiminer.android.data.resources.ResourceManagerState
+import com.ankiminer.android.data.resources.WordListKind
 import com.ankiminer.android.diagnostics.TesterDiagnosticsIdentity
 import com.ankiminer.android.localization.LocalizedStringResource
 import com.ankiminer.android.ui.mining.RuntimeConflictNotice
@@ -71,6 +72,8 @@ internal val KNOWN_WORDS_MIME_TYPES =
         "text/plain",
         "application/octet-stream",
     )
+
+internal val WORD_LIST_MIME_TYPES = arrayOf("text/plain", "application/octet-stream")
 
 internal data class ExcludedDeckChoice(
     val name: String,
@@ -153,6 +156,15 @@ internal fun SettingsRoute(
         rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             uri?.let { setupViewModel.importKnownWords(it.toString()) }
         }
+    // One launcher per kind: the contract callback cannot receive which list was chosen.
+    val blacklistPicker =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            uri?.let { setupViewModel.importWordList(it.toString(), WordListKind.BLACKLIST) }
+        }
+    val whitelistPicker =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            uri?.let { setupViewModel.importWordList(it.toString(), WordListKind.WHITELIST) }
+        }
     val knownWordsExportPicker =
         rememberLauncherForActivityResult(
             ActivityResultContracts.CreateDocument("text/plain"),
@@ -192,6 +204,12 @@ internal fun SettingsRoute(
         onImportPitch = { pitchPicker.launch(PITCH_MIME_TYPES) },
         onImportAudioPack = { audioPackPicker.launch(AUDIO_PACK_MIME_TYPES) },
         onImportKnownWords = { knownWordsPicker.launch(KNOWN_WORDS_MIME_TYPES) },
+        onImportWordList = { kind ->
+            when (kind) {
+                WordListKind.BLACKLIST -> blacklistPicker.launch(WORD_LIST_MIME_TYPES)
+                WordListKind.WHITELIST -> whitelistPicker.launch(WORD_LIST_MIME_TYPES)
+            }
+        },
         onExportKnownWords = { knownWordsExportPicker.launch("known_words.txt") },
         modifier = modifier,
     )
@@ -231,6 +249,7 @@ private fun SettingsScreen(
     onImportPitch: () -> Unit,
     onImportAudioPack: () -> Unit,
     onImportKnownWords: () -> Unit,
+    onImportWordList: (WordListKind) -> Unit,
     onExportKnownWords: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -305,6 +324,7 @@ private fun SettingsScreen(
             onImportPitch = onImportPitch,
             onImportAudioPack = onImportAudioPack,
             onImportKnownWords = onImportKnownWords,
+            onImportWordList = onImportWordList,
             onExportKnownWords = onExportKnownWords,
             onManageKnownWords = onManageKnownWords,
         )

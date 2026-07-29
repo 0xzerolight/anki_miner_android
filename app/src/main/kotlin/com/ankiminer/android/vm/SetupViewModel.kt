@@ -19,8 +19,10 @@ import com.ankiminer.android.data.resources.ResourceStartupReadiness
 import com.ankiminer.android.data.resources.FrequencySourceFormat
 import com.ankiminer.android.data.resources.KnownWordsResetScope
 import com.ankiminer.android.data.resources.KnownWordsSourceFormat
+import com.ankiminer.android.data.resources.WordListKind
 import com.ankiminer.android.data.resources.PitchAccentSourceFormat
 import com.ankiminer.android.data.settings.AppSettingsRepository
+import com.ankiminer.android.data.settings.CardType
 import com.ankiminer.android.engine.PythonRuntimeReadiness
 import com.ankiminer.android.localization.StringResourceResolver
 import com.ankiminer.android.mining.MiningRunAdmissionState
@@ -55,6 +57,8 @@ internal class SetupViewModel(
         val pitchFormat: PitchAccentSourceFormat = PitchAccentSourceFormat.YOMITAN_ZIP,
         val audioPackId: String = "audio-pack",
         val knownWordsFormat: KnownWordsSourceFormat = KnownWordsSourceFormat.JSON,
+        // Which list the last word-list operation touched, so a failed import can offer the right picker.
+        val wordListTarget: WordListKind = WordListKind.BLACKLIST,
         val knownWordsSearch: String = "",
         val pendingReplace: PendingResourceReplace? = null,
         val fieldMapChanges: List<AnkiFieldMappingChange> = emptyList(),
@@ -107,6 +111,8 @@ internal class SetupViewModel(
                 failedDeckName = localState.failedDeckName,
                 noteType = appSettings.noteType,
                 fieldMap = appSettings.fieldMap,
+                cardType = appSettings.cardType,
+                cardTypeMarkerField = appSettings.cardTypeMarkerField,
                 fieldMapChanges = localState.fieldMapChanges,
                 remediations = ankiState.remediations,
                 recoveryInventoryStatus = ankiState.recoveryInventoryStatus,
@@ -127,6 +133,7 @@ internal class SetupViewModel(
                 knownWordsImportPreview = resourceState.knownWordsImportPreview,
                 knownWordsPage = resourceState.knownWordsPage,
                 wordsets = resourceState.wordsets,
+                wordLists = resourceState.wordLists,
                 lastLocalImport = resourceState.lastLocalImport,
                 operation = resourceState.activeOperation,
                 failure = resourceState.failure,
@@ -140,6 +147,7 @@ internal class SetupViewModel(
                 pitchFormat = localState.pitchFormat,
                 audioPackId = localState.audioPackId,
                 knownWordsFormat = localState.knownWordsFormat,
+                wordListTarget = localState.wordListTarget,
                 knownWordsSearch = localState.knownWordsSearch,
             )
         }.stateIn(
@@ -244,6 +252,47 @@ internal class SetupViewModel(
             local.update { it.copy(fieldMapChanges = emptyList()) }
             ankiSetup.refresh(noteType, map)
         }
+    }
+
+    /**
+     * Pick a card mode. The conventional JP Mining Note field is preselected when the note type has
+     * it and nothing else is mapped to it; otherwise the marker stays unset and the mode stays off
+     * until the user chooses a field.
+     */
+    fun selectCardType(cardType: CardType?) {
+        val state = uiState.value
+        if (state.busy) return
+        if (cardType == null) {
+            viewModelScope.launch {
+                repository.update { it.copy(cardType = null, cardTypeMarkerField = null) }
+            }
+            return
+        }
+        val fields =
+            state.availableNoteTypes.firstOrNull { it.name == state.noteType }?.fieldNames.orEmpty()
+        val conventional =
+            cardType.conventionalField.takeIf { candidate ->
+                candidate in fields && state.fieldMap.none { (_, mapped) -> mapped == candidate }
+            }
+        // A marker belongs to one mode, so switching modes re-derives it instead of carrying the
+        // previous mode's field over.
+        val marker =
+            if (state.cardType == cardType) {
+                state.cardTypeMarkerField?.takeIf { it in fields }
+            } else {
+                conventional
+            }
+        viewModelScope.launch {
+            repository.update { it.copy(cardType = cardType, cardTypeMarkerField = marker) }
+        }
+    }
+
+    fun setCardTypeMarkerField(field: String) {
+        val state = uiState.value
+        if (state.busy) return
+        val destination = field.takeIf { it.isNotEmpty() }
+        if (destination != null && state.fieldMap.any { (_, mapped) -> mapped == destination }) return
+        viewModelScope.launch { repository.update { it.copy(cardTypeMarkerField = destination) } }
     }
 
     fun verifyNoteType() {
@@ -491,6 +540,18 @@ internal class SetupViewModel(
         viewModelScope.launch { resources.previewKnownWords(uri, format) }
     }
 
+    fun importWordList(uri: String, kind: WordListKind) {
+        if (uiState.value.busy) return
+        local.update { it.copy(wordListTarget = kind) }
+        viewModelScope.launch { resources.importWordList(uri, kind) }
+    }
+
+    fun removeWordList(kind: WordListKind) {
+        if (uiState.value.busy) return
+        local.update { it.copy(wordListTarget = kind) }
+        viewModelScope.launch { resources.removeWordList(kind) }
+    }
+
     fun confirmKnownWordsImport() {
         if (!uiState.value.busy) viewModelScope.launch { resources.confirmKnownWordsImport() }
     }
@@ -565,10 +626,12 @@ internal class SetupViewModel(
             }
             ResourceFailureOrigin.DICTIONARY_LOOKUP -> lookup()
             ResourceFailureOrigin.KNOWN_WORDS -> searchKnownWords()
+            // Both offer a file picker instead, which only the composable can open.
             ResourceFailureOrigin.CUSTOM_DICTIONARY,
             ResourceFailureOrigin.PITCH,
             ResourceFailureOrigin.AUDIO,
             ResourceFailureOrigin.FREQUENCY,
+            ResourceFailureOrigin.WORD_LIST,
             -> Unit
         }
     }

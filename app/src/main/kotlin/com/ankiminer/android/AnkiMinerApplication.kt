@@ -16,6 +16,7 @@ import com.ankiminer.android.data.resources.PinnedResourceDownloader
 import com.ankiminer.android.data.resources.ResourceManager
 import com.ankiminer.android.data.resources.ResourceStartupReadiness
 import com.ankiminer.android.data.resources.SafArchiveStager
+import com.ankiminer.android.data.resources.WordListKind
 import com.ankiminer.android.data.settings.AppSettingsRepository
 import com.ankiminer.android.data.settings.DataStoreAppSettingsRepository
 import com.ankiminer.android.engine.ChaquopyPyBridge
@@ -229,6 +230,8 @@ class AnkiMinerApplication : Application() {
                             installedFrequencyIds = resourceManager.installedFrequencyIds(),
                             installedAudioPackIds = resourceManager.installedAudioPackIds(),
                             availableWordsetIds = resourceManager.bundledWordsetIds(),
+                            blacklistPath = resourceManager.wordListPath(WordListKind.BLACKLIST),
+                            whitelistPath = resourceManager.wordListPath(WordListKind.WHITELIST),
                         )
                     }
                 },
@@ -267,6 +270,8 @@ class AnkiMinerApplication : Application() {
                             installedFrequencyIds = resourceManager.installedFrequencyIds(),
                             installedAudioPackIds = resourceManager.installedAudioPackIds(),
                             availableWordsetIds = resourceManager.bundledWordsetIds(),
+                            blacklistPath = resourceManager.wordListPath(WordListKind.BLACKLIST),
+                            whitelistPath = resourceManager.wordListPath(WordListKind.WHITELIST),
                         )
                     }
                 },

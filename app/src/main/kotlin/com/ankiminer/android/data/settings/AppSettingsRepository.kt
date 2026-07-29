@@ -34,6 +34,8 @@ interface AppSettingsRepository {
         installedFrequencyIds: List<String> = emptyList(),
         installedAudioPackIds: List<String> = emptyList(),
         availableWordsetIds: List<String> = emptyList(),
+        blacklistPath: String? = null,
+        whitelistPath: String? = null,
     ) =
         EngineSettingsSnapshotMapper.map(
             settings.first(),
@@ -41,6 +43,8 @@ interface AppSettingsRepository {
             installedFrequencyIds,
             installedAudioPackIds,
             availableWordsetIds,
+            blacklistPath,
+            whitelistPath,
         )
 }
 
@@ -156,12 +160,27 @@ class DataStoreAppSettingsRepository internal constructor(
                 candidate.setOrRemove(Keys.excludedDecks, DeckListPreferenceCodec.encode(value.excludedDecks))
                 candidate.setOrRemove(Keys.noteType, value.noteType)
                 candidate.setOrRemove(Keys.fieldMap, FieldMapPreferenceCodec.encode(value.fieldMap))
+                candidate.setOrRemove(Keys.cardType, value.cardType?.wireValue)
+                candidate.setOrRemove(Keys.cardTypeMarkerField, value.cardTypeMarkerField)
                 candidate.setOrRemove(Keys.tags, value.tags)
+                candidate.setOrRemove(Keys.allowDuplicateCards, value.allowDuplicateCards)
                 candidate.setOrRemove(Keys.audioPadding, value.audioPaddingSeconds)
                 candidate.setOrRemove(Keys.screenshotOffset, value.screenshotOffsetSeconds)
                 candidate.setOrRemove(Keys.subtitleOffset, value.subtitleOffsetSeconds)
                 candidate.setOrRemove(Keys.audioFormat, value.audioFormat?.wireValue)
                 candidate.setOrRemove(Keys.audioBitrate, value.audioBitrateKbps)
+                candidate.setOrRemove(
+                    Keys.stripSubtitleAnnotations,
+                    value.stripSubtitleAnnotations,
+                )
+                candidate.setOrRemove(Keys.subtitleRegexFilter, value.subtitleRegexFilter)
+                candidate.setOrRemove(
+                    Keys.subtitleRegexReplacement,
+                    value.subtitleRegexReplacement,
+                )
+                candidate.setOrRemove(Keys.useSubtitleRegexFilter, value.useSubtitleRegexFilter)
+                candidate.setOrRemove(Keys.useBlacklist, value.useBlacklist)
+                candidate.setOrRemove(Keys.useWhitelist, value.useWhitelist)
                 candidate.setOrRemove(Keys.useKnownWordsDatabase, value.useKnownWordsDatabase)
                 candidate.setOrRemove(Keys.excludeHiraganaOnly, value.excludeHiraganaOnly)
                 candidate.setOrRemove(Keys.excludeKatakanaOnly, value.excludeKatakanaOnly)
@@ -208,6 +227,22 @@ class DataStoreAppSettingsRepository internal constructor(
                 stored.takeIf { it == FRESH_WORDSET_POLICY || it == PRESERVED_WORDSET_POLICY }
                     ?: invalidStoredPreference()
             })
+            // Read ahead of the constructor: the replacement's group references are only meaningful
+            // against a pattern, so the pair is validated together under the replacement's own key.
+            // A corrupt combination is then quarantined like any other key instead of throwing out
+            // of the read path.
+            // Read ahead for the same reason: the marker's conflict rule is only meaningful against
+            // the field map it must not collide with.
+            val storedFieldMap =
+                decoder.read(Keys.fieldMap, emptyMap(), FieldMapPreferenceCodec::decode) {
+                    AppSettingsValidator.validate(AppSettings(fieldMap = it))
+                }
+            val storedSubtitleRegex =
+                decoder.read(Keys.subtitleRegexFilter, null, { it }) { value ->
+                    value?.let {
+                        AppSettingsValidator.validate(AppSettings(subtitleRegexFilter = it))
+                    }
+                }
             val settings =
                 AppSettings(
                     setupWizardSeen = decoder.read(Keys.setupWizardSeen, false, { it }),
@@ -228,14 +263,27 @@ class DataStoreAppSettingsRepository internal constructor(
                         decoder.read(Keys.noteType, null, { it }) { value ->
                             value?.let { AppSettingsValidator.validate(AppSettings(noteType = it)) }
                         },
-                    fieldMap =
-                        decoder.read(Keys.fieldMap, emptyMap(), FieldMapPreferenceCodec::decode) {
-                            AppSettingsValidator.validate(AppSettings(fieldMap = it))
+                    fieldMap = storedFieldMap,
+                    cardType =
+                        decoder.read(Keys.cardType, null, { stored ->
+                            CardType.fromWire(stored) ?: invalidStoredPreference()
+                        }),
+                    cardTypeMarkerField =
+                        decoder.read(Keys.cardTypeMarkerField, null, { it }) { value ->
+                            value?.let {
+                                AppSettingsValidator.validate(
+                                    AppSettings(
+                                        fieldMap = storedFieldMap,
+                                        cardTypeMarkerField = it,
+                                    ),
+                                )
+                            }
                         },
                     tags =
                         decoder.read(Keys.tags, null, { it }) { value ->
                             value?.let { AppSettingsValidator.validate(AppSettings(tags = it)) }
                         },
+                    allowDuplicateCards = decoder.read(Keys.allowDuplicateCards, null, { it }),
                     audioPaddingSeconds =
                         decoder.validated(Keys.audioPadding) { AppSettings(audioPaddingSeconds = it) },
                     screenshotOffsetSeconds =
@@ -253,6 +301,24 @@ class DataStoreAppSettingsRepository internal constructor(
                         }),
                     audioBitrateKbps =
                         decoder.validated(Keys.audioBitrate) { AppSettings(audioBitrateKbps = it) },
+                    stripSubtitleAnnotations =
+                        decoder.read(Keys.stripSubtitleAnnotations, null, { it }),
+                    subtitleRegexFilter = storedSubtitleRegex,
+                    subtitleRegexReplacement =
+                        decoder.read(Keys.subtitleRegexReplacement, null, { it }) { value ->
+                            value?.let {
+                                AppSettingsValidator.validate(
+                                    AppSettings(
+                                        subtitleRegexFilter = storedSubtitleRegex,
+                                        subtitleRegexReplacement = it,
+                                    ),
+                                )
+                            }
+                        },
+                    useSubtitleRegexFilter =
+                        decoder.read(Keys.useSubtitleRegexFilter, null, { it }),
+                    useBlacklist = decoder.read(Keys.useBlacklist, null, { it }),
+                    useWhitelist = decoder.read(Keys.useWhitelist, null, { it }),
                     useKnownWordsDatabase = decoder.read(Keys.useKnownWordsDatabase, null, { it }),
                     excludeHiraganaOnly = decoder.read(Keys.excludeHiraganaOnly, null, { it }),
                     excludeKatakanaOnly = decoder.read(Keys.excludeKatakanaOnly, null, { it }),
@@ -422,12 +488,24 @@ class DataStoreAppSettingsRepository internal constructor(
             val excludedDecks = register(stringPreferencesKey("excluded_decks_v1"))
             val noteType = register(stringPreferencesKey("note_type"))
             val fieldMap = register(stringPreferencesKey("field_map_v1"))
+            val cardType = register(stringPreferencesKey("card_type"))
+            val cardTypeMarkerField = register(stringPreferencesKey("card_type_marker_field"))
             val tags = register(stringPreferencesKey("tags"))
+            val allowDuplicateCards = register(booleanPreferencesKey("allow_duplicate_cards"))
             val audioPadding = register(doublePreferencesKey("audio_padding_seconds"))
             val screenshotOffset = register(doublePreferencesKey("screenshot_offset_seconds"))
             val subtitleOffset = register(doublePreferencesKey("subtitle_offset_seconds"))
             val audioFormat = register(stringPreferencesKey("audio_format"))
             val audioBitrate = register(intPreferencesKey("audio_bitrate_kbps"))
+            val stripSubtitleAnnotations =
+                register(booleanPreferencesKey("strip_subtitle_annotations"))
+            val subtitleRegexFilter = register(stringPreferencesKey("subtitle_regex_filter"))
+            val subtitleRegexReplacement =
+                register(stringPreferencesKey("subtitle_regex_replacement"))
+            val useSubtitleRegexFilter =
+                register(booleanPreferencesKey("use_subtitle_regex_filter"))
+            val useBlacklist = register(booleanPreferencesKey("use_blacklist"))
+            val useWhitelist = register(booleanPreferencesKey("use_whitelist"))
             val useKnownWordsDatabase = register(booleanPreferencesKey("use_known_words_database"))
             val excludeHiraganaOnly = register(booleanPreferencesKey("exclude_hiragana_only"))
             val excludeKatakanaOnly = register(booleanPreferencesKey("exclude_katakana_only"))

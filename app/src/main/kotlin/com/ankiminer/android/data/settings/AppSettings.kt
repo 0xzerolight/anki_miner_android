@@ -13,6 +13,25 @@ enum class AudioFormat(val wireValue: String) {
     OPUS("opus"),
 }
 
+/**
+ * JP Mining Note card modes. The engine stamps `"x"` into the field mapped for the active mode, and
+ * the note type's own templates render that as the card type.
+ *
+ * [conventionalField] is the name JP Mining Note itself uses, offered as the default pick when the
+ * chosen note type has it.
+ */
+enum class CardType(val wireValue: String, val conventionalField: String) {
+    WORD_AND_SENTENCE("word_and_sentence", "IsWordAndSentenceCard"),
+    CLICK("click", "IsClickCard"),
+    SENTENCE("sentence", "IsSentenceCard"),
+    AUDIO("audio", "IsAudioCard"),
+    ;
+
+    companion object {
+        fun fromWire(stored: String?): CardType? = entries.singleOrNull { it.wireValue == stored }
+    }
+}
+
 enum class PitchCategoryFormat(val wireValue: String) {
     JAPANESE("jp"),
     ROMAJI("romaji"),
@@ -55,12 +74,41 @@ data class AppSettings(
     val excludedDecks: List<String> = emptyList(),
     val noteType: String? = null,
     val fieldMap: Map<String, String> = emptyMap(),
+    /**
+     * Card mode and the note-type field that marks it. Desktop keeps a name per mode as a rename
+     * escape hatch, but only the active mode's field is ever read, so one destination is enough.
+     * Both must be set for either to reach the engine.
+     */
+    val cardType: CardType? = null,
+    val cardTypeMarkerField: String? = null,
     val tags: String? = null,
+    /**
+     * Card the user already has elsewhere in the collection stops being a reason to skip a word:
+     * the duplicate scope narrows from the whole collection to the target deck, and the within-run
+     * collapse of two surfaces sharing one expression is skipped.
+     */
+    val allowDuplicateCards: Boolean? = null,
     val audioPaddingSeconds: Double? = null,
     val screenshotOffsetSeconds: Double? = null,
     val subtitleOffsetSeconds: Double? = null,
     val audioFormat: AudioFormat? = null,
     val audioBitrateKbps: Int? = null,
+    /**
+     * Structural subtitle-annotation strip: whole-line sound-effect captions, leading speaker tags,
+     * and inline furigana. Engine default is on, and it runs before the user regex filter.
+     */
+    val stripSubtitleAnnotations: Boolean? = null,
+    /** Python `re` pattern removed from subtitle text before mining. See [SubtitleRegexCheck]. */
+    val subtitleRegexFilter: String? = null,
+    /** Inserted in place of each match. Python backreferences (`\1`), not `$1`. */
+    val subtitleRegexReplacement: String? = null,
+    val useSubtitleRegexFilter: Boolean? = null,
+    /**
+     * Word-list toggles. The paths are not persisted: the files live at a fixed location owned by
+     * the resource manager, so a stored absolute path could only go stale.
+     */
+    val useBlacklist: Boolean? = null,
+    val useWhitelist: Boolean? = null,
     val useKnownWordsDatabase: Boolean? = null,
     val excludeHiraganaOnly: Boolean? = null,
     val excludeKatakanaOnly: Boolean? = null,
@@ -92,11 +140,18 @@ data class AppSettings(
     fun restoreMiningDefaults(): AppSettings =
         copy(
             tags = null,
+            allowDuplicateCards = null,
             audioPaddingSeconds = null,
             screenshotOffsetSeconds = null,
             subtitleOffsetSeconds = null,
             audioFormat = null,
             audioBitrateKbps = null,
+            stripSubtitleAnnotations = null,
+            subtitleRegexFilter = null,
+            subtitleRegexReplacement = null,
+            useSubtitleRegexFilter = null,
+            useBlacklist = null,
+            useWhitelist = null,
             useKnownWordsDatabase = null,
             excludeHiraganaOnly = null,
             excludeKatakanaOnly = null,
@@ -119,6 +174,8 @@ data class AppSettings(
             deckName = null,
             noteType = null,
             fieldMap = emptyMap(),
+            cardType = null,
+            cardTypeMarkerField = null,
         )
 
     /** Clear resource priority/enable choices without removing installed resource files. */
@@ -157,6 +214,11 @@ internal enum class InvalidAppSettingCode {
     FIELD_MAP_UNKNOWN_KEY,
     FIELD_MAP_CONFLICT,
     RESOURCE_IDS_INVALID,
+    CARD_TYPE_MARKER_CONFLICT,
+    SUBTITLE_REGEX_TOO_LONG,
+    SUBTITLE_REGEX_REPLACEMENT_TOO_LONG,
+    SUBTITLE_REGEX_UNBOUNDED_REPEAT,
+    SUBTITLE_REGEX_BACKREFERENCE,
     UNKNOWN,
 }
 
@@ -227,7 +289,13 @@ object AppSettingsValidator {
             it.excludedDecks.forEach { deck -> canonicalName("Excluded deck name", deck) }
             it.noteType?.let { value -> canonicalName("Note type", value) }
             fieldMap(it.fieldMap)
+            cardTypeMarker(it.cardTypeMarkerField, it.fieldMap)
             it.tags?.let { value -> validScalarText("Tags", value) }
+            it.subtitleRegexFilter?.let { value -> validScalarText("Subtitle regex filter", value) }
+            it.subtitleRegexReplacement?.let { value ->
+                validScalarText("Subtitle regex replacement", value)
+            }
+            subtitleRegex(it.subtitleRegexFilter, it.subtitleRegexReplacement)
             nonNegative("Audio padding", it.audioPaddingSeconds)
             nonNegative("Screenshot offset", it.screenshotOffsetSeconds)
             finite("Subtitle offset", it.subtitleOffsetSeconds)
@@ -352,6 +420,60 @@ object AppSettingsValidator {
         }
     }
 
+    /**
+     * The marker destination is not part of `anki_fields`, so the field-map uniqueness rule does not
+     * cover it. Python enforces the combined uniqueness at the snapshot boundary; reject it here
+     * first so the collision surfaces as a settings error rather than a failed run.
+     */
+    private fun cardTypeMarker(
+        marker: String?,
+        fieldMap: Map<String, String>,
+    ) {
+        val destination = marker?.takeIf { it.isNotEmpty() } ?: return
+        canonicalName("Card type marker field", destination)
+        fieldMap.entries
+            .firstOrNull { (_, mapped) -> mapped == destination }
+            ?.let { (key, _) ->
+                invalid(
+                    InvalidAppSettingCode.CARD_TYPE_MARKER_CONFLICT,
+                    "Anki field '$destination' is already mapped from '$key'",
+                    destination,
+                    key,
+                )
+            }
+    }
+
+    /**
+     * The two size caps, the nested-repeat reject, and the replacement's group references. Checked
+     * even when the filter is switched off, so a stored pattern can never become dangerous by
+     * flipping one toggle — the same reason desktop validates the trio together.
+     */
+    private fun subtitleRegex(
+        pattern: String?,
+        replacement: String?,
+    ) {
+        if (pattern == null && replacement == null) return
+        when (val code = SubtitleRegexCheck.rejection(pattern, replacement.orEmpty())) {
+            null -> Unit
+            InvalidAppSettingCode.SUBTITLE_REGEX_TOO_LONG ->
+                invalid(
+                    code,
+                    "Subtitle filter exceeds ${SubtitleRegexCheck.MAX_PATTERN_CHARS} characters",
+                    SubtitleRegexCheck.MAX_PATTERN_CHARS,
+                )
+            InvalidAppSettingCode.SUBTITLE_REGEX_REPLACEMENT_TOO_LONG ->
+                invalid(
+                    code,
+                    "Replacement exceeds ${SubtitleRegexCheck.MAX_REPLACEMENT_CHARS} characters",
+                    SubtitleRegexCheck.MAX_REPLACEMENT_CHARS,
+                )
+            InvalidAppSettingCode.SUBTITLE_REGEX_UNBOUNDED_REPEAT ->
+                invalid(code, "Subtitle filter must not nest unbounded repeats")
+            else ->
+                invalid(code, "Replacement references a group the subtitle filter does not capture")
+        }
+    }
+
     private fun resourceChain(
         label: String,
         values: List<ResourceChainSelection>,
@@ -389,6 +511,8 @@ internal object EngineSettingsSnapshotMapper {
         installedFrequencyIds: List<String> = emptyList(),
         installedAudioPackIds: List<String> = emptyList(),
         availableWordsetIds: List<String> = emptyList(),
+        blacklistPath: String? = null,
+        whitelistPath: String? = null,
     ): MiningConfigSnapshot {
         val settings = AppSettingsValidator.validate(rawSettings)
         require(installedDictionaryIds.distinct() == installedDictionaryIds)
@@ -414,16 +538,33 @@ internal object EngineSettingsSnapshotMapper {
         // cannot let an unmapped key inherit a desktop default. Unmatched keys emit "".
         values["anki_fields"] =
             stringMap(AnkiFieldKeys.ALL.associateWith { settings.fieldMap[it] ?: "" })
-        // No first-party card modes are activated; emit an empty marker map rather than claiming
-        // JP Mining Note rendering semantics this target may not provide.
-        values["card_type_marker_fields"] = stringMap(emptyMap())
-        values["card_type"] = text("")
+        // Emit all four modes explicitly, blank unless the user picked one. An absent key would let
+        // config_map's overlay reinstate the engine's JP Mining Note field names on a note type that
+        // may not have them.
+        val marker = settings.cardTypeMarkerField?.takeIf { it.isNotEmpty() }
+        val activeCardType = settings.cardType?.takeIf { marker != null }
+        values["card_type_marker_fields"] =
+            stringMap(
+                CardType.entries.associate { type ->
+                    type.wireValue to if (type == activeCardType) marker.orEmpty() else ""
+                },
+            )
+        values["card_type"] = text(activeCardType?.wireValue ?: "")
         settings.tags?.let { values["anki_tags"] = text(it) }
+        settings.allowDuplicateCards?.let { values["allow_duplicate_cards"] = bool(it) }
         settings.audioPaddingSeconds?.let { values["audio_padding"] = decimal(it) }
         settings.screenshotOffsetSeconds?.let { values["screenshot_offset"] = decimal(it) }
         settings.subtitleOffsetSeconds?.let { values["subtitle_offset"] = decimal(it) }
         settings.audioFormat?.let { values["audio_format"] = text(it.wireValue) }
         settings.audioBitrateKbps?.let { values["audio_bitrate"] = integer(it) }
+        settings.stripSubtitleAnnotations?.let { values["strip_subtitle_annotations"] = bool(it) }
+        settings.subtitleRegexFilter?.let { values["subtitle_regex_filter"] = text(it) }
+        settings.subtitleRegexReplacement?.let { values["subtitle_regex_replacement"] = text(it) }
+        settings.useSubtitleRegexFilter?.let { values["use_subtitle_regex_filter"] = bool(it) }
+        // Fail closed: a toggle without an installed file would make the engine raise on every run,
+        // so the toggle only reaches the engine once the path it needs exists.
+        wordList(values, "blacklist_path", "use_blacklist", blacklistPath, settings.useBlacklist)
+        wordList(values, "whitelist_path", "use_whitelist", whitelistPath, settings.useWhitelist)
         settings.useKnownWordsDatabase?.let { values["use_known_words_db"] = bool(it) }
         settings.excludeHiraganaOnly?.let { values["exclude_hiragana_only_words"] = bool(it) }
         settings.excludeKatakanaOnly?.let { values["exclude_katakana_only_words"] = bool(it) }
@@ -508,6 +649,18 @@ internal object EngineSettingsSnapshotMapper {
             settings = values,
             androidTtsEnabled = settings.readingTtsEnabled,
         )
+    }
+
+    private fun wordList(
+        values: MutableMap<String, BridgeJsonValue>,
+        pathKey: String,
+        toggleKey: String,
+        path: String?,
+        enabled: Boolean?,
+    ) {
+        val usable = path != null && enabled == true
+        if (usable) values[pathKey] = text(path)
+        enabled?.let { values[toggleKey] = bool(usable) }
     }
 
     /** Preserve saved order/disable choices and append only newly installed resources enabled. */

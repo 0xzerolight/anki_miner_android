@@ -50,12 +50,14 @@ _STRING_FIELDS = frozenset(
 )
 _BOOL_FIELDS = frozenset(
     {
+        "allow_duplicate_cards",
         "use_known_words_db",
         "exclude_hiragana_only_words",
         "exclude_katakana_only_words",
         "use_blacklist",
         "use_whitelist",
         "use_subtitle_regex_filter",
+        "strip_subtitle_annotations",
         "bold_target_in_sentence",
         "deduplicate_sentences",
         "use_i_plus_one_filter",

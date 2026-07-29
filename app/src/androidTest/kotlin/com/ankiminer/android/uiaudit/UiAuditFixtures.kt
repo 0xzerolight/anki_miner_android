@@ -605,6 +605,8 @@ private fun SettingsAnkiFixture(setup: SetupUiState) {
             state = setup,
             onSelectNoteType = {},
             onSetFieldMapping = { _, _ -> },
+            onSelectCardType = {},
+            onSelectCardTypeMarker = {},
             onVerify = {},
         )
         AnkiRecoveryCard(

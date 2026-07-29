@@ -240,11 +240,18 @@ class AppSettingsRepositoryTest {
         assertEquals(
             original.copy(
                 tags = null,
+                allowDuplicateCards = null,
                 audioPaddingSeconds = null,
                 screenshotOffsetSeconds = null,
                 subtitleOffsetSeconds = null,
                 audioFormat = null,
                 audioBitrateKbps = null,
+                stripSubtitleAnnotations = null,
+                subtitleRegexFilter = null,
+                subtitleRegexReplacement = null,
+                useSubtitleRegexFilter = null,
+                useBlacklist = null,
+                useWhitelist = null,
                 useKnownWordsDatabase = null,
                 excludeHiraganaOnly = null,
                 excludeKatakanaOnly = null,
@@ -275,7 +282,14 @@ class AppSettingsRepositoryTest {
         val reset = original.resetAnkiTarget()
 
         assertEquals(
-            original.copy(deckName = null, noteType = null, fieldMap = emptyMap()),
+            original.copy(
+                deckName = null,
+                noteType = null,
+                fieldMap = emptyMap(),
+                // The marker names a field of the note type being cleared, so it cannot outlive it.
+                cardType = null,
+                cardTypeMarkerField = null,
+            ),
             reset,
         )
     }
@@ -440,12 +454,21 @@ class AppSettingsRepositoryTest {
                     AnkiFieldKeys.WORD to "Expression",
                     "sentence" to "Sentence",
                 ),
+            cardType = CardType.CLICK,
+            cardTypeMarkerField = "IsClickCard",
             tags = "mined japanese",
+            allowDuplicateCards = true,
             audioPaddingSeconds = 0.1,
             screenshotOffsetSeconds = 0.2,
             subtitleOffsetSeconds = -0.3,
             audioFormat = AudioFormat.OPUS,
             audioBitrateKbps = 96,
+            stripSubtitleAnnotations = false,
+            subtitleRegexFilter = """\[[^\]]*\]""",
+            subtitleRegexReplacement = "",
+            useSubtitleRegexFilter = true,
+            useBlacklist = true,
+            useWhitelist = true,
             useKnownWordsDatabase = true,
             excludeHiraganaOnly = true,
             excludeKatakanaOnly = true,
@@ -489,7 +512,16 @@ class AppSettingsRepositoryTest {
             ),
             corruptString("note_type", original.copy(noteType = defaults.noteType)),
             corruptString("field_map_v1", original.copy(fieldMap = defaults.fieldMap)),
+            corruptString("card_type", original.copy(cardType = defaults.cardType)),
+            corruptString(
+                "card_type_marker_field",
+                original.copy(cardTypeMarkerField = defaults.cardTypeMarkerField),
+            ),
             corruptString("tags", original.copy(tags = defaults.tags)),
+            corruptBoolean(
+                "allow_duplicate_cards",
+                original.copy(allowDuplicateCards = defaults.allowDuplicateCards),
+            ),
             corruptDouble(
                 "audio_padding_seconds",
                 original.copy(audioPaddingSeconds = defaults.audioPaddingSeconds),
@@ -507,6 +539,24 @@ class AppSettingsRepositoryTest {
                 "audio_bitrate_kbps",
                 original.copy(audioBitrateKbps = defaults.audioBitrateKbps),
             ),
+            corruptBoolean(
+                "strip_subtitle_annotations",
+                original.copy(stripSubtitleAnnotations = defaults.stripSubtitleAnnotations),
+            ),
+            corruptString(
+                "subtitle_regex_filter",
+                original.copy(subtitleRegexFilter = defaults.subtitleRegexFilter),
+            ),
+            corruptString(
+                "subtitle_regex_replacement",
+                original.copy(subtitleRegexReplacement = defaults.subtitleRegexReplacement),
+            ),
+            corruptBoolean(
+                "use_subtitle_regex_filter",
+                original.copy(useSubtitleRegexFilter = defaults.useSubtitleRegexFilter),
+            ),
+            corruptBoolean("use_blacklist", original.copy(useBlacklist = defaults.useBlacklist)),
+            corruptBoolean("use_whitelist", original.copy(useWhitelist = defaults.useWhitelist)),
             corruptBoolean(
                 "use_known_words_database",
                 original.copy(useKnownWordsDatabase = defaults.useKnownWordsDatabase),

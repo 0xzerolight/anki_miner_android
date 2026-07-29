@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedCard
@@ -20,6 +21,8 @@ import com.ankiminer.android.R
 import com.ankiminer.android.data.resources.FrequencySourceFormat
 import com.ankiminer.android.data.resources.KnownWordsSourceFormat
 import com.ankiminer.android.data.resources.PitchAccentSourceFormat
+import com.ankiminer.android.data.resources.WordListKind
+import com.ankiminer.android.ui.theme.AdaptivePairedActions
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
 import com.ankiminer.android.ui.theme.SupportingText
 import com.ankiminer.android.vm.SetupUiState
@@ -196,6 +199,102 @@ internal fun BundledWordsetInventoryCard(state: SetupUiState) {
             if (state.wordsets.isEmpty()) Text(stringResource(R.string.bundled_wordsets_unavailable), color = MaterialTheme.colorScheme.error)
         }
     }
+}
+
+/**
+ * The blacklist and whitelist files. Unlike every other import here the file itself is what the
+ * engine reads, once per run, so it stays installed until the user removes it.
+ */
+@Composable
+internal fun WordListImportCard(
+    state: SetupUiState,
+    blacklistEnabled: Boolean?,
+    whitelistEnabled: Boolean?,
+    onImport: (WordListKind) -> Unit,
+    onRemove: (WordListKind) -> Unit,
+    onBlacklistEnabledChange: (Boolean?) -> Unit,
+    onWhitelistEnabledChange: (Boolean?) -> Unit,
+    inlineFailure: (@Composable () -> Unit)? = null,
+) {
+    OutlinedCard(Modifier.fillMaxWidth()) {
+        Column(
+            Modifier.padding(AnkiMinerTokens.Space.content),
+            verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
+        ) {
+            Text(
+                stringResource(R.string.word_lists_title),
+                style = MaterialTheme.typography.titleMedium,
+            )
+            SupportingText(stringResource(R.string.word_lists_format))
+            WordListRow(
+                state = state,
+                kind = WordListKind.BLACKLIST,
+                title = stringResource(R.string.word_list_blacklist),
+                toggleLabel = stringResource(R.string.settings_use_blacklist),
+                enabled = blacklistEnabled,
+                onImport = onImport,
+                onRemove = onRemove,
+                onEnabledChange = onBlacklistEnabledChange,
+            )
+            HorizontalDivider()
+            WordListRow(
+                state = state,
+                kind = WordListKind.WHITELIST,
+                title = stringResource(R.string.word_list_whitelist),
+                toggleLabel = stringResource(R.string.settings_use_whitelist),
+                enabled = whitelistEnabled,
+                onImport = onImport,
+                onRemove = onRemove,
+                onEnabledChange = onWhitelistEnabledChange,
+            )
+            SupportingText(stringResource(R.string.word_list_whitelist_scope))
+            inlineFailure?.invoke()
+        }
+    }
+}
+
+@Composable
+private fun WordListRow(
+    state: SetupUiState,
+    kind: WordListKind,
+    title: String,
+    toggleLabel: String,
+    enabled: Boolean?,
+    onImport: (WordListKind) -> Unit,
+    onRemove: (WordListKind) -> Unit,
+    onEnabledChange: (Boolean?) -> Unit,
+) {
+    val installed = state.wordLists.firstOrNull { it.kind == kind }
+    Text(title, style = MaterialTheme.typography.titleSmall)
+    Text(
+        if (installed == null) {
+            stringResource(R.string.word_list_absent)
+        } else {
+            stringResource(R.string.word_list_installed, installed.entryCount)
+        },
+    )
+    // The toggle only takes effect once a file exists; without one the snapshot keeps it off.
+    NullableToggle(toggleLabel, enabled, false, onEnabledChange)
+    AdaptivePairedActions(
+        first = { modifier ->
+            OutlinedButton(
+                onClick = { onImport(kind) },
+                enabled = !state.busy,
+                modifier = modifier,
+                colors = outlinedActionButtonColors(),
+                border = actionBorder(!state.busy),
+            ) { Text(stringResource(R.string.word_list_choose_file)) }
+        },
+        second = { modifier ->
+            OutlinedButton(
+                onClick = { onRemove(kind) },
+                enabled = !state.busy && installed != null,
+                modifier = modifier,
+                colors = outlinedActionButtonColors(),
+                border = actionBorder(!state.busy && installed != null),
+            ) { Text(stringResource(R.string.word_list_remove)) }
+        },
+    )
 }
 
 @Composable
