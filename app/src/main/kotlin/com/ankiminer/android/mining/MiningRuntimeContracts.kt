@@ -6,6 +6,7 @@ import com.ankiminer.android.anki.provider.AnkiCancellation
 import com.ankiminer.android.anki.provider.AnkiProviderCallbacks
 import com.ankiminer.android.anki.provider.CancellationRegistration
 import com.ankiminer.android.media.FileCopyCancellation
+import com.ankiminer.android.media.ProviderIoCancellationRegistration
 import com.ankiminer.android.media.SafBroker
 import com.ankiminer.android.media.SafCopyProgressListener
 import com.ankiminer.android.media.SafJobFileOwner
@@ -133,7 +134,17 @@ internal class AndroidMiningInputOwnerFactory(context: Context) : MiningInputOwn
             private val owner =
                 SafJobFileOwner(
                     applicationContext,
-                    cancellation = FileCopyCancellation(cancellation::isCancelled),
+                    cancellation =
+                        object : FileCopyCancellation {
+                            override fun isCancelled(): Boolean = cancellation.isCancelled()
+
+                            override fun invokeOnCancellation(
+                                listener: () -> Unit,
+                            ): ProviderIoCancellationRegistration {
+                                val registration = cancellation.invokeOnCancellation(listener)
+                                return ProviderIoCancellationRegistration(registration::close)
+                            }
+                        },
                     progressListener = progressListener,
                 )
 

@@ -33,9 +33,7 @@ internal data class BoundedFileCopyProgress(
     }
 }
 
-internal fun interface FileCopyCancellation {
-    fun isCancelled(): Boolean
-
+internal fun interface FileCopyCancellation : ProviderIoCancellation {
     companion object {
         val NONE = FileCopyCancellation { false }
     }
@@ -51,10 +49,11 @@ internal fun interface FileCopyProgressListener {
 
 internal sealed class BoundedFileCopyException(
     message: String,
-) : IOException(message)
+    cause: Throwable? = null,
+) : IOException(message, cause)
 
-internal class FileCopyCancelledException :
-    BoundedFileCopyException("Private file copy was cancelled")
+internal class FileCopyCancelledException(cause: Throwable? = null) :
+    BoundedFileCopyException("Private file copy was cancelled", cause)
 
 internal class FileCopyLimitExceededException(
     val maxBytes: Long,
@@ -88,7 +87,7 @@ internal class BoundedFileCopier(
         destination: File,
         knownSizeBytes: Long?,
         policy: BoundedFileCopyPolicy,
-        cancellation: FileCopyCancellation = FileCopyCancellation.NONE,
+        cancellation: ProviderIoCancellation = FileCopyCancellation.NONE,
         progressListener: FileCopyProgressListener = FileCopyProgressListener.NONE,
     ): Long {
         require(knownSizeBytes == null || knownSizeBytes >= 0L) {
@@ -110,7 +109,7 @@ internal class BoundedFileCopier(
             checkCancellation(cancellation)
 
             val copiedBytes =
-                openSource().use { input ->
+                CancellableProviderIo.useResource(cancellation, openSource) { input ->
                     FileOutputStream(destination, false).use { output ->
                         val buffer = ByteArray(policy.bufferBytes)
                         var copied = 0L
@@ -154,8 +153,14 @@ internal class BoundedFileCopier(
             }
             return copiedBytes
         } catch (failure: Throwable) {
-            cleanupFailedDestination(destination, failure)
-            throw failure
+            val reported =
+                if (failure is ProviderIoCancelledException) {
+                    FileCopyCancelledException(failure)
+                } else {
+                    failure
+                }
+            cleanupFailedDestination(destination, reported)
+            throw reported
         }
     }
 
@@ -184,7 +189,7 @@ internal class BoundedFileCopier(
         }
     }
 
-    private fun checkCancellation(cancellation: FileCopyCancellation) {
+    private fun checkCancellation(cancellation: ProviderIoCancellation) {
         if (cancellation.isCancelled()) throw FileCopyCancelledException()
     }
 
