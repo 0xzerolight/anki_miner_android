@@ -95,11 +95,31 @@ def test_filter_never_raises_when_the_context_lookup_is_hostile(monkeypatch):
 
     monkeypatch.setattr(log_context, "_RUN_ID", _HostileContextVar())
     record = _record()
-    # A filter that raises drops the record silently and, with
-    # logging.raiseExceptions left at its default True, prints to stderr on
-    # every later line -- must fail closed to "-", never propagate.
+    # Handler.handle() calls filter() with no exception guard of its own, so
+    # a raise here would crash the original logger.warning(...) call site.
+    # The lookup failure happens before the assignment runs, so the record
+    # simply keeps no run_id rather than getting a synthesized fallback.
     assert log_context.RunContextFilter().filter(record) is True
-    assert record.run_id == "-"
+    assert not hasattr(record, "run_id")
+
+
+def test_filter_never_raises_when_the_record_rejects_the_attribute():
+    """Assignment-side hostility, not just lookup-side.
+
+    logging.Handler.handle() calls filter() with no exception guard of its
+    own -- unlike emit(), whose formatter failures are contained by
+    handleError(). A LogRecord installed via setLogRecordFactory could reject
+    an unknown attribute (e.g. a slotted subclass); that must not propagate
+    into the original logger.warning(...) call site.
+    """
+
+    class _AssignmentHostileRecord:
+        def __setattr__(self, name: str, value: object) -> None:
+            raise AttributeError(f"{name} is not an allowed attribute")
+
+    record = _AssignmentHostileRecord()
+    assert log_context.RunContextFilter().filter(record) is True
+    assert not hasattr(record, "run_id")
 
 
 def test_contextvar_set_on_the_main_thread_is_invisible_on_a_worker_thread():

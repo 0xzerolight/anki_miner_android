@@ -9,6 +9,7 @@ first.
 from __future__ import annotations
 
 import logging
+from contextlib import suppress
 from contextvars import ContextVar
 
 _RUN_ID: ContextVar[str | None] = ContextVar("anki_miner_run_id", default=None)
@@ -47,15 +48,13 @@ class RunContextFilter(logging.Filter):
     """
 
     def filter(self, record: logging.LogRecord) -> bool:
-        # logging.raiseExceptions defaults True, so a filter that raises
-        # would print to stderr on every subsequent record, not just drop
-        # this one. Resolve the value through the single precedence rule in
-        # current_run_id() -- one edit site, not two -- and assign it exactly
-        # once so a lookup failure can never trigger a second, unguarded
-        # assignment attempt.
-        try:
-            run_id = current_run_id() or "-"
-        except Exception:
-            run_id = "-"
-        record.run_id = run_id
+        # logging.Handler.handle() calls filter() with no exception guard of
+        # its own -- unlike emit(), whose formatter failures are contained by
+        # handleError(). A throw here propagates straight into the original
+        # logger.warning(...) call site and crashes the caller this feature
+        # exists to diagnose. The assignment itself can fail too (a LogRecord
+        # subclass that rejects the attribute), not just the lookup, so both
+        # must be inside the same guard, with no retry on failure.
+        with suppress(Exception):
+            record.run_id = current_run_id() or "-"
         return True
