@@ -97,11 +97,7 @@ internal class HttpsDownloadConnectionFactory(
         location: String,
     ): URI =
         try {
-            requireHttps(
-                current.resolve(location).toString(),
-                stableCode = "download_redirect_invalid",
-                message = "Resource download returned an invalid redirect",
-            )
+            requireRedirectHttps(current.resolve(location).toString())
         } catch (failure: ResourceDownloadException) {
             throw failure
         } catch (failure: Exception) {
@@ -112,22 +108,41 @@ internal class HttpsDownloadConnectionFactory(
             )
         }
 
-    private fun requireHttps(
-        value: String,
-        stableCode: String = "download_url_invalid",
-        message: String = "Resource URL is invalid",
-    ): URI {
+    private fun requireHttps(value: String): URI {
         val uri =
             try {
                 URI(value)
             } catch (failure: Exception) {
-                throw ResourceDownloadException(stableCode, message, failure)
+                throw ResourceDownloadException("download_url_invalid", "Resource URL is invalid", failure)
             }
         if (
             uri.scheme != "https" || uri.host.isNullOrBlank() || uri.userInfo != null ||
                 uri.fragment != null
         ) {
-            throw ResourceDownloadException(stableCode, message)
+            throw ResourceDownloadException("download_url_invalid", "Resource URL is invalid")
+        }
+        return uri
+    }
+
+    private fun requireRedirectHttps(value: String): URI {
+        val uri =
+            try {
+                URI(value)
+            } catch (failure: Exception) {
+                throw ResourceDownloadException(
+                    "download_redirect_invalid",
+                    "Resource download returned an invalid redirect",
+                    failure,
+                )
+            }
+        if (
+            uri.scheme != "https" || uri.host.isNullOrBlank() || uri.userInfo != null ||
+                uri.fragment != null
+        ) {
+            throw ResourceDownloadException(
+                "download_redirect_invalid",
+                "Resource download returned an invalid redirect",
+            )
         }
         return uri
     }
