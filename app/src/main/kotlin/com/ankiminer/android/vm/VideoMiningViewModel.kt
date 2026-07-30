@@ -33,8 +33,9 @@ import com.ankiminer.android.ui.video.DocumentSlotState
 import com.ankiminer.android.ui.video.MiningCommandError
 import com.ankiminer.android.ui.video.VideoMiningUiState
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -44,7 +45,6 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 class VideoMiningViewModel internal constructor(
     private val repository: MiningRepository,
@@ -52,6 +52,7 @@ class VideoMiningViewModel internal constructor(
     private val runtimeWorkState: StateFlow<RuntimeWorkCoordinator.Kind?> = MutableStateFlow(null),
     savedStateHandle: SavedStateHandle = SavedStateHandle(),
     selectionInventory: SafSelectionInventory? = null,
+    selectionIoDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : ViewModel() {
     private data class LocalState(
         val video: DocumentSlotState = DocumentSlotState(),
@@ -78,6 +79,7 @@ class VideoMiningViewModel internal constructor(
             keyPrefix = "videoMining.video",
             inventory = selectionInventory,
             inventorySlot = SafSelectionSlot.VIDEO,
+            ioDispatcher = selectionIoDispatcher,
         )
     private val subtitleSelection =
         SavedDocumentSelectionStore(
@@ -85,6 +87,7 @@ class VideoMiningViewModel internal constructor(
             keyPrefix = "videoMining.subtitle",
             inventory = selectionInventory,
             inventorySlot = SafSelectionSlot.VIDEO_SUBTITLE,
+            ioDispatcher = selectionIoDispatcher,
         )
 
     /** Small app-shell state; progress-only repository updates are filtered before composition. */
@@ -529,29 +532,29 @@ class VideoMiningViewModel internal constructor(
         val job =
             viewModelScope.launch {
                 try {
-                    // Android's withContext(IO) has a prompt-cancellation handoff: without this
-                    // ownership-transfer section, cancellation could discard a SafDocument after
-                    // takePersistableUriPermission succeeded, leaving no URI token to release.
-                    val document =
-                        withContext(NonCancellable) {
-                            safBroker.retainReadAccess(uri)
-                        }
-                    if (isCurrentDocumentRequest(kind, sequence)) {
-                        if (!selectionStore(kind).save(document)) {
-                            releaseDocumentNow(document)
+                    val result =
+                        SafSelectionOwnershipTransaction(
+                            broker = safBroker,
+                            store = selectionStore(kind),
+                        ).acquirePersistPublish(
+                            uri = uri,
+                            publish = { document ->
+                                check(isCurrentDocumentRequest(kind, sequence)) {
+                                    "Document request became stale before publication"
+                                }
+                                var replaced: SafDocument? = null
+                                localState.update { local ->
+                                    replaced = local.document(kind)
+                                    local.withDocument(kind, document)
+                                }
+                                replaced
+                            },
+                        )
+                    when (result) {
+                        is SafSelectionOwnershipResult.Published ->
+                            result.value?.let(::releaseDocument)
+                        is SafSelectionOwnershipResult.Rejected ->
                             localState.update { local -> local.withDocumentFailure(kind) }
-                            return@launch
-                        }
-                        var replaced: SafDocument? = null
-                        localState.update { local ->
-                            replaced = local.document(kind)
-                            local.withDocument(kind, document)
-                        }
-                        replaced?.let(::releaseDocument)
-                    } else {
-                        // A non-cooperative provider can finish after cancellation. Its newly
-                        // retained grant has no selection owner and must be released.
-                        releaseDocumentNow(document)
                     }
                 } catch (failure: CancellationException) {
                     throw failure
@@ -602,19 +605,6 @@ class VideoMiningViewModel internal constructor(
         // retry cleanup from onCleared. Transfer release to the process-scoped broker immediately;
         // a queued viewModelScope coroutine could be cancelled before its body ever starts.
         safBroker.releaseReadAccessEventually(document.uri)
-    }
-
-    private suspend fun releaseDocumentNow(document: SafDocument) {
-        try {
-            // A cancelled, non-cooperative retain may resume with a newly acquired platform grant.
-            // Cleanup must therefore outlive cancellation of the superseded picker coroutine.
-            withContext(NonCancellable) {
-                safBroker.releaseReadAccess(document.uri)
-            }
-        } catch (_: Exception) {
-            // Startup reconciliation in the application-scoped coordinator owns retrying an
-            // uncertain platform release; clearing the UI selection must remain usable.
-        }
     }
 
     private fun isCurrentDocumentRequest(

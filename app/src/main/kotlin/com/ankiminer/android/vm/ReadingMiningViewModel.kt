@@ -37,8 +37,9 @@ import com.ankiminer.android.ui.reading.isReadingArchive
 import com.ankiminer.android.ui.reading.readingArchiveMatches
 import com.ankiminer.android.ui.reading.readingSourceKind
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -48,7 +49,6 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 /** Owns live SAF grants and revalidates saved URI/display-name metadata after recreation. */
 class ReadingMiningViewModel internal constructor(
@@ -57,6 +57,7 @@ class ReadingMiningViewModel internal constructor(
     private val runtimeWorkState: StateFlow<RuntimeWorkCoordinator.Kind?> = MutableStateFlow(null),
     private val savedStateHandle: SavedStateHandle = SavedStateHandle(),
     selectionInventory: SafSelectionInventory? = null,
+    selectionIoDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : ViewModel() {
     private data class LocalState(
         val source: ReadingDocumentSlotState = ReadingDocumentSlotState(),
@@ -74,6 +75,13 @@ class ReadingMiningViewModel internal constructor(
         ARCHIVE,
     }
 
+    private data class DocumentPublication(
+        val replacedDocument: SafDocument?,
+        val archiveToClear: SafDocument?,
+        val clearArchive: Boolean,
+        val clearSeries: Boolean,
+    )
+
     private var sourceDocumentRequest = 0L
     private var archiveDocumentRequest = 0L
     private var sourceDocumentJob: Job? = null
@@ -86,6 +94,7 @@ class ReadingMiningViewModel internal constructor(
             keyPrefix = "readingMining.source",
             inventory = selectionInventory,
             inventorySlot = SafSelectionSlot.READING_SOURCE,
+            ioDispatcher = selectionIoDispatcher,
         )
     private val archiveSelection =
         SavedDocumentSelectionStore(
@@ -93,6 +102,7 @@ class ReadingMiningViewModel internal constructor(
             keyPrefix = "readingMining.archive",
             inventory = selectionInventory,
             inventorySlot = SafSelectionSlot.READING_ARCHIVE,
+            ioDispatcher = selectionIoDispatcher,
         )
     private val subtitleSeriesSelection =
         SavedTextValueStore(
@@ -614,30 +624,46 @@ class ReadingMiningViewModel internal constructor(
         val job =
             viewModelScope.launch {
                 try {
-                    // Persistable permission acquisition is an ownership transfer. It must finish
-                    // even if a newer picker result cancels this coroutine, so the stale result
-                    // can release the newly acquired grant deterministically.
-                    val document =
-                        withContext(NonCancellable) {
-                            safBroker.retainReadAccess(uri)
-                        }
-                    if (!isCurrentDocumentRequest(kind, sequence)) {
-                        releaseDocumentNow(document)
-                        return@launch
-                    }
+                    var rejectionError: ReadingDocumentSelectionError? = null
+                    val result =
+                        SafSelectionOwnershipTransaction(
+                            broker = safBroker,
+                            store = selectionStore(kind),
+                        ).acquirePersistPublish(
+                            uri = uri,
+                            accept = { document ->
+                                documentSelectionError(kind, document)
+                                    .also { rejectionError = it } == null
+                            },
+                            discardPersistedOnRejection = restoring,
+                            publish = { document ->
+                                check(isCurrentDocumentRequest(kind, sequence)) {
+                                    "Document request became stale before publication"
+                                }
+                                when (kind) {
+                                    DocumentKind.SOURCE ->
+                                        publishResolvedSource(document, restoring)
+                                    DocumentKind.ARCHIVE ->
+                                        publishResolvedArchive(document)
+                                }
+                            },
+                        )
                     val accepted =
-                        when (kind) {
-                            DocumentKind.SOURCE -> acceptResolvedSource(document)
-                            DocumentKind.ARCHIVE -> acceptResolvedArchive(document)
+                        when (result) {
+                            is SafSelectionOwnershipResult.Published -> {
+                                finishDocumentPublication(kind, result.value)
+                                true
+                            }
+                            is SafSelectionOwnershipResult.Rejected -> {
+                                localState.update { local ->
+                                    local.withSelectionRejection(kind, rejectionError)
+                                }
+                                if (restoring && kind == DocumentKind.SOURCE) {
+                                    clearRestoredSourceDependents()
+                                }
+                                false
+                            }
                         }
-                    if (!accepted && restoring) {
-                        selectionStore(kind).clear()
-                        if (kind == DocumentKind.SOURCE) {
-                            archiveSelection.clear()
-                            subtitleSeriesSelection.clear()
-                            localState.update { it.copy(subtitleSeriesName = "") }
-                        }
-                    }
                     onResolved?.invoke(accepted)
                 } catch (failure: CancellationException) {
                     throw failure
@@ -658,6 +684,121 @@ class ReadingMiningViewModel internal constructor(
                 }
             }
         setDocumentJob(kind, job)
+    }
+
+    private fun documentSelectionError(
+        kind: DocumentKind,
+        document: SafDocument,
+    ): ReadingDocumentSelectionError? =
+        when (kind) {
+            DocumentKind.SOURCE ->
+                if (readingSourceKind(document.displayName) == null) {
+                    ReadingDocumentSelectionError.SOURCE_TYPE
+                } else {
+                    null
+                }
+            DocumentKind.ARCHIVE -> {
+                val local = localState.value
+                val source = local.source.document
+                when {
+                    !isReadingArchive(document.displayName) ->
+                        ReadingDocumentSelectionError.ARCHIVE_TYPE
+                    local.sourceKind != ReadingSourceKindUi.MOKURO || source == null ->
+                        ReadingDocumentSelectionError.ARCHIVE_NAME
+                    !readingArchiveMatches(source.displayName, document.displayName) ->
+                        ReadingDocumentSelectionError.ARCHIVE_NAME
+                    else -> null
+                }
+            }
+        }
+
+    private fun publishResolvedSource(
+        document: SafDocument,
+        restoring: Boolean,
+    ): DocumentPublication {
+        val newKind = requireNotNull(readingSourceKind(document.displayName))
+        var replacedSource: SafDocument? = null
+        var archiveToClear: SafDocument? = null
+        var clearArchive = false
+        localState.update { local ->
+            replacedSource = local.source.document
+            val archiveCanRemain =
+                newKind == ReadingSourceKindUi.MOKURO &&
+                    local.archive.document?.let { archive ->
+                        readingArchiveMatches(document.displayName, archive.displayName)
+                    } == true
+            val preserveUnresolvedArchive =
+                restoring &&
+                    newKind == ReadingSourceKindUi.MOKURO &&
+                    local.archive.document == null
+            clearArchive = !archiveCanRemain && !preserveUnresolvedArchive
+            if (clearArchive) archiveToClear = local.archive.document
+            local.copy(
+                source = ReadingDocumentSlotState(document = document),
+                sourceKind = newKind,
+            )
+        }
+        return DocumentPublication(
+            replacedDocument = replacedSource,
+            archiveToClear = archiveToClear,
+            clearArchive = clearArchive,
+            clearSeries = newKind != ReadingSourceKindUi.SUBTITLE,
+        )
+    }
+
+    private fun publishResolvedArchive(document: SafDocument): DocumentPublication {
+        var replaced: SafDocument? = null
+        localState.update { current ->
+            replaced = current.archive.document
+            current.copy(archive = ReadingDocumentSlotState(document = document))
+        }
+        return DocumentPublication(
+            replacedDocument = replaced,
+            archiveToClear = null,
+            clearArchive = false,
+            clearSeries = false,
+        )
+    }
+
+    private suspend fun finishDocumentPublication(
+        kind: DocumentKind,
+        publication: DocumentPublication,
+    ) {
+        if (kind == DocumentKind.SOURCE) {
+            // Any archive picker was launched against the previous primary filename. Even when an
+            // installed archive remains compatible, a late result for the previous source is stale.
+            archiveDocumentRequest += 1
+            archiveDocumentJob?.cancel()
+            if (publication.clearArchive) {
+                SafSelectionOwnershipTransaction(safBroker, archiveSelection)
+                    .clearPersistPublishRelease(publication.archiveToClear) {
+                        localState.update {
+                            it.copy(archive = ReadingDocumentSlotState())
+                        }
+                    }
+            }
+            if (publication.clearSeries) {
+                subtitleSeriesSelection.clear()
+                localState.update { it.copy(subtitleSeriesName = "") }
+            }
+        }
+        publication.replacedDocument?.let(::releaseDocument)
+    }
+
+    private suspend fun clearRestoredSourceDependents() {
+        archiveDocumentRequest += 1
+        archiveDocumentJob?.cancel()
+        val archive = localState.value.archive.document
+        SafSelectionOwnershipTransaction(safBroker, archiveSelection)
+            .clearPersistPublishRelease(archive) {
+                subtitleSeriesSelection.clear()
+                localState.update {
+                    it.copy(
+                        archive = ReadingDocumentSlotState(),
+                        subtitleSeriesName = "",
+                    )
+                }
+            }
     }
 
     private fun resolvePendingArchive() {
@@ -693,99 +834,6 @@ class ReadingMiningViewModel internal constructor(
         }
     }
 
-    private suspend fun acceptResolvedSource(document: SafDocument): Boolean {
-        val newKind = readingSourceKind(document.displayName)
-        if (newKind == null) {
-            localState.update { local ->
-                local.copy(
-                    source =
-                        local.source.copy(
-                            isResolving = false,
-                            error = ReadingDocumentSelectionError.SOURCE_TYPE,
-                        ),
-                )
-            }
-            releaseDocumentNow(document)
-            return false
-        }
-        if (!sourceSelection.save(document)) {
-            localState.update { local -> local.withAccessFailure(DocumentKind.SOURCE) }
-            releaseDocumentNow(document)
-            return false
-        }
-
-        var replacedSource: SafDocument? = null
-        var removedArchive: SafDocument? = null
-        localState.update { local ->
-            replacedSource = local.source.document
-            val archiveCanRemain =
-                newKind == ReadingSourceKindUi.MOKURO &&
-                    local.archive.document?.let { archive ->
-                        readingArchiveMatches(document.displayName, archive.displayName)
-                    } == true
-            if (!archiveCanRemain) removedArchive = local.archive.document
-            local.copy(
-                source = ReadingDocumentSlotState(document = document),
-                archive = if (archiveCanRemain) local.archive else ReadingDocumentSlotState(),
-                sourceKind = newKind,
-            )
-        }
-        // Any archive picker was launched against the previous primary filename. Even when the
-        // currently installed archive remains compatible, a late picker result must go stale.
-        archiveDocumentRequest += 1
-        archiveDocumentJob?.cancel()
-        if (removedArchive != null || newKind != ReadingSourceKindUi.MOKURO) {
-            archiveSelection.clear()
-        }
-        if (newKind != ReadingSourceKindUi.SUBTITLE) {
-            subtitleSeriesSelection.clear()
-            localState.update { it.copy(subtitleSeriesName = "") }
-        }
-        replacedSource?.let(::releaseDocument)
-        removedArchive?.let(::releaseDocument)
-        return true
-    }
-
-    private suspend fun acceptResolvedArchive(document: SafDocument): Boolean {
-        val local = localState.value
-        val source = local.source.document
-        val error =
-            when {
-                !isReadingArchive(document.displayName) ->
-                    ReadingDocumentSelectionError.ARCHIVE_TYPE
-                local.sourceKind != ReadingSourceKindUi.MOKURO || source == null ->
-                    ReadingDocumentSelectionError.ARCHIVE_NAME
-                !readingArchiveMatches(source.displayName, document.displayName) ->
-                    ReadingDocumentSelectionError.ARCHIVE_NAME
-                else -> null
-            }
-        if (error != null) {
-            localState.update { current ->
-                current.copy(
-                    archive =
-                        current.archive.copy(
-                            isResolving = false,
-                            error = error,
-                        ),
-                )
-            }
-            releaseDocumentNow(document)
-            return false
-        }
-        if (!archiveSelection.save(document)) {
-            localState.update { current -> current.withAccessFailure(DocumentKind.ARCHIVE) }
-            releaseDocumentNow(document)
-            return false
-        }
-        var replaced: SafDocument? = null
-        localState.update { current ->
-            replaced = current.archive.document
-            current.copy(archive = ReadingDocumentSlotState(document = document))
-        }
-        replaced?.let(::releaseDocument)
-        return true
-    }
-
     override fun onCleared() {
         sourceDocumentRequest += 1
         archiveDocumentRequest += 1
@@ -814,16 +862,6 @@ class ReadingMiningViewModel internal constructor(
 
     private fun releaseDocument(document: SafDocument) {
         safBroker.releaseReadAccessEventually(document.uri)
-    }
-
-    private suspend fun releaseDocumentNow(document: SafDocument) {
-        try {
-            withContext(NonCancellable) {
-                safBroker.releaseReadAccess(document.uri)
-            }
-        } catch (_: Exception) {
-            // Process-start reconciliation owns retrying an uncertain platform release.
-        }
     }
 
     private fun nextDocumentRequest(kind: DocumentKind): Long =
@@ -887,6 +925,29 @@ class ReadingMiningViewModel internal constructor(
                         archive.copy(
                             isResolving = false,
                             error = ReadingDocumentSelectionError.ARCHIVE_ACCESS,
+                        ),
+                )
+        }
+
+    private fun LocalState.withSelectionRejection(
+        kind: DocumentKind,
+        error: ReadingDocumentSelectionError?,
+    ): LocalState =
+        when (kind) {
+            DocumentKind.SOURCE ->
+                copy(
+                    source =
+                        source.copy(
+                            isResolving = false,
+                            error = error ?: ReadingDocumentSelectionError.SOURCE_ACCESS,
+                        ),
+                )
+            DocumentKind.ARCHIVE ->
+                copy(
+                    archive =
+                        archive.copy(
+                            isResolving = false,
+                            error = error ?: ReadingDocumentSelectionError.ARCHIVE_ACCESS,
                         ),
                 )
         }

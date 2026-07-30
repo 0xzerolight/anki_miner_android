@@ -5,8 +5,13 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
 import com.ankiminer.android.MainDispatcherRule
 import com.ankiminer.android.data.RuntimeWorkCoordinator
+import com.ankiminer.android.media.AndroidSafBroker
+import com.ankiminer.android.media.ProviderIoCancellation
 import com.ankiminer.android.media.SafBroker
 import com.ankiminer.android.media.SafDocument
+import com.ankiminer.android.media.SafProviderAccess
+import com.ankiminer.android.media.SafSelectionInventory
+import com.ankiminer.android.media.SafSelectionPersistenceException
 import com.ankiminer.android.media.SafSelectionRecord
 import com.ankiminer.android.media.SafSelectionSlot
 import com.ankiminer.android.media.TransientSafSelectionInventory
@@ -192,6 +197,72 @@ class ReadingMiningViewModelTest {
         }
 
     @Test
+    fun rejectedRestoreClearsDurableOwnerBeforePlatformGrantRelease() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val uri = "content://test/renamed-source"
+            val events = mutableListOf<String>()
+            val inventory = RecordingSelectionInventory(events)
+            inventory.putSelection(
+                SafSelectionSlot.READING_SOURCE,
+                SafSelectionRecord(uri, "book.mokuro"),
+            )
+            events.clear()
+            val broker =
+                AndroidSafBroker(
+                    providerAccess =
+                        RenamingProviderAccess(
+                            grants = setOf(uri),
+                            resolved = SafDocument(uri, "renamed.bin", null, null),
+                            events = events,
+                        ),
+                    ioDispatcher = mainDispatcherRule.dispatcher,
+                    selectionInventory = inventory,
+                )
+
+            val viewModel =
+                ReadingMiningViewModel(
+                    repository = RecordingReadingRepository(),
+                    safBroker = broker,
+                    selectionInventory = inventory,
+                    selectionIoDispatcher = mainDispatcherRule.dispatcher,
+                )
+            runCurrent()
+
+            assertEquals(
+                ReadingDocumentSelectionError.SOURCE_TYPE,
+                viewModel.uiState.value.source.error,
+            )
+            assertNull(inventory.selection(SafSelectionSlot.READING_SOURCE))
+            assertTrue(events.indexOf("clear:READING_SOURCE") >= 0)
+            assertTrue(events.indexOf("release:$uri") > events.indexOf("clear:READING_SOURCE"))
+        }
+
+    @Test
+    fun failedReadingInventoryCommitReleasesNewlyAcquiredGrant() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val inventory = FailOnceSelectionInventory()
+            val broker = ImmediateSafBroker()
+            val viewModel =
+                ReadingMiningViewModel(
+                    repository = RecordingReadingRepository(),
+                    safBroker = broker,
+                    selectionInventory = inventory,
+                    selectionIoDispatcher = mainDispatcherRule.dispatcher,
+                )
+
+            viewModel.onSourcePicked("content://test/new-book.epub")
+            runCurrent()
+
+            assertEquals(
+                ReadingDocumentSelectionError.SOURCE_ACCESS,
+                viewModel.uiState.value.source.error,
+            )
+            assertNull(viewModel.uiState.value.source.document)
+            assertNull(inventory.selection(SafSelectionSlot.READING_SOURCE))
+            assertEquals(listOf("content://test/new-book.epub"), broker.releasedUris)
+        }
+
+    @Test
     fun subtitleStartUsesSingleSourceAndTrimmedOptionalSeriesName() =
         runTest(mainDispatcherRule.dispatcher) {
             val repository = RecordingReadingRepository()
@@ -260,9 +331,10 @@ class ReadingMiningViewModelTest {
             assertNull(viewModel.uiState.value.archive.document)
             assertTrue(viewModel.uiState.value.canStart)
             assertEquals(
-                listOf("content://test/book.mokuro", "content://test/book.cbz"),
+                listOf("content://test/book.mokuro"),
                 broker.eventualReleaseUris,
             )
+            assertEquals(listOf("content://test/book.cbz"), broker.releasedUris)
         }
 
     @Test
@@ -578,6 +650,77 @@ class ReadingMiningViewModelTest {
             requireNotNull(pending.remove(uri)).resumeWithException(
                 IllegalStateException("revoked"),
             )
+        }
+    }
+
+    private class RenamingProviderAccess(
+        private val grants: Set<String>,
+        private val resolved: SafDocument,
+        private val events: MutableList<String>,
+    ) : SafProviderAccess {
+        override fun persistedReadGrantUris(
+            cancellation: ProviderIoCancellation,
+        ): List<String> = grants.toList()
+
+        override fun resolveDocument(
+            uri: String,
+            cancellation: ProviderIoCancellation,
+        ): SafDocument = resolved
+
+        override fun takeReadGrant(uri: String) {
+            events += "take:$uri"
+        }
+
+        override fun releaseReadGrant(uri: String) {
+            events += "release:$uri"
+        }
+    }
+
+    private open class RecordingSelectionInventory(
+        private val events: MutableList<String> = mutableListOf(),
+    ) : SafSelectionInventory {
+        protected val selections = mutableMapOf<SafSelectionSlot, SafSelectionRecord>()
+        private val text = mutableMapOf<SafSelectionSlot, String>()
+
+        override fun selection(slot: SafSelectionSlot): SafSelectionRecord? = selections[slot]
+
+        override fun putSelection(
+            slot: SafSelectionSlot,
+            selection: SafSelectionRecord?,
+        ) {
+            events += if (selection == null) "clear:$slot" else "save:$slot"
+            if (selection == null) selections.remove(slot) else selections[slot] = selection
+        }
+
+        override fun text(slot: SafSelectionSlot): String? = text[slot]
+
+        override fun putText(
+            slot: SafSelectionSlot,
+            value: String?,
+        ) {
+            if (value == null) text.remove(slot) else text[slot] = value
+        }
+
+        override fun ownedUris(): Set<String> =
+            selections.values.mapTo(linkedSetOf(), SafSelectionRecord::uri)
+
+        override fun pruneMissingGrants(grantedUris: Set<String>) {
+            selections.entries.removeAll { it.value.uri !in grantedUris }
+        }
+    }
+
+    private class FailOnceSelectionInventory : RecordingSelectionInventory() {
+        private var failNextSave = true
+
+        override fun putSelection(
+            slot: SafSelectionSlot,
+            selection: SafSelectionRecord?,
+        ) {
+            super.putSelection(slot, selection)
+            if (selection != null && failNextSave) {
+                failNextSave = false
+                throw SafSelectionPersistenceException("injected commit failure")
+            }
         }
     }
 

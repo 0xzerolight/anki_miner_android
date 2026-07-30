@@ -9,6 +9,8 @@ import com.ankiminer.android.diagnostics.TesterDiagnosticsShareAction
 import com.ankiminer.android.media.SafBroker
 import com.ankiminer.android.media.SafDocument
 import com.ankiminer.android.media.SafSelectionRecord
+import com.ankiminer.android.media.SafSelectionInventory
+import com.ankiminer.android.media.SafSelectionPersistenceException
 import com.ankiminer.android.media.SafSelectionSlot
 import com.ankiminer.android.media.TransientSafSelectionInventory
 import com.ankiminer.android.mining.CurationCandidate
@@ -207,6 +209,28 @@ class VideoMiningViewModelTest {
             assertNull(selectionStore.restore())
             assertNull(savedState.get<String>("videoMining.video.uri"))
             assertNull(savedState.get<String>("videoMining.video.displayName"))
+        }
+
+    @Test
+    fun failedVideoInventoryCommitReleasesNewlyAcquiredGrant() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val inventory = FailOnceSelectionInventory()
+            val broker = ImmediateSafBroker()
+            val viewModel =
+                VideoMiningViewModel(
+                    repository = RecordingRepository(),
+                    safBroker = broker,
+                    selectionInventory = inventory,
+                    selectionIoDispatcher = mainDispatcherRule.dispatcher,
+                )
+
+            viewModel.onVideoPicked("content://test/new-video.mkv")
+            runCurrent()
+
+            assertEquals(DocumentSelectionError.VIDEO, viewModel.uiState.value.video.error)
+            assertNull(viewModel.uiState.value.video.document)
+            assertNull(inventory.selection(SafSelectionSlot.VIDEO))
+            assertEquals(listOf("content://test/new-video.mkv"), broker.releasedUris)
         }
 
     @Test
@@ -942,6 +966,41 @@ class VideoMiningViewModelTest {
 
         fun fail(uri: String) {
             requireNotNull(pending.remove(uri)).resumeWithException(IllegalStateException("stale"))
+        }
+    }
+
+    private class FailOnceSelectionInventory : SafSelectionInventory {
+        private val selections = mutableMapOf<SafSelectionSlot, SafSelectionRecord>()
+        private val text = mutableMapOf<SafSelectionSlot, String>()
+        private var failNextSave = true
+
+        override fun selection(slot: SafSelectionSlot): SafSelectionRecord? = selections[slot]
+
+        override fun putSelection(
+            slot: SafSelectionSlot,
+            selection: SafSelectionRecord?,
+        ) {
+            if (selection == null) selections.remove(slot) else selections[slot] = selection
+            if (selection != null && failNextSave) {
+                failNextSave = false
+                throw SafSelectionPersistenceException("injected commit failure")
+            }
+        }
+
+        override fun text(slot: SafSelectionSlot): String? = text[slot]
+
+        override fun putText(
+            slot: SafSelectionSlot,
+            value: String?,
+        ) {
+            if (value == null) text.remove(slot) else text[slot] = value
+        }
+
+        override fun ownedUris(): Set<String> =
+            selections.values.mapTo(linkedSetOf(), SafSelectionRecord::uri)
+
+        override fun pruneMissingGrants(grantedUris: Set<String>) {
+            selections.entries.removeAll { it.value.uri !in grantedUris }
         }
     }
 
