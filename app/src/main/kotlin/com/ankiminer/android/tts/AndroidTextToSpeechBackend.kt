@@ -21,14 +21,19 @@ internal data class OfflineJapaneseVoiceCandidate(
     val quality: Int,
     val latency: Int,
     val networkRequired: Boolean,
+    val installed: Boolean,
 )
 
 /** Deterministic selector: exact ja-JP, quality, latency, then stable voice ID. */
-internal fun selectOfflineJapaneseVoice(candidates: List<OfflineJapaneseVoiceCandidate>): String? =
+internal fun selectOfflineJapaneseVoice(
+    candidates: List<OfflineJapaneseVoiceCandidate>,
+    trySelect: (String) -> Boolean = { true },
+): String? =
     candidates
         .asSequence()
         .filter { candidate ->
             !candidate.networkRequired &&
+                candidate.installed &&
                 Locale.forLanguageTag(candidate.languageTag).language == Locale.JAPANESE.language
         }
         .sortedWith(
@@ -38,8 +43,8 @@ internal fun selectOfflineJapaneseVoice(candidates: List<OfflineJapaneseVoiceCan
                 .thenBy { it.latency }
                 .thenBy { it.id },
         )
-        .firstOrNull()
-        ?.id
+        .map { it.id }
+        .firstOrNull(trySelect)
 
 /** Factory intended for injection into the process-owned reading repository. */
 internal class AndroidSentenceAudioSynthesizerFactory(
@@ -113,11 +118,18 @@ private class AndroidOfflineJapaneseTtsBackendFactory(
                         quality = voice.quality,
                         latency = voice.latency,
                         networkRequired = voice.isNetworkConnectionRequired,
+                        installed =
+                            TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED !in
+                                voice.features.orEmpty(),
                     )
                 }
-            val selectedId = selectOfflineJapaneseVoice(candidates)
+            val selectedId =
+                selectOfflineJapaneseVoice(candidates) { candidateId ->
+                    val candidate = voices.singleOrNull { voice -> voice.name == candidateId }
+                    candidate != null && textToSpeech.setVoice(candidate) == TextToSpeech.SUCCESS
+                }
             val selected = voices.singleOrNull { voice -> voice.name == selectedId }
-            if (selected == null || textToSpeech.setVoice(selected) != TextToSpeech.SUCCESS) {
+            if (selected == null) {
                 textToSpeech.shutdownQuietly()
                 return OfflineTtsBackendOpenResult.Unavailable("offline_japanese_voice_unavailable")
             }
