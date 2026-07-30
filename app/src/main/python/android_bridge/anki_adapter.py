@@ -14,7 +14,7 @@ import logging
 import os
 import re
 import stat
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence, Set
 from dataclasses import dataclass
 from html import escape as html_escape
 from html import unescape as html_unescape
@@ -250,6 +250,7 @@ class _PreparedDictionaryMedia:
     assets: tuple[_MediaAsset, ...]
     sources_by_id: dict[str, str]
     confirmed_missing_sources: frozenset[str]
+    unavailable_sources: frozenset[str]
 
 
 @dataclass(frozen=True)
@@ -641,6 +642,7 @@ class AndroidAnkiAdapter:
         self._outstanding_baseline_token: str | None = None
         self._existing_vocab_cache: set[str] | None = None
         self._dict_media_uploaded: set[str] = set()
+        self._dict_media_missing_sources: set[str] = set()
         self._dict_media_actual_names: dict[str, str] = {}
         self._dict_media_bindings: dict[str, _MediaAcknowledgement] = {}
         self._stored_media_name_owners: dict[str, tuple[str, str]] = {}
@@ -692,6 +694,7 @@ class AndroidAnkiAdapter:
             self._outstanding_baseline_token = None
             self._existing_vocab_cache = None
             self._dict_media_uploaded.clear()
+            self._dict_media_missing_sources.clear()
             self._dict_media_actual_names.clear()
             self._dict_media_bindings.clear()
             self._stored_media_name_owners.clear()
@@ -941,11 +944,7 @@ class AndroidAnkiAdapter:
             "maxTotalUtf8Bytes": _KNOWN_VOCABULARY_PAGE_UTF8_BYTES,
         }
         try:
-            deck_scope = (
-                {"deckName": self.config.anki_deck_name}
-                if self.config.allow_duplicate_cards
-                else {}
-            )
+            deck_scope = {"deckName": self.config.anki_deck_name} if self.config.allow_duplicate_cards else {}
             payload = self._callbacks.scan_first_fields(
                 {
                     "scope": {
@@ -1599,17 +1598,24 @@ class AndroidAnkiAdapter:
         if source in self._dict_media_bindings:
             return True
 
-        # Renderer-marked basenames remain local-only even when their file is
-        # missing. Preserve them for the existing media preflight/collision
-        # proof, which handles disappearance/appearance races fail-closed.
-        return True
+        # Preserve unresolved renderer basenames for the media preflight and
+        # collision proof. Once absence is confirmed, later cards omit the
+        # source instead of materializing another broken reference.
+        return source not in self._dict_media_missing_sources
 
-    def _sanitize_dictionary_payloads(self, word_data_list: Sequence[Any]) -> list[Any]:
+    def _sanitize_dictionary_payloads(
+        self,
+        word_data_list: Sequence[Any],
+        rejected_sources: Set[str] = frozenset(),
+    ) -> list[Any]:
         """Remove remotely loading glossary media before note preflight."""
 
         from dataclasses import replace
 
         from .dictionary_html import sanitize_dictionary_html
+
+        def source_allowed(source: str) -> bool:
+            return source not in rejected_sources and self._is_allowed_dictionary_image_source(source)
 
         sanitized_payloads: list[Any] = []
         for item in word_data_list:
@@ -1617,19 +1623,23 @@ class AndroidAnkiAdapter:
             sanitized_definition = (
                 sanitize_dictionary_html(
                     definition,
-                    local_source_allowed=self._is_allowed_dictionary_image_source,
+                    local_source_allowed=source_allowed,
                 )
-                if isinstance(definition, str)
+                if self.config.anki_fields.get("definition") and isinstance(definition, str)
                 else definition
             )
 
             extra_fields = item.extra_fields
             sanitized_extra = extra_fields
-            if extra_fields and isinstance(extra_fields.get("glossary"), str):
+            if (
+                self.config.anki_fields.get("glossary")
+                and extra_fields
+                and isinstance(extra_fields.get("glossary"), str)
+            ):
                 glossary = extra_fields["glossary"]
                 sanitized_glossary = sanitize_dictionary_html(
                     glossary,
-                    local_source_allowed=self._is_allowed_dictionary_image_source,
+                    local_source_allowed=source_allowed,
                 )
                 if sanitized_glossary != glossary:
                     sanitized_extra = {
@@ -1811,6 +1821,7 @@ class AndroidAnkiAdapter:
         assets: list[_MediaAsset] = []
         sources_by_id: dict[str, str] = {}
         confirmed_missing_sources: set[str] = set()
+        unavailable_sources: set[str] = set()
         for source in preflight_plan.dictionary_media_sources:
             if source in self._dict_media_uploaded:
                 continue
@@ -1821,12 +1832,14 @@ class AndroidAnkiAdapter:
                     confirmed_missing_sources.add(source)
                 else:
                     logger.warning("Dict media file disappeared from disk: %s", source)
+                unavailable_sources.add(source)
                 continue
             try:
                 resolved_path = runtime_path.resolve()
                 digest = self._stream_media_digest(resolved_path, work_budget)
             except OSError as error:
                 logger.warning("Failed to read dict media file %s: %s", source, error)
+                unavailable_sources.add(source)
                 continue
             if planned_path is None or resolved_path != planned_path:
                 # The bytes were deliberately charged to the runtime work
@@ -1857,6 +1870,7 @@ class AndroidAnkiAdapter:
             tuple(assets),
             sources_by_id,
             frozenset(confirmed_missing_sources),
+            frozenset(unavailable_sources),
         )
 
     def _store_prepared_dictionary_media(
@@ -1870,6 +1884,7 @@ class AndroidAnkiAdapter:
             if source not in self._dict_media_uploaded:
                 logger.warning("Dict media file missing on disk: %s", source)
                 self._dict_media_uploaded.add(source)
+                self._dict_media_missing_sources.add(source)
 
         outcome = self._store_assets(list(prepared.assets))
         assets_by_id = {asset.asset_id: asset for asset in prepared.assets}
@@ -1885,26 +1900,40 @@ class AndroidAnkiAdapter:
                 purpose="dictionary",
                 media_kind=asset.media_kind,
             )
+        failed_sources = set(prepared.unavailable_sources)
+        failed_sources.update(
+            source for asset_id, source in prepared.sources_by_id.items() if asset_id not in outcome.stored
+        )
+        if failed_sources:
+            self.last_media_store_failures += len(failed_sources)
+            word_data_list = self._sanitize_dictionary_payloads(
+                word_data_list,
+                failed_sources,
+            )
         rewritten = self._rewrite_dictionary_payloads(word_data_list)
         if outcome.error is not None:
             _raise_callback_error(outcome.error)
         return rewritten
 
-    @staticmethod
-    def _relevant_source_utf8_bytes(payload: Any) -> int:
+    def _relevant_source_utf8_bytes(self, payload: Any) -> int:
         """Count strings retained or rendered by one card payload.
 
         Sentence-candidate alternatives are deliberately excluded: phase 5 has
         already selected one sentence, and the note builder never traverses the
-        alternatives. Definition/glossary/optional HTML, every direct word
-        string, media names, and source paths are included.
+        alternatives. Materialized definition/glossary HTML, every direct word
+        string, media names, source paths, and mapped optional fields are
+        included.
         """
 
-        values: list[object] = [payload.definition]
+        values: list[object] = []
+        if self.config.anki_fields.get("definition"):
+            values.append(payload.definition)
         values.extend(vars(payload.word).values())
         values.extend(vars(payload.media).values())
         if payload.extra_fields:
             for key, value in payload.extra_fields.items():
+                if key == "glossary" and not self.config.anki_fields.get("glossary"):
+                    continue
                 values.extend((key, value))
         total = 0
         for value in values:
@@ -2227,30 +2256,6 @@ class AndroidAnkiAdapter:
                     worst[field_name] = worst_value
                     note_binding_sources[payload_index].add(("card", filename))
 
-        # Dictionary media discovery scans definition and glossary even when a
-        # particular field is not mapped into this note type. Bound each raw
-        # HTML input before regex work or filesystem access as well.
-        for payload in word_data_list:
-            for html_field in (
-                payload.definition,
-                payload.extra_fields.get("glossary") if payload.extra_fields else None,
-            ):
-                if (
-                    isinstance(html_field, str)
-                    and len(
-                        _strict_utf8_bytes(
-                            html_field,
-                            context="Marked dictionary HTML",
-                            code="invalid_note",
-                        )
-                    )
-                    > _MAX_FIELD_VALUE_UTF8_BYTES
-                ):
-                    _protocol_error(
-                        "note_too_large",
-                        "Marked dictionary HTML exceeds the byte limit",
-                    )
-
         for payload_index, payload in enumerate(word_data_list):
             html_fields = (
                 ("definition", payload.definition),
@@ -2260,9 +2265,15 @@ class AndroidAnkiAdapter:
                 ),
             )
             for note_key, html_field in html_fields:
-                if not isinstance(html_field, str):
+                field_name = self.config.anki_fields.get(note_key, "")
+                if (
+                    not isinstance(html_field, str)
+                    or not field_name
+                    or built_fields[payload_index].get(field_name) != html_field
+                ):
                     continue
-                for source in _extract_dict_media_srcs(html_field):
+                sources = _extract_dict_media_srcs(html_field)
+                for source in sources:
                     _expect_media_basename(
                         source,
                         context="create-call dictionary media filename",
@@ -2282,22 +2293,17 @@ class AndroidAnkiAdapter:
                             else _resolve_dict_media_path(source, self.config.dicts_root)
                         )
 
-                field_name = self.config.anki_fields.get(note_key, "")
-                if field_name and built_fields[payload_index].get(field_name) == html_field:
-                    sources = _extract_dict_media_srcs(html_field)
-                    rewritable_sources = {
-                        source
-                        for source in sources
-                        if dictionary_source_paths[source] is not None or source in self._dict_media_actual_names
-                    }
-                    if rewritable_sources:
-                        worst_fields[payload_index][field_name] = self._rewrite_dictionary_html(
-                            html_field,
-                            dict.fromkeys(rewritable_sources, longest_provider_filename),
-                        )
-                        note_binding_sources[payload_index].update(
-                            ("dictionary", source) for source in rewritable_sources
-                        )
+                rewritable_sources = {
+                    source
+                    for source in sources
+                    if dictionary_source_paths[source] is not None or source in self._dict_media_actual_names
+                }
+                if rewritable_sources:
+                    worst_fields[payload_index][field_name] = self._rewrite_dictionary_html(
+                        html_field,
+                        dict.fromkeys(rewritable_sources, longest_provider_filename),
+                    )
+                    note_binding_sources[payload_index].update(("dictionary", source) for source in rewritable_sources)
 
         planned_dictionary_paths = {
             source: path

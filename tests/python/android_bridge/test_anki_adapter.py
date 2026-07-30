@@ -2730,9 +2730,14 @@ def test_oversized_marked_dictionary_html_fails_before_media_regex_or_callback(
     glossary = marked + "x" * _MAX_FIELD_VALUE_UTF8_BYTES
     card = replace(_card("猫"), extra_fields={"glossary": glossary})
     kotlin = FakeKotlinAnki()
+    base = _config(initialized_bridge_home)
+    config = replace(
+        base,
+        anki_fields={**base.anki_fields, "glossary": "Glossary"},
+    )
 
     with pytest.raises(BridgeProtocolError) as exc_info:
-        _adapter(_config(initialized_bridge_home), kotlin).create_cards_batch([card])
+        _adapter(config, kotlin).create_cards_batch([card])
 
     assert exc_info.value.code == "note_too_large"
     assert not kotlin.requests
@@ -3994,6 +3999,74 @@ def test_media_for_an_unmapped_field_is_neither_stored_nor_bound(initialized_bri
     assert note["mediaBindings"] == []
 
 
+@pytest.mark.parametrize(
+    ("note_key", "definition", "extra_fields"),
+    [
+        (
+            "definition",
+            '<img class="anki-miner-dict-media" src="dict__unmapped.png">',
+            {},
+        ),
+        (
+            "glossary",
+            "definition",
+            {"glossary": ('<img class="anki-miner-dict-media" ' 'src="dict__unmapped.png">')},
+        ),
+    ],
+    ids=["definition", "glossary"],
+)
+def test_dictionary_media_for_unmapped_fields_is_neither_stored_nor_bound(
+    note_key: str,
+    definition: str,
+    extra_fields: dict[str, str],
+    initialized_bridge_home: Path,
+) -> None:
+    media_path = initialized_bridge_home / "dicts" / "dict" / "media" / "unmapped.png"
+    media_path.parent.mkdir(parents=True, exist_ok=True)
+    media_path.write_bytes(b"png")
+    base = _config(initialized_bridge_home)
+    mapped_field = base.anki_fields.get(note_key, "")
+    config = replace(
+        base,
+        anki_fields={**base.anki_fields, note_key: ""},
+    )
+    card = replace(
+        _card("猫", definition=definition),
+        extra_fields=extra_fields,
+    )
+    kotlin = FakeKotlinAnki()
+
+    assert len(_adapter(config, kotlin).create_cards_batch([card])) == 1
+
+    assert kotlin.requests_for("ankiStoreMedia") == []
+    note = kotlin.requests_for("ankiCreateNotes")[0]["payload"]["notes"][0]
+    if mapped_field:
+        assert mapped_field not in note["fields"]
+    assert note["mediaBindings"] == []
+
+
+@pytest.mark.parametrize("note_key", ["definition", "glossary"])
+def test_oversized_unmapped_dictionary_html_does_not_reject_materialized_note(
+    note_key: str,
+    initialized_bridge_home: Path,
+) -> None:
+    marked = '<img class="anki-miner-dict-media" src="dict__unused.png">' + "x" * _MAX_FIELD_VALUE_UTF8_BYTES
+    base = _config(initialized_bridge_home)
+    config = replace(
+        base,
+        anki_fields={**base.anki_fields, note_key: ""},
+    )
+    card = _card("猫", definition=marked if note_key == "definition" else "definition")
+    if note_key == "glossary":
+        card = replace(card, extra_fields={"glossary": marked})
+    kotlin = FakeKotlinAnki()
+
+    assert len(_adapter(config, kotlin).create_cards_batch([card])) == 1
+
+    assert kotlin.requests_for("ankiStoreMedia") == []
+    assert kotlin.requests_for("ankiCreateNotes")[0]["payload"]["notes"][0]["mediaBindings"] == []
+
+
 def test_media_binding_bytes_are_part_of_the_note_content_budget() -> None:
     asset_id = "asset_" + "a" * 32
     actual_filename = "voice.opus"
@@ -4770,6 +4843,67 @@ def test_declared_media_failure_is_nonfatal_and_omits_reference(initialized_brid
     fields = kotlin.requests_for("ankiCreateNotes")[0]["payload"]["notes"][0]["fields"]
     assert fields["SentenceAudio"] == ""
     assert kotlin.requests_for("ankiCreateNotes")[0]["payload"]["notes"][0]["mediaBindings"] == []
+
+
+def test_declared_dictionary_media_failure_is_nonfatal_and_omits_reference(
+    initialized_bridge_home: Path,
+) -> None:
+    media_path = initialized_bridge_home / "dicts" / "dict" / "media" / "failed.png"
+    media_path.parent.mkdir(parents=True, exist_ok=True)
+    media_path.write_bytes(b"png")
+    source = "dict__failed.png"
+    definition = f'<img class="anki-miner-dict-media" src="{source}">'
+    kotlin = FakeKotlinAnki()
+    kotlin.failed_media_names.add(_dictionary_provider_preferred_name(source))
+    adapter = _adapter(_config(initialized_bridge_home), kotlin)
+
+    assert len(adapter.create_cards_batch([_card("猫", definition=definition)])) == 1
+
+    assert adapter.last_media_store_failures == 1
+    note = kotlin.requests_for("ankiCreateNotes")[0]["payload"]["notes"][0]
+    assert note["fields"]["MainDefinition"] == '<img class="anki-miner-dict-media">'
+    assert note["mediaBindings"] == []
+
+
+def test_missing_dictionary_media_is_nonfatal_and_omits_reference(
+    initialized_bridge_home: Path,
+) -> None:
+    definition = '<img class="anki-miner-dict-media" src="dict__missing-at-create.png">'
+    kotlin = FakeKotlinAnki()
+    adapter = _adapter(_config(initialized_bridge_home), kotlin)
+
+    assert len(adapter.create_cards_batch([_card("猫", definition=definition)])) == 1
+
+    assert kotlin.requests_for("ankiStoreMedia") == []
+    assert adapter.last_media_store_failures == 1
+    note = kotlin.requests_for("ankiCreateNotes")[0]["payload"]["notes"][0]
+    assert note["fields"]["MainDefinition"] == '<img class="anki-miner-dict-media">'
+    assert note["mediaBindings"] == []
+
+
+def test_unreadable_dictionary_media_is_nonfatal_and_omits_reference(
+    initialized_bridge_home: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    media_path = initialized_bridge_home / "dicts" / "dict" / "media" / "unreadable.png"
+    media_path.parent.mkdir(parents=True, exist_ok=True)
+    media_path.write_bytes(b"png")
+    definition = '<img class="anki-miner-dict-media" src="dict__unreadable.png">'
+    kotlin = FakeKotlinAnki()
+    adapter = _adapter(_config(initialized_bridge_home), kotlin)
+
+    def unreadable(_path: Path, _budget: object) -> object:
+        raise OSError("read denied")
+
+    monkeypatch.setattr(adapter, "_stream_media_digest", unreadable)
+
+    assert len(adapter.create_cards_batch([_card("猫", definition=definition)])) == 1
+
+    assert kotlin.requests_for("ankiStoreMedia") == []
+    assert adapter.last_media_store_failures == 1
+    note = kotlin.requests_for("ankiCreateNotes")[0]["payload"]["notes"][0]
+    assert note["fields"]["MainDefinition"] == '<img class="anki-miner-dict-media">'
+    assert note["mediaBindings"] == []
 
 
 def test_dictionary_media_uses_source_name_and_success_cache(
