@@ -355,7 +355,14 @@ class JobRegistry:
                     self._active.curation.cancelled = True
                     self._active.curation.page_resolved = True
                     self._active.curation.event.set()
-            log_context.set_active_run(None)
+            else:
+                # Keep the invariant _ACTIVE_RUN_ID is not None iff self._active
+                # is not None. shutdown() cancels; it does not end the run --
+                # the cancelled thread still unwinds through its own exception
+                # handling and cleanup before its `finally: owner.finish()`, and
+                # those records are exactly the ones this feature exists to
+                # make sliceable, so they must keep the real run id.
+                log_context.set_active_run(None)
 
     def await_curation(
         self,

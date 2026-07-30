@@ -49,10 +49,13 @@ class RunContextFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
         # logging.raiseExceptions defaults True, so a filter that raises
         # would print to stderr on every subsequent record, not just drop
-        # this one. A plain attribute read cannot legitimately fail, but the
-        # handler must survive even a hostile record.
+        # this one. Resolve the value through the single precedence rule in
+        # current_run_id() -- one edit site, not two -- and assign it exactly
+        # once so a lookup failure can never trigger a second, unguarded
+        # assignment attempt.
         try:
-            record.run_id = _RUN_ID.get() or _ACTIVE_RUN_ID or "-"
+            run_id = current_run_id() or "-"
         except Exception:
-            record.run_id = "-"
+            run_id = "-"
+        record.run_id = run_id
         return True

@@ -212,20 +212,38 @@ print(json.dumps({
     assert "anki_miner.services.media_extractor" in data["line"]
 
 
-def test_third_party_debug_noise_is_capped_but_first_party_debug_reaches_the_file(
+def test_third_party_noise_is_capped_but_first_party_debug_reaches_the_file(
     tmp_path: Path,
 ) -> None:
+    """The actual threat model is a verbose toggle that lifts the root logger.
+
+    Elevating only the ``anki_miner`` tree (as an earlier version of this test
+    did) never exercises the third-party ceiling at all: root stays clamped at
+    INFO from ``initialize()``, which already blocks a DEBUG record on
+    ``urllib3.connectionpool`` on its own, pin or no pin. Root DEBUG is the
+    condition under which the per-logger ceiling is the only thing left
+    standing between a query string and the file.
+
+    Also covers the leak the flat WARNING ceiling alone would miss: urllib3's
+    connectionpool logs the retry URL, query string included, at WARNING
+    itself (a flaky mobile network hitting Jisho is the common case, not an
+    edge case), so ``urllib3.connectionpool`` needs its own ceiling above
+    WARNING rather than inheriting the plain ``urllib3`` pin.
+    """
+
     result = _run(
         """
 import json, logging, logging.handlers, sys
 from android_bridge.bootstrap import initialize
 initialize(sys.argv[1])
-# Mimics a later verbose toggle: it only ever touches the first-party tree,
-# per the brief; urllib3 is pinned once at handler install and stays there.
-logging.getLogger("anki_miner").setLevel(logging.DEBUG)
+logging.getLogger().setLevel(logging.DEBUG)
 logging.getLogger("anki_miner.services.media_extractor").debug("first party debug line")
 logging.getLogger("urllib3.connectionpool").debug(
     "GET /api/v1/search/words?keyword=%E6%AE%BA%E3%81%99"
+)
+logging.getLogger("urllib3.connectionpool").warning(
+    "Retrying (Retry(total=2)) after connection broken by "
+    "'ProtocolError': /api/v1/search/words?keyword=%E6%AE%BA%E3%81%99"
 )
 handler = next(
     h for h in logging.getLogger().handlers if isinstance(h, logging.handlers.RotatingFileHandler)
@@ -241,6 +259,34 @@ print(json.dumps({"content": content}))
     content = json.loads(result.stdout)["content"]
     assert "first party debug line" in content
     assert "keyword=" not in content
+
+
+def test_install_failure_stashes_traceback_and_writes_stderr_without_breaking_bootstrap(
+    tmp_path: Path,
+) -> None:
+    # A directory in the log file's place makes RotatingFileHandler's open()
+    # fail (IsADirectoryError), forcing the except branch this test targets.
+    (tmp_path / "anki_miner.log").mkdir()
+
+    result = _run(
+        """
+import json, sys
+from android_bridge import bootstrap
+raw = bootstrap.initialize(sys.argv[1])
+print(json.dumps({
+    "message": json.loads(raw)["type"],
+    "error": bootstrap.log_handler_install_error(),
+}))
+""",
+        tmp_path,
+    )
+
+    assert result.returncode == 0, result.stderr
+    data = json.loads(result.stdout)
+    assert data["message"] == "bootstrap.ready"
+    assert data["error"] is not None
+    assert "Traceback" in data["error"]
+    assert "Traceback" in result.stderr
 
 
 def test_initialize_twice_installs_exactly_one_handler(tmp_path: Path) -> None:

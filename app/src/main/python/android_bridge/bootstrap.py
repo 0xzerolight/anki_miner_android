@@ -21,18 +21,26 @@ _LOG_FILE_NAME = "anki_miner.log"
 _LOG_MAX_BYTES = 4_194_304
 _LOG_BACKUP_COUNT = 1
 _log_handler_installed = False
-# Set only on install failure, for a later diagnostics-bundle task to surface;
-# nothing in this module reads it back.
+# Set on install failure, cleared on a later success; read back through
+# log_handler_install_error() by a future diagnostics-bundle task.
 _log_handler_install_error: str | None = None
 
 # ``composition.toml``'s allowed_external includes ``requests`` for Jisho
-# egress. At DEBUG, urllib3.connectionpool logs the full request line
-# including the query string, and a mined vocabulary term arrives there
-# percent-encoded (e.g. ``keyword=%E6%AE%BA%E3%81%99``) where the later
-# redaction pass -- which matches literal CJK -- cannot see it. Pinning here,
-# at handler install, closes that leak regardless of what any later verbose
-# toggle sets on the first-party loggers.
-_THIRD_PARTY_LOG_CEILING = ("urllib3", "requests", "charset_normalizer", "PIL")
+# egress, and a mined vocabulary term reaches urllib3 percent-encoded (e.g.
+# ``keyword=%E6%AE%BA%E3%81%99``), where the later redaction pass -- which
+# matches literal CJK -- cannot see it. A flat WARNING ceiling is not enough:
+# urllib3 2.7's connectionpool logs the retry URL, query string included, at
+# WARNING itself (connectionpool.py:869, hit on any flaky mobile network
+# retry), so that one child logger needs its own ceiling above WARNING. The
+# rest of urllib3 stays at WARNING because its other warnings (TLS, header
+# parsing) carry no URL and are worth keeping.
+_THIRD_PARTY_LOG_CEILING = {
+    "urllib3": logging.WARNING,
+    "urllib3.connectionpool": logging.ERROR,
+    "requests": logging.WARNING,
+    "charset_normalizer": logging.WARNING,
+    "PIL": logging.WARNING,
+}
 
 
 def _install_file_logging(home: str) -> None:
@@ -72,9 +80,12 @@ def _install_file_logging(home: str) -> None:
         root.addHandler(handler)
         if root.level > logging.INFO:
             root.setLevel(logging.INFO)
-        for name in _THIRD_PARTY_LOG_CEILING:
-            logging.getLogger(name).setLevel(logging.WARNING)
+        for name, level in _THIRD_PARTY_LOG_CEILING.items():
+            logging.getLogger(name).setLevel(level)
         _log_handler_installed = True
+        # A prior failed attempt (different home, or a transient install
+        # error) must not leave a stale traceback behind a later success.
+        _log_handler_install_error = None
         # Without this, "no log lines yet" and "no log file at all" look
         # identical from the diagnostics bundle.
         logging.getLogger(__name__).info(
@@ -149,6 +160,17 @@ def initialized_home() -> str | None:
 
     with _LOCK:
         return _initialized_home
+
+
+def log_handler_install_error() -> str | None:
+    """Return the formatted traceback from the last failed handler install.
+
+    ``None`` means either no attempt has failed, or a later attempt for the
+    same home has since succeeded. For a future diagnostics-bundle task.
+    """
+
+    with _LOCK:
+        return _log_handler_install_error
 
 
 def engine_modules_before_initialize() -> tuple[str, ...] | None:

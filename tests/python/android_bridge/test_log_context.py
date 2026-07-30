@@ -3,21 +3,16 @@ from __future__ import annotations
 import logging
 import threading
 
-import pytest
 from android_bridge import log_context
 from android_bridge.jobs import JobRegistry
 
 _RUN_A = "run_" + "a" * 32
 _RUN_B = "run_" + "b" * 32
 
-
-@pytest.fixture(autouse=True)
-def _reset_module_global():
-    # The module global is process-wide state (that is the entire point of
-    # it), so tests must not leak it into each other.
-    log_context.set_active_run(None)
-    yield
-    log_context.set_active_run(None)
+# The autouse fixture that resets log_context's process-wide global around
+# every test lives in conftest.py -- it must apply to every module in this
+# directory (test_jobs.py's begin()/finish() imbalance is what leaks it),
+# not just this one.
 
 
 def _record() -> logging.LogRecord:
@@ -40,10 +35,27 @@ def test_job_registry_begin_and_finish_maintain_the_global():
     assert log_context.current_run_id() is None
 
 
-def test_job_registry_shutdown_clears_the_global():
+def test_job_registry_shutdown_with_an_active_run_preserves_the_global():
+    """shutdown() cancels; it does not end the run.
+
+    JobRegistry keeps ``_active`` set until the cancelled run's own thread
+    unwinds through ``finally: owner.finish()``. Every diagnostic line logged
+    during that unwind -- exception handling, terminal construction, cleanup
+    failures -- is exactly what this feature exists to make sliceable, so the
+    global must still mirror the real run id until finish() actually runs.
+    """
+
     registry = JobRegistry()
     handle = registry.begin()
+    registry.shutdown()
     assert log_context.current_run_id() == handle.run_id
+    registry.finish(handle.run_id)
+    assert log_context.current_run_id() is None
+
+
+def test_job_registry_shutdown_with_no_active_run_leaves_the_global_clear():
+    registry = JobRegistry()
+    assert log_context.current_run_id() is None
     registry.shutdown()
     assert log_context.current_run_id() is None
 
