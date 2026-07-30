@@ -338,6 +338,25 @@ class SetupViewModelTest {
         }
 
     @Test
+    fun `frequency import dispatches pinned NFC display name`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val resources = FakeResourceManager()
+            val model =
+                viewModel(
+                    FakeSettingsRepository(AppSettings()),
+                    FakeAnkiSetupManager(emptyList()),
+                    resources,
+                )
+            advanceUntilIdle()
+
+            model.setFrequencySourceName("\u306F\u3099")
+            model.importFrequencySource("content://import.csv")
+            advanceUntilIdle()
+
+            assertEquals(listOf("\u3070"), resources.frequencySourceNames)
+        }
+
+    @Test
     fun `a colliding frequency name asks before importing and dispatches nothing`() =
         runTest(mainDispatcherRule.dispatcher) {
             val resources = FakeResourceManager()
@@ -560,6 +579,7 @@ class SetupViewModelTest {
         val exportCalls = mutableListOf<String>()
 
         val frequencyImports = mutableListOf<Triple<String, String, Boolean>>()
+        val frequencySourceNames = mutableListOf<String>()
         val pitchImports = mutableListOf<Pair<String, Boolean>>()
         private val mutableState = MutableStateFlow(ResourceManagerState())
 
@@ -589,6 +609,7 @@ class SetupViewModelTest {
             replace: Boolean,
         ) {
             frequencyImports += Triple(uri, sourceId, replace)
+            frequencySourceNames += sourceName
         }
 
         override suspend fun importPitchAccent(

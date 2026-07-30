@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.CreationExtras
 import com.ankiminer.android.R
+import com.ankiminer.android.anki.generated.UnicodeContractV151
 import com.ankiminer.android.anki.provider.AnkiExternalReviewOutcome
 import com.ankiminer.android.anki.provider.AnkiFieldMapPolicy
 import com.ankiminer.android.anki.provider.AnkiFieldMappingChange
@@ -525,7 +526,7 @@ internal class SetupViewModel(
      */
     private fun sanitizeDisplayName(value: String): String {
         val stripped = value.filter { it.code >= 0x20 }.trim()
-        var candidate = stripped
+        var candidate = UnicodeContractV151.normalizeNfc(stripped) ?: return ""
         while (candidate.toByteArray(Charsets.UTF_8).size > 512) {
             candidate = candidate.dropLast(1)
         }
