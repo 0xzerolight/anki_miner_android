@@ -6,6 +6,7 @@ import com.ankiminer.android.anki.protocol.StoreMediaRequest
 import com.ankiminer.android.anki.protocol.StoreMediaResult
 import com.ankiminer.android.anki.protocol.StoredMedia
 import com.ankiminer.android.anki.protocol.VerifyTargetResult
+import com.ankiminer.android.diagnostics.AnkiFaultRecorder
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
@@ -611,6 +612,48 @@ class AnkiProviderCallbacksTest {
             harness.callbacks.releaseRunStateFallback(RUN_ID),
         )
         assertEquals(listOf(null), cleanup)
+    }
+
+    @Test
+    fun `an unnamed runtime failure names its throw site without leaking the exception message`() {
+        AnkiFaultRecorder.clear()
+        val private = "/storage/emulated/0/Books/秘密.epub"
+        val harness =
+            harness(
+                mediaMutations =
+                    FakeMediaMutationService { _, _ ->
+                        throw IllegalStateException("Media lease is not acquired for $private")
+                    },
+            )
+
+        val encoded = harness.callbacks.ankiStoreMedia(storeMediaEnvelope())
+
+        assertTrue(encoded.contains("\"code\":\"internal_error\""))
+        assertTrue(encoded.contains("The Anki provider operation failed safely"))
+        assertTrue(encoded.contains("(storeMedia: IllegalStateException @ "))
+        assertFalse(encoded.contains(private))
+        assertFalse(encoded.contains("Media lease is not acquired"))
+        val recorded = requireNotNull(AnkiFaultRecorder.lastFault())
+        assertTrue(recorded.startsWith("storeMedia:IllegalStateException @ "))
+        assertFalse(recorded.contains("Books"))
+    }
+
+    @Test
+    fun `a typed failure keeps its exact stable message and records no fault`() {
+        AnkiFaultRecorder.clear()
+        val harness =
+            harness(
+                mediaMutations =
+                    FakeMediaMutationService { _, _ ->
+                        throw RunCancelledException()
+                    },
+            )
+
+        val encoded = harness.callbacks.ankiStoreMedia(storeMediaEnvelope())
+
+        assertTrue(encoded.contains("\"code\":\"cancelled\""))
+        assertTrue(encoded.contains("\"message\":\"The Anki operation was cancelled\""))
+        assertNull(AnkiFaultRecorder.lastFault())
     }
 
     private fun harness(

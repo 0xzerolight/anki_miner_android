@@ -165,6 +165,49 @@ class TesterDiagnosticsTest {
         }
     }
 
+    @Test
+    fun `the last anki fault is reported as a bounded token and defaults to none`() {
+        val withoutFault =
+            TesterDiagnosticsBuilder.build(
+                build = plainIdentity(),
+                setup = SetupUiState(),
+                video = VideoMiningUiState(),
+                reading = ReadingMiningUiState(),
+            )
+
+        assertTrue(withoutFault.report.contains("anki.last_fault=none"))
+
+        val withFault =
+            TesterDiagnosticsBuilder.build(
+                build = plainIdentity(),
+                setup = SetupUiState(),
+                video = VideoMiningUiState(),
+                reading = ReadingMiningUiState(),
+                lastAnkiFault =
+                    "storeMedia:JournalInvariantViolation @ SqliteStore.reserveMedia:1609",
+            )
+
+        assertTrue(
+            withFault.report.contains(
+                "anki.last_fault=storeMedia:JournalInvariantViolation @ SqliteStore.reserveMedia:1609",
+            ),
+        )
+    }
+
+    private fun plainIdentity(): TesterBuildIdentity =
+        TesterBuildIdentity(
+            applicationId = "com.ankiminer.android",
+            versionName = "0.1.8",
+            versionCode = 100_008,
+            sourceCommit = "0123456789abcdef0123456789abcdef01234567",
+            sdkInt = 33,
+            supportedAbis = listOf("arm64-v8a"),
+            pythonVersion = "3.11",
+            runtimeWheelBuildKey = "cp311-arm64-release",
+            tokenizerPublicationBuildKey = "sudachipy-arm64-publication",
+            deviceRuntimeAccepted = true,
+        )
+
     private fun privateDocument(displayName: String): SafDocument =
         SafDocument(
             uri = "content://private/$displayName",

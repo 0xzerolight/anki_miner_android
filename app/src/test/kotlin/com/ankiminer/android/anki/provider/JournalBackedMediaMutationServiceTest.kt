@@ -3,8 +3,10 @@ package com.ankiminer.android.anki.provider
 import com.ankiminer.android.anki.journal.AlignedResult
 import com.ankiminer.android.anki.journal.ChildRecord
 import com.ankiminer.android.anki.journal.ChildState
+import com.ankiminer.android.anki.journal.JournalCorruptionException
 import com.ankiminer.android.anki.journal.JournalError
 import com.ankiminer.android.anki.journal.JournalErrorCode
+import com.ankiminer.android.anki.journal.JournalInvariantViolation
 import com.ankiminer.android.anki.journal.JournalRequest
 import com.ankiminer.android.anki.journal.JournalResponse
 import com.ankiminer.android.anki.journal.MediaClaimRecord
@@ -402,6 +404,59 @@ class JournalBackedMediaMutationServiceTest {
         assertEquals(1, fixture.staging.cleanupCalls.size)
     }
 
+    @Test
+    fun `an unadmittable batch fails every row locally instead of stopping the run`() {
+        // Namespace and lease admission run before any reservation exists, so the batch cannot be
+        // stored at all. It used to propagate as a top-level internal_error, which stopped the whole
+        // mining run with an unattributable message and created zero cards (Issue #6).
+        listOf(
+            "lease" to JournalInvariantViolation("Only one active media lease is permitted"),
+            "reserve" to JournalInvariantViolation("Media direct-name namespace collision"),
+        ).forEach { (stage, failure) ->
+            val request = request(2)
+            val fixture = Fixture(request)
+            if (stage == "lease") {
+                fixture.journal.leaseFailure = failure
+            } else {
+                fixture.journal.reserveFailure = failure
+            }
+
+            val outcome = fixture.execute()
+
+            assertEquals(
+                listOf(
+                    FailedMedia(request.assets[0].assetId, mediaFailure().toProtocol()),
+                    FailedMedia(request.assets[1].assetId, mediaFailure().toProtocol()),
+                ),
+                outcome.result.results,
+            )
+            assertEquals(null, outcome.result.error)
+            assertTrue(outcome.mediaAcknowledgements.isEmpty())
+            assertEquals(0, fixture.staging.stageCalls)
+            assertEquals(0, fixture.provider.storeCalls)
+            assertTrue(
+                "$stage evidence should name the throw site",
+                fixture.journal.appendedEvidence.all { evidence ->
+                    evidence.contains("admission=refused") &&
+                        evidence.contains("fault=JournalInvariantViolation @ ")
+                },
+            )
+            assertFalse(
+                "$stage evidence must not carry the exception message",
+                fixture.journal.appendedEvidence.any { it.contains("namespace collision") },
+            )
+        }
+    }
+
+    @Test
+    fun `durable corruption still stops the run instead of degrading to a media failure`() {
+        val request = request(1)
+        val fixture = Fixture(request)
+        fixture.journal.reserveFailure = JournalCorruptionException("Media lease capacity is overdrawn")
+
+        assertThrows(JournalCorruptionException::class.java) { fixture.execute() }
+    }
+
     private class Fixture(
         val request: StoreMediaRequest,
         cancellation: AnkiCancellation = AnkiCancellation.NONE,
@@ -444,11 +499,19 @@ class JournalBackedMediaMutationServiceTest {
         val releasedReservations = linkedSetOf<Long>()
         var leaseAcquired = false
         var leaseReleased = false
+        var leaseFailure: RuntimeException? = null
+        var reserveFailure: RuntimeException? = null
         var commitMode = CommitMode.NORMAL
         var uncertainCompletionCount = 0
 
         val unusedReservationCount: Int
             get() = reservations.values.count { it.state == MediaReservationState.RESERVED }
+
+        val appendedEvidence: List<String>
+            get() =
+                aligned
+                    .filterIsInstance<AlignedResult.MediaFailed>()
+                    .mapNotNull(AlignedResult.MediaFailed::compactEvidence)
 
         override fun replay(request: JournalRequest): ReplayResult {
             events += "replay"
@@ -462,6 +525,7 @@ class JournalBackedMediaMutationServiceTest {
 
         override fun acquireLease(runId: String) {
             events += "lease"
+            leaseFailure?.let { throw it }
             leaseAcquired = true
         }
 
@@ -470,6 +534,7 @@ class JournalBackedMediaMutationServiceTest {
             assets: List<MediaReservationDraft>,
         ): List<MediaReservationRecord> {
             events += "reserve:${assets.size}"
+            reserveFailure?.let { throw it }
             return assets.map { draft ->
                 val id = nextReservationId++
                 MediaReservationRecord(

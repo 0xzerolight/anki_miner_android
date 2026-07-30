@@ -112,6 +112,48 @@ class MediaNamespaceValidatorTest {
     }
 
     @Test
+    fun reStoringContentAddressedMediaCollidesWithAnEarlierRunsUnresolvedClaim() {
+        // The reachable shape behind Issue #6, in the names the field actually produces. Card media is
+        // content-addressed ({stem}_{sha1[:12]}), and AnkiDroid stores it as {preferredName}_{random},
+        // so a claim an earlier run left unresolved — stored but never attached to a note — holds a
+        // namespace family that a later run's reservation for the same bytes always falls inside.
+        //
+        // Rejection is correct: the journal cannot tell two owners apart by content, and renaming
+        // another owner's stored file would corrupt the collection. It stops being fatal to the run at
+        // the layer above, where JournalBackedMediaMutationService turns it into a media_store_failed
+        // row instead of a top-level internal_error.
+        val earlierRun = MediaNamespaceOwner("run-1", "asset-1")
+        val laterRun = MediaNamespaceOwner("run-2", "asset-2")
+
+        assertThrows(JournalInvariantViolation::class.java) {
+            MediaNamespaceValidator.requireDisjoint(
+                listOf(
+                    MediaNamespaceLock(earlierRun, "本好き_ab12cd34ef56_1739.opus", "本好き_ab12cd34ef56_"),
+                    MediaNamespaceLock(laterRun, "本好き_ab12cd34ef56.opus", "本好き_ab12cd34ef56_"),
+                ),
+            )
+        }
+
+        // Dictionary media reaches the same wall through its hashed prefix rather than its basename.
+        assertThrows(JournalInvariantViolation::class.java) {
+            MediaNamespaceValidator.requireDisjoint(
+                listOf(
+                    MediaNamespaceLock(
+                        earlierRun,
+                        "anki_miner_dict_${"a".repeat(64)}_884.png",
+                        "anki_miner_dict_${"a".repeat(64)}_",
+                    ),
+                    MediaNamespaceLock(
+                        laterRun,
+                        "image.png",
+                        "anki_miner_dict_${"a".repeat(64)}_",
+                    ),
+                ),
+            )
+        }
+    }
+
+    @Test
     fun globalNamespaceBoundaryAcceptsSixteenThousandAndRejectsOneMore() {
         MediaNamespaceValidator.requireDisjoint(disjointLocks(15_999))
         MediaNamespaceValidator.requireDisjoint(disjointLocks(16_000))

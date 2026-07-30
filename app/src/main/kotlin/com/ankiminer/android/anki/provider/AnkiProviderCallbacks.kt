@@ -16,6 +16,8 @@ import com.ankiminer.android.anki.protocol.StoreMediaRequest
 import com.ankiminer.android.anki.protocol.StoreMediaResult
 import com.ankiminer.android.anki.protocol.StoredMedia
 import com.ankiminer.android.anki.protocol.VerifyTargetRequest
+import com.ankiminer.android.diagnostics.AnkiFaultRecorder
+import com.ankiminer.android.diagnostics.compactFaultToken
 import java.util.Collections
 
 internal fun interface AnkiProviderResponseEncoder {
@@ -276,6 +278,26 @@ internal class AnkiProviderCallbacks(
             failureResponse(request, failure)
         }
 
+    /**
+     * Maps a handler failure to a stable typed error, or to the digested catch-all below.
+     *
+     * What can reach the catch-all, audited against Issue #6 (reads working, zero notes created):
+     *
+     * * `JournalInvariantViolation` from media lease/namespace admission — the one shape reachable on
+     *   ordinary content, because media names are content-addressed and an earlier run's unresolved
+     *   claim keeps its namespace family. `JournalBackedMediaMutationService.refuseBatchRowLocally`
+     *   now degrades it to `media_store_failed`, so it no longer stops a run.
+     * * `JournalInvariantViolation` / `JournalCorruptionException` from the note saga, `promote`,
+     *   `append`, `markResultReady`, and the `results()` reads — deliberately fatal: durable evidence
+     *   is either trustworthy or the run must stop.
+     * * `IllegalArgumentException` from the sealed provider commands, e.g. `CreateDeck`'s exact
+     *   deck-name check. Only reachable when the target deck must be created.
+     * * `IllegalStateException` from the `mediaMutationConflict` / `noteMutationConflict` helpers when
+     *   a durable replay disagrees with its live request.
+     *
+     * Anything new that lands here is a design gap, not a category: give it a typed branch above, or
+     * degrade it where it is raised. The token in the message is what tells the two apart in the field.
+     */
     private fun failureResponse(
         request: AnkiRequest,
         failure: RuntimeException,
@@ -328,10 +350,28 @@ internal class AnkiProviderCallbacks(
             else ->
                 request.error(
                     AnkiErrorCode.INTERNAL_ERROR,
-                    "The Anki provider operation failed safely",
+                    unattributableFailureMessage(request.operation, failure),
                     retryable = false,
                 )
         }
+
+    /**
+     * The stable sentence plus a bounded PII-safe fault token, with a copy in [AnkiFaultRecorder].
+     *
+     * This arm catches every `RuntimeException` the typed branches above do not name — in practice
+     * journal invariant violations raised several layers down. Answering with the sentence alone made
+     * the failure unattributable: no log, no digest, nothing on the wire, so a field report of this
+     * shape (Issue #6) could not be traced to a throw site. The token carries the exception class and
+     * topmost frame only, never the exception message.
+     */
+    private fun unattributableFailureMessage(
+        operation: AnkiOperation,
+        failure: RuntimeException,
+    ): String {
+        val token = compactFaultToken(failure)
+        AnkiFaultRecorder.record(operation.wireName, token)
+        return "$UNATTRIBUTABLE_FAILURE (${operation.wireName}: $token)"
+    }
 
     private fun encodeOwned(
         owner: AnkiRunStateRegistry.RunOwner,
@@ -449,6 +489,7 @@ internal class AnkiProviderCallbacks(
     private companion object {
         const val PLACEHOLDER_RUN_ID = "run_00000000000000000000000000000000"
         const val PLACEHOLDER_REQUEST_ID = "anki_00000000000000000000000000000000"
+        const val UNATTRIBUTABLE_FAILURE = "The Anki provider operation failed safely"
     }
 
     private data class DurableTargetCommit(

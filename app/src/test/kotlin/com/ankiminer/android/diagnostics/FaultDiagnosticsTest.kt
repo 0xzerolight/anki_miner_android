@@ -4,6 +4,7 @@ import com.ankiminer.android.engine.BridgeProtocolCategory
 import com.ankiminer.android.engine.BridgeProtocolException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class FaultDiagnosticsTest {
@@ -58,5 +59,51 @@ class FaultDiagnosticsTest {
         failure.stackTrace = emptyArray()
 
         assertEquals("RuntimeException", exceptionDigest(failure))
+    }
+
+    @Test
+    fun `fault token keeps the digest but folds every character an encoder could mishandle`() {
+        val failure = IllegalStateException("secret /storage/emulated/0/user-file.cbz")
+        failure.stackTrace =
+            arrayOf(
+                StackTraceElement(
+                    "com.ankiminer.android.anki.journal.Sqlite\"Store\\bad",
+                    "reserve\nMedia",
+                    "SqliteAnkiMutationStore.kt",
+                    1609,
+                ),
+            )
+
+        val token = compactFaultToken(failure)
+
+        assertEquals("IllegalStateException @ Sqlite_Store_bad.reserve_Media:1609", token)
+        assertFalse(token.contains('"'))
+        assertFalse(token.contains('\\'))
+        assertFalse(token.contains('\n'))
+        assertFalse(token.contains("secret"))
+    }
+
+    @Test
+    fun `fault token is bounded so it cannot inflate an unbounded error message`() {
+        val failure = IllegalStateException("boom")
+        failure.stackTrace =
+            arrayOf(StackTraceElement("a".repeat(500), "b".repeat(500), "Long.kt", 1))
+
+        val token = compactFaultToken(failure)
+
+        assertEquals(120, token.length)
+    }
+
+    @Test
+    fun `fault token survives a synthetic class with no simple name`() {
+        val failure = object : RuntimeException("boom") {}
+        failure.stackTrace =
+            arrayOf(StackTraceElement("Anonymous\$1", "invoke", "Anonymous.kt", 7))
+
+        val token = compactFaultToken(failure)
+
+        assertTrue(token.isNotBlank())
+        assertTrue(token.endsWith("Anonymous\$1.invoke:7"))
+        assertFalse(token.contains("boom"))
     }
 }
