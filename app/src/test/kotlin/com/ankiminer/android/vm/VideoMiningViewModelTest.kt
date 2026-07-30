@@ -8,6 +8,9 @@ import com.ankiminer.android.data.RuntimeWorkCoordinator
 import com.ankiminer.android.diagnostics.TesterDiagnosticsShareAction
 import com.ankiminer.android.media.SafBroker
 import com.ankiminer.android.media.SafDocument
+import com.ankiminer.android.media.SafSelectionRecord
+import com.ankiminer.android.media.SafSelectionSlot
+import com.ankiminer.android.media.TransientSafSelectionInventory
 import com.ankiminer.android.mining.CurationCandidate
 import com.ankiminer.android.mining.CurationPage
 import com.ankiminer.android.mining.CurationRequest
@@ -129,6 +132,51 @@ class VideoMiningViewModelTest {
                 "restored-subtitle.srt",
                 viewModel.uiState.value.subtitle.document?.displayName,
             )
+            assertTrue(viewModel.uiState.value.canStart)
+        }
+
+    @Test
+    fun freshNonIdleViewModelRestoresDurableSelectionsForLaterReset() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val inventory = TransientSafSelectionInventory()
+            inventory.putSelection(
+                SafSelectionSlot.VIDEO,
+                SafSelectionRecord("content://test/restored-video.mkv", "restored-video.mkv"),
+            )
+            inventory.putSelection(
+                SafSelectionSlot.VIDEO_SUBTITLE,
+                SafSelectionRecord(
+                    "content://test/restored-subtitle.srt",
+                    "restored-subtitle.srt",
+                ),
+            )
+            val repository =
+                RecordingRepository(
+                    MiningRunState.Running("run", MiningProgress(1, 2, "Running")),
+                )
+            val viewModel =
+                VideoMiningViewModel(
+                    repository = repository,
+                    safBroker = ImmediateSafBroker(),
+                    selectionInventory = inventory,
+                )
+            runCurrent()
+
+            assertEquals(
+                "restored-video.mkv",
+                viewModel.uiState.value.video.document?.displayName,
+            )
+            assertEquals(
+                "restored-subtitle.srt",
+                viewModel.uiState.value.subtitle.document?.displayName,
+            )
+            assertFalse(viewModel.uiState.value.canStart)
+
+            repository.transitionTo(MiningRunState.Success("run", result()))
+            viewModel.reset()
+            runCurrent()
+
+            assertEquals(MiningRunState.Idle, repository.state.value)
             assertTrue(viewModel.uiState.value.canStart)
         }
 

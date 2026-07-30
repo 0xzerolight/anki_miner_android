@@ -7,6 +7,9 @@ import com.ankiminer.android.MainDispatcherRule
 import com.ankiminer.android.data.RuntimeWorkCoordinator
 import com.ankiminer.android.media.SafBroker
 import com.ankiminer.android.media.SafDocument
+import com.ankiminer.android.media.SafSelectionRecord
+import com.ankiminer.android.media.SafSelectionSlot
+import com.ankiminer.android.media.TransientSafSelectionInventory
 import com.ankiminer.android.mining.CurationCandidate
 import com.ankiminer.android.mining.CurationPage
 import com.ankiminer.android.mining.CurationRequest
@@ -73,6 +76,78 @@ class ReadingMiningViewModelTest {
             )
             assertEquals("restored-book.mokuro", viewModel.uiState.value.source.document?.displayName)
             assertEquals("restored-book.cbz", viewModel.uiState.value.archive.document?.displayName)
+            assertTrue(viewModel.uiState.value.canStart)
+        }
+
+    @Test
+    fun archiveResultDuringSourceRestoreReplacesSavedArchiveInsteadOfDisappearing() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val savedState = SavedStateHandle()
+            SavedDocumentSelectionStore(savedState, "readingMining.source").save(
+                document("content://test/book.mokuro", "book.mokuro"),
+            )
+            SavedDocumentSelectionStore(savedState, "readingMining.archive").save(
+                document("content://test/old/book.cbz", "book.cbz"),
+            )
+            val broker = ControlledSafBroker()
+            val viewModel =
+                ReadingMiningViewModel(
+                    repository = RecordingReadingRepository(),
+                    safBroker = broker,
+                    savedStateHandle = savedState,
+                )
+            runCurrent()
+
+            viewModel.onArchivePicked("content://test/new/book.cbz")
+            broker.succeed("content://test/book.mokuro")
+            runCurrent()
+
+            assertTrue(broker.isPendingActive("content://test/new/book.cbz"))
+            assertFalse(broker.isPendingActive("content://test/old/book.cbz"))
+
+            broker.succeed("content://test/new/book.cbz")
+            runCurrent()
+
+            assertEquals(
+                "book.cbz",
+                viewModel.uiState.value.archive.document?.displayName,
+            )
+            assertEquals(listOf("content://test/old/book.cbz"), broker.releasedUris)
+        }
+
+    @Test
+    fun freshNonIdleReadingViewModelRestoresDurablePairForLaterReset() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val inventory = TransientSafSelectionInventory()
+            inventory.putSelection(
+                SafSelectionSlot.READING_SOURCE,
+                SafSelectionRecord("content://test/book.mokuro", "book.mokuro"),
+            )
+            inventory.putSelection(
+                SafSelectionSlot.READING_ARCHIVE,
+                SafSelectionRecord("content://test/book.cbz", "book.cbz"),
+            )
+            val repository =
+                RecordingReadingRepository(
+                    MiningRunState.Running("run", MiningProgress(1, 2, "Running")),
+                )
+            val viewModel =
+                ReadingMiningViewModel(
+                    repository = repository,
+                    safBroker = ImmediateSafBroker(),
+                    selectionInventory = inventory,
+                )
+            runCurrent()
+
+            assertEquals("book.mokuro", viewModel.uiState.value.source.document?.displayName)
+            assertEquals("book.cbz", viewModel.uiState.value.archive.document?.displayName)
+            assertFalse(viewModel.uiState.value.canStart)
+
+            repository.transitionTo(MiningRunState.Cancelled("run", null))
+            viewModel.reset()
+            runCurrent()
+
+            assertEquals(MiningRunState.Idle, repository.state.value)
             assertTrue(viewModel.uiState.value.canStart)
         }
 
@@ -485,6 +560,8 @@ class ReadingMiningViewModelTest {
         override fun releaseReadAccessEventually(uri: String) {
             releasedUris += uri
         }
+
+        fun isPendingActive(uri: String): Boolean = pending[uri]?.isActive == true
 
         fun succeed(uri: String) {
             requireNotNull(pending.remove(uri)).resume(

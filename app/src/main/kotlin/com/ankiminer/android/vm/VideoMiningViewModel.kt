@@ -164,14 +164,12 @@ class VideoMiningViewModel internal constructor(
                 }
             }
         }
-        if (repository.state.value == MiningRunState.Idle) {
-            videoSelection.restore()?.let { selection ->
-                resolveDocument(DocumentKind.VIDEO, selection.uri, restoring = true)
-            } ?: videoSelection.clear()
-            subtitleSelection.restore()?.let { selection ->
-                resolveDocument(DocumentKind.SUBTITLE, selection.uri, restoring = true)
-            } ?: subtitleSelection.clear()
-        }
+        videoSelection.restore()?.let { selection ->
+            resolveDocument(DocumentKind.VIDEO, selection.uri, restoring = true)
+        } ?: videoSelection.clear()
+        subtitleSelection.restore()?.let { selection ->
+            resolveDocument(DocumentKind.SUBTITLE, selection.uri, restoring = true)
+        } ?: subtitleSelection.clear()
     }
 
     fun onVideoPicked(uri: String) = resolveDocument(DocumentKind.VIDEO, uri)
@@ -506,7 +504,7 @@ class VideoMiningViewModel internal constructor(
         restoring: Boolean = false,
     ) {
         if (uri.isBlank() ||
-            repository.state.value != MiningRunState.Idle ||
+            (!restoring && repository.state.value != MiningRunState.Idle) ||
             localState.value.pending.start
         ) {
             return

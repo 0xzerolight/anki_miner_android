@@ -55,7 +55,7 @@ class ReadingMiningViewModel internal constructor(
     private val repository: ReadingMiningRepository,
     private val safBroker: SafBroker,
     private val runtimeWorkState: StateFlow<RuntimeWorkCoordinator.Kind?> = MutableStateFlow(null),
-    savedStateHandle: SavedStateHandle = SavedStateHandle(),
+    private val savedStateHandle: SavedStateHandle = SavedStateHandle(),
     selectionInventory: SafSelectionInventory? = null,
 ) : ViewModel() {
     private data class LocalState(
@@ -78,6 +78,8 @@ class ReadingMiningViewModel internal constructor(
     private var archiveDocumentRequest = 0L
     private var sourceDocumentJob: Job? = null
     private var archiveDocumentJob: Job? = null
+    private var sourceRestoreInFlight = false
+    private var pendingArchiveReplacedUri: String? = null
     private val sourceSelection =
         SavedDocumentSelectionStore(
             savedStateHandle = savedStateHandle,
@@ -183,14 +185,26 @@ class ReadingMiningViewModel internal constructor(
                 }
             }
         }
-        if (repository.state.value == MiningRunState.Idle) restoreSelections()
+        restoreSelections()
     }
 
-    fun onSourcePicked(uri: String) = resolveDocument(DocumentKind.SOURCE, uri)
+    fun onSourcePicked(uri: String) =
+        resolveDocument(
+            kind = DocumentKind.SOURCE,
+            uri = uri,
+            onResolved = { accepted ->
+                if (accepted) resolvePendingArchive()
+            },
+        )
 
     fun onArchivePicked(uri: String) {
-        if (localState.value.sourceKind != ReadingSourceKindUi.MOKURO) return
-        resolveDocument(DocumentKind.ARCHIVE, uri)
+        if (uri.isBlank()) return
+        pendingArchiveUri = uri
+        if (localState.value.sourceKind == ReadingSourceKindUi.MOKURO) {
+            resolvePendingArchive()
+        } else if (!sourceRestoreInFlight) {
+            rejectPendingArchive()
+        }
     }
 
     fun onSubtitleSeriesNameChanged(value: String) {
@@ -545,23 +559,35 @@ class ReadingMiningViewModel internal constructor(
             sourceSelection.clear()
             archiveSelection.clear()
             subtitleSeriesSelection.clear()
+            pendingArchiveUri = null
             return
         }
+        sourceRestoreInFlight = true
         resolveDocument(
             kind = DocumentKind.SOURCE,
             uri = source.uri,
             restoring = true,
-            onResolved = {
-                if (localState.value.sourceKind == ReadingSourceKindUi.MOKURO) {
-                    archiveSelection.restore()?.let { archive ->
-                        resolveDocument(
-                            kind = DocumentKind.ARCHIVE,
-                            uri = archive.uri,
-                            restoring = true,
-                        )
-                    } ?: archiveSelection.clear()
+            onResolved = { accepted ->
+                sourceRestoreInFlight = false
+                if (!accepted) {
+                    rejectPendingArchive()
+                } else if (localState.value.sourceKind == ReadingSourceKindUi.MOKURO) {
+                    if (pendingArchiveUri != null) {
+                        pendingArchiveReplacedUri =
+                            archiveSelection.restore()?.uri?.takeIf { it != pendingArchiveUri }
+                        resolvePendingArchive()
+                    } else {
+                        archiveSelection.restore()?.let { archive ->
+                            resolveDocument(
+                                kind = DocumentKind.ARCHIVE,
+                                uri = archive.uri,
+                                restoring = true,
+                            )
+                        } ?: archiveSelection.clear()
+                    }
                 } else {
                     archiveSelection.clear()
+                    rejectPendingArchive()
                 }
             },
         )
@@ -571,11 +597,11 @@ class ReadingMiningViewModel internal constructor(
         kind: DocumentKind,
         uri: String,
         restoring: Boolean = false,
-        onResolved: (() -> Unit)? = null,
+        onResolved: ((Boolean) -> Unit)? = null,
     ) {
         if (
             uri.isBlank() ||
-            repository.state.value != MiningRunState.Idle ||
+            (!restoring && repository.state.value != MiningRunState.Idle) ||
             localState.value.pending.start ||
             (kind == DocumentKind.ARCHIVE &&
                 localState.value.sourceKind != ReadingSourceKindUi.MOKURO)
@@ -612,11 +638,14 @@ class ReadingMiningViewModel internal constructor(
                             localState.update { it.copy(subtitleSeriesName = "") }
                         }
                     }
-                    onResolved?.invoke()
+                    onResolved?.invoke(accepted)
                 } catch (failure: CancellationException) {
                     throw failure
                 } catch (_: Exception) {
                     if (isCurrentDocumentRequest(kind, sequence)) {
+                        if (kind == DocumentKind.SOURCE && restoring) {
+                            sourceRestoreInFlight = false
+                        }
                         localState.update { local -> local.withAccessFailure(kind) }
                         if (restoring) {
                             selectionStore(kind).clear()
@@ -629,6 +658,39 @@ class ReadingMiningViewModel internal constructor(
                 }
             }
         setDocumentJob(kind, job)
+    }
+
+    private fun resolvePendingArchive() {
+        val uri = pendingArchiveUri ?: return
+        if (localState.value.sourceKind != ReadingSourceKindUi.MOKURO) return
+        resolveDocument(
+            kind = DocumentKind.ARCHIVE,
+            uri = uri,
+            onResolved = { accepted ->
+                if (pendingArchiveUri == uri) {
+                    pendingArchiveUri = null
+                    if (accepted) {
+                        pendingArchiveReplacedUri?.let(safBroker::releaseReadAccessEventually)
+                    }
+                    pendingArchiveReplacedUri = null
+                }
+            },
+        )
+    }
+
+    private fun rejectPendingArchive() {
+        if (pendingArchiveUri == null) return
+        pendingArchiveUri = null
+        pendingArchiveReplacedUri = null
+        localState.update { local ->
+            local.copy(
+                archive =
+                    local.archive.copy(
+                        isResolving = false,
+                        error = ReadingDocumentSelectionError.ARCHIVE_NAME,
+                    ),
+            )
+        }
     }
 
     private suspend fun acceptResolvedSource(document: SafDocument): Boolean {
@@ -923,5 +985,16 @@ class ReadingMiningViewModel internal constructor(
 
     private companion object {
         const val MAX_SERIES_NAME_CODE_POINTS = 120
+        const val PENDING_ARCHIVE_URI_KEY = "readingMining.pendingArchiveUri"
     }
+
+    private var pendingArchiveUri: String?
+        get() = savedStateHandle[PENDING_ARCHIVE_URI_KEY]
+        set(value) {
+            if (value == null) {
+                savedStateHandle.remove<String>(PENDING_ARCHIVE_URI_KEY)
+            } else {
+                savedStateHandle[PENDING_ARCHIVE_URI_KEY] = value
+            }
+        }
 }
