@@ -19,6 +19,7 @@ internal class SqliteAnkiMutationStore(
     private val crashHooks: JournalCrashHooks = NoOpJournalCrashHooks,
     private val enforceBackgroundThread: Boolean = true,
     private val capacityLimits: JournalCapacityLimits = JournalCapacityLimits.PRODUCTION,
+    private val retentionPolicy: JournalRetentionPolicy = JournalRetentionPolicy.PRODUCTION,
 ) : SQLiteOpenHelper(context.applicationContext, databaseName, null, JournalSchema.VERSION), AnkiMutationStore {
     private val closed = AtomicBoolean(false)
 
@@ -52,24 +53,26 @@ internal class SqliteAnkiMutationStore(
         if (!pragmaValue(db, "journal_mode").equals("wal", ignoreCase = true)) {
             throw JournalCorruptionException("Journal database did not open in WAL mode")
         }
-        if (pragmaValue(db, "quick_check") != "ok") {
-            throw JournalCorruptionException("Journal quick_check failed")
-        }
-        db.rawQuery("PRAGMA foreign_key_check", null).use { cursor ->
-            if (cursor.moveToFirst()) throw JournalCorruptionException("Journal foreign-key check failed")
-        }
         requireSchemaDefinitions(db)
+        requireMaintenanceInactive(db)
+        requireBoundedOpenValidationScope(db)
+        pruneCompletedCohortsOnOpen(db)
+        requireMaintenanceInactive(db)
+        // Lifetime PRAGMA scans defeat the retention bound. Foreign keys remain enforced on every
+        // write; synchronous semantic validation below is limited to recoverable and retained state.
         val inconsistentTargets =
             scalarLong(
                 db,
-                """SELECT count(*) FROM parents p WHERE p.has_target_expectation !=
+                """SELECT count(*) FROM parents p
+                   WHERE p.state IN ($ACTIVE_PARENT_STATES_SQL) AND
+                   p.has_target_expectation !=
                    EXISTS(SELECT 1 FROM target_expectations t WHERE t.parent_id = p.id)""".trimIndent(),
             )
         if (inconsistentTargets != 0L) throw JournalCorruptionException("Target expectation flag differs from normalized rows")
         val malformedRequestItems =
             scalarLong(
                 db,
-                """SELECT count(*) FROM parents p WHERE p.state NOT IN ('RESPONSE_ACKNOWLEDGED', 'ABANDONED') AND
+                """SELECT count(*) FROM parents p WHERE p.state IN ($ACTIVE_PARENT_STATES_SQL) AND
                    p.request_item_count !=
                    (SELECT count(*) FROM parent_request_items i WHERE i.parent_id = p.id)""".trimIndent(),
             )
@@ -77,16 +80,18 @@ internal class SqliteAnkiMutationStore(
         val malformedModels =
             scalarLong(
                 db,
-                """SELECT count(*) FROM target_expectations t WHERE
+                """SELECT count(*) FROM target_expectations t JOIN parents p ON p.id = t.parent_id
+                   WHERE p.state IN ($ACTIVE_PARENT_STATES_SQL) AND (
                    t.field_count != (SELECT count(*) FROM target_expectation_fields f WHERE f.parent_id = t.parent_id) OR
                    t.card_count != (SELECT count(*) FROM target_expectation_templates x WHERE x.parent_id = t.parent_id) OR
-                   t.sort_field_index >= (SELECT count(*) FROM target_expectation_fields f WHERE f.parent_id = t.parent_id)""".trimIndent(),
+                   t.sort_field_index >= (SELECT count(*) FROM target_expectation_fields f WHERE f.parent_id = t.parent_id))""".trimIndent(),
             )
         if (malformedModels != 0L) throw JournalCorruptionException("Target expectation ordering/count is malformed")
         val malformedActiveNotes =
             scalarLong(
                 db,
                 """SELECT count(*) FROM parents p LEFT JOIN active_notes n ON n.parent_id = p.id WHERE
+                   p.state IN ($ACTIVE_PARENT_STATES_SQL) AND (
                    ((p.active_request_index IS NULL) != (n.parent_id IS NULL)) OR
                    (n.parent_id IS NOT NULL AND n.request_index != p.active_request_index) OR
                    (p.routing_phase IS NOT NULL AND p.routing_phase != 'NOTE_PENDING' AND p.active_note_id IS NULL) OR
@@ -97,13 +102,25 @@ internal class SqliteAnkiMutationStore(
                    (n.parent_id IS NOT NULL AND n.tag_count !=
                        (SELECT count(*) FROM active_note_tags t WHERE t.parent_id = n.parent_id)) OR
                    (n.parent_id IS NOT NULL AND n.media_binding_count !=
-                       (SELECT count(*) FROM active_note_media_bindings b WHERE b.parent_id = n.parent_id))""".trimIndent(),
+                       (SELECT count(*) FROM active_note_media_bindings b WHERE b.parent_id = n.parent_id)))""".trimIndent(),
             )
         if (malformedActiveNotes != 0L) throw JournalCorruptionException("Active-note normalized rows are malformed")
         val malformedFinalAudits =
             scalarLong(
                 db,
-                """SELECT count(*) FROM parents p WHERE
+                """WITH validated_parent(parent_id) AS (
+                       SELECT parent_id FROM terminal_parent_audit
+                       ORDER BY finalized_at_ms DESC, parent_id DESC
+                       LIMIT ${retentionPolicy.completedCohortLimit}
+                   ), active_parent(parent_id) AS (
+                       SELECT id FROM parents
+                       WHERE state IN ($ACTIVE_PARENT_STATES_SQL)
+                   )
+                   SELECT count(*) FROM (
+                       SELECT parent_id FROM validated_parent
+                       UNION ALL
+                       SELECT parent_id FROM active_parent
+                   ) scope JOIN parents p ON p.id = scope.parent_id WHERE
                    (p.state IN ('RESPONSE_ACKNOWLEDGED', 'ABANDONED') AND NOT EXISTS(
                        SELECT 1 FROM terminal_parent_audit a WHERE a.parent_id = p.id AND
                            a.final_state = p.state AND a.result_count = p.request_item_count AND
@@ -123,18 +140,19 @@ internal class SqliteAnkiMutationStore(
                                a.terminal_variant IN ('VERIFY_SUCCESS', 'VERIFY_ERROR')) OR
                             (p.operation_kind = 'STORE_MEDIA' AND a.terminal_variant = 'STORE_MEDIA_RESULT') OR
                             (p.operation_kind = 'CREATE_NOTES' AND a.terminal_variant = 'CREATE_NOTES_RESULT')))) OR
-                   (p.state NOT IN ('RESPONSE_ACKNOWLEDGED', 'ABANDONED') AND EXISTS(
+                   (p.state IN ($ACTIVE_PARENT_STATES_SQL) AND EXISTS(
                        SELECT 1 FROM terminal_parent_audit a WHERE a.parent_id = p.id))""".trimIndent(),
             )
         if (malformedFinalAudits != 0L) throw JournalCorruptionException("Final parent compact audit is malformed")
         val malformedChildren =
             scalarLong(
                 db,
-                """SELECT count(*) FROM mutation_children c WHERE
+                """SELECT count(*) FROM mutation_children c JOIN parents p ON p.id = c.parent_id
+                   WHERE p.state IN ($ACTIVE_PARENT_STATES_SQL) AND (
                    ((c.operation_kind = 'DECK_CREATE') != EXISTS(SELECT 1 FROM deck_commands x WHERE x.child_id = c.id)) OR
                    ((c.operation_kind = 'MEDIA_INSERT') != EXISTS(SELECT 1 FROM media_commands x WHERE x.child_id = c.id)) OR
                    ((c.operation_kind = 'NOTE_INSERT') != EXISTS(SELECT 1 FROM note_commands x WHERE x.child_id = c.id)) OR
-                   ((c.operation_kind = 'CARD_DECK_UPDATE') != EXISTS(SELECT 1 FROM card_commands x WHERE x.child_id = c.id))""".trimIndent(),
+                   ((c.operation_kind = 'CARD_DECK_UPDATE') != EXISTS(SELECT 1 FROM card_commands x WHERE x.child_id = c.id)))""".trimIndent(),
             )
         if (malformedChildren != 0L) throw JournalCorruptionException("Mutation child lacks exactly one typed command")
         val malformedRouting =
@@ -146,7 +164,8 @@ internal class SqliteAnkiMutationStore(
                    LEFT JOIN target_expectation_templates x
                        ON x.parent_id = i.parent_id AND x.template_ordinal = i.ordinal
                    LEFT JOIN routing_observations o ON o.intent_id = i.id
-                   WHERE d.parent_id IS NULL OR x.parent_id IS NULL OR i.target_deck_id != d.deck_id OR
+                   WHERE p.state IN ($ACTIVE_PARENT_STATES_SQL) AND (
+                       d.parent_id IS NULL OR x.parent_id IS NULL OR i.target_deck_id != d.deck_id OR
                        (i.child_id IS NULL AND i.state IN ('VERIFIED', 'FAILED') AND o.intent_id IS NULL) OR
                        (i.child_id IS NOT NULL AND o.intent_id IS NOT NULL) OR
                        (o.intent_id IS NOT NULL AND (o.parent_id != i.parent_id OR
@@ -154,7 +173,7 @@ internal class SqliteAnkiMutationStore(
                            (i.state = 'VERIFIED' AND (o.card_id != i.card_id OR o.note_id != i.note_id OR
                                o.ordinal != i.ordinal OR o.deck_id != i.target_deck_id)) OR
                            (i.state = 'FAILED' AND o.card_id = i.card_id AND o.note_id = i.note_id AND
-                               o.ordinal = i.ordinal AND o.deck_id = i.target_deck_id)))""".trimIndent(),
+                               o.ordinal = i.ordinal AND o.deck_id = i.target_deck_id))))""".trimIndent(),
             )
         if (malformedRouting != 0L) {
             throw JournalCorruptionException("Card-routing evidence differs from its durable target")
@@ -162,7 +181,13 @@ internal class SqliteAnkiMutationStore(
         val finalizedUnremediatedMedia =
             scalarLong(
                 db,
-                """SELECT count(*) FROM parents p JOIN media_claims c
+                """WITH validated_final(parent_id) AS (
+                       SELECT parent_id FROM terminal_parent_audit
+                       ORDER BY finalized_at_ms DESC, parent_id DESC
+                       LIMIT ${retentionPolicy.completedCohortLimit}
+                   )
+                   SELECT count(*) FROM validated_final v JOIN parents p ON p.id = v.parent_id
+                   JOIN media_claims c
                    ON c.run_id = p.run_id AND c.request_id = p.request_id
                    WHERE p.operation_kind = 'STORE_MEDIA' AND
                        p.state IN ('RESPONSE_ACKNOWLEDGED', 'ABANDONED') AND
@@ -180,12 +205,10 @@ internal class SqliteAnkiMutationStore(
                 """SELECT count(*) FROM remediations r
                    LEFT JOIN parents p ON p.id = r.parent_id
                    LEFT JOIN media_claims c ON c.id = r.claim_id
-                   WHERE r.kind = 'MEDIA_STORED_UNATTACHED' AND (
+                   WHERE r.state = 'OPEN' AND r.kind = 'MEDIA_STORED_UNATTACHED' AND (
                        p.id IS NULL OR c.id IS NULL OR p.operation_kind != 'STORE_MEDIA' OR
                        c.run_id != p.run_id OR c.request_id != p.request_id OR
-                       (r.state = 'OPEN' AND c.state NOT IN ('STORED', 'PRESENT_BYTES_VERIFIED')) OR
-                       (r.state = 'RESOLVED' AND c.state NOT IN (
-                           'ATTACHED_VERIFIED', 'CLEANED_VERIFIED', 'ACKNOWLEDGED_BY_USER')))""".trimIndent(),
+                       c.state NOT IN ('STORED', 'PRESENT_BYTES_VERIFIED'))""".trimIndent(),
             )
         if (malformedStoredRemediations != 0L) {
             throw JournalCorruptionException("Stored-unattached remediation differs from its claim")
@@ -343,7 +366,9 @@ internal class SqliteAnkiMutationStore(
                             MediaClaimState.ATTACHED_VERIFIED,
                         )
                     ) {
-                        throw JournalInvariantViolation("Active note media binding differs from durable claim")
+                        throw ActiveNoteMaterializationRefused(
+                            "Active note media binding differs from durable claim",
+                        )
                     }
                     db.insertOrThrow(
                         "active_note_media_bindings",
@@ -758,6 +783,7 @@ internal class SqliteAnkiMutationStore(
                     if (target.model.templates.none { it.ordinal == intent.ordinal }) {
                         throw JournalInvariantViolation("Routing ordinal is outside the durable model template range")
                     }
+                    val createdAt = timestamp()
                     db.insertOrThrow(
                         "routing_intents",
                         null,
@@ -770,8 +796,8 @@ internal class SqliteAnkiMutationStore(
                             "target_deck_id" to intent.targetDeckId,
                             "pre_update_deck_id" to intent.preUpdateDeckId,
                             "state" to RoutingIntentState.PENDING.name,
-                            "created_at_ms" to timestamp(),
-                            "updated_at_ms" to timestamp(),
+                            "created_at_ms" to createdAt,
+                            "updated_at_ms" to createdAt,
                         ),
                     )
                 }
@@ -865,6 +891,7 @@ internal class SqliteAnkiMutationStore(
                     }
                 }
             JournalStateMachine.requireRoutingTransition(intent.state, terminalState)
+            val completedAt = nextTimestamp(intent.updatedAtMs)
             db.insertOrThrow(
                 "routing_observations",
                 null,
@@ -876,7 +903,7 @@ internal class SqliteAnkiMutationStore(
                     "note_id" to observation.noteId,
                     "ordinal" to observation.ordinal,
                     "deck_id" to observation.deckId,
-                    "observed_at_ms" to timestamp(),
+                    "observed_at_ms" to completedAt,
                 ),
             )
             if (terminalState == RoutingIntentState.FAILED) {
@@ -895,7 +922,7 @@ internal class SqliteAnkiMutationStore(
                 values(
                     "state" to terminalState.name,
                     "terminal_evidence" to outcome.compactEvidence,
-                    "updated_at_ms" to nextTimestamp(intent.updatedAtMs),
+                    "updated_at_ms" to completedAt,
                 ),
                 "id = ?",
                 arrayOf(intent.id.toString()),
@@ -1487,6 +1514,7 @@ internal class SqliteAnkiMutationStore(
                     finalizeAndScrub(db, terminal, finalState)
                 }
                 releaseRunCapabilitiesDb(db, runId)
+                pruneCompletedCohortsDb(db, timestamp())
                 RunCleanupResult(acknowledged, abandoned, evidenceAccepted)
             }
         crashHooks.hit(JournalCrashPoint.AFTER_RUN_CLEANUP)
@@ -1516,6 +1544,7 @@ internal class SqliteAnkiMutationStore(
                     releaseRunCapabilitiesDb(db, runId)
                 }
             }
+            pruneCompletedCohortsDb(db, timestamp())
             finalized
         }
     }
@@ -1589,7 +1618,27 @@ internal class SqliteAnkiMutationStore(
 
     override fun mediaLease(runId: String): MediaLeaseRecord? = read { leaseByRun(it, runId) }
 
-    override fun reserveMedia(runId: String, assets: List<MediaReservationDraft>): List<MediaReservationRecord> {
+    override fun reserveMedia(
+        runId: String,
+        assets: List<MediaReservationDraft>,
+    ): List<MediaReservationRecord> =
+        reserveMediaInternal(runId, assets, allowRowRefusals = false).map {
+            (it as MediaReservationAdmission.Reserved).reservation
+        }
+
+    override fun reserveMediaIndependently(
+        runId: String,
+        assets: List<MediaReservationDraft>,
+    ): List<MediaReservationAdmission> = reserveMediaInternal(runId, assets, allowRowRefusals = true)
+
+    override fun mediaReservation(reservationId: Long): MediaReservationRecord? =
+        read { db -> reservationByIdOrNull(db, reservationId) }
+
+    private fun reserveMediaInternal(
+        runId: String,
+        assets: List<MediaReservationDraft>,
+        allowRowRefusals: Boolean,
+    ): List<MediaReservationAdmission> {
         require(runId.isNotBlank())
         require(assets.isNotEmpty())
         require(assets.map { it.assetId }.distinct().size == assets.size) { "asset IDs must be unique in a reservation batch" }
@@ -1598,12 +1647,6 @@ internal class SqliteAnkiMutationStore(
                 ?: throw MediaAdmissionViolation(MediaAdmissionRefusal.LEASE_NOT_ACQUIRED, "Media lease is not acquired")
             if (lease.state != MediaLeaseState.ACTIVE) {
                 throw MediaAdmissionViolation(MediaAdmissionRefusal.LEASE_NOT_ACTIVE, "Media lease is released")
-            }
-            if (assets.size > lease.unusedSlots) {
-                throw MediaAdmissionViolation(
-                    MediaAdmissionRefusal.PER_RUN_NAMESPACE_CAPACITY,
-                    "Per-run media namespace capacity exhausted",
-                )
             }
             assets.forEach { validateMediaNames(it.requestedFilename, it.preferredName) }
             val existingLocks = boundedNamespaceLocks(db)
@@ -1615,16 +1658,35 @@ internal class SqliteAnkiMutationStore(
                         providerPrefix(it.preferredName),
                     )
                 }
-            if (existingLocks.size + newLocks.size > capacityLimits.globalUnresolvedLimit) {
+            val refusals = MediaNamespaceValidator.refuseCandidates(existingLocks, newLocks).toMutableMap()
+            newLocks.filterNot { it.owner in refusals }.forEach { candidate ->
+                try {
+                    requireNoClaimNamespaceCollisions(db, listOf(candidate))
+                } catch (failure: MediaAdmissionViolation) {
+                    refusals[candidate.owner] = failure
+                }
+            }
+            if (!allowRowRefusals) {
+                refusals.values.firstOrNull()?.let { throw it }
+            }
+            val acceptedLocks = newLocks.filterNot { it.owner in refusals }
+            if (acceptedLocks.size > lease.unusedSlots) {
+                throw MediaAdmissionViolation(
+                    MediaAdmissionRefusal.PER_RUN_NAMESPACE_CAPACITY,
+                    "Per-run media namespace capacity exhausted",
+                )
+            }
+            if (existingLocks.size + acceptedLocks.size > capacityLimits.globalUnresolvedLimit) {
                 throw MediaAdmissionViolation(
                     MediaAdmissionRefusal.GLOBAL_NAMESPACE_CAPACITY,
                     "Global media namespace capacity exhausted",
                 )
             }
-            requireNoClaimNamespaceCollisions(db, newLocks)
-            MediaNamespaceValidator.requireDisjoint(existingLocks + newLocks)
             val now = timestamp()
-            assets.map { asset ->
+            assets.zip(newLocks).map { (asset, lock) ->
+                refusals[lock.owner]?.let {
+                    return@map MediaReservationAdmission.Refused(asset.assetId, it)
+                }
                 val id =
                     db.insertOrThrow(
                         "media_reservations",
@@ -1645,7 +1707,7 @@ internal class SqliteAnkiMutationStore(
                             "updated_at_ms" to now,
                         ),
                     )
-                reservationById(db, id)
+                MediaReservationAdmission.Reserved(reservationById(db, id))
             }
         }
     }
@@ -3718,8 +3780,15 @@ internal class SqliteAnkiMutationStore(
     }
 
     private fun reservationById(db: SQLiteDatabase, id: Long): MediaReservationRecord =
+        reservationByIdOrNull(db, id)
+            ?: throw JournalCorruptionException("Missing media reservation $id")
+
+    private fun reservationByIdOrNull(
+        db: SQLiteDatabase,
+        id: Long,
+    ): MediaReservationRecord? =
         db.query("media_reservations", null, "id = ?", arrayOf(id.toString()), null, null, null).use {
-            it.requireSingle(::reservationFromCursor, "media reservation $id")
+            it.singleOrNull(::reservationFromCursor, "media reservation $id")
         }
 
     private fun reservationFromCursor(row: Cursor) =
@@ -4074,6 +4143,229 @@ internal class SqliteAnkiMutationStore(
         )
     }
 
+    private fun requireMaintenanceInactive(db: SQLiteDatabase) {
+        val active =
+            scalarLong(
+                db,
+                "SELECT retention_active FROM journal_maintenance WHERE id = 1",
+            )
+        if (active != 0L) throw JournalCorruptionException("Journal retention transaction is incomplete")
+    }
+
+    private fun requireBoundedOpenValidationScope(db: SQLiteDatabase) {
+        val excessActive =
+            db.rawQuery(
+                """SELECT id FROM parents
+                   WHERE state IN ($ACTIVE_PARENT_STATES_SQL)
+                   LIMIT 1 OFFSET $OPEN_VALIDATION_ROW_LIMIT""".trimIndent(),
+                null,
+            ).use { it.moveToFirst() }
+        if (excessActive) throw JournalCorruptionException("Journal active validation scope exceeds its bound")
+        val excessOpenRemediations =
+            db.rawQuery(
+                """SELECT id FROM remediations WHERE state = 'OPEN'
+                   LIMIT 1 OFFSET $OPEN_VALIDATION_ROW_LIMIT""".trimIndent(),
+                null,
+            ).use { it.moveToFirst() }
+        if (excessOpenRemediations) {
+            throw JournalCorruptionException("Journal remediation validation scope exceeds its bound")
+        }
+        val excessUnresolvedClaims =
+            db.rawQuery(
+                """SELECT id FROM media_claims
+                   WHERE state IN ('PENDING', 'STORED', 'COMMIT_UNCERTAIN', 'PRESENT_BYTES_VERIFIED')
+                   LIMIT 1 OFFSET ${capacityLimits.globalUnresolvedLimit}""".trimIndent(),
+                null,
+            ).use { it.moveToFirst() }
+        if (excessUnresolvedClaims) {
+            throw JournalCorruptionException("Journal unresolved-claim validation scope exceeds its bound")
+        }
+        val excessReservedMedia =
+            db.rawQuery(
+                """SELECT id FROM media_reservations WHERE state = 'RESERVED'
+                   LIMIT 1 OFFSET ${capacityLimits.globalUnresolvedLimit}""".trimIndent(),
+                null,
+            ).use { it.moveToFirst() }
+        if (excessReservedMedia) {
+            throw JournalCorruptionException("Journal reserved-media validation scope exceeds its bound")
+        }
+    }
+
+    private fun pruneCompletedCohortsOnOpen(db: SQLiteDatabase) {
+        db.beginTransaction()
+        try {
+            pruneCompletedCohortsDb(db, timestamp())
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
+    }
+
+    private fun pruneCompletedCohortsDb(db: SQLiteDatabase, nowEpochMillis: Long) {
+        val countBoundary =
+            db.rawQuery(
+                """SELECT finalized_at_ms, parent_id FROM terminal_parent_audit
+                   ORDER BY finalized_at_ms DESC, parent_id DESC
+                   LIMIT 1 OFFSET ${retentionPolicy.completedCohortLimit - 1}""".trimIndent(),
+                null,
+            ).use { cursor ->
+                cursor.singleOrNull(
+                    {
+                        JournalRetentionBoundary(
+                            finalizedAtMs = it.requiredLong(0),
+                            parentId = it.requiredLong(1),
+                        )
+                    },
+                    "retention count boundary",
+                )
+            }
+        val countClause =
+            countBoundary?.let {
+                "(a.finalized_at_ms < ${it.finalizedAtMs} OR " +
+                    "(a.finalized_at_ms = ${it.finalizedAtMs} AND p.id < ${it.parentId}))"
+            } ?: "0"
+        val ageCutoff = retentionPolicy.ageCutoff(nowEpochMillis)
+        val candidates =
+            db.rawQuery(
+                """SELECT p.id, p.run_id, p.request_id, a.finalized_at_ms
+                   FROM parents p JOIN terminal_parent_audit a ON a.parent_id = p.id
+                   WHERE p.state IN ('RESPONSE_ACKNOWLEDGED', 'ABANDONED') AND
+                       (a.finalized_at_ms < $ageCutoff OR $countClause) AND
+                       NOT EXISTS(SELECT 1 FROM remediations r
+                           WHERE r.parent_id = p.id AND r.state = 'OPEN') AND
+                       NOT EXISTS(SELECT 1 FROM remediations r JOIN media_claims rc ON rc.id = r.claim_id
+                           WHERE rc.run_id = p.run_id AND rc.request_id = p.request_id AND
+                               r.state = 'OPEN') AND
+                       NOT EXISTS(SELECT 1 FROM media_claims c
+                           WHERE c.run_id = p.run_id AND c.request_id = p.request_id AND
+                               c.state IN ('PENDING', 'STORED', 'COMMIT_UNCERTAIN', 'PRESENT_BYTES_VERIFIED')) AND
+                       NOT EXISTS(SELECT 1 FROM media_reservations x
+                           WHERE x.run_id = p.run_id AND x.request_id = p.request_id AND x.state = 'RESERVED')
+                   ORDER BY a.finalized_at_ms, p.id
+                   LIMIT $RETENTION_PRUNE_BATCH""".trimIndent(),
+                null,
+            ).use { cursor ->
+                cursor.mapRows {
+                    RetentionCandidate(
+                        parentId = it.requiredLong(0),
+                        runId = it.requiredString(1),
+                        requestId = it.requiredString(2),
+                        finalizedAtMs = it.requiredLong(3),
+                    )
+                }
+            }.filter {
+                retentionPolicy.shouldPrune(
+                    it.finalizedAtMs,
+                    it.parentId,
+                    nowEpochMillis,
+                    countBoundary,
+                )
+            }
+        val remediationIds = resolvedRemediationPruneIds(db, nowEpochMillis)
+        if (candidates.isEmpty() && remediationIds.isEmpty()) return
+
+        db.update(
+            "journal_maintenance",
+            values("retention_active" to 1),
+            "id = 1 AND retention_active = 0",
+            null,
+        ).requireOne("enable journal retention")
+        try {
+            candidates.forEach { candidate -> pruneCompletedCohortDb(db, candidate) }
+            remediationIds.forEach { remediationId ->
+                db.delete("remediations", "id = ?", arrayOf(remediationId.toString()))
+                    .requireOne("prune resolved remediation")
+            }
+        } finally {
+            db.update(
+                "journal_maintenance",
+                values("retention_active" to 0),
+                "id = 1 AND retention_active = 1",
+                null,
+            ).requireOne("disable journal retention")
+        }
+    }
+
+    private fun resolvedRemediationPruneIds(
+        db: SQLiteDatabase,
+        nowEpochMillis: Long,
+    ): List<Long> {
+        val boundary =
+            db.rawQuery(
+                """SELECT updated_at_ms, id FROM remediations WHERE state = 'RESOLVED'
+                   ORDER BY updated_at_ms DESC, id DESC
+                   LIMIT 1 OFFSET ${retentionPolicy.resolvedRemediationLimit - 1}""".trimIndent(),
+                null,
+            ).use { cursor ->
+                cursor.singleOrNull(
+                    { it.requiredLong(0) to it.requiredLong(1) },
+                    "resolved remediation retention boundary",
+                )
+            }
+        val countClause =
+            boundary?.let {
+                "(updated_at_ms < ${it.first} OR (updated_at_ms = ${it.first} AND id < ${it.second}))"
+            } ?: "0"
+        return db.rawQuery(
+            """SELECT id FROM remediations
+               WHERE state = 'RESOLVED' AND
+                   (updated_at_ms < ${retentionPolicy.ageCutoff(nowEpochMillis)} OR $countClause)
+               ORDER BY updated_at_ms, id
+               LIMIT $RETENTION_PRUNE_BATCH""".trimIndent(),
+            null,
+        ).use { cursor -> cursor.mapRows { it.requiredLong(0) } }
+    }
+
+    private fun pruneCompletedCohortDb(db: SQLiteDatabase, candidate: RetentionCandidate) {
+        val arguments = arrayOf(candidate.parentId.toString())
+        db.delete("remediations", "parent_id = ? AND state = 'RESOLVED'", arguments)
+        db.delete("terminal_result_audit", "parent_id = ?", arguments)
+        db.delete("terminal_target_audit", "parent_id = ?", arguments)
+        db.delete("terminal_outcome_audit", "parent_id = ?", arguments)
+        db.delete("terminal_receipt_audit", "parent_id = ?", arguments)
+        db.delete("terminal_parent_audit", "parent_id = ?", arguments)
+            .requireOne("prune terminal parent audit")
+        db.delete("parents", "id = ?", arguments).requireOne("prune completed parent")
+
+        val requestArguments = arrayOf(candidate.runId, candidate.requestId)
+        val leaseIds =
+            db.query(
+                true,
+                "media_reservations",
+                arrayOf("lease_id"),
+                "run_id = ? AND request_id = ?",
+                requestArguments,
+                null,
+                null,
+                null,
+                null,
+            ).use { cursor -> cursor.mapRows { it.requiredLong(0) } }
+        db.delete(
+            "remediations",
+            """state = 'RESOLVED' AND claim_id IN (
+                   SELECT id FROM media_claims WHERE run_id = ? AND request_id = ?)""".trimIndent(),
+            requestArguments,
+        )
+        db.delete(
+            "media_reservations",
+            "run_id = ? AND request_id = ? AND state != 'RESERVED'",
+            requestArguments,
+        )
+        db.delete(
+            "media_claims",
+            "run_id = ? AND request_id = ? AND state = 'CLEANED_VERIFIED'",
+            requestArguments,
+        )
+        leaseIds.forEach { leaseId ->
+            db.delete(
+                "media_leases",
+                "id = ? AND state = 'RELEASED' AND NOT EXISTS(" +
+                    "SELECT 1 FROM media_reservations WHERE lease_id = ?)",
+                arrayOf(leaseId.toString(), leaseId.toString()),
+            )
+        }
+    }
+
     private fun validateMediaNames(directFilename: String, preferredName: String) {
         listOf(directFilename, preferredName).forEach { value ->
             require(value.isNotBlank()) { "media name must not be blank" }
@@ -4089,6 +4381,13 @@ internal class SqliteAnkiMutationStore(
     private fun timestamp(): Long = clock.nowEpochMillis().also { require(it >= 0) { "Journal clock must be non-negative" } }
 
     private fun nextTimestamp(previous: Long): Long = maxOf(timestamp(), previous + 1)
+
+    private data class RetentionCandidate(
+        val parentId: Long,
+        val runId: String,
+        val requestId: String,
+        val finalizedAtMs: Long,
+    )
 
     private fun <T> read(block: (SQLiteDatabase) -> T): T {
         checkAccess()
@@ -4130,6 +4429,9 @@ internal class SqliteAnkiMutationStore(
 
     companion object {
         const val DEFAULT_DATABASE_NAME = "anki_mutations.db"
+        private const val ACTIVE_PARENT_STATES_SQL = "'PREPARED','RUNNING','RESULT_READY'"
+        private const val OPEN_VALIDATION_ROW_LIMIT = GLOBAL_UNRESOLVED_CLAIM_LIMIT
+        private const val RETENTION_PRUNE_BATCH = 512
     }
 }
 

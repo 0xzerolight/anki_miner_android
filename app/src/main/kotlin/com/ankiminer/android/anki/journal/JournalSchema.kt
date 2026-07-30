@@ -6,7 +6,7 @@ import java.security.MessageDigest
 
 /** Clean pre-release schema. There is intentionally no migration from the discarded JSON scratch schema. */
 internal object JournalSchema {
-    const val VERSION = 3
+    const val VERSION = 4
 
     private fun names(values: Iterable<Enum<*>>) = values.joinToString(",") { "'${it.name}'" }
 
@@ -30,6 +30,7 @@ internal object JournalSchema {
 
     internal val requiredTables: Set<String> =
         setOf(
+            "journal_maintenance",
             "parents",
             "parent_request_items",
             "target_expectations",
@@ -70,50 +71,71 @@ internal object JournalSchema {
         statements.forEach(db::execSQL)
     }
 
-    /** Lossless additive migration for both durable journal versions shipped before note writes. */
+    /** Lossless migration for every durable journal version shipped before bounded retention. */
     fun upgrade(
         db: SQLiteDatabase,
         oldVersion: Int,
         newVersion: Int,
     ) {
-        if (oldVersion !in 1..2 || newVersion != VERSION) {
+        if (oldVersion !in 1..3 || newVersion != VERSION) {
             throw JournalCorruptionException(
                 "Unsupported journal schema migration $oldVersion -> $newVersion",
             )
         }
 
         dropKnownNonTableObjects(db)
-        db.execSQL(requireStatement("CREATE TABLE routing_observations"))
-        db.execSQL(
-            """
-            INSERT INTO routing_observations (
-                intent_id, parent_id, request_index, card_id, note_id, ordinal, deck_id, observed_at_ms
+        if (requiresRemediationRebuild(oldVersion)) rebuildVersionOneRemediations(db)
+        db.execSQL(requireStatement("CREATE TABLE journal_maintenance"))
+        db.execSQL("INSERT INTO journal_maintenance (id, retention_active) VALUES (1, 0)")
+        if (oldVersion <= 2) {
+            db.execSQL(requireStatement("CREATE TABLE routing_observations"))
+            db.execSQL(
+                """
+                INSERT INTO routing_observations (
+                    intent_id, parent_id, request_index, card_id, note_id, ordinal, deck_id, observed_at_ms
+                )
+                SELECT id, parent_id, request_index, card_id, note_id, ordinal, target_deck_id, updated_at_ms
+                FROM routing_intents
+                WHERE child_id IS NULL AND state = 'VERIFIED' AND pre_update_deck_id = target_deck_id
+                """.trimIndent(),
             )
-            SELECT id, parent_id, request_index, card_id, note_id, ordinal, target_deck_id, updated_at_ms
-            FROM routing_intents
-            WHERE child_id IS NULL AND state = 'VERIFIED' AND pre_update_deck_id = target_deck_id
-            """.trimIndent(),
-        )
-        db.execSQL(
-            """
-            INSERT INTO remediations (
-                parent_id, claim_id, staging_id, staging_subject_id, kind, state, summary,
-                compact_evidence, created_at_ms, updated_at_ms
+            db.execSQL(
+                """
+                INSERT INTO remediations (
+                    parent_id, claim_id, staging_id, staging_subject_id, kind, state, summary,
+                    compact_evidence, created_at_ms, updated_at_ms
+                )
+                SELECT p.id, c.id, NULL, NULL, 'MEDIA_STORED_UNATTACHED', 'OPEN',
+                    'Stored Anki media was not attached to a verified note',
+                    'schema=v3;reason=stored-unattached-backfill',
+                    max(p.updated_at_ms, c.updated_at_ms), max(p.updated_at_ms, c.updated_at_ms)
+                FROM parents p JOIN media_claims c
+                    ON c.run_id = p.run_id AND c.request_id = p.request_id
+                WHERE p.operation_kind = 'STORE_MEDIA' AND
+                    p.state IN ('RESPONSE_ACKNOWLEDGED', 'ABANDONED') AND
+                    c.state IN ('STORED', 'PRESENT_BYTES_VERIFIED') AND NOT EXISTS(
+                        SELECT 1 FROM remediations r
+                        WHERE r.claim_id = c.id AND r.kind = 'MEDIA_STORED_UNATTACHED')
+                """.trimIndent(),
             )
-            SELECT p.id, c.id, NULL, NULL, 'MEDIA_STORED_UNATTACHED', 'OPEN',
-                'Stored Anki media was not attached to a verified note',
-                'schema=v3;reason=stored-unattached-backfill',
-                max(p.updated_at_ms, c.updated_at_ms), max(p.updated_at_ms, c.updated_at_ms)
-            FROM parents p JOIN media_claims c
-                ON c.run_id = p.run_id AND c.request_id = p.request_id
-            WHERE p.operation_kind = 'STORE_MEDIA' AND
-                p.state IN ('RESPONSE_ACKNOWLEDGED', 'ABANDONED') AND
-                c.state IN ('STORED', 'PRESENT_BYTES_VERIFIED') AND NOT EXISTS(
-                    SELECT 1 FROM remediations r
-                    WHERE r.claim_id = c.id AND r.kind = 'MEDIA_STORED_UNATTACHED')
-            """.trimIndent(),
-        )
+        }
         nonTableStatements.forEach(db::execSQL)
+    }
+
+    internal fun requiresRemediationRebuild(oldVersion: Int): Boolean = oldVersion == 1
+
+    private fun rebuildVersionOneRemediations(db: SQLiteDatabase) {
+        db.execSQL("ALTER TABLE remediations RENAME TO remediations_v1_legacy")
+        db.execSQL(requireStatement("CREATE TABLE remediations"))
+        db.execSQL(
+            """INSERT INTO remediations (
+                   id, parent_id, claim_id, staging_id, staging_subject_id, kind, state, summary,
+                   compact_evidence, created_at_ms, updated_at_ms)
+               SELECT id, parent_id, claim_id, staging_id, staging_subject_id, kind, state, summary,
+                   compact_evidence, created_at_ms, updated_at_ms
+               FROM remediations_v1_legacy""".trimIndent(),
+        )
+        db.execSQL("DROP TABLE remediations_v1_legacy")
     }
 
     private fun requireStatement(prefix: String): String =
@@ -256,6 +278,13 @@ internal object JournalSchema {
 
     private val statements: List<String> by lazy {
         listOf(
+            """
+            CREATE TABLE journal_maintenance (
+                id INTEGER PRIMARY KEY CHECK(id = 1),
+                retention_active INTEGER NOT NULL CHECK(retention_active IN (0, 1))
+            )
+            """.trimIndent(),
+            "INSERT INTO journal_maintenance (id, retention_active) VALUES (1, 0)",
             """
             CREATE TABLE parents (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -722,11 +751,18 @@ internal object JournalSchema {
             """.trimIndent(),
             "CREATE INDEX unfinished_parent_index ON parents(state, created_at_ms, id)",
             "CREATE INDEX unresolved_claim_index ON media_claims(state, id)",
+            "CREATE INDEX claim_request_state_index ON media_claims(run_id, request_id, state, id)",
             "CREATE INDEX claim_namespace_direct_index ON media_claims(COALESCE(actual_filename, requested_filename)) WHERE state != 'CLEANED_VERIFIED'",
             "CREATE INDEX claim_namespace_prefix_index ON media_claims(provider_prefix) WHERE state != 'CLEANED_VERIFIED'",
+            "CREATE INDEX media_lease_state_index ON media_leases(state, id)",
+            "CREATE INDEX media_reservation_state_index ON media_reservations(state, id)",
             "CREATE INDEX staging_recovery_index ON staging_artifacts(state, id)",
             "CREATE INDEX remediation_open_index ON remediations(state, id)",
+            "CREATE INDEX remediation_retention_index ON remediations(state, updated_at_ms DESC, id DESC)",
+            "CREATE INDEX remediation_parent_state_index ON remediations(parent_id, state)",
+            "CREATE INDEX remediation_claim_state_index ON remediations(claim_id, state)",
             "CREATE UNIQUE INDEX one_stored_unattached_remediation_per_claim ON remediations(claim_id) WHERE kind = 'MEDIA_STORED_UNATTACHED'",
+            "CREATE INDEX terminal_parent_retention_index ON terminal_parent_audit(finalized_at_ms DESC, parent_id DESC)",
             parentIdentityTrigger,
             *parentNormalizedTransitionTriggers.toTypedArray(),
             parentTransitionTrigger,
@@ -1547,7 +1583,12 @@ internal object JournalSchema {
         listOf(
             """
             CREATE TRIGGER parent_delete_forbidden BEFORE DELETE ON parents
-            BEGIN SELECT RAISE(ABORT, 'parent audit roots are never deleted'); END
+            WHEN NOT EXISTS(SELECT 1 FROM journal_maintenance WHERE id = 1 AND retention_active = 1) OR
+                 OLD.state NOT IN ('RESPONSE_ACKNOWLEDGED', 'ABANDONED') OR
+                 EXISTS(SELECT 1 FROM terminal_parent_audit a WHERE a.parent_id = OLD.id) OR
+                 EXISTS(SELECT 1 FROM remediations r WHERE r.parent_id = OLD.id AND r.state = 'OPEN') OR
+                 EXISTS(SELECT 1 FROM mutation_children c WHERE c.parent_id = OLD.id)
+            BEGIN SELECT RAISE(ABORT, 'parent is not retention-safe'); END
             """.trimIndent(),
             """
             CREATE TRIGGER media_lease_insert_guard BEFORE INSERT ON media_leases
@@ -1569,7 +1610,10 @@ internal object JournalSchema {
             """.trimIndent(),
             """
             CREATE TRIGGER media_lease_delete_forbidden BEFORE DELETE ON media_leases
-            BEGIN SELECT RAISE(ABORT, 'media leases are compact durable accounting'); END
+            WHEN NOT EXISTS(SELECT 1 FROM journal_maintenance WHERE id = 1 AND retention_active = 1) OR
+                 OLD.state != 'RELEASED' OR
+                 EXISTS(SELECT 1 FROM media_reservations r WHERE r.lease_id = OLD.id)
+            BEGIN SELECT RAISE(ABORT, 'media lease still owns durable accounting'); END
             """.trimIndent(),
             """
             CREATE TRIGGER media_reservation_insert_guard BEFORE INSERT ON media_reservations
@@ -1608,7 +1652,12 @@ internal object JournalSchema {
             """.trimIndent(),
             """
             CREATE TRIGGER media_reservation_delete_forbidden BEFORE DELETE ON media_reservations
-            BEGIN SELECT RAISE(ABORT, 'media reservations are compact durable accounting'); END
+            WHEN NOT EXISTS(SELECT 1 FROM journal_maintenance WHERE id = 1 AND retention_active = 1) OR
+                 OLD.state = 'RESERVED' OR (
+                OLD.state = 'PROMOTED' AND EXISTS(
+                    SELECT 1 FROM media_claims c WHERE c.id = OLD.claim_id AND
+                        c.state IN ('PENDING', 'STORED', 'COMMIT_UNCERTAIN', 'PRESENT_BYTES_VERIFIED')))
+            BEGIN SELECT RAISE(ABORT, 'media reservation is not retention-safe'); END
             """.trimIndent(),
             """
             CREATE TRIGGER media_claim_insert_guard BEFORE INSERT ON media_claims
@@ -1653,7 +1702,10 @@ internal object JournalSchema {
             """.trimIndent(),
             """
             CREATE TRIGGER media_claim_delete_forbidden BEFORE DELETE ON media_claims
-            BEGIN SELECT RAISE(ABORT, 'media claims are never silently removed'); END
+            WHEN NOT EXISTS(SELECT 1 FROM journal_maintenance WHERE id = 1 AND retention_active = 1) OR
+                 OLD.state != 'CLEANED_VERIFIED' OR EXISTS(
+                SELECT 1 FROM remediations r WHERE r.claim_id = OLD.id AND r.state = 'OPEN')
+            BEGIN SELECT RAISE(ABORT, 'media claim still owns bytes or recovery evidence'); END
             """.trimIndent(),
             """
             CREATE TRIGGER staging_insert_guard BEFORE INSERT ON staging_artifacts
@@ -1719,7 +1771,9 @@ internal object JournalSchema {
             """.trimIndent(),
             """
             CREATE TRIGGER remediation_delete_forbidden BEFORE DELETE ON remediations
-            BEGIN SELECT RAISE(ABORT, 'remediation evidence is never silently removed'); END
+            WHEN NOT EXISTS(SELECT 1 FROM journal_maintenance WHERE id = 1 AND retention_active = 1) OR
+                 OLD.state != 'RESOLVED'
+            BEGIN SELECT RAISE(ABORT, 'open remediation evidence is undeletable'); END
             """.trimIndent(),
             """
             CREATE TRIGGER terminal_parent_audit_insert_guard BEFORE INSERT ON terminal_parent_audit
@@ -1804,23 +1858,38 @@ internal object JournalSchema {
             """.trimIndent(),
             """
             CREATE TRIGGER terminal_parent_audit_delete_forbidden BEFORE DELETE ON terminal_parent_audit
-            BEGIN SELECT RAISE(ABORT, 'terminal parent audit is undeletable'); END
+            WHEN NOT EXISTS(SELECT 1 FROM journal_maintenance WHERE id = 1 AND retention_active = 1) OR
+                 (SELECT state FROM parents WHERE id = OLD.parent_id)
+                 NOT IN ('RESPONSE_ACKNOWLEDGED', 'ABANDONED')
+            BEGIN SELECT RAISE(ABORT, 'terminal parent audit is not retention-safe'); END
             """.trimIndent(),
             """
             CREATE TRIGGER terminal_result_audit_delete_forbidden BEFORE DELETE ON terminal_result_audit
-            BEGIN SELECT RAISE(ABORT, 'terminal result audit is undeletable'); END
+            WHEN NOT EXISTS(SELECT 1 FROM journal_maintenance WHERE id = 1 AND retention_active = 1) OR
+                 (SELECT state FROM parents WHERE id = OLD.parent_id)
+                 NOT IN ('RESPONSE_ACKNOWLEDGED', 'ABANDONED')
+            BEGIN SELECT RAISE(ABORT, 'terminal result audit is not retention-safe'); END
             """.trimIndent(),
             """
             CREATE TRIGGER terminal_target_audit_delete_forbidden BEFORE DELETE ON terminal_target_audit
-            BEGIN SELECT RAISE(ABORT, 'terminal target audit is undeletable'); END
+            WHEN NOT EXISTS(SELECT 1 FROM journal_maintenance WHERE id = 1 AND retention_active = 1) OR
+                 (SELECT state FROM parents WHERE id = OLD.parent_id)
+                 NOT IN ('RESPONSE_ACKNOWLEDGED', 'ABANDONED')
+            BEGIN SELECT RAISE(ABORT, 'terminal target audit is not retention-safe'); END
             """.trimIndent(),
             """
             CREATE TRIGGER terminal_outcome_audit_delete_forbidden BEFORE DELETE ON terminal_outcome_audit
-            BEGIN SELECT RAISE(ABORT, 'terminal outcome audit is undeletable'); END
+            WHEN NOT EXISTS(SELECT 1 FROM journal_maintenance WHERE id = 1 AND retention_active = 1) OR
+                 (SELECT state FROM parents WHERE id = OLD.parent_id)
+                 NOT IN ('RESPONSE_ACKNOWLEDGED', 'ABANDONED')
+            BEGIN SELECT RAISE(ABORT, 'terminal outcome audit is not retention-safe'); END
             """.trimIndent(),
             """
             CREATE TRIGGER terminal_receipt_audit_delete_forbidden BEFORE DELETE ON terminal_receipt_audit
-            BEGIN SELECT RAISE(ABORT, 'terminal receipt audit is undeletable'); END
+            WHEN NOT EXISTS(SELECT 1 FROM journal_maintenance WHERE id = 1 AND retention_active = 1) OR
+                 (SELECT state FROM parents WHERE id = OLD.parent_id)
+                 NOT IN ('RESPONSE_ACKNOWLEDGED', 'ABANDONED')
+            BEGIN SELECT RAISE(ABORT, 'terminal receipt audit is not retention-safe'); END
             """.trimIndent(),
         )
 

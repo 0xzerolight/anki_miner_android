@@ -15,6 +15,7 @@ import com.ankiminer.android.anki.protocol.MediaAsset
 import com.ankiminer.android.anki.protocol.MediaBinding
 import com.ankiminer.android.anki.protocol.StoreMediaRequest
 import com.ankiminer.android.anki.protocol.VerifyTargetRequest
+import java.util.ArrayDeque
 import java.util.concurrent.atomic.AtomicReference
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -67,12 +68,14 @@ class SqliteAnkiMutationStoreInstrumentedTest {
     }
 
     @Test
-    fun versionOneAndTwoUpgradeLosslesslyBackfillsChildlessRoutingObservations() {
-        listOf(1, 2).forEach { oldVersion ->
+    fun legacyVersionUpgradesLosslesslyBackfillAndRebuildAuthenticTables() {
+        listOf(1 to false, 1 to true, 2 to false, 3 to false).forEach { (oldVersion, withStoredMedia) ->
             val name = databaseName()
-            val request = createRequest(200 + oldVersion, 1, 1)
-            val providerNoteId = 20_000L + oldVersion
+            val scenario = oldVersion * 10 + if (withStoredMedia) 1 else 0
+            val request = createRequest(200 + scenario, 1, 1)
+            val providerNoteId = 20_000L + scenario
             var legacyStoredMedia: Pair<JournalRequest, MediaPromotion>? = null
+            var legacyRemediationId = 0L
             try {
                 SqliteAnkiMutationStore(context, name, enforceBackgroundThread = false).use { store ->
                     prepareCommittedNote(store, request, providerNoteId)
@@ -106,8 +109,17 @@ class SqliteAnkiMutationStoreInstrumentedTest {
                         ),
                     )
                     assertEquals(NoteRoutingPhase.ROUTED, store.parent(request.key)?.routingPhase)
-                    if (oldVersion == 1) {
-                        legacyStoredMedia = readyStoredMedia(store, 300 + oldVersion, 1, 1)
+                    legacyRemediationId =
+                        store.addRemediation(
+                            RemediationDraft(
+                                parentId = requireNotNull(store.parent(request.key)).id,
+                                kind = RemediationKind.CAPACITY_EXHAUSTED,
+                                summary = "legacy remediation copy proof",
+                                compactEvidence = "legacy-schema=$oldVersion",
+                            ),
+                        ).id
+                    if (withStoredMedia) {
+                        legacyStoredMedia = readyStoredMedia(store, 300 + scenario, 1, 1)
                         val (mediaRequest, _) = requireNotNull(legacyStoredMedia)
                         assertTrue(
                             store.cleanupRun(
@@ -124,28 +136,14 @@ class SqliteAnkiMutationStoreInstrumentedTest {
                     null,
                     SQLiteDatabase.OPEN_READWRITE,
                 ).use { db ->
-                    // v1/v2 stored direct VERIFIED routing in routing_intents. Remove only the v3
-                    // normalized observation surface and retain all note/receipt/intent evidence.
-                    db.execSQL("DROP TRIGGER routing_observations_delete_guard")
-                    db.execSQL("DROP TRIGGER routing_observation_insert_guard")
-                    db.execSQL("DROP TRIGGER routing_observation_update_forbidden")
-                    db.execSQL("DROP TABLE routing_observations")
+                    // Freeze the authentic pre-v3 table incompatibility instead of merely changing
+                    // user_version on a current schema. v1's persisted CHECK lacks the v2
+                    // MEDIA_STORED_UNATTACHED kind; v2 already carries the widened CHECK.
+                    dropProjectIndexesAndTriggers(db)
+                    db.execSQL("DROP TABLE journal_maintenance")
+                    if (oldVersion <= 2) db.execSQL("DROP TABLE routing_observations")
                     if (oldVersion == 1) {
-                        // v1 allowed a finalized stored claim without the v2 remediation guards.
-                        db.execSQL("DROP TRIGGER remediation_delete_forbidden")
-                        assertEquals(
-                            1,
-                            db.delete(
-                                "remediations",
-                                "kind = ?",
-                                arrayOf(RemediationKind.MEDIA_STORED_UNATTACHED.name),
-                            ),
-                        )
-                        db.execSQL("DROP INDEX one_stored_unattached_remediation_per_claim")
-                        db.execSQL("DROP TRIGGER stored_unattached_remediation_insert_guard")
-                        db.execSQL("DROP TRIGGER stored_unattached_remediation_resolution_guard")
-                        db.execSQL("DROP TRIGGER stored_unattached_claim_guard")
-                        db.execSQL("DROP TRIGGER stored_unattached_claim_resolution")
+                        replaceRemediationsWithAuthenticVersionOneDdl(db)
                     }
                     db.execSQL("PRAGMA user_version = $oldVersion")
                 }
@@ -160,6 +158,9 @@ class SqliteAnkiMutationStoreInstrumentedTest {
                     assertEquals(1L, count(reopened.writableDatabase, "note_receipts"))
                     assertEquals(1L, count(reopened.writableDatabase, "routing_intents"))
                     assertEquals(1L, count(reopened.writableDatabase, "routing_observations"))
+                    val copiedRemediation = reopened.openRemediations().single { it.id == legacyRemediationId }
+                    assertEquals(RemediationKind.CAPACITY_EXHAUSTED, copiedRemediation.kind)
+                    assertEquals("legacy-schema=$oldVersion", copiedRemediation.compactEvidence)
                     reopened.writableDatabase.rawQuery(
                         """SELECT i.card_id, i.note_id, i.ordinal, i.target_deck_id,
                                   o.card_id, o.note_id, o.ordinal, o.deck_id
@@ -1708,7 +1709,7 @@ class SqliteAnkiMutationStoreInstrumentedTest {
         }
 
     @Test
-    fun exactRunCleanupAcceptsOrderIndependentExactSetAndKeepsOnlyCompactAudit() =
+    fun exactRunCleanupAcceptsOrderIndependentExactSetAndKeepsOnlyCompactAudit() {
         withStore { store ->
             val first = readyVerify(store, 11, 1)
             val second = readyVerify(store, 11, 2)
@@ -1725,6 +1726,59 @@ class SqliteAnkiMutationStoreInstrumentedTest {
             assertEquals(2L, count(store.writableDatabase, "terminal_outcome_audit"))
             assertEquals(0L, count(store.writableDatabase, "parent_terminal_metadata"))
         }
+
+        val name = databaseName()
+        val policy =
+            JournalRetentionPolicy.forTests(
+                completedCohortLimit = 2,
+                resolvedRemediationLimit = 2,
+                maxAgeMillis = Long.MAX_VALUE,
+            )
+        val inFlight = verifyRequest(111, 1)
+        val recoverable = verifyRequest(112, 1)
+        val finalizedRuns = (113..115).toList()
+        val finalized = finalizedRuns.map { verifyRequest(it, 1) }
+        try {
+            SqliteAnkiMutationStore(
+                context,
+                name,
+                retentionPolicy = policy,
+                enforceBackgroundThread = false,
+            ).use { store ->
+                store.createParent(inFlight)
+                store.beginParent(inFlight.key)
+                readyVerify(store, 112, 1)
+                finalizedRuns.zip(finalized).forEach { (run, request) ->
+                    readyVerify(store, run, 1)
+                    assertTrue(
+                        store.cleanupRun(
+                            request.key.runId,
+                            acknowledgeAuthorized = true,
+                            frozenDurableRequestIds = listOf(request.key.requestId),
+                        ).evidenceAccepted,
+                    )
+                }
+
+                assertNull(store.parent(finalized.first().key))
+                assertEquals(ParentState.RUNNING, store.parent(inFlight.key)?.state)
+                assertEquals(ParentState.RESULT_READY, store.parent(recoverable.key)?.state)
+                assertTrue(store.replay(recoverable, liveRun = true) is ReplayResult.Ready)
+                assertEquals(2L, count(store.writableDatabase, "terminal_parent_audit"))
+            }
+            SqliteAnkiMutationStore(
+                context,
+                name,
+                retentionPolicy = policy,
+                enforceBackgroundThread = false,
+            ).use { reopened ->
+                assertEquals(ParentState.RUNNING, reopened.parent(inFlight.key)?.state)
+                assertEquals(ParentState.RESULT_READY, reopened.parent(recoverable.key)?.state)
+                assertEquals(2L, count(reopened.writableDatabase, "terminal_parent_audit"))
+            }
+        } finally {
+            context.deleteDatabase(name)
+        }
+    }
 
     @Test
     fun finalizedStoredMediaRequiresAtomicUnattachedAcknowledgementAcrossReopen() {
@@ -2611,6 +2665,58 @@ class SqliteAnkiMutationStoreInstrumentedTest {
             ).use { reopened ->
                 assertEquals(ParentState.RESPONSE_ACKNOWLEDGED, reopened.parent(request.key)?.state)
             }
+
+            val routingName = databaseName()
+            try {
+                var rollbackReads: ArrayDeque<Long>? = null
+                val rollbackClock =
+                    JournalClock {
+                        rollbackReads?.let { reads ->
+                            if (reads.isEmpty()) 1_000L else reads.removeFirst()
+                        } ?: 1_000L
+                    }
+                val routingRequest = createRequest(198, 1, 1)
+                val noteId = 19_800L
+                SqliteAnkiMutationStore(
+                    context,
+                    routingName,
+                    clock = rollbackClock,
+                    enforceBackgroundThread = false,
+                ).use { store ->
+                    prepareCommittedNote(store, routingRequest, noteId)
+                    store.advanceNotePhase(routingRequest.key, 0, NoteRoutingPhase.NOTE_READBACK_VERIFIED)
+                    store.advanceNotePhase(routingRequest.key, 0, NoteRoutingPhase.CARDS_DISCOVERED)
+
+                    rollbackReads = ArrayDeque(listOf(1_000L, 999L, 998L))
+                    val intent =
+                        store.createRoutingIntents(
+                            routingRequest.key,
+                            0,
+                            listOf(RoutingIntentDraft(0, noteId + 1, noteId, 0, 2, 2)),
+                        ).single()
+                    rollbackReads = ArrayDeque(listOf(1L, 0L))
+                    store.completeChildlessRoutingIntent(
+                        intent.id,
+                        ChildlessRoutingOutcome.Verified(
+                            RoutingCardObservation(intent.cardId, intent.noteId, intent.ordinal, intent.targetDeckId),
+                            "clock rollback exact-target proof",
+                        ),
+                    )
+
+                    store.writableDatabase.rawQuery(
+                        """SELECT i.created_at_ms, i.updated_at_ms, o.observed_at_ms
+                           FROM routing_intents i JOIN routing_observations o ON o.intent_id = i.id
+                           WHERE i.id = ?""".trimIndent(),
+                        arrayOf(intent.id.toString()),
+                    ).use { cursor ->
+                        assertTrue(cursor.moveToFirst())
+                        assertTrue(cursor.getLong(1) >= cursor.getLong(0))
+                        assertTrue(cursor.getLong(2) >= cursor.getLong(0))
+                    }
+                }
+            } finally {
+                context.deleteDatabase(routingName)
+            }
         } finally {
             context.deleteDatabase(name)
         }
@@ -3196,6 +3302,59 @@ class SqliteAnkiMutationStoreInstrumentedTest {
         } finally {
             context.deleteDatabase(name)
         }
+    }
+
+    private fun dropProjectIndexesAndTriggers(db: SQLiteDatabase) {
+        val objects =
+            db.rawQuery(
+                """SELECT type, name FROM sqlite_master
+                   WHERE type IN ('index', 'trigger') AND name NOT LIKE 'sqlite_%'""".trimIndent(),
+                null,
+            ).use { cursor ->
+                buildList {
+                    while (cursor.moveToNext()) add(cursor.getString(0) to cursor.getString(1))
+                }
+            }
+        objects.forEach { (type, name) -> db.execSQL("DROP ${type.uppercase()} $name") }
+    }
+
+    private fun replaceRemediationsWithAuthenticVersionOneDdl(db: SQLiteDatabase) {
+        db.execSQL(
+            "DELETE FROM remediations WHERE kind = '${RemediationKind.MEDIA_STORED_UNATTACHED.name}'",
+        )
+        db.execSQL("ALTER TABLE remediations RENAME TO remediations_current_test")
+        db.execSQL(
+            """
+            CREATE TABLE remediations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                parent_id INTEGER REFERENCES parents(id) ON DELETE SET NULL,
+                claim_id INTEGER REFERENCES media_claims(id) ON DELETE SET NULL,
+                staging_id INTEGER REFERENCES staging_artifacts(id) ON DELETE SET NULL,
+                staging_subject_id INTEGER CHECK(staging_subject_id IS NULL OR staging_subject_id > 0),
+                kind TEXT NOT NULL CHECK(kind IN (
+                    'DECK_COMMIT_UNCERTAIN','MEDIA_COMMIT_UNCERTAIN','NOTE_COMMIT_UNCERTAIN',
+                    'NOTE_COMMITTED_FAILED','CARD_ROUTING_FAILED','STAGING_QUARANTINED',
+                    'CAPACITY_EXHAUSTED'
+                )),
+                state TEXT NOT NULL CHECK(state IN ('OPEN','RESOLVED')),
+                summary TEXT NOT NULL CHECK(length(summary) > 0),
+                compact_evidence TEXT CHECK(compact_evidence IS NULL OR length(compact_evidence) > 0),
+                created_at_ms INTEGER NOT NULL CHECK(created_at_ms >= 0),
+                updated_at_ms INTEGER NOT NULL CHECK(updated_at_ms >= created_at_ms),
+                CHECK(parent_id IS NOT NULL OR claim_id IS NOT NULL OR staging_subject_id IS NOT NULL),
+                CHECK(staging_id IS NULL OR staging_id = staging_subject_id)
+            )
+            """.trimIndent(),
+        )
+        db.execSQL(
+            """INSERT INTO remediations (
+                   id, parent_id, claim_id, staging_id, staging_subject_id, kind, state, summary,
+                   compact_evidence, created_at_ms, updated_at_ms)
+               SELECT id, parent_id, claim_id, staging_id, staging_subject_id, kind, state, summary,
+                   compact_evidence, created_at_ms, updated_at_ms
+               FROM remediations_current_test""".trimIndent(),
+        )
+        db.execSQL("DROP TABLE remediations_current_test")
     }
 
     private fun count(db: SQLiteDatabase, table: String): Long =

@@ -998,6 +998,21 @@ internal data class MediaReservationRecord(
     val updatedAtMs: Long,
 )
 
+internal sealed interface MediaReservationAdmission {
+    val assetId: String
+
+    data class Reserved(
+        val reservation: MediaReservationRecord,
+    ) : MediaReservationAdmission {
+        override val assetId: String = reservation.assetId
+    }
+
+    data class Refused(
+        override val assetId: String,
+        val failure: MediaAdmissionViolation,
+    ) : MediaReservationAdmission
+}
+
 internal enum class MediaClaimState {
     PENDING,
     STORED,
@@ -1130,14 +1145,17 @@ internal data class RunCleanupResult(
 
 internal open class JournalInvariantViolation(message: String) : IllegalStateException(message)
 
+/** Expected pre-entry refusal when a frozen media binding no longer matches its durable claim. */
+internal class ActiveNoteMaterializationRefused(message: String) : JournalInvariantViolation(message)
+
 /**
- * Why media lease or namespace admission refused a batch, as a closed typed set.
+ * Why media lease or namespace admission refused a batch or one collision component, as a closed
+ * typed set.
  *
- * Admission runs before any reservation exists, so a refusal fails every asset in the batch
- * ([com.ankiminer.android.anki.provider.JournalBackedMediaMutationService] degrades it row-locally).
- * The reason therefore has to reach the user, and the exception message cannot carry it: messages are
- * excluded from fault tokens by design, and R8 minifies the class and frame names a digest would
- * otherwise report to `t0 @ a.W:342`. These constants survive minification because they are values.
+ * Global lease/capacity refusal still stops the batch. Namespace conflicts are classified before
+ * inserts so only graph members fail and disjoint assets keep their aligned rows. The reason has to
+ * reach the user, and the exception message cannot carry it: messages are excluded from fault tokens
+ * by design, and R8 minifies class/frame names. These constants survive minification as values.
  */
 internal enum class MediaAdmissionRefusal {
     LEASE_ALREADY_ACTIVE_FOR_ANOTHER_RUN,

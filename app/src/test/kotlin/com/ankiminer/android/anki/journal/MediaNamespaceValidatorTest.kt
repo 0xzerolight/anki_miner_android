@@ -102,9 +102,9 @@ class MediaNamespaceValidatorTest {
     /**
      * A refusal names the colliding pair by opaque asset identity.
      *
-     * A batch carries up to fifty assets and one overlap refuses all of them, so "something in this
-     * batch overlapped" cannot be acted on. The identities are the only safe discriminator: the
-     * filenames are the user's mined vocabulary and must never leave the device.
+     * A batch carries up to fifty assets and collision components are refused row-locally. The
+     * identities are the only safe discriminator: filenames are mined vocabulary and must never
+     * leave the device.
      */
     @Test
     fun anOverlapRefusalNamesTheCollidingPairWithoutTheirFilenames() {
@@ -150,6 +150,33 @@ class MediaNamespaceValidatorTest {
                 MediaNamespaceLock(ownerB, "other.ogg", "other_"),
             ),
         )
+    }
+
+    @Test
+    fun collisionClassificationRejectsOnlyGraphMembersAndKeepsDisjointCandidates() {
+        val held = MediaNamespaceLock(MediaNamespaceOwner("old-run", "old-asset"), "held.mp3", "held_")
+        val directCollision =
+            MediaNamespaceLock(MediaNamespaceOwner("new-run", "asset-a"), "held.mp3", "fresh-a_")
+        val incomingPairLeft =
+            MediaNamespaceLock(MediaNamespaceOwner("new-run", "asset-b"), "left.mp3", "family_")
+        val incomingPairRight =
+            MediaNamespaceLock(MediaNamespaceOwner("new-run", "asset-c"), "family_1.mp3", "fresh-c_")
+        val disjoint =
+            MediaNamespaceLock(MediaNamespaceOwner("new-run", "asset-d"), "safe.mp3", "safe_")
+
+        val refused =
+            MediaNamespaceValidator.refuseCandidates(
+                existing = listOf(held),
+                candidates = listOf(directCollision, incomingPairLeft, incomingPairRight, disjoint),
+            )
+
+        assertEquals(
+            setOf(directCollision.owner, incomingPairLeft.owner, incomingPairRight.owner),
+            refused.keys,
+        )
+        assertEquals(MediaAdmissionRefusal.DIRECT_NAME_COLLISION, refused.getValue(directCollision.owner).refusal)
+        assertEquals(MediaAdmissionRefusal.PROVIDER_NAMESPACE_OVERLAP, refused.getValue(incomingPairLeft.owner).refusal)
+        assertFalse(disjoint.owner in refused)
     }
 
     @Test
