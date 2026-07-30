@@ -30,6 +30,8 @@ internal class FakeMiningRepository(
     private var activeInput: VideoMiningInput? = null
     private var activeOutcome = TerminalOutcome.SUCCESS
     private var activeWorkJob: Job? = null
+    @Volatile
+    private var savedCurationSessionState: CurationSessionState? = null
 
     internal var confirmedSelection: List<CurationSelection>? = null
         private set
@@ -42,6 +44,20 @@ internal class FakeMiningRepository(
         require(terminalOutcomes.isNotEmpty())
     }
 
+    override fun curationSessionState(): CurationSessionState? = savedCurationSessionState
+
+    override fun saveCurationSessionState(state: CurationSessionState) {
+        if (mutableState.value.runId == state.runId) {
+            savedCurationSessionState = state
+        }
+    }
+
+    override fun clearCurationSessionState(runId: String?) {
+        if (runId == null || savedCurationSessionState?.runId == runId) {
+            savedCurationSessionState = null
+        }
+    }
+
     override suspend fun startVideo(input: VideoMiningInput) {
         if (mutableState.value != MiningRunState.Idle) {
             throw MiningCommandException("A mining run is already active")
@@ -51,6 +67,7 @@ internal class FakeMiningRepository(
         activeInput = input
         activeOutcome = terminalOutcomes[((runSequence - 1) % terminalOutcomes.size).toInt()]
         confirmedSelection = null
+        savedCurationSessionState = null
 
         mutableState.value =
             MiningRunState.Starting(
@@ -148,7 +165,10 @@ internal class FakeMiningRepository(
         while (true) {
             val running = mutableState.value as? MiningRunState.Running ?: return
             if (running.runId != runId) return
-            if (mutableState.compareAndSet(running, terminal)) return
+            if (mutableState.compareAndSet(running, terminal)) {
+                savedCurationSessionState = null
+                return
+            }
         }
     }
 
@@ -177,6 +197,7 @@ internal class FakeMiningRepository(
             cancelCount += 1
             activeWorkJob?.cancel()
             activeWorkJob = null
+            savedCurationSessionState = null
             return
         }
     }
@@ -189,6 +210,7 @@ internal class FakeMiningRepository(
         activeWorkJob = null
         activeInput = null
         confirmedSelection = null
+        savedCurationSessionState = null
         mutableState.value = MiningRunState.Idle
     }
 

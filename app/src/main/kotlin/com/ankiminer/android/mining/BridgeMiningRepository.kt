@@ -116,6 +116,7 @@ internal class BridgeMiningRepository(
     private var active: ActiveRun? = null
     private var nextGeneration = 1L
     private var restartRequired: ProtocolFault? = null
+    private var savedCurationSessionState: CurationSessionState? = null
 
     init {
         require(foregroundStartTimeoutSeconds > 0)
@@ -135,6 +136,25 @@ internal class BridgeMiningRepository(
             run.sourcesDetached = true
             true
         }
+
+    override fun curationSessionState(): CurationSessionState? =
+        synchronized(monitor) { savedCurationSessionState }
+
+    override fun saveCurationSessionState(state: CurationSessionState) {
+        synchronized(monitor) {
+            if (mutableState.value.runId == state.runId) {
+                savedCurationSessionState = state
+            }
+        }
+    }
+
+    override fun clearCurationSessionState(runId: String?) {
+        synchronized(monitor) {
+            if (runId == null || savedCurationSessionState?.runId == runId) {
+                savedCurationSessionState = null
+            }
+        }
+    }
 
     override suspend fun startVideo(input: VideoMiningInput) {
         val generation: Long
@@ -158,6 +178,7 @@ internal class BridgeMiningRepository(
                         "Resource setup must finish before a mining run starts",
                     )
             generation = nextGeneration++
+            savedCurationSessionState = null
             active = ActiveRun(generation, input, cancellationToken, workLease)
             mutableState.value =
                 MiningRunState.Starting(
@@ -267,6 +288,7 @@ internal class BridgeMiningRepository(
             if (active != null || !mutableState.value.isTerminal) {
                 throw MiningCommandException("Only a terminal mining run can be reset")
             }
+            savedCurationSessionState = null
             mutableState.value = MiningRunState.Idle
         }
     }
@@ -518,6 +540,7 @@ internal class BridgeMiningRepository(
                 runFault = run.stickyFault
                 presenterNotices = run.presenterNotices.toList()
                 active = null
+                savedCurationSessionState = null
             }
             var detachedCleanupFault: ProtocolFault? = null
             if (detachedInput != null) {

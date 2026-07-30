@@ -5,13 +5,24 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
 import com.ankiminer.android.MainDispatcherRule
 import com.ankiminer.android.data.RuntimeWorkCoordinator
+import com.ankiminer.android.media.AndroidSafBroker
+import com.ankiminer.android.media.ProviderIoCancellation
+import com.ankiminer.android.media.SafAccessException
+import com.ankiminer.android.media.SafAccessFailureKind
 import com.ankiminer.android.media.SafBroker
 import com.ankiminer.android.media.SafDocument
+import com.ankiminer.android.media.SafProviderAccess
+import com.ankiminer.android.media.SafSelectionInventory
+import com.ankiminer.android.media.SafSelectionPersistenceException
+import com.ankiminer.android.media.SafSelectionRecord
+import com.ankiminer.android.media.SafSelectionSlot
+import com.ankiminer.android.media.TransientSafSelectionInventory
 import com.ankiminer.android.mining.CurationCandidate
 import com.ankiminer.android.mining.CurationPage
 import com.ankiminer.android.mining.CurationRequest
 import com.ankiminer.android.mining.CurationSelection
 import com.ankiminer.android.mining.CurationSentence
+import com.ankiminer.android.mining.CurationSessionState
 import com.ankiminer.android.mining.MiningCancellationToken
 import com.ankiminer.android.mining.MiningProgress
 import com.ankiminer.android.mining.MiningRunState
@@ -76,6 +87,78 @@ class ReadingMiningViewModelTest {
         }
 
     @Test
+    fun archiveResultDuringSourceRestoreReplacesSavedArchiveInsteadOfDisappearing() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val savedState = SavedStateHandle()
+            SavedDocumentSelectionStore(savedState, "readingMining.source").save(
+                document("content://test/book.mokuro", "book.mokuro"),
+            )
+            SavedDocumentSelectionStore(savedState, "readingMining.archive").save(
+                document("content://test/old/book.cbz", "book.cbz"),
+            )
+            val broker = ControlledSafBroker()
+            val viewModel =
+                ReadingMiningViewModel(
+                    repository = RecordingReadingRepository(),
+                    safBroker = broker,
+                    savedStateHandle = savedState,
+                )
+            runCurrent()
+
+            viewModel.onArchivePicked("content://test/new/book.cbz")
+            broker.succeed("content://test/book.mokuro")
+            runCurrent()
+
+            assertTrue(broker.isPendingActive("content://test/new/book.cbz"))
+            assertFalse(broker.isPendingActive("content://test/old/book.cbz"))
+
+            broker.succeed("content://test/new/book.cbz")
+            runCurrent()
+
+            assertEquals(
+                "book.cbz",
+                viewModel.uiState.value.archive.document?.displayName,
+            )
+            assertEquals(listOf("content://test/old/book.cbz"), broker.releasedUris)
+        }
+
+    @Test
+    fun freshNonIdleReadingViewModelRestoresDurablePairForLaterReset() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val inventory = TransientSafSelectionInventory()
+            inventory.putSelection(
+                SafSelectionSlot.READING_SOURCE,
+                SafSelectionRecord("content://test/book.mokuro", "book.mokuro"),
+            )
+            inventory.putSelection(
+                SafSelectionSlot.READING_ARCHIVE,
+                SafSelectionRecord("content://test/book.cbz", "book.cbz"),
+            )
+            val repository =
+                RecordingReadingRepository(
+                    MiningRunState.Running("run", MiningProgress(1, 2, "Running")),
+                )
+            val viewModel =
+                ReadingMiningViewModel(
+                    repository = repository,
+                    safBroker = ImmediateSafBroker(),
+                    selectionInventory = inventory,
+                )
+            runCurrent()
+
+            assertEquals("book.mokuro", viewModel.uiState.value.source.document?.displayName)
+            assertEquals("book.cbz", viewModel.uiState.value.archive.document?.displayName)
+            assertFalse(viewModel.uiState.value.canStart)
+
+            repository.transitionTo(MiningRunState.Cancelled("run", null))
+            viewModel.reset()
+            runCurrent()
+
+            assertEquals(MiningRunState.Idle, repository.state.value)
+            assertTrue(viewModel.uiState.value.canStart)
+        }
+
+    @Test
     fun revokedSavedSourceGrantSurfacesAccessErrorAndClearsSavedPair() =
         runTest(mainDispatcherRule.dispatcher) {
             val savedState = SavedStateHandle()
@@ -98,7 +181,13 @@ class ReadingMiningViewModelTest {
                     savedStateHandle = savedState,
                 )
             runCurrent()
-            broker.fail("content://test/revoked-book.mokuro")
+            broker.fail(
+                "content://test/revoked-book.mokuro",
+                SafAccessException(
+                    SafAccessFailureKind.PERMISSION_REVOKED,
+                    "revoked",
+                ),
+            )
             runCurrent()
 
             assertEquals(
@@ -113,6 +202,228 @@ class ReadingMiningViewModelTest {
             assertNull(savedState.get<String>("readingMining.source.displayName"))
             assertNull(savedState.get<String>("readingMining.archive.uri"))
             assertNull(savedState.get<String>("readingMining.archive.displayName"))
+        }
+
+    @Test
+    fun revokedSubtitleRestoreClearsLiveSeriesBeforeReplacementSubtitleStarts() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val savedState = SavedStateHandle()
+            SavedDocumentSelectionStore(savedState, "readingMining.source").save(
+                document("content://test/old-episode.srt", "old-episode.srt"),
+            )
+            val seriesStore =
+                SavedTextValueStore(savedState, "readingMining.subtitleSeriesName")
+            seriesStore.save("Series A")
+            val repository = RecordingReadingRepository()
+            val broker = ControlledSafBroker()
+            val viewModel =
+                ReadingMiningViewModel(
+                    repository = repository,
+                    safBroker = broker,
+                    savedStateHandle = savedState,
+                )
+            runCurrent()
+
+            broker.fail(
+                "content://test/old-episode.srt",
+                SafAccessException(
+                    SafAccessFailureKind.PERMISSION_REVOKED,
+                    "revoked",
+                ),
+            )
+            runCurrent()
+
+            assertEquals("", viewModel.uiState.value.subtitleSeriesName)
+            assertEquals("", seriesStore.restore())
+
+            viewModel.onSourcePicked("content://test/new-episode.srt")
+            runCurrent()
+            broker.succeed("content://test/new-episode.srt")
+            runCurrent()
+            viewModel.start()
+            runCurrent()
+
+            assertNull(repository.startedInputs.single().subtitleSeriesName)
+        }
+
+    @Test
+    fun missingSavedSourceClearsOrphanLiveSubtitleSeries() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val savedState = SavedStateHandle()
+            SavedTextValueStore(savedState, "readingMining.subtitleSeriesName").save("Series A")
+
+            val viewModel =
+                ReadingMiningViewModel(
+                    repository = RecordingReadingRepository(),
+                    safBroker = ImmediateSafBroker(),
+                    savedStateHandle = savedState,
+                )
+            runCurrent()
+
+            assertEquals("", viewModel.uiState.value.subtitleSeriesName)
+        }
+
+    @Test
+    fun transientMokuroProviderFailurePreservesSourceAndArchiveForRetry() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val sourceUri = "content://test/book.mokuro"
+            val archiveUri = "content://test/book.cbz"
+            val inventory = TransientSafSelectionInventory()
+            inventory.putSelection(
+                SafSelectionSlot.READING_SOURCE,
+                SafSelectionRecord(sourceUri, "book.mokuro"),
+            )
+            inventory.putSelection(
+                SafSelectionSlot.READING_ARCHIVE,
+                SafSelectionRecord(archiveUri, "book.cbz"),
+            )
+            val broker = ControlledSafBroker()
+            val first =
+                ReadingMiningViewModel(
+                    repository = RecordingReadingRepository(),
+                    safBroker = broker,
+                    selectionInventory = inventory,
+                    selectionIoDispatcher = mainDispatcherRule.dispatcher,
+                )
+            runCurrent()
+
+            broker.fail(
+                sourceUri,
+                SafAccessException(
+                    SafAccessFailureKind.PROVIDER_UNAVAILABLE,
+                    "provider updating",
+                ),
+            )
+            runCurrent()
+
+            assertEquals(
+                ReadingDocumentSelectionError.SOURCE_ACCESS,
+                first.uiState.value.source.error,
+            )
+            assertEquals(sourceUri, inventory.selection(SafSelectionSlot.READING_SOURCE)?.uri)
+            assertEquals(archiveUri, inventory.selection(SafSelectionSlot.READING_ARCHIVE)?.uri)
+
+            val recreated =
+                ReadingMiningViewModel(
+                    repository = RecordingReadingRepository(),
+                    safBroker = ImmediateSafBroker(),
+                    selectionInventory = inventory,
+                    selectionIoDispatcher = mainDispatcherRule.dispatcher,
+                )
+            runCurrent()
+
+            assertEquals("book.mokuro", recreated.uiState.value.source.document?.displayName)
+            assertEquals("book.cbz", recreated.uiState.value.archive.document?.displayName)
+        }
+
+    @Test
+    fun transientSubtitleProviderFailurePreservesSeriesForRetry() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val sourceUri = "content://test/episode.srt"
+            val inventory = TransientSafSelectionInventory()
+            inventory.putSelection(
+                SafSelectionSlot.READING_SOURCE,
+                SafSelectionRecord(sourceUri, "episode.srt"),
+            )
+            inventory.putText(SafSelectionSlot.READING_SUBTITLE_SERIES, "Series A")
+            val broker = ControlledSafBroker()
+            ReadingMiningViewModel(
+                repository = RecordingReadingRepository(),
+                safBroker = broker,
+                selectionInventory = inventory,
+                selectionIoDispatcher = mainDispatcherRule.dispatcher,
+            )
+            runCurrent()
+
+            broker.fail(
+                sourceUri,
+                SafAccessException(
+                    SafAccessFailureKind.PROVIDER_UNAVAILABLE,
+                    "provider updating",
+                ),
+            )
+            runCurrent()
+
+            assertEquals(sourceUri, inventory.selection(SafSelectionSlot.READING_SOURCE)?.uri)
+            assertEquals("Series A", inventory.text(SafSelectionSlot.READING_SUBTITLE_SERIES))
+
+            val recreated =
+                ReadingMiningViewModel(
+                    repository = RecordingReadingRepository(),
+                    safBroker = ImmediateSafBroker(),
+                    selectionInventory = inventory,
+                    selectionIoDispatcher = mainDispatcherRule.dispatcher,
+                )
+            runCurrent()
+
+            assertEquals("episode.srt", recreated.uiState.value.source.document?.displayName)
+            assertEquals("Series A", recreated.uiState.value.subtitleSeriesName)
+        }
+
+    @Test
+    fun rejectedRestoreClearsDurableOwnerBeforePlatformGrantRelease() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val uri = "content://test/renamed-source"
+            val events = mutableListOf<String>()
+            val inventory = RecordingSelectionInventory(events)
+            inventory.putSelection(
+                SafSelectionSlot.READING_SOURCE,
+                SafSelectionRecord(uri, "book.mokuro"),
+            )
+            events.clear()
+            val broker =
+                AndroidSafBroker(
+                    providerAccess =
+                        RenamingProviderAccess(
+                            grants = setOf(uri),
+                            resolved = SafDocument(uri, "renamed.bin", null, null),
+                            events = events,
+                        ),
+                    ioDispatcher = mainDispatcherRule.dispatcher,
+                    selectionInventory = inventory,
+                )
+
+            val viewModel =
+                ReadingMiningViewModel(
+                    repository = RecordingReadingRepository(),
+                    safBroker = broker,
+                    selectionInventory = inventory,
+                    selectionIoDispatcher = mainDispatcherRule.dispatcher,
+                )
+            runCurrent()
+
+            assertEquals(
+                ReadingDocumentSelectionError.SOURCE_TYPE,
+                viewModel.uiState.value.source.error,
+            )
+            assertNull(inventory.selection(SafSelectionSlot.READING_SOURCE))
+            assertTrue(events.indexOf("clear:READING_SOURCE") >= 0)
+            assertTrue(events.indexOf("release:$uri") > events.indexOf("clear:READING_SOURCE"))
+        }
+
+    @Test
+    fun failedReadingInventoryCommitReleasesNewlyAcquiredGrant() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val inventory = FailOnceSelectionInventory()
+            val broker = ImmediateSafBroker()
+            val viewModel =
+                ReadingMiningViewModel(
+                    repository = RecordingReadingRepository(),
+                    safBroker = broker,
+                    selectionInventory = inventory,
+                    selectionIoDispatcher = mainDispatcherRule.dispatcher,
+                )
+
+            viewModel.onSourcePicked("content://test/new-book.epub")
+            runCurrent()
+
+            assertEquals(
+                ReadingDocumentSelectionError.SOURCE_ACCESS,
+                viewModel.uiState.value.source.error,
+            )
+            assertNull(viewModel.uiState.value.source.document)
+            assertNull(inventory.selection(SafSelectionSlot.READING_SOURCE))
+            assertEquals(listOf("content://test/new-book.epub"), broker.releasedUris)
         }
 
     @Test
@@ -184,9 +495,10 @@ class ReadingMiningViewModelTest {
             assertNull(viewModel.uiState.value.archive.document)
             assertTrue(viewModel.uiState.value.canStart)
             assertEquals(
-                listOf("content://test/book.mokuro", "content://test/book.cbz"),
+                listOf("content://test/book.mokuro"),
                 broker.eventualReleaseUris,
             )
+            assertEquals(listOf("content://test/book.cbz"), broker.releasedUris)
         }
 
     @Test
@@ -269,6 +581,46 @@ class ReadingMiningViewModelTest {
 
             assertEquals(1, viewModel.uiState.value.curation?.previousPageSelectedCount)
             assertTrue(viewModel.uiState.value.curation?.hasSelectionToLose == true)
+
+            val recreated = ReadingMiningViewModel(repository, ImmediateSafBroker())
+            runCurrent()
+
+            assertEquals(1, recreated.uiState.value.curation?.previousPageSelectedCount)
+        }
+
+    @Test
+    fun recreatedReadingViewModelRestoresExactCurationDraftFromProcessRepository() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val base = curationRequest(page = null)
+            val candidate = base.candidates.single()
+            val alternate =
+                candidate.sentences.single().copy(
+                    sentenceId = "alternate-sentence",
+                    sentence = "魚を食べた。",
+                )
+            val request =
+                base.copy(
+                    candidates =
+                        listOf(
+                            candidate.copy(sentences = candidate.sentences + alternate),
+                        ),
+                )
+            val repository = RecordingReadingRepository(MiningRunState.Curating(request))
+            val first = ReadingMiningViewModel(repository, ImmediateSafBroker())
+            runCurrent()
+
+            first.setCandidateSelected(candidate.candidateId, false)
+            first.selectSentence(candidate.candidateId, alternate.sentenceId)
+            runCurrent()
+
+            val recreated = ReadingMiningViewModel(repository, ImmediateSafBroker())
+            runCurrent()
+
+            assertEquals(0, recreated.uiState.value.curation?.selectedCount)
+            assertEquals(
+                alternate.sentenceId,
+                recreated.uiState.value.curation?.sentenceIds?.get(candidate.candidateId),
+            )
         }
 
     @Test
@@ -450,6 +802,8 @@ class ReadingMiningViewModelTest {
             releasedUris += uri
         }
 
+        fun isPendingActive(uri: String): Boolean = pending[uri]?.isActive == true
+
         fun succeed(uri: String) {
             requireNotNull(pending.remove(uri)).resume(
                 SafDocument(
@@ -461,10 +815,84 @@ class ReadingMiningViewModelTest {
             )
         }
 
-        fun fail(uri: String) {
+        fun fail(
+            uri: String,
+            failure: Exception = IllegalStateException("revoked"),
+        ) {
             requireNotNull(pending.remove(uri)).resumeWithException(
-                IllegalStateException("revoked"),
+                failure,
             )
+        }
+    }
+
+    private class RenamingProviderAccess(
+        private val grants: Set<String>,
+        private val resolved: SafDocument,
+        private val events: MutableList<String>,
+    ) : SafProviderAccess {
+        override fun persistedReadGrantUris(
+            cancellation: ProviderIoCancellation,
+        ): List<String> = grants.toList()
+
+        override fun resolveDocument(
+            uri: String,
+            cancellation: ProviderIoCancellation,
+        ): SafDocument = resolved
+
+        override fun takeReadGrant(uri: String) {
+            events += "take:$uri"
+        }
+
+        override fun releaseReadGrant(uri: String) {
+            events += "release:$uri"
+        }
+    }
+
+    private open class RecordingSelectionInventory(
+        private val events: MutableList<String> = mutableListOf(),
+    ) : SafSelectionInventory {
+        protected val selections = mutableMapOf<SafSelectionSlot, SafSelectionRecord>()
+        private val text = mutableMapOf<SafSelectionSlot, String>()
+
+        override fun selection(slot: SafSelectionSlot): SafSelectionRecord? = selections[slot]
+
+        override fun putSelection(
+            slot: SafSelectionSlot,
+            selection: SafSelectionRecord?,
+        ) {
+            events += if (selection == null) "clear:$slot" else "save:$slot"
+            if (selection == null) selections.remove(slot) else selections[slot] = selection
+        }
+
+        override fun text(slot: SafSelectionSlot): String? = text[slot]
+
+        override fun putText(
+            slot: SafSelectionSlot,
+            value: String?,
+        ) {
+            if (value == null) text.remove(slot) else text[slot] = value
+        }
+
+        override fun ownedUris(): Set<String> =
+            selections.values.mapTo(linkedSetOf(), SafSelectionRecord::uri)
+
+        override fun pruneMissingGrants(grantedUris: Set<String>) {
+            selections.entries.removeAll { it.value.uri !in grantedUris }
+        }
+    }
+
+    private class FailOnceSelectionInventory : RecordingSelectionInventory() {
+        private var failNextSave = true
+
+        override fun putSelection(
+            slot: SafSelectionSlot,
+            selection: SafSelectionRecord?,
+        ) {
+            super.putSelection(slot, selection)
+            if (selection != null && failNextSave) {
+                failNextSave = false
+                throw SafSelectionPersistenceException("injected commit failure")
+            }
         }
     }
 
@@ -476,6 +904,7 @@ class ReadingMiningViewModelTest {
     ) : ReadingMiningRepository {
         private val mutableState = MutableStateFlow(initialState)
         override val state: StateFlow<MiningRunState> = mutableState.asStateFlow()
+        private var savedCurationSessionState: CurationSessionState? = null
 
         val startedInputs = mutableListOf<ReadingMiningInput>()
         val detachedInputs = mutableListOf<ReadingMiningInput>()
@@ -485,6 +914,18 @@ class ReadingMiningViewModelTest {
             private set
         var confirmedSelection: List<CurationSelection>? = null
             private set
+
+        override fun curationSessionState(): CurationSessionState? = savedCurationSessionState
+
+        override fun saveCurationSessionState(state: CurationSessionState) {
+            savedCurationSessionState = state
+        }
+
+        override fun clearCurationSessionState(runId: String?) {
+            if (runId == null || savedCurationSessionState?.runId == runId) {
+                savedCurationSessionState = null
+            }
+        }
 
         override fun detachActiveSources(input: ReadingMiningInput): Boolean {
             detachedInputs += input

@@ -24,6 +24,7 @@ import com.ankiminer.android.mining.CoordinatorAnkiCallbacks
 import com.ankiminer.android.mining.CoordinatorAnkiCancellation
 import com.ankiminer.android.mining.CurationRequest
 import com.ankiminer.android.mining.CurationSelection
+import com.ankiminer.android.mining.CurationSessionState
 import com.ankiminer.android.mining.InstalledTokenizerResource
 import com.ankiminer.android.mining.InstalledTokenizerResourceProvider
 import com.ankiminer.android.mining.MiningCancellationToken
@@ -42,6 +43,7 @@ import com.ankiminer.android.mining.ProcessingResult
 import com.ankiminer.android.mining.SecureMiningCancellationTokenFactory
 import com.ankiminer.android.mining.SourceGrantReleaser
 import com.ankiminer.android.mining.isTerminal
+import com.ankiminer.android.mining.runId
 import com.ankiminer.android.service.MiningForegroundCancellationReason
 import com.ankiminer.android.service.MiningForegroundLease
 import com.ankiminer.android.service.MiningForegroundProgress
@@ -63,6 +65,12 @@ internal data class ReadingMiningInput(
 
 internal interface ReadingMiningRepository {
     val state: StateFlow<MiningRunState>
+
+    fun curationSessionState(): CurationSessionState? = null
+
+    fun saveCurationSessionState(state: CurationSessionState) {}
+
+    fun clearCurationSessionState(runId: String? = null) {}
 
     /** Transfer selection-owned SAF grants to the matching live run during caller teardown. */
     fun detachActiveSources(input: ReadingMiningInput): Boolean = false
@@ -171,6 +179,7 @@ internal class BridgeReadingMiningRepository(
     private var active: ActiveRun? = null
     private var nextGeneration = 1L
     private var restartRequired: ProtocolFault? = null
+    private var savedCurationSessionState: CurationSessionState? = null
 
     init {
         require(foregroundStartTimeoutSeconds > 0)
@@ -185,6 +194,25 @@ internal class BridgeReadingMiningRepository(
             run.sourcesDetached = true
             true
         }
+
+    override fun curationSessionState(): CurationSessionState? =
+        synchronized(monitor) { savedCurationSessionState }
+
+    override fun saveCurationSessionState(state: CurationSessionState) {
+        synchronized(monitor) {
+            if (mutableState.value.runId == state.runId) {
+                savedCurationSessionState = state
+            }
+        }
+    }
+
+    override fun clearCurationSessionState(runId: String?) {
+        synchronized(monitor) {
+            if (runId == null || savedCurationSessionState?.runId == runId) {
+                savedCurationSessionState = null
+            }
+        }
+    }
 
     override suspend fun startReading(input: ReadingMiningInput) {
         val generation: Long
@@ -208,6 +236,7 @@ internal class BridgeReadingMiningRepository(
                         "Another mining or resource setup task must finish before reading mining starts",
                     )
             generation = nextGeneration++
+            savedCurationSessionState = null
             active = ActiveRun(generation, input, cancellationToken, workLease)
             mutableState.value =
                 MiningRunState.Starting(
@@ -327,6 +356,7 @@ internal class BridgeReadingMiningRepository(
             if (active != null || !mutableState.value.isTerminal) {
                 throw MiningCommandException("Only a terminal mining run can be reset")
             }
+            savedCurationSessionState = null
             mutableState.value = MiningRunState.Idle
         }
     }
@@ -598,6 +628,7 @@ internal class BridgeReadingMiningRepository(
                 runFault = run.stickyFault
                 presenterNotices = run.presenterNotices.toList()
                 active = null
+                savedCurationSessionState = null
             }
             val detachedCleanupFault =
                 detachedInput?.selection?.documents()?.let(::releaseDetachedSources)
