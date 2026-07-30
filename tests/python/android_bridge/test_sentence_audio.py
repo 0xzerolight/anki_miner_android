@@ -13,9 +13,15 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 
 class ResultCallbacks:
-    def __init__(self, cache_dir: Path, outcome: str = "ready") -> None:
+    def __init__(
+        self,
+        cache_dir: Path,
+        outcome: str = "ready",
+        error_code: str = "tts_engine_unavailable",
+    ) -> None:
         self.cache_dir = cache_dir
         self.outcome = outcome
+        self.error_code = error_code
         self.requests: list[str] = []
 
     def synthesizeSentenceAudio(self, raw: str) -> str:
@@ -31,7 +37,7 @@ class ResultCallbacks:
                 "requestId": request.payload["requestId"],
                 "outcome": self.outcome,
                 "path": str(output) if self.outcome == "ready" else None,
-                "errorCode": None if self.outcome == "ready" else "tts_engine_unavailable",
+                "errorCode": None if self.outcome == "ready" else self.error_code,
             },
         )
 
@@ -57,7 +63,7 @@ def test_fetch_sends_strict_correlated_request_and_returns_verified_private_wav(
 def test_optional_tts_failure_never_raises(tmp_path: Path, outcome: str) -> None:
     warnings: list[str] = []
     fetcher = AndroidSentenceAudioFetcher(
-        ResultCallbacks(tmp_path, outcome),
+        ResultCallbacks(tmp_path, outcome, "offline_japanese_voice_unavailable"),
         RUN_ID,
         tmp_path,
         warning_callback=warnings.append,
@@ -69,6 +75,26 @@ def test_optional_tts_failure_never_raises(tmp_path: Path, outcome: str) -> None
         "Offline Japanese sentence audio is unavailable. Install an offline Japanese "
         "voice in Android speech settings."
     ]
+
+
+@pytest.mark.parametrize(
+    "error_code",
+    ["tts_engine_unavailable", "tts_initialization_timeout"],
+)
+def test_engine_or_initialization_failure_does_not_claim_voice_is_missing(
+    tmp_path: Path,
+    error_code: str,
+) -> None:
+    warnings: list[str] = []
+    fetcher = AndroidSentenceAudioFetcher(
+        ResultCallbacks(tmp_path, "unavailable", error_code),
+        RUN_ID,
+        tmp_path,
+        warning_callback=warnings.append,
+    )
+
+    assert fetcher.fetch("猫だ。") is None
+    assert warnings == ["Offline sentence audio could not be synthesized for one or more selected sentences."]
 
 
 def test_missing_throwing_or_malformed_callback_never_raises(tmp_path: Path) -> None:

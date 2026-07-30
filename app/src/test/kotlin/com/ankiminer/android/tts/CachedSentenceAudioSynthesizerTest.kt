@@ -58,7 +58,7 @@ class CachedSentenceAudioSynthesizerTest {
     }
 
     @Test
-    fun cacheEvictsOldestPublishedFilesWithinBudget() {
+    fun activeRunPinsReturnedFilesUntilCloseThenAllowsEviction() {
         val backend = FakeBackend(output = ByteArray(6) { 7 })
         val synthesizer = synthesizer(backend, budget = 16, maxFile = 8)
 
@@ -66,12 +66,23 @@ class CachedSentenceAudioSynthesizerTest {
         Thread.sleep(2)
         val second = synthesizer.synthesize("二。") { false }.file!!
         Thread.sleep(2)
-        val third = synthesizer.synthesize("三。") { false }.file!!
+        val blocked = synthesizer.synthesize("三。") { false }
+
+        assertEquals("cache_unavailable", blocked.errorCode)
+        assertTrue(first.exists())
+        assertTrue(second.exists())
+        assertTrue(first.readBytes().contentEquals(ByteArray(6) { 7 }))
+        assertTrue(second.readBytes().contentEquals(ByteArray(6) { 7 }))
+
+        synthesizer.close()
+        val nextRun = this.synthesizer(FakeBackend(output = ByteArray(6) { 8 }), budget = 16, maxFile = 8)
+        val third = nextRun.synthesize("三。") { false }.file!!
 
         assertFalse(first.exists())
         assertTrue(second.exists())
         assertTrue(third.exists())
         assertTrue(cacheRoot().listFiles().orEmpty().sumOf(File::length) <= 16)
+        nextRun.close()
     }
 
     @Test
