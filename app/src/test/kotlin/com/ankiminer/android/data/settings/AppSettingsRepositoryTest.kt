@@ -232,6 +232,31 @@ class AppSettingsRepositoryTest {
         }
 
     @Test
+    fun `DataStore read IOException never emits persistable defaults`() =
+        runTest {
+            val repository =
+                DataStoreAppSettingsRepository(
+                    object : DataStore<Preferences> {
+                        override val data: Flow<Preferences> =
+                            kotlinx.coroutines.flow.flow {
+                                throw IOException("transient read failure")
+                            }
+
+                        override suspend fun updateData(
+                            transform: suspend (Preferences) -> Preferences,
+                        ): Preferences = error("write not expected")
+                    },
+                )
+
+            try {
+                repository.settings.first()
+                fail("Expected DataStore read failure")
+            } catch (failure: IOException) {
+                assertEquals("transient read failure", failure.message)
+            }
+        }
+
+    @Test
     fun `restore mining defaults changes only mining settings`() {
         val original = populatedSettings()
 
