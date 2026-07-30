@@ -8,6 +8,7 @@ import com.ankiminer.android.anki.journal.JournalErrorCode
 import com.ankiminer.android.anki.journal.JournalInvariantViolation
 import com.ankiminer.android.anki.journal.JournalRequest
 import com.ankiminer.android.anki.journal.JournalResponse
+import com.ankiminer.android.anki.journal.MediaAdmissionViolation
 import com.ankiminer.android.anki.journal.MediaClaimRecord
 import com.ankiminer.android.anki.journal.MediaClaimState
 import com.ankiminer.android.anki.journal.MediaKind as JournalMediaKind
@@ -537,14 +538,15 @@ internal class JournalBackedMediaMutationService(
         failure: JournalInvariantViolation,
     ): StoreMediaMutationOutcome {
         val fault = compactFaultToken(failure)
-        val evidence = "providerEntry=false;admission=refused;fault=$fault"
+        val reason = (failure as? MediaAdmissionViolation)?.refusal?.name ?: "UNCLASSIFIED"
+        val evidence = "providerEntry=false;admission=refused;reason=$reason;fault=$fault"
         request.assets.forEachIndexed { index, asset ->
             journal.append(
                 durableRequest.key,
                 AlignedResult.MediaFailed(
                     requestIndex = index,
                     itemId = asset.assetId,
-                    rowError = refusedBatchMediaFailure(fault),
+                    rowError = refusedBatchMediaFailure(reason, fault),
                     compactEvidence = evidence,
                 ),
             )
@@ -858,13 +860,22 @@ private fun rowLocalMediaFailure(failure: AnkiMediaStagingException) =
         retryable = false,
     )
 
-/** The batch-admission refusal counterpart, whose fault token is already digested by the caller. */
-private fun refusedBatchMediaFailure(fault: String) =
-    JournalError(
-        JournalErrorCode.MEDIA_STORE_FAILED,
-        "The media asset could not be staged for AnkiDroid (admission=refused fault=$fault)",
-        retryable = false,
-    )
+/**
+ * The batch-admission refusal counterpart.
+ *
+ * [reason] carries the diagnosis, not [fault]: R8 minifies the exception and frame names the digest
+ * reports, so a release build renders the token as `t0 @ a.W:342`. The typed
+ * [MediaAdmissionRefusal] name is a value and survives. The digest is retained for the
+ * `UNCLASSIFIED` case, where it is the only thing left to go on.
+ */
+private fun refusedBatchMediaFailure(
+    reason: String,
+    fault: String,
+) = JournalError(
+    JournalErrorCode.MEDIA_STORE_FAILED,
+    "The media asset could not be staged for AnkiDroid (admission=refused reason=$reason fault=$fault)",
+    retryable = false,
+)
 
 private fun cancelledBeforeEntry() =
     JournalError(

@@ -6,9 +6,10 @@ import com.ankiminer.android.anki.journal.ChildState
 import com.ankiminer.android.anki.journal.JournalCorruptionException
 import com.ankiminer.android.anki.journal.JournalError
 import com.ankiminer.android.anki.journal.JournalErrorCode
-import com.ankiminer.android.anki.journal.JournalInvariantViolation
 import com.ankiminer.android.anki.journal.JournalRequest
 import com.ankiminer.android.anki.journal.JournalResponse
+import com.ankiminer.android.anki.journal.MediaAdmissionRefusal
+import com.ankiminer.android.anki.journal.MediaAdmissionViolation
 import com.ankiminer.android.anki.journal.MediaClaimRecord
 import com.ankiminer.android.anki.journal.MediaClaimState
 import com.ankiminer.android.anki.journal.MediaKind as JournalMediaKind
@@ -471,8 +472,16 @@ class JournalBackedMediaMutationServiceTest {
         // stored at all. It used to propagate as a top-level internal_error, which stopped the whole
         // mining run with an unattributable message and created zero cards (Issue #6).
         listOf(
-            "lease" to JournalInvariantViolation("Only one active media lease is permitted"),
-            "reserve" to JournalInvariantViolation("Media direct-name namespace collision"),
+            "lease" to
+                MediaAdmissionViolation(
+                    MediaAdmissionRefusal.LEASE_ALREADY_ACTIVE_FOR_ANOTHER_RUN,
+                    "Only one active media lease is permitted",
+                ),
+            "reserve" to
+                MediaAdmissionViolation(
+                    MediaAdmissionRefusal.DIRECT_NAME_COLLISION,
+                    "Media direct-name namespace collision",
+                ),
         ).forEach { (stage, failure) ->
             val request = request(2)
             val fixture = Fixture(request)
@@ -492,10 +501,16 @@ class JournalBackedMediaMutationServiceTest {
                 val error = (row as FailedMedia).error
                 assertEquals(AnkiErrorCode.MEDIA_STORE_FAILED, error.code)
                 assertFalse(error.retryable)
+                val expected =
+                    if (stage == "lease") {
+                        MediaAdmissionRefusal.LEASE_ALREADY_ACTIVE_FOR_ANOTHER_RUN
+                    } else {
+                        MediaAdmissionRefusal.DIRECT_NAME_COLLISION
+                    }
                 assertTrue(
-                    "$stage row error should name the refusal: ${error.message}",
+                    "$stage row error should name the typed refusal: ${error.message}",
                     error.message.contains("admission=refused") &&
-                        error.message.contains("fault=JournalInvariantViolation @ "),
+                        error.message.contains("reason=${expected.name}"),
                 )
                 assertFalse(
                     "$stage row error must not carry the exception message",
@@ -508,10 +523,11 @@ class JournalBackedMediaMutationServiceTest {
             assertEquals(0, fixture.staging.stageCalls)
             assertEquals(0, fixture.provider.storeCalls)
             assertTrue(
-                "$stage evidence should name the throw site",
+                "$stage evidence should name the typed refusal and the throw site",
                 fixture.journal.appendedEvidence.all { evidence ->
                     evidence.contains("admission=refused") &&
-                        evidence.contains("fault=JournalInvariantViolation @ ")
+                        evidence.contains("reason=") &&
+                        evidence.contains("fault=MediaAdmissionViolation @ ")
                 },
             )
             assertFalse(

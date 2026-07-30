@@ -329,14 +329,20 @@ internal data class MediaNamespaceLock(
 internal object MediaNamespaceValidator {
     fun requireDisjoint(locks: List<MediaNamespaceLock>) {
         if (locks.size > GLOBAL_UNRESOLVED_CLAIM_LIMIT) {
-            throw JournalInvariantViolation("Global media namespace capacity exhausted")
+            throw MediaAdmissionViolation(
+                MediaAdmissionRefusal.GLOBAL_NAMESPACE_CAPACITY,
+                "Global media namespace capacity exhausted",
+            )
         }
         val direct = locks.sortedWith(compareBy(MediaNamespaceLock::directFilename, { it.owner.runId }, { it.owner.assetId }))
         for (index in 1 until direct.size) {
             val left = direct[index - 1]
             val right = direct[index]
             if (left.directFilename == right.directFilename && left.owner != right.owner) {
-                throw JournalInvariantViolation("Media direct-name namespace collision")
+                throw MediaAdmissionViolation(
+                    MediaAdmissionRefusal.DIRECT_NAME_COLLISION,
+                    "Media direct-name namespace collision",
+                )
             }
         }
 
@@ -358,7 +364,10 @@ internal object MediaNamespaceValidator {
                 if (count == 0) activeOwners.remove(removed.owner) else activeOwners[removed.owner] = count
             }
             if (activeOwners.isNotEmpty() && (activeOwners.size > 1 || event.owner !in activeOwners)) {
-                throw JournalInvariantViolation("Media provider namespace overlaps another owner")
+                throw MediaAdmissionViolation(
+                    MediaAdmissionRefusal.PROVIDER_NAMESPACE_OVERLAP,
+                    "Media provider namespace overlaps another owner",
+                )
             }
             if (event.isPrefix) {
                 activePrefixes += event

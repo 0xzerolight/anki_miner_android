@@ -1547,7 +1547,12 @@ internal class SqliteAnkiMutationStore(
         require(runId.isNotBlank())
         return write { db ->
             leaseByRun(db, runId)?.let {
-                if (it.state != MediaLeaseState.ACTIVE) throw JournalInvariantViolation("Released run lease cannot be reacquired")
+                if (it.state != MediaLeaseState.ACTIVE) {
+                    throw MediaAdmissionViolation(
+                        MediaAdmissionRefusal.LEASE_RELEASED_CANNOT_REACQUIRE,
+                        "Released run lease cannot be reacquired",
+                    )
+                }
                 return@write it
             }
             val activeLeaseUnused =
@@ -1589,9 +1594,17 @@ internal class SqliteAnkiMutationStore(
         require(assets.isNotEmpty())
         require(assets.map { it.assetId }.distinct().size == assets.size) { "asset IDs must be unique in a reservation batch" }
         return write { db ->
-            val lease = leaseByRun(db, runId) ?: throw JournalInvariantViolation("Media lease is not acquired")
-            if (lease.state != MediaLeaseState.ACTIVE) throw JournalInvariantViolation("Media lease is released")
-            if (assets.size > lease.unusedSlots) throw JournalInvariantViolation("Per-run media namespace capacity exhausted")
+            val lease = leaseByRun(db, runId)
+                ?: throw MediaAdmissionViolation(MediaAdmissionRefusal.LEASE_NOT_ACQUIRED, "Media lease is not acquired")
+            if (lease.state != MediaLeaseState.ACTIVE) {
+                throw MediaAdmissionViolation(MediaAdmissionRefusal.LEASE_NOT_ACTIVE, "Media lease is released")
+            }
+            if (assets.size > lease.unusedSlots) {
+                throw MediaAdmissionViolation(
+                    MediaAdmissionRefusal.PER_RUN_NAMESPACE_CAPACITY,
+                    "Per-run media namespace capacity exhausted",
+                )
+            }
             assets.forEach { validateMediaNames(it.requestedFilename, it.preferredName) }
             val existingLocks = boundedNamespaceLocks(db)
             val newLocks =
@@ -1603,7 +1616,10 @@ internal class SqliteAnkiMutationStore(
                     )
                 }
             if (existingLocks.size + newLocks.size > capacityLimits.globalUnresolvedLimit) {
-                throw JournalInvariantViolation("Global media namespace capacity exhausted")
+                throw MediaAdmissionViolation(
+                    MediaAdmissionRefusal.GLOBAL_NAMESPACE_CAPACITY,
+                    "Global media namespace capacity exhausted",
+                )
             }
             requireNoClaimNamespaceCollisions(db, newLocks)
             MediaNamespaceValidator.requireDisjoint(existingLocks + newLocks)
