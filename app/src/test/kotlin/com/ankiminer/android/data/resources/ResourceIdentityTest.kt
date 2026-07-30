@@ -68,6 +68,14 @@ class ResourceIdentityTest {
     }
 
     @Test
+    fun canonicallyEquivalentNonAsciiNamesGetOneFallbackId() {
+        assertEquals(
+            ResourceIdentity.derive("\u3070", "frequency"),
+            ResourceIdentity.derive("\u306F\u3099", "frequency"),
+        )
+    }
+
+    @Test
     fun longNamesAreTruncatedAndStillEndAlphanumeric() {
         val id = ResourceIdentity.derive("word ".repeat(60), "frequency")
         assertTrue(id.length <= 40)
@@ -179,6 +187,16 @@ class ResourceIdentityTest {
     }
 
     @Test
+    fun frequencyTargetMatchesCanonicalEquivalentLegacyNameAndKeepsItsId() {
+        val installed = listOf(frequencySource(sourceId = "legacy-frequency", sourceName = "\u3070"))
+
+        val target = ResourceIdentity.frequencyTarget("\u306F\u3099", installed)
+
+        assertEquals("legacy-frequency", target.identity)
+        assertEquals("\u3070", target.installedName)
+    }
+
+    @Test
     fun frequencyTargetPrefersAnIdMatchOverANameMatch() {
         val installed =
             listOf(
@@ -263,6 +281,16 @@ class ResourceIdentityTest {
         // A different source is a separate slot now, not a collision with the
         // single installed pitch file it used to be.
         assertFalse(ResourceIdentity.pitchTarget("NHK 2016", installed).collides)
+    }
+
+    @Test
+    fun pitchTargetMatchesCanonicalEquivalentLegacyNameAndKeepsItsId() {
+        val installed = listOf(pitchSource("legacy-pitch", "\u3070"))
+
+        val target = ResourceIdentity.pitchTarget("\u306F\u3099", installed)
+
+        assertEquals("legacy-pitch", target.identity)
+        assertEquals("\u3070", target.installedName)
     }
 
     private fun pitchSource(

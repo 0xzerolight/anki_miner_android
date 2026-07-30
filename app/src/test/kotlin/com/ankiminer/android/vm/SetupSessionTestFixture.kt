@@ -13,6 +13,7 @@ import com.ankiminer.android.data.resources.WordListKind
 import com.ankiminer.android.data.resources.PitchAccentSourceFormat
 import com.ankiminer.android.data.resources.ResourceManager
 import com.ankiminer.android.data.resources.ResourceManagerState
+import com.ankiminer.android.data.resources.ResourceStartupReadiness
 import com.ankiminer.android.data.settings.AppSettings
 import com.ankiminer.android.data.settings.AppSettingsRepository
 import com.ankiminer.android.data.settings.AppSettingsValidator
@@ -75,7 +76,8 @@ internal class SessionSettingsRepository(initial: AppSettings) : AppSettingsRepo
 }
 
 internal class SessionResourceManager(
-    initial: ResourceManagerState = ResourceManagerState(),
+    initial: ResourceManagerState =
+        ResourceManagerState(startupReadiness = ResourceStartupReadiness.READY),
 ) : ResourceManager {
     override val state: StateFlow<ResourceManagerState> = MutableStateFlow(initial).asStateFlow()
 
@@ -116,6 +118,8 @@ internal class SessionResourceManager(
     override suspend fun previewKnownWords(uri: String, format: KnownWordsSourceFormat) = Unit
 
     override suspend fun confirmKnownWordsImport() = Unit
+
+    override suspend fun retryKnownWordsFailure() = Unit
 
     override fun dismissKnownWordsImportPreview() = Unit
 

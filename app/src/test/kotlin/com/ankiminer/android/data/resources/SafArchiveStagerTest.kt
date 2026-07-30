@@ -57,7 +57,10 @@ class SafArchiveStagerTest {
                 executor.submit<StagedArchive> {
                     stager.stage(INPUT_URI, "blocked-open", cancellation) { _, _ -> }
                 }
-            assertTrue(openStarted.await(1, TimeUnit.SECONDS))
+            if (!openStarted.await(1, TimeUnit.SECONDS)) {
+                staged.get(1, TimeUnit.SECONDS)
+                throw AssertionError("provider open never started")
+            }
 
             cancellation.cancel()
 

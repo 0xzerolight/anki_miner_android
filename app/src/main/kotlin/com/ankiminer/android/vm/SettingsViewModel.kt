@@ -19,6 +19,7 @@ import com.ankiminer.android.data.settings.ResourceChainSelection
 import com.ankiminer.android.data.settings.SubtitleRegexCheck
 import com.ankiminer.android.data.settings.ThemeMode
 import com.ankiminer.android.localization.LocalizedStringResource
+import java.io.IOException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.NonCancellable
@@ -26,6 +27,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChangedBy
 import kotlinx.coroutines.flow.filter
@@ -789,6 +791,11 @@ internal class SettingsViewModel(
     private val settings: StateFlow<AppSettings?> =
         repository.settings
             .map<AppSettings, AppSettings?> { it }
+            .catch { failure ->
+                if (failure is CancellationException) throw failure
+                if (failure !is IOException) throw failure
+                // No fallback emission: failed reads leave the draft unloaded and non-persistable.
+            }
             .stateIn(viewModelScope, SharingStarted.Eagerly, null)
     val saving = MutableStateFlow(false)
     val error = MutableStateFlow<LocalizedStringResource?>(null)

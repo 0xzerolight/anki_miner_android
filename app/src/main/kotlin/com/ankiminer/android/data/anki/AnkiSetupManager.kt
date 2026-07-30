@@ -11,6 +11,7 @@ import com.ankiminer.android.anki.provider.NoteTypeSetupStatus
 import com.ankiminer.android.data.RuntimeWorkCoordinator
 import com.ankiminer.android.localization.StringResourceResolver
 import java.util.concurrent.Executor
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -87,6 +88,10 @@ internal interface AnkiSetupManager {
 
     fun refresh(noteType: String?, fieldMap: Map<String, String>)
 
+    suspend fun refreshAndAwait(noteType: String?, fieldMap: Map<String, String>) {
+        refresh(noteType, fieldMap)
+    }
+
     fun reconcileInterruptedWork()
 
     fun performRemediation(command: AnkiRemediationCommand)
@@ -113,12 +118,22 @@ internal class ProcessAnkiSetupManager(
 
     private val monitor = Any()
     private var active = false
+    private var pendingRefresh: PendingRefresh? = null
+
+    private data class PendingRefresh(
+        val noteType: String?,
+        val fieldMap: Map<String, String>,
+        val completions: List<CompletableDeferred<Unit>>,
+    )
 
     override fun refresh(noteType: String?, fieldMap: Map<String, String>) {
-        runOperation(AnkiSetupOperation.REFRESHING) {
-            refreshRecoveryInventory()
-            refreshProviderSetup(noteType, fieldMap)
-        }
+        enqueueRefresh(noteType, fieldMap, completion = null)
+    }
+
+    override suspend fun refreshAndAwait(noteType: String?, fieldMap: Map<String, String>) {
+        val completion = CompletableDeferred<Unit>()
+        enqueueRefresh(noteType, fieldMap, completion)
+        completion.await()
     }
 
     override fun reconcileInterruptedWork() {
@@ -224,10 +239,68 @@ internal class ProcessAnkiSetupManager(
         operation: AnkiSetupOperation,
         work: () -> Unit,
     ) {
-        synchronized(monitor) {
-            if (active) return
-            active = true
+        val accepted =
+            synchronized(monitor) {
+                if (active) {
+                    false
+                } else {
+                    active = true
+                    true
+                }
+            }
+        if (!accepted) return
+        scheduleActiveOperation(operation, work, emptyList())
+    }
+
+    private fun enqueueRefresh(
+        noteType: String?,
+        fieldMap: Map<String, String>,
+        completion: CompletableDeferred<Unit>?,
+    ) {
+        val startNow =
+            synchronized(monitor) {
+                if (active) {
+                    val completions = pendingRefresh?.completions.orEmpty().toMutableList()
+                    completion?.let(completions::add)
+                    pendingRefresh =
+                        PendingRefresh(
+                            noteType = noteType,
+                            fieldMap = fieldMap.toMap(),
+                            completions = completions,
+                        )
+                    false
+                } else {
+                    active = true
+                    true
+                }
+            }
+        if (startNow) {
+            scheduleRefresh(
+                PendingRefresh(
+                    noteType = noteType,
+                    fieldMap = fieldMap.toMap(),
+                    completions = listOfNotNull(completion),
+                ),
+            )
         }
+    }
+
+    private fun scheduleRefresh(refresh: PendingRefresh) {
+        scheduleActiveOperation(
+            AnkiSetupOperation.REFRESHING,
+            work = {
+                refreshRecoveryInventory()
+                refreshProviderSetup(refresh.noteType, refresh.fieldMap)
+            },
+            completions = refresh.completions,
+        )
+    }
+
+    private fun scheduleActiveOperation(
+        operation: AnkiSetupOperation,
+        work: () -> Unit,
+        completions: List<CompletableDeferred<Unit>>,
+    ) {
         val lease =
             if (operation == AnkiSetupOperation.REFRESHING) {
                 null
@@ -235,12 +308,12 @@ internal class ProcessAnkiSetupManager(
                 runtimeWorkCoordinator.tryAcquire(RuntimeWorkCoordinator.Kind.ANKI_SETUP)
             }
         if (operation != AnkiSetupOperation.REFRESHING && lease == null) {
-            synchronized(monitor) { active = false }
             recordFailure(
                 "runtime_busy",
                 strings.resolve(R.string.anki_setup_runtime_busy),
                 operation,
             )
+            finishActiveOperation(completions)
             return
         }
         mutableState.update { it.copy(operation = operation) }
@@ -258,10 +331,7 @@ internal class ProcessAnkiSetupManager(
                     try {
                         lease?.close()
                     } finally {
-                        synchronized(monitor) { active = false }
-                        // Publish the terminal state only after releasing process exclusion so a
-                        // collector-triggered admission refresh cannot race the old lease.
-                        mutableState.update { it.copy(operation = null) }
+                        finishActiveOperation(completions)
                     }
                 }
             }
@@ -269,13 +339,32 @@ internal class ProcessAnkiSetupManager(
             try {
                 lease?.close()
             } finally {
-                synchronized(monitor) { active = false }
-                mutableState.update { it.copy(operation = null) }
+                finishActiveOperation(completions)
             }
             recordFailure(
                 "anki_setup_unavailable",
                 strings.resolve(R.string.anki_setup_schedule_failed),
                 operation,
+            )
+        }
+    }
+
+    private fun finishActiveOperation(completions: List<CompletableDeferred<Unit>>) {
+        val queued =
+            synchronized(monitor) {
+                pendingRefresh.also {
+                    pendingRefresh = null
+                    if (it == null) active = false
+                }
+            }
+        if (queued == null) {
+            // Publish terminal state only after releasing process exclusion. A collector-triggered
+            // admission refresh therefore cannot race an old lease or a queued newer refresh.
+            mutableState.update { it.copy(operation = null) }
+            completions.forEach { it.complete(Unit) }
+        } else {
+            scheduleRefresh(
+                queued.copy(completions = completions + queued.completions),
             )
         }
     }

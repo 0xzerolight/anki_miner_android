@@ -1,5 +1,6 @@
 package com.ankiminer.android.data.anki
 
+import com.ankiminer.android.runStartupRecoverySequence
 import com.ankiminer.android.anki.provider.AnkiCancellation
 import com.ankiminer.android.anki.provider.AnkiPendingRemediation
 import com.ankiminer.android.anki.provider.AnkiRemediationCommand
@@ -12,6 +13,12 @@ import com.ankiminer.android.data.RuntimeWorkCoordinator
 import com.ankiminer.android.localization.testStringResourceResolver
 import java.util.ArrayDeque
 import java.util.concurrent.Executor
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -177,6 +184,69 @@ class AnkiSetupManagerTest {
         assertNull(manager.state.value.operation)
         assertNull(coordinator.activeKind.value)
     }
+
+    @Test
+    fun `queued refresh keeps newest target and await completes after publication`() =
+        runTest {
+            val executor = QueuedExecutor()
+            val backend = FakeBackend()
+            val manager =
+                ProcessAnkiSetupManager(
+                    backend,
+                    executor,
+                    RuntimeWorkCoordinator(),
+                    testStringResourceResolver,
+                )
+
+            manager.refresh("Old", mapOf("word" to "Old field"))
+            val newest =
+                async {
+                    manager.refreshAndAwait("Newest", mapOf("word" to "Expression"))
+                }
+            runCurrent()
+
+            assertEquals(1, executor.queued.size)
+            executor.runNext()
+            assertEquals(1, executor.queued.size)
+            executor.runNext()
+            newest.await()
+
+            assertEquals(2, backend.listCalls)
+            assertEquals("Newest", backend.lastNoteType)
+            assertEquals(mapOf("word" to "Expression"), backend.lastFieldMap)
+            assertNull(manager.state.value.operation)
+        }
+
+    @Test
+    fun `startup sequence never admits mining before recovery inventory refresh completes`() =
+        runTest {
+            val setupGate = CompletableDeferred<Unit>()
+            val events = mutableListOf<String>()
+
+            val startup =
+                launch {
+                    runStartupRecoverySequence(
+                        recoverResources = { events += "resources" },
+                        refreshSetup = {
+                            events += "setup-start"
+                            setupGate.await()
+                            events += "setup-published"
+                        },
+                        refreshAdmission = { events += "admission" },
+                    )
+                }
+            runCurrent()
+
+            assertEquals(listOf("resources", "setup-start"), events)
+            setupGate.complete(Unit)
+            advanceUntilIdle()
+            startup.join()
+
+            assertEquals(
+                listOf("resources", "setup-start", "setup-published", "admission"),
+                events,
+            )
+        }
 
     @Test
     fun `backend failure is UI safe and always releases setup exclusion`() {

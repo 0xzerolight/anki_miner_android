@@ -2,6 +2,8 @@ package com.ankiminer.android.data.resources
 
 import android.content.ContentResolver
 import android.net.Uri
+import android.os.CancellationSignal
+import android.os.ParcelFileDescriptor
 import com.ankiminer.android.media.CancellableProviderIo
 import com.ankiminer.android.media.ProviderIoCancellation
 import com.ankiminer.android.media.ProviderIoCancelledException
@@ -32,6 +34,13 @@ internal interface ResourceArchiveStager {
 
 internal fun interface ResourceDocumentWriter {
     fun open(uri: String): OutputStream?
+
+    fun open(
+        uri: String,
+        cancellationSignal: CancellationSignal,
+    ): OutputStream? = open(uri)
+
+    fun delete(uri: String): Boolean = false
 }
 
 internal class AndroidResourceDocumentWriter(
@@ -39,11 +48,27 @@ internal class AndroidResourceDocumentWriter(
 ) : ResourceDocumentWriter {
     override fun open(uri: String): OutputStream? =
         resolver.openOutputStream(Uri.parse(uri), "wt")
+
+    override fun open(
+        uri: String,
+        cancellationSignal: CancellationSignal,
+    ): OutputStream? =
+        resolver
+            .openFileDescriptor(Uri.parse(uri), "wt", cancellationSignal)
+            ?.let(ParcelFileDescriptor::AutoCloseOutputStream)
+
+    override fun delete(uri: String): Boolean =
+        resolver.delete(Uri.parse(uri), null, null) > 0
 }
 
 internal fun interface ResourceInputOpener {
+    /**
+     * Opens [uri], a `content://` string. Kept as a String rather than a parsed
+     * [Uri] so staging can be exercised by JVM unit tests, where `Uri.parse` is a
+     * throwing stub.
+     */
     fun open(
-        uri: Uri,
+        uri: String,
         cancellation: ProviderIoCancellation,
     ): InputStream
 }
@@ -52,12 +77,12 @@ private class AndroidResourceInputOpener(
     private val resolver: ContentResolver,
 ) : ResourceInputOpener {
     override fun open(
-        uri: Uri,
+        uri: String,
         cancellation: ProviderIoCancellation,
     ): InputStream =
         CancellableProviderIo.open(cancellation) { signal ->
             val descriptor =
-                resolver.openAssetFileDescriptor(uri, "r", signal)
+                resolver.openAssetFileDescriptor(Uri.parse(uri), "r", signal)
                     ?: throw FileNotFoundException("DocumentsProvider returned no descriptor for $uri")
             try {
                 descriptor.createInputStream()
@@ -98,8 +123,7 @@ internal class SafArchiveStager(
         sourceLabel: String,
         onProgress: (Long, Long) -> Unit,
     ): StagedArchive {
-        val source = Uri.parse(sourceUri)
-        require(source.scheme == ContentResolver.SCHEME_CONTENT)
+        require(sourceUri.startsWith("${ContentResolver.SCHEME_CONTENT}://"))
         require(FILE_SUFFIX.matches(fileSuffix))
         require(maximumBytes in 1..MAXIMUM_SUPPORTED_BYTES)
         require(sourceLabel.isNotBlank() && sourceLabel.length <= 64)
@@ -120,7 +144,7 @@ internal class SafArchiveStager(
                     timeoutMillis = providerIoTimeoutMillis,
                 ) { deadlineCancellation ->
                     copyProviderInput(
-                        source = source,
+                        source = sourceUri,
                         destination = destination,
                         cancellation = cancellation.combine(deadlineCancellation),
                         maximumBytes = maximumBytes,
@@ -144,7 +168,7 @@ internal class SafArchiveStager(
     }
 
     private fun copyProviderInput(
-        source: Uri,
+        source: String,
         destination: File,
         cancellation: ProviderIoCancellation,
         maximumBytes: Long,

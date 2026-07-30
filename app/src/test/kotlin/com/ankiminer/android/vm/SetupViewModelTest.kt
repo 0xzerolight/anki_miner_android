@@ -15,8 +15,14 @@ import com.ankiminer.android.data.resources.KnownWordsResetScope
 import com.ankiminer.android.data.resources.KnownWordsSourceFormat
 import com.ankiminer.android.data.resources.WordListKind
 import com.ankiminer.android.data.resources.PitchAccentSourceFormat
+import com.ankiminer.android.data.resources.KnownWordsFailureOperation
+import com.ankiminer.android.data.resources.ResourceFailure
+import com.ankiminer.android.data.resources.ResourceFailureAction
+import com.ankiminer.android.data.resources.ResourceFailureOrigin
+import com.ankiminer.android.data.resources.ResourceFailureRetry
 import com.ankiminer.android.data.resources.ResourceManager
 import com.ankiminer.android.data.resources.ResourceManagerState
+import com.ankiminer.android.data.resources.ResourceStartupReadiness
 import com.ankiminer.android.data.settings.AppSettings
 import com.ankiminer.android.data.settings.AppSettingsRepository
 import com.ankiminer.android.data.settings.AppSettingsValidator
@@ -322,6 +328,35 @@ class SetupViewModelTest {
         }
 
     @Test
+    fun `known-word retry delegates to repository mutation contract instead of search`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val resources = FakeResourceManager()
+            resources.setFailure(
+                ResourceFailure(
+                    code = "known_words_remove_failed",
+                    message = "failed",
+                    retryable = true,
+                    origin = ResourceFailureOrigin.KNOWN_WORDS,
+                    retry = ResourceFailureRetry(ResourceFailureAction.RETRY),
+                    knownWordsOperation = null,
+                ),
+            )
+            val model =
+                viewModel(
+                    FakeSettingsRepository(AppSettings()),
+                    FakeAnkiSetupManager(emptyList()),
+                    resources,
+                )
+            advanceUntilIdle()
+
+            model.retryResourceFailure()
+            advanceUntilIdle()
+
+            assertEquals(1, resources.knownWordsRetryCount)
+            assertEquals(emptyList<Pair<String, Boolean>>(), resources.searchCalls)
+        }
+
+    @Test
     fun `a fresh frequency name imports immediately under its derived id`() =
         runTest(mainDispatcherRule.dispatcher) {
             val resources = FakeResourceManager()
@@ -335,6 +370,25 @@ class SetupViewModelTest {
 
             assertEquals(listOf(Triple("content://import.zip", "jpdb-v2-1", false)), resources.frequencyImports)
             assertEquals(null, model.uiState.value.pendingReplace)
+        }
+
+    @Test
+    fun `frequency import dispatches pinned NFC display name`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val resources = FakeResourceManager()
+            val model =
+                viewModel(
+                    FakeSettingsRepository(AppSettings()),
+                    FakeAnkiSetupManager(emptyList()),
+                    resources,
+                )
+            advanceUntilIdle()
+
+            model.setFrequencySourceName("\u306F\u3099")
+            model.importFrequencySource("content://import.csv")
+            advanceUntilIdle()
+
+            assertEquals(listOf("\u3070"), resources.frequencySourceNames)
         }
 
     @Test
@@ -554,14 +608,19 @@ class SetupViewModelTest {
         val importCalls = mutableListOf<Pair<String, KnownWordsSourceFormat>>()
         var confirmCount = 0
         var dismissCount = 0
+        var knownWordsRetryCount = 0
         val searchCalls = mutableListOf<Pair<String, Boolean>>()
         val removeCalls = mutableListOf<List<String>>()
         val resetCalls = mutableListOf<KnownWordsResetScope>()
         val exportCalls = mutableListOf<String>()
 
         val frequencyImports = mutableListOf<Triple<String, String, Boolean>>()
+        val frequencySourceNames = mutableListOf<String>()
         val pitchImports = mutableListOf<Pair<String, Boolean>>()
-        private val mutableState = MutableStateFlow(ResourceManagerState())
+        private val mutableState =
+            MutableStateFlow(
+                ResourceManagerState(startupReadiness = ResourceStartupReadiness.READY),
+            )
 
         override val state: StateFlow<ResourceManagerState> = mutableState.asStateFlow()
 
@@ -571,6 +630,10 @@ class SetupViewModelTest {
 
         fun setInstalledPitchSources(sources: List<InstalledPitchSource>) {
             mutableState.value = mutableState.value.copy(pitchSources = sources)
+        }
+
+        fun setFailure(failure: ResourceFailure) {
+            mutableState.value = mutableState.value.copy(failure = failure)
         }
 
         override suspend fun recoverAndRefresh() = Unit
@@ -589,6 +652,7 @@ class SetupViewModelTest {
             replace: Boolean,
         ) {
             frequencyImports += Triple(uri, sourceId, replace)
+            frequencySourceNames += sourceName
         }
 
         override suspend fun importPitchAccent(
@@ -630,6 +694,10 @@ class SetupViewModelTest {
 
         override fun dismissKnownWordsImportPreview() {
             dismissCount += 1
+        }
+
+        override suspend fun retryKnownWordsFailure() {
+            knownWordsRetryCount += 1
         }
 
         override suspend fun searchKnownWords(query: String, loadMore: Boolean) {

@@ -24,6 +24,7 @@ import com.ankiminer.android.ui.settings.SettingsResetAction
 import com.ankiminer.android.ui.settings.SettingsResetConfirmationState
 import com.ankiminer.android.ui.settings.dispatchConfirmedSettingsReset
 import java.io.File
+import java.io.IOException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -229,6 +230,31 @@ class AppSettingsRepositoryTest {
 
             assertEquals(priorPreferences.asMap(), dataStore.data.first().asMap())
             assertEquals(original, failingRepository.settings.first())
+        }
+
+    @Test
+    fun `DataStore read IOException never emits persistable defaults`() =
+        runTest {
+            val repository =
+                DataStoreAppSettingsRepository(
+                    object : DataStore<Preferences> {
+                        override val data: Flow<Preferences> =
+                            kotlinx.coroutines.flow.flow {
+                                throw IOException("transient read failure")
+                            }
+
+                        override suspend fun updateData(
+                            transform: suspend (Preferences) -> Preferences,
+                        ): Preferences = error("write not expected")
+                    },
+                )
+
+            try {
+                repository.settings.first()
+                fail("Expected DataStore read failure")
+            } catch (failure: IOException) {
+                assertEquals("transient read failure", failure.message)
+            }
         }
 
     @Test
