@@ -3027,6 +3027,10 @@ class AndroidAnkiAdapter:
         self._accept_terminal_payload(payload)
         if any(note_id is not None for note_id in outcome[0]):
             self.anki_write_state = AnkiWriteState.NOTE_WRITE_CONFIRMED
+        elif any(row["status"] == "uncertain" for row in payload["results"]):
+            # The aligned response proves which request became uncertain, not
+            # that no provider write occurred. Keep the pre-dispatch state.
+            self.anki_write_state = AnkiWriteState.NOTE_WRITE_UNCERTAIN
         else:
             self.anki_write_state = state_before_request
         return outcome

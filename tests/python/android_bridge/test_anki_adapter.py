@@ -5269,6 +5269,7 @@ def test_unknown_post_commit_state_never_invents_id_or_updates_vocab_cache(
     initialized_bridge_home: Path,
 ) -> None:
     from anki_miner.exceptions import AnkiConnectionError
+    from anki_miner.models import AnkiWriteState
 
     kotlin = FakeKotlinAnki()
     kotlin.known_fields = ["既知"]
@@ -5292,6 +5293,7 @@ def test_unknown_post_commit_state_never_invents_id_or_updates_vocab_cache(
     assert adapter.last_skipped_duplicates == 0
     assert adapter.get_existing_vocabulary() == {"既知"}
     assert kotlin.next_note_id == 1001
+    assert adapter.anki_write_state is AnkiWriteState.NOTE_WRITE_UNCERTAIN
 
 
 def test_callback_wide_post_commit_error_is_rejected_as_temporally_invalid(
