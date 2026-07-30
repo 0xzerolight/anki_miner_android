@@ -41,30 +41,41 @@ def strip_subtitle_markup(text: str) -> str:
     return text
 
 
-def clean_subtitle_text(text: str) -> str:
+def clean_subtitle_text(text: str, *, strip_annotations: bool = False) -> str:
     """Remove formatting tags, then Japanese-normalize for tokenization.
 
-    Tag/whitespace stripping runs first, then :func:`normalize_for_tokenization`
+    Markup stripping runs first, then :func:`normalize_for_tokenization`
     (halfwidth katakana → fullwidth, NFC combining-mark composition, CJK-compat
-    and radical NFKD folding) and the minimal kanji-variant map (𠮟 → 叱). Because
-    normalization precedes tokenization here, the returned string *is* the text
-    MeCab tokenizes and the stored card sentence, so token offsets, dedup keys,
-    and script-type filters all see one consistent normalized form.
+    and radical NFKD folding) and the minimal kanji-variant map (𠮟 → 叱). When
+    annotation stripping is enabled, physical lines stay separate through
+    normalization and are stripped before whitespace is flattened. The returned
+    string *is* the text MeCab tokenizes and the stored card sentence, so token
+    offsets, dedup keys, and script-type filters all see one normalized form.
 
     Args:
         text: Raw subtitle text with possible formatting tags
+        strip_annotations: Strip annotations per physical line after normalization
 
     Returns:
         Cleaned, normalized text without formatting tags
     """
+    if strip_annotations:
+        # Preserve physical lines until the gated post-normalization strip;
+        # strip_subtitle_markup normally flattens ASS/SSA \N and \n to spaces.
+        text = re.sub(r"\\[nN]|\r\n?", "\n", text)
     text = strip_subtitle_markup(text)
 
-    # Normalize whitespace
-    text = " ".join(text.split())
+    # Preserve the pre-annotation behavior exactly when the opt-in is disabled.
+    if not strip_annotations:
+        text = " ".join(text.split())
 
     # Japanese pre-tokenization normalization (see anki_miner.utils.ja_normalize).
     text = normalize_for_tokenization(text)
     text = standardize_kanji_variants(text)
+
+    if strip_annotations:
+        text = strip_inline_annotations(text)
+        text = " ".join(text.split())
 
     return text.strip()
 
@@ -83,6 +94,7 @@ _INNERMOST_PAREN_GROUP_RE = re.compile(r"（([^（）()]*)）|\(([^（）()]*)\)
 # A longer kana parenthetical after a kanji word is likely a real aside, so it
 # is left intact (precision over recall).
 _FURIGANA_MAX_KANA = 10
+_ANNOTATION_STRIP_MAX_PASSES = 32
 
 
 def _is_furigana_content(content: str) -> bool:
@@ -180,15 +192,25 @@ def strip_inline_annotations(text: str) -> str:
        peeled (with following whitespace), repeatedly, so
        ``（旬: 小声で）余計な…`` → ``余計な…``. Deliberately broader than names.
 
-    Mid-line paren groups containing kanji are left untouched (conservative).
-    Balanced-paren matching only: malformed/unbalanced parens leave the text
-    unchanged. Pure function — no I/O, no config; the caller gates it.
+    Each pass applies independently to every physical line (actual newlines or
+    ASS/SSA ``\\N``/``\\n`` markers), so an annotation at any physical line start
+    cannot become mid-cue dialogue when whitespace is later flattened. Mid-line
+    paren groups containing kanji are left untouched (conservative). Balanced-
+    paren matching only:
+    malformed/unbalanced parens leave the text unchanged. Pure function — no
+    I/O, no config; the caller gates it.
     """
+    return "\n".join(_strip_inline_annotations_line(line) for line in re.split(r"\\[nN]|\r\n?|\n", text))
+
+
+def _strip_inline_annotations_line(text: str) -> str:
+    """Apply the three annotation passes to one physical subtitle line."""
     # Pass 1: inline furigana. Re-run until stable so adjacent groups whose
     # kanji-adjacency only appears after an earlier deletion also resolve
     # (漢(あ)(い) → 漢). Each successful sub strictly shrinks the string, so
-    # this terminates.
-    while True:
+    # each pass shrinks the string. Cap the work so a long run of adjacent
+    # groups cannot make this repeat-until-stable pass quadratic.
+    for _ in range(_ANNOTATION_STRIP_MAX_PASSES):
         stripped = _INNERMOST_PAREN_GROUP_RE.sub(_strip_furigana_match, text)
         if stripped == text:
             break
@@ -271,9 +293,19 @@ def _is_kanji(char: str) -> bool:
     return is_cjk_ideograph(char) or char == "々"
 
 
-def _is_kana_only(text: str) -> bool:
-    """True iff every char is kana or a kana mark (ー・, iteration marks)."""
+def is_kana_only(text: str) -> bool:
+    """True iff every char is kana or a kana mark (ー・, iteration marks).
+
+    False for the empty string — callers using this as a "usable kana reading"
+    gate (audio fetchers, parser reading recovery) get the empty case rejected
+    for free.
+    """
     return bool(text) and all("ぁ" <= ch <= "ゖ" or "ァ" <= ch <= "ヺ" or ch in "ー・ゝゞヽヾ" for ch in text)
+
+
+# Internal alias predating the public export; existing private-name callers
+# (dictionary storage, furigana helpers) keep working.
+_is_kana_only = is_kana_only
 
 
 def _format_furigana(surface: str, reading: str) -> str:

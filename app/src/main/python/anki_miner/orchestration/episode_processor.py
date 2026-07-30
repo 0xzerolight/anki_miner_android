@@ -23,10 +23,16 @@ from PyQt6.QtCore import QCoreApplication
 from anki_miner.config import AnkiMinerConfig
 from anki_miner.exceptions import AnkiMinerException, SetupError
 from anki_miner.interfaces import PresenterProtocol, ProgressCallback
-from anki_miner.models import CANCELLED_ERROR, CardPayload, MediaData, ProcessingResult, TokenizedWord
+from anki_miner.models import (
+    CANCELLED_ERROR,
+    AnkiWriteState,
+    CardPayload,
+    MediaData,
+    ProcessingResult,
+    TokenizedWord,
+)
 from anki_miner.models.youtube import FetchedMedia, SubMode
 from anki_miner.orchestration.audio_stage import AudioStage
-from anki_miner.orchestration.stage_weighted_progress import StageWeightedProgress
 from anki_miner.services import (
     AnkiService,
     DefinitionService,
@@ -34,20 +40,27 @@ from anki_miner.services import (
     SubtitleParserService,
     WordFilterService,
 )
-from anki_miner.services.definition_service import collect_dictionary_css
-from anki_miner.services.dictionary.card_style_block import build_card_style_block
+from anki_miner.services.anki_service import is_transient_anki_transport_error
+from anki_miner.services.definition_service import collect_dictionary_css_entries
+from anki_miner.services.dictionary.card_style_block import attach_card_style_block
 from anki_miner.services.frequency.multi_frequency_service import harmonic_rank, min_rank
 from anki_miner.services.frequency.render import render_frequency_html
 from anki_miner.services.pitch_accent.render import (
     render_pitch_graph_field,
     render_pitch_text_field,
 )
-from anki_miner.services.reading.images import prepare_card_image
+from anki_miner.services.reading.images import ReadingImageArchiveError, ReadingImageMemberError, prepare_card_image
 from anki_miner.utils import ensure_directory, katakana_to_hiragana
 from anki_miner.utils.i18n import tr_format
 from anki_miner.utils.timing import timed_phase
 
 logger = logging.getLogger(__name__)
+
+#: The mining pipeline is exactly five stages long: parse, filter, media,
+#: definitions, cards. Their *order* and *count* are the only whole-run
+#: position knowable in advance -- their relative durations are not, which is
+#: why no stage weight lives anywhere in this module any more.
+PIPELINE_STAGE_COUNT = 5
 
 
 if TYPE_CHECKING:
@@ -58,7 +71,7 @@ if TYPE_CHECKING:
     from anki_miner.services.dictionary.registry import DictionaryRegistry
     from anki_miner.services.frequency.multi_frequency_service import MultiFrequencyService
     from anki_miner.services.known_word_db import KnownWordDB
-    from anki_miner.services.pitch_accent_service import PitchAccentService
+    from anki_miner.services.pitch_accent.multi_pitch_service import MultiPitchAccentService
     from anki_miner.services.stats_service import StatsService
     from anki_miner.services.word_list_service import WordListService
     from anki_miner.services.wordset_service import WordsetService
@@ -95,6 +108,21 @@ _ARR_METADATA_RE = re.compile(r"\s*(?:\[[^\]]*\]\s*)+(?:-\S+)?\s*$")
 # (ARC-004: inlined, never surfaced in any panel). > 1 keeps the filter live;
 # Bug-F5 ordering (filter before dedup) is unchanged.
 MIN_EPISODE_APPEARANCES = 2
+
+_OFFLINE_DICTIONARY_REQUIRED_MESSAGE = (
+    "No usable offline dictionary is installed. Use Tools → Download Recommended Resources or Settings → Dictionaries."
+)
+
+
+def require_usable_offline_provider(
+    config: AnkiMinerConfig,
+    definition_service: DefinitionService,
+) -> None:
+    """Fail standard mining when no non-empty offline dictionary can serve it."""
+    if config.bypass_optional_filters:
+        return
+    if not definition_service.has_usable_offline_provider():
+        raise SetupError(_OFFLINE_DICTIONARY_REQUIRED_MESSAGE)
 
 
 def _sanitize_source_label(label: str) -> str:
@@ -175,7 +203,7 @@ class EpisodeProcessor:
         definition_service: DefinitionService,
         anki_service: AnkiService,
         presenter: PresenterProtocol,
-        pitch_accent_service: PitchAccentService | None = None,
+        pitch_accent_service: MultiPitchAccentService | None = None,
         frequency_service: MultiFrequencyService | None = None,
         known_word_db: KnownWordDB | None = None,
         word_list_service: WordListService | None = None,
@@ -432,6 +460,31 @@ class EpisodeProcessor:
             new_words_found=ctx.new_words_found,
         )
 
+    def _announce_stage(
+        self,
+        progress_callback: ProgressCallback | None,
+        index: int,
+        name: str,
+    ) -> None:
+        """Say which of the five pipeline stages this run has reached.
+
+        The pipeline knows its stage position exactly, and knows nothing
+        whatever about how the stages compare in duration. Stage weights used
+        to supply that missing comparison as constants; because they were
+        guesses the bar raced through short stages and then sat on a long one.
+        Both channels therefore carry the position and nothing else: the
+        presenter writes the log line, the per-run callback updates the run's
+        own state.
+
+        Args:
+            progress_callback: The run's progress callback, if it has one.
+            index: 1-based stage position.
+            name: The stage's own name.
+        """
+        self.presenter.show_stage(index, PIPELINE_STAGE_COUNT, name)
+        if progress_callback is not None:
+            progress_callback.on_stage(index, PIPELINE_STAGE_COUNT, name)
+
     def _report_no_mineable_words(self, ctx: _EpisodeContext) -> None:
         """Emit the terminal message when no mineable words remain.
 
@@ -455,12 +508,19 @@ class EpisodeProcessor:
                 )
             )
         else:
-            self.presenter.show_info(QCoreApplication.translate("EpisodeProcessor", "All words already in Anki!"))
+            # Kept byte-identical to ``gui.utils.result_copy.nothing_new_to_mine``
+            # (D47-B). Orchestration must not import the GUI, so the sentence is
+            # duplicated rather than shared; ``test_result_copy`` fails if the two
+            # drift apart.
+            self.presenter.show_info(
+                QCoreApplication.translate("EpisodeProcessor", "No cards created. Every word is already in Anki.")
+            )
 
     def _phase1_parse(
         self,
         ctx: _EpisodeContext,
         subtitle_file: Path,
+        progress_callback: ProgressCallback | None = None,
         want_line_index: bool = False,
     ) -> tuple[list[TokenizedWord], list[LineLemmas] | None]:
         """Phase 1: parse subtitles into tokenized words (and optionally a line index).
@@ -470,11 +530,13 @@ class EpisodeProcessor:
         via ``want_line_index`` (interactive curation uses it to offer
         alternative example sentences per word).
         """
+        self._announce_stage(
+            progress_callback,
+            1,
+            QCoreApplication.translate("EpisodeProcessor", "Parsing subtitles"),
+        )
         self.presenter.show_info(
-            tr_format(
-                QCoreApplication.translate("EpisodeProcessor", "Step 1/5 — Parsing subtitles: %1"),
-                subtitle_file.name,
-            )
+            tr_format(QCoreApplication.translate("EpisodeProcessor", "Subtitles: %1"), subtitle_file.name)
         )
         line_index: list[LineLemmas] | None = None
         if self.config.use_i_plus_one_filter or want_line_index:
@@ -493,6 +555,7 @@ class EpisodeProcessor:
         all_words: list[TokenizedWord],
         line_index: list[LineLemmas] | None,
         cross_episode_counts: dict[str, int] | None,
+        progress_callback: ProgressCallback | None = None,
     ) -> list[TokenizedWord]:
         """Phase 2: attach frequency data, filter against known vocab, apply optional filters.
 
@@ -569,21 +632,21 @@ class EpisodeProcessor:
             )
 
         # Filter against existing vocabulary.
+        self._announce_stage(
+            progress_callback,
+            2,
+            QCoreApplication.translate("EpisodeProcessor", "Filtering against known vocabulary"),
+        )
         if self.config.include_known_words:
             # Deck Builder "include everything" mode: skip known-words subtraction
             # entirely — including the Issue #42 user ignore list — and mine all
             # words that passed POS/subtype filtering. Coverage-deck builds
             # intentionally re-card words the user already knows.
             self.presenter.show_info(
-                QCoreApplication.translate(
-                    "EpisodeProcessor", "Step 2/5 — Known-words filter bypassed (include everything mode)"
-                )
+                QCoreApplication.translate("EpisodeProcessor", "Known-words filter bypassed (include everything mode)")
             )
             unknown_words = all_words
         else:
-            self.presenter.show_info(
-                QCoreApplication.translate("EpisodeProcessor", "Step 2/5 — Filtering against known vocabulary")
-            )
             # User-curated ignore list (Issue #42): always applied on the normal
             # mining path, regardless of the use_known_words_db toggle. The DB
             # object is always present now, but the file may not exist for users
@@ -600,8 +663,7 @@ class EpisodeProcessor:
                     user_words = self.known_word_db.get_words_by_source("user")
                 except (sqlite3.Error, OSError) as e:
                     logger.warning(
-                        "Could not read the user ignore list from known_words.db (%s); "
-                        "proceeding without it this run.",
+                        "Could not read the user ignore list from known_words.db (%s); proceeding without it this run.",
                         e,
                     )
 
@@ -977,7 +1039,7 @@ class EpisodeProcessor:
                     )
                 )
 
-        # Record difficulty data if stats service available.
+        # Record difficulty data if a stats service is configured.
         # OVH-024: use the pre-filter comprehension-unknown count (all_unknown_lemmas),
         # NOT the post-filter mineable count (unknown_words). difficulty_score measures
         # how hard the episode is to comprehend; i+1/frequency filters can collapse
@@ -987,7 +1049,7 @@ class EpisodeProcessor:
         # Do NOT let it bubble into process_episode's generic except — that would
         # report cards_created=0 with no note IDs, turning a successful run into an
         # apparent failure. Dropping one difficulty row is safe; warn and continue.
-        if self.stats_service and self.stats_service.is_available():
+        if self.stats_service:
             try:
                 self.stats_service.record_difficulty(
                     series_name=ctx.series_name,
@@ -998,7 +1060,7 @@ class EpisodeProcessor:
                 )
             except (sqlite3.Error, OSError) as e:
                 logger.warning(
-                    "Could not record difficulty for %s in stats.db (%s); " "the run will continue.",
+                    "Could not record difficulty for %s in stats.db (%s); the run will continue.",
                     ctx.episode_name,
                     e,
                 )
@@ -1018,8 +1080,10 @@ class EpisodeProcessor:
     ) -> list[tuple[TokenizedWord, MediaData]]:
         """Phase 3: extract media (screenshots + audio; audio + cover art when
         ``audio_only``) for each unknown word."""
-        self.presenter.show_info(
-            QCoreApplication.translate("EpisodeProcessor", "Step 3/5 — Extracting media from video")
+        self._announce_stage(
+            progress_callback,
+            3,
+            QCoreApplication.translate("EpisodeProcessor", "Extracting media"),
         )
 
         # Resolve the animated screenshot format once and announce any fallback
@@ -1028,8 +1092,10 @@ class EpisodeProcessor:
         # screenshots are configured and we are not in audiobook (audio_only)
         # mode, where screenshots are skipped entirely; otherwise the batch's
         # own default resolves to the static path.
+        picture_mapped = bool(self.config.anki_fields.get("picture"))
+        audio_mapped = bool(self.config.anki_fields.get("audio"))
         extra_kwargs: dict[str, str | None] = {}
-        if self.config.screenshot_animated and not audio_only:
+        if picture_mapped and self.config.screenshot_animated and not audio_only:
             animated_fmt = self.media_extractor.resolve_animated_format()
             extra_kwargs["animated_format"] = animated_fmt
             if animated_fmt == "webp" and self.config.screenshot_animated_format == "avif":
@@ -1048,16 +1114,21 @@ class EpisodeProcessor:
                     )
                 )
 
-        media_results: list[tuple[TokenizedWord, MediaData]] = self.media_extractor.extract_media_batch(
-            video_file,
-            unknown_words,
-            progress_callback,
-            cancelled_check=lambda: self.cancelled,
-            temp_folder=run_temp_folder,
-            audio_track_override=audio_track_override,
-            audio_only=audio_only,
-            **extra_kwargs,
-        )
+        if picture_mapped or audio_mapped:
+            media_results = self.media_extractor.extract_media_batch(
+                video_file,
+                unknown_words,
+                progress_callback,
+                cancelled_check=lambda: self.cancelled,
+                temp_folder=run_temp_folder,
+                audio_track_override=audio_track_override,
+                audio_only=audio_only,
+                include_screenshot=picture_mapped,
+                include_audio=audio_mapped,
+                **extra_kwargs,
+            )
+        else:
+            media_results = [(word, MediaData()) for word in unknown_words]
 
         self._audio_stage.fetch_expression_audio(media_results, progress_callback)
 
@@ -1074,7 +1145,11 @@ class EpisodeProcessor:
         list[tuple[str | None, str | None]],
     ]:
         """Phase 4: look up definitions, optional glossaries, and pitch accents."""
-        self.presenter.show_info(QCoreApplication.translate("EpisodeProcessor", "Step 4/5 — Fetching definitions"))
+        self._announce_stage(
+            progress_callback,
+            4,
+            QCoreApplication.translate("EpisodeProcessor", "Fetching definitions"),
+        )
         words_with_media = [word for word, _ in media_results]
         # Keyed on mined_form (the card-front spelling), NOT lemma: unidic's
         # canonical lemma collapses kanji variants (殺る → 遣る), so lemma-keyed
@@ -1185,35 +1260,35 @@ class EpisodeProcessor:
         that were created — carried onto ``ProcessingResult`` so the Undo
         callback can revert ``source='mined'`` rows in known_words.db (OVH-030).
         """
-        self.presenter.show_info(QCoreApplication.translate("EpisodeProcessor", "Step 5/5 — Creating Anki cards"))
+        self._announce_stage(
+            progress_callback,
+            5,
+            QCoreApplication.translate("EpisodeProcessor", "Creating Anki cards"),
+        )
         card_data: list[CardPayload] = []
-        # Self-contained per-card glossary styling: collect the dictionary CSS
-        # ONCE per episode (collect_dictionary_css does registry + per-dict
-        # SQLite I/O) but assemble the <style> block PER CARD inside the loop —
-        # the base sheet is tree-shaken against each card's own HTML (Issue
-        # #93; witness/variant scans are cheap cached string work; freshly
-        # rendered bodies are born stamped, so witnesses are already
-        # post-stamp). Built when EITHER the glossary OR the definition field
-        # is mapped — an Anki <style> in any field is card-wide, so the block
-        # rides the glossary field when it's mapped and otherwise prepends to
-        # the definition field. That way the base sheet (dark-theme SVG
-        # recolor, tag chips, structured-content layout) reaches default-config
-        # cards too, which map definition="MainDefinition" but leave glossary
-        # unmapped. Skipping the collect only when neither is mapped keeps the
-        # no-styling path I/O-free.
+        # Self-contained PER-FIELD glossary styling: collect the dictionary CSS
+        # entries ONCE per episode (collect_dictionary_css_entries does registry
+        # + per-dict SQLite I/O) but attach a <style> block to EVERY mapped
+        # styled field inside the loop — tree-shaken against that field's own
+        # HTML and filtered to the dictionaries present in it (Issue #93;
+        # witness/variant scans are cheap cached string work; freshly rendered
+        # bodies are born stamped, so witnesses are already post-stamp). Each
+        # field must carry its own TRAILING block: JS-driven note types (Kiku)
+        # keep fields in inert <template>s and re-inject them one at a time
+        # through DOMParser→body.innerHTML, so a <style> in another field never
+        # applies and a field-LEADING <style> is hoisted to <head> and dropped
+        # (attach_card_style_block enforces both — the old single-carrier
+        # "card-wide <style>" model broke every Kiku page). Skipping the collect
+        # when neither field is mapped keeps the no-styling path I/O-free.
         glossary_mapped = bool(self.config.anki_fields.get("glossary"))
         definition_mapped = bool(self.config.anki_fields.get("definition"))
         styling_on = glossary_mapped or definition_mapped
-        episode_dict_css = collect_dictionary_css(self.config) if styling_on else ""
+        episode_dict_css_entries = collect_dictionary_css_entries(self.config) if styling_on else []
         for (word, media), definition, glossary, (pitch_position, pitch_category) in zip(
             media_results, definitions, glossaries, pitch_data, strict=True
         ):
             if not definition:
                 continue
-            # Bound unconditionally ("") so the write-site references are safe.
-            style_block = ""
-            if styling_on:
-                style_block = build_card_style_block(dict_css=episode_dict_css, card_html=(glossary or "") + definition)
 
             extra_fields: dict[str, str] = {}
             if pitch_position:
@@ -1257,7 +1332,11 @@ class EpisodeProcessor:
                     str(word.frequency_harmonic_rank) if word.frequency_harmonic_rank is not None else "9999999"
                 )
             if glossary:
-                extra_fields["glossary"] = (style_block + glossary) if style_block else glossary
+                extra_fields["glossary"] = (
+                    attach_card_style_block(glossary, dict_css_entries=episode_dict_css_entries)
+                    if glossary_mapped
+                    else glossary
+                )
             # Stamp the source unconditionally; AnkiService gates the write on a
             # non-empty configured field name (anki_fields["source"]). Reading-tab
             # runs carry a per-unit page/chapter label ("… @ p.42"); a miss
@@ -1269,14 +1348,12 @@ class EpisodeProcessor:
             else:
                 extra_fields["source"] = f"{ctx.source_label} @ {_format_timestamp(word.start_time)}"
 
-            # When the glossary field isn't the styling carrier (unmapped), prepend
-            # the style block to the definition field so the card still carries the
-            # base sheet. When glossary IS mapped it already rides the glossary
-            # field above (a card-wide <style> only needs to appear once), so the
-            # definition stays untouched — keeping glossary-mapped output identical.
+            # Per-field self-containment: the definition field carries its OWN
+            # trailing block whenever it's mapped — regardless of the glossary
+            # field, which JS note types never render alongside it.
             card_definition = definition
-            if style_block and not glossary_mapped:
-                card_definition = style_block + definition
+            if definition_mapped:
+                card_definition = attach_card_style_block(definition, dict_css_entries=episode_dict_css_entries)
 
             card_data.append(
                 CardPayload(
@@ -1304,8 +1381,8 @@ class EpisodeProcessor:
                 )
             )
 
-        cards_created = self.anki_service.create_cards_batch(card_data, progress_callback)
-        created_note_ids = list(self.anki_service.last_created_note_ids)
+        created_note_ids = self.anki_service.create_cards_batch(card_data, progress_callback)
+        cards_created = len(created_note_ids)
 
         self.presenter.show_success(
             QCoreApplication.translate("EpisodeProcessor", "Successfully created %n card(s)", "", cards_created)
@@ -1348,16 +1425,14 @@ class EpisodeProcessor:
         # a failure (T-19). The cache is additive and self-heals on the next
         # run, so dropping this one write is safe; warn and keep the result.
         #
-        # Undo must revert only the 'mined' rows THIS session inserted, never a
-        # 'mined' row a prior session created that this run merely re-encountered
-        # (Anki-duplicate-skipped). Snapshot the existing 'mined' lemmas BEFORE
-        # the insert and report only the genuinely-new ones for the Undo path.
-        mined_forms_for_undo = sorted(mined_words)
+        # Undo must revert only the 'mined' rows THIS session inserted. Default
+        # empty: any DB failure must be fail-safe and never authorize deletion
+        # of a pre-existing row. The insert returns its exact transaction-owned
+        # receipt, avoiding a racy before/after snapshot.
+        mined_forms_for_undo: list[str] = []
         if self.known_word_db and self.known_word_db.is_available() and card_data:
             try:
-                already_mined = self.known_word_db.get_words_by_source("mined")
-                mined_forms_for_undo = sorted(mined_words - already_mined)
-                self.known_word_db.add_words(mined_words, source="mined")
+                mined_forms_for_undo = sorted(self.known_word_db.add_words_with_receipt(mined_words, source="mined"))
             except (sqlite3.Error, OSError) as e:
                 logger.warning(
                     "Could not record %d mined words in known_words.db (%s); "
@@ -1377,8 +1452,8 @@ class EpisodeProcessor:
         """Shared run skeleton for :meth:`process_episode` / :meth:`process_reading`.
 
         Owns ONLY the machinery both entry points share verbatim: the pre-flight
-        gates (staleness backstop then card-target verify, both *outside* the
-        try so a ``SetupError`` propagates instead of collapsing into a
+        gates (staleness backstop, card-target verify, then offline dictionary),
+        all *outside* the try so a ``SetupError`` propagates instead of collapsing into a
         "completed" result and *before* temp allocation so no dir leaks on
         failure), the per-run temp folder, the partial-IDs reset, the per-run
         ``_external_cancel`` bridge, and the try/except/finally tail (partial-card
@@ -1389,17 +1464,27 @@ class EpisodeProcessor:
         the video-only audio-stream-cache invalidation, the reading occurrence
         floor — lives in the caller's ``body`` closure.
         """
+        # Reset the run-scoped Anki accumulators FIRST — before the pre-flight
+        # gates, which can raise SetupError straight out of this method. A
+        # caller that catches that raise still needs the truth about THIS run:
+        # on a shared processor/service (Batch mines every pair through one
+        # AnkiService) the previous item's confirmed write would otherwise still
+        # be standing, and its ids would be attributed to an item that never got
+        # as far as Anki.
+        #
+        # * last_created_note_ids: the except handlers harvest ONLY IDs created
+        #   during THIS run (OVH-008).
+        # * anki_write_state: nothing has been submitted yet, so the honest
+        #   answer is NO_NOTE_WRITE. create_cards_batch escalates it from here
+        #   and never resets it, so this line is the single run boundary (D30).
+        self.anki_service.last_created_note_ids = []
+        self.anki_service.anki_write_state = AnkiWriteState.NO_NOTE_WRITE
+
         self.check_dictionary_staleness()
         self._preflight_card_target()
+        self.check_offline_dictionary()
         run_temp_folder = self._allocate_run_temp_folder()
         keep_temp = bool(os.environ.get("ANKI_MINER_KEEP_TEMP"))
-
-        # Reset the partial-IDs accumulator before this run so that if it fails
-        # mid-batch the except handlers harvest ONLY IDs created during THIS run,
-        # not stale IDs left over from a prior run on the same processor instance
-        # (OVH-008). create_cards_batch resets it again at its own start — this
-        # guard is belt-and-suspenders for a failure before phase 5 even runs.
-        self.anki_service.last_created_note_ids = []
 
         # Bridge the caller's cancel_event into this run's cancellation
         # checkpoints for the duration of this call only: the phase checkpoints
@@ -1410,12 +1495,14 @@ class EpisodeProcessor:
         if cancel_event is not None:
             self._external_cancel = cancel_event.is_set
         try:
-            return body(run_temp_folder)
+            return self._stamp_write_provenance(body(run_temp_folder))
         except AnkiMinerException as e:
             ctx.errors.append(str(e))
             partial_ids = list(self.anki_service.last_created_note_ids)
             self.presenter.show_error(tr_format(QCoreApplication.translate("EpisodeProcessor", "Error: %1"), str(e)))
-            return self._partial_failure_result(ctx, partial_ids)
+            return self._stamp_write_provenance(self._partial_failure_result(ctx, partial_ids), failure=e)
+        except MemoryError:
+            raise
         except Exception as e:
             logger.exception("EpisodeProcessor unhandled exception")
             ctx.errors.append(f"Unexpected error: {e}")
@@ -1423,7 +1510,7 @@ class EpisodeProcessor:
             self.presenter.show_error(
                 tr_format(QCoreApplication.translate("EpisodeProcessor", "Unexpected error: %1"), str(e))
             )
-            return self._partial_failure_result(ctx, partial_ids)
+            return self._stamp_write_provenance(self._partial_failure_result(ctx, partial_ids), failure=e)
         finally:
             if cancel_event is not None:
                 self._external_cancel = None
@@ -1543,7 +1630,8 @@ class EpisodeProcessor:
             ProcessingResult with statistics.
 
         Raises:
-            SetupError: note type or field mapping is misconfigured.
+            SetupError: note type / field mapping is misconfigured, or no usable
+                offline dictionary is installed.
             AnkiConnectionError: AnkiConnect is unreachable.
         """
         series_name = _resolve_identity(series_name_override, video_file.parent.name)
@@ -1570,7 +1658,9 @@ class EpisodeProcessor:
             # path too — not just the i+1 filter.
             want_line_index = curation_callback is not None
             with timed_phase("parse", logger):
-                all_words, line_index = self._phase1_parse(ctx, subtitle_file, want_line_index=want_line_index)
+                all_words, line_index = self._phase1_parse(
+                    ctx, subtitle_file, progress_callback, want_line_index=want_line_index
+                )
             if not all_words:
                 self.presenter.show_warning(
                     QCoreApplication.translate("EpisodeProcessor", "No words found in subtitles")
@@ -1580,7 +1670,7 @@ class EpisodeProcessor:
                 return self._cancelled_result_from_ctx(ctx)
 
             with timed_phase("filter", logger):
-                unknown_words = self._phase2_filter(ctx, all_words, line_index, cross_episode_counts)
+                unknown_words = self._phase2_filter(ctx, all_words, line_index, cross_episode_counts, progress_callback)
             if not unknown_words:
                 self._report_no_mineable_words(ctx)
                 return ctx.build_result(new_words_found=0)
@@ -1600,30 +1690,12 @@ class EpisodeProcessor:
                     return outcome
                 unknown_words = outcome
 
-            # Wrap the raw callback so the bar reflects whole-episode progress
-            # instead of resetting 0->100 per stage. One weight per stage that
-            # reports progress, in firing order: extract, definitions,
-            # [glossaries if mapped], cards.
-            stage_progress = progress_callback
-            if progress_callback is not None:
-                # StageWeightedProgress normalizes these internally, so the
-                # individual values only express relative weight — sums need
-                # not equal 1.0.
-                stage_weights = [0.40]  # extract
-                if self._expression_audio_active:
-                    stage_weights.append(0.10)  # expression audio (right after extract)
-                stage_weights.append(0.25)  # definitions
-                if self.config.anki_fields.get("glossary"):
-                    stage_weights.append(0.10)  # glossaries
-                stage_weights.append(0.25)  # cards
-                stage_progress = StageWeightedProgress(progress_callback, stage_weights)
-
             with timed_phase("extract", logger):
                 media_results = self._phase3_extract(
                     ctx,
                     video_file,
                     unknown_words,
-                    stage_progress,
+                    progress_callback,
                     run_temp_folder,
                     audio_track_override,
                     audio_only=audio_only,
@@ -1640,16 +1712,14 @@ class EpisodeProcessor:
             )
 
             with timed_phase("lookup", logger):
-                definitions, glossaries, pitch_data = self._phase4_lookup(ctx, media_results, stage_progress)
+                definitions, glossaries, pitch_data = self._phase4_lookup(ctx, media_results, progress_callback)
             if self.cancelled:
                 return self._cancelled_result_from_ctx(ctx)
 
             with timed_phase("cards", logger):
                 cards_created, created_note_ids, mined_forms = self._phase5_create(
-                    ctx, media_results, definitions, glossaries, pitch_data, stage_progress
+                    ctx, media_results, definitions, glossaries, pitch_data, progress_callback
                 )
-            if isinstance(stage_progress, StageWeightedProgress):
-                stage_progress.finish()
             result = ctx.build_result(
                 cards_created=cards_created,
                 card_ids=created_note_ids,
@@ -1659,6 +1729,30 @@ class EpisodeProcessor:
             return result
 
         return self._run_pipeline(ctx, cancel_event, _body)
+
+    def _stamp_write_provenance(
+        self,
+        result: ProcessingResult,
+        *,
+        failure: BaseException | None = None,
+    ) -> ProcessingResult:
+        """Record what this run can prove about Anki note writes (D30).
+
+        The single funnel: every ``ProcessingResult`` :meth:`_run_pipeline`
+        hands back — success, early phase return, cancellation, partial failure —
+        passes through here, so none can escape still carrying the dataclass
+        default. Automatic retry consumes these two fields; the pipeline is the
+        last place that can see the live service state and the raised exception
+        before both are flattened into ``errors`` strings.
+
+        Fail closed on the write state: a service whose ``anki_write_state`` is
+        not a real :class:`AnkiWriteState` (a stub, a mock, a string) has proved
+        nothing, so it reports the unsafe answer rather than the retryable one.
+        """
+        state = getattr(self.anki_service, "anki_write_state", None)
+        result.anki_write_state = state if isinstance(state, AnkiWriteState) else AnkiWriteState.NOTE_WRITE_UNCERTAIN
+        result.failure_is_transient = failure is not None and is_transient_anki_transport_error(failure)
+        return result
 
     def _partial_failure_result(self, ctx: _EpisodeContext, partial_ids: list[int]) -> ProcessingResult:
         """Shared except-handler tail: note any partial cards and build the failure result."""
@@ -1712,15 +1806,9 @@ class EpisodeProcessor:
         """
         # Label-only kind split: manga cards carry a distinct page image each,
         # while a book attaches one cover to every card (txt and subtitles have
-        # none) — so the image-stage wording differs. The three emissions below
-        # stay strictly UNCONDITIONAL (band accounting must not depend on kind);
-        # only the text varies. Derived once here, used at the three sites.
+        # none) — so the image-stage wording differs. Only the text varies.
+        # Derived once here, used at the two sites below.
         is_book = document.kind in ("book", "subtitle")
-        step_banner = (
-            QCoreApplication.translate("EpisodeProcessor", "Step 3/5 — Preparing card images")
-            if is_book
-            else QCoreApplication.translate("EpisodeProcessor", "Step 3/5 — Preparing page images")
-        )
         image_stage_desc = (
             QCoreApplication.translate("EpisodeProcessor", "Preparing card images")
             if is_book
@@ -1731,9 +1819,10 @@ class EpisodeProcessor:
             if is_book
             else QCoreApplication.translate("EpisodeProcessor", "Page image: %1")
         )
-        self.presenter.show_info(step_banner)
+        self._announce_stage(progress_callback, 3, image_stage_desc)
         images_dir = run_temp_folder / "images"
         units_by_index = {unit.index: unit for unit in document.units}
+        picture_mapped = bool(self.config.anki_fields.get("picture"))
 
         # YOU own the per-run bookkeeping: a unique-ref → materialized-path memo,
         # a set of archives whose safety gate failed or that are corrupt (skip
@@ -1746,10 +1835,9 @@ class EpisodeProcessor:
 
         media_results: list[tuple[TokenizedWord, MediaData]] = []
 
-        # The image band is consumed UNCONDITIONALLY (on_start / per-ref
-        # on_progress / on_complete) — even for text-only volumes with zero
-        # image refs — so StageWeightedProgress does not advance into the next
-        # band's weight on an imageless run (same discipline as expression audio).
+        # on_start fires even for text-only volumes with zero image refs, so the
+        # stage still declares its true denominator (which is then legitimately
+        # zero) rather than going silent.
         if progress_callback is not None:
             progress_callback.on_start(
                 len(unknown_words),
@@ -1766,7 +1854,7 @@ class EpisodeProcessor:
             media = MediaData()
             unit = units_by_index.get(int(word.start_time))
             ref = unit.image_ref if unit is not None else None
-            if ref is not None and ref.source not in failed_archives and ref not in failed_refs:
+            if picture_mapped and ref is not None and ref.source not in failed_archives and ref not in failed_refs:
                 image_path = ref_cache.get(ref)
                 if image_path is None:
                     try:
@@ -1786,7 +1874,27 @@ class EpisodeProcessor:
                             )
                         )
                         image_path = None
-                    except (OSError, zipfile.BadZipFile) as exc:
+                    except ReadingImageArchiveError:
+                        failed_archives.add(ref.source)
+                        self.presenter.show_warning(
+                            tr_format(
+                                QCoreApplication.translate(
+                                    "EpisodeProcessor",
+                                    "Skipped corrupt image archive %1 — its cards have no page image",
+                                ),
+                                ref.source.name,
+                            )
+                        )
+                        image_path = None
+                    except (
+                        ReadingImageMemberError,
+                        OSError,
+                        ValueError,
+                        zipfile.BadZipFile,
+                        RuntimeError,
+                        NotImplementedError,
+                        EOFError,
+                    ) as exc:
                         # An image failure must never abort the volume (the plan's
                         # degradation policy: keep mining imageless). A BadZipFile
                         # (NOT an OSError subclass) means the whole archive is
@@ -1869,8 +1977,8 @@ class EpisodeProcessor:
             ProcessingResult with statistics.
 
         Raises:
-            SetupError: note type / field mapping misconfigured, or a stale dict
-                index needs reimport.
+            SetupError: note type / field mapping misconfigured, a stale dict
+                index needs reimport, or no usable offline dictionary is installed.
             AnkiConnectionError: AnkiConnect is unreachable.
         """
         # Manga and subtitle sources carry a meaningful series (mokuro title /
@@ -1901,14 +2009,23 @@ class EpisodeProcessor:
             # want_line_index itself — otherwise the filter gets an empty index
             # and silently drops every word.
             want_line_index = self.config.use_i_plus_one_filter or curation_callback is not None
+            self._announce_stage(
+                progress_callback,
+                1,
+                QCoreApplication.translate("EpisodeProcessor", "Parsing text"),
+            )
             self.presenter.show_info(
                 tr_format(
-                    QCoreApplication.translate("EpisodeProcessor", "Step 1/5 — Parsing text: %1"),
+                    QCoreApplication.translate("EpisodeProcessor", "Text: %1"),
                     document.title,
                 )
             )
             with timed_phase("parse", logger):
-                all_words, line_index, counts = self.subtitle_parser.parse_text_units(document.units, want_line_index)
+                # Only the per-cue subtitle kind gets the video path's annotation
+                # strip + regex filter; manga/OCR and book text pass it through.
+                all_words, line_index, counts = self.subtitle_parser.parse_text_units(
+                    document.units, want_line_index, subtitle_cleanup=document.kind == "subtitle"
+                )
             self.presenter.show_success(
                 QCoreApplication.translate("EpisodeProcessor", "Found %n unique word(s)", "", len(all_words))
             )
@@ -1922,7 +2039,7 @@ class EpisodeProcessor:
                 return self._cancelled_result_from_ctx(ctx)
 
             with timed_phase("filter", logger):
-                unknown_words = self._phase2_filter(ctx, all_words, line_index, None)
+                unknown_words = self._phase2_filter(ctx, all_words, line_index, None, progress_callback)
             # Reading-specific in-document occurrence floor (reuses the
             # cross-episode filter's <=1 early-return). counts is the parse
             # Counter — replaces the episode path's count_lemmas(subtitle_file).
@@ -1947,41 +2064,22 @@ class EpisodeProcessor:
                     return outcome
                 unknown_words = outcome
 
-            # Wrap only phases 3'/4/5 in one weighted sweep (no parse/filter
-            # bands). Bands, in firing order: image prep, [expression audio],
-            # [sentence TTS], definitions, [glossaries], cards — renormalized
-            # internally.
-            stage_progress = progress_callback
-            if progress_callback is not None:
-                stage_weights = [0.40]  # image prep
-                if self._expression_audio_active:
-                    stage_weights.append(0.10)  # expression audio
-                if self._reading_tts_active:
-                    stage_weights.append(0.10)  # sentence TTS
-                stage_weights.append(0.25)  # definitions
-                if self.config.anki_fields.get("glossary"):
-                    stage_weights.append(0.10)  # glossaries
-                stage_weights.append(0.25)  # cards
-                stage_progress = StageWeightedProgress(progress_callback, stage_weights)
-
             with timed_phase("reading-media", logger):
                 media_results = self._phase3_reading_media(
-                    ctx, document, unknown_words, stage_progress, run_temp_folder
+                    ctx, document, unknown_words, progress_callback, run_temp_folder
                 )
             if self.cancelled:
                 return self._cancelled_result_from_ctx(ctx)
 
             with timed_phase("lookup", logger):
-                definitions, glossaries, pitch_data = self._phase4_lookup(ctx, media_results, stage_progress)
+                definitions, glossaries, pitch_data = self._phase4_lookup(ctx, media_results, progress_callback)
             if self.cancelled:
                 return self._cancelled_result_from_ctx(ctx)
 
             with timed_phase("cards", logger):
                 cards_created, created_note_ids, mined_forms = self._phase5_create(
-                    ctx, media_results, definitions, glossaries, pitch_data, stage_progress
+                    ctx, media_results, definitions, glossaries, pitch_data, progress_callback
                 )
-            if isinstance(stage_progress, StageWeightedProgress):
-                stage_progress.finish()
             result = ctx.build_result(
                 cards_created=cards_created,
                 card_ids=created_note_ids,
@@ -1994,7 +2092,7 @@ class EpisodeProcessor:
 
     def _record_session(self, ctx: _EpisodeContext, result: ProcessingResult) -> None:
         """Record a mining session in the stats service if one is configured."""
-        if not (self.stats_service and self.stats_service.is_available()):
+        if not self.stats_service:
             return
         from anki_miner.models.stats import MiningSession
 
@@ -2017,14 +2115,18 @@ class EpisodeProcessor:
             )
         except (sqlite3.Error, OSError) as e:
             logger.warning(
-                "Could not record mining session for %s in stats.db (%s); " "the cards were still created.",
+                "Could not record mining session for %s in stats.db (%s); the cards were still created.",
                 ctx.episode_name,
                 e,
             )
 
     def _preflight_card_target(self) -> None:
-        """Fail fast on a misconfigured Anki target; auto-create the deck (Issue #52)."""
+        """Fail fast on a misconfigured Anki target (Issue #52)."""
         self.anki_service.verify_card_target()
+
+    def check_offline_dictionary(self) -> None:
+        """Fail fast when standard filtering has no usable offline provider."""
+        require_usable_offline_provider(self.config, self.definition_service)
 
     def check_dictionary_staleness(self) -> None:
         """Raise SetupError if any enabled indexed dict slot needs reimport (4.0).
@@ -2059,6 +2161,7 @@ class EpisodeProcessor:
         curation_callback: Callable[[list], list | None] | None = None,
         on_fetched: Callable[[FetchedMedia], None] | None = None,
         source_label: str | None = None,
+        fallback_allowed: bool = False,
     ) -> ProcessingResult:
         """Fetch a YouTube video + subs then run the standard mining pipeline.
 
@@ -2078,6 +2181,11 @@ class EpisodeProcessor:
                 the video and subtitle files into.
             sub_mode: "manual_only" or "auto_only" — chosen by the user based
                 on what probe_metadata reported as available.
+            fallback_allowed: Forwarded to the fetcher. When True (the worker
+                passes ``VideoInfo.has_auto_ja_subs``), a ``manual_only`` fetch may
+                fall back to the video's *native* auto-captions if the listed manual
+                track is unavailable at download time. Gated on the probe's verdict
+                so the fallback can never reach a machine-translated track.
             cancel_event: Threading event set by the worker on cancellation;
                 forwarded to the fetcher so in-flight yt-dlp can be killed,
                 and passed through to ``process_episode``, which bridges it
@@ -2106,7 +2214,8 @@ class EpisodeProcessor:
 
         Raises:
             RuntimeError: if no YouTubeFetcherService was injected.
-            SetupError: note type or field mapping is misconfigured.
+            SetupError: note type / field mapping is misconfigured, or no usable
+                offline dictionary is installed.
             AnkiConnectionError: AnkiConnect is unreachable.
             Any fetcher exception propagates unchanged (no workspace cleanup
             happens here — the worker handles it).
@@ -2125,6 +2234,7 @@ class EpisodeProcessor:
         # download when an enabled index needs reimport.
         self.check_dictionary_staleness()
         self._preflight_card_target()
+        self.check_offline_dictionary()
 
         # The fetch stage consults cancel_event directly (fetch_video gets it
         # verbatim and the post-fetch check below polls it); the mining stage
@@ -2138,6 +2248,7 @@ class EpisodeProcessor:
                 sub_mode,
                 progress_cb=fetch_progress_cb,
                 cancel_event=cancel_event,
+                fallback_allowed=fallback_allowed,
             )
 
         if on_fetched is not None:

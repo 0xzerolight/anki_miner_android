@@ -110,6 +110,10 @@ class MediaExtractorService:
         ensure_directory(config.media_temp_folder)
         self._audio_stream_cache: dict[Path, int | None] = {}
         self._audio_stream_list_cache: dict[Path, list[AudioStream]] = {}
+        # Files already warned about missing Japanese audio. The probe result
+        # is cached per file, but the fallback WARNING fired per clip — one
+        # line per mined word, hundreds per episode (Issue #100 log).
+        self._no_jp_audio_warned: set[Path] = set()
         self._cache_lock = threading.Lock()
         # Lazy, cached encoder-availability probe for animated screenshots.
         # Keyed by ffmpeg encoder name (e.g. "libsvtav1", "libwebp_anim").
@@ -132,6 +136,8 @@ class MediaExtractorService:
         audio_track_override: int | None = None,
         proc_registry: _FfmpegProcRegistry | None = None,
         audio_only: bool = False,
+        include_screenshot: bool = True,
+        include_audio: bool = True,
         animated_format: Any = _RESOLVE,
     ) -> MediaData:
         """Extract screenshot and audio for a single word.
@@ -170,7 +176,7 @@ class MediaExtractorService:
         if animated_format is _RESOLVE:
             effective_fmt = (
                 self.resolve_animated_format(proc_registry=proc_registry)
-                if (self.config.screenshot_animated and not audio_only)
+                if (include_screenshot and self.config.screenshot_animated and not audio_only)
                 else None
             )
         else:
@@ -202,15 +208,17 @@ class MediaExtractorService:
         # When animated is configured but no encoder is available (effective_fmt
         # is None), the screenshot is skipped without spawning ffmpeg.
         screenshot_success = False
-        if not audio_only and not (self.config.screenshot_animated and effective_fmt is None):
+        if include_screenshot and not audio_only and not (self.config.screenshot_animated and effective_fmt is None):
             screenshot_success = self._extract_screenshot(
                 video_file, word.start_time, word.duration, screenshot_path, effective_fmt, proc_registry
             )
 
         # Extract audio
-        audio_success = self._extract_audio(
-            video_file, word.start_time, word.duration, audio_path, audio_track_override, proc_registry
-        )
+        audio_success = False
+        if include_audio:
+            audio_success = self._extract_audio(
+                video_file, word.start_time, word.duration, audio_path, audio_track_override, proc_registry
+            )
 
         return MediaData(
             screenshot_path=screenshot_path if screenshot_success else None,
@@ -229,6 +237,8 @@ class MediaExtractorService:
         *,
         audio_track_override: int | None = None,
         audio_only: bool = False,
+        include_screenshot: bool = True,
+        include_audio: bool = True,
         animated_format: Any = _RESOLVE,
     ) -> list[tuple[TokenizedWord, MediaData]]:
         """Extract media for multiple words in parallel.
@@ -290,7 +300,7 @@ class MediaExtractorService:
             if animated_format is _RESOLVE:
                 animated_fmt = (
                     self.resolve_animated_format(proc_registry=proc_registry)
-                    if (self.config.screenshot_animated and not audio_only)
+                    if (include_screenshot and self.config.screenshot_animated and not audio_only)
                     else None
                 )
             else:
@@ -300,7 +310,7 @@ class MediaExtractorService:
                 proc_registry.kill_all()
                 return []
             cover_path: Path | None = None
-            if audio_only:
+            if audio_only and include_screenshot:
                 output_dir = temp_folder if temp_folder is not None else self.config.media_temp_folder
                 cover_path = self.extract_cover_art(video_file, output_dir, proc_registry=proc_registry)
         finally:
@@ -324,6 +334,8 @@ class MediaExtractorService:
                     audio_track_override=audio_track_override,
                     proc_registry=proc_registry,
                     audio_only=audio_only,
+                    include_screenshot=include_screenshot,
+                    include_audio=include_audio,
                     animated_format=animated_fmt,
                 ): word
                 for word in words
@@ -357,9 +369,12 @@ class MediaExtractorService:
                         # audio_only keys the keep/drop decision on audio (there
                         # is no per-word screenshot); default mode keeps the
                         # original screenshot-based filter.
-                        keep = media.has_audio if audio_only else media.has_screenshot
+                        if audio_only:
+                            keep = media.has_audio if include_audio else include_screenshot and cover_path is not None
+                        else:
+                            keep = media.has_screenshot if include_screenshot else include_audio and media.has_audio
                         if keep:
-                            if audio_only and cover_path is not None:
+                            if audio_only and include_screenshot and cover_path is not None:
                                 media.screenshot_path = cover_path
                                 media.screenshot_filename = cover_path.name
                             media_data_list.append((word, media))
@@ -378,7 +393,7 @@ class MediaExtractorService:
                             # audio_only mode is untouched: its keep decision already
                             # keys on has_audio, so a word reaching here always has
                             # audio.
-                            if not audio_only and not media.has_audio and progress_callback:
+                            if not audio_only and include_audio and not media.has_audio and progress_callback:
                                 progress_callback.on_error(
                                     word.lemma,
                                     QCoreApplication.translate("MediaExtractorService", "audio extraction failed"),
@@ -388,7 +403,7 @@ class MediaExtractorService:
                             # bare skip_reason variable (untranslatable).
                             skip_template = (
                                 QCoreApplication.translate("MediaExtractorService", "No audio: %1")
-                                if audio_only
+                                if include_audio and (audio_only or not include_screenshot)
                                 else QCoreApplication.translate("MediaExtractorService", "No screenshot: %1")
                             )
                             if progress_callback:
@@ -563,7 +578,7 @@ class MediaExtractorService:
             logger.debug("extract_full_audio: using audio stream %d", global_index)
         else:
             cmd.extend(["-map", "0:a:0"])
-            logger.warning("extract_full_audio: no Japanese audio found, using first audio stream")
+            self._warn_no_japanese_audio_once(video_file)
 
         cmd.extend(
             [
@@ -990,9 +1005,19 @@ class MediaExtractorService:
             if video_file is None:
                 self._audio_stream_list_cache.clear()
                 self._audio_stream_cache.clear()
+                self._no_jp_audio_warned.clear()
             else:
                 self._audio_stream_list_cache.pop(video_file, None)
                 self._audio_stream_cache.pop(video_file, None)
+                self._no_jp_audio_warned.discard(video_file)
+
+    def _warn_no_japanese_audio_once(self, video_file: Path) -> None:
+        """Warn about the first-audio-stream fallback once per file per run."""
+        with self._cache_lock:
+            if video_file in self._no_jp_audio_warned:
+                return
+            self._no_jp_audio_warned.add(video_file)
+        logger.warning("No Japanese audio found in %s, using first audio stream", video_file)
 
     def _list_audio_streams_cached(
         self,
@@ -1038,8 +1063,7 @@ class MediaExtractorService:
                 return stream.global_index
 
         logger.warning(
-            "audio_track_override=%d not found in stream list (got %d streams); "
-            "falling back to Japanese auto-detect",
+            "audio_track_override=%d not found in stream list (got %d streams); falling back to Japanese auto-detect",
             audio_track_override,
             len(streams),
         )
@@ -1106,7 +1130,7 @@ class MediaExtractorService:
             logger.debug(f"Using audio stream {global_index}")
         else:
             cmd.extend(["-map", "0:a:0"])  # First audio stream
-            logger.warning("No Japanese audio found, using first audio stream")
+            self._warn_no_japanese_audio_once(video_file)
 
         cmd.extend(
             [

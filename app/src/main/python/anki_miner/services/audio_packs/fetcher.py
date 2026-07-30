@@ -9,9 +9,18 @@ import sqlite3
 from collections.abc import Callable
 from pathlib import Path
 
-from anki_miner.services.audio_fetch_common import first_candidate_hit as _first_candidate_hit
+from anki_miner.services.audio_fetch_common import (
+    find_cached_by_stem as _find_cached_by_stem,
+)
+from anki_miner.services.audio_fetch_common import (
+    first_candidate_hit as _first_candidate_hit,
+)
+from anki_miner.services.audio_fetch_common import (
+    record_cached_path as _record_cached_path,
+)
 from anki_miner.services.audio_packs import storage
 from anki_miner.utils.file_utils import safe_filename
+from anki_miner.utils.text_utils import hiragana_to_katakana, is_kana_only, katakana_to_hiragana
 
 logger = logging.getLogger(__name__)
 
@@ -68,12 +77,19 @@ class LocalAudioPackFetcher:
 
         Args:
             mined_form: Word as mined onto the card (kanji/surface form).
-            reading: Kana reading of the word.  An empty or whitespace-only
-                reading skips the fetch entirely: storage.lookup falls back to
-                wildcard row selection without a reading, which can pick — and
-                cache permanently under the word's key — the wrong homograph
-                pronunciation (e.g. 辛い → からい vs つらい).  Same hazard the
-                JPod101AudioFetcher empty-reading skip closes.
+            reading: Kana reading of the word — usually. When the tokenizer has
+                no kana for a word (OOV), it falls back to the kanji surface,
+                so this can arrive non-kana; and a direct caller may pass ""
+                (unreachable from the mining ladder, which drops empty pairs —
+                see ``orchestration.audio_stage._expression_audio_candidates``).
+                A pure-kana reading takes the exact-match path (with a
+                katakana-folded retry: packs store ``kana`` verbatim, the miner
+                folds to hiragana). Anything else takes the wildcard path,
+                served ONLY when the pack's rows for the expression are
+                unambiguous — ≤1 distinct hiragana-folded reading — else only
+                NULL-reading (wildcard) rows are eligible. That guard keeps the
+                original homograph safety: 辛い (からい vs つらい) never serves
+                or caches a guessed pronunciation under the word's key.
             cancelled_check: Optional zero-argument callable that returns True
                 when the caller has requested cancellation.  Consulted once at
                 entry (before the sqlite open) — local lookups are fast enough
@@ -82,32 +98,17 @@ class LocalAudioPackFetcher:
         Returns:
             Path to a cached audio file, or None if unavailable. Never raises.
         """
-        if not mined_form.strip() or not reading.strip():
+        if not mined_form.strip():
             return None
+        reading = reading.strip()
 
         if cancelled_check is not None and cancelled_check():
             return None
 
-        # 1. Cache hit: match any extension — suffix varies by pack format.
-        #    iterdir + startswith instead of glob: mined forms may contain
-        #    glob metacharacters ([], *, ?) that would corrupt a glob pattern.
-        #    Skip leftover .part staging files (e.g. stem.mp3.part from a
-        #    crashed prior copy); they contain partial/garbage data.
+        # 1. Cache hit: shared index matches any extension and skips leftover
+        #    .part staging files (e.g. stem.mp3.part from a crashed prior copy).
         stem = safe_filename(f"{self._pack_id}_{mined_form}_{reading}")
-        prefix = f"{stem}."
-        try:
-            existing = next(
-                (
-                    p
-                    for p in self._cache_dir.iterdir()
-                    if p.name.startswith(prefix) and not p.name.endswith(".part") and p.is_file()
-                ),
-                None,
-            )
-        except OSError:
-            # Cache dir missing (first fetch) or unreadable — fall through to
-            # the index lookup; the copy step creates the dir as needed.
-            existing = None
+        existing = _find_cached_by_stem(self._cache_dir, stem)
         if existing is not None:
             return existing
 
@@ -121,7 +122,24 @@ class LocalAudioPackFetcher:
                 return None
 
             try:
-                rows = storage.lookup(conn, mined_form, reading)
+                if is_kana_only(reading):
+                    rows = storage.lookup(conn, mined_form, reading)
+                    katakana_variant = hiragana_to_katakana(reading)
+                    if not rows and katakana_variant != reading:
+                        # Packs store kana verbatim (often katakana for
+                        # NHK/SMK) while miner readings are hiragana-folded;
+                        # retry the exact match in the other script.
+                        rows = storage.lookup(conn, mined_form, katakana_variant)
+                else:
+                    # Non-kana (or empty) reading: the exact key is useless.
+                    # Wildcard the expression, then guard on ambiguity.
+                    rows = storage.lookup(conn, mined_form, "")
+                    distinct = {katakana_to_hiragana(r.reading) for r in rows if r.reading}
+                    if len(distinct) > 1:
+                        # Genuinely ambiguous — only wildcard (NULL-reading)
+                        # rows may serve, matching what the old exact path
+                        # returned for a non-kana reading.
+                        rows = [r for r in rows if r.reading is None]
             except (sqlite3.Error, OSError) as exc:
                 logger.debug("LocalAudioPackFetcher: lookup failed for %r: %s", mined_form, exc)
                 return None
@@ -143,6 +161,7 @@ class LocalAudioPackFetcher:
                 part_path = cache_path.with_suffix(orig_suffix + ".part")
                 shutil.copy2(candidate, part_path)
                 os.replace(part_path, cache_path)
+                _record_cached_path(self._cache_dir, cache_path)
             except OSError as exc:
                 logger.debug("LocalAudioPackFetcher: copy failed for %s: %s", candidate, exc)
                 return None

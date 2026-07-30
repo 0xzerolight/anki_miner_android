@@ -2,9 +2,9 @@
 
 Reading-tab cards carry a manga page or book cover. ``ImageRef`` defers the
 actual bytes until card creation; this module turns one ref into a small RGB
-JPEG on disk. Stateless by contract: the output name is a hash of the ref, so
-the same ref always maps to the same file and repeat calls short-circuit on the
-existing file (a filesystem-level memo — no module state). Output names are
+JPEG on disk. The output name is a hash of the ref, so the same ref always maps
+to the same file and repeat calls short-circuit on the existing file. A bounded
+module cache avoids repeating the archive safety scan. Output names are
 hash-derived, never taken from an archive entry name, so a hostile member name
 can never influence the written path.
 """
@@ -12,14 +12,18 @@ can never influence the written path.
 from __future__ import annotations
 
 import hashlib
+import lzma
+import threading
 import zipfile
+import zlib
+from collections import OrderedDict
 from pathlib import Path
 
-from PIL import Image
+from PIL import Image, UnidentifiedImageError
 
 from anki_miner.models.reading import ImageRef
 from anki_miner.services.dictionary.zip_safety import validate_zip_safe
-from anki_miner.utils.pil_limits import apply_pil_image_limits
+from anki_miner.utils.pil_limits import apply_pil_image_limits, validate_image_pixel_budget
 
 # Decompression-bomb ceiling: explicit project pin (== Pillow's default) so the
 # card-image decode limit is an intentional, tested value, not an inherited one.
@@ -28,6 +32,30 @@ apply_pil_image_limits()
 # Long-edge cap for a card image. Larger pages/covers are downscaled (never
 # upscaled) before JPEG encode to keep Anki media small.
 _MAX_EDGE = 1280
+_VALIDATED_ARCHIVE_CACHE_MAX = 16
+_VALIDATED_ARCHIVES: OrderedDict[tuple[Path, Path, int, int, int, int, int], None] = OrderedDict()
+_VALIDATED_ARCHIVES_LOCK = threading.Lock()
+_MEMBER_ERRORS = (
+    KeyError,
+    zipfile.BadZipFile,
+    RuntimeError,
+    NotImplementedError,
+    OSError,
+    EOFError,
+    SyntaxError,
+    zlib.error,
+    lzma.LZMAError,
+    UnidentifiedImageError,
+    Image.DecompressionBombError,
+)
+
+
+class ReadingImageArchiveError(OSError):
+    """The image archive itself cannot be opened."""
+
+
+class ReadingImageMemberError(OSError):
+    """One optional image member cannot be read or decoded."""
 
 
 def prepare_card_image(ref: ImageRef, dest_dir: Path) -> Path:
@@ -47,18 +75,55 @@ def prepare_card_image(ref: ImageRef, dest_dir: Path) -> Path:
         return out_path
 
     if ref.entry is None:
-        with Image.open(ref.source) as img:
-            _encode_jpeg(img, out_path)
-    else:
-        with zipfile.ZipFile(ref.source) as zf:
-            validate_zip_safe(zf, dest_dir)
-            with zf.open(ref.entry) as member, Image.open(member) as img:
+        try:
+            with Image.open(ref.source) as img:
                 _encode_jpeg(img, out_path)
+        except _MEMBER_ERRORS as exc:
+            raise ReadingImageMemberError(str(exc)) from exc
+    else:
+        try:
+            zf = zipfile.ZipFile(ref.source)
+        except (OSError, zipfile.BadZipFile) as exc:
+            raise ReadingImageArchiveError(str(exc)) from exc
+        with zf:
+            _validate_archive_once(zf, ref.source, dest_dir)
+            try:
+                with zf.open(ref.entry) as member, Image.open(member) as img:
+                    _encode_jpeg(img, out_path)
+            except _MEMBER_ERRORS as exc:
+                raise ReadingImageMemberError(str(exc)) from exc
     return out_path
+
+
+def _validate_archive_once(zf: zipfile.ZipFile, source: Path, dest_dir: Path) -> None:
+    """Run the full zip-safety scan once per unchanged archive and destination."""
+    try:
+        stat = source.stat()
+    except OSError:
+        validate_zip_safe(zf, dest_dir)
+        return
+    key = (
+        source,
+        dest_dir.resolve(),
+        stat.st_dev,
+        stat.st_ino,
+        stat.st_size,
+        stat.st_mtime_ns,
+        stat.st_ctime_ns,
+    )
+    with _VALIDATED_ARCHIVES_LOCK:
+        if key in _VALIDATED_ARCHIVES:
+            _VALIDATED_ARCHIVES.move_to_end(key)
+            return
+        validate_zip_safe(zf, dest_dir)
+        _VALIDATED_ARCHIVES[key] = None
+        if len(_VALIDATED_ARCHIVES) > _VALIDATED_ARCHIVE_CACHE_MAX:
+            _VALIDATED_ARCHIVES.popitem(last=False)
 
 
 def _encode_jpeg(img: Image.Image, out_path: Path) -> None:
     """Convert to RGB, cap the long edge at ``_MAX_EDGE``, save JPEG quality 85."""
+    validate_image_pixel_budget(img)
     rgb = img.convert("RGB")
     # thumbnail() preserves aspect ratio and only ever shrinks — it never
     # upscales — so a page already within the cap is saved at its native size.

@@ -8,7 +8,11 @@ from pathlib import Path
 
 from anki_miner.config import AnkiMinerConfig
 from anki_miner.interfaces.dictionary_provider import DictionaryProvider
-from anki_miner.services._sqlite_index import scan_index_root
+from anki_miner.services._sqlite_index import (
+    is_generated_store_artifact,
+    read_ownership_marker,
+    scan_index_root,
+)
 from anki_miner.services.dictionary.providers.indexed_provider import IndexedDictProvider
 from anki_miner.services.dictionary.providers.jisho_provider import JishoProvider
 from anki_miner.services.dictionary.storage import SCHEMA_VERSION
@@ -34,23 +38,35 @@ class DictionaryRegistry:
         self._dicts: dict[str, DictMeta] = {}
 
     def load(self) -> None:
-        self._dicts = scan_index_root(self._root, self._parse_meta, warn_label="dictionary")
+        self._dicts = scan_index_root(
+            self._root,
+            self._parse_meta,
+            child_prefilter=lambda child: (
+                not is_generated_store_artifact(child.name)
+                or read_ownership_marker(child) == ("dictionary", child.name)
+            ),
+            warn_label="dictionary",
+        )
 
     def _parse_meta(self, child: Path, db: Path, meta: dict[str, str]) -> DictMeta:
+        source_name = meta.get("source_name")
+        format_name = meta.get("format")
+        raw_version = meta.get("schema_version")
+        raw_count = meta.get("entry_count")
         try:
-            version = int(meta.get("schema_version", "0"))
-        except ValueError:
+            version = int(raw_version) if isinstance(raw_version, str) else 0
+        except (TypeError, ValueError):
             version = 0
         try:
-            count = int(meta.get("entry_count", "0"))
-        except ValueError:
+            count = int(raw_count) if isinstance(raw_count, str) else 0
+        except (TypeError, ValueError):
             count = 0
         # schema_ok policy: dictionaries require an exact-version match — a
         # mismatch is dropped from the chain and gated for reimport.
         return DictMeta(
             dict_id=child.name,
-            source_name=meta.get("source_name", child.name),
-            format=meta.get("format", "unknown"),
+            source_name=source_name if isinstance(source_name, str) else child.name,
+            format=format_name if isinstance(format_name, str) else "unknown",
             entry_count=count,
             schema_ok=(version == SCHEMA_VERSION),
             db_path=db,
@@ -101,6 +117,32 @@ class DictionaryRegistry:
             if meta is not None and not meta.schema_ok:
                 stale.append(meta)
         return sorted(stale, key=lambda m: m.dict_id)
+
+    def usable_enabled(self, config: AnkiMinerConfig) -> list[DictMeta]:
+        """Enabled indexed chain slots that can actually answer a lookup.
+
+        Three conditions, all read off this snapshot: present on disk,
+        schema-current, and holding at least one entry. They are the same three
+        :meth:`DefinitionService.has_usable_offline_provider` applies to the
+        registry after building and loading the chain — answered here without
+        opening a single SQLite connection, which is what makes this callable
+        from a readiness check that must not take a file lock on the very
+        indexes the user may be about to reimport.
+
+        "An ``index.sqlite`` exists" was never the question worth asking: a
+        schema-stale index is dropped from the chain, and a zero-entry index
+        opens perfectly and returns nothing. Both mine cards with no definition.
+
+        Does NOT call load(); callers control when the scan happens.
+        """
+        usable: list[DictMeta] = []
+        for entry in config.dictionary_chain:
+            if entry.kind != "indexed" or not entry.enabled or entry.dict_id is None:
+                continue
+            meta = self._dicts.get(entry.dict_id)
+            if meta is not None and meta.schema_ok and meta.entry_count > 0:
+                usable.append(meta)
+        return sorted(usable, key=lambda m: m.dict_id)
 
     def build_provider_chain(self, config: AnkiMinerConfig) -> list[DictionaryProvider]:
         """Build the ordered provider chain from config + disk state.

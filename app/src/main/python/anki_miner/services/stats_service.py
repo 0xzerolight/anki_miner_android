@@ -2,6 +2,7 @@
 
 import logging
 import sqlite3
+import threading
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
@@ -9,37 +10,21 @@ from pathlib import Path
 from anki_miner.models.stats import (
     DifficultyEntry,
     Milestone,
+    MilestoneKind,
     MiningSession,
     OverallStats,
 )
 
 logger = logging.getLogger(__name__)
 
-CARD_MILESTONES = [
-    (50, "First Steps", "Created 50 cards"),
-    (100, "Getting Started", "Created 100 cards"),
-    (250, "Building Momentum", "Created 250 cards"),
-    (500, "Dedicated Learner", "Created 500 cards"),
-    (1000, "Vocabulary Builder", "Created 1,000 cards"),
-    (2500, "Word Collector", "Created 2,500 cards"),
-    (5000, "Language Explorer", "Created 5,000 cards"),
-    (10000, "Master Miner", "Created 10,000 cards"),
-]
+# Ascending thresholds per counter. Numbers only, on purpose: any title or
+# blurb written here would reach the user untranslated (decision D47). The
+# Analytics tab states the fact, in the UI language.
+CARD_MILESTONES = [50, 100, 250, 500, 1000, 2500, 5000, 10000]
 
-SESSION_MILESTONES = [
-    (5, "Regular Miner", "Completed 5 mining sessions"),
-    (10, "Consistent Learner", "Completed 10 mining sessions"),
-    (25, "Mining Veteran", "Completed 25 mining sessions"),
-    (50, "Mining Expert", "Completed 50 mining sessions"),
-    (100, "Mining Master", "Completed 100 mining sessions"),
-]
+SESSION_MILESTONES = [5, 10, 25, 50, 100]
 
-SERIES_MILESTONES = [
-    (3, "Series Explorer", "Mined from 3 different series"),
-    (5, "Series Fan", "Mined from 5 different series"),
-    (10, "Series Enthusiast", "Mined from 10 different series"),
-    (25, "Series Connoisseur", "Mined from 25 different series"),
-]
+SERIES_MILESTONES = [3, 5, 10, 25]
 
 
 class StatsService:
@@ -58,6 +43,7 @@ class StatsService:
     def __init__(self, db_path: Path):
         self._db_path = db_path
         self._initialized = False
+        self._load_lock = threading.Lock()
 
     def load(self) -> bool:
         """Initialize the database, creating tables if needed."""
@@ -75,6 +61,15 @@ class StatsService:
     def is_available(self) -> bool:
         """Check if the stats service has been initialized."""
         return self._initialized
+
+    def _ensure_loaded(self) -> bool:
+        """Initialize once on the first write, including concurrent first writes."""
+        if self._initialized:
+            return True
+        with self._load_lock:
+            if self._initialized:
+                return True
+            return self.load()
 
     @contextmanager
     def _connect(self):
@@ -128,7 +123,7 @@ class StatsService:
 
     def record_session(self, session: MiningSession) -> int:
         """Record a mining session. Returns the row ID, or -1 on failure."""
-        if not self._initialized:
+        if not self._ensure_loaded():
             return -1
         with self._connect() as conn:
             cursor = conn.execute(
@@ -199,7 +194,7 @@ class StatsService:
         The difficulty_score is calculated as unknown_words / total_words.
         Skips recording if total_words is 0.
         """
-        if not self._initialized or total_words == 0:
+        if total_words == 0 or not self._ensure_loaded():
             return
         difficulty_score = unknown_words / total_words
         with self._connect() as conn:
@@ -268,16 +263,15 @@ class StatsService:
             stats = self.get_overall_stats()
         milestones: list[Milestone] = []
 
-        for milestone_list, current_value in [
-            (CARD_MILESTONES, stats.total_cards_created),
-            (SESSION_MILESTONES, stats.total_sessions),
-            (SERIES_MILESTONES, stats.series_count),
+        for kind, thresholds, current_value in [
+            (MilestoneKind.CARDS, CARD_MILESTONES, stats.total_cards_created),
+            (MilestoneKind.SESSIONS, SESSION_MILESTONES, stats.total_sessions),
+            (MilestoneKind.SERIES, SERIES_MILESTONES, stats.series_count),
         ]:
             selected = None
-            for threshold, name, description in milestone_list:
+            for threshold in thresholds:
                 selected = Milestone(
-                    name=name,
-                    description=description,
+                    kind=kind,
                     threshold=threshold,
                     current_value=current_value,
                     achieved=current_value >= threshold,
@@ -288,6 +282,34 @@ class StatsService:
                 milestones.append(selected)
 
         return milestones
+
+    # === Maintenance ===
+
+    def reset(self) -> int:
+        """Delete every recorded session and difficulty row. Returns rows removed.
+
+        Milestones are derived from these two tables, so they reset with them.
+
+        The count is taken *before* the deletes rather than from ``rowcount``:
+        SQLite's truncate optimisation applies to a bare ``DELETE FROM t``, and
+        the change count it reports is not the row count. Same reason
+        :meth:`KnownWordDB.clear` counts first.
+
+        Two things are deliberately left out. ``VACUUM`` cannot run here --
+        :meth:`_connect` yields inside ``with conn:``, an open transaction, and
+        SQLite refuses to vacuum in one; stats.db is far too small to be worth a
+        second connection for it. ``sqlite_sequence`` is left alone because row
+        IDs are never shown to the user.
+        """
+        if not self._ensure_loaded():
+            return 0
+        with self._connect() as conn:
+            removed = conn.execute("SELECT COUNT(*) FROM mining_sessions").fetchone()[0]
+            removed += conn.execute("SELECT COUNT(*) FROM series_difficulty").fetchone()[0]
+            conn.execute("DELETE FROM mining_sessions")
+            conn.execute("DELETE FROM series_difficulty")
+        logger.info(f"Reset stats database, removed {removed} row(s)")
+        return int(removed)
 
     @staticmethod
     def _row_to_session(row: sqlite3.Row) -> MiningSession:

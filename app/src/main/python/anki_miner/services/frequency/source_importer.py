@@ -28,15 +28,21 @@ count first) before storage, so downstream rank filtering/sorting stays correct.
 from __future__ import annotations
 
 import logging
+import os
 import shutil
 import tempfile
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Callable
 
 from anki_miner.exceptions import SetupError
-from anki_miner.services._staging import promote_staged_dir
+from anki_miner.services._sqlite_index import (
+    prove_owned_slot,
+    resolve_managed_slot,
+    write_ownership_marker,
+)
+from anki_miner.services._staging import promote_staged_dir, repair_managed_slot
 from anki_miner.services.frequency import mode_probe, storage
 from anki_miner.services.frequency.csv_parse import (
     _extract_word_rank,
@@ -53,12 +59,14 @@ from anki_miner.services.yomitan_meta_bank import (
     open_yomitan_meta_banks,
 )
 from anki_miner.utils.csv_utils import detect_delimiter, is_header_row
+from anki_miner.utils.robust_fs import robust_rmtree
 from anki_miner.utils.slug import slugify
 
 logger = logging.getLogger(__name__)
 
-_ZIP_SUFFIXES = {".zip"}
-_CSV_SUFFIXES = {".csv", ".tsv", ".txt"}
+FREQUENCY_SOURCE_SUFFIXES = (".zip", ".csv", ".tsv", ".txt")
+_ZIP_SUFFIXES = frozenset(FREQUENCY_SOURCE_SUFFIXES[:1])
+_CSV_SUFFIXES = frozenset(FREQUENCY_SOURCE_SUFFIXES[1:])
 
 
 def _rank_preference(row: tuple[int, str | None]) -> tuple[bool, int]:
@@ -108,6 +116,7 @@ def import_frequency_source(
     source_name: str | None = None,
     progress: ProgressFn | None = None,
     cancel_check: Callable[[], bool] | None = None,
+    overwrite: bool = False,
 ) -> FreqSourceImportResult:
     """Import ``input_path`` into ``dest_root/<source_id>/index.sqlite``.
 
@@ -126,10 +135,11 @@ def import_frequency_source(
         progress: Optional ``(current, total, message)`` callback.
         cancel_check: Optional zero-arg predicate; if it returns True the import
             aborts (partial staging files are cleaned up by the temp dir).
+        overwrite: If true, replace an existing same-id source atomically.
 
     Raises:
         SetupError: On a missing/unsupported input, or a source that yields zero
-            usable entries.
+            usable entries, or when the destination exists and overwrite is false.
     """
     if not input_path.exists():
         raise SetupError(f"Frequency source not found: {input_path}")
@@ -142,11 +152,46 @@ def import_frequency_source(
             source_id=source_id,
             progress=progress,
             cancel_check=cancel_check,
+            overwrite=overwrite,
         )
     if suffix in _CSV_SUFFIXES:
-        return _import_csv(input_path, dest_root, source_id=source_id, source_name=source_name)
+        return _import_csv(
+            input_path,
+            dest_root,
+            source_id=source_id,
+            source_name=source_name,
+            cancel_check=cancel_check,
+            overwrite=overwrite,
+        )
     raise SetupError(
-        f"Unsupported frequency source '{input_path.name}'. " "Provide a Yomitan .zip or a .csv/.tsv/.txt rank list."
+        f"Unsupported frequency source '{input_path.name}'. Provide a Yomitan .zip or a .csv/.tsv/.txt rank list."
+    )
+
+
+def repair_frequency_source(
+    input_path: Path,
+    dest_root: Path,
+    *,
+    source_id: str,
+    source_name: str,
+    progress: ProgressFn | None = None,
+    cancel_check: Callable[[], bool] | None = None,
+) -> FreqSourceImportResult:
+    """Explicitly repair ``source_id``, retaining an invalid prior slot as quarantine."""
+    return repair_managed_slot(
+        input_path,
+        dest_root,
+        source_id,
+        "frequency",
+        lambda source, overwrite: import_frequency_source(
+            source,
+            dest_root,
+            source_id=source_id,
+            source_name=source_name,
+            progress=progress,
+            cancel_check=cancel_check,
+            overwrite=overwrite,
+        ),
     )
 
 
@@ -157,6 +202,7 @@ def _import_zip(
     source_id: str | None,
     progress: ProgressFn | None,
     cancel_check: Callable[[], bool] | None,
+    overwrite: bool,
 ) -> FreqSourceImportResult:
     with open_yomitan_meta_banks(zip_path, kind="frequency") as banks:
         title = banks.title
@@ -226,11 +272,11 @@ def _import_zip(
             # Store labels display-only: the sentinel rank keeps every row out of
             # numeric aggregation; the level shows on the card via display_value.
             # Direction detection is meaningless for categories, so it is skipped.
-            rows: list[storage.FreqRow] = [
+            rows: Iterable[storage.FreqRow] = (
                 (term, reading, storage.CATEGORICAL_RANK, label)
                 for (term, reading), label in sorted(labels.items(), key=lambda kv: kv[0])
-            ]
-            entry_count = len(rows)
+            )
+            entry_count = len(labels)
             skipped_display_only = total_considered - total_labelled  # rank-only rows dropped
             converted = False
         else:
@@ -240,13 +286,8 @@ def _import_zip(
                     f"{skipped_display_only} display-only entries). "
                     "The dictionary may use an unsupported data format."
                 )
-            # Sorted by rank for stable, human-scannable storage order.
-            rows = [
-                (term, reading, rank, display_value)
-                for (term, reading), (rank, display_value) in sorted(ranks.items(), key=lambda kv: kv[1][0])
-            ]
-            rows, converted = _apply_direction(rows, declared_mode)
-            entry_count = len(rows)
+            rows, converted = _iter_rank_rows(ranks, declared_mode)
+            entry_count = len(ranks)
 
         result = _finalize(
             input_path=zip_path,
@@ -261,11 +302,12 @@ def _import_zip(
             skipped_malformed=banks.skipped_malformed,
             converted_to_ranks=converted,
             is_categorical=is_categorical,
+            cancel_check=cancel_check,
+            overwrite=overwrite,
         )
 
     logger.info(
-        "Imported %d frequency entries from '%s' (revision '%s') as source '%s', "
-        "skipped %d display-only, %d malformed",
+        "Imported %d frequency entries from '%s' (revision '%s') as source '%s', skipped %d display-only, %d malformed",
         result.entry_count,
         title,
         revision,
@@ -282,6 +324,8 @@ def _import_csv(
     *,
     source_id: str | None,
     source_name: str | None = None,
+    cancel_check: Callable[[], bool] | None,
+    overwrite: bool,
 ) -> FreqSourceImportResult:
     stem = csv_path.stem
     resolved_id = source_id or _derive_source_id(stem)
@@ -306,6 +350,8 @@ def _import_csv(
             first_row = True
             word_first = False
             for row in reader:
+                if cancel_check is not None and cancel_check():
+                    raise SetupError("Import cancelled")
                 if len(row) < 2:
                     continue
                 if first_row:
@@ -333,12 +379,9 @@ def _import_csv(
             "Yomitan .zip dictionaries — import one of those instead."
         )
 
-    rows: list[storage.FreqRow] = [
-        (term, reading, rank, None) for (term, reading), rank in sorted(ranks.items(), key=lambda kv: kv[1])
-    ]
     # Plain CSVs never declare a direction, so always probe: an occurrence-count
     # list re-ranks here instead of silently inverting max_frequency_rank.
-    rows, converted = _apply_direction(rows, "")
+    rows, converted = _iter_rank_rows(ranks, "")
 
     result = _finalize(
         input_path=csv_path,
@@ -351,6 +394,8 @@ def _import_csv(
         entry_count=len(ranks),
         skipped_display_only=0,
         converted_to_ranks=converted,
+        cancel_check=cancel_check,
+        overwrite=overwrite,
     )
     logger.info(
         "Imported %d frequency entries from CSV '%s' as source '%s'",
@@ -361,23 +406,52 @@ def _import_csv(
     return result
 
 
-def _apply_direction(
-    rows: list[storage.FreqRow],
+def _iter_rank_rows(
+    ranks: Mapping[tuple[str, str | None], int | tuple[int, str | None]],
     declared_mode: str,
-) -> tuple[list[storage.FreqRow], bool]:
-    """Detect direction and re-rank occurrence-based sources to ``1..n``.
+) -> tuple[Iterable[storage.FreqRow], bool]:
+    """Yield stored rows in stable order, re-ranking occurrence sources.
 
-    ``declared_mode`` (Yomitan ``frequencyMode``) is authoritative; a blank mode
-    (CSVs, undeclared zips) triggers the statistical probe over the stored
-    values. When occurrence-based, the raw counts in the ``rank`` column are
-    converted to real ranks (largest count = rank 1). Returns the (possibly
-    re-ranked) rows and whether a conversion happened.
+    The dedupe mapping remains necessary, but yielded rows stream into SQLite
+    instead of duplicating the entire source in a second list.
     """
+    probe_terms = {
+        term
+        for table in (mode_probe.MORE_COMMON_TERMS, mode_probe.LESS_COMMON_TERMS)
+        for terms in table.values()
+        for term in terms
+    }
     term_values: dict[str, list[int]] = {}
-    for term, _reading, value, _display in rows:
-        term_values.setdefault(term, []).append(value)
+    for (term, _reading), value in ranks.items():
+        if term in probe_terms:
+            rank = value if isinstance(value, int) else value[0]
+            term_values.setdefault(term, []).append(rank)
+
     if mode_probe.resolve_is_occurrence(declared_mode, term_values):
-        return mode_probe.convert_to_ranks(rows), True
+        ordered = sorted(
+            ranks.items(),
+            key=lambda item: (
+                -(item[1] if isinstance(item[1], int) else item[1][0]),
+                item[0][0],
+                item[0][1] or "",
+            ),
+        )
+        rows = (
+            (term, reading, new_rank, None if isinstance(value, int) else value[1])
+            for new_rank, ((term, reading), value) in enumerate(ordered, 1)
+        )
+        return rows, True
+
+    ordered = sorted(ranks.items(), key=lambda item: item[1] if isinstance(item[1], int) else item[1][0])
+    rows = (
+        (
+            term,
+            reading,
+            value if isinstance(value, int) else value[0],
+            None if isinstance(value, int) else value[1],
+        )
+        for (term, reading), value in ordered
+    )
     return rows, False
 
 
@@ -412,23 +486,37 @@ def _finalize(
     source_name: str,
     source_revision: str,
     fmt: str,
-    rows: list[storage.FreqRow],
+    rows: Iterable[storage.FreqRow],
     entry_count: int,
     skipped_display_only: int,
     skipped_malformed: int = 0,
     converted_to_ranks: bool = False,
     is_categorical: bool = False,
+    cancel_check: Callable[[], bool] | None,
+    overwrite: bool,
 ) -> FreqSourceImportResult:
     """Build the index under a staging dir, then atomically promote it.
 
     Copies the original input alongside ``index.sqlite`` (``source.zip`` /
-    ``source.csv``) for later reimport, overwriting any same-id source.
+    ``source.csv``) for later reimport.
     """
-    dest_root.mkdir(parents=True, exist_ok=True)
-    final_path = dest_root / source_id
-
-    staging = Path(tempfile.mkdtemp(prefix=".staging-", dir=dest_root))
     try:
+        final_path = resolve_managed_slot(dest_root, source_id)
+    except ValueError as exc:
+        raise SetupError(str(exc)) from exc
+    final_path.parent.mkdir(parents=True, exist_ok=True)
+    if os.path.lexists(final_path):
+        if not overwrite:
+            raise SetupError(f"Frequency source '{source_id}' already exists")
+        if not prove_owned_slot(final_path.parent, source_id, "frequency"):
+            raise SetupError(
+                f"Frequency source '{source_id}' exists but is not an Anki Miner-managed frequency source; "
+                "refusing to overwrite it"
+            )
+
+    staging = Path(tempfile.mkdtemp(prefix=".staging-", dir=final_path.parent))
+    try:
+        write_ownership_marker(staging, source_id, "frequency")
         db_path = staging / "index.sqlite"
         meta = {
             "schema_version": str(storage.SCHEMA_VERSION),
@@ -448,13 +536,17 @@ def _finalize(
         source_copy_name = "source" + input_path.suffix.lower()
         shutil.copy2(input_path, staging / source_copy_name)
 
-        # Atomic-ish promote: replace any existing same-id source.
-        promote_staged_dir(staging, final_path, mover=shutil.move, overwrite=True)
+        if cancel_check is not None and cancel_check():
+            raise SetupError("Import cancelled")
+
+        try:
+            promote_staged_dir(staging, final_path, mover=shutil.move, overwrite=overwrite)
+        except FileExistsError as exc:
+            raise SetupError(f"Frequency source '{source_id}' already exists") from exc
     finally:
         # On success the staging dir was moved away; clean up on any failure
         # so a partial import does not orphan a .staging-* dir in dest_root.
-        if staging.exists():
-            shutil.rmtree(staging, ignore_errors=True)
+        robust_rmtree(staging, mode="outcome")
 
     return FreqSourceImportResult(
         source_id=source_id,

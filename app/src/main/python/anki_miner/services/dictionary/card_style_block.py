@@ -1,11 +1,25 @@
-"""Self-contained per-card glossary ``<style>`` block (Yomitan model).
+"""Self-contained per-field glossary ``<style>`` block (Yomitan model).
 
-Anki Miner emits each card's glossary CSS *inside the card's own field* as one
+Anki Miner emits glossary CSS *inside each styled field* as one TRAILING
 ``<style>`` block, so styling travels with the note — it works on any note type,
 on AnkiDroid/mobile, in exports, and when a card is shared, and nothing can strip
 or de-sync it. This is how Yomitan delivers glossary CSS (self-contained field
 HTML), and it replaces the shared note-type CSS block that the v2.7.6 rework
 introduced (Anki Miner no longer writes note-type styling at all).
+
+Two placement invariants, both load-bearing for JS-driven note types (Kiku
+class) that hold fields in inert ``<template>`` elements and re-inject them
+page-by-page through ``DOMParser`` → ``doc.body.innerHTML``:
+
+* **Per field, not per card.** A ``<style>`` in one field is only card-wide on
+  note types that render all fields into one live document. Field-isolating
+  note types show each field alone, so EVERY styled field must carry its own
+  block (Yomitan does the same and duplicates dict CSS across fields).
+* **Trailing, never leading.** The HTML parser hoists a *leading* ``<style>``
+  into ``<head>``, so any ``body.innerHTML`` round-trip silently drops it; a
+  trailing block stays in ``<body>`` and survives (jsdom-verified against
+  Kiku's actual pipeline). ``attach_card_style_block`` is the only sanctioned
+  attach seam and enforces both invariants.
 
 The block is ``[tree-shaken base glossary.css] + [scoped per-dictionary CSS]``
 (base → dict-author, following the Yomitan ``_getCustomCss`` ordering). The base
@@ -27,6 +41,7 @@ bundled read. The scoped per-dictionary CSS is gathered separately by
 
 from __future__ import annotations
 
+import html as html_lib
 import re
 from collections.abc import Iterable
 from functools import lru_cache
@@ -86,6 +101,7 @@ def _minify_css(css: str) -> str:
 # ---------------------------------------------------------------------------
 
 ALL_GROUPS = frozenset({"unstyled-chrome", "sc-gapfill", "images", "tables"})
+OWNED_STYLE_MARKER = ".yomitan-glossary{--anki-miner-owned-style: 1;"
 
 _GROUP_MARKER_RE = re.compile(r"/\*\s*@am-group:\s*([a-z-]+)\s*\*/|/\*\s*@am-endgroup\s*\*/")
 
@@ -97,7 +113,7 @@ _GROUP_MARKER_RE = re.compile(r"/\*\s*@am-group:\s*([a-z-]+)\s*\*/|/\*\s*@am-end
 # card_restyler imports this for legacy-envelope stamping; it lives here so the
 # witness and the stamper cannot drift apart (and card_restyler already imports
 # this module, so the dependency points this way).
-UNSTAMPED_ENVELOPE_RE = re.compile(r'<li data-dictionary="([^"]*)">')
+UNSTAMPED_ENVELOPE_RE = re.compile(r'<li data-dictionary="([^"]*)"(?: data-dictionary-id="([^"]*)")?>')
 
 
 def split_group_regions(css: str) -> list[tuple[str, str]]:
@@ -153,7 +169,7 @@ def base_css_variant(groups: frozenset[str]) -> str:
     if unknown:
         raise ValueError(f"unknown style groups: {sorted(unknown)}")
     css = "".join(m for g, m in _minified_regions() if g == "core" or g in groups)
-    if "\n" in css or "ol[data-count]" not in css:
+    if "\n" in css or "ol[data-count]" not in css or not css.startswith(OWNED_STYLE_MARKER):
         raise ValueError("base variant broke the newline-free/ol[data-count] contract")
     return css
 
@@ -242,18 +258,21 @@ def css_witnesses(html_texts: Iterable[str]) -> frozenset[str]:
 
 
 def build_card_style_block(*, dict_css: str, card_html: str) -> str:
-    """Assemble the self-contained per-card ``<style>`` block.
+    """Assemble the self-contained ``<style>`` block for ONE field.
 
     ``[witness-selected base variant] + [dict_css]``, wrapped in a single
-    ``<style>`` element for embedding at the top of a card's styling-carrier
-    field. ``card_html`` is the card's own (stamped) miner-markup HTML —
-    glossary AND definition field values concatenated, since a ``<style>`` in
-    any field is card-wide — and drives the tree-shaking; it is a REQUIRED
-    keyword so a caller can never silently fall back to an under-styled core.
-    ``dict_css`` is the already-scoped, already-concatenated per-dictionary CSS
-    (from ``collect_dictionary_css``), embedded verbatim. Returns ``""`` only if
-    every section is empty (the core is never empty, so in practice this always
-    returns a block).
+    ``<style>`` element. ``card_html`` is the ONE field's own (stamped)
+    miner-markup HTML and drives the tree-shaking; it is a REQUIRED keyword so a
+    caller can never silently fall back to an under-styled core. Cross-field
+    concatenation (the pre-per-field "glossary AND definition, a ``<style>``
+    in any field is card-wide" contract) is deliberately abandoned: every
+    writer (mining, backfill, restyle) must witness per field, or their
+    outputs diverge and the restyler rewrites fresh cards forever — and
+    field-isolating note types (module docstring) never see the other field
+    anyway. ``dict_css`` is the already-scoped per-dictionary CSS (filtered to
+    this field via ``filter_dict_css_entries``), embedded verbatim. Returns
+    ``""`` only if every section is empty (the core is never empty, so in
+    practice this always returns a block).
     """
     sections = [base_css_variant(css_witnesses([card_html]))]
     scoped = dict_css.strip()
@@ -263,3 +282,62 @@ def build_card_style_block(*, dict_css: str, card_html: str) -> str:
     if not body.strip():
         return ""
     return f"<style>{body}</style>"
+
+
+# Dictionary envelopes in a field body, stamped or not (contrast
+# UNSTAMPED_ENVELOPE_RE, which is deliberately blind to stamped envelopes).
+# Restricting the probe to ``<li>`` avoids treating selectors in carried legacy
+# ``<style>`` blocks as card envelopes.
+_ENVELOPE_RE = re.compile(r'<li data-dictionary="([^"]*)"(?: data-dictionary-id="([^"]*)")?')
+
+# The miner-markup fingerprint a field must carry before any styling attaches.
+# Same probe the restyler uses to recognize miner fields; a field without it
+# has nothing our CSS could style, and attaching a block to empty content
+# would emit a field-LEADING <style> — the head-hoist hazard (module docstring).
+_MINER_MARKUP_TOKENS = ("yomitan-glossary", "data-count")
+
+
+def filter_dict_css_entries(field_html: str, entries: Iterable[tuple[str, str, str]]) -> str:
+    """Join the scoped CSS of exactly the dictionaries present in ``field_html``.
+
+    ``entries`` is ``collect_dictionary_css_entries`` output: ordered
+    ``(dict_id, display_name, scoped_css)`` triples, duplicates preserved. New
+    envelopes carrying ``data-dictionary-id`` match only by stable ID, preserving
+    same-title isolation. Legacy envelopes lacking that attribute match by their
+    ``html.unescape``d display title for back-compat.
+    """
+    envelopes = [
+        (html_lib.unescape(title), html_lib.unescape(dict_id) if dict_id else None)
+        for title, dict_id in _ENVELOPE_RE.findall(field_html)
+    ]
+    ids = {dict_id for _, dict_id in envelopes if dict_id is not None}
+    legacy_titles = {title for title, dict_id in envelopes if dict_id is None}
+    return "\n\n".join(css for dict_id, display_name, css in entries if dict_id in ids or display_name in legacy_titles)
+
+
+def attach_card_style_block(field_html: str, *, dict_css_entries: Iterable[tuple[str, str, str]]) -> str:
+    """Return ``field_html`` with its self-contained TRAILING ``<style>`` block.
+
+    The one sanctioned attach seam for fresh writers (mining, backfill); it
+    enforces both module-docstring invariants:
+
+    * A field without miner markup (or empty) is returned UNCHANGED — never a
+      leading block, never styling on content we don't own.
+    * Otherwise the block is appended AFTER the content — trailing survives the
+      ``DOMParser`` → ``body.innerHTML`` round-trips of JS note types; leading
+      does not.
+
+    The embedded dict CSS is filtered to the dictionaries present in this field
+    (``filter_dict_css_entries``) and the base sheet is tree-shaken against this
+    field only. NOT for the restyler's no-block path: input here must be born
+    stamped (fresh renders are — ``indexed_provider._render``); legacy bodies
+    need ``_stamp_styled_envelopes`` first, which this helper deliberately does
+    not do (stamping needs the carried-CSS gate only the restyler has).
+    """
+    if not field_html or any(token not in field_html for token in _MINER_MARKUP_TOKENS):
+        return field_html
+    block = build_card_style_block(
+        dict_css=filter_dict_css_entries(field_html, dict_css_entries),
+        card_html=field_html,
+    )
+    return field_html + block

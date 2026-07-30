@@ -10,7 +10,7 @@ from PyQt6.QtCore import QCoreApplication
 from anki_miner.config import AnkiMinerConfig
 from anki_miner.exceptions import AnkiConnectionError, SetupError
 from anki_miner.interfaces import ProgressCallback
-from anki_miner.models import CardPayload
+from anki_miner.models import AnkiWriteState, CardPayload
 from anki_miner.services._ankiconnect import _expect_list, post_action, post_multi
 from anki_miner.services.anki_media_store import AnkiMediaStore
 from anki_miner.services.anki_note_builder import (
@@ -22,6 +22,7 @@ from anki_miner.services.anki_note_builder import (
 from anki_miner.services.anki_note_builder import (
     _strip_for_dedup,
     build_note,
+    configured_target_field_names,
 )
 from anki_miner.utils.i18n import tr_format
 
@@ -76,6 +77,26 @@ _DUPLICATE_ERROR_SUBSTRING = "cannot create note because it is a duplicate"
 _UNSUPPORTED_ACTION_SUBSTRING = "unsupported action"
 
 
+def is_transient_anki_transport_error(exc: BaseException) -> bool:
+    """Whether *exc* is an AnkiConnect failure a later attempt could survive.
+
+    Source-proven only, and deliberately narrow: the exception must be an
+    :class:`AnkiConnectionError` chained from a real ``requests`` connection or
+    timeout error — the two ``raise ... from e`` sites in
+    ``_ankiconnect.post_action``/``post_multi``. Everything else keeps its
+    ``__cause__`` empty or carries a deterministic one (an AnkiConnect-side
+    error payload, an HTTP status, an unparseable body), and re-running it just
+    fails the same way.
+
+    Transience alone never authorizes a retry — the caller must also hold
+    :attr:`AnkiWriteState.NO_NOTE_WRITE`, since a dropped connection *during*
+    ``addNotes`` is both transient and unsafe to replay.
+    """
+    if not isinstance(exc, AnkiConnectionError):
+        return False
+    return isinstance(exc.__cause__, (requests.exceptions.ConnectionError, requests.exceptions.Timeout))
+
+
 class AnkiService:
     """Service for interacting with Anki via AnkiConnect (stateless service)."""
 
@@ -94,6 +115,11 @@ class AnkiService:
             ValueError: If required field keys are missing from config
         """
         self.config = config
+        # What this service can prove about note writes (D30). Only ever
+        # escalated by create_cards_batch; reset per mining run by
+        # EpisodeProcessor._run_pipeline, which is the sole run boundary.
+        # A service that has not submitted anything has written nothing.
+        self.anki_write_state: AnkiWriteState = AnkiWriteState.NO_NOTE_WRITE
         self.last_created_note_ids: list[int] = []
         # Number of notes not created during the last create_cards_batch call.
         # Combines both sources:
@@ -199,12 +225,19 @@ class AnkiService:
         )
 
     def verify_card_target(self) -> None:
-        """Validate note type + field mapping, then ensure the deck exists.
+        """Validate note type, field mapping, and that the target deck exists.
 
-        Order is checks-then-side-effects: a failed run creates nothing.
+        Pure check — creates nothing. Decks are no longer auto-created on the
+        mining path: the Settings → Anki deck dropdown only offers decks that
+        really exist, so a configured deck that is missing is a user-visible
+        error rather than a silently-created stray deck. ``ensure_deck`` is
+        still used by Deck Builder, which builds a genuinely new deck and calls
+        it BEFORE its per-pair process_episode loop — that ordering is what
+        makes this check pass there (see deck_builder_worker.py).
 
         Raises:
-            SetupError: note type missing, or a configured field absent from it.
+            SetupError: note type missing, a configured field absent from it,
+                or the configured deck absent from the collection.
             AnkiConnectionError: AnkiConnect unreachable or errors.
         """
         models = post_action(self.config.ankiconnect_url, "modelNames", timeout=15) or []
@@ -226,14 +259,7 @@ class AnkiService:
             )
             or []
         )
-        required = {v for v in self.config.anki_fields.values() if v}
-        # Validate only the active card-type marker (build_note writes just that
-        # one). Inactive markers stay unvalidated so a non-JPMN note type without
-        # them still passes pre-flight.
-        if self.config.card_type:
-            marker = self.config.card_type_marker_fields.get(self.config.card_type, "")
-            if marker:
-                required.add(marker)
+        required = configured_target_field_names(self.config)
         missing = required - actual
         if missing:
             _sorted_actual = sorted(actual)
@@ -246,7 +272,15 @@ class AnkiService:
                 f"Check Settings → Anki field mapping."
             )
 
-        self.ensure_deck(self.config.anki_deck_name)
+        decks = post_action(self.config.ankiconnect_url, "deckNames", timeout=15) or []
+        if self.config.anki_deck_name not in decks:
+            available = ", ".join(decks[:5])
+            more = "..." if len(decks) > 5 else ""
+            raise SetupError(
+                f"Deck '{self.config.anki_deck_name}' not found in Anki. "
+                f"Available: {available}{more}. "
+                f"Pick an existing deck in Settings → Anki, or create it in Anki first."
+            )
 
     def _build_vocab_query(self) -> str:
         """Build the findNotes query for known-words detection.
@@ -287,28 +321,29 @@ class AnkiService:
             elem_type=dict,
         )
 
-    def update_notes_fields(self, updates: list[tuple[int, dict[str, str]]]) -> int:
+    def update_notes_fields(self, updates: list[tuple[int, dict[str, str]]]) -> list[int]:
         """Overwrite fields on many notes in one batch (``updateNoteFields`` via ``post_multi``).
 
-        ``updates`` is ``[(note_id, {field_name: value})]``. Returns the count of
-        notes updated without an AnkiConnect error. This writes note *content*
+        ``updates`` is ``[(note_id, {field_name: value})]``. Returns the ordered
+        note IDs whose updates AnkiConnect confirmed. This writes note *content*
         (fields the app already fills at mining time), never note-type styling.
-        Returns 0 for empty input.
+        Returns ``[]`` for empty input.
         """
         if not updates:
-            return 0
-        updated = 0
+            return []
+        updated_note_ids: list[int] = []
         for chunk in _chunk_note_updates(updates):
-            updated += self._post_note_update_chunk(chunk)
-        return updated
+            updated_note_ids.extend(self._post_note_update_chunk(chunk))
+        return updated_note_ids
 
-    def _post_note_update_chunk(self, chunk: list[tuple[int, dict[str, str]]]) -> int:
+    def _post_note_update_chunk(self, chunk: list[tuple[int, dict[str, str]]]) -> list[int]:
         """POST one ``updateNoteFields`` chunk via ``multi``; fall back per-note on transport failure.
 
-        Returns the count of notes updated without an AnkiConnect error. A chunk
-        oversized enough to trip the connection reset surfaces as an
-        ``AnkiConnectionError``; we then retry each note in its own tiny POST
-        (like ``AnkiMediaStore._store_media_files_individually``) so one bad chunk
+        Returns ordered note IDs updated without an AnkiConnect error. A chunk
+        oversized enough to trip the connection reset, or a malformed result
+        cardinality, surfaces as an ``AnkiConnectionError``; we then retry each
+        note in its own tiny POST (like
+        ``AnkiMediaStore._store_media_files_individually``) so one bad chunk
         doesn't abort the whole restyle.
         """
         actions = [
@@ -316,7 +351,11 @@ class AnkiService:
             for nid, fields in chunk
         ]
         try:
-            results = post_multi(self.config.ankiconnect_url, actions, timeout=60)
+            results = _expect_list(
+                post_multi(self.config.ankiconnect_url, actions, timeout=60),
+                "multi",
+                len(actions),
+            )
         except AnkiConnectionError as e:
             logger.warning(
                 "updateNoteFields multi POST failed (%s); retrying %d note(s) individually",
@@ -324,12 +363,15 @@ class AnkiService:
                 len(actions),
             )
             return self._update_notes_individually(chunk)
-        errors = sum(1 for sub in results[: len(actions)] if isinstance(sub, dict) and sub.get("error"))
-        return len(actions) - errors
+        return [
+            nid
+            for (nid, _fields), sub in zip(chunk, results, strict=True)
+            if not (isinstance(sub, dict) and sub.get("error"))
+        ]
 
-    def _update_notes_individually(self, chunk: list[tuple[int, dict[str, str]]]) -> int:
+    def _update_notes_individually(self, chunk: list[tuple[int, dict[str, str]]]) -> list[int]:
         """Per-note ``updateNoteFields`` fallback (tiny bodies) for a failed-multi chunk."""
-        updated = 0
+        updated_note_ids: list[int] = []
         for nid, fields in chunk:
             try:
                 post_action(
@@ -338,10 +380,10 @@ class AnkiService:
                     params={"note": {"id": nid, "fields": fields}},
                     timeout=60,
                 )
-                updated += 1
+                updated_note_ids.append(nid)
             except AnkiConnectionError as e:
                 logger.warning("Failed to update note %s individually: %s", nid, e)
-        return updated
+        return updated_note_ids
 
     def add_tags(self, note_ids: list[int], tags: str) -> None:
         """Add ``tags`` to notes (AnkiConnect ``addTags``); no-op for empty input.
@@ -491,7 +533,7 @@ class AnkiService:
         self,
         word_data_list: list[CardPayload],
         progress_callback: ProgressCallback | None = None,
-    ) -> int:
+    ) -> list[int]:
         """Create multiple Anki cards in batches.
 
         Args:
@@ -499,13 +541,13 @@ class AnkiService:
             progress_callback: Optional callback for progress reporting
 
         Returns:
-            Number of successfully created cards
+            Ordered note IDs successfully created and confirmed by AnkiConnect.
         """
         if not word_data_list:
             self.last_created_note_ids = []
             self.last_skipped_duplicates = 0
             self.last_media_store_failures = 0
-            return 0
+            return []
 
         self.last_created_note_ids = []
         self.last_skipped_duplicates = 0
@@ -587,6 +629,18 @@ class AnkiService:
                 # each an id (int) or null (None); length alignment is load-bearing
                 # for the positional zip below.
                 if submit_notes:
+                    # Note-write provenance (D30). From the moment the request
+                    # leaves this process until a VALIDATED response comes back,
+                    # the honest answer is "we cannot tell": a dropped
+                    # connection or an unreadable body may well have created the
+                    # notes. Anything that escapes between these two lines
+                    # therefore leaves NOTE_WRITE_UNCERTAIN behind, which blocks
+                    # automatic retry. Only the validated response downgrades it
+                    # again — and only back to what held BEFORE this batch, so a
+                    # later all-duplicate batch cannot erase an earlier batch's
+                    # confirmed write.
+                    state_before_request = self.anki_write_state
+                    self.anki_write_state = AnkiWriteState.NOTE_WRITE_UNCERTAIN
                     note_ids = _expect_list(
                         post_action(
                             self.config.ankiconnect_url,
@@ -598,6 +652,10 @@ class AnkiService:
                         len(submit_notes),
                         (int, type(None)),
                     )
+                    if any(nid is not None for nid in note_ids):
+                        self.anki_write_state = AnkiWriteState.NOTE_WRITE_CONFIRMED
+                    else:
+                        self.anki_write_state = state_before_request
                 else:
                     note_ids = []
 
@@ -667,7 +725,7 @@ class AnkiService:
                 len(word_data_list),
                 bold_fallback,
             )
-        return total_created
+        return list(all_created_ids)
 
     @staticmethod
     def _strip_note_to_first_field(note: dict) -> dict:
