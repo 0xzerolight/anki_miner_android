@@ -76,6 +76,39 @@ class LogRedactorTest {
     }
 
     @Test
+    fun `a quoted path with spaces becomes one token and leaves the field structure alone`() {
+        val line =
+            "2026-07-30T12:00:00.000Z I run=abc c=media op=media.extract " +
+                "path=\"/storage/emulated/0/My Anime Shows/ep 01.mkv\" bytes=42"
+
+        val redacted = redactor().redact(line)
+
+        assertEquals(
+            "2026-07-30T12:00:00.000Z I run=abc c=media op=media.extract " +
+                "path=\"<path-${fingerprintIn(redacted)}>\" bytes=42",
+            redacted,
+        )
+        assertEquals(fieldCount(line), fieldCount(redacted))
+    }
+
+    @Test
+    fun `a space next to the closing quote stays outside the token`() {
+        val redacted = redactor().redact("path=\"/storage/emulated/0/My Videos/ep.mkv \" n=1")
+
+        assertTrue(redacted, redacted.matches(Regex("path=\"<path-[0-9a-f]{6}> \" n=1")))
+    }
+
+    @Test
+    fun `a quoted leaf under an app root survives spaces and keeps its extension`() {
+        val redacted = redactor().redact("path=\"$filesDir/media/My Video 01.mkv\" n=1")
+
+        assertTrue(
+            redacted,
+            redacted.matches(Regex("path=\"<files>/media/<file-[0-9a-f]{6}>\\.mkv\" n=1")),
+        )
+    }
+
+    @Test
     fun `a path behind a file scheme still matches`() {
         // A slash is deliberately absent from the boundary lookbehind for exactly this shape.
         val redacted = redactor().redact("uri=file:///storage/emulated/0/Movies/ep.mkv")
@@ -126,7 +159,7 @@ class LogRedactorTest {
     @Test
     fun `a saf display name is redacted where it appears outside any path`() {
         val redacted =
-            redactor(safDisplayNames = listOf("Kimi no Na wa.mkv"))
+            redactor(safUserText = listOf("Kimi no Na wa.mkv"))
                 .redact("op=saf.picked name=\"Kimi no Na wa.mkv\"")
 
         assertTrue(redacted, redacted.matches(Regex("op=saf\\.picked name=\"<saf-[0-9a-f]{6}>\\.mkv\"")))
@@ -135,7 +168,7 @@ class LogRedactorTest {
     @Test
     fun `a japanese saf display name is claimed by rule 5 before rule 7 sees it`() {
         val redacted =
-            redactor(safDisplayNames = listOf("殺す動画.mkv"))
+            redactor(safUserText = listOf("殺す動画.mkv"))
                 .redact("name=殺す動画.mkv")
 
         assertTrue(redacted, redacted.startsWith("name=<saf-"))
@@ -197,10 +230,33 @@ class LogRedactorTest {
     }
 
     @Test
-    fun `a single japanese character is below the threshold and survives`() {
+    fun `a single japanese character is redacted too`() {
+        // Single-kanji vocabulary is exactly what this app mines, so there is no lower threshold.
         val redacted = redactor().redact("reading=猫 kana=あ")
 
-        assertEquals("reading=猫 kana=あ", redacted)
+        assertTrue(
+            redacted,
+            redacted.matches(Regex("reading=<jp-[0-9a-f]{6}:1> kana=<jp-[0-9a-f]{6}:1>")),
+        )
+    }
+
+    @Test
+    fun `an iteration mark joins the run it sits in rather than splitting it`() {
+        val redacted = redactor().redact("a=時々 b=人々")
+
+        assertTrue(redacted, redacted.matches(Regex("a=<jp-[0-9a-f]{6}:2> b=<jp-[0-9a-f]{6}:2>")))
+    }
+
+    @Test
+    fun `extension a compatibility and halfwidth japanese are covered`() {
+        val redacted = redactor().redact("a=㐂 b=豈 c=ｱﾆﾒ")
+
+        assertTrue(
+            redacted,
+            redacted.matches(
+                Regex("a=<jp-[0-9a-f]{6}:1> b=<jp-[0-9a-f]{6}:1> c=<jp-[0-9a-f]{6}:3>"),
+            ),
+        )
     }
 
     // Rule 8
@@ -290,7 +346,7 @@ class LogRedactorTest {
         val redactor =
             redactor(
                 settings = AppSettings(deckName = "Immersion", noteType = "JP Mining Note"),
-                safDisplayNames = listOf("episode.mkv"),
+                safUserText = listOf("episode.mkv"),
             )
 
         redactor.redact("a=/storage/emulated/0/one.mkv b=/storage/emulated/0/two.mkv 猫猫")
@@ -376,21 +432,28 @@ class LogRedactorTest {
             assertTrue(redacted[1], redacted[1].matches(Regex("b=<jp-[0-9a-f]{6}:3>")))
         }
 
+    /** Top-level `key=` fields, which redaction must neither add to nor remove from a record. */
+    private fun fieldCount(line: String): Int =
+        Regex("(?:^|\\s)[A-Za-z0-9_.]+=").findAll(line).count()
+
+    private fun fingerprintIn(line: String): String =
+        Regex("<path-([0-9a-f]{6})>").find(line)!!.groupValues[1]
+
     private fun redactor(
         settings: AppSettings = AppSettings(),
-        safDisplayNames: List<String> = emptyList(),
+        safUserText: List<String> = emptyList(),
         buildUser: String? = null,
         salt: ByteArray = FIXED_SALT,
         roots: Map<String, File> = defaultRoots(),
-    ) = LogRedactor(rules(settings, safDisplayNames, buildUser, salt, roots))
+    ) = LogRedactor(rules(settings, safUserText, buildUser, salt, roots))
 
     private fun rules(
         settings: AppSettings = AppSettings(),
-        safDisplayNames: List<String> = emptyList(),
+        safUserText: List<String> = emptyList(),
         buildUser: String? = null,
         salt: ByteArray = FIXED_SALT,
         roots: Map<String, File> = defaultRoots(),
-    ) = RedactionRulesFactory.forExport(roots, settings, safDisplayNames, buildUser, salt)
+    ) = RedactionRulesFactory.forExport(roots, settings, safUserText, buildUser, salt)
 
     private fun defaultRoots(): Map<String, File> =
         linkedMapOf(
