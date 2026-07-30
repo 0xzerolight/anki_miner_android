@@ -22,6 +22,11 @@ android_instrumentation_output_passed() {
         <<<"$normalized"; then
         return 1
     fi
+    if grep -Eiq \
+        'AssumptionViolatedException|assumption (failed|violation)|test (ignored|skipped)' \
+        <<<"$normalized"; then
+        return 1
+    fi
     mapfile -t terminal_codes < <(
         sed -n 's/^INSTRUMENTATION_CODE: //p' <<<"$normalized"
     )
@@ -40,6 +45,11 @@ android_instrumentation_output_passed_any() {
     [[ "$summary_count" == 1 ]] || return 1
     if grep -Eq \
         'FAILURES!!!|INSTRUMENTATION_FAILED|INSTRUMENTATION_ABORTED|shortMsg=|Process crashed' \
+        <<<"$normalized"; then
+        return 1
+    fi
+    if grep -Eiq \
+        'AssumptionViolatedException|assumption (failed|violation)|test (ignored|skipped)' \
         <<<"$normalized"; then
         return 1
     fi

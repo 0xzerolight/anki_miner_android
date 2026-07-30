@@ -10,6 +10,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 VALIDATOR = REPO_ROOT / "tools/release/validate_release_build.py"
 BUILD_SCRIPT = REPO_ROOT / "app/build.gradle.kts"
 GRADLE_HARNESS = REPO_ROOT / "scripts/tests/test-release-build-integrity-gradle.sh"
+HEALTH_SCRIPT = REPO_ROOT / "scripts/health.sh"
+CI_WORKFLOW = REPO_ROOT / ".github/workflows/pull-request.yml"
 FABRICATED_SHA = "0123456789abcdef0123456789abcdef01234567"
 
 sys.path.insert(0, str(REPO_ROOT / "tools/release"))
@@ -178,6 +180,26 @@ class ReleaseBuildIntegrityTests(unittest.TestCase):
         self.assertIn("invalid release SHA", harness)
         self.assertIn("missing release SHA", harness)
         self.assertIn("manifest drift", harness)
+
+    def test_ci_and_health_audit_unsigned_device_release_apks(self) -> None:
+        workflow = CI_WORKFLOW.read_text(encoding="utf-8")
+        health = HEALTH_SCRIPT.read_text(encoding="utf-8")
+
+        self.assertIn(':app:assembleDeviceRelease', workflow)
+        self.assertIn('-PankiMinerSourceCommit="$source_commit"', workflow)
+        self.assertIn('app/build/outputs/apk/device/release/app-device-release-unsigned.apk', workflow)
+        self.assertIn('--allow-abi arm64-v8a', workflow)
+        self.assertIn('check_runtime_artifact.py', workflow)
+        self.assertIn('--vendored-manifest app/wheels/manifest.json', workflow)
+
+        # health.sh deliberately does NOT build a release variant. Doing so runs
+        # validate_release_build.py, which fails closed unless the checkout is
+        # completely clean, so every local health run would require a committed
+        # tree. The shipped ARM64 artifact is audited by CI, where that holds.
+        self.assertNotIn(':app:assembleDeviceRelease', health)
+        self.assertIn('check_runtime_artifact.py', health)
+        self.assertIn('--vendored-manifest "$REPO_ROOT/app/wheels/manifest.json"', health)
+        self.assertIn('--allow-abi x86_64', health)
 
     def test_release_callers_pass_current_source_commit(self) -> None:
         tokenizer = (REPO_ROOT / "tools/tokenizer/build-s1b-android.sh").read_text(

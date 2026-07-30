@@ -140,6 +140,7 @@ jobs:
           python-version: "3.12.13"
 
       - name: Set up host Python 3.13
+        id: host_python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.13"
@@ -165,18 +166,35 @@ jobs:
       - name: Install exact Android build packages
         shell: bash
         run: |
-          sdkmanager --install \
+          available_packages="$RUNNER_TEMP/android-sdk-available.txt"
+          installed_packages="$RUNNER_TEMP/android-sdk-installed.txt"
+          sdkmanager --sdk_root="$ANDROID_HOME" --channel=0 --list >"$available_packages"
+          "${{ steps.host_python.outputs.python-path }}" scripts/preflight_android_packages.py \
+            --lock scripts/android-sdk-packages.lock \
+            --sdkmanager-list "$available_packages"
+          sdkmanager --sdk_root="$ANDROID_HOME" --channel=0 --install \
             "platform-tools" \
+            "emulator" \
             "platforms;android-36" \
             "build-tools;36.0.0" \
             "cmake;3.22.1" \
-            "ndk;28.2.13676358"
+            "ndk;28.2.13676358" \
+            "system-images;android-26;google_apis;x86_64" \
+            "system-images;android-36;google_apis;x86_64" \
+            "system-images;android-36;google_apis_ps16k;x86_64"
+          sdkmanager --sdk_root="$ANDROID_HOME" --channel=0 --list_installed >"$installed_packages"
+          "${{ steps.host_python.outputs.python-path }}" scripts/verify_android_toolchain.py \
+            --sdk-root "$ANDROID_HOME" \
+            --installed-list "$installed_packages" \
+            --avd-home "$ANDROID_HOME" \
+            --lock scripts/android-sdk-packages.lock
 
-      - name: Run JVM tests, lint, and assemble emulator APKs
+      - name: Run JVM tests, lint, and assemble audited APKs
         shell: bash
         env:
           ANKI_MINER_CHAQUOPY_BUILD_PYTHON: ${{ steps.build_python.outputs.python-path }}
         run: |
+          source_commit="$(git rev-parse HEAD)"
           ./gradlew \
             --no-daemon \
             --no-parallel \
@@ -187,15 +205,21 @@ jobs:
             :app:testEmulatorDebugUnitTest \
             :app:lintEmulatorDebug \
             :app:assembleEmulatorDebug \
-            :app:assembleEmulatorDebugAndroidTest
+            :app:assembleEmulatorDebugAndroidTest \
+            -PankiMinerSourceCommit="$source_commit" \
+            :app:assembleDeviceRelease
 
-      - name: Inspect emulator native artifact
+      - name: Audit packaged emulator and device artifacts
         shell: bash
         run: |
           toolchain_root="$RUNNER_TEMP/anki-miner-ci-toolchain"
           mkdir -p "$toolchain_root"
           ln -s "$ANDROID_HOME" "$toolchain_root/sdk"
           ln -s "$JAVA_HOME" "$toolchain_root/jdk-17"
+          "${{ steps.host_python.outputs.python-path }}" \
+            tools/wheels/vendored_wheel_manifest.py check \
+              --wheels-root app/wheels \
+              --manifest app/wheels/manifest.json
           ANKI_MINER_ANDROID_TOOLCHAIN_ROOT="$toolchain_root" \
             scripts/check-native-artifact.sh \
               --artifact app/build/outputs/apk/emulator/debug/app-emulator-debug.apk \
@@ -205,6 +229,25 @@ jobs:
               --require-entry lib/x86_64/libanki_miner_mecab.so \
               --require-entry lib/x86_64/libffmpeg.so \
               --require-entry lib/x86_64/libffprobe.so
+          "${{ steps.host_python.outputs.python-path }}" scripts/check_runtime_artifact.py \
+            --artifact app/build/outputs/apk/emulator/debug/app-emulator-debug.apk \
+            --vendored-manifest app/wheels/manifest.json \
+            --allow-abi x86_64
+          device_apk="app/build/outputs/apk/device/release/app-device-release-unsigned.apk"
+          [[ -f "$device_apk" ]] || { echo "device release APK was not produced" >&2; exit 1; }
+          ANKI_MINER_ANDROID_TOOLCHAIN_ROOT="$toolchain_root" \
+            scripts/check-native-artifact.sh \
+              --artifact "$device_apk" \
+              --allow-abi arm64-v8a \
+              --require-app-imy \
+              --reject-base-unidic \
+              --require-entry lib/arm64-v8a/libanki_miner_mecab.so \
+              --require-entry lib/arm64-v8a/libffmpeg.so \
+              --require-entry lib/arm64-v8a/libffprobe.so
+          "${{ steps.host_python.outputs.python-path }}" scripts/check_runtime_artifact.py \
+            --artifact "$device_apk" \
+            --vendored-manifest app/wheels/manifest.json \
+            --allow-abi arm64-v8a
 
       - name: Execute API 26 instrumentation
         uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0

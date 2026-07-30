@@ -66,6 +66,9 @@ class InstrumentationResultTest(unittest.TestCase):
             "OK (1 test)\nshortMsg=Process crashed\nINSTRUMENTATION_CODE: -1\n",
             "FAILURES!!!\nOK (1 test)\nINSTRUMENTATION_CODE: -1\n",
             "OK (2 tests)\nINSTRUMENTATION_CODE: -1\n",
+            "AssumptionViolatedException: missing selector\nOK (1 test)\nINSTRUMENTATION_CODE: -1\n",
+            "Test ignored because a required fixture is absent\nOK (1 test)\nINSTRUMENTATION_CODE: -1\n",
+            "Test skipped because a required fixture is absent\nOK (1 test)\nINSTRUMENTATION_CODE: -1\n",
         )
         for output in cases:
             with self.subTest(output=output):

@@ -453,8 +453,20 @@ class NativeArtifactTest(unittest.TestCase):
                 "lib/x86_64/libchaquopy.so": elf64(),
             }
         )
-        with self.assertRaisesRegex(ArtifactError, "missing required direct"):
+        with self.assertRaisesRegex(ArtifactError, "native library payload is not an ELF"):
             self.inspect_complete(payload, required=[expected])
+
+    def test_generic_shared_library_placeholder_cannot_be_hidden_by_valid_elf(
+        self,
+    ) -> None:
+        payload = archive(
+            {
+                "lib/x86_64/libpython3.12.so": b"not an ELF",
+                "lib/x86_64/libchaquopy.so": elf64(),
+            }
+        )
+        with self.assertRaisesRegex(ArtifactError, "native library payload is not an ELF"):
+            self.inspect_complete(payload, required=[])
 
     def test_required_shared_library_must_be_et_dyn(self) -> None:
         expected = "lib/x86_64/libanki_miner_mecab.so"
