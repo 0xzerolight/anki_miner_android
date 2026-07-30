@@ -15,6 +15,7 @@ from .config_map import (
     AndroidPaths,
     map_config_settings,
 )
+from .faults import record_fault
 from .jobs import JobRegistry, registry
 from .protocol import (
     BridgeProtocolError,
@@ -728,14 +729,27 @@ def _exception_terminal(
     error: BaseException,
     *,
     cancelled: bool,
+    log: logging.Logger | None = None,
 ) -> tuple[str, str]:
+    """Classify a raised failure into a terminal, logging it under a fault id.
+
+    ``log`` is the calling lane's logger so the record's logger name still says
+    which lane failed; the caller must not log the same exception again, or the
+    fault id and the traceback land in different records.
+    """
+
     outcome = "cancelled" if cancelled else "failed"
+    lane_log = log or logger
+    fault_id: str | None = None
     if cancelled:
         code = "cancelled"
         message = str(error) or "Mining was cancelled"
     elif isinstance(error, BridgeProtocolError):
         code = error.code
         message = str(error)
+        # A stable machine code and a deliberate message already identify this
+        # failure, so it needs a traceback but not a correlation key.
+        lane_log.error("Mining failed with protocol error %s", code, exc_info=error)
     else:
         # Only deliberate engine-domain messages cross the public boundary.
         # Raw RuntimeError/OSError text can contain filesystem/provider detail.
@@ -747,13 +761,17 @@ def _exception_terminal(
         else:
             code = "internal_error"
             message = "Internal mining failure"
+        fault_id = record_fault(lane_log, "Mining failed", error, code=code)
+    terminal_error: dict[str, object] = {"code": code, "message": message}
+    if fault_id is not None:
+        terminal_error["faultId"] = fault_id
     return outcome, encode_message(
         "mining.terminal",
         {
             "runId": run_id,
             "outcome": outcome,
             "result": None,
-            "error": {"code": code, "message": message},
+            "error": terminal_error,
         },
     )
 
@@ -815,8 +833,7 @@ def run_video(
         except AnkiOperationCancelled as error:
             outcome, terminal = _exception_terminal(handle.run_id, error, cancelled=True)
         except Exception as error:
-            logger.exception("Video mining failed")
-            outcome, terminal = _exception_terminal(handle.run_id, error, cancelled=False)
+            outcome, terminal = _exception_terminal(handle.run_id, error, cancelled=False, log=logger)
     finally:
         owner.finish(handle.run_id)
 

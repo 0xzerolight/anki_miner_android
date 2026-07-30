@@ -78,6 +78,8 @@ data class TokenizerIdentity(
 data class TerminalError(
     val code: String,
     val message: String,
+    /** Opaque key joining this terminal to the Python traceback in the exported log. */
+    val faultId: String? = null,
 )
 
 enum class MiningOutcome(val wireName: String) {
@@ -146,6 +148,8 @@ sealed interface BridgeMessage {
         val code: String,
         val message: String,
         val requestType: String?,
+        /** Opaque key joining this failure to the Python traceback in the exported log. */
+        val faultId: String? = null,
     ) : BridgeMessage
 
     data class VideoRun(val request: VideoMiningWireRequest) : BridgeMessage

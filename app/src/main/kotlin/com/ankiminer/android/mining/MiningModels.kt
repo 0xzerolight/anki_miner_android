@@ -228,6 +228,11 @@ data class CurationSelection(
 data class MiningFailure(
     val message: String,
     val retryable: Boolean,
+    /**
+     * Opaque key joining this failure to the Python traceback in the exported log. Defaulted so a
+     * Kotlin-side failure, which has no Python traceback to point at, constructs unchanged.
+     */
+    val faultId: String? = null,
 ) {
     init {
         require(message.isNotBlank())

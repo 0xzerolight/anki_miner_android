@@ -102,7 +102,7 @@ class TesterDiagnosticsTest {
                         runState =
                             MiningRunState.Failed(
                                 runId = "secret-video-run-id",
-                                failure = MiningFailure("Secret video failure detail", true),
+                                failure = MiningFailure("Secret video failure detail", true, "f0123abcd"),
                                 result = null,
                             ),
                         startPending = true,
@@ -148,6 +148,9 @@ class TesterDiagnosticsTest {
         assertTrue(diagnostics.report.contains("video.pending=start"))
         assertTrue(diagnostics.report.contains("reading.run=starting"))
         assertTrue(diagnostics.report.contains("reading.pending=cancel"))
+        // The fault id is opaque by construction, so reporting it leaks nothing while giving a
+        // pasted report the key that finds the traceback.
+        assertTrue(diagnostics.report.contains("mining.fault_id=f0123abcd"))
         assertTrue(diagnostics.report.length <= 4_096)
 
         listOf(

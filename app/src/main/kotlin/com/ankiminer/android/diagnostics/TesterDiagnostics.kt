@@ -149,6 +149,7 @@ internal object TesterDiagnosticsBuilder {
                 line("reading.run", miningRun(reading.runState))
                 line("reading.pending", readingPending(reading))
                 line("reading.command_failure", reading.commandError?.name?.lowercase(Locale.ROOT) ?: NONE)
+                line("mining.fault_id", miningFaultId(video.runState, reading.runState))
             }.take(MAX_REPORT_CHARS)
 
         return TesterDiagnostics(
@@ -210,6 +211,14 @@ internal object TesterDiagnosticsBuilder {
             is MiningRunState.Cancelled -> "cancelled"
             is MiningRunState.Failed -> "failed"
         }
+
+    /**
+     * The one value in this report that points into the exported log: it joins the failure a tester
+     * pasted to the Python traceback behind it. One mining run is admitted at a time, so at most one
+     * lane holds a fresh failure and the scan order is not a tie-break in practice.
+     */
+    private fun miningFaultId(vararg states: MiningRunState): String =
+        safeCode(states.firstNotNullOfOrNull { (it as? MiningRunState.Failed)?.failure?.faultId })
 
     private fun videoPending(state: VideoMiningUiState): String =
         pendingLabels(

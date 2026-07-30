@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Mapping
 
+from .faults import record_fault
 from .protocol import (
     BridgeProtocolError,
     decode_envelope,
@@ -163,10 +164,11 @@ def dispatch(raw_request: str, callbacks: object | None = None) -> str:
     """Dispatch one Kotlin request and always return a versioned envelope.
 
     ``BridgeProtocolError`` becomes a ``bridge.error`` carrying its stable
-    machine code. Any other ordinary Python exception is logged locally and
-    becomes a generic ``internal_error``; its type and text never cross into
-    Kotlin. Process-control exceptions derived directly from ``BaseException``
-    are logged, then re-raised rather than swallowed.
+    machine code. Any other ordinary Python exception is logged locally under an
+    opaque fault id and becomes a generic ``internal_error``; the id is the only
+    part of it that crosses, so its type and text still never reach Kotlin.
+    Process-control exceptions derived directly from ``BaseException`` are
+    logged, then re-raised rather than swallowed.
     """
 
     request_type: str | None = None
@@ -180,11 +182,17 @@ def dispatch(raw_request: str, callbacks: object | None = None) -> str:
         return _dispatch_validated(request_type, decoded.payload, raw_request, callbacks)
     except BridgeProtocolError as error:
         return encode_protocol_error(error, request_type=request_type)
-    except Exception:
-        logger.exception("Unexpected failure in Android bridge operation %r", request_type)
+    except Exception as error:
+        fault_id = record_fault(
+            logger,
+            "Unexpected failure in Android bridge operation",
+            error,
+            request=request_type,
+        )
         return encode_protocol_error(
             BridgeProtocolError("internal_error", "Internal bridge failure"),
             request_type=request_type,
+            fault_id=fault_id,
         )
     except BaseException:
         logger.exception("Process-control exception escaping Android bridge operation %r", request_type)

@@ -58,6 +58,9 @@ object BridgeJsonCodec {
     private val tokenizerResourceIdPattern = Regex("[A-Za-z0-9](?:[A-Za-z0-9._-]{0,126}[A-Za-z0-9_-])?")
     private val configResourceIdPattern = Regex("(?!.*\\.\\.)[A-Za-z0-9](?:[A-Za-z0-9._-]{0,126}[A-Za-z0-9_-])?")
     private val sha256Pattern = Regex("[0-9a-f]{64}")
+    // Mirrors android_bridge/faults.py: an id neither side can parse is a
+    // protocol error, not a correlation key worth showing anyone.
+    private val faultIdPattern = Regex("f[0-9a-f]{8}")
     private val errorCodePattern = Regex("[a-z][a-z0-9]*(?:_[a-z0-9]+)*")
 
     private val factory: JsonFactory =
@@ -239,8 +242,18 @@ object BridgeJsonCodec {
         }
 
     private fun readBridgeError(payload: Map<String, BridgeJsonValue>): BridgeMessage.Error {
-        val allowed = setOf("code", "message", "requestType")
-        if (payload.keys !in setOf(setOf("code", "message"), allowed)) {
+        val required = setOf("code", "message")
+        // Both optional fields are independently present or absent: only a
+        // decode that got far enough to know the request type carries one, and
+        // only a collapsed non-protocol exception carries the other.
+        val accepted =
+            setOf(
+                required,
+                required + "requestType",
+                required + "faultId",
+                required + "requestType" + "faultId",
+            )
+        if (payload.keys !in accepted) {
             fail(BridgeProtocolCategory.INVALID_PAYLOAD, "bridge.error has missing or unknown fields")
         }
         val code = text(payload.getValue("code"), "bridge error code")
@@ -249,7 +262,12 @@ object BridgeJsonCodec {
         if (requestType != null && !messageTypePattern.matches(requestType)) {
             fail(BridgeProtocolCategory.INVALID_VALUE, "bridge error request type is invalid")
         }
-        return BridgeMessage.Error(code, text(payload.getValue("message"), "bridge error message"), requestType)
+        return BridgeMessage.Error(
+            code = code,
+            message = text(payload.getValue("message"), "bridge error message"),
+            requestType = requestType,
+            faultId = payload["faultId"]?.let { opaque(it, faultIdPattern, "bridge error fault id") },
+        )
     }
 
     private fun readProgressStart(payload: Map<String, BridgeJsonValue>): BridgeMessage.ProgressStart {
@@ -400,10 +418,20 @@ object BridgeJsonCodec {
     }
 
     private fun readTerminalError(payload: Map<String, BridgeJsonValue>): TerminalError {
-        requireExact(payload, setOf("code", "message"), "terminal error")
+        // Deliberately not requireExact with faultId added: requireExact is set
+        // equality, so that would make the id mandatory and reject every
+        // cancelled and cleanup_failed terminal, which carry none.
+        val required = setOf("code", "message")
+        if (payload.keys !in setOf(required, required + "faultId")) {
+            fail(BridgeProtocolCategory.INVALID_PAYLOAD, "terminal error has missing or unknown fields")
+        }
         val code = text(payload.getValue("code"), "terminal error code")
         if (!errorCodePattern.matches(code)) fail(BridgeProtocolCategory.INVALID_VALUE, "terminal error code is invalid")
-        return TerminalError(code, text(payload.getValue("message"), "terminal error message"))
+        return TerminalError(
+            code = code,
+            message = text(payload.getValue("message"), "terminal error message"),
+            faultId = payload["faultId"]?.let { opaque(it, faultIdPattern, "terminal error fault id") },
+        )
     }
 
     private fun validateTerminal(

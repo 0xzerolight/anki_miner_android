@@ -577,7 +577,10 @@ internal class BridgeMiningRepository(
         presenterNotices: List<String>,
     ): MiningRunState {
         val result = terminal?.result.withPresenterNotices(presenterNotices)
-        if (fault != null) return fault.toFailed(runId, result)
+        // A Kotlin fault outranks the Python terminal's message, but not its fault id: this pairing
+        // is a Kotlin protocol failure and a Python traceback describing the same run, which is
+        // exactly the case a maintainer needs the log key for.
+        if (fault != null) return fault.toFailed(runId, result, terminal?.error?.faultId)
         if (terminal == null && cancelled) return MiningRunState.Cancelled(runId, null)
         if (terminal == null) {
             return ProtocolFault(strings.resolve(R.string.mining_failure_missing_result)).toFailed(runId, null)
@@ -595,6 +598,7 @@ internal class BridgeMiningRepository(
                                     ?: presenterNotices.firstOrNull()
                                     ?: strings.resolve(R.string.mining_failure_generic),
                             retryable = terminal.error?.code in RETRYABLE_TERMINAL_ERRORS,
+                            faultId = terminal.error?.faultId,
                         ),
                     result = result,
                 )
@@ -1251,10 +1255,11 @@ internal class BridgeMiningRepository(
     private fun ProtocolFault.toFailed(
         runId: String?,
         result: ProcessingResult?,
+        faultId: String? = null,
     ): MiningRunState.Failed =
         MiningRunState.Failed(
             runId = runId,
-            failure = MiningFailure(message, retryable),
+            failure = MiningFailure(message, retryable, faultId),
             result = result,
         )
 

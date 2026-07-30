@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -9,6 +10,7 @@ from pathlib import Path
 import android_bridge
 import android_bridge.boundary as boundary
 import pytest
+from android_bridge.faults import FAULT_ID_PATTERN
 from android_bridge.protocol import decode_envelope, encode_message
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -38,21 +40,32 @@ def test_dispatch_serializes_malformed_and_protocol_errors() -> None:
 
 def test_dispatch_serializes_internal_errors_without_leaking_exception(
     monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     def explode(*_: object) -> str:
         raise RuntimeError("secret filesystem detail")
 
     monkeypatch.setattr(boundary, "_dispatch_validated", explode)
-    raw = boundary.dispatch(encode_message("job.cancel", {"runId": "run_" + "0" * 32}))
+    with caplog.at_level("ERROR", logger=boundary.logger.name):
+        raw = boundary.dispatch(encode_message("job.cancel", {"runId": "run_" + "0" * 32}))
     decoded = decode_envelope(raw, expected_type="bridge.error")
 
+    fault_id = decoded.payload.pop("faultId")
     assert decoded.payload == {
         "code": "internal_error",
         "message": "Internal bridge failure",
         "requestType": "job.cancel",
     }
+    assert re.fullmatch(FAULT_ID_PATTERN, fault_id)
     assert "secret" not in raw
     assert "RuntimeError" not in raw
+
+    # The id is only worth anything if the traceback it labels is in the same record.
+    faults = [record for record in caplog.records if fault_id in record.getMessage()]
+    assert len(faults) == 1
+    assert faults[0].exc_info is not None
+    assert faults[0].exc_info[0] is RuntimeError
+    assert "secret filesystem detail" in caplog.text
 
 
 def test_dispatch_does_not_swallow_process_control_exceptions(

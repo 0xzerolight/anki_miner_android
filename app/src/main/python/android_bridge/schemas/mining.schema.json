@@ -135,6 +135,11 @@
         "message": {
           "type": "string",
           "$comment": "result_error_text preserves a possibly empty desktop error string verbatim; Kotlin supplies any display fallback."
+        },
+        "faultId": {
+          "type": "string",
+          "pattern": "^f[0-9a-f]{8}$",
+          "$comment": "Optional opaque key joining this terminal to the traceback logged on device. Absent on cancelled and cleanup_failed terminals, which are not faults."
         }
       }
     },

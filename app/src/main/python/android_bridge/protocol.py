@@ -394,10 +394,21 @@ def decode_message(raw: str, *, expected_type: str | None = None) -> dict[str, A
     return decode_envelope(raw, expected_type=expected_type).payload
 
 
-def encode_protocol_error(error: BridgeProtocolError, *, request_type: str | None = None) -> str:
-    """Encode a protocol failure without exposing Python exception details."""
+def encode_protocol_error(
+    error: BridgeProtocolError,
+    *,
+    request_type: str | None = None,
+    fault_id: str | None = None,
+) -> str:
+    """Encode a protocol failure without exposing Python exception details.
+
+    ``fault_id`` is emitted only when the caller logged a traceback under it, so
+    a payload without one is still a complete, valid ``bridge.error``.
+    """
 
     payload: dict[str, Any] = {"code": error.code, "message": str(error)}
     if request_type is not None:
         payload["requestType"] = request_type
+    if fault_id is not None:
+        payload["faultId"] = fault_id
     return encode_message("bridge.error", payload)

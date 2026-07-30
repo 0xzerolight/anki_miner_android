@@ -665,6 +665,42 @@ class BridgeReadingMiningRepositoryTest {
         awaitState(harness.repository, MiningRunState::isTerminal)
     }
 
+    @Test
+    fun `python fault id reaches the failure state without changing its message`() {
+        val harness = harness(raisedFailure = true)
+
+        runBlocking { harness.repository.startReading(INPUT) }
+        val curating =
+            awaitState(harness.repository) { it is MiningRunState.Curating } as MiningRunState.Curating
+        runBlocking {
+            harness.repository.confirmCuration(curating.request.runId, curating.request.requestId, emptyList())
+        }
+        assertTrue(harness.bridge.curationSubmitted.await(2, TimeUnit.SECONDS))
+        harness.bridge.allowTerminal.countDown()
+
+        val failed = awaitState(harness.repository, MiningRunState::isTerminal) as MiningRunState.Failed
+        assertEquals("Mining failed", failed.failure.message)
+        assertEquals(TERMINAL_FAULT_ID, failed.failure.faultId)
+    }
+
+    @Test
+    fun `a Kotlin fault wins the message but keeps the Python fault id`() {
+        val harness = harness(raisedFailure = true, fallbackState = ReleaseState.DEFERRED)
+
+        runBlocking { harness.repository.startReading(INPUT) }
+        val curating =
+            awaitState(harness.repository) { it is MiningRunState.Curating } as MiningRunState.Curating
+        runBlocking {
+            harness.repository.confirmCuration(curating.request.runId, curating.request.requestId, emptyList())
+        }
+        assertTrue(harness.bridge.curationSubmitted.await(2, TimeUnit.SECONDS))
+        harness.bridge.allowTerminal.countDown()
+
+        val failed = awaitState(harness.repository, MiningRunState::isTerminal) as MiningRunState.Failed
+        assertEquals("Anki cleanup remained incomplete", failed.failure.message)
+        assertEquals(TERMINAL_FAULT_ID, failed.failure.faultId)
+    }
+
     private fun zipBytes(vararg members: Pair<String, ByteArray>): ByteArray {
         val bytes = java.io.ByteArrayOutputStream()
         java.util.zip.ZipOutputStream(bytes).use { zip ->
@@ -689,6 +725,8 @@ class BridgeReadingMiningRepositoryTest {
         presenterWarning: String? = null,
         terminalErrorCount: Int = 0,
         readingRunFailure: RuntimeException? = null,
+        raisedFailure: Boolean = false,
+        fallbackState: ReleaseState = ReleaseState.ABSENT,
         cache: File? = null,
     ): Harness {
         val runExecutor = Executors.newSingleThreadExecutor().also(executors::add)
@@ -702,8 +740,9 @@ class BridgeReadingMiningRepositoryTest {
                 presenterWarning = presenterWarning,
                 terminalErrorCount = terminalErrorCount,
                 readingRunFailure = readingRunFailure,
+                raisedFailure = raisedFailure,
             )
-        val anki = FakeAnkiCallbacks()
+        val anki = FakeAnkiCallbacks(fallbackState)
         val foreground = FakeForegroundStarter()
         val openCount = AtomicInteger()
         val repository =
@@ -804,7 +843,9 @@ class BridgeReadingMiningRepositoryTest {
         val stageRoot: File,
     )
 
-    private class FakeAnkiCallbacks : CoordinatorAnkiCallbacks {
+    private class FakeAnkiCallbacks(
+        private val fallbackState: ReleaseState = ReleaseState.ABSENT,
+    ) : CoordinatorAnkiCallbacks {
         var cancellation: AnkiCancellation? = null
         val fallbackRuns = Collections.synchronizedList(mutableListOf<String>())
 
@@ -828,7 +869,7 @@ class BridgeReadingMiningRepositoryTest {
 
         override fun releaseRunStateFallback(runId: String): ReleaseState {
             fallbackRuns += runId
-            return ReleaseState.ABSENT
+            return fallbackState
         }
     }
 
@@ -896,6 +937,7 @@ class BridgeReadingMiningRepositoryTest {
         private val presenterWarning: String? = null,
         private val terminalErrorCount: Int = 0,
         private val readingRunFailure: RuntimeException? = null,
+        private val raisedFailure: Boolean = false,
     ) : PyBridge {
         val readingRequest = AtomicReference<ReadingMiningWireRequest?>()
         val curationSubmitted = CountDownLatch(1)
@@ -982,7 +1024,7 @@ class BridgeReadingMiningRepositoryTest {
                 return CANCELLED_TERMINAL
             }
             val terminal = terminalPayload()
-            if (terminalErrorCount == 0) {
+            if (terminalErrorCount == 0 && !raisedFailure) {
                 callbacks.onComplete(terminal)
             } else {
                 callbacks.onError(terminal)
@@ -991,6 +1033,7 @@ class BridgeReadingMiningRepositoryTest {
         }
 
         private fun terminalPayload(): String {
+            if (raisedFailure) return RAISED_FAILURE_TERMINAL
             if (terminalErrorCount == 0) return SUCCESS_TERMINAL
             val errors =
                 (0 until terminalErrorCount).joinToString(prefix = "[", postfix = "]") {
@@ -1067,5 +1110,8 @@ class BridgeReadingMiningRepositoryTest {
             """{"schemaVersion":1,"type":"mining.terminal","payload":{"runId":"$RUN_ID","outcome":"success","result":{"totalWordsFound":1,"newWordsFound":0,"cardsCreated":0,"errors":[],"elapsedTime":1.0,"comprehensionPercentage":100.0,"cardIds":[],"videoFile":"","subtitleFile":"Novel.txt","minedForms":[],"ankiWriteState":"no_note_write","failureIsTransient":false},"error":null}}"""
         val CANCELLED_TERMINAL =
             """{"schemaVersion":1,"type":"mining.terminal","payload":{"runId":"$RUN_ID","outcome":"cancelled","result":null,"error":{"code":"cancelled","message":"Mining was cancelled"}}}"""
+        const val TERMINAL_FAULT_ID = "f0123abcd"
+        val RAISED_FAILURE_TERMINAL =
+            """{"schemaVersion":1,"type":"mining.terminal","payload":{"runId":"$RUN_ID","outcome":"failed","result":null,"error":{"code":"engine_error","message":"Mining failed","faultId":"$TERMINAL_FAULT_ID"}}}"""
     }
 }

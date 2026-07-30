@@ -363,8 +363,7 @@ def run_reading(
         except AnkiOperationCancelled as error:
             outcome, terminal = _exception_terminal(handle.run_id, error, cancelled=True)
         except Exception as error:
-            logger.exception("Reading mining failed")
-            outcome, terminal = _exception_terminal(handle.run_id, error, cancelled=False)
+            outcome, terminal = _exception_terminal(handle.run_id, error, cancelled=False, log=logger)
     finally:
         owner.finish(handle.run_id)
 

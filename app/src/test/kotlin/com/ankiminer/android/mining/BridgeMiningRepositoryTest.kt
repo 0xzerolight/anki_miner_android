@@ -576,6 +576,40 @@ class BridgeMiningRepositoryTest {
         assertFalse(message, "episode.mkv" in message)
     }
 
+    @Test
+    fun `python fault id reaches the failure state without changing its message`() {
+        val harness = harness(raisedFailure = true)
+
+        runBlocking { harness.repository.startVideo(INPUT) }
+        val curating = awaitState(harness.repository) { it is MiningRunState.Curating } as MiningRunState.Curating
+        runBlocking {
+            harness.repository.confirmCuration(curating.request.runId, curating.request.requestId, emptyList())
+        }
+        assertTrue(harness.bridge.curationSubmitted.await(2, TimeUnit.SECONDS))
+        harness.bridge.allowTerminal.countDown()
+
+        val failed = awaitState(harness.repository, MiningRunState::isTerminal) as MiningRunState.Failed
+        assertEquals("Mining failed", failed.failure.message)
+        assertEquals(TERMINAL_FAULT_ID, failed.failure.faultId)
+    }
+
+    @Test
+    fun `a Kotlin fault wins the message but keeps the Python fault id`() {
+        val harness = harness(raisedFailure = true, fallbackState = ReleaseState.DEFERRED)
+
+        runBlocking { harness.repository.startVideo(INPUT) }
+        val curating = awaitState(harness.repository) { it is MiningRunState.Curating } as MiningRunState.Curating
+        runBlocking {
+            harness.repository.confirmCuration(curating.request.runId, curating.request.requestId, emptyList())
+        }
+        assertTrue(harness.bridge.curationSubmitted.await(2, TimeUnit.SECONDS))
+        harness.bridge.allowTerminal.countDown()
+
+        val failed = awaitState(harness.repository, MiningRunState::isTerminal) as MiningRunState.Failed
+        assertEquals("Anki cleanup remained incomplete", failed.failure.message)
+        assertEquals(TERMINAL_FAULT_ID, failed.failure.faultId)
+    }
+
     private fun harness(
         foregroundFailure: Boolean = false,
         mismatchedTerminal: Boolean = false,
@@ -586,6 +620,7 @@ class BridgeMiningRepositoryTest {
         presenterWarning: String? = null,
         terminalErrorCount: Int = 0,
         videoRunFailure: RuntimeException? = null,
+        raisedFailure: Boolean = false,
         tokenizerResourceProvider: InstalledTokenizerResourceProvider =
             InstalledTokenizerResourceProvider {
                 InstalledTokenizerResource(
@@ -608,6 +643,7 @@ class BridgeMiningRepositoryTest {
                 presenterWarning = presenterWarning,
                 terminalErrorCount = terminalErrorCount,
                 videoRunFailure = videoRunFailure,
+                raisedFailure = raisedFailure,
             )
         val anki = FakeAnkiCallbacks(fallbackState)
         val inputOwner = FakeInputOwner()
@@ -746,6 +782,7 @@ class BridgeMiningRepositoryTest {
         private val presenterWarning: String? = null,
         private val terminalErrorCount: Int = 0,
         private val videoRunFailure: RuntimeException? = null,
+        private val raisedFailure: Boolean = false,
     ) : PyBridge {
         val videoRuns = AtomicInteger()
         val videoRequest = AtomicReference<VideoMiningWireRequest?>()
@@ -837,7 +874,7 @@ class BridgeMiningRepositoryTest {
                 } else {
                     terminal
                 }
-            if (terminalErrorCount > 0) {
+            if (terminalErrorCount > 0 || raisedFailure) {
                 callbacks.onError(callbackTerminal)
             } else {
                 callbacks.onComplete(callbackTerminal)
@@ -846,6 +883,7 @@ class BridgeMiningRepositoryTest {
         }
 
         private fun terminalPayload(): String {
+            if (raisedFailure) return RAISED_FAILURE_TERMINAL
             if (terminalErrorCount == 0) return SUCCESS_TERMINAL
             val errors =
                 (0 until terminalErrorCount).joinToString(prefix = "[", postfix = "]") {
@@ -908,5 +946,8 @@ class BridgeMiningRepositoryTest {
             """{"schemaVersion":1,"type":"mining.terminal","payload":{"runId":"$RUN_ID","outcome":"success","result":{"totalWordsFound":1,"newWordsFound":0,"cardsCreated":0,"errors":[],"elapsedTime":1.0,"comprehensionPercentage":100.0,"cardIds":[],"videoFile":"episode.mkv","subtitleFile":"episode.srt","minedForms":[],"ankiWriteState":"no_note_write","failureIsTransient":false},"error":null}}"""
         val CANCELLED_TERMINAL =
             """{"schemaVersion":1,"type":"mining.terminal","payload":{"runId":"$RUN_ID","outcome":"cancelled","result":null,"error":{"code":"cancelled","message":"Mining was cancelled"}}}"""
+        const val TERMINAL_FAULT_ID = "f0123abcd"
+        val RAISED_FAILURE_TERMINAL =
+            """{"schemaVersion":1,"type":"mining.terminal","payload":{"runId":"$RUN_ID","outcome":"failed","result":null,"error":{"code":"engine_error","message":"Mining failed","faultId":"$TERMINAL_FAULT_ID"}}}"""
     }
 }

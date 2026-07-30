@@ -228,6 +228,30 @@ def test_mining_protocol_valid_and_rejected_corpora_freeze_complete_messages(
         assert list(validator.iter_errors(case["message"])), case["name"]
 
 
+def test_terminal_error_fault_id_is_optional_and_opaque(
+    schemas: dict[str, dict[str, Any]],
+) -> None:
+    validator = Draft202012Validator(schemas["mining"], registry=_cross_schema_registry(schemas))
+
+    def terminal(error: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "schemaVersion": 1,
+            "type": "mining.terminal",
+            "payload": {
+                "runId": "run_" + "a" * 32,
+                "outcome": "failed",
+                "result": None,
+                "error": error,
+            },
+        }
+
+    base = {"code": "internal_error", "message": "Internal mining failure"}
+    assert list(validator.iter_errors(terminal(base))) == []
+    assert list(validator.iter_errors(terminal({**base, "faultId": "f0123abcd"}))) == []
+    for malformed in ("f7a3c91", "f0123abcde", "0123abcd", "fZZZZZZZZ", "F7A3C91E", ""):
+        assert list(validator.iter_errors(terminal({**base, "faultId": malformed}))), malformed
+
+
 def test_tokenizer_protocol_corpus_freezes_complete_messages(
     schemas: dict[str, dict[str, Any]],
 ) -> None:
