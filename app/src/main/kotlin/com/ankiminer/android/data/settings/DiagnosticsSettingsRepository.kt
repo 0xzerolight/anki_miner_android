@@ -9,6 +9,7 @@ import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import java.io.IOException
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.emitAll
@@ -37,10 +38,22 @@ internal class DataStoreDiagnosticsSettingsRepository internal constructor(
     override val verboseLogging: Flow<Boolean> =
         flow {
             // The expiry write runs before this flow starts collecting store.data, never from
-            // inside that collector, so it cannot contend with DataStore's own writer. An
-            // expiry that elapses mid-collection is still reported as false by decode() below;
-            // it is only the stored flag that waits for the next collection to be cleared.
-            runCatching { clearExpiredFlag() }
+            // inside that collector, so it cannot contend with DataStore's own writer.
+            //
+            // The window is therefore evaluated at collection start and at every later store
+            // write, not continuously: decode() runs per store.data emission, and an idle store
+            // emits once. The process-lifetime collector in AnkiMinerApplication consequently
+            // does not lower the level the instant the seventh day passes -- it lowers at the
+            // next write, the next collection, or the next process start. A timer that fires
+            // once a week per process is not worth the machinery to close that gap.
+            try {
+                clearExpiredFlag()
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Exception) {
+                // A store that cannot be written is still readable often enough to report the
+                // flag; failing the whole flow here would take the settings screen with it.
+            }
             emitAll(
                 store.data
                     .catch { failure -> if (failure is IOException) emit(emptyPreferences()) else throw failure }

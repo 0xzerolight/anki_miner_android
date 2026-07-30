@@ -39,7 +39,10 @@ class DiagnosticsSettingsRepositoryTest {
             val dataStore = createDataStore(backgroundScope, "restart")
             DataStoreDiagnosticsSettingsRepository(dataStore).setVerboseLogging(true)
 
-            // A second repository over the same file is what a relaunch actually sees.
+            // A second repository, not a second DataStore: DataStore forbids two instances over
+            // one file per process, so this reaches its in-memory cache rather than re-reading
+            // the file. A true relaunch cannot be exercised in a JVM unit test; what this does
+            // prove is that the value lives in the store rather than in repository state.
             assertTrue(DataStoreDiagnosticsSettingsRepository(dataStore).verboseLogging.first())
 
             DataStoreDiagnosticsSettingsRepository(dataStore).setVerboseLogging(false)
@@ -70,6 +73,23 @@ class DiagnosticsSettingsRepositoryTest {
             repository.setVerboseLogging(true)
 
             clock = ENABLED_AT + TimeUnit.DAYS.toMillis(7) - 1
+
+            assertTrue(repository.verboseLogging.first())
+            assertEquals(true, dataStore.data.first()[VERBOSE_LOGGING])
+        }
+
+    @Test
+    fun `a stamp exactly one window old is still inside the window`() =
+        runTest {
+            // Pins the inclusive bound: `!in 0..W` and `!in 0 until W` differ only here, and a
+            // window that expires a millisecond early is indistinguishable from a bug in the
+            // clock for anyone reading the code later.
+            val dataStore = createDataStore(backgroundScope, "window-boundary")
+            var clock = ENABLED_AT
+            val repository = DataStoreDiagnosticsSettingsRepository(dataStore) { clock }
+            repository.setVerboseLogging(true)
+
+            clock = ENABLED_AT + TimeUnit.DAYS.toMillis(7)
 
             assertTrue(repository.verboseLogging.first())
             assertEquals(true, dataStore.data.first()[VERBOSE_LOGGING])

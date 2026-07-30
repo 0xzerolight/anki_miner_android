@@ -1,6 +1,9 @@
 package com.ankiminer.android.engine
 
+import com.ankiminer.android.diagnostics.log.AppLog
 import com.ankiminer.android.diagnostics.log.LogLevel
+import com.ankiminer.android.diagnostics.log.NoOpSink
+import com.ankiminer.android.diagnostics.log.RecordingLogSink
 import java.io.IOException
 import java.util.concurrent.Executor
 import java.util.concurrent.atomic.AtomicBoolean
@@ -51,25 +54,56 @@ class PythonRuntimeBootstrapTest {
             )
             "/files"
         }
-        queued.get().run()
+        try {
+            queued.get().run()
 
-        assertEquals(PythonRuntimeReadiness.Ready("/files"), gate.readiness.value)
-        assertEquals("/files", gate.await { })
+            assertEquals(PythonRuntimeReadiness.Ready("/files"), gate.readiness.value)
+            assertEquals("/files", gate.await { })
+        } finally {
+            // The second hop raised the process-wide Kotlin level before its dispatch failed.
+            AppLog.setMinLevel(LogLevel.INFO)
+        }
     }
 
     @Test
     fun `a log level the runtime did not apply is reported without throwing`() {
         val requests = mutableListOf<String>()
+        val recorded = RecordingLogSink()
+        AppLog.install(NoOpSink)
+        AppLog.install(recorded)
+        try {
+            // Confirming a different level than the one requested is a failure, not a success: a
+            // tester whose DEBUG request quietly landed as INFO collects a bundle with nothing
+            // extra in it and no sign of why. Asserting only the encoded request would pass with
+            // the confirmation check deleted, so the WARN record is the assertion that matters.
+            applyPythonLogLevelSafely(LogLevel.DEBUG) { raw ->
+                requests += raw
+                """{"schemaVersion":1,"type":"diagnostics.loglevel.applied","payload":{"level":"info"}}"""
+            }
 
-        // Confirming a different level than the one requested is a failure, not a success: a
-        // tester whose DEBUG request quietly landed as INFO collects a bundle with nothing
-        // extra in it and no sign of why.
-        applyPythonLogLevelSafely(LogLevel.DEBUG) { raw ->
-            requests += raw
-            """{"schemaVersion":1,"type":"diagnostics.loglevel.applied","payload":{"level":"info"}}"""
+            assertEquals(listOf(BridgeJsonCodec.encodeDiagnosticsLogLevelSet("debug")), requests)
+            val record = recorded.records.single()
+            assertTrue(record, record.contains(" W "))
+            assertTrue(record, record.contains("c=diag op=python.loglevel level=DEBUG"))
+        } finally {
+            AppLog.install(NoOpSink)
         }
+    }
 
-        assertEquals(listOf(BridgeJsonCodec.encodeDiagnosticsLogLevelSet("debug")), requests)
+    @Test
+    fun `a confirmed log level is applied without a warning`() {
+        val recorded = RecordingLogSink()
+        AppLog.install(NoOpSink)
+        AppLog.install(recorded)
+        try {
+            applyPythonLogLevelSafely(LogLevel.DEBUG) {
+                """{"schemaVersion":1,"type":"diagnostics.loglevel.applied","payload":{"level":"debug"}}"""
+            }
+
+            assertEquals(emptyList<String>(), recorded.records)
+        } finally {
+            AppLog.install(NoOpSink)
+        }
     }
 
     @Test

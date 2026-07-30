@@ -4,11 +4,19 @@ import com.ankiminer.android.diagnostics.log.AppLog
 import com.ankiminer.android.diagnostics.log.LogComponent
 import com.ankiminer.android.diagnostics.log.LogLevel
 
-/** Wire name of the Python level that pairs with a Kotlin [LogLevel]. */
+/**
+ * Wire name of the Python level that pairs with a Kotlin [LogLevel].
+ *
+ * Exhaustive rather than `else -> "info"`: the toggle only ever produces INFO or DEBUG, so a caller
+ * arriving with WARN or ERROR is a mistake that should fail to compile, not silently raise Python
+ * logging to INFO.
+ */
 internal fun pythonLogLevelName(level: LogLevel): String =
     when (level) {
         LogLevel.DEBUG -> "debug"
-        else -> "info"
+        LogLevel.INFO -> "info"
+        LogLevel.WARN, LogLevel.ERROR ->
+            throw IllegalArgumentException("The Python log level toggle accepts INFO or DEBUG only")
     }
 
 /**
@@ -39,7 +47,9 @@ internal fun applyPythonLogLevelSafely(
 ) {
     runCatching { applyPythonLogLevel(level, dispatch) }
         .onFailure { failure ->
-            AppLog.w(LogComponent.DIAG, "python.loglevel", failure, "level" to pythonLogLevelName(level))
+            // level.name, not the wire name: rendering the wire name is one of the things that
+            // can throw here, and a failure handler must not fail the same way as its subject.
+            AppLog.w(LogComponent.DIAG, "python.loglevel", failure, "level" to level.name)
         }
 }
 

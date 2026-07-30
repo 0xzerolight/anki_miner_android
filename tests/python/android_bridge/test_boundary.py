@@ -199,10 +199,13 @@ def test_dispatch_log_level_set_raises_only_the_first_party_trees(
         {"level": ""},
         {"level": True},
         {"level": 10},
-        {},
         {"level": "debug", "extra": 1},
     ],
 )
+# The empty payload belongs to the fall-through test below, which stubs
+# jobs.shutdown: it is the one payload that reaches the real shutdown() if the
+# dispatch branch is ever removed, so asserting it here unguarded would take the
+# job registry down mid-session on the very regression it is meant to catch.
 def test_dispatch_rejects_a_log_level_outside_the_wire_vocabulary(
     initialized_bridge_home: Path,
     payload: dict[str, object],
@@ -215,15 +218,23 @@ def test_dispatch_rejects_a_log_level_outside_the_wire_vocabulary(
     assert logging.getLogger("anki_miner").level == logging.INFO
 
 
+@pytest.mark.parametrize("payload", [{"level": "debug"}, {}])
 def test_dispatch_log_level_set_does_not_fall_through_to_registry_shutdown(
     initialized_bridge_home: Path,
     monkeypatch: pytest.MonkeyPatch,
+    payload: dict[str, object],
 ) -> None:
     """The tail of ``_dispatch_validated`` is an unguarded fall-through to ``shutdown()``.
 
     Declaring a request type supported without routing it therefore does not
     fail -- it tears the job registry down, which looks like a mining run that
     simply stopped.
+
+    The empty payload is the case that matters, and it is the reason this stub
+    exists at all: with the branch deleted, ``{"level": "debug"}`` is rejected
+    by the tail's own ``_exact_payload(payload, set())`` *before* the shutdown
+    import, so a stub guarding only that payload can never fire. ``{}`` passes
+    that check and reaches the real ``shutdown()``.
     """
 
     import logging
@@ -235,13 +246,18 @@ def test_dispatch_log_level_set_does_not_fall_through_to_registry_shutdown(
 
     monkeypatch.setattr(jobs, "shutdown", shutdown)
     try:
-        raw = boundary.dispatch(encode_message("diagnostics.loglevel.set", {"level": "debug"}))
+        raw = boundary.dispatch(encode_message("diagnostics.loglevel.set", payload))
     finally:
         from android_bridge import log_context
 
         log_context.set_first_party_log_level(logging.INFO)
 
-    assert decode_envelope(raw).message_type == "diagnostics.loglevel.applied"
+    decoded = decode_envelope(raw)
+    if payload:
+        assert decoded.message_type == "diagnostics.loglevel.applied"
+    else:
+        assert decoded.message_type == "bridge.error"
+        assert decoded.payload["code"] == "invalid_log_level_request"
 
 
 def test_dispatch_log_level_set_requires_bootstrap() -> None:

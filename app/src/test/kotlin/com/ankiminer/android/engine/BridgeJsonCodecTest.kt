@@ -326,6 +326,33 @@ class BridgeJsonCodecTest {
     }
 
     @Test
+    fun `diagnostics log level messages round-trip and reject levels outside the vocabulary`() {
+        val request = BridgeJsonCodec.decode(BridgeJsonCodec.encodeDiagnosticsLogLevelSet("debug"))
+        val applied =
+            BridgeJsonCodec.decode(
+                """{"schemaVersion":1,"type":"diagnostics.loglevel.applied","payload":{"level":"info"}}""",
+            )
+
+        assertEquals(BridgeMessage.DiagnosticsLogLevelSet("debug"), request)
+        assertEquals(BridgeMessage.DiagnosticsLogLevelApplied("info"), applied)
+
+        // Only reachable through decode: encode() self-validates its own output, so the encoder
+        // can never present the codec with a level it did not write.
+        val rejected =
+            listOf(
+                """{"schemaVersion":1,"type":"diagnostics.loglevel.set","payload":{"level":"trace"}}""",
+                """{"schemaVersion":1,"type":"diagnostics.loglevel.set","payload":{"level":"DEBUG"}}""",
+                """{"schemaVersion":1,"type":"diagnostics.loglevel.applied","payload":{"level":"warning"}}""",
+                """{"schemaVersion":1,"type":"diagnostics.loglevel.set","payload":{"level":1}}""",
+                """{"schemaVersion":1,"type":"diagnostics.loglevel.set","payload":{}}""",
+                """{"schemaVersion":1,"type":"diagnostics.loglevel.set","payload":{"level":"info","extra":1}}""",
+            )
+        rejected.forEach { raw ->
+            assertThrows(raw, BridgeProtocolException::class.java) { BridgeJsonCodec.decode(raw) }
+        }
+    }
+
+    @Test
     fun `nesting and UTF-8 envelope ceilings are enforced before routing`() {
         val deep =
             """{"schemaVersion":1,"type":"bridge.error","payload":{"code":"x","message":${"[".repeat(130)}null${"]".repeat(130)}}}"""

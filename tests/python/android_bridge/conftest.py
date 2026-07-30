@@ -22,8 +22,13 @@ def initialized_bridge_home(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 
 @pytest.fixture(autouse=True)
-def _reset_active_run_id():
-    """Reset ``log_context``'s process-wide global around every test in this directory.
+def _reset_log_context():
+    """Reset ``log_context``'s process-wide state around every test in this directory.
+
+    Two globals now: the active run id, and the first-party logger levels that
+    ``diagnostics.loglevel.set`` moves. Both leak the same way -- a test that
+    raises the ``anki_miner`` tree to DEBUG and does not put it back makes the
+    next test's assertion about that level depend on ordering.
 
     A fixture defined inside a single test module only autouses within that
     module; ``_ACTIVE_RUN_ID`` is a module-global read across the whole
@@ -35,8 +40,12 @@ def _reset_active_run_id():
     stop leakage between individual tests, which is the actual bug.
     """
 
+    import logging
+
     from android_bridge import log_context
 
     log_context.set_active_run(None)
+    log_context.set_first_party_log_level(logging.INFO)
     yield
     log_context.set_active_run(None)
+    log_context.set_first_party_log_level(logging.INFO)
