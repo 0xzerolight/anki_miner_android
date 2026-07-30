@@ -2,8 +2,8 @@
 set -euo pipefail
 
 # Host/build health gate: toolchain presence, host Python suites, JVM tests,
-# lint, APK assembly, and native inspection. This script builds the AndroidTest
-# APK but does not boot an emulator or execute instrumentation.
+# lint, APK assembly, and native/runtime inspection. This script builds the
+# AndroidTest APK but does not boot an emulator or execute instrumentation.
 #
 # Invariant: this script is a SUPERSET of the CI "Secretless host checks" job.
 # health.sh green => that job green. Anything added there must be added here.
@@ -43,6 +43,14 @@ anki_miner_require_no_emulator || fail "host health requires every emulator to b
 command -v python3.13 >/dev/null || fail "host Python 3.13 is required by repository tooling"
 [[ "$(python3.13 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')" == "3.13" ]] \
     || fail "host Python 3.13 is required by repository tooling"
+available_sdk_packages="$(mktemp)"
+trap 'rm -f "$available_sdk_packages"' EXIT
+"$ANDROID_CMDLINE_TOOLS_HOME/bin/sdkmanager" --sdk_root="$ANDROID_HOME" --channel=0 --list \
+    >"$available_sdk_packages"
+python3.13 "$SCRIPT_DIR/preflight_android_packages.py" \
+    --lock "$SCRIPT_DIR/android-sdk-packages.lock" \
+    --sdkmanager-list "$available_sdk_packages" \
+    || fail "Android SDK stable-channel revision differs from the package lock"
 "$SCRIPT_DIR/verify-android-toolchain.sh" || fail "Android SDK package or AVD lock mismatch"
 
 python3.13 "$SCRIPT_DIR/verify_chaquopy_build_python.py" verify \
@@ -149,18 +157,27 @@ echo "$wrapper_checksum  $wrapper_jar" | sha256sum --check --status \
     || fail "Gradle wrapper JAR checksum mismatch"
 
 cd "$REPO_ROOT"
+source_commit="$(git rev-parse HEAD)"
 anki_miner_run_gradle ./gradlew \
     :app:testEmulatorDebugUnitTest \
     :app:lintEmulatorDebug \
     :app:assembleEmulatorDebug \
-    :app:assembleEmulatorDebugAndroidTest
+    :app:assembleEmulatorDebugAndroidTest \
+    -PankiMinerSourceCommit="$source_commit" \
+    :app:assembleDeviceRelease
 
 emulator_apk="$REPO_ROOT/app/build/outputs/apk/emulator/debug/app-emulator-debug.apk"
 emulator_test_apk="$REPO_ROOT/app/build/outputs/apk/androidTest/emulator/debug/app-emulator-debug-androidTest.apk"
+device_release_apk="$REPO_ROOT/app/build/outputs/apk/device/release/app-device-release-unsigned.apk"
 [[ -f "$emulator_apk" ]] || fail "emulator debug APK was not produced"
 [[ -f "$emulator_test_apk" ]] || fail "emulator debug AndroidTest APK was not produced"
+[[ -f "$device_release_apk" ]] || fail "device release APK was not produced"
 echo "health: instrumentation APK built: $emulator_test_apk"
 echo "health: instrumentation executed: NO (build-only host gate)"
+
+"$host_test_python" "$REPO_ROOT/tools/wheels/vendored_wheel_manifest.py" check \
+    --wheels-root "$REPO_ROOT/app/wheels" \
+    --manifest "$REPO_ROOT/app/wheels/manifest.json"
 
 "$SCRIPT_DIR/check-native-artifact.sh" \
     --artifact "$emulator_apk" \
@@ -170,5 +187,22 @@ echo "health: instrumentation executed: NO (build-only host gate)"
     --require-entry lib/x86_64/libanki_miner_mecab.so \
     --require-entry lib/x86_64/libffmpeg.so \
     --require-entry lib/x86_64/libffprobe.so
+python3.13 "$SCRIPT_DIR/check_runtime_artifact.py" \
+    --artifact "$emulator_apk" \
+    --vendored-manifest "$REPO_ROOT/app/wheels/manifest.json" \
+    --allow-abi x86_64
+
+"$SCRIPT_DIR/check-native-artifact.sh" \
+    --artifact "$device_release_apk" \
+    --allow-abi arm64-v8a \
+    --require-app-imy \
+    --reject-base-unidic \
+    --require-entry lib/arm64-v8a/libanki_miner_mecab.so \
+    --require-entry lib/arm64-v8a/libffmpeg.so \
+    --require-entry lib/arm64-v8a/libffprobe.so
+python3.13 "$SCRIPT_DIR/check_runtime_artifact.py" \
+    --artifact "$device_release_apk" \
+    --vendored-manifest "$REPO_ROOT/app/wheels/manifest.json" \
+    --allow-abi arm64-v8a
 
 echo "health: host/build checks OK; instrumentation execution NOT RUN"

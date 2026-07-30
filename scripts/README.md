@@ -39,8 +39,9 @@ answers.
 
 Run the full host gate without an emulator: toolchain and lock verification,
 shell syntax + ShellCheck, the host Python suites, `ruff`/`black`, the JVM unit
-tests, Android Lint, the emulator-flavor app and AndroidTest APK builds, and
-native inspection of the resulting APK.
+tests, Android Lint, emulator app and AndroidTest APK builds, an unsigned
+minified ARM64 device-release APK build, and exact native/runtime inspections
+of both app APKs.
 
 ```bash
 source scripts/android-env.sh

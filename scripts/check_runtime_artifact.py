@@ -32,6 +32,7 @@ MAX_REQUIREMENT_TOTAL_SIZE = 2 * 1024 * 1024 * 1024
 MAX_METADATA_SIZE = 4 * 1024 * 1024
 MAX_LICENSE_SIZE = 16 * 1024 * 1024
 EMPTY_ZIP = b"PK\x05\x06" + (b"\x00" * 18)
+ELF_MAGIC = b"\x7fELF"
 
 ALLOWED_COMPRESSION = {zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED}
 NESTED_ARCHIVE_SUFFIXES = (".aab", ".apk", ".imy", ".whl", ".zip")
@@ -70,6 +71,16 @@ S1A_SPECS = {
         "cp312-cp312",
         "fugashi/fugashi.so",
     ),
+}
+VENDORED_MANIFEST_ENTRY_KEYS = {
+    "abi",
+    "filename",
+    "license",
+    "package",
+    "path",
+    "sha256",
+    "source",
+    "version",
 }
 
 
@@ -180,6 +191,17 @@ def _safe_manifest_path(value: object, label: str) -> str:
 def _is_license_path(path: str) -> bool:
     basename = PurePosixPath(path).name.upper()
     return basename == "BSD" or basename.startswith(LICENSE_PREFIXES)
+
+
+def _is_dist_info_license_path(path: str) -> bool:
+    """Return whether a wheel member is an owned dist-info license payload."""
+    parts = PurePosixPath(path).parts
+    return (
+        bool(parts)
+        and parts[0].endswith(".dist-info")
+        and not any(part.endswith(".dist-info") for part in parts[1:])
+        and _is_license_path(path)
+    )
 
 
 def _dist_info_identity(path: str, label: str) -> tuple[str, str, str]:
@@ -435,6 +457,129 @@ def load_s1a_inventory(manifest: Path, abi: str) -> ExpectedInventory:
     return inventory
 
 
+def load_vendored_inventory(manifest: Path, abi: str) -> ExpectedInventory:
+    """Load exact package inventory from Gradle-verified vendored wheels."""
+    resolved, document = _read_manifest(manifest, "vendored wheel manifest")
+    if document.get("schema") != 1 or set(document) != {"schema", "wheels"}:
+        raise RuntimeArtifactError("unsupported vendored wheel manifest schema")
+    entries = document.get("wheels")
+    if not isinstance(entries, list) or not entries:
+        raise RuntimeArtifactError("vendored wheel manifest has no wheel entries")
+
+    inventory = ExpectedInventory()
+    selected_groups = {"common", abi}
+    seen_paths: set[str] = set()
+    for raw_entry in entries:
+        label = "vendored wheel manifest entry"
+        if not isinstance(raw_entry, dict) or set(raw_entry) != VENDORED_MANIFEST_ENTRY_KEYS:
+            raise RuntimeArtifactError(f"{label}: keys differ from schema")
+        group = raw_entry.get("abi")
+        filename = raw_entry.get("filename")
+        package_value = raw_entry.get("package")
+        version = raw_entry.get("version")
+        path_value = raw_entry.get("path")
+        sha256 = raw_entry.get("sha256")
+        if (
+            not isinstance(group, str)
+            or group not in {"common", *SUPPORTED_ABIS}
+            or not isinstance(filename, str)
+            or Path(filename).name != filename
+            or not isinstance(package_value, str)
+            or PACKAGE_PATTERN.fullmatch(package_value) is None
+            or not isinstance(version, str)
+            or not version
+            or not isinstance(raw_entry.get("license"), str)
+            or not isinstance(raw_entry.get("source"), dict)
+        ):
+            raise RuntimeArtifactError(f"{label}: invalid wheel identity")
+        path = _safe_manifest_path(path_value, label)
+        if PurePosixPath(path).parts != (group, filename):
+            raise RuntimeArtifactError(f"{label}: wheel path differs from group and filename")
+        if path in seen_paths:
+            raise RuntimeArtifactError(f"{label}: duplicate wheel path {path}")
+        seen_paths.add(path)
+        expected_hash = _require_hash(sha256, label)
+        if group not in selected_groups:
+            continue
+
+        wheel = resolved.parent / path
+        if wheel.is_symlink() or not wheel.is_file():
+            raise RuntimeArtifactError(f"{label}: wheel is not a regular file: {path}")
+        if _sha256(wheel.read_bytes()) != expected_hash:
+            raise RuntimeArtifactError(f"{label}: wheel hash differs: {path}")
+        try:
+            archive = zipfile.ZipFile(wheel)
+        except zipfile.BadZipFile as error:
+            raise RuntimeArtifactError(f"{label}: invalid wheel archive: {path}") from error
+        with archive:
+            infos = _validated_infos(
+                archive,
+                f"{label}: {path}",
+                max_entries=MAX_REQUIREMENT_ENTRIES,
+                max_entry_size=MAX_REQUIREMENT_ENTRY_SIZE,
+                max_total_size=MAX_REQUIREMENT_TOTAL_SIZE,
+            )
+            metadata_paths = [
+                member
+                for member, info in infos.items()
+                if not info.is_dir() and member.endswith(".dist-info/METADATA")
+            ]
+            if len(metadata_paths) != 1:
+                raise RuntimeArtifactError(f"{label}: expected one METADATA payload: {path}")
+            metadata_path = metadata_paths[0]
+            package, actual_version = _parse_metadata(
+                _read_member(
+                    archive,
+                    infos[metadata_path],
+                    f"{label}: {path}",
+                    MAX_METADATA_SIZE,
+                ),
+                metadata_path.removesuffix("/METADATA"),
+            )
+            if package != normalize_package(package_value) or actual_version != version:
+                raise RuntimeArtifactError(f"{label}: wheel METADATA differs from manifest: {path}")
+            inventory.add_distribution(package, actual_version, label)
+
+            for member, info in infos.items():
+                if info.is_dir():
+                    continue
+                data = _read_member(
+                    archive,
+                    info,
+                    f"{label}: {path}",
+                    MAX_REQUIREMENT_ENTRY_SIZE,
+                )
+                if _is_dist_info_license_path(member):
+                    _validate_license_owner(member, package, actual_version, f"{label}: {path}")
+                    inventory.add_file(
+                        inventory.licenses,
+                        member,
+                        ExpectedFile(package, _sha256(data)),
+                        label,
+                    )
+                native_name = _is_native_name(member)
+                native_magic = data.startswith(ELF_MAGIC)
+                if native_name != native_magic:
+                    raise RuntimeArtifactError(f"{label}: malformed native payload {member}")
+                if native_magic:
+                    if group == "common":
+                        raise RuntimeArtifactError(f"{label}: common wheel contains native payload {member}")
+                    native_abi = _native_abi(data, member)
+                    if native_abi != abi:
+                        raise RuntimeArtifactError(
+                            f"{label}: native payload {member} is {native_abi}, expected {abi}",
+                        )
+                    inventory.add_file(
+                        inventory.natives,
+                        member,
+                        ExpectedFile(package, _sha256(data), native_abi),
+                        label,
+                    )
+    if not inventory.distributions:
+        raise RuntimeArtifactError("vendored wheel manifest has no selected wheels")
+    return inventory
+
+
 def _validated_infos(
     archive: zipfile.ZipFile,
     label: str,
@@ -685,24 +830,18 @@ def _artifact_layout(artifact: Path, abi: str) -> tuple[str, str, str]:
     )
 
 
-def audit_artifact(
+def _audit_artifact_inventory(
     artifact: Path,
-    runtime_manifest: Path,
+    expected: ExpectedInventory,
     allowed_abi: str,
-    s1a_manifest: Path | None = None,
+    *,
+    s1a_enabled: bool,
 ) -> AuditResult:
     if allowed_abi not in SUPPORTED_ABIS:
         raise RuntimeArtifactError(f"unsupported ABI: {allowed_abi}")
     if artifact.is_symlink() or not artifact.is_file():
         raise RuntimeArtifactError(f"artifact is not a regular file: {artifact}")
     artifact_type, common_path, abi_path = _artifact_layout(artifact, allowed_abi)
-
-    expected = load_runtime_inventory(runtime_manifest, allowed_abi)
-    if s1a_manifest is not None:
-        expected.merge(
-            load_s1a_inventory(s1a_manifest, allowed_abi),
-            "runtime and S1a manifests",
-        )
 
     try:
         outer = zipfile.ZipFile(artifact)
@@ -750,7 +889,7 @@ def audit_artifact(
         common_payload,
         expected,
         allowed_abi,
-        s1a_enabled=s1a_manifest is not None,
+        s1a_enabled=s1a_enabled,
     )
     return AuditResult(
         abi=allowed_abi,
@@ -758,7 +897,40 @@ def audit_artifact(
         distribution_count=len(expected.distributions),
         license_count=len(expected.licenses),
         native_count=len(expected.natives),
-        s1a_included=s1a_manifest is not None,
+        s1a_included=s1a_enabled,
+    )
+
+
+def audit_artifact(
+    artifact: Path,
+    runtime_manifest: Path,
+    allowed_abi: str,
+    s1a_manifest: Path | None = None,
+) -> AuditResult:
+    expected = load_runtime_inventory(runtime_manifest, allowed_abi)
+    if s1a_manifest is not None:
+        expected.merge(
+            load_s1a_inventory(s1a_manifest, allowed_abi),
+            "runtime and S1a manifests",
+        )
+    return _audit_artifact_inventory(
+        artifact,
+        expected,
+        allowed_abi,
+        s1a_enabled=s1a_manifest is not None,
+    )
+
+
+def audit_vendored_artifact(
+    artifact: Path,
+    vendored_manifest: Path,
+    allowed_abi: str,
+) -> AuditResult:
+    return _audit_artifact_inventory(
+        artifact,
+        load_vendored_inventory(vendored_manifest, allowed_abi),
+        allowed_abi,
+        s1a_enabled=True,
     )
 
 
@@ -767,7 +939,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         description="Audit packaged Chaquopy requirements against wheel manifests.",
     )
     parser.add_argument("--artifact", type=Path, required=True)
-    parser.add_argument("--runtime-manifest", type=Path, required=True)
+    manifest_source = parser.add_mutually_exclusive_group(required=True)
+    manifest_source.add_argument("--runtime-manifest", type=Path)
+    manifest_source.add_argument("--vendored-manifest", type=Path)
     parser.add_argument(
         "--allow-abi",
         action="append",
@@ -778,6 +952,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     arguments = parser.parse_args(argv)
     if len(arguments.allow_abi) != 1:
         parser.error("--allow-abi must be supplied exactly once")
+    if arguments.vendored_manifest is not None and arguments.s1a_manifest is not None:
+        parser.error("--s1a-manifest cannot be combined with --vendored-manifest")
     arguments.allow_abi = arguments.allow_abi[0]
     return arguments
 
@@ -785,12 +961,19 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def main(argv: list[str] | None = None) -> int:
     arguments = parse_args(argv)
     try:
-        result = audit_artifact(
-            arguments.artifact,
-            arguments.runtime_manifest,
-            arguments.allow_abi,
-            arguments.s1a_manifest,
-        )
+        if arguments.vendored_manifest is not None:
+            result = audit_vendored_artifact(
+                arguments.artifact,
+                arguments.vendored_manifest,
+                arguments.allow_abi,
+            )
+        else:
+            result = audit_artifact(
+                arguments.artifact,
+                arguments.runtime_manifest,
+                arguments.allow_abi,
+                arguments.s1a_manifest,
+            )
     except (OSError, RuntimeArtifactError) as error:
         print(f"runtime-artifact: {error}", file=sys.stderr)
         return 1

@@ -228,6 +228,56 @@ class ArtifactFixture:
             self.s1a_manifest,
         )
 
+    def write_vendored_manifest(self) -> Path:
+        wheels_root = self.root / "wheels"
+        entries = (
+            (
+                "common",
+                "requests-1.0-py3-none-any.whl",
+                "requests",
+                "1.0",
+                {
+                    "requests-1.0.dist-info/METADATA": self.common["requests-1.0.dist-info/METADATA"],
+                    "requests-1.0.dist-info/licenses/LICENSE": self.common[
+                        "requests-1.0.dist-info/licenses/LICENSE"
+                    ],
+                    "requests/__init__.py": self.common["requests/__init__.py"],
+                },
+            ),
+            (
+                self.abi,
+                f"pillow-2.0-{self.abi}.whl",
+                "pillow",
+                "2.0",
+                {
+                    "pillow-2.0.dist-info/METADATA": self.common["pillow-2.0.dist-info/METADATA"],
+                    "pillow-2.0.dist-info/LICENSE": self.common["pillow-2.0.dist-info/LICENSE"],
+                    "PIL/_imaging.so": self.common["PIL/_imaging.so"],
+                },
+            ),
+        )
+        manifest_entries: list[dict[str, object]] = []
+        for abi, filename, package, version, wheel_entries in entries:
+            payload = _zip(wheel_entries)
+            path = wheels_root / abi / filename
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(payload)
+            manifest_entries.append(
+                {
+                    "abi": abi,
+                    "filename": filename,
+                    "license": "MIT",
+                    "package": package,
+                    "path": path.relative_to(wheels_root).as_posix(),
+                    "sha256": _sha256(payload),
+                    "source": {"kind": "fixture"},
+                    "version": version,
+                }
+            )
+        manifest = wheels_root / "manifest.json"
+        manifest.write_text(json.dumps({"schema": 1, "wheels": manifest_entries}), encoding="utf-8")
+        return manifest
+
 
 @contextmanager
 def fixture(**kwargs: object):
@@ -273,6 +323,21 @@ class RuntimeArtifactPositiveTests(unittest.TestCase):
 
 
 class RuntimeArtifactInventoryTests(unittest.TestCase):
+    def test_vendored_manifest_audit_rejects_mutated_packaged_native(self) -> None:
+        with fixture() as value:
+            value.common["requests-1.0.dist-info/licenses/LICENSE"] = value.common.pop(
+                "requests-1.0.dist-info/LICENSE"
+            )
+            value.write_artifact()
+            manifest = value.write_vendored_manifest()
+            result = checker.audit_vendored_artifact(value.artifact, manifest, value.abi)
+            self.assertEqual(2, result.distribution_count)
+
+            value.common["PIL/_imaging.so"] = _elf(value.abi, b"changed after wheel verification")
+            value.write_artifact()
+            with self.assertRaisesRegex(checker.RuntimeArtifactError, "native inventory"):
+                checker.audit_vendored_artifact(value.artifact, manifest, value.abi)
+
     def test_distribution_identity_must_be_exact(self) -> None:
         cases = {
             "extra": lambda value: value.common.update(
@@ -526,6 +591,7 @@ class RuntimeArtifactManifestAndCliTests(unittest.TestCase):
         )
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertIn("--runtime-manifest", result.stdout)
+        self.assertIn("--vendored-manifest", result.stdout)
         self.assertIn("--s1a-manifest", result.stdout)
 
 
