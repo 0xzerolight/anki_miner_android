@@ -2,10 +2,21 @@ package com.ankiminer.android.data.resources
 
 import android.content.ContentResolver
 import android.net.Uri
+import com.ankiminer.android.media.CancellableProviderIo
+import com.ankiminer.android.media.ProviderIoCancellation
+import com.ankiminer.android.media.ProviderIoCancelledException
+import com.ankiminer.android.media.ProviderIoTimeoutException
+import com.ankiminer.android.media.combine
 import java.io.File
+import java.io.FileNotFoundException
 import java.io.FileOutputStream
+import java.io.InputStream
 import java.io.OutputStream
 import java.security.MessageDigest
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.runBlocking
 
 internal interface ResourceArchiveStager {
     fun stage(
@@ -30,11 +41,54 @@ internal class AndroidResourceDocumentWriter(
         resolver.openOutputStream(Uri.parse(uri), "wt")
 }
 
-internal class SafArchiveStager(
+internal fun interface ResourceInputOpener {
+    fun open(
+        uri: Uri,
+        cancellation: ProviderIoCancellation,
+    ): InputStream
+}
+
+private class AndroidResourceInputOpener(
     private val resolver: ContentResolver,
+) : ResourceInputOpener {
+    override fun open(
+        uri: Uri,
+        cancellation: ProviderIoCancellation,
+    ): InputStream =
+        CancellableProviderIo.open(cancellation) { signal ->
+            val descriptor =
+                resolver.openAssetFileDescriptor(uri, "r", signal)
+                    ?: throw FileNotFoundException("DocumentsProvider returned no descriptor for $uri")
+            try {
+                descriptor.createInputStream()
+            } catch (failure: Throwable) {
+                try {
+                    descriptor.close()
+                } catch (closeFailure: Throwable) {
+                    failure.addSuppressed(closeFailure)
+                }
+                throw failure
+            }
+        }
+}
+
+internal class SafArchiveStager(
+    private val inputOpener: ResourceInputOpener,
     private val stagingRoot: File,
     private val availableBytes: (File) -> Long = { it.usableSpace },
+    private val providerIoScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
+    private val providerIoTimeoutMillis: Long = PROVIDER_IO_TIMEOUT_MILLIS,
 ) : ResourceArchiveStager {
+    constructor(
+        resolver: ContentResolver,
+        stagingRoot: File,
+        availableBytes: (File) -> Long = { it.usableSpace },
+    ) : this(
+        inputOpener = AndroidResourceInputOpener(resolver),
+        stagingRoot = stagingRoot,
+        availableBytes = availableBytes,
+    )
+
     override fun stage(
         sourceUri: String,
         operationId: String,
@@ -59,56 +113,105 @@ internal class SafArchiveStager(
             if (available < FREE_SPACE_RESERVE_BYTES) {
                 throw ResourceStorageException(FREE_SPACE_RESERVE_BYTES, available)
             }
-            val digest = MessageDigest.getInstance("SHA-256")
-            val input = resolver.openInputStream(source)
-                ?: throw ResourceDownloadException(
-                    "import_source_unavailable",
-                    "The selected $sourceLabel cannot be opened",
-                    formatArguments = listOf(sourceLabel),
-                )
-            var total = 0L
-            input.use { stream ->
-                FileOutputStream(destination, false).use { output ->
-                    val buffer = ByteArray(BUFFER_BYTES)
-                    while (true) {
-                        cancellation.check()
-                        val count = stream.read(buffer)
-                        if (count < 0) break
-                        total += count
-                        if (total > maximumBytes) {
-                            throw archiveTooLarge(sourceLabel, total, maximumBytes)
-                        }
-                        if (available - total < FREE_SPACE_RESERVE_BYTES) {
-                            throw ResourceStorageException(total + FREE_SPACE_RESERVE_BYTES, available)
-                        }
-                        output.write(buffer, 0, count)
-                        digest.update(buffer, 0, count)
-                        onProgress(total, 0)
-                    }
-                    output.fd.sync()
+            cancellation.check()
+            return runBlocking {
+                CancellableProviderIo.execute(
+                    scope = providerIoScope,
+                    timeoutMillis = providerIoTimeoutMillis,
+                ) { deadlineCancellation ->
+                    copyProviderInput(
+                        source = source,
+                        destination = destination,
+                        cancellation = cancellation.combine(deadlineCancellation),
+                        maximumBytes = maximumBytes,
+                        available = available,
+                        sourceLabel = sourceLabel,
+                        onProgress = onProgress,
+                    )
                 }
             }
-            if (total <= 0) {
-                throw ResourceDownloadException(
-                    "resource_archive_mismatch",
-                    "The selected $sourceLabel is empty",
-                )
-            }
-            return StagedArchive(
-                file = destination,
-                sha256 = digest.digest().joinToString("") { "%02x".format(it) },
-                sizeBytes = total,
-            )
         } catch (failure: Exception) {
             destination.delete()
+            if (failure is ProviderIoCancelledException) {
+                cancellation.check()
+                throw sourceUnavailable(sourceLabel, failure)
+            }
+            if (failure is ProviderIoTimeoutException || failure is FileNotFoundException) {
+                throw sourceUnavailable(sourceLabel, failure)
+            }
             throw failure
         }
     }
+
+    private fun copyProviderInput(
+        source: Uri,
+        destination: File,
+        cancellation: ProviderIoCancellation,
+        maximumBytes: Long,
+        available: Long,
+        sourceLabel: String,
+        onProgress: (Long, Long) -> Unit,
+    ): StagedArchive {
+        val digest = MessageDigest.getInstance("SHA-256")
+        var total = 0L
+        CancellableProviderIo.useResource(
+            cancellation = cancellation,
+            open = { inputOpener.open(source, cancellation) },
+        ) { stream ->
+            FileOutputStream(destination, false).use { output ->
+                val buffer = ByteArray(BUFFER_BYTES)
+                while (true) {
+                    throwIfCancelled(cancellation)
+                    val count = stream.read(buffer)
+                    throwIfCancelled(cancellation)
+                    if (count < 0) break
+                    total += count
+                    if (total > maximumBytes) {
+                        throw archiveTooLarge(sourceLabel, total, maximumBytes)
+                    }
+                    if (available - total < FREE_SPACE_RESERVE_BYTES) {
+                        throw ResourceStorageException(total + FREE_SPACE_RESERVE_BYTES, available)
+                    }
+                    output.write(buffer, 0, count)
+                    digest.update(buffer, 0, count)
+                    onProgress(total, 0)
+                }
+                output.fd.sync()
+                throwIfCancelled(cancellation)
+            }
+        }
+        if (total <= 0) {
+            throw ResourceDownloadException(
+                "resource_archive_mismatch",
+                "The selected $sourceLabel is empty",
+            )
+        }
+        return StagedArchive(
+            file = destination,
+            sha256 = digest.digest().joinToString("") { "%02x".format(it) },
+            sizeBytes = total,
+        )
+    }
+
+    private fun throwIfCancelled(cancellation: ProviderIoCancellation) {
+        if (cancellation.isCancelled()) throw ProviderIoCancelledException()
+    }
+
+    private fun sourceUnavailable(
+        sourceLabel: String,
+        cause: Throwable,
+    ) = ResourceDownloadException(
+        "import_source_unavailable",
+        "The selected $sourceLabel cannot be opened",
+        cause,
+        formatArguments = listOf(sourceLabel),
+    )
 
     private companion object {
         const val BUFFER_BYTES = 256 * 1024
         const val MAXIMUM_SUPPORTED_BYTES = AUDIO_ARCHIVE_CEILING_BYTES
         const val FREE_SPACE_RESERVE_BYTES = ARCHIVE_BUDGET_RESERVE_BYTES
+        const val PROVIDER_IO_TIMEOUT_MILLIS = 60_000L
         val FILE_SUFFIX = Regex("\\.[a-z0-9]{1,8}")
     }
 }
