@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
 RESOURCE_SCRIPT = Path(__file__).resolve().parents[1] / "android-test-resources.sh"
+EMULATOR_SCRIPT = Path(__file__).resolve().parents[1] / "emulator.sh"
+EMULATOR_LANES_SCRIPT = Path(__file__).resolve().parents[1] / "emulator-lanes.sh"
 
 
 class AndroidTestResourceTest(unittest.TestCase):
@@ -137,6 +141,145 @@ class AndroidTestResourceTest(unittest.TestCase):
                     )
                     self.assertNotEqual(0, result.returncode)
                     self.assertIn(message, result.stderr)
+
+    def test_emulator_lock_stays_held_after_launcher_exec(self) -> None:
+        temporary, _, environment = self._fixture()
+        with temporary:
+            environment["ANKI_MINER_ANDROID_TOOLCHAIN_ROOT"] = temporary.name
+            ready = Path(temporary.name) / "ready"
+            holder = subprocess.Popen(
+                [
+                    "bash",
+                    "-c",
+                    ('source "$1"; ' "anki_miner_acquire_emulator_lock; " 'touch "$2"; ' "exec sleep 60"),
+                    "resource-test",
+                    str(RESOURCE_SCRIPT),
+                    str(ready),
+                ],
+                env=environment,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+
+            def cleanup_holder() -> None:
+                if holder.poll() is None:
+                    holder.kill()
+                    holder.wait(timeout=2)
+                if holder.stderr is not None:
+                    holder.stderr.close()
+
+            self.addCleanup(cleanup_holder)
+            deadline = time.monotonic() + 2
+            while not ready.exists() and holder.poll() is None and time.monotonic() < deadline:
+                time.sleep(0.01)
+            if not ready.exists():
+                holder.terminate()
+                _, stderr = holder.communicate(timeout=2)
+                self.fail(stderr)
+
+            contender = subprocess.run(
+                [
+                    "bash",
+                    "-c",
+                    'source "$1"; anki_miner_acquire_emulator_lock',
+                    "resource-test",
+                    str(RESOURCE_SCRIPT),
+                ],
+                check=False,
+                capture_output=True,
+                env=environment,
+                text=True,
+            )
+
+            self.assertNotEqual(0, contender.returncode)
+            self.assertIn("another emulator launcher", contender.stderr)
+            holder.terminate()
+            holder.wait(timeout=2)
+
+    def test_emulator_launcher_rejects_a_running_different_lane(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            checkout = root / "checkout"
+            scripts = checkout / "scripts"
+            fake_bin = root / "bin"
+            toolchain = root / "toolchain"
+            scripts.mkdir(parents=True)
+            fake_bin.mkdir()
+            shutil.copy2(EMULATOR_SCRIPT, scripts / "emulator.sh")
+            shutil.copy2(EMULATOR_LANES_SCRIPT, scripts / "emulator-lanes.sh")
+            shutil.copy2(RESOURCE_SCRIPT, scripts / "android-test-resources.sh")
+            self._script(
+                scripts / "android-env.sh",
+                """
+export ANKI_MINER_ANDROID_TOOLCHAIN_ROOT="$FAKE_TOOLCHAIN"
+export ANDROID_HOME="$FAKE_TOOLCHAIN/sdk"
+export ANDROID_AVD_API26_NAME="anki_miner_api26"
+export ANDROID_AVD_4K_NAME="anki_miner_api36"
+export ANDROID_AVD_16K_NAME="anki_miner_api36_ps16k"
+export ANDROID_EMULATOR_API26_PORT="5558"
+export ANDROID_EMULATOR_4K_PORT="5554"
+export ANDROID_EMULATOR_16K_PORT="5556"
+export ANDROID_EMULATOR_API26_SERIAL="emulator-5558"
+export ANDROID_EMULATOR_4K_SERIAL="emulator-5554"
+export ANDROID_EMULATOR_16K_SERIAL="emulator-5556"
+export ANDROID_EMULATOR_API26_FINGERPRINT="api26-fingerprint"
+export PATH="$FAKE_BIN:$PATH"
+""",
+            )
+            self._script(scripts / "verify-android-toolchain.sh", "exit 0\n")
+            emulator = toolchain / "sdk/emulator/emulator"
+            emulator.parent.mkdir(parents=True)
+            self._script(
+                emulator,
+                """
+if [[ "${1:-}" == "-list-avds" ]]; then
+    printf '%s\n' anki_miner_api26 anki_miner_api36 anki_miner_api36_ps16k
+else
+    touch "$FAKE_ROOT/emulator-launched"
+fi
+""",
+            )
+            shutil.copy2(emulator, fake_bin / "emulator")
+            self._script(
+                fake_bin / "adb",
+                "printf 'List of devices attached\\nemulator-5554\\tdevice\\n'\n",
+            )
+            self._script(fake_bin / "pgrep", "exit 1\n")
+            self._script(fake_bin / "ss", "exit 1\n")
+            meminfo = root / "meminfo"
+            meminfo.write_text(
+                "MemAvailable: 8388608 kB\nSwapTotal: 0 kB\nSwapFree: 0 kB\n",
+                encoding="utf-8",
+            )
+            environment = os.environ.copy()
+            environment.update(
+                {
+                    "ANKI_MINER_MEMINFO_PATH": str(meminfo),
+                    "FAKE_BIN": str(fake_bin),
+                    "FAKE_ROOT": str(root),
+                    "FAKE_TOOLCHAIN": str(toolchain),
+                    "PATH": f"{fake_bin}:{environment['PATH']}",
+                },
+            )
+
+            result = subprocess.run(
+                [
+                    "bash",
+                    str(scripts / "emulator.sh"),
+                    "--lane",
+                    "16k",
+                    "--headless",
+                    "--software",
+                ],
+                check=False,
+                capture_output=True,
+                env=environment,
+                text=True,
+            )
+
+            self.assertNotEqual(0, result.returncode)
+            self.assertIn("emulator is running", result.stderr)
+            self.assertFalse((root / "emulator-launched").exists())
 
     def test_every_gradle_entry_gets_the_explicit_resource_flags(self) -> None:
         temporary, bin_dir, environment = self._fixture()
