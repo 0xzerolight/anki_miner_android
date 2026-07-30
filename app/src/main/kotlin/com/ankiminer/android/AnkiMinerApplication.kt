@@ -292,10 +292,10 @@ class AnkiMinerApplication : Application() {
         // Load-bearing ordering: this is the first task submitted to the process Python executor.
         // It starts Chaquopy and establishes ANKI_MINER_HOME before any engine import.
         pythonRuntime.enqueueFirst(miningRunExecutor)
-        // Installed after the bootstrap is enqueued, not before: opening the log file is I/O and
-        // this is the main thread. Nothing is lost — install() replays the pre-install buffer, and
-        // that buffer is the only place a Python startup failure can be recorded, because the
-        // engine's own file handler is created inside bootstrap.initialize.
+        // Installed after the enqueue so nothing displaces the bootstrap as the first task on the
+        // Python executor. Logging before this point is not lost: install() replays the pre-install
+        // buffer, which is the only place a Python startup failure can be recorded at all, because
+        // the engine's own file handler is created inside bootstrap.initialize.
         AppLog.install(
             CompositeSink(LogcatSink(), FileLogSink(filesDir, scope = applicationScope)),
         )

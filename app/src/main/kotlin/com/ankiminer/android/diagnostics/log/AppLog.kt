@@ -36,9 +36,10 @@ internal object AppLog {
     /**
      * Swaps in the real sink and replays whatever was buffered before it existed.
      *
-     * The swap happens before the replay so a record emitted concurrently is never lost; the cost is
-     * that such a record can appear ahead of the replayed ones. Losing a startup failure matters,
-     * ordering across that one instant does not.
+     * Neither swap-then-drain nor drain-then-swap is race-free against a concurrent [emit]: closing
+     * the window needs a lock on the write path, which is not worth paying on every record for one
+     * call made once during startup. A record emitted at that instant lands in one sink or the
+     * other and may sort ahead of the replayed ones.
      */
     @Synchronized
     fun install(sink: LogSink) {
@@ -161,13 +162,59 @@ internal object AppLog {
         fields: Array<out Pair<String, Any?>>,
     ) {
         if (level < minLevel) return
-        val rendered =
-            renderLogRecord(Instant.now(), level, LogContext.runId(), component, op, fields, failure)
         try {
-            sink.write(rendered)
-        } catch (_: Exception) {
-            // A logging layer that throws into its caller is the classic own-goal. A sink that
-            // fails is responsible for recording that failure itself.
+            // Rendering is inside the try because it is the part that runs caller-controlled code:
+            // toString() on every field and on every link of the cause chain. A Chaquopy
+            // PyException whose JNI-backed getMessage() fails once the interpreter is dead throws
+            // here — while logging the very failure that killed it. A deep cause chain can also
+            // exhaust the stack, which is an Error, hence Throwable rather than Exception.
+            sink.write(
+                renderLogRecord(
+                    Instant.now(),
+                    level,
+                    LogContext.runId(),
+                    component,
+                    op,
+                    fields,
+                    failure,
+                ),
+            )
+        } catch (broken: Throwable) {
+            emitRenderFailure(level, component, op, failure, broken)
+        }
+    }
+
+    /**
+     * Last resort when a record cannot be rendered or written: a record built only from values this
+     * object controls, so it cannot fail the same way twice. Losing the record entirely would hide
+     * the fact that something was logged at all.
+     */
+    private fun emitRenderFailure(
+        level: LogLevel,
+        component: LogComponent,
+        op: String,
+        failure: Throwable?,
+        broken: Throwable,
+    ) {
+        try {
+            // Class names only: reading anything else off either throwable is what failed.
+            sink.write(
+                renderLogRecord(
+                    Instant.now(),
+                    level,
+                    null,
+                    component,
+                    op,
+                    arrayOf(
+                        "unrenderable" to (failure?.javaClass?.name ?: "-"),
+                        "renderFault" to broken.javaClass.name,
+                    ),
+                    null,
+                ),
+            )
+        } catch (_: Throwable) {
+            // The sink itself is gone. A logging layer that throws into its caller is the classic
+            // own-goal, so this is where the record dies.
         }
     }
 

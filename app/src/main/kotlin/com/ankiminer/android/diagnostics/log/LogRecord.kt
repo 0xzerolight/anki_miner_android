@@ -93,8 +93,17 @@ private fun isBareCharacter(character: Char): Boolean =
         character in '0'..'9' ||
         character in BARE_PUNCTUATION
 
+/**
+ * U+2028 and U+2029 are here because Python's `str.splitlines()` breaks on both, and the reader
+ * of these files is a line-oriented Python step: one of them inside a file name would split a
+ * record in two even though Kotlin never saw a line break.
+ */
 private fun isControl(character: Char): Boolean =
-    character < ' ' || character == '\u007F' || character in '\u0080'..'\u009F'
+    character < ' ' ||
+        character == '\u007F' ||
+        character in '\u0080'..'\u009F' ||
+        character == '\u2028' ||
+        character == '\u2029'
 
 /**
  * Renders the whole failure: message, frames, the full `Caused by:` chain and `Suppressed:` entries.
@@ -144,12 +153,17 @@ private fun appendFailure(
  * Continuation lines are already delimited by their TAB prefix, so they need no quoting — only the
  * characters that would end the line early. A Chaquopy `PyException` message embeds a whole Python
  * traceback, newlines included.
+ *
+ * The backslash is escaped for the same reason it is in a field value: without it a message holding
+ * a literal `C:\new` is indistinguishable from an escaped newline, and the later redaction pass has
+ * to round-trip these lines.
  */
 private fun renderText(text: String): String {
-    if (text.none { it == '\n' || isControl(it) }) return text
+    if (text.none { it == '\n' || it == '\\' || isControl(it) }) return text
     val safe = StringBuilder(text.length)
     for (character in text) {
         when {
+            character == '\\' -> safe.append("\\\\")
             character == '\n' -> safe.append("\\n")
             isControl(character) -> Unit
             else -> safe.append(character)

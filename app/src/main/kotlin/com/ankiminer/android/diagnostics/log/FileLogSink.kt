@@ -9,6 +9,7 @@ import java.io.OutputStreamWriter
 import java.nio.charset.StandardCharsets
 import java.time.Instant
 import java.util.concurrent.atomic.AtomicLong
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -49,6 +50,7 @@ internal class FileLogSink(
     scope: CoroutineScope,
     lineCapacity: Int = 4096,
     dispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val openStream: (File) -> OutputStream = { file -> FileOutputStream(file, true) },
 ) : LogSink, AutoCloseable {
     private val dropped = AtomicLong()
     private val lines =
@@ -114,36 +116,57 @@ internal class FileLogSink(
         try {
             var running = true
             while (running) {
-                select {
-                    // Commands are offered first so a busy producer cannot starve a rendezvous
-                    // send. Record ordering does not depend on that bias: every command drains
-                    // the queued lines before it runs.
-                    commands.onReceive { command -> execute(command) }
-                    lines.onReceiveCatching { received ->
-                        val line = received.getOrNull()
-                        if (line == null) running = false else appendBatch(line)
+                try {
+                    select {
+                        // Commands are offered first so a busy producer cannot starve a rendezvous
+                        // send. Ordering is not what this buys: the drain at the top of execute()
+                        // is what puts every queued record on disk ahead of the command.
+                        commands.onReceive { command -> execute(command) }
+                        lines.onReceiveCatching { received ->
+                            val line = received.getOrNull()
+                            if (line == null) running = false else appendBatch(line)
+                        }
                     }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (failure: Throwable) {
+                    // This coroutine runs in the application scope, which carries no
+                    // CoroutineExceptionHandler: anything escaping here reaches Android's default
+                    // uncaught handler and takes the process down over a log line. File operations
+                    // throw more than IOException — SecurityException from rename and delete.
+                    disable(failure)
                 }
             }
         } finally {
             drainQueuedLines()
             flushFile()
             closeFile()
+            // Closed last so a caller suspended in submit() fails fast instead of waiting on a
+            // rendezvous nobody will ever receive.
             commands.close()
         }
     }
 
+    /**
+     * Every path out of here completes [LogCommand.Flush.done] or [LogCommand.Snapshot.done]. A
+     * command whose deferred is dropped strands its caller in `await()` forever, and the ZIP export
+     * is that caller.
+     */
     private fun execute(command: LogCommand) {
-        drainQueuedLines()
-        flushFile()
-        when (command) {
-            is LogCommand.Flush -> command.done.complete(Unit)
-            is LogCommand.Snapshot ->
-                try {
-                    command.done.complete(copyInto(command.destDir))
-                } catch (failure: IOException) {
-                    command.done.completeExceptionally(failure)
-                }
+        try {
+            drainQueuedLines()
+            flushFile()
+            when (command) {
+                is LogCommand.Flush -> command.done.complete(Unit)
+                is LogCommand.Snapshot -> command.done.complete(copyInto(command.destDir))
+            }
+        } catch (failure: Throwable) {
+            when (command) {
+                is LogCommand.Flush -> command.done.completeExceptionally(failure)
+                is LogCommand.Snapshot -> command.done.completeExceptionally(failure)
+            }
+            if (failure is CancellationException) throw failure
+            disable(failure)
         }
     }
 
@@ -158,9 +181,14 @@ internal class FileLogSink(
         flushFile()
     }
 
+    /**
+     * Drains through [appendBatch] rather than record by record: the rotation check lives in
+     * [flushFile], so a bare loop would write the whole queue — up to `lineCapacity` records, which
+     * with 200-frame stacks is far past the size cap — before any rotation could fire.
+     */
     private fun drainQueuedLines() {
         while (true) {
-            appendRecord(lines.tryReceive().getOrNull() ?: return)
+            appendBatch(lines.tryReceive().getOrNull() ?: return)
         }
     }
 
@@ -202,7 +230,9 @@ internal class FileLogSink(
         open?.let { return it }
         return try {
             directory.mkdirs()
-            val counted = CountingOutputStream(FileOutputStream(target, true), target.length())
+            // The stream is opened through a parameter so a test can make the write path itself
+            // fail; a directory that cannot be opened only exercises this method's own catch.
+            val counted = CountingOutputStream(openStream(target), target.length())
             OpenFile(counted, BufferedWriter(OutputStreamWriter(counted, StandardCharsets.UTF_8)))
                 .also { open = it }
         } catch (failure: IOException) {
@@ -243,8 +273,10 @@ internal class FileLogSink(
         }
     }
 
-    private fun disable(failure: IOException) {
-        if (disabledBy == null) disabledBy = failure
+    private fun disable(failure: Throwable) {
+        if (disabledBy == null) {
+            disabledBy = failure as? IOException ?: IOException("log writer failed", failure)
+        }
         closeFile()
     }
 

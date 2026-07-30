@@ -137,16 +137,45 @@ class AppLogTest {
     }
 
     @Test
+    fun `a stack deeper than the frame cap is truncated exactly once`() {
+        val deep = RuntimeException("deep")
+        deep.stackTrace =
+            Array(250) { index -> StackTraceElement("Deep", "frame$index", "Deep.kt", index) }
+
+        AppLog.e(LogComponent.BRIDGE, "dispatch", deep)
+
+        val record = recorded.records.single()
+        assertEquals(200, record.split("\n\t    at ").size - 1)
+        assertEquals(1, record.split("... frames truncated").size - 1)
+    }
+
+    @Test
+    fun `the timestamp length constant still matches what is rendered`() {
+        // LogcatSink indexes the level character past this constant to pick a logcat priority; a
+        // format change that nobody mirrored here silently downgrades every logcat line to INFO.
+        AppLog.w(LogComponent.DIAG, "probe", null)
+
+        val record = recorded.records.single()
+        assertTrue(
+            record.take(TIMESTAMP_LENGTH)
+                .matches(Regex("""\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z""")),
+        )
+        assertEquals(' ', record[TIMESTAMP_LENGTH])
+        assertEquals(LogLevel.WARN.code, record[TIMESTAMP_LENGTH + 1])
+    }
+
+    @Test
     fun `a value carrying quotes, newlines and control characters stays on one line`() {
         AppLog.w(
             LogComponent.MEDIA,
             "probe",
             null,
-            "detail" to "he said \"go\"\nsecond\u0007 line\\here",
+            "detail" to "he said \"go\"\r\nsecond\u0007 line\\here",
         )
 
         val record = recorded.records.single()
         assertEquals(1, record.lines().size)
+        assertFalse(record.contains('\r'))
         assertTrue(record.contains("detail=\""))
         assertTrue(record.contains("\\\"go\\\""))
         assertTrue(record.contains("\\nsecond line"))
@@ -186,6 +215,26 @@ class AppLogTest {
     fun `boundary returns the block result and is silent while debug is off`() {
         assertEquals(7, AppLog.boundary(LogComponent.MINING, "tokenize") { 7 })
         assertEquals(emptyList<String>(), recorded.records)
+    }
+
+    @Test
+    fun `a failure whose message cannot be read is reported, not rethrown`() {
+        // The real shape: a Chaquopy PyException whose JNI-backed getMessage() fails because the
+        // interpreter is already dead — which is the failure being logged. Propagating out of here
+        // would skip the caller's own error handling, and PythonRuntimeBootstrapGate would never
+        // complete its future.
+        AppLog.e(LogComponent.BOOTSTRAP, "python.initialize", UnreadableFailure())
+
+        val record = recorded.records.single()
+        assertEquals(1, record.lines().size)
+        assertTrue(record.contains(" E run=- c=bootstrap op=python.initialize unrenderable="))
+        assertTrue(record.contains("UnreadableFailure"))
+        assertTrue(record.contains("renderFault=java.lang.IllegalStateException"))
+    }
+
+    private class UnreadableFailure : RuntimeException() {
+        override val message: String
+            get() = throw IllegalStateException("interpreter is gone")
     }
 
     private fun opOf(record: String): String = fieldOf(record, "op")

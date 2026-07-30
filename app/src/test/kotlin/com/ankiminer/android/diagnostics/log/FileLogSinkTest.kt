@@ -1,6 +1,9 @@
 package com.ankiminer.android.diagnostics.log
 
 import java.io.File
+import java.io.FileOutputStream
+import java.io.IOException
+import java.io.OutputStream
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
@@ -8,6 +11,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -84,7 +88,7 @@ class FileLogSinkTest {
         }
 
     @Test
-    fun `a snapshot copies whole files across a rotation`() =
+    fun `a snapshot drains the queue and copies whole files across a rotation`() =
         runTest {
             val directory = temporaryFolder.newFolder("snapshotting")
             val destination = temporaryFolder.newFolder("bundle")
@@ -93,8 +97,10 @@ class FileLogSinkTest {
 
             repeat(4) { index -> sink.write("rotated-line-$index") }
             sink.flush()
+            // Deliberately not flushed: a snapshot that copied on the caller's thread instead of on
+            // the writer coroutine would miss this record, and the file it belongs in would not
+            // exist yet.
             sink.write("after-rotation")
-            sink.flush()
 
             val copies = sink.snapshot(destination)
 
@@ -141,17 +147,64 @@ class FileLogSinkTest {
             sink.write("line-0")
             sink.flush()
 
-            assertNotNull(sink.disabledBy)
+            val disabled = sink.disabledBy
+            assertNotNull(disabled)
 
             sink.write("line-1")
             sink.flush()
+
+            // Still disabled by the original failure, and no file was created beside the target.
+            assertSame(disabled, sink.disabledBy)
+            assertTrue(occupied.isFile)
         }
+
+    @Test
+    fun `a failing write disables the sink and never reaches the caller`() =
+        runTest {
+            val directory = temporaryFolder.newFolder("failing")
+            val stream = FailingOutputStream()
+            val sink = newSink(directory, openStream = { stream })
+
+            sink.write("line-0")
+            sink.flush()
+
+            assertNotNull(sink.disabledBy)
+            val attemptsBeforeDisable = stream.attempts
+            assertTrue(attemptsBeforeDisable > 0)
+
+            sink.write("line-1")
+            sink.flush()
+
+            // A disabled sink stops touching the file altogether, and flush() still returns.
+            assertEquals(attemptsBeforeDisable, stream.attempts)
+        }
+
+    private class FailingOutputStream : OutputStream() {
+        var attempts = 0
+            private set
+
+        override fun write(b: Int) = fail()
+
+        override fun write(
+            b: ByteArray,
+            off: Int,
+            len: Int,
+        ) = fail()
+
+        override fun flush() = fail()
+
+        private fun fail(): Nothing {
+            attempts++
+            throw IOException("No space left on device")
+        }
+    }
 
     private fun TestScope.newSink(
         directory: File,
         maxBytes: Long = 4L * 1024 * 1024,
         backupCount: Int = 1,
         lineCapacity: Int = 4096,
+        openStream: ((File) -> OutputStream)? = null,
     ) = FileLogSink(
         directory = directory,
         maxBytes = maxBytes,
@@ -159,6 +212,7 @@ class FileLogSinkTest {
         scope = backgroundScope,
         lineCapacity = lineCapacity,
         dispatcher = StandardTestDispatcher(testScheduler),
+        openStream = openStream ?: { file -> FileOutputStream(file, true) },
     )
 
     private fun logIn(directory: File) = File(directory, "anki_miner_app.log")
