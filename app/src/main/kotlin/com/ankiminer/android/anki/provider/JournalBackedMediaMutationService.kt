@@ -5,6 +5,7 @@ import com.ankiminer.android.anki.journal.AnkiMutationStore
 import com.ankiminer.android.anki.journal.ChildState
 import com.ankiminer.android.anki.journal.JournalError
 import com.ankiminer.android.anki.journal.JournalErrorCode
+import com.ankiminer.android.anki.journal.JournalInvariantViolation
 import com.ankiminer.android.anki.journal.JournalRequest
 import com.ankiminer.android.anki.journal.JournalResponse
 import com.ankiminer.android.anki.journal.MediaClaimRecord
@@ -30,6 +31,7 @@ import com.ankiminer.android.anki.protocol.StoreMediaRequest
 import com.ankiminer.android.anki.protocol.StoreMediaResult
 import com.ankiminer.android.anki.protocol.StoredMedia
 import com.ankiminer.android.anki.protocol.UncertainMedia
+import com.ankiminer.android.diagnostics.compactFaultToken
 import java.nio.ByteBuffer
 import java.security.MessageDigest
 
@@ -239,12 +241,16 @@ internal class JournalBackedMediaMutationService(
         }
 
         journal.begin(durableRequest)
-        journal.acquireLease(request.runId)
         val reservations =
-            journal.reserve(
-                request.runId,
-                request.assets.map { asset -> asset.toReservation(request.requestId) },
-            )
+            try {
+                journal.acquireLease(request.runId)
+                journal.reserve(
+                    request.runId,
+                    request.assets.map { asset -> asset.toReservation(request.requestId) },
+                )
+            } catch (failure: JournalInvariantViolation) {
+                return refuseBatchRowLocally(request, durableRequest, failure)
+            }
         requireReservationBatch(request, reservations)
         val unusedReservations = reservations.associateByTo(linkedMapOf(), MediaReservationRecord::id)
 
@@ -509,6 +515,39 @@ internal class JournalBackedMediaMutationService(
         }
 
         releaseUnusedReservations(unusedReservations)
+        return finishResult(request, durableRequest, topLevelError = null, replayed = false)
+    }
+
+    /**
+     * Refuses every asset row-locally when the journal will not admit the batch at all.
+     *
+     * Lease and namespace admission happen before any reservation exists, so there is nothing to
+     * roll back and no provider entry to reconcile — the batch simply cannot be stored. Answering
+     * with a top-level error made the whole mining run fail with an unattributable
+     * `internal_error` (Issue #6); a `media_store_failed` row per asset is the same outcome the
+     * staging failures above already produce, and Python treats it as recoverable, so the run
+     * creates its notes without that media instead of creating nothing.
+     *
+     * `JournalInvariantViolation` only: a [com.ankiminer.android.anki.journal.JournalCorruptionException]
+     * means the durable state itself is untrustworthy and must stay fatal.
+     */
+    private fun refuseBatchRowLocally(
+        request: StoreMediaRequest,
+        durableRequest: JournalRequest,
+        failure: JournalInvariantViolation,
+    ): StoreMediaMutationOutcome {
+        val evidence = "providerEntry=false;admission=refused;fault=${compactFaultToken(failure)}"
+        request.assets.forEachIndexed { index, asset ->
+            journal.append(
+                durableRequest.key,
+                AlignedResult.MediaFailed(
+                    requestIndex = index,
+                    itemId = asset.assetId,
+                    rowError = rowLocalMediaFailure(),
+                    compactEvidence = evidence,
+                ),
+            )
+        }
         return finishResult(request, durableRequest, topLevelError = null, replayed = false)
     }
 
