@@ -278,6 +278,26 @@ internal class AnkiProviderCallbacks(
             failureResponse(request, failure)
         }
 
+    /**
+     * Maps a handler failure to a stable typed error, or to the digested catch-all below.
+     *
+     * What can reach the catch-all, audited against Issue #6 (reads working, zero notes created):
+     *
+     * * `JournalInvariantViolation` from media lease/namespace admission — the one shape reachable on
+     *   ordinary content, because media names are content-addressed and an earlier run's unresolved
+     *   claim keeps its namespace family. `JournalBackedMediaMutationService.refuseBatchRowLocally`
+     *   now degrades it to `media_store_failed`, so it no longer stops a run.
+     * * `JournalInvariantViolation` / `JournalCorruptionException` from the note saga, `promote`,
+     *   `append`, `markResultReady`, and the `results()` reads — deliberately fatal: durable evidence
+     *   is either trustworthy or the run must stop.
+     * * `IllegalArgumentException` from the sealed provider commands, e.g. `CreateDeck`'s exact
+     *   deck-name check. Only reachable when the target deck must be created.
+     * * `IllegalStateException` from the `mediaMutationConflict` / `noteMutationConflict` helpers when
+     *   a durable replay disagrees with its live request.
+     *
+     * Anything new that lands here is a design gap, not a category: give it a typed branch above, or
+     * degrade it where it is raised. The token in the message is what tells the two apart in the field.
+     */
     private fun failureResponse(
         request: AnkiRequest,
         failure: RuntimeException,
