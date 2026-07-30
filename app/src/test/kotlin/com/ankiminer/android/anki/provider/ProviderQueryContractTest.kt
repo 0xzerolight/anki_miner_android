@@ -116,6 +116,21 @@ class ProviderQueryContractTest {
                 checksumColumn = "csum",
             ),
         )
+        val deckCards =
+            ProviderQuery(
+                endpoint = ProviderEndpoint.CARDS,
+                projection = ProviderQueryShapes.CARD_NOTE_DECK_PROJECTION,
+                selection = ProviderSelection.CardsInDeck("Quote \\\" deck"),
+            )
+        assertEquals(
+            CompiledProviderSelection("deck:\"Quote \\\\\\\" deck\"", null),
+            compileProviderSelection(
+                deckCards,
+                noteIdColumn = "_id",
+                modelIdColumn = "mid",
+                checksumColumn = "csum",
+            ),
+        )
     }
 
     @Test
@@ -177,6 +192,11 @@ class ProviderQueryContractTest {
                     selection = ProviderSelection.CardsForNote(30L),
                 ),
                 ProviderQuery(
+                    ProviderEndpoint.CARDS,
+                    projection = ProviderQueryShapes.CARD_NOTE_DECK_PROJECTION,
+                    selection = ProviderSelection.CardsInDeck("Mining"),
+                ),
+                ProviderQuery(
                     ProviderEndpoint.CARD_BY_ID,
                     endpointId = 40L,
                     projection = ProviderQueryShapes.CARD_IDENTITY_PROJECTION,
@@ -188,7 +208,7 @@ class ProviderQueryContractTest {
                 ),
             )
 
-        assertEquals(13, legal.size)
+        assertEquals(14, legal.size)
         assertTrue(legal.all(ProviderQueryShapes::isAllowed))
     }
 

@@ -114,7 +114,12 @@ internal data class KnownTraversalInitialization(
     internal val runId: String,
     internal val ownerId: Long,
     internal val generation: Long,
-    val scope: List<String>,
+    val scope: KnownTraversalScope,
+)
+
+internal data class KnownTraversalScope(
+    val excludedDecks: List<String>,
+    val deckName: String?,
 )
 
 internal data class KnownPageLease(
@@ -508,7 +513,7 @@ internal class AnkiRunStateRegistry(
 
     fun beginKnownTraversal(
         owner: RunOwner,
-        scope: List<String>,
+        scope: KnownTraversalScope,
     ): KnownTraversalInitialization =
         synchronized(lock) {
             val state = requireOwnerLocked(owner)
@@ -517,7 +522,12 @@ internal class AnkiRunStateRegistry(
             }
             val generation = nextGeneration++
             state.knownInitialization = generation
-            KnownTraversalInitialization(state.runId, owner.ownerId, generation, scope.toList())
+            KnownTraversalInitialization(
+                state.runId,
+                owner.ownerId,
+                generation,
+                scope.copy(excludedDecks = scope.excludedDecks.toList()),
+            )
         }
 
     fun finishKnownTraversalInitialization(
@@ -547,7 +557,7 @@ internal class AnkiRunStateRegistry(
 
     fun reserveKnownPage(
         owner: RunOwner,
-        scope: List<String>,
+        scope: KnownTraversalScope,
         requestedCursor: KnownVocabularyCursor,
     ): KnownPageLease =
         synchronized(lock) {
@@ -996,7 +1006,7 @@ internal class AnkiRunStateRegistry(
     }
 
     private inner class KnownTraversal(
-        val scope: List<String>,
+        val scope: KnownTraversalScope,
         val noteIds: List<Long>,
     ) {
         val generation = nextGeneration++

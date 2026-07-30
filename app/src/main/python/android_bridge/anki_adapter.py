@@ -941,10 +941,16 @@ class AndroidAnkiAdapter:
             "maxTotalUtf8Bytes": _KNOWN_VOCABULARY_PAGE_UTF8_BYTES,
         }
         try:
+            deck_scope = (
+                {"deckName": self.config.anki_deck_name}
+                if self.config.allow_duplicate_cards
+                else {}
+            )
             payload = self._callbacks.scan_first_fields(
                 {
                     "scope": {
                         "kind": "knownVocabulary",
+                        **deck_scope,
                         "excludedDecks": excluded_decks,
                         "cursor": cursor,
                         "limits": limits,

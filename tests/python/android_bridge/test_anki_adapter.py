@@ -578,12 +578,14 @@ class FakeKotlinAnki:
                 cursor_state = self._known_cursors.pop(cursor["token"])
                 assert cursor_state["runId"] == request["runId"]
                 assert cursor_state["excludedDecks"] == tuple(scope["excludedDecks"])
+                assert cursor_state["deckName"] == scope.get("deckName")
                 assert cursor_state["ordinal"] == cursor["ordinal"]
                 start = cursor_state["start"]
                 scanned_before = cursor_state["scannedNotes"]
                 next_ordinal = cursor["ordinal"] + 1
             limits = scope["limits"]
             excluded = scope["excludedDecks"]
+            target_deck = scope.get("deckName")
             page_fields: list[str] = []
             page_utf8_bytes = 0
             scanned_notes = 0
@@ -604,10 +606,16 @@ class FakeKotlinAnki:
                     for deck in decks
                     for excluded_deck in excluded
                 )
-                if not note_is_excluded and page_fields and page_utf8_bytes + field_bytes > limits["maxTotalUtf8Bytes"]:
+                note_is_in_scope = target_deck is None or target_deck in decks
+                if (
+                    note_is_in_scope
+                    and not note_is_excluded
+                    and page_fields
+                    and page_utf8_bytes + field_bytes > limits["maxTotalUtf8Bytes"]
+                ):
                     break
                 scanned_notes += 1
-                if not note_is_excluded:
+                if note_is_in_scope and not note_is_excluded:
                     page_fields.append(field)
                     page_utf8_bytes += field_bytes
             next_index = start + scanned_notes
@@ -630,6 +638,7 @@ class FakeKotlinAnki:
                 self._known_cursors[token] = {
                     "runId": request["runId"],
                     "excludedDecks": tuple(scope["excludedDecks"]),
+                    "deckName": target_deck,
                     "ordinal": next_ordinal,
                     "start": next_index,
                     "scannedNotes": total_scanned,
@@ -1363,6 +1372,23 @@ def test_known_vocabulary_is_normalized_filtered_and_cached(
         "cursor": None,
         "limits": _KNOWN_VOCABULARY_LIMITS,
     }
+
+
+def test_allow_duplicate_cards_scopes_known_vocabulary_to_exact_target_deck(
+    initialized_bridge_home: Path,
+) -> None:
+    config = _config(initialized_bridge_home, allow_duplicate_cards=True)
+    kotlin = FakeKotlinAnki()
+    kotlin.known_fields = ["猫", "犬", "鳥"]
+    kotlin.known_note_decks = [
+        {"Japanese::Other"},
+        {config.anki_deck_name},
+        {f"{config.anki_deck_name}::Child"},
+    ]
+    adapter = _adapter(config, kotlin)
+
+    assert adapter.get_existing_vocabulary() == {"犬"}
+    assert kotlin.requests_for("ankiScanFirstFields")[0]["payload"]["scope"]["deckName"] == config.anki_deck_name
 
 
 def test_known_vocabulary_cancellation_stops_before_the_next_page(
