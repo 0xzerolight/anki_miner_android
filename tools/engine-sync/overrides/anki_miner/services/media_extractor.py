@@ -324,9 +324,16 @@ class MediaExtractorService:
         poll = self._CANCEL_POLL_INTERVAL if cancelled_check else None
 
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            # Submit all extraction jobs
-            future_to_word = {
-                executor.submit(
+            words_to_submit = iter(words)
+            future_to_word = {}
+            pending = set()
+
+            def _submit_next() -> bool:
+                try:
+                    word = next(words_to_submit)
+                except StopIteration:
+                    return False
+                future = executor.submit(
                     self.extract_media,
                     video_file,
                     word,
@@ -337,31 +344,38 @@ class MediaExtractorService:
                     include_screenshot=include_screenshot,
                     include_audio=include_audio,
                     animated_format=animated_fmt,
-                ): word
-                for word in words
-            }
+                )
+                future_to_word[future] = word
+                pending.add(future)
+                return True
+
+            # Keep no more queued Futures than workers. Replenish the window
+            # only as completed work is consumed.
+            for _ in range(max_workers):
+                if not _submit_next():
+                    break
 
             # Collect results as they complete. concurrent.futures.wait with a
             # short timeout (instead of as_completed) so a cancel request is
             # noticed while encodes are still in flight, not only after one
             # of them happens to finish.
-            pending = set(future_to_word)
             completed = 0
             while pending and not was_cancelled:
-                done, pending = wait(pending, timeout=poll, return_when=FIRST_COMPLETED)
+                done, _ = wait(pending, timeout=poll, return_when=FIRST_COMPLETED)
                 if not done:
                     # Nothing finished within the poll window; only check cancel.
                     if cancelled_check and cancelled_check():
                         was_cancelled = True
                     continue
                 for future in done:
+                    pending.discard(future)
+                    word = future_to_word.pop(future)
                     # Check cancellation between items
                     if cancelled_check and cancelled_check():
                         was_cancelled = True
                         break
 
                     completed += 1
-                    word = future_to_word[future]
 
                     try:
                         media = future.result()
@@ -427,6 +441,8 @@ class MediaExtractorService:
                     except Exception as e:
                         if progress_callback:
                             progress_callback.on_error(word.lemma, str(e))
+                    if not was_cancelled:
+                        _submit_next()
 
             if was_cancelled:
                 # Drop queued futures, then kill in-flight ffmpeg so the

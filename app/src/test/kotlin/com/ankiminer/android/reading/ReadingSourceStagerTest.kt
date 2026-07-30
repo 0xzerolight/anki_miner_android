@@ -5,6 +5,9 @@ import com.ankiminer.android.media.FileCopyCancelledException
 import com.ankiminer.android.media.FileCopyLimitExceededException
 import com.ankiminer.android.media.FileCopySizeMismatchException
 import com.ankiminer.android.media.FileCopyStorageException
+import com.ankiminer.android.media.ProviderIoCancellation
+import com.ankiminer.android.media.ProviderIoCancellationController
+import com.ankiminer.android.media.ProviderIoCancellationRegistration
 import com.ankiminer.android.media.SafDocument
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
@@ -20,6 +23,10 @@ import java.io.IOException
 import java.io.InputStream
 import java.nio.file.Files
 import java.util.ArrayDeque
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
 class ReadingSourceStagerTest {
@@ -344,6 +351,60 @@ class ReadingSourceStagerTest {
     }
 
     @Test
+    fun `cancellation interrupts a blocked provider open and removes the stage`() {
+        val root = File(temporary.root, "cancel-blocked-open")
+        val source = document("content://reading/blocked-open", "blocked.txt", null)
+        val openStarted = CountDownLatch(1)
+        val releaseOpen = CountDownLatch(1)
+        val controller = ProviderIoCancellationController()
+        val cancellation =
+            object : FileCopyCancellation {
+                override fun isCancelled(): Boolean = controller.isCancelled()
+
+                override fun invokeOnCancellation(
+                    listener: () -> Unit,
+                ): ProviderIoCancellationRegistration =
+                    controller.invokeOnCancellation(listener)
+            }
+        val opener =
+            ReadingSourceInputOpener { _, providerCancellation ->
+                val registration =
+                    providerCancellation.invokeOnCancellation {
+                        releaseOpen.countDown()
+                    }
+                try {
+                    openStarted.countDown()
+                    assertTrue(releaseOpen.await(1, TimeUnit.SECONDS))
+                    throw IOException("provider open interrupted")
+                } finally {
+                    registration.close()
+                }
+            }
+        val executor = Executors.newSingleThreadExecutor()
+        try {
+            val staging =
+                executor.submit<StagedReadingSource> {
+                    stager(root, opener).stage(
+                        ReadingSourceSelection.Single(source),
+                        cancellation = cancellation,
+                    )
+                }
+            assertTrue(openStarted.await(1, TimeUnit.SECONDS))
+
+            controller.cancel()
+
+            val failure =
+                assertThrows(ExecutionException::class.java) {
+                    staging.get(1, TimeUnit.SECONDS)
+                }
+            assertTrue(failure.cause is FileCopyCancelledException)
+            assertTrue(root.listFiles().orEmpty().isEmpty())
+        } finally {
+            executor.shutdownNow()
+        }
+    }
+
+    @Test
     fun `empty sources fail before open when known and after bounded copy when unknown`() {
         val knownRoot = File(temporary.root, "known-empty")
         val known = document("content://reading/known-empty", "empty.txt", 0L)
@@ -484,6 +545,46 @@ class ReadingSourceStagerTest {
             staged.close()
             assertTrue(root.listFiles().orEmpty().isEmpty())
         }
+    }
+
+    @Test
+    fun `lone archive rejects a generated sidecar name over 255 UTF-8 bytes before open`() {
+        val root = File(temporary.root, "generated-name-limit")
+        val stem = "a".repeat(251)
+        val document = document("content://reading/long-name", "$stem.cbz", 1L)
+        val opener = FakeReadingSourceOpener(emptyMap())
+
+        val failure =
+            assertThrows(ReadingSourceSelectionException::class.java) {
+                stager(root, opener, limits = archiveLimits())
+                    .stage(ReadingSourceSelection.Single(document))
+            }
+
+        assertEquals(ReadingSourceSelectionFailure.INVALID_DISPLAY_NAME, failure.failure)
+        assertFalse(root.exists())
+        assertTrue(opener.openedUris.isEmpty())
+    }
+
+    @Test
+    fun `EOCD member cap is checked before archive parser allocation`() {
+        val root = File(temporary.root, "eocd-member-limit")
+        val archiveBytes =
+            zipBytes("volume.mokuro" to "{\"pages\":[]}".toByteArray()).also { bytes ->
+                val eocd = bytes.lastIndexOfSignature(0x50, 0x4b, 0x05, 0x06)
+                bytes.writeLittleEndianU16(eocd + 8, 4_097)
+                bytes.writeLittleEndianU16(eocd + 10, 4_097)
+            }
+        val document = document("content://reading/eocd-limit", "volume.cbz", archiveBytes.size.toLong())
+        val opener = FakeReadingSourceOpener(mapOf(document.uri to archiveBytes))
+
+        val failure =
+            assertThrows(EmbeddedSidecarException::class.java) {
+                stager(root, opener, limits = archiveLimits())
+                    .stage(ReadingSourceSelection.Single(document))
+            }
+
+        assertEquals(EmbeddedSidecarFailure.UNREADABLE_ARCHIVE, failure.failure)
+        assertTrue(root.listFiles().orEmpty().isEmpty())
     }
 
     @Test
@@ -688,7 +789,7 @@ class ReadingSourceStagerTest {
 
     private fun stager(
         root: File,
-        opener: FakeReadingSourceOpener,
+        opener: ReadingSourceInputOpener,
         limits: ReadingSourceStageLimits = limits(),
         availableBytes: (File) -> Long = { Long.MAX_VALUE },
         nonceSource: ReadingSourceStageNonceSource = QueueNonceSource("1".repeat(32)),
@@ -762,10 +863,40 @@ private class FakeReadingSourceOpener(
 ) : ReadingSourceInputOpener {
     val openedUris = mutableListOf<String>()
 
-    override fun open(document: SafDocument): InputStream {
+    override fun open(
+        document: SafDocument,
+        cancellation: ProviderIoCancellation,
+    ): InputStream {
         openedUris += document.uri
         return ByteArrayInputStream(content.getValue(document.uri))
     }
+}
+
+private fun ByteArray.lastIndexOfSignature(
+    first: Int,
+    second: Int,
+    third: Int,
+    fourth: Int,
+): Int {
+    for (index in size - 4 downTo 0) {
+        if (
+            (this[index].toInt() and 0xff) == first &&
+                (this[index + 1].toInt() and 0xff) == second &&
+                (this[index + 2].toInt() and 0xff) == third &&
+                (this[index + 3].toInt() and 0xff) == fourth
+        ) {
+            return index
+        }
+    }
+    error("ZIP signature not found")
+}
+
+private fun ByteArray.writeLittleEndianU16(
+    offset: Int,
+    value: Int,
+) {
+    this[offset] = (value and 0xff).toByte()
+    this[offset + 1] = (value ushr 8 and 0xff).toByte()
 }
 
 private class QueueNonceSource(

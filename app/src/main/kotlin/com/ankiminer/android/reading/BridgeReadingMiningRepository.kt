@@ -18,6 +18,7 @@ import com.ankiminer.android.engine.ReadingMiningWireRequest
 import com.ankiminer.android.engine.TokenizerConfiguration
 import com.ankiminer.android.localization.StringResourceResolver
 import com.ankiminer.android.media.FileCopyCancellation
+import com.ankiminer.android.media.ProviderIoCancellationRegistration
 import com.ankiminer.android.media.SafDocument
 import com.ankiminer.android.mining.AlwaysReadyMiningRunAdmissionGate
 import com.ankiminer.android.mining.CoordinatorAnkiCallbacks
@@ -411,7 +412,19 @@ internal class BridgeReadingMiningRepository(
                 try {
                     sourceStager.stage(
                         selection = run.input.selection,
-                        cancellation = FileCopyCancellation(run.cancellation::isCancelled),
+                        cancellation =
+                            object : FileCopyCancellation {
+                                override fun isCancelled(): Boolean =
+                                    run.cancellation.isCancelled()
+
+                                override fun invokeOnCancellation(
+                                    listener: () -> Unit,
+                                ): ProviderIoCancellationRegistration {
+                                    val registration =
+                                        run.cancellation.invokeOnCancellation(listener)
+                                    return ProviderIoCancellationRegistration(registration::close)
+                                }
+                            },
                         progressListener =
                             ReadingSourceStageProgressListener { progress ->
                                 updateStagingProgress(generation, progress)

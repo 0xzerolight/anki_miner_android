@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import importlib.util
 import json
+import sys
 import threading
 import zipfile
 from pathlib import Path
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 
 import android_bridge.reading_limits as reading_limits
+import android_bridge.reading_mining as reading_mining
 import pytest
 from android_bridge.anki_adapter import AnkiOperationCancelled
 from android_bridge.protocol import BridgeProtocolError
@@ -32,6 +35,27 @@ def _limits(**changes: int) -> ZipArchiveLimits:
     }
     values.update(changes)
     return ZipArchiveLimits(**values)
+
+
+def _stub_pillow(monkeypatch: pytest.MonkeyPatch) -> None:
+    class DecompressionBombWarning(Warning):
+        pass
+
+    class DecompressionBombError(Exception):
+        pass
+
+    class UnidentifiedImageError(OSError):
+        pass
+
+    image = SimpleNamespace(
+        DecompressionBombWarning=DecompressionBombWarning,
+        DecompressionBombError=DecompressionBombError,
+        open=lambda _source: pytest.fail("Image.open must not run after archive.open fails"),
+    )
+    pillow = ModuleType("PIL")
+    pillow.Image = image
+    pillow.UnidentifiedImageError = UnidentifiedImageError
+    monkeypatch.setitem(sys.modules, "PIL", pillow)
 
 
 def test_normal_epub_archive_passes_mobile_expansion_preflight(tmp_path: Path) -> None:
@@ -177,6 +201,61 @@ def test_mokuro_json_fanout_and_txt_bytes_are_bounded_before_detector(
     assert "choose a smaller source" in str(text_size.value)
 
 
+def test_mokuro_page_cap_precedes_json_graph_materialization(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    sidecar = tmp_path / "preflight-first.mokuro"
+    sidecar.write_text('{"pages":[{},{}]}', encoding="utf-8")
+    monkeypatch.setattr(reading_limits, "MAX_MOKURO_PAGES", 1)
+
+    def fail_materialization(*_args: object, **_kwargs: object) -> object:
+        raise AssertionError("JSON graph was materialized before the page cap")
+
+    monkeypatch.setattr(json, "loads", fail_materialization)
+
+    with pytest.raises(BridgeProtocolError) as error:
+        reading_limits.validate_source_before_load(
+            source_kind="mokuro",
+            source_path=sidecar,
+            image_archive_path=None,
+        )
+
+    assert error.value.code == "reading_source_too_large"
+    assert "pages" in str(error.value)
+
+
+def test_mokuro_preflight_skips_the_same_malformed_nested_records_as_engine(
+    tmp_path: Path,
+) -> None:
+    sidecar = tmp_path / "mixed-records.mokuro"
+    sidecar.write_text(
+        json.dumps(
+            {
+                "pages": [
+                    None,
+                    {"blocks": "not-a-list"},
+                    {
+                        "blocks": [
+                            None,
+                            {"lines": "not-a-list"},
+                            {"lines": [7, "まとも。"]},
+                        ]
+                    },
+                ]
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    reading_limits.validate_source_before_load(
+        source_kind="mokuro",
+        source_path=sidecar,
+        image_archive_path=None,
+    )
+
+
 def test_loaded_document_unit_and_cumulative_text_limits_are_exact(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -207,6 +286,161 @@ def test_loaded_document_unit_and_cumulative_text_limits_are_exact(
         )
     assert text_error.value.code == "reading_source_too_large"
     assert "retained-text" in str(text_error.value)
+
+
+def test_reading_unit_limit_stops_loader_before_the_excess_unit_is_retained(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "book.txt"
+    source.write_text("猫。犬。", encoding="utf-8")
+
+    class CountingDetector:
+        def __init__(self) -> None:
+            self.created: list[object] = []
+            self.ref = SimpleNamespace(kind="txt", image_root=None)
+
+        def detect(self, _path: Path) -> list[object]:
+            return [self.ref]
+
+        def load(
+            self,
+            _ref: object,
+            *,
+            strip_subtitle_annotations: bool,
+        ) -> object:
+            assert strip_subtitle_annotations is True
+            from anki_miner.models.reading import ReadingDocument, ReadingUnit
+
+            splitter_path = (
+                Path(__file__).resolve().parents[3]
+                / "app/src/main/python/anki_miner/services/reading/sentence_splitter.py"
+            )
+            spec = importlib.util.spec_from_file_location("bounded_sentence_splitter", splitter_path)
+            assert spec is not None and spec.loader is not None
+            splitter = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(splitter)
+
+            document = ReadingDocument(
+                title="book",
+                kind="book",
+                series="book",
+                episode="book",
+            )
+            for index, text in enumerate(splitter.split_sentences("猫。犬。")):
+                unit = ReadingUnit(
+                    text=text,
+                    index=index,
+                    location_label="¶1",
+                )
+                self.created.append(unit)
+                document.units.append(unit)
+            return document
+
+    detector = CountingDetector()
+    monkeypatch.setattr(reading_mining, "_reading_detector", lambda: detector)
+    monkeypatch.setattr(reading_limits, "MAX_DOCUMENT_UNITS", 1)
+    request = reading_mining._ReadingRequest(
+        source_kind="txt",
+        source_path=source,
+        image_archive_path=None,
+        series_name=None,
+        cache_dir=tmp_path,
+        native_library_dir=tmp_path,
+        settings={},
+        android_tts_enabled=False,
+    )
+
+    with pytest.raises(BridgeProtocolError) as error:
+        reading_mining._load_document(request)
+
+    assert error.value.code == "reading_source_too_large"
+    assert detector.created == []
+
+
+def test_image_preflight_skips_unsupported_members_like_engine(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _stub_pillow(monkeypatch)
+    archive_path = tmp_path / "unsupported.cbz"
+    archive_path.write_bytes(b"placeholder")
+    image_ref = SimpleNamespace(source=archive_path, entry="page.png")
+    document = SimpleNamespace(
+        units=[
+            SimpleNamespace(
+                text="猫。",
+                location_label="p.1",
+                image_ref=image_ref,
+            )
+        ]
+    )
+
+    class UnsupportedArchive:
+        def __enter__(self) -> UnsupportedArchive:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def open(self, _entry: str) -> object:
+            raise NotImplementedError("unsupported ZIP compression")
+
+    monkeypatch.setattr(
+        reading_limits.zipfile,
+        "ZipFile",
+        lambda _path: UnsupportedArchive(),
+    )
+
+    reading_limits.validate_loaded_document(
+        document,
+        source_kind="mokuro",
+        source_path=tmp_path / "volume.mokuro",
+        image_archive_path=archive_path,
+    )
+
+
+def test_image_preflight_never_swallows_memory_error(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _stub_pillow(monkeypatch)
+    archive_path = tmp_path / "memory.cbz"
+    archive_path.write_bytes(b"placeholder")
+    image_ref = SimpleNamespace(source=archive_path, entry="page.png")
+    document = SimpleNamespace(
+        units=[
+            SimpleNamespace(
+                text="猫。",
+                location_label="p.1",
+                image_ref=image_ref,
+            )
+        ]
+    )
+
+    class ExhaustedArchive:
+        def __enter__(self) -> ExhaustedArchive:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def open(self, _entry: str) -> object:
+            raise MemoryError("allocation failed")
+
+    monkeypatch.setattr(
+        reading_limits.zipfile,
+        "ZipFile",
+        lambda _path: ExhaustedArchive(),
+    )
+
+    with pytest.raises(MemoryError, match="allocation failed"):
+        reading_limits.validate_loaded_document(
+            document,
+            source_kind="mokuro",
+            source_path=tmp_path / "volume.mokuro",
+            image_archive_path=archive_path,
+        )
 
 
 def test_cancellation_interrupts_archive_preflight(tmp_path: Path) -> None:

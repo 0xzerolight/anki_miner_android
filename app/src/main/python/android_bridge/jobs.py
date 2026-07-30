@@ -9,6 +9,7 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, cast
 
+from .anki_limits import ANKI_LIMITS_V1
 from .protocol import BridgeProtocolError, decode_envelope, decode_message, encode_message
 
 _RUN_ID_RE = re.compile(r"^run_[0-9a-f]{32}$")
@@ -21,6 +22,7 @@ _SENTENCE_ID_RE = re.compile(r"^sentence_[0-9a-f]{32}$")
 # BridgeJsonCodec and curation.schema.json.
 CURATION_PAGE_MAX_CANDIDATES = 100
 CURATION_PAGE_MAX_UTF8_BYTES = 512 * 1024
+_MAX_CURATED_SOURCE_ITEMS = ANKI_LIMITS_V1["createCall"]["maxSourceItems"]
 
 
 @dataclass(frozen=True)
@@ -61,6 +63,7 @@ class _CurationGate:
     page_index: int = 0
     page_resolved: bool = False
     cancelled: bool = False
+    failure: BridgeProtocolError | None = None
     selected: list[object] = field(default_factory=list)
 
     @property
@@ -458,6 +461,10 @@ class JobRegistry:
                 if state.handle.cancel_event.is_set() or gate.cancelled:
                     self._complete_curation_locked(state, gate)
                     return None
+                if gate.failure is not None:
+                    failure = gate.failure
+                    self._complete_curation_locked(state, gate)
+                    raise failure
                 if not gate.page_resolved:
                     raise BridgeProtocolError(
                         "invalid_curation_state",
@@ -578,11 +585,18 @@ class JobRegistry:
                 allowed_candidate_ids = (
                     set(gate.pages[gate.page_index].candidate_ids) if gate.paged else set(gate.candidates)
                 )
-                gate.selected.extend(self._resolve_selection(gate, selection, allowed_candidate_ids))
+                resolved = self._resolve_selection(gate, selection, allowed_candidate_ids)
+                if len(gate.selected) + len(resolved) > _MAX_CURATED_SOURCE_ITEMS:
+                    gate.failure = BridgeProtocolError(
+                        "create_call_too_large",
+                        "The create call contains too many source cards",
+                    )
+                else:
+                    gate.selected.extend(resolved)
             else:
                 raise BridgeProtocolError("invalid_curation_response", "selection must be null or an array")
 
-            final_page = gate.final_page or gate.cancelled
+            final_page = gate.final_page or gate.cancelled or gate.failure is not None
             gate.page_resolved = True
             gate.event.set()
             return CurationResolution(

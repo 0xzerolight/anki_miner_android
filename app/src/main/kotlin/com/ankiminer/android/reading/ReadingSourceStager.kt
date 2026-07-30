@@ -8,18 +8,19 @@ import com.ankiminer.android.media.FileCopyCancelledException
 import com.ankiminer.android.media.FileCopyLimitExceededException
 import com.ankiminer.android.media.FileCopyProgressListener
 import com.ankiminer.android.media.FileCopyStorageException
+import com.ankiminer.android.media.ProviderIoCancellation
 import com.ankiminer.android.media.SafDocument
 import java.io.Closeable
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
+import java.io.RandomAccessFile
 import java.net.URI
 import java.net.URISyntaxException
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.security.SecureRandom
 import java.text.Normalizer
-import java.util.Collections
 import java.util.Locale
 import java.util.zip.ZipException
 import java.util.zip.ZipFile
@@ -150,7 +151,10 @@ internal data class ReadingSourceStageLimits(
 
 internal fun interface ReadingSourceInputOpener {
     @Throws(IOException::class)
-    fun open(document: SafDocument): InputStream
+    fun open(
+        document: SafDocument,
+        cancellation: ProviderIoCancellation,
+    ): InputStream
 }
 
 internal fun interface ReadingSourceStageNonceSource {
@@ -231,6 +235,7 @@ internal class ReadingSourceStager(
     ): StagedReadingSource {
         checkCancellation(cancellation)
         val plan = buildPlan(selection)
+        validatePlanNames(plan)
         preflightKnownSizes(plan)
         checkCancellation(cancellation)
 
@@ -264,7 +269,7 @@ internal class ReadingSourceStager(
                 val copied =
                     try {
                         fileCopier.copy(
-                            openSource = { inputOpener.open(entry.document) },
+                            openSource = { inputOpener.open(entry.document, cancellation) },
                             destination = destination,
                             knownSizeBytes = entry.document.sizeBytes,
                             policy = policy,
@@ -355,6 +360,7 @@ internal class ReadingSourceStager(
         cancellation: FileCopyCancellation,
         progressListener: ReadingSourceStageProgressListener,
     ): Long {
+        preflightArchiveDirectory(archive, cancellation)
         val zip =
             try {
                 ZipFile(archive)
@@ -364,17 +370,26 @@ internal class ReadingSourceStager(
                 throw embeddedSidecarUnreadable(failure)
             }
         zip.use { open ->
-            val members = Collections.list(open.entries())
-            if (members.size > MAX_ARCHIVE_MEMBER_SCAN) {
-                throw EmbeddedSidecarException(
-                    EmbeddedSidecarFailure.UNREADABLE_ARCHIVE,
-                    "Mokuro image archive lists too many members",
-                )
-            }
-            val candidates =
-                members.filter { member ->
-                    !member.isDirectory && isSafeSidecarMemberName(member.name)
+            val members = open.entries()
+            val candidates = mutableListOf<java.util.zip.ZipEntry>()
+            var memberCount = 0
+            while (members.hasMoreElements()) {
+                if (memberCount % ARCHIVE_CANCELLATION_INTERVAL == 0) {
+                    checkCancellation(cancellation)
                 }
+                val member = members.nextElement()
+                memberCount += 1
+                if (memberCount > MAX_ARCHIVE_MEMBER_SCAN) {
+                    throw EmbeddedSidecarException(
+                        EmbeddedSidecarFailure.UNREADABLE_ARCHIVE,
+                        "Mokuro image archive lists too many members",
+                    )
+                }
+                if (!member.isDirectory && isSafeSidecarMemberName(member.name)) {
+                    candidates += member
+                }
+            }
+            checkCancellation(cancellation)
             val selected =
                 when {
                     candidates.isEmpty() ->
@@ -422,6 +437,71 @@ internal class ReadingSourceStager(
         }
     }
 
+    private fun preflightArchiveDirectory(
+        archive: File,
+        cancellation: FileCopyCancellation,
+    ) {
+        checkCancellation(cancellation)
+        val length = archive.length()
+        if (length < ZIP_EOCD_BYTES.toLong()) throw unreadableArchiveDirectory()
+        val tailSize =
+            minOf(
+                length,
+                (ZIP_EOCD_BYTES + ZIP_MAX_COMMENT_BYTES).toLong(),
+            ).toInt()
+        val tail = ByteArray(tailSize)
+        try {
+            RandomAccessFile(archive, "r").use { input ->
+                input.seek(length - tailSize)
+                input.readFully(tail)
+            }
+        } catch (failure: IOException) {
+            throw embeddedSidecarUnreadable(failure)
+        }
+        checkCancellation(cancellation)
+
+        val eocd = tail.lastIndexOfSignature(ZIP_EOCD_SIGNATURE)
+        if (eocd < 0 || tail.size - eocd < ZIP_EOCD_BYTES) {
+            throw unreadableArchiveDirectory()
+        }
+        val commentLength = tail.readU16(eocd + ZIP_EOCD_COMMENT_LENGTH_OFFSET)
+        if (eocd + ZIP_EOCD_BYTES + commentLength != tail.size) {
+            throw unreadableArchiveDirectory()
+        }
+        val diskNumber = tail.readU16(eocd + ZIP_EOCD_DISK_NUMBER_OFFSET)
+        val centralDisk = tail.readU16(eocd + ZIP_EOCD_CENTRAL_DISK_OFFSET)
+        val diskEntries = tail.readU16(eocd + ZIP_EOCD_DISK_ENTRIES_OFFSET)
+        val totalEntries = tail.readU16(eocd + ZIP_EOCD_TOTAL_ENTRIES_OFFSET)
+        val centralSize = tail.readU32(eocd + ZIP_EOCD_CENTRAL_SIZE_OFFSET)
+        val centralOffset = tail.readU32(eocd + ZIP_EOCD_CENTRAL_OFFSET_OFFSET)
+        if (diskNumber != 0 || centralDisk != 0 || diskEntries != totalEntries) {
+            throw unreadableArchiveDirectory()
+        }
+        if (
+            totalEntries == ZIP64_U16 ||
+                centralSize == ZIP64_U32 ||
+                centralOffset == ZIP64_U32
+        ) {
+            throw unreadableArchiveDirectory()
+        }
+        if (totalEntries > MAX_ARCHIVE_MEMBER_SCAN) {
+            throw EmbeddedSidecarException(
+                EmbeddedSidecarFailure.UNREADABLE_ARCHIVE,
+                "Mokuro image archive lists too many members",
+            )
+        }
+        if (centralSize > MAX_ARCHIVE_CENTRAL_DIRECTORY_BYTES) {
+            throw EmbeddedSidecarException(
+                EmbeddedSidecarFailure.UNREADABLE_ARCHIVE,
+                "Mokuro image archive central directory is too large",
+            )
+        }
+        if (centralOffset > length || centralSize > length - centralOffset) {
+            throw unreadableArchiveDirectory()
+        }
+        checkCancellation(cancellation)
+    }
+
     private fun preflightKnownSizes(plan: StagePlan) {
         var knownTotal = 0L
         plan.entries.forEach { entry ->
@@ -433,6 +513,25 @@ internal class ReadingSourceStager(
             if (knownTotal > limits.jobMaxBytes) {
                 throw ReadingSourceTotalLimitExceededException(limits.jobMaxBytes, knownTotal)
             }
+        }
+    }
+
+    private fun validatePlanNames(plan: StagePlan) {
+        val generatedNames =
+            buildList {
+                plan.entries.forEach { entry -> add(entry.outputName) }
+                add(plan.detectorName)
+                plan.imageArchiveName?.let(::add)
+            }
+        if (
+            generatedNames.any { name ->
+                name.toByteArray(StandardCharsets.UTF_8).size > MAX_DISPLAY_NAME_UTF8_BYTES
+            }
+        ) {
+            throw selectionFailure(
+                ReadingSourceSelectionFailure.INVALID_DISPLAY_NAME,
+                "Reading source display name cannot be staged safely",
+            )
         }
     }
 
@@ -610,8 +709,45 @@ internal class ReadingSourceStager(
         // Cheap defense-in-depth mirroring android_bridge.reading_limits
         // MOKURO_ARCHIVE_LIMITS.max_members; Python re-validates the archive.
         const val MAX_ARCHIVE_MEMBER_SCAN = 4096
+        const val MAX_ARCHIVE_CENTRAL_DIRECTORY_BYTES = 4L * 1024 * 1024
+        const val ARCHIVE_CANCELLATION_INTERVAL = 64
+        const val ZIP_EOCD_BYTES = 22
+        const val ZIP_MAX_COMMENT_BYTES = 65_535
+        const val ZIP_EOCD_DISK_NUMBER_OFFSET = 4
+        const val ZIP_EOCD_CENTRAL_DISK_OFFSET = 6
+        const val ZIP_EOCD_DISK_ENTRIES_OFFSET = 8
+        const val ZIP_EOCD_TOTAL_ENTRIES_OFFSET = 10
+        const val ZIP_EOCD_CENTRAL_SIZE_OFFSET = 12
+        const val ZIP_EOCD_CENTRAL_OFFSET_OFFSET = 16
+        const val ZIP_EOCD_COMMENT_LENGTH_OFFSET = 20
+        const val ZIP64_U16 = 0xffff
+        const val ZIP64_U32 = 0xffff_ffffL
+        val ZIP_EOCD_SIGNATURE = byteArrayOf(0x50, 0x4b, 0x05, 0x06)
     }
 }
+
+private fun ByteArray.lastIndexOfSignature(signature: ByteArray): Int {
+    for (index in size - signature.size downTo 0) {
+        if (signature.indices.all { offset -> this[index + offset] == signature[offset] }) {
+            return index
+        }
+    }
+    return -1
+}
+
+private fun ByteArray.readU16(offset: Int): Int =
+    (this[offset].toInt() and 0xff) or
+        ((this[offset + 1].toInt() and 0xff) shl 8)
+
+private fun ByteArray.readU32(offset: Int): Long =
+    readU16(offset).toLong() or
+        (readU16(offset + 2).toLong() shl 16)
+
+private fun unreadableArchiveDirectory() =
+    EmbeddedSidecarException(
+        EmbeddedSidecarFailure.UNREADABLE_ARCHIVE,
+        "Mokuro image archive central directory is invalid",
+    )
 
 private fun isSafeSidecarMemberName(name: String): Boolean {
     if (name.isEmpty() || !name.lowercase(Locale.ROOT).endsWith(".mokuro")) return false
