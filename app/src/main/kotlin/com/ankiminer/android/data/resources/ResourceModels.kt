@@ -469,9 +469,11 @@ class ResourceDownloadException(
     message: String,
     cause: Throwable? = null,
     val formatArguments: List<Any> = emptyList(),
+    val retryAfterMillis: Long? = null,
 ) : IOException(message, cause)
 
 class ResourceStorageException(
-    val requiredBytes: Long,
-    val availableBytes: Long,
-) : IOException("Not enough private storage for the resource operation")
+    val requiredBytes: Long?,
+    val availableBytes: Long?,
+    cause: Throwable? = null,
+) : IOException("Not enough private storage for the resource operation", cause)

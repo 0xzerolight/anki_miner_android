@@ -1,5 +1,8 @@
 package com.ankiminer.android.data.resources
 
+import com.ankiminer.android.media.ProviderIoCancellation
+import com.ankiminer.android.media.ProviderIoCancellationController
+import com.ankiminer.android.media.ProviderIoCancellationRegistration
 import java.io.BufferedInputStream
 import java.io.File
 import java.io.FileInputStream
@@ -10,19 +13,29 @@ import java.net.URI
 import java.net.URL
 import java.nio.file.Files
 import java.security.MessageDigest
-import java.util.concurrent.atomic.AtomicBoolean
+import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
+import java.time.format.DateTimeParseException
+import java.util.Locale
+import java.util.concurrent.ThreadLocalRandom
+import kotlin.math.max
+import kotlin.math.min
 
-internal class ResourceCancellationSignal {
-    private val cancelled = AtomicBoolean(false)
+internal class ResourceCancellationSignal : ProviderIoCancellation {
+    private val delegate = ProviderIoCancellationController()
 
     fun cancel() {
-        cancelled.set(true)
+        delegate.cancel()
     }
 
-    fun isCancelled(): Boolean = cancelled.get()
+    override fun isCancelled(): Boolean = delegate.isCancelled()
+
+    override fun invokeOnCancellation(
+        listener: () -> Unit,
+    ): ProviderIoCancellationRegistration = delegate.invokeOnCancellation(listener)
 
     fun check() {
-        if (cancelled.get()) {
+        if (isCancelled()) {
             throw ResourceDownloadException("resource_operation_cancelled", "Resource operation was cancelled")
         }
     }
@@ -38,37 +51,62 @@ internal fun interface DownloadConnectionFactory {
     fun open(url: String, offset: Long): HttpURLConnection
 }
 
-internal class HttpsDownloadConnectionFactory : DownloadConnectionFactory {
+internal class HttpsDownloadConnectionFactory(
+    private val connectionOpener: (URL) -> HttpURLConnection = {
+        it.openConnection() as HttpURLConnection
+    },
+) : DownloadConnectionFactory {
     override fun open(url: String, offset: Long): HttpURLConnection {
         var current = requireHttps(url)
         repeat(MAX_REDIRECTS + 1) { redirectCount ->
-            val connection =
-                (current.toURL().openConnection() as HttpURLConnection).apply {
-                    instanceFollowRedirects = false
-                    connectTimeout = CONNECT_TIMEOUT_MS
-                    readTimeout = READ_TIMEOUT_MS
-                    useCaches = false
-                    setRequestProperty("Accept-Encoding", "identity")
-                    setRequestProperty("User-Agent", "AnkiMinerAndroid/1 resource-installer")
-                    if (offset > 0) setRequestProperty("Range", "bytes=$offset-")
+            val connection = connectionOpener(current.toURL())
+            var handedOff = false
+            try {
+                connection.instanceFollowRedirects = false
+                connection.connectTimeout = CONNECT_TIMEOUT_MS
+                connection.readTimeout = READ_TIMEOUT_MS
+                connection.useCaches = false
+                connection.setRequestProperty("Accept-Encoding", "identity")
+                connection.setRequestProperty("User-Agent", "AnkiMinerAndroid/1 resource-installer")
+                if (offset > 0) connection.setRequestProperty("Range", "bytes=$offset-")
+                val status = connection.responseCode
+                if (status !in REDIRECT_CODES) {
+                    handedOff = true
+                    return connection
                 }
-            val status = connection.responseCode
-            if (status !in REDIRECT_CODES) return connection
-            if (redirectCount == MAX_REDIRECTS) {
-                connection.disconnect()
-                throw ResourceDownloadException("download_redirect_limit", "Resource download redirected too many times")
+                if (redirectCount == MAX_REDIRECTS) {
+                    throw ResourceDownloadException("download_redirect_limit", "Resource download redirected too many times")
+                }
+                val location =
+                    connection.getHeaderField("Location")
+                        ?.takeIf { it.isNotBlank() }
+                        ?: throw ResourceDownloadException(
+                            "download_redirect_invalid",
+                            "Resource download returned an invalid redirect",
+                        )
+                current = resolveRedirect(current, location)
+            } finally {
+                if (!handedOff) connection.disconnect()
             }
-            val location = connection.getHeaderField("Location")
-                ?: run {
-                    connection.disconnect()
-                    throw ResourceDownloadException("download_redirect_invalid", "Resource download returned an invalid redirect")
-                }
-            val resolved = requireHttps(current.resolve(location).toString())
-            connection.disconnect()
-            current = resolved
         }
         throw AssertionError("redirect loop exhausted")
     }
+
+    private fun resolveRedirect(
+        current: URI,
+        location: String,
+    ): URI =
+        try {
+            requireRedirectHttps(current.resolve(location).toString())
+        } catch (failure: ResourceDownloadException) {
+            throw failure
+        } catch (failure: Exception) {
+            throw ResourceDownloadException(
+                "download_redirect_invalid",
+                "Resource download returned an invalid redirect",
+                failure,
+            )
+        }
 
     private fun requireHttps(value: String): URI {
         val uri =
@@ -81,7 +119,30 @@ internal class HttpsDownloadConnectionFactory : DownloadConnectionFactory {
             uri.scheme != "https" || uri.host.isNullOrBlank() || uri.userInfo != null ||
                 uri.fragment != null
         ) {
-            throw ResourceDownloadException("download_url_invalid", "Resource URL must use HTTPS")
+            throw ResourceDownloadException("download_url_invalid", "Resource URL is invalid")
+        }
+        return uri
+    }
+
+    private fun requireRedirectHttps(value: String): URI {
+        val uri =
+            try {
+                URI(value)
+            } catch (failure: Exception) {
+                throw ResourceDownloadException(
+                    "download_redirect_invalid",
+                    "Resource download returned an invalid redirect",
+                    failure,
+                )
+            }
+        if (
+            uri.scheme != "https" || uri.host.isNullOrBlank() || uri.userInfo != null ||
+                uri.fragment != null
+        ) {
+            throw ResourceDownloadException(
+                "download_redirect_invalid",
+                "Resource download returned an invalid redirect",
+            )
         }
         return uri
     }
@@ -94,10 +155,54 @@ internal class HttpsDownloadConnectionFactory : DownloadConnectionFactory {
     }
 }
 
+internal fun interface ResourceRetryDelay {
+    fun await(
+        delayMillis: Long,
+        cancellation: ResourceCancellationSignal,
+    )
+}
+
+private object CancellationAwareRetryDelay : ResourceRetryDelay {
+    override fun await(
+        delayMillis: Long,
+        cancellation: ResourceCancellationSignal,
+    ) {
+        var remaining = delayMillis
+        while (remaining > 0L) {
+            cancellation.check()
+            val slice = min(remaining, RETRY_CANCELLATION_SLICE_MILLIS)
+            try {
+                Thread.sleep(slice)
+            } catch (failure: InterruptedException) {
+                Thread.currentThread().interrupt()
+                cancellation.check()
+                throw ResourceDownloadException(
+                    "download_retry_exhausted",
+                    "Resource retry delay was interrupted",
+                    failure,
+                )
+            }
+            remaining -= slice
+        }
+        cancellation.check()
+    }
+
+    private const val RETRY_CANCELLATION_SLICE_MILLIS = 100L
+}
+
 internal class PinnedResourceDownloader(
     private val stagingRoot: File,
     private val connections: DownloadConnectionFactory = HttpsDownloadConnectionFactory(),
     private val availableBytes: (File) -> Long = { it.usableSpace },
+    private val retryDelay: ResourceRetryDelay = CancellationAwareRetryDelay,
+    private val retryJitterMillis: (Long) -> Long = { maximum ->
+        if (maximum <= 0L) 0L else ThreadLocalRandom.current().nextLong(maximum + 1)
+    },
+    private val currentTimeMillis: () -> Long = System::currentTimeMillis,
+    private val writeChunk: (FileOutputStream, ByteArray, Int) -> Unit = { output, bytes, count ->
+        output.write(bytes, 0, count)
+    },
+    private val syncOutput: (FileOutputStream) -> Unit = { it.fd.sync() },
 ) {
     /**
      * Reconciles durable download state against the frozen catalog. Only direct, regular files
@@ -172,10 +277,10 @@ internal class PinnedResourceDownloader(
                 deleteEntry(ready)
             }
 
-            checkFreeSpace((archive.sizeBytes - partial.length()).coerceAtLeast(0L))
             var lastFailure: IOException? = null
-            repeat(MAX_ATTEMPTS) {
+            repeat(MAX_ATTEMPTS) { attempt ->
                 cancellation.check()
+                checkFreeSpace((archive.sizeBytes - partial.length()).coerceAtLeast(0L))
                 try {
                     val actual = transferAttempt(archive, partial, cancellation, onProgress)
                     if (actual != archive.sha256) {
@@ -191,8 +296,16 @@ internal class PinnedResourceDownloader(
                 } catch (failure: ResourceDownloadException) {
                     if (failure.stableCode !in RETRYABLE_CODES) throw failure
                     lastFailure = failure
+                    if (attempt < MAX_ATTEMPTS - 1) {
+                        awaitRetry(attempt, failure.retryAfterMillis, cancellation)
+                    }
+                } catch (failure: LocalDownloadIOException) {
+                    throw classifyLocalFailure(archive, partial, failure.localCause)
                 } catch (failure: IOException) {
                     lastFailure = failure
+                    if (attempt < MAX_ATTEMPTS - 1) {
+                        awaitRetry(attempt, retryAfterMillis = null, cancellation)
+                    }
                 }
             }
             throw ResourceDownloadException(
@@ -225,18 +338,25 @@ internal class PinnedResourceDownloader(
         }
         val digest = MessageDigest.getInstance("SHA-256")
         if (offset > 0) {
-            FileInputStream(partial).use { input ->
-                val buffer = ByteArray(BUFFER_BYTES)
-                while (true) {
-                    cancellation.check()
-                    val count = input.read(buffer)
-                    if (count < 0) break
-                    digest.update(buffer, 0, count)
-                    onProgress(input.channel.position(), archive.sizeBytes, ResourceOperationPhase.VERIFYING)
+            try {
+                FileInputStream(partial).use { input ->
+                    val buffer = ByteArray(BUFFER_BYTES)
+                    while (true) {
+                        cancellation.check()
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        digest.update(buffer, 0, count)
+                        onProgress(input.channel.position(), archive.sizeBytes, ResourceOperationPhase.VERIFYING)
+                    }
                 }
+            } catch (failure: ResourceDownloadException) {
+                throw failure
+            } catch (failure: IOException) {
+                throw LocalDownloadIOException(failure)
             }
         }
         if (offset == archive.sizeBytes) {
+            syncPartial(partial)
             onProgress(offset, archive.sizeBytes, ResourceOperationPhase.VERIFYING)
             return digest.digest().joinToString("") { "%02x".format(it) }
         }
@@ -255,6 +375,12 @@ internal class PinnedResourceDownloader(
                     code,
                     "Resource host returned HTTP $status",
                     formatArguments = listOf(status),
+                    retryAfterMillis =
+                        if (status == 429 || status == HttpURLConnection.HTTP_UNAVAILABLE) {
+                            parseRetryAfter(connection.getHeaderField("Retry-After"))
+                        } else {
+                            null
+                        },
                 )
             }
             val contentLength = connection.contentLengthLong
@@ -265,8 +391,10 @@ internal class PinnedResourceDownloader(
             if (contentLength >= 0L && contentLength < expectedRemaining) {
                 throw ResourceDownloadException("download_incomplete", "Resource response is shorter than its catalog size")
             }
-            FileOutputStream(partial, append).use { output ->
-                if (!append) output.channel.truncate(0)
+            val output = localIo { FileOutputStream(partial, append) }
+            var primaryFailure: Throwable? = null
+            try {
+                if (!append) localIo { output.channel.truncate(0) }
                 BufferedInputStream(connection.inputStream, BUFFER_BYTES).use { input ->
                     val buffer = ByteArray(BUFFER_BYTES)
                     var total = offset
@@ -279,11 +407,25 @@ internal class PinnedResourceDownloader(
                         if (total > archive.sizeBytes) {
                             throw ResourceDownloadException("resource_archive_mismatch", "Resource response exceeds its catalog size")
                         }
-                        output.write(buffer, 0, count)
+                        localIo { writeChunk(output, buffer, count) }
                         digest.update(buffer, 0, count)
                         onProgress(total, archive.sizeBytes, ResourceOperationPhase.DOWNLOADING)
                     }
-                    output.fd.sync()
+                    localIo { syncOutput(output) }
+                }
+            } catch (failure: Throwable) {
+                primaryFailure = failure
+                throw failure
+            } finally {
+                try {
+                    output.close()
+                } catch (closeFailure: IOException) {
+                    if (primaryFailure == null) {
+                        throw LocalDownloadIOException(closeFailure)
+                    }
+                    if (primaryFailure !== closeFailure) {
+                        primaryFailure?.addSuppressed(closeFailure)
+                    }
                 }
             }
             if (partial.length() != archive.sizeBytes) {
@@ -327,6 +469,89 @@ internal class PinnedResourceDownloader(
             throw ResourceStorageException(required + FREE_SPACE_RESERVE_BYTES, available)
         }
     }
+
+    private fun awaitRetry(
+        attempt: Int,
+        retryAfterMillis: Long?,
+        cancellation: ResourceCancellationSignal,
+    ) {
+        val exponential = min(RETRY_BASE_DELAY_MILLIS shl attempt, RETRY_MAX_DELAY_MILLIS)
+        val maximumJitter = exponential / 2
+        val jitter = retryJitterMillis(maximumJitter).coerceIn(0L, maximumJitter)
+        val delay =
+            max(exponential + jitter, retryAfterMillis ?: 0L)
+                .coerceAtMost(RETRY_MAX_DELAY_MILLIS)
+        retryDelay.await(delay, cancellation)
+    }
+
+    private fun parseRetryAfter(value: String?): Long? {
+        val text = value?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        val seconds = text.toLongOrNull()
+        if (seconds != null) {
+            if (seconds < 0L) return null
+            return min(seconds, RETRY_MAX_DELAY_MILLIS / 1000) * 1000
+        }
+        return try {
+            (ZonedDateTime.parse(text, DateTimeFormatter.RFC_1123_DATE_TIME).toInstant().toEpochMilli() -
+                currentTimeMillis())
+                .coerceIn(0L, RETRY_MAX_DELAY_MILLIS)
+        } catch (_: DateTimeParseException) {
+            null
+        }
+    }
+
+    private fun classifyLocalFailure(
+        archive: ResourceArchive,
+        partial: File,
+        failure: IOException,
+    ): IOException {
+        val remaining = (archive.sizeBytes - partial.length()).coerceAtLeast(0L)
+        val required = remaining + FREE_SPACE_RESERVE_BYTES
+        val available = availableBytes(stagingRoot).coerceAtLeast(0L)
+        if (available < required || isStorageExhaustion(failure)) {
+            return ResourceStorageException(required, available, failure)
+        }
+        return ResourceDownloadException(
+            "download_staging_failed",
+            "Could not write private resource staging",
+            failure,
+        )
+    }
+
+    private fun syncPartial(partial: File) {
+        localIo {
+            FileOutputStream(partial, true).use { output ->
+                syncOutput(output)
+            }
+        }
+    }
+
+    private fun isStorageExhaustion(failure: IOException): Boolean {
+        var current: Throwable? = failure
+        while (current != null) {
+            val message = current.message?.lowercase(Locale.ROOT).orEmpty()
+            if (
+                "enospc" in message ||
+                "no space left on device" in message ||
+                "edquot" in message ||
+                "disk quota exceeded" in message ||
+                "quota exceeded" in message
+            ) {
+                return true
+            }
+            current = current.cause
+        }
+        return false
+    }
+
+    private inline fun <T> localIo(block: () -> T): T =
+        try {
+            block()
+        } catch (failure: ResourceDownloadException) {
+            throw failure
+        } catch (failure: IOException) {
+            throw LocalDownloadIOException(failure)
+        }
 
     private fun reconcileArchiveFiles(
         archive: ResourceArchive,
@@ -404,6 +629,8 @@ internal class PinnedResourceDownloader(
         private const val BUFFER_BYTES = 256 * 1024
         private const val MAX_ATTEMPTS = 3
         private const val FREE_SPACE_RESERVE_BYTES = 32L * 1024 * 1024
+        private const val RETRY_BASE_DELAY_MILLIS = 500L
+        private const val RETRY_MAX_DELAY_MILLIS = 60_000L
         private val SHA_256 = Regex("[0-9a-f]{64}")
         private val STAGED_FILE = Regex("([0-9a-f]{64})\\.(part|ready)")
         private val CONTENT_RANGE = Regex("bytes ([0-9]+)-([0-9]+)/([0-9]+)")
@@ -414,4 +641,8 @@ internal class PinnedResourceDownloader(
         private const val READY_SUFFIX = "ready"
         private val STAGED_SUFFIXES = setOf(PART_SUFFIX, READY_SUFFIX)
     }
+
+    private class LocalDownloadIOException(
+        val localCause: IOException,
+    ) : IOException(localCause.message, localCause)
 }

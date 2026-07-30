@@ -270,21 +270,103 @@ class ResourceManagerTest {
             )
         }
 
+    @Test
+    fun committedDictionaryInventoryRefreshesWhenResponseDecodeFails() =
+        runTest {
+            val harness =
+                Harness(
+                    sourceLabel = "resource",
+                    committedDictionaryDecodeFailure = true,
+                )
+
+            harness.manager.importCustomDictionary(INPUT_URI, "revisionless", replace = false)
+
+            assertEquals(listOf("revisionless"), harness.manager.state.value.dictionaries.map { it.slotId })
+            assertEquals("invalid_resource_response", harness.manager.state.value.failure?.code)
+            assertEquals(
+                listOf(
+                    "resource.dictionary.import",
+                    "resource.catalog.get",
+                    "resource.dictionary.list",
+                    "resource.local.list",
+                ),
+                harness.bridge.requestTypes,
+            )
+        }
+
+    @Test
+    fun committedPitchInventoryRefreshesWhenResponseDecodeFails() =
+        runTest {
+            val harness =
+                Harness(
+                    sourceLabel = "pitch-accent source",
+                    committedPitchDecodeFailure = true,
+                )
+
+            harness.manager.importPitchAccent(
+                INPUT_URI,
+                sourceId = "fixture-pitch",
+                sourceName = "Fixture Pitch",
+                format = PitchAccentSourceFormat.YOMITAN_ZIP,
+                replace = false,
+            )
+
+            assertEquals(listOf("fixture-pitch"), harness.manager.state.value.pitchSources.map { it.sourceId })
+            assertEquals("invalid_resource_response", harness.manager.state.value.failure?.code)
+            assertEquals(
+                listOf(
+                    "resource.pitch.import",
+                    "resource.catalog.get",
+                    "resource.dictionary.list",
+                    "resource.local.list",
+                ),
+                harness.bridge.requestTypes,
+            )
+        }
+
+    @Test
+    fun wordListImportPublishesBomFreeFirstWordForBothKinds() =
+        runTest {
+            val bomWord =
+                byteArrayOf(0xef.toByte(), 0xbb.toByte(), 0xbf.toByte()) +
+                    "猫\n".toByteArray(Charsets.UTF_8)
+            val harness = Harness(stagedContent = bomWord)
+
+            harness.manager.importWordList(INPUT_URI, WordListKind.BLACKLIST)
+            harness.manager.importWordList(INPUT_URI, WordListKind.WHITELIST)
+
+            WordListKind.entries.forEach { kind ->
+                val installed = harness.manager.state.value.wordLists.single { it.kind == kind }
+                assertEquals(1, installed.entryCount)
+                val path = requireNotNull(harness.manager.wordListPath(kind))
+                assertEquals("猫\n", File(path).readText(Charsets.UTF_8))
+            }
+        }
+
     private inner class Harness(
         initialUserCount: Int = 0,
         runtimeWorkCoordinator: RuntimeWorkCoordinator = RuntimeWorkCoordinator(),
         sourceLabel: String = "known-word file",
         reportedSourceSizeBytes: Long? = 16,
         stagingAvailableBytes: Long = Long.MAX_VALUE / 2,
+        committedDictionaryDecodeFailure: Boolean = false,
+        committedPitchDecodeFailure: Boolean = false,
+        stagedContent: ByteArray = "fixture".toByteArray(Charsets.UTF_8),
     ) {
         private val root = temporary.newFolder("manager")
         val bridgeRoot = File(root, "bridge").apply { mkdirs() }
         val stagingRoot = File(root, "staging").apply { mkdirs() }
         val pendingRoot = File(root, "resource-pending-known-words")
         val broker = RecordingSafBroker(reportedSourceSizeBytes)
-        val stager = RecordingArchiveStager(stagingRoot, sourceLabel)
+        val stager = RecordingArchiveStager(stagingRoot, sourceLabel, stagedContent)
         val writer = RecordingDocumentWriter()
-        val bridge = FakeResourceBridge(bridgeRoot, initialUserCount)
+        val bridge =
+            FakeResourceBridge(
+                bridgeRoot,
+                initialUserCount,
+                committedDictionaryDecodeFailure,
+                committedPitchDecodeFailure,
+            )
         val manager =
             AndroidResourceManager(
                 safBroker = broker,
@@ -329,6 +411,7 @@ class ResourceManagerTest {
     private class RecordingArchiveStager(
         private val stagingRoot: File,
         private val expectedSourceLabel: String = "known-word file",
+        private val stagedContent: ByteArray,
     ) : ResourceArchiveStager {
         val stagedFiles = mutableListOf<File>()
         var lastMaximumBytes: Long? = null
@@ -347,7 +430,7 @@ class ResourceManagerTest {
             lastMaximumBytes = maximumBytes
             cancellation.check()
             val file = File(stagingRoot, "$operationId-custom$fileSuffix")
-            file.writeText("fixture", Charsets.UTF_8)
+            file.writeBytes(stagedContent)
             stagedFiles += file
             onProgress(file.length(), file.length())
             return StagedArchive(file, "0".repeat(64), file.length())
@@ -367,9 +450,13 @@ class ResourceManagerTest {
     private class FakeResourceBridge(
         private val bridgeFilesRoot: File,
         initialUserCount: Int,
+        private val committedDictionaryDecodeFailure: Boolean,
+        private val committedPitchDecodeFailure: Boolean,
     ) : PyBridge {
         private val requests = mutableListOf<String>()
         private var userCount = initialUserCount
+        private var dictionaryInstalled = false
+        private var pitchInstalled = false
         var lastExportFile: File? = null
             private set
 
@@ -385,8 +472,24 @@ class ResourceManagerTest {
             return when (requestType(rawRequest)) {
                 "resource.catalog.get" -> catalogResponse()
                 "resource.dictionary.list" ->
-                    envelope("resource.dictionary.listed", """{"dictionaries":[]}""")
+                    dictionaryInventoryResponse()
                 "resource.local.list" -> inventoryResponse()
+                "resource.dictionary.import" -> {
+                    dictionaryInstalled = true
+                    check(committedDictionaryDecodeFailure)
+                    envelope(
+                        "resource.dictionary.imported",
+                        """{"slotId":"revisionless","catalogResourceId":null,"sourceName":"Revisionless","sourceRevision":"","entryCount":1,"skippedMalformed":0,"mediaWarnings":[],"archiveSha256":"${"0".repeat(64)}","attribution":[],"unexpected":true}""",
+                    )
+                }
+                "resource.pitch.import" -> {
+                    pitchInstalled = true
+                    check(committedPitchDecodeFailure)
+                    envelope(
+                        "resource.pitch.imported",
+                        """{"sourceId":"fixture-pitch","sourceName":"Fixture Pitch","sourceRevision":"1","sourceFormat":"unknown-installed-format","entryCount":1,"skippedDisplayOnly":0,"skippedMalformed":0,"archiveSha256":"${"0".repeat(64)}"}""",
+                    )
+                }
                 "resource.knownwords.preview" ->
                     envelope(
                         "resource.knownwords.previewed",
@@ -424,7 +527,17 @@ class ResourceManagerTest {
         private fun inventoryResponse(): String =
             envelope(
                 "resource.local.listed",
-                """{"frequencies":[],"pitchSources":[],"audioPacks":[],"knownWords":{"totalCount":$userCount,"userCount":$userCount,"ankiCount":0,"minedCount":0,"schemaOk":true},"wordsets":[]}""",
+                """{"frequencies":[],"pitchSources":${if (pitchInstalled) """[{"sourceId":"fixture-pitch","sourceName":"Fixture Pitch","sourceRevision":"1","format":"yomitan-pitch","entryCount":1,"schemaOk":true,"schemaVersion":1}]""" else "[]"},"audioPacks":[],"knownWords":{"totalCount":$userCount,"userCount":$userCount,"ankiCount":0,"minedCount":0,"schemaOk":true},"wordsets":[]}""",
+            )
+
+        private fun dictionaryInventoryResponse(): String =
+            envelope(
+                "resource.dictionary.listed",
+                if (dictionaryInstalled) {
+                    """{"dictionaries":[{"slotId":"revisionless","occupied":true,"valid":true,"sourceName":"Revisionless","sourceRevision":"","format":"yomitan","entryCount":1,"schemaOk":true,"embeddedAttribution":{},"catalogResourceId":null,"attribution":[]}]}"""
+                } else {
+                    """{"dictionaries":[]}"""
+                },
             )
 
         private fun pageResponse(rawRequest: String): String {
