@@ -332,7 +332,15 @@ class SafSelectionInventoryTest {
                 "content://provider/old.mkv",
                 inventory.selection(SafSelectionSlot.VIDEO)?.uri,
             )
-            assertEquals(listOf("release:content://provider/new.mkv"), events)
+            // The broker and the inventory record into one shared list, and the transaction must
+            // retain before it persists, so the rollback trace is retain-then-release.
+            assertEquals(
+                listOf(
+                    "retain:content://provider/new.mkv",
+                    "release:content://provider/new.mkv",
+                ),
+                events,
+            )
         } finally {
             dispatcher.close()
             executor.shutdownNow()
@@ -483,8 +491,12 @@ class SafSelectionInventoryTest {
                     publish = { Unit },
                 )
 
+            // Shared event list: both slots are cleared durably before either grant is released,
+            // so a crash between the two can never leave a published slot without its grant.
             assertEquals(
                 listOf(
+                    "clear:READING_SOURCE",
+                    "clear:READING_ARCHIVE",
                     "release:${document.uri}",
                     "release:${document.uri}",
                 ),

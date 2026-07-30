@@ -31,7 +31,7 @@ class AndroidSafBrokerTest {
             runBlocking {
                 broker.retainReadAccess(EXISTING_URI)
                 access.blockMetadataFor = BLOCKED_URI
-                val blocked = async { broker.retainReadAccess(BLOCKED_URI) }
+                val blocked = async(dispatcher) { broker.retainReadAccess(BLOCKED_URI) }
                 assertTrue(access.metadataStarted.await(1, TimeUnit.SECONDS))
 
                 withTimeout(1_000L) {
@@ -127,7 +127,7 @@ class AndroidSafBrokerTest {
                 )
 
             runBlocking {
-                val stalled = async { broker.retainReadAccess(BLOCKED_URI) }
+                val stalled = async(dispatcher) { broker.retainReadAccess(BLOCKED_URI) }
                 assertTrue(access.firstQueryStarted.await(1, TimeUnit.SECONDS))
                 stalled.cancelAndJoin()
 
