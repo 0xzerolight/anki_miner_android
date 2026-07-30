@@ -17,6 +17,9 @@ from typing import Any, Iterator, Mapping
 
 MANIFEST_NAME = ".engine-sync-manifest.json"
 MANIFEST_VERSION = 1
+# Exhaustive destination roots owned by this tool. The previous-manifest guard
+# makes removing a historical root from this declaration an explicit migration.
+MANAGED_ROOTS = frozenset({"PyQt6", "anki_miner"})
 
 
 class EngineSyncError(RuntimeError):
@@ -318,7 +321,13 @@ class GitTree:
     def _git(self, *args: str) -> bytes:
         try:
             result = subprocess.run(
-                ["git", "-C", os.fspath(self.repo), *args],
+                [
+                    "git",
+                    "--no-replace-objects",
+                    "-C",
+                    os.fspath(self.repo),
+                    *args,
+                ],
                 check=True,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -789,8 +798,58 @@ def build_snapshot(
     )
 
 
-def _managed_roots(snapshot: EngineSnapshot) -> frozenset[str]:
+def _snapshot_managed_roots(snapshot: EngineSnapshot) -> frozenset[str]:
     return frozenset(path.partition("/")[0] for path in snapshot.files)
+
+
+def _strict_manifest_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise EngineSyncError(f"engine sync manifest contains duplicate key: {key}")
+        result[key] = value
+    return result
+
+
+def _previous_managed_roots(destination: Path) -> frozenset[str]:
+    manifest = destination / MANIFEST_NAME
+    if not manifest.is_file():
+        return frozenset()
+    try:
+        document = json.loads(
+            manifest.read_text(encoding="utf-8"),
+            object_pairs_hook=_strict_manifest_object,
+        )
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise EngineSyncError(f"cannot read previous engine sync manifest: {exc}") from exc
+    if (
+        not isinstance(document, dict)
+        or document.get("format_version") != MANIFEST_VERSION
+        or not isinstance(document.get("files"), dict)
+    ):
+        raise EngineSyncError("previous engine sync manifest has an invalid structure")
+    roots: set[str] = set()
+    for path in document["files"]:
+        if not isinstance(path, str):
+            raise EngineSyncError("previous engine sync manifest path must be a string")
+        _validate_relative_path(path, "previous engine sync manifest path")
+        roots.add(path.partition("/")[0])
+    return frozenset(roots)
+
+
+def _validate_managed_roots(destination: Path, snapshot: EngineSnapshot) -> None:
+    undeclared_snapshot_roots = _snapshot_managed_roots(snapshot) - MANAGED_ROOTS
+    if undeclared_snapshot_roots:
+        raise EngineSyncError(
+            "snapshot names undeclared managed roots: "
+            + ", ".join(sorted(undeclared_snapshot_roots))
+        )
+    undeclared_previous_roots = _previous_managed_roots(destination) - MANAGED_ROOTS
+    if undeclared_previous_roots:
+        raise EngineSyncError(
+            "previous manifest names undeclared managed roots: "
+            + ", ".join(sorted(undeclared_previous_roots))
+        )
 
 
 def _validate_destination(destination: Path) -> None:
@@ -808,8 +867,9 @@ def _is_bytecode_cache(path: Path, destination: Path) -> bool:
 
 def _actual_managed_files(destination: Path, snapshot: EngineSnapshot) -> set[str]:
     _validate_destination(destination)
+    _validate_managed_roots(destination, snapshot)
     actual: set[str] = set()
-    for root_name in _managed_roots(snapshot):
+    for root_name in MANAGED_ROOTS:
         root = destination / root_name
         if root.is_symlink():
             raise EngineSyncError(
@@ -873,7 +933,7 @@ def sync_destination(destination: Path, snapshot: EngineSnapshot) -> None:
             except FileNotFoundError:
                 pass
             raise
-    for root_name in _managed_roots(snapshot):
+    for root_name in MANAGED_ROOTS:
         root = destination / root_name
         for directory in sorted(
             (path for path in root.rglob("*") if path.is_dir()), reverse=True
@@ -882,3 +942,7 @@ def sync_destination(destination: Path, snapshot: EngineSnapshot) -> None:
                 directory.rmdir()
             except OSError:
                 pass
+        try:
+            root.rmdir()
+        except OSError:
+            pass

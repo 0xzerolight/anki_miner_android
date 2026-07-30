@@ -7,6 +7,7 @@ import subprocess
 import tempfile
 import tomllib
 import unittest
+from dataclasses import replace
 from pathlib import Path
 
 from engine_sync.core import (
@@ -278,6 +279,53 @@ target = "anki_miner.services.youtube_fetcher"
         sync_destination(destination, snapshot)
         self.assertEqual(check_destination(destination, snapshot), ())
 
+    def test_sync_removes_a_top_level_root_dropped_from_the_snapshot(self) -> None:
+        snapshot = self._snapshot(self._fixture())
+        destination = self.root / "vendor"
+        sync_destination(destination, snapshot)
+        reduced_snapshot = replace(
+            snapshot,
+            files={
+                path: item
+                for path, item in snapshot.files.items()
+                if not path.startswith("PyQt6/")
+            },
+            modules=tuple(
+                module
+                for module in snapshot.modules
+                if module != "PyQt6" and not module.startswith("PyQt6.")
+            ),
+        )
+
+        differences = check_destination(destination, reduced_snapshot)
+
+        self.assertIn("unexpected PyQt6/QtCore.py", differences)
+        self.assertIn("unexpected PyQt6/__init__.py", differences)
+        sync_destination(destination, reduced_snapshot)
+        self.assertFalse((destination / "PyQt6").exists())
+        self.assertEqual((), check_destination(destination, reduced_snapshot))
+
+    def test_previous_manifest_cannot_expand_the_declared_managed_roots(self) -> None:
+        snapshot = self._snapshot(self._fixture())
+        destination = self.root / "vendor"
+        sync_destination(destination, snapshot)
+        manifest_path = destination / ".engine-sync-manifest.json"
+        manifest = json.loads(manifest_path.read_bytes())
+        manifest["files"]["legacy_shim/compat.py"] = manifest["files"][
+            "anki_miner/dep.py"
+        ]
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        legacy = destination / "legacy_shim/compat.py"
+        legacy.parent.mkdir()
+        legacy.write_text("stale\n", encoding="utf-8")
+
+        with self.assertRaisesRegex(
+            EngineSyncError,
+            "previous manifest names undeclared managed roots: legacy_shim",
+        ):
+            sync_destination(destination, snapshot)
+        self.assertTrue(legacy.exists())
+
     def test_runtime_forbidden_import_is_rejected_semantically(self) -> None:
         fixture = self._fixture("import gtts\n")
         with self.assertRaisesRegex(EngineSyncError, r"forbidden import gtts"):
@@ -495,6 +543,66 @@ target = "anki_miner.services.youtube_fetcher"
         second = self._snapshot(fixture)
         self.assertEqual(first.manifest_bytes(), second.manifest_bytes())
         self.assertEqual(first.files, second.files)
+
+    def test_commit_replacement_cannot_relabel_the_pinned_tree(self) -> None:
+        fixture = self._fixture()
+        pinned_revision = fixture["lock"].read_text(encoding="ascii").strip()
+        (fixture["repo"] / "anki_miner/dep.py").write_text(
+            "VALUE = 2\n",
+            encoding="utf-8",
+        )
+        _run("git", "add", ".", cwd=fixture["repo"])
+        _run("git", "commit", "-qm", "replacement commit", cwd=fixture["repo"])
+        replacement_revision = _run(
+            "git",
+            "rev-parse",
+            "HEAD",
+            cwd=fixture["repo"],
+        )
+        _run("git", "reset", "--hard", "-q", pinned_revision, cwd=fixture["repo"])
+        _run(
+            "git",
+            "replace",
+            pinned_revision,
+            replacement_revision,
+            cwd=fixture["repo"],
+        )
+
+        snapshot = self._snapshot(fixture)
+
+        self.assertEqual(b"VALUE = 1\n", snapshot.files["anki_miner/dep.py"].content)
+
+    def test_blob_replacement_cannot_relabel_pinned_source_bytes(self) -> None:
+        fixture = self._fixture()
+        pinned_revision = fixture["lock"].read_text(encoding="ascii").strip()
+        source = fixture["repo"] / "anki_miner/dep.py"
+        pinned_bytes = source.read_bytes()
+        pinned_blob = _run(
+            "git",
+            "rev-parse",
+            f"{pinned_revision}:anki_miner/dep.py",
+            cwd=fixture["repo"],
+        )
+        source.write_text("VALUE = 2\n", encoding="utf-8")
+        replacement_blob = _run(
+            "git",
+            "hash-object",
+            "-w",
+            "anki_miner/dep.py",
+            cwd=fixture["repo"],
+        )
+        source.write_bytes(pinned_bytes)
+        _run(
+            "git",
+            "replace",
+            pinned_blob,
+            replacement_blob,
+            cwd=fixture["repo"],
+        )
+
+        snapshot = self._snapshot(fixture)
+
+        self.assertEqual(pinned_bytes, snapshot.files["anki_miner/dep.py"].content)
 
     def test_production_composition_keeps_known_words_import_as_a_root(self) -> None:
         project_root = Path(__file__).resolve().parents[3]
