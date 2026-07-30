@@ -161,9 +161,13 @@ class AppSettingsTest {
         assertEquals(null, AppSettingsDraftParser.optionalInt(""))
         assertFalse(AppSettingsDraftParser.isOptionalDouble("."))
         assertFalse(AppSettingsDraftParser.isOptionalDouble("-"))
+        assertFalse(AppSettingsDraftParser.isOptionalDouble("1,5"))
         assertFalse(AppSettingsDraftParser.isOptionalInt("1.5"))
         assertThrows(InvalidAppSettingException::class.java) {
             AppSettingsDraftParser.optionalDouble(".")
+        }
+        assertThrows(InvalidAppSettingException::class.java) {
+            AppSettingsDraftParser.optionalDouble("1,5")
         }
     }
 

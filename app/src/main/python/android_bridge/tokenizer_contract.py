@@ -111,6 +111,8 @@ class Utf8OffsetMap:
         utf16_offset = 0
         for codepoint_offset, character in enumerate(text, start=1):
             value = ord(character)
+            if value == 0:
+                raise TokenizerContractError("invalid_text_utf8", "Tokenizer text contains NUL")
             if 0xD800 <= value <= 0xDFFF:
                 raise TokenizerContractError("invalid_text_utf8", "Tokenizer text contains a lone surrogate")
             encoded.extend(character.encode("utf-8"))
