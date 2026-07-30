@@ -193,7 +193,9 @@ internal object SubtitleRegexCheck {
                 }
                 ')' -> {
                     if (enclosingVerboseModes.isNotEmpty()) {
-                        verbose = enclosingVerboseModes.removeLast()
+                        // removeAt, not removeLast: Kotlin resolves MutableList.removeLast() to
+                        // java.util.List.removeLast(), which is JDK 21 / API 35 only.
+                        verbose = enclosingVerboseModes.removeAt(enclosingVerboseModes.lastIndex)
                     }
                     index += 1
                 }
