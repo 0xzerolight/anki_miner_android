@@ -237,7 +237,12 @@ internal class InvalidAppSettingException(
     )
 }
 
-/** Parsing rules for editable settings fields, kept separate from persisted-value validation. */
+/**
+ * Parsing rules for editable settings fields, kept separate from persisted-value validation.
+ *
+ * Decimal text is intentionally locale-invariant: a comma is malformed input rather than a decimal
+ * separator, so a locale can never silently change a persisted or engine-bound value.
+ */
 internal object AppSettingsDraftParser {
     fun isOptionalDouble(value: String): Boolean =
         value.isEmpty() || value.toDoubleOrNull()?.isFinite() == true

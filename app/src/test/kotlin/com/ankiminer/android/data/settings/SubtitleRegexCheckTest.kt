@@ -55,10 +55,58 @@ class SubtitleRegexCheckTest {
         )
         assertNull(SubtitleRegexCheck.rejection("([0-9])", """\1"""))
         assertNull(SubtitleRegexCheck.rejection("([0-9])", """\g<1>"""))
+        assertNull(SubtitleRegexCheck.rejection("(?P<数字>[0-9])", """\g<数字>"""))
         // An escaped backslash is a literal, not a group reference.
         assertNull(SubtitleRegexCheck.rejection("[0-9]", """\\1"""))
-        // Named groups carry no number, so there is nothing to range-check here.
         assertNull(SubtitleRegexCheck.rejection("(?P<digit>[0-9])", """\g<digit>"""))
+        assertEquals(
+            InvalidAppSettingCode.SUBTITLE_REGEX_BACKREFERENCE,
+            SubtitleRegexCheck.rejection("(?P<digit>[0-9])", """\g<missing>"""),
+        )
+        assertEquals(
+            InvalidAppSettingCode.SUBTITLE_REGEX_BACKREFERENCE,
+            SubtitleRegexCheck.rejection("(?P<digit>[0-9])(?P=digit)", """\g<missing>"""),
+        )
+    }
+
+    @Test
+    fun replacementGrammarMatchesPythonForLargeGroupsAndOctalEscapes() {
+        val groups = "(a)".repeat(123)
+
+        assertNull(SubtitleRegexCheck.rejection(groups, """\g<123>"""))
+        assertNull(
+            SubtitleRegexCheck.rejection("(a)", """\g<00000000000000000000000000001>"""),
+        )
+        assertEquals(
+            InvalidAppSettingCode.SUBTITLE_REGEX_BACKREFERENCE,
+            SubtitleRegexCheck.rejection("(a)", """\g<123>"""),
+        )
+        // Three bare octal digits are one character, not a reference to group 12.
+        assertNull(SubtitleRegexCheck.rejection("[0-9]", """\123"""))
+        assertEquals(
+            InvalidAppSettingCode.SUBTITLE_REGEX_BACKREFERENCE,
+            SubtitleRegexCheck.rejection("[0-9]", """\777"""),
+        )
+        assertEquals(
+            InvalidAppSettingCode.SUBTITLE_REGEX_BACKREFERENCE,
+            SubtitleRegexCheck.rejection("(a)", """\q"""),
+        )
+    }
+
+    @Test
+    fun replacementGroupCountSkipsCharacterClassesAndVerboseComments() {
+        assertEquals(
+            InvalidAppSettingCode.SUBTITLE_REGEX_BACKREFERENCE,
+            SubtitleRegexCheck.rejection("""[]()]""", """\1"""),
+        )
+        assertEquals(
+            InvalidAppSettingCode.SUBTITLE_REGEX_BACKREFERENCE,
+            SubtitleRegexCheck.rejection("(?x)# ignored (\n(a)", """\2"""),
+        )
+        assertEquals(
+            InvalidAppSettingCode.SUBTITLE_REGEX_BACKREFERENCE,
+            SubtitleRegexCheck.rejection("(?x:# ignored (\n(a))", """\2"""),
+        )
     }
 
     @Test
