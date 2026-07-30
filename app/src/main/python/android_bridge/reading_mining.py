@@ -219,9 +219,9 @@ def _load_document(
     # Staging bounds compressed bytes only. The Android bridge additionally
     # proves ZIP expansion, Mokuro fan-out and cancellation before the desktop
     # detector or loader can allocate their parity-sensitive object graphs.
-    from .reading_limits import validate_loaded_document, validate_source_before_load
+    from . import reading_limits
 
-    validate_source_before_load(
+    reading_limits.validate_source_before_load(
         source_kind=request.source_kind,
         source_path=request.source_path,
         image_archive_path=request.image_archive_path,
@@ -247,8 +247,33 @@ def _load_document(
         from .anki_adapter import AnkiOperationCancelled
 
         raise AnkiOperationCancelled("runReading", "Mining was cancelled", False)
-    document = detector.load(ref, strip_subtitle_annotations=strip_subtitle_annotations)
-    validate_loaded_document(
+    from anki_miner.models.reading import (
+        ReadingUnitLimitExceeded,
+        ReadingUnitLoadCancelled,
+        reading_unit_budget,
+    )
+
+    try:
+        with reading_unit_budget(
+            reading_limits.MAX_DOCUMENT_UNITS,
+            cancellation_check=cancellation_check,
+            precount_sentences=request.source_kind in {"txt", "epub"},
+        ):
+            document = detector.load(ref, strip_subtitle_annotations=strip_subtitle_annotations)
+    except ReadingUnitLimitExceeded as error:
+        raise BridgeProtocolError(
+            "reading_source_too_large",
+            f"The reading document contains too many units " f"({error.observed:,} > {error.maximum:,})",
+        ) from error
+    except ReadingUnitLoadCancelled as error:
+        from .anki_adapter import AnkiOperationCancelled
+
+        raise AnkiOperationCancelled(
+            "runReading",
+            "Mining was cancelled",
+            False,
+        ) from error
+    reading_limits.validate_loaded_document(
         document,
         source_kind=request.source_kind,
         source_path=request.source_path,
