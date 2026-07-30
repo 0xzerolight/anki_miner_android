@@ -112,6 +112,16 @@ class AnkiMinerApplication : Application() {
         Executors.newSingleThreadExecutor { task -> Thread(task, "anki-miner-diagnostics") }
     }
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    /**
+     * Retained rather than built inline in [AppLog.install], because the diagnostics export needs
+     * this exact instance: [FileLogSink.snapshot] runs on the writer coroutine, which is the only
+     * way to copy the files without a rotation halfway through a rename. A second instance would
+     * hold a second handle on the same file and know nothing about the first one's queue.
+     */
+    internal val logFileSink: FileLogSink by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        FileLogSink(filesDir, scope = applicationScope)
+    }
     private val runtimeWorkCoordinator = RuntimeWorkCoordinator()
     internal val runtimeWorkState
         get() = runtimeWorkCoordinator.activeKind
@@ -313,9 +323,7 @@ class AnkiMinerApplication : Application() {
         // Python executor. Logging before this point is not lost: install() replays the pre-install
         // buffer, which is the only place a Python startup failure can be recorded at all, because
         // the engine's own file handler is created inside bootstrap.initialize.
-        AppLog.install(
-            CompositeSink(LogcatSink(), FileLogSink(filesDir, scope = applicationScope)),
-        )
+        AppLog.install(CompositeSink(LogcatSink(), logFileSink))
         applicationScope.launch {
             diagnosticsSettings.verboseLogging.distinctUntilChanged().collect { verbose ->
                 val level = if (verbose) LogLevel.DEBUG else LogLevel.INFO
