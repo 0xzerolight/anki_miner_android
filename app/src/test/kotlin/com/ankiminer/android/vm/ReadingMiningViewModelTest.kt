@@ -12,6 +12,7 @@ import com.ankiminer.android.mining.CurationPage
 import com.ankiminer.android.mining.CurationRequest
 import com.ankiminer.android.mining.CurationSelection
 import com.ankiminer.android.mining.CurationSentence
+import com.ankiminer.android.mining.CurationSessionState
 import com.ankiminer.android.mining.MiningCancellationToken
 import com.ankiminer.android.mining.MiningProgress
 import com.ankiminer.android.mining.MiningRunState
@@ -272,6 +273,41 @@ class ReadingMiningViewModelTest {
         }
 
     @Test
+    fun recreatedReadingViewModelRestoresExactCurationDraftFromProcessRepository() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val base = curationRequest(page = null)
+            val candidate = base.candidates.single()
+            val alternate =
+                candidate.sentences.single().copy(
+                    sentenceId = "alternate-sentence",
+                    sentence = "魚を食べた。",
+                )
+            val request =
+                base.copy(
+                    candidates =
+                        listOf(
+                            candidate.copy(sentences = candidate.sentences + alternate),
+                        ),
+                )
+            val repository = RecordingReadingRepository(MiningRunState.Curating(request))
+            val first = ReadingMiningViewModel(repository, ImmediateSafBroker())
+            runCurrent()
+
+            first.setCandidateSelected(candidate.candidateId, false)
+            first.selectSentence(candidate.candidateId, alternate.sentenceId)
+            runCurrent()
+
+            val recreated = ReadingMiningViewModel(repository, ImmediateSafBroker())
+            runCurrent()
+
+            assertEquals(0, recreated.uiState.value.curation?.selectedCount)
+            assertEquals(
+                alternate.sentenceId,
+                recreated.uiState.value.curation?.sentenceIds?.get(candidate.candidateId),
+            )
+        }
+
+    @Test
     fun deselectAllConfirmsEmptyPageInsteadOfCancellingRun() =
         runTest(mainDispatcherRule.dispatcher) {
             val request = curationRequest(page = CurationPage(0, 2, 0, 2))
@@ -476,6 +512,7 @@ class ReadingMiningViewModelTest {
     ) : ReadingMiningRepository {
         private val mutableState = MutableStateFlow(initialState)
         override val state: StateFlow<MiningRunState> = mutableState.asStateFlow()
+        private var savedCurationSessionState: CurationSessionState? = null
 
         val startedInputs = mutableListOf<ReadingMiningInput>()
         val detachedInputs = mutableListOf<ReadingMiningInput>()
@@ -485,6 +522,18 @@ class ReadingMiningViewModelTest {
             private set
         var confirmedSelection: List<CurationSelection>? = null
             private set
+
+        override fun curationSessionState(): CurationSessionState? = savedCurationSessionState
+
+        override fun saveCurationSessionState(state: CurationSessionState) {
+            savedCurationSessionState = state
+        }
+
+        override fun clearCurationSessionState(runId: String?) {
+            if (runId == null || savedCurationSessionState?.runId == runId) {
+                savedCurationSessionState = null
+            }
+        }
 
         override fun detachActiveSources(input: ReadingMiningInput): Boolean {
             detachedInputs += input

@@ -225,6 +225,28 @@ data class CurationSelection(
     }
 }
 
+/**
+ * Compact user intent for one process-owned curation request.
+ *
+ * Candidate payloads remain in [CurationRequest]. This snapshot only keeps identities and the
+ * cross-page count needed to recreate an Activity-scoped ViewModel without changing selections.
+ */
+data class CurationSessionState(
+    val runId: String,
+    val requestId: String,
+    val pageIndex: Long?,
+    val selectedCandidateIds: Set<String>,
+    val sentenceIds: Map<String, String>,
+    val focusedCandidateId: String?,
+    val previousPageSelectedCount: Int,
+) {
+    init {
+        require(runId.isNotBlank())
+        require(requestId.isNotBlank())
+        require(previousPageSelectedCount >= 0)
+    }
+}
+
 data class MiningFailure(
     val message: String,
     val retryable: Boolean,

@@ -13,6 +13,7 @@ import com.ankiminer.android.mining.CurationPage
 import com.ankiminer.android.mining.CurationRequest
 import com.ankiminer.android.mining.CurationSelection
 import com.ankiminer.android.mining.CurationSentence
+import com.ankiminer.android.mining.CurationSessionState
 import com.ankiminer.android.mining.FakeMiningRepository
 import com.ankiminer.android.mining.MiningFailure
 import com.ankiminer.android.mining.AnkiWriteState
@@ -280,6 +281,41 @@ class VideoMiningViewModelTest {
 
             assertEquals(1, viewModel.uiState.value.curation?.previousPageSelectedCount)
             assertTrue(viewModel.uiState.value.curation?.hasSelectionToLose == true)
+        }
+
+    @Test
+    fun recreatedViewModelRestoresExactCurationDraftFromProcessRepository() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val base = curationRequest()
+            val candidate = base.candidates.single()
+            val alternate =
+                candidate.sentences.single().copy(
+                    sentenceId = "alternate-sentence",
+                    sentence = "魚を食べた。",
+                )
+            val request =
+                base.copy(
+                    candidates =
+                        listOf(
+                            candidate.copy(sentences = candidate.sentences + alternate),
+                        ),
+                )
+            val repository = RecordingRepository(MiningRunState.Curating(request))
+            val first = VideoMiningViewModel(repository, ImmediateSafBroker())
+            runCurrent()
+
+            first.setCandidateSelected(candidate.candidateId, false)
+            first.selectSentence(candidate.candidateId, alternate.sentenceId)
+            runCurrent()
+
+            val recreated = VideoMiningViewModel(repository, ImmediateSafBroker())
+            runCurrent()
+
+            assertEquals(0, recreated.uiState.value.curation?.selectedCount)
+            assertEquals(
+                alternate.sentenceId,
+                recreated.uiState.value.curation?.sentenceIds?.get(candidate.candidateId),
+            )
         }
 
     @Test
@@ -872,6 +908,7 @@ class VideoMiningViewModelTest {
     ) : MiningRepository {
         private val mutableState = MutableStateFlow(initialState)
         override val state: StateFlow<MiningRunState> = mutableState.asStateFlow()
+        private var savedCurationSessionState: CurationSessionState? = null
 
         var startCalls = 0
             private set
@@ -886,6 +923,18 @@ class VideoMiningViewModelTest {
         var confirmedSelection: List<CurationSelection>? = null
             private set
         val detachedInputs = mutableListOf<VideoMiningInput>()
+
+        override fun curationSessionState(): CurationSessionState? = savedCurationSessionState
+
+        override fun saveCurationSessionState(state: CurationSessionState) {
+            savedCurationSessionState = state
+        }
+
+        override fun clearCurationSessionState(runId: String?) {
+            if (runId == null || savedCurationSessionState?.runId == runId) {
+                savedCurationSessionState = null
+            }
+        }
 
         override fun detachActiveSources(input: VideoMiningInput): Boolean {
             detachedInputs += input

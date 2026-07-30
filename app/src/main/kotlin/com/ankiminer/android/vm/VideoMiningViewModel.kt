@@ -25,6 +25,8 @@ import com.ankiminer.android.ui.mining.MiningPendingAction
 import com.ankiminer.android.ui.mining.MiningPendingState
 import com.ankiminer.android.ui.mining.SharedCurationDraft
 import com.ankiminer.android.ui.mining.defaultCurationDraft
+import com.ankiminer.android.ui.mining.draftFor
+import com.ankiminer.android.ui.mining.toCurationSessionState
 import com.ankiminer.android.ui.video.CurationUiState
 import com.ankiminer.android.ui.video.DocumentSelectionError
 import com.ankiminer.android.ui.video.DocumentSlotState
@@ -130,20 +132,28 @@ class VideoMiningViewModel internal constructor(
         viewModelScope.launch {
             repository.state.collect { runState ->
                 if (runState is MiningRunState.Curating) {
+                    val saved = repository.curationSessionState()
                     localState.update { local ->
                         if (local.curationDraft?.matches(runState.request) == true) {
                             local
                         } else {
                             local.copy(
-                                curationDraft = runState.request.defaultCurationDraft(),
+                                curationDraft =
+                                    saved?.draftFor(runState.request)
+                                        ?: runState.request.defaultCurationDraft(),
                                 previousPageSelectedCount =
-                                    local.previousPageSelectedCount.takeIf {
-                                        local.curationDraft?.runId == runState.request.runId
-                                    } ?: 0,
+                                    saved
+                                        ?.previousPageSelectedCount
+                                        ?.takeIf { saved.runId == runState.request.runId }
+                                        ?: local.previousPageSelectedCount.takeIf {
+                                            local.curationDraft?.runId == runState.request.runId
+                                        } ?: 0,
                             )
                         }
                     }
+                    saveCurationSession(runState.request)
                 } else if (runState.isTerminal) {
+                    repository.clearCurationSessionState(runState.runId)
                     localState.update { local ->
                         local.copy(
                             curationDraft = null,
@@ -240,6 +250,7 @@ class VideoMiningViewModel internal constructor(
             val draft = local.curationDraft?.forRequest(request) ?: request.defaultCurationDraft()
             local.copy(curationDraft = draft.focusCandidate(request, candidateId))
         }
+        saveCurationSession(request)
     }
 
     /** Checkbox: change inclusion, leave the detail where it is. */
@@ -253,6 +264,7 @@ class VideoMiningViewModel internal constructor(
             val draft = local.curationDraft?.forRequest(request) ?: request.defaultCurationDraft()
             local.copy(curationDraft = draft.setCandidateSelected(request, candidateId, selected))
         }
+        saveCurationSession(request)
     }
 
     /**
@@ -274,6 +286,7 @@ class VideoMiningViewModel internal constructor(
                         .reconcileFocus(visibleCandidateIds),
             )
         }
+        saveCurationSession(request)
     }
 
     /**
@@ -297,6 +310,7 @@ class VideoMiningViewModel internal constructor(
                 curationDraft = draft.reconcileFocus(visibleCandidateIds, previousVisibleIds),
             )
         }
+        saveCurationSession(request)
     }
 
     fun selectSentence(
@@ -310,6 +324,7 @@ class VideoMiningViewModel internal constructor(
             val updated = draft.selectSentence(request, candidateId, sentenceId) ?: return@update local
             local.copy(curationDraft = updated)
         }
+        saveCurationSession(request)
     }
 
     fun confirmCuration() {
@@ -353,6 +368,7 @@ class VideoMiningViewModel internal constructor(
                                 ),
                         )
                     }
+                    saveCurationSession(runState.request)
                 }
             } catch (failure: CancellationException) {
                 throw failure
@@ -662,6 +678,14 @@ class VideoMiningViewModel internal constructor(
     private fun isCurationSubmissionPending(): Boolean =
         localState.value.pending.curation ||
             (repository.state.value as? MiningRunState.Curating)?.pageSubmissionPending == true
+
+    private fun saveCurationSession(request: CurationRequest) {
+        val local = localState.value
+        val draft = local.curationDraft?.takeIf { it.matches(request) } ?: return
+        repository.saveCurationSessionState(
+            draft.toCurationSessionState(local.previousPageSelectedCount),
+        )
+    }
 
     private fun RuntimeWorkCoordinator.Kind.toRuntimeConflict(): RuntimeWorkConflict =
         when (this) {
