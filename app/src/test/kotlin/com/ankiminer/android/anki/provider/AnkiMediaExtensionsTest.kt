@@ -47,15 +47,15 @@ class AnkiMediaExtensionsTest {
     }
 
     @Test
-    fun `device-unmappable extensions reach neither the allowlist nor a staged name`() {
-        // An extension parked there has no MIME this platform reverse-maps, so naming the staged copy
-        // after it would still yield .bin. It must sanitize to null for BOTH kinds, or staging would
-        // reject the request outright instead of degrading to .stage.
-        AnkiMediaExtensions.DEVICE_UNMAPPABLE_EXTENSIONS.forEach { extension ->
+    fun `always-fallback extensions reach neither the allowlist nor a staged name`() {
+        // This is a compile-time compatibility decision, not a claim about the current device.
+        // It must sanitize to null for BOTH kinds, or staging rejects instead of using .stage.
+        AnkiMediaExtensions.ALWAYS_FALLBACK_EXTENSIONS.forEach { extension ->
             assertFalse(extension in AnkiMediaExtensions.ALLOWED_EXTENSIONS)
             assertNull(AnkiMediaExtensions.sanitizedExtension("x.$extension", MediaKind.AUDIO))
             assertNull(AnkiMediaExtensions.sanitizedExtension("x.$extension", MediaKind.IMAGE))
         }
+        assertTrue("avif" in AnkiMediaExtensions.ALWAYS_FALLBACK_EXTENSIONS)
     }
 
     @Test

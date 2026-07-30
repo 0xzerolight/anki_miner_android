@@ -99,7 +99,7 @@ def _producer_image_extensions() -> set[str]:
 
 
 def test_kotlin_audio_allowlist_covers_every_audio_producer() -> None:
-    covered = _kotlin_extensions("AUDIO_EXTENSIONS") | _kotlin_extensions("DEVICE_UNMAPPABLE_EXTENSIONS")
+    covered = _kotlin_extensions("AUDIO_EXTENSIONS") | _kotlin_extensions("ALWAYS_FALLBACK_EXTENSIONS")
     missing = _producer_audio_extensions() - covered
     assert not missing, (
         f"AnkiMediaExtensions.AUDIO_EXTENSIONS is missing {sorted(missing)}; media with those "
@@ -109,13 +109,13 @@ def test_kotlin_audio_allowlist_covers_every_audio_producer() -> None:
 
 def test_kotlin_image_allowlist_matches_the_dictionary_media_whitelist() -> None:
     # Equality, not a superset: a new upstream suffix must fail closed, and every exclusion must be a
-    # deliberate DEVICE_UNMAPPABLE_EXTENSIONS entry carrying its API 26 measurement.
-    covered = _kotlin_extensions("IMAGE_EXTENSIONS") | _kotlin_extensions("DEVICE_UNMAPPABLE_EXTENSIONS")
+    # deliberate ALWAYS_FALLBACK_EXTENSIONS entry carrying its API 26 baseline measurement.
+    covered = _kotlin_extensions("IMAGE_EXTENSIONS") | _kotlin_extensions("ALWAYS_FALLBACK_EXTENSIONS")
     assert covered == _producer_image_extensions()
 
 
-def test_device_unmappable_extensions_never_evicts_a_downloaded_audio_format() -> None:
+def test_always_fallback_extensions_never_evicts_a_downloaded_audio_format() -> None:
     # The exclusion set is image-only by construction. Excluding opus in particular would reintroduce
     # Issue #2 for local-audio-yomichan's default collection.
-    excluded = _kotlin_extensions("DEVICE_UNMAPPABLE_EXTENSIONS")
+    excluded = _kotlin_extensions("ALWAYS_FALLBACK_EXTENSIONS")
     assert not excluded & _producer_audio_extensions()
