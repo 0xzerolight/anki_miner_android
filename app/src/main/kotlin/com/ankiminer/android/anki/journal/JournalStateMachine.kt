@@ -342,6 +342,7 @@ internal object MediaNamespaceValidator {
                 throw MediaAdmissionViolation(
                     MediaAdmissionRefusal.DIRECT_NAME_COLLISION,
                     "Media direct-name namespace collision",
+                    collisionDetail(left.owner, right.owner),
                 )
             }
         }
@@ -364,9 +365,14 @@ internal object MediaNamespaceValidator {
                 if (count == 0) activeOwners.remove(removed.owner) else activeOwners[removed.owner] = count
             }
             if (activeOwners.isNotEmpty() && (activeOwners.size > 1 || event.owner !in activeOwners)) {
+                // The colliding pair is what a report needs: "one of these fifty assets overlapped"
+                // is not actionable, and the names themselves must never leave the device.
                 throw MediaAdmissionViolation(
                     MediaAdmissionRefusal.PROVIDER_NAMESPACE_OVERLAP,
                     "Media provider namespace overlaps another owner",
+                    collisionDetail(activePrefixes.last().owner, event.owner) +
+                        ";kind=" + (if (event.isPrefix) "prefix" else "stem") +
+                        ";under=" + (if (activeOwners.size > 1) "nested" else "single"),
                 )
             }
             if (event.isPrefix) {
@@ -381,6 +387,18 @@ internal object MediaNamespaceValidator {
         val isPrefix: Boolean,
         val owner: MediaNamespaceOwner,
     )
+
+    /**
+     * Names the two colliding assets by their opaque wire identities.
+     *
+     * `sameRun` matters: it separates a batch that collided with itself from one that collided with
+     * an earlier run's retained claim, and those have entirely different causes.
+     */
+    private fun collisionDetail(
+        held: MediaNamespaceOwner,
+        incoming: MediaNamespaceOwner,
+    ): String =
+        "held=${held.assetId};incoming=${incoming.assetId};sameRun=${held.runId == incoming.runId}"
 
     private fun filenameStem(filename: String): String? {
         val dot = filename.lastIndexOf('.')

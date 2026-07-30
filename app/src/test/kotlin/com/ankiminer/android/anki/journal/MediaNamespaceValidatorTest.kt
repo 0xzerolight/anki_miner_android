@@ -2,6 +2,7 @@ package com.ankiminer.android.anki.journal
 
 import kotlin.system.measureTimeMillis
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -96,6 +97,46 @@ class MediaNamespaceValidatorTest {
                 ),
             )
         }
+    }
+
+    /**
+     * A refusal names the colliding pair by opaque asset identity.
+     *
+     * A batch carries up to fifty assets and one overlap refuses all of them, so "something in this
+     * batch overlapped" cannot be acted on. The identities are the only safe discriminator: the
+     * filenames are the user's mined vocabulary and must never leave the device.
+     */
+    @Test
+    fun anOverlapRefusalNamesTheCollidingPairWithoutTheirFilenames() {
+        val held = MediaNamespaceOwner("run-a", "asset_aaaa")
+        val incoming = MediaNamespaceOwner("run-a", "asset_bbbb")
+
+        val overlap =
+            assertThrows(MediaAdmissionViolation::class.java) {
+                MediaNamespaceValidator.requireDisjoint(
+                    listOf(
+                        MediaNamespaceLock(held, "秘密_1.ogg", "family_"),
+                        MediaNamespaceLock(incoming, "秘密_2.ogg", "family_nested_"),
+                    ),
+                )
+            }
+        assertEquals(MediaAdmissionRefusal.PROVIDER_NAMESPACE_OVERLAP, overlap.refusal)
+        val detail = requireNotNull(overlap.detail)
+        assertTrue(detail, detail.contains("held=asset_aaaa") && detail.contains("incoming=asset_bbbb"))
+        assertTrue(detail, detail.contains("sameRun=true"))
+        assertFalse("detail must not carry a filename: $detail", detail.contains("秘密"))
+
+        val crossRun =
+            assertThrows(MediaAdmissionViolation::class.java) {
+                MediaNamespaceValidator.requireDisjoint(
+                    listOf(
+                        MediaNamespaceLock(held, "shared.ogg", "alpha_"),
+                        MediaNamespaceLock(MediaNamespaceOwner("run-b", "asset_cccc"), "shared.ogg", "beta_"),
+                    ),
+                )
+            }
+        assertEquals(MediaAdmissionRefusal.DIRECT_NAME_COLLISION, crossRun.refusal)
+        assertTrue(requireNotNull(crossRun.detail), requireNotNull(crossRun.detail).contains("sameRun=false"))
     }
 
     @Test

@@ -1178,9 +1178,12 @@ class AndroidAnkiAdapter:
                 row_error = _expect_error_detail(row["error"], operation="storeMedia")
                 if row_error.code not in _RECOVERABLE_MEDIA_ERROR_CODES:
                     _raise_callback_error(row_error)
+                # The asset id is what ties this line to an identity named in the error itself
+                # (a namespace refusal reports the colliding pair by id, never by filename).
                 logger.warning(
-                    "Failed to store media asset %s: %s",
+                    "Failed to store media asset %s [%s]: %s",
                     asset.original_name,
+                    asset.asset_id,
                     row_error,
                 )
             elif status == "uncertain":
