@@ -703,6 +703,68 @@ class AnkiProviderReadsTest {
     }
 
     @Test
+    fun `known vocabulary exact deck scope excludes children and other decks`() {
+        val fixture = fixture()
+        fixture.gateway.queryHandler = targetQueryHandler()
+        fixture.withOwner { owner -> fixture.verifyExistingTarget(owner, verifyRequest()) }
+        fixture.gateway.queries.clear()
+        fixture.gateway.queryHandler = { query, _ ->
+            when {
+                query.endpoint == ProviderEndpoint.CARDS -> {
+                    assertEquals(ProviderSelection.CardsInDeck("Mining"), query.selection)
+                    FakeProviderCursor(
+                        query.projection,
+                        listOf(
+                            mapOf(
+                                ProviderColumn.CARD_NOTE_ID to integer(3L),
+                                ProviderColumn.CARD_DECK_ID to integer(20L),
+                            ),
+                            mapOf(
+                                ProviderColumn.CARD_NOTE_ID to integer(2L),
+                                ProviderColumn.CARD_DECK_ID to integer(21L),
+                            ),
+                            mapOf(
+                                ProviderColumn.CARD_NOTE_ID to integer(1L),
+                                ProviderColumn.CARD_DECK_ID to integer(20L),
+                            ),
+                            mapOf(
+                                ProviderColumn.CARD_NOTE_ID to integer(1L),
+                                ProviderColumn.CARD_DECK_ID to integer(20L),
+                            ),
+                        ),
+                    )
+                }
+                query.selection is ProviderSelection.NoteIds -> {
+                    assertEquals(listOf(1L, 3L), (query.selection as ProviderSelection.NoteIds).ids)
+                    FakeProviderCursor(
+                        query.projection,
+                        listOf(
+                            mapOf(
+                                ProviderColumn.NOTE_ID to integer(3L),
+                                ProviderColumn.NOTE_FIELDS to text("three\u001fmeaning"),
+                            ),
+                            mapOf(
+                                ProviderColumn.NOTE_ID to integer(1L),
+                                ProviderColumn.NOTE_FIELDS to text("one\u001fmeaning"),
+                            ),
+                        ),
+                    )
+                }
+                else -> error("unexpected query $query")
+            }
+        }
+
+        val result =
+            fixture.withOwner { owner ->
+                fixture.reads.scanFirstFields(owner, knownRequest(deckName = "Mining"))
+            } as KnownVocabularyResult
+
+        assertEquals(listOf("one", "three"), result.firstFields)
+        assertEquals(2, result.scannedNotes)
+        assertNull(result.nextCursor)
+    }
+
+    @Test
     fun `known continuation failure is nonretryable after consuming its cursor`() {
         val fixture = fixture(tokens = listOf("cursor_${"a".repeat(32)}"))
         fixture.gateway.queryHandler = { query, _ ->
@@ -1597,11 +1659,12 @@ class AnkiProviderReadsTest {
         excluded: List<String> = emptyList(),
         cursor: com.ankiminer.android.anki.protocol.KnownVocabularyCursor? = null,
         requestId: String = REQUEST_ID,
+        deckName: String? = null,
     ) =
         ScanFirstFieldsRequest(
             RUN_ID,
             requestId,
-            KnownVocabularyScope(excluded, cursor),
+            KnownVocabularyScope(excluded, cursor, deckName),
         )
 
     private fun duplicateRequest(
