@@ -16,7 +16,7 @@ import com.ankiminer.android.data.resources.DictionaryLookup
 import com.ankiminer.android.data.resources.InstalledDictionary
 import com.ankiminer.android.data.resources.InstalledAudioPack
 import com.ankiminer.android.data.resources.InstalledFrequencySource
-import com.ankiminer.android.data.resources.InstalledPitchAccent
+import com.ankiminer.android.data.resources.InstalledPitchSource
 import com.ankiminer.android.data.resources.InstalledWordList
 import com.ankiminer.android.data.resources.KnownWordsInventory
 import com.ankiminer.android.data.resources.KnownWordsImportPreview
@@ -66,7 +66,7 @@ internal data class SetupUiState(
     val pendingReplace: PendingResourceReplace? = null,
     val dictionaries: List<InstalledDictionary> = emptyList(),
     val frequencySources: List<InstalledFrequencySource> = emptyList(),
-    val pitchAccent: InstalledPitchAccent? = null,
+    val pitchSources: List<InstalledPitchSource> = emptyList(),
     val audioPacks: List<InstalledAudioPack> = emptyList(),
     val knownWords: KnownWordsInventory = KnownWordsInventory(0, 0, 0, 0, schemaOk = true),
     val knownWordsImportPreview: KnownWordsImportPreview? = null,

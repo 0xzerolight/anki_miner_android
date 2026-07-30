@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import importlib
+import json
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -1120,6 +1121,37 @@ def test_online_dictionary_provider_is_memoized_and_cancel_gated_per_run() -> No
     assert calls == ["猫", "closed"]
 
 
+def test_offline_dictionary_error_is_reworded_for_android() -> None:
+    pytest.importorskip("requests")
+    from anki_miner.exceptions import SetupError
+    from anki_miner.orchestration.episode_processor import (
+        _OFFLINE_DICTIONARY_REQUIRED_MESSAGE,
+    )
+
+    # The engine pre-flight names desktop menus ("Tools -> Download Recommended
+    # Resources"); its text crosses the bridge verbatim, so the run must not tell
+    # an Android user to use surfaces the app does not have.
+    _outcome, terminal = mining._exception_terminal(
+        "run_" + "a" * 32,
+        SetupError(_OFFLINE_DICTIONARY_REQUIRED_MESSAGE),
+        cancelled=False,
+    )
+    payload = json.loads(terminal)["payload"]
+    assert payload["error"]["code"] == "engine_error"
+    assert "Tools" not in payload["error"]["message"]
+    assert payload["error"]["message"] == (
+        "No usable offline dictionary is installed. Import one in Settings, under Dictionaries."
+    )
+
+    # Every other engine message still crosses unchanged.
+    _outcome, other = mining._exception_terminal(
+        "run_" + "b" * 32,
+        SetupError("Something else went wrong"),
+        cancelled=False,
+    )
+    assert json.loads(other)["payload"]["error"]["message"] == "Something else went wrong"
+
+
 def test_runtime_composition_injects_only_android_video_services(
     monkeypatch: pytest.MonkeyPatch,
     initialized_bridge_home: Path,
@@ -1135,7 +1167,8 @@ def test_runtime_composition_injects_only_android_video_services(
             "anki_miner.services.frequency.registry",
             "anki_miner.services.known_word_db",
             "anki_miner.services.media_extractor",
-            "anki_miner.services.pitch_accent_service",
+            "anki_miner.services.pitch_accent.multi_pitch_service",
+            "anki_miner.services.pitch_accent.registry",
             "anki_miner.services.stats_service",
             "anki_miner.services.subtitle_parser",
             "anki_miner.services.word_filter",
@@ -1150,6 +1183,7 @@ def test_runtime_composition_injects_only_android_video_services(
     expected_term_lookup = object()
     expected_reading_lookup = object()
     expected_kana_attest_lookup = object()
+    expected_term_common_lookup = object()
 
     class Registry:
         def __init__(self, root: Path) -> None:
@@ -1162,11 +1196,16 @@ def test_runtime_composition_injects_only_android_video_services(
             return []
 
     class Definition:
-        def __init__(self, config: object, providers: list[object]) -> None:
+        def __init__(self, config: object, providers: list[object], *, registry: object) -> None:
+            # registry= is what makes the processor's check_offline_dictionary
+            # pre-flight see a usable provider; a registry-less service aborts
+            # every run.
+            assert isinstance(registry, Registry)
             events.append("definition")
             self.offline_terms_exist = expected_term_lookup
             self.offline_term_readings = expected_reading_lookup
             self.has_offline_definitions = expected_kana_attest_lookup
+            self.offline_term_commonness = expected_term_common_lookup
 
         def ensure_loaded(self) -> None:
             events.append("definition-load")
@@ -1182,10 +1221,12 @@ def test_runtime_composition_injects_only_android_video_services(
             term_lookup: object,
             reading_lookup: object,
             kana_attest_lookup: object,
+            term_common_lookup: object,
         ) -> None:
             assert term_lookup is expected_term_lookup
             assert reading_lookup is expected_reading_lookup
             assert kana_attest_lookup is expected_kana_attest_lookup
+            assert term_common_lookup is expected_term_common_lookup
             self.tagger = tagger
             events.append("subtitle-parser")
 

@@ -143,6 +143,7 @@ def _full_config_payload(home: Path) -> dict[str, Any]:
         "pitch_category_format": "romaji",
         "max_frequency_rank": 20000,
         "frequency_chain": [{"source_id": "bccwj", "enabled": True}],
+        "pitch_chain": [{"source_id": "kanjium", "enabled": True}],
         "use_known_words_db": True,
         "exclude_hiragana_only_words": True,
         "exclude_katakana_only_words": False,
@@ -300,6 +301,9 @@ def test_every_progress_and_presenter_emitter_matches_engine_event_schema(
         def onProgress(self, raw: str) -> None:
             raw_events.append(raw)
 
+        def onStage(self, raw: str) -> None:
+            raw_events.append(raw)
+
         def onComplete(self, raw: str) -> None:
             raw_events.append(raw)
 
@@ -314,6 +318,7 @@ def test_every_progress_and_presenter_emitter_matches_engine_event_schema(
     adapters = CallbackAdapters(Callbacks(), registry, handle)
     adapters.progress.on_start(10, "Parsing")
     adapters.progress.on_progress(3, "字幕")
+    adapters.progress.on_stage(3, 5, "Extracting media")
     adapters.progress.on_complete()
     adapters.progress.on_error("line 3", "bad input")
     adapters.presenter.show_info("Ready")
@@ -330,23 +335,23 @@ def test_every_progress_and_presenter_emitter_matches_engine_event_schema(
             "ffprobeOk": True,
         }
     )
+    # The real engine dataclass, not a hand-rolled dict: protocol.to_json_value
+    # emits every dataclass field by reflection, so only the real type proves the
+    # wire shape still matches the schema after an engine re-pin.
+    from anki_miner.models.processing import ProcessingResult
+
     adapters.presenter.show_processing_result(
-        {
-            "totalWordsFound": 1,
-            "newWordsFound": 1,
-            "cardsCreated": 0,
-            "errors": [],
-            "elapsedTime": 0.0,
-            "comprehensionPercentage": 0.0,
-            "cardIds": [],
-            "videoFile": "/video.mkv",
-            "subtitleFile": "/subtitle.srt",
-            "minedForms": [],
-        }
+        ProcessingResult(
+            total_words_found=1,
+            new_words_found=1,
+            cards_created=0,
+            video_file="/video.mkv",
+            subtitle_file="/subtitle.srt",
+        )
     )
 
     validator = Draft202012Validator(schemas["engine_events"], registry=_cross_schema_registry(schemas))
-    assert len(raw_events) == 10
+    assert len(raw_events) == 11
     for raw in raw_events:
         validator.validate(json.loads(raw))
 

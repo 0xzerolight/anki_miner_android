@@ -590,7 +590,7 @@
     <string name="settings_audio_pack_chain">Expression audio priority</string>
     <string name="settings_no_audio_packs">No valid local audio packs are installed. Import one in Settings.</string>
     <string name="settings_pitch_format">Pitch category labels</string>
-    <string name="settings_pitch_installed">%1$s installed · %2$d entries</string>
+    <string name="settings_pitch_chain">Pitch priority</string>
     <string name="settings_pitch_not_installed">No valid pitch-accent source is installed.</string>
     <string name="settings_pitch_japanese">Japanese</string>
     <string name="settings_pitch_romaji">Romaji</string>

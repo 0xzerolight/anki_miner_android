@@ -12,9 +12,12 @@ import contextlib
 import logging
 import os
 import tempfile
+import threading
+from collections import OrderedDict
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING
+from urllib.parse import urlsplit, urlunsplit
 
 import requests
 
@@ -32,12 +35,55 @@ logger = logging.getLogger(__name__)
 # so they still produce a correct .miss even with the default UA — which is why
 # the symptom was "0 hits, a few misses, everything synthesized".)
 _BROWSER_USER_AGENT = (
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 " "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 )
 
 # Real word audio is ~10–100 KB. 5 MB is a generous upper bound; anything
 # larger is almost certainly an error page or CDN redirect body.
 MAX_AUDIO_BYTES = 5 * 1024 * 1024
+
+_AUDIO_CACHE_INDEX_MAX_DIRS = 16
+_AUDIO_CACHE_INDEXES: OrderedDict[Path, tuple[tuple[int, int, int, int], dict[str, Path]]] = OrderedDict()
+_AUDIO_CACHE_INDEX_LOCK = threading.Lock()
+
+
+def _index_audio_path(index: dict[str, Path], path: Path) -> None:
+    if path.name.endswith(".part") or not path.is_file():
+        return
+    for dot_index, char in enumerate(path.name):
+        if char == ".":
+            index.setdefault(path.name[:dot_index], path)
+
+
+def record_cached_path(cache_dir: Path, path: Path) -> None:
+    """Add a newly-written cache file without rescanning the growing directory."""
+    try:
+        stat = cache_dir.stat()
+    except OSError:
+        return
+    signature = (stat.st_dev, stat.st_ino, stat.st_mtime_ns, stat.st_ctime_ns)
+    with _AUDIO_CACHE_INDEX_LOCK:
+        cached = _AUDIO_CACHE_INDEXES.get(cache_dir)
+        if cached is None:
+            return
+        _index_audio_path(cached[1], path)
+        _AUDIO_CACHE_INDEXES[cache_dir] = (signature, cached[1])
+        _AUDIO_CACHE_INDEXES.move_to_end(cache_dir)
+
+
+def redact_url_for_log(url: str) -> str:
+    """Return a URL safe to persist: scheme, host, port, and path only."""
+    try:
+        parts = urlsplit(url)
+        hostname = parts.hostname
+        port = parts.port
+    except ValueError:
+        return "<redacted-url>"
+    if not parts.scheme or hostname is None:
+        return "<redacted-url>"
+    host = f"[{hostname}]" if ":" in hostname else hostname
+    netloc = f"{host}:{port}" if port is not None else host
+    return urlunsplit((parts.scheme, netloc, parts.path, "", ""))
 
 
 def is_mp3(body: bytes) -> bool:
@@ -107,22 +153,28 @@ def new_browser_session() -> "requests.Session":
 def find_cached_by_stem(cache_dir: Path, stem: str) -> Path | None:
     """Return a cached audio file whose name is ``<stem>.<ext>``, or None.
 
-    Extension varies by source (mp3/opus/flac/…), so match any suffix. Uses
-    ``iterdir`` + ``startswith`` rather than ``glob`` because a mined form may
-    contain glob metacharacters ([], *, ?) that would corrupt a glob pattern.
-    Skips ``.part`` staging files left by a crashed prior download. A missing or
-    unreadable directory yields None (first-fetch cold path).
+    Extension varies by source (mp3/opus/flac/…), so match any suffix. A bounded
+    per-directory index preserves the first ``iterdir`` match for arbitrary
+    stems, including glob metacharacters. Skips ``.part`` staging files left by
+    a crashed prior download. A missing or unreadable directory yields None.
     """
-    prefix = f"{stem}."
     try:
-        return next(
-            (
-                p
-                for p in cache_dir.iterdir()
-                if p.name.startswith(prefix) and not p.name.endswith(".part") and p.is_file()
-            ),
-            None,
-        )
+        stat = cache_dir.stat()
+        signature = (stat.st_dev, stat.st_ino, stat.st_mtime_ns, stat.st_ctime_ns)
+        with _AUDIO_CACHE_INDEX_LOCK:
+            cached = _AUDIO_CACHE_INDEXES.get(cache_dir)
+            if cached is not None and cached[0] == signature:
+                _AUDIO_CACHE_INDEXES.move_to_end(cache_dir)
+                return cached[1].get(stem)
+
+            index: dict[str, Path] = {}
+            for path in cache_dir.iterdir():
+                _index_audio_path(index, path)
+            _AUDIO_CACHE_INDEXES[cache_dir] = (signature, index)
+            _AUDIO_CACHE_INDEXES.move_to_end(cache_dir)
+            if len(_AUDIO_CACHE_INDEXES) > _AUDIO_CACHE_INDEX_MAX_DIRS:
+                _AUDIO_CACHE_INDEXES.popitem(last=False)
+            return index.get(stem)
     except OSError:
         return None
 
@@ -236,12 +288,18 @@ def download_audio_to_cache(
                 with contextlib.suppress(OSError):
                     Path(tmp_name).unlink()
                 raise
+            record_cached_path(cache_dir, dest)
             return dest
         finally:
             response.close()
     except (requests.RequestException, OSError) as exc:
         _bump(classify_request_exception(exc))
-        logger.debug("audio download failed for %s: %s", url, exc)
+        logger.debug(
+            "audio download failed for %s: %s: %s",
+            redact_url_for_log(url),
+            type(exc).__name__,
+            redact_url_for_log(str(exc)),
+        )
         return None
 
 

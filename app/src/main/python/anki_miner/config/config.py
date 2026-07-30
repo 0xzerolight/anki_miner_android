@@ -37,6 +37,24 @@ class FreqEntry:
 
 
 @dataclass(frozen=True)
+class PitchSourceEntry:
+    """One enabled/ordered pitch accent source in the first-hit-wins chain.
+
+    References a folder under ~/.anki_miner/pitch/<source_id>/ holding an
+    index.sqlite built by the pitch source importer. Unlike the additive
+    frequency chain, sources resolve first-hit-wins in chain order: the first
+    enabled source whose lookup returns an entry wins, and later sources only
+    fill words earlier sources miss.
+
+    (Named PitchSourceEntry, not PitchEntry — that name is already the lookup
+    record in services/pitch_accent_service.py.)
+    """
+
+    source_id: str
+    enabled: bool = True
+
+
+@dataclass(frozen=True)
 class AudioSourceEntry:
     """One entry in the expression audio source chain.
 
@@ -177,7 +195,16 @@ class AnkiMinerConfig:
     # Enabled name-wordset IDs (Issue #59). Each ID maps to a bundled
     # plain-text proper-noun list under resources/wordsets/<id>.txt.
     # Words on any enabled set are dropped from mining unless whitelisted.
-    excluded_wordsets: tuple[str, ...] = field(default_factory=tuple)
+    #
+    # Default-ON (junk-reduction r3): all four bundled sets ship enabled so
+    # proper nouns are dropped out of the box. The literal is a deliberate
+    # duplicate of services.wordset_service.WORDSET_IDS — config must not
+    # import services; a sync-assertion test (test_config_wordsets.py) pins
+    # the two identical. Existing users are seeded once via the schema-v2
+    # migration in gui/utils/config_manager.py.
+    excluded_wordsets: tuple[str, ...] = field(
+        default_factory=lambda: ("surnames", "given-names", "place-names", "org-product")
+    )
 
     # Dictionary settings
     #
@@ -229,9 +256,20 @@ class AnkiMinerConfig:
     reading_tts_papago_enabled: bool = True
 
     # Pitch accent settings. Activation is resource-driven (see the pitch_active
-    # property): the lookup runs iff a pitch data file is present. There is no
-    # separate on/off flag — importing/downloading the file is the switch.
+    # property): the lookup runs iff at least one enabled source is in the
+    # chain. There is no separate on/off flag — adding a source is the switch.
+    #
+    # DEPRECATED: pitch_accent_path is the legacy single-CSV location, kept only
+    # as the source for the one-time legacy-pitch chain migration (and for
+    # graceful downgrade to older app versions this release). Runtime lookups
+    # never read it once the chain exists.
     pitch_accent_path: Path = field(default_factory=lambda: ANKI_MINER_HOME / "pitch_accent.csv")
+    # First-hit-wins multi-source pitch chain. Each enabled PitchSourceEntry
+    # references a per-source index under ~/.anki_miner/pitch/<source_id>/.
+    # Empty by default; the boot-time legacy migration populates it from
+    # pitch_accent.csv when present.
+    pitch_chain: tuple["PitchSourceEntry", ...] = field(default_factory=tuple)
+    pitch_root: Path = field(default_factory=lambda: ANKI_MINER_HOME / "pitch")
     # Output label format for the pitch_category Anki field.
     # "jp": 平板/頭高/中高/尾高/起伏 (legacy)
     # "romaji": heiban/atamadaka/nakadaka/odaka/kifuku (Yomitan/Lapis compatible)
@@ -295,11 +333,11 @@ class AnkiMinerConfig:
     # Structural subtitle-annotation stripping (Task U1, default ON). Kills the
     # largest batch-mining junk class: parenthetical SFX captions
     # (（スマホのバイブ音）), leading speaker/style tags (（旬: 小声で）…), and inline
-    # furigana (瀕死(ひんし)) that would otherwise tokenize as dialogue. Applied at
-    # the parser choke point AFTER clean_subtitle_text and BEFORE the user regex
-    # filter, on both the mining path and the display path (curation player /
-    # timing viewer). Default-ON is deliberate: an absent key falls back to this
-    # dataclass default on config load, so the strip reaches existing users on
+    # furigana (瀕死(ひんし)) that would otherwise tokenize as dialogue. Applied per
+    # physical line before whitespace flattening on the subtitle-file path, and
+    # before the user regex filter on both mining and display paths (curation
+    # player / timing viewer). Default-ON is deliberate: an absent key falls back
+    # to this dataclass default on config load, so the strip reaches existing users on
     # upgrade with no migration; the Filtering-panel checkbox is the escape hatch.
     # See utils.text_utils.strip_inline_annotations for the three passes.
     strip_subtitle_annotations: bool = True
@@ -351,11 +389,13 @@ class AnkiMinerConfig:
     skipped_update_version: str = ""
     last_known_version: str = ""
 
-    # First-run flags (GUI-persisted; used to auto-create desktop shortcut once)
+    # First-run flags (GUI-persisted; used to auto-create desktop shortcut once).
+    # Fresh installs default False; GUIConfigManager seeds absent keys True only
+    # when loading a pre-existing config.
     first_run_shortcut_done: bool = False
     # Set once the first-run recommended-resources setup has been offered (so the
     # Welcome dialog never re-fires). Persisted automatically; absent in old
-    # configs defaults to False.
+    # configs is seeded True by GUIConfigManager.
     first_run_setup_done: bool = False
 
     # Performance settings
@@ -374,12 +414,25 @@ class AnkiMinerConfig:
     youtube_cookies_file: Path | None = None
     youtube_ffmpeg_location: Path | None = None
     # Optional explicit override for the yt-dlp executable. When unset,
-    # anki_miner.utils.ytdlp_resolver falls back to the app-managed downloaded
-    # copy (~/.anki_miner/bin/), a bundled binary, or the bare literal on PATH.
+    # anki_miner.utils.ytdlp_resolver prefers a verified app-managed copy
+    # (~/.anki_miner/bin/), then PATH, then a bundled binary, then the bare literal.
     ytdlp_location: Path | None = None
-    # When True, the GUI runs a throttled background yt-dlp self-update on
-    # startup (auto-download to ~/.anki_miner/bin/, kept current). Independent of
+    # When True, the GUI runs a throttled background yt-dlp self-update on startup
+    # (auto-download to ~/.anki_miner/bin/, kept current). Independent of
     # check_for_updates (the app updater).
+    #
+    # Defaults ON, but only reaches genuinely fresh installs: GUIConfigManager
+    # serializes every dataclass field, and this field predates
+    # CONFIG_SCHEMA_VERSION 3, so every config file the app has ever written already
+    # carries an explicit value that a load preserves. Existing users keep whatever
+    # they had and are nudged instead, via the stale-binary validation warning, which
+    # fires only while this is False.
+    #
+    # Default-ON is what keeps YouTube mining working: yt-dlp breaks whenever YouTube
+    # changes something, and a bundled binary is pinned at build time. It is safe now
+    # in a way it was not when P0 containment 048 forced it off — the download is
+    # host-allowlisted, SHA-256 verified against the release manifest, atomically
+    # installed, and receipt-gated before the resolver will select it.
     auto_update_ytdlp: bool = True
 
     # --- Bundled media tooling ---
@@ -437,6 +490,14 @@ class AnkiMinerConfig:
     # the source language: no translator is installed for it. Persisted via
     # gui_config.json; applied at startup (restart-to-apply). Discussion #76.
     ui_language: str = "en"
+    # File pickers use Qt's built-in dialog by default: the OS-native dialog
+    # can hang the GUI thread indefinitely on some Windows setups (Explorer
+    # shell/cloud enumeration on a bad network — Issue #100). True restores
+    # native dialogs. Consumed via gui/utils/file_dialogs.set_use_native.
+    use_native_file_dialogs: bool = False
+
+    # Monotonic identity for committed GUI settings. Not user-editable.
+    config_version: int = 0
 
     def __post_init__(self):
         """Convert string paths to Path objects if needed.
@@ -460,6 +521,8 @@ class AnkiMinerConfig:
             object.__setattr__(self, "audio_packs_root", Path(self.audio_packs_root))
         if isinstance(self.pitch_accent_path, str):
             object.__setattr__(self, "pitch_accent_path", Path(self.pitch_accent_path))
+        if isinstance(self.pitch_root, str):
+            object.__setattr__(self, "pitch_root", Path(self.pitch_root))
         if isinstance(self.freqs_root, str):
             object.__setattr__(self, "freqs_root", Path(self.freqs_root))
         if isinstance(self.known_words_db_path, str):
@@ -586,11 +649,13 @@ class AnkiMinerConfig:
 
     @property
     def pitch_active(self) -> bool:
-        """Whether pitch lookup should load — iff a pitch data file is present.
+        """Whether pitch lookup should load — iff an enabled source is configured.
 
-        Replaces the removed ``use_pitch_accent`` flag. The default path exists
-        only after the user imports/downloads pitch data, so default configs are
-        inactive. Like frequency, this drives pre-card-write surfaces (CSV
-        export), so file-presence — not a mapped pitch field — is the switch.
+        Replaces the removed ``use_pitch_accent`` flag (and, since the
+        multi-source chain, the legacy file-presence check on
+        ``pitch_accent_path``). Like frequency, this drives pre-card-write
+        surfaces (CSV export), so the chain — not a mapped pitch field — is the
+        switch. The default chain is empty, so default configs are inactive;
+        the boot-time legacy migration back-fills it for existing CSV users.
         """
-        return self.pitch_accent_path.is_file()
+        return any(e.enabled for e in self.pitch_chain)

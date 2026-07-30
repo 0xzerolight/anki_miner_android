@@ -14,26 +14,32 @@ from anki_miner.utils.i18n import tr_format
 
 if TYPE_CHECKING:
     from anki_miner.interfaces import DictionaryProvider
+    from anki_miner.services.dictionary.registry import DictionaryRegistry
 
 logger = logging.getLogger(__name__)
 
 
-def collect_dictionary_css(config: AnkiMinerConfig) -> str:
-    """Concatenate every enabled indexed dictionary's scoped ``styles.css``.
+def collect_dictionary_css_entries(config: AnkiMinerConfig) -> list[tuple[str, str, str]]:
+    """Collect ``(dict_id, display_name, scoped_css)`` for every enabled
+    dictionary that ships a ``styles.css``.
 
     Builds the configured provider chain from disk, loads each provider, and
-    joins the per-dictionary scoped CSS (``IndexedDictProvider.dictionary_css``)
-    in chain order. The result is embedded (with the tree-shaken base sheet) in
-    each card's self-contained per-card ``<style>`` block via
-    ``card_style_block.build_card_style_block`` at the
+    gathers the per-dictionary scoped CSS (``IndexedDictProvider.dictionary_css``)
+    in chain order. Both stable ``dict_id`` and ``display_name`` are retained:
+    new envelopes match by ID, while pre-ID envelopes still match by title.
+    Entries with no usable CSS are skipped (online providers, dicts without
+    ``styles.css``), and the list is ORDERED with duplicates preserved:
+    ``display_name`` is not guaranteed unique across providers, so this is
+    deliberately not a dict.
+
+    The result feeds each styled field's self-contained trailing ``<style>``
+    block via ``card_style_block.attach_card_style_block`` at the
     ``EpisodeProcessor._phase5_create`` seam — this collection runs once per
-    episode; the block itself is assembled per card (Issue #93). Online
-    providers (Jisho) and dictionaries that ship no ``styles.css`` contribute
-    nothing.
+    episode; blocks are assembled per card/field (Issue #93).
 
     Does light per-dictionary SQLite I/O (registry scan + ``read_meta`` +
     ``open_readonly`` via each provider's ``load()``), so it runs off the GUI
-    thread (inside the card-creation worker). Returns ``""`` when no enabled
+    thread (inside the card-creation worker). Returns ``[]`` when no enabled
     dictionary ships styles. Never raises: a provider that fails to load is
     skipped, mirroring the never-raises provider boundary elsewhere here. Each
     provider opened here is closed before returning so no ``index.sqlite`` handle
@@ -44,7 +50,7 @@ def collect_dictionary_css(config: AnkiMinerConfig) -> str:
 
     registry = DictionaryRegistry(config.dicts_root)
     registry.load()
-    blocks: list[str] = []
+    entries: list[tuple[str, str, str]] = []
     for provider in registry.build_provider_chain(config):
         css = ""
         try:
@@ -58,8 +64,21 @@ def collect_dictionary_css(config: AnkiMinerConfig) -> str:
                 with contextlib.suppress(Exception):
                     closer()
         if css and css.strip():
-            blocks.append(css.strip())
-    return "\n\n".join(blocks)
+            dict_id = getattr(provider, "dict_id", None)
+            if isinstance(dict_id, str):
+                entries.append((dict_id, provider.name, css.strip()))
+    return entries
+
+
+def collect_dictionary_css(config: AnkiMinerConfig) -> str:
+    """Concatenate every enabled indexed dictionary's scoped ``styles.css``.
+
+    Thin join over ``collect_dictionary_css_entries`` (byte-equivalent to the
+    pre-entries implementation; pinned by test). Used where an unfiltered
+    whole-config blob is still the right input (e.g. the restyler's
+    envelope-stamping gate).
+    """
+    return "\n\n".join(css for _, _, css in collect_dictionary_css_entries(config))
 
 
 class DefinitionService:
@@ -73,9 +92,12 @@ class DefinitionService:
         self,
         config: AnkiMinerConfig,
         providers: list[DictionaryProvider],
+        *,
+        registry: DictionaryRegistry | None = None,
     ):
         self.config = config
         self._providers = providers
+        self._registry = registry
         self._loaded = False
 
     def ensure_loaded(self) -> bool:
@@ -90,6 +112,26 @@ class DefinitionService:
             except Exception as e:  # pragma: no cover - defensive
                 logger.warning("Failed to load provider '%s': %s", provider.name, e)
         return any(p.is_available() for p in self._providers)
+
+    def has_usable_offline_provider(self) -> bool:
+        """Whether the loaded chain has an available, non-empty offline index.
+
+        Provider availability alone is insufficient: Jisho is always available,
+        and a schema-current index with zero declared entries opens normally. The
+        registry snapshot that built this chain is therefore authoritative. No
+        disk scan or metadata read occurs here.
+        """
+        if self._registry is None:
+            return False
+        self.ensure_loaded()
+        for provider in self._available_offline_providers():
+            dict_id = getattr(provider, "dict_id", None)
+            if not isinstance(dict_id, str):
+                continue
+            meta = self._registry.get(dict_id)
+            if meta is not None and meta.schema_ok and meta.entry_count > 0:
+                return True
+        return False
 
     def close(self) -> None:
         """Close every provider that exposes a ``close()`` method.
@@ -491,6 +533,102 @@ class DefinitionService:
             remaining = [t for t in remaining if t not in hits]
 
         return found
+
+    def _available_offline_providers(self) -> list[DictionaryProvider]:
+        """Available, offline providers in chain order (commonness/quality probes)."""
+        return [p for p in self._providers if not p.is_online and p.is_available()]
+
+    @staticmethod
+    def _provider_commonness_aware(provider: DictionaryProvider) -> bool:
+        """Whether ``provider`` exposes a truthy ``commonness_aware`` property.
+
+        Optional surface (like ``lookup_many`` / ``has_terms``): a provider
+        lacking it — online Jisho, legacy dicts — is not aware. Never raises: a
+        property that throws degrades to False."""
+        try:
+            return bool(getattr(provider, "commonness_aware", False))
+        except Exception as e:  # pragma: no cover - defensive
+            logger.warning("Provider '%s' raised reading commonness_aware; treating as unaware: %s", provider.name, e)
+            return False
+
+    @staticmethod
+    def _provider_attest_quality(
+        provider: DictionaryProvider, words: list[str], include_readings: bool
+    ) -> dict[str, dict[str, frozenset[str]]]:
+        """Call ``provider.attest_quality`` under the never-raises boundary.
+
+        Providers without the optional method (or that raise) contribute nothing
+        (empty map), so a single buggy provider can never abort the probe."""
+        fn = getattr(provider, "attest_quality", None)
+        if not callable(fn):
+            return {}
+        try:
+            return fn(words, include_readings)  # type: ignore[no-any-return]
+        except Exception as e:
+            logger.warning("Provider '%s' raised during attest_quality; skipping: %s", provider.name, e)
+            return {}
+
+    def offline_term_commonness(self, terms: list[str]) -> dict[str, bool] | None:
+        """Whether each term is a COMMON headword in a commonness-aware offline dict.
+
+        Foundation probe for the dict-commonness units (U10 infra). Returns
+        ``None`` iff NO available offline provider is commonness-aware — the
+        monolingual-only case, where the caller has no commonness signal and must
+        stay byte-identical to pre-U10 behavior. Otherwise returns a dict keyed by
+        the deduped terms: ``True`` iff some commonness-AWARE provider attests the
+        term with a term-exact common row (``attest_quality`` ``common_rules``
+        non-empty on the term-only, ``include_readings=False`` probe). Unaware
+        providers are ignored; never raises (provider boundary)."""
+        self.ensure_loaded()
+        aware = [p for p in self._available_offline_providers() if self._provider_commonness_aware(p)]
+        if not aware:
+            return None
+        deduped = list(dict.fromkeys(terms))
+        result: dict[str, bool] = dict.fromkeys(deduped, False)
+        for provider in aware:
+            quality = self._provider_attest_quality(provider, deduped, include_readings=False)
+            for term in deduped:
+                if result[term]:
+                    continue
+                wq = quality.get(term)
+                if wq and wq["common_rules"]:
+                    result[term] = True
+        return result
+
+    def offline_kana_attest_quality(self, words: list[str]) -> dict[str, dict[str, frozenset[str]]] | None:
+        """Term/common rule sets per word across offline dicts (kana-recovery quality).
+
+        Foundation probe for the kana-recovery quality gate (U10 infra), run with
+        the reading arm ON (``include_readings=True``). Returns ``None`` iff NO
+        available offline provider is commonness-aware. Otherwise, per deduped
+        word:
+
+        * ``term_rules`` — union of ``attest_quality`` ``term_rules`` over ALL
+          available offline providers (aware or not: term attestation does not
+          need commonness tags).
+        * ``common_rules`` — union of ``common_rules`` over commonness-AWARE
+          providers only (an unaware dict's ``common_rules`` is empty regardless).
+
+        Never raises (provider boundary)."""
+        self.ensure_loaded()
+        offline = self._available_offline_providers()
+        aware = {id(p): self._provider_commonness_aware(p) for p in offline}
+        if not any(aware.values()):
+            return None
+        deduped = list(dict.fromkeys(words))
+        term_acc: dict[str, set[str]] = {w: set() for w in deduped}
+        common_acc: dict[str, set[str]] = {w: set() for w in deduped}
+        for provider in offline:
+            quality = self._provider_attest_quality(provider, deduped, include_readings=True)
+            provider_aware = aware[id(provider)]
+            for word in deduped:
+                wq = quality.get(word)
+                if not wq:
+                    continue
+                term_acc[word].update(wq["term_rules"])
+                if provider_aware:
+                    common_acc[word].update(wq["common_rules"])
+        return {w: {"term_rules": frozenset(term_acc[w]), "common_rules": frozenset(common_acc[w])} for w in deduped}
 
     def get_glossaries_batch(
         self,

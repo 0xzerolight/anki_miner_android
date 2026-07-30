@@ -32,6 +32,7 @@ interface AppSettingsRepository {
     suspend fun snapshot(
         installedDictionaryIds: List<String>,
         installedFrequencyIds: List<String> = emptyList(),
+        installedPitchIds: List<String> = emptyList(),
         installedAudioPackIds: List<String> = emptyList(),
         availableWordsetIds: List<String> = emptyList(),
         blacklistPath: String? = null,
@@ -41,6 +42,7 @@ interface AppSettingsRepository {
             settings.first(),
             installedDictionaryIds,
             installedFrequencyIds,
+            installedPitchIds,
             installedAudioPackIds,
             availableWordsetIds,
             blacklistPath,
@@ -201,6 +203,10 @@ class DataStoreAppSettingsRepository internal constructor(
                 candidate.setOrRemove(
                     Keys.frequencySources,
                     ResourceSelectionPreferenceCodec.encode(value.frequencySources),
+                )
+                candidate.setOrRemove(
+                    Keys.pitchSources,
+                    ResourceSelectionPreferenceCodec.encode(value.pitchSources),
                 )
                 candidate.setOrRemove(
                     Keys.audioPacks,
@@ -364,6 +370,12 @@ class DataStoreAppSettingsRepository internal constructor(
                             emptyList(),
                             ResourceSelectionPreferenceCodec::decode,
                         ) { AppSettingsValidator.validate(AppSettings(frequencySources = it)) },
+                    pitchSources =
+                        decoder.read(
+                            Keys.pitchSources,
+                            emptyList(),
+                            ResourceSelectionPreferenceCodec::decode,
+                        ) { AppSettingsValidator.validate(AppSettings(pitchSources = it)) },
                     audioPacks =
                         decoder.read(
                             Keys.audioPacks,
@@ -521,6 +533,7 @@ class DataStoreAppSettingsRepository internal constructor(
             val maxParallelWorkers = register(intPreferencesKey("max_parallel_workers"))
             val dictionarySources = register(stringPreferencesKey("dictionary_sources_v1"))
             val frequencySources = register(stringPreferencesKey("frequency_sources_v1"))
+            val pitchSources = register(stringPreferencesKey("pitch_sources_v1"))
             val audioPacks = register(stringPreferencesKey("audio_packs_v1"))
             val enabledWordsets = register(stringPreferencesKey("enabled_wordsets_v2"))
             val wordsetDefaultsPolicy = register(stringPreferencesKey("wordset_defaults_policy"))

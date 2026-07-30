@@ -16,7 +16,7 @@ from __future__ import annotations
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
+from typing import Callable, Iterable
 
 import anki_miner.services._sqlite_index as _sqlite_index
 from anki_miner.services._sqlite_index import open_readonly as open_readonly
@@ -50,7 +50,7 @@ CREATE TABLE IF NOT EXISTS meta (
 # both cases as wildcards so callers never need to branch on reading presence.
 # No LIMIT: fetchers want all candidate rows; dictionary storage's LIMIT 5 does not apply.
 _LOOKUP_SQL = (
-    "SELECT file, source, speaker FROM entries "
+    "SELECT file, source, speaker, reading FROM entries "
     "WHERE expression = ? AND (? = '' OR reading IS NULL OR reading = ?) "
     "ORDER BY id"
 )
@@ -70,11 +70,17 @@ class AudioPackRow:
 
 @dataclass(frozen=True)
 class AudioEntry:
-    """Result of a lookup query."""
+    """Result of a lookup query.
+
+    ``reading`` carries the row's stored reading (None for wildcard rows,
+    e.g. forvo/legacy-jpod) so the fetcher's wildcard-lookup ambiguity guard
+    can count distinct readings; it is not part of the served audio identity.
+    """
 
     file: str
     source: str
     speaker: str | None
+    reading: str | None = None
 
 
 def create_index(db_path: Path) -> None:
@@ -88,7 +94,13 @@ def create_index(db_path: Path) -> None:
         conn.close()
 
 
-def bulk_insert(db_path: Path, rows: Iterable[AudioPackRow], batch_size: int = 5000) -> int:
+def bulk_insert(
+    db_path: Path,
+    rows: Iterable[AudioPackRow],
+    batch_size: int = 5000,
+    *,
+    on_malformed: Callable[[int], None] | None = None,
+) -> int:
     """Insert rows in batched transactions. Returns total inserted.
 
     The sqlite3 `with` context manager commits/rolls back but does NOT close
@@ -96,10 +108,14 @@ def bulk_insert(db_path: Path, rows: Iterable[AudioPackRow], batch_size: int = 5
     across the importer's staging-dir cleanup (matters on Windows).
     """
     total = 0
+    skipped_malformed = 0
     conn = sqlite3.connect(db_path)
     try:
         batch: list[tuple] = []
         for row in rows:
+            if row is None or not _valid_row(row):
+                skipped_malformed += 1
+                continue
             batch.append(
                 (
                     row.expression,
@@ -120,8 +136,7 @@ def bulk_insert(db_path: Path, rows: Iterable[AudioPackRow], batch_size: int = 5
                 batch.clear()
         if batch:
             conn.executemany(
-                "INSERT INTO entries (expression, reading, source, speaker, display, file) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
+                "INSERT INTO entries (expression, reading, source, speaker, display, file) VALUES (?, ?, ?, ?, ?, ?)",
                 batch,
             )
             total += len(batch)
@@ -129,7 +144,23 @@ def bulk_insert(db_path: Path, rows: Iterable[AudioPackRow], batch_size: int = 5
         conn.commit()
     finally:
         conn.close()
+    if on_malformed is not None:
+        on_malformed(skipped_malformed)
     return total
+
+
+def _valid_row(row: AudioPackRow) -> bool:
+    return (
+        isinstance(row, AudioPackRow)
+        and isinstance(row.expression, str)
+        and bool(row.expression)
+        and (row.reading is None or isinstance(row.reading, str))
+        and isinstance(row.source, str)
+        and (row.speaker is None or isinstance(row.speaker, str))
+        and (row.display is None or isinstance(row.display, str))
+        and isinstance(row.file, str)
+        and bool(row.file)
+    )
 
 
 def read_meta_cached(db_path: Path) -> dict[str, str]:
@@ -152,4 +183,4 @@ def lookup(conn: sqlite3.Connection, expression: str, reading: str | None = "") 
     """
     r = reading if reading is not None else ""
     rows = conn.execute(_LOOKUP_SQL, (expression, r, r)).fetchall()
-    return [AudioEntry(file=row[0], source=row[1], speaker=row[2]) for row in rows]
+    return [AudioEntry(file=row[0], source=row[1], speaker=row[2], reading=row[3]) for row in rows]

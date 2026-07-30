@@ -18,7 +18,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from anki_miner.config import AnkiMinerConfig
-from anki_miner.services._sqlite_index import scan_index_root
+from anki_miner.services._sqlite_index import (
+    is_generated_store_artifact,
+    read_ownership_marker,
+    scan_index_root,
+)
 from anki_miner.services.frequency.providers.indexed_freq_provider import (
     IndexedFreqProvider,
 )
@@ -57,21 +61,32 @@ class FrequencySourceRegistry:
         self._sources: dict[str, FreqSourceMeta] = {}
 
     def load(self) -> None:
-        self._sources = scan_index_root(self._root, self._parse_meta, warn_label="frequency source")
+        self._sources = scan_index_root(
+            self._root,
+            self._parse_meta,
+            child_prefilter=lambda child: (
+                not is_generated_store_artifact(child.name) or read_ownership_marker(child) == ("frequency", child.name)
+            ),
+            warn_label="frequency source",
+        )
 
     def _parse_meta(self, child: Path, db: Path, meta: dict[str, str]) -> FreqSourceMeta:
+        source_name = meta.get("source_name")
+        format_name = meta.get("format")
+        raw_version = meta.get("schema_version")
+        raw_count = meta.get("entry_count")
         try:
-            version = int(meta.get("schema_version", "0"))
-        except ValueError:
+            version = int(raw_version) if isinstance(raw_version, str) else 0
+        except (TypeError, ValueError):
             version = 0
         try:
-            count = int(meta.get("entry_count", "0"))
-        except ValueError:
+            count = int(raw_count) if isinstance(raw_count, str) else 0
+        except (TypeError, ValueError):
             count = 0
         return FreqSourceMeta(
             source_id=child.name,
-            source_name=meta.get("source_name", child.name),
-            format=meta.get("format", "unknown"),
+            source_name=source_name if isinstance(source_name, str) else child.name,
+            format=format_name if isinstance(format_name, str) else "unknown",
             entry_count=count,
             # schema_ok policy: additive-only migrations, so every version from
             # 1..current is readable (older = fewer columns, filled as absent by

@@ -419,8 +419,13 @@ class _DocumentParser:
         self,
         units: list[object],
         want_line_index: bool,
+        *,
+        subtitle_cleanup: bool = False,
     ) -> tuple[list[object], None, collections.Counter[str]]:
         assert want_line_index is False
+        # The processor keys per-cue cleanup on the document kind; this fixture
+        # is a mokuro volume, so cleanup must stay off.
+        assert subtitle_cleanup is False
         assert [unit.text for unit in units] == ["猫を見る。", "犬もいる。"]
         self.received_units = list(units)
         word = self._tokenized_word_type(
@@ -481,7 +486,7 @@ class _AnkiService:
         self,
         card_data: list[object],
         progress_callback: object | None = None,
-    ) -> int:
+    ) -> list[int]:
         assert progress_callback is None
         self.card_data = list(card_data)
         assert len(self.card_data) == 1
@@ -489,7 +494,9 @@ class _AnkiService:
         assert screenshot_path is not None
         self.image_bytes = screenshot_path.read_bytes()
         self.last_created_note_ids = [4242]
-        return 1
+        # The service contract returns the created ids; the processor takes
+        # len() of this and stamps them onto the result.
+        return [4242]
 
 
 def test_actual_process_reading_mines_loaded_mokuro_document(
@@ -519,7 +526,10 @@ def test_actual_process_reading_mines_loaded_mokuro_document(
     document = reading_mining._load_document(request)
     config = replace(
         reading_mining._map_config(request, initialized_bridge_home),
-        anki_fields={},
+        # The reading image phase is now gated on the picture field being mapped
+        # (episode_processor picture_mapped), so an empty mapping would mine the
+        # mokuro volume imageless and the fixture asserts the page image.
+        anki_fields={"picture": "Picture"},
         include_known_words=True,
         bypass_optional_filters=True,
         reading_min_occurrence=1,
@@ -558,7 +568,10 @@ def test_actual_process_reading_mines_loaded_mokuro_document(
         "cardsCreated": 1,
         "errors": [],
         "cardIds": [4242],
-        "minedForms": ["猫"],
+        # mined_forms is now the known-words DB insert receipt, not "everything
+        # mined": Undo may only revert rows this run actually inserted, so with
+        # no DB wired here the list is legitimately empty.
+        "minedForms": [],
         "videoFile": "",
         "subtitleFile": "",
     }

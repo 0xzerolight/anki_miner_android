@@ -124,7 +124,10 @@ internal object TesterDiagnosticsBuilder {
                     "resources.audio_packs_usable",
                     setup.audioPacks.count { it.contentAvailable && it.entryCount > 0 }.toString(),
                 )
-                line("resources.pitch_usable", (setup.pitchAccent?.schemaOk == true).toString())
+                line(
+                    "resources.pitch_usable",
+                    setup.pitchSources.count { it.schemaOk && it.entryCount > 0 }.toString(),
+                )
                 line("resources.operation", setup.operation?.phase?.name?.lowercase(Locale.ROOT) ?: NONE)
                 line("resources.failure", safeCode(setup.failure?.code))
                 line("anki.provider", ankiReadiness(setup.anki))

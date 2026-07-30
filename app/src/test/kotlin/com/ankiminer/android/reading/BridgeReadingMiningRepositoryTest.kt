@@ -1064,7 +1064,7 @@ class BridgeReadingMiningRepositoryTest {
         val JOB_CANCELLED =
             """{"schemaVersion":1,"type":"job.cancelled","payload":{"runId":"$RUN_ID","newlyCancelled":true}}"""
         val SUCCESS_TERMINAL =
-            """{"schemaVersion":1,"type":"mining.terminal","payload":{"runId":"$RUN_ID","outcome":"success","result":{"totalWordsFound":1,"newWordsFound":0,"cardsCreated":0,"errors":[],"elapsedTime":1.0,"comprehensionPercentage":100.0,"cardIds":[],"videoFile":"","subtitleFile":"Novel.txt","minedForms":[]},"error":null}}"""
+            """{"schemaVersion":1,"type":"mining.terminal","payload":{"runId":"$RUN_ID","outcome":"success","result":{"totalWordsFound":1,"newWordsFound":0,"cardsCreated":0,"errors":[],"elapsedTime":1.0,"comprehensionPercentage":100.0,"cardIds":[],"videoFile":"","subtitleFile":"Novel.txt","minedForms":[],"ankiWriteState":"no_note_write","failureIsTransient":false},"error":null}}"""
         val CANCELLED_TERMINAL =
             """{"schemaVersion":1,"type":"mining.terminal","payload":{"runId":"$RUN_ID","outcome":"cancelled","result":null,"error":{"code":"cancelled","message":"Mining was cancelled"}}}"""
     }

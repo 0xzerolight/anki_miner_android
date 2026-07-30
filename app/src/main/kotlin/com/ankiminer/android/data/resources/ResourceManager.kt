@@ -49,6 +49,7 @@ interface ResourceManager {
 
     suspend fun importPitchAccent(
         uri: String,
+        sourceId: String,
         sourceName: String,
         format: PitchAccentSourceFormat,
         replace: Boolean,
@@ -371,6 +372,7 @@ internal class AndroidResourceManager(
 
     override suspend fun importPitchAccent(
         uri: String,
+        sourceId: String,
         sourceName: String,
         format: PitchAccentSourceFormat,
         replace: Boolean,
@@ -409,6 +411,7 @@ internal class AndroidResourceManager(
                             ResourceBridgeCodec.encodePitchImportRequest(
                                 operation.id,
                                 staged.file.canonicalPath,
+                                sourceId,
                                 sourceName,
                                 format,
                                 replace,
@@ -1074,7 +1077,7 @@ internal class AndroidResourceManager(
                         "dictionary_resource_invalid",
                         "An occupied dictionary slot is incomplete, unsafe, or uses an old schema",
                     )
-                localResources.pitchAccent?.schemaOk == false ->
+                localResources.pitchSources.any { !it.schemaOk } ->
                     ResourceBridgeException(
                         "pitch_resource_invalid",
                         "Installed pitch-accent data is incomplete or malformed",
@@ -1119,7 +1122,7 @@ internal class AndroidResourceManager(
                 catalog = catalog,
                 dictionaries = dictionaries,
                 frequencySources = localResources.frequencies.sortedBy { source -> source.sourceId },
-                pitchAccent = localResources.pitchAccent,
+                pitchSources = localResources.pitchSources,
                 audioPacks = localResources.audioPacks.sortedBy { pack -> pack.packId },
                 knownWords = localResources.knownWords,
                 wordsets = localResources.wordsets,

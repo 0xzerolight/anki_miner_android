@@ -31,7 +31,7 @@ import com.ankiminer.android.data.resources.FrozenResourceCatalog
 import com.ankiminer.android.data.resources.InstalledAudioPack
 import com.ankiminer.android.data.resources.InstalledDictionary
 import com.ankiminer.android.data.resources.InstalledFrequencySource
-import com.ankiminer.android.data.resources.InstalledPitchAccent
+import com.ankiminer.android.data.resources.InstalledPitchSource
 import com.ankiminer.android.data.resources.KnownWordsInventory
 import com.ankiminer.android.data.resources.KnownWordsPage
 import com.ankiminer.android.data.resources.ResourceFailure
@@ -42,6 +42,7 @@ import com.ankiminer.android.data.resources.ResourceStartupReadiness
 import com.ankiminer.android.data.settings.ResourceChainSelection
 import com.ankiminer.android.engine.PythonRuntimeReadiness
 import com.ankiminer.android.media.SafDocument
+import com.ankiminer.android.mining.AnkiWriteState
 import com.ankiminer.android.mining.CurationCandidate
 import com.ankiminer.android.mining.CurationRequest
 import com.ankiminer.android.mining.CurationSentence
@@ -416,14 +417,17 @@ internal fun setupAuditState(): SetupUiState {
                     isCategorical = false,
                 ),
             ),
-        pitchAccent =
-            InstalledPitchAccent(
-                sourceName = "Kanjium pitch accents",
-                sourceRevision = "2025-02",
-                sourceFormat = "yomitan",
-                entryCount = 163_284,
-                fileSizeBytes = 8_412_391,
-                schemaOk = true,
+        pitchSources =
+            listOf(
+                InstalledPitchSource(
+                    sourceId = "kanjium",
+                    sourceName = "Kanjium pitch accents",
+                    sourceRevision = "2025-02",
+                    format = "csv",
+                    entryCount = 163_284,
+                    schemaOk = true,
+                    schemaVersion = 1,
+                ),
             ),
         audioPacks =
             listOf(
@@ -784,6 +788,8 @@ private fun processingResult(kind: String): ProcessingResult =
         videoFile = if (kind == "video") "episode.mkv" else "",
         subtitleFile = if (kind == "video") "episode.srt" else "銀河鉄道の夜.epub",
         minedForms = listOf("掛ける", "美しい", "懐かしい", "辿り着く", "見落とす", "鮮やか"),
+        ankiWriteState = AnkiWriteState.NOTE_WRITE_CONFIRMED,
+        failureIsTransient = false,
     )
 
 private val JAPANESE_WORDS =

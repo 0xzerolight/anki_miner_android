@@ -25,13 +25,25 @@ class KnownWordDB:
         """
         self._db_path = db_path
 
+    def _connect(self) -> sqlite3.Connection:
+        """Open a connection with a 5 s busy timeout.
+
+        Two app processes can share this DB (Issue #100 double launch); with
+        the default rollback journal and no timeout, a concurrent writer made
+        every collision an instant "database is locked". Mirrors
+        ``StatsService._connect``; journal mode deliberately unchanged.
+        """
+        conn = sqlite3.connect(self._db_path)
+        conn.execute("PRAGMA busy_timeout = 5000")
+        return conn
+
     def initialize(self) -> None:
         """Create the database and schema if they don't exist.
 
         Creates the parent directories and the known_words table.
         """
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
-        with closing(sqlite3.connect(self._db_path)) as conn:
+        with closing(self._connect()) as conn:
             conn.execute(
                 "CREATE TABLE IF NOT EXISTS known_words ("
                 "lemma TEXT PRIMARY KEY, "
@@ -55,7 +67,7 @@ class KnownWordDB:
         Returns:
             Set of all lemma strings in the database.
         """
-        with closing(sqlite3.connect(self._db_path)) as conn:
+        with closing(self._connect()) as conn:
             cursor = conn.execute("SELECT lemma FROM known_words")
             return {row[0] for row in cursor.fetchall()}
 
@@ -72,7 +84,7 @@ class KnownWordDB:
         Returns:
             Set of lemma strings with the matching source.
         """
-        with closing(sqlite3.connect(self._db_path)) as conn:
+        with closing(self._connect()) as conn:
             cursor = conn.execute("SELECT lemma FROM known_words WHERE source = ?", (source,))
             return {row[0] for row in cursor.fetchall()}
 
@@ -100,7 +112,7 @@ class KnownWordDB:
         # When marking as 'user' we therefore UPGRADE an existing row's source on
         # conflict. For every other source (anki/mined) we keep IGNORE so a later
         # sync can never DOWNGRADE a 'user' row back to 'anki'.
-        with closing(sqlite3.connect(self._db_path)) as conn:
+        with closing(self._connect()) as conn:
             before = self._count(conn)
             if source == "user":
                 conn.executemany(
@@ -116,6 +128,30 @@ class KnownWordDB:
             conn.commit()
             after = self._count(conn)
             return after - before
+
+    def add_words_with_receipt(self, words: set[str], source: str = "anki") -> set[str]:
+        """Bulk insert words and return the exact newly inserted lemmas.
+
+        The receipt is derived from each INSERT result inside the same
+        transaction, so callers never need a racy before/after snapshot.
+        Existing rows upgraded to ``source='user'`` are not newly inserted.
+        """
+        if not words:
+            return set()
+
+        with closing(self._connect()) as conn:
+            inserted: set[str] = set()
+            for word in sorted(words):
+                cursor = conn.execute(
+                    "INSERT OR IGNORE INTO known_words (lemma, source) VALUES (?, ?)",
+                    (word, source),
+                )
+                if cursor.rowcount == 1:
+                    inserted.add(word)
+                elif source == "user":
+                    conn.execute("UPDATE known_words SET source = ? WHERE lemma = ?", (source, word))
+            conn.commit()
+            return inserted
 
     def sync_with_anki(
         self,
@@ -164,7 +200,7 @@ class KnownWordDB:
         if not words:
             return 0
 
-        with closing(sqlite3.connect(self._db_path)) as conn:
+        with closing(self._connect()) as conn:
             before = self._count(conn)
             if source is None:
                 conn.executemany("DELETE FROM known_words WHERE lemma = ?", [(w,) for w in words])
@@ -194,7 +230,7 @@ class KnownWordDB:
         Returns:
             Number of rows removed.
         """
-        with closing(sqlite3.connect(self._db_path)) as conn:
+        with closing(self._connect()) as conn:
             before = self._count(conn)
             if preserve_user:
                 conn.execute("DELETE FROM known_words WHERE source != 'user'")
@@ -212,7 +248,7 @@ class KnownWordDB:
         Returns:
             Number of ``source='user'`` rows removed.
         """
-        with closing(sqlite3.connect(self._db_path)) as conn:
+        with closing(self._connect()) as conn:
             before = self._count(conn)
             conn.execute("DELETE FROM known_words WHERE source = 'user'")
             conn.commit()
@@ -225,7 +261,7 @@ class KnownWordDB:
         Returns:
             Count of rows in the known_words table.
         """
-        with closing(sqlite3.connect(self._db_path)) as conn:
+        with closing(self._connect()) as conn:
             return self._count(conn)
 
     @staticmethod
@@ -236,13 +272,16 @@ class KnownWordDB:
 
 
 def add_user_known_words(db_path: Path, forms: set[str]) -> int:
-    """Persist curator-selected forms to the local known/ignore list (Issue #42).
+    """Persist curator-confirmed forms to the local known/ignore list.
 
     Encapsulates the user "mark known" rule shared by every mining tab's
-    curation callback: build the DB ad hoc from the config path, write
-    immediately with ``source='user'`` (so the words persist even if the dialog
-    is later cancelled), and store the ``mined_form`` spelling as passed — never
+    curation callback: build the DB ad hoc from the config path, write with
+    ``source='user'``, and store the ``mined_form`` spelling as passed — never
     the lemma. Same pattern the settings tab uses for the rebuild action.
+
+    The curator stages its marks and calls this only from a successful Confirm
+    (D34-B), so cancelling a review writes nothing. Callers must not treat this
+    as "persisted the moment the user clicked"; it is the commit step.
 
     Args:
         db_path: Path to the known-words SQLite database

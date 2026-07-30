@@ -253,6 +253,8 @@ internal class FakeMiningRepository(
             videoFile = input.video.displayName,
             subtitleFile = input.subtitle.displayName,
             minedForms = selectedForms,
+            ankiWriteState = AnkiWriteState.NOTE_WRITE_CONFIRMED,
+            failureIsTransient = false,
         )
 
     private fun selectedFormsForConfirmedSelection(): List<String> =

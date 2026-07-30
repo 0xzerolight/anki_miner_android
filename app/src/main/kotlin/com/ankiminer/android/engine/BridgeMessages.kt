@@ -168,6 +168,13 @@ sealed interface BridgeMessage {
         val description: String,
     ) : BridgeMessage
 
+    data class ProgressStage(
+        val runId: String,
+        val index: Int,
+        val total: Int,
+        val name: String,
+    ) : BridgeMessage
+
     data class ProgressComplete(val runId: String) : BridgeMessage
 
     data class ProgressError(

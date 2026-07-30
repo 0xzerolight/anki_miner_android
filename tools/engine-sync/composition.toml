@@ -18,6 +18,11 @@ roots = [
   "anki_miner.services.frequency.source_importer",
   "anki_miner.services.known_word_db",
   "anki_miner.services.known_words_import",
+  "anki_miner.services.pitch_accent.legacy_migration",
+  "anki_miner.services.pitch_accent.multi_pitch_service",
+  "anki_miner.services.pitch_accent.provider",
+  "anki_miner.services.pitch_accent.registry",
+  "anki_miner.services.pitch_accent.source_importer",
   "anki_miner.services.pitch_accent.yomitan_pitch_importer",
   "anki_miner.services.pitch_accent_service",
   "anki_miner.services.reading.aozora_source",
@@ -45,6 +50,7 @@ assets = [
 overlay_allowlist = [
   "PyQt6/QtCore.py",
   "PyQt6/__init__.py",
+  "anki_miner/services/__init__.py",
   "anki_miner/services/media_extractor.py",
   "anki_miner/services/tagger.py",
   "anki_miner/utils/android_fd.py",
@@ -54,7 +60,7 @@ overlay_allowlist = [
 # Whole-file shadow overlays must name the exact upstream Git blob they were
 # reviewed against. An engine.lock bump stops here until the override is
 # consciously rebased over any upstream change.
-overlay_base_blobs = { "anki_miner/services/media_extractor.py" = "357dea44ae92b47ad06e19d8692a863438fa3d62", "anki_miner/services/tagger.py" = "e94a7a4933f2f4df289c53cd91e21158eb7f5602", "anki_miner/utils/audio_track_detector.py" = "f785f5b8706e1073f076149dbfb873472446d414" }
+overlay_base_blobs = { "anki_miner/services/__init__.py" = "989c5ae4bd09ed16613ea54fa6a9abb78540594a", "anki_miner/services/media_extractor.py" = "7798b8c1733ff59523424ecb6e95d178dc8b8b93", "anki_miner/services/tagger.py" = "567eb191e3f5100401bdad1678be9dbe189dfe45", "anki_miner/utils/audio_track_detector.py" = "f785f5b8706e1073f076149dbfb873472446d414" }
 
 # A protected module may be selected from the desktop Git object only. An
 # overlay at the same path is a hard error.
@@ -92,6 +98,7 @@ allowed_stdlib = [
   "dataclasses",
   "datetime",
   "enum",
+  "errno",
   "fractions",
   "functools",
   "hashlib",
@@ -102,13 +109,16 @@ allowed_stdlib = [
   "itertools",
   "json",
   "logging",
+  "lzma",
   "math",
   "os",
   "pathlib",
   "posixpath",
+  "random",
   "re",
   "shutil",
   "sqlite3",
+  "stat",
   "subprocess",
   "sys",
   "tempfile",
@@ -121,8 +131,10 @@ allowed_stdlib = [
   "uuid",
   "warnings",
   "wave",
+  "weakref",
   "xml",
   "zipfile",
+  "zlib",
 ]
 
 # These modules and distributions are cut from Android. Prefix matching is

@@ -302,6 +302,7 @@ class AppSettingsRepositoryTest {
             original.resetResourceChoices(
                 dictionaryIds = listOf("jitendex"),
                 frequencyIds = listOf("bccwj"),
+                pitchIds = listOf("kanjium"),
                 audioPackIds = listOf("local-audio"),
             )
 
@@ -309,6 +310,7 @@ class AppSettingsRepositoryTest {
             original.copy(
                 dictionarySources = listOf(ResourceChainSelection("jitendex", enabled = false)),
                 frequencySources = listOf(ResourceChainSelection("bccwj", enabled = false)),
+                pitchSources = listOf(ResourceChainSelection("kanjium", enabled = false)),
                 audioPacks = listOf(ResourceChainSelection("local-audio", enabled = false)),
                 enabledWordsets = AppSettings.DEFAULT_ENABLED_WORDSETS,
                 jishoEnabled = false,
@@ -382,6 +384,8 @@ class AppSettingsRepositoryTest {
                     "resource-selection-v1\n+jitendex\n-custom-dictionary\n",
                 stringPreferencesKey("frequency_sources_v1") to
                     "resource-selection-v1\n+bccwj\n",
+                stringPreferencesKey("pitch_sources_v1") to
+                    "resource-selection-v1\n+kanjium\n",
                 stringPreferencesKey("audio_packs_v1") to
                     "resource-selection-v1\n+local-audio\n",
                 stringPreferencesKey("excluded_wordsets_v1") to
@@ -484,6 +488,7 @@ class AppSettingsRepositoryTest {
             maxParallelWorkers = 3,
             dictionarySources = listOf(ResourceChainSelection("jitendex")),
             frequencySources = listOf(ResourceChainSelection("bccwj")),
+            pitchSources = listOf(ResourceChainSelection("kanjium")),
             audioPacks = listOf(ResourceChainSelection("local-audio")),
             enabledWordsets = listOf("place-names"),
             readingTtsEnabled = true,
@@ -616,6 +621,10 @@ class AppSettingsRepositoryTest {
             corruptString(
                 "frequency_sources_v1",
                 original.copy(frequencySources = defaults.frequencySources),
+            ),
+            corruptString(
+                "pitch_sources_v1",
+                original.copy(pitchSources = defaults.pitchSources),
             ),
             corruptString("audio_packs_v1", original.copy(audioPacks = defaults.audioPacks)),
             corruptString(

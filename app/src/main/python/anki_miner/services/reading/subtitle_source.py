@@ -7,11 +7,13 @@ skip → ``clean_subtitle_text`` → drop empties) deliberately duplicates
 ``SubtitleParserService.parse_raw_entries``: reusing it would couple this
 config-free loader to a config/MeCab-bound service.
 
-v1 limitations vs the video path: ``config.subtitle_regex_filter`` and
-``subtitle_offset`` do NOT apply here (reading loaders are config-free; an
-offset is meaningless without media). Encoding handling is *broader* — the
-video path is utf-8-only via ``pysubs2.load``, while this loader sniffs
-BOM/utf-8/cp932/euc_jp like the aozora loader.
+Config-free by design: the caller supplies the structural annotation opt-in to
+``clean_subtitle_text``; the configured ``subtitle_regex_filter`` still runs in
+``SubtitleParserService.parse_text_units`` (``subtitle_cleanup=True``), the one
+config/MeCab-bound seam. ``subtitle_offset`` never applies here (an offset is
+meaningless without media). Encoding handling is *broader* — the video path is
+utf-8-only via ``pysubs2.load``, while this loader sniffs BOM/utf-8/cp932/euc_jp
+like the aozora loader.
 
 MicroDVD ``.sub`` is unsupported: it is frame-based and pysubs2 raises
 ``UnknownFPSError`` without a media-derived fps.
@@ -30,6 +32,8 @@ from anki_miner.models.reading import (
 from anki_miner.services.reading._util import _decode
 from anki_miner.utils.text_utils import clean_subtitle_text
 
+_MAX_TEXT_FILE_BYTES = 32 * 1024 * 1024
+
 
 def _format_cue_time(seconds: float) -> str:
     """Cue start as trimmed ``m:ss`` / ``h:mm:ss`` (not the video path's
@@ -42,7 +46,7 @@ def _format_cue_time(seconds: float) -> str:
     return f"{minutes}:{secs:02d}"
 
 
-def load(ref: ReadingSourceRef) -> ReadingDocument:
+def load(ref: ReadingSourceRef, *, strip_annotations: bool = False) -> ReadingDocument:
     """Load a subtitle file into a per-cue :class:`ReadingDocument`.
 
     Identity mirrors the video path: series = parent folder name,
@@ -55,7 +59,17 @@ def load(ref: ReadingSourceRef) -> ReadingDocument:
     assert ref.path is not None
     path = ref.path
     try:
-        raw = path.read_bytes()
+        size = path.stat().st_size
+        if size > _MAX_TEXT_FILE_BYTES:
+            raise SetupError(
+                f"subtitle file '{path.name}' is {size:,} bytes (cap {_MAX_TEXT_FILE_BYTES:,}); refusing to load"
+            )
+        with path.open("rb") as f:
+            raw = f.read(_MAX_TEXT_FILE_BYTES + 1)
+        if len(raw) > _MAX_TEXT_FILE_BYTES:
+            raise SetupError(
+                f"subtitle file '{path.name}' exceeds cap {_MAX_TEXT_FILE_BYTES:,} bytes; refusing to load"
+            )
     except OSError as e:
         raise SetupError(f"Cannot read subtitle file '{path.name}': {e}") from e
 
@@ -73,7 +87,7 @@ def load(ref: ReadingSourceRef) -> ReadingDocument:
         # Skip ASS/SSA Comment events (same guard as parse_raw_entries).
         if getattr(event, "is_comment", None) is True:
             continue
-        cue_text = clean_subtitle_text(event.text)
+        cue_text = clean_subtitle_text(event.text, strip_annotations=strip_annotations)
         if not cue_text:
             continue
         units.append(

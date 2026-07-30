@@ -17,9 +17,10 @@ import re
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
+from typing import Callable, Iterable, NamedTuple
 
 import anki_miner.services._sqlite_index as _sqlite_index
+from anki_miner.exceptions import SetupError
 from anki_miner.services._sqlite_index import open_readonly as open_readonly
 from anki_miner.services._sqlite_index import read_meta as read_meta
 from anki_miner.utils.text_utils import _is_kana_only, _is_kanji, katakana_to_hiragana
@@ -167,6 +168,55 @@ class TagMeta:
     score: float
 
 
+# Tag-bank ``category`` values (TagMeta.category) that mark an entry as a
+# common/frequent headword. A dictionary is "commonness-aware" iff its tags
+# table defines at least one tag in one of these categories; a row is "common"
+# iff it carries such a tag. Category-based, NOT table-presence: jitendex uses
+# 'frequent'/'popular', and so does the Yomitan JMdict build (⭐ → 'popular';
+# news·k/ichi/spec/gai → 'frequent'). The legacy XML-derived jmdict import
+# writes no commonness categories ('partOfSpeech'/'name'/'' only → unaware),
+# and a monolingual dict ships an empty tags table (also unaware). Single
+# source of truth shared by ``row_is_common`` and the provider's
+# ``commonness_aware`` property (U10 infra).
+COMMON_TAG_CATEGORIES = frozenset({"frequent", "popular"})
+
+
+class AttestRow(NamedTuple):
+    """One attesting row for the commonness/quality probes (U10 infra).
+
+    ``match_kind`` is ``'term'`` (row's ``term`` equals the queried word) or
+    ``'reading'`` (row's hiragana-folded ``reading`` equals the folded word).
+    ``rules``/``tags`` are the row's raw columns so the provider can classify
+    POS (rules) and commonness (tags, via :func:`row_is_common`) without a
+    second query.
+    """
+
+    match_kind: str
+    rules: str
+    tags: str
+
+
+def row_is_common(tags_str: str, tag_meta: dict[str, TagMeta]) -> bool:
+    """True iff any of ``tags_str``'s tags is categorized as common/frequent.
+
+    ``tags_str`` is an entry row's space-separated ``tags`` column; each token
+    is a full tag name looked up in ``tag_meta`` (the dict's ``tags`` table).
+    Split on ASCII space ONLY — Yomitan tag NAMES may contain an internal
+    non-breaking space (e.g. ``'priority form'``), so a token stays whole
+    and matches its ``tags``-table key. A tag with no table row, or a category
+    outside :data:`COMMON_TAG_CATEGORIES`, does not mark the row common.
+    """
+    if not tags_str:
+        return False
+    for tag in tags_str.split(" "):
+        if not tag:
+            continue
+        meta = tag_meta.get(tag)
+        if meta is not None and meta.category in COMMON_TAG_CATEGORIES:
+            return True
+    return False
+
+
 def _fold_reading(reading: str | None) -> str | None:
     """Hiragana-fold a stored reading (katakana → hiragana), preserving None.
 
@@ -224,8 +274,19 @@ def create_index(db_path: Path) -> None:
         conn.close()
 
 
-def bulk_insert(db_path: Path, rows: Iterable[DictRow], batch_size: int = 5000) -> int:
+def bulk_insert(
+    db_path: Path,
+    rows: Iterable[DictRow],
+    batch_size: int = 5000,
+    *,
+    progress: Callable[[int], None] | None = None,
+    cancel_check: Callable[[], bool] | None = None,
+) -> int:
     """Insert rows in batched transactions. Returns total inserted.
+
+    ``progress`` receives the cumulative inserted-row count after each
+    ``executemany``. ``cancel_check`` is polled before each batch and aborts
+    with ``SetupError("Import cancelled")`` when true.
 
     The sqlite3 `with` context manager commits/rolls back but does NOT close
     the connection — we close explicitly so the db file is not held open
@@ -235,6 +296,23 @@ def bulk_insert(db_path: Path, rows: Iterable[DictRow], batch_size: int = 5000) 
     conn = sqlite3.connect(db_path)
     try:
         batch: list[tuple] = []
+
+        def flush_batch() -> None:
+            nonlocal total
+            if not batch:
+                return
+            if cancel_check is not None and cancel_check():
+                raise SetupError("Import cancelled")
+            conn.executemany(
+                "INSERT INTO entries (term, reading, content, tags, rules, score, sequence) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                batch,
+            )
+            total += len(batch)
+            batch.clear()
+            if progress is not None:
+                progress(total)
+
         for row in rows:
             # reading is stored hiragana-folded so katakana/hiragana readings
             # collate to one key (schema v3); lookup folds the query side too.
@@ -250,20 +328,8 @@ def bulk_insert(db_path: Path, rows: Iterable[DictRow], batch_size: int = 5000) 
                 )
             )
             if len(batch) >= batch_size:
-                conn.executemany(
-                    "INSERT INTO entries (term, reading, content, tags, rules, score, sequence) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    batch,
-                )
-                total += len(batch)
-                batch.clear()
-        if batch:
-            conn.executemany(
-                "INSERT INTO entries (term, reading, content, tags, rules, score, sequence) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                batch,
-            )
-            total += len(batch)
+                flush_batch()
+        flush_batch()
         conn.commit()
     finally:
         conn.close()
@@ -566,6 +632,70 @@ def terms_readings(conn: sqlite3.Connection, terms: list[str]) -> dict[str, list
             if reading not in readings:
                 readings.append(reading)
     return found
+
+
+def attest_detail(conn: sqlite3.Connection, words: list[str], include_readings: bool) -> dict[str, list[AttestRow]]:
+    """Per-word attesting rows for the commonness/quality probes (U10 infra).
+
+    For each requested word returns the rows that attest it, each carrying its
+    ``rules`` and ``tags`` columns:
+
+    * term-exact rows (``entries.term == word``) — ``match_kind='term'``, ALWAYS.
+    * kana reading rows (hiragana-folded ``entries.reading == fold(word)``) —
+      ``match_kind='reading'``, only when ``include_readings``. Uses the SAME
+      katakana→hiragana fold as :func:`lookup_many`'s reading arm (both the query
+      word and the stored reading are folded; readings are stored pre-folded).
+
+    A row matching a word by BOTH term and reading is emitted once, classified
+    ``'term'`` (term wins, mirroring ``lookup_many``'s per-word collapse). Every
+    requested word is present (``[]`` when unattested); duplicate words collapse
+    to one key. Row order within a word is unspecified — this is a probe, not a
+    render path; the provider unions into order-independent frozensets.
+    """
+    unique = list(dict.fromkeys(words))
+    result: dict[str, list[AttestRow]] = {w: [] for w in unique}
+    if not unique:
+        return result
+
+    for start in range(0, len(unique), _BIND_CHUNK):
+        chunk = unique[start : start + _BIND_CHUNK]
+        chunk_set = set(chunk)
+        if include_readings:
+            # Readings are stored hiragana-folded, so bind the folded query words
+            # (touch point b) and map a reading hit back through the folded key —
+            # a katakana requested word still attests via a kanji headword's
+            # folded reading (mirrors lookup_many's reading_reverse).
+            folded_chunk = [katakana_to_hiragana(w) for w in chunk]
+            reading_reverse: dict[str, list[str]] = {}
+            for w, wf in zip(chunk, folded_chunk, strict=True):
+                reading_reverse.setdefault(wf, []).append(w)
+            placeholders = ", ".join("?" for _ in chunk)
+            sql = (
+                "SELECT term, reading, rules, tags FROM entries "
+                f"WHERE term IN ({placeholders}) OR reading IN ({placeholders})"
+            )
+            rows = conn.execute(sql, (*chunk, *folded_chunk)).fetchall()
+            for term, reading, rules, tags in rows:
+                rules_val = rules if rules is not None else ""
+                tags_val = tags if tags is not None else ""
+                folded_reading = katakana_to_hiragana(reading) if reading is not None else None
+                # Term wins over reading for the same (row, word) pair.
+                matched: dict[str, str] = {}
+                if term in chunk_set:
+                    matched[term] = "term"
+                if folded_reading is not None:
+                    for w in reading_reverse.get(folded_reading, ()):
+                        matched.setdefault(w, "reading")
+                for w, kind in matched.items():
+                    result[w].append(AttestRow(kind, rules_val, tags_val))
+        else:
+            placeholders = ", ".join("?" for _ in chunk)
+            sql = f"SELECT term, rules, tags FROM entries WHERE term IN ({placeholders})"
+            for term, rules, tags in conn.execute(sql, chunk).fetchall():
+                result[term].append(
+                    AttestRow("term", rules if rules is not None else "", tags if tags is not None else "")
+                )
+    return result
 
 
 # Sort key mirroring SQLite "ORDER BY (reading = ?) DESC" for the reading boost.

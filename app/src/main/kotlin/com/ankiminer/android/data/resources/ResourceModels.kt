@@ -185,23 +185,25 @@ data class InstalledFrequencySource(
     val isCategorical: Boolean,
 )
 
-data class ImportedPitchAccent(
+data class ImportedPitchSource(
+    val sourceId: String,
     val sourceName: String,
     val sourceRevision: String,
     val sourceFormat: String,
     val entryCount: Long,
     val skippedDisplayOnly: Long,
     val skippedMalformed: Long,
-    val fileSha256: String,
+    val archiveSha256: String,
 ) : LocalResourceImportResult
 
-data class InstalledPitchAccent(
+data class InstalledPitchSource(
+    val sourceId: String,
     val sourceName: String,
     val sourceRevision: String,
-    val sourceFormat: String,
+    val format: String,
     val entryCount: Long,
-    val fileSizeBytes: Long,
     val schemaOk: Boolean,
+    val schemaVersion: Long,
 )
 
 data class ImportedAudioPack(
@@ -276,7 +278,7 @@ data class BundledWordset(
 
 data class LocalResourceInventory(
     val frequencies: List<InstalledFrequencySource>,
-    val pitchAccent: InstalledPitchAccent?,
+    val pitchSources: List<InstalledPitchSource>,
     val audioPacks: List<InstalledAudioPack>,
     val knownWords: KnownWordsInventory,
     val wordsets: List<BundledWordset>,
@@ -414,7 +416,7 @@ data class ResourceManagerState(
     val installedUniDic: InstalledUniDic? = null,
     val dictionaries: List<InstalledDictionary> = emptyList(),
     val frequencySources: List<InstalledFrequencySource> = emptyList(),
-    val pitchAccent: InstalledPitchAccent? = null,
+    val pitchSources: List<InstalledPitchSource> = emptyList(),
     val audioPacks: List<InstalledAudioPack> = emptyList(),
     val knownWords: KnownWordsInventory = KnownWordsInventory(0, 0, 0, 0, schemaOk = true),
     val wordsets: List<BundledWordset> = emptyList(),

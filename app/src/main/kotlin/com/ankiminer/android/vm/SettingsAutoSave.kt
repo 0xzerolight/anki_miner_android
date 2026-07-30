@@ -48,6 +48,7 @@ private data class SettingsWriteKey(
     val deckDirty: Boolean,
     val dictionarySourcesDirty: Boolean,
     val frequencySourcesDirty: Boolean,
+    val pitchSourcesDirty: Boolean,
     val audioPacksDirty: Boolean,
 )
 
@@ -68,6 +69,7 @@ internal class SuccessfulSettingsWriteTracker {
             deckDirty = state.deckDirty,
             dictionarySourcesDirty = state.dictionarySourcesDirty,
             frequencySourcesDirty = state.frequencySourcesDirty,
+            pitchSourcesDirty = state.pitchSourcesDirty,
             audioPacksDirty = state.audioPacksDirty,
         )
 }

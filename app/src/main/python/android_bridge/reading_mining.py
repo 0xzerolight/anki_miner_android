@@ -199,8 +199,17 @@ def _reading_detector() -> object:
 def _load_document(
     request: _ReadingRequest,
     cancellation_check: Callable[[], bool] | None = None,
+    *,
+    strip_subtitle_annotations: bool = True,
 ) -> object:
-    """Call the desktop detector and loader after validating the staged pair."""
+    """Call the desktop detector and loader after validating the staged pair.
+
+    ``strip_subtitle_annotations`` carries the user's setting to the per-cue
+    cleanup. The engine's own kwarg defaults to False (opt-in for callers that
+    predate it), but the product default is on, so the bridge default matches
+    the config rather than the engine signature — a caller that forgets it gets
+    desktop behaviour, not silently unfiltered cues.
+    """
 
     if not request.source_path.is_file():
         raise _invalid_request("sourcePath must name an existing staged file")
@@ -238,7 +247,7 @@ def _load_document(
         from .anki_adapter import AnkiOperationCancelled
 
         raise AnkiOperationCancelled("runReading", "Mining was cancelled", False)
-    document = detector.load(ref)
+    document = detector.load(ref, strip_subtitle_annotations=strip_subtitle_annotations)
     validate_loaded_document(
         document,
         source_kind=request.source_kind,
@@ -343,6 +352,7 @@ def run_reading(
             document = _load_document(
                 request,
                 adapters.cancel_event.is_set,
+                strip_subtitle_annotations=bool(config.strip_subtitle_annotations),
             )
             if adapters.cancel_event.is_set():
                 raise AnkiOperationCancelled("runReading", "Mining was cancelled", False)

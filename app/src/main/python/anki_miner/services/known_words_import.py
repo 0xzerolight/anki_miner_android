@@ -76,6 +76,7 @@ class KnownWordsImportResult:
     format_key: str
     words: frozenset[str]
     total_entries: int
+    skipped_malformed: int = 0
 
 
 def parse_known_words_file(path: Path) -> KnownWordsImportResult:
@@ -106,13 +107,14 @@ def parse_known_words_file(path: Path) -> KnownWordsImportResult:
     return _parse_json(data)
 
 
-def _result(format_key: str, words: set[str], total: int) -> KnownWordsImportResult:
+def _result(format_key: str, words: set[str], total: int, skipped_malformed: int = 0) -> KnownWordsImportResult:
     if not words:
         raise KnownWordsImportError("no_known_words", format_key=format_key)
     return KnownWordsImportResult(
         format_key=format_key,
         words=frozenset(words),
         total_entries=total,
+        skipped_malformed=skipped_malformed,
     )
 
 
@@ -145,17 +147,34 @@ def _parse_json(data: Any) -> KnownWordsImportResult:
 def _parse_jpdb(cards: list[Any]) -> KnownWordsImportResult:
     words: set[str] = set()
     total = 0
+    skipped_malformed = 0
     for card in cards:
         if not isinstance(card, dict) or not _clean(card.get("spelling")):
+            skipped_malformed += 1
             continue
         total += 1
-        reviews = [r for r in card.get("reviews") or [] if isinstance(r, dict) and "grade" in r]
+        raw_reviews = card.get("reviews")
+        if raw_reviews is None:
+            raw_reviews = []
+        if not isinstance(raw_reviews, list):
+            skipped_malformed += 1
+            continue
+        reviews = []
+        for review in raw_reviews:
+            if not isinstance(review, dict) or "grade" not in review:
+                skipped_malformed += 1
+                continue
+            grade = review["grade"]
+            if not isinstance(grade, str) or not grade:
+                skipped_malformed += 1
+                continue
+            reviews.append(review)
         if not reviews:
             continue
-        latest = max(reviews, key=lambda r: r.get("timestamp", 0))
+        latest = max(reviews, key=_review_timestamp)
         if latest["grade"] not in _JPDB_EXCLUDED_GRADES:
             words.add(_clean(card["spelling"]))
-    return _result("jpdb", words, total)
+    return _result("jpdb", words, total, skipped_malformed)
 
 
 # ----------------------------------------------------------------------
@@ -214,3 +233,16 @@ def _decode(raw: bytes) -> str:
 
 def _clean(value: Any) -> str:
     return value.strip() if isinstance(value, str) else ""
+
+
+def _review_timestamp(review: dict[str, Any]) -> float:
+    """Sort key for jpdb reviews: the numeric ``timestamp``, else 0.
+
+    A non-numeric ``timestamp`` (a drifted/hand-edited export) is coerced to 0
+    rather than fed to ``max()`` — otherwise comparing a str against the int-0
+    default would raise TypeError and escape the KnownWordsImportError contract
+    as a generic "unexpected error". ``bool`` is an ``int`` subclass and floats
+    fine.
+    """
+    ts = review.get("timestamp", 0)
+    return float(ts) if isinstance(ts, (int, float)) else 0.0

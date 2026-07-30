@@ -86,6 +86,15 @@
         "enabled": {"type": "boolean"}
       }
     },
+    "pitchSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_id"],
+      "properties": {
+        "source_id": {"$ref": "#/$defs/resourceId"},
+        "enabled": {"type": "boolean"}
+      }
+    },
     "frequencySource": {
       "type": "object",
       "additionalProperties": false,
@@ -153,6 +162,12 @@
           "type": "array",
           "uniqueItems": true,
           "items": {"$ref": "#/$defs/frequencySource"}
+        },
+        "pitch_chain": {
+          "type": "array",
+          "uniqueItems": true,
+          "$comment": "First-hit-wins pitch chain; each entry names a per-source index under the pitch root.",
+          "items": {"$ref": "#/$defs/pitchSource"}
         },
         "allow_duplicate_cards": {"type": "boolean"},
         "use_known_words_db": {"type": "boolean"},

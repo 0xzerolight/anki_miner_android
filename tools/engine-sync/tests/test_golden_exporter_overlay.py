@@ -81,10 +81,19 @@ class GoldenExporterOverlayTests(unittest.TestCase):
 
     def test_production_patch_targets_the_frozen_revision_exactly(self) -> None:
         self.assertIn(b"ba3b3cfbcc53e57a440c8b9f157209851408c62a", overlay.DESKTOP_REVISION_LINE)
-        self.assertIn(b"420ce234b01b845a3766f2cee4638c1cde64f059", overlay.ANDROID_REVISION_LINE)
+        self.assertIn(b"6f57f836b59d5e375a26c883482c158c06c47da9", overlay.ANDROID_REVISION_LINE)
         self.assertEqual(
-            "5c8f3cc73aa42fac2d68f9980eb8888275ccdb5b874e220d9c9847f1419eef47",
+            "b635f9328cf2ef252dfeab2dddb2528a369daa62e6607d824333745a6a51e6e9",
             overlay.MATERIALIZED_SHA256["engine_golden_contract_v2.py"],
+        )
+        # Both identities of the desktop source move whenever the exporter itself
+        # changes; the materializer checks them before it patches the revision.
+        self.assertEqual(
+            (
+                "0bca8b86e58a467c0a4359ccc0ffcab0f362d37c021ca435688b961c4ff54e8f",
+                "c78d56e4de8845637651a5fc5871cbe4b9695634",
+            ),
+            overlay.SOURCE_ATTESTATIONS["engine_golden_contract_v2.py"],
         )
 
 

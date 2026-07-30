@@ -87,7 +87,7 @@ _LITERAL_FIELDS: Mapping[str, frozenset[str]] = {
 _STRING_TUPLE_FIELDS = frozenset({"excluded_decks", "allowed_pos", "excluded_subtypes", "excluded_wordsets"})
 _OPTIONAL_PATH_FIELDS = frozenset({"blacklist_path", "whitelist_path"})
 _MAPPING_FIELDS = frozenset({"anki_fields", "card_type_marker_fields"})
-_CHAIN_FIELDS = frozenset({"dictionary_chain", "frequency_chain", "expression_audio_chain"})
+_CHAIN_FIELDS = frozenset({"dictionary_chain", "frequency_chain", "pitch_chain", "expression_audio_chain"})
 _STATIC_SCREENSHOT_FIELD = "screenshot_animated"
 
 _EXPOSED_CONFIG_FIELDS = frozenset(
@@ -421,6 +421,19 @@ def _frequency_chain(value: object, constructor: Callable[..., object]) -> tuple
     return tuple(result)
 
 
+def _pitch_chain(value: object, constructor: Callable[..., object]) -> tuple[object, ...]:
+    result: list[object] = []
+    identities: set[str] = set()
+    for raw in _chain_items("pitch_chain", value):
+        item = _entry_mapping("pitch_chain", raw, frozenset({"source_id", "enabled"}))
+        source_id = _resource_id("pitch_chain.source_id", item.get("source_id"))
+        if source_id in identities:
+            raise _invalid("pitch_chain", "duplicate source")
+        identities.add(source_id)
+        result.append(constructor(source_id=source_id, enabled=_enabled("pitch_chain.enabled", item)))
+    return tuple(result)
+
+
 def _expression_audio_chain(value: object, constructor: Callable[..., object]) -> tuple[object, ...]:
     result: list[object] = []
     identities: set[str] = set()
@@ -454,6 +467,7 @@ def _android_path_overrides(paths: AndroidPaths) -> dict[str, Path]:
         "dicts_root": home / "dicts",
         "audio_packs_root": home / "audio_packs",
         "pitch_accent_path": home / "pitch_accent.csv",
+        "pitch_root": home / "pitch",
         "freqs_root": home / "freqs",
         "known_words_db_path": home / "known_words.db",
         "stats_db_path": home / "stats.db",
@@ -509,6 +523,7 @@ def map_config_settings(
         AudioSourceEntry,
         ChainEntry,
         FreqEntry,
+        PitchSourceEntry,
     )
 
     base = AnkiMinerConfig()
@@ -552,6 +567,8 @@ def map_config_settings(
             updates[field_name] = _dictionary_chain(value, ChainEntry)
         elif field_name == "frequency_chain":
             updates[field_name] = _frequency_chain(value, FreqEntry)
+        elif field_name == "pitch_chain":
+            updates[field_name] = _pitch_chain(value, PitchSourceEntry)
         elif field_name == "expression_audio_chain":
             updates[field_name] = _expression_audio_chain(value, AudioSourceEntry)
         else:  # pragma: no cover - guarded by the allowlist union

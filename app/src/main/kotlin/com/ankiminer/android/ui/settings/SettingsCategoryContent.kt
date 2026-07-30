@@ -474,16 +474,21 @@ private fun LazyListScope.dictionarySettings(
             )
             SupportingText(stringResource(R.string.settings_jisho_disclosure))
             HorizontalDivider()
-            Text(
-                resources.pitchAccent?.let {
-                    stringResource(
-                        R.string.settings_pitch_installed,
-                        it.sourceName,
-                        it.entryCount,
-                    )
-                } ?: stringResource(R.string.settings_pitch_not_installed),
-                style = MaterialTheme.typography.bodySmall,
-            )
+            // Pitch is a first-hit-wins chain now, so the order is editable here and the
+            // per-source names live in the editor rather than one installed-file line.
+            SettingsSection(stringResource(R.string.settings_pitch_chain)) {
+                ResourceChainEditor(
+                    choices = draft.pitchSources,
+                    labels =
+                        resources.pitchSources.associate {
+                            it.sourceId to "${it.sourceName} (${it.entryCount})"
+                        },
+                    emptyMessage = stringResource(R.string.settings_pitch_not_installed),
+                    onChange = {
+                        callbacks.onDraftChange(draft.copy(pitchSources = it))
+                    },
+                )
+            }
             NullableChoice(
                 label = stringResource(R.string.settings_pitch_format),
                 value = draft.pitchFormat,

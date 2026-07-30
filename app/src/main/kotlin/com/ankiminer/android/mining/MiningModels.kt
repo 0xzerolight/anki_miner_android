@@ -45,6 +45,7 @@ data class MiningProgress(
     val total: Long,
     val description: String,
     val unit: MiningProgressUnit = MiningProgressUnit.ITEMS,
+    val stage: MiningStage? = null,
 ) {
     init {
         require(total >= 0)
@@ -52,8 +53,34 @@ data class MiningProgress(
         require(total == 0L || current <= total)
     }
 
+    /**
+     * Whole-run completion.
+     *
+     * The engine stopped blending its stages into one percentage, so each stage
+     * restarts the item counts. Composing the within-stage fraction inside the
+     * stage's own band keeps a single monotonic bar instead of one that resets
+     * several times per run. Without a stage the raw item fraction is all there
+     * is.
+     */
     val fraction: Float?
-        get() = if (total == 0L) null else current.toFloat() / total.toFloat()
+        get() {
+            val within = if (total == 0L) null else current.toFloat() / total.toFloat()
+            val stage = stage ?: return within
+            val band = 1f / stage.total
+            return (stage.index - 1) * band + (within ?: 0f) * band
+        }
+}
+
+/** One numbered pipeline stage, as announced by the engine. */
+data class MiningStage(
+    val index: Int,
+    val total: Int,
+    val name: String,
+) {
+    init {
+        require(index in 1..total)
+        require(total >= 1)
+    }
 }
 
 /**
@@ -74,7 +101,29 @@ data class ProcessingResult(
     val videoFile: String,
     val subtitleFile: String,
     val minedForms: List<String>,
+    val ankiWriteState: AnkiWriteState,
+    val failureIsTransient: Boolean,
 )
+
+/**
+ * What a finished run can prove about whether Anki notes were written.
+ *
+ * The engine fails closed to [NOTE_WRITE_UNCERTAIN] whenever it cannot tell, so
+ * only [NO_NOTE_WRITE] means nothing reached the collection. Android never sets
+ * [ProcessingResult.failureIsTransient]: the engine's classifier recognizes only
+ * an AnkiConnect transport failure, and the ContentProvider seam never raises
+ * through that path — so no automatic retry may be built on it here.
+ */
+enum class AnkiWriteState(val wireValue: String) {
+    NO_NOTE_WRITE("no_note_write"),
+    NOTE_WRITE_UNCERTAIN("note_write_uncertain"),
+    NOTE_WRITE_CONFIRMED("note_write_confirmed"),
+    ;
+
+    companion object {
+        fun fromWire(value: String): AnkiWriteState? = entries.firstOrNull { it.wireValue == value }
+    }
+}
 
 @Immutable
 data class CurationSentence(

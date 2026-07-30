@@ -424,7 +424,7 @@ class ResourceManagerTest {
         private fun inventoryResponse(): String =
             envelope(
                 "resource.local.listed",
-                """{"frequencies":[],"pitchAccent":null,"audioPacks":[],"knownWords":{"totalCount":$userCount,"userCount":$userCount,"ankiCount":0,"minedCount":0,"schemaOk":true},"wordsets":[]}""",
+                """{"frequencies":[],"pitchSources":[],"audioPacks":[],"knownWords":{"totalCount":$userCount,"userCount":$userCount,"ankiCount":0,"minedCount":0,"schemaOk":true},"wordsets":[]}""",
             )
 
         private fun pageResponse(rawRequest: String): String {
