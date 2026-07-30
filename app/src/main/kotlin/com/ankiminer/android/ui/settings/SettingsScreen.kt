@@ -111,6 +111,8 @@ internal fun SettingsRoute(
     onOpenSpeechSettings: () -> Unit,
     onShareDiagnostics: () -> Unit,
     onShareEngineLog: () -> Unit,
+    verboseLogging: Boolean,
+    onVerboseLoggingChange: (Boolean) -> Unit,
     onReturnToActiveRun: (() -> Unit)? = null,
     onAttributions: () -> Unit,
     onRunSetupWizard: (() -> Unit)? = null,
@@ -211,6 +213,8 @@ internal fun SettingsRoute(
             }
         },
         onExportKnownWords = { knownWordsExportPicker.launch("known_words.txt") },
+        verboseLogging = verboseLogging,
+        onVerboseLoggingChange = onVerboseLoggingChange,
         modifier = modifier,
     )
 }
@@ -251,6 +255,8 @@ private fun SettingsScreen(
     onImportKnownWords: () -> Unit,
     onImportWordList: (WordListKind) -> Unit,
     onExportKnownWords: () -> Unit,
+    verboseLogging: Boolean,
+    onVerboseLoggingChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var selectedCategory by rememberSaveable { mutableStateOf(SettingsCategory.ANKI) }
@@ -327,6 +333,8 @@ private fun SettingsScreen(
             onImportWordList = onImportWordList,
             onExportKnownWords = onExportKnownWords,
             onManageKnownWords = onManageKnownWords,
+            verboseLogging = verboseLogging,
+            onVerboseLoggingChange = onVerboseLoggingChange,
         )
     SettingsCategoryLayout(
         selectedCategory = selectedCategory,

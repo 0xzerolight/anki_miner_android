@@ -217,6 +217,9 @@
     <string name="open_ankidroid">AnkiDroidを開く</string>
     <string name="return_to_active_run">実行中のマイニングに戻る</string>
     <string name="ankidroid_action_unavailable">AnkiDroidまたは公式リリースページを開けるアプリがありません。</string>
+    <string name="settings_verbose_logging_section">ログ</string>
+    <string name="settings_verbose_logging">詳細ログ</string>
+    <string name="settings_verbose_logging_detail">不具合報告用に詳細な情報を記録します。ストレージの使用量が増え、マイニングがわずかに遅くなります。1週間後に自動で解除されます。</string>
     <string name="settings_tester_diagnostics">テスター診断情報</string>
     <string name="settings_version_identity">バージョン: %1$s</string>
     <string name="settings_source_identity">ソース: %1$s</string>

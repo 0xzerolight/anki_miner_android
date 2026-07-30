@@ -165,6 +165,115 @@ def test_dispatch_routes_callback_bearing_video_run_only_with_callbacks(
     assert received == [(request, callback)]
 
 
+def test_dispatch_log_level_set_raises_only_the_first_party_trees(
+    initialized_bridge_home: Path,
+) -> None:
+    import logging
+
+    from android_bridge import log_context
+
+    try:
+        raw = boundary.dispatch(encode_message("diagnostics.loglevel.set", {"level": "debug"}))
+
+        assert decode_envelope(raw, expected_type="diagnostics.loglevel.applied").payload == {"level": "debug"}
+        assert logging.getLogger("anki_miner").level == logging.DEBUG
+        assert logging.getLogger("android_bridge").level == logging.DEBUG
+        # The pins bootstrap installed are the only thing keeping a percent-encoded mined term
+        # out of an exported bundle, and root is what would lift the libraries with no pin.
+        assert logging.getLogger().level == logging.INFO
+        assert logging.getLogger("urllib3.connectionpool").level == logging.ERROR
+
+        back = boundary.dispatch(encode_message("diagnostics.loglevel.set", {"level": "info"}))
+
+        assert decode_envelope(back, expected_type="diagnostics.loglevel.applied").payload == {"level": "info"}
+        assert logging.getLogger("anki_miner").level == logging.INFO
+    finally:
+        log_context.set_first_party_log_level(logging.INFO)
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"level": "trace"},
+        {"level": "DEBUG"},
+        {"level": ""},
+        {"level": True},
+        {"level": 10},
+        {},
+        {"level": "debug", "extra": 1},
+    ],
+)
+def test_dispatch_rejects_a_log_level_outside_the_wire_vocabulary(
+    initialized_bridge_home: Path,
+    payload: dict[str, object],
+) -> None:
+    import logging
+
+    raw = boundary.dispatch(encode_message("diagnostics.loglevel.set", payload))
+
+    assert decode_envelope(raw, expected_type="bridge.error").payload["code"] == "invalid_log_level_request"
+    assert logging.getLogger("anki_miner").level == logging.INFO
+
+
+def test_dispatch_log_level_set_does_not_fall_through_to_registry_shutdown(
+    initialized_bridge_home: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The tail of ``_dispatch_validated`` is an unguarded fall-through to ``shutdown()``.
+
+    Declaring a request type supported without routing it therefore does not
+    fail -- it tears the job registry down, which looks like a mining run that
+    simply stopped.
+    """
+
+    import logging
+
+    import android_bridge.jobs as jobs
+
+    def shutdown() -> str:
+        raise AssertionError("the log level request reached the shutdown fall-through")
+
+    monkeypatch.setattr(jobs, "shutdown", shutdown)
+    try:
+        raw = boundary.dispatch(encode_message("diagnostics.loglevel.set", {"level": "debug"}))
+    finally:
+        from android_bridge import log_context
+
+        log_context.set_first_party_log_level(logging.INFO)
+
+    assert decode_envelope(raw).message_type == "diagnostics.loglevel.applied"
+
+
+def test_dispatch_log_level_set_requires_bootstrap() -> None:
+    """Nothing engine-adjacent runs before ``bootstrap.initialize``, this included.
+
+    A subprocess, because bootstrap state is a process global that any earlier
+    test in the session may already have established.
+    """
+
+    env = dict(os.environ)
+    env["PYTHONPATH"] = str(PYTHON_ROOT)
+    env.pop("ANKI_MINER_HOME", None)
+    script = """
+import json
+from android_bridge import dispatch
+from android_bridge.protocol import encode_message
+print(dispatch(encode_message("diagnostics.loglevel.set", {"level": "debug"})))
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+    assert result.returncode == 0, result.stderr
+    envelope = json.loads(result.stdout)
+    assert envelope["type"] == "bridge.error"
+    assert envelope["payload"]["code"] == "bootstrap_required"
+
+
 def test_dispatch_routes_paged_curation_control_without_callbacks(
     initialized_bridge_home: Path,
     monkeypatch: pytest.MonkeyPatch,

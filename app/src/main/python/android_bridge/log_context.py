@@ -14,6 +14,17 @@ from contextvars import ContextVar
 
 _RUN_ID: ContextVar[str | None] = ContextVar("anki_miner_run_id", default=None)
 
+# The wire vocabulary of ``diagnostics.loglevel.set``. INFO is always on; DEBUG
+# is the tester switch.
+LOG_LEVELS: dict[str, int] = {
+    "info": logging.INFO,
+    "debug": logging.DEBUG,
+}
+
+# Only the trees this app owns. Anything outside them keeps whatever ceiling
+# bootstrap gave it.
+_FIRST_PARTY_LOG_TREES = ("anki_miner", "android_bridge")
+
 # JobRegistry admits at most one active job, so a single module global is an
 # exact (not approximate) fallback: the engine fans work out to plain
 # threading.Thread workers for parallel media extraction, and a ContextVar set
@@ -37,6 +48,26 @@ def current_run_id() -> str | None:
     """Return the run id that should be attributed to a log record right now."""
 
     return _RUN_ID.get() or _ACTIVE_RUN_ID
+
+
+def set_first_party_log_level(level: int) -> None:
+    """Set ``level`` on the app's own logger trees, never on the root logger.
+
+    Root must stay where ``bootstrap._install_file_logging`` left it. Lifting
+    root to DEBUG would lift every third-party logger that has no explicit
+    ceiling, and the ceiling covers five named libraries only -- one of them
+    because urllib3 logs a Jisho retry URL whose query string carries the mined
+    term percent-encoded, which the redaction pass (it matches literal CJK)
+    cannot see. A bundle the user is about to send is the worst place to
+    discover that.
+
+    Records still reach the root file handler: propagation walks ancestor
+    *handlers* and filters on the handler's own level, and never re-checks an
+    ancestor *logger*'s level.
+    """
+
+    for name in _FIRST_PARTY_LOG_TREES:
+        logging.getLogger(name).setLevel(level)
 
 
 class RunContextFilter(logging.Filter):

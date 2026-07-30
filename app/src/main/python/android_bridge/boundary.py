@@ -9,6 +9,7 @@ from .faults import record_fault
 from .protocol import (
     BridgeProtocolError,
     decode_envelope,
+    encode_message,
     encode_protocol_error,
 )
 
@@ -45,6 +46,7 @@ def _dispatch_validated(
         "curation.page.response",
         "curation.response",
         "bridge.shutdown.request",
+        "diagnostics.loglevel.set",
         "mining.reading.run",
         "mining.video.run",
         "resource.catalog.get",
@@ -144,6 +146,23 @@ def _dispatch_validated(
         from .reading_mining import run_reading
 
         return run_reading(raw_request, callbacks)
+
+    # Needs its own branch, not just membership in the set above: the tail of
+    # this function is an unguarded fall-through to shutdown(), so a type that
+    # is declared supported and never routed would tear the job registry down
+    # instead of failing.
+    if request_type == "diagnostics.loglevel.set":
+        _exact_payload(payload, {"level"}, error_code="invalid_log_level_request")
+        from . import log_context
+
+        requested = payload["level"]
+        if not isinstance(requested, str) or requested not in log_context.LOG_LEVELS:
+            raise BridgeProtocolError(
+                "invalid_log_level_request",
+                f"Expected level in {sorted(log_context.LOG_LEVELS)!r}",
+            )
+        log_context.set_first_party_log_level(log_context.LOG_LEVELS[requested])
+        return encode_message("diagnostics.loglevel.applied", {"level": requested})
 
     if request_type == "job.cancel":
         from .jobs import cancel_job

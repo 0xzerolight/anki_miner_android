@@ -293,6 +293,8 @@ internal fun AnkiMinerApp(
     onOpenSpeechSettings: () -> Unit,
     onShareDiagnostics: (String) -> Unit,
     onShareEngineLog: () -> Unit,
+    verboseLogging: Boolean,
+    onVerboseLoggingChange: (Boolean) -> Unit,
 ) {
     val navController = rememberNavController()
     val currentEntry by navController.currentBackStackEntryAsState()
@@ -522,6 +524,8 @@ internal fun AnkiMinerApp(
                     onOpenSpeechSettings = onOpenSpeechSettings,
                     onShareDiagnostics = diagnosticsShareAction::share,
                     onShareEngineLog = onShareEngineLog,
+                    verboseLogging = verboseLogging,
+                    onVerboseLoggingChange = onVerboseLoggingChange,
                     onReturnToActiveRun =
                         activeWorkflowDestination?.let { destination ->
                             { navigateTo(destination) }

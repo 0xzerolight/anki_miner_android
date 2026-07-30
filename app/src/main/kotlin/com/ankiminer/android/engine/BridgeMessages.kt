@@ -223,6 +223,10 @@ sealed interface BridgeMessage {
         val newlyCancelled: Boolean,
     ) : BridgeMessage
 
+    data class DiagnosticsLogLevelSet(val level: String) : BridgeMessage
+
+    data class DiagnosticsLogLevelApplied(val level: String) : BridgeMessage
+
     /** `rawEnvelope` is retained byte-for-byte for callback/return reconciliation. */
     data class Terminal(
         val runId: String,

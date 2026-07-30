@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import subprocess
 import sys
@@ -229,14 +230,21 @@ def test_third_party_noise_is_capped_but_first_party_debug_reaches_the_file(
     itself (a flaky mobile network hitting Jisho is the common case, not an
     edge case), so ``urllib3.connectionpool`` needs its own ceiling above
     WARNING rather than inheriting the plain ``urllib3`` pin.
+
+    The first-party trees are raised explicitly here because ``initialize()``
+    now pins them at INFO explicitly too, which is what makes the shipped
+    toggle unable to lift anything else. Root DEBUG alone no longer reaches
+    them, so this scenario is deliberately worse than any the app can produce.
     """
 
     result = _run(
         """
 import json, logging, logging.handlers, sys
+from android_bridge import log_context
 from android_bridge.bootstrap import initialize
 initialize(sys.argv[1])
 logging.getLogger().setLevel(logging.DEBUG)
+log_context.set_first_party_log_level(logging.DEBUG)
 logging.getLogger("anki_miner.services.media_extractor").debug("first party debug line")
 logging.getLogger("urllib3.connectionpool").debug(
     "GET /api/v1/search/words?keyword=%E6%AE%BA%E3%81%99"
@@ -259,6 +267,53 @@ print(json.dumps({"content": content}))
     content = json.loads(result.stdout)["content"]
     assert "first party debug line" in content
     assert "keyword=" not in content
+
+
+def test_the_verbose_toggle_reaches_the_file_without_reopening_the_url_leak(
+    tmp_path: Path,
+) -> None:
+    """The same guarantee as the test above, but reached the way a tester reaches it.
+
+    That test lifts the root logger by hand. This one goes through the real
+    request path, which is what ships: ``diagnostics.loglevel.set`` must raise
+    the first-party trees far enough that engine DEBUG lands in the file, and
+    must leave root and the third-party ceilings exactly where bootstrap put
+    them -- a bundle assembled right after the toggle is the worst possible
+    place for a percent-encoded mined term to appear.
+    """
+
+    result = _run(
+        """
+import json, logging, logging.handlers, sys
+from android_bridge import dispatch
+from android_bridge.bootstrap import initialize
+from android_bridge.protocol import encode_message
+initialize(sys.argv[1])
+applied = dispatch(encode_message("diagnostics.loglevel.set", {"level": "debug"}))
+logging.getLogger("anki_miner.services.media_extractor").debug("first party debug line")
+logging.getLogger("urllib3.connectionpool").warning(
+    "Retrying (Retry(total=2)) after connection broken by "
+    "'ProtocolError': /api/v1/search/words?keyword=%E6%AE%BA%E3%81%99"
+)
+handler = next(
+    h for h in logging.getLogger().handlers if isinstance(h, logging.handlers.RotatingFileHandler)
+)
+handler.flush()
+print(json.dumps({
+    "applied": json.loads(applied),
+    "root": logging.getLogger().level,
+    "content": open(handler.baseFilename, encoding="utf-8").read(),
+}))
+""",
+        tmp_path,
+    )
+
+    assert result.returncode == 0, result.stderr
+    data = json.loads(result.stdout)
+    assert data["applied"]["type"] == "diagnostics.loglevel.applied"
+    assert data["root"] == logging.INFO
+    assert "first party debug line" in data["content"]
+    assert "keyword=" not in data["content"]
 
 
 def test_install_failure_stashes_traceback_and_writes_stderr_without_breaking_bootstrap(

@@ -223,6 +223,9 @@
     <string name="open_ankidroid">Open AnkiDroid</string>
     <string name="return_to_active_run">Return to active run</string>
     <string name="ankidroid_action_unavailable">No app is available to open AnkiDroid or its official releases page.</string>
+    <string name="settings_verbose_logging_section">Logging</string>
+    <string name="settings_verbose_logging">Verbose logging</string>
+    <string name="settings_verbose_logging_detail">Records extra detail for bug reports. Uses more storage and slows mining slightly. Turns itself off after a week.</string>
     <string name="settings_tester_diagnostics">Tester diagnostics</string>
     <string name="settings_version_identity">Version: %1$s</string>
     <string name="settings_source_identity">Source: %1$s</string>

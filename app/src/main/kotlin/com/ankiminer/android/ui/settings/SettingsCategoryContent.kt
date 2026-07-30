@@ -64,6 +64,8 @@ internal data class SettingsScreenCallbacks(
     val onImportWordList: (WordListKind) -> Unit,
     val onExportKnownWords: () -> Unit,
     val onManageKnownWords: () -> Unit,
+    val verboseLogging: Boolean,
+    val onVerboseLoggingChange: (Boolean) -> Unit,
 )
 
 internal enum class KnownWordsFailureTarget {
@@ -884,6 +886,19 @@ private fun LazyListScope.diagnosticsSettings(
                         callbacks,
                     )
                 },
+            )
+        }
+    }
+    settingsCard("diagnostic-logging") {
+        SettingsSection(stringResource(R.string.settings_verbose_logging_section)) {
+            BooleanSetting(
+                label = stringResource(R.string.settings_verbose_logging),
+                checked = callbacks.verboseLogging,
+                onCheckedChange = callbacks.onVerboseLoggingChange,
+            )
+            Text(
+                stringResource(R.string.settings_verbose_logging_detail),
+                style = MaterialTheme.typography.bodySmall,
             )
         }
     }

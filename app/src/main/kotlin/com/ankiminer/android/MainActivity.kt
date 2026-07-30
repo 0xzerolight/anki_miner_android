@@ -115,6 +115,10 @@ class MainActivity : ComponentActivity() {
                 )
                 return@setContent
             }
+            val verboseLogging =
+                app.diagnosticsSettings.verboseLogging
+                    .collectAsStateWithLifecycle(initialValue = false)
+                    .value
             val darkTheme = appSettings.theme == ThemeMode.DARK
             val iconAppearance = systemBarIconAppearance(darkTheme)
             LaunchedEffect(iconAppearance) {
@@ -165,6 +169,8 @@ class MainActivity : ComponentActivity() {
                     onOpenSpeechSettings = ::openSpeechSettings,
                     onShareDiagnostics = ::shareDiagnostics,
                     onShareEngineLog = ::shareEngineLog,
+                    verboseLogging = verboseLogging,
+                    onVerboseLoggingChange = app::setVerboseLogging,
                 )
             }
         }

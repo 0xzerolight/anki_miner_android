@@ -80,6 +80,10 @@ def _install_file_logging(home: str) -> None:
         root.addHandler(handler)
         if root.level > logging.INFO:
             root.setLevel(logging.INFO)
+        # Explicit rather than inherited, so the tester switch
+        # (diagnostics.loglevel.set) raises and lowers exactly the same set of
+        # loggers it finds here instead of a wider one.
+        log_context.set_first_party_log_level(logging.INFO)
         for name, level in _THIRD_PARTY_LOG_CEILING.items():
             logging.getLogger(name).setLevel(level)
         _log_handler_installed = True

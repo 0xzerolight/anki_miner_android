@@ -2,6 +2,7 @@ package com.ankiminer.android.engine
 
 import android.content.Context
 import android.os.Looper
+import com.ankiminer.android.data.settings.DiagnosticsSettingsRepository
 import com.ankiminer.android.diagnostics.log.AppLog
 import com.ankiminer.android.diagnostics.log.LogComponent
 import com.chaquo.python.PyObject
@@ -10,6 +11,8 @@ import com.chaquo.python.android.AndroidPlatform
 import java.io.File
 import java.util.concurrent.Executor
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 
 /** Raw, deterministic seam used by the coordinator and its JVM fakes. */
 fun interface PyBridge {
@@ -26,6 +29,7 @@ fun interface PyBridge {
  */
 internal class ChaquopyPythonRuntime(
     context: Context,
+    private val diagnosticsSettings: DiagnosticsSettingsRepository,
     private val filesDir: File = context.filesDir,
 ) {
     private val applicationContext = context.applicationContext
@@ -76,6 +80,13 @@ internal class ChaquopyPythonRuntime(
             "Python bootstrap did not confirm the requested engine home"
         }
         AppLog.i(LogComponent.BOOTSTRAP, "python.home", "home" to requestedHome)
+        // Before tokenizer.configure and any engine work: the app starts Python work at launch
+        // without the user touching anything, so waiting for the settings collector in
+        // AnkiMinerApplication would leave the first run of the process logging at INFO.
+        applyStoredPythonLogLevel(
+            readVerbose = { runBlocking { diagnosticsSettings.verboseLogging.first() } },
+            dispatch = { raw -> boundary.callAttr("dispatch", raw).toJava(String::class.java) },
+        )
         return Runtime(requestedHome, boundary)
     }
 

@@ -51,6 +51,7 @@ object BridgeJsonCodec {
     private const val NEGATIVE_LONG_BOUNDARY_AS_DOUBLE = -9.223372036854776E18
 
     private val messageTypePattern = Regex("[a-z][a-z0-9]*(?:\\.[a-z][a-z0-9]*)+")
+    private val logLevelNames = setOf("info", "debug")
     private val runIdPattern = Regex("run_[0-9a-f]{32}")
     private val curationIdPattern = Regex("curation_[0-9a-f]{32}")
     private val candidateIdPattern = Regex("candidate_[0-9a-f]{32}")
@@ -148,6 +149,9 @@ object BridgeJsonCodec {
     fun encodeJobCancel(runId: String): String =
         encode("job.cancel") { generator -> generator.writeStringField("runId", runId) }
 
+    fun encodeDiagnosticsLogLevelSet(level: String): String =
+        encode("diagnostics.loglevel.set") { generator -> generator.writeStringField("level", level) }
+
     fun encodeCurationResponse(
         request: CurationRequest,
         selection: List<CurationSelection>?,
@@ -235,6 +239,8 @@ object BridgeJsonCodec {
             "curation.page.response" -> readCurationPageResponse(payload)
             "curation.accepted" -> readCurationAccepted(payload)
             "curation.page.accepted" -> readCurationPageAccepted(payload)
+            "diagnostics.loglevel.set" -> BridgeMessage.DiagnosticsLogLevelSet(logLevel(payload, type))
+            "diagnostics.loglevel.applied" -> BridgeMessage.DiagnosticsLogLevelApplied(logLevel(payload, type))
             "job.cancel" -> BridgeMessage.JobCancel(singleRunId(payload, type))
             "job.cancelled" -> readJobCancelled(payload)
             "mining.terminal" -> readTerminal(payload, raw)
@@ -1193,6 +1199,17 @@ object BridgeJsonCodec {
             is BridgeMessage.Terminal -> message.runId to null
             else -> null to null
         }
+
+    /** The wire vocabulary of the verbose-logging toggle: INFO is always on, DEBUG is the switch. */
+    private fun logLevel(
+        payload: Map<String, BridgeJsonValue>,
+        context: String,
+    ): String {
+        requireExact(payload, setOf("level"), context)
+        return text(payload.getValue("level"), "log level").also {
+            if (it !in logLevelNames) fail(BridgeProtocolCategory.INVALID_VALUE, "log level is invalid")
+        }
+    }
 
     private fun singleRunId(
         payload: Map<String, BridgeJsonValue>,
