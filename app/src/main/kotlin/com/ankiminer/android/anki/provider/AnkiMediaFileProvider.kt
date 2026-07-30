@@ -22,7 +22,7 @@ import androidx.core.content.FileProvider
  *   extension we return exactly what stock [FileProvider] would have.
  * * **Every value must reverse-map.** `getExtensionFromMimeType(value)` has to be non-null or
  *   AnkiDroid cannot name the file. An extension for which no value satisfies that belongs in
- *   [AnkiMediaExtensions.DEVICE_UNMAPPABLE_EXTENSIONS], not here.
+ *   [AnkiMediaExtensions.ALWAYS_FALLBACK_EXTENSIONS], not here.
  *
  * Both rules are asserted per extension on the API 26 lane by
  * `AndroidAnkiMediaStagingInstrumentedTest`.

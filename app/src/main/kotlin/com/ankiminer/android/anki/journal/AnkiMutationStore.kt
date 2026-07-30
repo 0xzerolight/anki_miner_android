@@ -139,6 +139,11 @@ internal interface AnkiMutationStore : Closeable {
     fun acquireMediaLease(runId: String): MediaLeaseRecord
     fun mediaLease(runId: String): MediaLeaseRecord?
     fun reserveMedia(runId: String, assets: List<MediaReservationDraft>): List<MediaReservationRecord>
+    fun reserveMediaIndependently(
+        runId: String,
+        assets: List<MediaReservationDraft>,
+    ): List<MediaReservationAdmission>
+    fun mediaReservation(reservationId: Long): MediaReservationRecord?
     fun releaseReservation(reservationId: Long): MediaReservationRecord
     fun promoteReservation(
         key: ParentKey,

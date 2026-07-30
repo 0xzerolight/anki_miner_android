@@ -37,9 +37,9 @@ internal object AnkiMediaExtensions {
         )
 
     /**
-     * Extensions a producer can emit that no MIME on this platform reverse-maps to, so staging them
-     * under their real name would still yield `.bin` — they stay out of [ALLOWED_EXTENSIONS] and fall
-     * back to [STAGE_FALLBACK_EXTENSION] instead.
+     * Extensions deliberately kept on the compile-time fallback path for the API 26 baseline. This
+     * is not a claim about the current device's MIME table: newer devices may map these extensions,
+     * but runtime capability negotiation is intentionally outside the provider contract.
      *
      * Image-only by construction: every audio producer extension reverse-maps at API 26
      * (aac->audio/aac, flac->audio/flac, wav->audio/x-wav, mp4->video/mp4, webm->video/webm,
@@ -49,14 +49,14 @@ internal object AnkiMediaExtensions {
      *
      * `apng` is missing at API 26 as well but is NOT here: an APNG is a valid PNG stream, so
      * [AnkiMediaFileProvider] names it `image/png` and AnkiDroid stores a `.png` that renders. An
-     * extension belongs here only when no compatible MIME exists for it at all.
+     * extension belongs here only when no compatible MIME exists for it on the API 26 baseline.
      *
      * Entries move in and out ONLY on evidence from the instrumented API 26 gate, with the measured
      * value recorded alongside. The exclusion is compile-time, so it also applies on API levels that
      * resolve the extension natively. Accepted for now: the alternative is a device-resolved
      * predicate threaded through the staging seam, and `.avif` dictionary media is rare.
      */
-    internal val DEVICE_UNMAPPABLE_EXTENSIONS: Set<String> =
+    internal val ALWAYS_FALLBACK_EXTENSIONS: Set<String> =
         linkedSetOf(
             // API 26 registers no `avif` extension, and `image/avif` reverse-maps to null, so there
             // is no value the provider could answer with that AnkiDroid can name a file after.
@@ -65,7 +65,7 @@ internal object AnkiMediaExtensions {
 
     /** Every real media extension, ordered for a stable regex alternation. */
     val ALLOWED_EXTENSIONS: List<String> =
-        (AUDIO_EXTENSIONS + IMAGE_EXTENSIONS).filterNot { it in DEVICE_UNMAPPABLE_EXTENSIONS }
+        (AUDIO_EXTENSIONS + IMAGE_EXTENSIONS).filterNot { it in ALWAYS_FALLBACK_EXTENSIONS }
 
     /**
      * The exact shape a staged relative path may take. The 64-hex token is the identity; the
@@ -80,9 +80,9 @@ internal object AnkiMediaExtensions {
 
     /**
      * The extension to name a staged copy after, or null when [requestedFilename] has no recognized
-     * suffix for its [mediaKind], or carries one this platform cannot express as a MIME. A null
-     * return means the caller falls back to [STAGE_FALLBACK_EXTENSION] (the safe behavior for
-     * anything unexpected). [DEVICE_UNMAPPABLE_EXTENSIONS] is filtered here as well as out of
+     * suffix for its [mediaKind], or carries one fixed to the baseline fallback policy. A null return
+     * means the caller falls back to [STAGE_FALLBACK_EXTENSION] (the safe behavior for anything
+     * unexpected). [ALWAYS_FALLBACK_EXTENSIONS] is filtered here as well as out of
      * [ALLOWED_EXTENSIONS], or staging would reject the request outright instead of degrading.
      */
     fun sanitizedExtension(
@@ -92,7 +92,7 @@ internal object AnkiMediaExtensions {
         val dot = requestedFilename.lastIndexOf('.')
         if (dot <= 0 || dot == requestedFilename.lastIndex) return null
         val candidate = requestedFilename.substring(dot + 1).lowercase()
-        if (candidate in DEVICE_UNMAPPABLE_EXTENSIONS) return null
+        if (candidate in ALWAYS_FALLBACK_EXTENSIONS) return null
         val allowed =
             when (mediaKind) {
                 MediaKind.AUDIO -> AUDIO_EXTENSIONS
