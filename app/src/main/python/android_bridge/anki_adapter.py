@@ -221,6 +221,8 @@ class _CreatePreflightPlan:
     dictionary_media_paths: dict[str, Path]
     dictionary_media_sources: tuple[str, ...]
     pending_media_name_reservations: dict[str, tuple[str, str]]
+    pending_notes: tuple[_PendingNote, ...]
+    skipped_outgoing_duplicates: int
 
 
 @dataclass
@@ -278,6 +280,12 @@ class _MediaAcknowledgement:
 class _StoredCardMedia:
     filenames: frozenset[str]
     bindings_by_media_identity: dict[int, tuple[_MediaAcknowledgement, ...]]
+
+
+@dataclass(frozen=True)
+class _StoredDictionaryMedia:
+    payloads: tuple[Any, ...]
+    failed_sources: frozenset[str]
 
 
 def _protocol_error(code: str, message: str) -> NoReturn:
@@ -1560,7 +1568,7 @@ class AndroidAnkiAdapter:
                 if all(binding.asset_id != asset_id for binding in bindings):
                     bindings.append(acknowledgement)
 
-        self.last_media_store_failures = len(prepared.refs) - len(renamed_originals)
+        self.last_media_store_failures += len(prepared.refs) - len(renamed_originals)
         if outcome.error is not None:
             _raise_callback_error(outcome.error)
         return _StoredCardMedia(
@@ -1877,7 +1885,7 @@ class AndroidAnkiAdapter:
         self,
         word_data_list: Sequence[Any],
         prepared: _PreparedDictionaryMedia,
-    ) -> list[Any]:
+    ) -> _StoredDictionaryMedia:
         """Store prepared dictionary assets and rewrite acknowledged HTML."""
 
         for source in prepared.confirmed_missing_sources:
@@ -1913,7 +1921,10 @@ class AndroidAnkiAdapter:
         rewritten = self._rewrite_dictionary_payloads(word_data_list)
         if outcome.error is not None:
             _raise_callback_error(outcome.error)
-        return rewritten
+        return _StoredDictionaryMedia(
+            tuple(rewritten),
+            frozenset(failed_sources),
+        )
 
     def _relevant_source_utf8_bytes(self, payload: Any) -> int:
         """Count strings retained or rendered by one card payload.
@@ -2321,6 +2332,7 @@ class AndroidAnkiAdapter:
         worst_note_utf8_bytes = 0
         pending_notes: list[_PendingNote] = []
         seen_outgoing: set[str] = set()
+        skipped_outgoing_duplicates = 0
         binding_ids: dict[tuple[str, str], str] = {}
         for source_index, (payload, built_note, fields) in enumerate(
             zip(
@@ -2369,6 +2381,7 @@ class AndroidAnkiAdapter:
             )
             if not self.config.allow_duplicate_cards:
                 if pending.key in seen_outgoing:
+                    skipped_outgoing_duplicates += 1
                     continue
                 seen_outgoing.add(pending.key)
             pending_notes.append(pending)
@@ -2388,6 +2401,8 @@ class AndroidAnkiAdapter:
             planned_dictionary_paths,
             tuple(dictionary_sources),
             pending_reservations,
+            tuple(pending_notes),
+            skipped_outgoing_duplicates,
         )
 
     @staticmethod
@@ -3038,26 +3053,10 @@ class AndroidAnkiAdapter:
         # asset before any note identity, media scan, or provider mutation.
         word_data_list = self._sanitize_dictionary_payloads(word_data_list)
         preflight_plan = self._preflight_create_call(word_data_list)
-        media_work_budget = _MediaWorkBudget()
-        prepared_card_media = self._prepare_card_media(word_data_list, media_work_budget)
-        prepared_dictionary_media = self._prepare_dictionary_media(preflight_plan, media_work_budget)
-        all_prepared_assets = [
-            *prepared_card_media.assets,
-            *prepared_dictionary_media.assets,
-        ]
-        self._validate_asset_provider_namespaces(
-            all_prepared_assets,
-            additional_reservations=(preflight_plan.pending_media_name_reservations),
-        )
-        self._raise_if_cancelled("createNotes")
-        # Commit reservations only after every digest and the combined card /
-        # dictionary namespace proof has succeeded. A rejected call therefore
-        # produces neither provider mutation nor poisoned adapter state.
-        self._reserved_media_name_owners.update(preflight_plan.pending_media_name_reservations)
 
         all_created_ids: list[int] = []
         created_first_fields: list[str] = []
-        skipped_duplicates = 0
+        skipped_duplicates = preflight_plan.skipped_outgoing_duplicates
         total_created = 0
         bold_used = 0
         bold_fallback = 0
@@ -3065,76 +3064,211 @@ class AndroidAnkiAdapter:
         if progress_callback:
             progress_callback.on_start(len(word_data_list), "Creating Anki cards")
 
-        stored_card_media = self._store_prepared_card_media(prepared_card_media)
-        word_data_list = self._store_prepared_dictionary_media(word_data_list, prepared_dictionary_media)
-
         from anki_miner.services.anki_note_builder import _strip_for_dedup, build_note
 
-        seen_outgoing: set[str] = set()
         try:
-            pending_notes: list[_PendingNote] = []
-            for source_index, item in enumerate(word_data_list):
-                built = build_note(
-                    item,
-                    self.config,
-                    set(stored_card_media.filenames),
-                )
-                if built.used_precomputed_bold:
-                    bold_used += 1
-                if built.used_bold_fallback:
-                    bold_fallback += 1
-                pending = self._prepare_note(
-                    item,
-                    built.note,
-                    source_index,
-                    card_media_bindings=(stored_card_media.bindings_by_media_identity.get(id(item.media), ())),
-                )
-                if not self.config.allow_duplicate_cards:
-                    if pending.key in seen_outgoing:
-                        skipped_duplicates += 1
-                        continue
-                    seen_outgoing.add(pending.key)
-                pending_notes.append(pending)
+            callback_batches = self._chunk_pending_notes(preflight_plan.pending_notes)
+            # Outgoing duplicates were removed by structural preflight. Hash
+            # the remaining call graph once to retain the cross-batch content
+            # and provider-namespace proof, but do not store any asset yet.
+            survivor_payloads = [pending.payload for pending in preflight_plan.pending_notes]
+            survivor_plan = self._preflight_create_call(survivor_payloads)
+            media_work_budget = _MediaWorkBudget()
+            prepared_card_media = self._prepare_card_media(
+                survivor_payloads,
+                media_work_budget,
+            )
+            prepared_dictionary_media = self._prepare_dictionary_media(
+                survivor_plan,
+                media_work_budget,
+            )
+            all_prepared_assets = [
+                *prepared_card_media.assets,
+                *prepared_dictionary_media.assets,
+            ]
+            self._validate_asset_provider_namespaces(
+                all_prepared_assets,
+                additional_reservations=(survivor_plan.pending_media_name_reservations),
+            )
+            self._raise_if_cancelled("createNotes")
+            # Commit reservations only after every survivor digest and the
+            # combined card/dictionary namespace proof has succeeded.
+            self._reserved_media_name_owners.update(survivor_plan.pending_media_name_reservations)
+
+            handled_card_originals: set[str] = set()
+            stored_card_filenames: set[str] = set()
+            card_bindings_by_media_identity: dict[int, tuple[_MediaAcknowledgement, ...]] = {}
+            handled_dictionary_sources: set[str] = set()
+            failed_dictionary_sources: set[str] = set()
 
             progress_reported = 0
-            for callback_batch in self._chunk_pending_notes(pending_notes):
+            for original_batch in callback_batches:
                 self._raise_if_cancelled("createNotes")
                 duplicate_probes, baseline_token = self._duplicate_first_fields(
-                    [(pending.key, pending.first_field) for pending in callback_batch]
+                    [(pending.key, pending.first_field) for pending in original_batch]
                 )
                 submissions = [
                     (pending, probe.occurrence)
-                    for pending, probe in zip(callback_batch, duplicate_probes, strict=True)
+                    for pending, probe in zip(
+                        original_batch,
+                        duplicate_probes,
+                        strict=True,
+                    )
                     if not probe.is_duplicate
                 ]
-                skipped_duplicates += len(callback_batch) - len(submissions)
-                if submissions:
-                    submit_notes = [pending for pending, _ in submissions]
-                    occurrences = [occurrence for _, occurrence in submissions]
-                    note_ids, successful, residual_duplicates, partial_error = self._create_note_batch(
-                        submit_notes, baseline_token, occurrences
-                    )
-                    skipped_duplicates += residual_duplicates
-                    repeated_created_ids = set(all_created_ids).intersection(
-                        note_id for note_id in note_ids if note_id is not None
-                    )
-                    if repeated_created_ids:
-                        self._callbacks.mark_response_failure()
-                        _protocol_error(
-                            "invalid_anki_response",
-                            "createNotes reused a note ID from an earlier batch",
-                        )
-                    total_created += sum(successful)
-                    all_created_ids.extend(note_id for note_id in note_ids if note_id is not None)
-                    created_first_fields.extend(
-                        pending.first_field
-                        for pending, was_successful in zip(submit_notes, successful, strict=True)
-                        if was_successful
-                    )
-                    if partial_error is not None:
-                        _raise_callback_error(partial_error)
+                skipped_duplicates += len(original_batch) - len(submissions)
 
-                processed_through = callback_batch[-1].source_index + 1
+                if submissions:
+                    submit_templates = [pending for pending, _ in submissions]
+                    occurrences = [occurrence for _, occurrence in submissions]
+                    batch_payloads = self._sanitize_dictionary_payloads(
+                        [pending.payload for pending in submit_templates],
+                        failed_dictionary_sources,
+                    )
+                    batch_plan = self._preflight_create_call(batch_payloads)
+                    submitted_media_ids = {id(pending.payload.media) for pending in submit_templates}
+                    needed_card_originals = {
+                        original
+                        for original, refs in prepared_card_media.refs.items()
+                        if any(id(ref.media) in submitted_media_ids for ref in refs)
+                    }
+                    new_card_originals = needed_card_originals - handled_card_originals
+                    selected_card_assets = tuple(
+                        asset
+                        for asset in prepared_card_media.assets
+                        if prepared_card_media.originals_by_id[asset.asset_id] in new_card_originals
+                    )
+                    selected_card_asset_ids = {asset.asset_id for asset in selected_card_assets}
+                    selected_card_media = _PreparedCardMedia(
+                        selected_card_assets,
+                        {
+                            asset_id: original
+                            for asset_id, original in prepared_card_media.originals_by_id.items()
+                            if asset_id in selected_card_asset_ids
+                        },
+                        {original: prepared_card_media.refs[original] for original in new_card_originals},
+                    )
+                    stored_card_batch = self._store_prepared_card_media(selected_card_media)
+                    handled_card_originals.update(new_card_originals)
+                    stored_card_filenames.update(stored_card_batch.filenames)
+                    for identity, bindings in stored_card_batch.bindings_by_media_identity.items():
+                        existing = card_bindings_by_media_identity.get(identity, ())
+                        card_bindings_by_media_identity[identity] = (
+                            *existing,
+                            *(
+                                binding
+                                for binding in bindings
+                                if all(prior.asset_id != binding.asset_id for prior in existing)
+                            ),
+                        )
+
+                    needed_dictionary_sources = set(batch_plan.dictionary_media_sources)
+                    new_dictionary_sources = needed_dictionary_sources - handled_dictionary_sources
+                    selected_dictionary_sources_by_id = {
+                        asset_id: source
+                        for asset_id, source in prepared_dictionary_media.sources_by_id.items()
+                        if source in new_dictionary_sources
+                    }
+                    selected_dictionary_asset_ids = set(selected_dictionary_sources_by_id)
+                    selected_dictionary_media = _PreparedDictionaryMedia(
+                        tuple(
+                            asset
+                            for asset in prepared_dictionary_media.assets
+                            if asset.asset_id in selected_dictionary_asset_ids
+                        ),
+                        selected_dictionary_sources_by_id,
+                        frozenset(prepared_dictionary_media.confirmed_missing_sources & new_dictionary_sources),
+                        frozenset(prepared_dictionary_media.unavailable_sources & new_dictionary_sources),
+                    )
+                    stored_dictionary_batch = self._store_prepared_dictionary_media(
+                        batch_payloads,
+                        selected_dictionary_media,
+                    )
+                    handled_dictionary_sources.update(new_dictionary_sources)
+                    failed_dictionary_sources.update(stored_dictionary_batch.failed_sources)
+
+                    submit_notes: list[_PendingNote] = []
+                    identity_changed = False
+                    for template, item in zip(
+                        submit_templates,
+                        stored_dictionary_batch.payloads,
+                        strict=True,
+                    ):
+                        built = build_note(
+                            item,
+                            self.config,
+                            stored_card_filenames,
+                        )
+                        if built.used_precomputed_bold:
+                            bold_used += 1
+                        if built.used_bold_fallback:
+                            bold_fallback += 1
+                        pending = self._prepare_note(
+                            item,
+                            built.note,
+                            template.source_index,
+                            card_media_bindings=(
+                                card_bindings_by_media_identity.get(
+                                    id(item.media),
+                                    (),
+                                )
+                            ),
+                        )
+                        if pending.key != template.key or pending.first_field != template.first_field:
+                            identity_changed = True
+                        submit_notes.append(pending)
+
+                    if identity_changed:
+                        # A nonstandard target may put rewritten dictionary
+                        # HTML in its first field. Its provider identity is not
+                        # stable until storage returns the actual filename.
+                        duplicate_probes, baseline_token = self._duplicate_first_fields(
+                            [(pending.key, pending.first_field) for pending in submit_notes]
+                        )
+                        rewritten_submissions = [
+                            (pending, probe.occurrence)
+                            for pending, probe in zip(
+                                submit_notes,
+                                duplicate_probes,
+                                strict=True,
+                            )
+                            if not probe.is_duplicate
+                        ]
+                        skipped_duplicates += len(submit_notes) - len(rewritten_submissions)
+                        submit_notes = [pending for pending, _occurrence in rewritten_submissions]
+                        occurrences = [occurrence for _pending, occurrence in rewritten_submissions]
+
+                    if submit_notes:
+                        note_ids, successful, residual_duplicates, partial_error = self._create_note_batch(
+                            submit_notes,
+                            baseline_token,
+                            occurrences,
+                        )
+                        skipped_duplicates += residual_duplicates
+                        repeated_created_ids = set(all_created_ids).intersection(
+                            note_id for note_id in note_ids if note_id is not None
+                        )
+                        if repeated_created_ids:
+                            self._callbacks.mark_response_failure()
+                            _protocol_error(
+                                "invalid_anki_response",
+                                "createNotes reused a note ID from an earlier batch",
+                            )
+                        total_created += sum(successful)
+                        all_created_ids.extend(note_id for note_id in note_ids if note_id is not None)
+                        created_first_fields.extend(
+                            pending.first_field
+                            for pending, was_successful in zip(
+                                submit_notes,
+                                successful,
+                                strict=True,
+                            )
+                            if was_successful
+                        )
+                        if partial_error is not None:
+                            _raise_callback_error(partial_error)
+
+                processed_through = original_batch[-1].source_index + 1
                 while progress_callback and progress_reported + _BATCH_SIZE <= processed_through:
                     progress_reported += _BATCH_SIZE
                     progress_callback.on_progress(

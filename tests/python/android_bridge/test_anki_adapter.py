@@ -2065,6 +2065,76 @@ def test_repeated_expressions_in_one_batch_follow_desktop_duplicate_mode(
         assert scope["occurrences"] == [0, 0, 0]
 
 
+def test_outgoing_duplicate_media_is_not_stored(
+    initialized_bridge_home: Path,
+    tmp_path: Path,
+) -> None:
+    from anki_miner.models import MediaData
+
+    duplicate_audio = tmp_path / "duplicate.opus"
+    duplicate_audio.write_bytes(b"duplicate audio")
+    kotlin = FakeKotlinAnki()
+    adapter = _adapter(_config(initialized_bridge_home), kotlin)
+
+    created_ids = adapter.create_cards_batch(
+        [
+            _card("猫"),
+            _card(
+                "猫",
+                media=MediaData(
+                    audio_path=duplicate_audio,
+                    audio_filename=duplicate_audio.name,
+                ),
+            ),
+        ]
+    )
+
+    assert len(created_ids) == 1
+    assert adapter.last_skipped_duplicates == 1
+    assert kotlin.requests_for("ankiStoreMedia") == []
+
+
+def test_vocab_timeout_provider_duplicate_media_is_not_stored(
+    initialized_bridge_home: Path,
+    tmp_path: Path,
+) -> None:
+    from anki_miner.models import MediaData
+
+    audio = tmp_path / "provider-duplicate.opus"
+    audio.write_bytes(b"duplicate audio")
+    dictionary_path = initialized_bridge_home / "dicts" / "dict" / "media" / "duplicate.png"
+    dictionary_path.parent.mkdir(parents=True, exist_ok=True)
+    dictionary_path.write_bytes(b"png")
+    definition = '<img class="anki-miner-dict-media" src="dict__duplicate.png">'
+    kotlin = FakeKotlinAnki()
+    kotlin.duplicate_fields = ["猫"]
+    adapter = _adapter(_config(initialized_bridge_home), kotlin)
+    kotlin.errors["scanFirstFields"] = (
+        "timeout",
+        "known-vocabulary scan timed out",
+        True,
+    )
+    assert adapter.get_existing_vocabulary() == set()
+    del kotlin.errors["scanFirstFields"]
+
+    created_ids = adapter.create_cards_batch(
+        [
+            _card(
+                "猫",
+                definition=definition,
+                media=MediaData(
+                    audio_path=audio,
+                    audio_filename=audio.name,
+                ),
+            )
+        ]
+    )
+
+    assert created_ids == []
+    assert adapter.last_skipped_duplicates == 1
+    assert kotlin.requests_for("ankiStoreMedia") == []
+
+
 def test_allow_duplicate_cards_fans_existing_target_hit_to_repeated_candidates(
     initialized_bridge_home: Path,
 ) -> None:
