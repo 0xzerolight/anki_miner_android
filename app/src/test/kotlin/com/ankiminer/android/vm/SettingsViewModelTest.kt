@@ -823,6 +823,8 @@ class SettingsViewModelTest {
 
         override suspend fun confirmKnownWordsImport() = Unit
 
+        override suspend fun retryKnownWordsFailure() = Unit
+
         override fun dismissKnownWordsImportPreview() = Unit
 
         override suspend fun searchKnownWords(query: String, loadMore: Boolean) = Unit

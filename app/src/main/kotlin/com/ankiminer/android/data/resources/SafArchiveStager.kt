@@ -2,6 +2,8 @@ package com.ankiminer.android.data.resources
 
 import android.content.ContentResolver
 import android.net.Uri
+import android.os.CancellationSignal
+import android.os.ParcelFileDescriptor
 import java.io.File
 import java.io.FileOutputStream
 import java.io.OutputStream
@@ -21,6 +23,13 @@ internal interface ResourceArchiveStager {
 
 internal fun interface ResourceDocumentWriter {
     fun open(uri: String): OutputStream?
+
+    fun open(
+        uri: String,
+        cancellationSignal: CancellationSignal,
+    ): OutputStream? = open(uri)
+
+    fun delete(uri: String): Boolean = false
 }
 
 internal class AndroidResourceDocumentWriter(
@@ -28,6 +37,17 @@ internal class AndroidResourceDocumentWriter(
 ) : ResourceDocumentWriter {
     override fun open(uri: String): OutputStream? =
         resolver.openOutputStream(Uri.parse(uri), "wt")
+
+    override fun open(
+        uri: String,
+        cancellationSignal: CancellationSignal,
+    ): OutputStream? =
+        resolver
+            .openFileDescriptor(Uri.parse(uri), "wt", cancellationSignal)
+            ?.let(ParcelFileDescriptor::AutoCloseOutputStream)
+
+    override fun delete(uri: String): Boolean =
+        resolver.delete(Uri.parse(uri), null, null) > 0
 }
 
 internal class SafArchiveStager(

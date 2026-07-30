@@ -18,6 +18,7 @@ import com.ankiminer.android.data.resources.ResourceManager
 import com.ankiminer.android.data.resources.ResourceFailureOrigin
 import com.ankiminer.android.data.resources.ResourceStartupReadiness
 import com.ankiminer.android.data.resources.FrequencySourceFormat
+import com.ankiminer.android.data.resources.KnownWordsFailureOperation
 import com.ankiminer.android.data.resources.KnownWordsResetScope
 import com.ankiminer.android.data.resources.KnownWordsSourceFormat
 import com.ankiminer.android.data.resources.WordListKind
@@ -103,6 +104,7 @@ internal class SetupViewModel(
                 resourceStartup = resourceState.startupReadiness,
                 anki = admission.anki,
                 ankiRecovery = admission.ankiRecovery,
+                miningTarget = admission.target,
                 notifications = admission.notifications,
                 noteTypeStatus = ankiState.noteTypeStatus,
                 availableNoteTypes = ankiState.availableNoteTypes,
@@ -614,7 +616,15 @@ internal class SetupViewModel(
     fun retryResourceFailure() {
         val state = uiState.value
         val failure = state.failure ?: return
-        if (state.busy) return
+        if (
+            state.busy &&
+                !(
+                    failure.origin == ResourceFailureOrigin.SETUP &&
+                        state.resourceStartup == ResourceStartupReadiness.FAILED
+                )
+        ) {
+            return
+        }
         when (failure.origin) {
             ResourceFailureOrigin.SETUP -> refresh()
             ResourceFailureOrigin.UNIDIC ->
@@ -629,7 +639,15 @@ internal class SetupViewModel(
                 }
             }
             ResourceFailureOrigin.DICTIONARY_LOOKUP -> lookup()
-            ResourceFailureOrigin.KNOWN_WORDS -> searchKnownWords()
+            ResourceFailureOrigin.KNOWN_WORDS ->
+                when (failure.knownWordsOperation) {
+                    KnownWordsFailureOperation.IMPORT,
+                    null,
+                    -> viewModelScope.launch { resources.retryKnownWordsFailure() }
+                    KnownWordsFailureOperation.PREVIEW,
+                    KnownWordsFailureOperation.EXPORT,
+                    -> searchKnownWords()
+                }
             // Both offer a file picker instead, which only the composable can open.
             ResourceFailureOrigin.CUSTOM_DICTIONARY,
             ResourceFailureOrigin.PITCH,

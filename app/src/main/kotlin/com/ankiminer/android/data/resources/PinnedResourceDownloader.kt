@@ -1,5 +1,8 @@
 package com.ankiminer.android.data.resources
 
+import com.ankiminer.android.media.ProviderIoCancellation
+import com.ankiminer.android.media.ProviderIoCancellationController
+import com.ankiminer.android.media.ProviderIoCancellationRegistration
 import java.io.BufferedInputStream
 import java.io.File
 import java.io.FileInputStream
@@ -10,19 +13,22 @@ import java.net.URI
 import java.net.URL
 import java.nio.file.Files
 import java.security.MessageDigest
-import java.util.concurrent.atomic.AtomicBoolean
 
-internal class ResourceCancellationSignal {
-    private val cancelled = AtomicBoolean(false)
+internal class ResourceCancellationSignal : ProviderIoCancellation {
+    private val cancellation = ProviderIoCancellationController()
 
     fun cancel() {
-        cancelled.set(true)
+        cancellation.cancel()
     }
 
-    fun isCancelled(): Boolean = cancelled.get()
+    override fun isCancelled(): Boolean = cancellation.isCancelled()
+
+    override fun invokeOnCancellation(
+        listener: () -> Unit,
+    ): ProviderIoCancellationRegistration = cancellation.invokeOnCancellation(listener)
 
     fun check() {
-        if (cancelled.get()) {
+        if (cancellation.isCancelled()) {
             throw ResourceDownloadException("resource_operation_cancelled", "Resource operation was cancelled")
         }
     }

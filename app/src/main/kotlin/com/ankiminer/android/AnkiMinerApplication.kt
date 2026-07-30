@@ -64,6 +64,9 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
+import kotlin.coroutines.suspendCoroutine
 
 /**
  * Single production composition boundary for video and reading runs.
@@ -84,6 +87,16 @@ internal suspend fun ResourceManager.snapshotProductionSettings(
         blacklistPath = wordListPath(WordListKind.BLACKLIST),
         whitelistPath = wordListPath(WordListKind.WHITELIST),
     )
+
+internal suspend fun runStartupRecoverySequence(
+    recoverResources: suspend () -> Unit,
+    refreshSetup: suspend () -> Unit,
+    refreshAdmission: suspend () -> Unit,
+) {
+    recoverResources()
+    refreshSetup()
+    refreshAdmission()
+}
 
 class AnkiMinerApplication : Application() {
     internal val stringResourceResolver by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
@@ -331,13 +344,19 @@ class AnkiMinerApplication : Application() {
         // releases that lease, otherwise two independently scheduled startup tasks can make the
         // required resource inventory fail with a synthetic busy error.
         applicationScope.launch {
-            resourceManager.recoverAndRefresh()
-            refreshAnkiSetup()
-            refreshMiningAdmission()
+            runStartupRecoverySequence(
+                recoverResources = resourceManager::recoverAndRefresh,
+                refreshSetup = ::refreshAnkiSetupAndAwait,
+                refreshAdmission = ::refreshMiningAdmissionAndAwait,
+            )
         }
     }
 
     internal fun refreshMiningAdmission() {
+        applicationScope.launch { refreshMiningAdmissionAndAwait() }
+    }
+
+    private suspend fun refreshMiningAdmissionAndAwait() {
         val resources = resourceManager.state.value
         if (
             resources.startupReadiness != ResourceStartupReadiness.READY ||
@@ -345,10 +364,10 @@ class AnkiMinerApplication : Application() {
         ) {
             return
         }
-        miningControlExecutor.execute {
+        runOnExecutor(miningControlExecutor) {
             val lease =
                 runtimeWorkCoordinator.tryAcquire(RuntimeWorkCoordinator.Kind.MINING)
-                    ?: return@execute
+                    ?: return@runOnExecutor
             try {
                 miningAdmissionGate.evaluate(CoordinatorAnkiCancellation())
             } catch (_: Exception) {
@@ -361,19 +380,34 @@ class AnkiMinerApplication : Application() {
 
     /** Refresh process-owned state which may change while an external Android UI is visible. */
     internal fun refreshExternalReadiness() {
-        refreshAnkiSetup()
-        refreshMiningAdmission()
+        applicationScope.launch {
+            refreshAnkiSetupAndAwait()
+            refreshMiningAdmissionAndAwait()
+        }
     }
 
     /**
      * Re-verify the user-selected note type against the currently persisted settings. The DataStore
-     * read and the verify are scheduled on the setup executor, so callers on the main thread
-     * (onResume, permission return) never block on I/O.
+     * read runs in application scope; provider verification runs on the setup executor and is
+     * awaited so admission cannot publish against an older remediation inventory.
      */
-    private fun refreshAnkiSetup() {
-        ankiSetupExecutor.execute {
-            val settings = runBlocking { settingsRepository.settings.first() }
-            ankiSetupManager.refresh(settings.noteType, settings.fieldMap)
+    private suspend fun refreshAnkiSetupAndAwait() {
+        val settings = settingsRepository.settings.first()
+        ankiSetupManager.refreshAndAwait(settings.noteType, settings.fieldMap)
+    }
+
+    private suspend fun <T> runOnExecutor(
+        executor: java.util.concurrent.Executor,
+        block: () -> T,
+    ): T =
+        suspendCoroutine { continuation ->
+            executor.execute {
+                try {
+                    continuation.resume(block())
+                } catch (failure: Throwable) {
+                    continuation.resumeWithException(failure)
+                }
+            }
         }
     }
 

@@ -56,6 +56,7 @@ internal data class KnownWordsManagerCallbacks(
     val onImport: () -> Unit = {},
     val onExport: () -> Unit = {},
     val onReset: (KnownWordsResetScope) -> Unit = {},
+    val onRetry: () -> Unit = {},
     val onDismissFailure: () -> Unit = {},
 )
 
@@ -87,6 +88,7 @@ internal fun KnownWordsManagerRoute(
                 onImport = { importPicker.launch(KNOWN_WORDS_MIME_TYPES) },
                 onExport = { exportPicker.launch("known_words.txt") },
                 onReset = setupViewModel::resetKnownWords,
+                onRetry = setupViewModel::retryResourceFailure,
                 onDismissFailure = setupViewModel::dismissFailure,
             ),
         modifier = modifier,
@@ -189,7 +191,7 @@ internal fun KnownWordsManagerScreen(
                             when (knownWordsFailureTarget(failure)) {
                                 KnownWordsFailureTarget.IMPORT -> callbacks.onImport
                                 KnownWordsFailureTarget.EXPORT -> callbacks.onExport
-                                null -> callbacks.onSearch
+                                null -> callbacks.onRetry
                             },
                         onDismiss = callbacks.onDismissFailure,
                     )
