@@ -19,6 +19,10 @@ import com.ankiminer.android.data.resources.SafArchiveStager
 import com.ankiminer.android.data.resources.WordListKind
 import com.ankiminer.android.data.settings.AppSettingsRepository
 import com.ankiminer.android.data.settings.DataStoreAppSettingsRepository
+import com.ankiminer.android.diagnostics.log.AppLog
+import com.ankiminer.android.diagnostics.log.CompositeSink
+import com.ankiminer.android.diagnostics.log.FileLogSink
+import com.ankiminer.android.diagnostics.log.LogcatSink
 import com.ankiminer.android.engine.ChaquopyPyBridge
 import com.ankiminer.android.engine.ChaquopyPythonRuntime
 import com.ankiminer.android.engine.PythonRuntimeReadiness
@@ -288,6 +292,13 @@ class AnkiMinerApplication : Application() {
         // Load-bearing ordering: this is the first task submitted to the process Python executor.
         // It starts Chaquopy and establishes ANKI_MINER_HOME before any engine import.
         pythonRuntime.enqueueFirst(miningRunExecutor)
+        // Installed after the bootstrap is enqueued, not before: opening the log file is I/O and
+        // this is the main thread. Nothing is lost — install() replays the pre-install buffer, and
+        // that buffer is the only place a Python startup failure can be recorded, because the
+        // engine's own file handler is created inside bootstrap.initialize.
+        AppLog.install(
+            CompositeSink(LogcatSink(), FileLogSink(filesDir, scope = applicationScope)),
+        )
         miningRunExecutor.execute {
             try {
                 SafInputCacheJanitor(this).removeOrphans()

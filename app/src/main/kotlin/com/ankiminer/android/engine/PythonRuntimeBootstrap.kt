@@ -1,5 +1,7 @@
 package com.ankiminer.android.engine
 
+import com.ankiminer.android.diagnostics.log.AppLog
+import com.ankiminer.android.diagnostics.log.LogComponent
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.Executor
@@ -43,12 +45,17 @@ internal class PythonRuntimeBootstrapGate<T>(
                     completion.complete(runtime)
                     mutableReadiness.value = PythonRuntimeReadiness.Ready(homeOf(runtime))
                 } catch (failure: Throwable) {
+                    // The readiness state carries no payload, so this record is the only account of
+                    // why the engine never came up — and Python's own log handler does not exist
+                    // yet at this point.
+                    AppLog.e(LogComponent.BOOTSTRAP, "python.initialize", failure)
                     mutableReadiness.value = PythonRuntimeReadiness.Failed
                     completion.completeExceptionally(failure)
                     if (failure is Error) throw failure
                 }
             }
         } catch (failure: RuntimeException) {
+            AppLog.e(LogComponent.BOOTSTRAP, "python.enqueue", failure)
             mutableReadiness.value = PythonRuntimeReadiness.Failed
             completion.completeExceptionally(failure)
             throw failure

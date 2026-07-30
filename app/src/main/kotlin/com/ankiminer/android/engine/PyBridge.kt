@@ -2,6 +2,8 @@ package com.ankiminer.android.engine
 
 import android.content.Context
 import android.os.Looper
+import com.ankiminer.android.diagnostics.log.AppLog
+import com.ankiminer.android.diagnostics.log.LogComponent
 import com.chaquo.python.PyObject
 import com.chaquo.python.Python
 import com.chaquo.python.android.AndroidPlatform
@@ -42,9 +44,15 @@ internal class ChaquopyPythonRuntime(
         }
 
     private fun initialize(): Runtime {
+        val startedNanos = System.nanoTime()
         if (!Python.isStarted()) {
             Python.start(AndroidPlatform(applicationContext))
         }
+        AppLog.i(
+            LogComponent.BOOTSTRAP,
+            "python.start",
+            "ms" to (System.nanoTime() - startedNanos) / 1_000_000L,
+        )
         val requestedHome = filesDir.canonicalPath
         val boundary = Python.getInstance().getModule("android_bridge.boundary")
         val bootstrapRequest = BridgeJsonCodec.encodeBootstrapInitialize(requestedHome)
@@ -53,9 +61,21 @@ internal class ChaquopyPythonRuntime(
                 .callAttr("dispatch", bootstrapRequest)
                 .toJava(String::class.java)
         val ready = BridgeJsonCodec.decode(rawReady)
+        // ANKI_MINER_HOME freezes at import, so a mismatch here means every later path resolves
+        // somewhere else. The check message cannot name the two homes; this record can.
+        if (ready !is BridgeMessage.BootstrapReady || ready.home != requestedHome) {
+            AppLog.e(
+                LogComponent.BOOTSTRAP,
+                "python.home",
+                null,
+                "requested" to requestedHome,
+                "confirmed" to (ready as? BridgeMessage.BootstrapReady)?.home,
+            )
+        }
         check(ready is BridgeMessage.BootstrapReady && ready.home == requestedHome) {
             "Python bootstrap did not confirm the requested engine home"
         }
+        AppLog.i(LogComponent.BOOTSTRAP, "python.home", "home" to requestedHome)
         return Runtime(requestedHome, boundary)
     }
 

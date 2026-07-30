@@ -8,9 +8,9 @@ import java.time.Instant
  * It is an object rather than an injected collaborator because the call sites are ~60 files deep,
  * including provider and codec code where a logger parameter would be a large mechanical diff for no
  * benefit; testability comes from the swappable [LogSink]. It is also the reason no code outside
- * [LogcatSink] touches `android.util.Log`: the unit test build has neither Robolectric nor
- * `returnDefaultValues`, so a direct `Log` call from a tested class throws
- * "Method d in android.util.Log not mocked" and reddens the whole suite.
+ * [LogcatSink] touches the platform logger: the unit test build has neither Robolectric nor
+ * `returnDefaultValues`, so a direct platform call from a tested class throws
+ * "Method d in ... not mocked" and reddens the whole suite.
  *
  * Until [install] runs, records accumulate in a [PreInstallBufferSink]; that buffer is the only
  * possible record of a failure during Python bootstrap, which happens before the engine's own file
