@@ -763,7 +763,7 @@ class BridgeReadingMiningRepositoryTest {
         ReadingSourceStager(
             stagingRoot = root,
             inputOpener =
-                ReadingSourceInputOpener { document ->
+                ReadingSourceInputOpener { document, _ ->
                     openCount.incrementAndGet()
                     ByteArrayInputStream(requireNotNull(inputBytes[document.uri]))
                 },
