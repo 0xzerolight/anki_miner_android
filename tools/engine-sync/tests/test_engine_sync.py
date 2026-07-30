@@ -21,6 +21,8 @@ from engine_sync.core import (
 
 PINNED_MEDIA_EXTRACTOR_BLOB = "7798b8c1733ff59523424ecb6e95d178dc8b8b93"
 PINNED_AUDIO_TRACK_DETECTOR_BLOB = "f785f5b8706e1073f076149dbfb873472446d414"
+PINNED_KNOWN_WORDS_IMPORT_BLOB = "9353f416baec93f6c7e5dd1ed2231110bbe9f20b"
+REVIEWED_KNOWN_WORDS_IMPORT_SHA256 = "8eea3756190b27f78298402d8797b3d8d6872a3a9c6a30016e0165b70b98c88d"
 REVIEWED_MEDIA_EXTRACTOR_SHA256 = (
     "434683f5d211754f8afd6945bf5966323112a3e489a85dd553cff155bd428eb8"
 )
@@ -623,7 +625,20 @@ target = "anki_miner.services.youtube_fetcher"
         )
         path = "anki_miner/services/known_words_import.py"
         self.assertIn("anki_miner.services.known_words_import", manifest["modules"])
-        self.assertEqual("desktop", manifest["files"][path]["origin"])
+        self.assertEqual("overlay", manifest["files"][path]["origin"])
+        self.assertEqual(
+            PINNED_KNOWN_WORDS_IMPORT_BLOB,
+            composition["overlay_base_blobs"][path],
+        )
+        override = (
+            project_root / "tools/engine-sync/overrides" / path
+        ).read_bytes()
+        generated = (project_root / "app/src/main/python" / path).read_bytes()
+        self.assertEqual(
+            REVIEWED_KNOWN_WORDS_IMPORT_SHA256,
+            hashlib.sha256(override).hexdigest(),
+        )
+        self.assertEqual(override, generated)
 
     def test_reading_image_limits_are_applied_before_every_decode(self) -> None:
         project_root = Path(__file__).resolve().parents[3]

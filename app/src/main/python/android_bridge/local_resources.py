@@ -48,6 +48,8 @@ _MAX_KNOWN_WORD_MUTATION = 256
 _KNOWN_WORD_EXPORT_LIMIT = 512 * 1024 * 1024
 _KNOWN_WORD_LINE_SEPARATORS = frozenset("\n\r\v\f\x1c\x1d\x1e\x85\u2028\u2029")
 _ANDROID_SIDECAR = "android-resource.json"
+_LEGACY_PITCH_SOURCE_ID = "legacy-pitch"
+_LEGACY_PITCH_SOURCE_NAME = "Pitch Accent"
 
 
 def _fail(code: str, message: str) -> BridgeProtocolError:
@@ -305,14 +307,28 @@ def import_frequency(payload: Mapping[str, object]) -> str:
                 operation,
                 maximum_bytes=maximum,
             )
+            import_source = copied.path
             if source_format == "zip":
-                core._validate_zip_streamed(
+                identity = core._validate_zip_streamed(
                     copied.path,
                     operation,
                     member_limit=None,
                     total_limit=core._engine_uncompressed_limit(),
                     file_limit=None,
                     require_root_index=False,
+                )
+                core._check_free_space(
+                    operation_root,
+                    core._yomitan_import_peak_bytes(
+                        identity,
+                        copied.size_bytes,
+                        intermediate_csv=True,
+                    ),
+                )
+                import_source = core._rewrite_yomitan_banks(
+                    copied.path,
+                    operation_root / "streamed-frequency.zip",
+                    operation,
                 )
             operation.check()
             from anki_miner.exceptions import SetupError
@@ -323,20 +339,23 @@ def import_frequency(payload: Mapping[str, object]) -> str:
             import_root = operation_root / "publication"
             try:
                 result = import_frequency_source(
-                    copied.path,
+                    import_source,
                     import_root,
                     source_id=source_id,
                     source_name=source_name,
                     cancel_check=operation.cancelled.is_set,
                 )
-            except (SetupError, UnicodeError, csv.Error, OSError) as exc:
+            except (SetupError, UnicodeError, csv.Error, OSError, sqlite3.Error) as exc:
                 operation.check()
+                core._raise_if_storage_exhausted(exc)
                 raise _fail(
                     "frequency_import_failed",
                     "The selected file is not a supported frequency source",
                 ) from exc
             operation.check()
             candidate = import_root / source_id
+            if source_format == "zip":
+                core._restore_original_yomitan_zip(candidate, copied)
             _write_sidecar(
                 candidate / _ANDROID_SIDECAR,
                 {
@@ -420,14 +439,28 @@ def import_pitch(payload: Mapping[str, object]) -> str:
                 operation,
                 maximum_bytes=maximum,
             )
+            import_source = copied.path
             if source_format == "zip":
-                core._validate_zip_streamed(
+                identity = core._validate_zip_streamed(
                     copied.path,
                     operation,
                     member_limit=None,
                     total_limit=core._engine_uncompressed_limit(),
                     file_limit=None,
                     require_root_index=False,
+                )
+                core._check_free_space(
+                    operation_root,
+                    core._yomitan_import_peak_bytes(
+                        identity,
+                        copied.size_bytes,
+                        intermediate_csv=True,
+                    ),
+                )
+                import_source = core._rewrite_yomitan_banks(
+                    copied.path,
+                    operation_root / "streamed-pitch.zip",
+                    operation,
                 )
             operation.check()
             from anki_miner.exceptions import SetupError
@@ -438,20 +471,23 @@ def import_pitch(payload: Mapping[str, object]) -> str:
             import_root = operation_root / "publication"
             try:
                 result = import_pitch_source(
-                    copied.path,
+                    import_source,
                     import_root,
                     source_id=source_id,
                     source_name=requested_name,
                     cancel_check=operation.cancelled.is_set,
                 )
-            except (SetupError, UnicodeError, csv.Error, OSError) as exc:
+            except (SetupError, UnicodeError, csv.Error, OSError, sqlite3.Error) as exc:
                 operation.check()
+                core._raise_if_storage_exhausted(exc)
                 raise _fail(
                     "pitch_import_failed",
                     "The selected file is not supported pitch-accent data",
                 ) from exc
             operation.check()
             candidate = import_root / source_id
+            if source_format == "zip":
+                core._restore_original_yomitan_zip(candidate, copied)
             _write_sidecar(
                 candidate / _ANDROID_SIDECAR,
                 {
@@ -575,7 +611,10 @@ def _extract_audio_zip(path: Path, destination: Path, operation: core._Operation
                 raise _fail("invalid_resource_archive", "Audio pack length is inconsistent")
     except BridgeProtocolError:
         raise
-    except (zipfile.BadZipFile, RuntimeError, OSError, EOFError) as exc:
+    except OSError as exc:
+        core._raise_if_storage_exhausted(exc)
+        raise _fail("resource_install_failed", "Cannot extract audio pack") from exc
+    except (zipfile.BadZipFile, RuntimeError, EOFError) as exc:
         raise _fail("invalid_resource_archive", "Audio pack archive is corrupt") from exc
 
 
@@ -763,8 +802,14 @@ def _parse_known_words_copy(source: Path, source_format: str, operation: object,
     )
 
     try:
-        parsed = parse_known_words_file(copied.path)
+        parsed = parse_known_words_file(
+            copied.path,
+            max_words=_MAX_KNOWN_WORDS,
+            max_word_bytes=_MAX_WORD_BYTES,
+            cancel_check=operation.cancelled.is_set,
+        )
     except KnownWordsImportError as exc:
+        operation.check()
         raise _fail(
             "known_words_import_failed",
             "The selected file contains no supported known-word export",
@@ -1010,10 +1055,98 @@ def export_known_words(payload: Mapping[str, object]) -> str:
             raise
 
 
+def _invalid_pitch_inventory_entry(source_id: str) -> dict[str, object]:
+    return {
+        "sourceId": source_id,
+        "sourceName": source_id,
+        "sourceRevision": "",
+        "format": "unknown",
+        "entryCount": 0,
+        "schemaOk": False,
+        "schemaVersion": 0,
+    }
+
+
+def _migrate_legacy_pitch_csv(home: Path) -> None:
+    """Publish v0.1.8's single pitch CSV as desktop's legacy source.
+
+    Desktop ``legacy_migration.py`` leaves the source in place for downgrade
+    safety and uses the stable ``legacy-pitch`` identity. Android mirrors that
+    contract while routing publication through its crash-recoverable slot swap.
+    Invalid legacy data remains untouched and is surfaced by inventory.
+    """
+
+    legacy = home / "pitch_accent.csv"
+    final = _pitch_root(home) / _LEGACY_PITCH_SOURCE_ID
+    if _valid_indexed_dir(final, require_content=False):
+        return
+    try:
+        if legacy.is_symlink() or not legacy.is_file():
+            return
+    except OSError:
+        return
+
+    operation_id = "legacy-pitch-migration"
+    operation_root = _work_root(home, operation_id)
+    operation = core._Operation(operation_id)
+    try:
+        core._safe_rmtree(operation_root)
+        operation_root.mkdir(parents=True)
+        archive = core._hash_archive(
+            legacy,
+            operation,
+            maximum_bytes=_PITCH_TEXT_LIMIT,
+        )
+        from anki_miner.services.pitch_accent.source_importer import (
+            import_pitch_source,
+        )
+
+        import_root = operation_root / "publication"
+        import_pitch_source(
+            legacy,
+            import_root,
+            source_id=_LEGACY_PITCH_SOURCE_ID,
+            source_name=_LEGACY_PITCH_SOURCE_NAME,
+        )
+        candidate = import_root / _LEGACY_PITCH_SOURCE_ID
+        _write_sidecar(
+            candidate / _ANDROID_SIDECAR,
+            {
+                "schemaVersion": 1,
+                "kind": "pitch",
+                "sourceId": _LEGACY_PITCH_SOURCE_ID,
+                "archiveSha256": archive.sha256,
+                "archiveSizeBytes": archive.size_bytes,
+            },
+        )
+        _fsync_small_tree(candidate)
+        _publish_indexed_dir(
+            candidate,
+            home=home,
+            kind="pitch",
+            identity=_LEGACY_PITCH_SOURCE_ID,
+            operation_id=operation_id,
+            overwrite=True,
+            final_root=_pitch_root(home),
+            require_content=False,
+        )
+    except Exception:
+        # Desktop intentionally treats a malformed legacy file as a non-fatal
+        # startup condition. Inventory below makes the failed migration visible.
+        pass
+    finally:
+        if operation_root.exists():
+            with contextlib.suppress(Exception):
+                core._safe_rmtree(operation_root)
+
+
 def _pitch_inventory(home: Path) -> list[dict[str, object]]:
+    _migrate_legacy_pitch_csv(home)
+    legacy = home / "pitch_accent.csv"
+    legacy_occupied = legacy.exists() or legacy.is_symlink()
     root = _pitch_root(home)
     if not root.exists():
-        return []
+        return [_invalid_pitch_inventory_entry(_LEGACY_PITCH_SOURCE_ID)] if legacy_occupied else []
     if root.is_symlink() or not root.is_dir():
         raise _fail("resource_inventory_failed", "Pitch resource root is unsafe")
     result: list[dict[str, object]] = []
@@ -1027,6 +1160,7 @@ def _pitch_inventory(home: Path) -> list[dict[str, object]]:
             continue
         meta = _read_index_meta(child)
         if meta is None:
+            result.append(_invalid_pitch_inventory_entry(child.name))
             continue
         try:
             version = int(meta.get("schema_version", "0"))
@@ -1047,6 +1181,9 @@ def _pitch_inventory(home: Path) -> list[dict[str, object]]:
                 "schemaVersion": max(version, 0),
             }
         )
+    if legacy_occupied and not any(item["sourceId"] == _LEGACY_PITCH_SOURCE_ID for item in result):
+        result.append(_invalid_pitch_inventory_entry(_LEGACY_PITCH_SOURCE_ID))
+    result.sort(key=lambda item: str(item["sourceId"]))
     return result
 
 

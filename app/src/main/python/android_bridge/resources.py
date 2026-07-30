@@ -8,7 +8,9 @@ output.
 
 from __future__ import annotations
 
+import codecs
 import contextlib
+import errno
 import hashlib
 import json
 import os
@@ -16,6 +18,7 @@ import re
 import shutil
 import sqlite3
 import stat
+import struct
 import tarfile
 import threading
 import zipfile
@@ -39,6 +42,12 @@ _MANIFEST_NAME = "install.manifest.json"
 _COMPATIBILITY_MARKER_NAME = "install.complete"
 _MAX_MANIFEST_BYTES = 16 * 1024
 _MAX_CUSTOM_DICTIONARY_ARCHIVE_BYTES = 1024 * 1024 * 1024
+# Anti-DoS backstop for archives whose catalog entry declares no member limit,
+# NOT a product limit: it exists only so a hostile central directory cannot make
+# zipfile materialise an unbounded ZipInfo list. Real Yomitan dictionaries are
+# orders of magnitude below this, including media-bearing ones, so no archive a
+# user can import today is refused by it. A catalog-declared limit still wins.
+_MAX_CUSTOM_ZIP_MEMBERS = 65_536
 _MAX_LOOKUP_HTML_BYTES = 2 * 1024 * 1024
 _MAX_DICTIONARY_SLOTS = 128
 _FREE_SPACE_RESERVE_BYTES = 32 * 1024 * 1024
@@ -47,7 +56,15 @@ _DICTIONARY_SCHEMA_VERSION = 4
 _OPERATION_ID_RE = re.compile(r"[a-z0-9](?:[a-z0-9_-]{0,62}[a-z0-9])?")
 _SLOT_ID_RE = re.compile(r"(?!.*(?:\.\.|--))[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?")
 _SHA256_RE = re.compile(r"[0-9a-f]{64}")
+_YOMITAN_BANK_RE = re.compile(r"^(term_bank|term_meta_bank|tag_bank)_[^/]+\.json$")
 _PROMOTION_LOCK = threading.Lock()
+_YOMITAN_BANK_CHUNK_BYTES = 4 * 1024 * 1024
+_STORAGE_EXHAUSTION_ERRNOS = frozenset(
+    {
+        errno.ENOSPC,
+        getattr(errno, "EDQUOT", errno.ENOSPC),
+    }
+)
 
 
 def _fail(code: str, message: str) -> BridgeProtocolError:
@@ -261,12 +278,47 @@ def _write_all(stream: BinaryIO, content: bytes) -> None:
         view = view[written:]
 
 
+def _is_storage_exhaustion(error: BaseException) -> bool:
+    """Recognize ENOSPC/EDQUOT and SQLite's equivalent through wrapper causes."""
+
+    pending: list[BaseException] = [error]
+    seen: set[int] = set()
+    while pending:
+        current = pending.pop()
+        if id(current) in seen:
+            continue
+        seen.add(id(current))
+        if isinstance(current, OSError) and current.errno in _STORAGE_EXHAUSTION_ERRNOS:
+            return True
+        if isinstance(current, sqlite3.Error) and (
+            getattr(current, "sqlite_errorcode", None) == sqlite3.SQLITE_FULL
+            or "database or disk is full" in str(current).lower()
+        ):
+            return True
+        if current.__cause__ is not None:
+            pending.append(current.__cause__)
+        if current.__context__ is not None:
+            pending.append(current.__context__)
+    return False
+
+
+def _raise_if_storage_exhausted(error: BaseException) -> None:
+    """Map capacity races to stable Python reason ``insufficient_storage``."""
+
+    if _is_storage_exhaustion(error):
+        raise _fail(
+            "insufficient_storage",
+            "Not enough free space for this resource operation",
+        ) from error
+
+
 def _write_file(path: Path, content: bytes) -> None:
     try:
         with path.open("xb", buffering=0) as stream:
             _write_all(stream, content)
             os.fsync(stream.fileno())
     except OSError as exc:
+        _raise_if_storage_exhausted(exc)
         raise _fail("resource_install_failed", "Cannot write resource completion metadata") from exc
 
 
@@ -439,8 +491,9 @@ def _copy_archive(
         destination.chmod(0o400)
         _fsync_directory(destination.parent)
         return _ArchiveCopy(destination, actual_hash, copied)
-    except Exception:
+    except Exception as exc:
         destination.unlink(missing_ok=True)
+        _raise_if_storage_exhausted(exc)
         raise
 
 
@@ -618,7 +671,10 @@ def _extract_unidic(
                         "resource_archive_mismatch",
                         "UniDic member length is inconsistent",
                     )
-    except (tarfile.TarError, EOFError, OSError) as exc:
+    except OSError as exc:
+        _raise_if_storage_exhausted(exc)
+        raise _fail("resource_install_failed", "Cannot extract UniDic archive") from exc
+    except (tarfile.TarError, EOFError) as exc:
         raise _fail("invalid_resource_archive", "UniDic archive is corrupt") from exc
 
     if len(selected) != install.file_count or selected_bytes != install.size_bytes:
@@ -789,12 +845,164 @@ class _ZipIdentity:
     uncompressed_bytes: int
 
 
+def _yomitan_import_peak_bytes(
+    identity: _ZipIdentity,
+    archive_size_bytes: int,
+    *,
+    intermediate_csv: bool,
+) -> int:
+    """Bound additional same-filesystem bytes needed after source copy.
+
+    Bank streaming can produce a stored-size ZIP as large as expanded input.
+    Import then holds that ZIP, its retained copy, extracted files, and a SQLite
+    index whose table+indexes are budgeted at twice expanded input. Frequency
+    and pitch also build one intermediate CSV. Existing installed slots already
+    consume reported free space, so overwrite backups need no second addition.
+    ``_check_free_space`` adds the shared 32 MiB reserve.
+    """
+
+    expanded = identity.uncompressed_bytes
+    streamed_zip_bound = expanded + archive_size_bytes
+    extracted_tree = expanded
+    sqlite_index_bound = expanded * 2
+    csv_bound = expanded if intermediate_csv else 0
+    return streamed_zip_bound * 2 + extracted_tree + sqlite_index_bound + csv_bound
+
+
 def _zip_entry_is_safe_type(info: zipfile.ZipInfo) -> bool:
     if info.is_dir():
         return True
     mode = (info.external_attr >> 16) & 0xFFFF
     file_type = stat.S_IFMT(mode)
     return file_type in {0, stat.S_IFREG}
+
+
+def _read_at(stream: BinaryIO, offset: int, size: int) -> bytes:
+    stream.seek(offset)
+    content = stream.read(size)
+    if len(content) != size:
+        raise _fail("invalid_resource_archive", "Dictionary archive metadata is truncated")
+    return content
+
+
+def _preflight_zip_member_count(path: Path, member_limit: int) -> int:
+    """Read EOCD/ZIP64 counts before ``ZipFile`` allocates one object per entry."""
+
+    try:
+        with _open_source(path) as (stream, source_stat):
+            tail_size = min(source_stat.st_size, 22 + 65_535)
+            tail_offset = source_stat.st_size - tail_size
+            tail = _read_at(stream, tail_offset, tail_size)
+            search_end = len(tail)
+            relative_eocd = -1
+            while search_end:
+                candidate = tail.rfind(b"PK\x05\x06", 0, search_end)
+                if candidate < 0:
+                    break
+                if candidate + 22 <= len(tail):
+                    candidate_comment_size = struct.unpack_from("<H", tail, candidate + 20)[0]
+                    if candidate + 22 + candidate_comment_size == len(tail):
+                        relative_eocd = candidate
+                        break
+                search_end = candidate
+            if relative_eocd < 0:
+                raise _fail(
+                    "invalid_resource_archive",
+                    "Dictionary archive is corrupt (BadZipFile)",
+                )
+            (
+                _signature,
+                disk_number,
+                central_disk,
+                disk_entries,
+                total_entries,
+                central_size,
+                central_offset,
+                comment_size,
+            ) = struct.unpack_from("<4s4H2LH", tail, relative_eocd)
+            if relative_eocd + 22 + comment_size != len(tail):
+                raise _fail("invalid_resource_archive", "Dictionary archive end record is inconsistent")
+            if disk_number != 0 or central_disk != 0 or disk_entries != total_entries:
+                raise _fail("invalid_resource_archive", "Multi-disk dictionary archives are unsupported")
+
+            eocd_offset = tail_offset + relative_eocd
+            central_end = eocd_offset
+            if total_entries == 0xFFFF or central_size == 0xFFFFFFFF or central_offset == 0xFFFFFFFF:
+                if eocd_offset < 20:
+                    raise _fail("invalid_resource_archive", "Dictionary ZIP64 locator is missing")
+                locator = _read_at(stream, eocd_offset - 20, 20)
+                locator_signature, zip64_disk, zip64_offset, zip64_disks = struct.unpack("<4sLQL", locator)
+                if locator_signature != b"PK\x06\x07" or zip64_disk != 0 or zip64_disks != 1:
+                    raise _fail("invalid_resource_archive", "Dictionary ZIP64 locator is invalid")
+                zip64_location = zip64_offset
+                zip64 = _read_at(stream, zip64_location, 56)
+                if not zip64.startswith(b"PK\x06\x06"):
+                    # A self-extracting prefix shifts the physical record while
+                    # the locator retains ZIP-relative offsets.
+                    zip64_location = eocd_offset - 20 - 56
+                    zip64 = _read_at(stream, zip64_location, 56)
+                (
+                    zip64_signature,
+                    record_size,
+                    _created_version,
+                    _required_version,
+                    zip64_disk_number,
+                    zip64_central_disk,
+                    zip64_disk_entries,
+                    zip64_total_entries,
+                    zip64_central_size,
+                    zip64_central_offset,
+                ) = struct.unpack("<4sQ2H2L4Q", zip64)
+                if (
+                    zip64_signature != b"PK\x06\x06"
+                    or record_size != 44
+                    or zip64_disk_number != 0
+                    or zip64_central_disk != 0
+                    or zip64_disk_entries != zip64_total_entries
+                ):
+                    raise _fail("invalid_resource_archive", "Dictionary ZIP64 end record is invalid")
+                total_entries = zip64_total_entries
+                central_size = zip64_central_size
+                central_offset = zip64_central_offset
+                central_end = zip64_location
+
+            if central_size > central_end or central_offset > central_end:
+                raise _fail("invalid_resource_archive", "Dictionary central directory offset is invalid")
+            central_start = central_end - central_size
+            # ``central_offset`` is ZIP-relative for self-extracting archives.
+            if central_start < central_offset:
+                raise _fail("invalid_resource_archive", "Dictionary central directory is inconsistent")
+            position = central_start
+            counted_entries = 0
+            while position < central_end:
+                counted_entries += 1
+                if counted_entries > member_limit:
+                    raise _fail(
+                        "resource_archive_too_large",
+                        "Dictionary archive member count is outside its limit",
+                    )
+                header = _read_at(stream, position, 46)
+                if not header.startswith(b"PK\x01\x02"):
+                    raise _fail("invalid_resource_archive", "Dictionary central directory is corrupt")
+                filename_size, extra_size, entry_comment_size = struct.unpack_from("<3H", header, 28)
+                record_size = 46 + filename_size + extra_size + entry_comment_size
+                position += record_size
+                if position > central_end:
+                    raise _fail("invalid_resource_archive", "Dictionary central directory is truncated")
+            if position != central_end or counted_entries != total_entries:
+                raise _fail("invalid_resource_archive", "Dictionary central directory count is inconsistent")
+            total_entries = counted_entries
+    except BridgeProtocolError:
+        raise
+    except (OSError, struct.error) as exc:
+        raise _fail("invalid_resource_archive", "Dictionary archive metadata is corrupt") from exc
+
+    if total_entries <= 0 or total_entries > member_limit:
+        raise _fail(
+            "resource_archive_too_large",
+            "Dictionary archive member count is outside its limit",
+        )
+    return total_entries
 
 
 def _validate_zip_streamed(
@@ -806,10 +1014,12 @@ def _validate_zip_streamed(
     file_limit: int | None,
     require_root_index: bool,
 ) -> _ZipIdentity:
+    effective_member_limit = member_limit if member_limit is not None else _MAX_CUSTOM_ZIP_MEMBERS
+    declared_member_count = _preflight_zip_member_count(path, effective_member_limit)
     try:
         with zipfile.ZipFile(path, "r") as archive:
             infos = archive.infolist()
-            if not infos or (member_limit is not None and len(infos) > member_limit):
+            if not infos or len(infos) != declared_member_count or len(infos) > effective_member_limit:
                 raise _fail(
                     "resource_archive_too_large",
                     "Dictionary archive member count is outside its limit",
@@ -899,6 +1109,218 @@ def _validate_zip_streamed(
         # structural corruption reaches here. Name the exception class (PII-safe)
         # so a screenshot-only report stays diagnosable.
         raise _fail("invalid_resource_archive", f"Dictionary archive is corrupt ({type(exc).__name__})") from exc
+
+
+def _iter_json_array_stream(
+    stream: BinaryIO,
+    operation: _Operation,
+) -> Iterator[Any]:
+    """Yield one top-level JSON-array item without retaining the whole bank."""
+
+    json_decoder = json.JSONDecoder()
+    utf8_decoder = codecs.getincrementaldecoder("utf-8")()
+    buffer = ""
+    position = 0
+    eof = False
+
+    def fill() -> None:
+        nonlocal buffer, eof
+        if eof:
+            return
+        operation.check()
+        chunk = stream.read(_COPY_CHUNK_BYTES)
+        try:
+            if chunk:
+                buffer += utf8_decoder.decode(chunk)
+            else:
+                buffer += utf8_decoder.decode(b"", final=True)
+                eof = True
+        except UnicodeDecodeError as exc:
+            raise _fail("invalid_resource_archive", "Yomitan bank is not valid UTF-8") from exc
+
+    def skip_whitespace() -> None:
+        nonlocal position
+        while True:
+            while position < len(buffer) and buffer[position].isspace():
+                position += 1
+            if position < len(buffer) or eof:
+                return
+            fill()
+
+    fill()
+    skip_whitespace()
+    if position >= len(buffer) or buffer[position] != "[":
+        raise _fail("invalid_resource_archive", "Yomitan bank must be a JSON array")
+    position += 1
+
+    skip_whitespace()
+    if position < len(buffer) and buffer[position] == "]":
+        position += 1
+    else:
+        while True:
+            if position:
+                buffer = buffer[position:]
+                position = 0
+            while True:
+                try:
+                    item, item_end = json_decoder.raw_decode(buffer)
+                except json.JSONDecodeError as exc:
+                    if eof:
+                        raise _fail("invalid_resource_archive", "Yomitan bank contains invalid JSON") from exc
+                    fill()
+                    continue
+
+                probe = item_end
+                while probe < len(buffer) and buffer[probe].isspace():
+                    probe += 1
+                if probe == len(buffer) and not eof:
+                    fill()
+                    continue
+                if probe >= len(buffer) or buffer[probe] not in {",", "]"}:
+                    raise _fail("invalid_resource_archive", "Yomitan bank contains invalid JSON")
+                delimiter = buffer[probe]
+                position = probe + 1
+                break
+
+            buffer = buffer[position:]
+            position = 0
+            operation.check()
+            yield item
+            if delimiter == "]":
+                break
+            skip_whitespace()
+            if position < len(buffer) and buffer[position] == "]":
+                raise _fail("invalid_resource_archive", "Yomitan bank has a trailing comma")
+
+    while True:
+        while position < len(buffer) and buffer[position].isspace():
+            position += 1
+        if position < len(buffer):
+            raise _fail("invalid_resource_archive", "Yomitan bank has trailing content")
+        if eof:
+            return
+        buffer = ""
+        position = 0
+        fill()
+
+
+def _rewrite_yomitan_banks(
+    source_path: Path,
+    destination_path: Path,
+    operation: _Operation,
+) -> Path:
+    """Split Yomitan JSON arrays into bounded banks before desktop import.
+
+    Desktop semantics stay intact: every decoded entry is re-emitted in order;
+    only bank partitioning changes. This prevents its ``read_text`` +
+    ``json.loads`` path from materializing an entire near-2-GiB bank.
+    """
+
+    destination_path.unlink(missing_ok=True)
+    encoded = json.JSONEncoder(ensure_ascii=False, separators=(",", ":"))
+    try:
+        with (
+            zipfile.ZipFile(source_path, "r") as source,
+            zipfile.ZipFile(
+                destination_path,
+                "x",
+                compression=zipfile.ZIP_DEFLATED,
+                allowZip64=True,
+            ) as destination,
+        ):
+            infos = source.infolist()
+            banks: dict[str, list[zipfile.ZipInfo]] = {
+                "term_bank": [],
+                "term_meta_bank": [],
+                "tag_bank": [],
+            }
+            written_members = 0
+
+            def count_member() -> None:
+                nonlocal written_members
+                written_members += 1
+                if written_members > _MAX_CUSTOM_ZIP_MEMBERS:
+                    raise _fail(
+                        "resource_archive_too_large",
+                        "Streamed dictionary archive has too many bank chunks",
+                    )
+
+            for info in infos:
+                operation.check()
+                match = _YOMITAN_BANK_RE.fullmatch(info.filename)
+                if match and not info.is_dir():
+                    banks[match.group(1)].append(info)
+                    continue
+                count_member()
+                if info.is_dir():
+                    destination.writestr(info.filename, b"")
+                    continue
+                with (
+                    source.open(info, "r") as input_stream,
+                    destination.open(
+                        info.filename,
+                        "w",
+                        force_zip64=True,
+                    ) as output_stream,
+                ):
+                    while True:
+                        operation.check()
+                        chunk = input_stream.read(_COPY_CHUNK_BYTES)
+                        if not chunk:
+                            break
+                        _write_all(output_stream, chunk)
+
+            for bank_prefix, bank_infos in banks.items():
+                bank_number = 0
+                chunk_entries: list[bytes] = []
+                chunk_size = 2
+
+                def flush_bank(prefix: str = bank_prefix) -> None:
+                    nonlocal bank_number, chunk_entries, chunk_size
+                    if not chunk_entries:
+                        return
+                    bank_number += 1
+                    count_member()
+                    destination.writestr(
+                        f"{prefix}_{bank_number:06d}.json",
+                        b"[" + b",".join(chunk_entries) + b"]",
+                    )
+                    chunk_entries = []
+                    chunk_size = 2
+
+                for info in sorted(bank_infos, key=lambda item: item.filename):
+                    with source.open(info, "r") as bank_stream:
+                        for item in _iter_json_array_stream(bank_stream, operation):
+                            item_bytes = "".join(encoded.iterencode(item)).encode("utf-8")
+                            added_size = len(item_bytes) + (1 if chunk_entries else 0)
+                            if chunk_entries and chunk_size + added_size > _YOMITAN_BANK_CHUNK_BYTES:
+                                flush_bank()
+                                added_size = len(item_bytes)
+                            chunk_entries.append(item_bytes)
+                            chunk_size += added_size
+                flush_bank()
+                if bank_infos and bank_number == 0:
+                    count_member()
+                    destination.writestr(f"{bank_prefix}_000001.json", b"[]")
+            operation.check()
+        destination_path.chmod(0o400)
+        _fsync_directory(destination_path.parent)
+        return destination_path
+    except BridgeProtocolError:
+        destination_path.unlink(missing_ok=True)
+        raise
+    except (OSError, RuntimeError, zipfile.BadZipFile) as exc:
+        destination_path.unlink(missing_ok=True)
+        _raise_if_storage_exhausted(exc)
+        raise _fail("invalid_resource_archive", "Cannot stream Yomitan banks") from exc
+
+
+def _restore_original_yomitan_zip(candidate: Path, archive: _ArchiveCopy) -> None:
+    """Replace importer's rewritten retained ZIP with original verified bytes."""
+
+    retained = candidate / "source.zip"
+    retained.unlink()
+    archive.path.replace(retained)
 
 
 def _dictionary_sidecar(
@@ -1156,8 +1578,19 @@ def import_dictionary(payload: Mapping[str, object]) -> str:
                 )
             _check_free_space(
                 operation_root,
-                identity.uncompressed_bytes + copied.size_bytes,
+                _yomitan_import_peak_bytes(
+                    identity,
+                    copied.size_bytes,
+                    intermediate_csv=False,
+                ),
             )
+            import_source = copied.path
+            if catalog_resource is None:
+                import_source = _rewrite_yomitan_banks(
+                    copied.path,
+                    operation_root / "streamed-dictionary.zip",
+                    operation,
+                )
             import_root = operation_root / "publication"
             import_root.mkdir()
 
@@ -1168,7 +1601,7 @@ def import_dictionary(payload: Mapping[str, object]) -> str:
 
             try:
                 result = import_yomitan_zip(
-                    copied.path,
+                    import_source,
                     import_root,
                     overwrite=False,
                     cancel_check=operation.cancelled.is_set,
@@ -1176,6 +1609,7 @@ def import_dictionary(payload: Mapping[str, object]) -> str:
                 )
             except Exception as exc:
                 operation.check()
+                _raise_if_storage_exhausted(exc)
                 from anki_miner.exceptions import SetupError
 
                 if isinstance(exc, SetupError):
@@ -1194,6 +1628,8 @@ def import_dictionary(payload: Mapping[str, object]) -> str:
                     "Pinned dictionary metadata differs from the catalog",
                 )
             candidate = import_root / slot_id
+            if catalog_resource is None:
+                _restore_original_yomitan_zip(candidate, copied)
             sidecar = _dictionary_sidecar(
                 slot_id=slot_id,
                 archive=copied,
