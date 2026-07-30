@@ -25,6 +25,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
@@ -85,6 +86,41 @@ class SettingsViewModelTest {
             // persists. A filter that dropped the dirty predicate would write on both.
             assertEquals(0, repository.writeCount)
             assertFalse(viewModel.draftState.value.dirty)
+        }
+
+    @Test
+    fun settingsReadFailureLeavesDraftUnloadedAndRejectsEdits() =
+        runTest(mainDispatcherRule.dispatcher) {
+            var writeCount = 0
+            val repository =
+                object : AppSettingsRepository {
+                    override val settings: Flow<AppSettings> =
+                        flow {
+                            throw IOException("transient read failure")
+                        }
+
+                    override suspend fun update(settings: AppSettings) {
+                        writeCount += 1
+                    }
+
+                    override suspend fun update(transform: (AppSettings) -> AppSettings) {
+                        writeCount += 1
+                    }
+                }
+            val viewModel =
+                SettingsViewModel(
+                    repository,
+                    FakeResourceManager(resources("first")),
+                )
+            advanceUntilIdle()
+
+            assertFalse(viewModel.draftState.value.loaded)
+            viewModel.updateDraft(viewModel.draftState.value.draft.copy(deckName = "Default"))
+            advanceUntilIdle()
+
+            assertFalse(viewModel.draftState.value.loaded)
+            assertFalse(viewModel.draftState.value.dirty)
+            assertEquals(0, writeCount)
         }
 
     @Test
