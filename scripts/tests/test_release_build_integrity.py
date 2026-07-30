@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -9,10 +10,40 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 VALIDATOR = REPO_ROOT / "tools/release/validate_release_build.py"
 BUILD_SCRIPT = REPO_ROOT / "app/build.gradle.kts"
 GRADLE_HARNESS = REPO_ROOT / "scripts/tests/test-release-build-integrity-gradle.sh"
-VALID_SHA = "0123456789abcdef0123456789abcdef01234567"
+FABRICATED_SHA = "0123456789abcdef0123456789abcdef01234567"
+
+sys.path.insert(0, str(REPO_ROOT / "tools/release"))
+import validate_release_build as release_validator  # noqa: E402
 
 
 class ReleaseBuildIntegrityTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._temporary = tempfile.TemporaryDirectory()
+        self.source_root = Path(self._temporary.name) / "source"
+        self.source_root.mkdir()
+        self._git("init", "-q")
+        self._git("config", "user.email", "tests@example.invalid")
+        self._git("config", "user.name", "Release Integrity Tests")
+        (self.source_root / "tracked.txt").write_text("first\n", encoding="utf-8")
+        self._git("add", ".")
+        self._git("commit", "-qm", "first")
+        self.stale_sha = self._git("rev-parse", "HEAD")
+        (self.source_root / "tracked.txt").write_text("second\n", encoding="utf-8")
+        self._git("commit", "-qam", "second")
+        self.head_sha = self._git("rev-parse", "HEAD")
+
+    def tearDown(self) -> None:
+        self._temporary.cleanup()
+
+    def _git(self, *args: str) -> str:
+        return subprocess.run(
+            ("git", *args),
+            cwd=self.source_root,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+
     def _run_validator(
         self,
         build_type: str,
@@ -27,6 +58,15 @@ class ReleaseBuildIntegrityTests(unittest.TestCase):
             check=False,
             capture_output=True,
             text=True,
+        )
+
+    def _validate_release(self, source_commit: str) -> str:
+        return release_validator.validate_build(
+            "release",
+            source_commit,
+            release_validator.DEFAULT_WHEELS_ROOT,
+            release_validator.DEFAULT_MANIFEST,
+            self.source_root,
         )
 
     def test_debug_defaults_to_development_without_source_commit(self) -> None:
@@ -48,10 +88,50 @@ class ReleaseBuildIntegrityTests(unittest.TestCase):
         self.assertIn("full lowercase Git SHA", result.stderr)
 
     def test_release_with_valid_source_commit_and_current_wheels_passes(self) -> None:
-        result = self._run_validator("release", VALID_SHA)
+        self.assertEqual(self.head_sha, self._validate_release(self.head_sha))
 
-        self.assertEqual(0, result.returncode, result.stderr)
-        self.assertEqual(f"{VALID_SHA}\n", result.stdout)
+    def test_release_with_fabricated_source_commit_fails_closed(self) -> None:
+        with self.assertRaisesRegex(
+            release_validator.ReleaseBuildIntegrityError,
+            "does not identify a commit",
+        ):
+            self._validate_release(FABRICATED_SHA)
+
+    def test_release_with_non_head_source_commit_fails_closed(self) -> None:
+        with self.assertRaisesRegex(
+            release_validator.ReleaseBuildIntegrityError,
+            "does not equal checkout HEAD",
+        ):
+            self._validate_release(self.stale_sha)
+
+    def test_release_with_dirty_tracked_source_fails_closed(self) -> None:
+        (self.source_root / "tracked.txt").write_text("dirty\n", encoding="utf-8")
+
+        with self.assertRaisesRegex(
+            release_validator.ReleaseBuildIntegrityError,
+            "source checkout is dirty",
+        ):
+            self._validate_release(self.head_sha)
+
+    def test_release_with_untracked_source_fails_closed(self) -> None:
+        (self.source_root / "untracked.txt").write_text("dirty\n", encoding="utf-8")
+
+        with self.assertRaisesRegex(
+            release_validator.ReleaseBuildIntegrityError,
+            "source checkout is dirty",
+        ):
+            self._validate_release(self.head_sha)
+
+    def test_release_with_assume_unchanged_source_fails_closed(self) -> None:
+        self._git("update-index", "--assume-unchanged", "tracked.txt")
+        (self.source_root / "tracked.txt").write_text("hidden dirty\n", encoding="utf-8")
+        self.assertEqual("", self._git("status", "--porcelain=v1"))
+
+        with self.assertRaisesRegex(
+            release_validator.ReleaseBuildIntegrityError,
+            "Git index hides tracked source",
+        ):
+            self._validate_release(self.head_sha)
 
     def test_release_variant_consumes_integrity_provider_in_manifest_and_build_config(self) -> None:
         script = BUILD_SCRIPT.read_text(encoding="utf-8")
