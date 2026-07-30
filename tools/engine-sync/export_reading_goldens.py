@@ -122,10 +122,14 @@ class _DocumentParser:
         self.received_units: list[Any] = []
 
     def parse_text_units(
-        self, units: list[Any], want_line_index: bool
+        self, units: list[Any], want_line_index: bool, *, subtitle_cleanup: bool = False
     ) -> tuple[list[Any], None, collections.Counter[str]]:
         if want_line_index:
             raise ReadingExportError("reading golden unexpectedly requested a line index")
+        if subtitle_cleanup:
+            # The processor keys per-cue cleanup on the document kind; this
+            # snapshot is a Mokuro volume, so it must never ask for it.
+            raise ReadingExportError("Mokuro reading unexpectedly requested subtitle cleanup")
         if [unit.text for unit in units] != ["猫を見る。", "犬もいる。"]:
             raise ReadingExportError("Mokuro units differ before process_reading")
         self.received_units = list(units)
@@ -185,7 +189,7 @@ class _AnkiService:
 
     def create_cards_batch(
         self, card_data: list[Any], progress_callback: object | None = None
-    ) -> int:
+    ) -> list[int]:
         if progress_callback is not None or len(card_data) != 1:
             raise ReadingExportError("reading golden card sink received invalid input")
         from PIL import Image
@@ -219,7 +223,9 @@ class _AnkiService:
             },
         }
         self.last_created_note_ids = [4242]
-        return 1
+        # The service contract returns the created ids; the processor takes
+        # len() of this and stamps them onto the result.
+        return [4242]
 
 
 def _process_snapshot(document: Any, home: Path) -> dict[str, Any]:
@@ -227,11 +233,14 @@ def _process_snapshot(document: Any, home: Path) -> dict[str, Any]:
     from anki_miner.models import TokenizedWord
     from anki_miner.orchestration.episode_processor import EpisodeProcessor
     from anki_miner.presenters import NullPresenter
+    from anki_miner.services.known_word_db import KnownWordDB
     from anki_miner.services.word_filter import WordFilterService
 
     config = replace(
         AnkiMinerConfig(),
-        anki_fields={},
+        # The reading image phase is gated on the picture field being mapped, so an
+        # empty mapping would snapshot an imageless card.
+        anki_fields={"picture": "Picture"},
         include_known_words=True,
         bypass_optional_filters=True,
         reading_min_occurrence=1,
@@ -241,6 +250,12 @@ def _process_snapshot(document: Any, home: Path) -> dict[str, Any]:
     parser = _DocumentParser(TokenizedWord)
     definitions = _DefinitionService()
     anki = _AnkiService()
+    # mined_forms is the known-words insert receipt now: only rows this run wrote
+    # may be reverted by Undo. Every real run owns a database (the bridge always
+    # constructs one), so the snapshot needs one or it would freeze an empty list
+    # the app never produces.
+    known_word_db = KnownWordDB(config.known_words_db_path)
+    known_word_db.initialize()
     processor = EpisodeProcessor(
         config=config,
         subtitle_parser=parser,
@@ -249,6 +264,7 @@ def _process_snapshot(document: Any, home: Path) -> dict[str, Any]:
         definition_service=definitions,
         anki_service=anki,
         presenter=NullPresenter(),
+        known_word_db=known_word_db,
     )
     try:
         result = processor.process_reading(document)
@@ -304,7 +320,10 @@ def derive(*, engine_root: Path, corpus_path: Path) -> dict[str, Any]:
                 expected_kind = corpus["sources"][name]["kind"]
                 if len(refs) != 1 or refs[0].kind != expected_kind:
                     raise ReadingExportError(f"{name} detector output is invalid")
-                document = detector.load(refs[0])
+                # Mirrors the bridge: the product default strips per-cue
+                # annotations, and the engine kwarg defaults to off, so the
+                # golden must pass it or it freezes behaviour the app never has.
+                document = detector.load(refs[0], strip_subtitle_annotations=True)
                 if name == "subtitle":
                     document.series = corpus["sources"][name]["series_name"]
                 loaded[name] = document

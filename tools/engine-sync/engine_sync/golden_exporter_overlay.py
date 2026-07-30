@@ -20,8 +20,8 @@ SOURCE_ATTESTATIONS = {
         "720e0133dc011c8174f417d30d7739b4c64830c7",
     ),
     "engine_golden_contract_v2.py": (
-        "ef51d7f63f7c5828d41f36c0b04ed9562222bf95634a2fc0308ea505099be379",
-        "796c49e7613a694a1ab7682b5536f28e426fea7d",
+        "0bca8b86e58a467c0a4359ccc0ffcab0f362d37c021ca435688b961c4ff54e8f",
+        "c78d56e4de8845637651a5fc5871cbe4b9695634",
     ),
     "prepare_golden_unidic.py": (
         "fd51f42ff6ee9210f239f68bd8cf1b3aec87deda930af7ec17e673200e34eee2",
@@ -35,7 +35,7 @@ SCHEMA_ATTESTATION = (
 MATERIALIZED_SHA256 = {
     "dump_engine_goldens.py": SOURCE_ATTESTATIONS["dump_engine_goldens.py"][0],
     "engine_golden_contract_v2.py": (
-        "5c8f3cc73aa42fac2d68f9980eb8888275ccdb5b874e220d9c9847f1419eef47"
+        "b635f9328cf2ef252dfeab2dddb2528a369daa62e6607d824333745a6a51e6e9"
     ),
     "prepare_golden_unidic.py": SOURCE_ATTESTATIONS["prepare_golden_unidic.py"][0],
 }
@@ -43,7 +43,7 @@ DESKTOP_REVISION_LINE = (
     b'PINNED_ENGINE_REVISION = "ba3b3cfbcc53e57a440c8b9f157209851408c62a"'
 )
 ANDROID_REVISION_LINE = (
-    b'PINNED_ENGINE_REVISION = "420ce234b01b845a3766f2cee4638c1cde64f059"'
+    b'PINNED_ENGINE_REVISION = "6f57f836b59d5e375a26c883482c158c06c47da9"'
 )
 
 
