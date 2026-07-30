@@ -65,6 +65,26 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 
+/**
+ * Single production composition boundary for video and reading runs.
+ *
+ * Every persisted local-resource chain is intersected with this inventory before crossing the
+ * bridge. Keep all installed-id kinds here so adding a call-site default cannot silently disable a
+ * configured source in one mining mode.
+ */
+internal suspend fun ResourceManager.snapshotProductionSettings(
+    settingsRepository: AppSettingsRepository,
+) =
+    settingsRepository.snapshot(
+        installedDictionaryIds = installedDictionaryIds(),
+        installedFrequencyIds = installedFrequencyIds(),
+        installedPitchIds = installedPitchIds(),
+        installedAudioPackIds = installedAudioPackIds(),
+        availableWordsetIds = bundledWordsetIds(),
+        blacklistPath = wordListPath(WordListKind.BLACKLIST),
+        whitelistPath = wordListPath(WordListKind.WHITELIST),
+    )
+
 class AnkiMinerApplication : Application() {
     internal val stringResourceResolver by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         AndroidStringResourceResolver(this)
@@ -225,14 +245,7 @@ class AnkiMinerApplication : Application() {
                     // DataStore on this worker therefore captures settings and dictionary slots
                     // atomically with respect to every resource publication.
                     runBlocking {
-                        settingsRepository.snapshot(
-                            installedDictionaryIds = resourceManager.installedDictionaryIds(),
-                            installedFrequencyIds = resourceManager.installedFrequencyIds(),
-                            installedAudioPackIds = resourceManager.installedAudioPackIds(),
-                            availableWordsetIds = resourceManager.bundledWordsetIds(),
-                            blacklistPath = resourceManager.wordListPath(WordListKind.BLACKLIST),
-                            whitelistPath = resourceManager.wordListPath(WordListKind.WHITELIST),
-                        )
+                        resourceManager.snapshotProductionSettings(settingsRepository)
                     }
                 },
             resourceStartupReady = {
@@ -265,14 +278,7 @@ class AnkiMinerApplication : Application() {
             configSnapshotResolver =
                 ReadingConfigSnapshotResolver {
                     runBlocking {
-                        settingsRepository.snapshot(
-                            installedDictionaryIds = resourceManager.installedDictionaryIds(),
-                            installedFrequencyIds = resourceManager.installedFrequencyIds(),
-                            installedAudioPackIds = resourceManager.installedAudioPackIds(),
-                            availableWordsetIds = resourceManager.bundledWordsetIds(),
-                            blacklistPath = resourceManager.wordListPath(WordListKind.BLACKLIST),
-                            whitelistPath = resourceManager.wordListPath(WordListKind.WHITELIST),
-                        )
+                        resourceManager.snapshotProductionSettings(settingsRepository)
                     }
                 },
             resourceStartupReady = {

@@ -346,12 +346,19 @@ class AppSettingsTest {
                                 ResourceChainSelection("removed", enabled = true),
                                 ResourceChainSelection("freq-a", enabled = true),
                             ),
+                        pitchSources =
+                            listOf(
+                                ResourceChainSelection("pitch-b", enabled = false),
+                                ResourceChainSelection("removed", enabled = true),
+                                ResourceChainSelection("pitch-a", enabled = true),
+                            ),
                         audioPacks = listOf(ResourceChainSelection("audio-a", enabled = false)),
                         enabledWordsets = listOf("given-names"),
                         readingTtsEnabled = true,
                     ),
                 installedDictionaryIds = listOf("jitendex", "custom"),
                 installedFrequencyIds = listOf("freq-a", "freq-b", "freq-new"),
+                installedPitchIds = listOf("pitch-a", "pitch-b", "pitch-new"),
                 installedAudioPackIds = listOf("audio-a", "audio-new"),
                 availableWordsetIds = listOf("given-names", "place-names"),
             )
@@ -386,6 +393,20 @@ class AppSettingsTest {
         assertEquals(
             listOf(false, true, true),
             frequency.values.map { value ->
+                ((value as BridgeJsonValue.ObjectValue).values.getValue("enabled") as BridgeJsonValue.Bool).value
+            },
+        )
+
+        val pitch = snapshot.settings.getValue("pitch_chain") as BridgeJsonValue.ArrayValue
+        assertEquals(
+            listOf("pitch-b", "pitch-a", "pitch-new"),
+            pitch.values.map { value ->
+                ((value as BridgeJsonValue.ObjectValue).values.getValue("source_id") as BridgeJsonValue.Text).value
+            },
+        )
+        assertEquals(
+            listOf(false, true, true),
+            pitch.values.map { value ->
                 ((value as BridgeJsonValue.ObjectValue).values.getValue("enabled") as BridgeJsonValue.Bool).value
             },
         )

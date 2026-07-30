@@ -1,15 +1,22 @@
 package com.ankiminer.android.data.resources
 
 import com.ankiminer.android.data.RuntimeWorkCoordinator
+import com.ankiminer.android.data.settings.AppSettings
+import com.ankiminer.android.data.settings.AppSettingsRepository
+import com.ankiminer.android.data.settings.ResourceChainSelection
+import com.ankiminer.android.engine.BridgeJsonValue
 import com.ankiminer.android.engine.EngineCallbacks
 import com.ankiminer.android.engine.PyBridge
+import com.ankiminer.android.localization.testStringResourceResolver
 import com.ankiminer.android.media.SafBroker
 import com.ankiminer.android.media.SafDocument
-import com.ankiminer.android.localization.testStringResourceResolver
+import com.ankiminer.android.snapshotProductionSettings
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.OutputStream
 import java.util.concurrent.Executor
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -82,6 +89,39 @@ class ResourceManagerTest {
             )
 
             lease.close()
+        }
+
+    @Test
+    fun productionSnapshotCarriesUsableInstalledPitchSourcesToBridgeConfig() =
+        runTest {
+            val harness = Harness(installedPitchSourceId = "kanjium")
+            harness.manager.recoverAndRefresh()
+            val repository =
+                object : AppSettingsRepository {
+                    override val settings: Flow<AppSettings> =
+                        flowOf(
+                            AppSettings(
+                                pitchSources =
+                                    listOf(ResourceChainSelection("kanjium", enabled = true)),
+                            ),
+                        )
+
+                    override suspend fun update(settings: AppSettings) = Unit
+
+                    override suspend fun update(transform: (AppSettings) -> AppSettings) = Unit
+                }
+
+            val snapshot = harness.manager.snapshotProductionSettings(repository)
+
+            val pitchChain =
+                snapshot.settings.getValue("pitch_chain") as BridgeJsonValue.ArrayValue
+            assertEquals(1, pitchChain.values.size)
+            val source = pitchChain.values.single() as BridgeJsonValue.ObjectValue
+            assertEquals(
+                BridgeJsonValue.Text("kanjium"),
+                source.values["source_id"],
+            )
+            assertEquals(BridgeJsonValue.Bool(true), source.values["enabled"])
         }
 
     @Test
@@ -276,6 +316,7 @@ class ResourceManagerTest {
         sourceLabel: String = "known-word file",
         reportedSourceSizeBytes: Long? = 16,
         stagingAvailableBytes: Long = Long.MAX_VALUE / 2,
+        installedPitchSourceId: String? = null,
     ) {
         private val root = temporary.newFolder("manager")
         val bridgeRoot = File(root, "bridge").apply { mkdirs() }
@@ -284,7 +325,7 @@ class ResourceManagerTest {
         val broker = RecordingSafBroker(reportedSourceSizeBytes)
         val stager = RecordingArchiveStager(stagingRoot, sourceLabel)
         val writer = RecordingDocumentWriter()
-        val bridge = FakeResourceBridge(bridgeRoot, initialUserCount)
+        val bridge = FakeResourceBridge(bridgeRoot, initialUserCount, installedPitchSourceId)
         val manager =
             AndroidResourceManager(
                 safBroker = broker,
@@ -367,6 +408,7 @@ class ResourceManagerTest {
     private class FakeResourceBridge(
         private val bridgeFilesRoot: File,
         initialUserCount: Int,
+        private val installedPitchSourceId: String?,
     ) : PyBridge {
         private val requests = mutableListOf<String>()
         private var userCount = initialUserCount
@@ -421,11 +463,16 @@ class ResourceManagerTest {
             }
         }
 
-        private fun inventoryResponse(): String =
-            envelope(
+        private fun inventoryResponse(): String {
+            val pitchSources =
+                installedPitchSourceId?.let { sourceId ->
+                    """[{"sourceId":"$sourceId","sourceName":"Kanjium","sourceRevision":"1","format":"yomitan","entryCount":10,"schemaOk":true,"schemaVersion":1}]"""
+                } ?: "[]"
+            return envelope(
                 "resource.local.listed",
-                """{"frequencies":[],"pitchSources":[],"audioPacks":[],"knownWords":{"totalCount":$userCount,"userCount":$userCount,"ankiCount":0,"minedCount":0,"schemaOk":true},"wordsets":[]}""",
+                """{"frequencies":[],"pitchSources":$pitchSources,"audioPacks":[],"knownWords":{"totalCount":$userCount,"userCount":$userCount,"ankiCount":0,"minedCount":0,"schemaOk":true},"wordsets":[]}""",
             )
+        }
 
         private fun pageResponse(rawRequest: String): String {
             val query = stringField(rawRequest, "query")
