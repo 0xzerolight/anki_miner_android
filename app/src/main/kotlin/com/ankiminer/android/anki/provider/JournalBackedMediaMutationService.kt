@@ -538,15 +538,17 @@ internal class JournalBackedMediaMutationService(
         failure: JournalInvariantViolation,
     ): StoreMediaMutationOutcome {
         val fault = compactFaultToken(failure)
-        val reason = (failure as? MediaAdmissionViolation)?.refusal?.name ?: "UNCLASSIFIED"
-        val evidence = "providerEntry=false;admission=refused;reason=$reason;fault=$fault"
+        val admission = failure as? MediaAdmissionViolation
+        val reason = admission?.refusal?.name ?: "UNCLASSIFIED"
+        val detail = admission?.detail?.let { ";$it" }.orEmpty()
+        val evidence = "providerEntry=false;admission=refused;reason=$reason$detail;fault=$fault"
         request.assets.forEachIndexed { index, asset ->
             journal.append(
                 durableRequest.key,
                 AlignedResult.MediaFailed(
                     requestIndex = index,
                     itemId = asset.assetId,
-                    rowError = refusedBatchMediaFailure(reason, fault),
+                    rowError = refusedBatchMediaFailure(reason, detail, fault),
                     compactEvidence = evidence,
                 ),
             )
@@ -870,10 +872,12 @@ private fun rowLocalMediaFailure(failure: AnkiMediaStagingException) =
  */
 private fun refusedBatchMediaFailure(
     reason: String,
+    detail: String,
     fault: String,
 ) = JournalError(
     JournalErrorCode.MEDIA_STORE_FAILED,
-    "The media asset could not be staged for AnkiDroid (admission=refused reason=$reason fault=$fault)",
+    "The media asset could not be staged for AnkiDroid " +
+        "(admission=refused reason=$reason${detail.replace(';', ' ')} fault=$fault)",
     retryable = false,
 )
 

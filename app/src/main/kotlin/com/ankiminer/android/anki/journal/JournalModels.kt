@@ -1151,10 +1151,17 @@ internal enum class MediaAdmissionRefusal {
     PROVIDER_NAMESPACE_OVERLAP,
 }
 
-/** A [JournalInvariantViolation] raised by media admission, carrying its typed [refusal]. */
+/**
+ * A [JournalInvariantViolation] raised by media admission, carrying its typed [refusal].
+ *
+ * [detail] identifies the exact assets involved, for refusals where the reason alone does not say
+ * which of a fifty-asset batch was at fault. It holds opaque `asset_<32 hex>` identities only: those
+ * are already on the wire, and unlike a filename they carry nothing about what the user mined.
+ */
 internal class MediaAdmissionViolation(
     val refusal: MediaAdmissionRefusal,
     message: String,
+    val detail: String? = null,
 ) : JournalInvariantViolation(message)
 
 internal class JournalCorruptionException(
