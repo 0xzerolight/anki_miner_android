@@ -10,11 +10,12 @@ amplification factors.
 
 from __future__ import annotations
 
-import json
+import lzma
 import posixpath
 import struct
 import warnings
 import zipfile
+import zlib
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
@@ -56,6 +57,8 @@ _ZIP64_U32 = 0xFFFFFFFF
 _MAX_ZIP_MEMBER_NAME_UTF8_BYTES = 1_024
 _MAX_COMPRESSION_RATIO = 250
 _CANCEL_CHECK_INTERVAL = 64
+_STRING_CANCEL_CHECK_INTERVAL = 4_096
+_MAX_JSON_NESTING = 1_000
 
 _EPUB_BINARY_EXTENSIONS = frozenset(
     {
@@ -91,6 +94,426 @@ class ZipArchiveLimits:
     max_total_uncompressed_bytes: int
     max_text_member_uncompressed_bytes: int | None = None
     max_total_text_uncompressed_bytes: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class _MokuroFanout:
+    pages: int = 0
+    blocks: int = 0
+    lines: int = 0
+    text_bytes: int = 0
+    oversized_line: bool = False
+    invalid_unicode: bool = False
+
+    def with_page(self, page: _MokuroFanout) -> _MokuroFanout:
+        return _MokuroFanout(
+            pages=self.pages + 1,
+            blocks=self.blocks + page.blocks,
+            lines=self.lines + page.lines,
+            text_bytes=self.text_bytes + page.text_bytes,
+            oversized_line=self.oversized_line or page.oversized_line,
+            invalid_unicode=self.invalid_unicode or page.invalid_unicode,
+        )
+
+    def with_block(self, block: _MokuroFanout) -> _MokuroFanout:
+        return _MokuroFanout(
+            blocks=self.blocks + 1,
+            lines=self.lines + block.lines,
+            text_bytes=self.text_bytes + block.text_bytes,
+            oversized_line=self.oversized_line or block.oversized_line,
+            invalid_unicode=self.invalid_unicode or block.invalid_unicode,
+        )
+
+    def with_line(self, *, text_bytes: int = 0, invalid_unicode: bool = False) -> _MokuroFanout:
+        return _MokuroFanout(
+            lines=self.lines + 1,
+            text_bytes=self.text_bytes + text_bytes,
+            oversized_line=self.oversized_line or text_bytes > MAX_UNIT_TEXT_UTF8_BYTES,
+            invalid_unicode=self.invalid_unicode or invalid_unicode,
+        )
+
+
+class _JsonSyntaxError(ValueError):
+    pass
+
+
+class _MokuroJsonScanner:
+    """Validate/count Mokuro collections without materializing the JSON graph."""
+
+    def __init__(
+        self,
+        raw: str,
+        cancellation_check: Callable[[], bool] | None,
+    ) -> None:
+        self.raw = raw
+        self.cancellation_check = cancellation_check
+        self.index = 0
+
+    def scan(self) -> _MokuroFanout | None:
+        self._whitespace()
+        if self._peek() != "{":
+            self._skip_value()
+            self._finish()
+            return None
+
+        self.index += 1
+        pages_seen = False
+        pages: _MokuroFanout | None = None
+        self._whitespace()
+        if self._take("}"):
+            self._finish()
+            return None
+        while True:
+            key = self._key()
+            self._whitespace()
+            self._expect(":")
+            self._whitespace()
+            if key == "pages":
+                pages_seen = True
+                if self._peek() == "[":
+                    pages = self._pages()
+                else:
+                    self._skip_value()
+                    pages = None
+            else:
+                self._skip_value()
+            self._whitespace()
+            if self._take("}"):
+                break
+            self._expect(",")
+            self._whitespace()
+        self._finish()
+        return pages if pages_seen else None
+
+    def _pages(self) -> _MokuroFanout:
+        self._expect("[")
+        result = _MokuroFanout()
+        self._whitespace()
+        if self._take("]"):
+            return result
+        while True:
+            if result.pages % _CANCEL_CHECK_INTERVAL == 0:
+                _check_cancelled(self.cancellation_check)
+            page = self._page() if self._peek() == "{" else self._skipped_value()
+            result = result.with_page(page)
+            self._whitespace()
+            if self._take("]"):
+                return result
+            self._expect(",")
+            self._whitespace()
+
+    def _page(self) -> _MokuroFanout:
+        self._expect("{")
+        blocks_seen = False
+        blocks: _MokuroFanout | None = _MokuroFanout()
+        self._whitespace()
+        if self._take("}"):
+            return blocks
+        while True:
+            key = self._key()
+            self._whitespace()
+            self._expect(":")
+            self._whitespace()
+            if key == "blocks":
+                blocks_seen = True
+                if self._peek() == "[":
+                    blocks = self._blocks()
+                else:
+                    self._skip_value()
+                    blocks = None
+            else:
+                self._skip_value()
+            self._whitespace()
+            if self._take("}"):
+                return blocks if not blocks_seen or blocks is not None else _MokuroFanout()
+            self._expect(",")
+            self._whitespace()
+
+    def _blocks(self) -> _MokuroFanout:
+        self._expect("[")
+        result = _MokuroFanout()
+        self._whitespace()
+        if self._take("]"):
+            return result
+        while True:
+            if result.blocks % _CANCEL_CHECK_INTERVAL == 0:
+                _check_cancelled(self.cancellation_check)
+            block = self._block() if self._peek() == "{" else self._skipped_value()
+            result = result.with_block(block)
+            self._whitespace()
+            if self._take("]"):
+                return result
+            self._expect(",")
+            self._whitespace()
+
+    def _block(self) -> _MokuroFanout:
+        self._expect("{")
+        lines_seen = False
+        lines: _MokuroFanout | None = _MokuroFanout()
+        self._whitespace()
+        if self._take("}"):
+            return lines
+        while True:
+            key = self._key()
+            self._whitespace()
+            self._expect(":")
+            self._whitespace()
+            if key == "lines":
+                lines_seen = True
+                if self._peek() == "[":
+                    lines = self._lines()
+                else:
+                    self._skip_value()
+                    lines = None
+            else:
+                self._skip_value()
+            self._whitespace()
+            if self._take("}"):
+                return lines if not lines_seen or lines is not None else _MokuroFanout()
+            self._expect(",")
+            self._whitespace()
+
+    def _lines(self) -> _MokuroFanout:
+        self._expect("[")
+        result = _MokuroFanout()
+        self._whitespace()
+        if self._take("]"):
+            return result
+        while True:
+            if result.lines % _CANCEL_CHECK_INTERVAL == 0:
+                _check_cancelled(self.cancellation_check)
+            if self._peek() == '"':
+                _, text_bytes, valid_unicode = self._string(capture_key=False)
+                result = result.with_line(
+                    text_bytes=text_bytes,
+                    invalid_unicode=not valid_unicode,
+                )
+            else:
+                self._skip_value()
+                result = result.with_line()
+            self._whitespace()
+            if self._take("]"):
+                return result
+            self._expect(",")
+            self._whitespace()
+
+    def _skipped_value(self) -> _MokuroFanout:
+        self._skip_value()
+        return _MokuroFanout()
+
+    def _key(self) -> str | None:
+        if self._peek() != '"':
+            raise _JsonSyntaxError("JSON object key must be a string")
+        key, _, _ = self._string(capture_key=True)
+        return key
+
+    def _string(
+        self,
+        *,
+        capture_key: bool,
+    ) -> tuple[str | None, int, bool]:
+        self._expect('"')
+        captured: list[str] | None = [] if capture_key else None
+        utf8_bytes = 0
+        valid_unicode = True
+        scanned = 0
+        while self.index < len(self.raw):
+            char = self.raw[self.index]
+            self.index += 1
+            scanned += 1
+            if scanned % _STRING_CANCEL_CHECK_INTERVAL == 0:
+                _check_cancelled(self.cancellation_check)
+            if char == '"':
+                return (
+                    "".join(captured) if captured is not None else None,
+                    utf8_bytes,
+                    valid_unicode,
+                )
+            if ord(char) < 0x20:
+                raise _JsonSyntaxError("Unescaped control character in JSON string")
+            if char != "\\":
+                code_point = ord(char)
+            else:
+                if self.index >= len(self.raw):
+                    raise _JsonSyntaxError("Unterminated JSON escape")
+                escaped = self.raw[self.index]
+                self.index += 1
+                simple = {
+                    '"': '"',
+                    "\\": "\\",
+                    "/": "/",
+                    "b": "\b",
+                    "f": "\f",
+                    "n": "\n",
+                    "r": "\r",
+                    "t": "\t",
+                }
+                if escaped in simple:
+                    char = simple[escaped]
+                    code_point = ord(char)
+                elif escaped == "u":
+                    code_point = self._unicode_escape()
+                    if 0xD800 <= code_point <= 0xDBFF and self.raw.startswith("\\u", self.index):
+                        saved = self.index
+                        self.index += 2
+                        low = self._unicode_escape()
+                        if 0xDC00 <= low <= 0xDFFF:
+                            code_point = 0x10000 + ((code_point - 0xD800) << 10) + (low - 0xDC00)
+                        else:
+                            self.index = saved
+                else:
+                    raise _JsonSyntaxError("Invalid JSON escape")
+
+            if 0xD800 <= code_point <= 0xDFFF:
+                valid_unicode = False
+            else:
+                utf8_bytes += _code_point_utf8_bytes(code_point)
+            if captured is not None:
+                captured.append(chr(code_point))
+                if len(captured) > len("blocks"):
+                    captured = None
+        raise _JsonSyntaxError("Unterminated JSON string")
+
+    def _unicode_escape(self) -> int:
+        end = self.index + 4
+        if end > len(self.raw):
+            raise _JsonSyntaxError("Truncated Unicode escape")
+        digits = self.raw[self.index : end]
+        if any(char not in "0123456789abcdefABCDEF" for char in digits):
+            raise _JsonSyntaxError("Invalid Unicode escape")
+        self.index = end
+        return int(digits, 16)
+
+    def _skip_value(self) -> None:
+        self._whitespace()
+        first = self._peek()
+        if first not in "[{":
+            self._scalar()
+            return
+        self.index += 1
+        stack: list[tuple[str, str]] = [("array", "value_or_end") if first == "[" else ("object", "key_or_end")]
+        while stack:
+            if len(stack) > _MAX_JSON_NESTING:
+                raise RecursionError("JSON nesting exceeds the decoder boundary")
+            self._whitespace()
+            kind, state = stack[-1]
+            if kind == "array":
+                if state == "value_or_end":
+                    if self._take("]"):
+                        stack.pop()
+                        continue
+                    stack[-1] = (kind, "comma_or_end")
+                    self._skip_scalar_or_push(stack)
+                elif state == "value":
+                    stack[-1] = (kind, "comma_or_end")
+                    self._skip_scalar_or_push(stack)
+                else:
+                    if self._take("]"):
+                        stack.pop()
+                    else:
+                        self._expect(",")
+                        stack[-1] = (kind, "value")
+            elif state == "key_or_end":
+                if self._take("}"):
+                    stack.pop()
+                else:
+                    self._key()
+                    self._whitespace()
+                    self._expect(":")
+                    stack[-1] = (kind, "value")
+            elif state == "value":
+                stack[-1] = (kind, "comma_or_end")
+                self._skip_scalar_or_push(stack)
+            else:
+                if self._take("}"):
+                    stack.pop()
+                else:
+                    self._expect(",")
+                    stack[-1] = (kind, "key_or_end")
+
+    def _skip_scalar_or_push(self, stack: list[tuple[str, str]]) -> None:
+        self._whitespace()
+        first = self._peek()
+        if first == "[":
+            self.index += 1
+            stack.append(("array", "value_or_end"))
+        elif first == "{":
+            self.index += 1
+            stack.append(("object", "key_or_end"))
+        else:
+            self._scalar()
+
+    def _scalar(self) -> None:
+        first = self._peek()
+        if first == '"':
+            self._string(capture_key=False)
+            return
+        for literal in ("true", "false", "null", "NaN", "Infinity", "-Infinity"):
+            if self.raw.startswith(literal, self.index):
+                self.index += len(literal)
+                return
+        self._number()
+
+    def _number(self) -> None:
+        start = self.index
+        if self._take("-") and self._peek() == "":
+            raise _JsonSyntaxError("Truncated JSON number")
+        if self._take("0"):
+            if self._peek().isdigit():
+                raise _JsonSyntaxError("Leading zero in JSON number")
+        elif self._peek() and self._peek() in "123456789":
+            while self._peek().isdigit():
+                self.index += 1
+        else:
+            raise _JsonSyntaxError("Invalid JSON value")
+        if self._take("."):
+            if not self._peek().isdigit():
+                raise _JsonSyntaxError("Invalid JSON fraction")
+            while self._peek().isdigit():
+                self.index += 1
+        if self._peek() and self._peek() in "eE":
+            self.index += 1
+            if self._peek() and self._peek() in "+-":
+                self.index += 1
+            if not self._peek().isdigit():
+                raise _JsonSyntaxError("Invalid JSON exponent")
+            while self._peek().isdigit():
+                self.index += 1
+        if self.index == start:
+            raise _JsonSyntaxError("Invalid JSON number")
+
+    def _finish(self) -> None:
+        self._whitespace()
+        if self.index != len(self.raw):
+            raise _JsonSyntaxError("Trailing data after JSON value")
+        _check_cancelled(self.cancellation_check)
+
+    def _whitespace(self) -> None:
+        while self.index < len(self.raw) and self.raw[self.index] in " \t\r\n":
+            self.index += 1
+
+    def _peek(self) -> str:
+        return self.raw[self.index] if self.index < len(self.raw) else ""
+
+    def _take(self, expected: str) -> bool:
+        if not self.raw.startswith(expected, self.index):
+            return False
+        self.index += len(expected)
+        return True
+
+    def _expect(self, expected: str) -> None:
+        if not self._take(expected):
+            raise _JsonSyntaxError(f"Expected {expected!r} in JSON")
+
+
+def _code_point_utf8_bytes(code_point: int) -> int:
+    if code_point <= 0x7F:
+        return 1
+    if code_point <= 0x7FF:
+        return 2
+    if code_point <= 0xFFFF:
+        return 3
+    return 4
 
 
 EPUB_ARCHIVE_LIMITS = ZipArchiveLimits(
@@ -315,57 +738,33 @@ def _validate_mokuro_json(
     cancellation_check: Callable[[], bool] | None,
 ) -> None:
     try:
-        with path.open("r", encoding="utf-8") as source:
-            payload = json.load(source)
-    except (OSError, UnicodeError, json.JSONDecodeError, RecursionError) as error:
+        raw = path.read_text(encoding="utf-8")
+        fanout = _MokuroJsonScanner(raw, cancellation_check).scan()
+    except (OSError, UnicodeError, _JsonSyntaxError, RecursionError) as error:
         raise _invalid_source("The selected .mokuro sidecar is invalid") from error
     _check_cancelled(cancellation_check)
-    if not isinstance(payload, dict) or not isinstance(payload.get("pages"), list):
+    if fanout is None:
         raise _invalid_source("The selected .mokuro sidecar has an invalid pages list")
 
-    pages = payload["pages"]
-    if len(pages) > MAX_MOKURO_PAGES:
+    if fanout.pages > MAX_MOKURO_PAGES:
         raise _too_large(
-            f"The selected .mokuro sidecar contains too many pages " f"({len(pages):,} > {MAX_MOKURO_PAGES:,})"
+            f"The selected .mokuro sidecar contains too many pages " f"({fanout.pages:,} > {MAX_MOKURO_PAGES:,})"
         )
-
-    blocks = 0
-    lines = 0
-    text_bytes = 0
-    for page_index, page in enumerate(pages):
-        if page_index % _CANCEL_CHECK_INTERVAL == 0:
-            _check_cancelled(cancellation_check)
-        if not isinstance(page, dict):
-            raise _invalid_source("The selected .mokuro sidecar contains an invalid page")
-        page_blocks = page.get("blocks", []) or []
-        if not isinstance(page_blocks, list):
-            raise _invalid_source("The selected .mokuro sidecar contains an invalid block list")
-        blocks += len(page_blocks)
-        if blocks > MAX_MOKURO_BLOCKS:
-            raise _too_large(
-                f"The selected .mokuro sidecar contains too many text blocks " f"({blocks:,} > {MAX_MOKURO_BLOCKS:,})"
-            )
-        for block in page_blocks:
-            if not isinstance(block, dict):
-                raise _invalid_source("The selected .mokuro sidecar contains an invalid block")
-            block_lines = block.get("lines", []) or []
-            if not isinstance(block_lines, list) or not all(isinstance(line, str) for line in block_lines):
-                raise _invalid_source("The selected .mokuro sidecar contains invalid OCR text")
-            lines += len(block_lines)
-            if lines > MAX_MOKURO_LINES:
-                raise _too_large(
-                    f"The selected .mokuro sidecar contains too many OCR lines " f"({lines:,} > {MAX_MOKURO_LINES:,})"
-                )
-            for line in block_lines:
-                try:
-                    line_bytes = len(line.encode("utf-8"))
-                except UnicodeEncodeError as error:
-                    raise _invalid_source("The selected .mokuro sidecar contains invalid Unicode") from error
-                if line_bytes > MAX_UNIT_TEXT_UTF8_BYTES:
-                    raise _too_large("The selected .mokuro sidecar contains an oversized OCR line")
-                text_bytes += line_bytes
-                if text_bytes > MAX_DOCUMENT_TEXT_UTF8_BYTES:
-                    raise _too_large("The selected .mokuro sidecar exceeds the mobile OCR text limit")
+    if fanout.blocks > MAX_MOKURO_BLOCKS:
+        raise _too_large(
+            f"The selected .mokuro sidecar contains too many text blocks "
+            f"({fanout.blocks:,} > {MAX_MOKURO_BLOCKS:,})"
+        )
+    if fanout.lines > MAX_MOKURO_LINES:
+        raise _too_large(
+            f"The selected .mokuro sidecar contains too many OCR lines " f"({fanout.lines:,} > {MAX_MOKURO_LINES:,})"
+        )
+    if fanout.invalid_unicode:
+        raise _invalid_source("The selected .mokuro sidecar contains invalid Unicode")
+    if fanout.oversized_line:
+        raise _too_large("The selected .mokuro sidecar contains an oversized OCR line")
+    if fanout.text_bytes > MAX_DOCUMENT_TEXT_UTF8_BYTES:
+        raise _too_large("The selected .mokuro sidecar exceeds the mobile OCR text limit")
     _check_cancelled(cancellation_check)
 
 
@@ -480,7 +879,18 @@ def _validate_image_headers(
                 raise _too_large("A reading image exceeds the mobile pixel safety limit") from error
             except Image.DecompressionBombWarning as error:
                 raise _too_large("A reading image exceeds the mobile pixel safety limit") from error
-            except (KeyError, OSError, zipfile.BadZipFile, UnidentifiedImageError):
+            except (
+                KeyError,
+                zipfile.BadZipFile,
+                RuntimeError,
+                NotImplementedError,
+                OSError,
+                EOFError,
+                SyntaxError,
+                zlib.error,
+                lzma.LZMAError,
+                UnidentifiedImageError,
+            ):
                 # The desktop phase-3 path already turns corrupt/unreadable images
                 # into per-image warnings. They carry no decode amplification here.
                 continue
