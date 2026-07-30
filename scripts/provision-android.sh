@@ -43,7 +43,7 @@ if [[ "$(uname -s)" != "Linux" || "$(uname -m)" != "x86_64" ]]; then
     exit 1
 fi
 
-for command_name in curl python3.13 sha1sum sha256sum tar unzip; do
+for command_name in curl mktemp python3.13 sha1sum sha256sum tar unzip; do
     if ! command -v "$command_name" >/dev/null; then
         echo "Required command not found: $command_name" >&2
         exit 1
@@ -84,6 +84,47 @@ download_verified() {
     fi
 }
 
+jdk_staging=""
+tools_staging=""
+
+cleanup_staging_directory() {
+    local path="$1"
+    local label="$2"
+    local expected_prefix="$3"
+    local relative_path
+
+    [[ -n "$path" ]] || return 0
+    relative_path="${path#"$ANKI_MINER_ANDROID_TOOLCHAIN_ROOT"/}"
+    if [[ "$path" != "$ANKI_MINER_ANDROID_TOOLCHAIN_ROOT"/"$expected_prefix"?* ]] \
+        || [[ "$relative_path" == */* ]]; then
+        echo "Refusing to clean unexpected $label staging path: $path" >&2
+        return 1
+    fi
+    rm -rf -- "$path"
+}
+
+cleanup_provision_staging() {
+    local cleanup_status=0
+
+    cleanup_staging_directory "$jdk_staging" JDK ".jdk-staging-" \
+        || cleanup_status=1
+    cleanup_staging_directory "$tools_staging" "command-line tools" ".tools-staging-" \
+        || cleanup_status=1
+    return "$cleanup_status"
+}
+
+cleanup_after_signal() {
+    local exit_status="$1"
+
+    trap - EXIT INT TERM
+    cleanup_provision_staging || true
+    exit "$exit_status"
+}
+
+trap cleanup_provision_staging EXIT
+trap 'cleanup_after_signal 130' INT
+trap 'cleanup_after_signal 143' TERM
+
 JDK_ARCHIVE="$ANKI_MINER_ANDROID_TOOLCHAIN_ROOT/downloads/temurin-${JDK_VERSION}.tar.gz"
 download_verified "$JDK_URL" "$JDK_ARCHIVE" "$JDK_SHA256"
 
@@ -92,11 +133,10 @@ if [[ ! -x "$JAVA_HOME/bin/java" ]]; then
         echo "Incomplete JDK directory exists at $JAVA_HOME; remove it and retry." >&2
         exit 1
     fi
-    jdk_staging="$ANKI_MINER_ANDROID_TOOLCHAIN_ROOT/.jdk-staging-$$"
-    trap 'rm -rf "${jdk_staging:-}" "${tools_staging:-}"' EXIT
-    mkdir -p "$jdk_staging"
+    jdk_staging="$(mktemp -d -- "$ANKI_MINER_ANDROID_TOOLCHAIN_ROOT/.jdk-staging-XXXXXXXX")"
     tar -xzf "$JDK_ARCHIVE" --strip-components=1 -C "$jdk_staging"
     mv "$jdk_staging" "$JAVA_HOME"
+    jdk_staging=""
 fi
 
 TOOLS_ARCHIVE="$ANKI_MINER_ANDROID_TOOLCHAIN_ROOT/downloads/$CMDLINE_TOOLS_ARCHIVE"
@@ -111,12 +151,14 @@ if [[ ! -x "$ANDROID_CMDLINE_TOOLS_HOME/bin/sdkmanager" ]]; then
         echo "Incomplete command-line tools directory exists at $ANDROID_CMDLINE_TOOLS_HOME; remove it and retry." >&2
         exit 1
     fi
-    tools_staging="$ANKI_MINER_ANDROID_TOOLCHAIN_ROOT/.tools-staging-$$"
-    trap 'rm -rf "${jdk_staging:-}" "${tools_staging:-}"' EXIT
-    mkdir -p "$tools_staging" "$(dirname "$ANDROID_CMDLINE_TOOLS_HOME")"
+    tools_staging="$(
+        mktemp -d -- "$ANKI_MINER_ANDROID_TOOLCHAIN_ROOT/.tools-staging-XXXXXXXX"
+    )"
+    mkdir -p "$(dirname "$ANDROID_CMDLINE_TOOLS_HOME")"
     unzip -q "$TOOLS_ARCHIVE" -d "$tools_staging"
     mv "$tools_staging/cmdline-tools" "$ANDROID_CMDLINE_TOOLS_HOME"
     rmdir "$tools_staging"
+    tools_staging=""
 fi
 
 "$SCRIPT_DIR/install-android-sdk-packages.sh"
