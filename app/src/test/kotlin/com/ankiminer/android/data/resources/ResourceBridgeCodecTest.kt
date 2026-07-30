@@ -238,6 +238,19 @@ class ResourceBridgeCodecTest {
     }
 
     @Test
+    fun insufficientStorageBridgeErrorMapsToTypedStorageFailure() {
+        val failure =
+            assertThrows(ResourceStorageException::class.java) {
+                ResourceBridgeCodec.decodeImportedDictionary(
+                    """{"schemaVersion":1,"type":"bridge.error","payload":{"code":"insufficient_storage","message":"Not enough free space for this resource operation"}}""",
+                )
+            }
+
+        assertEquals(null, failure.requiredBytes)
+        assertEquals(null, failure.availableBytes)
+    }
+
+    @Test
     fun knownWordManagementRequestsAndResponsesAreStrictAndBounded() {
         val previewRequest =
             ResourceBridgeCodec.encodeKnownWordsPreviewRequest(

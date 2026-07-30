@@ -823,10 +823,17 @@ object ResourceBridgeCodec {
             if (error.keys !in setOf(setOf("code", "message"), setOf("code", "message", "requestType"))) {
                 invalid("Bridge error payload is invalid")
             }
-            throw ResourceBridgeException(
-                text(error.getValue("code"), "error code"),
-                boundedText(error.getValue("message"), "error message", 16 * 1024),
-            )
+            val code = text(error.getValue("code"), "error code")
+            val message = boundedText(error.getValue("message"), "error message", 16 * 1024)
+            val bridgeFailure = ResourceBridgeException(code, message)
+            if (code == "insufficient_storage") {
+                throw ResourceStorageException(
+                    requiredBytes = null,
+                    availableBytes = null,
+                    cause = bridgeFailure,
+                )
+            }
+            throw bridgeFailure
         }
         if (envelope.first != expectedType) invalid("Unexpected resource response type")
         return envelope.second
