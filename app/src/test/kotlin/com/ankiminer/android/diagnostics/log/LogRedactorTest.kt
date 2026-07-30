@@ -248,6 +248,24 @@ class LogRedactorTest {
     }
 
     @Test
+    fun `an astral kanji is redacted and its length counted in code points`() {
+        // U+20B9F 叱 (CJK Extension B) is a surrogate pair in UTF-16: two chars, one code point.
+        // A BMP-shaped character class would have matched neither half and let it through.
+        val redacted = redactor().redact("a=$ASTRAL_KANJI b=${ASTRAL_KANJI}る")
+
+        assertFalse(redacted, redacted.contains(ASTRAL_KANJI))
+        assertTrue(redacted, redacted.matches(Regex("a=<jp-[0-9a-f]{6}:1> b=<jp-[0-9a-f]{6}:2>")))
+    }
+
+    @Test
+    fun `a percent encoded astral kanji is caught by rule 8 too`() {
+        // The same sweep has to reach rule 8's decode check, not only the character class.
+        val redacted = redactor().redact("q=%F0%A0%AE%9F end")
+
+        assertTrue(redacted, redacted.matches(Regex("q=<jp-enc-[0-9a-f]{6}> end")))
+    }
+
+    @Test
     fun `extension a compatibility and halfwidth japanese are covered`() {
         val redacted = redactor().redact("a=㐂 b=豈 c=ｱﾆﾒ")
 
@@ -502,6 +520,8 @@ class LogRedactorTest {
     }
 
     private companion object {
+        /** U+20B9F, written as its surrogate pair so the encoding under test is explicit. */
+        const val ASTRAL_KANJI = "\uD842\uDF9F"
         val FIXED_SALT = ByteArray(16) { index -> index.toByte() }
         const val FOUR_MEBIBYTES = 4L * 1024 * 1024
         const val BOUNDED_CHUNK = 64 * 1024
