@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import importlib
+import json
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -1118,6 +1119,37 @@ def test_online_dictionary_provider_is_memoized_and_cancel_gated_per_run() -> No
     assert calls == ["猫"]
     wrapped.close()
     assert calls == ["猫", "closed"]
+
+
+def test_offline_dictionary_error_is_reworded_for_android() -> None:
+    pytest.importorskip("requests")
+    from anki_miner.exceptions import SetupError
+    from anki_miner.orchestration.episode_processor import (
+        _OFFLINE_DICTIONARY_REQUIRED_MESSAGE,
+    )
+
+    # The engine pre-flight names desktop menus ("Tools -> Download Recommended
+    # Resources"); its text crosses the bridge verbatim, so the run must not tell
+    # an Android user to use surfaces the app does not have.
+    _outcome, terminal = mining._exception_terminal(
+        "run_" + "a" * 32,
+        SetupError(_OFFLINE_DICTIONARY_REQUIRED_MESSAGE),
+        cancelled=False,
+    )
+    payload = json.loads(terminal)["payload"]
+    assert payload["error"]["code"] == "engine_error"
+    assert "Tools" not in payload["error"]["message"]
+    assert payload["error"]["message"] == (
+        "No usable offline dictionary is installed. Import one in Settings, under Dictionaries."
+    )
+
+    # Every other engine message still crosses unchanged.
+    _outcome, other = mining._exception_terminal(
+        "run_" + "b" * 32,
+        SetupError("Something else went wrong"),
+        cancelled=False,
+    )
+    assert json.loads(other)["payload"]["error"]["message"] == "Something else went wrong"
 
 
 def test_runtime_composition_injects_only_android_video_services(

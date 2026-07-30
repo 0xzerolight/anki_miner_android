@@ -703,6 +703,26 @@ def _result_terminal(run_id: str, result: object) -> tuple[str, str]:
     )
 
 
+def _android_engine_message(message: str) -> str:
+    """Re-word the one engine message that names desktop-only menus.
+
+    Engine exception text crosses the bridge verbatim, and the offline-dictionary
+    pre-flight tells the user to "Use Tools → Download Recommended Resources or
+    Settings → Dictionaries" — two surfaces Android does not have. Matched against
+    the engine's own constant rather than a substring, so an upstream re-wording
+    surfaces the desktop text again (visible, and caught by the bridge test) rather
+    than silently mapping the wrong message.
+    """
+
+    from anki_miner.orchestration.episode_processor import (
+        _OFFLINE_DICTIONARY_REQUIRED_MESSAGE,
+    )
+
+    if message == _OFFLINE_DICTIONARY_REQUIRED_MESSAGE:
+        return "No usable offline dictionary is installed. Import one in Settings, under Dictionaries."
+    return message
+
+
 def _exception_terminal(
     run_id: str,
     error: BaseException,
@@ -723,7 +743,7 @@ def _exception_terminal(
 
         if isinstance(error, AnkiMinerException):
             code = "engine_error"
-            message = str(error) or "Mining failed"
+            message = _android_engine_message(str(error)) or "Mining failed"
         else:
             code = "internal_error"
             message = "Internal mining failure"

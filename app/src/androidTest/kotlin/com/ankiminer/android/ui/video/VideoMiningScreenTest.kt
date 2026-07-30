@@ -26,6 +26,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
 import com.ankiminer.android.media.SafDocument
+import com.ankiminer.android.mining.AnkiWriteState
 import com.ankiminer.android.mining.CurationCandidate
 import com.ankiminer.android.mining.CurationPage
 import com.ankiminer.android.mining.CurationRequest
@@ -991,11 +992,15 @@ class VideoMiningScreenTest {
             videoFile = "episode.mkv",
             subtitleFile = "episode.srt",
             minedForms = listOf("食べる", "懐かしい"),
+            ankiWriteState = AnkiWriteState.NOTE_WRITE_CONFIRMED,
+            failureIsTransient = false,
         )
 
     private fun hugeResult(): ProcessingResult =
         result().copy(
             minedForms = (1..250).map { "form-$it" },
+            ankiWriteState = AnkiWriteState.NOTE_WRITE_CONFIRMED,
+            failureIsTransient = false,
             cardIds = (1L..250L).toList(),
             errors = (1..125).map { "error-$it" },
         )

@@ -42,6 +42,7 @@ import com.ankiminer.android.data.resources.ResourceStartupReadiness
 import com.ankiminer.android.data.settings.ResourceChainSelection
 import com.ankiminer.android.engine.PythonRuntimeReadiness
 import com.ankiminer.android.media.SafDocument
+import com.ankiminer.android.mining.AnkiWriteState
 import com.ankiminer.android.mining.CurationCandidate
 import com.ankiminer.android.mining.CurationRequest
 import com.ankiminer.android.mining.CurationSentence
@@ -787,6 +788,8 @@ private fun processingResult(kind: String): ProcessingResult =
         videoFile = if (kind == "video") "episode.mkv" else "",
         subtitleFile = if (kind == "video") "episode.srt" else "銀河鉄道の夜.epub",
         minedForms = listOf("掛ける", "美しい", "懐かしい", "辿り着く", "見落とす", "鮮やか"),
+        ankiWriteState = AnkiWriteState.NOTE_WRITE_CONFIRMED,
+        failureIsTransient = false,
     )
 
 private val JAPANESE_WORDS =
