@@ -30,7 +30,9 @@
       "message": {
         "schemaVersion": 1,
         "type": "progress.complete",
-        "payload": {"runId": "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
+        "payload": {
+          "runId": "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
       }
     },
     {
@@ -133,10 +135,18 @@
             "errors": [],
             "elapsedTime": 1.25,
             "comprehensionPercentage": 62.5,
-            "cardIds": [101, 102],
+            "cardIds": [
+              101,
+              102
+            ],
             "videoFile": "/proc/self/fd/41",
             "subtitleFile": "/cache/subtitle.srt",
-            "minedForms": ["猫", "食べる"]
+            "minedForms": [
+              "猫",
+              "食べる"
+            ],
+            "ankiWriteState": "note_write_confirmed",
+            "failureIsTransient": false
           }
         }
       }
@@ -218,7 +228,9 @@
       "message": {
         "schemaVersion": 1,
         "type": "progress.complete",
-        "payload": {"runId": "not-a-run"}
+        "payload": {
+          "runId": "not-a-run"
+        }
       }
     },
     {
@@ -278,7 +290,11 @@
             "deckExists": true,
             "noteTypeExists": true,
             "issues": [
-              {"component": "AnkiDroid", "severity": "INFO", "message": "down"}
+              {
+                "component": "AnkiDroid",
+                "severity": "INFO",
+                "message": "down"
+              }
             ],
             "ffprobeOk": true
           }
@@ -293,7 +309,10 @@
         "payload": {
           "runId": "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
           "kind": "processingResult",
-          "result": {"cardsCreated": 2, "errors": []}
+          "result": {
+            "cardsCreated": 2,
+            "errors": []
+          }
         }
       }
     },
@@ -302,7 +321,9 @@
       "message": {
         "schemaVersion": 1,
         "type": "progress.paused",
-        "payload": {"runId": "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
+        "payload": {
+          "runId": "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
       }
     }
   ]

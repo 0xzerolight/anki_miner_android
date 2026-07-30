@@ -39,6 +39,7 @@ def _path_overrides(paths: AndroidPaths) -> dict[str, Path]:
         "dicts_root": home / "dicts",
         "audio_packs_root": home / "audio_packs",
         "pitch_accent_path": home / "pitch_accent.csv",
+        "pitch_root": home / "pitch",
         "freqs_root": home / "freqs",
         "known_words_db_path": home / "known_words.db",
         "stats_db_path": home / "stats.db",
@@ -53,7 +54,7 @@ def _path_overrides(paths: AndroidPaths) -> dict[str, Path]:
     }
 
 
-def test_empty_snapshot_preserves_all_98_desktop_defaults_except_targeted_android_overrides(
+def test_empty_snapshot_preserves_all_102_desktop_defaults_except_targeted_android_overrides(
     tmp_path: Path,
 ) -> None:
     from anki_miner.config import AnkiMinerConfig, AudioSourceEntry
@@ -73,7 +74,7 @@ def test_empty_snapshot_preserves_all_98_desktop_defaults_except_targeted_androi
     )
 
     desktop_fields = fields(AnkiMinerConfig)
-    assert len(desktop_fields) == 98
+    assert len(desktop_fields) == 102
     assert {field.name: getattr(mapped.engine_config, field.name) for field in desktop_fields} == {
         field.name: getattr(expected, field.name) for field in desktop_fields
     }

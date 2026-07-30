@@ -76,7 +76,9 @@
         "cardIds",
         "videoFile",
         "subtitleFile",
-        "minedForms"
+        "minedForms",
+        "ankiWriteState",
+        "failureIsTransient"
       ],
       "properties": {
         "totalWordsFound": {"$ref": "#/$defs/nonNegativeSigned64"},
@@ -110,6 +112,14 @@
         "minedForms": {
           "type": "array",
           "items": {"type": "string"}
+        },
+        "ankiWriteState": {
+          "enum": ["no_note_write", "note_write_uncertain", "note_write_confirmed"],
+          "$comment": "Engine D30 note-write provenance. Only no_note_write proves nothing reached the collection; the engine fails closed to note_write_uncertain."
+        },
+        "failureIsTransient": {
+          "type": "boolean",
+          "$comment": "Always false on Android: the engine classifier only recognizes an AnkiConnectionError caused by a requests transport error, and the ContentProvider adapter never raises through that path. Carried for wire fidelity; not a retry signal here."
         }
       }
     },

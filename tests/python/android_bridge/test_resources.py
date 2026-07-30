@@ -1048,7 +1048,7 @@ def test_frequency_import_is_indexed_inventory_visible_and_no_replace_by_default
     importlib.util.find_spec("requests") is None,
     reason="local-resource importers require the runtime engine dependency set",
 )
-def test_pitch_csv_import_publishes_canonical_file_and_inventory(
+def test_pitch_csv_import_publishes_its_own_slot_and_inventory(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1064,6 +1064,7 @@ def test_pitch_csv_import_publishes_canonical_file_and_inventory(
             {
                 "operationId": "pitch-one",
                 "sourcePath": str(source),
+                "sourceId": "fixture-pitch",
                 "sourceName": "Fixture Pitch",
                 "sourceFormat": "tsv",
                 "overwrite": False,
@@ -1072,47 +1073,50 @@ def test_pitch_csv_import_publishes_canonical_file_and_inventory(
         expected_type="resource.pitch.imported",
     )
 
+    assert imported.payload["sourceId"] == "fixture-pitch"
     assert imported.payload["entryCount"] == 1
     assert imported.payload["sourceName"] == "Fixture Pitch"
-    assert (home / "pitch_accent.csv").read_text(encoding="utf-8") == source.read_text(encoding="utf-8")
+    # A pitch source is now a per-source index under the pitch root, exactly
+    # like a frequency source; there is no canonical single CSV any more.
+    assert (home / "pitch" / "fixture-pitch" / "index.sqlite").is_file()
     listed = decode_envelope(
         local_resources.list_local_resources({}),
         expected_type="resource.local.listed",
     )
-    assert listed.payload["pitchAccent"] == {
-        "sourceName": "Fixture Pitch",
-        "sourceRevision": "",
-        "sourceFormat": "tsv",
-        "entryCount": 1,
-        "fileSizeBytes": source.stat().st_size,
-        "schemaOk": True,
-    }
+    assert listed.payload["pitchSources"] == [
+        {
+            "sourceId": "fixture-pitch",
+            "sourceName": "Fixture Pitch",
+            "sourceRevision": "",
+            "format": "csv",
+            "entryCount": 1,
+            "schemaOk": True,
+            "schemaVersion": 1,
+        }
+    ]
 
 
 @pytest.mark.skipif(
     importlib.util.find_spec("requests") is None,
     reason="pitch validation requires the runtime engine dependency set",
 )
-def test_malformed_pitch_inventory_fails_closed(
+def test_malformed_pitch_slot_is_omitted_from_the_inventory(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     home = _local_home(tmp_path, monkeypatch)
-    (home / "pitch_accent.csv").write_bytes(b"\xff")
+    slot = home / "pitch" / "broken"
+    slot.mkdir(parents=True)
+    (slot / "index.sqlite").write_bytes(b"\xff")
 
     listed = decode_envelope(
         local_resources.list_local_resources({}),
         expected_type="resource.local.listed",
     )
 
-    assert listed.payload["pitchAccent"] == {
-        "sourceName": "Pitch accent data",
-        "sourceRevision": "",
-        "sourceFormat": "unknown",
-        "entryCount": 0,
-        "fileSizeBytes": 1,
-        "schemaOk": False,
-    }
+    # An unreadable index has no meta to trust, so the slot is dropped rather
+    # than listed with invented zeros — the frequency inventory behaves the same.
+    assert listed.payload["pitchSources"] == []
 
 
 def _ajt_audio_zip(path: Path) -> Path:
@@ -1637,6 +1641,7 @@ def test_pitch_zip_import_accepts_oversized_meta_bank(
             {
                 "operationId": "pitch-zip",
                 "sourcePath": str(source),
+                "sourceId": "pitch-zip",
                 "sourceName": "Fixture NHK",
                 "sourceFormat": "zip",
                 "overwrite": False,
@@ -1704,6 +1709,7 @@ def test_pitch_zip_unsupported_compression_propagates_verbatim(
             {
                 "operationId": "pitch-method",
                 "sourcePath": str(source),
+                "sourceId": "pitch-method",
                 "sourceName": "Fixture NHK",
                 "sourceFormat": "zip",
                 "overwrite": False,

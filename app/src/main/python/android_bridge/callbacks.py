@@ -320,6 +320,26 @@ class AndroidProgressCallback:
             ),
         )
 
+    def on_stage(self, index: int, total: int, name: str) -> None:
+        """Report which numbered pipeline stage the run reached.
+
+        The engine calls this and ``PresenterProtocol.show_stage`` with the same
+        arguments; only this run-scoped channel forwards them, so the UI gets one
+        stage event per stage rather than two. It replaced the engine's blended
+        stage-weight percentage, so the stage pair is now the only whole-run
+        position available: Kotlin composes it as the outer denominator around
+        the per-stage on_start/on_progress counts.
+        """
+
+        _invoke(
+            self.callbacks,
+            "onStage",
+            encode_message(
+                "progress.stage",
+                {"runId": self.run_id, "index": index, "total": total, "name": name},
+            ),
+        )
+
     def on_complete(self) -> None:
         _invoke(
             self.callbacks,
@@ -367,6 +387,25 @@ class AndroidPresenter:
 
     def show_error(self, message: str) -> None:
         self._event("error", message=message)
+
+    def show_stage(self, index: int, total: int, name: str) -> None:
+        """Deliberately silent: the run-scoped progress callback owns stages.
+
+        ``EpisodeProcessor._announce_stage`` calls the presenter and the progress
+        callback with identical arguments, because on desktop four Reading
+        sub-tabs share one presenter while each run owns its callback. Android
+        has one run per presenter, so forwarding here would duplicate every
+        stage event. Kept because the protocol is duck-typed and the engine calls
+        it unconditionally.
+        """
+
+    def show_run_details(self, result: object) -> None:
+        """Deliberately silent: no Android surface opens a run-details view.
+
+        Desktop raises this from **View details** on a run receipt. The engine
+        never calls it during a run (only the GUI does, via getattr), but the
+        protocol names it, so it exists to keep this class structurally complete.
+        """
 
     def show_validation_result(self, result: object) -> None:
         self._event("validation", result=to_json_value(result))

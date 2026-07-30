@@ -175,9 +175,15 @@ def isolated_services_namespace(initialized_bridge_home: Path) -> Iterator[None]
 
     ankiconnect.post_action = unexpected_http  # type: ignore[attr-defined]
     ankiconnect.post_multi = unexpected_http  # type: ignore[attr-defined]
+    # anki_service also imports the response validator now. Nothing can reach it
+    # while both posters are hard failures, so it gets the same guard.
+    ankiconnect._expect_list = unexpected_http  # type: ignore[attr-defined]
     sys.modules[ankiconnect.__name__] = ankiconnect
     reading_images = types.ModuleType(f"{prefix}.reading.images")
     reading_images.prepare_card_image = unexpected_http  # type: ignore[attr-defined]
+    # episode_processor now imports the loader's two error types alongside it.
+    reading_images.ReadingImageArchiveError = type("ReadingImageArchiveError", (Exception,), {})
+    reading_images.ReadingImageMemberError = type("ReadingImageMemberError", (Exception,), {})
     sys.modules[reading_images.__name__] = reading_images
     try:
         yield
@@ -1674,9 +1680,9 @@ def test_note_building_dedup_and_first_occurrence_semantics_are_python_owned(
     kotlin.duplicate_fields = ["<b>既存</b>"]
     adapter = _adapter(config, kotlin)
 
-    created = adapter.create_cards_batch([_card("既存"), _card("猫"), _card("猫")])
+    created_ids = adapter.create_cards_batch([_card("既存"), _card("猫"), _card("猫")])
 
-    assert created == 1
+    assert len(created_ids) == 1
     assert adapter.last_created_note_ids == [1000]
     assert adapter.last_skipped_duplicates == 2
     create_payload = kotlin.requests_for("ankiCreateNotes")[0]["payload"]
@@ -1708,7 +1714,7 @@ def test_duplicate_fake_requires_pinned_checksum_match_before_normalized_match(
     kotlin.duplicate_fields = [" 猫 "]
     adapter = _adapter(_config(initialized_bridge_home), kotlin)
 
-    assert adapter.create_cards_batch([_card("猫")]) == 1
+    assert len(adapter.create_cards_batch([_card("猫")])) == 1
     assert adapter.last_skipped_duplicates == 0
 
 
@@ -1719,9 +1725,9 @@ def test_duplicate_probe_sends_exact_markup_first_field_for_checksum(
     kotlin.duplicate_fields = ["&lt;b&gt;猫&lt;/b&gt;"]
     adapter = _adapter(_config(initialized_bridge_home), kotlin)
 
-    created = adapter.create_cards_batch([_card("<b>猫</b>")])
+    created_ids = adapter.create_cards_batch([_card("<b>猫</b>")])
     scope = kotlin.requests_for("ankiScanFirstFields")[0]["payload"]["scope"]
-    assert created == 0
+    assert len(created_ids) == 0
     assert scope["candidates"] == [{"key": "<b>猫</b>", "firstField": "&lt;b&gt;猫&lt;/b&gt;"}]
 
 
@@ -1760,7 +1766,7 @@ def test_python_normalizes_bounded_raw_duplicate_hits(
     ]
     adapter = _adapter(_config(initialized_bridge_home), kotlin)
 
-    assert adapter.create_cards_batch(cards) == 0
+    assert len(adapter.create_cards_batch(cards)) == 0
     assert adapter.last_skipped_duplicates == len(cards)
     assert not kotlin.requests_for("ankiCreateNotes")
 
@@ -1901,7 +1907,7 @@ def test_create_race_baseline_preserves_preprobe_checksum_collision(
     kotlin.duplicate_fields = ['<img src="x">猫']
     adapter = _adapter(_config(initialized_bridge_home), kotlin)
 
-    assert adapter.create_cards_batch([_card(" x 猫")]) == 1
+    assert len(adapter.create_cards_batch([_card(" x 猫")])) == 1
     create_note = kotlin.requests_for("ankiCreateNotes")[0]["payload"]["notes"][0]
     assert create_note["duplicateCandidate"] == {
         "key": "x 猫",
@@ -1921,7 +1927,7 @@ def test_create_baseline_limit_counts_unique_ids_across_repeated_candidates(
     kotlin.duplicate_decks = {collision: {config.anki_deck_name}}
     adapter = _adapter(config, kotlin)
 
-    assert adapter.create_cards_batch([_card(" x 猫")] * 100) == 100
+    assert len(adapter.create_cards_batch([_card(" x 猫")] * 100)) == 100
     notes = kotlin.requests_for("ankiCreateNotes")[0]["payload"]["notes"]
     assert len(notes) == 100
     assert [note["duplicateCandidate"]["occurrence"] for note in notes] == list(range(100))
@@ -1972,7 +1978,7 @@ def test_create_snapshot_rejects_only_new_ids_in_configured_scope(
     kotlin = RacingKotlin()
     adapter = _adapter(config, kotlin)
 
-    assert adapter.create_cards_batch([_card("猫")]) == expected_created
+    assert len(adapter.create_cards_batch([_card("猫")])) == expected_created
     assert adapter.last_skipped_duplicates == 1 - expected_created
     request = kotlin.requests_for("ankiCreateNotes")[0]["payload"]
     assert request["notes"][0]["duplicateCandidate"]["occurrence"] == 0
@@ -1993,7 +1999,7 @@ def test_allow_duplicate_cards_filters_checksum_hits_to_target_deck(
     }
     adapter = _adapter(config, kotlin)
 
-    assert adapter.create_cards_batch([_card("猫"), _card("犬")]) == 1
+    assert len(adapter.create_cards_batch([_card("猫"), _card("犬")])) == 1
     assert adapter.last_skipped_duplicates == 1
     notes = kotlin.requests_for("ankiCreateNotes")[0]["payload"]["notes"]
     assert [note["fields"]["Expression"] for note in notes] == ["猫"]
@@ -2016,9 +2022,9 @@ def test_repeated_expressions_in_one_batch_follow_desktop_duplicate_mode(
     kotlin = FakeKotlinAnki()
     adapter = _adapter(config, kotlin)
 
-    created = adapter.create_cards_batch([_card("猫"), _card("猫"), _card("猫")])
+    created_ids = adapter.create_cards_batch([_card("猫"), _card("猫"), _card("猫")])
 
-    assert created == expected_created
+    assert len(created_ids) == expected_created
     assert adapter.last_skipped_duplicates == expected_skipped
     scope = kotlin.requests_for("ankiScanFirstFields")[0]["payload"]["scope"]
     assert scope["candidates"] == [{"key": "猫", "firstField": "猫"}]
@@ -2042,7 +2048,7 @@ def test_allow_duplicate_cards_fans_existing_target_hit_to_repeated_candidates(
     kotlin.duplicate_decks = {"猫": {config.anki_deck_name}}
     adapter = _adapter(config, kotlin)
 
-    assert adapter.create_cards_batch([_card("猫"), _card("猫")]) == 0
+    assert len(adapter.create_cards_batch([_card("猫"), _card("猫")])) == 0
     assert adapter.last_skipped_duplicates == 2
     scope = kotlin.requests_for("ankiScanFirstFields")[0]["payload"]["scope"]
     assert scope["candidates"] == [{"key": "猫", "firstField": "猫"}]
@@ -2057,7 +2063,7 @@ def test_baseline_token_binds_ordered_occurrences_in_both_duplicate_scopes(
     config = _config(initialized_bridge_home, allow_duplicate_cards=allow_duplicate_cards)
     kotlin = FakeKotlinAnki()
 
-    assert _adapter(config, kotlin).create_cards_batch([_card("猫"), _card("犬")]) == 2
+    assert len(_adapter(config, kotlin).create_cards_batch([_card("猫"), _card("犬")])) == 2
 
     scan = kotlin.requests_for("ankiScanFirstFields")[0]["payload"]["scope"]
     create = kotlin.requests_for("ankiCreateNotes")[0]["payload"]
@@ -2085,7 +2091,7 @@ def test_all_duplicate_probes_keep_one_outstanding_baseline_per_run(
     adapter = _adapter(config, kotlin)
 
     for _ in range(25):
-        assert adapter.create_cards_batch([_card("猫")]) == 0
+        assert len(adapter.create_cards_batch([_card("猫")])) == 0
         assert len(kotlin._baseline_snapshots) == 1
         assert len(kotlin._outstanding_baseline_by_run) == 1
 
@@ -2097,7 +2103,7 @@ def test_all_duplicate_probes_keep_one_outstanding_baseline_per_run(
 
     kotlin.duplicate_fields = []
     kotlin.duplicate_decks = {}
-    assert adapter.create_cards_batch([_card("犬")]) == 1
+    assert len(adapter.create_cards_batch([_card("犬")])) == 1
     assert not kotlin._baseline_snapshots
     assert not kotlin._outstanding_baseline_by_run
     assert adapter._outstanding_baseline_token is None
@@ -2110,7 +2116,7 @@ def test_close_releases_abandoned_all_duplicate_baseline_idempotently(
     kotlin.duplicate_fields = ["猫"]
     adapter = _adapter(_config(initialized_bridge_home), kotlin)
 
-    assert adapter.create_cards_batch([_card("猫")]) == 0
+    assert len(adapter.create_cards_batch([_card("猫")])) == 0
     assert RUN_ID in kotlin._outstanding_baseline_by_run
 
     adapter.close()
@@ -2167,7 +2173,7 @@ def test_release_defers_until_last_provider_task_then_cleans_exactly_once(
     kotlin = FakeKotlinAnki()
     kotlin.duplicate_fields = ["猫"]
     adapter = _adapter(_config(initialized_bridge_home), kotlin)
-    assert adapter.create_cards_batch([_card("猫")]) == 0
+    assert len(adapter.create_cards_batch([_card("猫")])) == 0
     token = kotlin._outstanding_baseline_by_run[RUN_ID]
     retained_baseline = kotlin._baseline_snapshots[token]
     kotlin._media_acknowledgements_by_run[RUN_ID] = {"asset_ack": "ack.opus"}
@@ -2278,7 +2284,7 @@ def test_close_releases_abandoned_baseline_after_clean_cancellation(
         kotlin,
         cancellation_check=lambda: cancelled,
     )
-    assert adapter.create_cards_batch([_card("猫")]) == 0
+    assert len(adapter.create_cards_batch([_card("猫")])) == 0
     cancelled = True
 
     with pytest.raises(AnkiOperationCancelled):
@@ -2332,16 +2338,18 @@ def test_context_exit_releases_normal_media_ack_state_without_provider_mutation(
 
     with adapter:
         assert (
-            adapter.create_cards_batch(
-                [
-                    _card(
-                        "猫",
-                        media=MediaData(
-                            audio_path=audio,
-                            audio_filename=audio.name,
-                        ),
-                    )
-                ]
+            len(
+                adapter.create_cards_batch(
+                    [
+                        _card(
+                            "猫",
+                            media=MediaData(
+                                audio_path=audio,
+                                audio_filename=audio.name,
+                            ),
+                        )
+                    ]
+                )
             )
             == 1
         )
@@ -2369,7 +2377,7 @@ def test_close_failure_cannot_mask_primary_error_and_direct_release_is_fallback(
     kotlin = CallbackFailureKotlin()
     kotlin.duplicate_fields = ["猫"]
     adapter = _adapter(_config(initialized_bridge_home), kotlin)
-    assert adapter.create_cards_batch([_card("猫")]) == 0
+    assert len(adapter.create_cards_batch([_card("猫")])) == 0
 
     with pytest.raises(RuntimeError, match="primary mining failure"):
         try:
@@ -2522,7 +2530,7 @@ def test_duplicate_probe_fans_matches_by_exact_first_field_candidate(
     kotlin.duplicate_decks = {" 猫 ": {config.anki_deck_name}}
     adapter = _adapter(config, kotlin)
 
-    assert adapter.create_cards_batch([_card("猫"), _card(" 猫 "), _card("猫")]) == 2
+    assert len(adapter.create_cards_batch([_card("猫"), _card(" 猫 "), _card("猫")])) == 2
     assert adapter.last_skipped_duplicates == 1
     scope = kotlin.requests_for("ankiScanFirstFields")[0]["payload"]["scope"]
     assert scope["candidates"] == [
@@ -2553,9 +2561,9 @@ def test_create_notes_batches_at_100_and_reports_cumulative_progress(
     progress = Progress()
     cards = [_card(f"語{index}") for index in range(101)]
 
-    created = _adapter(_config(initialized_bridge_home), kotlin).create_cards_batch(cards, progress)
+    created_ids = _adapter(_config(initialized_bridge_home), kotlin).create_cards_batch(cards, progress)
 
-    assert created == 101
+    assert len(created_ids) == 101
     assert [len(request["payload"]["notes"]) for request in kotlin.requests_for("ankiCreateNotes")] == [100, 1]
     duplicate_scopes = [request["payload"]["scope"] for request in kotlin.requests_for("ankiScanFirstFields")]
     assert [len(scope["candidates"]) for scope in duplicate_scopes] == [100, 1]
@@ -2636,7 +2644,9 @@ def test_note_field_value_limit_uses_exact_utf8_bytes(
 ) -> None:
     exact_kotlin = FakeKotlinAnki()
     assert (
-        _adapter(_config(initialized_bridge_home), exact_kotlin).create_cards_batch([_card("猫", definition=exact)])
+        len(
+            _adapter(_config(initialized_bridge_home), exact_kotlin).create_cards_batch([_card("猫", definition=exact)])
+        )
         == 1
     )
     oversized_kotlin = FakeKotlinAnki()
@@ -2870,9 +2880,13 @@ def test_create_call_total_media_bytes_are_bounded_before_hashing_or_callback(
             )
         )
     kotlin = FakeKotlinAnki()
+    # expression_audio is unmapped by default and the engine now skips media for
+    # unmapped fields, so map it to keep all three slots per card in the count.
+    base = _config(initialized_bridge_home)
+    config = replace(base, anki_fields={**base.anki_fields, "expression_audio": "WordAudio"})
 
     with pytest.raises(BridgeProtocolError) as exc_info:
-        _adapter(_config(initialized_bridge_home), kotlin).create_cards_batch(cards)
+        _adapter(config, kotlin).create_cards_batch(cards)
 
     assert _MAX_CREATE_CALL_MEDIA_BYTES == 8 * _MAX_MEDIA_ASSET_BYTES
     assert exc_info.value.code == "create_call_too_large"
@@ -2903,9 +2917,11 @@ def test_create_call_media_bytes_count_distinct_logical_names_separately(
         for index in range(3)
     ]
     kotlin = FakeKotlinAnki()
+    base = _config(initialized_bridge_home)
+    config = replace(base, anki_fields={**base.anki_fields, "expression_audio": "WordAudio"})
 
     with pytest.raises(BridgeProtocolError) as exc_info:
-        _adapter(_config(initialized_bridge_home), kotlin).create_cards_batch(cards)
+        _adapter(config, kotlin).create_cards_batch(cards)
 
     assert exc_info.value.code == "create_call_too_large"
     assert not kotlin.requests
@@ -2965,7 +2981,7 @@ def test_exact_tag_count_and_aggregate_utf8_boundary_is_accepted(
     kotlin = FakeKotlinAnki()
     config = _config(initialized_bridge_home, anki_tags=" ".join(tags))
 
-    assert _adapter(config, kotlin).create_cards_batch([_card("猫")]) == 1
+    assert len(_adapter(config, kotlin).create_cards_batch([_card("猫")])) == 1
     request_tags = kotlin.requests_for("ankiCreateNotes")[0]["payload"]["notes"][0]["tags"]
     assert len(request_tags) == _MAX_NOTE_TAGS
     assert sum(len(tag.encode("utf-8")) for tag in request_tags) == (_MAX_NOTE_TAGS_UTF8_BYTES)
@@ -2977,7 +2993,7 @@ def test_json_escaping_drives_exact_envelope_batching(
     cards = [_card(f"語{index}", definition="\\" * 50_000) for index in range(6)]
     kotlin = FakeKotlinAnki()
 
-    assert _adapter(_config(initialized_bridge_home), kotlin).create_cards_batch(cards) == 6
+    assert len(_adapter(_config(initialized_bridge_home), kotlin).create_cards_batch(cards)) == 6
 
     requests = kotlin.requests_for("ankiCreateNotes")
     assert len(requests) > 1
@@ -3061,7 +3077,7 @@ def test_multibyte_content_drives_aggregate_batching(
     cards = [_card(f"語{index}", definition="界" * 20_000) for index in range(7)]
     kotlin = FakeKotlinAnki()
 
-    assert _adapter(_config(initialized_bridge_home), kotlin).create_cards_batch(cards) == 7
+    assert len(_adapter(_config(initialized_bridge_home), kotlin).create_cards_batch(cards)) == 7
     assert [len(request["payload"]["notes"]) for request in kotlin.requests_for("ankiCreateNotes")] == [6, 1]
 
 
@@ -3087,7 +3103,7 @@ def test_duplicate_lookup_is_candidate_bounded_across_large_batches(
     cards = [_card(f"語{index}", definition="x" * 20_000) for index in range(205)]
     adapter = _adapter(_config(initialized_bridge_home), kotlin)
 
-    assert adapter.create_cards_batch(cards) == 202
+    assert len(adapter.create_cards_batch(cards)) == 202
     assert adapter.last_skipped_duplicates == 3
 
     scopes = [request["payload"]["scope"] for request in kotlin.requests_for("ankiScanFirstFields")]
@@ -3149,7 +3165,7 @@ def test_first_occurrence_wins_across_batch_boundary_when_duplicates_disallowed(
     cards = [_card(f"語{index}") for index in range(100)] + [_card("語0")]
     adapter = _adapter(_config(initialized_bridge_home), kotlin)
 
-    assert adapter.create_cards_batch(cards) == 100
+    assert len(adapter.create_cards_batch(cards)) == 100
     assert adapter.last_skipped_duplicates == 1
     assert [len(request["payload"]["notes"]) for request in kotlin.requests_for("ankiCreateNotes")] == [100]
     assert [
@@ -3361,7 +3377,7 @@ def test_cached_dictionary_actual_name_cannot_be_reintroduced_as_source(
     kotlin = FakeKotlinAnki()
     kotlin.media_renames[preferred] = actual
     adapter = _adapter(_config(initialized_bridge_home), kotlin)
-    assert adapter.create_cards_batch([_card("猫", definition=marked(source))]) == 1
+    assert len(adapter.create_cards_batch([_card("猫", definition=marked(source))])) == 1
     prior_requests = len(kotlin.requests)
 
     def unexpected_hash(_path: Path) -> object:
@@ -3396,7 +3412,7 @@ def test_cached_dictionary_source_spellings_share_preflight_block_identity(
         *sorted(required - {"MainDefinition"}),
     ]
     adapter = _adapter(config, kotlin)
-    assert adapter.create_cards_batch([_card("初", definition=marked(source))]) == 1
+    assert len(adapter.create_cards_batch([_card("初", definition=marked(source))])) == 1
     prior_requests = len(kotlin.requests)
     spellings = [f"dict__&#{'0' * leading_zeroes}99;ached-spellings.png" for leading_zeroes in range(101)]
 
@@ -3854,9 +3870,9 @@ def test_card_media_is_content_addressed_deduped_and_actual_name_propagates(
     kotlin.media_renames[preferred] = provider_name
     adapter = _adapter(_config(initialized_bridge_home), kotlin)
 
-    created = adapter.create_cards_batch([_card("猫", media=media_a), _card("犬", media=media_b)])
+    created_ids = adapter.create_cards_batch([_card("猫", media=media_a), _card("犬", media=media_b)])
 
-    assert created == 2
+    assert len(created_ids) == 2
     assert adapter.last_media_store_failures == 1
     assert media_a.screenshot_filename == provider_name
     assert media_b.screenshot_filename == provider_name
@@ -3894,16 +3910,18 @@ def test_card_media_hashing_never_uses_unbounded_read_bytes(
     kotlin = FakeKotlinAnki()
 
     assert (
-        _adapter(_config(initialized_bridge_home), kotlin).create_cards_batch(
-            [
-                _card(
-                    "猫",
-                    media=MediaData(
-                        audio_path=audio,
-                        audio_filename="streamed.opus",
-                    ),
-                )
-            ]
+        len(
+            _adapter(_config(initialized_bridge_home), kotlin).create_cards_batch(
+                [
+                    _card(
+                        "猫",
+                        media=MediaData(
+                            audio_path=audio,
+                            audio_filename="streamed.opus",
+                        ),
+                    )
+                ]
+            )
         )
         == 1
     )
@@ -3912,9 +3930,7 @@ def test_card_media_hashing_never_uses_unbounded_read_bytes(
     assert requested == f"streamed_{expected_digest}.opus"
 
 
-def test_stored_media_is_not_bound_when_materialized_note_does_not_reference_it(
-    initialized_bridge_home: Path, tmp_path: Path
-) -> None:
+def test_media_for_an_unmapped_field_is_neither_stored_nor_bound(initialized_bridge_home: Path, tmp_path: Path) -> None:
     from anki_miner.models import MediaData
 
     audio = tmp_path / "unmapped.opus"
@@ -3927,21 +3943,26 @@ def test_stored_media_is_not_bound_when_materialized_note_does_not_reference_it(
     kotlin = FakeKotlinAnki()
 
     assert (
-        _adapter(config, kotlin).create_cards_batch(
-            [
-                _card(
-                    "猫",
-                    media=MediaData(
-                        audio_path=audio,
-                        audio_filename=audio.name,
-                    ),
-                )
-            ]
+        len(
+            _adapter(config, kotlin).create_cards_batch(
+                [
+                    _card(
+                        "猫",
+                        media=MediaData(
+                            audio_path=audio,
+                            audio_filename=audio.name,
+                        ),
+                    )
+                ]
+            )
         )
         == 1
     )
 
-    assert len(kotlin.requests_for("ankiStoreMedia")) == 1
+    # The engine skips media whose Anki field is unmapped, so the asset is not
+    # even prepared: no store call is made, and nothing binds. Previously the
+    # bytes were uploaded and then left unreferenced.
+    assert kotlin.requests_for("ankiStoreMedia") == []
     note = kotlin.requests_for("ankiCreateNotes")[0]["payload"]["notes"][0]
     assert note["fields"].get("SentenceAudio") in {None, ""}
     assert note["mediaBindings"] == []
@@ -4221,8 +4242,10 @@ def test_same_logical_media_name_with_identical_bytes_dedupes_across_paths(
     kotlin = FakeKotlinAnki()
 
     assert (
-        _adapter(_config(initialized_bridge_home), kotlin).create_cards_batch(
-            [_card("猫", media=first_media), _card("犬", media=second_media)]
+        len(
+            _adapter(_config(initialized_bridge_home), kotlin).create_cards_batch(
+                [_card("猫", media=first_media), _card("犬", media=second_media)]
+            )
         )
         == 2
     )
@@ -4247,7 +4270,7 @@ def test_media_store_is_bounded_to_fifty_assets_per_callback(initialized_bridge_
         cards.append(_card(f"語{index}", media=media))
     kotlin = FakeKotlinAnki()
 
-    assert _adapter(_config(initialized_bridge_home), kotlin).create_cards_batch(cards) == 51
+    assert len(_adapter(_config(initialized_bridge_home), kotlin).create_cards_batch(cards)) == 51
 
     requests = kotlin.requests_for("ankiStoreMedia")
     assert [len(request["payload"]["assets"]) for request in requests] == [50, 1]
@@ -4705,13 +4728,15 @@ def test_declared_media_failure_is_nonfatal_and_omits_reference(initialized_brid
     adapter = _adapter(_config(initialized_bridge_home), kotlin)
 
     assert (
-        adapter.create_cards_batch(
-            [
-                _card(
-                    "猫",
-                    media=MediaData(audio_path=audio, audio_filename="clip.opus"),
-                )
-            ]
+        len(
+            adapter.create_cards_batch(
+                [
+                    _card(
+                        "猫",
+                        media=MediaData(audio_path=audio, audio_filename="clip.opus"),
+                    )
+                ]
+            )
         )
         == 1
     )
@@ -4782,7 +4807,8 @@ def test_dictionary_media_preserves_quote_filename_for_direct_fallback(
     kotlin = DirectNameMediaKotlin()
 
     assert (
-        _adapter(_config(initialized_bridge_home), kotlin).create_cards_batch([_card("猫", definition=definition)]) == 1
+        len(_adapter(_config(initialized_bridge_home), kotlin).create_cards_batch([_card("猫", definition=definition)]))
+        == 1
     )
 
     asset = kotlin.requests_for("ankiStoreMedia")[0]["payload"]["assets"][0]
@@ -4825,7 +4851,7 @@ def test_remote_yomitan_image_never_reaches_anki_or_media_callbacks(
     kotlin = FakeKotlinAnki()
     adapter = _adapter(_config(initialized_bridge_home), kotlin)
 
-    assert adapter.create_cards_batch([_card("猫", definition=definition)]) == 1
+    assert len(adapter.create_cards_batch([_card("猫", definition=definition)])) == 1
 
     assert kotlin.requests_for("ankiStoreMedia") == []
     create_request = kotlin.requests_for("ankiCreateNotes")[0]
@@ -4869,15 +4895,17 @@ def test_dictionary_media_random_names_rewrite_marked_html_and_strip_unmarked_sr
     }
     adapter = _adapter(config, kotlin)
 
-    assert adapter.create_cards_batch([first_card]) == 1
+    assert len(adapter.create_cards_batch([first_card])) == 1
     assert (
-        adapter.create_cards_batch(
-            [
-                replace(
-                    _card("犬", definition=definition),
-                    extra_fields={"glossary": glossary},
-                )
-            ]
+        len(
+            adapter.create_cards_batch(
+                [
+                    replace(
+                        _card("犬", definition=definition),
+                        extra_fields={"glossary": glossary},
+                    )
+                ]
+            )
         )
         == 1
     )
@@ -5352,7 +5380,7 @@ def test_provider_duplicate_status_is_the_only_residual_duplicate_count(
     kotlin.create_scripts = [(["created", "duplicate"], None)]
     adapter = _adapter(_config(initialized_bridge_home), kotlin)
 
-    assert adapter.create_cards_batch([_card("猫"), _card("犬")]) == 1
+    assert len(adapter.create_cards_batch([_card("猫"), _card("犬")])) == 1
     assert adapter.last_created_note_ids == [1000]
     assert adapter.last_skipped_duplicates == 1
 
@@ -5563,6 +5591,10 @@ def test_vendored_episode_processor_harvests_ids_on_intercallback_cancellation(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    # episode_processor now imports anki_service at module level (for the
+    # transient-transport classifier), which pulls requests. The lean host-test
+    # env has no runtime deps; the runtime-host lane still runs this for real.
+    pytest.importorskip("requests")
     from anki_miner.orchestration.episode_processor import (
         EpisodeProcessor,
         _EpisodeContext,
@@ -5588,6 +5620,10 @@ def test_vendored_episode_processor_harvests_ids_on_intercallback_cancellation(
     processor.presenter = presenter
     processor._external_cancel = None
     processor.check_dictionary_staleness = lambda: None
+    # _run_pipeline gained a third pre-flight gate at this pin; it asks the
+    # definition service for a usable offline provider, which this partial
+    # processor has no reason to own.
+    processor.check_offline_dictionary = lambda: None
     processor._preflight_card_target = lambda: None
     run_temp = tmp_path / "partial-run"
 
@@ -5607,9 +5643,9 @@ def test_vendored_episode_processor_harvests_ids_on_intercallback_cancellation(
     cards = [_card(f"語{index}") for index in range(101)]
 
     def body(_run_temp: Path) -> Any:
-        created = adapter.create_cards_batch(cards)
+        created_ids = adapter.create_cards_batch(cards)
         return ctx.build_result(
-            cards_created=created,
+            cards_created=len(created_ids),
             card_ids=list(adapter.last_created_note_ids),
         )
 
@@ -5628,6 +5664,10 @@ def test_vendored_episode_processor_preserves_clean_prewrite_cancellation(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    # episode_processor now imports anki_service at module level (for the
+    # transient-transport classifier), which pulls requests. The lean host-test
+    # env has no runtime deps; the runtime-host lane still runs this for real.
+    pytest.importorskip("requests")
     from anki_miner.orchestration.episode_processor import (
         EpisodeProcessor,
         _EpisodeContext,
@@ -5649,6 +5689,10 @@ def test_vendored_episode_processor_preserves_clean_prewrite_cancellation(
     processor.presenter = presenter
     processor._external_cancel = None
     processor.check_dictionary_staleness = lambda: None
+    # _run_pipeline gained a third pre-flight gate at this pin; it asks the
+    # definition service for a usable offline provider, which this partial
+    # processor has no reason to own.
+    processor.check_offline_dictionary = lambda: None
     processor._preflight_card_target = lambda: None
     run_temp = tmp_path / "cancelled-run"
 

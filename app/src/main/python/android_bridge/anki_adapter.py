@@ -629,6 +629,14 @@ class AndroidAnkiAdapter:
         self.last_created_note_ids: list[int] = []
         self.last_skipped_duplicates = 0
         self.last_media_store_failures = 0
+        # Note-write provenance (engine D30). EpisodeProcessor reads this off
+        # the service after every run and fails closed to UNCERTAIN when it is
+        # not a real AnkiWriteState, so an adapter that never set it would
+        # report every clean run as unretryable. Function-local import: the
+        # bridge must not touch anki_miner at module import time.
+        from anki_miner.models import AnkiWriteState
+
+        self.anki_write_state: Any = AnkiWriteState.NO_NOTE_WRITE
         self._verified_field_names: tuple[str, ...] | None = None
         self._outstanding_baseline_token: str | None = None
         self._existing_vocab_cache: set[str] | None = None
@@ -1441,7 +1449,12 @@ class AndroidAnkiAdapter:
 
         for item in word_data_list:
             media = item.media
-            for filename_attr, path_attr in _MEDIA_FIELD_ATTRS:
+            # The engine's tuple gained a leading Anki field key and it now
+            # skips media whose field is unmapped. Both sites here mirror that
+            # gate, or Android would upload assets desktop never stores.
+            for field_key, filename_attr, path_attr in _MEDIA_FIELD_ATTRS:
+                if not self.config.anki_fields.get(field_key):
+                    continue
                 filename = getattr(media, filename_attr)
                 source_path = getattr(media, path_attr)
                 if not filename or not source_path:
@@ -2123,13 +2136,10 @@ class AndroidAnkiAdapter:
                     "The create call exceeds its total media-byte limit",
                 )
 
-        note_key_by_filename_attr = {
-            "screenshot_filename": "picture",
-            "audio_filename": "audio",
-            "expression_audio_filename": "expression_audio",
-        }
         for payload_index, payload in enumerate(word_data_list):
-            for filename_attr, path_attr in _MEDIA_FIELD_ATTRS:
+            for field_key, filename_attr, path_attr in _MEDIA_FIELD_ATTRS:
+                if not self.config.anki_fields.get(field_key):
+                    continue
                 filename = getattr(payload.media, filename_attr)
                 source_path = getattr(payload.media, path_attr)
                 if not filename or not source_path:
@@ -2157,7 +2167,7 @@ class AndroidAnkiAdapter:
                     )
                 intended_stored_files.add(filename)
                 card_media_paths.append((filename, Path(source_path)))
-                card_note_refs[payload_index].append((note_key_by_filename_attr[filename_attr], filename))
+                card_note_refs[payload_index].append((field_key, filename))
 
         # Validate the exact current note graph before running a regex over
         # marked dictionary HTML or touching media on disk. This makes a
@@ -2958,6 +2968,16 @@ class AndroidAnkiAdapter:
         # Initiating createNotes consumes the sole outstanding capability.
         # Kotlin enforces the same one-use transition before any insert.
         self._outstanding_baseline_token = None
+        # From here until a VALIDATED response is parsed the honest answer is
+        # "cannot tell": a dead provider or an unreadable reply is
+        # indistinguishable from notes that were written and whose reply was
+        # lost. Only the validated reply below downgrades this again, and only
+        # to what held BEFORE this batch, so an all-duplicate batch cannot erase
+        # an earlier batch's confirmed write.
+        from anki_miner.models import AnkiWriteState
+
+        state_before_request = self.anki_write_state
+        self.anki_write_state = AnkiWriteState.NOTE_WRITE_UNCERTAIN
         try:
             payload = self._callbacks.create_notes(request_payload)
         except AnkiCallbackError as error:
@@ -2975,16 +2995,25 @@ class AndroidAnkiAdapter:
             self._reject_terminal_payload(payload)
             raise
         self._accept_terminal_payload(payload)
+        if any(note_id is not None for note_id in outcome[0]):
+            self.anki_write_state = AnkiWriteState.NOTE_WRITE_CONFIRMED
+        else:
+            self.anki_write_state = state_before_request
         return outcome
 
-    def create_cards_batch(self, word_data_list: list[Any], progress_callback: Any | None = None) -> int:
-        """Create cards in desktop-compatible batches and preserve partial state."""
+    def create_cards_batch(self, word_data_list: list[Any], progress_callback: Any | None = None) -> list[int]:
+        """Create cards in desktop-compatible batches and preserve partial state.
+
+        Returns the ordered created note ids, matching the desktop service: the
+        processor takes ``len(...)`` of this as the card count and stamps the ids
+        onto the result, so returning a count would break both.
+        """
 
         if not word_data_list:
             self.last_created_note_ids = []
             self.last_skipped_duplicates = 0
             self.last_media_store_failures = 0
-            return 0
+            return []
 
         self.last_created_note_ids = []
         self.last_skipped_duplicates = 0
@@ -3142,7 +3171,7 @@ class AndroidAnkiAdapter:
                 len(word_data_list),
                 bold_fallback,
             )
-        return total_created
+        return list(all_created_ids)
 
 
 # Concise injection name for callers which do not care about the transport.

@@ -484,7 +484,10 @@ def _build_processor(
     from anki_miner.services.frequency.registry import FrequencySourceRegistry
     from anki_miner.services.known_word_db import KnownWordDB
     from anki_miner.services.media_extractor import MediaExtractorService
-    from anki_miner.services.pitch_accent_service import PitchAccentService
+    from anki_miner.services.pitch_accent.multi_pitch_service import (
+        MultiPitchAccentService,
+    )
+    from anki_miner.services.pitch_accent.registry import PitchSourceRegistry
     from anki_miner.services.stats_service import StatsService
     from anki_miner.services.subtitle_parser import SubtitleParserService
     from anki_miner.services.word_filter import WordFilterService
@@ -504,7 +507,10 @@ def _build_processor(
             dictionary_registry.build_provider_chain(config),
             adapters.cancel_event.is_set,
         )
-        definition_service = DefinitionService(config, providers=providers)
+        # registry= is load-bearing, not decoration: the processor's pre-flight
+        # check_offline_dictionary asks has_usable_offline_provider, which
+        # returns False for a registry-less service and aborts the whole run.
+        definition_service = DefinitionService(config, providers=providers, registry=dictionary_registry)
 
         has_indexed_dictionary = any(entry.kind == "indexed" and entry.enabled for entry in config.dictionary_chain)
         if has_indexed_dictionary:
@@ -518,6 +524,7 @@ def _build_processor(
             term_lookup=(definition_service.offline_terms_exist if has_indexed_dictionary else None),
             reading_lookup=(definition_service.offline_term_readings if has_indexed_dictionary else None),
             kana_attest_lookup=(definition_service.has_offline_definitions if has_indexed_dictionary else None),
+            term_common_lookup=(definition_service.offline_term_commonness if has_indexed_dictionary else None),
         )
         word_filter = WordFilterService(config, tagger=subtitle_parser.tagger)
         media_extractor = MediaExtractorService(config)
@@ -529,11 +536,16 @@ def _build_processor(
         pitch_accent_service = None
         if config.pitch_active:
             try:
-                pitch_accent_service = PitchAccentService(config.pitch_accent_path)
-                pitch_accent_service.load()
-                if pitch_accent_service.entry_count <= 0:
-                    adapters.presenter.show_warning("Pitch accent file has no valid entries")
-                    pitch_accent_service = None
+                pitch_registry = PitchSourceRegistry(config.pitch_root)
+                pitch_registry.load()
+                pitch_providers = [p for p in pitch_registry.build_sources(config) if p.load()]
+                if pitch_providers:
+                    pitch_accent_service = MultiPitchAccentService(pitch_providers)
+                else:
+                    # An enabled chain entry can still point at a missing or
+                    # unreadable on-disk index. Not an error; pitch fields stay
+                    # empty for the run.
+                    adapters.presenter.show_warning("No pitch accent source could be loaded")
             except Exception as error:
                 _show_optional_failure(adapters.presenter, "Couldn't load pitch accent data", error)
                 pitch_accent_service = None

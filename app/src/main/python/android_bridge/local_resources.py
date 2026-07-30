@@ -11,10 +11,8 @@ from __future__ import annotations
 
 import contextlib
 import csv
-import hashlib
 import json
 import os
-import shutil
 import sqlite3
 import stat
 import zipfile
@@ -49,7 +47,6 @@ _MAX_KNOWN_WORD_PAGE = 200
 _MAX_KNOWN_WORD_MUTATION = 256
 _KNOWN_WORD_EXPORT_LIMIT = 512 * 1024 * 1024
 _KNOWN_WORD_LINE_SEPARATORS = frozenset("\n\r\v\f\x1c\x1d\x1e\x85\u2028\u2029")
-_PITCH_SIDECAR = "pitch_accent.android-resource.json"
 _ANDROID_SIDECAR = "android-resource.json"
 
 
@@ -83,6 +80,10 @@ def _work_root(home: Path, operation_id: str) -> Path:
 
 def _frequency_root(home: Path) -> Path:
     return home / "freqs"
+
+
+def _pitch_root(home: Path) -> Path:
+    return home / "pitch"
 
 
 def _audio_root(home: Path) -> Path:
@@ -377,58 +378,35 @@ def import_frequency(payload: Mapping[str, object]) -> str:
                 core._safe_rmtree(operation_root)
 
 
-def _pitch_sidecar_payload(
-    *,
-    source_name: str,
-    source_revision: str,
-    source_format: str,
-    entry_count: int,
-    file_path: Path,
-) -> dict[str, object]:
-    digest = hashlib.sha256()
-    size = 0
-    with file_path.open("rb") as stream:
-        while True:
-            chunk = stream.read(core._COPY_CHUNK_BYTES)
-            if not chunk:
-                break
-            digest.update(chunk)
-            size += len(chunk)
-    return {
-        "schemaVersion": 1,
-        "sourceName": source_name,
-        "sourceRevision": source_revision,
-        "sourceFormat": source_format,
-        "entryCount": entry_count,
-        "fileSizeBytes": size,
-        "fileSha256": digest.hexdigest(),
-    }
-
-
-def _file_sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        while True:
-            chunk = stream.read(core._COPY_CHUNK_BYTES)
-            if not chunk:
-                return digest.hexdigest()
-            digest.update(chunk)
-
-
 def import_pitch(payload: Mapping[str, object]) -> str:
+    """Import one pitch source into its own slot under the pitch root.
+
+    Mirrors :func:`import_frequency`: the engine builds a per-source
+    ``index.sqlite`` inside a private operation root, and publication into the
+    canonical root stays here. The engine's own ``repair_pitch_source`` is
+    deliberately unused — it takes the canonical root and quarantines any slot
+    without an ownership marker, which is every slot an existing install has.
+    """
+
     core._exact(
         payload,
-        {"operationId", "sourcePath", "sourceName", "sourceFormat", "overwrite"},
+        {
+            "operationId",
+            "sourcePath",
+            "sourceId",
+            "sourceName",
+            "sourceFormat",
+            "overwrite",
+        },
         code="invalid_resource_request",
     )
     operation_id = core._operation_id(payload["operationId"])
     source = core._absolute_path(payload["sourcePath"], name="sourcePath")
+    source_id = core._slot_id(payload["sourceId"])
     requested_name = _display_name(payload["sourceName"], label="sourceName")
     source_format = _format(payload["sourceFormat"], _PITCH_FORMATS, label="sourceFormat")
     overwrite = _boolean(payload["overwrite"], label="overwrite")
     home = Path(require_initialized())
-    final = home / "pitch_accent.csv"
-    sidecar = home / _PITCH_SIDECAR
     operation_root = _work_root(home, operation_id)
     with core._OPERATIONS.begin(operation_id) as operation:
         operation.check()
@@ -442,45 +420,30 @@ def import_pitch(payload: Mapping[str, object]) -> str:
                 operation,
                 maximum_bytes=maximum,
             )
-            candidate = operation_root / "pitch_accent.csv"
-            source_name = requested_name
-            source_revision = ""
-            skipped_display_only = 0
-            skipped_malformed = 0
+            if source_format == "zip":
+                core._validate_zip_streamed(
+                    copied.path,
+                    operation,
+                    member_limit=None,
+                    total_limit=core._engine_uncompressed_limit(),
+                    file_limit=None,
+                    require_root_index=False,
+                )
+            operation.check()
             from anki_miner.exceptions import SetupError
-            from anki_miner.services.pitch_accent_service import PitchAccentService
+            from anki_miner.services.pitch_accent.source_importer import (
+                import_pitch_source,
+            )
 
+            import_root = operation_root / "publication"
             try:
-                if source_format == "zip":
-                    core._validate_zip_streamed(
-                        copied.path,
-                        operation,
-                        member_limit=None,
-                        total_limit=core._engine_uncompressed_limit(),
-                        file_limit=None,
-                        require_root_index=False,
-                    )
-                    from anki_miner.services.pitch_accent.yomitan_pitch_importer import (
-                        import_yomitan_pitch_zip,
-                    )
-
-                    result = import_yomitan_pitch_zip(
-                        copied.path,
-                        candidate,
-                        cancel_check=operation.cancelled.is_set,
-                    )
-                    source_name = result.source_name
-                    source_revision = result.source_revision
-                    entry_count = result.entry_count
-                    skipped_display_only = result.skipped_display_only
-                    skipped_malformed = result.skipped_malformed
-                else:
-                    shutil.copyfile(copied.path, candidate)
-                    service = PitchAccentService(candidate)
-                    service.load()
-                    entry_count = service.entry_count
-                    if entry_count <= 0:
-                        raise SetupError("Pitch source yielded no usable entries")
+                result = import_pitch_source(
+                    copied.path,
+                    import_root,
+                    source_id=source_id,
+                    source_name=requested_name,
+                    cancel_check=operation.cancelled.is_set,
+                )
             except (SetupError, UnicodeError, csv.Error, OSError) as exc:
                 operation.check()
                 raise _fail(
@@ -488,36 +451,39 @@ def import_pitch(payload: Mapping[str, object]) -> str:
                     "The selected file is not supported pitch-accent data",
                 ) from exc
             operation.check()
-            _fsync_file(candidate)
-            metadata = _pitch_sidecar_payload(
-                source_name=source_name,
-                source_revision=source_revision,
-                source_format=source_format,
-                entry_count=entry_count,
-                file_path=candidate,
+            candidate = import_root / source_id
+            _write_sidecar(
+                candidate / _ANDROID_SIDECAR,
+                {
+                    "schemaVersion": 1,
+                    "kind": "pitch",
+                    "sourceId": source_id,
+                    "archiveSha256": copied.sha256,
+                    "archiveSizeBytes": copied.size_bytes,
+                },
             )
-            staged_sidecar = operation_root / _PITCH_SIDECAR
-            _write_sidecar(staged_sidecar, metadata)
-            with core._PROMOTION_LOCK:
-                if (final.exists() or final.is_symlink()) and not overwrite:
-                    raise _fail(
-                        "resource_already_installed",
-                        "Pitch-accent data is already installed",
-                    )
-                os.replace(candidate, final)
-                core._fsync_directory(home)
-                os.replace(staged_sidecar, sidecar)
-                core._fsync_directory(home)
+            _fsync_small_tree(candidate)
+            _publish_indexed_dir(
+                candidate,
+                home=home,
+                kind="pitch",
+                identity=source_id,
+                operation_id=operation_id,
+                overwrite=overwrite,
+                final_root=_pitch_root(home),
+                require_content=False,
+            )
             return encode_message(
                 "resource.pitch.imported",
                 {
-                    "sourceName": source_name,
-                    "sourceRevision": source_revision,
-                    "sourceFormat": source_format,
-                    "entryCount": entry_count,
-                    "skippedDisplayOnly": skipped_display_only,
-                    "skippedMalformed": skipped_malformed,
-                    "fileSha256": metadata["fileSha256"],
+                    "sourceId": result.source_id,
+                    "sourceName": result.source_name,
+                    "sourceRevision": result.source_revision,
+                    "sourceFormat": result.format,
+                    "entryCount": result.entry_count,
+                    "skippedDisplayOnly": result.skipped_display_only,
+                    "skippedMalformed": result.skipped_malformed,
+                    "archiveSha256": copied.sha256,
                 },
             )
         finally:
@@ -1044,92 +1010,44 @@ def export_known_words(payload: Mapping[str, object]) -> str:
             raise
 
 
-def _read_pitch_inventory(home: Path) -> dict[str, object] | None:
-    pitch = home / "pitch_accent.csv"
-    if not pitch.exists():
-        return None
-    if pitch.is_symlink() or not pitch.is_file():
-        return {
-            "sourceName": "Pitch accent data",
-            "sourceRevision": "",
-            "sourceFormat": "unknown",
-            "entryCount": 0,
-            "fileSizeBytes": 0,
-            "schemaOk": False,
-        }
-    try:
-        size = pitch.stat().st_size
-        if size <= 0 or size > _PITCH_TEXT_LIMIT:
-            raise ValueError("invalid pitch size")
-        sidecar_path = home / _PITCH_SIDECAR
+def _pitch_inventory(home: Path) -> list[dict[str, object]]:
+    root = _pitch_root(home)
+    if not root.exists():
+        return []
+    if root.is_symlink() or not root.is_dir():
+        raise _fail("resource_inventory_failed", "Pitch resource root is unsafe")
+    result: list[dict[str, object]] = []
+    for child in sorted(root.iterdir(), key=lambda item: item.name):
         if (
-            not sidecar_path.is_file()
-            or sidecar_path.is_symlink()
-            or sidecar_path.stat().st_size > core._MAX_MANIFEST_BYTES
+            child.name.startswith(".")
+            or not core._SLOT_ID_RE.fullmatch(child.name)
+            or child.is_symlink()
+            or not child.is_dir()
         ):
-            raise ValueError("invalid sidecar")
-        parsed = json.loads(sidecar_path.read_text(encoding="utf-8"))
-        if (
-            not isinstance(parsed, dict)
-            or parsed.get("schemaVersion") != 1
-            or parsed.get("fileSizeBytes") != size
-            or not isinstance(parsed.get("entryCount"), int)
-            or parsed["entryCount"] <= 0
-            or not isinstance(parsed.get("sourceName"), str)
-            or not parsed["sourceName"]
-            or len(parsed["sourceName"].encode("utf-8")) > 4096
-            or not isinstance(parsed.get("sourceRevision"), str)
-            or len(parsed["sourceRevision"].encode("utf-8")) > 4096
-            or parsed.get("sourceFormat") not in _PITCH_FORMATS
-            or not isinstance(parsed.get("fileSha256"), str)
-            or len(parsed["fileSha256"]) != 64
-            or _file_sha256(pitch) != parsed["fileSha256"]
-        ):
-            raise ValueError("invalid sidecar")
-        return {
-            "sourceName": str(parsed.get("sourceName", "Pitch accent data")),
-            "sourceRevision": str(parsed.get("sourceRevision", "")),
-            "sourceFormat": str(parsed.get("sourceFormat", "unknown")),
-            "entryCount": parsed["entryCount"],
-            "fileSizeBytes": size,
-            "schemaOk": True,
-        }
-    except (OSError, UnicodeError, json.JSONDecodeError, TypeError, ValueError):
+            continue
+        meta = _read_index_meta(child)
+        if meta is None:
+            continue
         try:
-            fallback_size = pitch.stat().st_size
-        except OSError:
-            fallback_size = 0
-        if 0 < fallback_size <= _PITCH_TEXT_LIMIT:
-            try:
-                # A crash can atomically publish the CSV immediately before its
-                # informational sidecar. Re-validate the actual runtime format
-                # so that harmless metadata loss does not permanently brick the
-                # resource; malformed data still fails closed below.
-                from anki_miner.services.pitch_accent_service import (
-                    PitchAccentService,
-                )
-
-                service = PitchAccentService(pitch)
-                service.load()
-                if service.entry_count > 0:
-                    return {
-                        "sourceName": "Recovered local pitch accent",
-                        "sourceRevision": "",
-                        "sourceFormat": "unknown",
-                        "entryCount": service.entry_count,
-                        "fileSizeBytes": fallback_size,
-                        "schemaOk": True,
-                    }
-            except Exception:
-                pass
-        return {
-            "sourceName": "Pitch accent data",
-            "sourceRevision": "",
-            "sourceFormat": "unknown",
-            "entryCount": 0,
-            "fileSizeBytes": fallback_size,
-            "schemaOk": False,
-        }
+            version = int(meta.get("schema_version", "0"))
+            count = int(meta.get("entry_count", "0"))
+        except ValueError:
+            version = 0
+            count = 0
+        result.append(
+            {
+                "sourceId": child.name,
+                "sourceName": meta.get("source_name", child.name),
+                "sourceRevision": meta.get("source_revision", ""),
+                "format": meta.get("format", "unknown"),
+                "entryCount": max(count, 0),
+                # Only one pitch index schema exists; a future version fails
+                # closed rather than being read with the wrong row shape.
+                "schemaOk": version == 1,
+                "schemaVersion": max(version, 0),
+            }
+        )
+    return result
 
 
 def _known_words_inventory(home: Path) -> dict[str, object]:
@@ -1382,7 +1300,7 @@ def list_local_resources(payload: Mapping[str, object]) -> str:
         "resource.local.listed",
         {
             "frequencies": _frequency_inventory(home),
-            "pitchAccent": _read_pitch_inventory(home),
+            "pitchSources": _pitch_inventory(home),
             "audioPacks": _audio_inventory(home),
             "knownWords": _known_words_inventory(home),
             "wordsets": _wordset_inventory(),
@@ -1397,6 +1315,12 @@ def recover_local_resources(home: Path) -> None:
         home,
         kind="frequency",
         final_root=_frequency_root(home),
+        require_content=False,
+    )
+    _recover_indexed_backups(
+        home,
+        kind="pitch",
+        final_root=_pitch_root(home),
         require_content=False,
     )
     _recover_indexed_backups(
