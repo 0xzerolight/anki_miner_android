@@ -202,6 +202,32 @@ def test_exact_tokenizer_configuration_is_idempotent(
     assert selected == ["s1a", "s1a"]
 
 
+def test_replaced_registered_tree_poison_requires_process_restart(
+    initialized_bridge_home: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    del initialized_bridge_home
+    root = _make_dicdir(tmp_path, "live")
+    tree_sha256 = calculate_unidic_tree_sha256(root)
+    monkeypatch.setattr(tokenizer_runtime, "configure_tokenizer_backend", lambda backend: backend)
+    request = _payload(str(root), tree_sha256=tree_sha256)
+    decode_envelope(_dispatch(request), expected_type="tokenizer.ready")
+    root.rename(tmp_path / "retired")
+    replacement = _make_dicdir(tmp_path, "replacement")
+    replacement.rename(root)
+
+    response = decode_envelope(_dispatch(request), expected_type="bridge.error")
+
+    assert response.payload == {
+        "code": "tokenizer_restart_required",
+        "message": "Tokenizer setup cannot continue until the Python process is restarted",
+        "requestType": "tokenizer.configure",
+    }
+    assert tokenizer_runtime._configuration_requires_restart is True
+    assert decode_envelope(_dispatch(request), expected_type="bridge.error").payload == response.payload
+
+
 def test_provenance_mismatch_uses_stable_redacted_contract_error(
     initialized_bridge_home: Path,
     tmp_path: Path,

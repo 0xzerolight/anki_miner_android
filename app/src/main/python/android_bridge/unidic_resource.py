@@ -40,6 +40,8 @@ class RegisteredUniDic:
     tree_sha256: str
     file_count: int
     total_bytes: int
+    dicdir_identity: tuple[int, int] | None = None
+    sys_dic_identity: tuple[int, int] | None = None
 
     @property
     def mecab_arguments(self) -> tuple[str, str, str, str]:
@@ -237,6 +239,26 @@ def _same_request(
     )
 
 
+def _path_generation(path: Path) -> tuple[int, int]:
+    try:
+        value = path.stat(follow_symlinks=False)
+    except OSError as exc:
+        raise _invalid("unidic_tree_replaced", "Registered UniDic tree is no longer present") from exc
+    return value.st_dev, value.st_ino
+
+
+def _registered_tree_is_current(registered: RegisteredUniDic) -> bool:
+    if registered.dicdir_identity is None or registered.sys_dic_identity is None:
+        return True
+    try:
+        return (
+            _path_generation(registered.dicdir) == registered.dicdir_identity
+            and _path_generation(registered.sys_dic) == registered.sys_dic_identity
+        )
+    except TokenizerContractError:
+        return False
+
+
 def register_unidic(
     dicdir: str | os.PathLike[str],
     *,
@@ -265,13 +287,22 @@ def register_unidic(
                 dicdir=root,
                 expected_tree_sha256=expected_tree_sha256,
             ):
-                return existing
+                if _registered_tree_is_current(existing):
+                    return existing
+                raise _invalid(
+                    "unidic_tree_replaced",
+                    "Registered UniDic files were replaced and require a fresh process",
+                )
             raise _invalid(
                 "unidic_already_registered",
                 "A different UniDic identity is already registered in this process",
             )
 
+    generation_before = (_path_generation(root), _path_generation(root / "sys.dic"))
     identity = _tree_identity(root)
+    generation_after = (_path_generation(root), _path_generation(root / "sys.dic"))
+    if generation_after != generation_before:
+        raise _invalid("unidic_tree_changed", "UniDic tree changed during registration")
     if identity.sha256 != expected_tree_sha256:
         raise _invalid(
             "unidic_provenance_mismatch",
@@ -286,6 +317,8 @@ def register_unidic(
         tree_sha256=identity.sha256,
         file_count=identity.file_count,
         total_bytes=identity.total_bytes,
+        dicdir_identity=generation_after[0],
+        sys_dic_identity=generation_after[1],
     )
     with _LOCK:
         existing = _registration
@@ -298,7 +331,12 @@ def register_unidic(
             dicdir=root,
             expected_tree_sha256=expected_tree_sha256,
         ):
-            return existing
+            if _registered_tree_is_current(existing):
+                return existing
+            raise _invalid(
+                "unidic_tree_replaced",
+                "Registered UniDic files were replaced and require a fresh process",
+            )
         raise _invalid(
             "unidic_already_registered",
             "A different UniDic identity won concurrent registration",
