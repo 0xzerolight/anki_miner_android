@@ -1,5 +1,32 @@
 """Parse known-word exports from external tools into a set of written forms.
 
+Feeds the Manage Known Words "Import…" flow: users migrating from jpdb,
+Migaku, AnkiMorphs (or with a plain word list, e.g. ad-hoc WaniKani exports)
+bulk-load their known vocabulary as ``known_words.db`` ``source='user'`` rows.
+Pure module — no Qt; runs inside a ``run_off_thread`` work callable.
+
+Format signatures were verified against upstream sources (2026-07); if an
+import misbehaves years later, check these for drift before touching the
+detection order:
+
+- jpdb review export (JSON shape + grade enum): two independent consumers,
+  github.com/llvtt/jpdb_anki_import (jpdb.py) and
+  github.com/daryll-ko/jpdb-stats (README schema). jpdb has no known-flag, so
+  known-ness is derived from the latest review grade with an EXCLUDE-list —
+  an unrecognized/future grade (e.g. never-forget markers) defaults to
+  *include*, so enum drift fails safe.
+- AnkiMorphs headers: exporter source constants ``"Morph-Lemma"`` /
+  ``"Morph-Inflection"`` / ``"Occurrence"`` in
+  ankimorphs/known_morphs_exporter.py @ github.com/mortii/anki-morphs.
+- Migaku Word Exporter JSON/CSV (``Word,Reading,Language,Status``, status
+  ``KNOWN``): README/source of github.com/mh-343/migaku-word-exporter
+  (Migaku removed its built-in export).
+- Migaku legacy add-on backup ``[[word, int], …]`` (2 = known, 1 = learning):
+  raetsel migration walkthrough + Migaku-legacy-guides repo.
+
+Stored form is the written form as exported (食べる), matching the
+``mined_form`` keying convention — never re-lemmatized here.
+
 Android adds optional streaming limits to the desktop parser. Calls without
 those options retain the pinned desktop behavior byte-for-byte at the API
 boundary; Android supplies them so a large plain-text export cannot build an
@@ -18,18 +45,37 @@ from itertools import chain
 from pathlib import Path
 from typing import Any, TextIO
 
+# Stable keys the dialog maps to translated display labels; keep the dialog's
+# mapping in lockstep (a unit test asserts completeness on both sides).
 FORMAT_KEYS = ("jpdb", "migaku_json", "migaku_legacy", "ankimorphs", "migaku_csv", "generic")
 
+# jpdb grades whose *latest* occurrence disqualifies a card. Everything else
+# (okay/easy/hard/pass/known + future positive states) counts as known.
 _JPDB_EXCLUDED_GRADES = frozenset({"nothing", "something", "fail", "unknown"})
 _MIGAKU_CSV_HEADER = ("word", "reading", "language", "status")
 _ANKIMORPHS_LEMMA_HEADER = "morph-lemma"
+
+# Known-word exports are tiny (a jpdb/AnkiMorphs dump is well under a MB); the
+# "All Files (*)" dialog filter lets a user mis-pick a large file, so cap the
+# read rather than buffer+decode an arbitrary blob off-thread.
 _MAX_IMPORT_BYTES = 50 * 1024 * 1024
 _READ_CHUNK_BYTES = 1024 * 1024
 _LINE_BOUNDARY_RE = re.compile(r"\r\n|[\n\r\v\f\x1c-\x1e\x85\u2028\u2029]")
 
 
 class KnownWordsImportError(Exception):
-    """Raised when a file yields no importable known words."""
+    """Raised when a file yields no importable known words.
+
+    ``reason`` distinguishes the failure class for user messaging:
+    ``"unreadable"`` (missing/undecodable file), ``"unrecognized"`` (format
+    not matched — including valid JSON matching no known signature), or
+    ``"no_known_words"`` (format matched but zero entries qualified;
+    ``format_key`` carries the detected format in that case).
+
+    Android bounded imports can additionally raise ``"limit_exceeded"`` when
+    a supplied word or the distinct-word set exceeds its limit, or
+    ``"cancelled"`` when ``cancel_check`` requests cancellation.
+    """
 
     def __init__(self, reason: str, format_key: str | None = None):
         super().__init__(reason)
@@ -54,11 +100,22 @@ def parse_known_words_file(
     max_word_bytes: int | None = None,
     cancel_check: Callable[[], bool] | None = None,
 ) -> KnownWordsImportResult:
-    """Detect format and extract known words.
+    """Detect the export format of ``path`` and extract its known words.
+
+    Content is tried as JSON first; valid JSON that matches no known JSON
+    signature raises ``unrecognized`` rather than falling through to the line
+    reader (which would ingest syntax fragments as words). ``.json`` files
+    are never read as generic word lists for the same reason.
+
+    Bytes are decoded utf-8-sig first (BOM-stripping), then cp932 — the
+    Japanese Windows/Excel default for hand-made lists — before giving up.
 
     ``max_words`` and ``max_word_bytes`` are Android-only allocation guards.
     Delimited, text, and structured JSON arrays are decoded and parsed
     incrementally when any bounded option is supplied.
+
+    Omitting all Android-only options follows the pinned desktop materialized
+    parsing path unchanged.
     """
 
     if max_words is not None and max_words <= 0:
@@ -517,6 +574,11 @@ def _parse_delimited_or_text_streamed(
         raise KnownWordsImportError("unreadable") from exc
 
 
+# ----------------------------------------------------------------------
+# JSON formats
+# ----------------------------------------------------------------------
+
+
 def _parse_json(data: Any) -> KnownWordsImportResult:
     if isinstance(data, dict) and isinstance(data.get("cards_vocabulary_jp_en"), list):
         return _parse_jpdb(data["cards_vocabulary_jp_en"])
@@ -543,6 +605,11 @@ def _parse_jpdb(cards: list[Any]) -> KnownWordsImportResult:
     return _result("jpdb", words, total, skipped_malformed)
 
 
+# ----------------------------------------------------------------------
+# Delimited / plain-text formats
+# ----------------------------------------------------------------------
+
+
 def _parse_delimited_or_text(text: str) -> KnownWordsImportResult:
     rows = list(csv.reader(text.splitlines()))
     header = tuple(cell.strip().lower() for cell in rows[0]) if rows else ()
@@ -554,6 +621,8 @@ def _parse_delimited_or_text(text: str) -> KnownWordsImportResult:
 
     if header[:1] == (_ANKIMORPHS_LEMMA_HEADER,):
         entries = [row for row in rows[1:] if row and _clean(row[0])]
+        # Lemma column only: verbs/adjectives mine as lemma and nouns mine as
+        # surface == lemma, so inflected surfaces could never match a card front.
         words = {row[0].strip() for row in entries}
         return _result("ankimorphs", words, len(entries))
 
@@ -561,6 +630,7 @@ def _parse_delimited_or_text(text: str) -> KnownWordsImportResult:
 
 
 def _parse_generic(text: str) -> KnownWordsImportResult:
+    """One word per line; first csv/tab cell when the line is delimited."""
     words: set[str] = set()
     total = 0
     for line in text.splitlines():
@@ -578,6 +648,9 @@ def _parse_generic(text: str) -> KnownWordsImportResult:
 
 
 def _decode(raw: bytes) -> str:
+    # utf-8-sig strips a Windows/Excel BOM that would otherwise break json.loads
+    # and the exact first-cell header matches; cp932 covers Shift-JIS lists
+    # exported from Japanese Notepad/Excel. Both failing ⇒ truly unreadable.
     for encoding in ("utf-8-sig", "cp932"):
         try:
             return raw.decode(encoding)
@@ -591,5 +664,13 @@ def _clean(value: Any) -> str:
 
 
 def _review_timestamp(review: dict[str, Any]) -> float:
+    """Sort key for jpdb reviews: the numeric ``timestamp``, else 0.
+
+    A non-numeric ``timestamp`` (a drifted/hand-edited export) is coerced to 0
+    rather than fed to ``max()`` — otherwise comparing a str against the int-0
+    default would raise TypeError and escape the KnownWordsImportError contract
+    as a generic "unexpected error". ``bool`` is an ``int`` subclass and floats
+    fine.
+    """
     ts = review.get("timestamp", 0)
     return float(ts) if isinstance(ts, (int, float)) else 0.0
