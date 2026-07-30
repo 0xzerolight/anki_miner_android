@@ -52,9 +52,17 @@ class RunContextFilter(logging.Filter):
         # its own -- unlike emit(), whose formatter failures are contained by
         # handleError(). A throw here propagates straight into the original
         # logger.warning(...) call site and crashes the caller this feature
-        # exists to diagnose. The assignment itself can fail too (a LogRecord
-        # subclass that rejects the attribute), not just the lookup, so both
-        # must be inside the same guard, with no retry on failure.
+        # exists to diagnose, so both failure modes must be guarded. They are
+        # guarded separately, not together, because they have different
+        # correct fallbacks: a failed lookup still has a usable one ("-"),
+        # so the record survives with a degraded field; a failed assignment
+        # (a LogRecord subclass that rejects the attribute) has none, and
+        # collapsing the two would let a lookup failure fall through with no
+        # run_id at all, which drops the whole record at the formatter later.
+        try:
+            run_id = current_run_id() or "-"
+        except Exception:
+            run_id = "-"
         with suppress(Exception):
-            record.run_id = current_run_id() or "-"
+            record.run_id = run_id
         return True

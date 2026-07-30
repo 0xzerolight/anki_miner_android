@@ -97,10 +97,11 @@ def test_filter_never_raises_when_the_context_lookup_is_hostile(monkeypatch):
     record = _record()
     # Handler.handle() calls filter() with no exception guard of its own, so
     # a raise here would crash the original logger.warning(...) call site.
-    # The lookup failure happens before the assignment runs, so the record
-    # simply keeps no run_id rather than getting a synthesized fallback.
+    # A failed lookup still has a usable fallback, so the record must survive
+    # with the degraded "-" field rather than being dropped at the formatter
+    # for lacking run_id entirely.
     assert log_context.RunContextFilter().filter(record) is True
-    assert not hasattr(record, "run_id")
+    assert record.run_id == "-"
 
 
 def test_filter_never_raises_when_the_record_rejects_the_attribute():
