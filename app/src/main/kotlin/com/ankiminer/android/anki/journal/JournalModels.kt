@@ -913,11 +913,17 @@ internal object MediaCapacityPolicy {
         require(unresolvedClaims >= 0 && (activeLeaseUnusedSlots == null || activeLeaseUnusedSlots >= 0))
         require(requestedLeaseSlots > 0 && globalLimit > 0)
         if (activeLeaseUnusedSlots != null) {
-            throw JournalInvariantViolation("Only one active media lease is permitted")
+            throw MediaAdmissionViolation(
+                MediaAdmissionRefusal.LEASE_ALREADY_ACTIVE_FOR_ANOTHER_RUN,
+                "Only one active media lease is permitted",
+            )
         }
         val admitted = unresolvedClaims.toLong() + requestedLeaseSlots.toLong()
         if (admitted > globalLimit) {
-            throw JournalInvariantViolation("Global unresolved media capacity cannot admit a full run lease")
+            throw MediaAdmissionViolation(
+                MediaAdmissionRefusal.GLOBAL_UNRESOLVED_CAPACITY,
+                "Global unresolved media capacity cannot admit a full run lease",
+            )
         }
     }
 
@@ -1122,7 +1128,34 @@ internal data class RunCleanupResult(
     val evidenceAccepted: Boolean,
 )
 
-internal class JournalInvariantViolation(message: String) : IllegalStateException(message)
+internal open class JournalInvariantViolation(message: String) : IllegalStateException(message)
+
+/**
+ * Why media lease or namespace admission refused a batch, as a closed typed set.
+ *
+ * Admission runs before any reservation exists, so a refusal fails every asset in the batch
+ * ([com.ankiminer.android.anki.provider.JournalBackedMediaMutationService] degrades it row-locally).
+ * The reason therefore has to reach the user, and the exception message cannot carry it: messages are
+ * excluded from fault tokens by design, and R8 minifies the class and frame names a digest would
+ * otherwise report to `t0 @ a.W:342`. These constants survive minification because they are values.
+ */
+internal enum class MediaAdmissionRefusal {
+    LEASE_ALREADY_ACTIVE_FOR_ANOTHER_RUN,
+    LEASE_RELEASED_CANNOT_REACQUIRE,
+    GLOBAL_UNRESOLVED_CAPACITY,
+    LEASE_NOT_ACQUIRED,
+    LEASE_NOT_ACTIVE,
+    PER_RUN_NAMESPACE_CAPACITY,
+    GLOBAL_NAMESPACE_CAPACITY,
+    DIRECT_NAME_COLLISION,
+    PROVIDER_NAMESPACE_OVERLAP,
+}
+
+/** A [JournalInvariantViolation] raised by media admission, carrying its typed [refusal]. */
+internal class MediaAdmissionViolation(
+    val refusal: MediaAdmissionRefusal,
+    message: String,
+) : JournalInvariantViolation(message)
 
 internal class JournalCorruptionException(
     message: String,
