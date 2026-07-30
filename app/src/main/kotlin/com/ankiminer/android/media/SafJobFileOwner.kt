@@ -11,6 +11,8 @@ import java.io.IOException
 import java.io.InputStream
 import java.nio.file.Files
 import java.util.Locale
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 
 /** A path whose backing resource is owned by a [SafJobFileOwner]. */
 @ConsistentCopyVisibility
@@ -81,6 +83,8 @@ class SafJobFileOwner internal constructor(
 
     private val monitor = Any()
     private val ownedInputs = mutableListOf<OwnedInput>()
+    private val closeCancellation = ProviderIoCancellationController()
+    private val operationCancellation = cancellation.combine(closeCancellation)
     private var closed = false
 
     /** Compatibility alias for the S3 probe; production callers should name the video role. */
@@ -109,45 +113,67 @@ class SafJobFileOwner internal constructor(
     private fun openOwned(
         uri: String,
         copySuffix: String?,
-    ): PythonMediaInput =
+    ): PythonMediaInput {
         synchronized(monitor) {
             check(!closed) { "SAF job file owner is already closed" }
-            require(uri.isNotBlank()) { "SAF URI must not be blank" }
-
-            val descriptor = descriptorOpener.open(uri)
-            var cacheFile: File? = null
-            try {
-                val createdCacheFile = cacheFileFactory.create(copySuffix ?: VIDEO_COPY_SUFFIX)
-                cacheFile = createdCacheFile
-                require(createdCacheFile.isAbsolute) { "SAF cache path must be absolute" }
-                val role = if (copySuffix == null) SafCopyRole.VIDEO else SafCopyRole.SUBTITLE
-                fileCopier.copy(
-                    openSource = descriptor::openInputStream,
-                    destination = createdCacheFile,
-                    knownSizeBytes = descriptor.knownSizeBytes,
-                    policy = if (role == SafCopyRole.VIDEO) VIDEO_COPY_POLICY else SUBTITLE_COPY_POLICY,
-                    cancellation = cancellation,
-                    progressListener =
-                        FileCopyProgressListener { progress ->
-                            progressListener.onProgress(
-                                SafCopyProgress(
-                                    role = role,
-                                    copiedBytes = progress.copiedBytes,
-                                    expectedBytes = progress.expectedBytes,
-                                ),
-                            )
-                        },
-                )
-                check(createdCacheFile.isFile) { "SAF provider copy did not create a file" }
-                val input = PythonMediaInput(path = createdCacheFile.absolutePath)
-
-                ownedInputs += OwnedInput(descriptor, createdCacheFile)
-                input
-            } catch (failure: Throwable) {
-                cleanupFailedOpen(descriptor, cacheFile, failure)
-                throw failure
-            }
         }
+        require(uri.isNotBlank()) { "SAF URI must not be blank" }
+
+        val descriptor = CloseOnceOwnedDescriptor(descriptorOpener.open(uri, operationCancellation))
+        val descriptorCancellation =
+            operationCancellation.invokeOnCancellation {
+                try {
+                    descriptor.close()
+                } catch (_: Exception) {
+                    // cleanupFailedOpen re-reads the close-once wrapper's stored failure.
+                }
+            }
+        var cacheFile: File? = null
+        try {
+            if (operationCancellation.isCancelled()) throw FileCopyCancelledException()
+            val createdCacheFile = cacheFileFactory.create(copySuffix ?: VIDEO_COPY_SUFFIX)
+            cacheFile = createdCacheFile
+            require(createdCacheFile.isAbsolute) { "SAF cache path must be absolute" }
+            val role = if (copySuffix == null) SafCopyRole.VIDEO else SafCopyRole.SUBTITLE
+            fileCopier.copy(
+                openSource = descriptor::openInputStream,
+                destination = createdCacheFile,
+                knownSizeBytes = descriptor.knownSizeBytes,
+                policy = if (role == SafCopyRole.VIDEO) VIDEO_COPY_POLICY else SUBTITLE_COPY_POLICY,
+                cancellation = operationCancellation,
+                progressListener =
+                    FileCopyProgressListener { progress ->
+                        progressListener.onProgress(
+                            SafCopyProgress(
+                                role = role,
+                                copiedBytes = progress.copiedBytes,
+                                expectedBytes = progress.expectedBytes,
+                            ),
+                        )
+                    },
+            )
+            check(createdCacheFile.isFile) { "SAF provider copy did not create a file" }
+            if (operationCancellation.isCancelled()) throw FileCopyCancelledException()
+            val input = PythonMediaInput(path = createdCacheFile.absolutePath)
+
+            val published =
+                synchronized(monitor) {
+                    if (closed) {
+                        false
+                    } else {
+                        ownedInputs += OwnedInput(descriptor, createdCacheFile)
+                        true
+                    }
+                }
+            check(published) { "SAF job file owner closed while opening an input" }
+            return input
+        } catch (failure: Throwable) {
+            cleanupFailedOpen(descriptor, cacheFile, failure)
+            throw failure
+        } finally {
+            descriptorCancellation.close()
+        }
+    }
 
     private fun subtitleSuffix(displayName: String): String {
         require(displayName.isNotBlank()) { "Subtitle display name must not be blank" }
@@ -160,6 +186,7 @@ class SafJobFileOwner internal constructor(
     }
 
     override fun close() {
+        closeCancellation.cancel()
         val inputs =
             synchronized(monitor) {
                 if (closed) {
@@ -247,7 +274,10 @@ class SafJobFileOwner internal constructor(
 
 internal fun interface DescriptorOpener {
     @Throws(IOException::class)
-    fun open(uri: String): OwnedDescriptor
+    fun open(
+        uri: String,
+        cancellation: ProviderIoCancellation,
+    ): OwnedDescriptor
 }
 
 internal fun interface CacheFileFactory {
@@ -262,15 +292,50 @@ internal interface OwnedDescriptor : Closeable {
     fun openInputStream(): InputStream
 }
 
+private class CloseOnceOwnedDescriptor(
+    private val delegate: OwnedDescriptor,
+) : OwnedDescriptor {
+    private val closed = AtomicBoolean(false)
+    private val closeFailure = AtomicReference<Exception?>()
+
+    override val knownSizeBytes: Long?
+        get() = delegate.knownSizeBytes
+
+    override fun openInputStream(): InputStream {
+        check(!closed.get()) { "SAF descriptor is already closed" }
+        return delegate.openInputStream()
+    }
+
+    override fun close() {
+        if (closed.compareAndSet(false, true)) {
+            try {
+                delegate.close()
+            } catch (failure: Exception) {
+                closeFailure.set(failure)
+                throw failure
+            }
+        } else {
+            closeFailure.get()?.let { throw it }
+        }
+    }
+}
+
 private class AndroidDescriptorOpener(
     private val contentResolver: ContentResolver,
 ) : DescriptorOpener {
-    override fun open(uri: String): OwnedDescriptor {
+    override fun open(
+        uri: String,
+        cancellation: ProviderIoCancellation,
+    ): OwnedDescriptor {
         val parsed = Uri.parse(uri)
-        val descriptor =
-            contentResolver.openFileDescriptor(parsed, "r")
-                ?: throw FileNotFoundException("DocumentsProvider returned no descriptor for $parsed")
-        return ParcelDescriptor(descriptor)
+        return CancellableProviderIo.open(cancellation) { signal ->
+            val descriptor =
+                contentResolver.openFileDescriptor(parsed, "r", signal)
+                    ?: throw FileNotFoundException(
+                        "DocumentsProvider returned no descriptor for $parsed",
+                    )
+            ParcelDescriptor(descriptor)
+        }
     }
 }
 

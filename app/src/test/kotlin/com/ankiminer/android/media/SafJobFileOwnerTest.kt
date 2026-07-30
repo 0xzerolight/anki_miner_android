@@ -6,6 +6,12 @@ import java.io.IOException
 import java.io.InputStream
 import java.nio.file.Files
 import java.util.ArrayDeque
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -88,7 +94,7 @@ class SafJobFileOwnerTest {
         var opens = 0
         val owner =
             SafJobFileOwner(
-                DescriptorOpener {
+                DescriptorOpener { _, _ ->
                     opens += 1
                     FakeDescriptor(byteArrayOf())
                 },
@@ -112,7 +118,7 @@ class SafJobFileOwnerTest {
             var caches = 0
             val owner =
                 SafJobFileOwner(
-                    DescriptorOpener { descriptors.removeFirst() },
+                    DescriptorOpener { _, _ -> descriptors.removeFirst() },
                     CacheFileFactory { suffix ->
                         caches += 1
                         File(directory, "copy-$caches$suffix").apply { createNewFile() }
@@ -140,7 +146,7 @@ class SafJobFileOwnerTest {
             var requestedSuffix: String? = null
             val owner =
                 SafJobFileOwner(
-                    DescriptorOpener { descriptor },
+                    DescriptorOpener { _, _ -> descriptor },
                     CacheFileFactory { suffix ->
                         requestedSuffix = suffix
                         File(directory, "subtitle$suffix").apply { createNewFile() }
@@ -173,7 +179,7 @@ class SafJobFileOwnerTest {
         var cacheCreates = 0
         val owner =
             SafJobFileOwner(
-                DescriptorOpener {
+                DescriptorOpener { _, _ ->
                     opens += 1
                     FakeDescriptor(byteArrayOf())
                 },
@@ -246,6 +252,43 @@ class SafJobFileOwnerTest {
     }
 
     @Test
+    fun ownerCloseCancelsAStalledProviderReadWithoutDoubleClosingDescriptor() {
+        val directory = Files.createTempDirectory("saf-owner-stalled-read").toFile()
+        val executor = Executors.newSingleThreadExecutor()
+        try {
+            val source = StalledInputStream()
+            val descriptor = StalledDescriptor(source)
+            val cache = File(directory, "partial.media")
+            val owner =
+                SafJobFileOwner(
+                    DescriptorOpener { _, _ -> descriptor },
+                    CacheFileFactory { cache.apply { createNewFile() } },
+                )
+            val opening =
+                executor.submit<PythonMediaInput> {
+                    owner.openVideoUri("content://test/stalled")
+                }
+            assertTrue(source.readStarted.await(1, TimeUnit.SECONDS))
+
+            owner.close()
+
+            val failure =
+                assertThrows(ExecutionException::class.java) {
+                    opening.get(1, TimeUnit.SECONDS)
+                }
+            assertTrue(failure.cause is FileCopyCancelledException)
+            assertEquals(1, source.closeCalls.get())
+            assertEquals(1, descriptor.closeCalls.get())
+            assertFalse(cache.exists())
+            owner.close()
+            assertEquals(1, descriptor.closeCalls.get())
+        } finally {
+            executor.shutdownNow()
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test
     fun startupJanitorRemovesOnlyDirectOrphanEntries() {
         val directory = Files.createTempDirectory("saf-janitor-test").toFile()
         try {
@@ -285,7 +328,7 @@ class SafJobFileOwnerTest {
         cache: File = File("unused"),
     ): SafJobFileOwner =
         SafJobFileOwner(
-            DescriptorOpener { descriptor },
+            DescriptorOpener { _, _ -> descriptor },
             CacheFileFactory { cache.apply { createNewFile() } },
         )
 
@@ -319,6 +362,49 @@ class SafJobFileOwnerTest {
         override fun close() {
             closed = true
             closeFailure?.let { throw it }
+        }
+    }
+
+    private class StalledDescriptor(
+        private val source: InputStream,
+    ) : OwnedDescriptor {
+        override val knownSizeBytes: Long? = null
+        val closeCalls = AtomicInteger()
+
+        override fun openInputStream(): InputStream = source
+
+        override fun close() {
+            closeCalls.incrementAndGet()
+        }
+    }
+
+    private class StalledInputStream : InputStream() {
+        val readStarted = CountDownLatch(1)
+        val closeCalls = AtomicInteger()
+        private val closed = CountDownLatch(1)
+        private val suppliedFirstChunk = AtomicBoolean()
+
+        override fun read(): Int {
+            val one = ByteArray(1)
+            return if (read(one, 0, 1) < 0) -1 else one[0].toInt() and 0xff
+        }
+
+        override fun read(
+            buffer: ByteArray,
+            offset: Int,
+            length: Int,
+        ): Int {
+            if (suppliedFirstChunk.compareAndSet(false, true)) {
+                buffer[offset] = 1
+                return 1
+            }
+            readStarted.countDown()
+            check(closed.await(5, TimeUnit.SECONDS)) { "test provider read was not cancelled" }
+            throw IOException("provider descriptor closed")
+        }
+
+        override fun close() {
+            if (closeCalls.incrementAndGet() == 1) closed.countDown()
         }
     }
 }
