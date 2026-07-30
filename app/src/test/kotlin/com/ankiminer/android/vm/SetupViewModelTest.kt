@@ -10,7 +10,7 @@ import com.ankiminer.android.data.anki.AnkiSetupManager
 import com.ankiminer.android.data.anki.AnkiSetupManagerState
 import com.ankiminer.android.data.resources.FrequencySourceFormat
 import com.ankiminer.android.data.resources.InstalledFrequencySource
-import com.ankiminer.android.data.resources.InstalledPitchAccent
+import com.ankiminer.android.data.resources.InstalledPitchSource
 import com.ankiminer.android.data.resources.KnownWordsResetScope
 import com.ankiminer.android.data.resources.KnownWordsSourceFormat
 import com.ankiminer.android.data.resources.WordListKind
@@ -402,24 +402,36 @@ class SetupViewModelTest {
         }
 
     @Test
-    fun `pitch imports directly when nothing is installed and asks once something is`() =
+    fun `pitch imports directly and asks only when the name lands on an installed slot`() =
         runTest(mainDispatcherRule.dispatcher) {
             val resources = FakeResourceManager()
             val model = viewModel(FakeSettingsRepository(AppSettings()), FakeAnkiSetupManager(emptyList()), resources)
             advanceUntilIdle()
 
+            model.setPitchSourceName("Kanjium")
+            advanceUntilIdle()
             model.importPitchAccent("content://first.csv")
             advanceUntilIdle()
             assertEquals(listOf("content://first.csv" to false), resources.pitchImports)
 
-            // Pitch is a single fixed file, so a second import always collides.
-            resources.setInstalledPitchAccent(installedPitch("Kanjium"))
+            // Pitch is a chain of named slots now: only a name that derives onto an
+            // installed slot collides.
+            resources.setInstalledPitchSources(listOf(installedPitch("kanjium", "Kanjium")))
             advanceUntilIdle()
             model.importPitchAccent("content://second.csv")
             advanceUntilIdle()
-
             assertEquals(listOf("content://first.csv" to false), resources.pitchImports)
             assertEquals("Kanjium", model.uiState.value.pendingReplace?.installedLabel)
+
+            // A different name is a new slot, so it imports without asking.
+            model.setPitchSourceName("NHK 2016")
+            advanceUntilIdle()
+            model.importPitchAccent("content://third.csv")
+            advanceUntilIdle()
+            assertEquals(
+                listOf("content://first.csv" to false, "content://third.csv" to false),
+                resources.pitchImports,
+            )
         }
 
     @Test
@@ -445,15 +457,18 @@ class SetupViewModelTest {
             isCategorical = false,
         )
 
-    private fun installedPitch(sourceName: String) =
-        InstalledPitchAccent(
-            sourceName = sourceName,
-            sourceRevision = "2026-07-17",
-            sourceFormat = "csv",
-            entryCount = 1000,
-            fileSizeBytes = 2048,
-            schemaOk = true,
-        )
+    private fun installedPitch(
+        sourceId: String,
+        sourceName: String,
+    ) = InstalledPitchSource(
+        sourceId = sourceId,
+        sourceName = sourceName,
+        sourceRevision = "2026-07-17",
+        format = "csv",
+        entryCount = 1000,
+        schemaOk = true,
+        schemaVersion = 1,
+    )
 
     private fun viewModel(
         repository: FakeSettingsRepository,
@@ -554,8 +569,8 @@ class SetupViewModelTest {
             mutableState.value = mutableState.value.copy(frequencySources = sources)
         }
 
-        fun setInstalledPitchAccent(pitch: InstalledPitchAccent?) {
-            mutableState.value = mutableState.value.copy(pitchAccent = pitch)
+        fun setInstalledPitchSources(sources: List<InstalledPitchSource>) {
+            mutableState.value = mutableState.value.copy(pitchSources = sources)
         }
 
         override suspend fun recoverAndRefresh() = Unit
@@ -578,6 +593,7 @@ class SetupViewModelTest {
 
         override suspend fun importPitchAccent(
             uri: String,
+            sourceId: String,
             sourceName: String,
             format: PitchAccentSourceFormat,
             replace: Boolean,

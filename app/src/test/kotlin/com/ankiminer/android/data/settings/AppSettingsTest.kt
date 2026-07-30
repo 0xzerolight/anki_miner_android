@@ -44,6 +44,7 @@ class AppSettingsTest {
                 "card_type",
                 "dictionary_chain",
                 "frequency_chain",
+                "pitch_chain",
                 "expression_audio_chain",
                 "excluded_wordsets",
                 "screenshot_animated",

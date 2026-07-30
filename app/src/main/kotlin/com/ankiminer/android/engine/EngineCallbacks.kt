@@ -8,6 +8,14 @@ interface EngineCallbacks {
 
     fun onProgress(message: String)
 
+    /**
+     * The engine entered a numbered pipeline stage.
+     *
+     * Called on every run since the engine stopped blending its stages into one
+     * percentage: the stage pair is now the only whole-run position it reports.
+     */
+    fun onStage(message: String)
+
     fun onComplete(message: String)
 
     fun onError(message: String)

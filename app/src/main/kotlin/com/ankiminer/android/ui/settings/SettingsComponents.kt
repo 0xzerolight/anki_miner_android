@@ -64,7 +64,7 @@ import com.ankiminer.android.data.resources.FrequencySourceFormat
 import com.ankiminer.android.data.resources.ImportedAudioPack
 import com.ankiminer.android.data.resources.ImportedFrequencySource
 import com.ankiminer.android.data.resources.ImportedKnownWords
-import com.ankiminer.android.data.resources.ImportedPitchAccent
+import com.ankiminer.android.data.resources.ImportedPitchSource
 import com.ankiminer.android.data.resources.KnownWordsSourceFormat
 import com.ankiminer.android.data.resources.LocalResourceImportResult
 import com.ankiminer.android.data.resources.PitchAccentSourceFormat
@@ -708,7 +708,7 @@ internal fun LocalImportResultCard(result: LocalResourceImportResult) {
         when (result) {
             is ImportedFrequencySource ->
                 stringResource(R.string.frequency_import_result, result.sourceName, result.entryCount, result.skippedMalformed)
-            is ImportedPitchAccent ->
+            is ImportedPitchSource ->
                 stringResource(R.string.pitch_import_result, result.sourceName, result.entryCount, result.skippedMalformed)
             is ImportedAudioPack ->
                 stringResource(R.string.audio_pack_import_result, result.sourceName, result.entryCount)

@@ -127,7 +127,7 @@ internal class SetupViewModel(
                 pendingReplace = localState.pendingReplace,
                 dictionaries = resourceState.dictionaries,
                 frequencySources = resourceState.frequencySources,
-                pitchAccent = resourceState.pitchAccent,
+                pitchSources = resourceState.pitchSources,
                 audioPacks = resourceState.audioPacks,
                 knownWords = resourceState.knownWords,
                 knownWordsImportPreview = resourceState.knownWordsImportPreview,
@@ -396,6 +396,9 @@ internal class SetupViewModel(
                 ResourceReplaceKind.PITCH ->
                     resources.importPitchAccent(
                         uri = requireNotNull(pending.uri),
+                        // As with frequency: the record's identity, so a name match
+                        // replaces the slot already on disk and keeps its chain entry.
+                        sourceId = pending.identity,
                         sourceName = state.pitchSourceName,
                         format = state.pitchFormat,
                         replace = true,
@@ -464,12 +467,12 @@ internal class SetupViewModel(
     fun importPitchAccent(uri: String) {
         val state = uiState.value
         if (state.busy || state.pitchSourceName.isBlank()) return
-        // Pitch is one fixed file with no id, so anything installed always collides.
-        val target = ResourceIdentity.pitchTarget(state.pitchAccent)
+        val target = ResourceIdentity.pitchTarget(state.pitchSourceName, state.pitchSources)
         if (stagePendingReplace(ResourceReplaceKind.PITCH, target, uri)) return
         viewModelScope.launch {
             resources.importPitchAccent(
                 uri = uri,
+                sourceId = target.identity,
                 sourceName = state.pitchSourceName,
                 format = state.pitchFormat,
                 replace = false,

@@ -1,6 +1,7 @@
 package com.ankiminer.android.engine
 
 import com.ankiminer.android.anki.generated.UnicodeContractV151
+import com.ankiminer.android.mining.AnkiWriteState
 import com.ankiminer.android.mining.CurationCandidate
 import com.ankiminer.android.mining.CurationPage
 import com.ankiminer.android.mining.CurationRequest
@@ -37,6 +38,10 @@ object BridgeJsonCodec {
     const val MAX_READING_RUN_UTF8_BYTES = 1024 * 1024
     const val MAX_READING_SERIES_NAME_UTF8_BYTES = 1024
     const val MAX_CURATION_PAGE_UTF8_BYTES = 512 * 1024
+    // Matches the engine-events schema bound. The engine passes 5 today
+    // (PIPELINE_STAGE_COUNT); the ceiling is deliberately well above it so an
+    // added stage is not a runtime protocol error.
+    private const val MAX_PIPELINE_STAGES = 32L
     private const val MAX_JSON_DEPTH = 128
     private const val MAX_JSON_TOKENS = 1_000_000L
     private const val MAX_JSON_NUMBER_CHARS = 1000
@@ -211,6 +216,7 @@ object BridgeJsonCodec {
             "job.registration.accepted" -> BridgeMessage.JobRegistrationAccepted(singleRunId(payload, type))
             "progress.start" -> readProgressStart(payload)
             "progress.update" -> readProgressUpdate(payload)
+            "progress.stage" -> readProgressStage(payload)
             "progress.complete" -> BridgeMessage.ProgressComplete(singleRunId(payload, type))
             "progress.error" -> readProgressError(payload)
             "presenter.event" -> BridgeMessage.Presenter(readPresenter(payload))
@@ -258,6 +264,22 @@ object BridgeJsonCodec {
         val current = integral(payload.getValue("current"), "progress current")
         if (current < 0) fail(BridgeProtocolCategory.INVALID_VALUE, "progress current must be non-negative")
         return BridgeMessage.ProgressUpdate(runId(payload.getValue("runId")), current, text(payload.getValue("description"), "progress description"))
+    }
+
+    private fun readProgressStage(payload: Map<String, BridgeJsonValue>): BridgeMessage.ProgressStage {
+        requireExact(payload, setOf("runId", "index", "total", "name"), "progress.stage")
+        val index = integral(payload.getValue("index"), "stage index")
+        val total = integral(payload.getValue("total"), "stage total")
+        // Bounded exactly like the schema: a stage pair outside this range is a
+        // protocol error, not a UI curiosity.
+        if (total !in 1..MAX_PIPELINE_STAGES) fail(BridgeProtocolCategory.INVALID_VALUE, "stage total is out of range")
+        if (index !in 1..total) fail(BridgeProtocolCategory.INVALID_VALUE, "stage index is out of range")
+        return BridgeMessage.ProgressStage(
+            runId(payload.getValue("runId")),
+            index.toInt(),
+            total.toInt(),
+            text(payload.getValue("name"), "stage name"),
+        )
     }
 
     private fun readProgressError(payload: Map<String, BridgeJsonValue>): BridgeMessage.ProgressError {
@@ -334,6 +356,8 @@ object BridgeJsonCodec {
                 "videoFile",
                 "subtitleFile",
                 "minedForms",
+                "ankiWriteState",
+                "failureIsTransient",
             ),
             "processing result",
         )
@@ -355,6 +379,9 @@ object BridgeJsonCodec {
             text(payload.getValue("videoFile"), "videoFile"),
             text(payload.getValue("subtitleFile"), "subtitleFile"),
             stringArray(payload.getValue("minedForms"), "minedForms"),
+            AnkiWriteState.fromWire(text(payload.getValue("ankiWriteState"), "ankiWriteState"))
+                ?: fail(BridgeProtocolCategory.INVALID_VALUE, "ankiWriteState is invalid"),
+            bool(payload.getValue("failureIsTransient"), "failureIsTransient"),
         )
     }
 
@@ -827,7 +854,7 @@ object BridgeJsonCodec {
                 "anki_tags", "excluded_decks", "audio_padding", "screenshot_offset", "audio_format", "audio_bitrate",
                 "screenshot_animated", "subtitle_offset", "allowed_pos", "excluded_subtypes", "excluded_wordsets",
                 "dictionary_chain", "jisho_delay", "expression_audio_chain", "reading_tts_enabled", "pitch_category_format",
-                "max_frequency_rank", "frequency_chain", "allow_duplicate_cards", "use_known_words_db",
+                "max_frequency_rank", "frequency_chain", "pitch_chain", "allow_duplicate_cards", "use_known_words_db",
                 "exclude_hiragana_only_words",
                 "exclude_katakana_only_words", "blacklist_path", "whitelist_path", "use_blacklist", "use_whitelist",
                 "subtitle_regex_filter", "subtitle_regex_replacement", "use_subtitle_regex_filter",
@@ -871,7 +898,7 @@ object BridgeJsonCodec {
             "blacklist_path", "whitelist_path" -> if (value !is BridgeJsonValue.Null) absolutePath(value, key)
             "dictionary_chain" -> validateProviderArray(value, key, "kind", setOf("indexed", "jisho"))
             "expression_audio_chain" -> validateProviderArray(value, key, "kind", setOf("pack"))
-            "frequency_chain" -> validateFrequencyArray(value, key)
+            "frequency_chain", "pitch_chain" -> validateSourceIdArray(value, key)
         }
     }
 
@@ -912,7 +939,8 @@ object BridgeJsonCodec {
         }
     }
 
-    private fun validateFrequencyArray(
+    /** Validates a source_id/enabled chain: frequency and pitch share the shape. */
+    private fun validateSourceIdArray(
         value: BridgeJsonValue,
         context: String,
     ) {

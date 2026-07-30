@@ -250,20 +250,33 @@ class ResourceIdentityTest {
     }
 
     @Test
-    fun pitchTargetCollidesExactlyWhenSomethingIsInstalled() {
-        assertFalse(ResourceIdentity.pitchTarget(null).collides)
+    fun pitchTargetDerivesAnIdAndCollidesOnlyWithAMatchingSlot() {
+        assertFalse(ResourceIdentity.pitchTarget("Kanjium", emptyList()).collides)
+        assertEquals("kanjium", ResourceIdentity.pitchTarget("Kanjium", emptyList()).identity)
 
-        val installed =
-            InstalledPitchAccent(
-                sourceName = "Kanjium",
-                sourceRevision = "2026-07-17",
-                sourceFormat = "csv",
-                entryCount = 1000,
-                fileSizeBytes = 2048,
-                schemaOk = true,
-            )
-        assertEquals("Kanjium", ResourceIdentity.pitchTarget(installed).installedName)
+        val installed = listOf(pitchSource("kanjium", "Kanjium"))
+
+        val matched = ResourceIdentity.pitchTarget("Kanjium", installed)
+        assertEquals("kanjium", matched.identity)
+        assertEquals("Kanjium", matched.installedName)
+        assertTrue(matched.collides)
+        // A different source is a separate slot now, not a collision with the
+        // single installed pitch file it used to be.
+        assertFalse(ResourceIdentity.pitchTarget("NHK 2016", installed).collides)
     }
+
+    private fun pitchSource(
+        sourceId: String,
+        sourceName: String,
+    ) = InstalledPitchSource(
+        sourceId = sourceId,
+        sourceName = sourceName,
+        sourceRevision = "2026-07-17",
+        format = "csv",
+        entryCount = 1000,
+        schemaOk = true,
+        schemaVersion = 1,
+    )
 
     private fun frequencySource(
         sourceId: String,

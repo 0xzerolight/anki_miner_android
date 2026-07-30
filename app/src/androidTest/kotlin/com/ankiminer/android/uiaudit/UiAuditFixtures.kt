@@ -31,7 +31,7 @@ import com.ankiminer.android.data.resources.FrozenResourceCatalog
 import com.ankiminer.android.data.resources.InstalledAudioPack
 import com.ankiminer.android.data.resources.InstalledDictionary
 import com.ankiminer.android.data.resources.InstalledFrequencySource
-import com.ankiminer.android.data.resources.InstalledPitchAccent
+import com.ankiminer.android.data.resources.InstalledPitchSource
 import com.ankiminer.android.data.resources.KnownWordsInventory
 import com.ankiminer.android.data.resources.KnownWordsPage
 import com.ankiminer.android.data.resources.ResourceFailure
@@ -416,14 +416,17 @@ internal fun setupAuditState(): SetupUiState {
                     isCategorical = false,
                 ),
             ),
-        pitchAccent =
-            InstalledPitchAccent(
-                sourceName = "Kanjium pitch accents",
-                sourceRevision = "2025-02",
-                sourceFormat = "yomitan",
-                entryCount = 163_284,
-                fileSizeBytes = 8_412_391,
-                schemaOk = true,
+        pitchSources =
+            listOf(
+                InstalledPitchSource(
+                    sourceId = "kanjium",
+                    sourceName = "Kanjium pitch accents",
+                    sourceRevision = "2025-02",
+                    format = "csv",
+                    entryCount = 163_284,
+                    schemaOk = true,
+                    schemaVersion = 1,
+                ),
             ),
         audioPacks =
             listOf(

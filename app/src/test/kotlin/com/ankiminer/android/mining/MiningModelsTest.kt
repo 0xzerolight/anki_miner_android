@@ -3,6 +3,7 @@ package com.ankiminer.android.mining
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
+import org.junit.Assert.assertThrows
 import org.junit.Test
 
 class MiningModelsTest {
@@ -20,6 +21,8 @@ class MiningModelsTest {
                 videoFile = "episode.mkv",
                 subtitleFile = "episode.ass",
                 minedForms = listOf("遣る"),
+                ankiWriteState = AnkiWriteState.NOTE_WRITE_CONFIRMED,
+                failureIsTransient = false,
             )
 
         assertEquals(Long.MAX_VALUE, result.totalWordsFound)
@@ -47,6 +50,35 @@ class MiningModelsTest {
 
         assertEquals(1.0f, progress.fraction)
         assertEquals("", progress.description)
+    }
+
+    @Test
+    fun stagedProgressComposesWithinItsOwnBandInsteadOfRestarting() {
+        // The engine stopped blending stages into one percentage, so each stage
+        // restarts the item counts. Without composition a five-stage run would
+        // drive the bar 0..1 five times.
+        val firstStageHalf =
+            MiningProgress(current = 1, total = 2, description = "Parsing", stage = MiningStage(1, 5, "Parsing"))
+        assertEquals(0.1f, firstStageHalf.fraction)
+
+        val lastStageDone =
+            MiningProgress(current = 4, total = 4, description = "Creating", stage = MiningStage(5, 5, "Creating"))
+        assertEquals(1.0f, lastStageDone.fraction)
+
+        // A stage boundary never moves the bar backwards: entering stage 3 sits at
+        // the end of stage 2's band.
+        val stageEntered =
+            MiningProgress(current = 0, total = 0, description = "Extracting", stage = MiningStage(3, 5, "Extracting"))
+        assertEquals(0.4f, stageEntered.fraction)
+
+        // Unstaged progress keeps the raw item fraction.
+        assertEquals(0.5f, MiningProgress(current = 1, total = 2, description = "Parsing").fraction)
+    }
+
+    @Test
+    fun stageRejectsAnIndexOutsideItsTotal() {
+        assertThrows(IllegalArgumentException::class.java) { MiningStage(0, 5, "Parsing") }
+        assertThrows(IllegalArgumentException::class.java) { MiningStage(6, 5, "Parsing") }
     }
 
     @Test
@@ -113,5 +145,7 @@ class MiningModelsTest {
             videoFile = "video.mkv",
             subtitleFile = "subtitle.srt",
             minedForms = listOf("食べる"),
+            ankiWriteState = AnkiWriteState.NOTE_WRITE_CONFIRMED,
+            failureIsTransient = false,
         )
 }

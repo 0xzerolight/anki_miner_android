@@ -1,5 +1,6 @@
 package com.ankiminer.android.reading
 
+import com.ankiminer.android.mining.AnkiWriteState
 import com.ankiminer.android.mining.CurationCandidate
 import com.ankiminer.android.mining.CurationRequest
 import com.ankiminer.android.mining.CurationSelection
@@ -70,6 +71,8 @@ internal class FakeReadingMiningRepository : ReadingMiningRepository {
                     videoFile = "",
                     subtitleFile = "debug-reading.txt",
                     minedForms = selected.map(CurationCandidate::minedForm),
+                    ankiWriteState = AnkiWriteState.NOTE_WRITE_CONFIRMED,
+                    failureIsTransient = false,
                 ),
             )
     }

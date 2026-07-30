@@ -130,6 +130,7 @@ data class AppSettings(
     val maxParallelWorkers: Int? = null,
     val dictionarySources: List<ResourceChainSelection> = emptyList(),
     val frequencySources: List<ResourceChainSelection> = emptyList(),
+    val pitchSources: List<ResourceChainSelection> = emptyList(),
     val audioPacks: List<ResourceChainSelection> = emptyList(),
     /** Bundled proper-noun rejection sets enabled for mining. Wire name stays excluded_wordsets. */
     val enabledWordsets: List<String> = DEFAULT_ENABLED_WORDSETS,
@@ -182,6 +183,7 @@ data class AppSettings(
     fun resetResourceChoices(
         dictionaryIds: List<String> = emptyList(),
         frequencyIds: List<String> = emptyList(),
+        pitchIds: List<String> = emptyList(),
         audioPackIds: List<String> = emptyList(),
     ): AppSettings =
         copy(
@@ -189,6 +191,7 @@ data class AppSettings(
             // user-requested reset remain visibly clear for resources already installed.
             dictionarySources = dictionaryIds.map { ResourceChainSelection(it, enabled = false) },
             frequencySources = frequencyIds.map { ResourceChainSelection(it, enabled = false) },
+            pitchSources = pitchIds.map { ResourceChainSelection(it, enabled = false) },
             audioPacks = audioPackIds.map { ResourceChainSelection(it, enabled = false) },
             enabledWordsets = DEFAULT_ENABLED_WORDSETS,
             jishoEnabled = false,
@@ -314,6 +317,7 @@ object AppSettingsValidator {
             }
             resourceChain("Dictionaries", it.dictionarySources)
             resourceChain("Frequency sources", it.frequencySources)
+            resourceChain("Pitch sources", it.pitchSources)
             resourceChain("Audio packs", it.audioPacks)
             if (it.audioPacks.any { selection -> selection.resourceId == "jpod101" }) {
                 invalid(
@@ -509,6 +513,7 @@ internal object EngineSettingsSnapshotMapper {
         rawSettings: AppSettings,
         installedDictionaryIds: List<String>,
         installedFrequencyIds: List<String> = emptyList(),
+        installedPitchIds: List<String> = emptyList(),
         installedAudioPackIds: List<String> = emptyList(),
         availableWordsetIds: List<String> = emptyList(),
         blacklistPath: String? = null,
@@ -519,6 +524,8 @@ internal object EngineSettingsSnapshotMapper {
         require(installedDictionaryIds.all(dictionaryId::matches))
         require(installedFrequencyIds.distinct() == installedFrequencyIds)
         require(installedFrequencyIds.all(dictionaryId::matches))
+        require(installedPitchIds.distinct() == installedPitchIds)
+        require(installedPitchIds.all(dictionaryId::matches))
         require(installedAudioPackIds.distinct() == installedAudioPackIds)
         require(installedAudioPackIds.all(dictionaryId::matches))
         require(installedAudioPackIds.none { it == "jpod101" })
@@ -630,6 +637,19 @@ internal object EngineSettingsSnapshotMapper {
                 )
             }
         values["frequency_chain"] = BridgeJsonValue.ArrayValue(frequencyChain)
+
+        // Pitch became a first-hit-wins chain of per-source indexes with the
+        // engine re-pin; it carries the same source_id/enabled shape as frequency.
+        val pitchChain =
+            resolveResourceChain(settings.pitchSources, installedPitchIds).map { selection ->
+                BridgeJsonValue.ObjectValue(
+                    mapOf(
+                        "source_id" to text(selection.resourceId),
+                        "enabled" to bool(selection.enabled),
+                    ),
+                )
+            }
+        values["pitch_chain"] = BridgeJsonValue.ArrayValue(pitchChain)
 
         // Only private local packs cross this boundary. Network audio kinds remain mechanically
         // unrepresentable even if a desktop default or stale preference tries to introduce one.

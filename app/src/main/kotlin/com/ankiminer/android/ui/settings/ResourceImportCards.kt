@@ -97,17 +97,23 @@ internal fun PitchImportCard(
     OutlinedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(AnkiMinerTokens.Space.content), verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
             Text(stringResource(R.string.pitch_import_title), style = MaterialTheme.typography.titleMedium)
-            // A healthy pitch source's name and entry count are already printed by the pitch
-            // section of the Dictionaries tab, so only the invalid case says anything new.
-            val pitch = state.pitchAccent
-            if (pitch == null) {
-                Text(stringResource(R.string.pitch_none_installed))
-            } else if (!pitch.schemaOk || pitch.entryCount <= 0) {
-                Text(
-                    stringResource(R.string.pitch_inventory_invalid, pitch.sourceName, pitch.entryCount),
-                    color = MaterialTheme.colorScheme.error,
-                )
-            }
+            // Healthy sources are listed by the pitch priority editor; a broken one is
+            // silently dropped from the chain, so this line is its only signal (the
+            // frequency card says the same thing the same way).
+            state.pitchSources
+                .filterNot { it.schemaOk && it.entryCount > 0 }
+                .forEach { source ->
+                    Text(
+                        stringResource(
+                            R.string.local_resource_inventory_invalid,
+                            source.sourceName,
+                            source.sourceId,
+                            source.entryCount,
+                        ),
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            if (state.pitchSources.isEmpty()) Text(stringResource(R.string.pitch_none_installed))
             OutlinedTextField(
                 value = state.pitchSourceName,
                 onValueChange = onNameChanged,
@@ -124,9 +130,9 @@ internal fun PitchImportCard(
                 onSelect = onFormatChanged,
                 enabled = !state.busy,
             )
-            // Pitch is one fixed file, so a second import always replaces the first. Say so on the
-            // card rather than only in the confirmation that follows the picker.
-            if (state.pitchAccent != null) {
+            // A name that derives onto an installed slot replaces it; the confirmation
+            // that follows the picker names which one.
+            if (state.pitchSources.isNotEmpty()) {
                 SupportingText(stringResource(R.string.pitch_replaces_installed))
             }
             inlineFailure?.invoke()

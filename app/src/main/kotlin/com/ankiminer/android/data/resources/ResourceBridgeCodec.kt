@@ -108,16 +108,19 @@ object ResourceBridgeCodec {
     fun encodePitchImportRequest(
         operation: String,
         sourcePath: String,
+        sourceId: String,
         sourceName: String,
         sourceFormat: PitchAccentSourceFormat,
         overwrite: Boolean,
     ): String {
         requireOperationId(operation)
         requireAbsolutePath(sourcePath)
+        requireSlotId(sourceId)
         requireDisplayName(sourceName)
         return encode("resource.pitch.import") { generator ->
             generator.writeStringField("operationId", operation)
             generator.writeStringField("sourcePath", sourcePath)
+            generator.writeStringField("sourceId", sourceId)
             generator.writeStringField("sourceName", sourceName)
             generator.writeStringField("sourceFormat", sourceFormat.wireValue)
             generator.writeBooleanField("overwrite", overwrite)
@@ -351,29 +354,31 @@ object ResourceBridgeCodec {
         )
     }
 
-    fun decodeImportedPitch(raw: String): ImportedPitchAccent {
+    fun decodeImportedPitch(raw: String): ImportedPitchSource {
         val value = payload(raw, "resource.pitch.imported")
         exact(
             value,
             setOf(
+                "sourceId",
                 "sourceName",
                 "sourceRevision",
                 "sourceFormat",
                 "entryCount",
                 "skippedDisplayOnly",
                 "skippedMalformed",
-                "fileSha256",
+                "archiveSha256",
             ),
-            "imported pitch accent",
+            "imported pitch source",
         )
-        return ImportedPitchAccent(
+        return ImportedPitchSource(
+            sourceId = requireSlotId(text(value.getValue("sourceId"), "sourceId")),
             sourceName = boundedText(value.getValue("sourceName"), "sourceName", 4096),
             sourceRevision = boundedText(value.getValue("sourceRevision"), "sourceRevision", 4096, allowEmpty = true),
             sourceFormat = sourceFormat(value.getValue("sourceFormat"), PitchAccentSourceFormat.entries.map { it.wireValue }.toSet()),
             entryCount = positive(value.getValue("entryCount"), "entryCount"),
             skippedDisplayOnly = nonNegative(value.getValue("skippedDisplayOnly"), "skippedDisplayOnly"),
             skippedMalformed = nonNegative(value.getValue("skippedMalformed"), "skippedMalformed"),
-            fileSha256 = requireSha256(text(value.getValue("fileSha256"), "fileSha256")),
+            archiveSha256 = requireSha256(text(value.getValue("archiveSha256"), "archiveSha256")),
         )
     }
 
@@ -489,12 +494,15 @@ object ResourceBridgeCodec {
         val value = payload(raw, "resource.local.listed")
         exact(
             value,
-            setOf("frequencies", "pitchAccent", "audioPacks", "knownWords", "wordsets"),
+            setOf("frequencies", "pitchSources", "audioPacks", "knownWords", "wordsets"),
             "local resource inventory",
         )
         val frequencies = array(value.getValue("frequencies"), "frequencies").also {
             if (it.size > 128) invalid("Too many frequency sources")
         }.map(::installedFrequency)
+        val pitchSources = array(value.getValue("pitchSources"), "pitchSources").also {
+            if (it.size > 128) invalid("Too many pitch sources")
+        }.map(::installedPitch)
         val audioPacks = array(value.getValue("audioPacks"), "audioPacks").also {
             if (it.size > 128) invalid("Too many audio packs")
         }.map(::installedAudioPack)
@@ -502,11 +510,12 @@ object ResourceBridgeCodec {
             if (it.size > 32) invalid("Too many bundled wordsets")
         }.map(::bundledWordset)
         if (frequencies.map { it.sourceId }.distinct().size != frequencies.size) invalid("Duplicate frequency source")
+        if (pitchSources.map { it.sourceId }.distinct().size != pitchSources.size) invalid("Duplicate pitch source")
         if (audioPacks.map { it.packId }.distinct().size != audioPacks.size) invalid("Duplicate audio pack")
         if (wordsets.map { it.wordsetId }.distinct().size != wordsets.size) invalid("Duplicate bundled wordset")
         return LocalResourceInventory(
             frequencies = frequencies,
-            pitchAccent = if (value.getValue("pitchAccent") is BridgeJsonValue.Null) null else installedPitch(value.getValue("pitchAccent")),
+            pitchSources = pitchSources,
             audioPacks = audioPacks,
             knownWords = knownWordsInventory(value.getValue("knownWords")),
             wordsets = wordsets,
@@ -738,20 +747,21 @@ object ResourceBridgeCodec {
         )
     }
 
-    private fun installedPitch(raw: BridgeJsonValue): InstalledPitchAccent {
-        val value = objectValue(raw, "installed pitch accent")
+    private fun installedPitch(raw: BridgeJsonValue): InstalledPitchSource {
+        val value = objectValue(raw, "installed pitch source")
         exact(
             value,
-            setOf("sourceName", "sourceRevision", "sourceFormat", "entryCount", "fileSizeBytes", "schemaOk"),
-            "installed pitch accent",
+            setOf("sourceId", "sourceName", "sourceRevision", "format", "entryCount", "schemaOk", "schemaVersion"),
+            "installed pitch source",
         )
-        return InstalledPitchAccent(
+        return InstalledPitchSource(
+            sourceId = requireSlotId(text(value.getValue("sourceId"), "sourceId")),
             sourceName = boundedText(value.getValue("sourceName"), "sourceName", 4096),
             sourceRevision = boundedText(value.getValue("sourceRevision"), "sourceRevision", 4096, allowEmpty = true),
-            sourceFormat = boundedText(value.getValue("sourceFormat"), "sourceFormat", 64),
+            format = boundedText(value.getValue("format"), "format", 64),
             entryCount = nonNegative(value.getValue("entryCount"), "entryCount"),
-            fileSizeBytes = nonNegative(value.getValue("fileSizeBytes"), "fileSizeBytes"),
             schemaOk = bool(value.getValue("schemaOk"), "schemaOk"),
+            schemaVersion = nonNegative(value.getValue("schemaVersion"), "schemaVersion"),
         )
     }
 

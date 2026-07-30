@@ -15,6 +15,7 @@ import com.ankiminer.android.mining.CurationSelection
 import com.ankiminer.android.mining.CurationSentence
 import com.ankiminer.android.mining.FakeMiningRepository
 import com.ankiminer.android.mining.MiningFailure
+import com.ankiminer.android.mining.AnkiWriteState
 import com.ankiminer.android.mining.MiningProgress
 import com.ankiminer.android.mining.MiningRepository
 import com.ankiminer.android.mining.MiningRunState
@@ -987,6 +988,8 @@ class VideoMiningViewModelTest {
                 videoFile = "video.mkv",
                 subtitleFile = "subtitle.srt",
                 minedForms = listOf("食べる"),
+                ankiWriteState = AnkiWriteState.NOTE_WRITE_CONFIRMED,
+                failureIsTransient = false,
             )
     }
 }

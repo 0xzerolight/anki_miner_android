@@ -999,6 +999,22 @@ internal class BridgeMiningRepository(
         updateProgress(generation, MiningProgress(message.current, total, message.description))
     }
 
+    private fun onProgressStage(
+        generation: Long,
+        message: BridgeMessage.ProgressStage,
+    ) {
+        // The stage becomes the outer band of the bar and its label; the per-stage
+        // item counts restart inside it. Keep the current counts so the bar does
+        // not jump backwards between an on_stage and the on_start that follows.
+        val stage = MiningStage(message.index, message.total, message.name)
+        val current = synchronized(monitor) { activeFor(generation)?.progress }
+        updateProgress(
+            generation,
+            current?.copy(description = message.name, stage = stage)
+                ?: MiningProgress(0, 0, message.name, stage = stage),
+        )
+    }
+
     private fun onProgressComplete(generation: Long) {
         val progress = synchronized(monitor) { activeFor(generation)?.progress } ?: return
         updateProgress(generation, progress.copy(current = progress.total))
@@ -1078,6 +1094,14 @@ internal class BridgeMiningRepository(
                 val progress = decoded as? BridgeMessage.ProgressUpdate
                     ?: throw IllegalStateException("Unexpected onProgress message")
                 onProgressUpdate(generation, progress)
+            }
+
+        override fun onStage(message: String) =
+            callbackFailure(generation) {
+                val decoded = decodeCallback(generation, message)
+                val stage = decoded as? BridgeMessage.ProgressStage
+                    ?: throw IllegalStateException("Unexpected onStage message")
+                onProgressStage(generation, stage)
             }
 
         override fun onComplete(message: String) =

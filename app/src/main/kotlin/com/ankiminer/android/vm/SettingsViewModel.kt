@@ -142,6 +142,7 @@ internal data class SettingsDraft(
     val theme: ThemeMode,
     val dictionarySources: List<ResourceChainSelection>,
     val frequencySources: List<ResourceChainSelection>,
+    val pitchSources: List<ResourceChainSelection>,
     val audioPacks: List<ResourceChainSelection>,
     val enabledWordsets: List<String>,
     val readingTts: Boolean,
@@ -241,6 +242,7 @@ internal data class SettingsDraft(
             maxParallelWorkers = AppSettingsDraftParser.optionalInt(workers),
             dictionarySources = dictionarySources,
             frequencySources = frequencySources,
+            pitchSources = pitchSources,
             audioPacks = audioPacks,
             enabledWordsets = enabledWordsets,
             readingTtsEnabled = readingTts,
@@ -307,6 +309,11 @@ internal data class SettingsDraft(
                     frequencySources,
                     resources.usableFrequencyIds(),
                 ),
+            pitchSources =
+                EngineSettingsSnapshotMapper.resolveResourceChain(
+                    pitchSources,
+                    resources.usablePitchIds(),
+                ),
             audioPacks =
                 EngineSettingsSnapshotMapper.resolveResourceChain(
                     audioPacks,
@@ -354,6 +361,7 @@ internal data class SettingsDraft(
                 theme = settings.theme,
                 dictionarySources = settings.dictionarySources,
                 frequencySources = settings.frequencySources,
+                pitchSources = settings.pitchSources,
                 audioPacks = settings.audioPacks,
                 enabledWordsets = settings.enabledWordsets,
                 readingTts = settings.readingTtsEnabled,
@@ -427,6 +435,12 @@ private fun SettingsDraft.rebaseChangesSince(
                 frequencySources,
                 persisted.frequencySources,
             ),
+        pitchSources =
+            changedValue(
+                baseline.pitchSources,
+                pitchSources,
+                persisted.pitchSources,
+            ),
         audioPacks = changedValue(baseline.audioPacks, audioPacks, persisted.audioPacks),
         enabledWordsets =
             changedValue(
@@ -450,6 +464,9 @@ private fun ResourceManagerState.usableDictionaryIds(): List<String> =
 private fun ResourceManagerState.usableFrequencyIds(): List<String> =
     frequencySources.filter { it.schemaOk && it.entryCount > 0 }.map { it.sourceId }
 
+private fun ResourceManagerState.usablePitchIds(): List<String> =
+    pitchSources.filter { it.schemaOk && it.entryCount > 0 }.map { it.sourceId }
+
 private fun ResourceManagerState.usableAudioPackIds(): List<String> =
     audioPacks.filter { it.contentAvailable && it.entryCount > 0 }.map { it.packId }
 
@@ -460,6 +477,7 @@ internal data class SettingsDraftState(
     val deckDirty: Boolean,
     val dictionarySourcesDirty: Boolean,
     val frequencySourcesDirty: Boolean,
+    val pitchSourcesDirty: Boolean,
     val audioPacksDirty: Boolean,
     val editRevision: Long,
     val writeCadence: SettingsWriteCadence,
@@ -478,6 +496,7 @@ internal class SettingsDraftStore(
                 deckDirty = false,
                 dictionarySourcesDirty = false,
                 frequencySourcesDirty = false,
+                pitchSourcesDirty = false,
                 audioPacksDirty = false,
                 editRevision = 0,
                 writeCadence = SettingsWriteCadence.IMMEDIATE,
@@ -499,6 +518,9 @@ internal class SettingsDraftStore(
                     frequencySourcesDirty =
                         current.frequencySourcesDirty ||
                             value.frequencySources != current.draft.frequencySources,
+                    pitchSourcesDirty =
+                        current.pitchSourcesDirty ||
+                            value.pitchSources != current.draft.pitchSources,
                     audioPacksDirty =
                         current.audioPacksDirty ||
                             value.audioPacks != current.draft.audioPacks,
@@ -542,6 +564,9 @@ internal class SettingsDraftStore(
                     frequencySourcesDirty =
                         current.frequencySourcesDirty &&
                             mergedDraft.frequencySources != persistedDraft.frequencySources,
+                    pitchSourcesDirty =
+                        current.pitchSourcesDirty &&
+                            mergedDraft.pitchSources != persistedDraft.pitchSources,
                     audioPacksDirty =
                         current.audioPacksDirty &&
                             mergedDraft.audioPacks != persistedDraft.audioPacks,
@@ -556,6 +581,7 @@ internal class SettingsDraftStore(
                     deckDirty = false,
                     dictionarySourcesDirty = false,
                     frequencySourcesDirty = false,
+                    pitchSourcesDirty = false,
                     audioPacksDirty = false,
                     editRevision = current.editRevision,
                     writeCadence = SettingsWriteCadence.IMMEDIATE,
@@ -576,6 +602,7 @@ internal class SettingsDraftStore(
                 deckDirty = false,
                 dictionarySourcesDirty = false,
                 frequencySourcesDirty = false,
+                pitchSourcesDirty = false,
                 audioPacksDirty = false,
                 editRevision = mutableState.value.editRevision,
                 writeCadence = SettingsWriteCadence.IMMEDIATE,
@@ -600,6 +627,7 @@ internal class SettingsDraftStore(
                         deckDirty = false,
                         dictionarySourcesDirty = false,
                         frequencySourcesDirty = false,
+                        pitchSourcesDirty = false,
                         audioPacksDirty = false,
                         editRevision = current.editRevision,
                         writeCadence = SettingsWriteCadence.IMMEDIATE,
@@ -625,6 +653,10 @@ internal class SettingsDraftStore(
                             dirty &&
                                 currentDraft.frequencySources != baseline.frequencySources &&
                                 rebased.frequencySources != persistedDraft.frequencySources,
+                        pitchSourcesDirty =
+                            dirty &&
+                                currentDraft.pitchSources != baseline.pitchSources &&
+                                rebased.pitchSources != persistedDraft.pitchSources,
                         audioPacksDirty =
                             dirty &&
                                 currentDraft.audioPacks != baseline.audioPacks &&
@@ -965,6 +997,7 @@ internal class SettingsViewModel(
             current.resetResourceChoices(
                 dictionaryIds = inventory.usableDictionaryIds(),
                 frequencyIds = inventory.usableFrequencyIds(),
+                pitchIds = inventory.usablePitchIds(),
                 audioPackIds = inventory.usableAudioPackIds(),
             )
         }

@@ -111,9 +111,26 @@ internal object ResourceIdentity {
         return ResourceImportTarget(identity = slotId, installedName = match?.sourceName)
     }
 
-    /** Pitch accent is a single file with no id, so anything installed is always the collision. */
-    fun pitchTarget(installed: InstalledPitchAccent?): ResourceImportTarget =
-        ResourceImportTarget(identity = "pitch", installedName = installed?.sourceName)
+    /**
+     * Where a pitch import would land, and what it would replace.
+     *
+     * Pitch became a chain of per-source slots with the engine re-pin, so it now
+     * derives an id from the display name exactly like frequency; it is no longer
+     * a single unnamed file that anything installed collides with.
+     */
+    fun pitchTarget(
+        displayName: String,
+        installed: List<InstalledPitchSource>,
+    ): ResourceImportTarget {
+        val derived = derive(displayName, "pitch")
+        val match =
+            installed.firstOrNull { it.sourceId == derived }
+                ?: installed.firstOrNull { it.sourceName.trim().equals(displayName.trim(), ignoreCase = true) }
+        return ResourceImportTarget(
+            identity = match?.sourceId ?: derived,
+            installedName = match?.sourceName,
+        )
+    }
 
     private fun digest(value: String): String {
         val bytes = MessageDigest.getInstance("SHA-256").digest(value.toByteArray(Charsets.UTF_8))

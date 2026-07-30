@@ -582,7 +582,7 @@
     <string name="settings_audio_pack_chain">表現音声優先順位</string>
     <string name="settings_no_audio_packs">有効なローカル音声パックがインストールされていません。設定からインポートしてください。</string>
     <string name="settings_pitch_format">ピッチ表示形式</string>
-    <string name="settings_pitch_installed">%1$s インストール済み・%2$d件</string>
+    <string name="settings_pitch_chain">ピッチ優先順位</string>
     <string name="settings_pitch_not_installed">有効なピッチアクセントソースがインストールされていません。</string>
     <string name="settings_pitch_japanese">日本語</string>
     <string name="settings_pitch_romaji">ローマ字</string>

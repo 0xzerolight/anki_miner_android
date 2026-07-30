@@ -191,6 +191,7 @@ class ResourceBridgeCodecTest {
             ResourceBridgeCodec.encodePitchImportRequest(
                 operation = "resource_pitch",
                 sourcePath = "/private/pitch.zip",
+                sourceId = "pitch-source",
                 sourceName = "Pitch Source",
                 sourceFormat = PitchAccentSourceFormat.YOMITAN_ZIP,
                 overwrite = true,
@@ -283,12 +284,12 @@ class ResourceBridgeCodecTest {
     @Test
     fun localResourceInventoryDecodesEveryInstalledClass() {
         val raw =
-            """{"schemaVersion":1,"type":"resource.local.listed","payload":{"frequencies":[{"sourceId":"jpdb","sourceName":"JPDB","format":"yomitan-freq","entryCount":100,"schemaOk":true,"schemaVersion":2,"isCategorical":false}],"pitchAccent":{"sourceName":"NHK","sourceRevision":"1","sourceFormat":"zip","entryCount":20,"fileSizeBytes":300,"schemaOk":true},"audioPacks":[{"packId":"nhk16","sourceName":"nhk16","format":"nhk16","entryCount":30,"contentAvailable":true}],"knownWords":{"totalCount":12,"userCount":2,"ankiCount":9,"minedCount":1,"schemaOk":true},"wordsets":[{"wordsetId":"surnames","displayName":"Surnames","entryCount":98406}]}}"""
+            """{"schemaVersion":1,"type":"resource.local.listed","payload":{"frequencies":[{"sourceId":"jpdb","sourceName":"JPDB","format":"yomitan-freq","entryCount":100,"schemaOk":true,"schemaVersion":2,"isCategorical":false}],"pitchSources":[{"sourceId":"nhk","sourceName":"NHK","sourceRevision":"1","format":"csv","entryCount":20,"schemaOk":true,"schemaVersion":1}],"audioPacks":[{"packId":"nhk16","sourceName":"nhk16","format":"nhk16","entryCount":30,"contentAvailable":true}],"knownWords":{"totalCount":12,"userCount":2,"ankiCount":9,"minedCount":1,"schemaOk":true},"wordsets":[{"wordsetId":"surnames","displayName":"Surnames","entryCount":98406}]}}"""
 
         val inventory = ResourceBridgeCodec.decodeLocalResourceList(raw)
 
         assertEquals(listOf("jpdb"), inventory.frequencies.map { it.sourceId })
-        assertEquals("NHK", inventory.pitchAccent?.sourceName)
+        assertEquals(listOf("NHK"), inventory.pitchSources.map { it.sourceName })
         assertEquals(listOf("nhk16"), inventory.audioPacks.map { it.packId })
         assertEquals(2L, inventory.knownWords.userCount)
         assertEquals(listOf("surnames"), inventory.wordsets.map { it.wordsetId })
@@ -297,13 +298,13 @@ class ResourceBridgeCodecTest {
     @Test
     fun localResourceInventoryRejectsDuplicateIdsAndInconsistentCounts() {
         val duplicateFrequency =
-            """{"schemaVersion":1,"type":"resource.local.listed","payload":{"frequencies":[{"sourceId":"same","sourceName":"One","format":"csv","entryCount":1,"schemaOk":true,"schemaVersion":2,"isCategorical":false},{"sourceId":"same","sourceName":"Two","format":"csv","entryCount":1,"schemaOk":true,"schemaVersion":2,"isCategorical":false}],"pitchAccent":null,"audioPacks":[],"knownWords":{"totalCount":0,"userCount":0,"ankiCount":0,"minedCount":0,"schemaOk":true},"wordsets":[]}}"""
+            """{"schemaVersion":1,"type":"resource.local.listed","payload":{"frequencies":[{"sourceId":"same","sourceName":"One","format":"csv","entryCount":1,"schemaOk":true,"schemaVersion":2,"isCategorical":false},{"sourceId":"same","sourceName":"Two","format":"csv","entryCount":1,"schemaOk":true,"schemaVersion":2,"isCategorical":false}],"pitchSources":[],"audioPacks":[],"knownWords":{"totalCount":0,"userCount":0,"ankiCount":0,"minedCount":0,"schemaOk":true},"wordsets":[]}}"""
         assertThrows(ResourceBridgeException::class.java) {
             ResourceBridgeCodec.decodeLocalResourceList(duplicateFrequency)
         }
 
         val inconsistentKnownWords =
-            """{"schemaVersion":1,"type":"resource.local.listed","payload":{"frequencies":[],"pitchAccent":null,"audioPacks":[],"knownWords":{"totalCount":1,"userCount":1,"ankiCount":1,"minedCount":0,"schemaOk":true},"wordsets":[]}}"""
+            """{"schemaVersion":1,"type":"resource.local.listed","payload":{"frequencies":[],"pitchSources":[],"audioPacks":[],"knownWords":{"totalCount":1,"userCount":1,"ankiCount":1,"minedCount":0,"schemaOk":true},"wordsets":[]}}"""
         assertThrows(ResourceBridgeException::class.java) {
             ResourceBridgeCodec.decodeLocalResourceList(inconsistentKnownWords)
         }
