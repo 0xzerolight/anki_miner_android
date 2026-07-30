@@ -28,8 +28,8 @@ from android_bridge.expression_audio_fetcher import (  # noqa: E402
     custom_audio_slug,
 )
 
-# Minimal valid ID3v2-tagged MP3 body.
-_VALID_MP3 = b"ID3" + b"\x00" * 7 + b"\xff\xfb\x90\x00" + b"\x00" * 100
+# Minimal ID3v2-tagged MPEG-1 Layer III frame (128 kbps, 44.1 kHz, 417 bytes).
+_VALID_MP3 = b"ID3" + b"\x00" * 7 + b"\xff\xfb\x90\x00" + b"\x00" * 413
 
 
 @pytest.fixture(autouse=True)
@@ -126,6 +126,7 @@ class TestCustomAudioFetcherDirect:
         tmp_path: Path,
         kind: str = "custom",
         template: str = "http://localhost:8765/?t={term}&r={reading}",
+        **options: object,
     ):
         f = CustomAudioFetcher(
             url_template=template,
@@ -133,6 +134,7 @@ class TestCustomAudioFetcherDirect:
             cache_dir=tmp_path / "cache",
             file_prefix="custom_abc",
             delay=0,
+            **options,
         )
         f._session = MagicMock()
         return f
@@ -181,6 +183,59 @@ class TestCustomAudioFetcherDirect:
         f._session.get.return_value = _audio_response(b"<html>", content_type="text/html")
         assert f.fetch("食べる", "たべる") is None
 
+    def test_mislabeled_or_truncated_mp3_is_deleted_as_non_audio(self, tmp_path: Path) -> None:
+        f = self._fetcher(tmp_path)
+        truncated = b"ID3" + b"\x00" * 7 + b"\xff\xfb\x90\x00" + b"\x00" * 8
+        f._session.get.return_value = _audio_response(truncated, content_type="audio/mpeg")
+
+        assert f.fetch("食べる", "たべる") is None
+        assert f.stats()["non_audio"] == 1
+        assert not list((tmp_path / "cache").glob("*"))
+
+    def test_invalid_cache_entry_is_deleted_and_refetched(self, tmp_path: Path) -> None:
+        f = self._fetcher(tmp_path)
+        f._session.get.return_value = _audio_response(_VALID_MP3)
+        cached = f.fetch("食べる", "たべる")
+        assert cached is not None
+        cached.write_bytes(b"<html>")
+        f._session.get.reset_mock()
+        f._session.get.return_value = _audio_response(_VALID_MP3)
+
+        refreshed = f.fetch("食べる", "たべる")
+
+        assert refreshed == cached
+        assert refreshed.read_bytes() == _VALID_MP3
+        f._session.get.assert_called_once()
+        assert f.stats()["non_audio"] == 1
+
+    def test_ffprobe_rejection_deletes_structurally_valid_download(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        probe = MagicMock(return_value=False)
+        monkeypatch.setattr(expression_audio_fetcher_module, "_ffprobe_accepts_audio", probe)
+        f = self._fetcher(tmp_path, ffprobe_path=Path("/bundled/ffprobe"))
+        f._session.get.return_value = _audio_response(_VALID_MP3)
+
+        assert f.fetch("食べる", "たべる") is None
+        probe.assert_called_once()
+        assert f.stats()["non_audio"] == 1
+        assert not list((tmp_path / "cache").glob("*"))
+
+    def test_returned_files_remain_pinned_until_close_then_are_pruned(self, tmp_path: Path) -> None:
+        f = self._fetcher(tmp_path)
+        f._session.get.return_value = _audio_response(_VALID_MP3)
+
+        first = f.fetch("食べる", "たべる")
+        second = f.fetch("猫", "ねこ")
+
+        assert first is not None and first.exists()
+        assert second is not None and second.exists()
+        f.close()
+        assert not first.exists()
+        assert not second.exists()
+
     def test_never_raises_on_network_error(self, tmp_path: Path) -> None:
         f = self._fetcher(tmp_path)
         f._session.get.side_effect = requests.ConnectionError("server down")
@@ -210,10 +265,12 @@ class TestCustomAudioFetcherJson:
         template: str = "http://localhost:8765/list?t={term}",
         *,
         approved_audio_origins: tuple[str, ...] = (),
+        **extra_options: object,
     ):
         options: dict[str, object] = {}
         if approved_audio_origins:
             options["approved_audio_origins"] = approved_audio_origins
+        options.update(extra_options)
         f = CustomAudioFetcher(
             url_template=template,
             kind="custom_json",
@@ -641,6 +698,56 @@ class TestCustomAudioFetcherJson:
 
         assert f.fetch("食べる", "たべる") is None
         assert f.stats()["timeout"] == 1
+
+    def test_absolute_deadline_stops_trickling_directory_body(self, tmp_path: Path) -> None:
+        now = [0.0]
+        f = self._fetcher(
+            tmp_path,
+            deadline_seconds=1.0,
+            monotonic=lambda: now[0],
+        )
+        response = _json_response(None, raw_body=b"{}")
+
+        def trickle(chunk_size: int = 8192):
+            del chunk_size
+            now[0] = 0.75
+            yield b"{"
+            now[0] = 1.01
+            yield b"}"
+
+        response.iter_content.side_effect = trickle
+        f._session.get.return_value = response
+
+        assert f.fetch("食べる", "たべる") is None
+        assert f._session.get.call_count == 1
+        assert f.stats()["timeout"] == 1
+        response.close.assert_called()
+
+    def test_absolute_deadline_stops_trickling_audio_body(self, tmp_path: Path) -> None:
+        now = [0.0]
+        f = self._fetcher(
+            tmp_path,
+            deadline_seconds=1.0,
+            monotonic=lambda: now[0],
+        )
+        payload = {"type": "audioSourceList", "audioSources": [{"url": "/audio.mp3"}]}
+        audio = _audio_response(_VALID_MP3)
+
+        def trickle(chunk_size: int = 8192):
+            del chunk_size
+            now[0] = 0.75
+            yield _VALID_MP3[:20]
+            now[0] = 1.01
+            yield _VALID_MP3[20:]
+
+        audio.iter_content.side_effect = trickle
+        f._session.get.side_effect = [_json_response(payload), audio]
+
+        assert f.fetch("食べる", "たべる") is None
+        assert f._session.get.call_count == 2
+        assert f.stats()["timeout"] == 1
+        audio.close.assert_called()
+        assert not list((tmp_path / "cache").glob("*"))
 
     def test_total_raw_attempts_are_capped_across_sources_and_redirects(self, tmp_path: Path) -> None:
         assert _MAX_TOTAL_ATTEMPTS == 16

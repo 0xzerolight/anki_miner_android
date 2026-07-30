@@ -82,6 +82,7 @@ class _ExpressionAudioSourceChain:
         localaudio_fetcher: object | None = None,
         fallback_fetchers: Sequence[object] = (),
         diagnostic_callback: Callable[[str], None] | None = None,
+        cache_lifetime: object | None = None,
     ) -> None:
         self._fetchers = tuple(fetchers)
         self._localaudio_fetcher = localaudio_fetcher
@@ -89,6 +90,7 @@ class _ExpressionAudioSourceChain:
         self._diagnostic_callback = diagnostic_callback
         self._fallback_hits = 0
         self._diagnostic_reported = False
+        self._cache_lifetime = cache_lifetime
 
     def _record_fallback_hit(self, fetcher: object) -> None:
         if any(fetcher is fallback for fallback in self._fallback_fetchers):
@@ -136,6 +138,9 @@ class _ExpressionAudioSourceChain:
                 logger.exception("Expression-audio source fetch failed")
                 continue
             if path is not None:
+                pin = getattr(self._cache_lifetime, "pin", None)
+                if callable(pin) and not pin(path):
+                    continue
                 self._record_fallback_hit(fetcher)
                 return path
         return None
@@ -154,6 +159,9 @@ class _ExpressionAudioSourceChain:
                 logger.exception("Expression-audio source fetch failed")
                 continue
             if path is not None:
+                pin = getattr(self._cache_lifetime, "pin", None)
+                if callable(pin) and not pin(path):
+                    continue
                 self._record_fallback_hit(fetcher)
                 return path
         return None
@@ -172,6 +180,10 @@ class _ExpressionAudioSourceChain:
             if callable(close):
                 with contextlib.suppress(Exception):
                     close()
+        close_lifetime = getattr(self._cache_lifetime, "close", None)
+        if callable(close_lifetime):
+            with contextlib.suppress(Exception):
+                close_lifetime()
 
 
 class _PostProcessCleanupError(Exception):
@@ -341,13 +353,18 @@ def _build_expression_audio_source_chain(
     from anki_miner.config.paths import ANKI_MINER_HOME
     from anki_miner.services.audio_packs.registry import AudioPackRegistry
 
-    from .expression_audio_fetcher import CustomAudioFetcher, custom_audio_slug
+    from .expression_audio_fetcher import (
+        CustomAudioFetcher,
+        _RunAudioCache,
+        custom_audio_slug,
+    )
 
     # Nesting the custom cache UNDER the approved LOCAL_AUDIO_CACHE_ROOT
     # (audio_cache/local_packs) keeps the localaudio download inside the
     # already-approved media-staging prefix (startsWith approval), so bug 7 is
     # independent of the media-staging approval boundary.
     cache_root = ANKI_MINER_HOME / "audio_cache" / "local_packs"
+    cache_lifetime = _RunAudioCache(cache_root)
 
     # Lazily scan the packs dir only when an enabled pack entry is present.
     pack_fetchers_by_id: dict[str, object] = {}
@@ -381,6 +398,8 @@ def _build_expression_audio_source_chain(
                 # affects fetched bytes, so desktop OUTPUT parity holds.
                 delay=0.0,
                 approved_audio_origins=_LOCALAUDIO_APPROVED_AUDIO_ORIGINS,
+                ffprobe_path=getattr(config, "ffprobe_location", None),
+                cache_lifetime=cache_lifetime,
             )
             fetchers.append(custom_fetcher)
             if kind == "custom_json":
@@ -400,6 +419,7 @@ def _build_expression_audio_source_chain(
         localaudio_fetcher=localaudio_fetcher,
         fallback_fetchers=fallback_fetchers,
         diagnostic_callback=diagnostic_callback,
+        cache_lifetime=cache_lifetime,
     )
 
 

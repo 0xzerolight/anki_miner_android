@@ -33,7 +33,11 @@ import hashlib
 import ipaddress
 import json
 import logging
+import math
+import os
 import re
+import subprocess
+import threading
 import time
 from collections.abc import Callable, Iterable
 from pathlib import Path
@@ -61,6 +65,9 @@ _MAX_AUDIO_SOURCES = 8
 _MAX_URL_BYTES = 4096
 _MAX_REDIRECTS = 3
 _MAX_TOTAL_ATTEMPTS = 16
+_FETCH_DEADLINE_SECONDS = 30.0
+_MAX_CACHED_AUDIO_BYTES = 5 * 1024 * 1024
+_AUDIO_PROBE_TIMEOUT_SECONDS = 5.0
 _BRIDGE_FAILURE_KEYS = (
     "policy_rejection",
     "oversized_response",
@@ -75,6 +82,125 @@ class _PolicyViolation(requests.RequestException):
 
 class _CancelledRequest(requests.RequestException):
     """Internal signal for cancellation between bounded request hops."""
+
+
+class _DeadlineExceeded(requests.Timeout):
+    """Internal signal for an exhausted per-word request deadline."""
+
+
+class _RequestDeadline:
+    """One monotonic budget with a timer that closes the active response."""
+
+    def __init__(
+        self,
+        seconds: float,
+        monotonic: Callable[[], float],
+        expire_active_response: Callable[[], None],
+    ) -> None:
+        self._monotonic = monotonic
+        self._expires_at = monotonic() + seconds
+        self._expired = threading.Event()
+        self._timer = threading.Timer(seconds, self._expire, args=(expire_active_response,))
+        self._timer.daemon = True
+        self._timer.start()
+
+    def _expire(self, expire_active_response: Callable[[], None]) -> None:
+        self._expired.set()
+        expire_active_response()
+
+    def check(self) -> None:
+        if self._expired.is_set() or self._monotonic() >= self._expires_at:
+            self._expired.set()
+            raise _DeadlineExceeded("expression audio deadline exceeded")
+
+    def remaining(self) -> float:
+        self.check()
+        return max(0.001, self._expires_at - self._monotonic())
+
+    @property
+    def expired(self) -> bool:
+        try:
+            self.check()
+        except _DeadlineExceeded:
+            return True
+        return False
+
+    def close(self) -> None:
+        self._timer.cancel()
+
+
+class _RunAudioCache:
+    """Pins source copies for one run and removes only unreferenced cache files."""
+
+    def __init__(self, root: Path) -> None:
+        self._root = root.resolve(strict=False)
+        self._pinned: set[Path] = set()
+        self._closed = False
+        self._lock = threading.RLock()
+        self.prune_unreferenced()
+
+    def pin(self, path: Path) -> bool:
+        with self._lock:
+            if self._closed:
+                return False
+            try:
+                resolved = path.resolve(strict=True)
+                resolved.relative_to(self._root)
+            except (OSError, RuntimeError, ValueError):
+                return False
+            if not resolved.is_file():
+                return False
+            self._pinned.add(resolved)
+            self._prune_locked()
+            return True
+
+    def discard(self, path: Path) -> None:
+        with self._lock:
+            try:
+                resolved = path.resolve(strict=False)
+                resolved.relative_to(self._root)
+            except (OSError, RuntimeError, ValueError):
+                return
+            self._pinned.discard(resolved)
+            with contextlib.suppress(OSError):
+                path.unlink()
+
+    def prune_unreferenced(self) -> None:
+        with self._lock:
+            self._prune_locked()
+
+    def _prune_locked(self) -> None:
+        if not self._root.is_dir():
+            return
+        try:
+            entries = list(os.walk(self._root, topdown=False, followlinks=False))
+        except OSError:
+            return
+        for directory, child_dirs, filenames in entries:
+            parent = Path(directory)
+            for filename in filenames:
+                candidate = parent / filename
+                if candidate.resolve(strict=False) in self._pinned:
+                    continue
+                with contextlib.suppress(OSError):
+                    candidate.unlink()
+            for child_dir in child_dirs:
+                candidate = parent / child_dir
+                try:
+                    if candidate.is_symlink():
+                        candidate.unlink()
+                    else:
+                        candidate.rmdir()
+                except OSError:
+                    continue
+
+    def close(self) -> None:
+        with self._lock:
+            if self._closed:
+                return
+            self._pinned.clear()
+            self._prune_locked()
+            self._closed = True
 
 
 class _PolicyDownloadSession:
@@ -117,7 +243,14 @@ class _CancellationAwareResponse:
         return getattr(self._response, name)
 
     def iter_content(self, *args: object, **kwargs: object):
-        for chunk in self._response.iter_content(*args, **kwargs):
+        chunks = iter(self._response.iter_content(*args, **kwargs))
+        while True:
+            self._fetcher._check_deadline()
+            try:
+                chunk = next(chunks)
+            except StopIteration:
+                return
+            self._fetcher._check_deadline()
             if self._cancelled_check is not None and self._cancelled_check():
                 self._fetcher._cancellations_raised += 1
                 raise _CancelledRequest("request cancelled")
@@ -208,6 +341,200 @@ def custom_audio_slug(url_template: str) -> str:
     return hashlib.sha1(url_template.encode("utf-8")).hexdigest()[:10]
 
 
+def _mp3_frame_length(header: bytes) -> int | None:
+    if len(header) < 4 or header[0] != 0xFF or header[1] & 0xE0 != 0xE0:
+        return None
+    version = (header[1] >> 3) & 0x03
+    layer = (header[1] >> 1) & 0x03
+    bitrate_index = (header[2] >> 4) & 0x0F
+    sample_index = (header[2] >> 2) & 0x03
+    if version == 1 or layer != 1 or bitrate_index in {0, 15} or sample_index == 3:
+        return None
+    bitrates = (
+        (32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320)
+        if version == 3
+        else (8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160)
+    )
+    sample_rates = {
+        3: (44_100, 48_000, 32_000),
+        2: (22_050, 24_000, 16_000),
+        0: (11_025, 12_000, 8_000),
+    }
+    bitrate = bitrates[bitrate_index - 1]
+    sample_rate = sample_rates[version][sample_index]
+    coefficient = 144_000 if version == 3 else 72_000
+    return (coefficient * bitrate // sample_rate) + ((header[2] >> 1) & 0x01)
+
+
+def _valid_mp3(body: bytes) -> bool:
+    offset = 0
+    if body.startswith(b"ID3"):
+        if len(body) < 10 or any(byte & 0x80 for byte in body[6:10]):
+            return False
+        tag_size = sum(byte << shift for byte, shift in zip(body[6:10], (21, 14, 7, 0), strict=True))
+        offset = 10 + tag_size + (10 if body[5] & 0x10 else 0)
+        if offset >= len(body):
+            return False
+    search_end = min(len(body) - 3, offset + 4_096)
+    for frame_offset in range(offset, search_end):
+        frame_length = _mp3_frame_length(body[frame_offset : frame_offset + 4])
+        if frame_length is not None and frame_offset + frame_length <= len(body):
+            return True
+    return False
+
+
+def _valid_aac(body: bytes) -> bool:
+    if len(body) < 7 or body[0] != 0xFF or body[1] & 0xF6 != 0xF0:
+        return False
+    frame_length = ((body[3] & 0x03) << 11) | (body[4] << 3) | (body[5] >> 5)
+    return frame_length >= 7 and frame_length <= len(body)
+
+
+def _valid_wav(body: bytes) -> bool:
+    if len(body) < 44 or body[:4] != b"RIFF" or body[8:12] != b"WAVE":
+        return False
+    container_end = int.from_bytes(body[4:8], "little") + 8
+    if container_end > len(body):
+        return False
+    offset = 12
+    has_format = False
+    has_audio = False
+    while offset + 8 <= container_end:
+        chunk_id = body[offset : offset + 4]
+        chunk_size = int.from_bytes(body[offset + 4 : offset + 8], "little")
+        chunk_end = offset + 8 + chunk_size
+        if chunk_end > container_end:
+            return False
+        has_format = has_format or (chunk_id == b"fmt " and chunk_size >= 16)
+        has_audio = has_audio or (chunk_id == b"data" and chunk_size > 0)
+        offset = chunk_end + (chunk_size & 1)
+    return has_format and has_audio
+
+
+def _valid_flac(body: bytes) -> bool:
+    if len(body) < 42 or not body.startswith(b"fLaC"):
+        return False
+    offset = 4
+    saw_stream_info = False
+    while offset + 4 <= len(body):
+        header = body[offset]
+        block_type = header & 0x7F
+        block_length = int.from_bytes(body[offset + 1 : offset + 4], "big")
+        offset += 4
+        if offset + block_length > len(body):
+            return False
+        if block_type == 0:
+            saw_stream_info = block_length == 34
+        offset += block_length
+        if header & 0x80:
+            return saw_stream_info and offset + 2 <= len(body) and body[offset] == 0xFF
+    return False
+
+
+def _valid_ogg(body: bytes) -> bool:
+    offset = 0
+    pages = 0
+    codec_seen = False
+    end_seen = False
+    while offset < len(body):
+        if offset + 27 > len(body) or body[offset : offset + 4] != b"OggS" or body[offset + 4] != 0:
+            return False
+        segment_count = body[offset + 26]
+        table_end = offset + 27 + segment_count
+        if table_end > len(body):
+            return False
+        payload_length = sum(body[offset + 27 : table_end])
+        page_end = table_end + payload_length
+        if page_end > len(body):
+            return False
+        payload = body[table_end:page_end]
+        if pages == 0:
+            codec_seen = payload.startswith((b"OpusHead", b"\x01vorbis", b"fLaC"))
+        end_seen = bool(body[offset + 5] & 0x04)
+        pages += 1
+        offset = page_end
+    return codec_seen and pages >= 2 and end_seen
+
+
+def _valid_mp4(body: bytes) -> bool:
+    offset = 0
+    box_types: set[bytes] = set()
+    while offset + 8 <= len(body):
+        box_size = int.from_bytes(body[offset : offset + 4], "big")
+        box_type = body[offset + 4 : offset + 8]
+        header_size = 8
+        if box_size == 1:
+            if offset + 16 > len(body):
+                return False
+            box_size = int.from_bytes(body[offset + 8 : offset + 16], "big")
+            header_size = 16
+        elif box_size == 0:
+            box_size = len(body) - offset
+        if box_size < header_size or offset + box_size > len(body):
+            return False
+        box_types.add(box_type)
+        offset += box_size
+    return offset == len(body) and {b"ftyp", b"moov", b"mdat"} <= box_types
+
+
+def _valid_webm(body: bytes) -> bool:
+    head = body[: 64 * 1024]
+    return (
+        len(body) >= 32
+        and body.startswith(b"\x1aE\xdf\xa3")
+        and b"webm" in head.lower()
+        and (b"A_OPUS" in head or b"A_VORBIS" in head)
+    )
+
+
+def _has_valid_audio_structure(path: Path) -> bool:
+    try:
+        size = path.stat().st_size
+        if size not in range(2, _MAX_CACHED_AUDIO_BYTES + 1):
+            return False
+        body = path.read_bytes()
+    except OSError:
+        return False
+    validators: dict[str, Callable[[bytes], bool]] = {
+        ".aac": _valid_aac,
+        ".flac": _valid_flac,
+        ".mp3": _valid_mp3,
+        ".mp4": _valid_mp4,
+        ".ogg": _valid_ogg,
+        ".opus": _valid_ogg,
+        ".wav": _valid_wav,
+        ".webm": _valid_webm,
+    }
+    validator = validators.get(path.suffix.lower())
+    return validator(body) if validator is not None else False
+
+
+def _ffprobe_accepts_audio(path: Path, ffprobe_path: Path, timeout: float) -> bool:
+    try:
+        completed = subprocess.run(
+            [
+                str(ffprobe_path),
+                "-v",
+                "error",
+                "-select_streams",
+                "a:0",
+                "-show_entries",
+                "stream=codec_type",
+                "-of",
+                "default=noprint_wrappers=1:nokey=1",
+                str(path),
+            ],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            check=False,
+            timeout=timeout,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return completed.returncode == 0 and completed.stdout.strip() == b"audio"
+
+
 class CustomAudioFetcher:
     """Fetches word pronunciation audio from a user-configured URL template.
 
@@ -224,6 +551,10 @@ class CustomAudioFetcher:
         delay: float = 0.2,
         language: str = "ja",
         approved_audio_origins: Iterable[str] = (),
+        deadline_seconds: float = _FETCH_DEADLINE_SECONDS,
+        monotonic: Callable[[], float] = time.monotonic,
+        ffprobe_path: Path | None = None,
+        cache_lifetime: _RunAudioCache | None = None,
     ) -> None:
         """Initialize the fetcher.
 
@@ -262,17 +593,103 @@ class CustomAudioFetcher:
         self._approved_audio_origins = frozenset(
             _normalize_approved_origin(origin) for origin in approved_audio_origins
         )
+        if not math.isfinite(deadline_seconds) or deadline_seconds <= 0:
+            raise ValueError("deadline_seconds must be finite and positive")
+        self._deadline_seconds = deadline_seconds
+        self._monotonic = monotonic
+        self._ffprobe_path = ffprobe_path
+        self._cache_lifetime = cache_lifetime or _RunAudioCache(cache_dir)
+        self._owns_cache_lifetime = cache_lifetime is None
         self._download_session = _PolicyDownloadSession(self)
         self._attempt_count = 0
         self._candidate_budget_active = False
         self._policy_violations_raised = 0
         self._cancellations_raised = 0
         self._active_cancelled_check: Callable[[], bool] | None = None
+        self._active_deadline: _RequestDeadline | None = None
+        self._active_response: requests.Response | None = None
+        self._active_response_lock = threading.Lock()
         self._failure_counts = new_failure_counts()
         self._failure_counts.update(dict.fromkeys(_BRIDGE_FAILURE_KEYS, 0))
 
     def _bump(self, key: str) -> None:
         self._failure_counts[key] += 1
+
+    def _start_deadline(self) -> None:
+        if self._active_deadline is not None:
+            return
+        self._active_deadline = _RequestDeadline(
+            self._deadline_seconds,
+            self._monotonic,
+            self._expire_active_response,
+        )
+
+    def _finish_deadline(self) -> None:
+        deadline = self._active_deadline
+        self._active_deadline = None
+        if deadline is not None:
+            deadline.close()
+        with self._active_response_lock:
+            self._active_response = None
+
+    def _expire_active_response(self) -> None:
+        with self._active_response_lock:
+            response = self._active_response
+        if response is not None:
+            with contextlib.suppress(Exception):
+                response.close()
+
+    def _track_response(self, response: requests.Response) -> None:
+        with self._active_response_lock:
+            self._active_response = response
+
+    def _check_deadline(self) -> None:
+        deadline = self._active_deadline
+        if deadline is not None:
+            deadline.check()
+
+    def _remaining_timeout(self, requested: object) -> float:
+        deadline = self._active_deadline
+        if deadline is None:
+            raise _DeadlineExceeded("expression audio deadline is not active")
+        try:
+            requested_seconds = float(requested)
+        except (TypeError, ValueError):
+            requested_seconds = 10.0
+        return min(max(0.001, requested_seconds), deadline.remaining())
+
+    def _deadline_expired(self) -> bool:
+        deadline = self._active_deadline
+        return deadline is not None and deadline.expired
+
+    def _accept_audio(self, path: Path) -> bool:
+        if self._ffprobe_path is None:
+            return _has_valid_audio_structure(path)
+        try:
+            if path.suffix.lower() not in {
+                ".aac",
+                ".flac",
+                ".mp3",
+                ".mp4",
+                ".ogg",
+                ".opus",
+                ".wav",
+                ".webm",
+            } or path.stat().st_size not in range(2, _MAX_CACHED_AUDIO_BYTES + 1):
+                return False
+        except OSError:
+            return False
+        deadline = self._active_deadline
+        if deadline is None:
+            return False
+        timeout = min(_AUDIO_PROBE_TIMEOUT_SECONDS, deadline.remaining())
+        accepted = _ffprobe_accepts_audio(path, self._ffprobe_path, timeout)
+        self._check_deadline()
+        return accepted
+
+    def _discard_non_audio(self, path: Path) -> None:
+        self._cache_lifetime.discard(path)
+        self._bump("non_audio")
 
     def _validate_url(self, url: str, *, directory_only: bool) -> None:
         origin = _parse_http_origin(url)
@@ -317,10 +734,12 @@ class CustomAudioFetcher:
             self._attempt_count += 1
             response = self._session.get(
                 current,
-                timeout=timeout,
+                timeout=self._remaining_timeout(timeout),
                 stream=stream,
                 allow_redirects=False,
             )
+            self._track_response(response)
+            self._check_deadline()
             if response.status_code not in _REDIRECT_STATUSES:
                 return response
 
@@ -350,25 +769,49 @@ class CustomAudioFetcher:
         reading feeds the URL template and disambiguates homographs, matching the
         empty-reading skip every other fetcher applies.
         """
+        if not mined_form.strip() or not reading.strip():
+            return None
+        if cancelled_check is not None and cancelled_check():
+            return None
+
+        owns_deadline = self._active_deadline is None
+        if owns_deadline:
+            self._start_deadline()
+        try:
+            return self._fetch_with_active_deadline(mined_form, reading, cancelled_check)
+        except _DeadlineExceeded:
+            self._bump("timeout")
+            return None
+        finally:
+            self._active_cancelled_check = None
+            if owns_deadline:
+                self._finish_deadline()
+
+    def _fetch_with_active_deadline(
+        self,
+        mined_form: str,
+        reading: str,
+        cancelled_check: Callable[[], bool] | None,
+    ) -> Path | None:
         from anki_miner.services.audio_fetch_common import (
             download_audio_to_cache,
             find_cached_by_stem,
         )
         from anki_miner.utils.file_utils import safe_filename
 
-        if not mined_form.strip() or not reading.strip():
-            return None
-        if cancelled_check is not None and cancelled_check():
-            return None
-
+        self._check_deadline()
         stem = safe_filename(f"{self._file_prefix}_{mined_form}_{reading}")
         existing = find_cached_by_stem(self._cache_dir, stem)
         if existing is not None:
-            return existing
+            if self._accept_audio(existing):
+                return existing if self._cache_lifetime.pin(existing) else None
+            else:
+                self._discard_non_audio(existing)
 
         if cancelled_check is not None and cancelled_check():
             return None
         time.sleep(self._delay)
+        self._check_deadline()
         if cancelled_check is not None and cancelled_check():
             return None
 
@@ -382,8 +825,9 @@ class CustomAudioFetcher:
             audio_urls = [endpoint]
 
         for audio_url in audio_urls:
+            if self._deadline_expired():
+                return None
             if cancelled_check is not None and cancelled_check():
-                self._active_cancelled_check = None
                 return None
             policy_before = self._policy_violations_raised
             cancellations_before = self._cancellations_raised
@@ -407,12 +851,12 @@ class CustomAudioFetcher:
                     0,
                     self._failure_counts["connection"] - cancellations,
                 )
-                self._active_cancelled_check = None
                 return None
             if result is not None:
-                self._active_cancelled_check = None
-                return result
-        self._active_cancelled_check = None
+                if self._accept_audio(result):
+                    return result if self._cache_lifetime.pin(result) else None
+                else:
+                    self._discard_non_audio(result)
         return None
 
     def _resolve_json_sources(
@@ -427,6 +871,12 @@ class CustomAudioFetcher:
         each item contributes its string ``url`` (relative URLs normalized
         against the endpoint). Any malformed/failed response yields ``[]``.
         """
+        if self._active_deadline is None:
+            self._start_deadline()
+            try:
+                return self._resolve_json_sources(url, cancelled_check)
+            finally:
+                self._finish_deadline()
         try:
             response = self._get_with_policy(
                 url,
@@ -448,6 +898,7 @@ class CustomAudioFetcher:
                 chunks: list[bytes] = []
                 total = 0
                 for chunk in response.iter_content(chunk_size=8192):
+                    self._check_deadline()
                     if cancelled_check is not None and cancelled_check():
                         return []
                     if not isinstance(chunk, bytes):
@@ -459,6 +910,7 @@ class CustomAudioFetcher:
                         return []
                     if chunk:
                         chunks.append(chunk)
+                self._check_deadline()
                 body = b"".join(chunks)
                 base = response.url
             finally:
@@ -524,11 +976,16 @@ class CustomAudioFetcher:
 
         self._attempt_count = 0
         self._candidate_budget_active = True
+        owns_deadline = self._active_deadline is None
+        if owns_deadline:
+            self._start_deadline()
         try:
             return first_candidate_hit(self, candidates, cancelled_check)
         finally:
             self._candidate_budget_active = False
             self._active_cancelled_check = None
+            if owns_deadline:
+                self._finish_deadline()
 
     def stats(self) -> dict[str, int]:
         """Return a copy of this run's failure-cause counts (see FAILURE_KEYS)."""
@@ -536,4 +993,8 @@ class CustomAudioFetcher:
 
     def close(self) -> None:
         """Close the underlying ``requests.Session`` (release the per-run socket)."""
+        self._expire_active_response()
+        self._finish_deadline()
         self._session.close()
+        if self._owns_cache_lifetime:
+            self._cache_lifetime.close()

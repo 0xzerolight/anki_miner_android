@@ -889,6 +889,41 @@ def test_expression_audio_chain_is_source_first_cancellable_and_best_effort() ->
     assert calls == ["close:broken", "close:miss", "close:hit"]
 
 
+def test_expression_audio_chain_pins_pack_copy_until_run_close(tmp_path: Path) -> None:
+    pytest.importorskip("requests", reason="runtime dependency lane")
+    from android_bridge.expression_audio_fetcher import _RunAudioCache
+
+    cache_root = tmp_path / "audio_cache" / "local_packs"
+    cache_root.mkdir(parents=True)
+    stale = cache_root / "stale.mp3"
+    stale.write_bytes(b"old")
+    lifetime = _RunAudioCache(cache_root)
+    assert not stale.exists()
+
+    active = cache_root / "pack_word_reading.mp3"
+
+    class Pack:
+        def fetch(self, *_: object) -> Path:
+            active.write_bytes(b"audio")
+            return active
+
+        def close(self) -> None:
+            return None
+
+    chain = mining._ExpressionAudioSourceChain([Pack()], cache_lifetime=lifetime)
+    assert chain.fetch("猫", "ねこ") == active
+    assert active.exists()
+
+    unreferenced = cache_root / "unreferenced.mp3"
+    unreferenced.write_bytes(b"old")
+    lifetime.prune_unreferenced()
+    assert active.exists()
+    assert not unreferenced.exists()
+
+    chain.close()
+    assert not active.exists()
+
+
 def test_failed_localaudio_falls_through_and_reports_privacy_safe_pack_fallback() -> None:
     hit = Path("/cache/audio.mp3")
     notices: list[str] = []
