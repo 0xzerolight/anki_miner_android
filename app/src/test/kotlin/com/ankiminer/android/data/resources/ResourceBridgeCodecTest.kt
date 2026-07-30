@@ -218,6 +218,26 @@ class ResourceBridgeCodecTest {
     }
 
     @Test
+    fun importedDictionaryAcceptsDesktopRevisionlessYomitanMetadata() {
+        val imported =
+            ResourceBridgeCodec.decodeImportedDictionary(
+                """{"schemaVersion":1,"type":"resource.dictionary.imported","payload":{"slotId":"revisionless","catalogResourceId":null,"sourceName":"Revisionless","sourceRevision":"","entryCount":1,"skippedMalformed":0,"mediaWarnings":[],"archiveSha256":"${"0".repeat(64)}","attribution":[]}}""",
+            )
+
+        assertEquals("", imported.sourceRevision)
+    }
+
+    @Test
+    fun importedPitchAcceptsDesktopYomitanInstalledFormat() {
+        val imported =
+            ResourceBridgeCodec.decodeImportedPitch(
+                """{"schemaVersion":1,"type":"resource.pitch.imported","payload":{"sourceId":"yomitan-pitch","sourceName":"Yomitan Pitch","sourceRevision":"1","sourceFormat":"yomitan-pitch","entryCount":1,"skippedDisplayOnly":0,"skippedMalformed":0,"archiveSha256":"${"0".repeat(64)}"}}""",
+            )
+
+        assertEquals("yomitan-pitch", imported.sourceFormat)
+    }
+
+    @Test
     fun knownWordManagementRequestsAndResponsesAreStrictAndBounded() {
         val previewRequest =
             ResourceBridgeCodec.encodeKnownWordsPreviewRequest(

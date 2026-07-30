@@ -23,6 +23,7 @@ object ResourceBridgeCodec {
     private val resourceId = Regex("[A-Za-z0-9](?:[A-Za-z0-9._-]{0,126}[A-Za-z0-9_-])?")
     private val sha256 = Regex("[0-9a-f]{64}")
     private val messageType = Regex("[a-z][a-z0-9]*(?:\\.[a-z][a-z0-9]*)+")
+    private val pitchInstalledFormats = setOf("yomitan-pitch", "csv", "tsv")
 
     private val factory: JsonFactory =
         JsonFactoryBuilder()
@@ -313,7 +314,7 @@ object ResourceBridgeCodec {
             requireSlotId(text(value.getValue("slotId"), "slotId")),
             nullableText(value.getValue("catalogResourceId"), "catalogResourceId")?.let(::requireResourceId),
             boundedText(value.getValue("sourceName"), "sourceName", 4096),
-            boundedText(value.getValue("sourceRevision"), "sourceRevision", 4096),
+            boundedText(value.getValue("sourceRevision"), "sourceRevision", 4096, allowEmpty = true),
             nonNegative(value.getValue("entryCount"), "entryCount"),
             nonNegative(value.getValue("skippedMalformed"), "skippedMalformed"),
             strings(value.getValue("mediaWarnings"), "mediaWarnings", 4096),
@@ -374,7 +375,7 @@ object ResourceBridgeCodec {
             sourceId = requireSlotId(text(value.getValue("sourceId"), "sourceId")),
             sourceName = boundedText(value.getValue("sourceName"), "sourceName", 4096),
             sourceRevision = boundedText(value.getValue("sourceRevision"), "sourceRevision", 4096, allowEmpty = true),
-            sourceFormat = sourceFormat(value.getValue("sourceFormat"), PitchAccentSourceFormat.entries.map { it.wireValue }.toSet()),
+            sourceFormat = sourceFormat(value.getValue("sourceFormat"), pitchInstalledFormats),
             entryCount = positive(value.getValue("entryCount"), "entryCount"),
             skippedDisplayOnly = nonNegative(value.getValue("skippedDisplayOnly"), "skippedDisplayOnly"),
             skippedMalformed = nonNegative(value.getValue("skippedMalformed"), "skippedMalformed"),

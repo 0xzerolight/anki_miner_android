@@ -254,17 +254,19 @@ internal class AndroidResourceManager(
                 updateProgress(operation, ResourceOperationPhase.IMPORTING)
                 operation.cancellation.check()
                 operation.pythonStarted.set(true)
-                ResourceBridgeCodec.decodeImportedDictionary(
-                    bridge.dispatch(
-                        ResourceBridgeCodec.encodeDictionaryImportRequest(
-                            operation.id,
-                            staged.file.canonicalPath,
-                            resource.slotId,
-                            replace,
-                            resource.resourceId,
+                decodePublishedMutation(
+                    raw =
+                        bridge.dispatch(
+                            ResourceBridgeCodec.encodeDictionaryImportRequest(
+                                operation.id,
+                                staged.file.canonicalPath,
+                                resource.slotId,
+                                replace,
+                                resource.resourceId,
+                            ),
+                            null,
                         ),
-                        null,
-                    ),
+                    decode = ResourceBridgeCodec::decodeImportedDictionary,
                 )
                 refreshFromPython()
             }
@@ -292,17 +294,19 @@ internal class AndroidResourceManager(
                 updateProgress(operation, ResourceOperationPhase.IMPORTING)
                 operation.cancellation.check()
                 operation.pythonStarted.set(true)
-                ResourceBridgeCodec.decodeImportedDictionary(
-                    bridge.dispatch(
-                        ResourceBridgeCodec.encodeDictionaryImportRequest(
-                            operation.id,
-                            staged.file.canonicalPath,
-                            slotId,
-                            replace,
-                            catalogResourceId = null,
+                decodePublishedMutation(
+                    raw =
+                        bridge.dispatch(
+                            ResourceBridgeCodec.encodeDictionaryImportRequest(
+                                operation.id,
+                                staged.file.canonicalPath,
+                                slotId,
+                                replace,
+                                catalogResourceId = null,
+                            ),
+                            null,
                         ),
-                        null,
-                    ),
+                    decode = ResourceBridgeCodec::decodeImportedDictionary,
                 )
                 refreshFromPython()
             } finally {
@@ -406,18 +410,20 @@ internal class AndroidResourceManager(
                 operation.cancellation.check()
                 operation.pythonStarted.set(true)
                 val imported =
-                    ResourceBridgeCodec.decodeImportedPitch(
-                        bridge.dispatch(
-                            ResourceBridgeCodec.encodePitchImportRequest(
-                                operation.id,
-                                staged.file.canonicalPath,
-                                sourceId,
-                                sourceName,
-                                format,
-                                replace,
+                    decodePublishedMutation(
+                        raw =
+                            bridge.dispatch(
+                                ResourceBridgeCodec.encodePitchImportRequest(
+                                    operation.id,
+                                    staged.file.canonicalPath,
+                                    sourceId,
+                                    sourceName,
+                                    format,
+                                    replace,
+                                ),
+                                null,
                             ),
-                            null,
-                        ),
+                        decode = ResourceBridgeCodec::decodeImportedPitch,
                     )
                 mutableState.update { it.copy(lastLocalImport = imported) }
                 refreshFromPython()
@@ -1133,6 +1139,26 @@ internal class AndroidResourceManager(
         // fail closed because both fixed resources are consumed without a selectable chain gate.
         fatalInventoryFailure?.let { throw it }
     }
+
+    /**
+     * Python publishes imported resources before it encodes the success envelope. If Kotlin rejects
+     * that envelope, refresh durable inventory before reporting the contract failure so same-session
+     * state cannot claim the committed mutation did not happen.
+     */
+    private inline fun <T> decodePublishedMutation(
+        raw: String,
+        decode: (String) -> T,
+    ): T =
+        try {
+            decode(raw)
+        } catch (failure: ResourceBridgeException) {
+            try {
+                refreshFromPython()
+            } catch (reconciliationFailure: Exception) {
+                failure.addSuppressed(reconciliationFailure)
+            }
+            throw failure
+        }
 
     /**
      * Counts belong to the phase that reported them. Entering a new phase without its own numbers

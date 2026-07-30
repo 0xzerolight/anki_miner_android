@@ -494,6 +494,38 @@ def test_yomitan_import_list_lookup_and_stable_overwrite(
     assert not any((home / "resource-work" / "dictionary-backups").iterdir())
 
 
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="the lean host lane intentionally excludes runtime engine dependencies",
+)
+def test_revisionless_yomitan_import_returns_and_lists_empty_revision(
+    tmp_path: Path,
+    initialized_bridge_home: Path,
+) -> None:
+    source = _yomitan_zip(tmp_path / "revisionless.zip", term="猫", meaning="cat", revision="")
+
+    imported = decode_envelope(
+        resources.import_dictionary(
+            {
+                "operationId": "dict-revisionless",
+                "sourcePath": str(source),
+                "slotId": "revisionless",
+                "overwrite": False,
+                "catalogResourceId": None,
+            }
+        ),
+        expected_type="resource.dictionary.imported",
+    )
+    listed = decode_envelope(
+        resources.list_dictionaries({}),
+        expected_type="resource.dictionary.listed",
+    )
+
+    assert imported.payload["sourceRevision"] == ""
+    installed = next(item for item in listed.payload["dictionaries"] if item["slotId"] == "revisionless")
+    assert installed["sourceRevision"] == ""
+
+
 def test_dictionary_inventory_surfaces_corrupt_occupied_catalog_slot(
     tmp_path: Path,
     initialized_bridge_home: Path,
@@ -1956,6 +1988,7 @@ def test_pitch_zip_import_accepts_oversized_meta_bank(
         expected_type="resource.pitch.imported",
     )
     assert imported.payload["entryCount"] >= 1
+    assert imported.payload["sourceFormat"] == "yomitan-pitch"
 
 
 @pytest.mark.skipif(
