@@ -130,6 +130,10 @@ internal object TesterDiagnosticsBuilder {
                 )
                 line("resources.operation", setup.operation?.phase?.name?.lowercase(Locale.ROOT) ?: NONE)
                 line("resources.failure", safeCode(setup.failure?.code))
+                // Both fault ids sit with anki.last_fault, above the lane lines: MAX_REPORT_CHARS
+                // truncates the tail, and the keys that point into the log must survive it.
+                line("resources.fault_id", safeCode(setup.failure?.faultId))
+                line("mining.fault_id", miningFaultId(video.runState, reading.runState))
                 line("anki.provider", ankiReadiness(setup.anki))
                 line("anki.recovery_startup", ankiRecoveryReadiness(setup.ankiRecovery))
                 line(
@@ -149,7 +153,6 @@ internal object TesterDiagnosticsBuilder {
                 line("reading.run", miningRun(reading.runState))
                 line("reading.pending", readingPending(reading))
                 line("reading.command_failure", reading.commandError?.name?.lowercase(Locale.ROOT) ?: NONE)
-                line("mining.fault_id", miningFaultId(video.runState, reading.runState))
             }.take(MAX_REPORT_CHARS)
 
         return TesterDiagnostics(

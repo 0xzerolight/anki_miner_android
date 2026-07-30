@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import re
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -14,6 +15,7 @@ import android_bridge.reading_limits as reading_limits
 import android_bridge.reading_mining as reading_mining
 import pytest
 from android_bridge.anki_adapter import AnkiOperationCancelled
+from android_bridge.faults import FAULT_ID_PATTERN
 from android_bridge.jobs import JobRegistry
 from android_bridge.protocol import BridgeProtocolError, decode_envelope, encode_message
 
@@ -559,6 +561,38 @@ def test_run_reading_admits_loads_and_returns_same_terminal(
         },
         "error": None,
     }
+    assert registry.active_run_id is None
+
+
+def test_reading_failure_logs_one_fault_record_on_the_reading_lane(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    registry = JobRegistry()
+    callbacks = RecordingCallbacks(registry=registry)
+    _stub_run(monkeypatch, FakeResult())
+
+    def explode(*_: object) -> object:
+        raise RuntimeError("secret /private/reading/novel.epub")
+
+    monkeypatch.setattr(reading_mining, "_process_reading", explode)
+
+    with caplog.at_level("ERROR"):
+        returned = reading_mining.run_reading(_request(), callbacks, job_registry=registry)
+
+    terminal = decode_envelope(returned, expected_type="mining.terminal")
+    error = terminal.payload["error"]
+    fault_id = error.pop("faultId")
+    assert error == {"code": "internal_error", "message": "Internal mining failure"}
+    assert re.fullmatch(FAULT_ID_PATTERN, fault_id)
+    assert "secret" not in returned
+
+    # Exactly one record, on the reading lane's own logger: the shared terminal
+    # helper must neither double-log nor relabel the lane.
+    faults = [record for record in caplog.records if record.exc_info]
+    assert len(faults) == 1
+    assert faults[0].name == "android_bridge.reading_mining"
+    assert fault_id in faults[0].getMessage()
     assert registry.active_run_id is None
 
 

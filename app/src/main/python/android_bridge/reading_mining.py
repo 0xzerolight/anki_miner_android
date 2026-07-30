@@ -361,7 +361,7 @@ def run_reading(
         except _PostProcessCleanupError as error:
             outcome, terminal = _cleanup_failure_terminal(handle.run_id, error.result)
         except AnkiOperationCancelled as error:
-            outcome, terminal = _exception_terminal(handle.run_id, error, cancelled=True)
+            outcome, terminal = _exception_terminal(handle.run_id, error, cancelled=True, log=logger)
         except Exception as error:
             outcome, terminal = _exception_terminal(handle.run_id, error, cancelled=False, log=logger)
     finally:

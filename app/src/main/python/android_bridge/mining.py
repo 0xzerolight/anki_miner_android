@@ -729,17 +729,17 @@ def _exception_terminal(
     error: BaseException,
     *,
     cancelled: bool,
-    log: logging.Logger | None = None,
+    log: logging.Logger,
 ) -> tuple[str, str]:
     """Classify a raised failure into a terminal, logging it under a fault id.
 
-    ``log`` is the calling lane's logger so the record's logger name still says
-    which lane failed; the caller must not log the same exception again, or the
-    fault id and the traceback land in different records.
+    ``log`` is the calling lane's logger, required rather than defaulted so the
+    record's logger name always names the lane that failed. The caller must not
+    log the same exception again, or the fault id and the traceback land in
+    different records.
     """
 
     outcome = "cancelled" if cancelled else "failed"
-    lane_log = log or logger
     fault_id: str | None = None
     if cancelled:
         code = "cancelled"
@@ -749,8 +749,12 @@ def _exception_terminal(
         message = str(error)
         # A stable machine code and a deliberate message already identify this
         # failure, so it needs a traceback but not a correlation key.
-        lane_log.error("Mining failed with protocol error %s", code, exc_info=error)
+        log.error("Mining failed with protocol error %s", code, exc_info=error)
     else:
+        # Record before importing the engine: this import is itself a known
+        # failure mode (ANKI_MINER_HOME ordering, the PyQt6 shim), and if it
+        # raises, the exception being classified must still have left a record.
+        fault_id = record_fault(log, "Mining failed", error)
         # Only deliberate engine-domain messages cross the public boundary.
         # Raw RuntimeError/OSError text can contain filesystem/provider detail.
         from anki_miner.exceptions.base import AnkiMinerException
@@ -761,7 +765,6 @@ def _exception_terminal(
         else:
             code = "internal_error"
             message = "Internal mining failure"
-        fault_id = record_fault(lane_log, "Mining failed", error, code=code)
     terminal_error: dict[str, object] = {"code": code, "message": message}
     if fault_id is not None:
         terminal_error["faultId"] = fault_id
@@ -831,7 +834,7 @@ def run_video(
         except _PostProcessCleanupError as error:
             outcome, terminal = _cleanup_failure_terminal(handle.run_id, error.result)
         except AnkiOperationCancelled as error:
-            outcome, terminal = _exception_terminal(handle.run_id, error, cancelled=True)
+            outcome, terminal = _exception_terminal(handle.run_id, error, cancelled=True, log=logger)
         except Exception as error:
             outcome, terminal = _exception_terminal(handle.run_id, error, cancelled=False, log=logger)
     finally:

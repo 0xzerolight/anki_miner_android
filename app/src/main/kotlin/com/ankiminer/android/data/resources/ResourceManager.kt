@@ -978,7 +978,8 @@ internal class AndroidResourceManager(
                 )
             } catch (failure: ResourceBridgeException) {
                 if (failure.code != "resource_operation_cancelled") {
-                    recordFailure(operation, failure.code, userMessage(failure.code))
+                    // userMessage(code) is unchanged; the id rides beside it into diagnostics only.
+                    recordFailure(operation, failure.code, userMessage(failure.code), failure.faultId)
                 }
             } catch (_: Exception) {
                 recordFailure(
@@ -1168,6 +1169,7 @@ internal class AndroidResourceManager(
         operation: ActiveOperation,
         code: String,
         message: String,
+        faultId: String? = null,
     ) {
         val invalidDictionary =
             mutableState.value.dictionaries.firstOrNull { it.occupied && !it.isUsable }
@@ -1196,7 +1198,7 @@ internal class AndroidResourceManager(
                         ResourceFailureRetry(ResourceFailureAction.RESOLVE)
                 else -> operation.failureOrigin to operation.failureRetry
             }
-        recordFailure(code, message, origin, retry, operation.knownWordsOperation)
+        recordFailure(code, message, origin, retry, operation.knownWordsOperation, faultId)
     }
 
     private fun recordFailure(
@@ -1205,6 +1207,7 @@ internal class AndroidResourceManager(
         origin: ResourceFailureOrigin,
         retry: ResourceFailureRetry,
         knownWordsOperation: KnownWordsFailureOperation? = null,
+        faultId: String? = null,
     ) {
         mutableState.update {
             it.copy(
@@ -1213,6 +1216,7 @@ internal class AndroidResourceManager(
                         code = code,
                         message = message,
                         retryable = code in RETRYABLE_FAILURES,
+                        faultId = faultId,
                         origin = origin,
                         retry = retry,
                         knownWordsOperation = knownWordsOperation,

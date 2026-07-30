@@ -148,6 +148,61 @@ class ResourceBridgeCodecTest {
     }
 
     @Test
+    fun pythonBridgeErrorKeepsItsCodeWhateverOptionalFieldsItCarries() {
+        // Every resource.* operation shares boundary.py's generic exception arm, so a Python crash
+        // on this lane arrives with a faultId. Rejecting it would substitute invalid_resource_response
+        // for the real code, and ResourceManager.userMessage formats that code into a user-visible
+        // string -- the one thing this feature must not change.
+        fun bridgeError(payload: String) = """{"schemaVersion":1,"type":"bridge.error","payload":$payload}"""
+
+        val withFault =
+            assertThrows(ResourceBridgeException::class.java) {
+                ResourceBridgeCodec.decodeCleanup(
+                    bridgeError(
+                        """{"code":"internal_error","message":"Internal bridge failure","requestType":"resource.cleanup","faultId":"f0123abcd"}""",
+                    ),
+                )
+            }
+        assertEquals("internal_error", withFault.code)
+        assertEquals("Internal bridge failure", withFault.message)
+        assertEquals("f0123abcd", withFault.faultId)
+
+        val withoutRequestType =
+            assertThrows(ResourceBridgeException::class.java) {
+                ResourceBridgeCodec.decodeCleanup(
+                    bridgeError("""{"code":"internal_error","message":"Internal bridge failure","faultId":"f0123abcd"}"""),
+                )
+            }
+        assertEquals("internal_error", withoutRequestType.code)
+        assertEquals("f0123abcd", withoutRequestType.faultId)
+
+        val withoutFault =
+            assertThrows(ResourceBridgeException::class.java) {
+                ResourceBridgeCodec.decodeCleanup(
+                    bridgeError("""{"code":"resource_already_installed","message":"Slot is occupied","requestType":"resource.cleanup"}"""),
+                )
+            }
+        assertEquals("resource_already_installed", withoutFault.code)
+        assertEquals(null, withoutFault.faultId)
+
+        val malformedFault =
+            assertThrows(ResourceBridgeException::class.java) {
+                ResourceBridgeCodec.decodeCleanup(
+                    bridgeError("""{"code":"internal_error","message":"Internal bridge failure","faultId":"f0123abc"}"""),
+                )
+            }
+        assertEquals("invalid_resource_response", malformedFault.code)
+
+        val unknownField =
+            assertThrows(ResourceBridgeException::class.java) {
+                ResourceBridgeCodec.decodeCleanup(
+                    bridgeError("""{"code":"internal_error","message":"Internal bridge failure","retryable":false}"""),
+                )
+            }
+        assertEquals("invalid_resource_response", unknownField.code)
+    }
+
+    @Test
     fun duplicateOrUnknownResponseFieldsFailClosed() {
         val duplicate =
             """{"schemaVersion":1,"type":"resource.cleanup.result","payload":{"clean":true,"clean":true}}"""

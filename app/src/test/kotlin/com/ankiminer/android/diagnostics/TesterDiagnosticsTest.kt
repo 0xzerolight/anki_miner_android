@@ -84,6 +84,7 @@ class TesterDiagnosticsTest {
                                 code = "download_retry_exhausted",
                                 message = "Could not read /private/$privateReadingName",
                                 retryable = true,
+                                faultId = "fbeef1234",
                             ),
                         ankiFailure =
                             AnkiSetupFailure(
@@ -151,6 +152,7 @@ class TesterDiagnosticsTest {
         // The fault id is opaque by construction, so reporting it leaks nothing while giving a
         // pasted report the key that finds the traceback.
         assertTrue(diagnostics.report.contains("mining.fault_id=f0123abcd"))
+        assertTrue(diagnostics.report.contains("resources.fault_id=fbeef1234"))
         assertTrue(diagnostics.report.length <= 4_096)
 
         listOf(

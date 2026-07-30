@@ -1139,6 +1139,7 @@ def test_offline_dictionary_error_is_reworded_for_android() -> None:
         "run_" + "a" * 32,
         SetupError(_OFFLINE_DICTIONARY_REQUIRED_MESSAGE),
         cancelled=False,
+        log=mining.logger,
     )
     payload = json.loads(terminal)["payload"]
     assert payload["error"]["code"] == "engine_error"
@@ -1152,6 +1153,7 @@ def test_offline_dictionary_error_is_reworded_for_android() -> None:
         "run_" + "b" * 32,
         SetupError("Something else went wrong"),
         cancelled=False,
+        log=mining.logger,
     )
     assert json.loads(other)["payload"]["error"]["message"] == "Something else went wrong"
 
@@ -1167,16 +1169,19 @@ def test_raised_failures_carry_a_fault_id_matching_their_logged_traceback(
             "run_" + "a" * 32,
             SetupError("Something else went wrong"),
             cancelled=False,
+            log=mining.logger,
         )
         _outcome, internal_terminal = mining._exception_terminal(
             "run_" + "b" * 32,
             RuntimeError("secret /storage/emulated/0/episode.mkv"),
             cancelled=False,
+            log=mining.logger,
         )
         _outcome, cancelled_terminal = mining._exception_terminal(
             "run_" + "c" * 32,
             AnkiOperationCancelled("createNotes", "stopped", False),
             cancelled=True,
+            log=mining.logger,
         )
 
     engine_error = json.loads(engine_terminal)["payload"]["error"]
