@@ -7,7 +7,10 @@ import logging.handlers
 import os
 import sys
 import threading
+import time
+import traceback
 
+from . import log_context
 from .protocol import BridgeProtocolError, encode_message
 
 _LOCK = threading.Lock()
@@ -15,9 +18,21 @@ _initialized_home: str | None = None
 _engine_modules_before_initialize: tuple[str, ...] | None = None
 
 _LOG_FILE_NAME = "anki_miner.log"
-_LOG_MAX_BYTES = 1_048_576
+_LOG_MAX_BYTES = 4_194_304
 _LOG_BACKUP_COUNT = 1
 _log_handler_installed = False
+# Set only on install failure, for a later diagnostics-bundle task to surface;
+# nothing in this module reads it back.
+_log_handler_install_error: str | None = None
+
+# ``composition.toml``'s allowed_external includes ``requests`` for Jisho
+# egress. At DEBUG, urllib3.connectionpool logs the full request line
+# including the query string, and a mined vocabulary term arrives there
+# percent-encoded (e.g. ``keyword=%E6%AE%BA%E3%81%99``) where the later
+# redaction pass -- which matches literal CJK -- cannot see it. Pinning here,
+# at handler install, closes that leak regardless of what any later verbose
+# toggle sets on the first-party loggers.
+_THIRD_PARTY_LOG_CEILING = ("urllib3", "requests", "charset_normalizer", "PIL")
 
 
 def _install_file_logging(home: str) -> None:
@@ -29,24 +44,52 @@ def _install_file_logging(home: str) -> None:
     HOME). A logging failure must never break the load-bearing bootstrap.
     """
 
-    global _log_handler_installed
+    global _log_handler_installed, _log_handler_install_error
     if _log_handler_installed:
         return
     try:
+        log_path = os.path.join(home, _LOG_FILE_NAME)
         handler = logging.handlers.RotatingFileHandler(
-            os.path.join(home, _LOG_FILE_NAME),
+            log_path,
             maxBytes=_LOG_MAX_BYTES,
             backupCount=_LOG_BACKUP_COUNT,
             encoding="utf-8",
         )
-        handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+        # The timestamp must be byte-compatible with Kotlin's LogRecord.kt
+        # (UTC, millisecond precision, trailing Z) so a maintainer can
+        # interleave anki_miner_app.log and this file with a plain `sort`.
+        formatter = logging.Formatter(
+            "%(asctime)s.%(msecs)03dZ %(levelname)s run=%(run_id)s %(name)s: %(message)s",
+            datefmt="%Y-%m-%dT%H:%M:%S",
+        )
+        formatter.converter = time.gmtime
+        handler.setFormatter(formatter)
+        # On the handler, not on any logger: this is what stamps all 47
+        # vendored anki_miner modules and every bridge logger without
+        # touching the sync-generated vendored tree.
+        handler.addFilter(log_context.RunContextFilter())
         root = logging.getLogger()
         root.addHandler(handler)
         if root.level > logging.INFO:
             root.setLevel(logging.INFO)
+        for name in _THIRD_PARTY_LOG_CEILING:
+            logging.getLogger(name).setLevel(logging.WARNING)
         _log_handler_installed = True
+        # Without this, "no log lines yet" and "no log file at all" look
+        # identical from the diagnostics bundle.
+        logging.getLogger(__name__).info(
+            "file logging installed path=%s maxBytes=%d backupCount=%d",
+            log_path,
+            _LOG_MAX_BYTES,
+            _LOG_BACKUP_COUNT,
+        )
     except Exception:
-        logging.getLogger(__name__).debug("file logging unavailable", exc_info=True)
+        # The handler that would carry a message here is the one that just
+        # failed to install, under a root logger clamped to INFO -- logging
+        # this through `logging` goes nowhere. Chaquopy pipes Python stderr
+        # to logcat, which a later diagnostics bundle captures.
+        _log_handler_install_error = traceback.format_exc()
+        print(_log_handler_install_error, file=sys.stderr)
 
 
 def _loaded_engine_modules() -> tuple[str, ...]:

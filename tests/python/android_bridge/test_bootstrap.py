@@ -172,10 +172,75 @@ print(json.dumps({
     data = json.loads(result.stdout)
     assert data["count"] == 1
     assert data["file"] == str(tmp_path / "anki_miner.log")
-    assert data["maxBytes"] == 1_048_576
+    assert data["maxBytes"] == 4_194_304
     assert data["backupCount"] == 1
     assert "ffmpeg exit code 1: probe" in data["content"]
     assert "anki_miner.services.media_extractor" in data["content"]
+
+
+def test_installed_log_line_carries_a_stamped_run_id(tmp_path: Path) -> None:
+    """A vendored-style logger name is stamped with no edit to anki_miner.
+
+    The timestamp prefix must also match Kotlin's LogRecord.kt layout
+    byte-for-byte, since `sort` depends on it to interleave the two files.
+    """
+
+    result = _run(
+        r"""
+import json, logging, logging.handlers, re, sys
+from android_bridge.bootstrap import initialize
+initialize(sys.argv[1])
+logging.getLogger("anki_miner.services.media_extractor").warning("ffmpeg exit code 1: probe")
+handler = next(
+    h for h in logging.getLogger().handlers if isinstance(h, logging.handlers.RotatingFileHandler)
+)
+handler.flush()
+content = open(handler.baseFilename, encoding="utf-8").read()
+line = next(l for l in content.splitlines() if "ffmpeg exit code 1: probe" in l)
+print(json.dumps({
+    "line": line,
+    "timestamp_ok": bool(re.match(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z ", line)),
+}))
+""",
+        tmp_path,
+    )
+
+    assert result.returncode == 0, result.stderr
+    data = json.loads(result.stdout)
+    assert data["timestamp_ok"], data["line"]
+    assert "run=-" in data["line"]
+    assert "anki_miner.services.media_extractor" in data["line"]
+
+
+def test_third_party_debug_noise_is_capped_but_first_party_debug_reaches_the_file(
+    tmp_path: Path,
+) -> None:
+    result = _run(
+        """
+import json, logging, logging.handlers, sys
+from android_bridge.bootstrap import initialize
+initialize(sys.argv[1])
+# Mimics a later verbose toggle: it only ever touches the first-party tree,
+# per the brief; urllib3 is pinned once at handler install and stays there.
+logging.getLogger("anki_miner").setLevel(logging.DEBUG)
+logging.getLogger("anki_miner.services.media_extractor").debug("first party debug line")
+logging.getLogger("urllib3.connectionpool").debug(
+    "GET /api/v1/search/words?keyword=%E6%AE%BA%E3%81%99"
+)
+handler = next(
+    h for h in logging.getLogger().handlers if isinstance(h, logging.handlers.RotatingFileHandler)
+)
+handler.flush()
+content = open(handler.baseFilename, encoding="utf-8").read()
+print(json.dumps({"content": content}))
+""",
+        tmp_path,
+    )
+
+    assert result.returncode == 0, result.stderr
+    content = json.loads(result.stdout)["content"]
+    assert "first party debug line" in content
+    assert "keyword=" not in content
 
 
 def test_initialize_twice_installs_exactly_one_handler(tmp_path: Path) -> None:

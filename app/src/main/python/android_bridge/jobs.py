@@ -9,6 +9,7 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, cast
 
+from . import log_context
 from .protocol import BridgeProtocolError, decode_envelope, decode_message, encode_message
 
 _RUN_ID_RE = re.compile(r"^run_[0-9a-f]{32}$")
@@ -296,6 +297,7 @@ class JobRegistry:
                 raise BridgeProtocolError("job_already_active", "Only one Python mining job may run at a time")
             handle = JobHandle(run_id=_opaque_id("run"), cancel_event=threading.Event())
             self._active = _JobState(handle=handle)
+            log_context.set_active_run(handle.run_id)
             return handle
 
     @property
@@ -340,6 +342,7 @@ class JobRegistry:
                 state.curation.page_resolved = True
                 state.curation.event.set()
             self._active = None
+            log_context.set_active_run(None)
 
     def shutdown(self) -> None:
         """Permanently reject new work and release the current run."""
@@ -352,6 +355,7 @@ class JobRegistry:
                     self._active.curation.cancelled = True
                     self._active.curation.page_resolved = True
                     self._active.curation.event.set()
+            log_context.set_active_run(None)
 
     def await_curation(
         self,
