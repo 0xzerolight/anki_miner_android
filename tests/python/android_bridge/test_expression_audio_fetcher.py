@@ -832,3 +832,32 @@ class TestCustomAudioFetcherJson:
         assert f._session.get.call_count == 2
         assert sum(f.stats().values()) == 0
         assert not list((tmp_path / "cache").glob("*"))
+
+
+class TestUnknownContainerParity:
+    """An unrecognised container must not be treated as evidence of non-audio.
+
+    The desktop expression-audio chain stores whatever the configured source
+    returns, so refusing a container we happen to have no validator for would
+    silently drop pack audio that mines correctly today.
+    """
+
+    def test_unknown_extension_is_accepted(self, tmp_path: Path) -> None:
+        payload = tmp_path / "word.m4a"
+        payload.write_bytes(_VALID_MP3)
+
+        assert expression_audio_fetcher_module._has_valid_audio_structure(payload) is True
+
+    def test_recognised_container_is_still_structurally_checked(self, tmp_path: Path) -> None:
+        payload = tmp_path / "word.mp3"
+        payload.write_bytes(b"<html>not audio at all</html>")
+
+        assert expression_audio_fetcher_module._has_valid_audio_structure(payload) is False
+
+    def test_unreadable_probe_verdict_falls_back_to_structure(self, tmp_path: Path) -> None:
+        payload = tmp_path / "word.mp3"
+        payload.write_bytes(b"<html>not audio at all</html>")
+
+        assert (
+            expression_audio_fetcher_module._ffprobe_accepts_audio(payload, tmp_path / "no-such-ffprobe", 1.0) is None
+        )

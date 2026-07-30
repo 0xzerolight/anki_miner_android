@@ -506,10 +506,13 @@ def _has_valid_audio_structure(path: Path) -> bool:
         ".webm": _valid_webm,
     }
     validator = validators.get(path.suffix.lower())
-    return validator(body) if validator is not None else False
+    # An unrecognised container is NOT evidence of non-audio: the desktop chain
+    # stores whatever the configured source returns, so refusing an extension we
+    # have no validator for would drop audio that works today.
+    return validator(body) if validator is not None else True
 
 
-def _ffprobe_accepts_audio(path: Path, ffprobe_path: Path, timeout: float) -> bool:
+def _ffprobe_accepts_audio(path: Path, ffprobe_path: Path, timeout: float) -> bool | None:
     try:
         completed = subprocess.run(
             [
@@ -531,8 +534,11 @@ def _ffprobe_accepts_audio(path: Path, ffprobe_path: Path, timeout: float) -> bo
             timeout=timeout,
         )
     except (OSError, subprocess.TimeoutExpired):
-        return False
-    return completed.returncode == 0 and completed.stdout.strip() == b"audio"
+        # The probe itself failed, which says nothing about the payload.
+        return None
+    if completed.returncode != 0:
+        return None
+    return completed.stdout.strip() == b"audio"
 
 
 class CustomAudioFetcher:
@@ -663,29 +669,27 @@ class CustomAudioFetcher:
         return deadline is not None and deadline.expired
 
     def _accept_audio(self, path: Path) -> bool:
-        if self._ffprobe_path is None:
-            return _has_valid_audio_structure(path)
+        """Reject only payloads positively identified as non-audio.
+
+        Anything we cannot classify is accepted, because the desktop expression
+        audio chain stores whatever the configured source returns. Refusing an
+        unfamiliar container here would drop audio that mines correctly today.
+        """
         try:
-            if path.suffix.lower() not in {
-                ".aac",
-                ".flac",
-                ".mp3",
-                ".mp4",
-                ".ogg",
-                ".opus",
-                ".wav",
-                ".webm",
-            } or path.stat().st_size not in range(2, _MAX_CACHED_AUDIO_BYTES + 1):
+            if path.stat().st_size not in range(2, _MAX_CACHED_AUDIO_BYTES + 1):
                 return False
         except OSError:
             return False
         deadline = self._active_deadline
-        if deadline is None:
-            return False
+        if self._ffprobe_path is None or deadline is None:
+            return _has_valid_audio_structure(path)
         timeout = min(_AUDIO_PROBE_TIMEOUT_SECONDS, deadline.remaining())
-        accepted = _ffprobe_accepts_audio(path, self._ffprobe_path, timeout)
+        probed = _ffprobe_accepts_audio(path, self._ffprobe_path, timeout)
         self._check_deadline()
-        return accepted
+        if probed is None:
+            # The probe could not reach a verdict; fall back to structure.
+            return _has_valid_audio_structure(path)
+        return probed
 
     def _discard_non_audio(self, path: Path) -> None:
         self._cache_lifetime.discard(path)
