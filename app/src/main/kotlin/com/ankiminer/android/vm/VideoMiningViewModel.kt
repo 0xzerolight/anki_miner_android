@@ -558,10 +558,12 @@ class VideoMiningViewModel internal constructor(
                     }
                 } catch (failure: CancellationException) {
                     throw failure
-                } catch (_: Exception) {
+                } catch (failure: Exception) {
                     if (isCurrentDocumentRequest(kind, sequence)) {
                         localState.update { local -> local.withDocumentFailure(kind) }
-                        if (restoring) selectionStore(kind).clear()
+                        if (restoring && failure.provesPermanentSafAccessLoss()) {
+                            clearPermanentlyLostSelection(kind)
+                        }
                     }
                 }
             }
@@ -572,6 +574,17 @@ class VideoMiningViewModel internal constructor(
             DocumentKind.SUBTITLE -> {
                 subtitleDocumentJob = job
             }
+        }
+    }
+
+    private suspend fun clearPermanentlyLostSelection(kind: DocumentKind) {
+        try {
+            SafSelectionOwnershipTransaction(safBroker, selectionStore(kind))
+                .clearPersistPublishRelease(localState.value.document(kind)) { Unit }
+        } catch (failure: CancellationException) {
+            throw failure
+        } catch (_: Exception) {
+            // Failed durable clear leaves the saved selection and grant retryable.
         }
     }
 

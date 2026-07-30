@@ -6,6 +6,8 @@ import androidx.lifecycle.ViewModelStore
 import com.ankiminer.android.MainDispatcherRule
 import com.ankiminer.android.data.RuntimeWorkCoordinator
 import com.ankiminer.android.diagnostics.TesterDiagnosticsShareAction
+import com.ankiminer.android.media.SafAccessException
+import com.ankiminer.android.media.SafAccessFailureKind
 import com.ankiminer.android.media.SafBroker
 import com.ankiminer.android.media.SafDocument
 import com.ankiminer.android.media.SafSelectionRecord
@@ -200,7 +202,13 @@ class VideoMiningViewModelTest {
                     savedStateHandle = savedState,
                 )
             runCurrent()
-            broker.fail("content://test/revoked-video.mkv")
+            broker.fail(
+                "content://test/revoked-video.mkv",
+                SafAccessException(
+                    SafAccessFailureKind.PERMISSION_REVOKED,
+                    "revoked",
+                ),
+            )
             runCurrent()
 
             assertEquals(DocumentSelectionError.VIDEO, viewModel.uiState.value.video.error)
@@ -209,6 +217,52 @@ class VideoMiningViewModelTest {
             assertNull(selectionStore.restore())
             assertNull(savedState.get<String>("videoMining.video.uri"))
             assertNull(savedState.get<String>("videoMining.video.displayName"))
+        }
+
+    @Test
+    fun transientSavedVideoProviderFailurePreservesSelectionForRecreationRetry() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val uri = "content://test/temporarily-unavailable.mkv"
+            val inventory = TransientSafSelectionInventory()
+            inventory.putSelection(
+                SafSelectionSlot.VIDEO,
+                SafSelectionRecord(uri, "temporarily-unavailable.mkv"),
+            )
+            val broker = ControlledSafBroker()
+            val first =
+                VideoMiningViewModel(
+                    repository = RecordingRepository(),
+                    safBroker = broker,
+                    selectionInventory = inventory,
+                    selectionIoDispatcher = mainDispatcherRule.dispatcher,
+                )
+            runCurrent()
+
+            broker.fail(
+                uri,
+                SafAccessException(
+                    SafAccessFailureKind.PROVIDER_UNAVAILABLE,
+                    "provider updating",
+                ),
+            )
+            runCurrent()
+
+            assertEquals(DocumentSelectionError.VIDEO, first.uiState.value.video.error)
+            assertEquals(uri, inventory.selection(SafSelectionSlot.VIDEO)?.uri)
+
+            val recreated =
+                VideoMiningViewModel(
+                    repository = RecordingRepository(),
+                    safBroker = ImmediateSafBroker(),
+                    selectionInventory = inventory,
+                    selectionIoDispatcher = mainDispatcherRule.dispatcher,
+                )
+            runCurrent()
+
+            assertEquals(
+                "temporarily-unavailable.mkv",
+                recreated.uiState.value.video.document?.displayName,
+            )
         }
 
     @Test
@@ -964,8 +1018,11 @@ class VideoMiningViewModelTest {
             )
         }
 
-        fun fail(uri: String) {
-            requireNotNull(pending.remove(uri)).resumeWithException(IllegalStateException("stale"))
+        fun fail(
+            uri: String,
+            failure: Exception = IllegalStateException("stale"),
+        ) {
+            requireNotNull(pending.remove(uri)).resumeWithException(failure)
         }
     }
 

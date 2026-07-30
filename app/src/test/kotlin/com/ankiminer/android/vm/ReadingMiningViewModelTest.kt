@@ -7,6 +7,8 @@ import com.ankiminer.android.MainDispatcherRule
 import com.ankiminer.android.data.RuntimeWorkCoordinator
 import com.ankiminer.android.media.AndroidSafBroker
 import com.ankiminer.android.media.ProviderIoCancellation
+import com.ankiminer.android.media.SafAccessException
+import com.ankiminer.android.media.SafAccessFailureKind
 import com.ankiminer.android.media.SafBroker
 import com.ankiminer.android.media.SafDocument
 import com.ankiminer.android.media.SafProviderAccess
@@ -179,7 +181,13 @@ class ReadingMiningViewModelTest {
                     savedStateHandle = savedState,
                 )
             runCurrent()
-            broker.fail("content://test/revoked-book.mokuro")
+            broker.fail(
+                "content://test/revoked-book.mokuro",
+                SafAccessException(
+                    SafAccessFailureKind.PERMISSION_REVOKED,
+                    "revoked",
+                ),
+            )
             runCurrent()
 
             assertEquals(
@@ -194,6 +202,145 @@ class ReadingMiningViewModelTest {
             assertNull(savedState.get<String>("readingMining.source.displayName"))
             assertNull(savedState.get<String>("readingMining.archive.uri"))
             assertNull(savedState.get<String>("readingMining.archive.displayName"))
+        }
+
+    @Test
+    fun revokedSubtitleRestoreClearsLiveSeriesBeforeReplacementSubtitleStarts() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val savedState = SavedStateHandle()
+            SavedDocumentSelectionStore(savedState, "readingMining.source").save(
+                document("content://test/old-episode.srt", "old-episode.srt"),
+            )
+            val seriesStore =
+                SavedTextValueStore(savedState, "readingMining.subtitleSeriesName")
+            seriesStore.save("Series A")
+            val repository = RecordingReadingRepository()
+            val broker = ControlledSafBroker()
+            val viewModel =
+                ReadingMiningViewModel(
+                    repository = repository,
+                    safBroker = broker,
+                    savedStateHandle = savedState,
+                )
+            runCurrent()
+
+            broker.fail(
+                "content://test/old-episode.srt",
+                SafAccessException(
+                    SafAccessFailureKind.PERMISSION_REVOKED,
+                    "revoked",
+                ),
+            )
+            runCurrent()
+
+            assertEquals("", viewModel.uiState.value.subtitleSeriesName)
+            assertEquals("", seriesStore.restore())
+
+            viewModel.onSourcePicked("content://test/new-episode.srt")
+            runCurrent()
+            broker.succeed("content://test/new-episode.srt")
+            runCurrent()
+            viewModel.start()
+            runCurrent()
+
+            assertNull(repository.startedInputs.single().subtitleSeriesName)
+        }
+
+    @Test
+    fun transientMokuroProviderFailurePreservesSourceAndArchiveForRetry() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val sourceUri = "content://test/book.mokuro"
+            val archiveUri = "content://test/book.cbz"
+            val inventory = TransientSafSelectionInventory()
+            inventory.putSelection(
+                SafSelectionSlot.READING_SOURCE,
+                SafSelectionRecord(sourceUri, "book.mokuro"),
+            )
+            inventory.putSelection(
+                SafSelectionSlot.READING_ARCHIVE,
+                SafSelectionRecord(archiveUri, "book.cbz"),
+            )
+            val broker = ControlledSafBroker()
+            val first =
+                ReadingMiningViewModel(
+                    repository = RecordingReadingRepository(),
+                    safBroker = broker,
+                    selectionInventory = inventory,
+                    selectionIoDispatcher = mainDispatcherRule.dispatcher,
+                )
+            runCurrent()
+
+            broker.fail(
+                sourceUri,
+                SafAccessException(
+                    SafAccessFailureKind.PROVIDER_UNAVAILABLE,
+                    "provider updating",
+                ),
+            )
+            runCurrent()
+
+            assertEquals(
+                ReadingDocumentSelectionError.SOURCE_ACCESS,
+                first.uiState.value.source.error,
+            )
+            assertEquals(sourceUri, inventory.selection(SafSelectionSlot.READING_SOURCE)?.uri)
+            assertEquals(archiveUri, inventory.selection(SafSelectionSlot.READING_ARCHIVE)?.uri)
+
+            val recreated =
+                ReadingMiningViewModel(
+                    repository = RecordingReadingRepository(),
+                    safBroker = ImmediateSafBroker(),
+                    selectionInventory = inventory,
+                    selectionIoDispatcher = mainDispatcherRule.dispatcher,
+                )
+            runCurrent()
+
+            assertEquals("book.mokuro", recreated.uiState.value.source.document?.displayName)
+            assertEquals("book.cbz", recreated.uiState.value.archive.document?.displayName)
+        }
+
+    @Test
+    fun transientSubtitleProviderFailurePreservesSeriesForRetry() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val sourceUri = "content://test/episode.srt"
+            val inventory = TransientSafSelectionInventory()
+            inventory.putSelection(
+                SafSelectionSlot.READING_SOURCE,
+                SafSelectionRecord(sourceUri, "episode.srt"),
+            )
+            inventory.putText(SafSelectionSlot.READING_SUBTITLE_SERIES, "Series A")
+            val broker = ControlledSafBroker()
+            ReadingMiningViewModel(
+                repository = RecordingReadingRepository(),
+                safBroker = broker,
+                selectionInventory = inventory,
+                selectionIoDispatcher = mainDispatcherRule.dispatcher,
+            )
+            runCurrent()
+
+            broker.fail(
+                sourceUri,
+                SafAccessException(
+                    SafAccessFailureKind.PROVIDER_UNAVAILABLE,
+                    "provider updating",
+                ),
+            )
+            runCurrent()
+
+            assertEquals(sourceUri, inventory.selection(SafSelectionSlot.READING_SOURCE)?.uri)
+            assertEquals("Series A", inventory.text(SafSelectionSlot.READING_SUBTITLE_SERIES))
+
+            val recreated =
+                ReadingMiningViewModel(
+                    repository = RecordingReadingRepository(),
+                    safBroker = ImmediateSafBroker(),
+                    selectionInventory = inventory,
+                    selectionIoDispatcher = mainDispatcherRule.dispatcher,
+                )
+            runCurrent()
+
+            assertEquals("episode.srt", recreated.uiState.value.source.document?.displayName)
+            assertEquals("Series A", recreated.uiState.value.subtitleSeriesName)
         }
 
     @Test
@@ -646,9 +793,12 @@ class ReadingMiningViewModelTest {
             )
         }
 
-        fun fail(uri: String) {
+        fun fail(
+            uri: String,
+            failure: Exception = IllegalStateException("revoked"),
+        ) {
             requireNotNull(pending.remove(uri)).resumeWithException(
-                IllegalStateException("revoked"),
+                failure,
             )
         }
     }

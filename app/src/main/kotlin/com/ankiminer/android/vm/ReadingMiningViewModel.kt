@@ -596,7 +596,6 @@ class ReadingMiningViewModel internal constructor(
                         } ?: archiveSelection.clear()
                     }
                 } else {
-                    archiveSelection.clear()
                     rejectPendingArchive()
                 }
             },
@@ -667,23 +666,74 @@ class ReadingMiningViewModel internal constructor(
                     onResolved?.invoke(accepted)
                 } catch (failure: CancellationException) {
                     throw failure
-                } catch (_: Exception) {
+                } catch (failure: Exception) {
                     if (isCurrentDocumentRequest(kind, sequence)) {
                         if (kind == DocumentKind.SOURCE && restoring) {
                             sourceRestoreInFlight = false
                         }
                         localState.update { local -> local.withAccessFailure(kind) }
-                        if (restoring) {
-                            selectionStore(kind).clear()
+                        if (restoring && failure.provesPermanentSafAccessLoss()) {
+                            clearPermanentlyLostSelection(kind)
                             if (kind == DocumentKind.SOURCE) {
-                                archiveSelection.clear()
-                                subtitleSeriesSelection.clear()
+                                rejectPendingArchive()
                             }
                         }
                     }
                 }
             }
         setDocumentJob(kind, job)
+    }
+
+    private suspend fun clearPermanentlyLostSelection(kind: DocumentKind) {
+        try {
+            val local = localState.value
+            when (kind) {
+                DocumentKind.SOURCE ->
+                    SafSelectionOwnershipTransaction(safBroker, sourceSelection)
+                        .clearPersistPublishRelease(
+                            ownedDocument = local.source.document,
+                            additionalTargets =
+                                listOf(
+                                    SafSelectionClearTarget(
+                                        store = archiveSelection,
+                                        ownedDocument = local.archive.document,
+                                    ),
+                                ),
+                            publish = {
+                                subtitleSeriesSelection.clear()
+                                localState.update { current ->
+                                    current.copy(
+                                        source =
+                                            current.source.copy(
+                                                document = null,
+                                                isResolving = false,
+                                            ),
+                                        archive = ReadingDocumentSlotState(),
+                                        sourceKind = null,
+                                        subtitleSeriesName = "",
+                                    )
+                                }
+                            },
+                        )
+                DocumentKind.ARCHIVE ->
+                    SafSelectionOwnershipTransaction(safBroker, archiveSelection)
+                        .clearPersistPublishRelease(local.archive.document) {
+                            localState.update { current ->
+                                current.copy(
+                                    archive =
+                                        current.archive.copy(
+                                            document = null,
+                                            isResolving = false,
+                                        ),
+                                )
+                            }
+                        }
+            }
+        } catch (failure: CancellationException) {
+            throw failure
+        } catch (_: Exception) {
+            // Failed durable clear leaves saved metadata and platform grants retryable.
+        }
     }
 
     private fun documentSelectionError(
