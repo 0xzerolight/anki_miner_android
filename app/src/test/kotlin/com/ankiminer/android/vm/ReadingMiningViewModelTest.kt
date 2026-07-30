@@ -564,6 +564,11 @@ class ReadingMiningViewModelTest {
 
             assertEquals(1, viewModel.uiState.value.curation?.previousPageSelectedCount)
             assertTrue(viewModel.uiState.value.curation?.hasSelectionToLose == true)
+
+            val recreated = ReadingMiningViewModel(repository, ImmediateSafBroker())
+            runCurrent()
+
+            assertEquals(1, recreated.uiState.value.curation?.previousPageSelectedCount)
         }
 
     @Test

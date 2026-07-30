@@ -332,6 +332,8 @@ class VideoMiningViewModel internal constructor(
         val runState = repository.state.value as? MiningRunState.Curating ?: return
         if (runState.pageSubmissionPending) return
         var acceptedSelection: List<CurationSelection>? = null
+        var acceptedDraft: SharedCurationDraft? = null
+        var submittedPreviousPageCount: Int? = null
         while (acceptedSelection == null) {
             val local = localState.value
             if (local.pending.curation || local.pending.cancel) return
@@ -348,6 +350,11 @@ class VideoMiningViewModel internal constructor(
                 )
             ) {
                 acceptedSelection = currentSelection
+                acceptedDraft = draft
+                if (!runState.request.isFinalPage) {
+                    submittedPreviousPageCount =
+                        Math.addExact(local.previousPageSelectedCount, currentSelection.size)
+                }
             }
         }
         val selection = requireNotNull(acceptedSelection)
@@ -360,16 +367,17 @@ class VideoMiningViewModel internal constructor(
                     pageIndex = runState.request.page?.pageIndex,
                 )
                 if (!runState.request.isFinalPage) {
+                    val previousPageSelectedCount =
+                        requireNotNull(submittedPreviousPageCount)
+                    repository.saveCurationSessionState(
+                        requireNotNull(acceptedDraft)
+                            .toCurationSessionState(previousPageSelectedCount),
+                    )
                     localState.update { local ->
                         local.copy(
-                            previousPageSelectedCount =
-                                Math.addExact(
-                                    local.previousPageSelectedCount,
-                                    selection.size,
-                                ),
+                            previousPageSelectedCount = previousPageSelectedCount,
                         )
                     }
-                    saveCurationSession(runState.request)
                 }
             } catch (failure: CancellationException) {
                 throw failure
