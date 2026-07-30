@@ -74,6 +74,9 @@ internal object TesterDiagnosticsBuilder {
         setup: SetupUiState,
         video: VideoMiningUiState,
         reading: ReadingMiningUiState,
+        // Read from AnkiFaultRecorder by the caller, not here: the builder stays a pure function of
+        // its arguments so no test observes a fault another test recorded.
+        lastAnkiFault: String? = null,
     ): TesterDiagnostics {
         val identity = identity(build)
         val versionName = identity.versionLabel.substringBeforeLast(" (")
@@ -134,6 +137,7 @@ internal object TesterDiagnosticsBuilder {
                 line("anki.remediations", setup.remediations.pending.size.toString())
                 line("anki.operation", setup.ankiOperation?.name?.lowercase(Locale.ROOT) ?: NONE)
                 line("anki.failure", safeCode(setup.ankiFailure?.code))
+                line("anki.last_fault", safeFaultToken(lastAnkiFault))
                 line("anki.recovery_failure", safeCode(setup.ankiRecoveryFailure?.code))
                 line("permissions.notifications", setup.notifications.name.lowercase(Locale.ROOT))
                 line("video.run", miningRun(video.runState))
@@ -226,6 +230,21 @@ internal object TesterDiagnosticsBuilder {
     private fun safeCode(value: String?): String =
         value?.takeIf { SAFE_CODE.matches(it) } ?: NONE
 
+    /**
+     * The recorder already whitelists its alphabet; re-applying the report's own sanitizer keeps this
+     * line safe if that alphabet ever widens, and bounds the value like every other build value here.
+     * The alphabet matches [compactFaultToken] so a pasted report and a pasted error message carry
+     * the same token, character for character.
+     */
+    private fun safeFaultToken(value: String?): String =
+        value
+            ?.trim()
+            ?.takeIf(String::isNotEmpty)
+            ?.take(MAX_BUILD_VALUE_CHARS)
+            ?.map { character -> if (character in SAFE_FAULT_CHARACTERS) character else '_' }
+            ?.joinToString("")
+            ?: NONE
+
     private fun safeBuildValue(value: String): String =
         value
             .trim()
@@ -241,4 +260,6 @@ internal object TesterDiagnosticsBuilder {
     private val SAFE_CODE = Regex("[a-z0-9_.-]{1,64}")
     private val SAFE_BUILD_CHARACTERS =
         ('a'..'z') + ('A'..'Z') + ('0'..'9') + setOf('.', '_', '-', '+', ':', '/')
+    private val SAFE_FAULT_CHARACTERS =
+        ('a'..'z') + ('A'..'Z') + ('0'..'9') + setOf('.', '_', '-', ':', '/', '$', '@', ' ')
 }

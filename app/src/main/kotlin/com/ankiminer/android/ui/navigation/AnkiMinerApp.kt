@@ -47,6 +47,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.ankiminer.android.R
+import com.ankiminer.android.diagnostics.AnkiFaultRecorder
 import com.ankiminer.android.diagnostics.TesterDiagnosticsBuilder
 import com.ankiminer.android.diagnostics.TesterDiagnosticsShareAction
 import com.ankiminer.android.diagnostics.currentTesterBuildIdentity
@@ -327,6 +328,7 @@ internal fun AnkiMinerApp(
                         setup = setupViewModel.uiState.value,
                         video = videoViewModel.uiState.value,
                         reading = readingViewModel.uiState.value,
+                        lastAnkiFault = AnkiFaultRecorder.lastFault(),
                     ).report
                 },
                 shareReport = onShareDiagnostics,

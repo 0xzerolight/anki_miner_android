@@ -16,6 +16,8 @@ import com.ankiminer.android.anki.protocol.StoreMediaRequest
 import com.ankiminer.android.anki.protocol.StoreMediaResult
 import com.ankiminer.android.anki.protocol.StoredMedia
 import com.ankiminer.android.anki.protocol.VerifyTargetRequest
+import com.ankiminer.android.diagnostics.AnkiFaultRecorder
+import com.ankiminer.android.diagnostics.compactFaultToken
 import java.util.Collections
 
 internal fun interface AnkiProviderResponseEncoder {
@@ -328,10 +330,28 @@ internal class AnkiProviderCallbacks(
             else ->
                 request.error(
                     AnkiErrorCode.INTERNAL_ERROR,
-                    "The Anki provider operation failed safely",
+                    unattributableFailureMessage(request.operation, failure),
                     retryable = false,
                 )
         }
+
+    /**
+     * The stable sentence plus a bounded PII-safe fault token, with a copy in [AnkiFaultRecorder].
+     *
+     * This arm catches every `RuntimeException` the typed branches above do not name — in practice
+     * journal invariant violations raised several layers down. Answering with the sentence alone made
+     * the failure unattributable: no log, no digest, nothing on the wire, so a field report of this
+     * shape (Issue #6) could not be traced to a throw site. The token carries the exception class and
+     * topmost frame only, never the exception message.
+     */
+    private fun unattributableFailureMessage(
+        operation: AnkiOperation,
+        failure: RuntimeException,
+    ): String {
+        val token = compactFaultToken(failure)
+        AnkiFaultRecorder.record(operation.wireName, token)
+        return "$UNATTRIBUTABLE_FAILURE (${operation.wireName}: $token)"
+    }
 
     private fun encodeOwned(
         owner: AnkiRunStateRegistry.RunOwner,
@@ -449,6 +469,7 @@ internal class AnkiProviderCallbacks(
     private companion object {
         const val PLACEHOLDER_RUN_ID = "run_00000000000000000000000000000000"
         const val PLACEHOLDER_REQUEST_ID = "anki_00000000000000000000000000000000"
+        const val UNATTRIBUTABLE_FAILURE = "The Anki provider operation failed safely"
     }
 
     private data class DurableTargetCommit(
