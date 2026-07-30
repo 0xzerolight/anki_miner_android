@@ -103,9 +103,10 @@ refuses to boot an emulator with less than 6 GiB available memory or less than
 Nothing local executes instrumentation. CI runs it on the `api26` lane through
 `.github/scripts/run-api26-instrumentation.sh`, which sources
 `scripts/instrumentation-result.sh` to validate the complete terminal contract
-emitted by `am instrument -w -r`. That script pins `expected_test_count=177`
-(179 discovered, minus the two external-UniDic fixture tests it excludes), so
-adding or removing an instrumentation test requires editing that number by hand.
+emitted by `am instrument -w -r`. That script pins `expected_executed_test_count=162`
+(179 discovered, minus 17 explicitly reported UNEXECUTED tests: external-UniDic,
+selector-gated contracts, and opt-in UI audits), so adding or removing an
+instrumentation test requires editing that count and the script allowlist together.
 
 Those two need a full UniDic pushed to `/data/local/tmp` first — S1a and S1b
 respectively, from a local UniDic `dicdir`:
