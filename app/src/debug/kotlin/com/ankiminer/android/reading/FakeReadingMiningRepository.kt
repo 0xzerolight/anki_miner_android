@@ -4,6 +4,7 @@ import com.ankiminer.android.mining.AnkiWriteState
 import com.ankiminer.android.mining.CurationCandidate
 import com.ankiminer.android.mining.CurationRequest
 import com.ankiminer.android.mining.CurationSelection
+import com.ankiminer.android.mining.CurationSessionState
 import com.ankiminer.android.mining.CurationSentence
 import com.ankiminer.android.mining.MiningCommandException
 import com.ankiminer.android.mining.MiningFailure
@@ -21,12 +22,29 @@ internal class FakeReadingMiningRepository : ReadingMiningRepository {
     private val mutableState = MutableStateFlow<MiningRunState>(MiningRunState.Idle)
     override val state: StateFlow<MiningRunState> = mutableState.asStateFlow()
     private var sequence = 0L
+    @Volatile
+    private var savedCurationSessionState: CurationSessionState? = null
+
+    override fun curationSessionState(): CurationSessionState? = savedCurationSessionState
+
+    override fun saveCurationSessionState(state: CurationSessionState) {
+        if (mutableState.value.runId == state.runId) {
+            savedCurationSessionState = state
+        }
+    }
+
+    override fun clearCurationSessionState(runId: String?) {
+        if (runId == null || savedCurationSessionState?.runId == runId) {
+            savedCurationSessionState = null
+        }
+    }
 
     override suspend fun startReading(input: ReadingMiningInput) {
         if (mutableState.value != MiningRunState.Idle) {
             throw MiningCommandException("A mining run is already active")
         }
         sequence += 1
+        savedCurationSessionState = null
         val runId = "run_${sequence.toString(16).padStart(32, '0')}"
         mutableState.value =
             MiningRunState.Curating(
@@ -75,6 +93,7 @@ internal class FakeReadingMiningRepository : ReadingMiningRepository {
                     failureIsTransient = false,
                 ),
             )
+        savedCurationSessionState = null
     }
 
     override suspend fun cancel(runId: String) {
@@ -82,12 +101,14 @@ internal class FakeReadingMiningRepository : ReadingMiningRepository {
             throw MiningCommandException("The mining run cannot be cancelled")
         }
         mutableState.value = MiningRunState.Cancelled(runId, null)
+        savedCurationSessionState = null
     }
 
     override suspend fun reset() {
         if (!mutableState.value.isTerminal) {
             throw MiningCommandException("Only a terminal mining run can be reset")
         }
+        savedCurationSessionState = null
         mutableState.value = MiningRunState.Idle
     }
 
