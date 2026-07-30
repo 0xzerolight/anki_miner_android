@@ -564,7 +564,7 @@ internal class AndroidResourceManager(
                 // depends on. A non-UTF-8 file would otherwise fail at the start of every mine.
                 val entryCount =
                     try {
-                        WordListFileFormat.entryCount(staged.file)
+                        WordListFileFormat.normalizeForInstall(staged.file)
                     } catch (_: CharacterCodingException) {
                         throw ResourceDownloadException(
                             "word_list_not_utf8",

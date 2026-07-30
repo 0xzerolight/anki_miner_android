@@ -324,6 +324,25 @@ class ResourceManagerTest {
             )
         }
 
+    @Test
+    fun wordListImportPublishesBomFreeFirstWordForBothKinds() =
+        runTest {
+            val bomWord =
+                byteArrayOf(0xef.toByte(), 0xbb.toByte(), 0xbf.toByte()) +
+                    "猫\n".toByteArray(Charsets.UTF_8)
+            val harness = Harness(stagedContent = bomWord)
+
+            harness.manager.importWordList(INPUT_URI, WordListKind.BLACKLIST)
+            harness.manager.importWordList(INPUT_URI, WordListKind.WHITELIST)
+
+            WordListKind.entries.forEach { kind ->
+                val installed = harness.manager.state.value.wordLists.single { it.kind == kind }
+                assertEquals(1, installed.entryCount)
+                val path = requireNotNull(harness.manager.wordListPath(kind))
+                assertEquals("猫\n", File(path).readText(Charsets.UTF_8))
+            }
+        }
+
     private inner class Harness(
         initialUserCount: Int = 0,
         runtimeWorkCoordinator: RuntimeWorkCoordinator = RuntimeWorkCoordinator(),
@@ -332,13 +351,14 @@ class ResourceManagerTest {
         stagingAvailableBytes: Long = Long.MAX_VALUE / 2,
         committedDictionaryDecodeFailure: Boolean = false,
         committedPitchDecodeFailure: Boolean = false,
+        stagedContent: ByteArray = "fixture".toByteArray(Charsets.UTF_8),
     ) {
         private val root = temporary.newFolder("manager")
         val bridgeRoot = File(root, "bridge").apply { mkdirs() }
         val stagingRoot = File(root, "staging").apply { mkdirs() }
         val pendingRoot = File(root, "resource-pending-known-words")
         val broker = RecordingSafBroker(reportedSourceSizeBytes)
-        val stager = RecordingArchiveStager(stagingRoot, sourceLabel)
+        val stager = RecordingArchiveStager(stagingRoot, sourceLabel, stagedContent)
         val writer = RecordingDocumentWriter()
         val bridge =
             FakeResourceBridge(
@@ -391,6 +411,7 @@ class ResourceManagerTest {
     private class RecordingArchiveStager(
         private val stagingRoot: File,
         private val expectedSourceLabel: String = "known-word file",
+        private val stagedContent: ByteArray,
     ) : ResourceArchiveStager {
         val stagedFiles = mutableListOf<File>()
         var lastMaximumBytes: Long? = null
@@ -409,7 +430,7 @@ class ResourceManagerTest {
             lastMaximumBytes = maximumBytes
             cancellation.check()
             val file = File(stagingRoot, "$operationId-custom$fileSuffix")
-            file.writeText("fixture", Charsets.UTF_8)
+            file.writeBytes(stagedContent)
             stagedFiles += file
             onProgress(file.length(), file.length())
             return StagedArchive(file, "0".repeat(64), file.length())
