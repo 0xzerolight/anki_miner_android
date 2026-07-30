@@ -578,6 +578,7 @@ class ReadingMiningViewModel internal constructor(
             archiveSelection.clear()
             subtitleSeriesSelection.clear()
             pendingArchiveUri = null
+            localState.update { it.copy(subtitleSeriesName = "") }
             return
         }
         sourceRestoreInFlight = true

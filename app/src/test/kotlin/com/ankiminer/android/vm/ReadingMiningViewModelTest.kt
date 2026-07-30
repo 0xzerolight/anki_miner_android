@@ -247,6 +247,23 @@ class ReadingMiningViewModelTest {
         }
 
     @Test
+    fun missingSavedSourceClearsOrphanLiveSubtitleSeries() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val savedState = SavedStateHandle()
+            SavedTextValueStore(savedState, "readingMining.subtitleSeriesName").save("Series A")
+
+            val viewModel =
+                ReadingMiningViewModel(
+                    repository = RecordingReadingRepository(),
+                    safBroker = ImmediateSafBroker(),
+                    savedStateHandle = savedState,
+                )
+            runCurrent()
+
+            assertEquals("", viewModel.uiState.value.subtitleSeriesName)
+        }
+
+    @Test
     fun transientMokuroProviderFailurePreservesSourceAndArchiveForRetry() =
         runTest(mainDispatcherRule.dispatcher) {
             val sourceUri = "content://test/book.mokuro"
