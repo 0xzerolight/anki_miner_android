@@ -156,7 +156,7 @@ internal object CancellableProviderIo {
         val slot = CloseOnceSlot<T>()
         val registration = cancellation.invokeOnCancellation(slot::cancelSafely)
         return withCleanup(
-            cleanup = arrayOf(registration::close, slot::close),
+            cleanup = arrayOf({ registration.close() }, { slot.close() }),
         ) {
             try {
                 throwIfCancelled(cancellation)
@@ -185,7 +185,7 @@ internal object CancellableProviderIo {
                 }
             }
         return withCleanup(
-            cleanup = arrayOf(registration::close, slot::close),
+            cleanup = arrayOf({ registration.close() }, { slot.close() }),
         ) {
             try {
                 throwIfCancelled(cancellation)
@@ -210,7 +210,7 @@ internal object CancellableProviderIo {
             cancellation.invokeOnCancellation {
                 cancelSafely(signal::cancel)
             }
-        return withCleanup(cleanup = arrayOf(registration::close)) {
+        return withCleanup(cleanup = arrayOf({ registration.close() })) {
             try {
                 throwIfCancelled(cancellation)
                 val result = block(signal)
