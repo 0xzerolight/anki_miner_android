@@ -183,6 +183,67 @@ class JournalBackedMediaMutationServiceTest {
         assertEquals(0, fixture.journal.unusedReservationCount)
     }
 
+    /**
+     * The typed failure only ever reached `compact_evidence`, which lives in the app-private journal
+     * database and so is unreadable on a release build. A field report of "N media file(s) could not
+     * be stored in Anki" therefore named no cause at all. The row error is the one carrier that
+     * crosses into the Python adapter, which already logs it per asset to the shareable engine log.
+     */
+    @Test
+    fun `a row local failure names its typed staging failure and throw site without leaking messages`() {
+        listOf("stage", "grant").forEach { site ->
+            val request = request(1)
+            val fixture = Fixture(request)
+            if (site == "stage") fixture.staging.failStage += 0 else fixture.staging.failGrant += 0
+
+            val error = (fixture.execute().result.results.single() as FailedMedia).error
+
+            val expected =
+                if (site == "stage") {
+                    AnkiMediaStagingFailure.VERIFICATION_FAILED
+                } else {
+                    AnkiMediaStagingFailure.PERMISSION_FAILED
+                }
+            assertTrue(
+                "$site row error should name the typed failure: ${error.message}",
+                error.message.contains("staging=${expected.name}"),
+            )
+            assertTrue(
+                "$site row error should name the throw site: ${error.message}",
+                error.message.contains("fault=AnkiMediaStagingException @ "),
+            )
+            assertFalse(
+                "$site row error must not carry the exception message",
+                error.message.contains("staging failure"),
+            )
+        }
+    }
+
+    /** The cause is digested in preference to the wrapper, and its message never rides along. */
+    @Test
+    fun `a wrapped staging cause names the underlying exception and never its message`() {
+        val request = request(1)
+        val fixture = Fixture(request)
+        fixture.staging.stageFailure =
+            AnkiMediaStagingException(
+                AnkiMediaStagingFailure.PREPARATION_FAILED,
+                "Media staging could not be prepared",
+                IllegalStateException("/storage/emulated/0/Movies/private name.mkv"),
+            )
+
+        val error = (fixture.execute().result.results.single() as FailedMedia).error
+
+        assertTrue(
+            "row error should name the cause: ${error.message}",
+            error.message.contains("staging=PREPARATION_FAILED") &&
+                error.message.contains("fault=IllegalStateException @ "),
+        )
+        assertFalse(
+            "row error must never carry a user path",
+            error.message.contains("private name.mkv") || error.message.contains("/storage/"),
+        )
+    }
+
     @Test
     fun `grant failure cleans its private copy releases reservation and continues`() {
         val request = request(2)
@@ -424,12 +485,24 @@ class JournalBackedMediaMutationServiceTest {
             val outcome = fixture.execute()
 
             assertEquals(
-                listOf(
-                    FailedMedia(request.assets[0].assetId, mediaFailure().toProtocol()),
-                    FailedMedia(request.assets[1].assetId, mediaFailure().toProtocol()),
-                ),
-                outcome.result.results,
+                request.assets.map { it.assetId },
+                outcome.result.results.map { (it as FailedMedia).assetId },
             )
+            outcome.result.results.forEach { row ->
+                val error = (row as FailedMedia).error
+                assertEquals(AnkiErrorCode.MEDIA_STORE_FAILED, error.code)
+                assertFalse(error.retryable)
+                assertTrue(
+                    "$stage row error should name the refusal: ${error.message}",
+                    error.message.contains("admission=refused") &&
+                        error.message.contains("fault=JournalInvariantViolation @ "),
+                )
+                assertFalse(
+                    "$stage row error must not carry the exception message",
+                    error.message.contains("namespace collision") ||
+                        error.message.contains("active media lease"),
+                )
+            }
             assertEquals(null, outcome.result.error)
             assertTrue(outcome.mediaAcknowledgements.isEmpty())
             assertEquals(0, fixture.staging.stageCalls)
@@ -734,11 +807,15 @@ class JournalBackedMediaMutationServiceTest {
         val failCleanup = mutableSetOf<Int>()
         val cleanupCalls = mutableListOf<Int>()
 
+        /** Set to throw an exact exception (e.g. one carrying a cause) from the first stage call. */
+        var stageFailure: AnkiMediaStagingException? = null
+
         override fun stage(request: AnkiMediaStagingRequest): StagingRecord {
             val index = request.assetId.index()
             events += "stage:$index"
             stageCalls += 1
             stagedRequests += request
+            stageFailure?.let { throw it }
             if (index in failStage) throw stagingFailure(AnkiMediaStagingFailure.VERIFICATION_FAILED)
             return record(request, index, StagingState.STAGED)
         }

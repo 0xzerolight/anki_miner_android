@@ -267,7 +267,7 @@ internal class JournalBackedMediaMutationService(
                         AlignedResult.MediaFailed(
                             requestIndex = index,
                             itemId = asset.assetId,
-                            rowError = rowLocalMediaFailure(),
+                            rowError = rowLocalMediaFailure(failure),
                             compactEvidence = stagingEvidence(failure),
                         ),
                     )
@@ -285,7 +285,7 @@ internal class JournalBackedMediaMutationService(
                         AlignedResult.MediaFailed(
                             requestIndex = index,
                             itemId = asset.assetId,
-                            rowError = rowLocalMediaFailure(),
+                            rowError = rowLocalMediaFailure(failure),
                             compactEvidence = stagingEvidence(failure),
                         ),
                     )
@@ -536,14 +536,15 @@ internal class JournalBackedMediaMutationService(
         durableRequest: JournalRequest,
         failure: JournalInvariantViolation,
     ): StoreMediaMutationOutcome {
-        val evidence = "providerEntry=false;admission=refused;fault=${compactFaultToken(failure)}"
+        val fault = compactFaultToken(failure)
+        val evidence = "providerEntry=false;admission=refused;fault=$fault"
         request.assets.forEachIndexed { index, asset ->
             journal.append(
                 durableRequest.key,
                 AlignedResult.MediaFailed(
                     requestIndex = index,
                     itemId = asset.assetId,
-                    rowError = rowLocalMediaFailure(),
+                    rowError = refusedBatchMediaFailure(fault),
                     compactEvidence = evidence,
                 ),
             )
@@ -835,10 +836,33 @@ private fun AnkiReadFailure.toJournalError() =
         retryable = retryable,
     )
 
-private fun rowLocalMediaFailure() =
+/**
+ * Names WHY the asset could not be staged, inside the one field that reaches the user.
+ *
+ * The typed failure and its fault digest were already recorded in `compact_evidence`, but that column
+ * lives in the app-private journal database: on a release build there is no way to read it, so a field
+ * report of the "N media file(s) could not be stored in Anki" warning could not be attributed to a
+ * cause at all. The message crosses the callback seam into the Python adapter, which logs it to
+ * `anki_miner.log` — the file "Share engine log" exposes in every build.
+ *
+ * [compactFaultToken] exists for exactly this carrier and is bounded and PII-safe by construction
+ * (see its own docs); [AnkiMediaStagingFailure] names are compile-time ASCII. The cause is digested
+ * in preference to the wrapper because it names the throwing frame — which is the whole point, since
+ * `PREPARATION_FAILED` alone spans `contentUriFor`, `createDestination`, and the source-approval gate.
+ */
+private fun rowLocalMediaFailure(failure: AnkiMediaStagingException) =
     JournalError(
         JournalErrorCode.MEDIA_STORE_FAILED,
-        "The media asset could not be staged for AnkiDroid",
+        "The media asset could not be staged for AnkiDroid " +
+            "(staging=${failure.failure.name} fault=${compactFaultToken(failure.cause ?: failure)})",
+        retryable = false,
+    )
+
+/** The batch-admission refusal counterpart, whose fault token is already digested by the caller. */
+private fun refusedBatchMediaFailure(fault: String) =
+    JournalError(
+        JournalErrorCode.MEDIA_STORE_FAILED,
+        "The media asset could not be staged for AnkiDroid (admission=refused fault=$fault)",
         retryable = false,
     )
 
