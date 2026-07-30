@@ -192,11 +192,14 @@ class ReleaseBuildIntegrityTests(unittest.TestCase):
         self.assertIn('check_runtime_artifact.py', workflow)
         self.assertIn('--vendored-manifest app/wheels/manifest.json', workflow)
 
-        self.assertIn(':app:assembleDeviceRelease', health)
-        self.assertIn('device_release_apk=', health)
-        self.assertIn('--allow-abi arm64-v8a', health)
+        # health.sh deliberately does NOT build a release variant. Doing so runs
+        # validate_release_build.py, which fails closed unless the checkout is
+        # completely clean, so every local health run would require a committed
+        # tree. The shipped ARM64 artifact is audited by CI, where that holds.
+        self.assertNotIn(':app:assembleDeviceRelease', health)
         self.assertIn('check_runtime_artifact.py', health)
         self.assertIn('--vendored-manifest "$REPO_ROOT/app/wheels/manifest.json"', health)
+        self.assertIn('--allow-abi x86_64', health)
 
     def test_release_callers_pass_current_source_commit(self) -> None:
         tokenizer = (REPO_ROOT / "tools/tokenizer/build-s1b-android.sh").read_text(

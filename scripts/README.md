@@ -39,9 +39,13 @@ answers.
 
 Run the full host gate without an emulator: toolchain and lock verification,
 shell syntax + ShellCheck, the host Python suites, `ruff`/`black`, the JVM unit
-tests, Android Lint, emulator app and AndroidTest APK builds, an unsigned
-minified ARM64 device-release APK build, and exact native/runtime inspections
-of both app APKs.
+tests, Android Lint, the emulator app and AndroidTest APK builds, and exact
+native and packaged-runtime inspection of the resulting APK.
+
+It does not build a release variant: that runs `validate_release_build.py`,
+which fails closed unless the checkout is completely clean, so it would make
+every local run require a committed tree. CI builds and audits the unsigned
+minified ARM64 artifact instead.
 
 ```bash
 source scripts/android-env.sh

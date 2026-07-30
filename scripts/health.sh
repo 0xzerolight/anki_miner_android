@@ -157,21 +157,22 @@ echo "$wrapper_checksum  $wrapper_jar" | sha256sum --check --status \
     || fail "Gradle wrapper JAR checksum mismatch"
 
 cd "$REPO_ROOT"
-source_commit="$(git rev-parse HEAD)"
+# The shipped ARM64 release artifact is built and audited by the CI Android job,
+# not here. A release variant runs validate_release_build.py, which fails closed
+# unless HEAD matches the built source and the checkout is completely clean —
+# correct for a release, but it would make every local health run require a
+# committed tree. The packaged-runtime auditor below still runs on a real
+# artifact, which is what this gate was missing.
 anki_miner_run_gradle ./gradlew \
     :app:testEmulatorDebugUnitTest \
     :app:lintEmulatorDebug \
     :app:assembleEmulatorDebug \
-    :app:assembleEmulatorDebugAndroidTest \
-    -PankiMinerSourceCommit="$source_commit" \
-    :app:assembleDeviceRelease
+    :app:assembleEmulatorDebugAndroidTest
 
 emulator_apk="$REPO_ROOT/app/build/outputs/apk/emulator/debug/app-emulator-debug.apk"
 emulator_test_apk="$REPO_ROOT/app/build/outputs/apk/androidTest/emulator/debug/app-emulator-debug-androidTest.apk"
-device_release_apk="$REPO_ROOT/app/build/outputs/apk/device/release/app-device-release-unsigned.apk"
 [[ -f "$emulator_apk" ]] || fail "emulator debug APK was not produced"
 [[ -f "$emulator_test_apk" ]] || fail "emulator debug AndroidTest APK was not produced"
-[[ -f "$device_release_apk" ]] || fail "device release APK was not produced"
 echo "health: instrumentation APK built: $emulator_test_apk"
 echo "health: instrumentation executed: NO (build-only host gate)"
 
@@ -191,18 +192,5 @@ python3.13 "$SCRIPT_DIR/check_runtime_artifact.py" \
     --artifact "$emulator_apk" \
     --vendored-manifest "$REPO_ROOT/app/wheels/manifest.json" \
     --allow-abi x86_64
-
-"$SCRIPT_DIR/check-native-artifact.sh" \
-    --artifact "$device_release_apk" \
-    --allow-abi arm64-v8a \
-    --require-app-imy \
-    --reject-base-unidic \
-    --require-entry lib/arm64-v8a/libanki_miner_mecab.so \
-    --require-entry lib/arm64-v8a/libffmpeg.so \
-    --require-entry lib/arm64-v8a/libffprobe.so
-python3.13 "$SCRIPT_DIR/check_runtime_artifact.py" \
-    --artifact "$device_release_apk" \
-    --vendored-manifest "$REPO_ROOT/app/wheels/manifest.json" \
-    --allow-abi arm64-v8a
 
 echo "health: host/build checks OK; instrumentation execution NOT RUN"
