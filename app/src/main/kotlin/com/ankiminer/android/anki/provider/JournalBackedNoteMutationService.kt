@@ -37,6 +37,9 @@ import com.ankiminer.android.anki.protocol.ExactDeckCreateDuplicateScope
 import com.ankiminer.android.anki.protocol.FailedNote
 import com.ankiminer.android.anki.protocol.NotAttemptedNote
 import com.ankiminer.android.anki.protocol.UncertainNote
+import com.ankiminer.android.diagnostics.log.AppLog
+import com.ankiminer.android.diagnostics.log.LogComponent
+import java.util.concurrent.CancellationException
 
 internal data class CreateNotesMutationOutcome(
     val result: CreateNotesResult,
@@ -397,8 +400,31 @@ internal class JournalBackedNoteMutationService(
                             materialization.joinedFields,
                             materialization.providerTagsWire,
                         ),
+                    ).also { receipt ->
+                        if (receipt == null) {
+                            AppLog.w(
+                                LogComponent.JOURNAL,
+                                "note.insert",
+                                null,
+                                "outcome" to "fail",
+                                "entry_id" to noteChildId,
+                                "note_ordinal" to index,
+                                "receipt" to "null",
+                            )
+                        }
+                    }
+                } catch (_: CancellationException) {
+                    null
+                } catch (failure: RuntimeException) {
+                    AppLog.e(
+                        LogComponent.JOURNAL,
+                        "note.insert",
+                        failure,
+                        "outcome" to "fail",
+                        "entry_id" to noteChildId,
+                        "note_ordinal" to index,
+                        "receipt" to "exception",
                     )
-                } catch (_: RuntimeException) {
                     null
                 }
             val receipt = NoteInsertReceiptValidator.validate(rawReceipt)
@@ -630,10 +656,33 @@ internal class JournalBackedNoteMutationService(
                             targetDeckId = intent.targetDeckId,
                         ),
                     )
-                } catch (_: RuntimeException) {
+                } catch (_: CancellationException) {
+                    null
+                } catch (failure: RuntimeException) {
+                    AppLog.e(
+                        LogComponent.JOURNAL,
+                        "card.route",
+                        failure,
+                        "outcome" to "fail",
+                        "entry_id" to childId,
+                        "note_ordinal" to index,
+                        "receipt" to "exception",
+                    )
                     null
                 }
             if (affected != 1) {
+                if (affected != null) {
+                    AppLog.w(
+                        LogComponent.JOURNAL,
+                        "card.route",
+                        null,
+                        "outcome" to "fail",
+                        "entry_id" to childId,
+                        "note_ordinal" to index,
+                        "receipt" to "count",
+                        "affected" to affected,
+                    )
+                }
                 val error = postCommitUnknown("AnkiDroid returned no attributable card-routing receipt")
                 journal.completeRouting(
                     childId,
