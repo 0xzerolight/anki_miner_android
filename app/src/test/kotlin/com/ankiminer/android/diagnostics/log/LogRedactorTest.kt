@@ -121,12 +121,13 @@ class LogRedactorTest {
 
         assertFalse(redacted, redacted.contains("Anime"))
         assertFalse(redacted, redacted.contains("01.mkv"))
+        // The errno text is absorbed and hashed rather than left readable. On a line with no field
+        // structure there is no way to tell the rest of a message from the rest of a directory
+        // name, and for a privacy control the acceptable failure is over-redaction.
         assertTrue(
             redacted,
             redacted.matches(
-                Regex(
-                    "\tjava\\.io\\.FileNotFoundException: <path-[0-9a-f]{6}>: open failed: ENOENT",
-                ),
+                Regex("\tjava\\.io\\.FileNotFoundException: <path-[0-9a-f]{6}>: <text-[0-9a-f]{6}>"),
             ),
         )
     }
@@ -134,14 +135,17 @@ class LogRedactorTest {
     @Test
     fun `a path mid sentence inside a quoted value is redacted whole`() {
         // The quoted branch needs the path at offset 0 of the value, so this one falls through to
-        // the unquoted branch and depends on the same space absorption.
+        // the unquoted branch. The trailing prose is absorbed and hashed under its own token: it
+        // could just as easily be the rest of a directory name.
         val redacted =
             redactor().redact("msg=\"failed to open /storage/emulated/0/My Anime/ep.mkv for reading\"")
 
         assertFalse(redacted, redacted.contains("Anime"))
         assertTrue(
             redacted,
-            redacted.matches(Regex("msg=\"failed to open <path-[0-9a-f]{6}> for reading\"")),
+            redacted.matches(
+                Regex("msg=\"failed to open <path-[0-9a-f]{6}> <text-[0-9a-f]{6}>\""),
+            ),
         )
     }
 
@@ -153,9 +157,69 @@ class LogRedactorTest {
         assertTrue(
             redacted,
             redacted.matches(
-                Regex("\tjava\\.io\\.IOException: <files>/media/<file-[0-9a-f]{6}>\\.mkv \\(open\\)"),
+                Regex(
+                    "\tjava\\.io\\.IOException: <files>/media/<file-[0-9a-f]{6}>\\.mkv " +
+                        "<text-[0-9a-f]{6}>",
+                ),
             ),
         )
+    }
+
+    @Test
+    fun `a quote in a file name does not truncate a continuation line`() {
+        // renderText does not escape ", so a display name holding one — which
+        // isValidSafSelectionRecord explicitly admits — reaches the line raw.
+        val path = redactor().redact("\tIOException: /storage/emulated/0/Say \"Hi\"/ep.mkv: nope")
+        val leaf = redactor().redact("\tIOException: $filesDir/media/Say \"Hi\".mkv")
+
+        assertFalse(path, path.contains("Hi"))
+        assertFalse(path, path.contains("ep.mkv"))
+        assertFalse(leaf, leaf.contains("Hi"))
+        assertTrue(path, path.matches(Regex("\tIOException: <path-[0-9a-f]{6}>: <text-[0-9a-f]{6}>")))
+        assertTrue(leaf, leaf.matches(Regex("\tIOException: <files>/media/<file-[0-9a-f]{6}>\\.mkv")))
+    }
+
+    @Test
+    fun `a directory whose last segment is plain words is redacted whole`() {
+        // A directory has neither a slash nor an extension in its final segment, and staging and
+        // output directories are logged as directories. Requiring a path-shaped token to continue
+        // the match left the folder name in the clear.
+        val continuation = redactor().redact("\tIOException: /storage/emulated/0/My Anime Shows (dir missing)")
+        val bare = redactor().redact("outDir=/storage/emulated/0/Yes! Precure! Movies")
+
+        assertFalse(continuation, continuation.contains("Anime"))
+        assertFalse(continuation, continuation.contains("Shows"))
+        assertFalse(bare, bare.contains("Precure"))
+        assertFalse(bare, bare.contains("Movies"))
+    }
+
+    @Test
+    fun `absorption stops at the next field and never merges two paths`() {
+        // Redaction must not change the field count, and two distinct paths merging into one token
+        // would also make tokenCounts under-report.
+        val redactor = redactor()
+        val line =
+            "2026-07-30T12:00:00.000Z I run=abc c=media op=media.extract " +
+                "src=/storage/emulated/0/a.mkv dst=/data/user/0/b.mkv n=1"
+
+        val redacted = redactor.redact(line)
+
+        assertEquals(fieldCount(line), fieldCount(redacted))
+        assertTrue(redacted, redacted.endsWith(" n=1"))
+        assertEquals(2, redactor.tokenCounts()["path"])
+    }
+
+    @Test
+    fun `a python repr path carries the same token as a quoted one`() {
+        // repr() is how a path reaches a Chaquopy traceback, so the apostrophe has to come off
+        // before hashing or the same file reads as two different files.
+        val redactor = redactor()
+
+        val quoted = redactor.redact("path=\"/storage/emulated/0/Movies/ep.mkv\"")
+        val repr = redactor.redact("\tPyException: FileNotFoundError: '/storage/emulated/0/Movies/ep.mkv'")
+
+        val token = Regex("<path-[0-9a-f]{6}>").find(quoted)!!.value
+        assertTrue(repr, repr.contains("$token'"))
     }
 
     @Test
@@ -235,7 +299,7 @@ class LogRedactorTest {
             redacted.matches(
                 Regex(
                     "uri=content://com\\.android\\.externalstorage\\.documents/" +
-                        "<doc-[0-9a-f]{6}> end",
+                        "<doc-[0-9a-f]{6}> <text-[0-9a-f]{6}>",
                 ),
             ),
         )
@@ -576,7 +640,9 @@ class LogRedactorTest {
                 safUserText = listOf("episode.mkv"),
             )
 
-        redactor.redact("a=/storage/emulated/0/one.mkv b=/storage/emulated/0/two.mkv 猫猫")
+        // Written as real fields: a bare value trailing a path would be absorbed into the path's
+        // match instead of reaching rule 7, which is the documented cost of crossing a space.
+        redactor.redact("a=/storage/emulated/0/one.mkv b=/storage/emulated/0/two.mkv jp=猫猫")
         redactor.redact("c=/storage/emulated/0/one.mkv")
 
         val counts = redactor.tokenCounts()
@@ -620,14 +686,28 @@ class LogRedactorTest {
         // A nested quantifier over path segments recurses inside java.util.regex and throws
         // StackOverflowError. An Error on Dispatchers.IO kills the export outright rather than
         // degrading it, and logcat's content is written by code nobody here controls.
+        // The first version of this test used bare forms only, which is why a rewrite that made the
+        // quoted branches recurse per character got through. Every branch is covered now.
         val deep = (0 until 5000).joinToString("") { "/seg$it" }
+        val redactor = redactor()
 
-        val underRoot = redactor().redact("$filesDir$deep/leaf.mkv")
-        val absolute = redactor().redact("path=/storage/emulated/0$deep/leaf.mkv")
+        val underRoot = redactor.redact("$filesDir$deep/leaf.mkv")
+        val absolute = redactor.redact("path=/storage/emulated/0$deep/leaf.mkv")
+        val quotedAbsolute = redactor.redact("path=\"/storage/emulated/0$deep/leaf.mkv\"")
+        val quotedRoot = redactor.redact("path=\"$filesDir$deep/leaf.mkv\"")
+        val quotedUri = redactor.redact("uri=\"content://media$deep/leaf.mkv\"")
+        val bareUri = redactor.redact("uri=content://media$deep/leaf.mkv")
+        val continuation = redactor.redact("\tIOException: /storage/emulated/0$deep/leaf.mkv")
 
         assertTrue(underRoot, underRoot.startsWith("<files>/seg0/"))
         assertFalse(underRoot, underRoot.contains("leaf.mkv"))
         assertTrue(absolute, absolute.matches(Regex("path=<path-[0-9a-f]{6}>")))
+        assertTrue(quotedAbsolute, quotedAbsolute.matches(Regex("path=\"<path-[0-9a-f]{6}>\"")))
+        assertTrue(quotedRoot, quotedRoot.startsWith("path=\"<files>/seg0/"))
+        assertFalse(quotedRoot, quotedRoot.contains("leaf.mkv"))
+        assertTrue(quotedUri, quotedUri.matches(Regex("uri=\"content://media/<doc-[0-9a-f]{6}>\"")))
+        assertTrue(bareUri, bareUri.matches(Regex("uri=content://media/<doc-[0-9a-f]{6}>")))
+        assertTrue(continuation, continuation.matches(Regex("\tIOException: <path-[0-9a-f]{6}>")))
     }
 
     // Streaming
