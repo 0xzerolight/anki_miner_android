@@ -2,9 +2,14 @@ package com.ankiminer.android.diagnostics
 
 import java.io.ByteArrayInputStream
 import java.io.IOException
+import java.io.InputStream
+import java.io.OutputStream
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Test
 
 class LogcatCaptureTest {
@@ -125,4 +130,88 @@ class LogcatCaptureTest {
             assertNull(result.exitCode)
             assertEquals(LogcatCommand.candidates().size, attempts)
         }
+
+    @Test
+    fun `stdin close failure still performs every process teardown step`() =
+        runTest {
+            val process = StdinCloseFailingProcess()
+            val reader = ProcessLogcatCommandReader(start = { process })
+
+            try {
+                reader.read(listOf("logcat"), timeoutMillis = 1_000, maxBytes = 1024)
+                fail("expected stdin close failure")
+            } catch (error: IOException) {
+                assertEquals("stdin close failed", error.message)
+            }
+
+            assertTrue(process.forciblyDestroyed)
+            assertTrue(process.inputClosed)
+            assertTrue(process.errorClosed)
+            assertEquals(2, process.outputCloseAttempts)
+            assertEquals(1, process.timedWaits)
+        }
+
+    private class StdinCloseFailingProcess : Process() {
+        var forciblyDestroyed = false
+            private set
+        var inputClosed = false
+            private set
+        var errorClosed = false
+            private set
+        var outputCloseAttempts = 0
+            private set
+        var timedWaits = 0
+            private set
+        private var alive = true
+
+        private val input = closeTrackingStream { inputClosed = true }
+        private val error = closeTrackingStream { errorClosed = true }
+        private val output =
+            object : OutputStream() {
+                override fun write(value: Int) = Unit
+
+                override fun close() {
+                    outputCloseAttempts++
+                    throw IOException("stdin close failed")
+                }
+            }
+
+        override fun getOutputStream(): OutputStream = output
+
+        override fun getInputStream(): InputStream = input
+
+        override fun getErrorStream(): InputStream = error
+
+        override fun waitFor(): Int = 0
+
+        override fun waitFor(
+            timeout: Long,
+            unit: TimeUnit,
+        ): Boolean {
+            timedWaits++
+            return true
+        }
+
+        override fun exitValue(): Int = 0
+
+        override fun destroy() {
+            alive = false
+        }
+
+        override fun destroyForcibly(): Process {
+            forciblyDestroyed = true
+            alive = false
+            return this
+        }
+
+        override fun isAlive(): Boolean = alive
+
+        private fun closeTrackingStream(closed: () -> Unit): InputStream =
+            object : ByteArrayInputStream(ByteArray(0)) {
+                override fun close() {
+                    closed()
+                    super.close()
+                }
+            }
+    }
 }

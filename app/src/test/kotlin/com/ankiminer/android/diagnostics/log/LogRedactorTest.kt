@@ -276,6 +276,26 @@ class LogRedactorTest {
     }
 
     @Test
+    fun `a python record with a raw quote path uses conservative grammar`() {
+        val line =
+            "2026-07-30T12:00:00.000Z WARNING run=run-42 anki_miner.module: " +
+                "failed /storage/emulated/0/Say \"Hi\"/ep.mkv: nope"
+
+        val redacted = redactor().redact(line)
+
+        assertTrue(
+            redacted,
+            redacted.startsWith(
+                "2026-07-30T12:00:00.000Z WARNING run=run-42 anki_miner.module: failed ",
+            ),
+        )
+        assertFalse(redacted, redacted.contains("Say"))
+        assertFalse(redacted, redacted.contains("Hi"))
+        assertFalse(redacted, redacted.contains("ep.mkv"))
+        assertTrue(redacted, redacted.contains(Regex("<path-[0-9a-f]{6}>")))
+    }
+
+    @Test
     fun `a directory whose last segment is plain words is redacted whole`() {
         // A directory has neither a slash nor an extension in its final segment, and staging and
         // output directories are logged as directories. Requiring a path-shaped token to continue

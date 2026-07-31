@@ -95,10 +95,10 @@ internal class ProcessLogcatCommandReader(
     ): LogcatReadResult =
         coroutineScope {
             val process = start(command)
-            process.outputStream.close()
-            val reading = async(Dispatchers.IO) { LogTail.of(process.inputStream, maxBytes) }
-            var timedOut = false
             try {
+                process.outputStream.close()
+                val reading = async(Dispatchers.IO) { LogTail.of(process.inputStream, maxBytes) }
+                var timedOut = false
                 val completed =
                     withContext(Dispatchers.IO) {
                         process.waitFor(timeoutMillis, TimeUnit.MILLISECONDS)
@@ -115,14 +115,22 @@ internal class ProcessLogcatCommandReader(
                 )
             } finally {
                 withContext(NonCancellable + Dispatchers.IO) {
-                    if (process.isAlive) process.destroyForcibly()
-                    process.inputStream.close()
-                    process.errorStream.close()
-                    process.outputStream.close()
-                    process.waitFor(TEARDOWN_MILLIS, TimeUnit.MILLISECONDS)
+                    bestEffort { process.destroyForcibly() }
+                    bestEffort { process.inputStream.close() }
+                    bestEffort { process.errorStream.close() }
+                    bestEffort { process.outputStream.close() }
+                    bestEffort { process.waitFor(TEARDOWN_MILLIS, TimeUnit.MILLISECONDS) }
                 }
             }
         }
+
+    private fun bestEffort(action: () -> Unit) {
+        try {
+            action()
+        } catch (_: Throwable) {
+            // Every teardown operation is independent; one broken stream must not skip the rest.
+        }
+    }
 
     private companion object {
         const val TEARDOWN_MILLIS = 1_000L

@@ -1,6 +1,8 @@
 package com.ankiminer.android.diagnostics
 
+import java.io.ByteArrayInputStream
 import java.io.InputStream
+import java.nio.charset.StandardCharsets
 import java.time.Instant
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
@@ -30,8 +32,24 @@ internal data class BundleSource(
     val redacted: Boolean,
     val required: Boolean = false,
     val shedding: BundleShedding = BundleShedding.None,
+    val priorOmittedBytes: Long = 0,
+    val priorOmittedLines: Long = 0,
+    val unavailable: Boolean = false,
     val open: () -> InputStream?,
 )
+
+internal fun BundleEntrySpec.logcatSource(logcat: LogcatCaptureResult): BundleSource =
+    BundleSource(
+        name = name,
+        capBytes = capBytes,
+        redacted = redacted,
+        required = required,
+        shedding = shedding,
+        priorOmittedBytes = logcat.omittedBytes,
+        priorOmittedLines = logcat.omittedLines,
+        unavailable = logcat.status == LogcatCaptureStatus.UNAVAILABLE,
+        open = { ByteArrayInputStream(logcat.text.toByteArray(StandardCharsets.UTF_8)) },
+    )
 
 internal fun interface LineRedactor {
     fun redact(line: String): String

@@ -21,6 +21,8 @@ import com.ankiminer.android.data.settings.AppSettingsRepository
 import com.ankiminer.android.data.settings.DataStoreAppSettingsRepository
 import com.ankiminer.android.data.settings.DataStoreDiagnosticsSettingsRepository
 import com.ankiminer.android.data.settings.DiagnosticsSettingsRepository
+import com.ankiminer.android.diagnostics.DiagnosticsBundleJanitor
+import com.ankiminer.android.diagnostics.DiagnosticsBundleStager
 import com.ankiminer.android.diagnostics.log.AppLog
 import com.ankiminer.android.diagnostics.log.CompositeSink
 import com.ankiminer.android.diagnostics.log.FileLogSink
@@ -121,6 +123,11 @@ class AnkiMinerApplication : Application() {
      */
     internal val logFileSink: FileLogSink by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         FileLogSink(filesDir, scope = applicationScope)
+    }
+    internal val diagnosticsBundleStager: DiagnosticsBundleStager by lazy(
+        LazyThreadSafetyMode.SYNCHRONIZED,
+    ) {
+        DiagnosticsBundleStager(this, logFileSink, safSelectionInventory)
     }
     private val runtimeWorkCoordinator = RuntimeWorkCoordinator()
     internal val runtimeWorkState
@@ -324,6 +331,15 @@ class AnkiMinerApplication : Application() {
         // buffer, which is the only place a Python startup failure can be recorded at all, because
         // the engine's own file handler is created inside bootstrap.initialize.
         AppLog.install(CompositeSink(LogcatSink(), logFileSink))
+        applicationScope.launch(Dispatchers.IO) {
+            try {
+                DiagnosticsBundleJanitor(
+                    File(cacheDir, DiagnosticsBundleJanitor.DIRECTORY_NAME),
+                ).clean()
+            } catch (failure: RuntimeException) {
+                AppLog.w(LogComponent.DIAG, "bundle.janitor", failure)
+            }
+        }
         applicationScope.launch {
             diagnosticsSettings.verboseLogging.distinctUntilChanged().collect { verbose ->
                 val level = if (verbose) LogLevel.DEBUG else LogLevel.INFO

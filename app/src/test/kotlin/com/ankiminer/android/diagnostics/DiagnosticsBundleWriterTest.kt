@@ -2,6 +2,8 @@ package com.ankiminer.android.diagnostics
 
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
+import java.io.IOException
+import java.io.InputStream
 import java.nio.charset.StandardCharsets
 import java.time.Instant
 import java.util.zip.ZipInputStream
@@ -10,6 +12,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Test
 
 class DiagnosticsBundleWriterTest {
@@ -75,11 +78,132 @@ class DiagnosticsBundleWriterTest {
 
         val result = results.single { it.name == "logs/missing.log" }
         assertTrue(result.missing)
+        assertFalse(result.unavailable)
         assertEquals(0, result.includedBytes)
         assertEquals(0, result.totalBytes)
         val entry = unzip(archive.toByteArray()).associate { it.first to it.second }["logs/missing.log"]
         assertNotNull(entry)
         assertTrue(String(entry!!, StandardCharsets.UTF_8).contains("END OF ENTRY"))
+    }
+
+    @Test
+    fun `source read failures are unavailable rather than missing and remain explicit`() {
+        val archive = ByteArrayOutputStream()
+
+        val results =
+            writer().write(
+                destination = archive,
+                sources =
+                    listOf(
+                        BundleSource(
+                            name = "logs/unavailable.log",
+                            capBytes = 1024,
+                            redacted = true,
+                            open =
+                                {
+                                    object : InputStream() {
+                                        override fun read(): Int = throw IOException("read failed")
+                                    }
+                                },
+                        ),
+                        BundleSource(
+                            name = "logs/forbidden.log",
+                            capBytes = 1024,
+                            redacted = true,
+                            open = { throw SecurityException("access denied") },
+                        ),
+                    ),
+                redactor = LineRedactor { it },
+                manifest = { emptyMap() },
+                readme = { _, _ -> "" },
+            )
+
+        val result = results.single { it.name == "logs/unavailable.log" }
+        assertTrue(result.unavailable)
+        assertFalse(result.missing)
+        assertEquals(0, result.includedBytes)
+        assertEquals(0, result.totalBytes)
+        val entry =
+            unzip(archive.toByteArray()).associate { it.first to it.second }["logs/unavailable.log"]
+        assertNotNull(entry)
+        assertTrue(String(entry!!, StandardCharsets.UTF_8).contains("END OF ENTRY"))
+        val forbidden = results.single { it.name == "logs/forbidden.log" }
+        assertTrue(forbidden.unavailable)
+        assertFalse(forbidden.missing)
+        val forbiddenEntry =
+            unzip(archive.toByteArray()).associate { it.first to it.second }["logs/forbidden.log"]
+        assertNotNull(forbiddenEntry)
+        assertTrue(String(forbiddenEntry!!, StandardCharsets.UTF_8).contains("END OF ENTRY"))
+    }
+
+    @Test
+    fun `preclassified unavailable logcat remains explicit and is not missing`() {
+        val logcatSpec = DiagnosticsBundleSpec.entries.single { it.name == "logcat/logcat.txt" }
+        val source =
+            logcatSpec.logcatSource(
+                LogcatCaptureResult(
+                    text = "",
+                    status = LogcatCaptureStatus.UNAVAILABLE,
+                    exitCode = null,
+                    omittedBytes = 0,
+                    omittedLines = 0,
+                ),
+            )
+        val archive = ByteArrayOutputStream()
+
+        val result =
+            writer().write(
+                destination = archive,
+                sources = listOf(source),
+                redactor = LineRedactor { it },
+                manifest = { emptyMap() },
+                readme = { _, _ -> "" },
+            ).single()
+
+        assertTrue(source.unavailable)
+        assertTrue(result.unavailable)
+        assertFalse(result.missing)
+        val entry = unzip(archive.toByteArray()).associate { it.first to it.second }[source.name]
+        assertNotNull(entry)
+        assertTrue(String(entry!!, StandardCharsets.UTF_8).contains("END OF ENTRY"))
+    }
+
+    @Test
+    fun `unsatisfiable uncompressed budget fails before writing a zip`() {
+        val archive = ByteArrayOutputStream()
+        val source = source("diagnostics.txt", "expand\n", 1024, redacted = true, required = true)
+
+        try {
+            writer(totalBudgetBytes = 128).write(
+                destination = archive,
+                sources = listOf(source),
+                redactor = LineRedactor { it.repeat(128) },
+                manifest = { emptyMap() },
+                readme = { _, _ -> "" },
+            )
+            fail("expected an unsatisfiable budget failure")
+        } catch (error: IOException) {
+            assertTrue(error.message.orEmpty().contains("uncompressed budget"))
+        }
+
+        assertEquals(0, archive.size())
+    }
+
+    @Test
+    fun `satisfiable archive entry sizes stay within the uncompressed budget`() {
+        val budget = 512L
+        val archive = ByteArrayOutputStream()
+
+        writer(totalBudgetBytes = budget).write(
+            destination = archive,
+            sources = listOf(source("diagnostics.txt", "small\n", 1024, redacted = false)),
+            redactor = LineRedactor { it },
+            manifest = { emptyMap() },
+            readme = { _, _ -> "" },
+        )
+
+        val total = unzip(archive.toByteArray()).sumOf { it.second.size.toLong() }
+        assertTrue("uncompressed entry sum $total exceeds $budget", total <= budget)
     }
 
     @Test

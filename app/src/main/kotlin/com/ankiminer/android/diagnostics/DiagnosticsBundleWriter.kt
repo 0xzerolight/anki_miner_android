@@ -21,6 +21,7 @@ internal data class BundleEntryResult(
     val truncated: Boolean,
     val dropped: Boolean,
     val missing: Boolean,
+    val unavailable: Boolean,
 )
 
 internal class DiagnosticsBundleWriter(
@@ -60,9 +61,15 @@ internal class DiagnosticsBundleWriter(
                 candidate.entries.sumOf { it.bytes.size.toLong() } +
                     manifestBytes.size +
                     readmeBytes.size
-            if (total <= totalBudgetBytes || !shed(material, caps, dropped, total - totalBudgetBytes)) {
+            if (total <= totalBudgetBytes) {
                 prepared = FinalArchive(candidate, manifestBytes, readmeBytes)
                 break
+            }
+            if (!shed(material, caps, dropped, total - totalBudgetBytes)) {
+                throw IOException(
+                    "diagnostics bundle exceeds hard uncompressed budget: " +
+                        "$total > $totalBudgetBytes bytes",
+                )
             }
         }
 
@@ -79,22 +86,37 @@ internal class DiagnosticsBundleWriter(
         source: BundleSource,
         redactor: LineRedactor,
     ): SourceMaterial {
+        var unavailable = source.unavailable
         val opened =
             try {
                 source.open()
             } catch (_: IOException) {
+                unavailable = true
+                null
+            } catch (_: SecurityException) {
+                unavailable = true
                 null
             }
-        val tail =
+        val readTail =
             if (opened == null) {
                 LogTailResult("", 0, 0, 0)
             } else {
                 try {
                     opened.use { LogTail.of(it, source.capBytes) }
                 } catch (_: IOException) {
+                    unavailable = true
+                    LogTailResult("", 0, 0, 0)
+                } catch (_: SecurityException) {
+                    unavailable = true
                     LogTailResult("", 0, 0, 0)
                 }
             }
+        val tail =
+            readTail.copy(
+                omittedBytes = source.priorOmittedBytes + readTail.omittedBytes,
+                omittedLines = source.priorOmittedLines + readTail.omittedLines,
+                totalBytes = source.priorOmittedBytes + readTail.totalBytes,
+            )
         val lines = splitLines(tail.text)
         val rendered =
             if (source.redacted) {
@@ -107,7 +129,8 @@ internal class DiagnosticsBundleWriter(
             initialTail = tail,
             initialLines = lines,
             renderedLines = rendered,
-            missing = opened == null,
+            missing = opened == null && !unavailable,
+            unavailable = unavailable,
         )
     }
 
@@ -139,6 +162,7 @@ internal class DiagnosticsBundleWriter(
                     truncated = tail.omittedBytes > 0,
                     dropped = false,
                     missing = source.missing,
+                    unavailable = source.unavailable,
                 )
             results += result
             entries += PreparedEntry(source.source.name, framed)
@@ -253,6 +277,7 @@ internal class DiagnosticsBundleWriter(
             truncated = initialTail.totalBytes > 0,
             dropped = true,
             missing = missing,
+            unavailable = unavailable,
         )
     }
 
@@ -286,6 +311,8 @@ internal class DiagnosticsBundleWriter(
         require('\\' !in source.name)
         require(source.name.split('/').none { it.isEmpty() || it == "." || it == ".." })
         require(source.capBytes in 0 until Int.MAX_VALUE.toLong())
+        require(source.priorOmittedBytes >= 0)
+        require(source.priorOmittedLines >= 0)
         when (val policy = source.shedding) {
             BundleShedding.None -> Unit
             is BundleShedding.Drop -> require(policy.rank > 0)
@@ -324,6 +351,7 @@ internal class DiagnosticsBundleWriter(
         val initialLines: List<LinePart>,
         val renderedLines: List<LinePart>,
         val missing: Boolean,
+        val unavailable: Boolean,
     )
 
     private data class PreparedEntry(
