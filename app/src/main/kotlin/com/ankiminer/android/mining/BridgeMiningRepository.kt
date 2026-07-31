@@ -7,6 +7,7 @@ import com.ankiminer.android.data.RuntimeWorkCoordinator
 import com.ankiminer.android.diagnostics.exceptionDigest
 import com.ankiminer.android.diagnostics.log.AppLog
 import com.ankiminer.android.diagnostics.log.LogComponent
+import com.ankiminer.android.diagnostics.log.LogContext
 import com.ankiminer.android.engine.BridgeJsonCodec
 import com.ankiminer.android.engine.BridgeMessage
 import com.ankiminer.android.engine.EngineCallbacks
@@ -294,118 +295,123 @@ internal class BridgeMiningRepository(
     }
 
     private fun runVideo(generation: Long) {
-        var inputOwner: MiningInputOwner? = null
-        var terminal: BridgeMessage.Terminal? = null
-        try {
-            val run = requireActive(generation)
-            if (run.cancellation.isCancelled()) return
-            run.configSnapshot =
-                try {
-                    configSnapshotResolver.resolve(run.input)
-                } catch (failure: Exception) {
-                    recordFault(generation, strings.resolve(R.string.mining_failure_settings_snapshot))
-                    throw failure
-                }
-            if (run.cancellation.isCancelled()) return
-            val admission =
-                try {
-                    admissionGate.evaluate(run.cancellation)
-                } catch (_: RuntimeException) {
-                    if (run.cancellation.isCancelled()) return
-                    recordFault(generation, strings.resolve(R.string.mining_failure_anki_readiness))
-                    return
-                }
-            if (run.cancellation.isCancelled()) return
-            if (!admission.isReady) {
-                val failure = requireNotNull(admission.stableFailure(strings))
-                recordFault(generation, failure.message, failure.retryable)
-                return
-            }
-            val tokenizer =
-                try {
-                    tokenizerResourceProvider.installedResource()
-                } catch (failure: Exception) {
-                    recordFault(generation, strings.resolve(R.string.mining_failure_tokenizer_inspection))
-                    throw failure
-                }
-            if (tokenizer == null) {
-                recordFault(
-                    generation,
-                    strings.resolve(R.string.mining_failure_tokenizer_required),
-                    retryable = true,
-                )
-                return
-            }
-            if (run.cancellation.isCancelled()) return
-            configureTokenizer(run, tokenizer)
-            if (run.cancellation.isCancelled()) return
-            val videoPath: String
-            val subtitlePath: String
+        // registerJob installs the ambient run id on this thread part-way through this block.
+        // The video and reading repositories share one run executor, so leaving it set would
+        // label the next lane's records with this run's id; withRunId restores rather than clears.
+        LogContext.withRunId(null) {
+            var inputOwner: MiningInputOwner? = null
+            var terminal: BridgeMessage.Terminal? = null
             try {
-                inputOwner =
-                    inputOwnerFactory.create(run.cancellation) { copy ->
-                        updateProgress(
-                            generation,
-                            MiningProgress(
-                                current = copy.copiedBytes,
-                                total = copy.expectedBytes ?: 0L,
-                                description =
-                                    strings.resolve(
-                                        when (copy.role) {
-                                            SafCopyRole.VIDEO -> R.string.mining_progress_copying_video
-                                            SafCopyRole.SUBTITLE -> R.string.mining_progress_copying_subtitle
-                                        },
-                                    ),
-                                unit = MiningProgressUnit.BYTES,
-                            ),
-                        )
+                val run = requireActive(generation)
+                if (run.cancellation.isCancelled()) return
+                run.configSnapshot =
+                    try {
+                        configSnapshotResolver.resolve(run.input)
+                    } catch (failure: Exception) {
+                        recordFault(generation, strings.resolve(R.string.mining_failure_settings_snapshot))
+                        throw failure
                     }
                 if (run.cancellation.isCancelled()) return
-                videoPath = inputOwner.openVideo(run.input.video)
+                val admission =
+                    try {
+                        admissionGate.evaluate(run.cancellation)
+                    } catch (_: RuntimeException) {
+                        if (run.cancellation.isCancelled()) return
+                        recordFault(generation, strings.resolve(R.string.mining_failure_anki_readiness))
+                        return
+                    }
                 if (run.cancellation.isCancelled()) return
-                subtitlePath = inputOwner.materializeSubtitle(run.input.subtitle)
-            } catch (failure: Exception) {
-                // A cancelled copy must terminate as Cancelled: a recorded fault would win
-                // over the cancelled flag in terminalState.
-                if (!run.cancellation.isCancelled()) {
-                    recordFault(generation, strings.resolve(R.string.mining_failure_media_preparation))
+                if (!admission.isReady) {
+                    val failure = requireNotNull(admission.stableFailure(strings))
+                    recordFault(generation, failure.message, failure.retryable)
+                    return
                 }
-                throw failure
-            }
-            if (run.cancellation.isCancelled()) {
-                return
-            }
-            val labels = labelsFor(run.input.video.displayName)
-            val rawResult =
-                pyBridge.dispatch(
-                    BridgeJsonCodec.encodeVideoRun(
-                        VideoMiningWireRequest(
-                            videoPath = videoPath,
-                            subtitlePath = subtitlePath,
-                            episodeName = labels.first,
-                            seriesName = labels.second,
-                            sourceLabel = null,
-                            audioTrackOverride = null,
-                            cacheDir = runtimePaths.cacheDir.canonicalPath,
-                            nativeLibraryDir = runtimePaths.nativeLibraryDir.canonicalPath,
-                            configSnapshot = requireNotNull(run.configSnapshot),
+                val tokenizer =
+                    try {
+                        tokenizerResourceProvider.installedResource()
+                    } catch (failure: Exception) {
+                        recordFault(generation, strings.resolve(R.string.mining_failure_tokenizer_inspection))
+                        throw failure
+                    }
+                if (tokenizer == null) {
+                    recordFault(
+                        generation,
+                        strings.resolve(R.string.mining_failure_tokenizer_required),
+                        retryable = true,
+                    )
+                    return
+                }
+                if (run.cancellation.isCancelled()) return
+                configureTokenizer(run, tokenizer)
+                if (run.cancellation.isCancelled()) return
+                val videoPath: String
+                val subtitlePath: String
+                try {
+                    inputOwner =
+                        inputOwnerFactory.create(run.cancellation) { copy ->
+                            updateProgress(
+                                generation,
+                                MiningProgress(
+                                    current = copy.copiedBytes,
+                                    total = copy.expectedBytes ?: 0L,
+                                    description =
+                                        strings.resolve(
+                                            when (copy.role) {
+                                                SafCopyRole.VIDEO -> R.string.mining_progress_copying_video
+                                                SafCopyRole.SUBTITLE -> R.string.mining_progress_copying_subtitle
+                                            },
+                                        ),
+                                    unit = MiningProgressUnit.BYTES,
+                                ),
+                            )
+                        }
+                    if (run.cancellation.isCancelled()) return
+                    videoPath = inputOwner.openVideo(run.input.video)
+                    if (run.cancellation.isCancelled()) return
+                    subtitlePath = inputOwner.materializeSubtitle(run.input.subtitle)
+                } catch (failure: Exception) {
+                    // A cancelled copy must terminate as Cancelled: a recorded fault would win
+                    // over the cancelled flag in terminalState.
+                    if (!run.cancellation.isCancelled()) {
+                        recordFault(generation, strings.resolve(R.string.mining_failure_media_preparation))
+                    }
+                    throw failure
+                }
+                if (run.cancellation.isCancelled()) {
+                    return
+                }
+                val labels = labelsFor(run.input.video.displayName)
+                val rawResult =
+                    pyBridge.dispatch(
+                        BridgeJsonCodec.encodeVideoRun(
+                            VideoMiningWireRequest(
+                                videoPath = videoPath,
+                                subtitlePath = subtitlePath,
+                                episodeName = labels.first,
+                                seriesName = labels.second,
+                                sourceLabel = null,
+                                audioTrackOverride = null,
+                                cacheDir = runtimePaths.cacheDir.canonicalPath,
+                                nativeLibraryDir = runtimePaths.nativeLibraryDir.canonicalPath,
+                                configSnapshot = requireNotNull(run.configSnapshot),
+                            ),
                         ),
-                    ),
-                    RunCallbacks(generation),
-                )
-            terminal = reconcileTerminal(generation, rawResult)
-        } catch (failure: Exception) {
-            if (!isCancellationRequested(generation)) {
-                recordFault(
-                    generation,
-                    strings.resolve(
-                        R.string.mining_failure_embedded_video_detailed,
-                        listOf(exceptionDigest(failure)),
-                    ),
-                )
+                        RunCallbacks(generation),
+                    )
+                terminal = reconcileTerminal(generation, rawResult)
+            } catch (failure: Exception) {
+                if (!isCancellationRequested(generation)) {
+                    recordFault(
+                        generation,
+                        strings.resolve(
+                            R.string.mining_failure_embedded_video_detailed,
+                            listOf(exceptionDigest(failure)),
+                        ),
+                    )
+                }
+            } finally {
+                finishRun(generation, terminal, inputOwner)
             }
-        } finally {
-            finishRun(generation, terminal, inputOwner)
         }
     }
 
@@ -988,6 +994,12 @@ internal class BridgeMiningRepository(
             run.runId = request.runId
             cancellation = run.cancellation
         }
+        // The first moment the run id exists. Python calls back synchronously on this same
+        // thread and the Anki chain below is plain delegation, so onStage, ankiCreateNotes, the
+        // provider gateway and the journal all pick the id up from the thread local with no
+        // call-site changes. The one exception is the gateway's "anki-provider-deadline"
+        // watchdog, which is its own thread and will render run=- until it is threaded.
+        LogContext.setRunId(request.runId)
         val admitted = anki.registerRun(request.runId, cancellation)
         if (!admitted) {
             recordFaultAndCancel(generation, strings.resolve(R.string.mining_failure_anki_not_ready))
@@ -1383,8 +1395,11 @@ internal class BridgeMiningRepository(
         generation: Long,
         task: () -> Unit,
     ) {
+        // The control executor is a different thread from the run executor, so it does not
+        // inherit the id registerJob installed; it has to be carried across explicitly.
+        val runId = synchronized(monitor) { activeFor(generation)?.runId }
         try {
-            controlExecutor.execute(task)
+            controlExecutor.execute { LogContext.withRunId(runId) { task() } }
         } catch (_: RuntimeException) {
             recordFault(generation, strings.resolve(R.string.mining_failure_control_worker))
         }

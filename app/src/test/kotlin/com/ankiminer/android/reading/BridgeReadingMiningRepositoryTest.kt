@@ -114,6 +114,13 @@ class BridgeReadingMiningRepositoryTest {
             ),
             recordsFor("op=phase"),
         )
+
+        // The ambient run id, on both threads that emit these records: the run executor, which
+        // registerJob installs it on, and the control executor, which has to carry it across.
+        val onRunThread = recorded.records.single { it.contains("detail=finish") }
+        val onControlThread = recorded.records.single { it.contains("detail=foreground_started") }
+        assertTrue(onRunThread, onRunThread.contains(" run=$RUN_ID c=reading op=phase"))
+        assertTrue(onControlThread, onControlThread.contains(" run=$RUN_ID c=reading op=phase"))
     }
 
     @Test

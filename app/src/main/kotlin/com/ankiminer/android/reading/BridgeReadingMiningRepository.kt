@@ -7,6 +7,7 @@ import com.ankiminer.android.data.RuntimeWorkCoordinator
 import com.ankiminer.android.diagnostics.exceptionDigest
 import com.ankiminer.android.diagnostics.log.AppLog
 import com.ankiminer.android.diagnostics.log.LogComponent
+import com.ankiminer.android.diagnostics.log.LogContext
 import com.ankiminer.android.engine.BridgeJsonCodec
 import com.ankiminer.android.engine.BridgeJsonValue
 import com.ankiminer.android.engine.BridgeMessage
@@ -354,121 +355,126 @@ internal class BridgeReadingMiningRepository(
     }
 
     private fun runReading(generation: Long) {
-        var stagedSource: StagedReadingSource? = null
-        var terminal: BridgeMessage.Terminal? = null
-        try {
-            val run = requireActive(generation)
-            if (run.cancellation.isCancelled()) return
-            run.configSnapshot =
-                try {
-                    configSnapshotResolver.resolve(run.input)
-                } catch (failure: Exception) {
-                    recordFault(generation, strings.resolve(R.string.mining_failure_settings_snapshot))
-                    throw failure
-                }
-            if (run.cancellation.isCancelled()) return
-            val admission =
-                try {
-                    admissionGate.evaluate(run.cancellation)
-                } catch (_: RuntimeException) {
-                    if (run.cancellation.isCancelled()) return
-                    recordFault(generation, strings.resolve(R.string.mining_failure_anki_readiness))
-                    return
-                }
-            if (run.cancellation.isCancelled()) return
-            if (!admission.isReady) {
-                val failure = requireNotNull(admission.stableFailure(strings))
-                recordFault(generation, failure.message, failure.retryable)
-                return
-            }
-            val tokenizer =
-                try {
-                    tokenizerResourceProvider.installedResource()
-                } catch (failure: Exception) {
-                    recordFault(generation, strings.resolve(R.string.mining_failure_tokenizer_inspection))
-                    throw failure
-                }
-            if (tokenizer == null) {
-                recordFault(
-                    generation,
-                    strings.resolve(R.string.mining_failure_tokenizer_required),
-                    retryable = true,
-                )
-                return
-            }
-            if (run.cancellation.isCancelled()) return
-            configureTokenizer(run, tokenizer)
-            if (run.cancellation.isCancelled()) return
-            stagedSource =
-                try {
-                    sourceStager.stage(
-                        selection = run.input.selection,
-                        cancellation = FileCopyCancellation(run.cancellation::isCancelled),
-                        progressListener =
-                            ReadingSourceStageProgressListener { progress ->
-                                updateStagingProgress(generation, progress)
-                            },
-                    )
-                } catch (failure: Exception) {
-                    if (!run.cancellation.isCancelled()) {
-                        recordFault(generation, strings.resolve(stagingFaultMessage(failure)))
-                    }
-                    throw failure
-                }
-            if (run.cancellation.isCancelled()) return
-            run.requiresMediaForeground =
-                stagedSource.sourceKind == StagedReadingSourceKind.EPUB ||
-                    stagedSource.imageArchivePath != null ||
-                    requireNotNull(run.configSnapshot).androidTtsEnabled == true ||
-                    requireNotNull(run.configSnapshot).mapsExpressionAudioField()
-            if (requireNotNull(run.configSnapshot).androidTtsEnabled == true) {
-                val synthesizer =
+        // registerJob installs the ambient run id on this thread part-way through this block.
+        // The video and reading repositories share one run executor, so leaving it set would
+        // label the next lane's records with this run's id; withRunId restores rather than clears.
+        LogContext.withRunId(null) {
+            var stagedSource: StagedReadingSource? = null
+            var terminal: BridgeMessage.Terminal? = null
+            try {
+                val run = requireActive(generation)
+                if (run.cancellation.isCancelled()) return
+                run.configSnapshot =
                     try {
-                        sentenceAudioSynthesizerFactory?.open()
-                            ?: throw IllegalStateException("Sentence-audio integration is unavailable")
-                    } catch (failure: RuntimeException) {
-                        recordFault(generation, strings.resolve(R.string.mining_failure_sentence_audio_preparation))
+                        configSnapshotResolver.resolve(run.input)
+                    } catch (failure: Exception) {
+                        recordFault(generation, strings.resolve(R.string.mining_failure_settings_snapshot))
                         throw failure
                     }
-                run.sentenceAudioSynthesizer = synthesizer
-                run.sentenceAudioDispatcher = SentenceAudioCallbackDispatcher(synthesizer)
+                if (run.cancellation.isCancelled()) return
+                val admission =
+                    try {
+                        admissionGate.evaluate(run.cancellation)
+                    } catch (_: RuntimeException) {
+                        if (run.cancellation.isCancelled()) return
+                        recordFault(generation, strings.resolve(R.string.mining_failure_anki_readiness))
+                        return
+                    }
+                if (run.cancellation.isCancelled()) return
+                if (!admission.isReady) {
+                    val failure = requireNotNull(admission.stableFailure(strings))
+                    recordFault(generation, failure.message, failure.retryable)
+                    return
+                }
+                val tokenizer =
+                    try {
+                        tokenizerResourceProvider.installedResource()
+                    } catch (failure: Exception) {
+                        recordFault(generation, strings.resolve(R.string.mining_failure_tokenizer_inspection))
+                        throw failure
+                    }
+                if (tokenizer == null) {
+                    recordFault(
+                        generation,
+                        strings.resolve(R.string.mining_failure_tokenizer_required),
+                        retryable = true,
+                    )
+                    return
+                }
+                if (run.cancellation.isCancelled()) return
+                configureTokenizer(run, tokenizer)
+                if (run.cancellation.isCancelled()) return
+                stagedSource =
+                    try {
+                        sourceStager.stage(
+                            selection = run.input.selection,
+                            cancellation = FileCopyCancellation(run.cancellation::isCancelled),
+                            progressListener =
+                                ReadingSourceStageProgressListener { progress ->
+                                    updateStagingProgress(generation, progress)
+                                },
+                        )
+                    } catch (failure: Exception) {
+                        if (!run.cancellation.isCancelled()) {
+                            recordFault(generation, strings.resolve(stagingFaultMessage(failure)))
+                        }
+                        throw failure
+                    }
+                if (run.cancellation.isCancelled()) return
+                run.requiresMediaForeground =
+                    stagedSource.sourceKind == StagedReadingSourceKind.EPUB ||
+                        stagedSource.imageArchivePath != null ||
+                        requireNotNull(run.configSnapshot).androidTtsEnabled == true ||
+                        requireNotNull(run.configSnapshot).mapsExpressionAudioField()
+                if (requireNotNull(run.configSnapshot).androidTtsEnabled == true) {
+                    val synthesizer =
+                        try {
+                            sentenceAudioSynthesizerFactory?.open()
+                                ?: throw IllegalStateException("Sentence-audio integration is unavailable")
+                        } catch (failure: RuntimeException) {
+                            recordFault(generation, strings.resolve(R.string.mining_failure_sentence_audio_preparation))
+                            throw failure
+                        }
+                    run.sentenceAudioSynthesizer = synthesizer
+                    run.sentenceAudioDispatcher = SentenceAudioCallbackDispatcher(synthesizer)
+                }
+                if (run.cancellation.isCancelled()) return
+                val request =
+                    ReadingMiningWireRequest(
+                        sourceKind = stagedSource.sourceKind.toWireKind(),
+                        sourcePath = stagedSource.detectorPath,
+                        imageArchivePath = stagedSource.imageArchivePath,
+                        seriesName =
+                            if (stagedSource.sourceKind == StagedReadingSourceKind.SUBTITLE) {
+                                canonicalLabel(
+                                    run.input.subtitleSeriesName ?: DEFAULT_SUBTITLE_SERIES_NAME,
+                                ).ifEmpty { DEFAULT_SUBTITLE_SERIES_NAME }
+                            } else {
+                                null
+                            },
+                        cacheDir = runtimePaths.cacheDir.canonicalPath,
+                        nativeLibraryDir = runtimePaths.nativeLibraryDir.canonicalPath,
+                        configSnapshot = requireNotNull(run.configSnapshot),
+                    )
+                val rawResult =
+                    pyBridge.dispatch(
+                        BridgeJsonCodec.encodeReadingRun(request),
+                        RunCallbacks(generation),
+                    )
+                terminal = reconcileTerminal(generation, rawResult)
+            } catch (failure: Exception) {
+                if (!isCancellationRequested(generation)) {
+                    recordFault(
+                        generation,
+                        strings.resolve(
+                            R.string.mining_failure_embedded_reading_detailed,
+                            listOf(exceptionDigest(failure)),
+                        ),
+                    )
+                }
+            } finally {
+                finishRun(generation, terminal, stagedSource)
             }
-            if (run.cancellation.isCancelled()) return
-            val request =
-                ReadingMiningWireRequest(
-                    sourceKind = stagedSource.sourceKind.toWireKind(),
-                    sourcePath = stagedSource.detectorPath,
-                    imageArchivePath = stagedSource.imageArchivePath,
-                    seriesName =
-                        if (stagedSource.sourceKind == StagedReadingSourceKind.SUBTITLE) {
-                            canonicalLabel(
-                                run.input.subtitleSeriesName ?: DEFAULT_SUBTITLE_SERIES_NAME,
-                            ).ifEmpty { DEFAULT_SUBTITLE_SERIES_NAME }
-                        } else {
-                            null
-                        },
-                    cacheDir = runtimePaths.cacheDir.canonicalPath,
-                    nativeLibraryDir = runtimePaths.nativeLibraryDir.canonicalPath,
-                    configSnapshot = requireNotNull(run.configSnapshot),
-                )
-            val rawResult =
-                pyBridge.dispatch(
-                    BridgeJsonCodec.encodeReadingRun(request),
-                    RunCallbacks(generation),
-                )
-            terminal = reconcileTerminal(generation, rawResult)
-        } catch (failure: Exception) {
-            if (!isCancellationRequested(generation)) {
-                recordFault(
-                    generation,
-                    strings.resolve(
-                        R.string.mining_failure_embedded_reading_detailed,
-                        listOf(exceptionDigest(failure)),
-                    ),
-                )
-            }
-        } finally {
-            finishRun(generation, terminal, stagedSource)
         }
     }
 
@@ -1099,6 +1105,12 @@ internal class BridgeReadingMiningRepository(
             run.runId = request.runId
             cancellation = run.cancellation
         }
+        // The first moment the run id exists. Python calls back synchronously on this same
+        // thread and the Anki chain below is plain delegation, so onStage, ankiCreateNotes, the
+        // provider gateway and the journal all pick the id up from the thread local with no
+        // call-site changes. The one exception is the gateway's "anki-provider-deadline"
+        // watchdog, which is its own thread and will render run=- until it is threaded.
+        LogContext.setRunId(request.runId)
         val admitted = anki.registerRun(request.runId, cancellation)
         if (!admitted) {
             recordFaultAndCancel(generation, strings.resolve(R.string.mining_failure_anki_not_ready))
@@ -1533,8 +1545,11 @@ internal class BridgeReadingMiningRepository(
         generation: Long,
         task: () -> Unit,
     ) {
+        // The control executor is a different thread from the run executor, so it does not
+        // inherit the id registerJob installed; it has to be carried across explicitly.
+        val runId = synchronized(monitor) { activeFor(generation)?.runId }
         try {
-            controlExecutor.execute(task)
+            controlExecutor.execute { LogContext.withRunId(runId) { task() } }
         } catch (_: RuntimeException) {
             recordFault(generation, strings.resolve(R.string.mining_failure_control_worker))
         }
