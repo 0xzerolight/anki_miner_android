@@ -12,25 +12,27 @@ import com.ankiminer.android.anki.provider.AnkiExternalReviewOutcome
 import com.ankiminer.android.anki.provider.AnkiFieldMapPolicy
 import com.ankiminer.android.anki.provider.AnkiFieldMappingChange
 import com.ankiminer.android.anki.provider.AnkiRemediationCommand
-import com.ankiminer.android.data.anki.AnkiSetupManager
 import com.ankiminer.android.data.RuntimeWorkCoordinator
-import com.ankiminer.android.data.resources.ResourceIdentity
-import com.ankiminer.android.data.resources.ResourceImportTarget
-import com.ankiminer.android.data.resources.ResourceManager
-import com.ankiminer.android.data.resources.ResourceFailureOrigin
-import com.ankiminer.android.data.resources.ResourceStartupReadiness
+import com.ankiminer.android.data.anki.AnkiSetupManager
 import com.ankiminer.android.data.resources.FrequencySourceFormat
 import com.ankiminer.android.data.resources.KnownWordsFailureOperation
 import com.ankiminer.android.data.resources.KnownWordsResetScope
 import com.ankiminer.android.data.resources.KnownWordsSourceFormat
-import com.ankiminer.android.data.resources.WordListKind
 import com.ankiminer.android.data.resources.PitchAccentSourceFormat
+import com.ankiminer.android.data.resources.ResourceFailureOrigin
+import com.ankiminer.android.data.resources.ResourceIdentity
+import com.ankiminer.android.data.resources.ResourceImportTarget
+import com.ankiminer.android.data.resources.ResourceManager
+import com.ankiminer.android.data.resources.ResourceStartupReadiness
+import com.ankiminer.android.data.resources.WordListKind
+import com.ankiminer.android.data.settings.AppSettings
 import com.ankiminer.android.data.settings.AppSettingsRepository
 import com.ankiminer.android.data.settings.CardType
 import com.ankiminer.android.engine.PythonRuntimeReadiness
 import com.ankiminer.android.localization.StringResourceResolver
 import com.ankiminer.android.mining.MiningRunAdmissionState
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -40,6 +42,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 internal class SetupViewModel(
     private val resources: ResourceManager,
@@ -52,6 +56,24 @@ internal class SetupViewModel(
     private val strings: StringResourceResolver,
     private val savedStateHandle: SavedStateHandle = SavedStateHandle(),
 ) : ViewModel() {
+    private enum class ResourcePickerKind {
+        CUSTOM_DICTIONARY,
+        FREQUENCY,
+        PITCH,
+        AUDIO_PACK,
+        KNOWN_WORDS,
+    }
+
+    private data class PendingResourcePicker(
+        val kind: ResourcePickerKind,
+        val target: ResourceImportTarget? = null,
+        val sourceName: String? = null,
+        val frequencyFormat: FrequencySourceFormat? = null,
+        val pitchFormat: PitchAccentSourceFormat? = null,
+        val knownWordsFormat: KnownWordsSourceFormat? = null,
+        val uri: String? = null,
+    )
+
     private data class LocalState(
         val lookupTerm: String = "猫",
         val lookupSlotId: String? = null,
@@ -75,8 +97,28 @@ internal class SetupViewModel(
     private val local =
         MutableStateFlow(
             LocalState(
-                frequencySourceName = strings.resolve(R.string.setup_default_frequency_name),
-                pitchSourceName = strings.resolve(R.string.setup_default_pitch_name),
+                customSlotId =
+                    savedStateHandle[STATE_CUSTOM_SLOT_ID]
+                        ?: "custom-dictionary",
+                frequencySourceName =
+                    savedStateHandle[STATE_FREQUENCY_SOURCE_NAME]
+                        ?: strings.resolve(R.string.setup_default_frequency_name),
+                frequencyFormat =
+                    savedEnum<FrequencySourceFormat>(STATE_FREQUENCY_FORMAT)
+                        ?: FrequencySourceFormat.YOMITAN_ZIP,
+                pitchSourceName =
+                    savedStateHandle[STATE_PITCH_SOURCE_NAME]
+                        ?: strings.resolve(R.string.setup_default_pitch_name),
+                pitchFormat =
+                    savedEnum<PitchAccentSourceFormat>(STATE_PITCH_FORMAT)
+                        ?: PitchAccentSourceFormat.YOMITAN_ZIP,
+                audioPackId =
+                    savedStateHandle[STATE_AUDIO_PACK_ID]
+                        ?: "audio-pack",
+                knownWordsFormat =
+                    savedEnum<KnownWordsSourceFormat>(STATE_KNOWN_WORDS_FORMAT)
+                        ?: KnownWordsSourceFormat.JSON,
+                pendingReplace = restorePendingReplace(),
             ),
         )
     /** In-memory only: failed persistence must re-open the wizard in a fresh ViewModel. */
@@ -84,22 +126,9 @@ internal class SetupViewModel(
     val wizardDismissedForSession: StateFlow<Boolean> = _wizardDismissedForSession.asStateFlow()
     private val settings = settingsRepository.settings
     private val repository = settingsRepository
-
-    private enum class PendingSettingsImportKind {
-        CUSTOM_DICTIONARY,
-        FREQUENCY,
-        PITCH,
-        AUDIO_PACK,
-        KNOWN_WORDS,
-    }
-
-    private data class PendingSettingsImport(
-        val kind: PendingSettingsImportKind,
-        val targetIdentity: String? = null,
-        val sourceName: String? = null,
-        val format: String? = null,
-    )
-
+    private val settingsMutationMutex = Mutex()
+    private var pendingPicker = restorePendingPicker()
+    private var pendingPickerJob: Job? = null
     private val settingsAnkiAndRuntime =
         combine(settings, ankiSetup.state, runtimeWorkState) { appSettings, ankiState, runtimeKind ->
             Triple(appSettings, ankiState, runtimeKind)
@@ -178,6 +207,10 @@ internal class SetupViewModel(
             SetupUiState(),
         )
 
+    init {
+        resumePendingPicker()
+    }
+
     /**
      * [uiState] is a `combine(...).stateIn(...)`, so its value lags one dispatch behind
      * [local]: a `set…` followed by a dispatch in the same frame would otherwise act on
@@ -232,18 +265,37 @@ internal class SetupViewModel(
         val state = currentState()
         if (state.busy || state.noteType == name) return
         val fields = state.availableNoteTypes.firstOrNull { it.name == name }?.fieldNames ?: return
-        val merged =
-            AnkiFieldMapPolicy.merge(
-                currentNoteType = state.noteType,
-                selectedNoteType = name,
-                fieldNames = fields,
-                currentFieldMap = state.fieldMap,
-            )
-        viewModelScope.launch {
-            repository.update { it.copy(noteType = name, fieldMap = merged.fieldMap) }
-            local.update { it.copy(fieldMapChanges = merged.changes) }
-            ankiSetup.refresh(name, merged.fieldMap)
-        }
+        var changes = emptyList<AnkiFieldMappingChange>()
+        persistAnkiSettings(
+            transform = { current ->
+                if (current.noteType == name) {
+                    current
+                } else {
+                    val retainedMarker =
+                        current.cardTypeMarkerField?.takeIf { marker ->
+                            marker in fields && marker != fields.firstOrNull()
+                        }
+                    val merged =
+                        AnkiFieldMapPolicy.merge(
+                            currentNoteType = current.noteType,
+                            selectedNoteType = name,
+                            fieldNames = fields,
+                            currentFieldMap = current.fieldMap,
+                            reservedDestinations = setOfNotNull(retainedMarker),
+                        )
+                    changes = merged.changes
+                    current.copy(
+                        noteType = name,
+                        fieldMap = merged.fieldMap,
+                        cardTypeMarkerField = retainedMarker,
+                    )
+                }
+            },
+            afterSuccess = { persisted ->
+                local.update { it.copy(fieldMapChanges = changes) }
+                refreshPersistedTarget(persisted)
+            },
+        )
     }
 
     fun selectDeck(deckName: String) {
@@ -294,14 +346,41 @@ internal class SetupViewModel(
         val fields =
             state.availableNoteTypes.firstOrNull { it.name == state.noteType }?.fieldNames
                 ?: return
-        val map = AnkiFieldMapPolicy.assign(state.fieldMap, key, field, fields) ?: return
+        val map =
+            AnkiFieldMapPolicy.assign(
+                state.fieldMap,
+                key,
+                field,
+                fields,
+                setOfNotNull(state.cardTypeMarkerField),
+            ) ?: return
         if (map == state.fieldMap) return
-        val noteType = state.noteType
-        viewModelScope.launch {
-            repository.update { it.copy(fieldMap = map) }
-            local.update { it.copy(fieldMapChanges = emptyList()) }
-            ankiSetup.refresh(noteType, map)
-        }
+        val noteTypeAtIntent = state.noteType
+        persistAnkiSettings(
+            transform = { current ->
+                if (current.noteType != noteTypeAtIntent) {
+                    current
+                } else {
+                    val updated =
+                        AnkiFieldMapPolicy.assign(
+                            current.fieldMap,
+                            key,
+                            field,
+                            fields,
+                            setOfNotNull(current.cardTypeMarkerField),
+                        )
+                    if (updated == null || updated == current.fieldMap) {
+                        current
+                    } else {
+                        current.copy(fieldMap = updated)
+                    }
+                }
+            },
+            afterSuccess = { persisted ->
+                local.update { it.copy(fieldMapChanges = emptyList()) }
+                refreshPersistedTarget(persisted)
+            },
+        )
     }
 
     /**
@@ -312,29 +391,36 @@ internal class SetupViewModel(
     fun selectCardType(cardType: CardType?) {
         val state = currentState()
         if (state.busy) return
-        if (cardType == null) {
-            viewModelScope.launch {
-                repository.update { it.copy(cardType = null, cardTypeMarkerField = null) }
-            }
-            return
-        }
-        val fields =
-            state.availableNoteTypes.firstOrNull { it.name == state.noteType }?.fieldNames.orEmpty()
-        val conventional =
-            cardType.conventionalField.takeIf { candidate ->
-                candidate in fields && state.fieldMap.none { (_, mapped) -> mapped == candidate }
-            }
-        // A marker belongs to one mode, so switching modes re-derives it instead of carrying the
-        // previous mode's field over.
-        val marker =
-            if (state.cardType == cardType) {
-                state.cardTypeMarkerField?.takeIf { it in fields }
-            } else {
-                conventional
-            }
-        viewModelScope.launch {
-            repository.update { it.copy(cardType = cardType, cardTypeMarkerField = marker) }
-        }
+        if (cardType == null && state.cardType == null && state.cardTypeMarkerField == null) return
+        persistAnkiSettings(
+            transform = { current ->
+                if (cardType == null) {
+                    current.copy(cardType = null, cardTypeMarkerField = null)
+                } else {
+                    val fields =
+                        ankiSetup.state.value.availableNoteTypes
+                            .firstOrNull { it.name == current.noteType }
+                            ?.fieldNames
+                            .orEmpty()
+                    val conventional =
+                        cardType.conventionalField.takeIf { candidate ->
+                            candidate in fields &&
+                                current.fieldMap.none { (_, mapped) -> mapped == candidate }
+                        }
+                    val marker =
+                        if (current.cardType == cardType) {
+                            current.cardTypeMarkerField?.takeIf { candidate ->
+                                candidate in fields &&
+                                    current.fieldMap.none { (_, mapped) -> mapped == candidate }
+                            }
+                        } else {
+                            conventional
+                        }
+                    current.copy(cardType = cardType, cardTypeMarkerField = marker)
+                }
+            },
+            afterSuccess = ::refreshPersistedTarget,
+        )
     }
 
     fun setCardTypeMarkerField(field: String) {
@@ -342,12 +428,65 @@ internal class SetupViewModel(
         if (state.busy) return
         val destination = field.takeIf { it.isNotEmpty() }
         if (destination != null && state.fieldMap.any { (_, mapped) -> mapped == destination }) return
-        viewModelScope.launch { repository.update { it.copy(cardTypeMarkerField = destination) } }
+        val fields =
+            state.availableNoteTypes.firstOrNull { it.name == state.noteType }?.fieldNames.orEmpty()
+        if (destination != null && destination !in fields) return
+        if (destination == state.cardTypeMarkerField) return
+        persistAnkiSettings(
+            transform = { current ->
+                if (
+                    current.noteType != state.noteType ||
+                        (
+                            destination != null &&
+                                (
+                                    destination !in fields ||
+                                        current.fieldMap.any { (_, mapped) -> mapped == destination }
+                                )
+                        )
+                ) {
+                    current
+                } else {
+                    current.copy(cardTypeMarkerField = destination)
+                }
+            },
+            afterSuccess = ::refreshPersistedTarget,
+        )
     }
 
     fun verifyNoteType() {
         if (currentState().busy) return
-        ankiSetup.refresh(currentState().noteType, currentState().fieldMap)
+        val state = currentState()
+        ankiSetup.refresh(
+            state.noteType,
+            state.fieldMap,
+            state.cardType?.let { state.cardTypeMarkerField },
+        )
+    }
+
+    private fun persistAnkiSettings(
+        transform: (AppSettings) -> AppSettings,
+        afterSuccess: (AppSettings) -> Unit,
+    ) {
+        viewModelScope.launch {
+            settingsMutationMutex.withLock {
+                try {
+                    repository.update(transform)
+                    afterSuccess(repository.settings.first())
+                } catch (failure: CancellationException) {
+                    throw failure
+                } catch (_: Exception) {
+                    // Keep the prior persisted state. Repeating the same UI action retries it.
+                }
+            }
+        }
+    }
+
+    private fun refreshPersistedTarget(settings: AppSettings) {
+        ankiSetup.refresh(
+            settings.noteType,
+            settings.fieldMap,
+            settings.cardType?.let { settings.cardTypeMarkerField },
+        )
     }
 
     fun reconcileInterruptedWork() {
@@ -401,17 +540,14 @@ internal class SetupViewModel(
                     .firstOrNull { it.occupied && it.slotId == status.resource.slotId }
                     ?.sourceName
                     ?: status.resource.slotId
-            local.update {
-                it.copy(
-                    pendingReplace =
-                        PendingResourceReplace(
-                            kind = ResourceReplaceKind.CATALOG_DICTIONARY,
-                            identity = resourceId,
-                            installedLabel = occupant,
-                            repair = status.needsRepair,
-                        ),
-                )
-            }
+            setPendingReplace(
+                PendingResourceReplace(
+                    kind = ResourceReplaceKind.CATALOG_DICTIONARY,
+                    identity = resourceId,
+                    installedLabel = occupant,
+                    repair = status.needsRepair,
+                ),
+            )
         } else {
             viewModelScope.launch { resources.installCatalogDictionary(resourceId, replace = false) }
         }
@@ -422,7 +558,8 @@ internal class SetupViewModel(
         val state = currentState()
         if (state.busy) return
         val pending = state.pendingReplace ?: return
-        local.update { it.copy(pendingReplace = null) }
+        val picker = pendingPicker?.takeIf { it.kind.toReplaceKindOrNull() == pending.kind }
+        clearPendingReplace(clearPicker = true)
         viewModelScope.launch {
             when (pending.kind) {
                 ResourceReplaceKind.CATALOG_DICTIONARY ->
@@ -439,8 +576,8 @@ internal class SetupViewModel(
                         // The record's identity, not a freshly derived one: a name match targets
                         // the id already on disk so the priority chain entry survives.
                         sourceId = pending.identity,
-                        sourceName = requireNotNull(pending.sourceName),
-                        format = requireNotNull(pending.frequencyFormat),
+                        sourceName = picker?.sourceName ?: state.frequencySourceName,
+                        format = picker?.frequencyFormat ?: state.frequencyFormat,
                         replace = true,
                     )
                 ResourceReplaceKind.PITCH ->
@@ -449,8 +586,8 @@ internal class SetupViewModel(
                         // As with frequency: the record's identity, so a name match
                         // replaces the slot already on disk and keeps its chain entry.
                         sourceId = pending.identity,
-                        sourceName = requireNotNull(pending.sourceName),
-                        format = requireNotNull(pending.pitchFormat),
+                        sourceName = picker?.sourceName ?: state.pitchSourceName,
+                        format = picker?.pitchFormat ?: state.pitchFormat,
                         replace = true,
                     )
                 ResourceReplaceKind.AUDIO_PACK ->
@@ -464,283 +601,125 @@ internal class SetupViewModel(
     }
 
     fun dismissPendingReplace() {
-        local.update { it.copy(pendingReplace = null) }
+        clearPendingReplace(clearPicker = true)
     }
 
-    /** Snapshot picker metadata before Android may recreate this ViewModel. */
-    fun prepareCustomDictionaryImport(): Boolean {
-        val state = currentState()
-        if (state.busy || !SLOT_ID.matches(state.customSlotId)) return false
-        savePendingSettingsImport(
-            PendingSettingsImport(
-                kind = PendingSettingsImportKind.CUSTOM_DICTIONARY,
-                targetIdentity = state.customSlotId,
-            ),
-        )
-        return true
-    }
-
-    /** Snapshot picker metadata before Android may recreate this ViewModel. */
-    fun prepareFrequencyImport(): Boolean {
-        val state = currentState()
-        if (state.busy || state.frequencySourceName.isBlank()) return false
-        val target = ResourceIdentity.frequencyTarget(state.frequencySourceName, state.frequencySources)
-        savePendingSettingsImport(
-            PendingSettingsImport(
-                kind = PendingSettingsImportKind.FREQUENCY,
-                targetIdentity = target.identity,
-                sourceName = state.frequencySourceName,
-                format = state.frequencyFormat.name,
-            ),
-        )
-        return true
-    }
-
-    /** Snapshot picker metadata before Android may recreate this ViewModel. */
-    fun preparePitchAccentImport(): Boolean {
-        val state = currentState()
-        if (state.busy || state.pitchSourceName.isBlank()) return false
-        val target = ResourceIdentity.pitchTarget(state.pitchSourceName, state.pitchSources)
-        savePendingSettingsImport(
-            PendingSettingsImport(
-                kind = PendingSettingsImportKind.PITCH,
-                targetIdentity = target.identity,
-                sourceName = state.pitchSourceName,
-                format = state.pitchFormat.name,
-            ),
-        )
-        return true
-    }
-
-    /** Snapshot picker metadata before Android may recreate this ViewModel. */
-    fun prepareAudioPackImport(): Boolean {
-        val state = currentState()
-        if (state.busy || !state.audioPackIdValid) return false
-        savePendingSettingsImport(
-            PendingSettingsImport(
-                kind = PendingSettingsImportKind.AUDIO_PACK,
-                targetIdentity = state.audioPackId,
-            ),
-        )
-        return true
-    }
-
-    /** Snapshot picker metadata before Android may recreate this ViewModel. */
-    fun prepareKnownWordsImport(): Boolean {
+    fun beginCustomDictionaryPicker(): Boolean {
         val state = currentState()
         if (state.busy) return false
-        savePendingSettingsImport(
-            PendingSettingsImport(
-                kind = PendingSettingsImportKind.KNOWN_WORDS,
-                format = state.knownWordsFormat.name,
-            ),
-        )
+        val request = customDictionaryPickerRequest(state) ?: return false
+        savePendingPicker(request)
         return true
     }
 
-    /** Consume a restored picker result using exactly the metadata visible when it was launched. */
-    fun completePendingSettingsImport(uri: String?) {
-        val pending = pendingSettingsImport() ?: return
-        if (uri == null) {
-            clearPendingSettingsImport()
-            return
-        }
-        val state = currentState()
-        if (state.busy) return
-        val resourceState = resources.state.value
-        when (pending.kind) {
-            PendingSettingsImportKind.CUSTOM_DICTIONARY -> {
-                val target =
-                    ResourceImportTarget(
-                        identity = requireNotNull(pending.targetIdentity),
-                        installedName =
-                            resourceState.dictionaries
-                                .firstOrNull { it.occupied && it.slotId == pending.targetIdentity }
-                                ?.sourceName,
-                    )
-                dispatchCustomDictionaryImport(uri, target)
-            }
-            PendingSettingsImportKind.FREQUENCY -> {
-                val target =
-                    ResourceImportTarget(
-                        identity = requireNotNull(pending.targetIdentity),
-                        installedName =
-                            resourceState.frequencySources
-                                .firstOrNull { it.sourceId == pending.targetIdentity }
-                                ?.sourceName,
-                    )
-                dispatchFrequencyImport(
-                    uri = uri,
-                    target = target,
-                    sourceName = requireNotNull(pending.sourceName),
-                    format = FrequencySourceFormat.valueOf(requireNotNull(pending.format)),
-                )
-            }
-            PendingSettingsImportKind.PITCH -> {
-                val target =
-                    ResourceImportTarget(
-                        identity = requireNotNull(pending.targetIdentity),
-                        installedName =
-                            resourceState.pitchSources
-                                .firstOrNull { it.sourceId == pending.targetIdentity }
-                                ?.sourceName,
-                    )
-                dispatchPitchImport(
-                    uri = uri,
-                    target = target,
-                    sourceName = requireNotNull(pending.sourceName),
-                    format = PitchAccentSourceFormat.valueOf(requireNotNull(pending.format)),
-                )
-            }
-            PendingSettingsImportKind.AUDIO_PACK -> {
-                val target =
-                    ResourceImportTarget(
-                        identity = requireNotNull(pending.targetIdentity),
-                        installedName =
-                            resourceState.audioPacks
-                                .firstOrNull { it.packId == pending.targetIdentity }
-                                ?.sourceName,
-                    )
-                dispatchAudioPackImport(uri, target)
-            }
-            PendingSettingsImportKind.KNOWN_WORDS ->
-                viewModelScope.launch {
-                    resources.previewKnownWords(
-                        uri,
-                        KnownWordsSourceFormat.valueOf(requireNotNull(pending.format)),
-                    )
-                }
-        }
-        clearPendingSettingsImport()
-    }
+    fun onCustomDictionaryPicked(uri: String?) =
+        finishPicker(
+            ResourcePickerKind.CUSTOM_DICTIONARY,
+            uri,
+            fallback = { customDictionaryPickerRequest(currentState()) },
+        )
 
     fun importCustomDictionary(uri: String) {
-        val state = currentState()
-        if (state.busy || !SLOT_ID.matches(state.customSlotId)) return
-        val target = ResourceIdentity.customDictionaryTarget(state.customSlotId, state.dictionaries)
-        dispatchCustomDictionaryImport(uri, target)
+        savePendingPicker(customDictionaryPickerRequest(currentState()) ?: return)
+        onCustomDictionaryPicked(uri)
     }
 
     fun setCustomSlotId(value: String) {
-        if (value.length <= 64) local.update { it.copy(customSlotId = value.lowercase()) }
+        if (value.length <= 64) {
+            val normalized = value.lowercase()
+            savedStateHandle[STATE_CUSTOM_SLOT_ID] = normalized
+            local.update { it.copy(customSlotId = normalized) }
+        }
     }
 
     fun setFrequencySourceName(value: String) {
-        local.update { it.copy(frequencySourceName = sanitizeDisplayName(value)) }
+        val sanitized = sanitizeDisplayName(value)
+        savedStateHandle[STATE_FREQUENCY_SOURCE_NAME] = sanitized
+        local.update { it.copy(frequencySourceName = sanitized) }
     }
 
     fun setFrequencyFormat(value: FrequencySourceFormat) {
+        savedStateHandle[STATE_FREQUENCY_FORMAT] = value.name
         local.update { it.copy(frequencyFormat = value) }
     }
 
-    fun importFrequencySource(uri: String) {
+    fun beginFrequencyPicker(): Boolean {
         val state = currentState()
-        if (state.busy || state.frequencySourceName.isBlank()) return
-        val target =
-            ResourceIdentity.frequencyTarget(state.frequencySourceName, state.frequencySources)
-        dispatchFrequencyImport(uri, target, state.frequencySourceName, state.frequencyFormat)
+        if (state.busy) return false
+        val request = frequencyPickerRequest(state) ?: return false
+        savePendingPicker(request)
+        return true
+    }
+
+    fun onFrequencyPicked(uri: String?) =
+        finishPicker(
+            ResourcePickerKind.FREQUENCY,
+            uri,
+            fallback = { frequencyPickerRequest(currentState()) },
+        )
+
+    fun importFrequencySource(uri: String) {
+        savePendingPicker(frequencyPickerRequest(currentState()) ?: return)
+        onFrequencyPicked(uri)
     }
 
     fun setPitchSourceName(value: String) {
-        local.update { it.copy(pitchSourceName = sanitizeDisplayName(value)) }
+        val sanitized = sanitizeDisplayName(value)
+        savedStateHandle[STATE_PITCH_SOURCE_NAME] = sanitized
+        local.update { it.copy(pitchSourceName = sanitized) }
     }
 
     fun setPitchFormat(value: PitchAccentSourceFormat) {
+        savedStateHandle[STATE_PITCH_FORMAT] = value.name
         local.update { it.copy(pitchFormat = value) }
     }
 
-    fun importPitchAccent(uri: String) {
+    fun beginPitchPicker(): Boolean {
         val state = currentState()
-        if (state.busy || state.pitchSourceName.isBlank()) return
-        val target = ResourceIdentity.pitchTarget(state.pitchSourceName, state.pitchSources)
-        dispatchPitchImport(uri, target, state.pitchSourceName, state.pitchFormat)
+        if (state.busy) return false
+        val request = pitchPickerRequest(state) ?: return false
+        savePendingPicker(request)
+        return true
+    }
+
+    fun onPitchPicked(uri: String?) =
+        finishPicker(
+            ResourcePickerKind.PITCH,
+            uri,
+            fallback = { pitchPickerRequest(currentState()) },
+        )
+
+    fun importPitchAccent(uri: String) {
+        savePendingPicker(pitchPickerRequest(currentState()) ?: return)
+        onPitchPicked(uri)
     }
 
     fun setAudioPackId(value: String) {
-        if (value.length <= 64) local.update { it.copy(audioPackId = value.lowercase()) }
+        if (value.length <= 64) {
+            val normalized = value.lowercase()
+            savedStateHandle[STATE_AUDIO_PACK_ID] = normalized
+            local.update { it.copy(audioPackId = normalized) }
+        }
     }
+
+    fun beginAudioPackPicker(): Boolean {
+        val state = currentState()
+        if (state.busy) return false
+        val request = audioPackPickerRequest(state) ?: return false
+        savePendingPicker(request)
+        return true
+    }
+
+    fun onAudioPackPicked(uri: String?) =
+        finishPicker(
+            ResourcePickerKind.AUDIO_PACK,
+            uri,
+            fallback = { audioPackPickerRequest(currentState()) },
+        )
 
     fun importAudioPack(uri: String) {
-        val state = currentState()
-        if (state.busy || !state.audioPackIdValid) return
-        val target = ResourceIdentity.audioPackTarget(state.audioPackId, state.audioPacks)
-        dispatchAudioPackImport(uri, target)
-    }
-
-    private fun dispatchCustomDictionaryImport(
-        uri: String,
-        target: ResourceImportTarget,
-    ) {
-        if (stagePendingReplace(ResourceReplaceKind.CUSTOM_DICTIONARY, target, uri)) return
-        viewModelScope.launch {
-            resources.importCustomDictionary(uri, target.identity, replace = false)
-        }
-    }
-
-    private fun dispatchFrequencyImport(
-        uri: String,
-        target: ResourceImportTarget,
-        sourceName: String,
-        format: FrequencySourceFormat,
-    ) {
-        if (
-            stagePendingReplace(
-                kind = ResourceReplaceKind.FREQUENCY,
-                target = target,
-                uri = uri,
-                sourceName = sourceName,
-                frequencyFormat = format,
-            )
-        ) {
-            return
-        }
-        viewModelScope.launch {
-            resources.importFrequencySource(
-                uri = uri,
-                sourceId = target.identity,
-                sourceName = sourceName,
-                format = format,
-                replace = false,
-            )
-        }
-    }
-
-    private fun dispatchPitchImport(
-        uri: String,
-        target: ResourceImportTarget,
-        sourceName: String,
-        format: PitchAccentSourceFormat,
-    ) {
-        if (
-            stagePendingReplace(
-                kind = ResourceReplaceKind.PITCH,
-                target = target,
-                uri = uri,
-                sourceName = sourceName,
-                pitchFormat = format,
-            )
-        ) {
-            return
-        }
-        viewModelScope.launch {
-            resources.importPitchAccent(
-                uri = uri,
-                sourceId = target.identity,
-                sourceName = sourceName,
-                format = format,
-                replace = false,
-            )
-        }
-    }
-
-    private fun dispatchAudioPackImport(
-        uri: String,
-        target: ResourceImportTarget,
-    ) {
-        if (stagePendingReplace(ResourceReplaceKind.AUDIO_PACK, target, uri)) return
-        viewModelScope.launch {
-            resources.importAudioPack(uri, target.identity, replace = false)
-        }
+        savePendingPicker(audioPackPickerRequest(currentState()) ?: return)
+        onAudioPackPicked(uri)
     }
 
     /**
@@ -751,81 +730,263 @@ internal class SetupViewModel(
         kind: ResourceReplaceKind,
         target: ResourceImportTarget,
         uri: String,
-        sourceName: String? = null,
-        frequencyFormat: FrequencySourceFormat? = null,
-        pitchFormat: PitchAccentSourceFormat? = null,
     ): Boolean {
         val installedLabel = target.installedName ?: return false
-        local.update {
-            it.copy(
-                pendingReplace =
-                    PendingResourceReplace(
-                        kind = kind,
-                        identity = target.identity,
-                        installedLabel = installedLabel,
-                        uri = uri,
-                        sourceName = sourceName,
-                        frequencyFormat = frequencyFormat,
-                        pitchFormat = pitchFormat,
-                    ),
-            )
-        }
+        setPendingReplace(
+            PendingResourceReplace(
+                kind = kind,
+                identity = target.identity,
+                installedLabel = installedLabel,
+                uri = uri,
+            ),
+        )
         return true
     }
 
-    private fun savePendingSettingsImport(pending: PendingSettingsImport) {
-        savedStateHandle[PENDING_SETTINGS_IMPORT_KIND_KEY] = pending.kind.name
-        savedStateHandle[PENDING_SETTINGS_IMPORT_TARGET_KEY] = pending.targetIdentity
-        savedStateHandle[PENDING_SETTINGS_IMPORT_SOURCE_NAME_KEY] = pending.sourceName
-        savedStateHandle[PENDING_SETTINGS_IMPORT_FORMAT_KEY] = pending.format
+    private fun customDictionaryPickerRequest(state: SetupUiState): PendingResourcePicker? {
+        if (!SLOT_ID.matches(state.customSlotId)) return null
+        return PendingResourcePicker(
+            kind = ResourcePickerKind.CUSTOM_DICTIONARY,
+            target =
+                ResourceIdentity.customDictionaryTarget(
+                    state.customSlotId,
+                    state.dictionaries,
+                ),
+        )
     }
 
-    private fun pendingSettingsImport(): PendingSettingsImport? {
-        val kind =
-            savedStateHandle.get<String>(PENDING_SETTINGS_IMPORT_KIND_KEY)?.let { rawKind ->
-                runCatching { PendingSettingsImportKind.valueOf(rawKind) }.getOrNull()
-            } ?: run {
-                clearPendingSettingsImport()
-                return null
-            }
-        val pending =
-            PendingSettingsImport(
-                kind = kind,
-                targetIdentity = savedStateHandle[PENDING_SETTINGS_IMPORT_TARGET_KEY],
-                sourceName = savedStateHandle[PENDING_SETTINGS_IMPORT_SOURCE_NAME_KEY],
-                format = savedStateHandle[PENDING_SETTINGS_IMPORT_FORMAT_KEY],
-            )
-        val valid =
-            when (kind) {
-                PendingSettingsImportKind.CUSTOM_DICTIONARY,
-                PendingSettingsImportKind.AUDIO_PACK,
-                -> !pending.targetIdentity.isNullOrBlank()
-                PendingSettingsImportKind.FREQUENCY ->
-                    !pending.targetIdentity.isNullOrBlank() &&
-                        !pending.sourceName.isNullOrBlank() &&
-                        enumValueOrNull<FrequencySourceFormat>(pending.format) != null
-                PendingSettingsImportKind.PITCH ->
-                    !pending.targetIdentity.isNullOrBlank() &&
-                        !pending.sourceName.isNullOrBlank() &&
-                        enumValueOrNull<PitchAccentSourceFormat>(pending.format) != null
-                PendingSettingsImportKind.KNOWN_WORDS ->
-                    enumValueOrNull<KnownWordsSourceFormat>(pending.format) != null
-            }
-        if (!valid) {
-            clearPendingSettingsImport()
-            return null
+    private fun frequencyPickerRequest(state: SetupUiState): PendingResourcePicker? {
+        if (state.frequencySourceName.isBlank()) return null
+        return PendingResourcePicker(
+            kind = ResourcePickerKind.FREQUENCY,
+            target =
+                ResourceIdentity.frequencyTarget(
+                    state.frequencySourceName,
+                    state.frequencySources,
+                ),
+            sourceName = state.frequencySourceName,
+            frequencyFormat = state.frequencyFormat,
+        )
+    }
+
+    private fun pitchPickerRequest(state: SetupUiState): PendingResourcePicker? {
+        if (state.pitchSourceName.isBlank()) return null
+        return PendingResourcePicker(
+            kind = ResourcePickerKind.PITCH,
+            target = ResourceIdentity.pitchTarget(state.pitchSourceName, state.pitchSources),
+            sourceName = state.pitchSourceName,
+            pitchFormat = state.pitchFormat,
+        )
+    }
+
+    private fun audioPackPickerRequest(state: SetupUiState): PendingResourcePicker? {
+        if (!state.audioPackIdValid) return null
+        return PendingResourcePicker(
+            kind = ResourcePickerKind.AUDIO_PACK,
+            target = ResourceIdentity.audioPackTarget(state.audioPackId, state.audioPacks),
+        )
+    }
+
+    private fun finishPicker(
+        kind: ResourcePickerKind,
+        uri: String?,
+        fallback: () -> PendingResourcePicker?,
+    ) {
+        if (uri == null) {
+            if (pendingPicker?.kind == kind) clearPendingPicker()
+            return
         }
-        return pending
+        val request = pendingPicker?.takeIf { it.kind == kind } ?: fallback() ?: return
+        savePendingPicker(request.copy(uri = uri))
+        resumePendingPicker()
     }
 
-    private inline fun <reified T : Enum<T>> enumValueOrNull(value: String?): T? =
-        value?.let { runCatching { enumValueOf<T>(it) }.getOrNull() }
+    private fun resumePendingPicker() {
+        if (pendingPicker?.uri == null || pendingPickerJob?.isActive == true) return
+        pendingPickerJob =
+            viewModelScope.launch {
+                resources.state.first { state ->
+                    state.startupReadiness == ResourceStartupReadiness.READY &&
+                        state.activeOperation == null
+                }
+                runtimeWorkState.first { it == null }
+                val request = pendingPicker?.takeIf { it.uri != null } ?: return@launch
+                dispatchPendingPicker(request)
+            }
+    }
 
-    private fun clearPendingSettingsImport() {
-        savedStateHandle.remove<String>(PENDING_SETTINGS_IMPORT_KIND_KEY)
-        savedStateHandle.remove<String>(PENDING_SETTINGS_IMPORT_TARGET_KEY)
-        savedStateHandle.remove<String>(PENDING_SETTINGS_IMPORT_SOURCE_NAME_KEY)
-        savedStateHandle.remove<String>(PENDING_SETTINGS_IMPORT_FORMAT_KEY)
+    private suspend fun dispatchPendingPicker(request: PendingResourcePicker) {
+        val uri = requireNotNull(request.uri)
+        val replaceKind = request.kind.toReplaceKindOrNull()
+        if (
+            replaceKind != null &&
+                stagePendingReplace(
+                    replaceKind,
+                    requireNotNull(request.target),
+                    uri,
+                )
+        ) {
+            return
+        }
+        clearPendingPicker()
+        when (request.kind) {
+            ResourcePickerKind.CUSTOM_DICTIONARY ->
+                resources.importCustomDictionary(
+                    uri,
+                    requireNotNull(request.target).identity,
+                    replace = false,
+                )
+            ResourcePickerKind.FREQUENCY ->
+                resources.importFrequencySource(
+                    uri = uri,
+                    sourceId = requireNotNull(request.target).identity,
+                    sourceName = requireNotNull(request.sourceName),
+                    format = requireNotNull(request.frequencyFormat),
+                    replace = false,
+                )
+            ResourcePickerKind.PITCH ->
+                resources.importPitchAccent(
+                    uri = uri,
+                    sourceId = requireNotNull(request.target).identity,
+                    sourceName = requireNotNull(request.sourceName),
+                    format = requireNotNull(request.pitchFormat),
+                    replace = false,
+                )
+            ResourcePickerKind.AUDIO_PACK ->
+                resources.importAudioPack(
+                    uri,
+                    requireNotNull(request.target).identity,
+                    replace = false,
+                )
+            ResourcePickerKind.KNOWN_WORDS ->
+                resources.previewKnownWords(
+                    uri,
+                    requireNotNull(request.knownWordsFormat),
+                )
+        }
+    }
+
+    private fun ResourcePickerKind.toReplaceKindOrNull(): ResourceReplaceKind? =
+        when (this) {
+            ResourcePickerKind.CUSTOM_DICTIONARY -> ResourceReplaceKind.CUSTOM_DICTIONARY
+            ResourcePickerKind.FREQUENCY -> ResourceReplaceKind.FREQUENCY
+            ResourcePickerKind.PITCH -> ResourceReplaceKind.PITCH
+            ResourcePickerKind.AUDIO_PACK -> ResourceReplaceKind.AUDIO_PACK
+            ResourcePickerKind.KNOWN_WORDS -> null
+        }
+
+    private fun savePendingPicker(request: PendingResourcePicker) {
+        pendingPicker = request
+        saveString(STATE_PICKER_KIND, request.kind.name)
+        saveString(STATE_PICKER_TARGET_ID, request.target?.identity)
+        saveString(STATE_PICKER_INSTALLED_LABEL, request.target?.installedName)
+        saveString(STATE_PICKER_SOURCE_NAME, request.sourceName)
+        saveString(STATE_PICKER_FREQUENCY_FORMAT, request.frequencyFormat?.name)
+        saveString(STATE_PICKER_PITCH_FORMAT, request.pitchFormat?.name)
+        saveString(STATE_PICKER_KNOWN_WORDS_FORMAT, request.knownWordsFormat?.name)
+        saveString(STATE_PICKER_URI, request.uri)
+    }
+
+    private fun restorePendingPicker(): PendingResourcePicker? {
+        val kind = savedEnum<ResourcePickerKind>(STATE_PICKER_KIND) ?: return null
+        val targetId = savedStateHandle.get<String>(STATE_PICKER_TARGET_ID)
+        val target =
+            targetId?.let {
+                ResourceImportTarget(
+                    identity = it,
+                    installedName = savedStateHandle[STATE_PICKER_INSTALLED_LABEL],
+                )
+            }
+        val restored =
+            PendingResourcePicker(
+                kind = kind,
+                target = target,
+                sourceName = savedStateHandle[STATE_PICKER_SOURCE_NAME],
+                frequencyFormat = savedEnum(STATE_PICKER_FREQUENCY_FORMAT),
+                pitchFormat = savedEnum(STATE_PICKER_PITCH_FORMAT),
+                knownWordsFormat = savedEnum(STATE_PICKER_KNOWN_WORDS_FORMAT),
+                uri = savedStateHandle[STATE_PICKER_URI],
+            )
+        return restored.takeIf { request ->
+            when (request.kind) {
+                ResourcePickerKind.CUSTOM_DICTIONARY,
+                ResourcePickerKind.AUDIO_PACK,
+                -> request.target != null
+                ResourcePickerKind.FREQUENCY ->
+                    request.target != null &&
+                        request.sourceName != null &&
+                        request.frequencyFormat != null
+                ResourcePickerKind.PITCH ->
+                    request.target != null &&
+                        request.sourceName != null &&
+                        request.pitchFormat != null
+                ResourcePickerKind.KNOWN_WORDS -> request.knownWordsFormat != null
+            }
+        }
+    }
+
+    private fun clearPendingPicker() {
+        pendingPicker = null
+        listOf(
+            STATE_PICKER_KIND,
+            STATE_PICKER_TARGET_ID,
+            STATE_PICKER_INSTALLED_LABEL,
+            STATE_PICKER_SOURCE_NAME,
+            STATE_PICKER_FREQUENCY_FORMAT,
+            STATE_PICKER_PITCH_FORMAT,
+            STATE_PICKER_KNOWN_WORDS_FORMAT,
+            STATE_PICKER_URI,
+        ).forEach { savedStateHandle.remove<Any>(it) }
+    }
+
+    private fun setPendingReplace(pending: PendingResourceReplace) {
+        savedStateHandle[STATE_REPLACE_KIND] = pending.kind.name
+        savedStateHandle[STATE_REPLACE_IDENTITY] = pending.identity
+        savedStateHandle[STATE_REPLACE_LABEL] = pending.installedLabel
+        saveString(STATE_REPLACE_URI, pending.uri)
+        savedStateHandle[STATE_REPLACE_REPAIR] = pending.repair
+        local.update { it.copy(pendingReplace = pending) }
+    }
+
+    private fun restorePendingReplace(): PendingResourceReplace? {
+        val kind = savedEnum<ResourceReplaceKind>(STATE_REPLACE_KIND) ?: return null
+        val identity = savedStateHandle.get<String>(STATE_REPLACE_IDENTITY) ?: return null
+        val label = savedStateHandle.get<String>(STATE_REPLACE_LABEL) ?: return null
+        return PendingResourceReplace(
+            kind = kind,
+            identity = identity,
+            installedLabel = label,
+            uri = savedStateHandle[STATE_REPLACE_URI],
+            repair = savedStateHandle[STATE_REPLACE_REPAIR] ?: false,
+        )
+    }
+
+    private fun clearPendingReplace(clearPicker: Boolean) {
+        listOf(
+            STATE_REPLACE_KIND,
+            STATE_REPLACE_IDENTITY,
+            STATE_REPLACE_LABEL,
+            STATE_REPLACE_URI,
+            STATE_REPLACE_REPAIR,
+        ).forEach { savedStateHandle.remove<Any>(it) }
+        local.update { it.copy(pendingReplace = null) }
+        if (clearPicker) clearPendingPicker()
+    }
+
+    private inline fun <reified T : Enum<T>> savedEnum(key: String): T? =
+        savedStateHandle.get<String>(key)?.let { saved ->
+            enumValues<T>().firstOrNull { it.name == saved }
+        }
+
+    private fun saveString(
+        key: String,
+        value: String?,
+    ) {
+        if (value == null) {
+            savedStateHandle.remove<String>(key)
+        } else {
+            savedStateHandle[key] = value
+        }
     }
 
     /**
@@ -836,21 +997,53 @@ internal class SetupViewModel(
     private fun sanitizeDisplayName(value: String): String {
         val stripped = value.filter { it.code >= 0x20 }.trim()
         var candidate = UnicodeContractV151.normalizeNfc(stripped) ?: return ""
-        while (candidate.toByteArray(Charsets.UTF_8).size > 512) {
-            candidate = candidate.dropLast(1)
+        while ((UnicodeContractV151.strictUtf8Length(candidate) ?: Int.MAX_VALUE) > 512) {
+            if (candidate.isEmpty()) return ""
+            candidate =
+                candidate.dropLast(
+                    Character.charCount(candidate.codePointBefore(candidate.length)),
+                )
         }
         return candidate.trim()
     }
 
     fun setKnownWordsFormat(value: KnownWordsSourceFormat) {
+        savedStateHandle[STATE_KNOWN_WORDS_FORMAT] = value.name
         local.update { it.copy(knownWordsFormat = value) }
     }
 
-    fun importKnownWords(uri: String) {
+    fun beginKnownWordsPicker(): Boolean {
         val state = currentState()
-        if (state.busy) return
-        val format = state.knownWordsFormat
-        viewModelScope.launch { resources.previewKnownWords(uri, format) }
+        if (state.busy) return false
+        savePendingPicker(
+            PendingResourcePicker(
+                kind = ResourcePickerKind.KNOWN_WORDS,
+                knownWordsFormat = state.knownWordsFormat,
+            ),
+        )
+        return true
+    }
+
+    fun onKnownWordsPicked(uri: String?) =
+        finishPicker(
+            ResourcePickerKind.KNOWN_WORDS,
+            uri,
+            fallback = {
+                PendingResourcePicker(
+                    kind = ResourcePickerKind.KNOWN_WORDS,
+                    knownWordsFormat = currentState().knownWordsFormat,
+                )
+            },
+        )
+
+    fun importKnownWords(uri: String) {
+        savePendingPicker(
+            PendingResourcePicker(
+                kind = ResourcePickerKind.KNOWN_WORDS,
+                knownWordsFormat = currentState().knownWordsFormat,
+            ),
+        )
+        onKnownWordsPicked(uri)
     }
 
     fun importWordList(uri: String, kind: WordListKind) {
@@ -1043,24 +1236,40 @@ internal class SetupViewModel(
         override fun <T : ViewModel> create(modelClass: Class<T>, extras: CreationExtras): T {
             require(modelClass.isAssignableFrom(SetupViewModel::class.java))
             return SetupViewModel(
-                resources = resources,
-                settingsRepository = settings,
-                ankiSetup = ankiSetup,
-                pythonReadiness = python,
-                miningAdmission = admission,
-                runtimeWorkState = runtimeWorkState,
-                refreshExternalReadiness = refreshExternalReadiness,
-                strings = strings,
-                savedStateHandle = savedStateHandleFactory(extras),
+                resources,
+                settings,
+                ankiSetup,
+                python,
+                admission,
+                runtimeWorkState,
+                refreshExternalReadiness,
+                strings,
+                savedStateHandleFactory(extras),
             ) as T
         }
     }
 
     private companion object {
         val SLOT_ID = Regex("(?!.*(?:\\.\\.|--))[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?")
-        const val PENDING_SETTINGS_IMPORT_KIND_KEY = "settingsImport.kind"
-        const val PENDING_SETTINGS_IMPORT_TARGET_KEY = "settingsImport.target"
-        const val PENDING_SETTINGS_IMPORT_SOURCE_NAME_KEY = "settingsImport.sourceName"
-        const val PENDING_SETTINGS_IMPORT_FORMAT_KEY = "settingsImport.format"
+        const val STATE_CUSTOM_SLOT_ID = "setup.customSlotId"
+        const val STATE_FREQUENCY_SOURCE_NAME = "setup.frequencySourceName"
+        const val STATE_FREQUENCY_FORMAT = "setup.frequencyFormat"
+        const val STATE_PITCH_SOURCE_NAME = "setup.pitchSourceName"
+        const val STATE_PITCH_FORMAT = "setup.pitchFormat"
+        const val STATE_AUDIO_PACK_ID = "setup.audioPackId"
+        const val STATE_KNOWN_WORDS_FORMAT = "setup.knownWordsFormat"
+        const val STATE_PICKER_KIND = "setup.picker.kind"
+        const val STATE_PICKER_TARGET_ID = "setup.picker.targetId"
+        const val STATE_PICKER_INSTALLED_LABEL = "setup.picker.installedLabel"
+        const val STATE_PICKER_SOURCE_NAME = "setup.picker.sourceName"
+        const val STATE_PICKER_FREQUENCY_FORMAT = "setup.picker.frequencyFormat"
+        const val STATE_PICKER_PITCH_FORMAT = "setup.picker.pitchFormat"
+        const val STATE_PICKER_KNOWN_WORDS_FORMAT = "setup.picker.knownWordsFormat"
+        const val STATE_PICKER_URI = "setup.picker.uri"
+        const val STATE_REPLACE_KIND = "setup.replace.kind"
+        const val STATE_REPLACE_IDENTITY = "setup.replace.identity"
+        const val STATE_REPLACE_LABEL = "setup.replace.label"
+        const val STATE_REPLACE_URI = "setup.replace.uri"
+        const val STATE_REPLACE_REPAIR = "setup.replace.repair"
     }
 }

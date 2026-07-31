@@ -138,23 +138,23 @@ internal fun SettingsRoute(
     }
     val dictionaryPicker =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-            setupViewModel.completePendingSettingsImport(uri?.toString())
+            setupViewModel.onCustomDictionaryPicked(uri?.toString())
         }
     val frequencyPicker =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-            setupViewModel.completePendingSettingsImport(uri?.toString())
+            setupViewModel.onFrequencyPicked(uri?.toString())
         }
     val pitchPicker =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-            setupViewModel.completePendingSettingsImport(uri?.toString())
+            setupViewModel.onPitchPicked(uri?.toString())
         }
     val audioPackPicker =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-            setupViewModel.completePendingSettingsImport(uri?.toString())
+            setupViewModel.onAudioPackPicked(uri?.toString())
         }
     val knownWordsPicker =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-            setupViewModel.completePendingSettingsImport(uri?.toString())
+            setupViewModel.onKnownWordsPicked(uri?.toString())
         }
     // One launcher per kind: the contract callback cannot receive which list was chosen.
     val blacklistPicker =
@@ -200,27 +200,27 @@ internal fun SettingsRoute(
         requestedCategoryItemIndex = requestedCategoryItemIndex,
         onCategoryRequestConsumed = onCategoryRequestConsumed,
         onImportCustom = {
-            if (setupViewModel.prepareCustomDictionaryImport()) {
+            if (setupViewModel.beginCustomDictionaryPicker()) {
                 dictionaryPicker.launch(CUSTOM_DICTIONARY_MIME_TYPES)
             }
         },
         onImportFrequency = {
-            if (setupViewModel.prepareFrequencyImport()) {
+            if (setupViewModel.beginFrequencyPicker()) {
                 frequencyPicker.launch(FREQUENCY_MIME_TYPES)
             }
         },
         onImportPitch = {
-            if (setupViewModel.preparePitchAccentImport()) {
+            if (setupViewModel.beginPitchPicker()) {
                 pitchPicker.launch(PITCH_MIME_TYPES)
             }
         },
         onImportAudioPack = {
-            if (setupViewModel.prepareAudioPackImport()) {
+            if (setupViewModel.beginAudioPackPicker()) {
                 audioPackPicker.launch(AUDIO_PACK_MIME_TYPES)
             }
         },
         onImportKnownWords = {
-            if (setupViewModel.prepareKnownWordsImport()) {
+            if (setupViewModel.beginKnownWordsPicker()) {
                 knownWordsPicker.launch(KNOWN_WORDS_MIME_TYPES)
             }
         },
@@ -247,9 +247,9 @@ private fun SettingsScreen(
     diagnostics: TesterDiagnosticsIdentity,
     onRetrySave: () -> Unit,
     onDraftChange: (SettingsDraft) -> Unit,
-    onRestoreMiningDefaults: () -> Boolean,
-    onResetAnkiTarget: () -> Boolean,
-    onResetResourceChoices: () -> Boolean,
+    onRestoreMiningDefaults: () -> Unit,
+    onResetAnkiTarget: () -> Unit,
+    onResetResourceChoices: () -> Unit,
     onRequestPermissions: () -> Unit,
     onOpenAppSettings: () -> Unit,
     onInstallAnkiDroid: () -> Unit,
@@ -295,14 +295,14 @@ private fun SettingsScreen(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        val accepted =
-                            dispatchConfirmedSettingsReset(
-                                action = resetConfirmation.pendingAction,
-                                onRestoreMiningDefaults = onRestoreMiningDefaults,
-                                onResetAnkiTarget = onResetAnkiTarget,
-                                onResetResourceChoices = onResetResourceChoices,
-                            )
-                        resetConfirmation = resetConfirmation.confirmIfAccepted(accepted)
+                        val (nextState, confirmedAction) = resetConfirmation.confirm()
+                        resetConfirmation = nextState
+                        dispatchConfirmedSettingsReset(
+                            action = confirmedAction,
+                            onRestoreMiningDefaults = onRestoreMiningDefaults,
+                            onResetAnkiTarget = onResetAnkiTarget,
+                            onResetResourceChoices = onResetResourceChoices,
+                        )
                     },
                 ) {
                     Text(stringResource(settingsResetLabel(action)))

@@ -68,7 +68,7 @@ internal fun KnownWordsManagerRoute(
     val state by setupViewModel.uiState.collectAsStateWithLifecycle()
     val importPicker =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-            uri?.let { setupViewModel.importKnownWords(it.toString()) }
+            setupViewModel.onKnownWordsPicked(uri?.toString())
         }
     val exportPicker =
         rememberLauncherForActivityResult(
@@ -85,7 +85,11 @@ internal fun KnownWordsManagerRoute(
                 onSearch = setupViewModel::searchKnownWords,
                 onLoadMore = setupViewModel::loadMoreKnownWords,
                 onRemove = setupViewModel::removeKnownWord,
-                onImport = { importPicker.launch(KNOWN_WORDS_MIME_TYPES) },
+                onImport = {
+                    if (setupViewModel.beginKnownWordsPicker()) {
+                        importPicker.launch(KNOWN_WORDS_MIME_TYPES)
+                    }
+                },
                 onExport = { exportPicker.launch("known_words.txt") },
                 onReset = setupViewModel::resetKnownWords,
                 onRetry = setupViewModel::retryResourceFailure,

@@ -142,7 +142,11 @@ private class SessionAnkiSetupManager(deckNames: List<String>) : AnkiSetupManage
     override val state: StateFlow<AnkiSetupManagerState> =
         MutableStateFlow(AnkiSetupManagerState(availableDeckNames = deckNames)).asStateFlow()
 
-    override fun refresh(noteType: String?, fieldMap: Map<String, String>) = Unit
+    override fun refresh(
+        noteType: String?,
+        fieldMap: Map<String, String>,
+        cardTypeMarkerField: String?,
+    ) = Unit
 
     override fun reconcileInterruptedWork() = Unit
 

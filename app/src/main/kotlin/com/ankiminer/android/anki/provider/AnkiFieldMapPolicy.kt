@@ -26,21 +26,29 @@ internal data class AnkiFieldMapMergeResult(
  * only unowned destinations. A same-type reselection returns the exact input map.
  */
 internal object AnkiFieldMapPolicy {
+    const val CARD_TYPE_MARKER_KEY = "card_type_marker"
+
     fun merge(
         currentNoteType: String?,
         selectedNoteType: String,
         fieldNames: List<String>,
         currentFieldMap: Map<String, String>,
+        reservedDestinations: Set<String> = emptySet(),
     ): AnkiFieldMapMergeResult {
         if (currentNoteType == selectedNoteType) {
             return AnkiFieldMapMergeResult(currentFieldMap, emptyList())
         }
 
         val merged = AnkiFieldKeys.ALL.associateWithTo(linkedMapOf()) { "" }
-        val usedDestinations = mutableSetOf<String>()
-        fieldNames.firstOrNull()?.let { firstField ->
-            merged[AnkiFieldKeys.WORD] = firstField
-            usedDestinations += firstField
+        val firstField = fieldNames.firstOrNull()
+        val usedDestinations =
+            reservedDestinations
+                .filterTo(mutableSetOf()) { destination ->
+                    destination.isNotEmpty() && destination in fieldNames && destination != firstField
+                }
+        firstField?.let { field ->
+            merged[AnkiFieldKeys.WORD] = field
+            usedDestinations += field
         }
 
         AnkiFieldKeys.OPTIONAL.forEach { key ->
@@ -80,12 +88,14 @@ internal object AnkiFieldMapPolicy {
         logicalKey: String,
         destination: String,
         fieldNames: List<String>,
+        reservedDestinations: Set<String> = emptySet(),
     ): Map<String, String>? {
         if (logicalKey !in AnkiFieldKeys.ALL) return null
         val firstField = fieldNames.firstOrNull() ?: return null
         if (logicalKey == AnkiFieldKeys.WORD && destination.isEmpty()) return null
         if (destination.isNotEmpty()) {
             if (destination !in fieldNames) return null
+            if (destination in reservedDestinations) return null
             if (logicalKey == AnkiFieldKeys.WORD && destination != firstField) return null
             if (logicalKey != AnkiFieldKeys.WORD && destination == firstField) return null
         }
@@ -118,7 +128,15 @@ internal object AnkiFieldMapPolicy {
         logicalKey: String,
         destination: String,
         fieldNames: List<String>,
-    ): Boolean = assign(currentFieldMap, logicalKey, destination, fieldNames) != null
+        reservedDestinations: Set<String> = emptySet(),
+    ): Boolean =
+        assign(
+            currentFieldMap,
+            logicalKey,
+            destination,
+            fieldNames,
+            reservedDestinations,
+        ) != null
 
     fun firstConflict(fieldMap: Map<String, String>): AnkiFieldMapConflict? {
         val ownersByDestination = linkedMapOf<String, MutableList<String>>()

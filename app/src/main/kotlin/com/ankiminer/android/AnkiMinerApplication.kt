@@ -179,11 +179,17 @@ class AnkiMinerApplication : Application() {
                     override fun verifyNoteType(
                         noteType: String?,
                         fieldMap: Map<String, String>,
+                        cardTypeMarkerField: String?,
                         cancellation: AnkiCancellation,
                     ) = if (noteType.isNullOrEmpty()) {
                         NoteTypeSetupStatus.NotSelected
                     } else {
-                        ankiProviderRuntime.verifyUserNoteType(noteType, fieldMap, cancellation)
+                        ankiProviderRuntime.verifyUserNoteType(
+                            noteType,
+                            fieldMap,
+                            cancellation,
+                            cardTypeMarkerField,
+                        )
                     }
 
                     override fun remediationInventory(cancellation: AnkiCancellation) =
@@ -393,7 +399,11 @@ class AnkiMinerApplication : Application() {
      */
     private suspend fun refreshAnkiSetupAndAwait() {
         val settings = settingsRepository.settings.first()
-        ankiSetupManager.refreshAndAwait(settings.noteType, settings.fieldMap)
+        ankiSetupManager.refreshAndAwait(
+            settings.noteType,
+            settings.fieldMap,
+            settings.cardType?.let { settings.cardTypeMarkerField },
+        )
     }
 
     private suspend fun <T> runOnExecutor(
@@ -428,7 +438,15 @@ class AnkiMinerApplication : Application() {
                     true,
                 )
             }
-            when (val status = ankiProviderRuntime.verifyUserNoteType(noteType, settings.fieldMap, cancellation)) {
+            when (
+                val status =
+                    ankiProviderRuntime.verifyUserNoteType(
+                        noteType,
+                        settings.fieldMap,
+                        cancellation,
+                        settings.cardType?.let { settings.cardTypeMarkerField },
+                    )
+            ) {
                 is NoteTypeSetupStatus.Verified -> {
                     val pending = ankiProviderRuntime.remediationInventory(cancellation).pending
                     if (pending.isEmpty()) {
