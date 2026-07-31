@@ -2218,3 +2218,43 @@ def test_audio_pack_import_reads_the_staged_zip_without_copying_it(
     )
 
     assert imported.payload["archiveSha256"] == hashlib.sha256(source.read_bytes()).hexdigest()
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="local-resource importers require the runtime engine dependency set",
+)
+def test_known_words_import_cancelled_before_commit_writes_nothing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A Cancel delivered after parsing must not still commit the import."""
+    home = _local_home(tmp_path, monkeypatch)
+    source = tmp_path / "known.txt"
+    source.write_text("猫\n犬\n", encoding="utf-8")
+
+    from anki_miner.services.known_word_db import KnownWordDB
+
+    real_initialize = KnownWordDB.initialize
+
+    def cancel_during_initialize(self: KnownWordDB) -> None:
+        # Schema setup is the last step before the durable write; cancelling here
+        # lands in the window the final check has to cover.
+        real_initialize(self)
+        resources._OPERATIONS.cancel("known-cancel")
+
+    monkeypatch.setattr(KnownWordDB, "initialize", cancel_during_initialize)
+
+    with pytest.raises(BridgeProtocolError) as cancelled:
+        local_resources.import_known_words(
+            {
+                "operationId": "known-cancel",
+                "sourcePath": str(source),
+                "sourceFormat": "txt",
+            }
+        )
+
+    assert cancelled.value.code == "resource_operation_cancelled"
+    database = KnownWordDB(home / "known_words.db")
+    monkeypatch.setattr(KnownWordDB, "initialize", real_initialize)
+    assert database.get_known_words() == set()
