@@ -143,6 +143,7 @@ class ReadingMiningViewModelTest {
                     repository = repository,
                     safBroker = ImmediateSafBroker(),
                     selectionInventory = inventory,
+                    selectionIoDispatcher = mainDispatcherRule.dispatcher,
                 )
             runCurrent()
 

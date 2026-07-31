@@ -219,6 +219,7 @@ class ResourceManagerTest {
             var failReplacementPublish = false
             val harness =
                 Harness(
+                    sourceLabel = "word-list file",
                     wordListMover = { source, target ->
                         if (
                             failReplacementPublish &&
@@ -306,7 +307,8 @@ class ResourceManagerTest {
                     "resource.knownwords.preview",
                     "resource.knownwords.preview",
                     "resource.knownwords.import",
-                    "resource.catalog.get",
+                    // No resource.catalog.get: the startup recovery barrier already cached the
+                    // pinned catalog, so a committed mutation only re-reads the inventories.
                     "resource.dictionary.list",
                     "resource.local.list",
                 ),
@@ -487,7 +489,7 @@ class ResourceManagerTest {
             assertEquals(ResourceFailureOrigin.SETUP, failure.origin)
             assertEquals(ResourceFailureAction.RETRY, failure.retry.action)
             assertEquals(1, harness.bridge.requestsOfType("resource.knownwords.remove").size)
-            assertEquals(1L, harness.bridge.userCount)
+            assertEquals(1, harness.bridge.userCount)
         }
 
     @Test
@@ -925,7 +927,9 @@ class ResourceManagerTest {
             val dictionaries =
                 if (catalogDictionaryInstalled) {
                     val resource = FrozenResourceCatalog.value.dictionaries.first()
-                    """[{"slotId":"${resource.slotId}","occupied":true,"valid":true,"sourceName":"${resource.dictionary.title}","sourceRevision":"${resource.dictionary.revision}","format":"yomitan","entryCount":1,"schemaOk":true,"embeddedAttribution":{},"catalogResourceId":"${resource.resourceId}","attribution":[]}]"""
+                    // The decoder checks an installed catalog dictionary against the frozen
+                    // catalog identity, attribution included, so echo the catalog's own list.
+                    """[{"slotId":"${resource.slotId}","occupied":true,"valid":true,"sourceName":"${resource.dictionary.title}","sourceRevision":"${resource.dictionary.revision}","format":"yomitan","entryCount":1,"schemaOk":true,"embeddedAttribution":{},"catalogResourceId":"${resource.resourceId}","attribution":${attributionJson(resource.attribution)}}]"""
                 } else {
                     "[]"
                 }
@@ -1010,6 +1014,11 @@ class ResourceManagerTest {
 
         private fun envelope(type: String, payload: String): String =
             """{"schemaVersion":1,"type":"$type","payload":$payload}"""
+
+        private fun attributionJson(entries: List<ResourceAttribution>): String =
+            entries.joinToString(prefix = "[", postfix = "]") { entry ->
+                """{"name":"${entry.name}","copyright":"${entry.copyright}","license":"${entry.license}","url":"${entry.url}"}"""
+            }
 
         private fun requestType(raw: String): String =
             checkNotNull(TYPE_FIELD.find(raw)?.groupValues?.get(1)) { "request type missing" }

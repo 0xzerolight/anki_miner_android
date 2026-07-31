@@ -11,6 +11,7 @@ import com.ankiminer.android.data.resources.KnownWordsSourceFormat
 import com.ankiminer.android.data.resources.PitchAccentSourceFormat
 import com.ankiminer.android.data.resources.ResourceManager
 import com.ankiminer.android.data.resources.ResourceManagerState
+import com.ankiminer.android.data.resources.ResourceStartupReadiness
 import com.ankiminer.android.data.resources.WordListKind
 import com.ankiminer.android.data.settings.AppSettings
 import com.ankiminer.android.data.settings.AppSettingsRepository
@@ -727,8 +728,13 @@ class SettingsViewModelTest {
             assertEquals("Deck", viewModel.draftState.value.draft.deckName)
         }
 
+    // READY: startup recovery gates every setup command, so a PENDING fixture reports busy
+    // and silently drops deck selection.
     private fun resources(vararg ids: String): ResourceManagerState =
-        ResourceManagerState(dictionaries = ids.map(::dictionary))
+        ResourceManagerState(
+            startupReadiness = ResourceStartupReadiness.READY,
+            dictionaries = ids.map(::dictionary),
+        )
 
     private fun dictionary(id: String): InstalledDictionary =
         InstalledDictionary(
