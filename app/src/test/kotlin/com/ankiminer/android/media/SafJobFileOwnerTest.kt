@@ -1,5 +1,9 @@
 package com.ankiminer.android.media
 
+import com.ankiminer.android.diagnostics.log.AppLog
+import com.ankiminer.android.diagnostics.log.LogLevel
+import com.ankiminer.android.diagnostics.log.NoOpSink
+import com.ankiminer.android.diagnostics.log.RecordingLogSink
 import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.IOException
@@ -128,6 +132,41 @@ class SafJobFileOwnerTest {
             assertTrue(first.closed)
             assertTrue(second.closed)
         } finally {
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun closeFailureLogPreservesAggregateSuppressedChain() {
+        val recorded = RecordingLogSink()
+        AppLog.setMinLevel(LogLevel.INFO)
+        AppLog.install(NoOpSink)
+        AppLog.install(recorded)
+        val directory = Files.createTempDirectory("saf-owner-close-log").toFile()
+        try {
+            val first = FakeDescriptor(byteArrayOf(), closeFailure = IOException("first"))
+            val second = FakeDescriptor(byteArrayOf(), closeFailure = IOException("second"))
+            val descriptors = ArrayDeque(listOf(first, second))
+            var caches = 0
+            val owner =
+                SafJobFileOwner(
+                    DescriptorOpener { descriptors.removeFirst() },
+                    CacheFileFactory { suffix ->
+                        caches += 1
+                        File(directory, "copy-$caches$suffix").apply { createNewFile() }
+                    },
+                )
+            owner.openVideoUri("content://test/one")
+            owner.openVideoUri("content://test/two")
+
+            assertThrows(IOException::class.java) { owner.close() }
+
+            val record = recorded.records.single()
+            assertTrue(record, record.contains(" W run=- c=media op=job_files.close outcome=fail"))
+            assertTrue(record, record.contains("java.io.IOException: second"))
+            assertTrue(record, record.contains("Suppressed: java.io.IOException: first"))
+        } finally {
+            AppLog.install(NoOpSink)
             directory.deleteRecursively()
         }
     }

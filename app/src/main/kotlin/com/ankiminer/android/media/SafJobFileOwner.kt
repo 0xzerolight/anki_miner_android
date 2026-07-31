@@ -4,6 +4,8 @@ import android.content.ContentResolver
 import android.content.Context
 import android.net.Uri
 import android.os.ParcelFileDescriptor
+import com.ankiminer.android.diagnostics.log.AppLog
+import com.ankiminer.android.diagnostics.log.LogComponent
 import java.io.Closeable
 import java.io.File
 import java.io.FileNotFoundException
@@ -179,16 +181,31 @@ class SafJobFileOwner internal constructor(
                         throw IOException("Could not remove SAF cache copy: ${cacheFile.absolutePath}")
                     }
                 } catch (cleanupError: Exception) {
+                    AppLog.ignored(
+                        LogComponent.MEDIA,
+                        "job_files.close.cache",
+                        "aggregated_into_close",
+                        cleanupError,
+                    )
                     failure = collectFailure(failure, cleanupError)
                 }
             }
             try {
                 input.descriptor.close()
             } catch (cleanupError: Exception) {
+                AppLog.ignored(
+                    LogComponent.MEDIA,
+                    "job_files.close.descriptor",
+                    "aggregated_into_close",
+                    cleanupError,
+                )
                 failure = collectFailure(failure, cleanupError)
             }
         }
-        failure?.let { throw it }
+        failure?.let {
+            AppLog.w(LogComponent.MEDIA, "job_files.close", it, "outcome" to "fail")
+            throw it
+        }
     }
 
     private fun cleanupFailedOpen(

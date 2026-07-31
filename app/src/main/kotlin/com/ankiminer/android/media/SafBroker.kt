@@ -5,6 +5,8 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.provider.OpenableColumns
+import com.ankiminer.android.diagnostics.log.AppLog
+import com.ankiminer.android.diagnostics.log.LogComponent
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -81,10 +83,20 @@ internal class AndroidSafBroker(
             selectionInventory,
         )
 
-    override suspend fun reconcileStartup() =
-        withContext(ioDispatcher) {
-            synchronized(grantMonitor) { startupReconciler.reconcile() }
-        }
+    override suspend fun reconcileStartup() {
+        val result =
+            withContext(ioDispatcher) {
+                synchronized(grantMonitor) { startupReconciler.reconcile() }
+            }
+        AppLog.i(
+            LogComponent.SAF,
+            "startup.reconcile",
+            "outcome" to "ok",
+            "retained" to result.retained,
+            "released" to result.released,
+            "orphaned" to result.orphaned,
+        )
+    }
 
     override suspend fun retainReadAccess(uri: String): SafDocument =
         withContext(ioDispatcher) {
@@ -197,23 +209,35 @@ internal interface PersistedSafGrantAccess {
     fun releaseReadGrant(uri: String)
 }
 
+internal data class SafStartupReconciliation(
+    val retained: Int,
+    val released: Int,
+    val orphaned: Int,
+)
+
 /** One-shot process-start reconciliation; a failed pass remains retryable on the next retain. */
 internal class OrphanedSafGrantReconciler(
     private val access: PersistedSafGrantAccess,
     private val selectionInventory: SafSelectionInventory = TransientSafSelectionInventory(),
 ) {
-    private var reconciled = false
+    private var result: SafStartupReconciliation? = null
 
-    fun reconcile() {
-        if (reconciled) return
+    fun reconcile(): SafStartupReconciliation {
+        result?.let { return it }
         val grants = access.readGrantUris().toSet()
+        val ownedBefore = selectionInventory.ownedUris()
         selectionInventory.pruneMissingGrants(grants)
         val ownedUris = selectionInventory.ownedUris()
-        grants.filterNot(ownedUris::contains).forEach(access::releaseReadGrant)
-        reconciled = true
+        val releasedUris = grants.filterNot(ownedUris::contains)
+        releasedUris.forEach(access::releaseReadGrant)
+        return SafStartupReconciliation(
+            retained = grants.count(ownedUris::contains),
+            released = releasedUris.size,
+            orphaned = ownedBefore.count { it !in ownedUris },
+        ).also { result = it }
     }
 
-    internal fun isReconciled(): Boolean = reconciled
+    internal fun isReconciled(): Boolean = result != null
 }
 
 /** Reference counts selection ownership so same-URI slots and replace/clear races stay safe. */
