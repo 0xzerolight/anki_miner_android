@@ -199,9 +199,7 @@ def audit(resource_root: Path) -> tuple[int, list[Path]]:
             for quantity, translated_item in translated_resource.items.items():
                 source_item = source_resource.items.get(quantity) or source_resource.items.get("other")
                 if source_item is None:
-                    failures.append(
-                        f"{relative}: source plural {key} has no comparable quantity for {quantity}"
-                    )
+                    failures.append(f"{relative}: source plural {key} has no comparable quantity for {quantity}")
                     continue
                 source_signature = (
                     source_item.format_signature,
