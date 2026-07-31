@@ -79,7 +79,7 @@ class PackagePreflightTest(unittest.TestCase):
                 f"{installed_rows}\n"
                 "Available Updates:\nID | Installed | Available\n"
                 "------- | ------- | -------\n"
-                "emulator | 36.6.11 | 99.0.0\n",
+                f"emulator | {LOCKED_PACKAGES['emulator']} | 99.0.0\n",
                 encoding="utf-8",
             )
             with self.assertRaisesRegex(VerificationError, "stable-channel revision"):
