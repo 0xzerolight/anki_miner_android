@@ -12,6 +12,7 @@ import java.util.ArrayDeque
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -580,6 +581,29 @@ class AnkiProviderReadsTest {
                 }
             assertEquals(case.name, AnkiErrorCode.TARGET_INVALID, failure.code)
             assertEquals(case.name, case.expectedTrace, fixture.gateway.queries.map { it.endpoint })
+        }
+    }
+
+    @Test
+    fun `every provider failure kind keeps its platform cause across the read seam`() {
+        // Over entries rather than a fixed list: a kind added later gets an arm in toReadFailure,
+        // and an arm that forgets the cause is the bug this guards.
+        for (kind in ProviderFailureKind.entries) {
+            val platform = SecurityException("com.ichi2.anki denied READ")
+            val gateway = FakeAnkiProviderGateway()
+            gateway.queryHandler = { _, _ -> throw ProviderGatewayException(kind, platform) }
+
+            val failure =
+                assertThrows("kind $kind", AnkiReadFailure::class.java) {
+                    AnkiProviderReadService(gateway, AnkiRunStateRegistry())
+                        .listDeckNames(AnkiCancellation.NONE)
+                }
+
+            // stableMessage is category-level on purpose, so without the chain a log says an Anki
+            // read failed and never which platform refusal did it.
+            val gatewayFailure = failure.cause as? ProviderGatewayException
+            assertEquals("kind $kind", kind, gatewayFailure?.kind)
+            assertSame("kind $kind", platform, gatewayFailure?.cause)
         }
     }
 
