@@ -203,10 +203,15 @@ internal class DiagnosticsBundleWriter(
                 is BundleShedding.Shrink -> {
                     val current = caps.getValue(name)
                     if (current > policy.floorBytes) {
+                        val tail = candidate.tailAt(current)
+                        val retainedBytes = tail.totalBytes - tail.omittedBytes
                         caps[name] =
                             maxOf(
                                 policy.floorBytes,
-                                current - maxOf(excessBytes, 1L),
+                                minOf(
+                                    current - maxOf(excessBytes, 1L),
+                                    retainedBytes - 1,
+                                ),
                             )
                         return true
                     }

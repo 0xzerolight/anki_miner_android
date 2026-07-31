@@ -53,15 +53,20 @@ internal class LogcatCapture(
                     continue
                 }
             lastExitCode = read.exitCode
+            if (read.timedOut && read.tail.text.isNotEmpty()) {
+                return LogcatCaptureResult(
+                    text = read.tail.text,
+                    status = LogcatCaptureStatus.TIMEOUT,
+                    exitCode = read.exitCode,
+                    omittedBytes = read.tail.omittedBytes,
+                    omittedLines = read.tail.omittedLines,
+                )
+            }
+            if (read.exitCode != 0) continue
             if (read.tail.text.isNotEmpty()) {
                 return LogcatCaptureResult(
                     text = read.tail.text,
-                    status =
-                        if (read.timedOut) {
-                            LogcatCaptureStatus.TIMEOUT
-                        } else {
-                            LogcatCaptureStatus.CAPTURED
-                        },
+                    status = LogcatCaptureStatus.CAPTURED,
                     exitCode = read.exitCode,
                     omittedBytes = read.tail.omittedBytes,
                     omittedLines = read.tail.omittedLines,

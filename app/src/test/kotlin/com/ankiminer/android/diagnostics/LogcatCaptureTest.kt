@@ -91,6 +91,57 @@ class LogcatCaptureTest {
         }
 
     @Test
+    fun `nonzero output falls through to a successful fallback`() =
+        runTest {
+            val seen = mutableListOf<List<String>>()
+            val reader =
+                LogcatCommandReader { command, _, maxBytes ->
+                    seen += command
+                    val success = seen.size == 2
+                    val bytes =
+                        if (success) "recent logcat\n".toByteArray() else "logcat: bad option\n".toByteArray()
+                    LogcatReadResult(
+                        tail = LogTail.of(ByteArrayInputStream(bytes), maxBytes),
+                        exitCode = if (success) 0 else 1,
+                        timedOut = false,
+                    )
+                }
+
+            val result = LogcatCapture(reader).capture()
+
+            assertEquals(LogcatCaptureStatus.CAPTURED, result.status)
+            assertEquals("recent logcat\n", result.text)
+            assertEquals(0, result.exitCode)
+            assertEquals(LogcatCommand.candidates().take(2), seen)
+        }
+
+    @Test
+    fun `nonzero output from every candidate is unavailable`() =
+        runTest {
+            var attempts = 0
+            val reader =
+                LogcatCommandReader { _, _, maxBytes ->
+                    attempts++
+                    LogcatReadResult(
+                        tail =
+                            LogTail.of(
+                                ByteArrayInputStream("logcat: rejected options\n".toByteArray()),
+                                maxBytes,
+                            ),
+                        exitCode = 2,
+                        timedOut = false,
+                    )
+                }
+
+            val result = LogcatCapture(reader).capture()
+
+            assertEquals(LogcatCaptureStatus.UNAVAILABLE, result.status)
+            assertEquals("", result.text)
+            assertEquals(2, result.exitCode)
+            assertEquals(LogcatCommand.candidates().size, attempts)
+        }
+
+    @Test
     fun `timeout keeps partial bytes and reports timeout status`() =
         runTest {
             val reader =
