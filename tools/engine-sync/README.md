@@ -55,7 +55,7 @@ command at a newer desktop exporter fails rather than silently changing the
 contract. The frozen desktop v2 contract still names the earlier Android
 engine revision. Before derivation, the runner therefore materializes an
 attested exporter trio and changes only that revision constant to `engine.lock`'s
-reviewed `6f57f83` pin. Both SHA-256 and Git-blob identities bind the desktop
+reviewed `2d227dd` pin. Both SHA-256 and Git-blob identities bind the desktop
 sources, and the fixture records the hashes of the actual materialized files.
 Any upstream exporter change requires an explicit rebase in
 `golden_exporter_overlay.py` — all three constants for the changed file:
@@ -107,7 +107,7 @@ resolved directory to the exporter, and records it under the reserved
 `unidic_dicdir` asset name.
 
 `engine-v1.json` is frozen at desktop revision `ba3b3cf`, which predates the
-`6f57f83` in `engine.lock`. `run_goldens.py` takes its expected revision from
+`2d227dd` in `engine.lock`. `run_goldens.py` takes its expected revision from
 `--lock`, so reproducing v1 means pointing both `--engine-root` and `--lock` at
 `ba3b3cf`; against the current lock the run fails the revision check. Pass
 `--check` too — `--output` defaults to the committed fixture, so a run without
