@@ -135,6 +135,7 @@ internal object TesterDiagnosticsBuilder {
                 line("resources.fault_id", safeCode(setup.failure?.faultId))
                 line("mining.fault_id", miningFaultId(video.runState, reading.runState))
                 line("mining.run_id", miningRunId(video.runState, reading.runState))
+                line("mining.failure_code", miningFailureCode(video.runState, reading.runState))
                 line("anki.provider", ankiReadiness(setup.anki))
                 line("anki.recovery_startup", ankiRecoveryReadiness(setup.ankiRecovery))
                 line(
@@ -238,6 +239,14 @@ internal object TesterDiagnosticsBuilder {
      */
     private fun miningRunId(vararg states: MiningRunState): String =
         safeCode(states.firstNotNullOfOrNull { (it as? MiningRunState.Failed)?.runId })
+
+    /**
+     * The locale-independent half of the failure. `MiningFailure.message` is localized and is never
+     * put in this report, so without a code a report from a non-English device says only that a
+     * mining run failed.
+     */
+    private fun miningFailureCode(vararg states: MiningRunState): String =
+        safeCode(states.firstNotNullOfOrNull { (it as? MiningRunState.Failed)?.failure?.diagnostic })
 
     private fun videoPending(state: VideoMiningUiState): String =
         pendingLabels(

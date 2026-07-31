@@ -233,6 +233,16 @@ data class MiningFailure(
      * Kotlin-side failure, which has no Python traceback to point at, constructs unchanged.
      */
     val faultId: String? = null,
+    /**
+     * Stable snake_case name of what failed, for diagnostics only — never shown to the user, and no
+     * UI copy may be derived from it.
+     *
+     * [message] is localized and is the only thing a tester can quote, so a report from a non-English
+     * device names the failure in a language the maintainer may not read; two different failures can
+     * also resolve to the same string. This is the locale-independent half. It is a code, never a
+     * throwable: this class is compared by value in the JVM tests.
+     */
+    val diagnostic: String? = null,
 ) {
     init {
         require(message.isNotBlank())

@@ -136,6 +136,7 @@ internal class BridgeReadingMiningRepository(
     private data class ProtocolFault(
         val message: String,
         val retryable: Boolean = false,
+        val diagnostic: String? = null,
     )
 
     private class ActiveRun(
@@ -683,6 +684,9 @@ internal class BridgeReadingMiningRepository(
                                     ?: strings.resolve(R.string.mining_failure_generic),
                             retryable = terminal.error?.code in RETRYABLE_TERMINAL_ERRORS,
                             faultId = terminal.error?.faultId,
+                            // The engine's own terminal code: already snake_case on the wire and
+                            // already validated by the codec, so there is nothing to invent here.
+                            diagnostic = terminal.error?.code,
                         ),
                     result = result,
                 )
@@ -702,7 +706,11 @@ internal class BridgeReadingMiningRepository(
             try {
                 foregroundStarter.startSession(request.runId, generation, listener)
             } catch (_: RuntimeException) {
-                recordFaultAndCancel(generation, strings.resolve(R.string.mining_failure_background_start))
+                recordFaultAndCancel(
+                    generation,
+                    strings.resolve(R.string.mining_failure_background_start),
+                    diagnostic = "foreground_start_rejected",
+                )
                 return
             }
         val lease =
@@ -710,7 +718,11 @@ internal class BridgeReadingMiningRepository(
                 future.get(foregroundStartTimeoutSeconds, TimeUnit.SECONDS)
             } catch (_: Exception) {
                 future.cancel(false)
-                recordFaultAndCancel(generation, strings.resolve(R.string.mining_failure_background_start_unsafe))
+                recordFaultAndCancel(
+                    generation,
+                    strings.resolve(R.string.mining_failure_background_start_unsafe),
+                    diagnostic = "foreground_start_unconfirmed",
+                )
                 return
             }
 
@@ -1181,7 +1193,11 @@ internal class BridgeReadingMiningRepository(
         try {
             block()
         } catch (failure: RuntimeException) {
-            recordFaultAndCancel(generation, strings.resolve(R.string.mining_failure_python_callback))
+            recordFaultAndCancel(
+                generation,
+                strings.resolve(R.string.mining_failure_python_callback),
+                diagnostic = "python_callback_protocol",
+            )
             throw IllegalStateException("Invalid Python callback", failure)
         }
     }
@@ -1356,11 +1372,14 @@ internal class BridgeReadingMiningRepository(
     private fun recordFaultAndCancel(
         generation: Long,
         message: String,
+        diagnostic: String? = null,
     ) {
         val action =
             synchronized(monitor) {
                 val run = activeFor(generation) ?: return
-                if (run.stickyFault == null) run.stickyFault = ProtocolFault(message)
+                if (run.stickyFault == null) {
+                    run.stickyFault = ProtocolFault(message, diagnostic = diagnostic)
+                }
                 markCancellationLocked(run)
                 Pair(
                     run.cancellation,
@@ -1375,10 +1394,11 @@ internal class BridgeReadingMiningRepository(
         generation: Long,
         message: String,
         retryable: Boolean = false,
+        diagnostic: String? = null,
     ) {
         synchronized(monitor) {
             val run = activeFor(generation) ?: return
-            if (run.stickyFault == null) run.stickyFault = ProtocolFault(message, retryable)
+            if (run.stickyFault == null) run.stickyFault = ProtocolFault(message, retryable, diagnostic)
         }
     }
 
@@ -1406,7 +1426,7 @@ internal class BridgeReadingMiningRepository(
     ): MiningRunState.Failed =
         MiningRunState.Failed(
             runId = runId,
-            failure = MiningFailure(message, retryable, faultId),
+            failure = MiningFailure(message, retryable, faultId, diagnostic),
             result = result,
         )
 

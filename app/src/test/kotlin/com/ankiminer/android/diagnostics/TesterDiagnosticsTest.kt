@@ -104,7 +104,13 @@ class TesterDiagnosticsTest {
                         runState =
                             MiningRunState.Failed(
                                 runId = "run_0123456789abcdef0123456789abcdef",
-                                failure = MiningFailure("Secret video failure detail", true, "f0123abcd"),
+                                failure =
+                                    MiningFailure(
+                                        "Secret video failure detail",
+                                        true,
+                                        "f0123abcd",
+                                        "foreground_start_unconfirmed",
+                                    ),
                                 result = null,
                             ),
                         startPending = true,
@@ -155,6 +161,9 @@ class TesterDiagnosticsTest {
         assertTrue(diagnostics.report.contains("mining.fault_id=f0123abcd"))
         assertTrue(diagnostics.report.contains("resources.fault_id=fbeef1234"))
         assertTrue(diagnostics.report.contains("mining.run_id=run_0123456789abcdef0123456789abcdef"))
+        // The code is reported while the message it accompanies is not: the message is localized
+        // free text, the code is neither.
+        assertTrue(diagnostics.report.contains("mining.failure_code=foreground_start_unconfirmed"))
         assertTrue(diagnostics.report.length <= 4_096)
 
         listOf(
@@ -183,6 +192,7 @@ class TesterDiagnosticsTest {
 
         assertTrue(withoutFault.report.contains("anki.last_fault=none"))
         assertTrue(withoutFault.report.contains("mining.run_id=none"))
+        assertTrue(withoutFault.report.contains("mining.failure_code=none"))
 
         val withFault =
             TesterDiagnosticsBuilder.build(

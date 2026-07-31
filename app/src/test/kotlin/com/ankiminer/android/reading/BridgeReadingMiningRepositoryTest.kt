@@ -681,6 +681,8 @@ class BridgeReadingMiningRepositoryTest {
         val failed = awaitState(harness.repository, MiningRunState::isTerminal) as MiningRunState.Failed
         assertEquals("Mining failed", failed.failure.message)
         assertEquals(TERMINAL_FAULT_ID, failed.failure.faultId)
+        // The engine's terminal code, kept beside the localized message it cannot replace.
+        assertEquals("engine_error", failed.failure.diagnostic)
     }
 
     @Test
@@ -699,6 +701,9 @@ class BridgeReadingMiningRepositoryTest {
         val failed = awaitState(harness.repository, MiningRunState::isTerminal) as MiningRunState.Failed
         assertEquals("Anki cleanup remained incomplete", failed.failure.message)
         assertEquals(TERMINAL_FAULT_ID, failed.failure.faultId)
+        // The Kotlin fault owns the message, so it owns the code too. This site has no code of its
+        // own, and inheriting the engine's would claim a Python origin the failure does not have.
+        assertNull(failed.failure.diagnostic)
     }
 
     private fun zipBytes(vararg members: Pair<String, ByteArray>): ByteArray {
