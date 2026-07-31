@@ -1,5 +1,6 @@
 package com.ankiminer.android.anki.provider
 
+import com.ankiminer.android.anki.protocol.AnkiErrorCode
 import com.ankiminer.android.anki.protocol.AnkiJsonCodec
 import com.ankiminer.android.anki.protocol.AnkiOperation
 import com.ankiminer.android.anki.protocol.StoreMediaRequest
@@ -7,19 +8,40 @@ import com.ankiminer.android.anki.protocol.StoreMediaResult
 import com.ankiminer.android.anki.protocol.StoredMedia
 import com.ankiminer.android.anki.protocol.VerifyTargetResult
 import com.ankiminer.android.diagnostics.AnkiFaultRecorder
+import com.ankiminer.android.diagnostics.log.AppLog
+import com.ankiminer.android.diagnostics.log.LogContext
+import com.ankiminer.android.diagnostics.log.LogLevel
+import com.ankiminer.android.diagnostics.log.NoOpSink
+import com.ankiminer.android.diagnostics.log.RecordingLogSink
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.concurrent.thread
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 
 class AnkiProviderCallbacksTest {
+    private val recorded = RecordingLogSink()
+
+    @Before
+    fun installRecordingSink() {
+        AppLog.setMinLevel(LogLevel.INFO)
+        AppLog.install(NoOpSink)
+        AppLog.install(recorded)
+    }
+
+    @After
+    fun detachRecordingSink() {
+        AppLog.install(NoOpSink)
+    }
+
     @Test
     fun `registration checks worker and closed recovery gate before registry admission`() {
         var guardCalls = 0
@@ -93,6 +115,32 @@ class AnkiProviderCallbacksTest {
         val wrongOperation = harness.callbacks.ankiVerifyTarget(releaseEnvelope())
         assertTrue(wrongOperation.contains("\"code\":\"invalid_request\""))
         assertTrue(harness.gateway.queries.isEmpty())
+    }
+
+    @Test
+    fun `worker guard failure logs ambient run beside placeholder wire run`() {
+        val failure = IllegalStateException("main thread")
+        val harness =
+            harness(
+                register = false,
+                guard = WorkerThreadGuard { throw failure },
+            )
+
+        val encoded =
+            LogContext.withRunId(RUN_ID) {
+                harness.callbacks.ankiScanFirstFields(knownEnvelope())
+            }
+
+        assertTrue(encoded.contains("\"runId\":\"run_00000000000000000000000000000000\""))
+        val record = recorded.records.single()
+        assertTrue(
+            record,
+            record.contains(
+                " E run=$RUN_ID c=anki op=scanFirstFields outcome=fail " +
+                    "wire_run=run_00000000000000000000000000000000",
+            ),
+        )
+        assertTrue(record, record.contains("java.lang.IllegalStateException: main thread"))
     }
 
     @Test
@@ -654,6 +702,39 @@ class AnkiProviderCallbacksTest {
         assertTrue(encoded.contains("\"code\":\"cancelled\""))
         assertTrue(encoded.contains("\"message\":\"The Anki operation was cancelled\""))
         assertNull(AnkiFaultRecorder.lastFault())
+    }
+
+    @Test
+    fun `typed read failure logs retained provider cause at callback consumer`() {
+        val providerCause = SecurityException("provider permission changed")
+        val harness =
+            harness(
+                mediaMutations =
+                    FakeMediaMutationService { _, _ ->
+                        throw AnkiReadFailure(
+                            code = AnkiErrorCode.PERMISSION_REQUIRED,
+                            retryable = false,
+                            stableMessage = "AnkiDroid permission is required",
+                            cause = providerCause,
+                        )
+                    },
+            )
+
+        val encoded =
+            LogContext.withRunId(RUN_ID) {
+                harness.callbacks.ankiStoreMedia(storeMediaEnvelope())
+            }
+
+        assertTrue(encoded.contains("\"code\":\"permission_required\""))
+        val record = recorded.records.single()
+        assertTrue(
+            record,
+            record.contains(
+                " E run=$RUN_ID c=anki op=storeMedia outcome=fail code=permission_required",
+            ),
+        )
+        assertTrue(record, record.contains("java.lang.SecurityException: provider permission changed"))
+        assertFalse(record, record.contains("AnkiReadFailure"))
     }
 
     private fun harness(

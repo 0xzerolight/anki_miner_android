@@ -18,6 +18,8 @@ import com.ankiminer.android.anki.protocol.StoredMedia
 import com.ankiminer.android.anki.protocol.VerifyTargetRequest
 import com.ankiminer.android.diagnostics.AnkiFaultRecorder
 import com.ankiminer.android.diagnostics.compactFaultToken
+import com.ankiminer.android.diagnostics.log.AppLog
+import com.ankiminer.android.diagnostics.log.LogComponent
 import java.util.Collections
 
 internal fun interface AnkiProviderResponseEncoder {
@@ -243,7 +245,14 @@ internal class AnkiProviderCallbacks(
         try {
             workerThreadGuard.checkWorkerThread()
             null
-        } catch (_: RuntimeException) {
+        } catch (failure: RuntimeException) {
+            AppLog.e(
+                LogComponent.ANKI,
+                operation.wireName,
+                failure,
+                "outcome" to "fail",
+                "wire_run" to PLACEHOLDER_RUN_ID,
+            )
             fixedErrorEnvelope(
                 runId = PLACEHOLDER_RUN_ID,
                 requestId = PLACEHOLDER_REQUEST_ID,
@@ -303,8 +312,16 @@ internal class AnkiProviderCallbacks(
         failure: RuntimeException,
     ): AnkiResponse =
         when (failure) {
-            is AnkiReadFailure ->
+            is AnkiReadFailure -> {
+                AppLog.e(
+                    LogComponent.ANKI,
+                    request.operation.wireName,
+                    failure.cause ?: failure,
+                    "outcome" to "fail",
+                    "code" to failure.code.wireName,
+                )
                 request.error(failure.code, failure.stableMessage, failure.retryable)
+            }
             is RunNotRegisteredException ->
                 request.error(
                     AnkiErrorCode.INVALID_REQUEST,

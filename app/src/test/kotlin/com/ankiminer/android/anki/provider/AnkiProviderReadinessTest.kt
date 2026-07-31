@@ -1,10 +1,30 @@
 package com.ankiminer.android.anki.provider
 
+import com.ankiminer.android.diagnostics.log.AppLog
+import com.ankiminer.android.diagnostics.log.LogLevel
+import com.ankiminer.android.diagnostics.log.NoOpSink
+import com.ankiminer.android.diagnostics.log.RecordingLogSink
+import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 
 class AnkiProviderReadinessTest {
     private val worker = WorkerThreadGuard { }
+    private val recorded = RecordingLogSink()
+
+    @Before
+    fun installRecordingSink() {
+        AppLog.setMinLevel(LogLevel.INFO)
+        AppLog.install(NoOpSink)
+        AppLog.install(recorded)
+    }
+
+    @After
+    fun detachRecordingSink() {
+        AppLog.install(NoOpSink)
+    }
 
     @Test
     fun `access outcomes remain distinct while local recovery is still attempted`() {
@@ -73,6 +93,38 @@ class AnkiProviderReadinessTest {
         assertEquals(AnkiProviderReadiness.NotInstalled, result.provider)
         assertEquals(AnkiRecoveryReadiness.NotChecked, result.recovery)
         assertEquals(0, recoveryCalls)
+    }
+
+    @Test
+    fun `unexpected access and collection faults are logged before readiness degrades`() {
+        val accessFailure = IllegalStateException("access fault")
+        val absent =
+            AnkiProviderReadinessProbe(
+                workerThreadGuard = worker,
+                accessStatus = { throw accessFailure },
+                proveCollectionOperational = {},
+                recoverLocalState = {},
+            ).probe()
+        val collectionFailure = IllegalArgumentException("collection fault")
+        val uninitialized =
+            probe(
+                ProviderAccessStatus.Available("com.ichi2.anki", 2, 42L),
+                operational = { throw collectionFailure },
+            )
+
+        assertEquals(AnkiProviderReadiness.NotInstalled, absent.provider)
+        assertEquals(AnkiProviderReadiness.Uninitialized, uninitialized.provider)
+        assertEquals(2, recorded.records.size)
+        assertTrue(
+            recorded.records[0],
+            recorded.records[0].contains(" E run=- c=anki op=readiness.access outcome=fail"),
+        )
+        assertTrue(recorded.records[0], recorded.records[0].contains("java.lang.IllegalStateException: access fault"))
+        assertTrue(
+            recorded.records[1],
+            recorded.records[1].contains(" E run=- c=anki op=readiness.collection outcome=fail"),
+        )
+        assertTrue(recorded.records[1], recorded.records[1].contains("java.lang.IllegalArgumentException: collection fault"))
     }
 
     private fun probe(
