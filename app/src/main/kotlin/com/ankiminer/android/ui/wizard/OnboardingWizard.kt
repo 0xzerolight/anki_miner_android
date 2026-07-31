@@ -238,8 +238,9 @@ internal fun OnboardingWizardContent(
         }
     }
     BackHandler(
-        enabled = state.wizardCompletion != WizardCompletionStatus.SAVING,
-        onBack = requestBack,
+        onBack = {
+            if (state.wizardCompletion != WizardCompletionStatus.SAVING) requestBack()
+        },
     )
     val headingFocusRequester = remember { FocusRequester() }
     LaunchedEffect(step) {
