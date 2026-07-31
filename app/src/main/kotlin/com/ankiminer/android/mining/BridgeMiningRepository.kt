@@ -10,6 +10,7 @@ import com.ankiminer.android.diagnostics.log.LogComponent
 import com.ankiminer.android.diagnostics.log.LogContext
 import com.ankiminer.android.engine.BridgeJsonCodec
 import com.ankiminer.android.engine.BridgeMessage
+import com.ankiminer.android.engine.BridgeProtocolException
 import com.ankiminer.android.engine.EngineCallbacks
 import com.ankiminer.android.engine.MiningConfigSnapshot
 import com.ankiminer.android.engine.MiningOutcome
@@ -26,6 +27,7 @@ import com.ankiminer.android.service.MiningForegroundProgress
 import com.ankiminer.android.service.MiningForegroundSessionIdentity
 import com.ankiminer.android.service.MiningForegroundSessionListener
 import java.text.Normalizer
+import java.util.concurrent.CancellationException
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.TimeUnit
@@ -695,6 +697,9 @@ internal class BridgeMiningRepository(
         val lease =
             try {
                 future.get(foregroundStartTimeoutSeconds, TimeUnit.SECONDS)
+            } catch (_: CancellationException) {
+                handleForegroundStartCancellation(generation, future)
+                return
             } catch (failure: TimeoutException) {
                 handleForegroundStartFailure(
                     generation,
@@ -789,6 +794,18 @@ internal class BridgeMiningRepository(
             generation,
             strings.resolve(R.string.mining_failure_background_start_unsafe),
             diagnostic = diagnostic,
+        )
+    }
+
+    private fun handleForegroundStartCancellation(
+        generation: Long,
+        future: CompletableFuture<MiningForegroundLease>,
+    ) {
+        future.cancel(false)
+        recordFaultAndCancel(
+            generation,
+            strings.resolve(R.string.mining_failure_background_start_unsafe),
+            diagnostic = "foreground_start_cancelled",
         )
     }
 
@@ -1208,7 +1225,17 @@ internal class BridgeMiningRepository(
         try {
             block()
         } catch (failure: RuntimeException) {
-            AppLog.e(LogComponent.MINING, callback, failure, "outcome" to "fail")
+            if (failure is BridgeProtocolException) {
+                AppLog.e(
+                    LogComponent.MINING,
+                    callback,
+                    failure,
+                    "outcome" to "fail",
+                    "category" to failure.category.name,
+                )
+            } else {
+                AppLog.e(LogComponent.MINING, callback, failure, "outcome" to "fail")
+            }
             recordFaultAndCancel(
                 generation,
                 strings.resolve(R.string.mining_failure_python_callback),
@@ -1313,7 +1340,7 @@ internal class BridgeMiningRepository(
     ): BridgeMessage {
         val runId = synchronized(monitor) { activeFor(generation)?.runId }
             ?: throw IllegalStateException("Python callback arrived before job registration")
-        return BridgeJsonCodec.decode(raw, expectedRunId = runId)
+        return BridgeJsonCodec.decodeCallback(raw, expectedRunId = runId)
     }
 
     /**

@@ -127,9 +127,7 @@ internal class ChaquopyPyBridge(
         // bounded prefix scan rather than a parse.
         val type = bridgeEnvelopeType(rawRequest)
         val startedNanos = System.nanoTime()
-        AppLog.d(LogComponent.BRIDGE, "dispatch") {
-            arrayOf("at" to "enter", "type" to type, "bytes" to utf8Length(rawRequest))
-        }
+        emitDispatchEntry(type, rawRequest)
         val response =
             try {
                 val result =
@@ -162,6 +160,20 @@ internal class ChaquopyPyBridge(
             )
         }
         return response
+    }
+}
+
+internal fun emitDispatchEntry(
+    type: String,
+    rawRequest: String,
+) {
+    AppLog.d(LogComponent.BRIDGE, "dispatch") {
+        arrayOf(
+            "at" to "enter",
+            "type" to type,
+            "bytes" to utf8Length(rawRequest),
+            "outcome" to "ok",
+        )
     }
 }
 

@@ -89,6 +89,20 @@ object BridgeJsonCodec {
         raw: String,
         expectedRunId: String? = null,
         expectedRequestId: String? = null,
+    ): BridgeMessage =
+        decode(raw, expectedRunId, expectedRequestId, logFailure = true)
+
+    internal fun decodeCallback(
+        raw: String,
+        expectedRunId: String,
+    ): BridgeMessage =
+        decode(raw, expectedRunId, expectedRequestId = null, logFailure = false)
+
+    private fun decode(
+        raw: String,
+        expectedRunId: String?,
+        expectedRequestId: String?,
+        logFailure: Boolean,
     ): BridgeMessage {
         if (raw.startsWith('\uFEFF')) fail(BridgeProtocolCategory.INVALID_JSON, "a leading BOM is not JSON whitespace")
         val bytes = strictUtf8(raw)
@@ -99,22 +113,22 @@ object BridgeJsonCodec {
             } catch (error: BridgeProtocolException) {
                 // Every classification raised inside readEnvelope funnels through this one clause,
                 // so this record covers all of them and none of them needs a line of its own.
-                warnDecode(error.category, bytes.size, error)
+                if (logFailure) warnDecode(error.category, bytes.size, error)
                 throw error
             } catch (error: StreamConstraintsException) {
-                failDecode(BridgeProtocolCategory.INVALID_JSON, "bridge JSON exceeds a structural limit", bytes.size, error)
+                failDecode(BridgeProtocolCategory.INVALID_JSON, "bridge JSON exceeds a structural limit", bytes.size, error, logFailure)
             } catch (error: JsonParseException) {
                 val duplicate = error.originalMessage.contains("Duplicate field", ignoreCase = true)
                 val surrogate = error.originalMessage.contains("surrogate", ignoreCase = true)
                 when {
-                    duplicate -> failDecode(BridgeProtocolCategory.DUPLICATE_JSON_KEY, "bridge JSON contains a duplicate key", bytes.size, error)
-                    surrogate -> failDecode(BridgeProtocolCategory.INVALID_UTF8, "bridge JSON contains an invalid Unicode scalar", bytes.size, error)
-                    else -> failDecode(BridgeProtocolCategory.INVALID_JSON, "malformed bridge JSON", bytes.size, error)
+                    duplicate -> failDecode(BridgeProtocolCategory.DUPLICATE_JSON_KEY, "bridge JSON contains a duplicate key", bytes.size, error, logFailure)
+                    surrogate -> failDecode(BridgeProtocolCategory.INVALID_UTF8, "bridge JSON contains an invalid Unicode scalar", bytes.size, error, logFailure)
+                    else -> failDecode(BridgeProtocolCategory.INVALID_JSON, "malformed bridge JSON", bytes.size, error, logFailure)
                 }
             } catch (error: IOException) {
-                failDecode(BridgeProtocolCategory.INVALID_JSON, "malformed bridge JSON", bytes.size, error)
+                failDecode(BridgeProtocolCategory.INVALID_JSON, "malformed bridge JSON", bytes.size, error, logFailure)
             } catch (error: IllegalArgumentException) {
-                failDecode(BridgeProtocolCategory.INVALID_VALUE, "bridge payload violates its model invariants", bytes.size, error)
+                failDecode(BridgeProtocolCategory.INVALID_VALUE, "bridge payload violates its model invariants", bytes.size, error, logFailure)
             }
         val (runId, requestId) = identifiers(decoded)
         if (expectedRunId != null && runId != null && runId != expectedRunId) {
@@ -1529,8 +1543,9 @@ object BridgeJsonCodec {
         message: String,
         bytes: Int,
         cause: Throwable,
+        logFailure: Boolean,
     ): Nothing {
-        warnDecode(category, bytes, cause)
+        if (logFailure) warnDecode(category, bytes, cause)
         fail(category, message, cause)
     }
 

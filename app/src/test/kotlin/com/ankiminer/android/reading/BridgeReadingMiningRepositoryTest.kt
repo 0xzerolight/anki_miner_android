@@ -31,6 +31,7 @@ import com.ankiminer.android.mining.MiningTaskExecutor
 import com.ankiminer.android.mining.SourceGrantReleaser
 import com.ankiminer.android.mining.asMiningTaskExecutor
 import com.ankiminer.android.mining.isTerminal
+import com.ankiminer.android.service.ForegroundSessionRegistry
 import com.ankiminer.android.service.MiningForegroundLease
 import com.ankiminer.android.service.MiningForegroundProgress
 import com.ankiminer.android.service.MiningForegroundSessionIdentity
@@ -168,6 +169,36 @@ class BridgeReadingMiningRepositoryTest {
     }
 
     @Test
+    fun `a malformed callback has one owner with its callback and category`() {
+        val harness = harness(expressionAudioFieldMapped = true)
+
+        runBlocking { harness.repository.startReading(INPUT) }
+        awaitState(harness.repository) { it is MiningRunState.Curating }
+
+        assertThrows(IllegalStateException::class.java) {
+            harness.bridge.runCallbacks!!.onStage(
+                """{"schemaVersion":2,"type":"progress.stage","payload":{}}""",
+            )
+        }
+        harness.bridge.allowTerminal.countDown()
+        awaitState(harness.repository, MiningRunState::isTerminal)
+
+        val records =
+            recorded.records.filter { record ->
+                record.contains("op=codec.decode") || record.contains("op=onStage")
+            }
+        assertEquals(1, records.size)
+        val record = records.single()
+        assertTrue(
+            record,
+            record.contains(
+                " E run=- c=reading op=onStage outcome=fail " +
+                    "category=UNSUPPORTED_SCHEMA_VERSION",
+            ),
+        )
+    }
+
+    @Test
     fun `an Anki callback failure carries the provider code and its cause`() {
         val harness =
             harness(
@@ -231,6 +262,35 @@ class BridgeReadingMiningRepositoryTest {
         assertTrue(harness.foreground.cancelObservedInterrupt.get())
         val record = recorded.records.single { it.contains("op=foreground.start") }
         assertTrue(record, record.contains("java.lang.InterruptedException: test promotion interruption"))
+    }
+
+    @Test
+    fun `abandoned foreground start ends the run without propagating or logging an error`() {
+        val harness =
+            harness(
+                expressionAudioFieldMapped = true,
+                foregroundFailure = ForegroundStartFailure.ABANDONED,
+            )
+
+        runBlocking { harness.repository.startReading(INPUT) }
+        val curating =
+            awaitState(harness.repository) { it is MiningRunState.Curating } as MiningRunState.Curating
+        runBlocking {
+            harness.repository.confirmCuration(
+                curating.request.runId,
+                curating.request.requestId,
+                FIRST_SELECTION,
+            )
+        }
+
+        assertTrue(harness.controlTaskCompleted.await(2, TimeUnit.SECONDS))
+        assertNull(harness.controlFailure.get())
+        assertTrue(harness.bridge.cancellationSubmitted.await(2, TimeUnit.SECONDS))
+        harness.bridge.allowTerminal.countDown()
+        val failed = awaitState(harness.repository, MiningRunState::isTerminal) as MiningRunState.Failed
+
+        assertEquals("Background mining did not start safely", failed.failure.message)
+        assertFalse(recorded.records.any { it.substringBefore('\n').contains(" E run=") })
     }
 
     @Test
@@ -904,6 +964,8 @@ class BridgeReadingMiningRepositoryTest {
     ): Harness {
         val runExecutor = Executors.newSingleThreadExecutor().also(executors::add)
         val controlExecutor = Executors.newSingleThreadExecutor().also(executors::add)
+        val controlFailure = AtomicReference<Throwable?>()
+        val controlTaskCompleted = CountDownLatch(1)
         val cacheDir = cache ?: temporary.newFolder("cache-${executors.size}")
         val stageRoot = readingSourceStagingRoot(cacheDir)
         val bridge =
@@ -935,7 +997,18 @@ class BridgeReadingMiningRepositoryTest {
                 sourceGrantReleaser = SourceGrantReleaser(releases::add),
                 foregroundStarter = foreground,
                 runExecutor = runExecutor.asMiningTaskExecutor(),
-                controlExecutor = controlExecutor.asMiningTaskExecutor(),
+                controlExecutor =
+                    MiningTaskExecutor { task ->
+                        controlExecutor.execute {
+                            try {
+                                task()
+                            } catch (failure: Throwable) {
+                                controlFailure.compareAndSet(null, failure)
+                            } finally {
+                                controlTaskCompleted.countDown()
+                            }
+                        }
+                    },
                 strings = testStringResourceResolver,
                 runtimeWorkCoordinator = runtimeWorkCoordinator,
                 configSnapshotResolver =
@@ -964,7 +1037,16 @@ class BridgeReadingMiningRepositoryTest {
                 sentenceAudioSynthesizerFactory = sentenceAudioFactory,
                 foregroundStartTimeoutSeconds = 2,
             )
-        return Harness(repository, bridge, anki, foreground, cacheDir, stageRoot)
+        return Harness(
+            repository,
+            bridge,
+            anki,
+            foreground,
+            cacheDir,
+            stageRoot,
+            controlFailure,
+            controlTaskCompleted,
+        )
     }
 
     private fun foregroundFailure(
@@ -1046,6 +1128,8 @@ class BridgeReadingMiningRepositoryTest {
         val foreground: FakeForegroundStarter,
         val cacheDir: File,
         val stageRoot: File,
+        val controlFailure: AtomicReference<Throwable?>,
+        val controlTaskCompleted: CountDownLatch,
     )
 
     private class FakeAnkiCallbacks(
@@ -1080,6 +1164,7 @@ class BridgeReadingMiningRepositoryTest {
     }
 
     private enum class ForegroundStartFailure {
+        ABANDONED,
         EXECUTION,
         TIMEOUT,
         INTERRUPTION,
@@ -1099,6 +1184,23 @@ class BridgeReadingMiningRepositoryTest {
         ): CompletableFuture<MiningForegroundLease> {
             startCount.incrementAndGet()
             when (failure) {
+                ForegroundStartFailure.ABANDONED -> {
+                    val identity =
+                        MiningForegroundSessionIdentity(
+                            runId,
+                            generation,
+                            "00000000-0000-0000-0000-000000000001",
+                        )
+                    val registry =
+                        ForegroundSessionRegistry(
+                            java.util.concurrent.Executor { command -> command.run() },
+                        )
+                    val registration = registry.register(identity, listener)
+                    check(registry.cancelAbandonedStart(identity))
+                    @Suppress("UNCHECKED_CAST")
+                    return registration.started as CompletableFuture<MiningForegroundLease>
+                }
+
                 ForegroundStartFailure.EXECUTION -> {
                     return CompletableFuture<MiningForegroundLease>().also {
                         it.completeExceptionally(IllegalStateException("test promotion failure"))

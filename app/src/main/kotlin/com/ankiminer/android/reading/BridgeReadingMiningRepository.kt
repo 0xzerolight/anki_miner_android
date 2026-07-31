@@ -11,6 +11,7 @@ import com.ankiminer.android.diagnostics.log.LogContext
 import com.ankiminer.android.engine.BridgeJsonCodec
 import com.ankiminer.android.engine.BridgeJsonValue
 import com.ankiminer.android.engine.BridgeMessage
+import com.ankiminer.android.engine.BridgeProtocolException
 import com.ankiminer.android.engine.EngineCallbacks
 import com.ankiminer.android.engine.MiningConfigSnapshot
 import com.ankiminer.android.engine.MiningOutcome
@@ -55,6 +56,7 @@ import com.ankiminer.android.tts.SentenceAudioCallbackDispatcher
 import com.ankiminer.android.tts.SentenceAudioSynthesizer
 import com.ankiminer.android.tts.SentenceAudioSynthesizerFactory
 import java.text.Normalizer
+import java.util.concurrent.CancellationException
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.TimeUnit
@@ -616,8 +618,8 @@ internal class BridgeReadingMiningRepository(
                 stagedSource?.close()
             } catch (failure: Exception) {
                 // StagedReadingSource.close() folds every staged file's delete failure into one
-                // IOException and hangs the rest off addSuppressed, so the suppressed chain -- not
-                // the top-level message -- is what says which files survived.
+                // IOException and hangs the rest off addSuppressed, preserving every cleanup
+                // failure in one throwable chain.
                 AppLog.w(LogComponent.READING, "source.close", failure, "outcome" to "fail")
                 recordFault(generation, strings.resolve(R.string.mining_failure_reading_source_cleanup))
             }
@@ -782,6 +784,9 @@ internal class BridgeReadingMiningRepository(
         val lease =
             try {
                 future.get(foregroundStartTimeoutSeconds, TimeUnit.SECONDS)
+            } catch (_: CancellationException) {
+                handleForegroundStartCancellation(generation, future)
+                return
             } catch (failure: TimeoutException) {
                 handleForegroundStartFailure(
                     generation,
@@ -875,6 +880,18 @@ internal class BridgeReadingMiningRepository(
             generation,
             strings.resolve(R.string.mining_failure_background_start_unsafe),
             diagnostic = diagnostic,
+        )
+    }
+
+    private fun handleForegroundStartCancellation(
+        generation: Long,
+        future: CompletableFuture<MiningForegroundLease>,
+    ) {
+        future.cancel(false)
+        recordFaultAndCancel(
+            generation,
+            strings.resolve(R.string.mining_failure_background_start_unsafe),
+            diagnostic = "foreground_start_cancelled",
         )
     }
 
@@ -1324,7 +1341,17 @@ internal class BridgeReadingMiningRepository(
         try {
             block()
         } catch (failure: RuntimeException) {
-            AppLog.e(LogComponent.READING, callback, failure, "outcome" to "fail")
+            if (failure is BridgeProtocolException) {
+                AppLog.e(
+                    LogComponent.READING,
+                    callback,
+                    failure,
+                    "outcome" to "fail",
+                    "category" to failure.category.name,
+                )
+            } else {
+                AppLog.e(LogComponent.READING, callback, failure, "outcome" to "fail")
+            }
             recordFaultAndCancel(
                 generation,
                 strings.resolve(R.string.mining_failure_python_callback),
@@ -1433,7 +1460,7 @@ internal class BridgeReadingMiningRepository(
         val runId =
             synchronized(monitor) { activeFor(generation)?.runId }
                 ?: throw IllegalStateException("Python callback arrived before job registration")
-        return BridgeJsonCodec.decode(raw, expectedRunId = runId)
+        return BridgeJsonCodec.decodeCallback(raw, expectedRunId = runId)
     }
 
     /**

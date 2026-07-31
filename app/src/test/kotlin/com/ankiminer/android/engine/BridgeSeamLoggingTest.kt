@@ -47,6 +47,20 @@ class BridgeSeamLoggingTest {
     }
 
     @Test
+    fun `dispatch entry carries an ok outcome`() {
+        val raw = BridgeJsonCodec.encodeJobCancel("run_${"0".repeat(32)}")
+        AppLog.setMinLevel(LogLevel.DEBUG)
+
+        emitDispatchEntry(bridgeEnvelopeType(raw), raw)
+
+        assertEquals(
+            "D run=- c=bridge op=dispatch at=enter type=job.cancel " +
+                "bytes=${raw.toByteArray(StandardCharsets.UTF_8).size} outcome=ok",
+            recorded.records.single().substringBefore('\n').substring(TIMESTAMP_PREFIX),
+        )
+    }
+
+    @Test
     fun `a duplicate key is recorded as its own category rather than as malformed json`() {
         val raw = """{"schemaVersion":1,"schemaVersion":1,"type":"job.cancel","payload":{}}"""
 
