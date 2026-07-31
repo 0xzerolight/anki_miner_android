@@ -883,6 +883,10 @@ def import_known_words(payload: Mapping[str, object]) -> str:
                 raise _fail("known_words_database_unsafe", "Known-word database path is unsafe")
             database = KnownWordDB(db_path)
             database.initialize()
+            # Last point before the write becomes durable. Parsing and schema setup
+            # both run after the previous check, so without this a Cancel delivered
+            # in that window still committed the import.
+            operation.check()
             added_count = database.add_words(set(parsed.words), source="user")
             _fsync_file(db_path)
             core._fsync_directory(home)
