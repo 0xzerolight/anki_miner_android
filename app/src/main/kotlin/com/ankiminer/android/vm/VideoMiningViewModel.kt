@@ -7,6 +7,9 @@ import androidx.lifecycle.createSavedStateHandle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.CreationExtras
 import com.ankiminer.android.data.RuntimeWorkCoordinator
+import com.ankiminer.android.diagnostics.log.AppLog
+import com.ankiminer.android.diagnostics.log.LogComponent
+import com.ankiminer.android.diagnostics.log.LogContext
 import com.ankiminer.android.media.SafBroker
 import com.ankiminer.android.media.SafDocument
 import com.ankiminer.android.media.SafSelectionInventory
@@ -170,6 +173,13 @@ class VideoMiningViewModel internal constructor(
 
     fun clearVideo() {
         if (repository.state.value != MiningRunState.Idle || localState.value.pending.start) return
+        AppLog.i(
+            LogComponent.UI,
+            "command",
+            "command" to "source_clear",
+            "source" to "video",
+            "outcome" to "ok",
+        )
         videoDocumentRequest += 1
         videoDocumentJob?.cancel()
         val document = localState.value.video.document
@@ -180,6 +190,13 @@ class VideoMiningViewModel internal constructor(
 
     fun clearSubtitle() {
         if (repository.state.value != MiningRunState.Idle || localState.value.pending.start) return
+        AppLog.i(
+            LogComponent.UI,
+            "command",
+            "command" to "source_clear",
+            "source" to "subtitle",
+            "outcome" to "ok",
+        )
         subtitleDocumentRequest += 1
         subtitleDocumentJob?.cancel()
         val document = localState.value.subtitle.document
@@ -249,6 +266,16 @@ class VideoMiningViewModel internal constructor(
     ) {
         val request = (repository.state.value as? MiningRunState.Curating)?.request ?: return
         if (isCurationSubmissionPending() || localState.value.pending.cancel) return
+        LogContext.withRunId(request.runId) {
+            AppLog.i(
+                LogComponent.UI,
+                "command",
+                "command" to "target_change",
+                "target" to "candidate",
+                "selected" to selected,
+                "outcome" to "ok",
+            )
+        }
         localState.update { local ->
             val draft = local.curationDraft?.forRequest(request) ?: request.defaultCurationDraft()
             local.copy(curationDraft = draft.setCandidateSelected(request, candidateId, selected))
@@ -265,6 +292,17 @@ class VideoMiningViewModel internal constructor(
     ) {
         val request = (repository.state.value as? MiningRunState.Curating)?.request ?: return
         if (isCurationSubmissionPending() || localState.value.pending.cancel) return
+        LogContext.withRunId(request.runId) {
+            AppLog.i(
+                LogComponent.UI,
+                "command",
+                "command" to "target_change",
+                "target" to "selection",
+                "count" to visibleCandidateIds.size,
+                "selected" to selected,
+                "outcome" to "ok",
+            )
+        }
         localState.update { local ->
             val draft = local.curationDraft?.forRequest(request) ?: request.defaultCurationDraft()
             local.copy(
@@ -305,6 +343,15 @@ class VideoMiningViewModel internal constructor(
     ) {
         val request = (repository.state.value as? MiningRunState.Curating)?.request ?: return
         if (isCurationSubmissionPending() || localState.value.pending.cancel) return
+        LogContext.withRunId(request.runId) {
+            AppLog.i(
+                LogComponent.UI,
+                "command",
+                "command" to "target_change",
+                "target" to "sentence",
+                "outcome" to "ok",
+            )
+        }
         localState.update { local ->
             val draft = local.curationDraft?.forRequest(request) ?: request.defaultCurationDraft()
             val updated = draft.selectSentence(request, candidateId, sentenceId) ?: return@update local
@@ -335,7 +382,13 @@ class VideoMiningViewModel internal constructor(
             }
         }
         val selection = requireNotNull(acceptedSelection)
-        viewModelScope.launch {
+        viewModelScope.launch(LogContext.asContextElement(runState.request.runId)) {
+            AppLog.i(
+                LogComponent.UI,
+                "command",
+                "command" to "curation",
+                "outcome" to "ok",
+            )
             try {
                 repository.confirmCuration(
                     runId = runState.request.runId,
@@ -356,7 +409,14 @@ class VideoMiningViewModel internal constructor(
                 }
             } catch (failure: CancellationException) {
                 throw failure
-            } catch (_: RuntimeException) {
+            } catch (failure: RuntimeException) {
+                AppLog.e(
+                    LogComponent.UI,
+                    "command",
+                    failure,
+                    "command" to "curation",
+                    "outcome" to "fail",
+                )
                 localState.update { it.copy(commandError = MiningCommandError.CURATION) }
             } finally {
                 localState.update {
@@ -385,7 +445,13 @@ class VideoMiningViewModel internal constructor(
                 break
             }
         }
-        viewModelScope.launch {
+        viewModelScope.launch(LogContext.asContextElement(runId)) {
+            AppLog.i(
+                LogComponent.UI,
+                "command",
+                "command" to "cancel",
+                "outcome" to "ok",
+            )
             try {
                 if (cancellationToken != null) {
                     repository.cancel(cancellationToken)
@@ -394,7 +460,14 @@ class VideoMiningViewModel internal constructor(
                 }
             } catch (failure: CancellationException) {
                 throw failure
-            } catch (_: RuntimeException) {
+            } catch (failure: RuntimeException) {
+                AppLog.e(
+                    LogComponent.UI,
+                    "command",
+                    failure,
+                    "command" to "cancel",
+                    "outcome" to "fail",
+                )
                 localState.update {
                     it.copy(
                         pending = it.pending.complete(MiningPendingAction.CANCEL),
@@ -406,19 +479,33 @@ class VideoMiningViewModel internal constructor(
     }
 
     fun reset() {
-        if (!repository.state.value.isTerminal || localState.value.pending.reset) return
+        val runState = repository.state.value
+        if (!runState.isTerminal || localState.value.pending.reset) return
         localState.update {
             it.copy(
                 pending = it.pending.begin(MiningPendingAction.RESET),
                 commandError = null,
             )
         }
-        viewModelScope.launch {
+        viewModelScope.launch(LogContext.asContextElement(runState.runId)) {
+            AppLog.i(
+                LogComponent.UI,
+                "command",
+                "command" to "reset",
+                "outcome" to "ok",
+            )
             try {
                 repository.reset()
             } catch (failure: CancellationException) {
                 throw failure
-            } catch (_: RuntimeException) {
+            } catch (failure: RuntimeException) {
+                AppLog.e(
+                    LogComponent.UI,
+                    "command",
+                    failure,
+                    "command" to "reset",
+                    "outcome" to "fail",
+                )
                 localState.update { it.copy(commandError = MiningCommandError.RESET) }
             } finally {
                 localState.update {
@@ -441,7 +528,13 @@ class VideoMiningViewModel internal constructor(
         localState.update {
             it.copy(pending = it.pending.beginRetry(), commandError = null)
         }
-        viewModelScope.launch {
+        viewModelScope.launch(LogContext.asContextElement(failed.runId)) {
+            AppLog.i(
+                LogComponent.UI,
+                "command",
+                "command" to "retry",
+                "outcome" to "ok",
+            )
             try {
                 repository.reset()
                 localState.update {
@@ -450,7 +543,14 @@ class VideoMiningViewModel internal constructor(
                 repository.startVideo(video.toInput(subtitle))
             } catch (failure: CancellationException) {
                 throw failure
-            } catch (_: RuntimeException) {
+            } catch (failure: RuntimeException) {
+                AppLog.e(
+                    LogComponent.UI,
+                    "command",
+                    failure,
+                    "command" to "retry",
+                    "outcome" to "fail",
+                )
                 localState.update { it.copy(commandError = MiningCommandError.START) }
             } finally {
                 localState.update {
@@ -470,11 +570,24 @@ class VideoMiningViewModel internal constructor(
         subtitle: SafDocument,
     ) {
         viewModelScope.launch {
+            AppLog.i(
+                LogComponent.UI,
+                "command",
+                "command" to "start",
+                "outcome" to "ok",
+            )
             try {
                 repository.startVideo(video.toInput(subtitle))
             } catch (failure: CancellationException) {
                 throw failure
-            } catch (_: RuntimeException) {
+            } catch (failure: RuntimeException) {
+                AppLog.e(
+                    LogComponent.UI,
+                    "command",
+                    failure,
+                    "command" to "start",
+                    "outcome" to "fail",
+                )
                 localState.update { it.copy(commandError = MiningCommandError.START) }
             } finally {
                 localState.update {
@@ -494,6 +607,15 @@ class VideoMiningViewModel internal constructor(
             localState.value.pending.start
         ) {
             return
+        }
+        if (!restoring) {
+            AppLog.i(
+                LogComponent.UI,
+                "command",
+                "command" to "source_pick",
+                "source" to kind.name.lowercase(),
+                "outcome" to "ok",
+            )
         }
         val sequence =
             when (kind) {

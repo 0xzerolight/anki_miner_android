@@ -466,7 +466,8 @@ class ResourceBridgeException(
     override val message: String,
     /** Opaque key joining this failure to the Python traceback in the exported log. */
     val faultId: String? = null,
-) : IllegalStateException(message)
+    cause: Throwable? = null,
+) : IllegalStateException(message, cause)
 
 class ResourceDownloadException(
     val stableCode: String,

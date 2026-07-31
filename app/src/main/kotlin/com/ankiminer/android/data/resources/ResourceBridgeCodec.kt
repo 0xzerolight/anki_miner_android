@@ -864,9 +864,17 @@ object ResourceBridgeCodec {
         } catch (failure: ResourceBridgeException) {
             throw failure
         } catch (failure: JsonParseException) {
-            throw ResourceBridgeException("invalid_resource_json", "Resource bridge returned malformed JSON")
+            throw ResourceBridgeException(
+                "invalid_resource_json",
+                "Resource bridge returned malformed JSON",
+                cause = failure,
+            )
         } catch (failure: Exception) {
-            throw ResourceBridgeException("invalid_resource_json", "Resource bridge returned invalid JSON")
+            throw ResourceBridgeException(
+                "invalid_resource_json",
+                "Resource bridge returned invalid JSON",
+                cause = failure,
+            )
         }
     }
 
@@ -979,8 +987,8 @@ object ResourceBridgeCodec {
         value.also {
             val uri = try {
                 URI(it)
-            } catch (_: Exception) {
-                invalid("Invalid HTTPS URL")
+            } catch (failure: Exception) {
+                invalid("Invalid HTTPS URL", failure)
             }
             if (
                 uri.scheme != "https" || uri.host.isNullOrBlank() || uri.userInfo != null ||
@@ -990,8 +998,11 @@ object ResourceBridgeCodec {
             }
         }
 
-    private fun invalid(message: String): Nothing =
-        throw ResourceBridgeException("invalid_resource_response", message)
+    private fun invalid(
+        message: String,
+        cause: Throwable? = null,
+    ): Nothing =
+        throw ResourceBridgeException("invalid_resource_response", message, cause = cause)
 }
 
 /** Kotlin copy of the frozen Python catalog. Equality is checked before network access. */

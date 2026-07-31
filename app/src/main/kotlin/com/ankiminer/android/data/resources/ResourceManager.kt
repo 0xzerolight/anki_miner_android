@@ -2,6 +2,8 @@ package com.ankiminer.android.data.resources
 
 import com.ankiminer.android.R
 import com.ankiminer.android.data.RuntimeWorkCoordinator
+import com.ankiminer.android.diagnostics.log.AppLog
+import com.ankiminer.android.diagnostics.log.LogComponent
 import com.ankiminer.android.engine.PyBridge
 import com.ankiminer.android.localization.StringResourceResolver
 import com.ankiminer.android.media.SafBroker
@@ -559,10 +561,11 @@ internal class AndroidResourceManager(
                 val entryCount =
                     try {
                         WordListFileFormat.entryCount(staged.file)
-                    } catch (_: CharacterCodingException) {
+                    } catch (failure: CharacterCodingException) {
                         throw ResourceDownloadException(
                             "word_list_not_utf8",
                             "The word-list file is not UTF-8 text",
+                            failure,
                         )
                     }
                 if (!wordListRoot.exists() && !wordListRoot.mkdirs()) {
@@ -627,9 +630,23 @@ internal class AndroidResourceManager(
                 val entryCount =
                     try {
                         WordListFileFormat.entryCount(file)
-                    } catch (_: CharacterCodingException) {
+                    } catch (failure: CharacterCodingException) {
+                        AppLog.w(
+                            LogComponent.RESOURCES,
+                            "word_list.refresh",
+                            failure,
+                            "kind" to kind.name,
+                            "outcome" to "skip",
+                        )
                         return@mapNotNull null
-                    } catch (_: IOException) {
+                    } catch (failure: IOException) {
+                        AppLog.w(
+                            LogComponent.RESOURCES,
+                            "word_list.refresh",
+                            failure,
+                            "kind" to kind.name,
+                            "outcome" to "skip",
+                        )
                         return@mapNotNull null
                     }
                 InstalledWordList(kind, entryCount, file.length())
@@ -814,8 +831,12 @@ internal class AndroidResourceManager(
             val destination =
                 try {
                     URI(uri)
-                } catch (_: Exception) {
-                    throw ResourceBridgeException("known_words_export_failed", "Export destination is invalid")
+                } catch (failure: Exception) {
+                    throw ResourceBridgeException(
+                        "known_words_export_failed",
+                        "Export destination is invalid",
+                        cause = failure,
+                    )
                 }
             if (destination.scheme != "content") {
                 throw ResourceBridgeException("known_words_export_failed", "Export destination is invalid")
@@ -907,7 +928,13 @@ internal class AndroidResourceManager(
             try {
                 val raw = bridge.dispatch(ResourceBridgeCodec.encodeCancelRequest(operation.id), null)
                 ResourceBridgeCodec.decodeCancelAccepted(raw, operation.id)
-            } catch (_: Exception) {
+            } catch (failure: Exception) {
+                AppLog.ignored(
+                    LogComponent.RESOURCES,
+                    "operation.cancel",
+                    "worker_owns_terminal_state",
+                    failure,
+                )
                 // The operation worker owns terminal state. A late/failed cancel means it already
                 // crossed its final cancellation checkpoint or completed.
             }
@@ -967,21 +994,54 @@ internal class AndroidResourceManager(
                 cancelPython(operation)
                 throw failure
             } catch (failure: ResourceDownloadException) {
+                AppLog.e(
+                    LogComponent.RESOURCES,
+                    "operation.run",
+                    failure,
+                    "operation" to operation.id,
+                    "code" to failure.stableCode,
+                    "outcome" to "fail",
+                )
                 if (failure.stableCode != "resource_operation_cancelled") {
                     recordFailure(operation, failure.stableCode, downloadUserMessage(failure))
                 }
             } catch (failure: ResourceStorageException) {
+                AppLog.e(
+                    LogComponent.RESOURCES,
+                    "operation.run",
+                    failure,
+                    "operation" to operation.id,
+                    "code" to "insufficient_storage",
+                    "outcome" to "fail",
+                )
                 recordFailure(
                     operation,
                     "insufficient_storage",
                     strings.resolve(R.string.resource_failure_storage),
                 )
             } catch (failure: ResourceBridgeException) {
+                AppLog.e(
+                    LogComponent.RESOURCES,
+                    "operation.run",
+                    failure.cause ?: failure,
+                    "operation" to operation.id,
+                    "code" to failure.code,
+                    "fault" to failure.faultId,
+                    "outcome" to "fail",
+                )
                 if (failure.code != "resource_operation_cancelled") {
                     // userMessage(code) is unchanged; the id rides beside it into diagnostics only.
                     recordFailure(operation, failure.code, userMessage(failure.code), failure.faultId)
                 }
-            } catch (_: Exception) {
+            } catch (failure: Exception) {
+                AppLog.e(
+                    LogComponent.RESOURCES,
+                    "operation.run",
+                    failure,
+                    "operation" to operation.id,
+                    "code" to "resource_operation_failed",
+                    "outcome" to "fail",
+                )
                 recordFailure(
                     operation,
                     "resource_operation_failed",
@@ -1325,7 +1385,13 @@ internal class AndroidResourceManager(
         controlExecutor.execute {
             try {
                 bridge.dispatch(ResourceBridgeCodec.encodeCancelRequest(operation.id), null)
-            } catch (_: Exception) {
+            } catch (failure: Exception) {
+                AppLog.ignored(
+                    LogComponent.RESOURCES,
+                    "operation.cancel",
+                    "worker_owns_cleanup",
+                    failure,
+                )
                 // The worker still owns cleanup and recovery.
             }
         }

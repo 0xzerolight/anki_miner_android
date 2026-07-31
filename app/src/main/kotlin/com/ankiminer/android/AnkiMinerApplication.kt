@@ -21,6 +21,7 @@ import com.ankiminer.android.data.settings.AppSettingsRepository
 import com.ankiminer.android.data.settings.DataStoreAppSettingsRepository
 import com.ankiminer.android.data.settings.DataStoreDiagnosticsSettingsRepository
 import com.ankiminer.android.data.settings.DiagnosticsSettingsRepository
+import com.ankiminer.android.diagnostics.currentTesterBuildIdentity
 import com.ankiminer.android.diagnostics.log.AppLog
 import com.ankiminer.android.diagnostics.log.CompositeSink
 import com.ankiminer.android.diagnostics.log.FileLogSink
@@ -316,6 +317,25 @@ class AnkiMinerApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        val verboseLogging = runBlocking { diagnosticsSettings.verboseLogging.first() }
+        AppLog.setMinLevel(if (verboseLogging) LogLevel.DEBUG else LogLevel.INFO)
+        val buildIdentity = currentTesterBuildIdentity()
+        AppLog.i(
+            LogComponent.APP,
+            "startup",
+            "outcome" to "ok",
+            "applicationId" to buildIdentity.applicationId,
+            "versionName" to buildIdentity.versionName,
+            "versionCode" to buildIdentity.versionCode,
+            "sourceCommit" to buildIdentity.sourceCommit,
+            "sdkInt" to buildIdentity.sdkInt,
+            "supportedAbis" to buildIdentity.supportedAbis.joinToString(","),
+            "pythonVersion" to buildIdentity.pythonVersion,
+            "runtimeWheelBuildKey" to buildIdentity.runtimeWheelBuildKey,
+            "tokenizerPublicationBuildKey" to buildIdentity.tokenizerPublicationBuildKey,
+            "deviceRuntimeAccepted" to buildIdentity.deviceRuntimeAccepted,
+            "verboseLogging" to verboseLogging,
+        )
         // Load-bearing ordering: this is the first task submitted to the process Python executor.
         // It starts Chaquopy and establishes ANKI_MINER_HOME before any engine import.
         pythonRuntime.enqueueFirst(miningRunExecutor)
@@ -336,8 +356,24 @@ class AnkiMinerApplication : Application() {
         miningRunExecutor.execute {
             try {
                 SafInputCacheJanitor(this).removeOrphans()
+            } catch (failure: Exception) {
+                AppLog.w(
+                    LogComponent.MEDIA,
+                    "startup.orphans.saf_input",
+                    failure,
+                    "outcome" to "fail",
+                )
+                // A current run creates collision-resistant names and owns its own cleanup.
+            }
+            try {
                 readingSourceStaging.janitor.removeOrphans()
-            } catch (_: Exception) {
+            } catch (failure: Exception) {
+                AppLog.w(
+                    LogComponent.READING,
+                    "startup.orphans.reading",
+                    failure,
+                    "outcome" to "fail",
+                )
                 // A current run creates collision-resistant names and owns its own cleanup.
             }
         }
@@ -361,7 +397,13 @@ class AnkiMinerApplication : Application() {
         applicationScope.launch {
             try {
                 safBroker.reconcileStartup()
-            } catch (_: Exception) {
+            } catch (failure: Exception) {
+                AppLog.w(
+                    LogComponent.SAF,
+                    "startup.reconcile",
+                    failure,
+                    "outcome" to "fail",
+                )
                 // Best effort only. The first later retain retries reconciliation and surfaces a
                 // provider failure to that picker without crashing process startup.
             }
@@ -390,7 +432,13 @@ class AnkiMinerApplication : Application() {
                     ?: return@execute
             try {
                 miningAdmissionGate.evaluate(CoordinatorAnkiCancellation())
-            } catch (_: Exception) {
+            } catch (failure: Exception) {
+                AppLog.w(
+                    LogComponent.MINING,
+                    "admission.refresh",
+                    failure,
+                    "outcome" to "fail",
+                )
                 // The fail-closed admission state remains visible and is rechecked at run start.
             } finally {
                 lease.close()
@@ -408,7 +456,13 @@ class AnkiMinerApplication : Application() {
             try {
                 diagnosticsSettings.setVerboseLogging(enabled)
             } catch (failure: IOException) {
-                AppLog.w(LogComponent.SETTINGS, "verboseLogging.write", failure, "enabled" to enabled)
+                AppLog.w(
+                    LogComponent.SETTINGS,
+                    "verboseLogging.write",
+                    failure,
+                    "enabled" to enabled,
+                    "outcome" to "fail",
+                )
             }
         }
     }
@@ -492,7 +546,13 @@ class AnkiMinerApplication : Application() {
                         true,
                     )
             }
-        } catch (_: RuntimeException) {
+        } catch (failure: RuntimeException) {
+            AppLog.w(
+                LogComponent.ANKI,
+                "target.probe",
+                failure,
+                "outcome" to "fail",
+            )
             AnkiMiningTargetReadiness.Blocked(
                 stringResourceResolver.resolve(R.string.mining_target_inspection_failed),
                 true,
