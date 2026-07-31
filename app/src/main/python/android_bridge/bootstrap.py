@@ -131,6 +131,7 @@ def _install_file_logging(home: str) -> None:
         # vendored anki_miner modules and every bridge logger without
         # touching the sync-generated vendored tree.
         handler.addFilter(log_context.RunContextFilter())
+        handler.addFilter(log_context.DefaultLogPrivacyFilter())
         root = logging.getLogger()
         root.addHandler(handler)
         root.addHandler(_run_warning_counter)

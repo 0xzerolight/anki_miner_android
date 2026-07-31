@@ -1,5 +1,9 @@
 package com.ankiminer.android.reading
 
+import com.ankiminer.android.diagnostics.log.AppLog
+import com.ankiminer.android.diagnostics.log.LogLevel
+import com.ankiminer.android.diagnostics.log.NoOpSink
+import com.ankiminer.android.diagnostics.log.RecordingLogSink
 import com.ankiminer.android.media.FileCopyCancellation
 import com.ankiminer.android.media.FileCopyCancelledException
 import com.ankiminer.android.media.FileCopyLimitExceededException
@@ -741,6 +745,39 @@ class ReadingSourceStagerTest {
     }
 
     @Test
+    fun `corrupt embedded sidecar warning omits the member path at default verbosity`() {
+        val recorded = RecordingLogSink()
+        AppLog.setMinLevel(LogLevel.INFO)
+        AppLog.install(NoOpSink)
+        AppLog.install(recorded)
+        try {
+            val root = File(temporary.root, "private-corrupt-member")
+            val privateMember = "秘密/本.mokuro"
+            val archiveBytes = corruptedDeflatedZipBytes(privateMember, "ocr-data".toByteArray())
+            val document =
+                document(
+                    "content://reading/private-corrupt-member",
+                    "volume.cbz",
+                    archiveBytes.size.toLong(),
+                )
+            val opener = FakeReadingSourceOpener(mapOf(document.uri to archiveBytes))
+
+            assertThrows(EmbeddedSidecarException::class.java) {
+                stager(root, opener, limits = archiveLimits())
+                    .stage(ReadingSourceSelection.Single(document))
+            }
+
+            val warning = recorded.records.single { it.contains(" op=embedded_sidecar.copy ") }
+            assertFalse(warning, warning.contains(privateMember))
+            assertFalse(warning, warning.contains("秘密"))
+            assertTrue(warning, warning.contains(" extension=mokuro"))
+            assertTrue(warning, warning.contains(" nameBytes="))
+        } finally {
+            AppLog.install(NoOpSink)
+        }
+    }
+
+    @Test
     fun `cancellation during embedded sidecar extraction removes the whole stage`() {
         val root = File(temporary.root, "cancel-extraction")
         val archiveBytes =
@@ -785,6 +822,25 @@ class ReadingSourceStagerTest {
             }
         }
         return bytes.toByteArray()
+    }
+
+    private fun corruptedDeflatedZipBytes(
+        name: String,
+        content: ByteArray,
+    ): ByteArray {
+        val bytes = java.io.ByteArrayOutputStream()
+        java.util.zip.ZipOutputStream(bytes).use { zip ->
+            zip.putNextEntry(java.util.zip.ZipEntry(name))
+            zip.write(content)
+            zip.closeEntry()
+        }
+        return bytes.toByteArray().also { archive ->
+            val nameBytes = archive.readLittleEndianU16(26)
+            val extraBytes = archive.readLittleEndianU16(28)
+            val dataOffset = 30 + nameBytes + extraBytes
+            // DEFLATE BTYPE=3 is reserved, so the member stream must raise ZipException.
+            archive[dataOffset] = 0x07
+        }
     }
 
     private fun stager(
@@ -857,6 +913,9 @@ class ReadingSourceStagerTest {
         val outputName: String,
     )
 }
+
+private fun ByteArray.readLittleEndianU16(offset: Int): Int =
+    (this[offset].toInt() and 0xff) or ((this[offset + 1].toInt() and 0xff) shl 8)
 
 private class FakeReadingSourceOpener(
     private val content: Map<String, ByteArray>,

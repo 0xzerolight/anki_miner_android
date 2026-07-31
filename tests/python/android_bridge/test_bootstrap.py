@@ -175,7 +175,7 @@ print(json.dumps({
     assert data["file"] == str(tmp_path / "anki_miner.log")
     assert data["maxBytes"] == 4_194_304
     assert data["backupCount"] == 1
-    assert "ffmpeg exit code 1: probe" in data["content"]
+    assert "vendored record redacted" in data["content"]
     assert "anki_miner.services.media_extractor" in data["content"]
 
 
@@ -228,7 +228,7 @@ handler = next(
 )
 handler.flush()
 content = open(handler.baseFilename, encoding="utf-8").read()
-line = next(l for l in content.splitlines() if "ffmpeg exit code 1: probe" in l)
+line = next(l for l in content.splitlines() if "anki_miner.services.media_extractor" in l)
 print(json.dumps({
     "line": line,
     "timestamp_ok": bool(re.match(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z ", line)),
@@ -345,6 +345,40 @@ print(json.dumps({
     assert data["root"] == logging.INFO
     assert "first party debug line" in data["content"]
     assert "keyword=" not in data["content"]
+
+
+def test_default_file_log_redacts_vendored_messages_until_verbose_logging(
+    tmp_path: Path,
+) -> None:
+    result = _run(
+        """
+import json, logging, logging.handlers, sys
+from android_bridge import dispatch
+from android_bridge.bootstrap import initialize
+from android_bridge.protocol import encode_message
+initialize(sys.argv[1])
+logger = logging.getLogger("anki_miner.services.definition_service")
+logger.warning("lookup of '%s' failed: %s", "殺す", RuntimeError("provider unavailable"))
+handler = next(
+    h for h in logging.getLogger().handlers if isinstance(h, logging.handlers.RotatingFileHandler)
+)
+handler.flush()
+default_content = open(handler.baseFilename, encoding="utf-8").read()
+dispatch(encode_message("diagnostics.loglevel.set", {"level": "debug"}))
+logger.warning("lookup of '%s' failed: %s", "殺す", RuntimeError("provider unavailable"))
+handler.flush()
+verbose_content = open(handler.baseFilename, encoding="utf-8").read()
+print(json.dumps({"default": default_content, "verbose": verbose_content}))
+""",
+        tmp_path,
+    )
+
+    assert result.returncode == 0, result.stderr
+    data = json.loads(result.stdout)
+    assert "殺す" not in data["default"]
+    assert "vendored record redacted" in data["default"]
+    assert "RuntimeError" in data["default"]
+    assert "殺す" in data["verbose"]
 
 
 def test_install_failure_stashes_traceback_and_writes_stderr_without_breaking_bootstrap(

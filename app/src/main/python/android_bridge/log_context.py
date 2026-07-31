@@ -24,6 +24,7 @@ LOG_LEVELS: dict[str, int] = {
 # Only the trees this app owns. Anything outside them keeps whatever ceiling
 # bootstrap gave it.
 _FIRST_PARTY_LOG_TREES = ("anki_miner", "android_bridge")
+_VENDORED_LOG_TREE = "anki_miner"
 
 # JobRegistry admits at most one active job, so a single module global is an
 # exact (not approximate) fallback: the engine fans work out to plain
@@ -98,3 +99,49 @@ class RunContextFilter(logging.Filter):
         with suppress(Exception):
             record.run_id = run_id
         return True
+
+
+class DefaultLogPrivacyFilter(logging.Filter):
+    """Hide vendored message payloads unless the tester enabled DEBUG.
+
+    The synchronized engine can add new user-data-bearing log calls on every
+    re-pin, so this boundary treats every ``anki_miner`` message as private
+    instead of trying to maintain a call-site blocklist. Logger name, severity,
+    and exception class remain available at default verbosity.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        try:
+            vendored = record.name == _VENDORED_LOG_TREE or record.name.startswith(f"{_VENDORED_LOG_TREE}.")
+            verbose = logging.getLogger(_VENDORED_LOG_TREE).isEnabledFor(logging.DEBUG)
+            if vendored and not verbose:
+                failure = _record_failure_name(record)
+                record.msg = "vendored record redacted failure=%s"
+                record.args = (failure,)
+                # Traceback messages and locals can carry the same vocabulary
+                # or paths as the formatted message, so only the class survives.
+                record.exc_info = None
+                record.exc_text = None
+                record.stack_info = None
+        except Exception:
+            # A filter exception escapes Handler.handle() into the code which
+            # tried to log. Preserve a safe marker even if a hostile custom
+            # LogRecord defeats the richer path above.
+            with suppress(Exception):
+                record.msg = "vendored record redacted failure=unknown"
+                record.args = ()
+                record.exc_info = None
+                record.exc_text = None
+                record.stack_info = None
+        return True
+
+
+def _record_failure_name(record: logging.LogRecord) -> str:
+    exc_info = record.exc_info
+    if exc_info and exc_info[0] is not None:
+        return exc_info[0].__name__
+    values = record.args.values() if isinstance(record.args, dict) else record.args
+    for value in values:
+        if isinstance(value, BaseException):
+            return type(value).__name__
+    return "unspecified"

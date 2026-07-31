@@ -436,7 +436,8 @@ internal class ReadingSourceStager(
                         LogComponent.READING,
                         "embedded_sidecar.copy",
                         failure,
-                        "entry" to selected.name,
+                        "extension" to "mokuro",
+                        "nameBytes" to selected.name.toByteArray(StandardCharsets.UTF_8).size,
                         "outcome" to "fail",
                     )
                     throw embeddedSidecarUnreadable(failure)
