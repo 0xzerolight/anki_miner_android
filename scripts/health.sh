@@ -142,6 +142,22 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$REPO_ROOT/app/src/debug/python" \
     "$runtime_host_python" -c \
     'import runtime_dependencies_probe; runtime_dependencies_probe.snapshot()'
 
+# AppLog is the only permitted facade onto Log/console output: the unit test build has neither
+# Robolectric nor unitTests.returnDefaultValues, so a direct Log call from a JVM-tested class throws
+# "Method ... not mocked" and reddens the suite. println/System.out/System.err/printStackTrace bypass
+# the facade the same way Log does, so they fail the same gate. LogcatSink.kt is the one designated
+# sink and is exempt; app/src/test, app/src/androidTest and app/src/debug are separate source sets
+# not covered by this path, and androidTest legitimately uses Log.i for evidence emission.
+log_boundary_violations="$(grep -rn \
+    -e 'android\.util\.Log' \
+    -e '\bprintln(' \
+    -e 'System\.\(out\|err\)' \
+    -e 'printStackTrace(' \
+    "$REPO_ROOT/app/src/main/kotlin" \
+    | grep -v '/diagnostics/log/LogcatSink\.kt:' || true)"
+[[ -z "$log_boundary_violations" ]] || fail "AppLog boundary violated (direct Log/console usage outside LogcatSink.kt):
+$log_boundary_violations"
+
 wrapper_jar="$REPO_ROOT/gradle/wrapper/gradle-wrapper.jar"
 wrapper_checksum="81a82aaea5abcc8ff68b3dfcb58b3c3c429378efd98e7433460610fecd7ae45f"
 [[ -f "$wrapper_jar" ]] || fail "Gradle wrapper JAR is missing"

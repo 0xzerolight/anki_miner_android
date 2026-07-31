@@ -159,6 +159,11 @@ GitHub Release together with a `SHA256SUMS` and `NOTICE.md`. Release variants
 fail before compilation unless `ankiMinerSourceCommit` is a full lowercase Git
 SHA. Debug variants may use `development`.
 
+Also retain `app/build/outputs/mapping/deviceRelease/mapping.txt` for this
+build, under the released version, before the next build overwrites it: it is
+the only way to turn a minified stack trace from that exact APK back into
+readable symbols, and it cannot be regenerated later from source.
+
 ## Regenerating the vendored wheels
 
 The wheels are built once and committed. Rebuild them (e.g. on a version bump)

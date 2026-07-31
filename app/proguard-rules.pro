@@ -9,3 +9,10 @@
 # concrete per-run callback object so R8 cannot rename, merge, or remove those entry points.
 -keep interface com.ankiminer.android.engine.EngineCallbacks { *; }
 -keep class * implements com.ankiminer.android.engine.EngineCallbacks { public *; }
+
+# Same argument as the Throwable rule above, extended past one frame: an exported diagnostics
+# bundle is a full stack trace, not just a fault token, and R8 strips these attributes by default.
+# Renaming the source file keeps line numbers usable while replacing the real path with a
+# constant, so the attribute cannot leak a filesystem path off the device.
+-keepattributes SourceFile,LineNumberTable
+-renamesourcefileattribute SourceFile
