@@ -1,0 +1,51 @@
+package com.ankiminer.android.diagnostics
+
+internal object LogcatCommand {
+    fun candidates(): List<List<String>> =
+        listOf(
+            listOf(
+                "/system/bin/logcat",
+                "-d",
+                "-v",
+                "threadtime",
+                "-v",
+                "year",
+                "-v",
+                "UTC",
+                "-b",
+                "main,crash",
+                "-t",
+                "50000",
+            ),
+            listOf(
+                "/system/bin/logcat",
+                "-d",
+                "-v",
+                "threadtime",
+                "-b",
+                "main,crash",
+                "-t",
+                "50000",
+            ),
+            listOf(
+                "/system/bin/logcat",
+                "-d",
+                "-v",
+                "threadtime",
+                "-b",
+                "main",
+                "-t",
+                "50000",
+            ),
+            listOf(
+                "logcat",
+                "-d",
+                "-v",
+                "threadtime",
+                "-b",
+                "main",
+                "-t",
+                "50000",
+            ),
+        )
+}

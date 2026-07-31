@@ -42,7 +42,8 @@ internal class LogRedactor(private val rules: RedactionRules) {
         // Matched rather than taken blind: a bundle also carries logcat, whose own header is a
         // different length, and sealing 24 characters of `I/AnkiMiner( 1234): /data/…` would hide
         // the front of a path and leave the rest of it in the clear.
-        RECORD_HEADER.find(line)?.let { header -> segments.sealPrefix(header.value.length) }
+        val recordHeader = RECORD_HEADER.find(line)
+        recordHeader?.let { header -> segments.sealPrefix(header.value.length) }
         // Rule 1. Rewritten in place rather than sealed, because rule 3 has to see the root token it
         // produces in order to know a leaf filename is under an app directory.
         rules.literalAlternation?.let { roots ->
@@ -50,9 +51,10 @@ internal class LogRedactor(private val rules: RedactionRules) {
                 roots.replace(text) { match -> rules.literalReplacements[match.value] ?: match.value }
             }
         }
-        // A TAB prefix is what marks a continuation line in LogRecord's format, and a continuation
-        // line follows a different grammar: no quoting, so a raw quote there is file-name text.
-        val patterns = if (line[0] == '\t') rules.continuationPatterns else rules.patterns
+        // Only our anchored header proves the renderer's quoted-field grammar applies. Logcat and
+        // third-party lines may contain raw quotes in paths, so every other shape takes the
+        // conservative continuation grammar.
+        val patterns = if (recordHeader == null) rules.continuationPatterns else rules.patterns
         for ((regex, replace) in patterns) segments.seal(regex, replace)
         return segments.render()
     }

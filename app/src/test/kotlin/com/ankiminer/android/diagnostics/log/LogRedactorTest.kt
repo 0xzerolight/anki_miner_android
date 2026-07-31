@@ -93,14 +93,14 @@ class LogRedactorTest {
 
     @Test
     fun `a space next to the closing quote stays outside the token`() {
-        val redacted = redactor().redact("path=\"/storage/emulated/0/My Videos/ep.mkv \" n=1")
+        val redacted = redactor().redactRecord("path=\"/storage/emulated/0/My Videos/ep.mkv \" n=1")
 
         assertTrue(redacted, redacted.matches(Regex("path=\"<path-[0-9a-f]{6}> \" n=1")))
     }
 
     @Test
     fun `a quoted leaf under an app root survives spaces and keeps its extension`() {
-        val redacted = redactor().redact("path=\"$filesDir/media/My Video 01.mkv\" n=1")
+        val redacted = redactor().redactRecord("path=\"$filesDir/media/My Video 01.mkv\" n=1")
 
         assertTrue(
             redacted,
@@ -137,7 +137,9 @@ class LogRedactorTest {
         // the unquoted branch. The trailing prose is absorbed and hashed under its own token: it
         // could just as easily be the rest of a directory name.
         val redacted =
-            redactor().redact("msg=\"failed to open /storage/emulated/0/My Anime/ep.mkv for reading\"")
+            redactor().redactRecord(
+                "msg=\"failed to open /storage/emulated/0/My Anime/ep.mkv for reading\"",
+            )
 
         assertFalse(redacted, redacted.contains("Anime"))
         assertTrue(
@@ -226,7 +228,7 @@ class LogRedactorTest {
         val redactor = redactor()
         val path = "/storage/emulated/0/My Anime/ep 01.mkv"
 
-        val quoted = redactor.redact("path=\"$path\"")
+        val quoted = redactor.redactRecord("path=\"$path\"")
         val bare = redactor.redact("\tIOException: $path")
         val parenthesised = redactor.redact("\tIOException: opened ($path)")
         val repr = redactor.redact("\tPyException: FileNotFoundError: '$path'")
@@ -250,6 +252,27 @@ class LogRedactorTest {
         assertFalse(leaf, leaf.contains("Hi"))
         assertTrue(path, path.matches(Regex("\tIOException: <path-[0-9a-f]{6}>: nope")))
         assertTrue(leaf, leaf.matches(Regex("\tIOException: <files>/media/<file-[0-9a-f]{6}>\\.mkv")))
+    }
+
+    @Test
+    fun `a quote in a logcat path uses the conservative line grammar`() {
+        val redacted =
+            redactor().redact(
+                "07-30 14:30:12.345 1234 1234 E AnkiMiner: " +
+                    "failed /storage/emulated/0/Say \"Hi\"/ep.mkv: nope",
+            )
+
+        assertFalse(redacted, redacted.contains("Hi"))
+        assertFalse(redacted, redacted.contains("ep.mkv"))
+        assertTrue(
+            redacted,
+            redacted.matches(
+                Regex(
+                    "07-30 14:30:12\\.345 1234 1234 E AnkiMiner: " +
+                        "failed <path-[0-9a-f]{6}>: nope",
+                ),
+            ),
+        )
     }
 
     @Test
@@ -288,7 +311,7 @@ class LogRedactorTest {
         // before hashing or the same file reads as two different files.
         val redactor = redactor()
 
-        val quoted = redactor.redact("path=\"/storage/emulated/0/Movies/ep.mkv\"")
+        val quoted = redactor.redactRecord("path=\"/storage/emulated/0/Movies/ep.mkv\"")
         val repr = redactor.redact("\tPyException: FileNotFoundError: '/storage/emulated/0/Movies/ep.mkv'")
 
         val token = Regex("<path-[0-9a-f]{6}>").find(quoted)!!.value
@@ -339,7 +362,10 @@ class LogRedactorTest {
     fun `a quoted path containing escaped quotes is redacted past the escape`() {
         // Both " and \ are legal in an ext4 file name, and the renderer writes them escaped. A
         // pattern that treated the backslash as a hard stop ended the match inside the value.
-        val redacted = redactor().redact("path=\"${escapeForValue("/storage/emulated/0/Say \"Hi\"/ep.mkv")}\"")
+        val redacted =
+            redactor().redactRecord(
+                "path=\"${escapeForValue("/storage/emulated/0/Say \"Hi\"/ep.mkv")}\"",
+            )
 
         assertFalse(redacted, redacted.contains("Hi"))
         assertTrue(redacted, redacted.matches(Regex("path=\"<path-[0-9a-f]{6}>\"")))
@@ -766,9 +792,9 @@ class LogRedactorTest {
 
         val underRoot = redactor.redact("$filesDir$deep/leaf.mkv")
         val absolute = redactor.redact("path=/storage/emulated/0$deep/leaf.mkv")
-        val quotedAbsolute = redactor.redact("path=\"/storage/emulated/0$deep/leaf.mkv\"")
-        val quotedRoot = redactor.redact("path=\"$filesDir$deep/leaf.mkv\"")
-        val quotedUri = redactor.redact("uri=\"content://media$deep/leaf.mkv\"")
+        val quotedAbsolute = redactor.redactRecord("path=\"/storage/emulated/0$deep/leaf.mkv\"")
+        val quotedRoot = redactor.redactRecord("path=\"$filesDir$deep/leaf.mkv\"")
+        val quotedUri = redactor.redactRecord("uri=\"content://media$deep/leaf.mkv\"")
         val bareUri = redactor.redact("uri=content://media$deep/leaf.mkv")
         val continuation = redactor.redact("\tIOException: /storage/emulated/0$deep/leaf.mkv")
 
@@ -841,6 +867,9 @@ class LogRedactorTest {
     private fun fingerprintIn(line: String): String =
         Regex("<path-([0-9a-f]{6})>").find(line)!!.groupValues[1]
 
+    private fun LogRedactor.redactRecord(body: String): String =
+        redact(RECORD_PREFIX + body).removePrefix(RECORD_PREFIX)
+
     private fun redactor(
         settings: AppSettings = AppSettings(),
         safUserText: List<String> = emptyList(),
@@ -906,6 +935,7 @@ class LogRedactorTest {
     private companion object {
         /** U+20B9F, written as its surrogate pair so the encoding under test is explicit. */
         const val ASTRAL_KANJI = "\uD842\uDF9F"
+        const val RECORD_PREFIX = "2026-07-30T12:00:00.000Z I run=abc c=diag op=test "
         val FIXED_SALT = ByteArray(16) { index -> index.toByte() }
         const val FOUR_MEBIBYTES = 4L * 1024 * 1024
         const val BOUNDED_CHUNK = 64 * 1024
