@@ -397,6 +397,26 @@ def test_repeated_cancellation_is_idempotent() -> None:
     assert returned == [None]
 
 
+def test_correlated_cancellation_after_finish_is_idempotent() -> None:
+    registry = JobRegistry()
+    handle = registry.begin()
+
+    registry.finish(handle.run_id)
+
+    assert registry.cancel(handle.run_id) is False
+
+
+def test_unrelated_cancellation_after_finish_remains_rejected() -> None:
+    registry = JobRegistry()
+    handle = registry.begin()
+    registry.finish(handle.run_id)
+
+    with pytest.raises(BridgeProtocolError) as failure:
+        registry.cancel("run_ffffffffffffffffffffffffffffffff")
+
+    assert failure.value.code == "no_active_job"
+
+
 def test_sequential_curation_rejects_prior_response_without_poisoning_current_gate() -> None:
     registry = JobRegistry()
     handle = registry.begin()

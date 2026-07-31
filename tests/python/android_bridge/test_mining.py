@@ -144,6 +144,28 @@ def test_run_admits_before_config_or_engine_work_and_returns_same_terminal(
     assert registry.active_run_id is None
 
 
+def test_terminal_callback_can_idempotently_cancel_just_finished_video_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    registry = JobRegistry()
+    late_cancellations: list[bool] = []
+
+    class LateCancellationCallbacks(RecordingCallbacks):
+        def _terminal(self, channel: str, raw: str) -> None:
+            terminal = decode_envelope(raw, expected_type="mining.terminal")
+            late_cancellations.append(registry.cancel(terminal.payload["runId"]))
+            super()._terminal(channel, raw)
+
+    callbacks = LateCancellationCallbacks(registry=registry)
+    _stub_execution(monkeypatch, FakeResult())
+
+    returned = mining.run_video(_request(), callbacks, job_registry=registry)
+
+    assert late_cancellations == [False]
+    assert decode_envelope(returned, expected_type="mining.terminal").payload["outcome"] == "success"
+    assert callbacks.terminals == [("complete", returned)]
+
+
 @pytest.mark.parametrize(
     ("errors", "expected_outcome", "expected_channel"),
     [

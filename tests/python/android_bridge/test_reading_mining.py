@@ -562,6 +562,28 @@ def test_run_reading_admits_loads_and_returns_same_terminal(
     assert registry.active_run_id is None
 
 
+def test_terminal_callback_can_idempotently_cancel_just_finished_reading_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    registry = JobRegistry()
+    late_cancellations: list[bool] = []
+
+    class LateCancellationCallbacks(RecordingCallbacks):
+        def _terminal(self, channel: str, raw: str) -> None:
+            terminal = decode_envelope(raw, expected_type="mining.terminal")
+            late_cancellations.append(registry.cancel(terminal.payload["runId"]))
+            super()._terminal(channel, raw)
+
+    callbacks = LateCancellationCallbacks(registry=registry)
+    _stub_run(monkeypatch, FakeResult())
+
+    returned = reading_mining.run_reading(_request(), callbacks, job_registry=registry)
+
+    assert late_cancellations == [False]
+    assert decode_envelope(returned, expected_type="mining.terminal").payload["outcome"] == "success"
+    assert callbacks.terminals == [("complete", returned)]
+
+
 def test_cancellation_after_document_load_stops_before_processor(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
