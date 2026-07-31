@@ -32,6 +32,15 @@ re-derives either; both run only `validate_committed_fixture`, a hash-pin check
 that any self-consistent fixture passes. After an `engine.lock` bump the
 re-derivation above is therefore a manual step, and its output is the evidence.
 
+No hosted derivation exists in either repository, by decision. The desktop repo
+carried `.github/workflows/android-engine-goldens.yml` until 2026-07-31; it was
+removed because it byte-compared a desktop-side *duplicate* of this fixture at a
+pin older than `engine.lock`, because the artifact embeds the hash of the exporter
+that produced it (so every exporter edit turned the workflow red until the
+duplicate was regenerated inside its frozen runtime), and because deriving an old
+pin cannot detect drift against desktop HEAD — it stayed green through two weeks
+of exporter breakage against the current engine. Do not rebuild it here.
+
 ## Reading-source parity
 
 `reading-v1.json` is the desktop-derived M4 contract for all four supported
