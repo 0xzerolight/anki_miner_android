@@ -492,7 +492,7 @@ def _verify_ffmpeg_binary(tool: str, path: Path) -> None:
         stat_result = os.stat(resolved)
     except (OSError, RuntimeError):
         logger.error(
-            "ffmpeg_binary_verification_failed tool=%s path=%s reason=stat_failed",
+            "ffmpeg_binary_verification_failed outcome=fail tool=%s path=%s reason=stat_failed",
             tool,
             path,
             exc_info=True,
@@ -500,13 +500,14 @@ def _verify_ffmpeg_binary(tool: str, path: Path) -> None:
         return
     if not os.access(resolved, os.X_OK):
         logger.error(
-            "ffmpeg_binary_verification_failed tool=%s path=%s reason=not_executable",
+            "ffmpeg_binary_verification_failed outcome=fail tool=%s path=%s reason=not_executable",
             tool,
             resolved,
+            exc_info=PermissionError(f"{tool} binary is not executable"),
         )
         return
     logger.info(
-        "ffmpeg_binary_verified tool=%s path=%s size=%d",
+        "ffmpeg_binary_verified outcome=ok tool=%s path=%s size=%d",
         tool,
         resolved,
         stat_result.st_size,

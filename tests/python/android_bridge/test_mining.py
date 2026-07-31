@@ -253,6 +253,58 @@ def test_registration_callback_exception_is_protocol_error_and_releases_job(
     assert registry.active_run_id is None
 
 
+def test_synchronous_callback_failure_has_one_terminal_stack_owner(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    from anki_miner.utils import ffmpeg_resolver
+
+    registry = JobRegistry()
+    monkeypatch.setattr(mining, "_ensure_runtime_ready", lambda: Path("/files"))
+    monkeypatch.setattr(mining, "_map_config", lambda *_: object())
+    monkeypatch.setattr(ffmpeg_resolver, "resolve_ffmpeg", lambda _config: "/native/libffmpeg.so")
+
+    class ExplodingCallbacks(RecordingCallbacks):
+        def ankiVerifyTarget(self, _raw: str) -> str:
+            raise RuntimeError("private callback failure")
+
+    def process(_request: object, _config: object, adapters: object) -> object:
+        adapters.anki.verify_target({})
+        raise AssertionError("unreachable")
+
+    monkeypatch.setattr(mining, "_process_episode", process)
+    callbacks = ExplodingCallbacks(registry=registry)
+
+    with caplog.at_level("ERROR"):
+        returned = mining.run_video(_request(), callbacks, job_registry=registry)
+
+    terminal = decode_envelope(returned, expected_type="mining.terminal")
+    assert terminal.payload["error"]["code"] == "callback_failed"
+    owners = [record for record in caplog.records if record.exc_info]
+    assert len(owners) == 1
+    assert owners[0].name == mining.logger.name
+    assert "code=callback_failed" in owners[0].getMessage()
+    assert "outcome=fail" in owners[0].getMessage()
+    assert "private callback failure" in caplog.text
+
+
+def test_ffmpeg_path_fallback_error_has_outcome_and_throwable(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    registry = JobRegistry()
+    callbacks = RecordingCallbacks(registry=registry)
+    _stub_execution(monkeypatch, FakeResult())
+
+    with caplog.at_level("ERROR", logger=mining.logger.name):
+        mining.run_video(_request(), callbacks, job_registry=registry)
+
+    fallback = [record for record in caplog.records if "ffmpeg_fallback_to_path" in record.msg]
+    assert len(fallback) == 1
+    assert "outcome=fail" in fallback[0].getMessage()
+    assert fallback[0].exc_info is not None
+
+
 def test_cancellation_raced_through_registration_skips_expensive_composition(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

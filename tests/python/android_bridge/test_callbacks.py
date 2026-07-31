@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass
 
 import android_bridge.callbacks as callbacks_module
@@ -62,6 +63,9 @@ class RecordingCallbacks:
     def onProgress(self, raw: str) -> None:
         self._record("onProgress", raw)
 
+    def onStage(self, raw: str) -> None:
+        self._record("onStage", raw)
+
     def onComplete(self, raw: str) -> None:
         self._record("onComplete", raw)
 
@@ -81,7 +85,7 @@ class FakeResult:
     errors: list[str]
 
 
-def test_progress_and_presenter_methods_emit_versioned_events() -> None:
+def test_progress_and_presenter_methods_emit_versioned_events(caplog: pytest.LogCaptureFixture) -> None:
     registry = JobRegistry()
     handle = registry.begin()
     callbacks = RecordingCallbacks()
@@ -89,6 +93,8 @@ def test_progress_and_presenter_methods_emit_versioned_events() -> None:
 
     adapters.progress.on_start(10, "Parsing")
     adapters.progress.on_progress(3, "字幕")
+    with caplog.at_level(logging.INFO, logger=callbacks_module.logger.name):
+        adapters.progress.on_stage(2, 5, "Extracting media")
     adapters.progress.on_error("line 3", "bad input")
     adapters.progress.on_complete()
     adapters.presenter.show_info("Ready")
@@ -97,6 +103,7 @@ def test_progress_and_presenter_methods_emit_versioned_events() -> None:
     assert [method for method, _ in callbacks.calls] == [
         "onStart",
         "onProgress",
+        "onStage",
         "onError",
         "onComplete",
         "onPresenterEvent",
@@ -105,6 +112,7 @@ def test_progress_and_presenter_methods_emit_versioned_events() -> None:
     assert [message["type"] for _, message in callbacks.calls] == [
         "progress.start",
         "progress.update",
+        "progress.stage",
         "progress.error",
         "progress.complete",
         "presenter.event",
@@ -115,6 +123,8 @@ def test_progress_and_presenter_methods_emit_versioned_events() -> None:
         "errors": [],
     }
     assert all(call[1]["payload"]["runId"] == handle.run_id for call in callbacks.calls)
+    stage_record = next(record for record in caplog.records if "engine_stage" in record.msg)
+    assert "outcome=ok" in stage_record.getMessage()
 
 
 def test_terminal_notifications_are_distinct_from_stage_progress() -> None:

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 import re
 import threading
 import uuid
@@ -12,8 +11,6 @@ from typing import Any, cast
 
 from . import log_context
 from .protocol import BridgeProtocolError, decode_envelope, decode_message, encode_message
-
-logger = logging.getLogger(__name__)
 
 _RUN_ID_RE = re.compile(r"^run_[0-9a-f]{32}$")
 _REQUEST_ID_RE = re.compile(r"^curation_[0-9a-f]{32}$")
@@ -27,9 +24,7 @@ CURATION_PAGE_MAX_CANDIDATES = 100
 CURATION_PAGE_MAX_UTF8_BYTES = 512 * 1024
 
 
-def _reject(code: str, message: str, **fields: object) -> BridgeProtocolError:
-    details = "".join(f" {name}={value}" for name, value in sorted(fields.items()))
-    logger.error("bridge_protocol_rejected code=%s%s", code, details)
+def _reject(code: str, message: str) -> BridgeProtocolError:
     return BridgeProtocolError(code, message)
 
 
@@ -353,11 +348,15 @@ class JobRegistry:
                 state.curation.cancelled = True
                 state.curation.page_resolved = True
                 state.curation.event.set()
-            from .bootstrap import emit_run_warning_summary
+        from .bootstrap import emit_run_warning_summary
 
+        try:
             emit_run_warning_summary()
-            self._active = None
-            log_context.set_active_run(None)
+        finally:
+            with self._lock:
+                if self._active is state:
+                    self._active = None
+                    log_context.set_active_run(None)
 
     def shutdown(self) -> None:
         """Permanently reject new work and release the current run."""

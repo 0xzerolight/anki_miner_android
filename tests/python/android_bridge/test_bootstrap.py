@@ -205,8 +205,8 @@ print(json.dumps([line.split("android_bridge.bootstrap: ", 1)[-1] for line in li
 
     assert result.returncode == 0, result.stderr
     assert json.loads(result.stdout) == [
-        "run.summary warnings=1 errors=0 by=anki_miner.first:1",
-        "run.summary warnings=0 errors=1 by=anki_miner.second:1",
+        "run.summary outcome=ok warnings=1 errors=0 by=anki_miner.first:1",
+        "run.summary outcome=ok warnings=0 errors=1 by=anki_miner.second:1",
     ]
 
 

@@ -1074,14 +1074,13 @@ class AndroidAnkiAdapter:
         except AnkiCallbackError as error:
             if error.code == "timeout" and error.retryable:
                 logger.debug(
-                    "Known-vocabulary scan failed code=%s retryable=%s message=%s",
+                    "Known-vocabulary scan failed outcome=ignored code=%s retryable=%s message=%s",
                     error.code,
                     error.retryable,
                     error,
-                    exc_info=error,
                 )
                 logger.warning(
-                    "Known-vocabulary scan failed; filtering disabled",
+                    "Known-vocabulary scan failed; filtering disabled outcome=skip",
                     exc_info=(
                         RuntimeError,
                         RuntimeError("Known-vocabulary callback timed out"),
@@ -1832,14 +1831,13 @@ class AndroidAnkiAdapter:
                 digest = self._stream_media_digest(resolved_path, work_budget)
             except OSError as error:
                 logger.debug(
-                    "Dictionary media read failed source=%s path=%s error=%s",
+                    "Dictionary media read failed outcome=ignored source=%s path=%s error=%s",
                     source,
                     runtime_path,
                     error,
-                    exc_info=error,
                 )
                 logger.warning(
-                    "Dictionary media read failed; skipping asset",
+                    "Dictionary media read failed; skipping asset outcome=skip",
                     exc_info=(
                         OSError,
                         OSError("Dictionary media read failed"),

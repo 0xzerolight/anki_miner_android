@@ -94,7 +94,13 @@ internal object AppLog {
         reason: String,
         failure: Throwable,
     ) {
-        emit(LogLevel.DEBUG, component, op, failure, arrayOf("reason" to reason))
+        emit(
+            LogLevel.DEBUG,
+            component,
+            op,
+            failure,
+            arrayOf("outcome" to "ignored", "reason" to reason),
+        )
     }
 
     /** A state-machine transition. `op` is the machine name so `op=` stays the primary grep key. */

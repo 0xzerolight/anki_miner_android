@@ -70,6 +70,7 @@ class BridgeMiningRepositoryTest {
 
         runBlocking { harness.repository.startVideo(INPUT) }
         val curating = awaitState(harness.repository) { it is MiningRunState.Curating } as MiningRunState.Curating
+        harness.bridge.runCallbacks!!.onStage(PROGRESS_STAGE)
         runBlocking {
             harness.repository.confirmCuration(
                 curating.request.runId,
@@ -98,6 +99,10 @@ class BridgeMiningRepositoryTest {
         val onControlThread = recorded.records.single { it.contains("detail=foreground_started") }
         assertTrue(onRunThread, onRunThread.contains(" run=$RUN_ID c=mining op=phase"))
         assertTrue(onControlThread, onControlThread.contains(" run=$RUN_ID c=mining op=phase"))
+        assertTrue(
+            recorded.records.single { it.contains("op=engine_stage") }
+                .contains("outcome=ok"),
+        )
     }
 
     @Test
@@ -1230,6 +1235,8 @@ class BridgeMiningRepositoryTest {
             """{"schemaVersion":1,"type":"job.registration.request","payload":{"runId":"$RUN_ID"}}"""
         val PROGRESS_START =
             """{"schemaVersion":1,"type":"progress.start","payload":{"runId":"$RUN_ID","total":3,"description":"Preparing curation"}}"""
+        val PROGRESS_STAGE =
+            """{"schemaVersion":1,"type":"progress.stage","payload":{"runId":"$RUN_ID","index":2,"total":5,"name":"Extracting media"}}"""
         const val MINED_TERM = "猫"
         const val ANKI_VERIFY_REQUEST =
             """{"schemaVersion":1,"type":"anki.verify.request","payload":{}}"""

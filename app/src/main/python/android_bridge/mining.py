@@ -791,7 +791,7 @@ def _exception_terminal(
         message = str(error)
         # A stable machine code and a deliberate message already identify this
         # failure, so it needs a traceback but not a correlation key.
-        log.error("Mining failed with protocol error %s", code, exc_info=error)
+        log.error("Mining failed with protocol error code=%s outcome=fail", code, exc_info=error)
     else:
         # Record before importing the engine: this import is itself a known
         # failure mode (ANKI_MINER_HOME ordering, the PyQt6 shim), and if it
@@ -872,7 +872,10 @@ def run_video(
             from anki_miner.utils.ffmpeg_resolver import resolve_ffmpeg
 
             if resolve_ffmpeg(config) == "ffmpeg":
-                logger.error("ffmpeg_fallback_to_path")
+                logger.error(
+                    "ffmpeg_fallback_to_path outcome=fail",
+                    exc_info=RuntimeError("Bundled ffmpeg resolved to the PATH fallback"),
+                )
             if adapters.cancel_event.is_set():
                 raise AnkiOperationCancelled("runVideo", "Mining was cancelled", False)
             result = _process_episode(request, config, adapters)
