@@ -254,15 +254,26 @@ internal class FileLogSink(
     private fun rotate() {
         closeFile()
         if (backupCount <= 0) {
-            target.delete()
+            if (target.exists() && !target.delete()) {
+                disable(IOException("Could not delete the active log during rotation"))
+            }
             return
         }
-        File(directory, "$baseName.$backupCount").delete()
+        val oldest = File(directory, "$baseName.$backupCount")
+        if (oldest.exists() && !oldest.delete()) {
+            disable(IOException("Could not delete the oldest log backup during rotation"))
+            return
+        }
         for (index in backupCount - 1 downTo 1) {
             val source = File(directory, "$baseName.$index")
-            if (source.exists()) source.renameTo(File(directory, "$baseName.${index + 1}"))
+            if (source.exists() && !source.renameTo(File(directory, "$baseName.${index + 1}"))) {
+                disable(IOException("Could not shift a log backup during rotation"))
+                return
+            }
         }
-        target.renameTo(File(directory, "$baseName.1"))
+        if (target.exists() && !target.renameTo(File(directory, "$baseName.1"))) {
+            disable(IOException("Could not rotate the active log"))
+        }
     }
 
     private fun copyInto(destination: File): List<File> {
@@ -287,9 +298,12 @@ internal class FileLogSink(
             runId = null,
             component = LogComponent.DIAG,
             op = "log.dropped",
-            fields = arrayOf("n" to count),
-            failure = null,
+            fields = arrayOf("n" to count, "outcome" to "fail"),
+            failure = DroppedLogRecordsException(count),
         )
+
+    private class DroppedLogRecordsException(count: Long) :
+        RuntimeException("$count queued log records were dropped", null, false, false)
 
     private class OpenFile(
         private val counted: CountingOutputStream,

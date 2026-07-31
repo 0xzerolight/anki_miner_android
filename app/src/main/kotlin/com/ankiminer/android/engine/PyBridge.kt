@@ -61,6 +61,7 @@ internal class ChaquopyPythonRuntime(
                 AppLog.i(
                     LogComponent.BOOTSTRAP,
                     "python.start",
+                    "outcome" to "ok",
                     "ms" to (System.nanoTime() - startedNanos) / 1_000_000L,
                 )
                 Python.getInstance().getModule("android_bridge.boundary")
@@ -81,19 +82,25 @@ internal class ChaquopyPythonRuntime(
             // ANKI_MINER_HOME freezes at import, so a mismatch here means every later path resolves
             // somewhere else. The check message cannot name the two homes; this record can.
             if (ready !is BridgeMessage.BootstrapReady || ready.home != requestedHome) {
+                val mismatch =
+                    IllegalStateException("Python bootstrap did not confirm the requested engine home")
                 AppLog.e(
                     LogComponent.BOOTSTRAP,
                     "python.home",
-                    null,
+                    mismatch,
+                    "outcome" to "fail",
                     "requested" to requestedHome,
                     "confirmed" to (ready as? BridgeMessage.BootstrapReady)?.home,
                 )
-            }
-            check(ready is BridgeMessage.BootstrapReady && ready.home == requestedHome) {
-                "Python bootstrap did not confirm the requested engine home"
+                throw mismatch
             }
         }
-        AppLog.i(LogComponent.BOOTSTRAP, "python.home", "home" to requestedHome)
+        AppLog.i(
+            LogComponent.BOOTSTRAP,
+            "python.home",
+            "outcome" to "ok",
+            "home" to requestedHome,
+        )
         // Before tokenizer.configure and any engine work: the app starts Python work at launch
         // without the user touching anything, so waiting for the settings collector in
         // AnkiMinerApplication would leave the first run of the process logging at INFO.

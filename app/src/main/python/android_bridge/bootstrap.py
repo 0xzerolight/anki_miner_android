@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import logging.handlers
 import os
@@ -41,6 +42,76 @@ _THIRD_PARTY_LOG_CEILING = {
     "charset_normalizer": logging.WARNING,
     "PIL": logging.WARNING,
 }
+
+_BARE_PUNCTUATION = "._:/@+-"
+
+
+class _StructuredLogFormatter(logging.Formatter):
+    """Render Python records with the same parse grammar as Kotlin."""
+
+    converter = time.gmtime
+
+    def format(self, record: logging.LogRecord) -> str:
+        timestamp = self.formatTime(record, "%Y-%m-%dT%H:%M:%S")
+        level = _level_code(record.levelno)
+        outcome = "fail" if record.levelno >= logging.WARNING else "ok"
+        message = record.getMessage()
+        rendered = (
+            f"{timestamp}.{int(record.msecs):03d}Z {level} "
+            f"run={_render_log_value(getattr(record, 'run_id', '-'))} "
+            f"c=bridge op={_render_log_key(record.name)} outcome={outcome} "
+            f"message={_render_log_value(message)}"
+        )
+        failure = _record_exception_info(record)
+        if failure is not None:
+            traceback_text = self.formatException(failure)
+            rendered += "".join(f"\n\t{line}" for line in traceback_text.splitlines())
+        return rendered
+
+
+def _level_code(level: int) -> str:
+    if level >= logging.ERROR:
+        return "E"
+    if level >= logging.WARNING:
+        return "W"
+    if level >= logging.INFO:
+        return "I"
+    return "D"
+
+
+def _render_log_value(value: object) -> str:
+    text = "-" if value is None else str(value)
+    if text and all(
+        character.isascii() and (character.isalnum() or character in _BARE_PUNCTUATION) for character in text
+    ):
+        return text
+    return json.dumps(text, ensure_ascii=False)
+
+
+def _render_log_key(value: object) -> str:
+    text = str(value)
+    safe = "".join(
+        character if character.isascii() and (character.isalnum() or character in _BARE_PUNCTUATION) else "_"
+        for character in text
+    )
+    return safe or "_"
+
+
+def _record_exception_info(record: logging.LogRecord) -> tuple[type[BaseException], BaseException, object] | None:
+    if record.exc_info and record.exc_info[0] is not None:
+        return record.exc_info
+    if record.levelno < logging.WARNING:
+        return None
+    values = record.args.values() if isinstance(record.args, dict) else record.args
+    for value in values:
+        if isinstance(value, BaseException):
+            return type(value), value, value.__traceback__
+    failure_type = getattr(record, "_anki_miner_failure_type", None)
+    detail = (
+        f"{failure_type}: vendored record redacted" if failure_type else "Python log call omitted exception context"
+    )
+    failure = RuntimeError(detail)
+    return type(failure), failure, None
 
 
 class _RunWarningCounter(logging.Handler):
@@ -121,12 +192,7 @@ def _install_file_logging(home: str) -> None:
         # The timestamp must be byte-compatible with Kotlin's LogRecord.kt
         # (UTC, millisecond precision, trailing Z) so a maintainer can
         # interleave anki_miner_app.log and this file with a plain `sort`.
-        formatter = logging.Formatter(
-            "%(asctime)s.%(msecs)03dZ %(levelname)s run=%(run_id)s %(name)s: %(message)s",
-            datefmt="%Y-%m-%dT%H:%M:%S",
-        )
-        formatter.converter = time.gmtime
-        handler.setFormatter(formatter)
+        handler.setFormatter(_StructuredLogFormatter())
         # On the handler, not on any logger: this is what stamps all 47
         # vendored anki_miner modules and every bridge logger without
         # touching the sync-generated vendored tree.

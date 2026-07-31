@@ -49,7 +49,13 @@ internal fun applyPythonLogLevelSafely(
         .onFailure { failure ->
             // level.name, not the wire name: rendering the wire name is one of the things that
             // can throw here, and a failure handler must not fail the same way as its subject.
-            AppLog.w(LogComponent.DIAG, "python.loglevel", failure, "level" to level.name)
+            AppLog.w(
+                LogComponent.DIAG,
+                "python.loglevel",
+                failure,
+                "outcome" to "fail",
+                "level" to level.name,
+            )
         }
 }
 
@@ -71,6 +77,6 @@ internal fun applyStoredPythonLogLevel(
         AppLog.setMinLevel(level)
         applyPythonLogLevel(level, dispatch)
     }.onFailure { failure ->
-        AppLog.w(LogComponent.DIAG, "loglevel.bootstrap", failure)
+        AppLog.w(LogComponent.DIAG, "loglevel.bootstrap", failure, "outcome" to "fail")
     }
 }

@@ -55,7 +55,7 @@ internal class AndroidDiagnosticsExporter(
         withContext(ioDispatcher) {
             // No RuntimeWorkCoordinator lease: the most valuable bundle is the one captured while mining is stuck.
             onStep(DiagnosticsExportStep.PREPARING)
-            AppLog.i(LogComponent.DIAG, "bundle.build", "outcome" to "start")
+            AppLog.i(LogComponent.DIAG, "bundle.build", "outcome" to "ok", "at" to "start")
             try {
                 onStep(DiagnosticsExportStep.BUILDING)
                 stageBundle().also { bundle ->
@@ -121,7 +121,7 @@ internal class AndroidDiagnosticsExporter(
         if (uri.scheme != CONTENT_SCHEME) {
             throw DiagnosticsExportException(DiagnosticsExportFailure.BUNDLE)
         }
-        AppLog.i(LogComponent.DIAG, "bundle.share", "outcome" to "ready")
+        AppLog.i(LogComponent.DIAG, "bundle.share", "outcome" to "ok", "state" to "ready")
         return bundle.uri
     }
 

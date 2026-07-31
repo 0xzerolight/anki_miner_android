@@ -63,7 +63,7 @@ internal object AppLog {
     fun w(
         component: LogComponent,
         op: String,
-        failure: Throwable?,
+        failure: Throwable,
         vararg fields: Pair<String, Any?>,
     ) {
         emit(LogLevel.WARN, component, op, failure, fields)
@@ -72,7 +72,7 @@ internal object AppLog {
     fun e(
         component: LogComponent,
         op: String,
-        failure: Throwable?,
+        failure: Throwable,
         vararg fields: Pair<String, Any?>,
     ) {
         emit(LogLevel.ERROR, component, op, failure, fields)
@@ -127,7 +127,13 @@ internal object AppLog {
         block: () -> T,
     ): T {
         if (!debugEnabled) return block()
-        emit(LogLevel.DEBUG, component, op, null, arrayOf<Pair<String, Any?>>("at" to "enter"))
+        emit(
+            LogLevel.DEBUG,
+            component,
+            op,
+            null,
+            arrayOf<Pair<String, Any?>>("at" to "enter", "outcome" to "ok"),
+        )
         val startedNanos = System.nanoTime()
         try {
             val result = block()
@@ -151,7 +157,7 @@ internal object AppLog {
                 failure,
                 arrayOf<Pair<String, Any?>>(
                     "at" to "exit",
-                    "outcome" to "error",
+                    "outcome" to "fail",
                     "ms" to elapsedMillis(startedNanos),
                 ),
             )
@@ -203,6 +209,15 @@ internal object AppLog {
         broken: Throwable,
     ) {
         try {
+            val safeFailure =
+                if (level >= LogLevel.WARN) {
+                    LogRenderingException(
+                        failure?.javaClass?.name ?: "-",
+                        broken.javaClass.name,
+                    )
+                } else {
+                    null
+                }
             // Class names only: reading anything else off either throwable is what failed.
             sink.write(
                 renderLogRecord(
@@ -212,10 +227,11 @@ internal object AppLog {
                     component,
                     op,
                     arrayOf(
+                        "outcome" to "fail",
                         "unrenderable" to (failure?.javaClass?.name ?: "-"),
                         "renderFault" to broken.javaClass.name,
                     ),
-                    null,
+                    safeFailure,
                 ),
             )
         } catch (_: Throwable) {
@@ -226,4 +242,9 @@ internal object AppLog {
 
     private fun elapsedMillis(startedNanos: Long): Long =
         (System.nanoTime() - startedNanos) / 1_000_000L
+
+    private class LogRenderingException(
+        unrenderable: String,
+        renderFault: String,
+    ) : RuntimeException("Log rendering failed: unrenderable=$unrenderable renderFault=$renderFault")
 }

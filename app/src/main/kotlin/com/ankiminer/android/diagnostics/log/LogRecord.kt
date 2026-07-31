@@ -25,6 +25,7 @@ internal fun renderLogRecord(
     fields: Array<out Pair<String, Any?>>,
     failure: Throwable?,
 ): String {
+    validateRecordGrammar(level, fields, failure)
     val record = StringBuilder(RECORD_HINT)
     record.append(TIMESTAMP.format(at))
     record.append(' ').append(level.code)
@@ -57,6 +58,22 @@ private const val CONTINUATION = "\n\t"
 private const val FRAME_INDENT = "\n\t    "
 private const val MAX_FRAMES = 200
 private const val BARE_PUNCTUATION = "._:/@+-"
+private val ALLOWED_OUTCOMES = setOf("ok", "fail", "skip", "ignored")
+
+private fun validateRecordGrammar(
+    level: LogLevel,
+    fields: Array<out Pair<String, Any?>>,
+    failure: Throwable?,
+) {
+    val outcomes = fields.filter { (key, _) -> key == "outcome" }
+    require(outcomes.size == 1) { "A log record must carry exactly one outcome" }
+    require(outcomes.single().second?.toString() in ALLOWED_OUTCOMES) {
+        "A log record outcome must use the documented wire domain"
+    }
+    require(level < LogLevel.WARN || failure != null) {
+        "WARN and ERROR log records must carry a throwable"
+    }
+}
 
 private fun renderValue(value: Any?): String {
     val text = value?.toString() ?: return ABSENT

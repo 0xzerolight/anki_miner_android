@@ -72,6 +72,27 @@ class FileLogSinkTest {
         }
 
     @Test
+    fun `a failed rotation disables the sink before the active log can grow again`() =
+        runTest {
+            val directory = temporaryFolder.newFolder("rotation-failure")
+            val blockedBackup = File(directory, "anki_miner_app.log.1").apply { mkdir() }
+            File(blockedBackup, "keep").writeText("occupied")
+            val sink = newSink(directory, maxBytes = 8)
+
+            sink.write("rotation-0")
+            sink.flush()
+
+            val sizeAtFailure = logIn(directory).length()
+            assertNotNull(sink.disabledBy)
+
+            sink.write("must-not-append")
+            sink.flush()
+
+            assertEquals(sizeAtFailure, logIn(directory).length())
+            assertTrue(File(blockedBackup, "keep").isFile)
+        }
+
+    @Test
     fun `records dropped by the bounded queue are reported as a gap`() =
         runTest {
             val directory = temporaryFolder.newFolder("dropping")
@@ -83,8 +104,9 @@ class FileLogSinkTest {
             sink.flush()
 
             val lines = logIn(directory).readLines()
-            assertTrue(lines.first().contains(" W run=- c=diag op=log.dropped n=6"))
-            assertEquals(listOf("line-6", "line-7", "line-8", "line-9"), lines.drop(1))
+            assertTrue(lines.first().contains(" W run=- c=diag op=log.dropped n=6 outcome=fail"))
+            assertTrue(lines[1].startsWith('\t'))
+            assertEquals(listOf("line-6", "line-7", "line-8", "line-9"), lines.drop(2))
         }
 
     @Test

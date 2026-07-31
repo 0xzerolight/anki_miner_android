@@ -116,6 +116,7 @@ class DefaultLogPrivacyFilter(logging.Filter):
             verbose = logging.getLogger(_VENDORED_LOG_TREE).isEnabledFor(logging.DEBUG)
             if vendored and not verbose:
                 failure = _record_failure_name(record)
+                record._anki_miner_failure_type = failure
                 record.msg = "vendored record redacted failure=%s"
                 record.args = (failure,)
                 # Traceback messages and locals can carry the same vocabulary

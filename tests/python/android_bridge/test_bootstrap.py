@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -198,7 +199,7 @@ handler = next(
 )
 handler.flush()
 lines = open(handler.baseFilename, encoding="utf-8").read().splitlines()
-print(json.dumps([line.split("android_bridge.bootstrap: ", 1)[-1] for line in lines if "run.summary " in line]))
+print(json.dumps([json.loads(line.split(" message=", 1)[1]) for line in lines if "run.summary " in line]))
 """,
         tmp_path,
     )
@@ -379,6 +380,39 @@ print(json.dumps({"default": default_content, "verbose": verbose_content}))
     assert "vendored record redacted" in data["default"]
     assert "RuntimeError" in data["default"]
     assert "殺す" in data["verbose"]
+
+
+def test_python_file_records_follow_the_shared_record_grammar(tmp_path: Path) -> None:
+    result = _run(
+        r"""
+import json, logging, logging.handlers, sys
+from android_bridge.bootstrap import initialize
+initialize(sys.argv[1])
+logger = logging.getLogger("android_bridge.grammar_probe")
+logger.info("phase complete")
+try:
+    raise RuntimeError("broken\nbridge")
+except RuntimeError:
+    logger.exception("dispatch failed")
+handler = next(
+    h for h in logging.getLogger().handlers if isinstance(h, logging.handlers.RotatingFileHandler)
+)
+handler.flush()
+print(json.dumps(open(handler.baseFilename, encoding="utf-8").read().splitlines()))
+""",
+        tmp_path,
+    )
+
+    assert result.returncode == 0, result.stderr
+    lines = json.loads(result.stdout)
+    header = re.compile(
+        r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z [DIWE] "
+        r"run=\S+ c=[a-z]+ op=\S+ outcome=(?:ok|fail|skip|ignored) message=",
+    )
+    assert sum(bool(header.match(line)) for line in lines) >= 3
+    assert all(header.match(line) or line.startswith("\t") for line in lines)
+    error_index = next(index for index, line in enumerate(lines) if 'message="dispatch failed"' in line)
+    assert lines[error_index + 1].startswith("\tTraceback")
 
 
 def test_install_failure_stashes_traceback_and_writes_stderr_without_breaking_bootstrap(

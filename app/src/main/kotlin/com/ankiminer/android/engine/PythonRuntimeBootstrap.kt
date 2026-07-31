@@ -111,14 +111,20 @@ internal class PythonRuntimeBootstrapGate<T>(
                     // The readiness state carries no stack, so this record is the only full account
                     // of why the engine never came up — and Python's own log handler does not exist
                     // yet at this point.
-                    AppLog.e(LogComponent.BOOTSTRAP, "python.initialize", origin, "stage" to stage.name)
+                    AppLog.e(
+                        LogComponent.BOOTSTRAP,
+                        "python.initialize",
+                        origin,
+                        "outcome" to "fail",
+                        "stage" to stage.name,
+                    )
                     mutableReadiness.value = PythonRuntimeReadiness.Failed(stage, compactFaultToken(origin))
                     completion.completeExceptionally(origin)
                     if (origin is Error) throw origin
                 }
             }
         } catch (failure: RuntimeException) {
-            AppLog.e(LogComponent.BOOTSTRAP, "python.enqueue", failure)
+            AppLog.e(LogComponent.BOOTSTRAP, "python.enqueue", failure, "outcome" to "fail")
             mutableReadiness.value =
                 PythonRuntimeReadiness.Failed(PythonBootstrapStage.ENQUEUE, compactFaultToken(failure))
             completion.completeExceptionally(failure)

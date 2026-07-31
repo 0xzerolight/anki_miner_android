@@ -84,7 +84,7 @@ class PythonRuntimeBootstrapTest {
             assertEquals(listOf(BridgeJsonCodec.encodeDiagnosticsLogLevelSet("debug")), requests)
             val record = recorded.records.single()
             assertTrue(record, record.contains(" W "))
-            assertTrue(record, record.contains("c=diag op=python.loglevel level=DEBUG"))
+            assertTrue(record, record.contains("c=diag op=python.loglevel outcome=fail level=DEBUG"))
         } finally {
             AppLog.install(NoOpSink)
         }

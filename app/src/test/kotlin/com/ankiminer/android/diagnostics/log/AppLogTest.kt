@@ -29,13 +29,17 @@ class AppLogTest {
 
     @Test
     fun `debug records are suppressed until the minimum level admits them`() {
-        AppLog.d(LogComponent.MINING, "word.scored") { arrayOf("word" to "猫") }
+        AppLog.d(LogComponent.MINING, "word.scored") {
+            arrayOf("word" to "猫", "outcome" to "ok")
+        }
 
         assertFalse(AppLog.debugEnabled)
         assertEquals(emptyList<String>(), recorded.records)
 
         AppLog.setMinLevel(LogLevel.DEBUG)
-        AppLog.d(LogComponent.MINING, "word.scored") { arrayOf("word" to "猫") }
+        AppLog.d(LogComponent.MINING, "word.scored") {
+            arrayOf("word" to "猫", "outcome" to "ok")
+        }
 
         assertTrue(AppLog.debugEnabled)
         assertTrue(recorded.records.single().contains(" D run=- c=mining op=word.scored word=\"猫\""))
@@ -47,14 +51,14 @@ class AppLogTest {
 
         AppLog.d(LogComponent.MINING, "word.scored") {
             evaluated++
-            arrayOf("n" to evaluated)
+            arrayOf("n" to evaluated, "outcome" to "ok")
         }
         assertEquals(0, evaluated)
 
         AppLog.setMinLevel(LogLevel.DEBUG)
         AppLog.d(LogComponent.MINING, "word.scored") {
             evaluated++
-            arrayOf("n" to evaluated)
+            arrayOf("n" to evaluated, "outcome" to "ok")
         }
         assertEquals(1, evaluated)
     }
@@ -62,9 +66,14 @@ class AppLogTest {
     @Test
     fun `install replays everything the pre-install buffer captured, in order`() {
         AppLog.install(PreInstallBufferSink())
-        AppLog.i(LogComponent.BOOTSTRAP, "python.start")
-        AppLog.e(LogComponent.BOOTSTRAP, "python.initialize", IOException("no such file"))
-        AppLog.i(LogComponent.BOOTSTRAP, "python.home")
+        AppLog.i(LogComponent.BOOTSTRAP, "python.start", "outcome" to "ok")
+        AppLog.e(
+            LogComponent.BOOTSTRAP,
+            "python.initialize",
+            IOException("no such file"),
+            "outcome" to "fail",
+        )
+        AppLog.i(LogComponent.BOOTSTRAP, "python.home", "outcome" to "ok")
 
         val replayed = RecordingLogSink()
         AppLog.install(replayed)
@@ -89,13 +98,15 @@ class AppLogTest {
 
     @Test
     fun `nested run ids restore the outer value and an absent id renders as a dash`() {
-        AppLog.i(LogComponent.MINING, "before")
+        AppLog.i(LogComponent.MINING, "before", "outcome" to "ok")
         LogContext.withRunId("run_ab12cd34") {
-            AppLog.i(LogComponent.MINING, "outer")
-            LogContext.withRunId("run_ef56ab78") { AppLog.i(LogComponent.MINING, "inner") }
-            AppLog.i(LogComponent.MINING, "restored")
+            AppLog.i(LogComponent.MINING, "outer", "outcome" to "ok")
+            LogContext.withRunId("run_ef56ab78") {
+                AppLog.i(LogComponent.MINING, "inner", "outcome" to "ok")
+            }
+            AppLog.i(LogComponent.MINING, "restored", "outcome" to "ok")
         }
-        AppLog.i(LogComponent.MINING, "after")
+        AppLog.i(LogComponent.MINING, "after", "outcome" to "ok")
 
         assertEquals(
             listOf("-", "run_ab12cd34", "run_ef56ab78", "run_ab12cd34", "-"),
@@ -111,11 +122,17 @@ class AppLogTest {
         aggregate.addSuppressed(suppressed)
         val reported = IllegalStateException("job cleanup", aggregate)
 
-        AppLog.e(LogComponent.SAF, "job.close", reported, "fault" to "f7a3c91e")
+        AppLog.e(
+            LogComponent.SAF,
+            "job.close",
+            reported,
+            "fault" to "f7a3c91e",
+            "outcome" to "fail",
+        )
 
         val record = recorded.records.single()
         val lines = record.lines()
-        assertTrue(lines.first().endsWith(" E run=- c=saf op=job.close fault=f7a3c91e"))
+        assertTrue(lines.first().endsWith(" E run=- c=saf op=job.close fault=f7a3c91e outcome=fail"))
         assertTrue(lines.drop(1).all { it.startsWith("\t") })
         assertTrue(record.contains("\tjava.lang.IllegalStateException: job cleanup"))
         assertTrue(record.contains("\tCaused by: java.io.IOException: release failed"))
@@ -129,7 +146,7 @@ class AppLogTest {
         val second = RuntimeException("second", first)
         first.initCause(second)
 
-        AppLog.e(LogComponent.BRIDGE, "dispatch", first)
+        AppLog.e(LogComponent.BRIDGE, "dispatch", first, "outcome" to "fail")
 
         val record = recorded.records.single()
         assertEquals(2, record.split("Caused by: ").size - 1)
@@ -142,7 +159,7 @@ class AppLogTest {
         deep.stackTrace =
             Array(250) { index -> StackTraceElement("Deep", "frame$index", "Deep.kt", index) }
 
-        AppLog.e(LogComponent.BRIDGE, "dispatch", deep)
+        AppLog.e(LogComponent.BRIDGE, "dispatch", deep, "outcome" to "fail")
 
         val record = recorded.records.single()
         assertEquals(200, record.split("\n\t    at ").size - 1)
@@ -153,7 +170,7 @@ class AppLogTest {
     fun `the timestamp length constant still matches what is rendered`() {
         // LogcatSink indexes the level character past this constant to pick a logcat priority; a
         // format change that nobody mirrored here silently downgrades every logcat line to INFO.
-        AppLog.w(LogComponent.DIAG, "probe", null)
+        AppLog.w(LogComponent.DIAG, "probe", IOException("probe"), "outcome" to "fail")
 
         val record = recorded.records.single()
         assertTrue(
@@ -166,11 +183,11 @@ class AppLogTest {
 
     @Test
     fun `a value carrying quotes, newlines and control characters stays on one line`() {
-        AppLog.w(
+        AppLog.i(
             LogComponent.MEDIA,
             "probe",
-            null,
             "detail" to "he said \"go\"\r\nsecond\u0007 line\\here",
+            "outcome" to "ok",
         )
 
         val record = recorded.records.single()
@@ -185,11 +202,18 @@ class AppLogTest {
 
     @Test
     fun `a state transition names the machine as its op`() {
-        AppLog.state(LogComponent.MINING, "phase", from = "PROMOTING", to = "RUNNING", "ms" to 142)
+        AppLog.state(
+            LogComponent.MINING,
+            "phase",
+            from = "PROMOTING",
+            to = "RUNNING",
+            "ms" to 142,
+            "outcome" to "ok",
+        )
 
         assertTrue(
             recorded.records.single()
-                .endsWith(" I run=- c=mining op=phase from=PROMOTING to=RUNNING ms=142"),
+                .endsWith(" I run=- c=mining op=phase from=PROMOTING to=RUNNING ms=142 outcome=ok"),
         )
     }
 
@@ -208,7 +232,7 @@ class AppLogTest {
         assertEquals(thrown, caught)
         assertEquals(listOf("tokenize", "tokenize"), recorded.records.map(::opOf))
         assertTrue(recorded.records[0].contains("at=enter"))
-        assertTrue(recorded.records[1].contains("at=exit outcome=error ms="))
+        assertTrue(recorded.records[1].contains("at=exit outcome=fail ms="))
     }
 
     @Test
@@ -239,11 +263,16 @@ class AppLogTest {
         // interpreter is already dead — which is the failure being logged. Propagating out of here
         // would skip the caller's own error handling, and PythonRuntimeBootstrapGate would never
         // complete its future.
-        AppLog.e(LogComponent.BOOTSTRAP, "python.initialize", UnreadableFailure())
+        AppLog.e(
+            LogComponent.BOOTSTRAP,
+            "python.initialize",
+            UnreadableFailure(),
+            "outcome" to "fail",
+        )
 
         val record = recorded.records.single()
-        assertEquals(1, record.lines().size)
-        assertTrue(record.contains(" E run=- c=bootstrap op=python.initialize unrenderable="))
+        assertTrue(record.lines().drop(1).all { it.startsWith('\t') })
+        assertTrue(record.contains(" E run=- c=bootstrap op=python.initialize outcome=fail unrenderable="))
         assertTrue(record.contains("UnreadableFailure"))
         assertTrue(record.contains("renderFault=java.lang.IllegalStateException"))
     }
