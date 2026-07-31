@@ -37,7 +37,6 @@ def _invoke_result(callbacks: object, method_name: str, message: str) -> str:
     try:
         result = method(message)
     except Exception as exc:
-        logger.exception("Engine callback failed method=%s", method_name)
         raise BridgeProtocolError("callback_failed", f"EngineCallbacks.{method_name} raised an exception") from exc
     if not isinstance(result, str):
         raise BridgeProtocolError(
@@ -335,7 +334,7 @@ class AndroidProgressCallback:
         the per-stage on_start/on_progress counts.
         """
 
-        logger.info("engine_stage index=%d total=%d name=%s", index, total, name)
+        logger.info("engine_stage outcome=ok index=%d total=%d name=%s", index, total, name)
         _invoke(
             self.callbacks,
             "onStage",

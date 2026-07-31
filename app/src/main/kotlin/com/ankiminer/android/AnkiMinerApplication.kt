@@ -357,7 +357,7 @@ class AnkiMinerApplication : Application() {
                     File(cacheDir, DiagnosticsBundleJanitor.DIRECTORY_NAME),
                 ).clean()
             } catch (failure: RuntimeException) {
-                AppLog.w(LogComponent.DIAG, "bundle.janitor", failure)
+                AppLog.w(LogComponent.DIAG, "bundle.janitor", failure, "outcome" to "fail")
             }
         }
         applicationScope.launch {

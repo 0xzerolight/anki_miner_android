@@ -1161,6 +1161,7 @@ internal class BridgeMiningRepository(
         AppLog.i(
             LogComponent.MINING,
             "engine_stage",
+            "outcome" to "ok",
             "index" to message.index,
             "total" to message.total,
             "name" to message.name,

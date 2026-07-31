@@ -91,7 +91,7 @@ def emit_run_warning_summary() -> None:
     warnings, errors, by_logger = _run_warning_counter.finish_run()
     by = ",".join(f"{name}:{count}" for name, count in by_logger) or "-"
     logging.getLogger(__name__).info(
-        "run.summary warnings=%d errors=%d by=%s",
+        "run.summary outcome=ok warnings=%d errors=%d by=%s",
         warnings,
         errors,
         by,

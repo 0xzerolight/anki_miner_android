@@ -139,7 +139,7 @@ class SafJobFileOwnerTest {
     @Test
     fun closeFailureLogPreservesAggregateSuppressedChain() {
         val recorded = RecordingLogSink()
-        AppLog.setMinLevel(LogLevel.INFO)
+        AppLog.setMinLevel(LogLevel.DEBUG)
         AppLog.install(NoOpSink)
         AppLog.install(recorded)
         val directory = Files.createTempDirectory("saf-owner-close-log").toFile()
@@ -161,6 +161,7 @@ class SafJobFileOwnerTest {
 
             assertThrows(IOException::class.java) { owner.close() }
 
+            assertEquals(1, recorded.records.size)
             val record = recorded.records.single()
             assertTrue(record, record.contains(" W run=- c=media op=job_files.close outcome=fail"))
             assertTrue(record, record.contains("java.io.IOException: second"))

@@ -994,15 +994,23 @@ internal class AndroidResourceManager(
                 cancelPython(operation)
                 throw failure
             } catch (failure: ResourceDownloadException) {
-                AppLog.e(
-                    LogComponent.RESOURCES,
-                    "operation.run",
-                    failure,
-                    "operation" to operation.id,
-                    "code" to failure.stableCode,
-                    "outcome" to "fail",
-                )
-                if (failure.stableCode != "resource_operation_cancelled") {
+                if (failure.stableCode == "resource_operation_cancelled") {
+                    AppLog.d(LogComponent.RESOURCES, "operation.run") {
+                        arrayOf(
+                            "operation" to operation.id,
+                            "code" to failure.stableCode,
+                            "outcome" to "skip",
+                        )
+                    }
+                } else {
+                    AppLog.e(
+                        LogComponent.RESOURCES,
+                        "operation.run",
+                        failure,
+                        "operation" to operation.id,
+                        "code" to failure.stableCode,
+                        "outcome" to "fail",
+                    )
                     recordFailure(operation, failure.stableCode, downloadUserMessage(failure))
                 }
             } catch (failure: ResourceStorageException) {
@@ -1020,16 +1028,24 @@ internal class AndroidResourceManager(
                     strings.resolve(R.string.resource_failure_storage),
                 )
             } catch (failure: ResourceBridgeException) {
-                AppLog.e(
-                    LogComponent.RESOURCES,
-                    "operation.run",
-                    failure.cause ?: failure,
-                    "operation" to operation.id,
-                    "code" to failure.code,
-                    "fault" to failure.faultId,
-                    "outcome" to "fail",
-                )
-                if (failure.code != "resource_operation_cancelled") {
+                if (failure.code == "resource_operation_cancelled") {
+                    AppLog.d(LogComponent.RESOURCES, "operation.run") {
+                        arrayOf(
+                            "operation" to operation.id,
+                            "code" to failure.code,
+                            "outcome" to "skip",
+                        )
+                    }
+                } else {
+                    AppLog.e(
+                        LogComponent.RESOURCES,
+                        "operation.run",
+                        failure.cause ?: failure,
+                        "operation" to operation.id,
+                        "code" to failure.code,
+                        "fault" to failure.faultId,
+                        "outcome" to "fail",
+                    )
                     // userMessage(code) is unchanged; the id rides beside it into diagnostics only.
                     recordFailure(operation, failure.code, userMessage(failure.code), failure.faultId)
                 }

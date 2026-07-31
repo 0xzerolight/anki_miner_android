@@ -181,24 +181,12 @@ class SafJobFileOwner internal constructor(
                         throw IOException("Could not remove SAF cache copy: ${cacheFile.absolutePath}")
                     }
                 } catch (cleanupError: Exception) {
-                    AppLog.ignored(
-                        LogComponent.MEDIA,
-                        "job_files.close.cache",
-                        "aggregated_into_close",
-                        cleanupError,
-                    )
                     failure = collectFailure(failure, cleanupError)
                 }
             }
             try {
                 input.descriptor.close()
             } catch (cleanupError: Exception) {
-                AppLog.ignored(
-                    LogComponent.MEDIA,
-                    "job_files.close.descriptor",
-                    "aggregated_into_close",
-                    cleanupError,
-                )
                 failure = collectFailure(failure, cleanupError)
             }
         }

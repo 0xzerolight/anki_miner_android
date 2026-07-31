@@ -96,10 +96,17 @@ def test_ffmpeg_binary_verification_logs_non_executable_and_missing_paths(
 
     map_config_settings({}, paths)
 
-    failures = [record.getMessage() for record in caplog.records if "ffmpeg_binary_verification_failed" in record.msg]
+    failures = [record for record in caplog.records if "ffmpeg_binary_verification_failed" in record.msg]
     assert len(failures) == 2
-    assert any("tool=ffmpeg" in failure and "reason=not_executable" in failure for failure in failures)
-    assert any("tool=ffprobe" in failure and "reason=stat_failed" in failure for failure in failures)
+    assert all(record.exc_info for record in failures)
+    assert all("outcome=fail" in record.getMessage() for record in failures)
+    assert any(
+        "tool=ffmpeg" in failure.getMessage() and "reason=not_executable" in failure.getMessage()
+        for failure in failures
+    )
+    assert any(
+        "tool=ffprobe" in failure.getMessage() and "reason=stat_failed" in failure.getMessage() for failure in failures
+    )
 
     caplog.clear()
     original_resolve = Path.resolve

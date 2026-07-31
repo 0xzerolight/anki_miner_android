@@ -218,6 +218,22 @@ class AppLogTest {
     }
 
     @Test
+    fun `ignored failures always carry the ignored outcome`() {
+        AppLog.setMinLevel(LogLevel.DEBUG)
+
+        AppLog.ignored(
+            LogComponent.SAF,
+            "job.close",
+            "aggregate_owns_failure",
+            IOException("close failed"),
+        )
+
+        val record = recorded.records.single()
+        assertTrue(record.contains(" D run=- c=saf op=job.close outcome=ignored reason=aggregate_owns_failure"))
+        assertTrue(record.contains("java.io.IOException: close failed"))
+    }
+
+    @Test
     fun `a failure whose message cannot be read is reported, not rethrown`() {
         // The real shape: a Chaquopy PyException whose JNI-backed getMessage() fails because the
         // interpreter is already dead — which is the failure being logged. Propagating out of here
