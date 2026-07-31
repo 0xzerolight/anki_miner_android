@@ -344,7 +344,7 @@ internal class AnkiProviderReadService(
         if (minimalScopes.isEmpty()) return snapshot
         val snapshotSet = snapshot.toHashSet()
         val excluded = HashSet<Long>()
-        val excludedBrowserRows = HashSet<Long>()
+        var excludedBrowserRows = 0
         for (deckName in minimalScopes) {
             ensureActive(cancellation)
             val query =
@@ -358,15 +358,17 @@ internal class AnkiProviderReadService(
                 val seen = HashSet<Long>()
                 while (cursor.moveToNext()) {
                     ensureActive(cancellation)
-                    val id = cursor.positiveLong(ProviderColumn.NOTE_ID)
-                    if (!seen.add(id)) throw queryFailed()
+                    // Counted per row and checked before the cell read, so the scan refuses on
+                    // reaching row 100001 without pulling its cells.
+                    excludedBrowserRows = checkedAdd(excludedBrowserRows, 1)
                     if (
-                        excludedBrowserRows.add(id) &&
-                            excludedBrowserRows.size >
-                            AnkiLimitsV1.ScanFirstFields.KNOWN_TOTAL_SCANNED_NOTE_MAX_COUNT
+                        excludedBrowserRows >
+                        AnkiLimitsV1.ScanFirstFields.KNOWN_TOTAL_SCANNED_NOTE_MAX_COUNT
                     ) {
                         throw knownVocabularyLimitExceeded("the excluded Anki decks")
                     }
+                    val id = cursor.positiveLong(ProviderColumn.NOTE_ID)
+                    if (!seen.add(id)) throw queryFailed()
                     if (id in snapshotSet) excluded += id
                 }
             }

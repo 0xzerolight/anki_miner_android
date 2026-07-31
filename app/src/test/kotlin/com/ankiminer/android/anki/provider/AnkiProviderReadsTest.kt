@@ -1114,7 +1114,10 @@ class AnkiProviderReadsTest {
                     )
                 }
             }
-        assertEquals(AnkiErrorCode.QUERY_FAILED, failure.code)
+        // Same typed, non-retryable refusal as the unexcluded scan: the ceiling is a limit,
+        // not a provider error.
+        assertEquals(AnkiErrorCode.UNSUPPORTED_OPERATION, failure.code)
+        assertEquals(false, failure.retryable)
         assertEquals(100_000, browserCellReads)
         assertEquals(1, browserCursor.closeCount)
     }

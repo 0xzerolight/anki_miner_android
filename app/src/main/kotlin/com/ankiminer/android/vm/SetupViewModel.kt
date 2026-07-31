@@ -902,9 +902,9 @@ internal class SetupViewModel(
                 kind = kind,
                 target = target,
                 sourceName = savedStateHandle[STATE_PICKER_SOURCE_NAME],
-                frequencyFormat = savedEnum(STATE_PICKER_FREQUENCY_FORMAT),
-                pitchFormat = savedEnum(STATE_PICKER_PITCH_FORMAT),
-                knownWordsFormat = savedEnum(STATE_PICKER_KNOWN_WORDS_FORMAT),
+                frequencyFormat = savedEnum<FrequencySourceFormat>(STATE_PICKER_FREQUENCY_FORMAT),
+                pitchFormat = savedEnum<PitchAccentSourceFormat>(STATE_PICKER_PITCH_FORMAT),
+                knownWordsFormat = savedEnum<KnownWordsSourceFormat>(STATE_PICKER_KNOWN_WORDS_FORMAT),
                 uri = savedStateHandle[STATE_PICKER_URI],
             )
         return restored.takeIf { request ->

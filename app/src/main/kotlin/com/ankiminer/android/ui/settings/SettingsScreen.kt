@@ -247,9 +247,11 @@ private fun SettingsScreen(
     diagnostics: TesterDiagnosticsIdentity,
     onRetrySave: () -> Unit,
     onDraftChange: (SettingsDraft) -> Unit,
-    onRestoreMiningDefaults: () -> Unit,
-    onResetAnkiTarget: () -> Unit,
-    onResetResourceChoices: () -> Unit,
+    // Boolean: a reset that the store refuses must leave the confirmation queued
+    // instead of being silently dismissed.
+    onRestoreMiningDefaults: () -> Boolean,
+    onResetAnkiTarget: () -> Boolean,
+    onResetResourceChoices: () -> Boolean,
     onRequestPermissions: () -> Unit,
     onOpenAppSettings: () -> Unit,
     onInstallAnkiDroid: () -> Unit,

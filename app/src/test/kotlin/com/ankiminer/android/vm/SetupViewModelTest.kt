@@ -2,7 +2,6 @@ package com.ankiminer.android.vm
 
 import androidx.lifecycle.SavedStateHandle
 import com.ankiminer.android.MainDispatcherRule
-import androidx.lifecycle.SavedStateHandle
 import com.ankiminer.android.anki.provider.AnkiProviderReadiness
 import com.ankiminer.android.anki.provider.AnkiRecoveryReadiness
 import com.ankiminer.android.anki.provider.AnkiRemediationCommand
