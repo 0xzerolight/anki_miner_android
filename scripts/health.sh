@@ -145,16 +145,21 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$REPO_ROOT/app/src/debug/python" \
 # AppLog is the only permitted facade onto Log/console output: the unit test build has neither
 # Robolectric nor unitTests.returnDefaultValues, so a direct Log call from a JVM-tested class throws
 # "Method ... not mocked" and reddens the suite. println/System.out/System.err/printStackTrace bypass
-# the facade the same way Log does, so they fail the same gate. LogcatSink.kt is the one designated
-# sink and is exempt; app/src/test, app/src/androidTest and app/src/debug are separate source sets
-# not covered by this path, and androidTest legitimately uses Log.i for evidence emission.
+# the facade the same way Log does, so they fail the same gate. A wildcard `import android.util.*`
+# is caught by its own pattern because it never contains the literal "Log" the other pattern needs.
+# LogcatSink.kt is the one designated sink and is exempt, anchored to its full path so a decoy file
+# that merely ends in the same name elsewhere in the tree cannot borrow the exemption; app/src/test,
+# app/src/androidTest and app/src/debug are separate source sets not covered by this path, and
+# androidTest legitimately uses Log.i for evidence emission.
+log_sink_path="$REPO_ROOT/app/src/main/kotlin/com/ankiminer/android/diagnostics/log/LogcatSink.kt"
 log_boundary_violations="$(grep -rn \
     -e 'android\.util\.Log' \
+    -e 'import android\.util\.\*' \
     -e '\bprintln(' \
     -e 'System\.\(out\|err\)' \
     -e 'printStackTrace(' \
     "$REPO_ROOT/app/src/main/kotlin" \
-    | grep -v '/diagnostics/log/LogcatSink\.kt:' || true)"
+    | grep -v "^${log_sink_path//./\\.}:" || true)"
 [[ -z "$log_boundary_violations" ]] || fail "AppLog boundary violated (direct Log/console usage outside LogcatSink.kt):
 $log_boundary_violations"
 
