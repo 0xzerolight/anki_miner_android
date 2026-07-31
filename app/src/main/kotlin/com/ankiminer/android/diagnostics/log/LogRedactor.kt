@@ -34,15 +34,13 @@ internal class LogRedactor(private val rules: RedactionRules) {
     fun redact(line: String): String {
         if (line.isEmpty()) return line
         val segments = Segments(line)
-        // The record header is sealed before anything runs. LogRecord's format has exactly one parse
-        // rule — a line starting with a digit begins a new record — and a deck named "2026" would
-        // otherwise rewrite every timestamp in that user's bundle into <deck-177502>-07-30T…,
-        // collapsing continuation-line parsing for the whole file.
-        //
-        // Matched rather than taken blind: a bundle also carries logcat, whose own header is a
-        // different length, and sealing 24 characters of `I/AnkiMiner( 1234): /data/…` would hide
-        // the front of a path and leave the rest of it in the clear.
-        RECORD_HEADER.find(line)?.let { header -> segments.sealPrefix(header.value.length) }
+        // Both Kotlin and Python records start with this timestamp. Seal it independently from
+        // grammar selection so user literals cannot break line sorting, while Python's raw message
+        // still takes the conservative grammar below.
+        val timestampPrefix = TIMESTAMP_PREFIX.find(line)
+        val kotlinRecordPrefix = KOTLIN_RECORD_PREFIX.find(line)
+        val sealedPrefix = kotlinRecordPrefix ?: timestampPrefix
+        sealedPrefix?.let { prefix -> segments.sealPrefix(prefix.value.length) }
         // Rule 1. Rewritten in place rather than sealed, because rule 3 has to see the root token it
         // produces in order to know a leaf filename is under an app directory.
         rules.literalAlternation?.let { roots ->
@@ -50,9 +48,10 @@ internal class LogRedactor(private val rules: RedactionRules) {
                 roots.replace(text) { match -> rules.literalReplacements[match.value] ?: match.value }
             }
         }
-        // A TAB prefix is what marks a continuation line in LogRecord's format, and a continuation
-        // line follows a different grammar: no quoting, so a raw quote there is file-name text.
-        val patterns = if (line[0] == '\t') rules.continuationPatterns else rules.patterns
+        // Only LogRecord's complete structured prefix proves its quoted-field grammar applies.
+        // Python, logcat and third-party lines may contain raw quotes in paths, so every other shape
+        // takes the conservative grammar.
+        val patterns = if (kotlinRecordPrefix == null) rules.continuationPatterns else rules.patterns
         for ((regex, replace) in patterns) segments.seal(regex, replace)
         return segments.render()
     }
@@ -115,9 +114,10 @@ internal class LogRedactor(private val rules: RedactionRules) {
  * @property literalReplacements lookup shared by both literal passes: roots map to readable symbolic
  *   tokens, user-supplied names to hashed ones.
  * @property patterns the remaining rules for a record line, in the order they must run.
- * @property continuationPatterns the same rules for a TAB-prefixed continuation line, which has no
- *   quoting grammar: there a raw `"` is part of a file name rather than the end of a value, and
- *   [renderText] never escapes it. Rules 5 to 9 are the identical instances in both lists.
+ * @property continuationPatterns the conservative rules for every line without our anchored record
+ *   header, including TAB-prefixed continuations and logcat. Those lines have no trusted quoting
+ *   grammar: a raw `"` can be part of a file name rather than the end of a value. Rules 5 to 9 are
+ *   the identical instances in both lists.
  * @property salt 16 bytes minted per bundle. Being a [ByteArray] makes the generated [equals] and
  *   [hashCode] identity-based for this whole class; nothing compares these, and a value comparison
  *   would be meaningless anyway because [tokens] is mutable.
@@ -490,7 +490,11 @@ private class Segments(line: String) {
     /** Seals the first [length] characters, so no rule can rewrite the fixed record header. */
     fun sealPrefix(length: Int) {
         val run = runs.single()
-        if (length <= 0 || length >= run.text.length) return
+        if (length <= 0) return
+        if (length >= run.text.length) {
+            runs = mutableListOf(Run(run.text, sealed = true))
+            return
+        }
         runs =
             mutableListOf(
                 Run(run.text.take(length), sealed = true),
@@ -542,10 +546,18 @@ private class Segments(line: String) {
 }
 
 /**
- * The fixed part of a record header — the rendered timestamp, exactly [TIMESTAMP_LENGTH] characters.
- * Anchored, so it can only ever seal the front of a line that really is one of our records.
+ * The timestamp common to Kotlin and Python records, exactly [TIMESTAMP_LENGTH] characters.
  */
-private val RECORD_HEADER = Regex("^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z")
+private const val TIMESTAMP_PATTERN = "\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z"
+private const val BARE_TOKEN_PATTERN = "[A-Za-z0-9._:/@+\\-]+"
+private val TIMESTAMP_PREFIX = Regex("^$TIMESTAMP_PATTERN")
+
+/** The complete fixed prefix emitted by [renderLogRecord], through the operation token. */
+private val KOTLIN_RECORD_PREFIX =
+    Regex(
+        "^$TIMESTAMP_PATTERN [DIWE] run=$BARE_TOKEN_PATTERN " +
+            "c=$BARE_TOKEN_PATTERN op=$BARE_TOKEN_PATTERN(?=\\s|$)",
+    )
 
 private const val PATH_ROOTS = "storage|sdcard|mnt|data|system"
 
