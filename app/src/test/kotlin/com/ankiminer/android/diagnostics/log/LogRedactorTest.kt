@@ -276,6 +276,27 @@ class LogRedactorTest {
     }
 
     @Test
+    fun `a field shaped segment in a logcat path is redacted`() {
+        val redacted =
+            redactor().redact(
+                "07-30 14:30:12.345 1234 1234 E AnkiMiner: " +
+                    "failed /storage/emulated/0/My key=Secret/ep.mkv",
+            )
+
+        assertFalse(redacted, redacted.contains("key=Secret"))
+        assertFalse(redacted, redacted.contains("ep.mkv"))
+        assertTrue(
+            redacted,
+            redacted.matches(
+                Regex(
+                    "07-30 14:30:12\\.345 1234 1234 E AnkiMiner: " +
+                        "failed <path-[0-9a-f]{6}>",
+                ),
+            ),
+        )
+    }
+
+    @Test
     fun `a python record with a raw quote path uses conservative grammar`() {
         val line =
             "2026-07-30T12:00:00.000Z WARNING run=run-42 anki_miner.module: " +
@@ -292,6 +313,18 @@ class LogRedactorTest {
         assertFalse(redacted, redacted.contains("Say"))
         assertFalse(redacted, redacted.contains("Hi"))
         assertFalse(redacted, redacted.contains("ep.mkv"))
+        assertTrue(redacted, redacted.contains(Regex("<path-[0-9a-f]{6}>")))
+    }
+
+    @Test
+    fun `a raw python traceback path crosses a field shaped segment`() {
+        val redacted =
+            redactor().redact(
+                "  File /storage/emulated/0/My key=Secret/anki_miner/engine.py: failed",
+            )
+
+        assertFalse(redacted, redacted.contains("key=Secret"))
+        assertFalse(redacted, redacted.contains("engine.py"))
         assertTrue(redacted, redacted.contains(Regex("<path-[0-9a-f]{6}>")))
     }
 
@@ -759,10 +792,9 @@ class LogRedactorTest {
                 safUserText = listOf("episode.mkv"),
             )
 
-        // Written as real fields: a bare value trailing a path would be absorbed into the path's
-        // match instead of reaching rule 7, which is the documented cost of crossing a space.
-        redactor.redact("a=/storage/emulated/0/one.mkv b=/storage/emulated/0/two.mkv jp=猫猫")
-        redactor.redact("c=/storage/emulated/0/one.mkv")
+        // Written inside verified records: only that prefix gives key-shaped text field semantics.
+        redactor.redactRecord("a=/storage/emulated/0/one.mkv b=/storage/emulated/0/two.mkv jp=猫猫")
+        redactor.redactRecord("c=/storage/emulated/0/one.mkv")
 
         val counts = redactor.tokenCounts()
         assertEquals(2, counts["path"])

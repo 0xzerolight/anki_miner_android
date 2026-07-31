@@ -51,7 +51,12 @@ internal class LogRedactor(private val rules: RedactionRules) {
         // Only LogRecord's complete structured prefix proves its quoted-field grammar applies.
         // Python, logcat and third-party lines may contain raw quotes in paths, so every other shape
         // takes the conservative grammar.
-        val patterns = if (kotlinRecordPrefix == null) rules.continuationPatterns else rules.patterns
+        val patterns =
+            when {
+                kotlinRecordPrefix != null -> rules.patterns
+                line.startsWith('\t') -> rules.continuationPatterns
+                else -> rules.unstructuredPatterns
+            }
         for ((regex, replace) in patterns) segments.seal(regex, replace)
         return segments.render()
     }
@@ -114,10 +119,11 @@ internal class LogRedactor(private val rules: RedactionRules) {
  * @property literalReplacements lookup shared by both literal passes: roots map to readable symbolic
  *   tokens, user-supplied names to hashed ones.
  * @property patterns the remaining rules for a record line, in the order they must run.
- * @property continuationPatterns the conservative rules for every line without our anchored record
- *   header, including TAB-prefixed continuations and logcat. Those lines have no trusted quoting
- *   grammar: a raw `"` can be part of a file name rather than the end of a value. Rules 5 to 9 are
- *   the identical instances in both lists.
+ * @property continuationPatterns the conservative rules for TAB-prefixed continuations. These
+ *   lines have no trusted quoting grammar: a raw `"` can be part of a file name rather than the end
+ *   of a value.
+ * @property unstructuredPatterns rules for logcat, raw Python and platform text. Field-shaped
+ *   segments have no structural meaning there, so path absorption crosses them.
  * @property salt 16 bytes minted per bundle. Being a [ByteArray] makes the generated [equals] and
  *   [hashCode] identity-based for this whole class; nothing compares these, and a value comparison
  *   would be meaningless anyway because [tokens] is mutable.
@@ -130,6 +136,7 @@ internal data class RedactionRules(
     val salt: ByteArray,
     val tokens: TokenMint = TokenMint(salt),
     val continuationPatterns: List<Pair<Regex, (MatchResult) -> String>> = patterns,
+    val unstructuredPatterns: List<Pair<Regex, (MatchResult) -> String>> = continuationPatterns,
 ) {
     /**
      * Shape only, and this override is load-bearing.
@@ -388,8 +395,8 @@ internal object RedactionRulesFactory {
             }
         }
 
-        // Rules 5 to 9 read the same on either kind of line, so they are built once and appended to
-        // both lists rather than duplicated.
+        // Rules 5 to 9 read the same under every line grammar, so they are built once and appended
+        // to each list rather than duplicated.
         val shared =
             buildList<Pair<Regex, (MatchResult) -> String>> {
                 literalAlternation?.let { regex ->
@@ -446,6 +453,12 @@ internal object RedactionRulesFactory {
                 CONTINUATION_APP_ROOT_LEAF to leafOf,
                 CONTINUATION_CONTENT_URI to documentId,
             ) + shared
+        val unstructuredPatterns =
+            listOf(
+                UNSTRUCTURED_ABSOLUTE_PATH to path,
+                UNSTRUCTURED_APP_ROOT_LEAF to leafOf,
+                UNSTRUCTURED_CONTENT_URI to documentId,
+            ) + shared
 
         return RedactionRules(
             rootAlternation,
@@ -454,6 +467,7 @@ internal object RedactionRulesFactory {
             salt,
             tokens,
             continuationPatterns,
+            unstructuredPatterns,
         )
     }
 
@@ -616,7 +630,13 @@ private val CONTINUATION_TAIL = tailOf("\\s\\\\")
  * different paths into one token, and left `tokenCounts()` reporting one path where there were two.
  * A spaced value on a record line is always quoted, so nothing legitimate is lost to the guard.
  */
-private fun absorbing(tail: String) = "(?:$PATH_ALREADY_ENDED ++(?![A-Za-z0-9_.]++=)$tail)*+"
+private fun absorbing(
+    tail: String,
+    stopAtField: Boolean = true,
+): String {
+    val fieldBoundary = if (stopAtField) "(?![A-Za-z0-9_.]++=)" else ""
+    return "(?:$PATH_ALREADY_ENDED ++$fieldBoundary$tail)*+"
+}
 
 /**
  * The other end of absorption: stop once the path has plainly finished.
@@ -655,11 +675,14 @@ private val QUOTED_ABSOLUTE_PATH = Regex("(?<=\")/(?:$PATH_ROOTS)/$QUOTED_TAIL")
  * `data` inside a longer path cannot start a second, bogus match. `/` is deliberately absent from
  * it: `file:///data` must still match.
  */
-private fun absolutePath(tail: String) =
-    Regex("(?<![A-Za-z0-9._\\-])/(?:$PATH_ROOTS)/$tail${absorbing(tail)}")
+private fun absolutePath(
+    tail: String,
+    stopAtField: Boolean = true,
+) = Regex("(?<![A-Za-z0-9._\\-])/(?:$PATH_ROOTS)/$tail${absorbing(tail, stopAtField)}")
 
 private val RECORD_ABSOLUTE_PATH = absolutePath(RECORD_TAIL)
 private val CONTINUATION_ABSOLUTE_PATH = absolutePath(CONTINUATION_TAIL)
+private val UNSTRUCTURED_ABSOLUTE_PATH = absolutePath(CONTINUATION_TAIL, stopAtField = false)
 
 /**
  * Rule 3. Captures the whole tail; the leaf is split off in code.
@@ -670,10 +693,14 @@ private val CONTINUATION_ABSOLUTE_PATH = absolutePath(CONTINUATION_TAIL)
  */
 private val QUOTED_APP_ROOT_LEAF = Regex("(?<=\")<(?:$APP_ROOTS)>(/$QUOTED_TAIL)")
 
-private fun appRootLeaf(tail: String) = Regex("<(?:$APP_ROOTS)>(/$tail${absorbing(tail)})")
+private fun appRootLeaf(
+    tail: String,
+    stopAtField: Boolean = true,
+) = Regex("<(?:$APP_ROOTS)>(/$tail${absorbing(tail, stopAtField)})")
 
 private val RECORD_APP_ROOT_LEAF = appRootLeaf(RECORD_TAIL)
 private val CONTINUATION_APP_ROOT_LEAF = appRootLeaf(CONTINUATION_TAIL)
+private val UNSTRUCTURED_APP_ROOT_LEAF = appRootLeaf(CONTINUATION_TAIL, stopAtField = false)
 
 /**
  * Rule 4. `DocumentsContract.getDocumentId` returns the *decoded* id and logcat prints decoded
@@ -682,11 +709,14 @@ private val CONTINUATION_APP_ROOT_LEAF = appRootLeaf(CONTINUATION_TAIL)
 private val QUOTED_CONTENT_URI =
     Regex("(?<=\")content://([A-Za-z0-9._\\-]+)(/$QUOTED_TAIL)?")
 
-private fun contentUri(tail: String) =
-    Regex("content://([A-Za-z0-9._\\-]+)(/$tail${absorbing(tail)})?")
+private fun contentUri(
+    tail: String,
+    stopAtField: Boolean = true,
+) = Regex("content://([A-Za-z0-9._\\-]+)(/$tail${absorbing(tail, stopAtField)})?")
 
 private val RECORD_CONTENT_URI = contentUri(RECORD_TAIL)
 private val CONTINUATION_CONTENT_URI = contentUri(CONTINUATION_TAIL)
+private val UNSTRUCTURED_CONTENT_URI = contentUri(CONTINUATION_TAIL, stopAtField = false)
 
 /**
  * Rule 7. Hiragana, katakana including the halfwidth forms, CJK Unified Ideographs with Extension A

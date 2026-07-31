@@ -20,8 +20,10 @@ class DiagnosticsBundleWriterTest {
 
     @Test
     fun `archive has the canonical entry set and order`() {
+        val expectedEntries = canonicalEntries()
+        assertEquals(expectedEntries, DiagnosticsBundleSpec.entries)
         val sources =
-            DiagnosticsBundleSpec.entries.map { entry ->
+            expectedEntries.map { entry ->
                 source(
                     name = entry.name,
                     text = "${entry.name}\n",
@@ -42,7 +44,7 @@ class DiagnosticsBundleWriterTest {
         )
 
         assertEquals(
-            DiagnosticsBundleSpec.entries.map { it.name } + listOf("README.txt", "manifest.txt"),
+            expectedEntries.map { it.name } + listOf("README.txt", "manifest.txt"),
             unzip(archive.toByteArray()).map { it.first },
         )
         assertEquals(
@@ -207,6 +209,78 @@ class DiagnosticsBundleWriterTest {
     }
 
     @Test
+    fun `manifest and readme count toward the hard budget`() {
+        val sources = listOf(source("diagnostics.txt", "required\n", 1024, false, required = true))
+        val manifest = { _: List<BundleEntryResult> -> linkedMapOf("detail" to "m".repeat(128)) }
+        val readme = { _: List<BundleEntryResult>, _: Map<String, String> -> "r".repeat(128) }
+        val unconstrained = ByteArrayOutputStream()
+        writer(totalBudgetBytes = Long.MAX_VALUE).write(
+            unconstrained,
+            sources,
+            LineRedactor { it },
+            manifest,
+            readme,
+        )
+        val totalBytes = unzip(unconstrained.toByteArray()).sumOf { it.second.size.toLong() }
+        val constrained = ByteArrayOutputStream()
+
+        try {
+            writer(totalBudgetBytes = totalBytes - 1).write(
+                constrained,
+                sources,
+                LineRedactor { it },
+                manifest,
+                readme,
+            )
+            fail("expected synthesized entries to exceed the budget")
+        } catch (error: IOException) {
+            assertTrue(error.message.orEmpty().contains("uncompressed budget"))
+        }
+
+        assertEquals(0, constrained.size())
+    }
+
+    @Test
+    fun `unused cap slack is skipped before effective shedding`() {
+        val sources =
+            listOf(
+                source(
+                    name = "logcat/logcat.txt",
+                    text = "slack\n".repeat(100),
+                    capBytes = 4096,
+                    redacted = true,
+                    shedding = BundleShedding.Shrink(rank = 1, floorBytes = 128),
+                ),
+            )
+        val unconstrained = ByteArrayOutputStream()
+        writer(totalBudgetBytes = Long.MAX_VALUE).write(
+            unconstrained,
+            sources,
+            LineRedactor { it },
+            manifest = { emptyMap() },
+            readme = { _, _ -> "" },
+        )
+        val fullBytes = unzip(unconstrained.toByteArray()).sumOf { it.second.size.toLong() }
+        var preparations = 0
+
+        val results =
+            writer(totalBudgetBytes = fullBytes - 1).write(
+                ByteArrayOutputStream(),
+                sources,
+                LineRedactor { it },
+                manifest = {
+                    preparations++
+                    check(preparations <= 10) { "shedding made no effective progress" }
+                    emptyMap()
+                },
+                readme = { _, _ -> "" },
+            )
+
+        assertTrue("preparations=$preparations", preparations <= 10)
+        assertTrue(results.single().capBytes < 600)
+    }
+
+    @Test
     fun `truncated entries carry head and end markers with exact counts`() {
         val archive = ByteArrayOutputStream()
 
@@ -362,9 +436,10 @@ class DiagnosticsBundleWriterTest {
 
     @Test
     fun `same captured instant and inputs produce byte identical archives`() {
+        val oldCapturedAt = Instant.parse("2000-01-02T03:04:06Z")
         fun archive(): ByteArray =
             ByteArrayOutputStream().also { destination ->
-                writer().write(
+                writer(capturedAt = oldCapturedAt).write(
                     destination = destination,
                     sources =
                         listOf(
@@ -381,14 +456,79 @@ class DiagnosticsBundleWriterTest {
                 )
             }.toByteArray()
 
-        assertArrayEquals(archive(), archive())
+        val first = archive()
+        assertArrayEquals(first, archive())
+        assertEquals(List(3) { oldCapturedAt.toEpochMilli() }, zipEntryTimes(first))
     }
 
-    private fun writer(totalBudgetBytes: Long = 6L * 1024 * 1024) =
+    private fun writer(
+        totalBudgetBytes: Long = 6L * 1024 * 1024,
+        capturedAt: Instant = this.capturedAt,
+    ) =
         DiagnosticsBundleWriter(
             capturedAt = capturedAt,
             compressionLevel = java.util.zip.Deflater.BEST_COMPRESSION,
             totalBudgetBytes = totalBudgetBytes,
+        )
+
+    private fun canonicalEntries(): List<BundleEntrySpec> =
+        listOf(
+            BundleEntrySpec(
+                name = "logs/anki_miner.log",
+                capBytes = 1024L * 1024,
+                redacted = true,
+                required = false,
+                shedding = BundleShedding.Shrink(rank = 4, floorBytes = 256L * 1024),
+            ),
+            BundleEntrySpec(
+                name = "logs/anki_miner.log.1",
+                capBytes = 1024L * 1024,
+                redacted = true,
+                required = false,
+                shedding = BundleShedding.Drop(rank = 2),
+            ),
+            BundleEntrySpec(
+                name = "logs/app.log",
+                capBytes = 512L * 1024,
+                redacted = true,
+                required = false,
+                shedding = BundleShedding.None,
+            ),
+            BundleEntrySpec(
+                name = "logs/app.log.1",
+                capBytes = 512L * 1024,
+                redacted = true,
+                required = false,
+                shedding = BundleShedding.Drop(rank = 3),
+            ),
+            BundleEntrySpec(
+                name = "logcat/logcat.txt",
+                capBytes = 2L * 1024 * 1024,
+                redacted = true,
+                required = false,
+                shedding = BundleShedding.Shrink(rank = 1, floorBytes = 512L * 1024),
+            ),
+            BundleEntrySpec(
+                name = "diagnostics.txt",
+                capBytes = 4L * 1024,
+                redacted = false,
+                required = true,
+                shedding = BundleShedding.None,
+            ),
+            BundleEntrySpec(
+                name = "system/exit-reasons.txt",
+                capBytes = 64L * 1024,
+                redacted = true,
+                required = false,
+                shedding = BundleShedding.None,
+            ),
+            BundleEntrySpec(
+                name = "redaction.txt",
+                capBytes = 64L * 1024,
+                redacted = false,
+                required = false,
+                shedding = BundleShedding.None,
+            ),
         )
 
     private fun source(
@@ -478,5 +618,16 @@ class DiagnosticsBundleWriterTest {
             }
         }
         return entries
+    }
+
+    private fun zipEntryTimes(bytes: ByteArray): List<Long> {
+        val times = mutableListOf<Long>()
+        ZipInputStream(ByteArrayInputStream(bytes)).use { zip ->
+            while (true) {
+                val entry = zip.nextEntry ?: break
+                times += entry.time
+            }
+        }
+        return times
     }
 }

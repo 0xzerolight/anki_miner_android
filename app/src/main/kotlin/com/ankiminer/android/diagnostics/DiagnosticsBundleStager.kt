@@ -41,6 +41,7 @@ internal class DiagnosticsBundleStager(
     private val root =
         File(this.context.cacheDir, DiagnosticsBundleJanitor.DIRECTORY_NAME)
     private val pythonLogSnapshotter = PythonLogSnapshotter(this.context.filesDir)
+    private val nameAllocator = DiagnosticsBundleNameAllocator(root)
 
     suspend fun stage(
         diagnostics: String,
@@ -53,14 +54,12 @@ internal class DiagnosticsBundleStager(
                 check(root.isDirectory) { "diagnostics bundle staging directory is unavailable" }
                 val captured = capturedAt()
                 val identity = currentTesterBuildIdentity()
-                val name =
-                    DiagnosticsBundleSpec.fileName(
+                val destination =
+                    nameAllocator.allocate(
                         captured,
                         identity.versionName,
                         identity.sourceCommit,
                     )
-                val destination = File(root, name)
-                if (destination.exists()) throw IOException("diagnostics bundle name collision")
                 val workspace = File(root, ".capture-${captured.toEpochMilli()}").apply { mkdirs() }
                 val temporary = File.createTempFile(".building-", ".zip", root)
                 try {
@@ -295,5 +294,24 @@ internal class DiagnosticsBundleStager(
 
     private companion object {
         const val ANKIDROID_PACKAGE = "com.ichi2.anki"
+    }
+}
+
+internal class DiagnosticsBundleNameAllocator(private val root: File) {
+    fun allocate(
+        capturedAt: Instant,
+        versionName: String,
+        sourceCommit: String,
+    ): File {
+        var namedAt = capturedAt
+        while (true) {
+            val candidate =
+                File(
+                    root,
+                    DiagnosticsBundleSpec.fileName(namedAt, versionName, sourceCommit),
+                )
+            if (!candidate.exists()) return candidate
+            namedAt = namedAt.plusSeconds(1)
+        }
     }
 }
