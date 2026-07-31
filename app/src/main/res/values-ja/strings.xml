@@ -301,14 +301,14 @@
     <string name="anki_recovery_title">Ankiリカバリ</string>
     <string name="anki_recovery_clear">未解決のAnki操作は見つかりませんでした。</string>
     <plurals name="anki_recovery_attention">
-        <item quantity="other">%1$d Anki operation(s) need review before mining.</item>
+        <item quantity="other">マイニング前に、%1$d 件のAnki操作を確認する必要があります。</item>
     </plurals>
     <string name="anki_recovery_checking">ローカルのリカバリジャーナルを確認中…</string>
     <string name="anki_recovery_inventory_unavailable">ローカルのリカバリジャーナルを読み取れませんでした。この状態はAnkiDroidの利用可否とは別です。マイニング前に再確認してください。</string>
     <string name="anki_recovery_startup_blocked">マイニング前に、中断したローカルの処理を解決する必要があります。</string>
     <string name="anki_recovery_startup_blocked_provider_unavailable">中断したローカルの処理が記録されていますが、AnkiDroidを利用できません。AnkiDroidを開くか初期設定を行い、アクセスを許可してから解決してください。</string>
     <plurals name="anki_recovery_attention_provider_unavailable">
-        <item quantity="other">%1$d local recovery item(s) remain visible, but AnkiDroid is unavailable. Open or initialize AnkiDroid and allow access for provider-dependent review.</item>
+        <item quantity="other">%1$d 件のローカルリカバリ項目が残っていますが、AnkiDroidを利用できません。AnkiDroidを開くか初期設定を行い、アクセスを許可してから、AnkiDroidに依存する項目を確認してください。</item>
     </plurals>
     <string name="anki_recovery_retry_inventory">ローカルのリカバリを再確認</string>
     <string name="anki_recovery_reconcile">中断した処理を解決</string>

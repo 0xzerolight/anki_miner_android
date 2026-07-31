@@ -5,15 +5,18 @@ import com.ankiminer.android.MainDispatcherRule
 import com.ankiminer.android.R
 import com.ankiminer.android.data.resources.FrequencySourceFormat
 import com.ankiminer.android.data.resources.InstalledDictionary
+import com.ankiminer.android.data.resources.InstalledPitchSource
 import com.ankiminer.android.data.resources.KnownWordsResetScope
 import com.ankiminer.android.data.resources.KnownWordsSourceFormat
-import com.ankiminer.android.data.resources.WordListKind
 import com.ankiminer.android.data.resources.PitchAccentSourceFormat
 import com.ankiminer.android.data.resources.ResourceManager
 import com.ankiminer.android.data.resources.ResourceManagerState
+import com.ankiminer.android.data.resources.ResourceStartupReadiness
+import com.ankiminer.android.data.resources.WordListKind
 import com.ankiminer.android.data.settings.AppSettings
 import com.ankiminer.android.data.settings.AppSettingsRepository
 import com.ankiminer.android.data.settings.AppSettingsValidator
+import com.ankiminer.android.data.settings.ResourceChainSelection
 import com.ankiminer.android.engine.BridgeJsonValue
 import java.io.IOException
 import kotlinx.coroutines.CompletableDeferred
@@ -23,6 +26,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
@@ -83,6 +87,41 @@ class SettingsViewModelTest {
             // persists. A filter that dropped the dirty predicate would write on both.
             assertEquals(0, repository.writeCount)
             assertFalse(viewModel.draftState.value.dirty)
+        }
+
+    @Test
+    fun settingsReadFailureLeavesDraftUnloadedAndRejectsEdits() =
+        runTest(mainDispatcherRule.dispatcher) {
+            var writeCount = 0
+            val repository =
+                object : AppSettingsRepository {
+                    override val settings: Flow<AppSettings> =
+                        flow {
+                            throw IOException("transient read failure")
+                        }
+
+                    override suspend fun update(settings: AppSettings) {
+                        writeCount += 1
+                    }
+
+                    override suspend fun update(transform: (AppSettings) -> AppSettings) {
+                        writeCount += 1
+                    }
+                }
+            val viewModel =
+                SettingsViewModel(
+                    repository,
+                    FakeResourceManager(resources("first")),
+                )
+            advanceUntilIdle()
+
+            assertFalse(viewModel.draftState.value.loaded)
+            viewModel.updateDraft(viewModel.draftState.value.draft.copy(deckName = "Default"))
+            advanceUntilIdle()
+
+            assertFalse(viewModel.draftState.value.loaded)
+            assertFalse(viewModel.draftState.value.dirty)
+            assertEquals(0, writeCount)
         }
 
     @Test
@@ -196,6 +235,37 @@ class SettingsViewModelTest {
         }
 
     @Test
+    fun invalidRegexPairDoesNotBlockImmediateTogglePersistence() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val persistedPattern = "(a)"
+            val persistedReplacement = """\1"""
+            val repository =
+                FakeAppSettingsRepository(
+                    AppSettings(
+                        subtitleRegexFilter = persistedPattern,
+                        subtitleRegexReplacement = persistedReplacement,
+                        jishoEnabled = false,
+                    ),
+                )
+            val viewModel = SettingsViewModel(repository, FakeResourceManager(resources("first")))
+            advanceUntilIdle()
+
+            viewModel.updateDraft(
+                viewModel.draftState.value.draft.copy(
+                    subtitleRegex = "a",
+                    jisho = true,
+                ),
+            )
+            advanceUntilIdle()
+
+            assertEquals(1, repository.writeCount)
+            assertEquals(persistedPattern, repository.current.subtitleRegexFilter)
+            assertEquals(persistedReplacement, repository.current.subtitleRegexReplacement)
+            assertTrue(repository.current.jishoEnabled)
+            assertEquals("a", viewModel.draftState.value.draft.subtitleRegex)
+        }
+
+    @Test
     fun outOfRangeWorkersDoNotBlockConcurrentValidTogglePersistence() =
         runTest(mainDispatcherRule.dispatcher) {
             val repository =
@@ -284,6 +354,100 @@ class SettingsViewModelTest {
 
             assertEquals(1, repository.writeCount)
             assertEquals(reversed, repository.current.dictionarySources)
+        }
+
+    @Test
+    fun unrelatedEditPreservesUnavailablePersistedPitchChoices() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val savedPitch =
+                listOf(
+                    ResourceChainSelection("unavailable", enabled = false),
+                    ResourceChainSelection("available", enabled = true),
+                )
+            val repository =
+                FakeAppSettingsRepository(
+                    AppSettings(pitchSources = savedPitch, jishoEnabled = false),
+                )
+            val resourceManager =
+                FakeResourceManager(
+                    ResourceManagerState(pitchSources = listOf(pitchSource("available"))),
+                )
+            val viewModel = SettingsViewModel(repository, resourceManager)
+            advanceUntilIdle()
+
+            assertEquals(
+                listOf("available"),
+                viewModel.draftState.value.draft.pitchSources.map(
+                    ResourceChainSelection::resourceId,
+                ),
+            )
+
+            viewModel.updateDraft(viewModel.draftState.value.draft.copy(jisho = true))
+            advanceUntilIdle()
+
+            assertEquals(savedPitch, repository.current.pitchSources)
+            assertTrue(repository.current.jishoEnabled)
+        }
+
+    @Test
+    fun scalarEditPreservesOutOfBandPitchUpdate() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val initialPitch = listOf(ResourceChainSelection("first"))
+            val updatedPitch =
+                listOf(
+                    ResourceChainSelection("second", enabled = false),
+                    ResourceChainSelection("first", enabled = true),
+                )
+            val inventory =
+                ResourceManagerState(
+                    pitchSources = listOf(pitchSource("first"), pitchSource("second")),
+                )
+            val repository =
+                FakeAppSettingsRepository(
+                    AppSettings(pitchSources = initialPitch, jishoEnabled = false),
+                )
+            val viewModel = SettingsViewModel(repository, FakeResourceManager(inventory))
+            advanceUntilIdle()
+
+            viewModel.updateDraft(viewModel.draftState.value.draft.copy(deckName = "Pending"))
+            runCurrent()
+            repository.update { it.copy(pitchSources = updatedPitch) }
+            runCurrent()
+
+            viewModel.updateDraft(viewModel.draftState.value.draft.copy(jisho = true))
+            runCurrent()
+
+            assertEquals(updatedPitch, repository.current.pitchSources)
+            assertEquals("Pending", repository.current.deckName)
+            assertTrue(repository.current.jishoEnabled)
+        }
+
+    @Test
+    fun explicitPitchReorderPersistsWithoutDebounceDelay() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val inventory =
+                ResourceManagerState(
+                    pitchSources = listOf(pitchSource("first"), pitchSource("second")),
+                )
+            val repository =
+                FakeAppSettingsRepository(
+                    AppSettings(
+                        pitchSources =
+                            listOf(
+                                ResourceChainSelection("first"),
+                                ResourceChainSelection("second"),
+                            ),
+                    ),
+                )
+            val viewModel = SettingsViewModel(repository, FakeResourceManager(inventory))
+            advanceUntilIdle()
+
+            val reversed = viewModel.draftState.value.draft.pitchSources.reversed()
+            viewModel.updateDraft(viewModel.draftState.value.draft.copy(pitchSources = reversed))
+            runCurrent()
+
+            assertEquals(1, repository.writeCount)
+            assertEquals(reversed, repository.current.pitchSources)
         }
 
     @Test
@@ -476,6 +640,41 @@ class SettingsViewModelTest {
         }
 
     @Test
+    fun confirmedResetQueuesBehindInFlightAutosave() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val autosaveStarted = CompletableDeferred<Unit>()
+            val allowAutosave = CompletableDeferred<Unit>()
+            val repository =
+                FakeAppSettingsRepository(
+                    AppSettings(audioPaddingSeconds = 1.0, jishoEnabled = false),
+                ) { attempt ->
+                    if (attempt == 1) {
+                        autosaveStarted.complete(Unit)
+                        allowAutosave.await()
+                    }
+                }
+            val viewModel = SettingsViewModel(repository, FakeResourceManager(resources("first")))
+            advanceUntilIdle()
+
+            viewModel.updateDraft(viewModel.draftState.value.draft.copy(jisho = true))
+            runCurrent()
+            assertTrue(autosaveStarted.isCompleted)
+            assertTrue(viewModel.saving.value)
+
+            assertTrue(viewModel.restoreMiningDefaults())
+            runCurrent()
+            assertEquals(1, repository.attemptedWriteCount)
+
+            allowAutosave.complete(Unit)
+            advanceUntilIdle()
+
+            assertEquals(2, repository.writeCount)
+            assertTrue(repository.current.jishoEnabled)
+            assertNull(repository.current.audioPaddingSeconds)
+            assertFalse(viewModel.saving.value)
+        }
+
+    @Test
     fun editDuringInFlightScopedResetPersistsAfterReset() =
         runTest(mainDispatcherRule.dispatcher) {
             val writeStarted = CompletableDeferred<Unit>()
@@ -529,8 +728,13 @@ class SettingsViewModelTest {
             assertEquals("Deck", viewModel.draftState.value.draft.deckName)
         }
 
+    // READY: startup recovery gates every setup command, so a PENDING fixture reports busy
+    // and silently drops deck selection.
     private fun resources(vararg ids: String): ResourceManagerState =
-        ResourceManagerState(dictionaries = ids.map(::dictionary))
+        ResourceManagerState(
+            startupReadiness = ResourceStartupReadiness.READY,
+            dictionaries = ids.map(::dictionary),
+        )
 
     private fun dictionary(id: String): InstalledDictionary =
         InstalledDictionary(
@@ -545,6 +749,17 @@ class SettingsViewModelTest {
             embeddedAttribution = emptyMap(),
             catalogResourceId = null,
             attribution = emptyList(),
+        )
+
+    private fun pitchSource(id: String): InstalledPitchSource =
+        InstalledPitchSource(
+            sourceId = id,
+            sourceName = id,
+            sourceRevision = "1",
+            format = "yomitan",
+            entryCount = 1,
+            schemaOk = true,
+            schemaVersion = 1,
         )
 
     /**
@@ -649,6 +864,8 @@ class SettingsViewModelTest {
         override suspend fun previewKnownWords(uri: String, format: KnownWordsSourceFormat) = Unit
 
         override suspend fun confirmKnownWordsImport() = Unit
+
+        override suspend fun retryKnownWordsFailure() = Unit
 
         override fun dismissKnownWordsImportPreview() = Unit
 

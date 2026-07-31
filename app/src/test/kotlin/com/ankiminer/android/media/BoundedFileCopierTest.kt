@@ -2,12 +2,18 @@ package com.ankiminer.android.media
 
 import java.io.ByteArrayInputStream
 import java.io.IOException
+import java.io.InputStream
 import java.util.ArrayDeque
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -208,6 +214,97 @@ class BoundedFileCopierTest {
     }
 
     @Test
+    fun cancellationClosesAStalledProviderReadExactlyOnceAndRemovesPartialFile() {
+        val destination = temporary.newFile("cancel-stalled-read.stage")
+        val cancellation = ProviderIoCancellationController()
+        val source = StalledInputStream()
+        val executor = Executors.newSingleThreadExecutor()
+        try {
+            val copy =
+                executor.submit<Long> {
+                    BoundedFileCopier { Long.MAX_VALUE }.copy(
+                        openSource = { source },
+                        destination = destination,
+                        knownSizeBytes = null,
+                        policy = policy(maxBytes = 10L),
+                        cancellation = cancellation,
+                    )
+                }
+            assertTrue(source.readStarted.await(1, TimeUnit.SECONDS))
+
+            cancellation.cancel()
+
+            val failure =
+                assertThrows(ExecutionException::class.java) {
+                    copy.get(1, TimeUnit.SECONDS)
+                }
+            assertTrue(failure.cause is FileCopyCancelledException)
+            assertEquals(1, source.closeCalls.get())
+            assertFalse(destination.exists())
+        } finally {
+            executor.shutdownNow()
+        }
+    }
+
+    @Test
+    fun resourceCloseFailureIsSuppressedUnderThePrimaryReadFailure() {
+        val primary = IOException("provider read failed")
+        val closeFailure = IOException("provider close failed")
+        val source =
+            object : InputStream() {
+                override fun read(): Int = throw primary
+
+                override fun close() {
+                    throw closeFailure
+                }
+            }
+
+        val failure =
+            assertThrows(IOException::class.java) {
+                CancellableProviderIo.useResource(
+                    cancellation = ProviderIoCancellation.NONE,
+                    open = { source },
+                    block = { it.read() },
+                )
+            }
+
+        assertSame(primary, failure)
+        assertEquals(listOf(closeFailure), failure.suppressed.toList())
+    }
+
+    @Test
+    fun throwingStreamCloseCannotAbortCancellationDelivery() {
+        val destination = temporary.newFile("cancel-close-throws.stage")
+        val cancellation = ThrowPropagatingCancellation()
+        val source = StalledInputStream(closeFailure = IOException("provider close failed"))
+        val executor = Executors.newSingleThreadExecutor()
+        try {
+            val copy =
+                executor.submit<Long> {
+                    BoundedFileCopier { Long.MAX_VALUE }.copy(
+                        openSource = { source },
+                        destination = destination,
+                        knownSizeBytes = null,
+                        policy = policy(maxBytes = 10L),
+                        cancellation = cancellation,
+                    )
+                }
+            assertTrue(source.readStarted.await(1, TimeUnit.SECONDS))
+
+            cancellation.cancel()
+
+            val failure =
+                assertThrows(ExecutionException::class.java) {
+                    copy.get(1, TimeUnit.SECONDS)
+                }
+            assertTrue(failure.cause is FileCopyCancelledException)
+            assertFalse(destination.exists())
+        } finally {
+            executor.shutdownNow()
+        }
+    }
+
+    @Test
     fun providerSizeChangesInEitherDirectionAreTypedAndCleanedUp() {
         val shorter = temporary.newFile("shorter.stage")
         val shortFailure =
@@ -289,4 +386,58 @@ class BoundedFileCopierTest {
         reserveBytes: Long = 0L,
         bufferBytes: Int = 4,
     ) = BoundedFileCopyPolicy(maxBytes, reserveBytes, bufferBytes)
+
+    private class StalledInputStream(
+        private val closeFailure: IOException? = null,
+    ) : InputStream() {
+        val readStarted = CountDownLatch(1)
+        val closeCalls = AtomicInteger()
+        private val closed = CountDownLatch(1)
+        private val suppliedFirstChunk = AtomicBoolean()
+
+        override fun read(): Int {
+            val one = ByteArray(1)
+            return if (read(one, 0, 1) < 0) -1 else one[0].toInt() and 0xff
+        }
+
+        override fun read(
+            buffer: ByteArray,
+            offset: Int,
+            length: Int,
+        ): Int {
+            if (suppliedFirstChunk.compareAndSet(false, true)) {
+                buffer[offset] = 1
+                return 1
+            }
+            readStarted.countDown()
+            check(closed.await(5, TimeUnit.SECONDS)) { "test provider read was not cancelled" }
+            throw IOException("provider descriptor closed")
+        }
+
+        override fun close() {
+            if (closeCalls.incrementAndGet() == 1) {
+                closed.countDown()
+                closeFailure?.let { throw it }
+            }
+        }
+    }
+
+    private class ThrowPropagatingCancellation : ProviderIoCancellation {
+        private val cancelled = AtomicBoolean()
+        private var listener: (() -> Unit)? = null
+
+        override fun isCancelled(): Boolean = cancelled.get()
+
+        override fun invokeOnCancellation(
+            listener: () -> Unit,
+        ): ProviderIoCancellationRegistration {
+            this.listener = listener
+            return ProviderIoCancellationRegistration { this.listener = null }
+        }
+
+        fun cancel() {
+            cancelled.set(true)
+            listener?.invoke()
+        }
+    }
 }

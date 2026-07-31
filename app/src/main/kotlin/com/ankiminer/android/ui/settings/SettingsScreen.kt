@@ -145,23 +145,23 @@ internal fun SettingsRoute(
     }
     val dictionaryPicker =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-            uri?.let { setupViewModel.importCustomDictionary(it.toString()) }
+            setupViewModel.onCustomDictionaryPicked(uri?.toString())
         }
     val frequencyPicker =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-            uri?.let { setupViewModel.importFrequencySource(it.toString()) }
+            setupViewModel.onFrequencyPicked(uri?.toString())
         }
     val pitchPicker =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-            uri?.let { setupViewModel.importPitchAccent(it.toString()) }
+            setupViewModel.onPitchPicked(uri?.toString())
         }
     val audioPackPicker =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-            uri?.let { setupViewModel.importAudioPack(it.toString()) }
+            setupViewModel.onAudioPackPicked(uri?.toString())
         }
     val knownWordsPicker =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-            uri?.let { setupViewModel.importKnownWords(it.toString()) }
+            setupViewModel.onKnownWordsPicked(uri?.toString())
         }
     // One launcher per kind: the contract callback cannot receive which list was chosen.
     val blacklistPicker =
@@ -232,11 +232,31 @@ internal fun SettingsRoute(
         requestedCategory = requestedCategory,
         requestedCategoryItemIndex = requestedCategoryItemIndex,
         onCategoryRequestConsumed = onCategoryRequestConsumed,
-        onImportCustom = { dictionaryPicker.launch(CUSTOM_DICTIONARY_MIME_TYPES) },
-        onImportFrequency = { frequencyPicker.launch(FREQUENCY_MIME_TYPES) },
-        onImportPitch = { pitchPicker.launch(PITCH_MIME_TYPES) },
-        onImportAudioPack = { audioPackPicker.launch(AUDIO_PACK_MIME_TYPES) },
-        onImportKnownWords = { knownWordsPicker.launch(KNOWN_WORDS_MIME_TYPES) },
+        onImportCustom = {
+            if (setupViewModel.beginCustomDictionaryPicker()) {
+                dictionaryPicker.launch(CUSTOM_DICTIONARY_MIME_TYPES)
+            }
+        },
+        onImportFrequency = {
+            if (setupViewModel.beginFrequencyPicker()) {
+                frequencyPicker.launch(FREQUENCY_MIME_TYPES)
+            }
+        },
+        onImportPitch = {
+            if (setupViewModel.beginPitchPicker()) {
+                pitchPicker.launch(PITCH_MIME_TYPES)
+            }
+        },
+        onImportAudioPack = {
+            if (setupViewModel.beginAudioPackPicker()) {
+                audioPackPicker.launch(AUDIO_PACK_MIME_TYPES)
+            }
+        },
+        onImportKnownWords = {
+            if (setupViewModel.beginKnownWordsPicker()) {
+                knownWordsPicker.launch(KNOWN_WORDS_MIME_TYPES)
+            }
+        },
         onImportWordList = { kind ->
             when (kind) {
                 WordListKind.BLACKLIST -> blacklistPicker.launch(WORD_LIST_MIME_TYPES)
@@ -263,9 +283,11 @@ private fun SettingsScreen(
     diagnosticsExport: DiagnosticsExportState,
     onRetrySave: () -> Unit,
     onDraftChange: (SettingsDraft) -> Unit,
-    onRestoreMiningDefaults: () -> Unit,
-    onResetAnkiTarget: () -> Unit,
-    onResetResourceChoices: () -> Unit,
+    // Boolean: a reset that the store refuses must leave the confirmation queued
+    // instead of being silently dismissed.
+    onRestoreMiningDefaults: () -> Boolean,
+    onResetAnkiTarget: () -> Boolean,
+    onResetResourceChoices: () -> Boolean,
     onRequestPermissions: () -> Unit,
     onOpenAppSettings: () -> Unit,
     onInstallAnkiDroid: () -> Unit,

@@ -6,6 +6,8 @@ import com.ankiminer.android.diagnostics.log.AppLog
 import com.ankiminer.android.diagnostics.log.LogComponent
 import com.ankiminer.android.engine.PyBridge
 import com.ankiminer.android.localization.StringResourceResolver
+import com.ankiminer.android.media.CancellableProviderIo
+import com.ankiminer.android.media.ProviderIoCancelledException
 import com.ankiminer.android.media.SafBroker
 import com.ankiminer.android.mining.InstalledTokenizerResourceProvider
 import java.io.File
@@ -15,6 +17,7 @@ import java.nio.charset.CharacterCodingException
 import java.util.UUID
 import java.util.concurrent.Executor
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -79,6 +82,14 @@ interface ResourceManager {
 
     suspend fun confirmKnownWordsImport()
 
+    /**
+     * Replays only the failed known-word mutation represented by the current failure.
+     *
+     * Implementations must retain mutation input until success: staged import file and format,
+     * removed words, or reset scope. Search is never a mutation retry.
+     */
+    suspend fun retryKnownWordsFailure()
+
     fun dismissKnownWordsImportPreview()
 
     suspend fun searchKnownWords(query: String, loadMore: Boolean = false)
@@ -104,10 +115,21 @@ interface ResourceManager {
     fun installedFrequencyIds(): List<String> =
         state.value.frequencySources.filter { it.schemaOk && it.entryCount > 0 }.map { it.sourceId }
 
+    fun installedPitchIds(): List<String> =
+        state.value.pitchSources.filter { it.schemaOk && it.entryCount > 0 }.map { it.sourceId }
+
     fun installedAudioPackIds(): List<String> =
         state.value.audioPacks.filter { it.contentAvailable && it.entryCount > 0 }.map { it.packId }
 
     fun bundledWordsetIds(): List<String> = state.value.wordsets.map { it.wordsetId }
+}
+
+internal fun interface PinnedArchiveProvider {
+    fun download(
+        archive: ResourceArchive,
+        cancellation: ResourceCancellationSignal,
+        onProgress: (Long, Long, ResourceOperationPhase) -> Unit,
+    ): StagedArchive
 }
 
 internal class AndroidResourceManager(
@@ -124,6 +146,9 @@ internal class AndroidResourceManager(
     private val documentWriter: ResourceDocumentWriter,
     private val strings: StringResourceResolver,
     private val stagingAvailableBytes: (File) -> Long = ::usableSpaceForStaging,
+    private val pinnedArchiveProvider: PinnedArchiveProvider? = null,
+    wordListMover: (File, File) -> Boolean = { source, target -> source.renameTo(target) },
+    resourceDirectorySync: (File) -> Unit = ::syncResourceDirectory,
 ) : ResourceManager {
     private data class ActiveOperation(
         val id: String,
@@ -133,6 +158,8 @@ internal class AndroidResourceManager(
         val failureRetry: ResourceFailureRetry,
         val knownWordsOperation: KnownWordsFailureOperation?,
         val pythonStarted: AtomicBoolean = AtomicBoolean(false),
+        val cancelDelivery: AtomicReference<CancelDelivery> =
+            AtomicReference(CancelDelivery.NOT_REQUESTED),
     )
 
     private data class PendingKnownWordsImport(
@@ -140,57 +167,97 @@ internal class AndroidResourceManager(
         val format: KnownWordsSourceFormat,
     )
 
+    private sealed interface PendingKnownWordsMutation {
+        data class Remove(val words: List<String>) : PendingKnownWordsMutation
+
+        data class Reset(val scope: KnownWordsResetScope) : PendingKnownWordsMutation
+    }
+
+    private class ResourceInventoryReconciliationException(cause: Exception) :
+        RuntimeException(cause)
+
+    private class ResourceCancellationDeliveryException :
+        RuntimeException()
+
+    private enum class CancelDelivery {
+        NOT_REQUESTED,
+        REQUESTED,
+        DELIVERED,
+        FAILED,
+    }
+
     private val mutableState = MutableStateFlow(ResourceManagerState())
     override val state: StateFlow<ResourceManagerState> = mutableState.asStateFlow()
     private val operationMutex = Mutex()
     private val activeMonitor = Any()
     private val pendingKnownWordsRoot = File(stagingRoot.parentFile, "resource-pending-known-words")
+    private val operationJournal =
+        ResourceOperationJournal(stagingRoot.parentFile, resourceDirectorySync)
 
     /**
      * Sibling of the staging root, so the retention rename stays on one volume and [clearStaging]
      * never sweeps a file the engine is expected to keep reading.
      */
     private val wordListRoot = File(stagingRoot.parentFile, "resource-word-lists")
+    private val wordListStore =
+        CrashSafeWordListStore(wordListRoot, wordListMover, resourceDirectorySync)
     private var active: ActiveOperation? = null
     private var pendingKnownWordsImport: PendingKnownWordsImport? = null
+    private var pendingKnownWordsMutation: PendingKnownWordsMutation? = null
 
     override suspend fun recoverAndRefresh() {
-        val startupWasReady = mutableState.value.startupReadiness == ResourceStartupReadiness.READY
-        if (!startupWasReady) {
-            mutableState.update { it.copy(startupReadiness = ResourceStartupReadiness.RECOVERING) }
-        }
-        runOperation(
-            strings.resolve(R.string.resource_operation_refresh),
-            ResourceOperationPhase.REFRESHING,
-            failureOrigin = ResourceFailureOrigin.SETUP,
-        ) { operation ->
-            clearPendingKnownWordsImport()
-            mutableState.update { it.copy(knownWordsImportPreview = null) }
-            clearStaging()
-            downloader.reconcile(FrozenResourceCatalog.value.resources.map { it.archive })
-            operation.cancellation.check()
-            operation.pythonStarted.set(true)
-            ResourceBridgeCodec.decodeCleanup(
-                bridge.dispatch(ResourceBridgeCodec.encodeCleanupRequest(), null),
-            )
-            refreshFromPython()
-            refreshWordLists()
-            discardInstalledCatalogDownloads()
-        }
-        if (!startupWasReady) {
-            mutableState.update { current ->
-                current.copy(
-                    startupReadiness =
-                        if (
-                            current.failure == null &&
-                            current.catalog != null
-                        ) {
-                            ResourceStartupReadiness.READY
-                        } else {
-                            ResourceStartupReadiness.FAILED
-                        },
+        mutableState.update { it.copy(startupReadiness = ResourceStartupReadiness.RECOVERING) }
+        val interrupted = operationJournal.read()
+        val retainKnownWordsInput =
+            interrupted?.origin == ResourceFailureOrigin.KNOWN_WORDS &&
+                interrupted.knownWordsOperation == KnownWordsFailureOperation.IMPORT
+        val recovered =
+            runOperation(
+                strings.resolve(R.string.resource_operation_refresh),
+                ResourceOperationPhase.REFRESHING,
+                failureOrigin = ResourceFailureOrigin.SETUP,
+                requiresStartupReady = false,
+                waitForMutex = true,
+            ) { operation ->
+                if (!retainKnownWordsInput || !restorePendingKnownWordsImport()) {
+                    clearPendingKnownWordsImport()
+                    mutableState.update { it.copy(knownWordsImportPreview = null) }
+                }
+                clearStaging()
+                downloader.reconcile(FrozenResourceCatalog.value.resources.map { it.archive })
+                operation.cancellation.check()
+                operation.pythonStarted.set(true)
+                ResourceBridgeCodec.decodeCleanup(
+                    bridge.dispatch(ResourceBridgeCodec.encodeCleanupRequest(), null),
                 )
+                refreshFromPython()
+                wordListStore.recover()
+                refreshWordLists()
+                discardInstalledCatalogDownloads()
             }
+        mutableState.update {
+            it.copy(
+                startupReadiness =
+                    if (recovered) {
+                        ResourceStartupReadiness.READY
+                    } else {
+                        ResourceStartupReadiness.FAILED
+                    },
+            )
+        }
+        if (recovered) {
+            operationJournal.clear()
+            interrupted
+                ?.takeUnless(::interruptedOperationAlreadyCommitted)
+                ?.let { operation ->
+                    recordFailure(
+                        code = "resource_operation_interrupted",
+                        message = strings.resolve(R.string.resource_failure_operation),
+                        origin = operation.origin,
+                        retry = operation.retry,
+                        knownWordsOperation = operation.knownWordsOperation,
+                    )
+                }
         }
     }
 
@@ -199,6 +266,7 @@ internal class AndroidResourceManager(
             strings.resolve(R.string.resource_operation_install_unidic),
             ResourceOperationPhase.PREPARING,
             failureOrigin = ResourceFailureOrigin.UNIDIC,
+            persistForRecovery = true,
         ) { operation ->
             val resource = catalog().unidic
             val staged = download(resource, operation)
@@ -234,6 +302,7 @@ internal class AndroidResourceManager(
                     targetId = resourceId,
                     replace = replace,
                 ),
+            persistForRecovery = true,
         ) { operation ->
             val resource =
                 catalog().dictionary(resourceId)
@@ -256,19 +325,21 @@ internal class AndroidResourceManager(
                 updateProgress(operation, ResourceOperationPhase.IMPORTING)
                 operation.cancellation.check()
                 operation.pythonStarted.set(true)
-                ResourceBridgeCodec.decodeImportedDictionary(
-                    bridge.dispatch(
-                        ResourceBridgeCodec.encodeDictionaryImportRequest(
-                            operation.id,
-                            staged.file.canonicalPath,
-                            resource.slotId,
-                            replace,
-                            resource.resourceId,
+                decodePublishedMutation(
+                    raw =
+                        bridge.dispatch(
+                            ResourceBridgeCodec.encodeDictionaryImportRequest(
+                                operation.id,
+                                staged.file.canonicalPath,
+                                resource.slotId,
+                                replace,
+                                resource.resourceId,
+                            ),
+                            null,
                         ),
-                        null,
-                    ),
+                    decode = ResourceBridgeCodec::decodeImportedDictionary,
                 )
-                refreshFromPython()
+                refreshAfterCommittedMutation()
             }
         }
     }
@@ -283,6 +354,7 @@ internal class AndroidResourceManager(
             ResourceOperationPhase.PREPARING,
             failureOrigin = ResourceFailureOrigin.CUSTOM_DICTIONARY,
             failureRetry = ResourceFailureRetry(ResourceFailureAction.CHOOSE_ANOTHER),
+            persistForRecovery = true,
         ) { operation ->
             val retained = runBlocking { safBroker.retainReadAccess(uri) }
             var staged: StagedArchive? = null
@@ -294,17 +366,19 @@ internal class AndroidResourceManager(
                 updateProgress(operation, ResourceOperationPhase.IMPORTING)
                 operation.cancellation.check()
                 operation.pythonStarted.set(true)
-                ResourceBridgeCodec.decodeImportedDictionary(
-                    bridge.dispatch(
-                        ResourceBridgeCodec.encodeDictionaryImportRequest(
-                            operation.id,
-                            staged.file.canonicalPath,
-                            slotId,
-                            replace,
-                            catalogResourceId = null,
+                decodePublishedMutation(
+                    raw =
+                        bridge.dispatch(
+                            ResourceBridgeCodec.encodeDictionaryImportRequest(
+                                operation.id,
+                                staged.file.canonicalPath,
+                                slotId,
+                                replace,
+                                catalogResourceId = null,
+                            ),
+                            null,
                         ),
-                        null,
-                    ),
+                    decode = ResourceBridgeCodec::decodeImportedDictionary,
                 )
                 refreshFromPython()
             } finally {
@@ -326,6 +400,7 @@ internal class AndroidResourceManager(
             ResourceOperationPhase.PREPARING,
             failureOrigin = ResourceFailureOrigin.FREQUENCY,
             failureRetry = ResourceFailureRetry(ResourceFailureAction.CHOOSE_ANOTHER),
+            persistForRecovery = true,
         ) { operation ->
             val retained = runBlocking { safBroker.retainReadAccess(uri) }
             var staged: StagedArchive? = null
@@ -384,6 +459,7 @@ internal class AndroidResourceManager(
             ResourceOperationPhase.PREPARING,
             failureOrigin = ResourceFailureOrigin.PITCH,
             failureRetry = ResourceFailureRetry(ResourceFailureAction.CHOOSE_ANOTHER),
+            persistForRecovery = true,
         ) { operation ->
             val retained = runBlocking { safBroker.retainReadAccess(uri) }
             var staged: StagedArchive? = null
@@ -408,18 +484,20 @@ internal class AndroidResourceManager(
                 operation.cancellation.check()
                 operation.pythonStarted.set(true)
                 val imported =
-                    ResourceBridgeCodec.decodeImportedPitch(
-                        bridge.dispatch(
-                            ResourceBridgeCodec.encodePitchImportRequest(
-                                operation.id,
-                                staged.file.canonicalPath,
-                                sourceId,
-                                sourceName,
-                                format,
-                                replace,
+                    decodePublishedMutation(
+                        raw =
+                            bridge.dispatch(
+                                ResourceBridgeCodec.encodePitchImportRequest(
+                                    operation.id,
+                                    staged.file.canonicalPath,
+                                    sourceId,
+                                    sourceName,
+                                    format,
+                                    replace,
+                                ),
+                                null,
                             ),
-                            null,
-                        ),
+                        decode = ResourceBridgeCodec::decodeImportedPitch,
                     )
                 mutableState.update { it.copy(lastLocalImport = imported) }
                 refreshFromPython()
@@ -440,6 +518,7 @@ internal class AndroidResourceManager(
             ResourceOperationPhase.PREPARING,
             failureOrigin = ResourceFailureOrigin.AUDIO,
             failureRetry = ResourceFailureRetry(ResourceFailureAction.CHOOSE_ANOTHER),
+            persistForRecovery = true,
         ) { operation ->
             val retained = runBlocking { safBroker.retainReadAccess(uri) }
             var staged: StagedArchive? = null
@@ -496,6 +575,7 @@ internal class AndroidResourceManager(
             failureOrigin = ResourceFailureOrigin.KNOWN_WORDS,
             failureRetry = ResourceFailureRetry(ResourceFailureAction.CHOOSE_ANOTHER),
             knownWordsOperation = KnownWordsFailureOperation.IMPORT,
+            persistForRecovery = true,
         ) { operation ->
             val retained = runBlocking { safBroker.retainReadAccess(uri) }
             var staged: StagedArchive? = null
@@ -540,6 +620,7 @@ internal class AndroidResourceManager(
             ResourceOperationPhase.PREPARING,
             failureOrigin = ResourceFailureOrigin.WORD_LIST,
             failureRetry = ResourceFailureRetry(ResourceFailureAction.CHOOSE_ANOTHER),
+            persistForRecovery = true,
         ) { operation ->
             val retained = runBlocking { safBroker.retainReadAccess(uri) }
             var staged: StagedArchive? = null
@@ -560,7 +641,7 @@ internal class AndroidResourceManager(
                 // depends on. A non-UTF-8 file would otherwise fail at the start of every mine.
                 val entryCount =
                     try {
-                        WordListFileFormat.entryCount(staged.file)
+                        WordListFileFormat.normalizeForInstall(staged.file)
                     } catch (failure: CharacterCodingException) {
                         throw ResourceDownloadException(
                             "word_list_not_utf8",
@@ -568,20 +649,7 @@ internal class AndroidResourceManager(
                             failure,
                         )
                     }
-                if (!wordListRoot.exists() && !wordListRoot.mkdirs()) {
-                    throw ResourceDownloadException(
-                        "import_staging_failed",
-                        "Could not store the word-list file",
-                    )
-                }
-                val target = File(wordListRoot, kind.fileName)
-                target.delete()
-                if (!staged.file.renameTo(target)) {
-                    throw ResourceDownloadException(
-                        "import_staging_failed",
-                        "Could not store the word-list file",
-                    )
-                }
+                val target = wordListStore.publish(staged.file, kind)
                 staged = null
                 publishWordList(InstalledWordList(kind, entryCount, target.length()))
             } finally {
@@ -597,8 +665,7 @@ internal class AndroidResourceManager(
             ResourceOperationPhase.PREPARING,
             failureOrigin = ResourceFailureOrigin.WORD_LIST,
         ) {
-            val target = File(wordListRoot, kind.fileName)
-            if (target.exists() && !target.delete()) {
+            if (!wordListStore.remove(kind)) {
                 throw ResourceDownloadException(
                     "word_list_remove_failed",
                     "Could not remove the word-list file",
@@ -718,13 +785,14 @@ internal class AndroidResourceManager(
 
     override suspend fun confirmKnownWordsImport() {
         val pending = pendingKnownWordsImport ?: return
-        runOperation(
-            strings.resolve(R.string.resource_operation_import_known_words),
-            ResourceOperationPhase.IMPORTING,
-            ResourceFailureOrigin.KNOWN_WORDS,
-            knownWordsOperation = KnownWordsFailureOperation.IMPORT,
-        ) { operation ->
-            try {
+        val succeeded =
+            runOperation(
+                strings.resolve(R.string.resource_operation_import_known_words),
+                ResourceOperationPhase.IMPORTING,
+                ResourceFailureOrigin.KNOWN_WORDS,
+                knownWordsOperation = KnownWordsFailureOperation.IMPORT,
+                persistForRecovery = true,
+            ) { operation ->
                 operation.cancellation.check()
                 operation.pythonStarted.set(true)
                 val imported =
@@ -739,13 +807,34 @@ internal class AndroidResourceManager(
                         ),
                     )
                 mutableState.update {
-                    it.copy(lastLocalImport = imported, knownWordsImportPreview = null)
+                    it.copy(lastLocalImport = imported)
                 }
                 refreshFromPython()
-            } finally {
-                clearPendingKnownWordsImport()
-                mutableState.update { it.copy(knownWordsImportPreview = null) }
             }
+        if (succeeded) {
+            clearPendingKnownWordsImport()
+            mutableState.update { it.copy(knownWordsImportPreview = null) }
+        }
+    }
+
+    override suspend fun retryKnownWordsFailure() {
+        val failure =
+            mutableState.value.failure?.takeIf {
+                it.origin == ResourceFailureOrigin.KNOWN_WORDS &&
+                    it.retry.action == ResourceFailureAction.RETRY
+            } ?: return
+        when (failure.knownWordsOperation) {
+            KnownWordsFailureOperation.IMPORT -> confirmKnownWordsImport()
+            null -> {
+                when (val mutation = pendingKnownWordsMutation) {
+                    is PendingKnownWordsMutation.Remove -> removeKnownWords(mutation.words)
+                    is PendingKnownWordsMutation.Reset -> resetKnownWords(mutation.scope)
+                    null -> Unit
+                }
+            }
+            KnownWordsFailureOperation.PREVIEW,
+            KnownWordsFailureOperation.EXPORT,
+            -> Unit
         }
     }
 
@@ -763,6 +852,7 @@ internal class AndroidResourceManager(
             strings.resolve(R.string.resource_operation_inspect_known_words),
             ResourceOperationPhase.REFRESHING,
             ResourceFailureOrigin.KNOWN_WORDS,
+            clearMatchingFailureOnSuccess = pendingKnownWordsMutation == null,
         ) { operation ->
             operation.cancellation.check()
             operation.pythonStarted.set(true)
@@ -796,6 +886,7 @@ internal class AndroidResourceManager(
         runKnownWordsMutation(
             strings.resolve(R.string.resource_operation_remove_known_words),
             ResourceOperationPhase.IMPORTING,
+            PendingKnownWordsMutation.Remove(words.toList()),
         ) { operation ->
             ResourceBridgeCodec.decodeKnownWordsRemoved(
                 bridge.dispatch(
@@ -810,6 +901,7 @@ internal class AndroidResourceManager(
         runKnownWordsMutation(
             strings.resolve(R.string.resource_operation_reset_known_words),
             ResourceOperationPhase.IMPORTING,
+            PendingKnownWordsMutation.Reset(scope),
         ) { operation ->
             ResourceBridgeCodec.decodeKnownWordsReset(
                 bridge.dispatch(
@@ -862,13 +954,61 @@ internal class AndroidResourceManager(
                 throw ResourceBridgeException("known_words_export_failed", "Known-word export is invalid")
             }
             try {
-                documentWriter.open(uri)?.use { output ->
-                    source.inputStream().use { input -> input.copyTo(output) }
-                    output.flush()
-                } ?: throw ResourceBridgeException(
-                    "known_words_export_failed",
-                    "The selected export document could not be opened",
-                )
+                var destinationOpened = false
+                try {
+                    CancellableProviderIo.useResource(
+                        cancellation = operation.cancellation,
+                        open = {
+                            CancellableProviderIo.open(operation.cancellation) { signal ->
+                                documentWriter.open(uri, signal)
+                                    ?.also { destinationOpened = true }
+                                    ?: throw ResourceBridgeException(
+                                        "known_words_export_failed",
+                                        "The selected export document could not be opened",
+                                    )
+                            }
+                        },
+                    ) { output ->
+                        source.inputStream().use { input ->
+                            val buffer = ByteArray(EXPORT_BUFFER_BYTES)
+                            var copied = 0L
+                            updateProgress(
+                                operation,
+                                ResourceOperationPhase.REFRESHING,
+                                copied,
+                                source.length(),
+                            )
+                            while (true) {
+                                operation.cancellation.check()
+                                val count = input.read(buffer)
+                                operation.cancellation.check()
+                                if (count < 0) break
+                                if (count == 0) continue
+                                output.write(buffer, 0, count)
+                                copied += count
+                                updateProgress(
+                                    operation,
+                                    ResourceOperationPhase.REFRESHING,
+                                    copied,
+                                    source.length(),
+                                )
+                                operation.cancellation.check()
+                            }
+                            output.flush()
+                            operation.cancellation.check()
+                        }
+                    }
+                } catch (failure: ProviderIoCancelledException) {
+                    if (destinationOpened) deleteExportDestination(uri)
+                    throw ResourceDownloadException(
+                        "resource_operation_cancelled",
+                        "Resource operation was cancelled",
+                        failure,
+                    )
+                } catch (failure: Exception) {
+                    if (destinationOpened) deleteExportDestination(uri)
+                    throw failure
+                }
             } finally {
                 source.delete()
                 operationRoot.delete()
@@ -879,19 +1019,25 @@ internal class AndroidResourceManager(
     private suspend fun runKnownWordsMutation(
         label: String,
         phase: ResourceOperationPhase,
+        retryMutation: PendingKnownWordsMutation,
         mutate: (ActiveOperation) -> Unit,
     ) {
-        runOperation(
-            label,
-            phase,
-            ResourceFailureOrigin.KNOWN_WORDS,
-            ResourceFailureRetry(ResourceFailureAction.RESOLVE),
-        ) { operation ->
-            operation.cancellation.check()
-            operation.pythonStarted.set(true)
-            mutate(operation)
-            refreshFromPython()
-            mutableState.update { it.copy(knownWordsPage = null) }
+        pendingKnownWordsMutation = retryMutation
+        val succeeded =
+            runOperation(
+                label,
+                phase,
+                ResourceFailureOrigin.KNOWN_WORDS,
+                ResourceFailureRetry(ResourceFailureAction.RETRY),
+            ) { operation ->
+                operation.cancellation.check()
+                operation.pythonStarted.set(true)
+                mutate(operation)
+                refreshFromPython()
+                mutableState.update { it.copy(knownWordsPage = null) }
+            }
+        if (succeeded && pendingKnownWordsMutation == retryMutation) {
+            pendingKnownWordsMutation = null
         }
     }
 
@@ -900,6 +1046,21 @@ internal class AndroidResourceManager(
         pendingKnownWordsImport = null
         pendingKnownWordsRoot.listFiles()?.forEach { it.delete() }
         pendingKnownWordsRoot.delete()
+    }
+
+    private fun restorePendingKnownWordsImport(): Boolean {
+        val files = pendingKnownWordsRoot.listFiles()?.filter(File::isFile).orEmpty()
+        if (files.size != 1) return false
+        val file = files.single()
+        val format =
+            KnownWordsSourceFormat.entries.singleOrNull { file.name.endsWith(it.fileSuffix) }
+                ?: return false
+        pendingKnownWordsImport =
+            PendingKnownWordsImport(
+                staged = StagedArchive(file, sha256 = "", sizeBytes = file.length()),
+                format = format,
+            )
+        return true
     }
 
     override suspend fun lookup(slotId: String, term: String) {
@@ -920,6 +1081,10 @@ internal class AndroidResourceManager(
 
     override fun cancelActive() {
         val operation = synchronized(activeMonitor) { active } ?: return
+        operation.cancelDelivery.compareAndSet(
+            CancelDelivery.NOT_REQUESTED,
+            CancelDelivery.REQUESTED,
+        )
         operation.cancellation.cancel()
         updateProgress(operation, ResourceOperationPhase.CANCELLING)
         // Dispatch even before Python registration. Its bounded sticky-cancellation registry
@@ -927,16 +1092,21 @@ internal class AndroidResourceManager(
         controlExecutor.execute {
             try {
                 val raw = bridge.dispatch(ResourceBridgeCodec.encodeCancelRequest(operation.id), null)
-                ResourceBridgeCodec.decodeCancelAccepted(raw, operation.id)
+                check(ResourceBridgeCodec.decodeCancelAccepted(raw, operation.id)) {
+                    "Python did not accept resource cancellation"
+                }
+                operation.cancelDelivery.set(CancelDelivery.DELIVERED)
             } catch (failure: Exception) {
-                AppLog.ignored(
+                operation.cancelDelivery.set(CancelDelivery.FAILED)
+                AppLog.e(
                     LogComponent.RESOURCES,
                     "operation.cancel",
-                    "worker_owns_terminal_state",
                     failure,
+                    "operation" to operation.id,
+                    "outcome" to "fail",
+                    "delivery" to "failed",
                 )
-                // The operation worker owns terminal state. A late/failed cancel means it already
-                // crossed its final cancellation checkpoint or completed.
+                recordCancelDeliveryFailure(operation)
             }
         }
     }
@@ -952,10 +1122,22 @@ internal class AndroidResourceManager(
         failureRetry: ResourceFailureRetry =
             ResourceFailureRetry(ResourceFailureAction.RETRY),
         knownWordsOperation: KnownWordsFailureOperation? = null,
+        persistForRecovery: Boolean = false,
+        requiresStartupReady: Boolean = true,
+        waitForMutex: Boolean = false,
+        clearMatchingFailureOnSuccess: Boolean = true,
         block: (ActiveOperation) -> Unit,
-    ) {
-        if (!operationMutex.tryLock()) {
-            return
+    ): Boolean {
+        if (
+            requiresStartupReady &&
+                mutableState.value.startupReadiness != ResourceStartupReadiness.READY
+        ) {
+            return false
+        }
+        if (waitForMutex) {
+            operationMutex.lock()
+        } else if (!operationMutex.tryLock()) {
+            return false
         }
         try {
             val workLease =
@@ -968,7 +1150,7 @@ internal class AndroidResourceManager(
                     failureRetry,
                     knownWordsOperation,
                 )
-                return
+                return false
             }
             val operation =
                 ActiveOperation(
@@ -987,8 +1169,24 @@ internal class AndroidResourceManager(
             }
             var completed = false
             try {
+                if (persistForRecovery) {
+                    operationJournal.write(
+                        PersistedResourceOperation(
+                            origin = failureOrigin,
+                            retry = failureRetry,
+                            knownWordsOperation = knownWordsOperation,
+                        ),
+                    )
+                }
                 runOnExecutor(resourceExecutor) { block(operation) }
+                verifyTerminalCancellation(operation)
                 completed = true
+                // instrumentation: silent — reconciliation already recorded retry state
+            } catch (_: ResourceInventoryReconciliationException) {
+                // Mutation committed. The recorded setup failure owns reconciliation-only Retry.
+                // instrumentation: silent — cancel-delivery failure is recorded below
+            } catch (_: ResourceCancellationDeliveryException) {
+                recordCancelDeliveryFailure(operation)
             } catch (failure: CancellationException) {
                 operation.cancellation.cancel()
                 cancelPython(operation)
@@ -1064,9 +1262,16 @@ internal class AndroidResourceManager(
                     strings.resolve(R.string.resource_failure_operation),
                 )
             } finally {
-                if (completed) {
+                if (completed && clearMatchingFailureOnSuccess) {
                     mutableState.update { current ->
-                        if (current.failure?.origin == operation.failureOrigin) {
+                        if (
+                            current.failure?.origin == operation.failureOrigin &&
+                                (
+                                    operation.failureOrigin != ResourceFailureOrigin.KNOWN_WORDS ||
+                                        current.failure.knownWordsOperation ==
+                                        operation.knownWordsOperation
+                                )
+                        ) {
                             current.copy(failure = null)
                         } else {
                             current
@@ -1077,13 +1282,15 @@ internal class AndroidResourceManager(
                     clearStaging()
                 } finally {
                     try {
+                        if (persistForRecovery) operationJournal.clear()
+                    } finally {
                         synchronized(activeMonitor) { if (active === operation) active = null }
                         mutableState.update { it.copy(activeOperation = null) }
-                    } finally {
                         workLease.close()
                     }
                 }
             }
+            return completed
         } finally {
             operationMutex.unlock()
         }
@@ -1092,9 +1299,78 @@ internal class AndroidResourceManager(
     private fun download(
         resource: CatalogResource,
         operation: ActiveOperation,
-    ): StagedArchive =
-        downloader.download(resource.archive, operation.cancellation) { current, total, phase ->
-            updateProgress(operation, phase, current, total)
+    ): StagedArchive {
+        val provider = pinnedArchiveProvider
+        return if (provider != null) {
+            provider.download(resource.archive, operation.cancellation) { current, total, phase ->
+                updateProgress(operation, phase, current, total)
+            }
+        } else {
+            downloader.download(resource.archive, operation.cancellation) { current, total, phase ->
+                updateProgress(operation, phase, current, total)
+            }
+        }
+    }
+
+    private fun refreshAfterCommittedMutation() {
+        try {
+            refreshFromPython()
+        } catch (failure: Exception) {
+            recordFailure(
+                code = "resource_inventory_failed",
+                message = userMessage("resource_inventory_failed"),
+                origin = ResourceFailureOrigin.SETUP,
+                retry = ResourceFailureRetry(ResourceFailureAction.RETRY),
+            )
+            throw ResourceInventoryReconciliationException(failure)
+        }
+    }
+
+    private fun verifyTerminalCancellation(operation: ActiveOperation) {
+        when (operation.cancelDelivery.get()) {
+            CancelDelivery.REQUESTED,
+            CancelDelivery.FAILED,
+            -> throw ResourceCancellationDeliveryException()
+            CancelDelivery.DELIVERED,
+            CancelDelivery.NOT_REQUESTED,
+            -> operation.cancellation.check()
+        }
+    }
+
+    private fun recordCancelDeliveryFailure(operation: ActiveOperation) {
+        val stillActive = synchronized(activeMonitor) { active === operation }
+        if (!stillActive) return
+        recordFailure(
+            code = "resource_cancel_delivery_failed",
+            message = strings.resolve(R.string.resource_failure_operation),
+            origin = ResourceFailureOrigin.SETUP,
+            retry = ResourceFailureRetry(ResourceFailureAction.RETRY),
+            knownWordsOperation = operation.knownWordsOperation,
+        )
+    }
+
+    private fun deleteExportDestination(uri: String) {
+        try {
+            documentWriter.delete(uri)
+            // instrumentation: silent — provider may already have rolled back cancellation
+        } catch (_: Exception) {
+            // Best effort: provider may already have rolled the cancelled document back.
+        }
+    }
+
+    private fun interruptedOperationAlreadyCommitted(
+        operation: PersistedResourceOperation,
+    ): Boolean =
+        when (operation.origin) {
+            ResourceFailureOrigin.UNIDIC -> mutableState.value.installedUniDic != null
+            ResourceFailureOrigin.CATALOG_DICTIONARY -> {
+                val resourceId = operation.retry.targetId
+                resourceId != null &&
+                    mutableState.value.catalogDictionaries.any {
+                        it.installed && it.resource.resourceId == resourceId
+                    }
+            }
+            else -> false
         }
 
     private fun consumePinnedArchive(
@@ -1210,6 +1486,26 @@ internal class AndroidResourceManager(
         // fail closed because both fixed resources are consumed without a selectable chain gate.
         fatalInventoryFailure?.let { throw it }
     }
+
+    /**
+     * Python publishes imported resources before it encodes the success envelope. If Kotlin rejects
+     * that envelope, refresh durable inventory before reporting the contract failure so same-session
+     * state cannot claim the committed mutation did not happen.
+     */
+    private inline fun <T> decodePublishedMutation(
+        raw: String,
+        decode: (String) -> T,
+    ): T =
+        try {
+            decode(raw)
+        } catch (failure: ResourceBridgeException) {
+            try {
+                refreshFromPython()
+            } catch (reconciliationFailure: Exception) {
+                failure.addSuppressed(reconciliationFailure)
+            }
+            throw failure
+        }
 
     /**
      * Counts belong to the phase that reported them. Entering a new phase without its own numbers
@@ -1448,6 +1744,9 @@ internal class AndroidResourceManager(
                 "audio_pack_import_failed",
                 "known_words_import_failed",
                 "resource_operation_failed",
+                "resource_operation_interrupted",
+                "resource_inventory_failed",
+                "resource_cancel_delivery_failed",
             )
 
         val PINNED_ARCHIVE_INVALID_CODES =
@@ -1474,6 +1773,7 @@ internal class AndroidResourceManager(
          */
         const val WORD_LIST_FILE_LIMIT = 8L * 1024 * 1024
         const val KNOWN_WORD_EXPORT_LIMIT = 512L * 1024 * 1024
+        const val EXPORT_BUFFER_BYTES = 256 * 1024
         const val KNOWN_WORD_PAGE_SIZE = 100
     }
 }

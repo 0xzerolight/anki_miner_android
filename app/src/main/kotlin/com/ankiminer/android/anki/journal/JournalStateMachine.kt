@@ -327,6 +327,40 @@ internal data class MediaNamespaceLock(
 
 /** O(n log n) exact-name and prefix/stem collision validation for at most 16,000 locks. */
 internal object MediaNamespaceValidator {
+    /**
+     * Returns only incoming owners involved in a collision. Existing locks are never decisions;
+     * incoming-to-incoming collision components reject all members so admission is order-independent.
+     */
+    fun refuseCandidates(
+        existing: List<MediaNamespaceLock>,
+        candidates: List<MediaNamespaceLock>,
+    ): Map<MediaNamespaceOwner, MediaAdmissionViolation> {
+        require(candidates.map { it.owner }.distinct().size == candidates.size)
+        val refused = linkedMapOf<MediaNamespaceOwner, MediaAdmissionViolation>()
+        candidates.forEach { candidate ->
+            for (held in existing) {
+                try {
+                    requireDisjoint(listOf(held, candidate))
+                } catch (failure: MediaAdmissionViolation) {
+                    refused.putIfAbsent(candidate.owner, failure)
+                    break
+                }
+            }
+        }
+        candidates.forEachIndexed { leftIndex, left ->
+            for (rightIndex in leftIndex + 1 until candidates.size) {
+                val right = candidates[rightIndex]
+                try {
+                    requireDisjoint(listOf(left, right))
+                } catch (failure: MediaAdmissionViolation) {
+                    refused.putIfAbsent(left.owner, failure)
+                    refused.putIfAbsent(right.owner, failure)
+                }
+            }
+        }
+        return refused
+    }
+
     fun requireDisjoint(locks: List<MediaNamespaceLock>) {
         if (locks.size > GLOBAL_UNRESOLVED_CLAIM_LIMIT) {
             throw MediaAdmissionViolation(

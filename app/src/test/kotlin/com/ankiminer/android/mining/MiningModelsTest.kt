@@ -100,6 +100,19 @@ class MiningModelsTest {
         assertEquals(true, MiningRunState.Failed(null, failure, null).isTerminal)
     }
 
+    @Test
+    fun foregroundRunIdentityRetainsWorkKindBeforePythonRegisters() {
+        val token = MiningCancellationToken("cancel_0123456789abcdef0123456789abcdef")
+
+        val videoId = token.foregroundRunId(MiningRunKind.VIDEO)
+        val readingId = token.foregroundRunId(MiningRunKind.READING)
+
+        assertEquals(MiningRunKind.VIDEO, MiningRunKind.fromForegroundRunId(videoId))
+        assertEquals(MiningRunKind.READING, MiningRunKind.fromForegroundRunId(readingId))
+        assertNull(MiningRunKind.fromForegroundRunId(token.value))
+        assertNull(MiningRunKind.fromForegroundRunId("video-cancel_invalid"))
+    }
+
     private fun request(): CurationRequest =
         CurationRequest(
             runId = "run",

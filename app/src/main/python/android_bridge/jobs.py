@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from typing import Any, cast
 
 from . import log_context
+from .anki_limits import ANKI_LIMITS_V1
 from .protocol import BridgeProtocolError, decode_envelope, decode_message, encode_message
 
 _RUN_ID_RE = re.compile(r"^run_[0-9a-f]{32}$")
@@ -22,6 +23,8 @@ _SENTENCE_ID_RE = re.compile(r"^sentence_[0-9a-f]{32}$")
 # BridgeJsonCodec and curation.schema.json.
 CURATION_PAGE_MAX_CANDIDATES = 100
 CURATION_PAGE_MAX_UTF8_BYTES = 512 * 1024
+_MAX_CURATED_SOURCE_ITEMS = ANKI_LIMITS_V1["createCall"]["maxSourceItems"]
+_CURATION_CANCELLATION_POLL_SECONDS = 0.05
 
 
 def _reject(code: str, message: str) -> BridgeProtocolError:
@@ -66,6 +69,7 @@ class _CurationGate:
     page_index: int = 0
     page_resolved: bool = False
     cancelled: bool = False
+    failure: BridgeProtocolError | None = None
     selected: list[object] = field(default_factory=list)
 
     @property
@@ -289,6 +293,7 @@ class JobRegistry:
     def __init__(self) -> None:
         self._lock = threading.RLock()
         self._active: _JobState | None = None
+        self._last_finished_run_id: str | None = None
         self._shutdown = False
 
     def begin(self) -> JobHandle:
@@ -330,7 +335,15 @@ class JobRegistry:
         """
 
         with self._lock:
-            state = self._require_active(run_id)
+            if not isinstance(run_id, str) or not _RUN_ID_RE.fullmatch(run_id):
+                raise BridgeProtocolError("invalid_run_id", "runId is not a valid opaque run ID")
+            state = self._active
+            if state is None:
+                if self._last_finished_run_id == run_id:
+                    return False
+                raise BridgeProtocolError("no_active_job", "There is no active Python mining job")
+            if state.handle.run_id != run_id:
+                raise BridgeProtocolError("stale_run", "The response belongs to a stale mining run")
             first = not state.handle.cancel_event.is_set()
             state.handle.cancel_event.set()
             if state.curation is not None:
@@ -355,6 +368,7 @@ class JobRegistry:
         finally:
             with self._lock:
                 if self._active is state:
+                    self._last_finished_run_id = run_id
                     self._active = None
                     log_context.set_active_run(None)
 
@@ -383,6 +397,7 @@ class JobRegistry:
         run_id: str,
         candidates: Sequence[object],
         emit_request: Callable[[str], None],
+        cancellation_requested: Callable[[], bool] | None = None,
     ) -> list[object] | None:
         """Publish candidates and park until Kotlin confirms or cancels.
 
@@ -395,6 +410,11 @@ class JobRegistry:
             raise _reject("invalid_candidates", "Curation candidates must be a sequence")
         if not callable(emit_request):
             raise _reject("invalid_callback", "emit_request must be callable")
+        if cancellation_requested is not None and not callable(cancellation_requested):
+            raise _reject(
+                "invalid_callback",
+                "cancellation_requested must be callable",
+            )
 
         with self._lock:
             state = self._require_active(run_id)
@@ -478,11 +498,19 @@ class JobRegistry:
                     self._complete_curation_locked(state, gate)
                 raise
 
-            gate.event.wait()
+            while not gate.event.wait(
+                _CURATION_CANCELLATION_POLL_SECONDS if cancellation_requested is not None else None,
+            ):
+                if cancellation_requested is not None and cancellation_requested():
+                    self.cancel(run_id)
             with self._lock:
                 if state.handle.cancel_event.is_set() or gate.cancelled:
                     self._complete_curation_locked(state, gate)
                     return None
+                if gate.failure is not None:
+                    failure = gate.failure
+                    self._complete_curation_locked(state, gate)
+                    raise failure
                 if not gate.page_resolved:
                     raise _reject(
                         "invalid_curation_state",
@@ -603,11 +631,18 @@ class JobRegistry:
                 allowed_candidate_ids = (
                     set(gate.pages[gate.page_index].candidate_ids) if gate.paged else set(gate.candidates)
                 )
-                gate.selected.extend(self._resolve_selection(gate, selection, allowed_candidate_ids))
+                resolved = self._resolve_selection(gate, selection, allowed_candidate_ids)
+                if len(gate.selected) + len(resolved) > _MAX_CURATED_SOURCE_ITEMS:
+                    gate.failure = BridgeProtocolError(
+                        "create_call_too_large",
+                        "The create call contains too many source cards",
+                    )
+                else:
+                    gate.selected.extend(resolved)
             else:
                 raise _reject("invalid_curation_response", "selection must be null or an array")
 
-            final_page = gate.final_page or gate.cancelled
+            final_page = gate.final_page or gate.cancelled or gate.failure is not None
             gate.page_resolved = True
             gate.event.set()
             return CurationResolution(

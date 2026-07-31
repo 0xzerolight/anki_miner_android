@@ -17,23 +17,58 @@ EXTERNAL_UNIDIC_TESTS = (
     "com.ankiminer.android.tokenizer.MecabNativeTokenizerInstrumentedTest"
     "#externalUniDicMatchesAllGoldensThroughPythonKotlinAndJni",
 )
+SELECTOR_GATED_TESTS = (
+    "com.ankiminer.android.EngineGoldenV2InstrumentedTest" "#allCompleteSectionsReplayThroughPackagedEngine",
+    "com.ankiminer.android.ReadingGoldenInstrumentedTest"
+    "#desktopReadingSourcesAndMokuroCardReplayThroughPackagedBridge",
+    "com.ankiminer.android.S4EngineSmokeInstrumentedTest" "#pinnedDesktopChainRunsThroughPackagedEngine",
+    "com.ankiminer.android.anki.s2.AnkiDroidS2CapabilityInstrumentedTest"
+    "#provider_and_android_adapter_complete_the_raw_round_trip",
+    "com.ankiminer.android.mining.S5VideoMiningAcceptanceInstrumentedTest"
+    "#production_repository_mines_real_media_and_cancels_an_active_ffmpeg_child",
+)
+UI_AUDIT_TESTS = (
+    "com.ankiminer.android.uiaudit.UiAuditJankFlowTest" "#curationList200CandidatesScrollsBottomThenTop",
+    "com.ankiminer.android.uiaudit.UiAuditJankFlowTest" "#settingsFullScrollsDownThenUp",
+    "com.ankiminer.android.uiaudit.UiAuditJankFlowTest" "#readingResultsLongListScrollsDownThenUp",
+    "com.ankiminer.android.uiaudit.UiAuditJankFlowTest" "#wizardStepsThroughEveryScreen",
+    "com.ankiminer.android.uiaudit.UiAuditScreenshotTest" "#captureVideoStatesAcrossThemeAndFontScaleMatrix",
+    "com.ankiminer.android.uiaudit.UiAuditScreenshotTest" "#captureReadingStatesAcrossThemeAndFontScaleMatrix",
+    "com.ankiminer.android.uiaudit.UiAuditScreenshotTest" "#captureSettingsStatesAcrossThemeAndFontScaleMatrix",
+    "com.ankiminer.android.uiaudit.UiAuditScreenshotTest" "#captureReadinessActionsAcrossThemeAndFontScaleMatrix",
+    "com.ankiminer.android.uiaudit.UiAuditScreenshotTest" "#captureEveryWizardStepAcrossThemeAndFontScaleMatrix",
+    "com.ankiminer.android.uiaudit.UiAuditScreenshotTest" "#captureAttributionAndNoticesAcrossThemeAndFontScaleMatrix",
+)
+UNEXECUTED_TESTS = EXTERNAL_UNIDIC_TESTS + SELECTOR_GATED_TESTS + UI_AUDIT_TESTS
+ASSUMPTION_GATED_TESTS = (
+    EXTERNAL_UNIDIC_TESTS[0],
+    *SELECTOR_GATED_TESTS,
+    *UI_AUDIT_TESTS,
+)
 TEST_ANNOTATION = re.compile(r"^\s*@Test\b", re.MULTILINE)
-EXPECTED_COUNT = re.compile(r"readonly expected_test_count=(\d+)")
-DISCOVERY_COMMENT = re.compile(r"# Full discovery is (\d+) tests\. (\d+) UI-audit tests are discovered")
+EXPECTED_COUNT = re.compile(r"readonly expected_executed_test_count=(\d+)")
+DISCOVERY_COMMENT = re.compile(
+    r"# Full discovery is (\d+) tests\. This broad API 26 lane excludes (\d+) allowlisted tests\."
+)
 
 
 class Api26InstrumentationScriptTest(unittest.TestCase):
-    def test_excludes_only_external_unidic_tests_and_requires_discovered_results(self) -> None:
+    def test_excludes_all_assumption_gated_tests_and_requires_executed_results(self) -> None:
         discovered_test_count = sum(
             len(TEST_ANNOTATION.findall(source.read_text(encoding="utf-8")))
             for source in ANDROID_TEST_ROOT.rglob("*.kt")
         )
-        ui_audit_root = ANDROID_TEST_ROOT / "kotlin/com/ankiminer/android/uiaudit"
-        ui_audit_test_count = sum(
+        assumption_gated_test_count = sum(
             len(TEST_ANNOTATION.findall(source.read_text(encoding="utf-8")))
-            for source in ui_audit_root.glob("*Test.kt")
+            for source in ANDROID_TEST_ROOT.rglob("*.kt")
+            if "assumeTrue" in source.read_text(encoding="utf-8")
         )
-        expected_test_count = discovered_test_count - len(EXTERNAL_UNIDIC_TESTS)
+        self.assertEqual(
+            len(ASSUMPTION_GATED_TESTS),
+            assumption_gated_test_count,
+            "update the explicit unexecuted allowlist whenever an instrumentation class gains assumeTrue",
+        )
+        expected_test_count = discovered_test_count - len(UNEXECUTED_TESTS)
         script_source = SCRIPT.read_text(encoding="utf-8")
         count_match = EXPECTED_COUNT.search(script_source)
         self.assertIsNotNone(count_match)
@@ -42,9 +77,9 @@ class Api26InstrumentationScriptTest(unittest.TestCase):
 
         discovery_match = DISCOVERY_COMMENT.search(script_source)
         self.assertIsNotNone(discovery_match)
-        documented_discovery, documented_ui_audit = (int(value) for value in discovery_match.groups())
+        documented_discovery, documented_unexecuted = (int(value) for value in discovery_match.groups())
         self.assertEqual(discovered_test_count, documented_discovery)
-        self.assertEqual(ui_audit_test_count, documented_ui_audit)
+        self.assertEqual(len(UNEXECUTED_TESTS), documented_unexecuted)
 
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -96,12 +131,12 @@ class Api26InstrumentationScriptTest(unittest.TestCase):
             )
             instrumentation_command = adb_log.read_text(encoding="utf-8").splitlines()[-1]
             self.assertEqual(
-                "shell am instrument -w -r -e notClass "
-                + ",".join(EXTERNAL_UNIDIC_TESTS)
-                + " com.ankiminer.android.test/"
+                "shell am instrument -w -r -e notClass " + ",".join(UNEXECUTED_TESTS) + " com.ankiminer.android.test/"
                 "androidx.test.runner.AndroidJUnitRunner",
                 instrumentation_command,
             )
+            for test_name in SELECTOR_GATED_TESTS:
+                self.assertIn(f"instrumentation: UNEXECUTED: {test_name}", result.stdout)
 
 
 if __name__ == "__main__":

@@ -63,7 +63,11 @@ class AnkiJsonCodecTest {
 
         val known = decode(AnkiOperation.SCAN_FIRST_FIELDS, knownVocabularyPayload()) as ScanFirstFieldsRequest
         assertEquals(
-            KnownVocabularyScope(listOf("Suspended"), KnownVocabularyCursor(1, "cursor-token")),
+            KnownVocabularyScope(
+                listOf("Suspended"),
+                KnownVocabularyCursor(1, "cursor-token"),
+                "Mining",
+            ),
             known.scope,
         )
 
@@ -516,7 +520,7 @@ class AnkiJsonCodecTest {
         """{"runId":"$RUN_ID","requestId":"$REQUEST_ID","deckName":"$deck","modelName":"Mining","requiredFields":["Expression"]}"""
 
     private fun knownVocabularyPayload(): String =
-        """{"runId":"$RUN_ID","requestId":"$REQUEST_ID","scope":{"kind":"knownVocabulary","excludedDecks":["Suspended"],"cursor":{"ordinal":1,"token":"cursor-token"},"limits":{"maxScannedNotes":256,"maxTotalScannedNotes":100000,"maxItems":256,"maxItemUtf8Bytes":65536,"maxTotalUtf8Bytes":262144}}}"""
+        """{"runId":"$RUN_ID","requestId":"$REQUEST_ID","scope":{"kind":"knownVocabulary","deckName":"Mining","excludedDecks":["Suspended"],"cursor":{"ordinal":1,"token":"cursor-token"},"limits":{"maxScannedNotes":256,"maxTotalScannedNotes":100000,"maxItems":256,"maxItemUtf8Bytes":65536,"maxTotalUtf8Bytes":262144}}}"""
 
     private fun duplicateScanPayload(): String =
         """{"runId":"$RUN_ID","requestId":"$REQUEST_ID","scope":{"kind":"duplicates","modelName":"Mining","firstFieldName":"Expression","deckName":null,"candidates":[{"key":"猫","firstField":"<b>猫</b>"}],"occurrences":[0,0],"invalidateBaselineToken":null,"limits":{"maxHitsPerCandidate":100,"maxTotalHits":1000,"maxItemUtf8Bytes":65536,"maxTotalUtf8Bytes":1048576}}}"""

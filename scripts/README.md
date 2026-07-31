@@ -39,8 +39,13 @@ answers.
 
 Run the full host gate without an emulator: toolchain and lock verification,
 shell syntax + ShellCheck, the host Python suites, `ruff`/`black`, the JVM unit
-tests, Android Lint, the emulator-flavor app and AndroidTest APK builds, and
-native inspection of the resulting APK.
+tests, Android Lint, the emulator app and AndroidTest APK builds, and exact
+native and packaged-runtime inspection of the resulting APK.
+
+It does not build a release variant: that runs `validate_release_build.py`,
+which fails closed unless the checkout is completely clean, so it would make
+every local run require a committed tree. CI builds and audits the unsigned
+minified ARM64 artifact instead.
 
 ```bash
 source scripts/android-env.sh
@@ -139,9 +144,10 @@ refuses to boot an emulator with less than 6 GiB available memory or less than
 Nothing local executes instrumentation. CI runs it on the `api26` lane through
 `.github/scripts/run-api26-instrumentation.sh`, which sources
 `scripts/instrumentation-result.sh` to validate the complete terminal contract
-emitted by `am instrument -w -r`. That script pins `expected_test_count=179`
-(181 discovered, minus the two external-UniDic fixture tests it excludes), so
-adding or removing an instrumentation test requires editing that number by hand.
+emitted by `am instrument -w -r`. That script pins `expected_executed_test_count=164`
+(181 discovered, minus 17 explicitly reported UNEXECUTED tests: external-UniDic,
+selector-gated contracts, and opt-in UI audits), so adding or removing an
+instrumentation test requires editing that count and the script allowlist together.
 
 Those two need a full UniDic pushed to `/data/local/tmp` first — S1a and S1b
 respectively, from a local UniDic `dicdir`:

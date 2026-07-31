@@ -1,5 +1,6 @@
 package com.ankiminer.android.data.resources
 
+import com.ankiminer.android.anki.generated.UnicodeContractV151
 import java.security.MessageDigest
 import java.text.Normalizer
 import java.util.Locale
@@ -42,7 +43,7 @@ internal object ResourceIdentity {
         displayName: String,
         fallbackPrefix: String,
     ): String {
-        val name = displayName.trim()
+        val name = canonicalDisplayName(displayName)
         // Locale.ROOT, never the default locale: in Turkish, "I".lowercase() is "ı", which would
         // give the same name two different ids depending on the phone's language.
         val folded =
@@ -59,8 +60,8 @@ internal object ResourceIdentity {
         }
         val trimmed = slug.toString().take(MAX_SLUG_LENGTH).trimEnd('-')
         if (trimmed.isNotEmpty()) return trimmed
-        // Digest the raw name, not the normalized form, so the fallback id cannot shift when the
-        // platform's Unicode tables change under us.
+        // Digest pinned NFC, not platform-normalized or raw text. Canonically equivalent names
+        // must own one slot, and the digest must not shift with platform Unicode tables.
         return "$fallbackPrefix-${digest(name)}"
     }
 
@@ -80,9 +81,12 @@ internal object ResourceIdentity {
         installed: List<InstalledFrequencySource>,
     ): ResourceImportTarget {
         val derived = derive(displayName, "frequency")
+        val canonicalName = canonicalDisplayName(displayName)
         val match =
             installed.firstOrNull { it.sourceId == derived }
-                ?: installed.firstOrNull { it.sourceName.trim().equals(displayName.trim(), ignoreCase = true) }
+                ?: installed.firstOrNull {
+                    canonicalDisplayName(it.sourceName).equals(canonicalName, ignoreCase = true)
+                }
         return ResourceImportTarget(
             identity = match?.sourceId ?: derived,
             installedName = match?.sourceName,
@@ -123,13 +127,21 @@ internal object ResourceIdentity {
         installed: List<InstalledPitchSource>,
     ): ResourceImportTarget {
         val derived = derive(displayName, "pitch")
+        val canonicalName = canonicalDisplayName(displayName)
         val match =
             installed.firstOrNull { it.sourceId == derived }
-                ?: installed.firstOrNull { it.sourceName.trim().equals(displayName.trim(), ignoreCase = true) }
+                ?: installed.firstOrNull {
+                    canonicalDisplayName(it.sourceName).equals(canonicalName, ignoreCase = true)
+                }
         return ResourceImportTarget(
             identity = match?.sourceId ?: derived,
             installedName = match?.sourceName,
         )
+    }
+
+    private fun canonicalDisplayName(value: String): String {
+        val trimmed = value.trim()
+        return UnicodeContractV151.normalizeNfc(trimmed) ?: trimmed
     }
 
     private fun digest(value: String): String {

@@ -32,6 +32,7 @@ import com.ankiminer.android.data.resources.ResourceStartupReadiness
 import com.ankiminer.android.data.resources.WordListKind
 import com.ankiminer.android.data.settings.CardType
 import com.ankiminer.android.engine.PythonRuntimeReadiness
+import com.ankiminer.android.mining.AnkiMiningTargetReadiness
 import com.ankiminer.android.mining.NotificationPermissionReadiness
 
 internal data class SetupUiState(
@@ -39,6 +40,7 @@ internal data class SetupUiState(
     val resourceStartup: ResourceStartupReadiness = ResourceStartupReadiness.PENDING,
     val anki: AnkiProviderReadiness = AnkiProviderReadiness.NotChecked,
     val ankiRecovery: AnkiRecoveryReadiness = AnkiRecoveryReadiness.NotChecked,
+    val miningTarget: AnkiMiningTargetReadiness = AnkiMiningTargetReadiness.NotChecked,
     val notifications: NotificationPermissionReadiness = NotificationPermissionReadiness.READY,
     val noteTypeStatus: NoteTypeSetupStatus = NoteTypeSetupStatus.NotSelected,
     val availableNoteTypes: List<ModelSummary> = emptyList(),
@@ -129,13 +131,17 @@ internal data class SetupUiState(
                 remediations.pending.isEmpty()
 
     val targetReady: Boolean
-        get() = modelReady
+        get() = modelReady && miningTarget == AnkiMiningTargetReadiness.Ready
 
     val busy: Boolean
         get() =
             operation != null ||
                 ankiOperation != null ||
                 runtimeWorkKind != null ||
+                // Only in-progress startup counts as busy. FAILED is terminal and must fall
+                // through to its own CHECK_AGAIN action instead of showing a spinner forever.
+                resourceStartup == ResourceStartupReadiness.PENDING ||
+                resourceStartup == ResourceStartupReadiness.RECOVERING ||
                 deckPersistence == DeckPersistenceStatus.SAVING
 
     val isMiningReady: Boolean

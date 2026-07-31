@@ -15,6 +15,7 @@ import com.ankiminer.android.data.anki.AnkiRecoveryInventoryStatus
 import com.ankiminer.android.data.resources.ResourceStartupReadiness
 import com.ankiminer.android.engine.PythonBootstrapStage
 import com.ankiminer.android.engine.PythonRuntimeReadiness
+import com.ankiminer.android.mining.AnkiMiningTargetReadiness
 import com.ankiminer.android.vm.MiningReadinessAction
 import com.ankiminer.android.vm.SetupUiState
 import org.junit.Assert.assertEquals
@@ -43,6 +44,7 @@ internal class MiningReadinessActionTest(
                 noteTypeStatus = NoteTypeSetupStatus.Verified(modelId = 1L),
                 recoveryInventoryStatus = AnkiRecoveryInventoryStatus.AVAILABLE,
                 uniDicInstalled = true,
+                miningTarget = AnkiMiningTargetReadiness.Ready,
             )
 
         @JvmStatic

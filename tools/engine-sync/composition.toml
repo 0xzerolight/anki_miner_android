@@ -50,8 +50,11 @@ assets = [
 overlay_allowlist = [
   "PyQt6/QtCore.py",
   "PyQt6/__init__.py",
+  "anki_miner/models/reading.py",
   "anki_miner/services/__init__.py",
+  "anki_miner/services/known_words_import.py",
   "anki_miner/services/media_extractor.py",
+  "anki_miner/services/reading/sentence_splitter.py",
   "anki_miner/services/tagger.py",
   "anki_miner/utils/android_fd.py",
   "anki_miner/utils/audio_track_detector.py",
@@ -60,7 +63,7 @@ overlay_allowlist = [
 # Whole-file shadow overlays must name the exact upstream Git blob they were
 # reviewed against. An engine.lock bump stops here until the override is
 # consciously rebased over any upstream change.
-overlay_base_blobs = { "anki_miner/services/__init__.py" = "989c5ae4bd09ed16613ea54fa6a9abb78540594a", "anki_miner/services/media_extractor.py" = "7798b8c1733ff59523424ecb6e95d178dc8b8b93", "anki_miner/services/tagger.py" = "567eb191e3f5100401bdad1678be9dbe189dfe45", "anki_miner/utils/audio_track_detector.py" = "f785f5b8706e1073f076149dbfb873472446d414" }
+overlay_base_blobs = { "anki_miner/models/reading.py" = "555544cfcef5c71dff21e3f94ecfc24fca2c45c3", "anki_miner/services/__init__.py" = "989c5ae4bd09ed16613ea54fa6a9abb78540594a", "anki_miner/services/known_words_import.py" = "9353f416baec93f6c7e5dd1ed2231110bbe9f20b", "anki_miner/services/media_extractor.py" = "7798b8c1733ff59523424ecb6e95d178dc8b8b93", "anki_miner/services/reading/sentence_splitter.py" = "afeb7d134dd6b89101b8880531d6ab19386ea3cb", "anki_miner/services/tagger.py" = "567eb191e3f5100401bdad1678be9dbe189dfe45", "anki_miner/utils/audio_track_detector.py" = "f785f5b8706e1073f076149dbfb873472446d414" }
 
 # A protected module may be selected from the desktop Git object only. An
 # overlay at the same path is a hard error.
@@ -91,9 +94,11 @@ allowed_stdlib = [
   "abc",
   "base64",
   "bisect",
+  "codecs",
   "collections",
   "concurrent",
   "contextlib",
+  "contextvars",
   "csv",
   "dataclasses",
   "datetime",

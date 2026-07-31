@@ -474,7 +474,14 @@ class CallbackAdapters:
             self._handle.run_id,
             candidates,
             lambda message: _invoke(self._callbacks, "onCurationNeeded", message),
+            self.cancellation_requested,
         )
+
+    def cancellation_requested(self) -> bool:
+        """Read Kotlin's local token so a failed control dispatch cannot strand curation."""
+
+        callback = getattr(self._callbacks, "cancellationRequested", None)
+        return bool(callback()) if callable(callback) else False
 
     def notify_job_complete(self, result: object) -> None:
         _invoke(

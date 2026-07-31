@@ -18,6 +18,7 @@ import com.ankiminer.android.mining.CurationRequest
 import com.ankiminer.android.mining.CurationSelection
 import com.ankiminer.android.mining.MiningRunState
 import com.ankiminer.android.mining.RuntimeWorkConflict
+import com.ankiminer.android.mining.cancellationPending
 import com.ankiminer.android.mining.cancellationToken
 import com.ankiminer.android.mining.isTerminal
 import com.ankiminer.android.mining.runId
@@ -28,6 +29,8 @@ import com.ankiminer.android.ui.mining.MiningPendingAction
 import com.ankiminer.android.ui.mining.MiningPendingState
 import com.ankiminer.android.ui.mining.SharedCurationDraft
 import com.ankiminer.android.ui.mining.defaultCurationDraft
+import com.ankiminer.android.ui.mining.draftFor
+import com.ankiminer.android.ui.mining.toCurationSessionState
 import com.ankiminer.android.ui.reading.ReadingCurationUiState
 import com.ankiminer.android.ui.reading.ReadingDocumentSelectionError
 import com.ankiminer.android.ui.reading.ReadingDocumentSlotState
@@ -38,8 +41,9 @@ import com.ankiminer.android.ui.reading.isReadingArchive
 import com.ankiminer.android.ui.reading.readingArchiveMatches
 import com.ankiminer.android.ui.reading.readingSourceKind
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -49,15 +53,15 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 /** Owns live SAF grants and revalidates saved URI/display-name metadata after recreation. */
 class ReadingMiningViewModel internal constructor(
     private val repository: ReadingMiningRepository,
     private val safBroker: SafBroker,
     private val runtimeWorkState: StateFlow<RuntimeWorkCoordinator.Kind?> = MutableStateFlow(null),
-    savedStateHandle: SavedStateHandle = SavedStateHandle(),
+    private val savedStateHandle: SavedStateHandle = SavedStateHandle(),
     selectionInventory: SafSelectionInventory? = null,
+    selectionIoDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : ViewModel() {
     private data class LocalState(
         val source: ReadingDocumentSlotState = ReadingDocumentSlotState(),
@@ -75,16 +79,26 @@ class ReadingMiningViewModel internal constructor(
         ARCHIVE,
     }
 
+    private data class DocumentPublication(
+        val replacedDocument: SafDocument?,
+        val archiveToClear: SafDocument?,
+        val clearArchive: Boolean,
+        val clearSeries: Boolean,
+    )
+
     private var sourceDocumentRequest = 0L
     private var archiveDocumentRequest = 0L
     private var sourceDocumentJob: Job? = null
     private var archiveDocumentJob: Job? = null
+    private var sourceRestoreInFlight = false
+    private var pendingArchiveReplacedUri: String? = null
     private val sourceSelection =
         SavedDocumentSelectionStore(
             savedStateHandle = savedStateHandle,
             keyPrefix = "readingMining.source",
             inventory = selectionInventory,
             inventorySlot = SafSelectionSlot.READING_SOURCE,
+            ioDispatcher = selectionIoDispatcher,
         )
     private val archiveSelection =
         SavedDocumentSelectionStore(
@@ -92,6 +106,7 @@ class ReadingMiningViewModel internal constructor(
             keyPrefix = "readingMining.archive",
             inventory = selectionInventory,
             inventorySlot = SafSelectionSlot.READING_ARCHIVE,
+            ioDispatcher = selectionIoDispatcher,
         )
     private val subtitleSeriesSelection =
         SavedTextValueStore(
@@ -136,7 +151,7 @@ class ReadingMiningViewModel internal constructor(
                 curation = curation,
                 startPending = local.pending.start,
                 curationPending = local.pending.curation || repositoryCurationPending,
-                cancelPending = local.pending.cancel,
+                cancelPending = local.pending.cancel || runState.cancellationPending,
                 resetPending = local.pending.reset,
                 commandError = local.commandError,
                 runtimeConflict =
@@ -152,20 +167,28 @@ class ReadingMiningViewModel internal constructor(
         viewModelScope.launch {
             repository.state.collect { runState ->
                 if (runState is MiningRunState.Curating) {
+                    val saved = repository.curationSessionState()
                     localState.update { local ->
                         if (local.curationDraft?.matches(runState.request) == true) {
                             local
                         } else {
                             local.copy(
-                                curationDraft = runState.request.defaultCurationDraft(),
+                                curationDraft =
+                                    saved?.draftFor(runState.request)
+                                        ?: runState.request.defaultCurationDraft(),
                                 previousPageSelectedCount =
-                                    local.previousPageSelectedCount.takeIf {
-                                        local.curationDraft?.runId == runState.request.runId
-                                    } ?: 0,
+                                    saved
+                                        ?.previousPageSelectedCount
+                                        ?.takeIf { saved.runId == runState.request.runId }
+                                        ?: local.previousPageSelectedCount.takeIf {
+                                            local.curationDraft?.runId == runState.request.runId
+                                        } ?: 0,
                             )
                         }
                     }
+                    saveCurationSession(runState.request)
                 } else if (runState.isTerminal) {
+                    repository.clearCurationSessionState(runState.runId)
                     localState.update { local ->
                         local.copy(
                             curationDraft = null,
@@ -176,14 +199,26 @@ class ReadingMiningViewModel internal constructor(
                 }
             }
         }
-        if (repository.state.value == MiningRunState.Idle) restoreSelections()
+        restoreSelections()
     }
 
-    fun onSourcePicked(uri: String) = resolveDocument(DocumentKind.SOURCE, uri)
+    fun onSourcePicked(uri: String) =
+        resolveDocument(
+            kind = DocumentKind.SOURCE,
+            uri = uri,
+            onResolved = { accepted ->
+                if (accepted) resolvePendingArchive()
+            },
+        )
 
     fun onArchivePicked(uri: String) {
-        if (localState.value.sourceKind != ReadingSourceKindUi.MOKURO) return
-        resolveDocument(DocumentKind.ARCHIVE, uri)
+        if (uri.isBlank()) return
+        pendingArchiveUri = uri
+        if (localState.value.sourceKind == ReadingSourceKindUi.MOKURO) {
+            resolvePendingArchive()
+        } else if (!sourceRestoreInFlight) {
+            rejectPendingArchive()
+        }
     }
 
     fun onSubtitleSeriesNameChanged(value: String) {
@@ -297,6 +332,7 @@ class ReadingMiningViewModel internal constructor(
             val draft = local.curationDraft?.forRequest(request) ?: request.defaultCurationDraft()
             local.copy(curationDraft = draft.focusCandidate(request, candidateId))
         }
+        saveCurationSession(request)
     }
 
     /** Checkbox: change inclusion, leave the detail where it is. */
@@ -320,6 +356,7 @@ class ReadingMiningViewModel internal constructor(
             val draft = local.curationDraft?.forRequest(request) ?: request.defaultCurationDraft()
             local.copy(curationDraft = draft.setCandidateSelected(request, candidateId, selected))
         }
+        saveCurationSession(request)
     }
 
     /**
@@ -352,6 +389,7 @@ class ReadingMiningViewModel internal constructor(
                         .reconcileFocus(visibleCandidateIds),
             )
         }
+        saveCurationSession(request)
     }
 
     /**
@@ -375,6 +413,7 @@ class ReadingMiningViewModel internal constructor(
                 curationDraft = draft.reconcileFocus(visibleCandidateIds, previousVisibleIds),
             )
         }
+        saveCurationSession(request)
     }
 
     fun selectSentence(
@@ -397,12 +436,15 @@ class ReadingMiningViewModel internal constructor(
             val updated = draft.selectSentence(request, candidateId, sentenceId) ?: return@update local
             local.copy(curationDraft = updated)
         }
+        saveCurationSession(request)
     }
 
     fun confirmCuration() {
         val runState = repository.state.value as? MiningRunState.Curating ?: return
         if (runState.pageSubmissionPending) return
         var acceptedSelection: List<CurationSelection>? = null
+        var acceptedDraft: SharedCurationDraft? = null
+        var submittedPreviousPageCount: Int? = null
         while (acceptedSelection == null) {
             val local = localState.value
             if (local.pending.curation || local.pending.cancel) return
@@ -420,6 +462,11 @@ class ReadingMiningViewModel internal constructor(
                 )
             ) {
                 acceptedSelection = selection
+                acceptedDraft = draft
+                if (!runState.request.isFinalPage) {
+                    submittedPreviousPageCount =
+                        Math.addExact(local.previousPageSelectedCount, selection.size)
+                }
             }
         }
         val selection = requireNotNull(acceptedSelection)
@@ -438,13 +485,15 @@ class ReadingMiningViewModel internal constructor(
                     pageIndex = runState.request.page?.pageIndex,
                 )
                 if (!runState.request.isFinalPage) {
+                    val previousPageSelectedCount =
+                        requireNotNull(submittedPreviousPageCount)
+                    repository.saveCurationSessionState(
+                        requireNotNull(acceptedDraft)
+                            .toCurationSessionState(previousPageSelectedCount),
+                    )
                     localState.update { local ->
                         local.copy(
-                            previousPageSelectedCount =
-                                Math.addExact(
-                                    local.previousPageSelectedCount,
-                                    selection.size,
-                                ),
+                            previousPageSelectedCount = previousPageSelectedCount,
                         )
                     }
                 }
@@ -642,23 +691,35 @@ class ReadingMiningViewModel internal constructor(
             sourceSelection.clear()
             archiveSelection.clear()
             subtitleSeriesSelection.clear()
+            pendingArchiveUri = null
+            localState.update { it.copy(subtitleSeriesName = "") }
             return
         }
+        sourceRestoreInFlight = true
         resolveDocument(
             kind = DocumentKind.SOURCE,
             uri = source.uri,
             restoring = true,
-            onResolved = {
-                if (localState.value.sourceKind == ReadingSourceKindUi.MOKURO) {
-                    archiveSelection.restore()?.let { archive ->
-                        resolveDocument(
-                            kind = DocumentKind.ARCHIVE,
-                            uri = archive.uri,
-                            restoring = true,
-                        )
-                    } ?: archiveSelection.clear()
+            onResolved = { accepted ->
+                sourceRestoreInFlight = false
+                if (!accepted) {
+                    rejectPendingArchive()
+                } else if (localState.value.sourceKind == ReadingSourceKindUi.MOKURO) {
+                    if (pendingArchiveUri != null) {
+                        pendingArchiveReplacedUri =
+                            archiveSelection.restore()?.uri?.takeIf { it != pendingArchiveUri }
+                        resolvePendingArchive()
+                    } else {
+                        archiveSelection.restore()?.let { archive ->
+                            resolveDocument(
+                                kind = DocumentKind.ARCHIVE,
+                                uri = archive.uri,
+                                restoring = true,
+                            )
+                        } ?: archiveSelection.clear()
+                    }
                 } else {
-                    archiveSelection.clear()
+                    rejectPendingArchive()
                 }
             },
         )
@@ -668,11 +729,11 @@ class ReadingMiningViewModel internal constructor(
         kind: DocumentKind,
         uri: String,
         restoring: Boolean = false,
-        onResolved: (() -> Unit)? = null,
+        onResolved: ((Boolean) -> Unit)? = null,
     ) {
         if (
             uri.isBlank() ||
-            repository.state.value != MiningRunState.Idle ||
+            (!restoring && repository.state.value != MiningRunState.Idle) ||
             localState.value.pending.start ||
             (kind == DocumentKind.ARCHIVE &&
                 localState.value.sourceKind != ReadingSourceKindUi.MOKURO)
@@ -694,41 +755,59 @@ class ReadingMiningViewModel internal constructor(
         val job =
             viewModelScope.launch {
                 try {
-                    // Persistable permission acquisition is an ownership transfer. It must finish
-                    // even if a newer picker result cancels this coroutine, so the stale result
-                    // can release the newly acquired grant deterministically.
-                    val document =
-                        withContext(NonCancellable) {
-                            safBroker.retainReadAccess(uri)
-                        }
-                    if (!isCurrentDocumentRequest(kind, sequence)) {
-                        releaseDocumentNow(document)
-                        return@launch
-                    }
+                    var rejectionError: ReadingDocumentSelectionError? = null
+                    val result =
+                        SafSelectionOwnershipTransaction(
+                            broker = safBroker,
+                            store = selectionStore(kind),
+                        ).acquirePersistPublish(
+                            uri = uri,
+                            accept = { document ->
+                                documentSelectionError(kind, document)
+                                    .also { rejectionError = it } == null
+                            },
+                            discardPersistedOnRejection = restoring,
+                            publish = { document ->
+                                check(isCurrentDocumentRequest(kind, sequence)) {
+                                    "Document request became stale before publication"
+                                }
+                                when (kind) {
+                                    DocumentKind.SOURCE ->
+                                        publishResolvedSource(document, restoring)
+                                    DocumentKind.ARCHIVE ->
+                                        publishResolvedArchive(document)
+                                }
+                            },
+                        )
                     val accepted =
-                        when (kind) {
-                            DocumentKind.SOURCE -> acceptResolvedSource(document)
-                            DocumentKind.ARCHIVE -> acceptResolvedArchive(document)
+                        when (result) {
+                            is SafSelectionOwnershipResult.Published -> {
+                                finishDocumentPublication(kind, result.value)
+                                true
+                            }
+                            is SafSelectionOwnershipResult.Rejected -> {
+                                localState.update { local ->
+                                    local.withSelectionRejection(kind, rejectionError)
+                                }
+                                if (restoring && kind == DocumentKind.SOURCE) {
+                                    clearRestoredSourceDependents()
+                                }
+                                false
+                            }
                         }
-                    if (!accepted && restoring) {
-                        selectionStore(kind).clear()
-                        if (kind == DocumentKind.SOURCE) {
-                            archiveSelection.clear()
-                            subtitleSeriesSelection.clear()
-                            localState.update { it.copy(subtitleSeriesName = "") }
-                        }
-                    }
-                    onResolved?.invoke()
+                    onResolved?.invoke(accepted)
                 } catch (failure: CancellationException) {
                     throw failure
-                } catch (_: Exception) {
+                } catch (failure: Exception) {
                     if (isCurrentDocumentRequest(kind, sequence)) {
+                        if (kind == DocumentKind.SOURCE && restoring) {
+                            sourceRestoreInFlight = false
+                        }
                         localState.update { local -> local.withAccessFailure(kind) }
-                        if (restoring) {
-                            selectionStore(kind).clear()
+                        if (restoring && failure.provesPermanentSafAccessLoss()) {
+                            clearPermanentlyLostSelection(kind)
                             if (kind == DocumentKind.SOURCE) {
-                                archiveSelection.clear()
-                                subtitleSeriesSelection.clear()
+                                rejectPendingArchive()
                             }
                         }
                     }
@@ -737,29 +816,92 @@ class ReadingMiningViewModel internal constructor(
         setDocumentJob(kind, job)
     }
 
-    private suspend fun acceptResolvedSource(document: SafDocument): Boolean {
-        val newKind = readingSourceKind(document.displayName)
-        if (newKind == null) {
-            localState.update { local ->
-                local.copy(
-                    source =
-                        local.source.copy(
-                            isResolving = false,
-                            error = ReadingDocumentSelectionError.SOURCE_TYPE,
-                        ),
-                )
+    private suspend fun clearPermanentlyLostSelection(kind: DocumentKind) {
+        try {
+            val local = localState.value
+            when (kind) {
+                DocumentKind.SOURCE ->
+                    SafSelectionOwnershipTransaction(safBroker, sourceSelection)
+                        .clearPersistPublishRelease(
+                            ownedDocument = local.source.document,
+                            additionalTargets =
+                                listOf(
+                                    SafSelectionClearTarget(
+                                        store = archiveSelection,
+                                        ownedDocument = local.archive.document,
+                                    ),
+                                ),
+                            publish = {
+                                subtitleSeriesSelection.clear()
+                                localState.update { current ->
+                                    current.copy(
+                                        source =
+                                            current.source.copy(
+                                                document = null,
+                                                isResolving = false,
+                                            ),
+                                        archive = ReadingDocumentSlotState(),
+                                        sourceKind = null,
+                                        subtitleSeriesName = "",
+                                    )
+                                }
+                            },
+                        )
+                DocumentKind.ARCHIVE ->
+                    SafSelectionOwnershipTransaction(safBroker, archiveSelection)
+                        .clearPersistPublishRelease(local.archive.document) {
+                            localState.update { current ->
+                                current.copy(
+                                    archive =
+                                        current.archive.copy(
+                                            document = null,
+                                            isResolving = false,
+                                        ),
+                                )
+                            }
+                        }
             }
-            releaseDocumentNow(document)
-            return false
+        } catch (failure: CancellationException) {
+            throw failure
+        } catch (_: Exception) {
+            // Failed durable clear leaves saved metadata and platform grants retryable.
         }
-        if (!sourceSelection.save(document)) {
-            localState.update { local -> local.withAccessFailure(DocumentKind.SOURCE) }
-            releaseDocumentNow(document)
-            return false
+    }
+
+    private fun documentSelectionError(
+        kind: DocumentKind,
+        document: SafDocument,
+    ): ReadingDocumentSelectionError? =
+        when (kind) {
+            DocumentKind.SOURCE ->
+                if (readingSourceKind(document.displayName) == null) {
+                    ReadingDocumentSelectionError.SOURCE_TYPE
+                } else {
+                    null
+                }
+            DocumentKind.ARCHIVE -> {
+                val local = localState.value
+                val source = local.source.document
+                when {
+                    !isReadingArchive(document.displayName) ->
+                        ReadingDocumentSelectionError.ARCHIVE_TYPE
+                    local.sourceKind != ReadingSourceKindUi.MOKURO || source == null ->
+                        ReadingDocumentSelectionError.ARCHIVE_NAME
+                    !readingArchiveMatches(source.displayName, document.displayName) ->
+                        ReadingDocumentSelectionError.ARCHIVE_NAME
+                    else -> null
+                }
+            }
         }
 
+    private fun publishResolvedSource(
+        document: SafDocument,
+        restoring: Boolean,
+    ): DocumentPublication {
+        val newKind = requireNotNull(readingSourceKind(document.displayName))
         var replacedSource: SafDocument? = null
-        var removedArchive: SafDocument? = null
+        var archiveToClear: SafDocument? = null
+        var clearArchive = false
         localState.update { local ->
             replacedSource = local.source.document
             val archiveCanRemain =
@@ -767,67 +909,111 @@ class ReadingMiningViewModel internal constructor(
                     local.archive.document?.let { archive ->
                         readingArchiveMatches(document.displayName, archive.displayName)
                     } == true
-            if (!archiveCanRemain) removedArchive = local.archive.document
+            val preserveUnresolvedArchive =
+                restoring &&
+                    newKind == ReadingSourceKindUi.MOKURO &&
+                    local.archive.document == null
+            clearArchive = !archiveCanRemain && !preserveUnresolvedArchive
+            if (clearArchive) archiveToClear = local.archive.document
             local.copy(
                 source = ReadingDocumentSlotState(document = document),
-                archive = if (archiveCanRemain) local.archive else ReadingDocumentSlotState(),
                 sourceKind = newKind,
             )
         }
-        // Any archive picker was launched against the previous primary filename. Even when the
-        // currently installed archive remains compatible, a late picker result must go stale.
-        archiveDocumentRequest += 1
-        archiveDocumentJob?.cancel()
-        if (removedArchive != null || newKind != ReadingSourceKindUi.MOKURO) {
-            archiveSelection.clear()
-        }
-        if (newKind != ReadingSourceKindUi.SUBTITLE) {
-            subtitleSeriesSelection.clear()
-            localState.update { it.copy(subtitleSeriesName = "") }
-        }
-        replacedSource?.let(::releaseDocument)
-        removedArchive?.let(::releaseDocument)
-        return true
+        return DocumentPublication(
+            replacedDocument = replacedSource,
+            archiveToClear = archiveToClear,
+            clearArchive = clearArchive,
+            clearSeries = newKind != ReadingSourceKindUi.SUBTITLE,
+        )
     }
 
-    private suspend fun acceptResolvedArchive(document: SafDocument): Boolean {
-        val local = localState.value
-        val source = local.source.document
-        val error =
-            when {
-                !isReadingArchive(document.displayName) ->
-                    ReadingDocumentSelectionError.ARCHIVE_TYPE
-                local.sourceKind != ReadingSourceKindUi.MOKURO || source == null ->
-                    ReadingDocumentSelectionError.ARCHIVE_NAME
-                !readingArchiveMatches(source.displayName, document.displayName) ->
-                    ReadingDocumentSelectionError.ARCHIVE_NAME
-                else -> null
-            }
-        if (error != null) {
-            localState.update { current ->
-                current.copy(
-                    archive =
-                        current.archive.copy(
-                            isResolving = false,
-                            error = error,
-                        ),
-                )
-            }
-            releaseDocumentNow(document)
-            return false
-        }
-        if (!archiveSelection.save(document)) {
-            localState.update { current -> current.withAccessFailure(DocumentKind.ARCHIVE) }
-            releaseDocumentNow(document)
-            return false
-        }
+    private fun publishResolvedArchive(document: SafDocument): DocumentPublication {
         var replaced: SafDocument? = null
         localState.update { current ->
             replaced = current.archive.document
             current.copy(archive = ReadingDocumentSlotState(document = document))
         }
-        replaced?.let(::releaseDocument)
-        return true
+        return DocumentPublication(
+            replacedDocument = replaced,
+            archiveToClear = null,
+            clearArchive = false,
+            clearSeries = false,
+        )
+    }
+
+    private suspend fun finishDocumentPublication(
+        kind: DocumentKind,
+        publication: DocumentPublication,
+    ) {
+        if (kind == DocumentKind.SOURCE) {
+            // Any archive picker was launched against the previous primary filename. Even when an
+            // installed archive remains compatible, a late result for the previous source is stale.
+            archiveDocumentRequest += 1
+            archiveDocumentJob?.cancel()
+            if (publication.clearArchive) {
+                SafSelectionOwnershipTransaction(safBroker, archiveSelection)
+                    .clearPersistPublishRelease(publication.archiveToClear) {
+                        localState.update {
+                            it.copy(archive = ReadingDocumentSlotState())
+                        }
+                    }
+            }
+            if (publication.clearSeries) {
+                subtitleSeriesSelection.clear()
+                localState.update { it.copy(subtitleSeriesName = "") }
+            }
+        }
+        publication.replacedDocument?.let(::releaseDocument)
+    }
+
+    private suspend fun clearRestoredSourceDependents() {
+        archiveDocumentRequest += 1
+        archiveDocumentJob?.cancel()
+        val archive = localState.value.archive.document
+        SafSelectionOwnershipTransaction(safBroker, archiveSelection)
+            .clearPersistPublishRelease(archive) {
+                subtitleSeriesSelection.clear()
+                localState.update {
+                    it.copy(
+                        archive = ReadingDocumentSlotState(),
+                        subtitleSeriesName = "",
+                    )
+                }
+            }
+    }
+
+    private fun resolvePendingArchive() {
+        val uri = pendingArchiveUri ?: return
+        if (localState.value.sourceKind != ReadingSourceKindUi.MOKURO) return
+        resolveDocument(
+            kind = DocumentKind.ARCHIVE,
+            uri = uri,
+            onResolved = { accepted ->
+                if (pendingArchiveUri == uri) {
+                    pendingArchiveUri = null
+                    if (accepted) {
+                        pendingArchiveReplacedUri?.let(safBroker::releaseReadAccessEventually)
+                    }
+                    pendingArchiveReplacedUri = null
+                }
+            },
+        )
+    }
+
+    private fun rejectPendingArchive() {
+        if (pendingArchiveUri == null) return
+        pendingArchiveUri = null
+        pendingArchiveReplacedUri = null
+        localState.update { local ->
+            local.copy(
+                archive =
+                    local.archive.copy(
+                        isResolving = false,
+                        error = ReadingDocumentSelectionError.ARCHIVE_NAME,
+                    ),
+            )
+        }
     }
 
     override fun onCleared() {
@@ -858,16 +1044,6 @@ class ReadingMiningViewModel internal constructor(
 
     private fun releaseDocument(document: SafDocument) {
         safBroker.releaseReadAccessEventually(document.uri)
-    }
-
-    private suspend fun releaseDocumentNow(document: SafDocument) {
-        try {
-            withContext(NonCancellable) {
-                safBroker.releaseReadAccess(document.uri)
-            }
-        } catch (_: Exception) {
-            // Process-start reconciliation owns retrying an uncertain platform release.
-        }
     }
 
     private fun nextDocumentRequest(kind: DocumentKind): Long =
@@ -935,6 +1111,29 @@ class ReadingMiningViewModel internal constructor(
                 )
         }
 
+    private fun LocalState.withSelectionRejection(
+        kind: DocumentKind,
+        error: ReadingDocumentSelectionError?,
+    ): LocalState =
+        when (kind) {
+            DocumentKind.SOURCE ->
+                copy(
+                    source =
+                        source.copy(
+                            isResolving = false,
+                            error = error ?: ReadingDocumentSelectionError.SOURCE_ACCESS,
+                        ),
+                )
+            DocumentKind.ARCHIVE ->
+                copy(
+                    archive =
+                        archive.copy(
+                            isResolving = false,
+                            error = error ?: ReadingDocumentSelectionError.ARCHIVE_ACCESS,
+                        ),
+                )
+        }
+
     private fun LocalState.toInputOrNull(): ReadingMiningInput? {
         val document = source.document ?: return null
         val kind = sourceKind ?: return null
@@ -982,6 +1181,14 @@ class ReadingMiningViewModel internal constructor(
         localState.value.pending.curation ||
             (repository.state.value as? MiningRunState.Curating)?.pageSubmissionPending == true
 
+    private fun saveCurationSession(request: CurationRequest) {
+        val local = localState.value
+        val draft = local.curationDraft?.takeIf { it.matches(request) } ?: return
+        repository.saveCurationSessionState(
+            draft.toCurationSessionState(local.previousPageSelectedCount),
+        )
+    }
+
     private fun RuntimeWorkCoordinator.Kind.toRuntimeConflict(): RuntimeWorkConflict =
         when (this) {
             RuntimeWorkCoordinator.Kind.MINING -> RuntimeWorkConflict.MINING
@@ -1021,5 +1228,16 @@ class ReadingMiningViewModel internal constructor(
 
     private companion object {
         const val MAX_SERIES_NAME_CODE_POINTS = 120
+        const val PENDING_ARCHIVE_URI_KEY = "readingMining.pendingArchiveUri"
     }
+
+    private var pendingArchiveUri: String?
+        get() = savedStateHandle[PENDING_ARCHIVE_URI_KEY]
+        set(value) {
+            if (value == null) {
+                savedStateHandle.remove<String>(PENDING_ARCHIVE_URI_KEY)
+            } else {
+                savedStateHandle[PENDING_ARCHIVE_URI_KEY] = value
+            }
+        }
 }

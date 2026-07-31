@@ -8,6 +8,7 @@ import sys
 import threading
 import types
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
@@ -430,6 +431,82 @@ class MediaProcessCancellationTests(unittest.TestCase):
         self.assertIn("failed=0", summary)
         self.assertIn("cancelled=2", summary)
         self.assertIn("outcome=skip", summary)
+    def test_media_batch_never_queues_more_than_the_worker_bound(self) -> None:
+        media = self._media_extractor()
+        service = object.__new__(media.MediaExtractorService)
+        service.config = SimpleNamespace(
+            max_parallel_workers=2,
+            media_temp_folder=Path("."),
+            screenshot_animated=False,
+        )
+        release = threading.Event()
+        two_started = threading.Event()
+        started = 0
+        started_lock = threading.Lock()
+
+        def extract_media(*_args: object, **_kwargs: object) -> object:
+            nonlocal started
+            with started_lock:
+                started += 1
+                if started == 2:
+                    two_started.set()
+            release.wait(2)
+            return SimpleNamespace(has_screenshot=True, has_audio=False)
+
+        service.extract_media = extract_media
+
+        class TrackingExecutor(ThreadPoolExecutor):
+            latest: TrackingExecutor | None = None
+
+            def __init__(self, *args: object, **kwargs: object) -> None:
+                super().__init__(*args, **kwargs)
+                self._tracking_lock = threading.Lock()
+                self.outstanding = 0
+                self.max_outstanding = 0
+                TrackingExecutor.latest = self
+
+            def submit(self, *args: object, **kwargs: object):  # type: ignore[no-untyped-def]
+                with self._tracking_lock:
+                    self.outstanding += 1
+                    self.max_outstanding = max(self.max_outstanding, self.outstanding)
+                try:
+                    future = super().submit(*args, **kwargs)
+                except BaseException:
+                    with self._tracking_lock:
+                        self.outstanding -= 1
+                    raise
+
+                def complete(_future: object) -> None:
+                    with self._tracking_lock:
+                        self.outstanding -= 1
+
+                future.add_done_callback(complete)
+                return future
+
+        words = [SimpleNamespace(lemma=f"word-{index}") for index in range(6)]
+        results: list[object] = []
+        with mock.patch.object(media, "ThreadPoolExecutor", TrackingExecutor):
+            worker = threading.Thread(
+                target=lambda: results.append(
+                    service.extract_media_batch(
+                        Path("video.mkv"),
+                        words,
+                        animated_format=None,
+                        include_audio=False,
+                    )
+                )
+            )
+            worker.start()
+            self.assertTrue(two_started.wait(1))
+            executor = TrackingExecutor.latest
+            self.assertIsNotNone(executor)
+            assert executor is not None
+            self.assertLessEqual(executor.max_outstanding, 2)
+            release.set()
+            worker.join(2)
+
+        self.assertFalse(worker.is_alive())
+        self.assertEqual(6, len(results[0]))
 
 
 if __name__ == "__main__":

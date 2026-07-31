@@ -1,0 +1,427 @@
+{
+  "cases": [
+    {
+      "name": "plain-text",
+      "pattern": "(\\d+)",
+      "rejected": false,
+      "replacement": "x"
+    },
+    {
+      "name": "empty-replacement",
+      "pattern": "(\\d+)",
+      "rejected": false,
+      "replacement": ""
+    },
+    {
+      "name": "escaped-backslash",
+      "pattern": "(\\d+)",
+      "rejected": false,
+      "replacement": "\\\\"
+    },
+    {
+      "name": "escaped-backslash-then-digit",
+      "pattern": "(\\d+)",
+      "rejected": false,
+      "replacement": "\\\\1"
+    },
+    {
+      "name": "group-one",
+      "pattern": "(\\d+)",
+      "rejected": false,
+      "replacement": "\\1"
+    },
+    {
+      "name": "group-one-of-two",
+      "pattern": "(\\d+)(\\w)",
+      "rejected": false,
+      "replacement": "\\1"
+    },
+    {
+      "name": "group-two-of-two",
+      "pattern": "(\\d+)(\\w)",
+      "rejected": false,
+      "replacement": "\\2"
+    },
+    {
+      "name": "group-out-of-range",
+      "pattern": "(\\d+)",
+      "rejected": true,
+      "replacement": "\\2"
+    },
+    {
+      "name": "group-out-of-range-high",
+      "pattern": "(\\d+)",
+      "rejected": true,
+      "replacement": "\\9"
+    },
+    {
+      "name": "group-zero",
+      "pattern": "(\\d+)",
+      "rejected": false,
+      "replacement": "\\0"
+    },
+    {
+      "name": "two-digit-group-in-range",
+      "pattern": "(a)(b)(c)(d)(e)(f)(g)(h)(i)(j)(k)(l)",
+      "rejected": false,
+      "replacement": "\\12"
+    },
+    {
+      "name": "two-digit-group-out-of-range",
+      "pattern": "(a)(b)",
+      "rejected": true,
+      "replacement": "\\12"
+    },
+    {
+      "name": "named-group",
+      "pattern": "(?P<word>\\w+)",
+      "rejected": false,
+      "replacement": "\\g<word>"
+    },
+    {
+      "name": "named-group-unknown",
+      "pattern": "(?P<word>\\w+)",
+      "rejected": true,
+      "replacement": "\\g<other>"
+    },
+    {
+      "name": "named-group-unicode",
+      "pattern": "(?P<数字>[0-9])",
+      "rejected": false,
+      "replacement": "\\g<数字>"
+    },
+    {
+      "name": "named-group-unicode-unknown",
+      "pattern": "(?P<数字>[0-9])",
+      "rejected": true,
+      "replacement": "\\g<文字>"
+    },
+    {
+      "name": "g-numeric-in-range",
+      "pattern": "(\\d+)",
+      "rejected": false,
+      "replacement": "\\g<1>"
+    },
+    {
+      "name": "g-numeric-out-of-range",
+      "pattern": "(\\d+)",
+      "rejected": true,
+      "replacement": "\\g<2>"
+    },
+    {
+      "name": "g-zero",
+      "pattern": "(\\d+)",
+      "rejected": false,
+      "replacement": "\\g<0>"
+    },
+    {
+      "name": "g-missing-close",
+      "pattern": "(\\d+)",
+      "rejected": true,
+      "replacement": "\\g<1"
+    },
+    {
+      "name": "g-missing-open",
+      "pattern": "(\\d+)",
+      "rejected": true,
+      "replacement": "\\g1"
+    },
+    {
+      "name": "g-empty",
+      "pattern": "(\\d+)",
+      "rejected": true,
+      "replacement": "\\g<>"
+    },
+    {
+      "name": "trailing-backslash",
+      "pattern": "(\\d+)",
+      "rejected": true,
+      "replacement": "\\"
+    },
+    {
+      "name": "escape-n",
+      "pattern": "(\\d+)",
+      "rejected": false,
+      "replacement": "\\n"
+    },
+    {
+      "name": "escape-t",
+      "pattern": "(\\d+)",
+      "rejected": false,
+      "replacement": "\\t"
+    },
+    {
+      "name": "escape-r",
+      "pattern": "(\\d+)",
+      "rejected": false,
+      "replacement": "\\r"
+    },
+    {
+      "name": "escape-a",
+      "pattern": "(\\d+)",
+      "rejected": false,
+      "replacement": "\\a"
+    },
+    {
+      "name": "escape-b",
+      "pattern": "(\\d+)",
+      "rejected": false,
+      "replacement": "\\b"
+    },
+    {
+      "name": "escape-f",
+      "pattern": "(\\d+)",
+      "rejected": false,
+      "replacement": "\\f"
+    },
+    {
+      "name": "escape-v",
+      "pattern": "(\\d+)",
+      "rejected": false,
+      "replacement": "\\v"
+    },
+    {
+      "name": "escape-unknown-letter-d",
+      "pattern": "(\\d+)",
+      "rejected": true,
+      "replacement": "\\d"
+    },
+    {
+      "name": "escape-unknown-letter-q",
+      "pattern": "(\\d+)",
+      "rejected": true,
+      "replacement": "\\q"
+    },
+    {
+      "name": "escape-unknown-letter-upper",
+      "pattern": "(\\d+)",
+      "rejected": true,
+      "replacement": "\\W"
+    },
+    {
+      "name": "escape-punctuation",
+      "pattern": "(\\d+)",
+      "rejected": false,
+      "replacement": "\\-"
+    },
+    {
+      "name": "escape-space",
+      "pattern": "(\\d+)",
+      "rejected": false,
+      "replacement": "\\ "
+    },
+    {
+      "name": "octal-three-digit",
+      "pattern": "(\\d+)",
+      "rejected": false,
+      "replacement": "\\101"
+    },
+    {
+      "name": "octal-overflow",
+      "pattern": "(\\d+)",
+      "rejected": true,
+      "replacement": "\\400"
+    },
+    {
+      "name": "octal-from-zero",
+      "pattern": "(\\d+)",
+      "rejected": false,
+      "replacement": "\\012"
+    },
+    {
+      "name": "octal-zero-short",
+      "pattern": "(\\d+)",
+      "rejected": false,
+      "replacement": "\\0"
+    },
+    {
+      "name": "octal-zero-one-digit",
+      "pattern": "(\\d+)",
+      "rejected": false,
+      "replacement": "\\07"
+    },
+    {
+      "name": "digits-not-octal",
+      "pattern": "(\\d+)",
+      "rejected": true,
+      "replacement": "\\189"
+    },
+    {
+      "name": "mixed-text-and-group",
+      "pattern": "(\\d+)(\\w)",
+      "rejected": false,
+      "replacement": "[\\1-\\2]"
+    },
+    {
+      "name": "noncapturing-group",
+      "pattern": "(?:\\d+)(\\w)",
+      "rejected": false,
+      "replacement": "\\1"
+    },
+    {
+      "name": "noncapturing-group-out-of-range",
+      "pattern": "(?:\\d+)",
+      "rejected": true,
+      "replacement": "\\1"
+    },
+    {
+      "name": "lookahead-not-captured",
+      "pattern": "(?=\\d)(\\w)",
+      "rejected": false,
+      "replacement": "\\1"
+    },
+    {
+      "name": "lookbehind-not-captured",
+      "pattern": "(?<=a)(\\w)",
+      "rejected": false,
+      "replacement": "\\1"
+    },
+    {
+      "name": "atomic-class-with-paren",
+      "pattern": "[()](\\w)",
+      "rejected": false,
+      "replacement": "\\1"
+    },
+    {
+      "name": "class-with-literal-close-bracket",
+      "pattern": "[]()](\\w)",
+      "rejected": false,
+      "replacement": "\\1"
+    },
+    {
+      "name": "negated-class-with-close-bracket",
+      "pattern": "[^]()](\\w)",
+      "rejected": false,
+      "replacement": "\\1"
+    },
+    {
+      "name": "class-with-escaped-bracket",
+      "pattern": "[\\]](\\w)",
+      "rejected": false,
+      "replacement": "\\1"
+    },
+    {
+      "name": "escaped-paren-is-not-a-group",
+      "pattern": "\\((\\w)\\)",
+      "rejected": false,
+      "replacement": "\\1"
+    },
+    {
+      "name": "escaped-paren-out-of-range",
+      "pattern": "\\(\\w\\)",
+      "rejected": true,
+      "replacement": "\\1"
+    },
+    {
+      "name": "comment-group",
+      "pattern": "(?#a comment)(\\w)",
+      "rejected": false,
+      "replacement": "\\1"
+    },
+    {
+      "name": "comment-group-with-paren-text",
+      "pattern": "(?#has ( paren)(\\w)",
+      "rejected": false,
+      "replacement": "\\1"
+    },
+    {
+      "name": "inline-global-flags",
+      "pattern": "(?i)(\\w)",
+      "rejected": false,
+      "replacement": "\\1"
+    },
+    {
+      "name": "inline-scoped-flags",
+      "pattern": "(?i:(\\w))",
+      "rejected": false,
+      "replacement": "\\1"
+    },
+    {
+      "name": "inline-scoped-negated-flags",
+      "pattern": "(?i-s:(\\w))",
+      "rejected": false,
+      "replacement": "\\1"
+    },
+    {
+      "name": "verbose-comment-hides-paren",
+      "pattern": "(?x)(\\w)  # ( not a group\n",
+      "rejected": false,
+      "replacement": "\\1"
+    },
+    {
+      "name": "verbose-comment-hides-paren-out-of-range",
+      "pattern": "(?x)\\w  # ( not a group\n",
+      "rejected": true,
+      "replacement": "\\1"
+    },
+    {
+      "name": "verbose-escaped-hash",
+      "pattern": "(?x)(\\w)\\#(\\d)",
+      "rejected": false,
+      "replacement": "\\1\\2"
+    },
+    {
+      "name": "verbose-class-hash-is-literal",
+      "pattern": "(?x)(\\w)[#](\\d)",
+      "rejected": false,
+      "replacement": "\\2"
+    },
+    {
+      "name": "nested-groups",
+      "pattern": "((\\d)(\\w))",
+      "rejected": false,
+      "replacement": "\\1\\2\\3"
+    },
+    {
+      "name": "nested-groups-out-of-range",
+      "pattern": "((\\d)(\\w))",
+      "rejected": true,
+      "replacement": "\\4"
+    },
+    {
+      "name": "named-and-numbered",
+      "pattern": "(?P<a>\\d)(\\w)",
+      "rejected": false,
+      "replacement": "\\g<a>\\2"
+    },
+    {
+      "name": "backreference-in-pattern",
+      "pattern": "(\\w)\\1(\\d)",
+      "rejected": false,
+      "replacement": "\\2"
+    },
+    {
+      "name": "group-then-literal-digit",
+      "pattern": "(\\w)",
+      "rejected": true,
+      "replacement": "\\10"
+    },
+    {
+      "name": "repeated-group-reference",
+      "pattern": "(\\w)",
+      "rejected": false,
+      "replacement": "\\1\\1\\1"
+    },
+    {
+      "name": "literal-brace",
+      "pattern": "(\\w)",
+      "rejected": false,
+      "replacement": "{1}"
+    },
+    {
+      "name": "dollar-is-literal-in-python",
+      "pattern": "(\\w)",
+      "rejected": false,
+      "replacement": "$1"
+    },
+    {
+      "name": "ampersand-is-literal-in-python",
+      "pattern": "(\\w)",
+      "rejected": false,
+      "replacement": "&"
+    }
+  ],
+  "description": "Python re replacement-template verdicts for the Kotlin SubtitleRegexCheck parity test. Each case records whether compiled.sub(replacement, '') raises re.error, which is the preflight the vendored subtitle parser performs. Regenerate with tools/anki-contract/generate_subtitle_regex_parity.py.",
+  "python_version": "3.13",
+  "schema_version": 1
+}

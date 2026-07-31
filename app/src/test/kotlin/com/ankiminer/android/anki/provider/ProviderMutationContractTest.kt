@@ -159,12 +159,7 @@ class ProviderMutationContractTest {
         val gateway = FakeAnkiProviderGateway()
         gateway.queryHandler = { query, _ ->
             when (query.endpoint) {
-                ProviderEndpoint.CARDS ->
-                    FakeProviderCursor(
-                        query.projection,
-                        listOf(mapOf(ProviderColumn.CARD_ID to integer(101L))),
-                    )
-                ProviderEndpoint.CARD_BY_ID ->
+                ProviderEndpoint.CARDS_FOR_NOTE ->
                     FakeProviderCursor(
                         query.projection,
                         listOf(cardRow(id = 101L, noteId = 42L, ordinal = 1L, deckId = 7L)),

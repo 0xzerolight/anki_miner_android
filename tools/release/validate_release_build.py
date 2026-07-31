@@ -7,6 +7,7 @@ import argparse
 import contextlib
 import io
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -41,14 +42,92 @@ def source_commit_for(build_type: str, source_commit: str | None) -> str:
     return resolved
 
 
+def _git(source_root: Path, *args: str) -> str:
+    try:
+        result = subprocess.run(
+            [
+                "git",
+                "--no-optional-locks",
+                "--no-replace-objects",
+                "-C",
+                str(source_root),
+                *args,
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except OSError as exc:
+        raise ReleaseBuildIntegrityError(f"Cannot execute Git to verify release source: {exc}") from exc
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout).strip() or "Git command failed"
+        raise ReleaseBuildIntegrityError(f"Cannot verify release source with Git: {detail}")
+    return result.stdout.strip()
+
+
+def _validate_source_identity(source_root: Path, source_commit: str) -> None:
+    source_root = source_root.resolve()
+    try:
+        resolved_commit = _git(
+            source_root,
+            "rev-parse",
+            "--verify",
+            f"{source_commit}^{{commit}}",
+        )
+    except ReleaseBuildIntegrityError as exc:
+        raise ReleaseBuildIntegrityError(f"Release source commit does not identify a commit: {source_commit}") from exc
+    if resolved_commit != source_commit:
+        raise ReleaseBuildIntegrityError(
+            f"Release source commit does not name the commit object exactly: {source_commit}"
+        )
+
+    checkout_root = Path(_git(source_root, "rev-parse", "--show-toplevel")).resolve()
+    if checkout_root != source_root:
+        raise ReleaseBuildIntegrityError(f"Release source root must name the checkout root exactly: {checkout_root}")
+
+    head_commit = _git(source_root, "rev-parse", "--verify", "HEAD^{commit}")
+    if source_commit != head_commit:
+        raise ReleaseBuildIntegrityError(
+            "Release source commit does not equal checkout HEAD: " f"expected {head_commit}, received {source_commit}"
+        )
+
+    index_entries = _git(source_root, "ls-files", "-v", "-z")
+    hidden_paths: list[str] = []
+    for entry in index_entries.split("\0"):
+        if not entry:
+            continue
+        if len(entry) < 3 or entry[1] != " ":
+            raise ReleaseBuildIntegrityError("Cannot parse Git index flags while verifying release source.")
+        if entry[0] != "H":
+            hidden_paths.append(entry[2:])
+    if hidden_paths:
+        raise ReleaseBuildIntegrityError(
+            "Git index hides tracked source paths from cleanliness checks: " + ", ".join(hidden_paths)
+        )
+
+    status = _git(
+        source_root,
+        "status",
+        "--porcelain=v1",
+        "--untracked-files=all",
+        "--ignore-submodules=none",
+    )
+    if status:
+        raise ReleaseBuildIntegrityError(
+            "Release source checkout is dirty; commit or remove tracked and " "untracked changes before building."
+        )
+
+
 def validate_build(
     build_type: str,
     source_commit: str | None,
     wheels_root: Path,
     manifest: Path,
+    source_root: Path = REPO_ROOT,
 ) -> str:
     resolved = source_commit_for(build_type, source_commit)
     if build_type == "release":
+        _validate_source_identity(source_root, resolved)
         with contextlib.redirect_stdout(io.StringIO()):
             check_wheel_manifest(wheels_root, manifest)
     return resolved

@@ -96,8 +96,8 @@ class MiningForegroundService : Service() {
     ): Int {
         when (intent?.action) {
             ACTION_START -> handleStart(intent)
-            ACTION_UPDATE -> handleUpdate(intent)
-            ACTION_CANCEL -> handleCancel(intent)
+            ACTION_UPDATE -> handleUpdate(intent, startId)
+            ACTION_CANCEL -> handleCancel(intent, startId)
             else -> handleMalformedIntent(intent)
         }
         return START_NOT_STICKY
@@ -165,41 +165,57 @@ class MiningForegroundService : Service() {
         }
     }
 
-    private fun handleUpdate(intent: Intent) {
+    private fun handleUpdate(
+        intent: Intent,
+        startId: Int,
+    ) {
         val identity = decodeIdentity(intent)
-        if (identity == null) {
-            return
-        }
         val activeIdentity = sessionIdentity
-        if (identity != activeIdentity) {
-            // Old notification/update intents are inert against a newer generation.
-            return
+        when (foregroundCommandDisposition(activeIdentity, identity)) {
+            ForegroundCommandDisposition.STOP_COLD_SERVICE -> {
+                stopColdStart(startId)
+                return
+            }
+            ForegroundCommandDisposition.IGNORE_STALE_COMMAND -> return
+            ForegroundCommandDisposition.HANDLE_ACTIVE_COMMAND -> Unit
         }
-        val snapshot = registry.snapshotForService(identity, serviceToken)
+        val currentIdentity = requireNotNull(identity)
+        val snapshot = registry.snapshotForService(currentIdentity, serviceToken)
         if (snapshot == null) {
             failActiveSession("update")
             return
         }
         try {
-            startForegroundTyped(buildNotification(identity, snapshot.progress))
+            startForegroundTyped(
+                if (snapshot.cancelling) {
+                    buildCancellingNotification(currentIdentity)
+                } else {
+                    buildNotification(currentIdentity, snapshot.progress)
+                },
+            )
         } catch (failure: RuntimeException) {
             failActiveSession("update", failure)
         }
     }
 
-    private fun handleCancel(intent: Intent) {
+    private fun handleCancel(
+        intent: Intent,
+        startId: Int,
+    ) {
         val identity = decodeIdentity(intent)
-        if (identity == null) {
-            return
-        }
         val activeIdentity = sessionIdentity
-        if (identity != activeIdentity) {
-            // An obsolete notification action cannot cancel the current run.
-            return
+        when (foregroundCommandDisposition(activeIdentity, identity)) {
+            ForegroundCommandDisposition.STOP_COLD_SERVICE -> {
+                stopColdStart(startId)
+                return
+            }
+            ForegroundCommandDisposition.IGNORE_STALE_COMMAND -> return
+            ForegroundCommandDisposition.HANDLE_ACTIVE_COMMAND -> Unit
         }
+        val currentIdentity = requireNotNull(identity)
         if (
             !registry.requestCancellation(
-                identity,
+                currentIdentity,
                 serviceToken,
                 MiningForegroundCancellationReason.USER_REQUESTED,
             )
@@ -208,7 +224,7 @@ class MiningForegroundService : Service() {
             return
         }
         try {
-            startForegroundTyped(buildCancellingNotification(identity))
+            startForegroundTyped(buildCancellingNotification(currentIdentity))
         } catch (failure: RuntimeException) {
             failActiveSession("cancel", failure)
         }
@@ -277,6 +293,12 @@ class MiningForegroundService : Service() {
         cpuWakeLease.close()
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
+    }
+
+    private fun stopColdStart(startId: Int) {
+        cpuWakeLease.close()
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelfResult(startId)
     }
 
     @SuppressLint("InlinedApi")
@@ -459,3 +481,19 @@ class MiningForegroundService : Service() {
         }
     }
 }
+
+internal enum class ForegroundCommandDisposition {
+    HANDLE_ACTIVE_COMMAND,
+    IGNORE_STALE_COMMAND,
+    STOP_COLD_SERVICE,
+}
+
+internal fun foregroundCommandDisposition(
+    activeIdentity: MiningForegroundSessionIdentity?,
+    commandIdentity: MiningForegroundSessionIdentity?,
+): ForegroundCommandDisposition =
+    when {
+        activeIdentity == null -> ForegroundCommandDisposition.STOP_COLD_SERVICE
+        commandIdentity == activeIdentity -> ForegroundCommandDisposition.HANDLE_ACTIVE_COMMAND
+        else -> ForegroundCommandDisposition.IGNORE_STALE_COMMAND
+    }

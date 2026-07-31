@@ -88,14 +88,14 @@ class BridgeMiningRepositoryTest {
                 "c=mining op=phase from=REGISTERED to=CURATING outcome=ok detail=curation_needed",
                 "c=mining op=phase from=CURATING to=PROMOTING outcome=ok detail=curation_final",
                 "c=mining op=phase from=PROMOTING to=RUNNING outcome=ok detail=foreground_started",
-                "c=mining op=phase from=RUNNING to=FINALIZING outcome=ok detail=finish",
+                "c=mining op=phase from=RUNNING to=FINALIZING outcome=ok detail=terminal",
             ),
             recordsFor("op=phase"),
         )
 
         // The ambient run id, on both threads that emit these records: the run executor, which
         // registerJob installs it on, and the control executor, which has to carry it across.
-        val onRunThread = recorded.records.single { it.contains("detail=finish") }
+        val onRunThread = recorded.records.single { it.contains("detail=terminal") }
         val onControlThread = recorded.records.single { it.contains("detail=foreground_started") }
         assertTrue(onRunThread, onRunThread.contains(" run=$RUN_ID c=mining op=phase"))
         assertTrue(onControlThread, onControlThread.contains(" run=$RUN_ID c=mining op=phase"))
@@ -265,6 +265,87 @@ class BridgeMiningRepositoryTest {
     }
 
     @Test
+    fun `foreground ownership starts before video materialization`() {
+        val harness = harness()
+
+        runBlocking { harness.repository.startVideo(INPUT) }
+        val curating =
+            awaitState(harness.repository) { it is MiningRunState.Curating } as MiningRunState.Curating
+
+        assertEquals(1, harness.inputOwner.foregroundStartsAtOpen.get())
+        runBlocking { harness.repository.cancel(curating.request.runId) }
+        harness.bridge.allowTerminal.countDown()
+        awaitState(harness.repository, MiningRunState::isTerminal)
+    }
+
+    @Test
+    fun `process recreation surfaces an interrupted video run`() {
+        val interruptionStore = FakeMiningRunInterruptionStore()
+        val activeHarness = harness(interruptionStore = interruptionStore)
+
+        runBlocking { activeHarness.repository.startVideo(INPUT) }
+        val curating =
+            awaitState(activeHarness.repository) { it is MiningRunState.Curating } as
+                MiningRunState.Curating
+        val recreated = harness(interruptionStore = interruptionStore)
+
+        val interrupted = recreated.repository.state.value as MiningRunState.Failed
+        assertEquals(RUN_ID, interrupted.runId)
+        assertEquals("Background mining stopped unexpectedly", interrupted.failure.message)
+
+        runBlocking { activeHarness.repository.cancel(curating.request.runId) }
+        activeHarness.bridge.allowTerminal.countDown()
+        awaitState(activeHarness.repository, MiningRunState::isTerminal)
+    }
+
+    @Test
+    fun `failed video interruption cleanup is retried by reset`() {
+        val interruptionStore = FakeMiningRunInterruptionStore(failCompletions = 1)
+        val harness = harness(interruptionStore = interruptionStore)
+
+        runBlocking { harness.repository.startVideo(INPUT) }
+        val curating =
+            awaitState(harness.repository) { it is MiningRunState.Curating } as
+                MiningRunState.Curating
+        runBlocking { harness.repository.cancel(curating.request.runId) }
+        harness.bridge.allowTerminal.countDown()
+
+        assertTrue(awaitState(harness.repository, MiningRunState::isTerminal) is MiningRunState.Failed)
+        assertTrue(interruptionStore.hasBlockedRecord())
+        runBlocking { harness.repository.reset() }
+        assertTrue(harness.repository.state.value is MiningRunState.Idle)
+        assertFalse(interruptionStore.hasBlockedRecord())
+    }
+
+    @Test
+    fun `reset clears an unrecognized interruption record`() {
+        val interruptionStore = FakeMiningRunInterruptionStore(invalidRecord = true)
+        val harness = harness(interruptionStore = interruptionStore)
+
+        assertTrue(harness.repository.state.value is MiningRunState.Failed)
+        runBlocking { harness.repository.reset() }
+
+        assertTrue(harness.repository.state.value is MiningRunState.Idle)
+        assertFalse(interruptionStore.hasBlockedRecord())
+    }
+
+    @Test
+    fun `cancelling pending foreground start does not wait for control timeout`() {
+        val harness = harness(pendingForegroundStart = true)
+
+        runBlocking { harness.repository.startVideo(INPUT) }
+        assertTrue(harness.foreground.started.await(2, TimeUnit.SECONDS))
+        val token =
+            requireNotNull((harness.repository.state.value as MiningRunState.Starting).cancellationToken)
+
+        runBlocking { harness.repository.cancel(token) }
+
+        assertTrue(harness.foreground.future.isCancelled)
+        assertTrue(awaitState(harness.repository, MiningRunState::isTerminal) is MiningRunState.Cancelled)
+        assertEquals(0, harness.inputOwner.openCount.get())
+    }
+
+    @Test
     fun `video request keeps episode filename and uses stable local series label`() {
         val harness = harness()
 
@@ -301,7 +382,7 @@ class BridgeMiningRepositoryTest {
     }
 
     @Test
-    fun `empty single-page selection skips foreground and still completes`() {
+    fun `empty single-page selection keeps preparation foreground through completion`() {
         val harness = harness()
 
         runBlocking { harness.repository.startVideo(INPUT) }
@@ -315,16 +396,16 @@ class BridgeMiningRepositoryTest {
         }
 
         assertTrue(harness.bridge.curationSubmitted.await(2, TimeUnit.SECONDS))
-        assertEquals(0, harness.foreground.startCount.get())
+        assertEquals(1, harness.foreground.startCount.get())
         assertEquals(emptyList<CurationSelection>(), harness.bridge.selection)
         harness.bridge.allowTerminal.countDown()
 
         assertTrue(awaitState(harness.repository, MiningRunState::isTerminal) is MiningRunState.Success)
-        assertEquals(0, harness.foreground.lease.closeCount.get())
+        assertEquals(1, harness.foreground.lease.closeCount.get())
     }
 
     @Test
-    fun `cancelling parked curation never starts foreground and stays cancelled`() {
+    fun `cancelling parked curation closes preparation foreground and stays cancelled`() {
         val harness = harness()
 
         runBlocking { harness.repository.startVideo(INPUT) }
@@ -332,7 +413,8 @@ class BridgeMiningRepositoryTest {
         runBlocking { harness.repository.cancel(curating.request.runId) }
 
         assertTrue(harness.bridge.cancellationSubmitted.await(2, TimeUnit.SECONDS))
-        assertEquals(0, harness.foreground.startCount.get())
+        assertEquals(1, harness.foreground.startCount.get())
+        assertTrue((harness.repository.state.value as MiningRunState.Curating).cancellationPending)
         assertTrue(harness.anki.cancellation?.isCancelled() == true)
         harness.bridge.allowTerminal.countDown()
 
@@ -362,7 +444,7 @@ class BridgeMiningRepositoryTest {
         val second = awaitState(harness.repository) {
             (it as? MiningRunState.Curating)?.request?.page?.pageIndex == 1L
         } as MiningRunState.Curating
-        assertEquals(0, harness.foreground.startCount.get())
+        assertEquals(1, harness.foreground.startCount.get())
         assertFalse(second.pageSubmissionPending)
 
         runBlocking {
@@ -414,7 +496,7 @@ class BridgeMiningRepositoryTest {
             stale = failure
         }
         assertTrue(stale is MiningCommandException)
-        assertEquals(0, harness.foreground.startCount.get())
+        assertEquals(1, harness.foreground.startCount.get())
 
         runBlocking { harness.repository.cancel(second.request.runId) }
         assertTrue(harness.bridge.cancellationSubmitted.await(2, TimeUnit.SECONDS))
@@ -462,24 +544,21 @@ class BridgeMiningRepositoryTest {
         val harness = harness(foregroundFailure = ForegroundStartFailure.ABANDONED)
 
         runBlocking { harness.repository.startVideo(INPUT) }
-        val curating =
-            awaitState(harness.repository) { it is MiningRunState.Curating } as MiningRunState.Curating
-        runBlocking {
-            harness.repository.confirmCuration(
-                curating.request.runId,
-                curating.request.requestId,
-                FIRST_SELECTION,
-            )
-        }
 
-        assertTrue(harness.controlTaskCompleted.await(2, TimeUnit.SECONDS))
-        assertNull(harness.controlFailure.get())
-        assertTrue(harness.bridge.cancellationSubmitted.await(2, TimeUnit.SECONDS))
-        harness.bridge.allowTerminal.countDown()
+        assertTrue(awaitState(harness.repository, MiningRunState::isTerminal) is MiningRunState.Cancelled)
+        assertFalse(recorded.records.any { it.substringBefore('\n').contains(" E run=") })
+    }
+
+    @Test
+    fun `foreground ownership failure stops before Python dispatch`() {
+        val harness = harness(foregroundFailure = ForegroundStartFailure.EXECUTION)
+
+        runBlocking { harness.repository.startVideo(INPUT) }
         val failed = awaitState(harness.repository, MiningRunState::isTerminal) as MiningRunState.Failed
 
         assertEquals("Background mining did not start safely", failed.failure.message)
-        assertFalse(recorded.records.any { it.substringBefore('\n').contains(" E run=") })
+        assertFalse(failed.failure.retryable)
+        assertEquals(0, harness.bridge.videoRuns.get())
     }
 
     @Test
@@ -706,6 +785,108 @@ class BridgeMiningRepositoryTest {
     }
 
     @Test
+    fun `terminal callback atomically closes video cancellation admission`() {
+        val harness = harness(pauseAfterTerminalCallback = true)
+
+        runBlocking { harness.repository.startVideo(INPUT) }
+        val curating =
+            awaitState(harness.repository) { it is MiningRunState.Curating } as MiningRunState.Curating
+        runBlocking {
+            harness.repository.confirmCuration(
+                curating.request.runId,
+                curating.request.requestId,
+                emptyList(),
+            )
+        }
+        harness.bridge.allowTerminal.countDown()
+        assertTrue(harness.bridge.terminalCallbackDelivered.await(2, TimeUnit.SECONDS))
+
+        var rejected: RuntimeException? = null
+        try {
+            runBlocking { harness.repository.cancel(curating.request.runId) }
+        } catch (failure: RuntimeException) {
+            rejected = failure
+        }
+        harness.bridge.allowDispatchReturn.countDown()
+
+        assertTrue(rejected is MiningCommandException)
+        assertTrue(awaitState(harness.repository, MiningRunState::isTerminal) is MiningRunState.Success)
+        assertEquals(0, harness.bridge.cancellationAttempts.get())
+    }
+
+    @Test
+    fun `failed video cancellation dispatch retries and releases parked run`() {
+        val harness = harness(cancelFailuresBeforeSuccess = 1)
+
+        runBlocking { harness.repository.startVideo(INPUT) }
+        val curating =
+            awaitState(harness.repository) { it is MiningRunState.Curating } as MiningRunState.Curating
+        runBlocking { harness.repository.cancel(curating.request.runId) }
+
+        assertTrue(harness.bridge.cancellationSubmitted.await(2, TimeUnit.SECONDS))
+        assertEquals(2, harness.bridge.cancellationAttempts.get())
+        harness.bridge.allowTerminal.countDown()
+        assertTrue(awaitState(harness.repository, MiningRunState::isTerminal) is MiningRunState.Cancelled)
+    }
+
+    @Test
+    fun `local video cancellation releases curation after all dispatches fail`() {
+        val harness = harness(cancelFailuresBeforeSuccess = Int.MAX_VALUE)
+
+        runBlocking { harness.repository.startVideo(INPUT) }
+        val curating =
+            awaitState(harness.repository) { it is MiningRunState.Curating } as MiningRunState.Curating
+        runBlocking { harness.repository.cancel(curating.request.runId) }
+
+        assertTrue(harness.bridge.localCancellationObserved.await(2, TimeUnit.SECONDS))
+        assertTrue(waitUntil(2, TimeUnit.SECONDS) { harness.bridge.cancellationAttempts.get() == 2 })
+        assertEquals(2, harness.bridge.cancellationAttempts.get())
+        harness.bridge.allowTerminal.countDown()
+
+        assertTrue(awaitState(harness.repository, MiningRunState::isTerminal) is MiningRunState.Cancelled)
+        assertEquals(1, harness.inputOwner.closeCount.get())
+        assertEquals(1, harness.foreground.lease.closeCount.get())
+    }
+
+    @Test
+    fun `rejected video control task falls back to cancellation worker`() {
+        val harness = harness(rejectControlTasks = true)
+
+        runBlocking { harness.repository.startVideo(INPUT) }
+        val curating =
+            awaitState(harness.repository) { it is MiningRunState.Curating } as MiningRunState.Curating
+        runBlocking { harness.repository.cancel(curating.request.runId) }
+
+        assertTrue(harness.bridge.cancellationSubmitted.await(2, TimeUnit.SECONDS))
+        harness.bridge.allowTerminal.countDown()
+        assertTrue(awaitState(harness.repository, MiningRunState::isTerminal) is MiningRunState.Cancelled)
+    }
+
+    @Test
+    fun `late video cancellation no-active acknowledgement cannot replace success`() {
+        val harness = harness(pauseCancellationUntilTerminal = true)
+
+        runBlocking { harness.repository.startVideo(INPUT) }
+        val curating =
+            awaitState(harness.repository) { it is MiningRunState.Curating } as MiningRunState.Curating
+        runBlocking {
+            harness.repository.confirmCuration(
+                curating.request.runId,
+                curating.request.requestId,
+                emptyList(),
+            )
+        }
+        assertTrue(harness.bridge.curationSubmitted.await(2, TimeUnit.SECONDS))
+        runBlocking { harness.repository.cancel(curating.request.runId) }
+        assertTrue(harness.bridge.cancellationDispatchReached.await(2, TimeUnit.SECONDS))
+
+        harness.bridge.allowTerminal.countDown()
+
+        assertTrue(awaitState(harness.repository, MiningRunState::isTerminal) is MiningRunState.Success)
+        assertEquals(1, harness.bridge.cancellationAttempts.get())
+    }
+
+    @Test
     fun `presenter warning emitted before terminal is retained in successful result`() {
         val harness = harness(presenterWarning = PRESENTER_WARNING_MESSAGE)
 
@@ -827,6 +1008,12 @@ class BridgeMiningRepositoryTest {
         videoRunFailure: RuntimeException? = null,
         raisedFailure: Boolean = false,
         ankiFailure: RuntimeException? = null,
+        pendingForegroundStart: Boolean = false,
+        pauseAfterTerminalCallback: Boolean = false,
+        cancelFailuresBeforeSuccess: Int = 0,
+        pauseCancellationUntilTerminal: Boolean = false,
+        rejectControlTasks: Boolean = false,
+        interruptionStore: MiningRunInterruptionStore = NoOpMiningRunInterruptionStore,
         tokenizerResourceProvider: InstalledTokenizerResourceProvider =
             InstalledTokenizerResourceProvider {
                 InstalledTokenizerResource(
@@ -852,10 +1039,13 @@ class BridgeMiningRepositoryTest {
                 terminalErrorCount = terminalErrorCount,
                 videoRunFailure = videoRunFailure,
                 raisedFailure = raisedFailure,
+                pauseAfterTerminalCallback = pauseAfterTerminalCallback,
+                cancelFailuresBeforeSuccess = cancelFailuresBeforeSuccess,
+                pauseCancellationUntilTerminal = pauseCancellationUntilTerminal,
             )
         val anki = FakeAnkiCallbacks(fallbackState, ankiFailure)
-        val inputOwner = FakeInputOwner()
-        val foreground = FakeForegroundStarter(foregroundFailure)
+        val foreground = FakeForegroundStarter(foregroundFailure, pendingForegroundStart)
+        val inputOwner = FakeInputOwner(foreground.startCount)
         val repository =
             BridgeMiningRepository(
                 pyBridge = bridge,
@@ -867,14 +1057,18 @@ class BridgeMiningRepositoryTest {
                 foregroundStarter = foreground,
                 runExecutor = runExecutor.asMiningTaskExecutor(),
                 controlExecutor =
-                    MiningTaskExecutor { task ->
-                        controlExecutor.execute {
-                            try {
-                                task()
-                            } catch (failure: Throwable) {
-                                controlFailure.compareAndSet(null, failure)
-                            } finally {
-                                controlTaskCompleted.countDown()
+                    if (rejectControlTasks) {
+                        MiningTaskExecutor { throw IllegalStateException("test control rejection") }
+                    } else {
+                        MiningTaskExecutor { task ->
+                            controlExecutor.execute {
+                                try {
+                                    task()
+                                } catch (failure: Throwable) {
+                                    controlFailure.compareAndSet(null, failure)
+                                } finally {
+                                    controlTaskCompleted.countDown()
+                                }
                             }
                         }
                     },
@@ -882,6 +1076,7 @@ class BridgeMiningRepositoryTest {
                 configSnapshotResolver = configSnapshotResolver,
                 strings = testStringResourceResolver,
                 foregroundStartTimeoutSeconds = 2,
+                interruptionStore = interruptionStore,
             )
         return Harness(
             repository,
@@ -899,17 +1094,6 @@ class BridgeMiningRepositoryTest {
     ): Pair<Harness, MiningRunState.Failed> {
         val harness = harness(foregroundFailure = failure)
         runBlocking { harness.repository.startVideo(INPUT) }
-        val curating =
-            awaitState(harness.repository) { it is MiningRunState.Curating } as MiningRunState.Curating
-        runBlocking {
-            harness.repository.confirmCuration(
-                curating.request.runId,
-                curating.request.requestId,
-                FIRST_SELECTION,
-            )
-        }
-        assertTrue(harness.bridge.cancellationSubmitted.await(2, TimeUnit.SECONDS))
-        harness.bridge.allowTerminal.countDown()
         val failed =
             awaitState(harness.repository, MiningRunState::isTerminal) as MiningRunState.Failed
         return harness to failed
@@ -945,10 +1129,18 @@ class BridgeMiningRepositoryTest {
         val controlTaskCompleted: CountDownLatch,
     )
 
-    private class FakeInputOwner : MiningInputOwner {
+    private class FakeInputOwner(
+        private val foregroundStarts: AtomicInteger? = null,
+    ) : MiningInputOwner {
         val closeCount = AtomicInteger()
+        val openCount = AtomicInteger()
+        val foregroundStartsAtOpen = AtomicInteger(-1)
 
-        override fun openVideo(source: MiningSource): String = "/tmp/video.mkv"
+        override fun openVideo(source: MiningSource): String {
+            openCount.incrementAndGet()
+            foregroundStartsAtOpen.set(foregroundStarts?.get() ?: -1)
+            return "/tmp/video.mkv"
+        }
 
         override fun materializeSubtitle(source: MiningSource): String = "/tmp/subtitle.srt"
 
@@ -998,9 +1190,12 @@ class BridgeMiningRepositoryTest {
 
     private class FakeForegroundStarter(
         private val failure: ForegroundStartFailure?,
+        private val pending: Boolean = false,
     ) : MiningForegroundStarter {
         val startCount = AtomicInteger()
         val lease = FakeForegroundLease()
+        val started = CountDownLatch(1)
+        val future = CompletableFuture<MiningForegroundLease>()
         val cancelObservedInterrupt = AtomicBoolean()
 
         override fun startSession(
@@ -1009,6 +1204,7 @@ class BridgeMiningRepositoryTest {
             listener: MiningForegroundSessionListener,
         ): CompletableFuture<MiningForegroundLease> {
             startCount.incrementAndGet()
+            started.countDown()
             when (failure) {
                 ForegroundStartFailure.ABANDONED -> {
                     val identity =
@@ -1053,6 +1249,7 @@ class BridgeMiningRepositoryTest {
                     generation,
                     "00000000-0000-0000-0000-000000000001",
                 )
+            if (pending) return future
             return CompletableFuture.completedFuture(lease)
         }
     }
@@ -1089,6 +1286,56 @@ class BridgeMiningRepositoryTest {
         }
     }
 
+    private class FakeMiningRunInterruptionStore(
+        private var failCompletions: Int = 0,
+        private var invalidRecord: Boolean = false,
+    ) : MiningRunInterruptionStore {
+        private var current: InterruptedMiningRun? = null
+
+        override fun current(): InterruptedMiningRun? = current
+
+        override fun hasBlockedRecord(): Boolean = current != null || invalidRecord
+
+        override fun clearUnrecognizedRecord(): Boolean {
+            if (current != null) return false
+            invalidRecord = false
+            return true
+        }
+
+        override fun begin(
+            kind: MiningRunKind,
+            ownerId: String,
+        ): Boolean {
+            if (hasBlockedRecord()) return false
+            current = InterruptedMiningRun(kind, ownerId, runId = null)
+            return true
+        }
+
+        override fun registered(
+            kind: MiningRunKind,
+            ownerId: String,
+            runId: String,
+        ): Boolean {
+            if (current != InterruptedMiningRun(kind, ownerId, runId = null)) return false
+            current = InterruptedMiningRun(kind, ownerId, runId)
+            return true
+        }
+
+        override fun complete(
+            kind: MiningRunKind,
+            ownerId: String,
+        ): Boolean {
+            if (failCompletions > 0) {
+                failCompletions -= 1
+                return false
+            }
+            val active = current ?: return true
+            if (active.kind != kind || active.ownerId != ownerId) return false
+            current = null
+            return true
+        }
+    }
+
     private class FakePyBridge(
         private val mismatchedTerminal: Boolean,
         blockRegistration: Boolean = false,
@@ -1097,6 +1344,9 @@ class BridgeMiningRepositoryTest {
         private val terminalErrorCount: Int = 0,
         private val videoRunFailure: RuntimeException? = null,
         private val raisedFailure: Boolean = false,
+        private val pauseAfterTerminalCallback: Boolean = false,
+        private val cancelFailuresBeforeSuccess: Int = 0,
+        private val pauseCancellationUntilTerminal: Boolean = false,
     ) : PyBridge {
         val videoRuns = AtomicInteger()
         val videoRequest = AtomicReference<VideoMiningWireRequest?>()
@@ -1106,6 +1356,13 @@ class BridgeMiningRepositoryTest {
         val allowTerminal = CountDownLatch(1)
         val registrationReached = CountDownLatch(1)
         val allowRegistration = CountDownLatch(if (blockRegistration) 1 else 0)
+        val terminalCallbackDelivered = CountDownLatch(if (pauseAfterTerminalCallback) 1 else 0)
+        val allowDispatchReturn = CountDownLatch(if (pauseAfterTerminalCallback) 1 else 0)
+        val cancellationDispatchReached =
+            CountDownLatch(if (pauseCancellationUntilTerminal) 1 else 0)
+        val localCancellationObserved = CountDownLatch(1)
+        val cancellationAttempts = AtomicInteger()
+        private val terminalDelivered = AtomicBoolean()
         private val cancelled = AtomicBoolean()
         @Volatile
         var runCallbacks: EngineCallbacks? = null
@@ -1149,9 +1406,21 @@ class BridgeMiningRepositoryTest {
                     }
                 }
                 is BridgeMessage.JobCancel -> {
-                    cancelled.set(true)
-                    cancellationSubmitted.countDown()
-                    JOB_CANCELLED
+                    val attempt = cancellationAttempts.incrementAndGet()
+                    cancellationDispatchReached.countDown()
+                    if (pauseCancellationUntilTerminal) {
+                        check(waitUntil(3, TimeUnit.SECONDS) { terminalDelivered.get() })
+                    }
+                    if (attempt <= cancelFailuresBeforeSuccess) {
+                        throw IllegalStateException("test cancellation transport failure")
+                    }
+                    if (terminalDelivered.get()) {
+                        NO_ACTIVE_JOB
+                    } else {
+                        cancelled.set(true)
+                        cancellationSubmitted.countDown()
+                        JOB_CANCELLED
+                    }
                 }
                 else -> error("Unexpected request: $request")
             }
@@ -1174,6 +1443,11 @@ class BridgeMiningRepositoryTest {
             }
             callbacks.onCurationNeeded(if (pagedCuration) CURATION_PAGE_1_REQUEST else CURATION_REQUEST)
             while (curationSubmitted.count > 0 && cancellationSubmitted.count > 0) {
+                if (callbacks.cancellationRequested()) {
+                    cancelled.set(true)
+                    localCancellationObserved.countDown()
+                    break
+                }
                 Thread.sleep(2)
             }
             check(allowTerminal.await(3, TimeUnit.SECONDS))
@@ -1193,6 +1467,9 @@ class BridgeMiningRepositoryTest {
             } else {
                 callbacks.onComplete(callbackTerminal)
             }
+            terminalDelivered.set(true)
+            terminalCallbackDelivered.countDown()
+            check(allowDispatchReturn.await(3, TimeUnit.SECONDS))
             return terminal
         }
 
@@ -1260,6 +1537,8 @@ class BridgeMiningRepositoryTest {
             """{"schemaVersion":1,"type":"curation.page.accepted","payload":{"runId":"$RUN_ID","requestId":"$REQUEST_ID","pageIndex":1,"finalPage":true}}"""
         val JOB_CANCELLED =
             """{"schemaVersion":1,"type":"job.cancelled","payload":{"runId":"$RUN_ID","newlyCancelled":true}}"""
+        val NO_ACTIVE_JOB =
+            """{"schemaVersion":1,"type":"bridge.error","payload":{"code":"no_active_job","message":"There is no active Python mining job","requestType":"job.cancel"}}"""
         val SUCCESS_TERMINAL =
             """{"schemaVersion":1,"type":"mining.terminal","payload":{"runId":"$RUN_ID","outcome":"success","result":{"totalWordsFound":1,"newWordsFound":0,"cardsCreated":0,"errors":[],"elapsedTime":1.0,"comprehensionPercentage":100.0,"cardIds":[],"videoFile":"episode.mkv","subtitleFile":"episode.srt","minedForms":[],"ankiWriteState":"no_note_write","failureIsTransient":false},"error":null}}"""
         val CANCELLED_TERMINAL =
@@ -1268,4 +1547,18 @@ class BridgeMiningRepositoryTest {
         val RAISED_FAILURE_TERMINAL =
             """{"schemaVersion":1,"type":"mining.terminal","payload":{"runId":"$RUN_ID","outcome":"failed","result":null,"error":{"code":"engine_error","message":"Mining failed","faultId":"$TERMINAL_FAULT_ID"}}}"""
     }
+}
+
+/** Polls [predicate] until it holds or [timeout] elapses. Shared by the tests and the fakes. */
+private fun waitUntil(
+    timeout: Long,
+    unit: TimeUnit,
+    predicate: () -> Boolean,
+): Boolean {
+    val deadline = System.nanoTime() + unit.toNanos(timeout)
+    while (System.nanoTime() < deadline) {
+        if (predicate()) return true
+        Thread.sleep(2)
+    }
+    return predicate()
 }

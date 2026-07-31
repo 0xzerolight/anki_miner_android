@@ -7,6 +7,7 @@ import subprocess
 import tempfile
 import tomllib
 import unittest
+from dataclasses import replace
 from pathlib import Path
 
 from engine_sync.core import (
@@ -20,8 +21,10 @@ from engine_sync.core import (
 
 PINNED_MEDIA_EXTRACTOR_BLOB = "7798b8c1733ff59523424ecb6e95d178dc8b8b93"
 PINNED_AUDIO_TRACK_DETECTOR_BLOB = "f785f5b8706e1073f076149dbfb873472446d414"
+PINNED_KNOWN_WORDS_IMPORT_BLOB = "9353f416baec93f6c7e5dd1ed2231110bbe9f20b"
+REVIEWED_KNOWN_WORDS_IMPORT_SHA256 = "8eea3756190b27f78298402d8797b3d8d6872a3a9c6a30016e0165b70b98c88d"
 REVIEWED_MEDIA_EXTRACTOR_SHA256 = (
-    "356b019be58711dc0c7f9f93ca1c58d95180bb7561f20f7345ba0c9d84adc1bf"
+    "4e7fad628791f74b977e0e5152c40a1c385b6b3e54e6467a2541e43a68150b35"
 )
 REVIEWED_AUDIO_TRACK_DETECTOR_SHA256 = (
     "429663d08bc19ac9591a78e4d480eeaa209939563e02822c8fe8b6ea37fb0f88"
@@ -278,6 +281,53 @@ target = "anki_miner.services.youtube_fetcher"
         sync_destination(destination, snapshot)
         self.assertEqual(check_destination(destination, snapshot), ())
 
+    def test_sync_removes_a_top_level_root_dropped_from_the_snapshot(self) -> None:
+        snapshot = self._snapshot(self._fixture())
+        destination = self.root / "vendor"
+        sync_destination(destination, snapshot)
+        reduced_snapshot = replace(
+            snapshot,
+            files={
+                path: item
+                for path, item in snapshot.files.items()
+                if not path.startswith("PyQt6/")
+            },
+            modules=tuple(
+                module
+                for module in snapshot.modules
+                if module != "PyQt6" and not module.startswith("PyQt6.")
+            ),
+        )
+
+        differences = check_destination(destination, reduced_snapshot)
+
+        self.assertIn("unexpected PyQt6/QtCore.py", differences)
+        self.assertIn("unexpected PyQt6/__init__.py", differences)
+        sync_destination(destination, reduced_snapshot)
+        self.assertFalse((destination / "PyQt6").exists())
+        self.assertEqual((), check_destination(destination, reduced_snapshot))
+
+    def test_previous_manifest_cannot_expand_the_declared_managed_roots(self) -> None:
+        snapshot = self._snapshot(self._fixture())
+        destination = self.root / "vendor"
+        sync_destination(destination, snapshot)
+        manifest_path = destination / ".engine-sync-manifest.json"
+        manifest = json.loads(manifest_path.read_bytes())
+        manifest["files"]["legacy_shim/compat.py"] = manifest["files"][
+            "anki_miner/dep.py"
+        ]
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        legacy = destination / "legacy_shim/compat.py"
+        legacy.parent.mkdir()
+        legacy.write_text("stale\n", encoding="utf-8")
+
+        with self.assertRaisesRegex(
+            EngineSyncError,
+            "previous manifest names undeclared managed roots: legacy_shim",
+        ):
+            sync_destination(destination, snapshot)
+        self.assertTrue(legacy.exists())
+
     def test_runtime_forbidden_import_is_rejected_semantically(self) -> None:
         fixture = self._fixture("import gtts\n")
         with self.assertRaisesRegex(EngineSyncError, r"forbidden import gtts"):
@@ -496,6 +546,66 @@ target = "anki_miner.services.youtube_fetcher"
         self.assertEqual(first.manifest_bytes(), second.manifest_bytes())
         self.assertEqual(first.files, second.files)
 
+    def test_commit_replacement_cannot_relabel_the_pinned_tree(self) -> None:
+        fixture = self._fixture()
+        pinned_revision = fixture["lock"].read_text(encoding="ascii").strip()
+        (fixture["repo"] / "anki_miner/dep.py").write_text(
+            "VALUE = 2\n",
+            encoding="utf-8",
+        )
+        _run("git", "add", ".", cwd=fixture["repo"])
+        _run("git", "commit", "-qm", "replacement commit", cwd=fixture["repo"])
+        replacement_revision = _run(
+            "git",
+            "rev-parse",
+            "HEAD",
+            cwd=fixture["repo"],
+        )
+        _run("git", "reset", "--hard", "-q", pinned_revision, cwd=fixture["repo"])
+        _run(
+            "git",
+            "replace",
+            pinned_revision,
+            replacement_revision,
+            cwd=fixture["repo"],
+        )
+
+        snapshot = self._snapshot(fixture)
+
+        self.assertEqual(b"VALUE = 1\n", snapshot.files["anki_miner/dep.py"].content)
+
+    def test_blob_replacement_cannot_relabel_pinned_source_bytes(self) -> None:
+        fixture = self._fixture()
+        pinned_revision = fixture["lock"].read_text(encoding="ascii").strip()
+        source = fixture["repo"] / "anki_miner/dep.py"
+        pinned_bytes = source.read_bytes()
+        pinned_blob = _run(
+            "git",
+            "rev-parse",
+            f"{pinned_revision}:anki_miner/dep.py",
+            cwd=fixture["repo"],
+        )
+        source.write_text("VALUE = 2\n", encoding="utf-8")
+        replacement_blob = _run(
+            "git",
+            "hash-object",
+            "-w",
+            "anki_miner/dep.py",
+            cwd=fixture["repo"],
+        )
+        source.write_bytes(pinned_bytes)
+        _run(
+            "git",
+            "replace",
+            pinned_blob,
+            replacement_blob,
+            cwd=fixture["repo"],
+        )
+
+        snapshot = self._snapshot(fixture)
+
+        self.assertEqual(pinned_bytes, snapshot.files["anki_miner/dep.py"].content)
+
     def test_production_composition_keeps_known_words_import_as_a_root(self) -> None:
         project_root = Path(__file__).resolve().parents[3]
         composition = tomllib.loads(
@@ -515,7 +625,20 @@ target = "anki_miner.services.youtube_fetcher"
         )
         path = "anki_miner/services/known_words_import.py"
         self.assertIn("anki_miner.services.known_words_import", manifest["modules"])
-        self.assertEqual("desktop", manifest["files"][path]["origin"])
+        self.assertEqual("overlay", manifest["files"][path]["origin"])
+        self.assertEqual(
+            PINNED_KNOWN_WORDS_IMPORT_BLOB,
+            composition["overlay_base_blobs"][path],
+        )
+        override = (
+            project_root / "tools/engine-sync/overrides" / path
+        ).read_bytes()
+        generated = (project_root / "app/src/main/python" / path).read_bytes()
+        self.assertEqual(
+            REVIEWED_KNOWN_WORDS_IMPORT_SHA256,
+            hashlib.sha256(override).hexdigest(),
+        )
+        self.assertEqual(override, generated)
 
     def test_reading_image_limits_are_applied_before_every_decode(self) -> None:
         project_root = Path(__file__).resolve().parents[3]

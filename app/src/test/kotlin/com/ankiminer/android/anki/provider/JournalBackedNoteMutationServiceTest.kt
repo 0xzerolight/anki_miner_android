@@ -1,10 +1,12 @@
 package com.ankiminer.android.anki.provider
 
 import com.ankiminer.android.anki.journal.ActiveNoteMaterialization
+import com.ankiminer.android.anki.journal.ActiveNoteMaterializationRefused
 import com.ankiminer.android.anki.journal.ActiveNoteTermination
 import com.ankiminer.android.anki.journal.AlignedResult
 import com.ankiminer.android.anki.journal.ChildState
 import com.ankiminer.android.anki.journal.ChildlessRoutingOutcome
+import com.ankiminer.android.anki.journal.JournalCorruptionException
 import com.ankiminer.android.anki.journal.JournalRequest
 import com.ankiminer.android.anki.journal.JournalResponse
 import com.ankiminer.android.anki.journal.MutationCommand
@@ -358,6 +360,35 @@ class JournalBackedNoteMutationServiceTest {
             assertEquals(NoteRoutingPhase.NOTE_PENDING, harness.journal.parentRecord.routingPhase)
         }
 
+    @Test
+    fun `typed materialization refusal becomes a row failure before provider entry`() =
+        withHarness { harness ->
+            harness.journal.materializeFailure =
+                ActiveNoteMaterializationRefused("Active note media binding differs from durable claim")
+
+            val outcome = harness.service.create(harness.owner, harness.request())
+
+            assertTrue(outcome.result.results.single() is FailedNote)
+            assertEquals(0, harness.provider.insertCalls)
+            assertNull(harness.journal.parentRecord.activeRequestIndex)
+        }
+
+    @Test
+    fun `materialization corruption propagates without writing an ordinary failed row`() =
+        withHarness { harness ->
+            val failure = JournalCorruptionException("materialization claim is missing")
+            harness.journal.materializeFailure = failure
+
+            assertEquals(
+                failure,
+                assertThrows(JournalCorruptionException::class.java) {
+                    harness.service.create(harness.owner, harness.request())
+                },
+            )
+            assertTrue(harness.journal.results(harness.journal.parentRecord.key).isEmpty())
+            assertEquals(0, harness.provider.insertCalls)
+        }
+
     private fun withHarness(
         initialMatchingNoteIds: Set<Long> = emptySet(),
         cancellation: MutableAnkiCancellation = MutableAnkiCancellation(),
@@ -508,6 +539,7 @@ class JournalBackedNoteMutationServiceTest {
         var throwAfterNoteReceiptCommit = false
         var throwBeforeNoteReceiptCommit = false
         var throwAfterVerifiedCompletion = false
+        var materializeFailure: RuntimeException? = null
         val phases = mutableListOf<NoteRoutingPhase>()
         val terminations = mutableListOf<ActiveNoteTermination>()
         val childlessOutcomes = mutableListOf<ChildlessRoutingOutcome>()
@@ -546,6 +578,7 @@ class JournalBackedNoteMutationServiceTest {
         }
 
         override fun materialize(key: ParentKey, note: ActiveNoteMaterialization) {
+            materializeFailure?.let { throw it }
             materialization = note
             parentRecord = parentRecord.copy(
                 activeRequestIndex = note.requestIndex,

@@ -1,6 +1,7 @@
 package com.ankiminer.android.anki.provider
 
 import com.ankiminer.android.anki.journal.ActiveNoteMaterialization
+import com.ankiminer.android.anki.journal.ActiveNoteMaterializationRefused
 import com.ankiminer.android.anki.journal.ActiveNoteTermination
 import com.ankiminer.android.anki.journal.AlignedResult
 import com.ankiminer.android.anki.journal.AnkiMutationStore
@@ -300,20 +301,8 @@ internal class JournalBackedNoteMutationService(
             val materialization = prepared[index].materialization
             try {
                 journal.materialize(durableRequest.key, materialization)
-            } catch (failure: RuntimeException) {
-                if (
-                    runCatching { journal.parent(durableRequest.key)?.activeRequestIndex }
-                        .onFailure { lookupFailure ->
-                            AppLog.ignored(
-                                LogComponent.JOURNAL,
-                                "note.materialize.parent",
-                                "original_materialization_failure_retained",
-                                lookupFailure,
-                            )
-                        }.getOrNull() == index
-                ) {
-                    throw failure
-                }
+                // instrumentation: silent — refusal becomes a journaled aligned failure below
+            } catch (_: ActiveNoteMaterializationRefused) {
                 val error = stableInternal("The note media bindings could not be durably admitted")
                 journal.append(
                     durableRequest.key,

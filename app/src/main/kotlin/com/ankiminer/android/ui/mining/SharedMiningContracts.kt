@@ -3,6 +3,7 @@ package com.ankiminer.android.ui.mining
 import com.ankiminer.android.mining.CurationCandidate
 import com.ankiminer.android.mining.CurationRequest
 import com.ankiminer.android.mining.CurationSelection
+import com.ankiminer.android.mining.CurationSessionState
 import java.nio.charset.StandardCharsets
 import java.util.Locale
 
@@ -145,6 +146,54 @@ internal fun CurationRequest.defaultCurationDraft(): SharedCurationDraft =
         selectedCandidateIds = candidates.mapTo(linkedSetOf()) { it.candidateId },
         sentenceIds = candidates.associate { it.candidateId to it.defaultSentenceId },
         focusedCandidateId = candidates.firstOrNull()?.candidateId,
+    )
+
+internal fun CurationSessionState.draftFor(
+    request: CurationRequest,
+): SharedCurationDraft? {
+    if (
+        runId != request.runId ||
+        requestId != request.requestId ||
+        pageIndex != request.page?.pageIndex
+    ) {
+        return null
+    }
+    val candidateIds = request.candidates.mapTo(linkedSetOf()) { it.candidateId }
+    if (!candidateIds.containsAll(selectedCandidateIds)) return null
+    val validSentenceIds =
+        request.candidates.associate { candidate ->
+            candidate.candidateId to candidate.sentences.mapTo(hashSetOf()) { it.sentenceId }
+        }
+    if (
+        sentenceIds.keys != candidateIds ||
+        sentenceIds.any { (candidateId, sentenceId) ->
+            sentenceId !in validSentenceIds.getValue(candidateId)
+        } ||
+        (focusedCandidateId != null && focusedCandidateId !in candidateIds)
+    ) {
+        return null
+    }
+    return SharedCurationDraft(
+        runId = runId,
+        requestId = requestId,
+        pageIndex = pageIndex,
+        selectedCandidateIds = selectedCandidateIds.toSet(),
+        sentenceIds = sentenceIds.toMap(),
+        focusedCandidateId = focusedCandidateId,
+    )
+}
+
+internal fun SharedCurationDraft.toCurationSessionState(
+    previousPageSelectedCount: Int,
+): CurationSessionState =
+    CurationSessionState(
+        runId = runId,
+        requestId = requestId,
+        pageIndex = pageIndex,
+        selectedCandidateIds = selectedCandidateIds.toSet(),
+        sentenceIds = sentenceIds.toMap(),
+        focusedCandidateId = focusedCandidateId,
+        previousPageSelectedCount = previousPageSelectedCount,
     )
 
 internal enum class CurationFilter {

@@ -300,6 +300,21 @@ def safe_entry_name(name: str, archive_name: str) -> PurePosixPath:
     return path
 
 
+def is_native_library_payload(
+    entry_path: PurePosixPath,
+    *,
+    depth: int,
+    requirement_owner: str | None,
+) -> bool:
+    """Whether an archive member is required to start with an ELF header."""
+    parts = entry_path.parts
+    direct_apk_library = depth == 0 and len(parts) >= 3 and parts[0] == "lib"
+    direct_aab_library = depth == 0 and len(parts) >= 4 and parts[0:2] == ("base", "lib")
+    native_suffix = entry_path.name.endswith(".so") or ".so." in entry_path.name
+    nested_chaquopy_payload = depth > 0 or requirement_owner is not None
+    return direct_apk_library or direct_aab_library or (native_suffix and nested_chaquopy_payload)
+
+
 def parse_elf(
     data: bytes,
     logical_name: str,
@@ -642,6 +657,15 @@ def inspect_zip(
                     )
                 if expected_native is not None and not is_elf:
                     raise ArtifactError(f"{entry_name}: manifest S1a native payload is not an ELF")
+                if (
+                    is_native_library_payload(
+                        entry_path,
+                        depth=depth,
+                        requirement_owner=requirement_owner,
+                    )
+                    and not is_elf
+                ):
+                    raise ArtifactError(f"{entry_name}: native library payload is not an ELF")
                 if not (is_elf or is_archive or attribution is not None):
                     continue
                 size_limit = MAX_ATTRIBUTION_SIZE if attribution is not None else MAX_NESTED_ARCHIVE_SIZE

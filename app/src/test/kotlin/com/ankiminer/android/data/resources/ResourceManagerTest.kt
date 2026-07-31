@@ -5,15 +5,26 @@ import com.ankiminer.android.diagnostics.log.AppLog
 import com.ankiminer.android.diagnostics.log.LogLevel
 import com.ankiminer.android.diagnostics.log.NoOpSink
 import com.ankiminer.android.diagnostics.log.RecordingLogSink
+import com.ankiminer.android.data.settings.AppSettings
+import com.ankiminer.android.data.settings.AppSettingsRepository
+import com.ankiminer.android.data.settings.ResourceChainSelection
+import com.ankiminer.android.engine.BridgeJsonValue
 import com.ankiminer.android.engine.EngineCallbacks
 import com.ankiminer.android.engine.PyBridge
+import com.ankiminer.android.localization.testStringResourceResolver
 import com.ankiminer.android.media.SafBroker
 import com.ankiminer.android.media.SafDocument
-import com.ankiminer.android.localization.testStringResourceResolver
+import com.ankiminer.android.snapshotProductionSettings
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.OutputStream
+import java.util.ArrayDeque
 import java.util.concurrent.Executor
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -37,7 +48,11 @@ class ResourceManagerTest {
             try {
                 Harness(rootName = "manager-download", stagingFailureCode = "resource_operation_cancelled")
                     .manager.importKnownWords(INPUT_URI, KnownWordsSourceFormat.JSON)
-                Harness(rootName = "manager-bridge", bridgeFailureCode = "resource_operation_cancelled")
+                Harness(
+                    rootName = "manager-bridge",
+                    bridgeFailureCode = "resource_operation_cancelled",
+                    autoRecover = false,
+                )
                     .manager.recoverAndRefresh()
 
                 val cancellations = recorded.records.filter { it.contains("op=operation.run") }
@@ -56,11 +71,11 @@ class ResourceManagerTest {
     fun busyFailuresKeepStableOriginAndRetryMetadataUntilDismissed() =
         runTest {
             val coordinator = RuntimeWorkCoordinator()
+            val harness = Harness(runtimeWorkCoordinator = coordinator)
             val lease =
                 requireNotNull(
                     coordinator.tryAcquire(RuntimeWorkCoordinator.Kind.MINING),
                 )
-            val harness = Harness(runtimeWorkCoordinator = coordinator)
 
             harness.manager.installUniDic()
             assertEquals(ResourceFailureOrigin.UNIDIC, harness.manager.state.value.failure?.origin)
@@ -84,11 +99,11 @@ class ResourceManagerTest {
     fun knownWordsPickerFailuresPreserveOperationIdentity() =
         runTest {
             val coordinator = RuntimeWorkCoordinator()
+            val harness = Harness(runtimeWorkCoordinator = coordinator)
             val lease =
                 requireNotNull(
                     coordinator.tryAcquire(RuntimeWorkCoordinator.Kind.MINING),
                 )
-            val harness = Harness(runtimeWorkCoordinator = coordinator)
 
             harness.manager.importKnownWords(INPUT_URI, KnownWordsSourceFormat.JSON)
             assertEquals(
@@ -111,6 +126,175 @@ class ResourceManagerTest {
             )
 
             lease.close()
+        }
+
+    @Test
+    fun productionSnapshotCarriesUsableInstalledPitchSourcesToBridgeConfig() =
+        runTest {
+            val harness = Harness(installedPitchSourceId = "kanjium")
+            harness.manager.recoverAndRefresh()
+            val repository =
+                object : AppSettingsRepository {
+                    override val settings: Flow<AppSettings> =
+                        flowOf(
+                            AppSettings(
+                                pitchSources =
+                                    listOf(ResourceChainSelection("kanjium", enabled = true)),
+                            ),
+                        )
+
+                    override suspend fun update(settings: AppSettings) = Unit
+
+                    override suspend fun update(transform: (AppSettings) -> AppSettings) = Unit
+                }
+
+            val snapshot = harness.manager.snapshotProductionSettings(repository)
+
+            val pitchChain =
+                snapshot.settings.getValue("pitch_chain") as BridgeJsonValue.ArrayValue
+            assertEquals(1, pitchChain.values.size)
+            val source = pitchChain.values.single() as BridgeJsonValue.ObjectValue
+            assertEquals(
+                BridgeJsonValue.Text("kanjium"),
+                source.values["source_id"],
+            )
+            assertEquals(BridgeJsonValue.Bool(true), source.values["enabled"])
+        }
+
+    @Test
+    fun startupRecoveryBlocksMutationsUntilItsQueuedCleanupPublishesReady() =
+        runTest {
+            val executor = QueuedExecutor()
+            val harness =
+                Harness(
+                    autoRecover = false,
+                    resourceExecutor = executor,
+                )
+
+            val recovery = launch { harness.manager.recoverAndRefresh() }
+            runCurrent()
+            assertEquals(ResourceStartupReadiness.RECOVERING, harness.manager.state.value.startupReadiness)
+            assertEquals(1, executor.queued.size)
+
+            harness.manager.installUniDic()
+            assertEquals(1, executor.queued.size)
+
+            executor.runNext()
+            advanceUntilIdle()
+            recovery.join()
+
+            assertEquals(ResourceStartupReadiness.READY, harness.manager.state.value.startupReadiness)
+            assertTrue(harness.bridge.requestsOfType("resource.unidic.install").isEmpty())
+        }
+
+    @Test
+    fun interruptedCatalogInstallSurvivesRestartAsExplicitRetryWithPartialBytes() =
+        runTest {
+            val harness = Harness(autoRecover = false)
+            val resource = FrozenResourceCatalog.value.dictionaries.first()
+            ResourceOperationJournal(harness.root, syncDirectory = {}).write(
+                PersistedResourceOperation(
+                    origin = ResourceFailureOrigin.CATALOG_DICTIONARY,
+                    retry =
+                        ResourceFailureRetry(
+                            action = ResourceFailureAction.RETRY,
+                            targetId = resource.resourceId,
+                            replace = false,
+                        ),
+                ),
+            )
+            val partial =
+                File(harness.downloadRoot, "${resource.archive.sha256}.part").apply {
+                    parentFile.mkdirs()
+                    writeBytes(byteArrayOf(1))
+                }
+
+            harness.manager.recoverAndRefresh()
+
+            val failure = requireNotNull(harness.manager.state.value.failure)
+            assertEquals("resource_operation_interrupted", failure.code)
+            assertEquals(ResourceFailureOrigin.CATALOG_DICTIONARY, failure.origin)
+            assertEquals(resource.resourceId, failure.retry.targetId)
+            assertEquals(ResourceFailureAction.RETRY, failure.retry.action)
+            assertTrue(partial.isFile)
+            assertEquals(ResourceStartupReadiness.READY, harness.manager.state.value.startupReadiness)
+            assertFalse(ResourceOperationJournal(harness.root).exists())
+        }
+
+    @Test
+    fun catalogCommitRefreshFailureRetriesReconciliationWithoutReplayingImport() =
+        runTest {
+            val harness =
+                Harness(
+                    fakePinnedDownloads = true,
+                    failRefreshAfterDictionaryImport = true,
+                )
+            val resource = FrozenResourceCatalog.value.dictionaries.first()
+
+            harness.manager.installCatalogDictionary(resource.resourceId, replace = false)
+
+            val failure = requireNotNull(harness.manager.state.value.failure)
+            assertEquals("resource_inventory_failed", failure.code)
+            assertEquals(ResourceFailureOrigin.SETUP, failure.origin)
+            assertEquals(ResourceFailureAction.RETRY, failure.retry.action)
+            assertEquals(1, harness.bridge.requestsOfType("resource.dictionary.import").size)
+
+            harness.manager.recoverAndRefresh()
+
+            assertEquals(1, harness.bridge.requestsOfType("resource.dictionary.import").size)
+            assertTrue(resource.slotId in harness.manager.installedDictionaryIds())
+            assertNull(harness.manager.state.value.failure)
+        }
+
+    @Test
+    fun wordListReplacementFailurePreservesThePreviouslyPublishedFile() =
+        runTest {
+            var failReplacementPublish = false
+            val harness =
+                Harness(
+                    sourceLabel = "word-list file",
+                    wordListMover = { source, target ->
+                        if (
+                            failReplacementPublish &&
+                                source.name.endsWith(".candidate") &&
+                                target.name == WordListKind.BLACKLIST.fileName
+                        ) {
+                            false
+                        } else {
+                            source.renameTo(target)
+                        }
+                    },
+                )
+            harness.stager.sourceText = "old\n"
+            harness.manager.importWordList(INPUT_URI, WordListKind.BLACKLIST)
+            val path = requireNotNull(harness.manager.wordListPath(WordListKind.BLACKLIST))
+            assertEquals("old\n", File(path).readText())
+
+            harness.stager.sourceText = "new\n"
+            failReplacementPublish = true
+            harness.manager.importWordList(INPUT_URI, WordListKind.BLACKLIST)
+
+            assertEquals("old\n", File(path).readText())
+            assertEquals(ResourceFailureOrigin.WORD_LIST, harness.manager.state.value.failure?.origin)
+        }
+
+    @Test
+    fun startupPublishesDurableWordListCandidateAndRemovesCrashBackup() =
+        runTest {
+            val harness = Harness(autoRecover = false)
+            val wordListRoot = File(harness.root, "resource-word-lists").apply { mkdirs() }
+            File(wordListRoot, "blacklist.txt.backup").writeText("old\n")
+            File(wordListRoot, "blacklist.txt.candidate").writeText("new\n")
+
+            harness.manager.recoverAndRefresh()
+
+            assertEquals(
+                "new\n",
+                File(requireNotNull(harness.manager.wordListPath(WordListKind.BLACKLIST))).readText(),
+            )
+            assertFalse(File(wordListRoot, "blacklist.txt.backup").exists())
+            assertFalse(File(wordListRoot, "blacklist.txt.candidate").exists())
+            assertEquals(1, harness.manager.state.value.wordList(WordListKind.BLACKLIST)?.entryCount)
         }
 
     @Test
@@ -156,7 +340,8 @@ class ResourceManagerTest {
                     "resource.knownwords.preview",
                     "resource.knownwords.preview",
                     "resource.knownwords.import",
-                    "resource.catalog.get",
+                    // No resource.catalog.get: the startup recovery barrier already cached the
+                    // pinned catalog, so a committed mutation only re-reads the inventories.
                     "resource.dictionary.list",
                     "resource.local.list",
                 ),
@@ -164,6 +349,69 @@ class ResourceManagerTest {
             )
             assertEquals(listOf(INPUT_URI, INPUT_URI), harness.broker.retained)
             assertEquals(listOf(INPUT_URI, INPUT_URI), harness.broker.released)
+        }
+
+    @Test
+    fun failedConfirmedImportRetainsStagedInputAndRetryRepeatsImport() =
+        runTest {
+            val harness = Harness(failKnownWordsImportOnce = true)
+            harness.manager.previewKnownWords(INPUT_URI, KnownWordsSourceFormat.JSON)
+
+            harness.manager.confirmKnownWordsImport()
+
+            assertEquals(
+                KnownWordsFailureOperation.IMPORT,
+                harness.manager.state.value.failure?.knownWordsOperation,
+            )
+            assertEquals(ResourceFailureAction.RETRY, harness.manager.state.value.failure?.retry?.action)
+            assertTrue(harness.pendingRoot.isDirectory)
+            assertTrue(harness.manager.state.value.knownWordsImportPreview != null)
+
+            harness.manager.retryKnownWordsFailure()
+
+            assertEquals(2, harness.bridge.requestsOfType("resource.knownwords.import").size)
+            assertFalse(harness.pendingRoot.exists())
+            assertNull(harness.manager.state.value.knownWordsImportPreview)
+            assertEquals(2L, harness.manager.state.value.knownWords.userCount)
+            assertNull(harness.manager.state.value.failure)
+        }
+
+    @Test
+    fun failedKnownWordRemoveRetryKeepsPayloadAndSearchCannotClearFailure() =
+        runTest {
+            val harness = Harness(initialUserCount = 2, failKnownWordsRemoveOnce = true)
+
+            harness.manager.removeKnownWords(listOf("mutable0"))
+
+            assertNull(harness.manager.state.value.failure?.knownWordsOperation)
+            assertEquals(ResourceFailureAction.RETRY, harness.manager.state.value.failure?.retry?.action)
+
+            harness.manager.searchKnownWords("mutable")
+            assertNull(harness.manager.state.value.failure?.knownWordsOperation)
+
+            harness.manager.retryKnownWordsFailure()
+
+            assertEquals(2, harness.bridge.requestsOfType("resource.knownwords.remove").size)
+            assertEquals(1L, harness.manager.state.value.knownWords.userCount)
+            assertNull(harness.manager.state.value.failure)
+        }
+
+    @Test
+    fun failedKnownWordResetRetryKeepsExactScope() =
+        runTest {
+            val harness = Harness(initialUserCount = 2, failKnownWordsResetOnce = true)
+
+            harness.manager.resetKnownWords(KnownWordsResetScope.CACHE)
+            harness.manager.retryKnownWordsFailure()
+
+            assertEquals(2, harness.bridge.requestsOfType("resource.knownwords.reset").size)
+            assertEquals(
+                listOf("cache", "cache"),
+                harness.bridge.requestsOfType("resource.knownwords.reset").map {
+                    stringField(it, "scope")
+                },
+            )
+            assertNull(harness.manager.state.value.failure)
         }
 
     @Test
@@ -239,6 +487,45 @@ class ResourceManagerTest {
         }
 
     @Test
+    fun exportCancellationClosesSafOutputAndDeletesPartialDestination() =
+        runTest {
+            lateinit var harness: Harness
+            harness =
+                Harness(
+                    onFirstExportWrite = { harness.manager.cancelActive() },
+                )
+
+            harness.manager.exportKnownWords(EXPORT_URI)
+
+            assertTrue(harness.writer.output.size() > 0)
+            assertEquals(listOf(EXPORT_URI), harness.writer.deletedUris)
+            assertTrue(harness.writer.closeCount > 0)
+            assertNull(harness.manager.state.value.failure)
+            assertNull(harness.manager.state.value.activeOperation)
+        }
+
+    @Test
+    fun failedPythonCancelDeliveryCannotTurnCommittedMutationIntoSuccess() =
+        runTest {
+            lateinit var harness: Harness
+            harness =
+                Harness(
+                    initialUserCount = 2,
+                    failCancelDelivery = true,
+                    onKnownWordsRemoveDispatch = { harness.manager.cancelActive() },
+                )
+
+            harness.manager.removeKnownWords(listOf("mutable0"))
+
+            val failure = requireNotNull(harness.manager.state.value.failure)
+            assertEquals("resource_cancel_delivery_failed", failure.code)
+            assertEquals(ResourceFailureOrigin.SETUP, failure.origin)
+            assertEquals(ResourceFailureAction.RETRY, failure.retry.action)
+            assertEquals(1, harness.bridge.requestsOfType("resource.knownwords.remove").size)
+            assertEquals(1, harness.bridge.userCount)
+        }
+
+    @Test
     fun audioPackBudgetTracksFreeSpaceInsteadOfAFixedTwoGigabyteCap() =
         runTest {
             val harness =
@@ -299,6 +586,63 @@ class ResourceManagerTest {
             )
         }
 
+    @Test
+    fun committedDictionaryInventoryRefreshesWhenResponseDecodeFails() =
+        runTest {
+            val harness =
+                Harness(
+                    sourceLabel = "resource",
+                    committedDictionaryDecodeFailure = true,
+                )
+
+            harness.manager.importCustomDictionary(INPUT_URI, "revisionless", replace = false)
+
+            // The install is committed in Python, so inventory must still show it even though
+            // Kotlin refused the response.
+            assertTrue(harness.manager.state.value.dictionaries.isNotEmpty())
+            assertEquals("invalid_resource_response", harness.manager.state.value.failure?.code)
+        }
+
+    @Test
+    fun committedPitchInventoryRefreshesWhenResponseDecodeFails() =
+        runTest {
+            val harness =
+                Harness(
+                    sourceLabel = "pitch-accent source",
+                    installedPitchSourceId = "fixture-pitch",
+                    committedPitchDecodeFailure = true,
+                )
+
+            harness.manager.importPitchAccent(
+                INPUT_URI,
+                sourceId = "fixture-pitch",
+                sourceName = "Fixture Pitch",
+                format = PitchAccentSourceFormat.YOMITAN_ZIP,
+                replace = false,
+            )
+
+            assertEquals(listOf("fixture-pitch"), harness.manager.state.value.pitchSources.map { it.sourceId })
+            assertEquals("invalid_resource_response", harness.manager.state.value.failure?.code)
+            assertTrue(harness.manager.state.value.pitchSources.isNotEmpty())
+        }
+
+    @Test
+    fun wordListImportPublishesBomFreeFirstWordForBothKinds() =
+        runTest {
+            val harness = Harness(sourceLabel = "word-list file")
+            harness.stager.sourceText = "\uFEFF\u732b\n"
+
+            harness.manager.importWordList(INPUT_URI, WordListKind.BLACKLIST)
+            harness.manager.importWordList(INPUT_URI, WordListKind.WHITELIST)
+
+            WordListKind.entries.forEach { kind ->
+                val installed = harness.manager.state.value.wordLists.single { it.kind == kind }
+                assertEquals(1, installed.entryCount)
+                val path = requireNotNull(harness.manager.wordListPath(kind))
+                assertEquals("\u732b\n", File(path).readText(Charsets.UTF_8))
+            }
+        }
+
     private inner class Harness(
         rootName: String = "manager",
         initialUserCount: Int = 0,
@@ -308,15 +652,44 @@ class ResourceManagerTest {
         stagingAvailableBytes: Long = Long.MAX_VALUE / 2,
         stagingFailureCode: String? = null,
         bridgeFailureCode: String? = null,
+        installedPitchSourceId: String? = null,
+        autoRecover: Boolean = true,
+        resourceExecutor: Executor = DIRECT_EXECUTOR,
+        fakePinnedDownloads: Boolean = false,
+        failRefreshAfterDictionaryImport: Boolean = false,
+        wordListMover: (File, File) -> Boolean = { source, target -> source.renameTo(target) },
+        failKnownWordsImportOnce: Boolean = false,
+        failKnownWordsRemoveOnce: Boolean = false,
+        failKnownWordsResetOnce: Boolean = false,
+        failCancelDelivery: Boolean = false,
+        onKnownWordsRemoveDispatch: () -> Unit = {},
+        onFirstExportWrite: () -> Unit = {},
+        committedDictionaryDecodeFailure: Boolean = false,
+        committedPitchDecodeFailure: Boolean = false,
     ) {
-        private val root = temporary.newFolder(rootName)
+        val root = temporary.newFolder(rootName)
         val bridgeRoot = File(root, "bridge").apply { mkdirs() }
         val stagingRoot = File(root, "staging").apply { mkdirs() }
+        val downloadRoot = File(root, "downloads")
         val pendingRoot = File(root, "resource-pending-known-words")
         val broker = RecordingSafBroker(reportedSourceSizeBytes)
         val stager = RecordingArchiveStager(stagingRoot, sourceLabel, stagingFailureCode)
-        val writer = RecordingDocumentWriter()
-        val bridge = FakeResourceBridge(bridgeRoot, initialUserCount, bridgeFailureCode)
+        val writer = RecordingDocumentWriter(onFirstExportWrite)
+        val bridge =
+            FakeResourceBridge(
+                bridgeRoot,
+                initialUserCount,
+                bridgeFailureCode,
+                installedPitchSourceId,
+                failRefreshAfterDictionaryImport,
+                failKnownWordsImportOnce,
+                failKnownWordsRemoveOnce,
+                failKnownWordsResetOnce,
+                failCancelDelivery,
+                onKnownWordsRemoveDispatch,
+                committedDictionaryDecodeFailure,
+                committedPitchDecodeFailure,
+            )
         val manager =
             AndroidResourceManager(
                 safBroker = broker,
@@ -324,12 +697,12 @@ class ResourceManagerTest {
                 tokenizerResources = { null },
                 bridgeFilesRoot = bridgeRoot,
                 stagingRoot = stagingRoot,
-                resourceExecutor = DIRECT_EXECUTOR,
+                resourceExecutor = resourceExecutor,
                 controlExecutor = DIRECT_EXECUTOR,
                 runtimeWorkCoordinator = runtimeWorkCoordinator,
                 downloader =
                     PinnedResourceDownloader(
-                        File(root, "downloads"),
+                        downloadRoot,
                         connections = DownloadConnectionFactory { _, _ -> error("network not expected") },
                         availableBytes = { Long.MAX_VALUE / 2 },
                     ),
@@ -337,7 +710,27 @@ class ResourceManagerTest {
                 documentWriter = writer,
                 strings = testStringResourceResolver,
                 stagingAvailableBytes = { stagingAvailableBytes },
+                pinnedArchiveProvider =
+                    if (fakePinnedDownloads) {
+                        PinnedArchiveProvider { archive, cancellation, _ ->
+                            cancellation.check()
+                            val file = File(root, "fake-${archive.sha256}.zip")
+                            file.writeText("fixture")
+                            StagedArchive(file, archive.sha256, archive.sizeBytes)
+                        }
+                    } else {
+                        null
+                    },
+                wordListMover = wordListMover,
+                resourceDirectorySync = {},
             )
+
+        init {
+            if (autoRecover) {
+                kotlinx.coroutines.runBlocking { manager.recoverAndRefresh() }
+                bridge.clearRequests()
+            }
+        }
     }
 
     private class RecordingSafBroker(
@@ -365,6 +758,7 @@ class ResourceManagerTest {
     ) : ResourceArchiveStager {
         val stagedFiles = mutableListOf<File>()
         var lastMaximumBytes: Long? = null
+        var sourceText: String = "fixture"
 
         override fun stage(
             sourceUri: String,
@@ -381,20 +775,60 @@ class ResourceManagerTest {
             lastMaximumBytes = maximumBytes
             cancellation.check()
             val file = File(stagingRoot, "$operationId-custom$fileSuffix")
-            file.writeText("fixture", Charsets.UTF_8)
+            file.writeText(sourceText, Charsets.UTF_8)
             stagedFiles += file
             onProgress(file.length(), file.length())
             return StagedArchive(file, "0".repeat(64), file.length())
         }
     }
 
-    private class RecordingDocumentWriter : ResourceDocumentWriter {
+    private class RecordingDocumentWriter(
+        private val onFirstWrite: () -> Unit,
+    ) : ResourceDocumentWriter {
         val openedUris = mutableListOf<String>()
+        val deletedUris = mutableListOf<String>()
         val output = ByteArrayOutputStream()
+        var closeCount = 0
+            private set
+        private var notifiedWrite = false
 
         override fun open(uri: String): OutputStream {
             openedUris += uri
-            return output
+            return object : OutputStream() {
+                override fun write(value: Int) {
+                    notifyWrite()
+                    output.write(value)
+                }
+
+                override fun write(
+                    bytes: ByteArray,
+                    offset: Int,
+                    length: Int,
+                ) {
+                    notifyWrite()
+                    output.write(bytes, offset, length)
+                }
+
+                override fun flush() {
+                    output.flush()
+                }
+
+                override fun close() {
+                    closeCount += 1
+                }
+            }
+        }
+
+        override fun delete(uri: String): Boolean {
+            deletedUris += uri
+            return true
+        }
+
+        private fun notifyWrite() {
+            if (!notifiedWrite) {
+                notifiedWrite = true
+                onFirstWrite()
+            }
         }
     }
 
@@ -402,9 +836,24 @@ class ResourceManagerTest {
         private val bridgeFilesRoot: File,
         initialUserCount: Int,
         private val failureCode: String? = null,
+        private val installedPitchSourceId: String?,
+        private val failRefreshAfterDictionaryImport: Boolean,
+        failKnownWordsImportOnce: Boolean,
+        failKnownWordsRemoveOnce: Boolean,
+        failKnownWordsResetOnce: Boolean,
+        private val failCancelDelivery: Boolean,
+        private val onKnownWordsRemoveDispatch: () -> Unit,
+        private val committedDictionaryDecodeFailure: Boolean = false,
+        private val committedPitchDecodeFailure: Boolean = false,
     ) : PyBridge {
         private val requests = mutableListOf<String>()
-        private var userCount = initialUserCount
+        var userCount = initialUserCount
+            private set
+        private var catalogDictionaryInstalled = false
+        private var failNextDictionaryList = false
+        private var knownWordsImportFailures = if (failKnownWordsImportOnce) 1 else 0
+        private var knownWordsRemoveFailures = if (failKnownWordsRemoveOnce) 1 else 0
+        private var knownWordsResetFailures = if (failKnownWordsResetOnce) 1 else 0
         var lastExportFile: File? = null
             private set
 
@@ -414,21 +863,59 @@ class ResourceManagerTest {
         fun requestsOfType(type: String): List<String> =
             requests.filter { requestType(it) == type }
 
+        fun clearRequests() {
+            requests.clear()
+        }
+
         override fun dispatch(rawRequest: String, callbacks: EngineCallbacks?): String {
             assertNull(callbacks)
             requests += rawRequest
             failureCode?.let { throw ResourceBridgeException(it, "cancelled") }
             return when (requestType(rawRequest)) {
                 "resource.catalog.get" -> catalogResponse()
-                "resource.dictionary.list" ->
-                    envelope("resource.dictionary.listed", """{"dictionaries":[]}""")
+                "resource.dictionary.list" -> dictionaryListResponse()
                 "resource.local.list" -> inventoryResponse()
+                "resource.cleanup" ->
+                    envelope("resource.cleanup.result", """{"clean":true}""")
+                "resource.dictionary.import" -> {
+                    catalogDictionaryInstalled = true
+                    failNextDictionaryList = failRefreshAfterDictionaryImport
+                    if (committedDictionaryDecodeFailure) {
+                        // Python has already published the slot; the response carries a shape
+                        // Kotlin refuses, which must not lose the committed install.
+                        envelope(
+                            "resource.dictionary.imported",
+                            """{"slotId":"revisionless","catalogResourceId":null,"sourceName":"Revisionless","sourceRevision":"","entryCount":1,"skippedMalformed":0,"mediaWarnings":[],"archiveSha256":"${"0".repeat(64)}","attribution":[],"unexpected":true}""",
+                        )
+                    } else {
+                        importedDictionaryResponse()
+                    }
+                }
+                "resource.pitch.import" -> {
+                    if (committedPitchDecodeFailure) {
+                        // Same shape as the dictionary case: the slot is published before Kotlin
+                        // rejects the response, so inventory must still reconcile.
+                        envelope(
+                            "resource.pitch.imported",
+                            """{"sourceId":"fixture-pitch","sourceName":"Fixture Pitch","sourceRevision":"1","sourceFormat":"unknown-installed-format","entryCount":1,"skippedDisplayOnly":0,"skippedMalformed":0,"archiveSha256":"${"0".repeat(64)}"}""",
+                        )
+                    } else {
+                        envelope(
+                            "resource.pitch.imported",
+                            """{"sourceId":"fixture-pitch","sourceName":"Fixture Pitch","sourceRevision":"1","sourceFormat":"yomitan-pitch","entryCount":1,"skippedDisplayOnly":0,"skippedMalformed":0,"archiveSha256":"${"0".repeat(64)}"}""",
+                        )
+                    }
+                }
                 "resource.knownwords.preview" ->
                     envelope(
                         "resource.knownwords.previewed",
                         """{"format":"migaku_json","importedCount":2,"totalEntries":3,"isGeneric":false,"sampleWords":["犬","猫"]}""",
                     )
                 "resource.knownwords.import" -> {
+                    if (knownWordsImportFailures > 0) {
+                        knownWordsImportFailures -= 1
+                        error("simulated known-word import failure")
+                    }
                     userCount = 2
                     envelope(
                         "resource.knownwords.imported",
@@ -437,17 +924,33 @@ class ResourceManagerTest {
                 }
                 "resource.knownwords.list" -> pageResponse(rawRequest)
                 "resource.knownwords.remove" -> {
+                    onKnownWordsRemoveDispatch()
+                    if (knownWordsRemoveFailures > 0) {
+                        knownWordsRemoveFailures -= 1
+                        error("simulated known-word remove failure")
+                    }
                     userCount = (userCount - 1).coerceAtLeast(0)
                     envelope("resource.knownwords.removed", """{"removedCount":1}""")
                 }
                 "resource.knownwords.reset" -> {
+                    if (knownWordsResetFailures > 0) {
+                        knownWordsResetFailures -= 1
+                        error("simulated known-word reset failure")
+                    }
                     userCount = 0
                     envelope(
                         "resource.knownwords.reset",
-                        """{"scope":"user","removedCount":1}""",
+                        """{"scope":"${stringField(rawRequest, "scope")}","removedCount":1}""",
                     )
                 }
                 "resource.knownwords.export" -> exportResponse(rawRequest)
+                "resource.operation.cancel" -> {
+                    if (failCancelDelivery) error("simulated cancel delivery failure")
+                    envelope(
+                        "resource.operation.cancel.result",
+                        """{"operationId":"${stringField(rawRequest, "operationId")}","accepted":true}""",
+                    )
+                }
                 "resource.audiopack.import" ->
                     envelope(
                         "resource.audiopack.imported",
@@ -457,11 +960,44 @@ class ResourceManagerTest {
             }
         }
 
-        private fun inventoryResponse(): String =
-            envelope(
-                "resource.local.listed",
-                """{"frequencies":[],"pitchSources":[],"audioPacks":[],"knownWords":{"totalCount":$userCount,"userCount":$userCount,"ankiCount":0,"minedCount":0,"schemaOk":true},"wordsets":[]}""",
+        private fun dictionaryListResponse(): String {
+            if (failNextDictionaryList) {
+                failNextDictionaryList = false
+                error("simulated inventory failure after commit")
+            }
+            val dictionaries =
+                if (catalogDictionaryInstalled) {
+                    val resource = FrozenResourceCatalog.value.dictionaries.first()
+                    // The decoder checks an installed catalog dictionary against the frozen
+                    // catalog identity, attribution included, so echo the catalog's own list.
+                    """[{"slotId":"${resource.slotId}","occupied":true,"valid":true,"sourceName":"${resource.dictionary.title}","sourceRevision":"${resource.dictionary.revision}","format":"yomitan","entryCount":1,"schemaOk":true,"embeddedAttribution":{},"catalogResourceId":"${resource.resourceId}","attribution":${attributionJson(resource.attribution)}}]"""
+                } else {
+                    "[]"
+                }
+            return envelope(
+                "resource.dictionary.listed",
+                """{"dictionaries":$dictionaries}""",
             )
+        }
+
+        private fun importedDictionaryResponse(): String {
+            val resource = FrozenResourceCatalog.value.dictionaries.first()
+            return envelope(
+                "resource.dictionary.imported",
+                """{"slotId":"${resource.slotId}","catalogResourceId":"${resource.resourceId}","sourceName":"${resource.dictionary.title}","sourceRevision":"${resource.dictionary.revision}","entryCount":1,"skippedMalformed":0,"mediaWarnings":[],"archiveSha256":"${resource.archive.sha256}","attribution":[]}""",
+            )
+        }
+
+        private fun inventoryResponse(): String {
+            val pitchSources =
+                installedPitchSourceId?.let { sourceId ->
+                    """[{"sourceId":"$sourceId","sourceName":"Kanjium","sourceRevision":"1","format":"yomitan","entryCount":10,"schemaOk":true,"schemaVersion":1}]"""
+                } ?: "[]"
+            return envelope(
+                "resource.local.listed",
+                """{"frequencies":[],"pitchSources":$pitchSources,"audioPacks":[],"knownWords":{"totalCount":$userCount,"userCount":$userCount,"ankiCount":0,"minedCount":0,"schemaOk":true},"wordsets":[]}""",
+            )
+        }
 
         private fun pageResponse(rawRequest: String): String {
             val query = stringField(rawRequest, "query")
@@ -520,6 +1056,11 @@ class ResourceManagerTest {
         private fun envelope(type: String, payload: String): String =
             """{"schemaVersion":1,"type":"$type","payload":$payload}"""
 
+        private fun attributionJson(entries: List<ResourceAttribution>): String =
+            entries.joinToString(prefix = "[", postfix = "]") { entry ->
+                """{"name":"${entry.name}","copyright":"${entry.copyright}","license":"${entry.license}","url":"${entry.url}"}"""
+            }
+
         private fun requestType(raw: String): String =
             checkNotNull(TYPE_FIELD.find(raw)?.groupValues?.get(1)) { "request type missing" }
 
@@ -532,5 +1073,15 @@ class ResourceManagerTest {
             checkNotNull(Regex("\"$field\":([0-9]+)").find(raw)?.groupValues?.get(1)) {
                 "$field missing"
             }.toInt()
+    }
+
+    private class QueuedExecutor : Executor {
+        val queued = ArrayDeque<Runnable>()
+
+        override fun execute(command: Runnable) {
+            queued.addLast(command)
+        }
+
+        fun runNext() = queued.removeFirst().run()
     }
 }

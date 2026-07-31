@@ -84,8 +84,17 @@ class MiningForegroundSessionController private constructor(
         private val applicationContext: Context,
         private val registry: ForegroundSessionRegistry,
     ) : MiningForegroundLease {
+        override fun markCancelling(): Boolean {
+            if (!registry.markCancelling(identity)) return false
+            return notifyService()
+        }
+
         override fun updateProgress(progress: MiningForegroundProgress): Boolean {
             if (!registry.updateProgress(identity, progress)) return false
+            return notifyService()
+        }
+
+        private fun notifyService(): Boolean {
             return try {
                 val component =
                     applicationContext.startService(

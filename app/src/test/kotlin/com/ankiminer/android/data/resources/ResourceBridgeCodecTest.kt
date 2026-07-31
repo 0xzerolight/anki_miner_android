@@ -273,6 +273,39 @@ class ResourceBridgeCodecTest {
     }
 
     @Test
+    fun importedDictionaryAcceptsDesktopRevisionlessYomitanMetadata() {
+        val imported =
+            ResourceBridgeCodec.decodeImportedDictionary(
+                """{"schemaVersion":1,"type":"resource.dictionary.imported","payload":{"slotId":"revisionless","catalogResourceId":null,"sourceName":"Revisionless","sourceRevision":"","entryCount":1,"skippedMalformed":0,"mediaWarnings":[],"archiveSha256":"${"0".repeat(64)}","attribution":[]}}""",
+            )
+
+        assertEquals("", imported.sourceRevision)
+    }
+
+    @Test
+    fun importedPitchAcceptsDesktopYomitanInstalledFormat() {
+        val imported =
+            ResourceBridgeCodec.decodeImportedPitch(
+                """{"schemaVersion":1,"type":"resource.pitch.imported","payload":{"sourceId":"yomitan-pitch","sourceName":"Yomitan Pitch","sourceRevision":"1","sourceFormat":"yomitan-pitch","entryCount":1,"skippedDisplayOnly":0,"skippedMalformed":0,"archiveSha256":"${"0".repeat(64)}"}}""",
+            )
+
+        assertEquals("yomitan-pitch", imported.sourceFormat)
+    }
+
+    @Test
+    fun insufficientStorageBridgeErrorMapsToTypedStorageFailure() {
+        val failure =
+            assertThrows(ResourceStorageException::class.java) {
+                ResourceBridgeCodec.decodeImportedDictionary(
+                    """{"schemaVersion":1,"type":"bridge.error","payload":{"code":"insufficient_storage","message":"Not enough free space for this resource operation"}}""",
+                )
+            }
+
+        assertEquals(null, failure.requiredBytes)
+        assertEquals(null, failure.availableBytes)
+    }
+
+    @Test
     fun knownWordManagementRequestsAndResponsesAreStrictAndBounded() {
         val previewRequest =
             ResourceBridgeCodec.encodeKnownWordsPreviewRequest(

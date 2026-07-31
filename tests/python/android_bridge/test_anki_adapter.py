@@ -580,12 +580,14 @@ class FakeKotlinAnki:
                 cursor_state = self._known_cursors.pop(cursor["token"])
                 assert cursor_state["runId"] == request["runId"]
                 assert cursor_state["excludedDecks"] == tuple(scope["excludedDecks"])
+                assert cursor_state["deckName"] == scope.get("deckName")
                 assert cursor_state["ordinal"] == cursor["ordinal"]
                 start = cursor_state["start"]
                 scanned_before = cursor_state["scannedNotes"]
                 next_ordinal = cursor["ordinal"] + 1
             limits = scope["limits"]
             excluded = scope["excludedDecks"]
+            target_deck = scope.get("deckName")
             page_fields: list[str] = []
             page_utf8_bytes = 0
             scanned_notes = 0
@@ -606,10 +608,16 @@ class FakeKotlinAnki:
                     for deck in decks
                     for excluded_deck in excluded
                 )
-                if not note_is_excluded and page_fields and page_utf8_bytes + field_bytes > limits["maxTotalUtf8Bytes"]:
+                note_is_in_scope = target_deck is None or target_deck in decks
+                if (
+                    note_is_in_scope
+                    and not note_is_excluded
+                    and page_fields
+                    and page_utf8_bytes + field_bytes > limits["maxTotalUtf8Bytes"]
+                ):
                     break
                 scanned_notes += 1
-                if not note_is_excluded:
+                if note_is_in_scope and not note_is_excluded:
                     page_fields.append(field)
                     page_utf8_bytes += field_bytes
             next_index = start + scanned_notes
@@ -632,6 +640,7 @@ class FakeKotlinAnki:
                 self._known_cursors[token] = {
                     "runId": request["runId"],
                     "excludedDecks": tuple(scope["excludedDecks"]),
+                    "deckName": target_deck,
                     "ordinal": next_ordinal,
                     "start": next_index,
                     "scannedNotes": total_scanned,
@@ -1367,6 +1376,23 @@ def test_known_vocabulary_is_normalized_filtered_and_cached(
     }
 
 
+def test_allow_duplicate_cards_scopes_known_vocabulary_to_exact_target_deck(
+    initialized_bridge_home: Path,
+) -> None:
+    config = _config(initialized_bridge_home, allow_duplicate_cards=True)
+    kotlin = FakeKotlinAnki()
+    kotlin.known_fields = ["猫", "犬", "鳥"]
+    kotlin.known_note_decks = [
+        {"Japanese::Other"},
+        {config.anki_deck_name},
+        {f"{config.anki_deck_name}::Child"},
+    ]
+    adapter = _adapter(config, kotlin)
+
+    assert adapter.get_existing_vocabulary() == {"犬"}
+    assert kotlin.requests_for("ankiScanFirstFields")[0]["payload"]["scope"]["deckName"] == config.anki_deck_name
+
+
 def test_known_vocabulary_cancellation_stops_before_the_next_page(
     initialized_bridge_home: Path,
 ) -> None:
@@ -2077,6 +2103,76 @@ def test_repeated_expressions_in_one_batch_follow_desktop_duplicate_mode(
         assert scope["occurrences"] == [0, 0, 0]
 
 
+def test_outgoing_duplicate_media_is_not_stored(
+    initialized_bridge_home: Path,
+    tmp_path: Path,
+) -> None:
+    from anki_miner.models import MediaData
+
+    duplicate_audio = tmp_path / "duplicate.opus"
+    duplicate_audio.write_bytes(b"duplicate audio")
+    kotlin = FakeKotlinAnki()
+    adapter = _adapter(_config(initialized_bridge_home), kotlin)
+
+    created_ids = adapter.create_cards_batch(
+        [
+            _card("猫"),
+            _card(
+                "猫",
+                media=MediaData(
+                    audio_path=duplicate_audio,
+                    audio_filename=duplicate_audio.name,
+                ),
+            ),
+        ]
+    )
+
+    assert len(created_ids) == 1
+    assert adapter.last_skipped_duplicates == 1
+    assert kotlin.requests_for("ankiStoreMedia") == []
+
+
+def test_vocab_timeout_provider_duplicate_media_is_not_stored(
+    initialized_bridge_home: Path,
+    tmp_path: Path,
+) -> None:
+    from anki_miner.models import MediaData
+
+    audio = tmp_path / "provider-duplicate.opus"
+    audio.write_bytes(b"duplicate audio")
+    dictionary_path = initialized_bridge_home / "dicts" / "dict" / "media" / "duplicate.png"
+    dictionary_path.parent.mkdir(parents=True, exist_ok=True)
+    dictionary_path.write_bytes(b"png")
+    definition = '<img class="anki-miner-dict-media" src="dict__duplicate.png">'
+    kotlin = FakeKotlinAnki()
+    kotlin.duplicate_fields = ["猫"]
+    adapter = _adapter(_config(initialized_bridge_home), kotlin)
+    kotlin.errors["scanFirstFields"] = (
+        "timeout",
+        "known-vocabulary scan timed out",
+        True,
+    )
+    assert adapter.get_existing_vocabulary() == set()
+    del kotlin.errors["scanFirstFields"]
+
+    created_ids = adapter.create_cards_batch(
+        [
+            _card(
+                "猫",
+                definition=definition,
+                media=MediaData(
+                    audio_path=audio,
+                    audio_filename=audio.name,
+                ),
+            )
+        ]
+    )
+
+    assert created_ids == []
+    assert adapter.last_skipped_duplicates == 1
+    assert kotlin.requests_for("ankiStoreMedia") == []
+
+
 def test_allow_duplicate_cards_fans_existing_target_hit_to_repeated_candidates(
     initialized_bridge_home: Path,
 ) -> None:
@@ -2742,9 +2838,14 @@ def test_oversized_marked_dictionary_html_fails_before_media_regex_or_callback(
     glossary = marked + "x" * _MAX_FIELD_VALUE_UTF8_BYTES
     card = replace(_card("猫"), extra_fields={"glossary": glossary})
     kotlin = FakeKotlinAnki()
+    base = _config(initialized_bridge_home)
+    config = replace(
+        base,
+        anki_fields={**base.anki_fields, "glossary": "Glossary"},
+    )
 
     with pytest.raises(BridgeProtocolError) as exc_info:
-        _adapter(_config(initialized_bridge_home), kotlin).create_cards_batch([card])
+        _adapter(config, kotlin).create_cards_batch([card])
 
     assert exc_info.value.code == "note_too_large"
     assert not kotlin.requests
@@ -4006,6 +4107,74 @@ def test_media_for_an_unmapped_field_is_neither_stored_nor_bound(initialized_bri
     assert note["mediaBindings"] == []
 
 
+@pytest.mark.parametrize(
+    ("note_key", "definition", "extra_fields"),
+    [
+        (
+            "definition",
+            '<img class="anki-miner-dict-media" src="dict__unmapped.png">',
+            {},
+        ),
+        (
+            "glossary",
+            "definition",
+            {"glossary": ('<img class="anki-miner-dict-media" ' 'src="dict__unmapped.png">')},
+        ),
+    ],
+    ids=["definition", "glossary"],
+)
+def test_dictionary_media_for_unmapped_fields_is_neither_stored_nor_bound(
+    note_key: str,
+    definition: str,
+    extra_fields: dict[str, str],
+    initialized_bridge_home: Path,
+) -> None:
+    media_path = initialized_bridge_home / "dicts" / "dict" / "media" / "unmapped.png"
+    media_path.parent.mkdir(parents=True, exist_ok=True)
+    media_path.write_bytes(b"png")
+    base = _config(initialized_bridge_home)
+    mapped_field = base.anki_fields.get(note_key, "")
+    config = replace(
+        base,
+        anki_fields={**base.anki_fields, note_key: ""},
+    )
+    card = replace(
+        _card("猫", definition=definition),
+        extra_fields=extra_fields,
+    )
+    kotlin = FakeKotlinAnki()
+
+    assert len(_adapter(config, kotlin).create_cards_batch([card])) == 1
+
+    assert kotlin.requests_for("ankiStoreMedia") == []
+    note = kotlin.requests_for("ankiCreateNotes")[0]["payload"]["notes"][0]
+    if mapped_field:
+        assert mapped_field not in note["fields"]
+    assert note["mediaBindings"] == []
+
+
+@pytest.mark.parametrize("note_key", ["definition", "glossary"])
+def test_oversized_unmapped_dictionary_html_does_not_reject_materialized_note(
+    note_key: str,
+    initialized_bridge_home: Path,
+) -> None:
+    marked = '<img class="anki-miner-dict-media" src="dict__unused.png">' + "x" * _MAX_FIELD_VALUE_UTF8_BYTES
+    base = _config(initialized_bridge_home)
+    config = replace(
+        base,
+        anki_fields={**base.anki_fields, note_key: ""},
+    )
+    card = _card("猫", definition=marked if note_key == "definition" else "definition")
+    if note_key == "glossary":
+        card = replace(card, extra_fields={"glossary": marked})
+    kotlin = FakeKotlinAnki()
+
+    assert len(_adapter(config, kotlin).create_cards_batch([card])) == 1
+
+    assert kotlin.requests_for("ankiStoreMedia") == []
+    assert kotlin.requests_for("ankiCreateNotes")[0]["payload"]["notes"][0]["mediaBindings"] == []
+
+
 def test_media_binding_bytes_are_part_of_the_note_content_budget() -> None:
     asset_id = "asset_" + "a" * 32
     actual_filename = "voice.opus"
@@ -4784,6 +4953,67 @@ def test_declared_media_failure_is_nonfatal_and_omits_reference(initialized_brid
     assert kotlin.requests_for("ankiCreateNotes")[0]["payload"]["notes"][0]["mediaBindings"] == []
 
 
+def test_declared_dictionary_media_failure_is_nonfatal_and_omits_reference(
+    initialized_bridge_home: Path,
+) -> None:
+    media_path = initialized_bridge_home / "dicts" / "dict" / "media" / "failed.png"
+    media_path.parent.mkdir(parents=True, exist_ok=True)
+    media_path.write_bytes(b"png")
+    source = "dict__failed.png"
+    definition = f'<img class="anki-miner-dict-media" src="{source}">'
+    kotlin = FakeKotlinAnki()
+    kotlin.failed_media_names.add(_dictionary_provider_preferred_name(source))
+    adapter = _adapter(_config(initialized_bridge_home), kotlin)
+
+    assert len(adapter.create_cards_batch([_card("猫", definition=definition)])) == 1
+
+    assert adapter.last_media_store_failures == 1
+    note = kotlin.requests_for("ankiCreateNotes")[0]["payload"]["notes"][0]
+    assert note["fields"]["MainDefinition"] == '<img class="anki-miner-dict-media">'
+    assert note["mediaBindings"] == []
+
+
+def test_missing_dictionary_media_is_nonfatal_and_omits_reference(
+    initialized_bridge_home: Path,
+) -> None:
+    definition = '<img class="anki-miner-dict-media" src="dict__missing-at-create.png">'
+    kotlin = FakeKotlinAnki()
+    adapter = _adapter(_config(initialized_bridge_home), kotlin)
+
+    assert len(adapter.create_cards_batch([_card("猫", definition=definition)])) == 1
+
+    assert kotlin.requests_for("ankiStoreMedia") == []
+    assert adapter.last_media_store_failures == 1
+    note = kotlin.requests_for("ankiCreateNotes")[0]["payload"]["notes"][0]
+    assert note["fields"]["MainDefinition"] == '<img class="anki-miner-dict-media">'
+    assert note["mediaBindings"] == []
+
+
+def test_unreadable_dictionary_media_is_nonfatal_and_omits_reference(
+    initialized_bridge_home: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    media_path = initialized_bridge_home / "dicts" / "dict" / "media" / "unreadable.png"
+    media_path.parent.mkdir(parents=True, exist_ok=True)
+    media_path.write_bytes(b"png")
+    definition = '<img class="anki-miner-dict-media" src="dict__unreadable.png">'
+    kotlin = FakeKotlinAnki()
+    adapter = _adapter(_config(initialized_bridge_home), kotlin)
+
+    def unreadable(_path: Path, _budget: object) -> object:
+        raise OSError("read denied")
+
+    monkeypatch.setattr(adapter, "_stream_media_digest", unreadable)
+
+    assert len(adapter.create_cards_batch([_card("猫", definition=definition)])) == 1
+
+    assert kotlin.requests_for("ankiStoreMedia") == []
+    assert adapter.last_media_store_failures == 1
+    note = kotlin.requests_for("ankiCreateNotes")[0]["payload"]["notes"][0]
+    assert note["fields"]["MainDefinition"] == '<img class="anki-miner-dict-media">'
+    assert note["mediaBindings"] == []
+
+
 def test_dictionary_media_uses_source_name_and_success_cache(
     initialized_bridge_home: Path,
 ) -> None:
@@ -5077,6 +5307,7 @@ def test_unknown_post_commit_state_never_invents_id_or_updates_vocab_cache(
     initialized_bridge_home: Path,
 ) -> None:
     from anki_miner.exceptions import AnkiConnectionError
+    from anki_miner.models import AnkiWriteState
 
     kotlin = FakeKotlinAnki()
     kotlin.known_fields = ["既知"]
@@ -5100,6 +5331,7 @@ def test_unknown_post_commit_state_never_invents_id_or_updates_vocab_cache(
     assert adapter.last_skipped_duplicates == 0
     assert adapter.get_existing_vocabulary() == {"既知"}
     assert kotlin.next_note_id == 1001
+    assert adapter.anki_write_state is AnkiWriteState.NOTE_WRITE_UNCERTAIN
 
 
 def test_callback_wide_post_commit_error_is_rejected_as_temporally_invalid(

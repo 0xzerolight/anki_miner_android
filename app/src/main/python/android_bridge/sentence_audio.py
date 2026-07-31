@@ -179,11 +179,7 @@ class AndroidSentenceAudioFetcher:
         if self._warning_reported or self._warning_callback is None:
             return
         self._warning_reported = True
-        if error_code in {
-            "offline_japanese_voice_unavailable",
-            "tts_engine_unavailable",
-            "tts_initialization_timeout",
-        }:
+        if error_code == "offline_japanese_voice_unavailable":
             message = (
                 "Offline Japanese sentence audio is unavailable. Install an offline "
                 "Japanese voice in Android speech settings."

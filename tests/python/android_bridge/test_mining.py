@@ -146,6 +146,28 @@ def test_run_admits_before_config_or_engine_work_and_returns_same_terminal(
     assert registry.active_run_id is None
 
 
+def test_terminal_callback_can_idempotently_cancel_just_finished_video_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    registry = JobRegistry()
+    late_cancellations: list[bool] = []
+
+    class LateCancellationCallbacks(RecordingCallbacks):
+        def _terminal(self, channel: str, raw: str) -> None:
+            terminal = decode_envelope(raw, expected_type="mining.terminal")
+            late_cancellations.append(registry.cancel(terminal.payload["runId"]))
+            super()._terminal(channel, raw)
+
+    callbacks = LateCancellationCallbacks(registry=registry)
+    _stub_execution(monkeypatch, FakeResult())
+
+    returned = mining.run_video(_request(), callbacks, job_registry=registry)
+
+    assert late_cancellations == [False]
+    assert decode_envelope(returned, expected_type="mining.terminal").payload["outcome"] == "success"
+    assert callbacks.terminals == [("complete", returned)]
+
+
 @pytest.mark.parametrize(
     ("errors", "expected_outcome", "expected_channel"),
     [
@@ -945,6 +967,41 @@ def test_expression_audio_chain_is_source_first_cancellable_and_best_effort() ->
     assert calls == ["close:broken", "close:miss", "close:hit"]
 
 
+def test_expression_audio_chain_pins_pack_copy_until_run_close(tmp_path: Path) -> None:
+    pytest.importorskip("requests", reason="runtime dependency lane")
+    from android_bridge.expression_audio_fetcher import _RunAudioCache
+
+    cache_root = tmp_path / "audio_cache" / "local_packs"
+    cache_root.mkdir(parents=True)
+    stale = cache_root / "stale.mp3"
+    stale.write_bytes(b"old")
+    lifetime = _RunAudioCache(cache_root)
+    assert not stale.exists()
+
+    active = cache_root / "pack_word_reading.mp3"
+
+    class Pack:
+        def fetch(self, *_: object) -> Path:
+            active.write_bytes(b"audio")
+            return active
+
+        def close(self) -> None:
+            return None
+
+    chain = mining._ExpressionAudioSourceChain([Pack()], cache_lifetime=lifetime)
+    assert chain.fetch("猫", "ねこ") == active
+    assert active.exists()
+
+    unreferenced = cache_root / "unreferenced.mp3"
+    unreferenced.write_bytes(b"old")
+    lifetime.prune_unreferenced()
+    assert active.exists()
+    assert not unreferenced.exists()
+
+    chain.close()
+    assert not active.exists()
+
+
 def test_failed_localaudio_falls_through_and_reports_privacy_safe_pack_fallback() -> None:
     hit = Path("/cache/audio.mp3")
     notices: list[str] = []
@@ -1514,3 +1571,32 @@ def test_mining_module_keeps_all_engine_imports_after_bootstrap_and_excludes_cut
             "anki_miner.services.google_translate_audio_fetcher",
         }
     )
+
+
+def test_optional_source_memory_error_fails_the_run(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Exhaustion must not disable the filter and let mining keep writing cards."""
+    source = Path(mining.__file__).read_text(encoding="utf-8")
+    tree = ast.parse(source)
+
+    guarded = 0
+    optional = 0
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Try):
+            continue
+        warns_and_disables = any(
+            isinstance(handler.type, ast.Name)
+            and handler.type.id == "Exception"
+            and "_show_optional_failure" in ast.dump(handler)
+            for handler in node.handlers
+        )
+        if not warns_and_disables:
+            continue
+        optional += 1
+        for handler in node.handlers:
+            if isinstance(handler.type, ast.Name) and handler.type.id == "MemoryError":
+                assert any(isinstance(stmt, ast.Raise) for stmt in handler.body)
+                guarded += 1
+                break
+
+    assert optional > 0
+    assert guarded == optional, "every optional-source catch must re-raise MemoryError"

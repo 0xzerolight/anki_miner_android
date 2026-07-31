@@ -1,6 +1,8 @@
 package com.ankiminer.android.data.anki
 
+import com.ankiminer.android.runStartupRecoverySequence
 import com.ankiminer.android.anki.provider.AnkiCancellation
+import com.ankiminer.android.anki.provider.AnkiReadFailure
 import com.ankiminer.android.anki.provider.AnkiPendingRemediation
 import com.ankiminer.android.anki.provider.AnkiRemediationCommand
 import com.ankiminer.android.anki.provider.AnkiRemediationInventory
@@ -12,6 +14,12 @@ import com.ankiminer.android.data.RuntimeWorkCoordinator
 import com.ankiminer.android.localization.testStringResourceResolver
 import java.util.ArrayDeque
 import java.util.concurrent.Executor
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -89,6 +97,37 @@ class AnkiSetupManagerTest {
         assertEquals(AnkiSetupFailureOrigin.TARGET, failure.origin)
         assertEquals(AnkiSetupFailureAction.RETRY, failure.action)
         assertEquals(1, backend.inventoryCalls)
+    }
+
+    @Test
+    fun `typed provider discovery failure keeps its remediation taxonomy`() {
+        val typedFailure =
+            AnkiReadFailure(
+                code = com.ankiminer.android.anki.protocol.AnkiErrorCode.TIMEOUT,
+                retryable = true,
+                stableMessage = "The AnkiDroid read timed out",
+                providerErrorReason =
+                    com.ankiminer.android.anki.provider.NoteTypeProviderErrorReason.TIMEOUT,
+            )
+        val manager =
+            ProcessAnkiSetupManager(
+                FakeBackend(listFailure = typedFailure),
+                Executor(Runnable::run),
+                RuntimeWorkCoordinator(),
+                testStringResourceResolver,
+            )
+
+        manager.refresh("Lapis", mapOf("word" to "Expression"))
+
+        val status = manager.state.value.noteTypeStatus as NoteTypeSetupStatus.ProviderError
+        assertEquals(com.ankiminer.android.anki.protocol.AnkiErrorCode.TIMEOUT, status.code)
+        assertEquals(
+            com.ankiminer.android.anki.provider.NoteTypeProviderErrorReason.TIMEOUT,
+            status.reason,
+        )
+        assertEquals(true, status.retryable)
+        assertEquals("The AnkiDroid read timed out", status.stableMessage)
+        assertEquals("timeout", requireNotNull(manager.state.value.failure).code)
     }
 
     @Test
@@ -179,6 +218,74 @@ class AnkiSetupManagerTest {
     }
 
     @Test
+    fun `queued refresh keeps newest target and await completes after publication`() =
+        runTest {
+            val executor = QueuedExecutor()
+            val backend = FakeBackend()
+            val manager =
+                ProcessAnkiSetupManager(
+                    backend,
+                    executor,
+                    RuntimeWorkCoordinator(),
+                    testStringResourceResolver,
+                )
+
+            manager.refresh("Old", mapOf("word" to "Old field"))
+            val newest =
+                async {
+                    manager.refreshAndAwait(
+                        "Newest",
+                        mapOf("word" to "Expression"),
+                        cardTypeMarkerField = "IsClickCard",
+                    )
+                }
+            runCurrent()
+
+            assertEquals(1, executor.queued.size)
+            executor.runNext()
+            assertEquals(1, executor.queued.size)
+            executor.runNext()
+            newest.await()
+
+            assertEquals(2, backend.listCalls)
+            assertEquals("Newest", backend.lastNoteType)
+            assertEquals(mapOf("word" to "Expression"), backend.lastFieldMap)
+            assertEquals("IsClickCard", backend.lastCardTypeMarkerField)
+            assertNull(manager.state.value.operation)
+        }
+
+    @Test
+    fun `startup sequence never admits mining before recovery inventory refresh completes`() =
+        runTest {
+            val setupGate = CompletableDeferred<Unit>()
+            val events = mutableListOf<String>()
+
+            val startup =
+                launch {
+                    runStartupRecoverySequence(
+                        recoverResources = { events += "resources" },
+                        refreshSetup = {
+                            events += "setup-start"
+                            setupGate.await()
+                            events += "setup-published"
+                        },
+                        refreshAdmission = { events += "admission" },
+                    )
+                }
+            runCurrent()
+
+            assertEquals(listOf("resources", "setup-start"), events)
+            setupGate.complete(Unit)
+            advanceUntilIdle()
+            startup.join()
+
+            assertEquals(
+                listOf("resources", "setup-start", "setup-published", "admission"),
+                events,
+            )
+        }
+
+    @Test
     fun `backend failure is UI safe and always releases setup exclusion`() {
         val coordinator = RuntimeWorkCoordinator()
         val backend = FakeBackend(failReconcile = true)
@@ -210,6 +317,7 @@ class AnkiSetupManagerTest {
         private val failReconcile: Boolean = false,
         private val failList: Boolean = false,
         private val failInventory: Boolean = false,
+        private val listFailure: RuntimeException? = null,
     ) : AnkiSetupBackend {
         var listCalls = 0
         var inventoryCalls = 0
@@ -218,9 +326,11 @@ class AnkiSetupManagerTest {
         var performCalls = 0
         var lastNoteType: String? = null
         var lastFieldMap: Map<String, String> = emptyMap()
+        var lastCardTypeMarkerField: String? = null
 
         override fun listNoteTypes(cancellation: AnkiCancellation): List<ModelSummary> {
             listCalls += 1
+            listFailure?.let { throw it }
             if (failList) error("provider unavailable")
             return noteTypes
         }
@@ -230,11 +340,13 @@ class AnkiSetupManagerTest {
         override fun verifyNoteType(
             noteType: String?,
             fieldMap: Map<String, String>,
+            cardTypeMarkerField: String?,
             cancellation: AnkiCancellation,
         ): NoteTypeSetupStatus {
             verifyCalls += 1
             lastNoteType = noteType
             lastFieldMap = fieldMap
+            lastCardTypeMarkerField = cardTypeMarkerField
             return status
         }
 

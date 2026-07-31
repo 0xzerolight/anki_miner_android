@@ -103,7 +103,14 @@ internal class AnkiProviderRuntime(
         noteType: String,
         fieldMap: Map<String, String>,
         cancellation: AnkiCancellation,
-    ): NoteTypeSetupStatus = reads.verifyUserNoteType(noteType, fieldMap, cancellation)
+        cardTypeMarkerField: String? = null,
+    ): NoteTypeSetupStatus =
+        reads.verifyUserNoteType(
+            noteType,
+            fieldMap,
+            cancellation,
+            cardTypeMarkerField,
+        )
 
     fun remediationInventory(
         cancellation: AnkiCancellation,

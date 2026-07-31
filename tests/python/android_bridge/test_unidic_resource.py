@@ -96,6 +96,28 @@ def test_identical_registration_is_idempotent_but_switching_is_forbidden(
     assert changed.value.code == "unidic_already_registered"
 
 
+def test_identical_request_rejects_a_replaced_dictionary_tree(
+    tmp_path: Path,
+) -> None:
+    root = _make_dicdir(tmp_path, "live")
+    expected_hash = calculate_unidic_tree_sha256(root)
+    register_unidic(root, resource_id="unidic-v1", expected_tree_sha256=expected_hash)
+    retired = tmp_path / "retired"
+    root.rename(retired)
+    replacement = _make_dicdir(tmp_path, "replacement")
+    replacement.rename(root)
+    assert calculate_unidic_tree_sha256(root) == expected_hash
+
+    with pytest.raises(TokenizerContractError) as replaced:
+        register_unidic(
+            root,
+            resource_id="unidic-v1",
+            expected_tree_sha256=expected_hash,
+        )
+
+    assert replaced.value.code == "unidic_tree_replaced"
+
+
 def test_registration_rejects_wrong_provenance_without_freezing_it(
     tmp_path: Path,
 ) -> None:

@@ -13,6 +13,7 @@ import com.ankiminer.android.data.anki.AnkiRecoveryInventoryStatus
 import com.ankiminer.android.data.RuntimeWorkCoordinator
 import com.ankiminer.android.data.resources.ResourceStartupReadiness
 import com.ankiminer.android.engine.PythonRuntimeReadiness
+import com.ankiminer.android.mining.AnkiMiningTargetReadiness
 import com.ankiminer.android.mining.NotificationPermissionReadiness
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -29,6 +30,7 @@ class SetupUiStateTest {
                 resourceStartup = ResourceStartupReadiness.READY,
                 anki = AnkiProviderReadiness.Ready(2, 24L),
                 ankiRecovery = AnkiRecoveryReadiness.Ready,
+                miningTarget = AnkiMiningTargetReadiness.Ready,
                 noteTypeStatus = NoteTypeSetupStatus.Verified(modelId = 1L),
                 recoveryInventoryStatus = AnkiRecoveryInventoryStatus.AVAILABLE,
                 uniDicInstalled = true,
@@ -46,10 +48,27 @@ class SetupUiStateTest {
             recovered.copy(noteTypeStatus = NoteTypeSetupStatus.FieldsMissing(listOf("sentence")))
         assertFalse(fieldsMissing.targetReady)
         assertFalse(fieldsMissing.isMiningReady)
+        val admissionBlocked =
+            recovered.copy(
+                miningTarget =
+                    AnkiMiningTargetReadiness.Blocked(
+                        message = "Recovery item pending",
+                        retryable = true,
+                    ),
+            )
+        assertFalse(admissionBlocked.targetReady)
+        assertFalse(admissionBlocked.isMiningReady)
         assertFalse(
             recovered.copy(resourceStartup = ResourceStartupReadiness.FAILED).isMiningReady,
         )
         assertFalse(recovered.copy(ankiOperation = AnkiSetupOperation.REFRESHING).isMiningReady)
+        assertTrue(recovered.copy(resourceStartup = ResourceStartupReadiness.PENDING).busy)
+        assertTrue(recovered.copy(resourceStartup = ResourceStartupReadiness.RECOVERING).busy)
+        // FAILED is terminal, not in-progress: it must not report busy, or the WAIT
+        // branch would shadow its own CHECK_AGAIN action and strand the user.
+        val startupFailed = recovered.copy(resourceStartup = ResourceStartupReadiness.FAILED)
+        assertFalse(startupFailed.busy)
+        assertEquals(MiningReadinessAction.CHECK_AGAIN, startupFailed.miningReadinessAction)
         assertTrue(
             recovered.copy(runtimeWorkKind = RuntimeWorkCoordinator.Kind.MINING).isMiningReady,
         )

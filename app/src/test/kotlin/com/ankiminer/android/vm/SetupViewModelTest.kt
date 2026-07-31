@@ -1,5 +1,6 @@
 package com.ankiminer.android.vm
 
+import androidx.lifecycle.SavedStateHandle
 import com.ankiminer.android.MainDispatcherRule
 import com.ankiminer.android.anki.provider.AnkiProviderReadiness
 import com.ankiminer.android.anki.provider.AnkiRecoveryReadiness
@@ -15,8 +16,14 @@ import com.ankiminer.android.data.resources.KnownWordsResetScope
 import com.ankiminer.android.data.resources.KnownWordsSourceFormat
 import com.ankiminer.android.data.resources.WordListKind
 import com.ankiminer.android.data.resources.PitchAccentSourceFormat
+import com.ankiminer.android.data.resources.KnownWordsFailureOperation
+import com.ankiminer.android.data.resources.ResourceFailure
+import com.ankiminer.android.data.resources.ResourceFailureAction
+import com.ankiminer.android.data.resources.ResourceFailureOrigin
+import com.ankiminer.android.data.resources.ResourceFailureRetry
 import com.ankiminer.android.data.resources.ResourceManager
 import com.ankiminer.android.data.resources.ResourceManagerState
+import com.ankiminer.android.data.resources.ResourceStartupReadiness
 import com.ankiminer.android.data.settings.AppSettings
 import com.ankiminer.android.data.settings.AppSettingsRepository
 import com.ankiminer.android.data.settings.AppSettingsValidator
@@ -34,6 +41,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 
@@ -41,6 +49,45 @@ import org.junit.Test
 class SetupViewModelTest {
     @get:Rule
     val mainDispatcherRule = MainDispatcherRule()
+
+    @Test
+    fun `picker result after recreation keeps the launched frequency import metadata`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val savedState = SavedStateHandle()
+            val resources = FakeResourceManager()
+            val repository = FakeSettingsRepository(AppSettings())
+            val original =
+                viewModel(
+                    repository = repository,
+                    setup = FakeAnkiSetupManager(emptyList()),
+                    resources = resources,
+                    savedStateHandle = savedState,
+                )
+            advanceUntilIdle()
+            original.setFrequencySourceName("Custom TSV")
+            original.setFrequencyFormat(FrequencySourceFormat.TSV)
+            advanceUntilIdle()
+
+            assertTrue(original.beginFrequencyPicker())
+
+            val restored =
+                viewModel(
+                    repository = repository,
+                    setup = FakeAnkiSetupManager(emptyList()),
+                    resources = resources,
+                    savedStateHandle = savedState,
+                )
+            advanceUntilIdle()
+            restored.onFrequencyPicked("content://test/frequency.tsv")
+            advanceUntilIdle()
+
+            assertEquals(
+                listOf(Triple("content://test/frequency.tsv", "custom-tsv", false)),
+                resources.frequencyImports,
+            )
+            assertEquals(listOf("Custom TSV"), resources.frequencySourceNames)
+            assertEquals(listOf(FrequencySourceFormat.TSV), resources.frequencyFormats)
+        }
 
     @Test
     fun `same note type reselection performs no settings write or refresh`() =
@@ -223,6 +270,116 @@ class SetupViewModelTest {
         }
 
     @Test
+    fun `an active marker destination cannot be assigned to a logical field`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val original = mapOf("word" to "Word")
+            val repository =
+                FakeSettingsRepository(
+                    AppSettings(
+                        noteType = "JPMN",
+                        fieldMap = original,
+                        cardType = CardType.CLICK,
+                        cardTypeMarkerField = "IsClickCard",
+                    ),
+                )
+            val viewModel =
+                viewModel(
+                    repository,
+                    FakeAnkiSetupManager(listOf(model("JPMN", "Word", "IsClickCard", "Meaning"))),
+                )
+            advanceUntilIdle()
+
+            viewModel.setFieldMapping("definition", "IsClickCard")
+            advanceUntilIdle()
+
+            assertEquals(original, repository.current.fieldMap)
+            assertEquals("IsClickCard", repository.current.cardTypeMarkerField)
+            assertEquals(0, repository.writeCount)
+        }
+
+    @Test
+    fun `note type switch clears a marker absent from the selected model`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository =
+                FakeSettingsRepository(
+                    AppSettings(
+                        noteType = "Old",
+                        fieldMap = mapOf("word" to "Word"),
+                        cardType = CardType.CLICK,
+                        cardTypeMarkerField = "IsClickCard",
+                    ),
+                )
+            val setup =
+                FakeAnkiSetupManager(
+                    listOf(
+                        model("Old", "Word", "IsClickCard"),
+                        model("New", "Expression", "Meaning"),
+                    ),
+                )
+            val viewModel = viewModel(repository, setup)
+            advanceUntilIdle()
+
+            viewModel.selectNoteType("New")
+            advanceUntilIdle()
+
+            assertEquals("New", repository.current.noteType)
+            assertEquals(null, repository.current.cardTypeMarkerField)
+            assertEquals(null, setup.lastCardTypeMarkerField)
+        }
+
+    @Test
+    fun `rapid field mapping edits compose against the persisted map`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository =
+                FakeSettingsRepository(
+                    AppSettings(noteType = "Lapis", fieldMap = mapOf("word" to "Expression")),
+                )
+            val setup =
+                FakeAnkiSetupManager(
+                    listOf(model("Lapis", "Expression", "Meaning", "Audio")),
+                )
+            val viewModel = viewModel(repository, setup)
+            advanceUntilIdle()
+
+            viewModel.setFieldMapping("definition", "Meaning")
+            viewModel.setFieldMapping("audio", "Audio")
+            advanceUntilIdle()
+
+            assertEquals("Meaning", repository.current.fieldMap["definition"])
+            assertEquals("Audio", repository.current.fieldMap["audio"])
+            assertEquals(2, repository.writeCount)
+            assertEquals(repository.current.fieldMap, setup.lastFieldMap)
+        }
+
+    @Test
+    fun `Anki target write failures stay contained and the same action can retry`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository =
+                FakeSettingsRepository(
+                    AppSettings(noteType = "Lapis", fieldMap = mapOf("word" to "Expression")),
+                ).apply { failWrites = true }
+            val setup =
+                FakeAnkiSetupManager(
+                    listOf(model("Lapis", "Expression", "Meaning", "IsClickCard")),
+                )
+            val viewModel = viewModel(repository, setup)
+            advanceUntilIdle()
+
+            viewModel.setFieldMapping("definition", "Meaning")
+            advanceUntilIdle()
+            assertEquals(null, repository.current.fieldMap["definition"])
+            assertEquals(0, setup.refreshCount)
+
+            repository.failWrites = false
+            viewModel.setFieldMapping("definition", "Meaning")
+            advanceUntilIdle()
+
+            assertEquals("Meaning", repository.current.fieldMap["definition"])
+            assertEquals(2, repository.writeAttempts)
+            assertEquals(1, setup.refreshCount)
+        }
+
+    @Test
     fun `deck selection persists explicit existing and create-or-use choices`() =
         runTest(mainDispatcherRule.dispatcher) {
             val repository = FakeSettingsRepository(AppSettings())
@@ -322,6 +479,64 @@ class SetupViewModelTest {
         }
 
     @Test
+    fun `known-word retry delegates to repository mutation contract instead of search`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val resources = FakeResourceManager()
+            resources.setFailure(
+                ResourceFailure(
+                    code = "known_words_remove_failed",
+                    message = "failed",
+                    retryable = true,
+                    origin = ResourceFailureOrigin.KNOWN_WORDS,
+                    retry = ResourceFailureRetry(ResourceFailureAction.RETRY),
+                    knownWordsOperation = null,
+                ),
+            )
+            val model =
+                viewModel(
+                    FakeSettingsRepository(AppSettings()),
+                    FakeAnkiSetupManager(emptyList()),
+                    resources,
+                )
+            advanceUntilIdle()
+
+            model.retryResourceFailure()
+            advanceUntilIdle()
+
+            assertEquals(1, resources.knownWordsRetryCount)
+            assertEquals(emptyList<Pair<String, Boolean>>(), resources.searchCalls)
+        }
+
+    @Test
+    fun `known-word import retry delegates to the retained import mutation`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val resources = FakeResourceManager()
+            resources.setFailure(
+                ResourceFailure(
+                    code = "known_words_import_failed",
+                    message = "failed",
+                    retryable = true,
+                    origin = ResourceFailureOrigin.KNOWN_WORDS,
+                    retry = ResourceFailureRetry(ResourceFailureAction.RETRY),
+                    knownWordsOperation = KnownWordsFailureOperation.IMPORT,
+                ),
+            )
+            val model =
+                viewModel(
+                    FakeSettingsRepository(AppSettings()),
+                    FakeAnkiSetupManager(emptyList()),
+                    resources,
+                )
+            advanceUntilIdle()
+
+            model.retryResourceFailure()
+            advanceUntilIdle()
+
+            assertEquals(1, resources.knownWordsRetryCount)
+            assertEquals(emptyList<Pair<String, Boolean>>(), resources.searchCalls)
+        }
+
+    @Test
     fun `a fresh frequency name imports immediately under its derived id`() =
         runTest(mainDispatcherRule.dispatcher) {
             val resources = FakeResourceManager()
@@ -335,6 +550,25 @@ class SetupViewModelTest {
 
             assertEquals(listOf(Triple("content://import.zip", "jpdb-v2-1", false)), resources.frequencyImports)
             assertEquals(null, model.uiState.value.pendingReplace)
+        }
+
+    @Test
+    fun `frequency import dispatches pinned NFC display name`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val resources = FakeResourceManager()
+            val model =
+                viewModel(
+                    FakeSettingsRepository(AppSettings()),
+                    FakeAnkiSetupManager(emptyList()),
+                    resources,
+                )
+            advanceUntilIdle()
+
+            model.setFrequencySourceName("\u306F\u3099")
+            model.importFrequencySource("content://import.csv")
+            advanceUntilIdle()
+
+            assertEquals(listOf("\u3070"), resources.frequencySourceNames)
         }
 
     @Test
@@ -446,6 +680,100 @@ class SetupViewModelTest {
             assertEquals("JPDBv2", model.uiState.value.frequencySourceName)
         }
 
+    @Test
+    fun `display name UTF-8 truncation never splits an astral scalar`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val model = viewModel(FakeSettingsRepository(AppSettings()), FakeAnkiSetupManager(emptyList()))
+            advanceUntilIdle()
+
+            model.setFrequencySourceName("a".repeat(509) + "😀")
+            advanceUntilIdle()
+            assertEquals("a".repeat(509), model.uiState.value.frequencySourceName)
+
+            model.setPitchSourceName("a".repeat(508) + "😀")
+            advanceUntilIdle()
+            assertEquals("a".repeat(508) + "😀", model.uiState.value.pitchSourceName)
+        }
+
+    @Test
+    fun `picker context survives ViewModel recreation and waits for startup recovery`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val savedState = SavedStateHandle()
+            val firstResources = FakeResourceManager()
+            val first =
+                viewModel(
+                    FakeSettingsRepository(AppSettings()),
+                    FakeAnkiSetupManager(emptyList()),
+                    firstResources,
+                    savedState,
+                )
+            advanceUntilIdle()
+            first.setPitchSourceName("Kanjium CSV")
+            first.setPitchFormat(PitchAccentSourceFormat.CSV)
+            assertEquals(true, first.beginPitchPicker())
+
+            val restoredResources = FakeResourceManager()
+            restoredResources.setStartupReadiness(ResourceStartupReadiness.RECOVERING)
+            val restored =
+                viewModel(
+                    FakeSettingsRepository(AppSettings()),
+                    FakeAnkiSetupManager(emptyList()),
+                    restoredResources,
+                    savedState,
+                )
+            restored.onPitchPicked("content://pitch.csv")
+            advanceUntilIdle()
+            assertEquals(emptyList<Pair<String, Boolean>>(), restoredResources.pitchImports)
+
+            restoredResources.setStartupReadiness(ResourceStartupReadiness.READY)
+            advanceUntilIdle()
+
+            assertEquals(listOf("content://pitch.csv" to false), restoredResources.pitchImports)
+            assertEquals(listOf("Kanjium CSV"), restoredResources.pitchSourceNames)
+            assertEquals(listOf(PitchAccentSourceFormat.CSV), restoredResources.pitchFormats)
+        }
+
+    @Test
+    fun `pending picker collision survives recreation with immutable replace context`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val savedState = SavedStateHandle()
+            val firstResources =
+                FakeResourceManager().apply {
+                    setInstalledPitchSources(listOf(installedPitch("kanjium", "Kanjium")))
+                }
+            val first =
+                viewModel(
+                    FakeSettingsRepository(AppSettings()),
+                    FakeAnkiSetupManager(emptyList()),
+                    firstResources,
+                    savedState,
+                )
+            advanceUntilIdle()
+            first.setPitchSourceName("Kanjium")
+            first.setPitchFormat(PitchAccentSourceFormat.CSV)
+            assertEquals(true, first.beginPitchPicker())
+            first.onPitchPicked("content://kanjium.csv")
+            advanceUntilIdle()
+            assertEquals(ResourceReplaceKind.PITCH, first.uiState.value.pendingReplace?.kind)
+
+            val restoredResources = FakeResourceManager()
+            val restored =
+                viewModel(
+                    FakeSettingsRepository(AppSettings()),
+                    FakeAnkiSetupManager(emptyList()),
+                    restoredResources,
+                    savedState,
+                )
+            advanceUntilIdle()
+            restored.confirmPendingReplace()
+            advanceUntilIdle()
+
+            assertEquals(listOf("content://kanjium.csv" to true), restoredResources.pitchImports)
+            assertEquals(listOf("Kanjium"), restoredResources.pitchSourceNames)
+            assertEquals(listOf(PitchAccentSourceFormat.CSV), restoredResources.pitchFormats)
+            assertEquals(null, restored.uiState.value.pendingReplace)
+        }
+
     private fun installedFrequency(sourceId: String, sourceName: String) =
         InstalledFrequencySource(
             sourceId = sourceId,
@@ -474,6 +802,7 @@ class SetupViewModelTest {
         repository: FakeSettingsRepository,
         setup: FakeAnkiSetupManager,
         resources: FakeResourceManager = FakeResourceManager(),
+        savedStateHandle: SavedStateHandle = SavedStateHandle(),
     ): SetupViewModel =
         SetupViewModel(
             resources = resources,
@@ -492,6 +821,7 @@ class SetupViewModelTest {
             runtimeWorkState = MutableStateFlow<RuntimeWorkCoordinator.Kind?>(null),
             refreshExternalReadiness = {},
             strings = testStringResourceResolver,
+            savedStateHandle = savedStateHandle,
         )
 
     private fun model(name: String, vararg fields: String) =
@@ -537,9 +867,19 @@ class SetupViewModelTest {
         override val state: StateFlow<AnkiSetupManagerState> = mutableState.asStateFlow()
         var refreshCount = 0
             private set
+        var lastFieldMap: Map<String, String> = emptyMap()
+            private set
+        var lastCardTypeMarkerField: String? = null
+            private set
 
-        override fun refresh(noteType: String?, fieldMap: Map<String, String>) {
+        override fun refresh(
+            noteType: String?,
+            fieldMap: Map<String, String>,
+            cardTypeMarkerField: String?,
+        ) {
             refreshCount += 1
+            lastFieldMap = fieldMap
+            lastCardTypeMarkerField = cardTypeMarkerField
         }
 
         override fun reconcileInterruptedWork() = Unit
@@ -554,14 +894,22 @@ class SetupViewModelTest {
         val importCalls = mutableListOf<Pair<String, KnownWordsSourceFormat>>()
         var confirmCount = 0
         var dismissCount = 0
+        var knownWordsRetryCount = 0
         val searchCalls = mutableListOf<Pair<String, Boolean>>()
         val removeCalls = mutableListOf<List<String>>()
         val resetCalls = mutableListOf<KnownWordsResetScope>()
         val exportCalls = mutableListOf<String>()
 
         val frequencyImports = mutableListOf<Triple<String, String, Boolean>>()
+        val frequencySourceNames = mutableListOf<String>()
+        val frequencyFormats = mutableListOf<FrequencySourceFormat>()
         val pitchImports = mutableListOf<Pair<String, Boolean>>()
-        private val mutableState = MutableStateFlow(ResourceManagerState())
+        val pitchSourceNames = mutableListOf<String>()
+        val pitchFormats = mutableListOf<PitchAccentSourceFormat>()
+        private val mutableState =
+            MutableStateFlow(
+                ResourceManagerState(startupReadiness = ResourceStartupReadiness.READY),
+            )
 
         override val state: StateFlow<ResourceManagerState> = mutableState.asStateFlow()
 
@@ -571,6 +919,14 @@ class SetupViewModelTest {
 
         fun setInstalledPitchSources(sources: List<InstalledPitchSource>) {
             mutableState.value = mutableState.value.copy(pitchSources = sources)
+        }
+
+        fun setFailure(failure: ResourceFailure) {
+            mutableState.value = mutableState.value.copy(failure = failure)
+        }
+
+        fun setStartupReadiness(readiness: ResourceStartupReadiness) {
+            mutableState.value = mutableState.value.copy(startupReadiness = readiness)
         }
 
         override suspend fun recoverAndRefresh() = Unit
@@ -589,6 +945,8 @@ class SetupViewModelTest {
             replace: Boolean,
         ) {
             frequencyImports += Triple(uri, sourceId, replace)
+            frequencySourceNames += sourceName
+            frequencyFormats += format
         }
 
         override suspend fun importPitchAccent(
@@ -599,6 +957,8 @@ class SetupViewModelTest {
             replace: Boolean,
         ) {
             pitchImports += uri to replace
+            pitchSourceNames += sourceName
+            pitchFormats += format
         }
 
         override suspend fun importAudioPack(uri: String, packId: String, replace: Boolean) = Unit
@@ -630,6 +990,10 @@ class SetupViewModelTest {
 
         override fun dismissKnownWordsImportPreview() {
             dismissCount += 1
+        }
+
+        override suspend fun retryKnownWordsFailure() {
+            knownWordsRetryCount += 1
         }
 
         override suspend fun searchKnownWords(query: String, loadMore: Boolean) {

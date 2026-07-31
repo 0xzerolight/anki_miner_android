@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
+from android_bridge.anki_limits import ANKI_LIMITS_V1
 from android_bridge.jobs import (
     CURATION_PAGE_MAX_CANDIDATES,
     CURATION_PAGE_MAX_UTF8_BYTES,
@@ -170,6 +171,35 @@ def test_finish_emits_warning_summary_after_releasing_registry_lock(
     registry.finish(handle.run_id)
 
     assert lock_owned_during_summary == [False]
+
+
+def test_kotlin_cancellation_check_releases_parked_curation() -> None:
+    registry = JobRegistry()
+    handle = registry.begin()
+    emitted = threading.Event()
+    cancellation_requested = threading.Event()
+    returned: list[object] = []
+
+    def wait() -> None:
+        returned.append(
+            registry.await_curation(
+                handle.run_id,
+                [FakeWord("猫", "猫", "猫だ", 0, 1, 1)],
+                lambda _raw: emitted.set(),
+                cancellation_requested.is_set,
+            ),
+        )
+
+    thread = threading.Thread(target=wait, daemon=True)
+    thread.start()
+    assert emitted.wait(1), "curation request was not emitted"
+
+    cancellation_requested.set()
+    thread.join(1)
+
+    assert not thread.is_alive()
+    assert returned == [None]
+    assert handle.cancel_event.is_set()
 
 
 def test_selection_returns_original_objects_and_chosen_sentence_variant() -> None:
@@ -431,6 +461,26 @@ def test_repeated_cancellation_is_idempotent() -> None:
     assert returned == [None]
 
 
+def test_correlated_cancellation_after_finish_is_idempotent() -> None:
+    registry = JobRegistry()
+    handle = registry.begin()
+
+    registry.finish(handle.run_id)
+
+    assert registry.cancel(handle.run_id) is False
+
+
+def test_unrelated_cancellation_after_finish_remains_rejected() -> None:
+    registry = JobRegistry()
+    handle = registry.begin()
+    registry.finish(handle.run_id)
+
+    with pytest.raises(BridgeProtocolError) as failure:
+        registry.cancel("run_ffffffffffffffffffffffffffffffff")
+
+    assert failure.value.code == "no_active_job"
+
+
 def test_sequential_curation_rejects_prior_response_without_poisoning_current_gate() -> None:
     registry = JobRegistry()
     handle = registry.begin()
@@ -522,6 +572,51 @@ def test_large_curation_is_complete_bounded_and_aggregates_original_objects() ->
     assert len(seen_ids) == len(words)
     assert returned == [selected_words]
     assert all(actual is expected for actual, expected in zip(returned[0], selected_words, strict=True))
+
+
+def test_oversized_curation_fails_before_returning_selected_work() -> None:
+    limit = ANKI_LIMITS_V1["createCall"]["maxSourceItems"]
+    registry = JobRegistry()
+    words = [FakeWord(str(index), str(index), str(index), 1, 2, 1) for index in range(limit + 1)]
+    handle = registry.begin()
+    emitted: queue.Queue[dict[str, object]] = queue.Queue()
+    returned: list[object] = []
+    failures: list[BridgeProtocolError] = []
+
+    def wait() -> None:
+        try:
+            returned.append(
+                registry.await_curation(
+                    handle.run_id,
+                    words,
+                    lambda raw: emitted.put(json.loads(raw)),
+                )
+            )
+        except BridgeProtocolError as error:
+            failures.append(error)
+
+    thread = threading.Thread(target=wait, daemon=True)
+    thread.start()
+    final_resolution = None
+    while final_resolution is None or not final_resolution.final_page:
+        request = emitted.get(timeout=5)
+        payload = request["payload"]
+        assert isinstance(payload, dict)
+        candidates = payload["candidates"]
+        assert isinstance(candidates, list)
+        final_resolution = registry.resolve_curation(
+            _page_response(
+                handle.run_id,
+                payload["requestId"],
+                payload["pageIndex"],
+                [{"candidateId": candidate["candidateId"]} for candidate in candidates],
+            )
+        )
+
+    thread.join(1)
+    assert not thread.is_alive()
+    assert returned == []
+    assert [failure.code for failure in failures] == ["create_call_too_large"]
 
 
 def test_empty_selection_on_every_page_returns_empty_not_cancellation() -> None:

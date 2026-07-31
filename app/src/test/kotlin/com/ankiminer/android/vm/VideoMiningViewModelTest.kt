@@ -10,13 +10,21 @@ import com.ankiminer.android.diagnostics.log.AppLog
 import com.ankiminer.android.diagnostics.log.LogLevel
 import com.ankiminer.android.diagnostics.log.NoOpSink
 import com.ankiminer.android.diagnostics.log.RecordingLogSink
+import com.ankiminer.android.media.SafAccessException
+import com.ankiminer.android.media.SafAccessFailureKind
 import com.ankiminer.android.media.SafBroker
 import com.ankiminer.android.media.SafDocument
+import com.ankiminer.android.media.SafSelectionRecord
+import com.ankiminer.android.media.SafSelectionInventory
+import com.ankiminer.android.media.SafSelectionPersistenceException
+import com.ankiminer.android.media.SafSelectionSlot
+import com.ankiminer.android.media.TransientSafSelectionInventory
 import com.ankiminer.android.mining.CurationCandidate
 import com.ankiminer.android.mining.CurationPage
 import com.ankiminer.android.mining.CurationRequest
 import com.ankiminer.android.mining.CurationSelection
 import com.ankiminer.android.mining.CurationSentence
+import com.ankiminer.android.mining.CurationSessionState
 import com.ankiminer.android.mining.FakeMiningRepository
 import com.ankiminer.android.mining.MiningFailure
 import com.ankiminer.android.mining.AnkiWriteState
@@ -136,6 +144,52 @@ class VideoMiningViewModelTest {
         }
 
     @Test
+    fun freshNonIdleViewModelRestoresDurableSelectionsForLaterReset() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val inventory = TransientSafSelectionInventory()
+            inventory.putSelection(
+                SafSelectionSlot.VIDEO,
+                SafSelectionRecord("content://test/restored-video.mkv", "restored-video.mkv"),
+            )
+            inventory.putSelection(
+                SafSelectionSlot.VIDEO_SUBTITLE,
+                SafSelectionRecord(
+                    "content://test/restored-subtitle.srt",
+                    "restored-subtitle.srt",
+                ),
+            )
+            val repository =
+                RecordingRepository(
+                    MiningRunState.Running("run", MiningProgress(1, 2, "Running")),
+                )
+            val viewModel =
+                VideoMiningViewModel(
+                    repository = repository,
+                    safBroker = ImmediateSafBroker(),
+                    selectionInventory = inventory,
+                    selectionIoDispatcher = mainDispatcherRule.dispatcher,
+                )
+            runCurrent()
+
+            assertEquals(
+                "restored-video.mkv",
+                viewModel.uiState.value.video.document?.displayName,
+            )
+            assertEquals(
+                "restored-subtitle.srt",
+                viewModel.uiState.value.subtitle.document?.displayName,
+            )
+            assertFalse(viewModel.uiState.value.canStart)
+
+            repository.transitionTo(MiningRunState.Success("run", result()))
+            viewModel.reset()
+            runCurrent()
+
+            assertEquals(MiningRunState.Idle, repository.state.value)
+            assertTrue(viewModel.uiState.value.canStart)
+        }
+
+    @Test
     fun revokedSavedVideoGrantSurfacesAccessErrorAndClearsMetadata() =
         runTest(mainDispatcherRule.dispatcher) {
             val savedState = SavedStateHandle()
@@ -153,7 +207,13 @@ class VideoMiningViewModelTest {
                     savedStateHandle = savedState,
                 )
             runCurrent()
-            broker.fail("content://test/revoked-video.mkv")
+            broker.fail(
+                "content://test/revoked-video.mkv",
+                SafAccessException(
+                    SafAccessFailureKind.PERMISSION_REVOKED,
+                    "revoked",
+                ),
+            )
             runCurrent()
 
             assertEquals(DocumentSelectionError.VIDEO, viewModel.uiState.value.video.error)
@@ -162,6 +222,74 @@ class VideoMiningViewModelTest {
             assertNull(selectionStore.restore())
             assertNull(savedState.get<String>("videoMining.video.uri"))
             assertNull(savedState.get<String>("videoMining.video.displayName"))
+        }
+
+    @Test
+    fun transientSavedVideoProviderFailurePreservesSelectionForRecreationRetry() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val uri = "content://test/temporarily-unavailable.mkv"
+            val inventory = TransientSafSelectionInventory()
+            inventory.putSelection(
+                SafSelectionSlot.VIDEO,
+                SafSelectionRecord(uri, "temporarily-unavailable.mkv"),
+            )
+            val broker = ControlledSafBroker()
+            val first =
+                VideoMiningViewModel(
+                    repository = RecordingRepository(),
+                    safBroker = broker,
+                    selectionInventory = inventory,
+                    selectionIoDispatcher = mainDispatcherRule.dispatcher,
+                )
+            runCurrent()
+
+            broker.fail(
+                uri,
+                SafAccessException(
+                    SafAccessFailureKind.PROVIDER_UNAVAILABLE,
+                    "provider updating",
+                ),
+            )
+            runCurrent()
+
+            assertEquals(DocumentSelectionError.VIDEO, first.uiState.value.video.error)
+            assertEquals(uri, inventory.selection(SafSelectionSlot.VIDEO)?.uri)
+
+            val recreated =
+                VideoMiningViewModel(
+                    repository = RecordingRepository(),
+                    safBroker = ImmediateSafBroker(),
+                    selectionInventory = inventory,
+                    selectionIoDispatcher = mainDispatcherRule.dispatcher,
+                )
+            runCurrent()
+
+            assertEquals(
+                "temporarily-unavailable.mkv",
+                recreated.uiState.value.video.document?.displayName,
+            )
+        }
+
+    @Test
+    fun failedVideoInventoryCommitReleasesNewlyAcquiredGrant() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val inventory = FailOnceSelectionInventory()
+            val broker = ImmediateSafBroker()
+            val viewModel =
+                VideoMiningViewModel(
+                    repository = RecordingRepository(),
+                    safBroker = broker,
+                    selectionInventory = inventory,
+                    selectionIoDispatcher = mainDispatcherRule.dispatcher,
+                )
+
+            viewModel.onVideoPicked("content://test/new-video.mkv")
+            runCurrent()
+
+            assertEquals(DocumentSelectionError.VIDEO, viewModel.uiState.value.video.error)
+            assertNull(viewModel.uiState.value.video.document)
+            assertNull(inventory.selection(SafSelectionSlot.VIDEO))
+            assertEquals(listOf("content://test/new-video.mkv"), broker.releasedUris)
         }
 
     @Test
@@ -311,6 +439,46 @@ class VideoMiningViewModelTest {
 
             assertEquals(1, viewModel.uiState.value.curation?.previousPageSelectedCount)
             assertTrue(viewModel.uiState.value.curation?.hasSelectionToLose == true)
+
+            val recreated = VideoMiningViewModel(repository, ImmediateSafBroker())
+            runCurrent()
+
+            assertEquals(1, recreated.uiState.value.curation?.previousPageSelectedCount)
+        }
+
+    @Test
+    fun recreatedViewModelRestoresExactCurationDraftFromProcessRepository() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val base = curationRequest()
+            val candidate = base.candidates.single()
+            val alternate =
+                candidate.sentences.single().copy(
+                    sentenceId = "alternate-sentence",
+                    sentence = "魚を食べた。",
+                )
+            val request =
+                base.copy(
+                    candidates =
+                        listOf(
+                            candidate.copy(sentences = candidate.sentences + alternate),
+                        ),
+                )
+            val repository = RecordingRepository(MiningRunState.Curating(request))
+            val first = VideoMiningViewModel(repository, ImmediateSafBroker())
+            runCurrent()
+
+            first.setCandidateSelected(candidate.candidateId, false)
+            first.selectSentence(candidate.candidateId, alternate.sentenceId)
+            runCurrent()
+
+            val recreated = VideoMiningViewModel(repository, ImmediateSafBroker())
+            runCurrent()
+
+            assertEquals(0, recreated.uiState.value.curation?.selectedCount)
+            assertEquals(
+                alternate.sentenceId,
+                recreated.uiState.value.curation?.sentenceIds?.get(candidate.candidateId),
+            )
         }
 
     @Test
@@ -887,8 +1055,46 @@ class VideoMiningViewModelTest {
             )
         }
 
-        fun fail(uri: String) {
-            requireNotNull(pending.remove(uri)).resumeWithException(IllegalStateException("stale"))
+        fun fail(
+            uri: String,
+            failure: Exception = IllegalStateException("stale"),
+        ) {
+            requireNotNull(pending.remove(uri)).resumeWithException(failure)
+        }
+    }
+
+    private class FailOnceSelectionInventory : SafSelectionInventory {
+        private val selections = mutableMapOf<SafSelectionSlot, SafSelectionRecord>()
+        private val text = mutableMapOf<SafSelectionSlot, String>()
+        private var failNextSave = true
+
+        override fun selection(slot: SafSelectionSlot): SafSelectionRecord? = selections[slot]
+
+        override fun putSelection(
+            slot: SafSelectionSlot,
+            selection: SafSelectionRecord?,
+        ) {
+            if (selection == null) selections.remove(slot) else selections[slot] = selection
+            if (selection != null && failNextSave) {
+                failNextSave = false
+                throw SafSelectionPersistenceException("injected commit failure")
+            }
+        }
+
+        override fun text(slot: SafSelectionSlot): String? = text[slot]
+
+        override fun putText(
+            slot: SafSelectionSlot,
+            value: String?,
+        ) {
+            if (value == null) text.remove(slot) else text[slot] = value
+        }
+
+        override fun ownedUris(): Set<String> =
+            selections.values.mapTo(linkedSetOf(), SafSelectionRecord::uri)
+
+        override fun pruneMissingGrants(grantedUris: Set<String>) {
+            selections.entries.removeAll { it.value.uri !in grantedUris }
         }
     }
 
@@ -903,6 +1109,7 @@ class VideoMiningViewModelTest {
     ) : MiningRepository {
         private val mutableState = MutableStateFlow(initialState)
         override val state: StateFlow<MiningRunState> = mutableState.asStateFlow()
+        private var savedCurationSessionState: CurationSessionState? = null
 
         var startCalls = 0
             private set
@@ -917,6 +1124,18 @@ class VideoMiningViewModelTest {
         var confirmedSelection: List<CurationSelection>? = null
             private set
         val detachedInputs = mutableListOf<VideoMiningInput>()
+
+        override fun curationSessionState(): CurationSessionState? = savedCurationSessionState
+
+        override fun saveCurationSessionState(state: CurationSessionState) {
+            savedCurationSessionState = state
+        }
+
+        override fun clearCurationSessionState(runId: String?) {
+            if (runId == null || savedCurationSessionState?.runId == runId) {
+                savedCurationSessionState = null
+            }
+        }
 
         override fun detachActiveSources(input: VideoMiningInput): Boolean {
             detachedInputs += input

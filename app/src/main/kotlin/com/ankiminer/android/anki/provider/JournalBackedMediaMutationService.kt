@@ -3,6 +3,7 @@ package com.ankiminer.android.anki.provider
 import com.ankiminer.android.anki.journal.AlignedResult
 import com.ankiminer.android.anki.journal.AnkiMutationStore
 import com.ankiminer.android.anki.journal.ChildState
+import com.ankiminer.android.anki.journal.JournalCorruptionException
 import com.ankiminer.android.anki.journal.JournalError
 import com.ankiminer.android.anki.journal.JournalErrorCode
 import com.ankiminer.android.anki.journal.JournalInvariantViolation
@@ -14,8 +15,10 @@ import com.ankiminer.android.anki.journal.MediaClaimState
 import com.ankiminer.android.anki.journal.MediaKind as JournalMediaKind
 import com.ankiminer.android.anki.journal.MediaPromotion
 import com.ankiminer.android.anki.journal.MediaPurpose as JournalMediaPurpose
+import com.ankiminer.android.anki.journal.MediaReservationAdmission
 import com.ankiminer.android.anki.journal.MediaReservationDraft
 import com.ankiminer.android.anki.journal.MediaReservationRecord
+import com.ankiminer.android.anki.journal.MediaReservationState
 import com.ankiminer.android.anki.journal.MutationCommand
 import com.ankiminer.android.anki.journal.ParentKey
 import com.ankiminer.android.anki.journal.ProviderReceipt
@@ -32,6 +35,7 @@ import com.ankiminer.android.anki.protocol.StoreMediaRequest
 import com.ankiminer.android.anki.protocol.StoreMediaResult
 import com.ankiminer.android.anki.protocol.StoredMedia
 import com.ankiminer.android.anki.protocol.UncertainMedia
+import java.util.concurrent.atomic.AtomicBoolean
 import com.ankiminer.android.diagnostics.compactFaultToken
 import com.ankiminer.android.diagnostics.log.AppLog
 import com.ankiminer.android.diagnostics.log.LogComponent
@@ -63,9 +67,11 @@ internal interface MediaMutationJournal {
     fun reserve(
         runId: String,
         assets: List<MediaReservationDraft>,
-    ): List<MediaReservationRecord>
+    ): List<MediaReservationAdmission>
 
     fun releaseReservation(reservationId: Long)
+
+    fun reservation(reservationId: Long): MediaReservationRecord?
 
     fun promote(
         key: ParentKey,
@@ -126,11 +132,14 @@ internal class AnkiMutationMediaJournal(
     override fun reserve(
         runId: String,
         assets: List<MediaReservationDraft>,
-    ): List<MediaReservationRecord> = store.reserveMedia(runId, assets)
+    ): List<MediaReservationAdmission> = store.reserveMediaIndependently(runId, assets)
 
     override fun releaseReservation(reservationId: Long) {
         store.releaseReservation(reservationId)
     }
+
+    override fun reservation(reservationId: Long): MediaReservationRecord? =
+        store.mediaReservation(reservationId)
 
     override fun promote(
         key: ParentKey,
@@ -190,6 +199,8 @@ internal interface MediaMutationStaging {
     fun grantRead(record: StagingRecord): StagingRecord
 
     fun cleanup(record: StagingRecord): AnkiMediaCleanupOutcome
+
+    fun recover(): AnkiMediaRecoveryReport
 }
 
 internal class PrivateMediaMutationStaging(
@@ -200,6 +211,8 @@ internal class PrivateMediaMutationStaging(
     override fun grantRead(record: StagingRecord): StagingRecord = staging.grantRead(record)
 
     override fun cleanup(record: StagingRecord): AnkiMediaCleanupOutcome = staging.cleanup(record)
+
+    override fun recover(): AnkiMediaRecoveryReport = staging.recover()
 }
 
 internal interface MediaMutationProvider {
@@ -230,6 +243,9 @@ internal class JournalBackedMediaMutationService(
     private val staging: MediaMutationStaging,
     private val provider: MediaMutationProvider,
 ) : MediaMutationService {
+    private val stagingRecoveryRequired = AtomicBoolean(false)
+    private val stagingRecoveryLock = Any()
+
     override fun store(
         owner: AnkiRunStateRegistry.RunOwner,
         request: StoreMediaRequest,
@@ -244,8 +260,9 @@ internal class JournalBackedMediaMutationService(
             ReplayResult.LiveOwnerRequired -> throw mediaMutationConflict("Media replay requires a live run owner")
         }
 
+        ensureStagingRecovered()
         journal.begin(durableRequest)
-        val reservations =
+        val admissions =
             try {
                 journal.acquireLease(request.runId)
                 journal.reserve(
@@ -255,15 +272,27 @@ internal class JournalBackedMediaMutationService(
             } catch (failure: JournalInvariantViolation) {
                 return refuseBatchRowLocally(request, durableRequest, failure)
             }
-        requireReservationBatch(request, reservations)
-        val unusedReservations = reservations.associateByTo(linkedMapOf(), MediaReservationRecord::id)
+        requireReservationBatch(request, admissions)
+        val reservations =
+            admissions.map { admission ->
+                (admission as? MediaReservationAdmission.Reserved)?.reservation
+            }
+        val unusedReservations =
+            reservations.filterNotNull().associateByTo(linkedMapOf(), MediaReservationRecord::id)
 
         for ((index, asset) in request.assets.withIndex()) {
-            val reservation = reservations[index]
+            val admission = admissions[index]
+            if (admission is MediaReservationAdmission.Refused) {
+                appendAdmissionRefusal(durableRequest.key, index, asset, admission.failure)
+                continue
+            }
+            val reservation = checkNotNull(reservations[index])
+            ensureStagingRecovered()
             val staged =
                 try {
                     staging.stage(asset.toStagingRequest(request, index))
                 } catch (failure: AnkiMediaStagingException) {
+                    stagingRecoveryRequired.set(true)
                     journal.releaseReservation(reservation.id)
                     unusedReservations.remove(reservation.id)
                     journal.append(
@@ -282,6 +311,7 @@ internal class JournalBackedMediaMutationService(
                 try {
                     staging.grantRead(staged)
                 } catch (failure: AnkiMediaStagingException) {
+                    stagingRecoveryRequired.set(true)
                     journal.releaseReservation(reservation.id)
                     unusedReservations.remove(reservation.id)
                     journal.append(
@@ -297,16 +327,42 @@ internal class JournalBackedMediaMutationService(
                 }
 
             val promotion =
-                journal.promote(
-                    durableRequest.key,
-                    reservation.id,
-                    MutationCommand.StoreMedia(
-                        requestIndexValue = index,
-                        assetId = asset.assetId,
-                        fileUri = granted.contentUri,
-                        preferredName = asset.preferredName,
-                    ),
-                )
+                try {
+                    journal.promote(
+                        durableRequest.key,
+                        reservation.id,
+                        MutationCommand.StoreMedia(
+                            requestIndexValue = index,
+                            assetId = asset.assetId,
+                            fileUri = granted.contentUri,
+                            preferredName = asset.preferredName,
+                        ),
+                    )
+                } catch (failure: RuntimeException) {
+                    var provenNotCommitted = false
+                    try {
+                        val durableReservation = journal.reservation(reservation.id)
+                        provenNotCommitted =
+                            durableReservation?.state == MediaReservationState.RESERVED &&
+                            durableReservation.claimId == null &&
+                            durableReservation.runId == reservation.runId &&
+                            durableReservation.requestId == reservation.requestId &&
+                            durableReservation.assetId == reservation.assetId
+                    } catch (probeFailure: RuntimeException) {
+                        failure.addSuppressed(probeFailure)
+                    }
+                    if (provenNotCommitted) {
+                        try {
+                            journal.releaseReservation(reservation.id)
+                        } catch (releaseFailure: RuntimeException) {
+                            failure.addSuppressed(releaseFailure)
+                        } finally {
+                            unusedReservations.remove(reservation.id)
+                            cleanupPreservingOutcome(granted)
+                        }
+                    }
+                    throw failure
+                }
             unusedReservations.remove(reservation.id)
             val scope =
                 ProviderMutationScope(
@@ -582,6 +638,27 @@ internal class JournalBackedMediaMutationService(
         return finishResult(request, durableRequest, topLevelError = null, replayed = false)
     }
 
+    private fun appendAdmissionRefusal(
+        key: ParentKey,
+        index: Int,
+        asset: MediaAsset,
+        failure: MediaAdmissionViolation,
+    ) {
+        val fault = compactFaultToken(failure)
+        val detail = failure.detail?.let { ";$it" }.orEmpty()
+        val reason = failure.refusal.name
+        journal.append(
+            key,
+            AlignedResult.MediaFailed(
+                requestIndex = index,
+                itemId = asset.assetId,
+                rowError = refusedBatchMediaFailure(reason, detail, fault),
+                compactEvidence =
+                    "providerEntry=false;admission=refused;reason=$reason$detail;fault=$fault",
+            ),
+        )
+    }
+
     private fun stopBeforeProviderEntry(
         owner: AnkiRunStateRegistry.RunOwner,
         request: StoreMediaRequest,
@@ -590,7 +667,7 @@ internal class JournalBackedMediaMutationService(
         promotion: MediaPromotion,
         capability: ProviderEntryCapability?,
         scope: ProviderMutationScope,
-        reservations: List<MediaReservationRecord>,
+        reservations: List<MediaReservationRecord?>,
         unusedReservations: MutableMap<Long, MediaReservationRecord>,
         staged: StagingRecord,
         error: JournalError,
@@ -608,9 +685,10 @@ internal class JournalBackedMediaMutationService(
         if (capability != null) registry.abortProviderEntry(owner, capability, scope)
         cleanupPreservingOutcome(staged)
         for (suffixIndex in currentIndex + 1..request.assets.lastIndex) {
-            val reservation = reservations[suffixIndex]
-            if (unusedReservations.remove(reservation.id) != null) {
-                journal.releaseReservation(reservation.id)
+            reservations[suffixIndex]?.let { reservation ->
+                if (unusedReservations.remove(reservation.id) != null) {
+                    journal.releaseReservation(reservation.id)
+                }
             }
             journal.append(
                 durableRequest.key,
@@ -625,13 +703,14 @@ internal class JournalBackedMediaMutationService(
         request: StoreMediaRequest,
         durableRequest: JournalRequest,
         currentIndex: Int,
-        reservations: List<MediaReservationRecord>,
+        reservations: List<MediaReservationRecord?>,
         unusedReservations: MutableMap<Long, MediaReservationRecord>,
     ): StoreMediaMutationOutcome {
         for (suffixIndex in currentIndex + 1..request.assets.lastIndex) {
-            val reservation = reservations[suffixIndex]
-            if (unusedReservations.remove(reservation.id) != null) {
-                journal.releaseReservation(reservation.id)
+            reservations[suffixIndex]?.let { reservation ->
+                if (unusedReservations.remove(reservation.id) != null) {
+                    journal.releaseReservation(reservation.id)
+                }
             }
             journal.append(
                 durableRequest.key,
@@ -784,9 +863,25 @@ internal class JournalBackedMediaMutationService(
 
     private fun cleanupPreservingOutcome(record: StagingRecord) {
         try {
-            staging.cleanup(record)
+            if (staging.cleanup(record) == AnkiMediaCleanupOutcome.QUARANTINED) {
+                stagingRecoveryRequired.set(true)
+            }
         } catch (_: RuntimeException) {
             // Staging owns durable quarantine/recovery; mutation evidence must never be rewritten.
+            stagingRecoveryRequired.set(true)
+        }
+    }
+
+    private fun ensureStagingRecovered() {
+        if (!stagingRecoveryRequired.get()) return
+        synchronized(stagingRecoveryLock) {
+            if (!stagingRecoveryRequired.get()) return
+            val report = staging.recover()
+            if (report.cleanedRecords < 0 || report.quarantinedRecords < 0 || report.sweptOrphans < 0) {
+                throw JournalCorruptionException("Media staging recovery returned an invalid report")
+            }
+            if (!report.isClean) throw PendingMediaStagingRecoveryException()
+            stagingRecoveryRequired.set(false)
         }
     }
 }
@@ -819,11 +914,15 @@ private fun MediaAsset.toStagingRequest(
 
 private fun requireReservationBatch(
     request: StoreMediaRequest,
-    reservations: List<MediaReservationRecord>,
+    admissions: List<MediaReservationAdmission>,
 ) {
-    if (reservations.size != request.assets.size) throw mediaMutationConflict("The media reservation batch is incomplete")
-    reservations.forEachIndexed { index, reservation ->
+    if (admissions.size != request.assets.size) throw mediaMutationConflict("The media reservation batch is incomplete")
+    admissions.forEachIndexed { index, admission ->
         val asset = request.assets[index]
+        if (admission.assetId != asset.assetId) {
+            throw mediaMutationConflict("The media reservation batch changed identity")
+        }
+        val reservation = (admission as? MediaReservationAdmission.Reserved)?.reservation ?: return@forEachIndexed
         if (
             reservation.runId != request.runId ||
             reservation.requestId != request.requestId ||

@@ -24,6 +24,7 @@ import com.ankiminer.android.ui.settings.SettingsResetAction
 import com.ankiminer.android.ui.settings.SettingsResetConfirmationState
 import com.ankiminer.android.ui.settings.dispatchConfirmedSettingsReset
 import java.io.File
+import java.io.IOException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -232,6 +233,31 @@ class AppSettingsRepositoryTest {
         }
 
     @Test
+    fun `DataStore read IOException never emits persistable defaults`() =
+        runTest {
+            val repository =
+                DataStoreAppSettingsRepository(
+                    object : DataStore<Preferences> {
+                        override val data: Flow<Preferences> =
+                            kotlinx.coroutines.flow.flow {
+                                throw IOException("transient read failure")
+                            }
+
+                        override suspend fun updateData(
+                            transform: suspend (Preferences) -> Preferences,
+                        ): Preferences = error("write not expected")
+                    },
+                )
+
+            try {
+                repository.settings.first()
+                fail("Expected DataStore read failure")
+            } catch (failure: IOException) {
+                assertEquals("transient read failure", failure.message)
+            }
+        }
+
+    @Test
     fun `restore mining defaults changes only mining settings`() {
         val original = populatedSettings()
 
@@ -338,10 +364,12 @@ class AppSettingsRepositoryTest {
                     onRestoreMiningDefaults = {
                         callbackCounts[SettingsResetAction.RESTORE_MINING_DEFAULTS] = 1
                         launch { repository.update(AppSettings::restoreMiningDefaults) }
+                        true
                     },
                     onResetAnkiTarget = {
                         callbackCounts[SettingsResetAction.RESET_ANKI_TARGET] = 1
                         launch { repository.update(AppSettings::resetAnkiTarget) }
+                        true
                     },
                     onResetResourceChoices = {
                         callbackCounts[SettingsResetAction.RESET_RESOURCE_CHOICES] = 1
@@ -354,6 +382,7 @@ class AppSettingsRepositoryTest {
                                 )
                             }
                         }
+                        true
                     },
                 )
                 advanceUntilIdle()
@@ -368,6 +397,18 @@ class AppSettingsRepositoryTest {
                 assertEquals(requestedAction.name, original, repository.settings.first())
             }
         }
+
+    @Test
+    fun `reset confirmation remains pending until the view model accepts it`() {
+        val requested =
+            SettingsResetConfirmationState().request(SettingsResetAction.RESET_ANKI_TARGET)
+
+        assertEquals(
+            SettingsResetAction.RESET_ANKI_TARGET,
+            requested.confirmIfAccepted(accepted = false).pendingAction,
+        )
+        assertNull(requested.confirmIfAccepted(accepted = true).pendingAction)
+    }
 
     @Test
     fun `legacy duplicate raw field map is quarantined without erasing unrelated settings`() {

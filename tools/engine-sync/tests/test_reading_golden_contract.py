@@ -38,7 +38,7 @@ class ReadingGoldenContractTests(unittest.TestCase):
     def test_committed_fixture_is_complete_and_current(self) -> None:
         self.validate(self.fixture)
         self.assertEqual(
-            "1d64b5f5a56c2e537ceb9f3b796048e86c13a74a358f01bd326d0f230347ed88",
+            "5c913796f48846ba82564c80a18a381ea53aaf8a50b8c04dc01c1c2357135968",
             hashlib.sha256(self.fixture_path.read_bytes()).hexdigest(),
         )
         documents = self.fixture["case"]["output"]["documents"]

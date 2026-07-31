@@ -408,6 +408,54 @@ def test_real_mokuro_archive_detector_and_loader_match_contract(
     }
 
 
+def test_real_mokuro_loader_preserves_valid_siblings_of_malformed_records(
+    initialized_bridge_home: Path,
+    tmp_path: Path,
+) -> None:
+    assert initialized_bridge_home.is_absolute()
+    job_dir = tmp_path / "reading-job-v1-mixed-mokuro"
+    job_dir.mkdir()
+    source = job_dir / "mixed.mokuro"
+    source.write_text(
+        json.dumps(
+            {
+                "version": "0.2.4",
+                "title": "混在作品",
+                "title_uuid": "mixed-title",
+                "volume": "第一巻",
+                "volume_uuid": "mixed-volume",
+                "pages": [
+                    None,
+                    {"blocks": "not-a-list"},
+                    {
+                        "blocks": [
+                            None,
+                            {"lines": "not-a-list"},
+                            {"lines": [7, "まとも。"]},
+                        ]
+                    },
+                ],
+            },
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ),
+        encoding="utf-8",
+    )
+
+    document = _load_real_document(
+        cache_dir=tmp_path,
+        source_kind="mokuro",
+        source_path=source,
+    )
+
+    assert [unit.text for unit in document.units] == ["まとも。"]
+    assert [unit.location_label for unit in document.units] == ["p.3"]
+    assert document.warnings == [
+        "text-only volume: pages have no paired images",
+        "Skipped 5 malformed Mokuro record(s).",
+    ]
+
+
 class _DocumentParser:
     """Deterministic tokenizer boundary for the actual processor smoke."""
 

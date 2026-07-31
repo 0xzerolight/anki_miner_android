@@ -109,7 +109,7 @@ class AndroidAnkiMediaStagingInstrumentedTest {
      *
      * Every extension is measured before anything is asserted, and a failure prints the whole table.
      * Failing at the first bad extension hides the rest, and the only way to observe them is another
-     * emulator run — which is what [AnkiMediaExtensions.DEVICE_UNMAPPABLE_EXTENSIONS] has to be
+     * emulator run — which is what [AnkiMediaExtensions.ALWAYS_FALLBACK_EXTENSIONS] has to be
      * populated from.
      */
     private fun assertEveryAllowedExtensionSurvivesTheMimeRoundTrip(platform: AndroidAnkiMediaStagingPlatform) {
@@ -125,9 +125,9 @@ class AndroidAnkiMediaStagingInstrumentedTest {
             )
         }
 
-        AnkiMediaExtensions.DEVICE_UNMAPPABLE_EXTENSIONS.forEach { extension ->
+        AnkiMediaExtensions.ALWAYS_FALLBACK_EXTENSIONS.forEach { extension ->
             assertFalse(
-                "$extension is device-unmappable and must not be staged under its real name",
+                "$extension is fixed to the API 26 fallback and must not be staged under its real name",
                 extension in AnkiMediaExtensions.ALLOWED_EXTENSIONS,
             )
         }
@@ -164,7 +164,7 @@ class AndroidAnkiMediaStagingInstrumentedTest {
         if (table.any { !it.second }) {
             fail(
                 "staged media extensions AnkiDroid cannot name, on API ${Build.VERSION.SDK_INT}. " +
-                    "Park each FAIL row in AnkiMediaExtensions.DEVICE_UNMAPPABLE_EXTENSIONS, or give it " +
+                    "Park each FAIL row in AnkiMediaExtensions.ALWAYS_FALLBACK_EXTENSIONS, or give it " +
                     "an AnkiMediaFileProvider.FILL value that reverse-maps and names the same format:\n" +
                     table.joinToString("\n") { it.first },
             )

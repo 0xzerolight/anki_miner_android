@@ -60,4 +60,12 @@ class JournalSchemaFingerprintTest {
         assertEquals(JournalSchema.requiredIndexes, definitions.keys.filter { it.startsWith("index:") }.map { it.removePrefix("index:") }.toSet())
         assertTrue(definitions.values.all { it.matches(Regex("[0-9a-f]{64}")) })
     }
+
+    @Test
+    fun migrationPlanRebuildsOnlyAuthenticVersionOneRemediations() {
+        assertEquals(4, JournalSchema.VERSION)
+        assertTrue(JournalSchema.requiresRemediationRebuild(1))
+        assertTrue(!JournalSchema.requiresRemediationRebuild(2))
+        assertTrue(!JournalSchema.requiresRemediationRebuild(3))
+    }
 }

@@ -138,6 +138,39 @@ class ProviderQueryContractTest {
                 checksumColumn = "csum",
             ),
         )
+        listOf(
+            "Core_2k" to "deck:\"Core\\_2k\"",
+            "Wild*Card" to "deck:\"Wild\\*Card\"",
+        ).forEach { (deckName, expected) ->
+            assertEquals(
+                CompiledProviderSelection(expected, null),
+                compileProviderSelection(
+                    ProviderQuery(
+                        endpoint = ProviderEndpoint.NOTES_BROWSER,
+                        projection = ProviderQueryShapes.NOTE_ID_PROJECTION,
+                        selection = ProviderSelection.ExcludedDeck(deckName),
+                    ),
+                    noteIdColumn = "_id",
+                    modelIdColumn = "mid",
+                    checksumColumn = "csum",
+                ),
+            )
+        }
+        val deckCards =
+            ProviderQuery(
+                endpoint = ProviderEndpoint.CARDS,
+                projection = ProviderQueryShapes.CARD_NOTE_DECK_PROJECTION,
+                selection = ProviderSelection.CardsInDeck("Quote \\\" deck"),
+            )
+        assertEquals(
+            CompiledProviderSelection("deck:\"Quote \\\\\\\" deck\"", null),
+            compileProviderSelection(
+                deckCards,
+                noteIdColumn = "_id",
+                modelIdColumn = "mid",
+                checksumColumn = "csum",
+            ),
+        )
     }
 
     @Test
@@ -199,6 +232,11 @@ class ProviderQueryContractTest {
                     selection = ProviderSelection.CardsForNote(30L),
                 ),
                 ProviderQuery(
+                    ProviderEndpoint.CARDS,
+                    projection = ProviderQueryShapes.CARD_NOTE_DECK_PROJECTION,
+                    selection = ProviderSelection.CardsInDeck("Mining"),
+                ),
+                ProviderQuery(
                     ProviderEndpoint.CARD_BY_ID,
                     endpointId = 40L,
                     projection = ProviderQueryShapes.CARD_IDENTITY_PROJECTION,
@@ -210,7 +248,7 @@ class ProviderQueryContractTest {
                 ),
             )
 
-        assertEquals(13, legal.size)
+        assertEquals(14, legal.size)
         assertTrue(legal.all(ProviderQueryShapes::isAllowed))
     }
 

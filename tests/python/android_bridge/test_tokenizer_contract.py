@@ -139,7 +139,11 @@ def test_utf8_offsets_map_astral_codepoints_to_python_and_jvm_offsets() -> None:
         offsets.resolve(4)
 
 
-def test_utf8_offsets_reject_lone_surrogates_and_non_integer_offsets() -> None:
+def test_utf8_offsets_reject_nul_lone_surrogates_and_non_integer_offsets() -> None:
+    with pytest.raises(TokenizerContractError) as nul:
+        Utf8OffsetMap("猫\x00犬。")
+    assert nul.value.code == "invalid_text_utf8"
+
     with pytest.raises(TokenizerContractError) as surrogate:
         Utf8OffsetMap("\ud800")
     assert surrogate.value.code == "invalid_text_utf8"

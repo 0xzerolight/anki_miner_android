@@ -103,6 +103,45 @@ class VerifyUserNoteTypeTest {
     }
 
     @Test
+    fun `an active marker missing from the model blocks verification`() {
+        val reads = readService(lapisHandler())
+
+        val status =
+            reads.verifyUserNoteType(
+                MODEL_NAME,
+                AnkiFieldAutoMap.autoMap(lapisFields),
+                AnkiCancellation.NONE,
+                cardTypeMarkerField = "IsClickCard",
+            )
+
+        assertEquals(
+            NoteTypeSetupStatus.FieldsMissing(listOf(AnkiFieldMapPolicy.CARD_TYPE_MARKER_KEY)),
+            status,
+        )
+    }
+
+    @Test
+    fun `an active marker sharing a mapped destination blocks verification`() {
+        val reads = readService(lapisHandler())
+
+        val status =
+            reads.verifyUserNoteType(
+                MODEL_NAME,
+                AnkiFieldAutoMap.autoMap(lapisFields),
+                AnkiCancellation.NONE,
+                cardTypeMarkerField = "MainDefinition",
+            )
+
+        assertEquals(
+            NoteTypeSetupStatus.FieldMapInvalid(
+                destination = "MainDefinition",
+                logicalKeys = listOf("definition", AnkiFieldMapPolicy.CARD_TYPE_MARKER_KEY),
+            ),
+            status,
+        )
+    }
+
+    @Test
     fun `quarantined empty field map reports FieldMapInvalid before any note mutation`() {
         val gateway = FakeAnkiProviderGateway()
         gateway.queryHandler = lapisHandler()

@@ -83,6 +83,9 @@ private class CanonicalRequestWriter {
         when (val scope = request.scope) {
             is KnownVocabularyScope -> {
                 stringField("kind", "knownVocabulary")
+                if (scope.deckName != null) {
+                    stringField("deckName", scope.deckName, leadingComma = true)
+                }
                 fieldName("excludedDecks", leadingComma = true)
                 stringArray(scope.excludedDecks)
                 fieldName("cursor", leadingComma = true)

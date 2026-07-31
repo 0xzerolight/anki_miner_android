@@ -23,6 +23,7 @@ object ResourceBridgeCodec {
     private val resourceId = Regex("[A-Za-z0-9](?:[A-Za-z0-9._-]{0,126}[A-Za-z0-9_-])?")
     private val sha256 = Regex("[0-9a-f]{64}")
     private val messageType = Regex("[a-z][a-z0-9]*(?:\\.[a-z][a-z0-9]*)+")
+    private val pitchInstalledFormats = setOf("yomitan-pitch", "csv", "tsv")
 
     /** Same shape android_bridge/faults.py mints and BridgeJsonCodec enforces. */
     private val faultId = Regex("f[0-9a-f]{8}")
@@ -316,7 +317,7 @@ object ResourceBridgeCodec {
             requireSlotId(text(value.getValue("slotId"), "slotId")),
             nullableText(value.getValue("catalogResourceId"), "catalogResourceId")?.let(::requireResourceId),
             boundedText(value.getValue("sourceName"), "sourceName", 4096),
-            boundedText(value.getValue("sourceRevision"), "sourceRevision", 4096),
+            boundedText(value.getValue("sourceRevision"), "sourceRevision", 4096, allowEmpty = true),
             nonNegative(value.getValue("entryCount"), "entryCount"),
             nonNegative(value.getValue("skippedMalformed"), "skippedMalformed"),
             strings(value.getValue("mediaWarnings"), "mediaWarnings", 4096),
@@ -377,7 +378,7 @@ object ResourceBridgeCodec {
             sourceId = requireSlotId(text(value.getValue("sourceId"), "sourceId")),
             sourceName = boundedText(value.getValue("sourceName"), "sourceName", 4096),
             sourceRevision = boundedText(value.getValue("sourceRevision"), "sourceRevision", 4096, allowEmpty = true),
-            sourceFormat = sourceFormat(value.getValue("sourceFormat"), PitchAccentSourceFormat.entries.map { it.wireValue }.toSet()),
+            sourceFormat = sourceFormat(value.getValue("sourceFormat"), pitchInstalledFormats),
             entryCount = positive(value.getValue("entryCount"), "entryCount"),
             skippedDisplayOnly = nonNegative(value.getValue("skippedDisplayOnly"), "skippedDisplayOnly"),
             skippedMalformed = nonNegative(value.getValue("skippedMalformed"), "skippedMalformed"),
@@ -836,13 +837,23 @@ object ResourceBridgeCodec {
             if (error.keys !in accepted) {
                 invalid("Bridge error payload is invalid")
             }
-            throw ResourceBridgeException(
-                text(error.getValue("code"), "error code"),
-                boundedText(error.getValue("message"), "error message", 16 * 1024),
+            val code = text(error.getValue("code"), "error code")
+            val message = boundedText(error.getValue("message"), "error message", 16 * 1024)
+            val decodedFaultId =
                 error["faultId"]?.let { value ->
-                    text(value, "error fault id").also { if (!faultId.matches(it)) invalid("Bridge error fault id is invalid") }
-                },
-            )
+                    text(value, "error fault id").also {
+                        if (!faultId.matches(it)) invalid("Bridge error fault id is invalid")
+                    }
+                }
+            val bridgeFailure = ResourceBridgeException(code, message, decodedFaultId)
+            if (code == "insufficient_storage") {
+                throw ResourceStorageException(
+                    requiredBytes = null,
+                    availableBytes = null,
+                    cause = bridgeFailure,
+                )
+            }
+            throw bridgeFailure
         }
         if (envelope.first != expectedType) invalid("Unexpected resource response type")
         return envelope.second

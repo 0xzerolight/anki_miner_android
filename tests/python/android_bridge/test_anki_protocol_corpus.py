@@ -310,6 +310,8 @@ def _validate_scan_payload(payload: dict[str, Any], *, response: bool) -> None:
         total = sum(_canonical_name(deck, "deck") for deck in scope["excludedDecks"])
         if total > ANKI_LIMITS_V1["names"]["excludedDecks"]["maxTotalUtf8Bytes"]:
             _reject("invalid_value")
+        if "deckName" in scope:
+            _canonical_name(scope["deckName"], "deck")
         cursor = scope["cursor"]
         if cursor is not None:
             _positive_long(cursor["ordinal"])

@@ -32,6 +32,9 @@ import com.ankiminer.android.reading.ReadingSourceStageLimits
 import com.ankiminer.android.reading.ReadingSourceStageNonceSource
 import com.ankiminer.android.reading.ReadingSourceStager
 import com.ankiminer.android.reading.readingSourceStagingRoot
+import com.ankiminer.android.service.MiningForegroundLease
+import com.ankiminer.android.service.MiningForegroundProgress
+import com.ankiminer.android.service.MiningForegroundSessionIdentity
 import java.io.ByteArrayInputStream
 import java.io.File
 import java.util.concurrent.CompletableFuture
@@ -159,7 +162,7 @@ class RunIdCorrelationTest {
         tokenizerResourceProvider = tokenizerResourceProvider(),
         runtimePaths = runtimePaths("video"),
         sourceGrantReleaser = SourceGrantReleaser { },
-        foregroundStarter = MiningForegroundStarter { _, _, _ -> CompletableFuture() },
+        foregroundStarter = completedForegroundStarter(),
         runExecutor = runExecutor.asMiningTaskExecutor(),
         controlExecutor = controlExecutor.asMiningTaskExecutor(),
         strings = testStringResourceResolver,
@@ -179,7 +182,10 @@ class RunIdCorrelationTest {
             sourceStager =
                 ReadingSourceStager(
                     stagingRoot = readingSourceStagingRoot(paths.cacheDir),
-                    inputOpener = ReadingSourceInputOpener { ByteArrayInputStream("novel".toByteArray()) },
+                    inputOpener =
+                        ReadingSourceInputOpener { _, _ ->
+                            ByteArrayInputStream("novel".toByteArray())
+                        },
                     limits =
                         ReadingSourceStageLimits(
                             textMaxBytes = 1024,
@@ -197,7 +203,7 @@ class RunIdCorrelationTest {
             tokenizerResourceProvider = tokenizerResourceProvider(),
             runtimePaths = paths,
             sourceGrantReleaser = SourceGrantReleaser { },
-            foregroundStarter = MiningForegroundStarter { _, _, _ -> CompletableFuture() },
+            foregroundStarter = completedForegroundStarter(),
             runExecutor = runExecutor.asMiningTaskExecutor(),
             controlExecutor = controlExecutor.asMiningTaskExecutor(),
             strings = testStringResourceResolver,
@@ -208,6 +214,19 @@ class RunIdCorrelationTest {
     private fun tokenizerResourceProvider() =
         InstalledTokenizerResourceProvider {
             InstalledTokenizerResource(File("/tmp/test-unidic"), TOKENIZER_RESOURCE_ID, TOKENIZER_SHA)
+        }
+
+    private fun completedForegroundStarter() =
+        MiningForegroundStarter { runId, generation, _ ->
+            CompletableFuture.completedFuture(
+                object : MiningForegroundLease {
+                    override val identity = MiningForegroundSessionIdentity.create(runId, generation)
+
+                    override fun updateProgress(progress: MiningForegroundProgress): Boolean = true
+
+                    override fun close() = Unit
+                },
+            )
         }
 
     private fun runtimePaths(label: String) =

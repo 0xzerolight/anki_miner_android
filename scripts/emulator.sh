@@ -185,6 +185,7 @@ if ! emulator -list-avds | grep -Fx "$AVD_NAME" >/dev/null; then
     echo "AVD $AVD_NAME is missing; rerun provisioning." >&2
     exit 1
 fi
+anki_miner_acquire_emulator_lock
 if adb devices | awk -v serial="$EMULATOR_SERIAL" \
     '$1 == serial { found = 1 } END { exit !found }'; then
     echo "$EMULATOR_SERIAL is already reserved by a running or offline emulator." >&2
@@ -201,5 +202,6 @@ fi
 
 anki_miner_require_no_gradle
 anki_miner_require_emulator_capacity
+anki_miner_require_no_emulator
 
 exec emulator "${final_args[@]}"

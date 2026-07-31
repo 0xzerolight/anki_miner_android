@@ -5,6 +5,15 @@ import kotlinx.coroutines.flow.StateFlow
 interface MiningRepository {
     val state: StateFlow<MiningRunState>
 
+    /** Return compact curation intent owned by the process-scoped active run. */
+    fun curationSessionState(): CurationSessionState? = null
+
+    /** Publish compact curation intent after an Activity-scoped editor changes it. */
+    fun saveCurationSessionState(state: CurationSessionState) {}
+
+    /** Clear one run's curation intent, or all intent when [runId] is null. */
+    fun clearCurationSessionState(runId: String? = null) {}
+
     /**
      * Atomically transfer the two selection-owned SAF references for [input] to a matching live
      * coordinator run during ViewModel teardown.

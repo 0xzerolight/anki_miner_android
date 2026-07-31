@@ -727,6 +727,68 @@ class AnkiProviderReadsTest {
     }
 
     @Test
+    fun `known vocabulary exact deck scope excludes children and other decks`() {
+        val fixture = fixture()
+        fixture.gateway.queryHandler = targetQueryHandler()
+        fixture.withOwner { owner -> fixture.verifyExistingTarget(owner, verifyRequest()) }
+        fixture.gateway.queries.clear()
+        fixture.gateway.queryHandler = { query, _ ->
+            when {
+                query.endpoint == ProviderEndpoint.CARDS -> {
+                    assertEquals(ProviderSelection.CardsInDeck("Mining"), query.selection)
+                    FakeProviderCursor(
+                        query.projection,
+                        listOf(
+                            mapOf(
+                                ProviderColumn.CARD_NOTE_ID to integer(3L),
+                                ProviderColumn.CARD_DECK_ID to integer(20L),
+                            ),
+                            mapOf(
+                                ProviderColumn.CARD_NOTE_ID to integer(2L),
+                                ProviderColumn.CARD_DECK_ID to integer(21L),
+                            ),
+                            mapOf(
+                                ProviderColumn.CARD_NOTE_ID to integer(1L),
+                                ProviderColumn.CARD_DECK_ID to integer(20L),
+                            ),
+                            mapOf(
+                                ProviderColumn.CARD_NOTE_ID to integer(1L),
+                                ProviderColumn.CARD_DECK_ID to integer(20L),
+                            ),
+                        ),
+                    )
+                }
+                query.selection is ProviderSelection.NoteIds -> {
+                    assertEquals(listOf(1L, 3L), (query.selection as ProviderSelection.NoteIds).ids)
+                    FakeProviderCursor(
+                        query.projection,
+                        listOf(
+                            mapOf(
+                                ProviderColumn.NOTE_ID to integer(3L),
+                                ProviderColumn.NOTE_FIELDS to text("three\u001fmeaning"),
+                            ),
+                            mapOf(
+                                ProviderColumn.NOTE_ID to integer(1L),
+                                ProviderColumn.NOTE_FIELDS to text("one\u001fmeaning"),
+                            ),
+                        ),
+                    )
+                }
+                else -> error("unexpected query $query")
+            }
+        }
+
+        val result =
+            fixture.withOwner { owner ->
+                fixture.reads.scanFirstFields(owner, knownRequest(deckName = "Mining"))
+            } as KnownVocabularyResult
+
+        assertEquals(listOf("one", "three"), result.firstFields)
+        assertEquals(2, result.scannedNotes)
+        assertNull(result.nextCursor)
+    }
+
+    @Test
     fun `known continuation failure is nonretryable after consuming its cursor`() {
         val fixture = fixture(tokens = listOf("cursor_${"a".repeat(32)}"))
         fixture.gateway.queryHandler = { query, _ ->
@@ -892,7 +954,12 @@ class AnkiProviderReadsTest {
         val failure = assertThrows(AnkiReadFailure::class.java) {
             fixture.withOwner { owner -> fixture.reads.scanFirstFields(owner, knownRequest()) }
         }
-        assertEquals(AnkiErrorCode.QUERY_FAILED, failure.code)
+        assertEquals(AnkiErrorCode.UNSUPPORTED_OPERATION, failure.code)
+        assertEquals(false, failure.retryable)
+        assertEquals(
+            "Known-word filtering supports at most 100000 notes in an Anki collection",
+            failure.stableMessage,
+        )
         assertEquals(1, cursor.closeCount)
     }
 
@@ -1071,7 +1138,10 @@ class AnkiProviderReadsTest {
                     )
                 }
             }
-        assertEquals(AnkiErrorCode.QUERY_FAILED, failure.code)
+        // Same typed, non-retryable refusal as the unexcluded scan: the ceiling is a limit,
+        // not a provider error.
+        assertEquals(AnkiErrorCode.UNSUPPORTED_OPERATION, failure.code)
+        assertEquals(false, failure.retryable)
         assertEquals(100_000, browserCellReads)
         assertEquals(1, browserCursor.closeCount)
     }
@@ -1307,7 +1377,7 @@ class AnkiProviderReadsTest {
     }
 
     @Test
-    fun `exact-deck duplicate filter uses global card ID discovery and four-column readback`() {
+    fun `exact-deck duplicate filter reads each notes cards endpoint once`() {
         val fixture = fixture(tokens = listOf("baseline_${"c".repeat(32)}"))
         fixture.gateway.checksum = { 42L }
         fixture.gateway.queryHandler = targetThenDuplicateHandler(exactDeck = true)
@@ -1329,14 +1399,12 @@ class AnkiProviderReadsTest {
                 )
             } as DuplicateLookupResult
         assertEquals(listOf(31L), result.rawFirstFieldHits.single().map { it.noteId })
-        val cardDiscovery = fixture.gateway.queries.filter { it.endpoint == ProviderEndpoint.CARDS }
-        assertEquals(
-            listOf(ProviderSelection.CardsForNote(31L), ProviderSelection.CardsForNote(32L)),
-            cardDiscovery.map { it.selection },
-        )
+        val cardReads = fixture.gateway.queries.filter { it.endpoint == ProviderEndpoint.CARDS_FOR_NOTE }
+        assertEquals(listOf(31L, 32L), cardReads.map { it.endpointId })
+        assertTrue(cardReads.all { it.projection == ProviderQueryShapes.CARD_IDENTITY_PROJECTION })
+        assertTrue(fixture.gateway.queries.none { it.endpoint == ProviderEndpoint.CARDS })
         val directReads = fixture.gateway.queries.filter { it.endpoint == ProviderEndpoint.CARD_BY_ID }
-        assertTrue(directReads.all { it.projection.size == 4 })
-        assertTrue(fixture.gateway.queries.none { it.endpoint.name.contains("NOTE_CARD") })
+        assertTrue(directReads.isEmpty())
     }
 
     @Test
@@ -1367,7 +1435,7 @@ class AnkiProviderReadsTest {
     }
 
     @Test
-    fun `global card readback rejects malformed ids note ids ordinals decks and duplicate ordinals`() {
+    fun `cards-for-note read rejects malformed ids note ids ordinals decks and duplicate ordinals`() {
         data class CardCase(
             val name: String,
             val cardCount: Int = 1,
@@ -1385,9 +1453,6 @@ class AnkiProviderReadsTest {
                 },
                 CardCase("duplicate discovery ID", discoveredIds = listOf(131L, 131L)) { id ->
                     cardRow(id, 31L, 0L, 20L)
-                },
-                CardCase("returned card ID", discoveredIds = listOf(131L)) {
-                    cardRow(999L, 31L, 0L, 20L)
                 },
                 CardCase("returned note ID", discoveredIds = listOf(131L)) { id ->
                     cardRow(id, 32L, 0L, 20L)
@@ -1436,17 +1501,10 @@ class AnkiProviderReadsTest {
                                 ),
                             ),
                         )
-                    ProviderEndpoint.CARDS ->
+                    ProviderEndpoint.CARDS_FOR_NOTE ->
                         FakeProviderCursor(
                             query.projection,
-                            case.discoveredIds.map { id ->
-                                mapOf(ProviderColumn.CARD_ID to integer(id))
-                            },
-                        )
-                    ProviderEndpoint.CARD_BY_ID ->
-                        FakeProviderCursor(
-                            query.projection,
-                            listOf(case.row(requireNotNull(query.endpointId))),
+                            case.discoveredIds.map(case.row),
                         )
                     else -> error("unexpected query $query")
                 }
@@ -1534,26 +1592,17 @@ class AnkiProviderReadsTest {
                             ),
                         ),
                     )
-                ProviderEndpoint.CARDS -> {
+                ProviderEndpoint.CARDS_FOR_NOTE -> {
                     check(exactDeck)
-                    val noteId = (query.selection as ProviderSelection.CardsForNote).noteId
+                    val noteId = requireNotNull(query.endpointId)
                     FakeProviderCursor(
                         query.projection,
                         buildList {
-                            add(mapOf(ProviderColumn.CARD_ID to integer(noteId + 100L)))
+                            add(cardRow(noteId + 100L, noteId, 0L, if (noteId == 31L) 20L else 99L))
                             if (malformedCardCount) {
-                                add(mapOf(ProviderColumn.CARD_ID to integer(noteId + 200L)))
+                                add(cardRow(noteId + 200L, noteId, 1L, 99L))
                             }
                         },
-                    )
-                }
-                ProviderEndpoint.CARD_BY_ID -> {
-                    check(exactDeck)
-                    val cardId = requireNotNull(query.endpointId)
-                    val noteId = cardId - 100L
-                    FakeProviderCursor(
-                        query.projection,
-                        listOf(cardRow(cardId, noteId, 0L, if (noteId == 31L) 20L else 99L)),
                     )
                 }
                 else -> error("unexpected query $query")
@@ -1621,11 +1670,12 @@ class AnkiProviderReadsTest {
         excluded: List<String> = emptyList(),
         cursor: com.ankiminer.android.anki.protocol.KnownVocabularyCursor? = null,
         requestId: String = REQUEST_ID,
+        deckName: String? = null,
     ) =
         ScanFirstFieldsRequest(
             RUN_ID,
             requestId,
-            KnownVocabularyScope(excluded, cursor),
+            KnownVocabularyScope(excluded, cursor, deckName),
         )
 
     private fun duplicateRequest(

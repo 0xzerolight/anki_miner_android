@@ -6,21 +6,12 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = REPO_ROOT / ".github" / "workflows" / "pull-request.yml"
+HEALTH = REPO_ROOT / "scripts" / "health.sh"
 PACKAGES_LOCK = REPO_ROOT / "scripts" / "android-sdk-packages.lock"
 
-# CI installs a subset of the local toolchain on purpose:
-#   emulator      - reactivecircus/android-emulator-runner supplies its own
-#   system-images - the same action provisions the AVD image it needs
-# Everything else must match the lock, or CI silently builds against a
-# different NDK/build-tools than scripts/health.sh does.
-CI_OMITS_ON_PURPOSE = frozenset(
-    {
-        "emulator",
-        "system-images;android-26;google_apis;x86_64",
-        "system-images;android-36;google_apis;x86_64",
-        "system-images;android-36;google_apis_ps16k;x86_64",
-    }
-)
+# CI installs every lock entry itself. The emulator action must consume these
+# preflight-verified revisions rather than resolving mutable package paths.
+CI_OMITS_ON_PURPOSE = frozenset()
 
 
 def _locked_packages() -> set[str]:
@@ -36,7 +27,8 @@ def _locked_packages() -> set[str]:
 def _workflow_sdkmanager_packages() -> set[str]:
     """Package arguments of the workflow's `sdkmanager --install` invocation."""
     source = WORKFLOW.read_text(encoding="utf-8")
-    start = source.index("sdkmanager --install")
+    command_start = source.index('sdkmanager --sdk_root="$ANDROID_HOME" --channel=0 --install')
+    start = source.index("--install", command_start) + len("--install")
     # One backslash-continued shell command: consume lines until one does not
     # continue. Running off the end means the workflow is malformed.
     packages: set[str] = set()
@@ -65,11 +57,24 @@ class CiSdkPackagesTest(unittest.TestCase):
             "only if the emulator action really does supply them",
         )
 
-    def test_lock_and_workflow_agree_on_versioned_packages(self) -> None:
-        # `platforms;android-36` style entries carry their version in the name,
-        # so subset equality above already pins them. Guard the one unversioned
-        # entry so it cannot silently drift to "whatever is latest".
-        self.assertIn("platform-tools", _workflow_sdkmanager_packages())
+    def test_ci_preflights_and_verifies_locked_sdk_revisions(self) -> None:
+        source = WORKFLOW.read_text(encoding="utf-8")
+
+        self.assertIn('sdkmanager --sdk_root="$ANDROID_HOME" --channel=0 --list', source)
+        self.assertIn("scripts/preflight_android_packages.py", source)
+        self.assertIn("--sdkmanager-list", source)
+        self.assertIn('sdkmanager --sdk_root="$ANDROID_HOME" --channel=0 --list_installed', source)
+        self.assertIn("scripts/verify_android_toolchain.py", source)
+        self.assertIn("--installed-list", source)
+        self.assertIn("--lock scripts/android-sdk-packages.lock", source)
+        self.assertEqual(set(), CI_OMITS_ON_PURPOSE)
+
+    def test_health_preflights_stable_sdk_revisions(self) -> None:
+        source = HEALTH.read_text(encoding="utf-8")
+
+        self.assertIn("preflight_android_packages.py", source)
+        self.assertIn("--sdkmanager-list", source)
+        self.assertIn('--lock "$SCRIPT_DIR/android-sdk-packages.lock"', source)
 
 
 if __name__ == "__main__":

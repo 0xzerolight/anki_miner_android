@@ -15,6 +15,7 @@ import com.ankiminer.android.anki.journal.MediaClaimState
 import com.ankiminer.android.anki.journal.MediaKind as JournalMediaKind
 import com.ankiminer.android.anki.journal.MediaPromotion
 import com.ankiminer.android.anki.journal.MediaPurpose as JournalMediaPurpose
+import com.ankiminer.android.anki.journal.MediaReservationAdmission
 import com.ankiminer.android.anki.journal.MediaReservationDraft
 import com.ankiminer.android.anki.journal.MediaReservationRecord
 import com.ankiminer.android.anki.journal.MediaReservationState
@@ -524,10 +525,9 @@ class JournalBackedMediaMutationServiceTest {
     }
 
     @Test
-    fun `an unadmittable batch fails every row locally instead of stopping the run`() {
-        // Namespace and lease admission run before any reservation exists, so the batch cannot be
-        // stored at all. It used to propagate as a top-level internal_error, which stopped the whole
-        // mining run with an unattributable message and created zero cards (Issue #6).
+    fun `a global admission refusal fails every row locally instead of stopping the run`() {
+        // Lease and global-capacity failures apply to the batch before any reservation exists.
+        // They must not become a top-level internal_error that stops the whole mining run.
         listOf(
             "lease" to
                 MediaAdmissionViolation(
@@ -536,8 +536,8 @@ class JournalBackedMediaMutationServiceTest {
                 ),
             "reserve" to
                 MediaAdmissionViolation(
-                    MediaAdmissionRefusal.DIRECT_NAME_COLLISION,
-                    "Media direct-name namespace collision",
+                    MediaAdmissionRefusal.GLOBAL_NAMESPACE_CAPACITY,
+                    "Global media namespace capacity exhausted",
                 ),
         ).forEach { (stage, failure) ->
             val request = request(2)
@@ -562,7 +562,7 @@ class JournalBackedMediaMutationServiceTest {
                     if (stage == "lease") {
                         MediaAdmissionRefusal.LEASE_ALREADY_ACTIVE_FOR_ANOTHER_RUN
                     } else {
-                        MediaAdmissionRefusal.DIRECT_NAME_COLLISION
+                        MediaAdmissionRefusal.GLOBAL_NAMESPACE_CAPACITY
                     }
                 assertTrue(
                     "$stage row error should name the typed refusal: ${error.message}",
@@ -571,7 +571,7 @@ class JournalBackedMediaMutationServiceTest {
                 )
                 assertFalse(
                     "$stage row error must not carry the exception message",
-                    error.message.contains("namespace collision") ||
+                    error.message.contains("namespace capacity") ||
                         error.message.contains("active media lease"),
                 )
             }
@@ -592,6 +592,82 @@ class JournalBackedMediaMutationServiceTest {
                 fixture.journal.appendedEvidence.any { it.contains("namespace collision") },
             )
         }
+    }
+
+    @Test
+    fun `one namespace collision fails only that asset and stores disjoint later assets`() {
+        val request = request(2)
+        val fixture = Fixture(request)
+        fixture.journal.reserveRefusals[request.assets[0].assetId] =
+            MediaAdmissionViolation(
+                MediaAdmissionRefusal.DIRECT_NAME_COLLISION,
+                "Media direct-name namespace collision",
+                "left=${request.assets[0].assetId};right=existing_asset",
+            )
+        fixture.provider.receipts += "file:///clip1.mp3"
+
+        val outcome = fixture.execute()
+
+        val failed = outcome.result.results[0] as FailedMedia
+        assertEquals(request.assets[0].assetId, failed.assetId)
+        assertTrue(failed.error.message.contains("reason=DIRECT_NAME_COLLISION"))
+        assertEquals(StoredMedia(request.assets[1].assetId, "clip1.mp3"), outcome.result.results[1])
+        assertEquals(listOf(1), fixture.staging.stagedRequests.map { it.assetId.index() })
+        assertEquals(1, fixture.provider.storeCalls)
+        assertEquals(0, fixture.journal.unusedReservationCount)
+    }
+
+    @Test
+    fun `promotion failure before commit revokes staging and releases its reservation`() {
+        val request = request(1)
+        val fixture = Fixture(request)
+        val failure = IllegalStateException("promotion transaction rejected")
+        fixture.journal.promoteFailure = failure
+
+        assertEquals(
+            failure,
+            assertThrows(IllegalStateException::class.java) { fixture.execute() },
+        )
+        assertEquals(listOf(0), fixture.staging.cleanupCalls)
+        assertEquals(setOf(10L), fixture.journal.releasedReservations)
+        assertEquals(0, fixture.provider.storeCalls)
+    }
+
+    @Test
+    fun `promotion failure after commit leaves the artifact for prepared-child recovery`() {
+        val request = request(1)
+        val fixture = Fixture(request)
+        val failure = IllegalStateException("promotion returned ambiguously")
+        fixture.journal.promoteFailureAfterCommit = failure
+
+        assertEquals(
+            failure,
+            assertThrows(IllegalStateException::class.java) { fixture.execute() },
+        )
+        assertTrue(fixture.staging.cleanupCalls.isEmpty())
+        assertTrue(fixture.journal.releasedReservations.isEmpty())
+        assertEquals(ChildState.PREPARED, fixture.journal.children.single().state)
+        assertEquals(MediaClaimState.PENDING, fixture.journal.claims.values.single().state)
+    }
+
+    @Test
+    fun `quarantined promotion cleanup forces recovery before later same-process staging`() {
+        val first = request(1)
+        val fixture = Fixture(first)
+        fixture.journal.promoteFailure = IllegalStateException("promotion transaction rejected")
+        fixture.staging.quarantineCleanup += 0
+
+        assertThrows(IllegalStateException::class.java) { fixture.execute() }
+
+        fixture.journal.promoteFailure = null
+        fixture.staging.quarantineCleanup.clear()
+        fixture.provider.receipts += "file:///clip0.mp3"
+        val second = first.copy(requestId = "anki_" + "1".repeat(32))
+        val outcome = fixture.execute(second)
+
+        assertEquals(1, fixture.staging.recoveryCalls)
+        assertEquals(listOf(StoredMedia(second.assets.single().assetId, "clip0.mp3")), outcome.result.results)
+        assertTrue(fixture.events.indexOf("recover") < fixture.events.lastIndexOf("stage:0"))
     }
 
     @Test
@@ -619,7 +695,7 @@ class JournalBackedMediaMutationServiceTest {
             check(registry.register(request.runId, cancellation))
         }
 
-        fun execute(): StoreMediaMutationOutcome =
+        fun execute(request: StoreMediaRequest = this.request): StoreMediaMutationOutcome =
             registry.withOwner(request.runId) { owner ->
                 activeOwner = owner
                 try {
@@ -647,6 +723,9 @@ class JournalBackedMediaMutationServiceTest {
         var leaseReleased = false
         var leaseFailure: RuntimeException? = null
         var reserveFailure: RuntimeException? = null
+        val reserveRefusals = mutableMapOf<String, MediaAdmissionViolation>()
+        var promoteFailure: RuntimeException? = null
+        var promoteFailureAfterCommit: RuntimeException? = null
         var commitMode = CommitMode.NORMAL
         var uncertainCompletionCount = 0
 
@@ -678,27 +757,32 @@ class JournalBackedMediaMutationServiceTest {
         override fun reserve(
             runId: String,
             assets: List<MediaReservationDraft>,
-        ): List<MediaReservationRecord> {
+        ): List<MediaReservationAdmission> {
             events += "reserve:${assets.size}"
             reserveFailure?.let { throw it }
             return assets.map { draft ->
+                reserveRefusals[draft.assetId]?.let {
+                    return@map MediaReservationAdmission.Refused(draft.assetId, it)
+                }
                 val id = nextReservationId++
-                MediaReservationRecord(
-                    id = id,
-                    leaseId = 1,
-                    runId = runId,
-                    requestId = draft.requestId,
-                    assetId = draft.assetId,
-                    requestedFilename = draft.requestedFilename,
-                    preferredName = draft.preferredName,
-                    sha256 = draft.sha256,
-                    purpose = draft.purpose,
-                    mediaKind = draft.mediaKind,
-                    state = MediaReservationState.RESERVED,
-                    claimId = null,
-                    createdAtMs = 1,
-                    updatedAtMs = 1,
-                ).also { reservations[id] = it }
+                val reservation =
+                    MediaReservationRecord(
+                        id = id,
+                        leaseId = 1,
+                        runId = runId,
+                        requestId = draft.requestId,
+                        assetId = draft.assetId,
+                        requestedFilename = draft.requestedFilename,
+                        preferredName = draft.preferredName,
+                        sha256 = draft.sha256,
+                        purpose = draft.purpose,
+                        mediaKind = draft.mediaKind,
+                        state = MediaReservationState.RESERVED,
+                        claimId = null,
+                        createdAtMs = 1,
+                        updatedAtMs = 1,
+                    ).also { reservations[id] = it }
+                MediaReservationAdmission.Reserved(reservation)
             }
         }
 
@@ -710,12 +794,16 @@ class JournalBackedMediaMutationServiceTest {
             releasedReservations += reservationId
         }
 
+        override fun reservation(reservationId: Long): MediaReservationRecord? =
+            reservations[reservationId]
+
         override fun promote(
             key: ParentKey,
             reservationId: Long,
             command: MutationCommand.StoreMedia,
         ): MediaPromotion {
             events += "promote:${command.requestIndex}"
+            promoteFailure?.let { throw it }
             val reservation = reservations.getValue(reservationId)
             check(reservation.state == MediaReservationState.RESERVED)
             val claim =
@@ -759,6 +847,7 @@ class JournalBackedMediaMutationServiceTest {
                     state = MediaReservationState.PROMOTED,
                     claimId = claim.id,
                 )
+            promoteFailureAfterCommit?.let { throw it }
             return MediaPromotion(reservations.getValue(reservationId), claim, child)
         }
 
@@ -879,6 +968,8 @@ class JournalBackedMediaMutationServiceTest {
         val failGrant = mutableSetOf<Int>()
         val failCleanup = mutableSetOf<Int>()
         val cleanupCalls = mutableListOf<Int>()
+        val quarantineCleanup = mutableSetOf<Int>()
+        var recoveryCalls = 0
 
         /** Set to throw an exact exception (e.g. one carrying a cause) from the first stage call. */
         var stageFailure: AnkiMediaStagingException? = null
@@ -908,7 +999,14 @@ class JournalBackedMediaMutationServiceTest {
             events += "cleanup:$index"
             cleanupCalls += index
             if (index in failCleanup) throw stagingFailure(AnkiMediaStagingFailure.CLEANUP_FAILED)
+            if (index in quarantineCleanup) return AnkiMediaCleanupOutcome.QUARANTINED
             return AnkiMediaCleanupOutcome.CLEANED
+        }
+
+        override fun recover(): AnkiMediaRecoveryReport {
+            events += "recover"
+            recoveryCalls += 1
+            return AnkiMediaRecoveryReport(cleanedRecords = 1, quarantinedRecords = 0, sweptOrphans = 0)
         }
 
         private fun record(

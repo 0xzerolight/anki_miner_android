@@ -1,4 +1,13 @@
-"""Android-owned composition and execution of one local video mining run."""
+"""Android-owned composition and execution of one local video mining run.
+
+Optional data sources warn and disable themselves when they cannot load, so a
+missing dictionary or word list degrades the run instead of failing it. That
+rule stops at ``MemoryError``, and a phone reaches it far sooner than a desktop:
+the wordset union alone is roughly 45 MiB across 480K entries. Swallowing an
+allocation failure would silently drop the proper-noun filter the user
+configured and keep writing cards from a memory-starved interpreter. Mirrors
+``service_factory`` upstream, which re-raises at the same six catches.
+"""
 
 from __future__ import annotations
 
@@ -82,6 +91,7 @@ class _ExpressionAudioSourceChain:
         localaudio_fetcher: object | None = None,
         fallback_fetchers: Sequence[object] = (),
         diagnostic_callback: Callable[[str], None] | None = None,
+        cache_lifetime: object | None = None,
     ) -> None:
         self._fetchers = tuple(fetchers)
         self._localaudio_fetcher = localaudio_fetcher
@@ -89,6 +99,7 @@ class _ExpressionAudioSourceChain:
         self._diagnostic_callback = diagnostic_callback
         self._fallback_hits = 0
         self._diagnostic_reported = False
+        self._cache_lifetime = cache_lifetime
 
     def _record_fallback_hit(self, fetcher: object) -> None:
         if any(fetcher is fallback for fallback in self._fallback_fetchers):
@@ -136,6 +147,9 @@ class _ExpressionAudioSourceChain:
                 logger.exception("Expression-audio source fetch failed")
                 continue
             if path is not None:
+                pin = getattr(self._cache_lifetime, "pin", None)
+                if callable(pin) and not pin(path):
+                    continue
                 self._record_fallback_hit(fetcher)
                 return path
         return None
@@ -154,6 +168,9 @@ class _ExpressionAudioSourceChain:
                 logger.exception("Expression-audio source fetch failed")
                 continue
             if path is not None:
+                pin = getattr(self._cache_lifetime, "pin", None)
+                if callable(pin) and not pin(path):
+                    continue
                 self._record_fallback_hit(fetcher)
                 return path
         return None
@@ -174,6 +191,12 @@ class _ExpressionAudioSourceChain:
                     close()
                 except Exception:
                     logger.debug("Expression-audio source close failed", exc_info=True)
+        close_lifetime = getattr(self._cache_lifetime, "close", None)
+        if callable(close_lifetime):
+            try:
+                close_lifetime()
+            except Exception:
+                logger.debug("Expression-audio cache lifetime close failed", exc_info=True)
 
 
 class _PostProcessCleanupError(Exception):
@@ -349,13 +372,18 @@ def _build_expression_audio_source_chain(
     from anki_miner.config.paths import ANKI_MINER_HOME
     from anki_miner.services.audio_packs.registry import AudioPackRegistry
 
-    from .expression_audio_fetcher import CustomAudioFetcher, custom_audio_slug
+    from .expression_audio_fetcher import (
+        CustomAudioFetcher,
+        _RunAudioCache,
+        custom_audio_slug,
+    )
 
     # Nesting the custom cache UNDER the approved LOCAL_AUDIO_CACHE_ROOT
     # (audio_cache/local_packs) keeps the localaudio download inside the
     # already-approved media-staging prefix (startsWith approval), so bug 7 is
     # independent of the media-staging approval boundary.
     cache_root = ANKI_MINER_HOME / "audio_cache" / "local_packs"
+    cache_lifetime = _RunAudioCache(cache_root)
 
     # Lazily scan the packs dir only when an enabled pack entry is present.
     pack_fetchers_by_id: dict[str, object] = {}
@@ -389,6 +417,8 @@ def _build_expression_audio_source_chain(
                 # affects fetched bytes, so desktop OUTPUT parity holds.
                 delay=0.0,
                 approved_audio_origins=_LOCALAUDIO_APPROVED_AUDIO_ORIGINS,
+                ffprobe_path=getattr(config, "ffprobe_location", None),
+                cache_lifetime=cache_lifetime,
             )
             fetchers.append(custom_fetcher)
             if kind == "custom_json":
@@ -408,6 +438,7 @@ def _build_expression_audio_source_chain(
         localaudio_fetcher=localaudio_fetcher,
         fallback_fetchers=fallback_fetchers,
         diagnostic_callback=diagnostic_callback,
+        cache_lifetime=cache_lifetime,
     )
 
 
@@ -529,6 +560,8 @@ def _build_processor(
         if has_indexed_dictionary:
             try:
                 definition_service.ensure_loaded()
+            except MemoryError:
+                raise  # never an optional-source miss; see the module note
             except Exception as error:
                 _show_optional_failure(
                     adapters.presenter,
@@ -564,6 +597,8 @@ def _build_processor(
                     # unreadable on-disk index. Not an error; pitch fields stay
                     # empty for the run.
                     adapters.presenter.show_warning("No pitch accent source could be loaded")
+            except MemoryError:
+                raise  # never an optional-source miss; see the module note
             except Exception as error:
                 _show_optional_failure(
                     adapters.presenter,
@@ -585,6 +620,8 @@ def _build_processor(
                         frequency_providers.append(provider)
                 if frequency_providers:
                     frequency_service = MultiFrequencyService(frequency_providers)
+            except MemoryError:
+                raise  # never an optional-source miss; see the module note
             except Exception as error:
                 for provider in candidates:
                     _close_without_masking(provider, "frequency provider")
@@ -600,6 +637,8 @@ def _build_processor(
             known_word_db = KnownWordDB(config.known_words_db_path)
             if config.use_known_words_db:
                 known_word_db.initialize()
+        except MemoryError:
+            raise  # never an optional-source miss; see the module note
         except Exception as error:
             _show_optional_failure(
                 adapters.presenter,
@@ -617,6 +656,8 @@ def _build_processor(
                     whitelist_path=(config.whitelist_path if config.use_whitelist else None),
                 )
                 word_list_service.load()
+            except MemoryError:
+                raise  # never an optional-source miss; see the module note
             except Exception as error:
                 _show_optional_failure(
                     adapters.presenter,
@@ -633,6 +674,8 @@ def _build_processor(
                 wordset_service.load()
                 if not wordset_service.is_available():
                     wordset_service = None
+            except MemoryError:
+                raise  # never an optional-source miss; see the module note
             except Exception as error:
                 _show_optional_failure(
                     adapters.presenter,

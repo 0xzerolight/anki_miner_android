@@ -19,6 +19,7 @@ import com.ankiminer.android.data.settings.ResourceChainSelection
 import com.ankiminer.android.data.settings.SubtitleRegexCheck
 import com.ankiminer.android.data.settings.ThemeMode
 import com.ankiminer.android.localization.LocalizedStringResource
+import java.io.IOException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.NonCancellable
@@ -26,6 +27,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChangedBy
 import kotlinx.coroutines.flow.filter
@@ -192,10 +194,16 @@ internal data class SettingsDraft(
                             ),
                         )
                     }
-                SubtitleRegexCheck
-                    .rejection(subtitleRegex.takeIf(String::isNotEmpty), subtitleRegexReplacement)
+                subtitleRegexRejection
                     ?.let { code -> put(subtitleRegexField(code), subtitleRegexMessage(code)) }
             }
+
+    private val subtitleRegexRejection: InvalidAppSettingCode?
+        get() =
+            SubtitleRegexCheck.rejection(
+                subtitleRegex.takeIf(String::isNotEmpty),
+                subtitleRegexReplacement,
+            )
 
     /** Java rejected the pattern. Python `re` still decides, so this warns instead of blocking. */
     val subtitleRegexWarning: Boolean
@@ -250,8 +258,9 @@ internal data class SettingsDraft(
         )
 
     /** Apply every valid field while retaining persisted values for invalid numeric text. */
-    fun toPersistableSettings(base: AppSettings): AppSettings =
-        copy(
+    fun toPersistableSettings(base: AppSettings): AppSettings {
+        val keepPersistedSubtitleRegexPair = subtitleRegexRejection != null
+        return copy(
             audioPadding =
                 audioPadding.takeIf { SettingsFieldKey.AUDIO_PADDING !in validation }
                     ?: base.audioPaddingSeconds?.toString().orEmpty(),
@@ -282,14 +291,13 @@ internal data class SettingsDraft(
                 workers.takeIf { SettingsFieldKey.WORKERS !in validation }
                     ?: base.maxParallelWorkers?.toString().orEmpty(),
             subtitleRegex =
-                subtitleRegex.takeIf { SettingsFieldKey.SUBTITLE_REGEX !in validation }
+                subtitleRegex.takeUnless { keepPersistedSubtitleRegexPair }
                     ?: base.subtitleRegexFilter.orEmpty(),
             subtitleRegexReplacement =
-                subtitleRegexReplacement.takeIf {
-                    SettingsFieldKey.SUBTITLE_REGEX_REPLACEMENT !in validation
-                }
+                subtitleRegexReplacement.takeUnless { keepPersistedSubtitleRegexPair }
                     ?: base.subtitleRegexReplacement.orEmpty(),
         ).toSettings(base)
+    }
 
     /**
      * Re-derive the three ordered resource-chain fields against [resources] while preserving every
@@ -783,6 +791,11 @@ internal class SettingsViewModel(
     private val settings: StateFlow<AppSettings?> =
         repository.settings
             .map<AppSettings, AppSettings?> { it }
+            .catch { failure ->
+                if (failure is CancellationException) throw failure
+                if (failure !is IOException) throw failure
+                // No fallback emission: failed reads leave the draft unloaded and non-persistable.
+            }
             .stateIn(viewModelScope, SharingStarted.Eagerly, null)
     val saving = MutableStateFlow(false)
     val error = MutableStateFlow<LocalizedStringResource?>(null)
@@ -871,6 +884,7 @@ internal class SettingsViewModel(
                 currentState.deckDirty != state.deckDirty ||
                 currentState.dictionarySourcesDirty != state.dictionarySourcesDirty ||
                 currentState.frequencySourcesDirty != state.frequencySourcesDirty ||
+                currentState.pitchSourcesDirty != state.pitchSourcesDirty ||
                 currentState.audioPacksDirty != state.audioPacksDirty
         ) {
             return
@@ -933,6 +947,12 @@ internal class SettingsViewModel(
                     } else {
                         current.frequencySources
                     },
+                pitchSources =
+                    if (state.pitchSourcesDirty) {
+                        candidate.pitchSources
+                    } else {
+                        current.pitchSources
+                    },
                 audioPacks =
                     if (state.audioPacksDirty) {
                         candidate.audioPacks
@@ -942,58 +962,61 @@ internal class SettingsViewModel(
             )
         }
 
-    private fun save(transform: (AppSettings) -> AppSettings) {
-        if (saving.value) return
-        val started = draftStore.state.value
-        saving.value = true
-        mutableSaveState.value = SettingsSaveState.Saving(started.editRevision)
-        error.value = null
+    /**
+     * Accept a confirmed reset into the persistence queue.
+     *
+     * `true` means ownership transferred to this ViewModel: the reset will run after any active
+     * autosave. `false` means settings have not loaded, so the caller must keep confirmation
+     * visible. An active write never rejects or replaces an accepted reset.
+     */
+    private fun save(transform: (AppSettings) -> AppSettings): Boolean {
+        if (!draftState.value.loaded) return false
         viewModelScope.launch {
-            try {
-                // Fold all persistable draft fields into the transaction, then apply the reset.
-                persistenceMutex.withLock {
+            var flushAfterReset = false
+            persistenceMutex.withLock {
+                val started = draftStore.state.value
+                saving.value = true
+                mutableSaveState.value = SettingsSaveState.Saving(started.editRevision)
+                error.value = null
+                try {
+                    // Fold all persistable draft fields into the transaction, then apply the reset.
                     repository.update { current ->
                         transform(if (started.dirty) applyDraft(started, current) else current)
                     }
+                    draftStore.completeScopedSave(
+                        started = started,
+                        settings = repository.settings.first(),
+                        resources = resources.state.value,
+                    )
+                    val completedRevision = draftStore.state.value.editRevision
+                    if (completedRevision == started.editRevision) {
+                        mutableSaveState.value = SettingsSaveState.Saved(completedRevision)
+                    }
+                } catch (failure: CancellationException) {
+                    throw failure
+                } catch (failure: InvalidAppSettingException) {
+                    error.value = settingsValidationError(failure)
+                    mutableSaveState.value = SettingsSaveState.Failed(started.editRevision)
+                } catch (_: Exception) {
+                    error.value = LocalizedStringResource(R.string.b3_settings_save_failed)
+                    mutableSaveState.value = SettingsSaveState.Failed(started.editRevision)
+                } finally {
+                    saving.value = false
+                    flushAfterReset = draftStore.state.value.dirty
                 }
-                draftStore.completeScopedSave(
-                    started = started,
-                    settings = repository.settings.first(),
-                    resources = resources.state.value,
-                )
-                val completedRevision = draftStore.state.value.editRevision
-                if (completedRevision == started.editRevision) {
-                    mutableSaveState.value = SettingsSaveState.Saved(completedRevision)
-                }
-            } catch (failure: CancellationException) {
-                throw failure
-            } catch (failure: InvalidAppSettingException) {
-                error.value = settingsValidationError(failure)
-                mutableSaveState.value = SettingsSaveState.Failed(started.editRevision)
-            } catch (_: Exception) {
-                error.value = LocalizedStringResource(R.string.b3_settings_save_failed)
-                mutableSaveState.value = SettingsSaveState.Failed(started.editRevision)
-            } finally {
-                saving.value = false
-                if (draftStore.state.value.dirty) flushPendingWrites()
             }
+            if (flushAfterReset) flushPendingWrites()
         }
+        return true
     }
 
-    fun restoreMiningDefaults() {
-        if (!draftState.value.loaded) return
-        save(AppSettings::restoreMiningDefaults)
-    }
+    fun restoreMiningDefaults(): Boolean = save(AppSettings::restoreMiningDefaults)
 
-    fun resetAnkiTarget() {
-        if (!draftState.value.loaded) return
-        save(AppSettings::resetAnkiTarget)
-    }
+    fun resetAnkiTarget(): Boolean = save(AppSettings::resetAnkiTarget)
 
-    fun resetResourceChoices() {
-        if (!draftState.value.loaded) return
+    fun resetResourceChoices(): Boolean {
         val inventory = resources.state.value
-        save { current ->
+        return save { current ->
             current.resetResourceChoices(
                 dictionaryIds = inventory.usableDictionaryIds(),
                 frequencyIds = inventory.usableFrequencyIds(),

@@ -93,6 +93,7 @@ internal class AnkiProviderReadService(
         noteType: String,
         fieldMap: Map<String, String>,
         cancellation: AnkiCancellation,
+        cardTypeMarkerField: String? = null,
     ): NoteTypeSetupStatus {
         val model =
             try {
@@ -123,6 +124,12 @@ internal class AnkiProviderReadService(
             }
         val allMissing = (missing + missingOptional).distinct().sorted()
         if (allMissing.isNotEmpty()) return NoteTypeSetupStatus.FieldsMissing(allMissing)
+        val marker = cardTypeMarkerField?.takeIf { it.isNotEmpty() }
+        if (marker != null && marker !in model.fieldNames) {
+            return NoteTypeSetupStatus.FieldsMissing(
+                listOf(AnkiFieldMapPolicy.CARD_TYPE_MARKER_KEY),
+            )
+        }
         if (fieldMap[AnkiFieldKeys.WORD] != model.fieldNames.firstOrNull()) {
             return NoteTypeSetupStatus.FirstFieldMismatch
         }
@@ -131,6 +138,16 @@ internal class AnkiProviderReadService(
                 conflict.destination,
                 conflict.logicalKeys,
             )
+        }
+        if (marker != null) {
+            fieldMap.entries
+                .firstOrNull { (_, destination) -> destination == marker }
+                ?.let { (logicalKey, _) ->
+                    return NoteTypeSetupStatus.FieldMapInvalid(
+                        marker,
+                        listOf(logicalKey, AnkiFieldMapPolicy.CARD_TYPE_MARKER_KEY),
+                    )
+                }
         }
         return NoteTypeSetupStatus.Verified(model.id)
     }
@@ -227,18 +244,23 @@ internal class AnkiProviderReadService(
         scope: KnownVocabularyScope,
     ): KnownVocabularyResult {
         val cancellation = registry.cancellation(owner)
+        val traversalScope =
+            KnownTraversalScope(
+                excludedDecks = scope.excludedDecks,
+                deckName = scope.deckName,
+            )
         val lease =
             if (scope.cursor == null) {
-                val initialization = registry.beginKnownTraversal(owner, scope.excludedDecks)
+                val initialization = registry.beginKnownTraversal(owner, traversalScope)
                 try {
-                    val noteIds = snapshotKnownNoteIds(scope.excludedDecks, cancellation)
+                    val noteIds = snapshotKnownNoteIds(owner, traversalScope, cancellation)
                     registry.finishKnownTraversalInitialization(owner, initialization, noteIds)
                 } catch (error: RuntimeException) {
                     registry.abortKnownTraversalInitialization(owner, initialization)
                     throw error
                 }
             } else {
-                registry.reserveKnownPage(owner, scope.excludedDecks, scope.cursor)
+                registry.reserveKnownPage(owner, traversalScope, scope.cursor)
             }
         try {
             val firstFields = readKnownPage(lease.noteIds, cancellation)
@@ -269,28 +291,63 @@ internal class AnkiProviderReadService(
     }
 
     private fun snapshotKnownNoteIds(
-        excludedDecks: List<String>,
+        owner: AnkiRunStateRegistry.RunOwner,
+        scope: KnownTraversalScope,
         cancellation: AnkiCancellation,
     ): List<Long> {
-        val snapshot = ArrayList<Long>()
-        provider.queryRequired(NOTE_ID_SNAPSHOT_QUERY, cancellation).use { cursor ->
-            requireProjection(cursor, NOTE_ID_SNAPSHOT_QUERY)
-            var prior = 0L
-            while (cursor.moveToNext()) {
-                ensureActive(cancellation)
-                val id = cursor.positiveLong(ProviderColumn.NOTE_ID)
-                if (id <= prior) throw queryFailed()
-                prior = id
-                snapshot += id
-                if (snapshot.size > AnkiLimitsV1.ScanFirstFields.KNOWN_TOTAL_SCANNED_NOTE_MAX_COUNT) {
-                    throw queryFailed("The Anki collection exceeds the v1 known-vocabulary scan limit")
+        val snapshot =
+            if (scope.deckName == null) {
+                val allNotes = ArrayList<Long>()
+                provider.queryRequired(NOTE_ID_SNAPSHOT_QUERY, cancellation).use { cursor ->
+                    requireProjection(cursor, NOTE_ID_SNAPSHOT_QUERY)
+                    var prior = 0L
+                    while (cursor.moveToNext()) {
+                        ensureActive(cancellation)
+                        val id = cursor.positiveLong(ProviderColumn.NOTE_ID)
+                        if (id <= prior) throw queryFailed()
+                        prior = id
+                        allNotes += id
+                        if (allNotes.size > AnkiLimitsV1.ScanFirstFields.KNOWN_TOTAL_SCANNED_NOTE_MAX_COUNT) {
+                            throw knownVocabularyLimitExceeded("an Anki collection")
+                        }
+                    }
                 }
+                allNotes
+            } else {
+                val target = registry.target(owner) ?: throw invalidRequest("The Anki target has not been verified")
+                if (scope.deckName != target.deck.name) {
+                    throw invalidRequest("The known-vocabulary deck scope does not match the verified target")
+                }
+                val exactNotes = linkedSetOf<Long>()
+                val query =
+                    ProviderQuery(
+                        endpoint = ProviderEndpoint.CARDS,
+                        projection = ProviderQueryShapes.CARD_NOTE_DECK_PROJECTION,
+                        selection = ProviderSelection.CardsInDeck(scope.deckName),
+                    )
+                provider.queryRequired(query, cancellation).use { cursor ->
+                    requireProjection(cursor, query)
+                    while (cursor.moveToNext()) {
+                        ensureActive(cancellation)
+                        val noteId = cursor.positiveLong(ProviderColumn.CARD_NOTE_ID)
+                        val deckId = cursor.positiveLong(ProviderColumn.CARD_DECK_ID)
+                        if (deckId == target.deck.id) {
+                            exactNotes += noteId
+                            if (
+                                exactNotes.size >
+                                AnkiLimitsV1.ScanFirstFields.KNOWN_TOTAL_SCANNED_NOTE_MAX_COUNT
+                            ) {
+                                throw knownVocabularyLimitExceeded("the selected Anki deck")
+                            }
+                        }
+                    }
+                }
+                exactNotes.sorted()
             }
-        }
-        if (excludedDecks.isEmpty() || snapshot.isEmpty()) return snapshot
+        if (scope.excludedDecks.isEmpty() || snapshot.isEmpty()) return snapshot
 
         val existingNames = targets.readAllDeckNames(cancellation)
-        val minimalScopes = minimalExistingDeckScopes(excludedDecks, existingNames)
+        val minimalScopes = minimalExistingDeckScopes(scope.excludedDecks, existingNames)
         if (minimalScopes.isEmpty()) return snapshot
         val snapshotSet = snapshot.toHashSet()
         val excluded = HashSet<Long>()
@@ -303,19 +360,19 @@ internal class AnkiProviderReadService(
                     projection = ProviderQueryShapes.NOTE_ID_PROJECTION,
                     selection = ProviderSelection.ExcludedDeck(deckName),
                 )
-            provider.queryOptional(query, cancellation)?.use { cursor ->
+            provider.queryRequired(query, cancellation).use { cursor ->
                 requireProjection(cursor, query)
                 val seen = HashSet<Long>()
                 while (cursor.moveToNext()) {
                     ensureActive(cancellation)
+                    // Counted per row and checked before the cell read, so the scan refuses on
+                    // reaching row 100001 without pulling its cells.
                     excludedBrowserRows = checkedAdd(excludedBrowserRows, 1)
                     if (
                         excludedBrowserRows >
                         AnkiLimitsV1.ScanFirstFields.KNOWN_TOTAL_SCANNED_NOTE_MAX_COUNT
                     ) {
-                        throw queryFailed(
-                            "The Anki excluded-deck scan exceeds the v1 collection limit",
-                        )
+                        throw knownVocabularyLimitExceeded("the excluded Anki decks")
                     }
                     val id = cursor.positiveLong(ProviderColumn.NOTE_ID)
                     if (!seen.add(id)) throw queryFailed()
@@ -955,38 +1012,39 @@ internal class GlobalCardReader(private val provider: CheckedProvider) {
         if (noteId <= 0L || templateCount !in 1..AnkiLimitsV1.CreateNotes.MAX_CARD_COUNT_PER_NOTE) {
             throw queryFailed()
         }
-        val idQuery =
+        val query =
             ProviderQuery(
-                endpoint = ProviderEndpoint.CARDS,
-                projection = ProviderQueryShapes.CARD_ID_PROJECTION,
-                selection = ProviderSelection.CardsForNote(noteId),
+                endpoint = ProviderEndpoint.CARDS_FOR_NOTE,
+                endpointId = noteId,
+                projection = ProviderQueryShapes.CARD_IDENTITY_PROJECTION,
             )
-        val ids = ArrayList<Long>()
-        provider.queryRequired(idQuery, cancellation).use { cursor ->
-            requireProjection(cursor, idQuery)
+        val cards = ArrayList<CardIdentity>()
+        val ids = HashSet<Long>()
+        val ordinals = HashSet<Int>()
+        provider.queryRequired(query, cancellation).use { cursor ->
+            requireProjection(cursor, query)
             while (cursor.moveToNext()) {
                 ensureActive(cancellation)
-                val id = cursor.positiveLong(ProviderColumn.CARD_ID)
-                if (id in ids) throw queryFailed()
-                ids += id
-                if (ids.size > templateCount) throw queryFailed()
-            }
-        }
-        if (ids.isEmpty()) throw queryFailed()
-        val cards = ArrayList<CardIdentity>(ids.size)
-        for (id in ids.sorted()) {
-            ensureActive(cancellation)
-            val card = readById(id, cancellation)
-            if (
-                card.id != id ||
+                val card =
+                    CardIdentity(
+                        id = cursor.positiveLong(ProviderColumn.CARD_ID),
+                        noteId = cursor.positiveLong(ProviderColumn.CARD_NOTE_ID),
+                        ordinal = cursor.exactInt(ProviderColumn.CARD_ORDINAL),
+                        deckId = cursor.positiveLong(ProviderColumn.CARD_DECK_ID),
+                    )
+                if (
                     card.noteId != noteId ||
-                    card.ordinal !in 0 until templateCount
-            ) {
-                throw queryFailed()
+                        card.ordinal !in 0 until templateCount ||
+                        !ids.add(card.id) ||
+                        !ordinals.add(card.ordinal)
+                ) {
+                    throw queryFailed()
+                }
+                cards += card
+                if (cards.size > templateCount) throw queryFailed()
             }
-            cards += card
         }
-        if (cards.map { it.ordinal }.distinct().size != cards.size) throw queryFailed()
+        if (cards.isEmpty()) throw queryFailed()
         return cards.sortedWith(compareBy(CardIdentity::ordinal, CardIdentity::id))
     }
 
@@ -1253,6 +1311,15 @@ private fun queryFailed(
     stableMessage = message,
     cause = cause,
 )
+
+private fun knownVocabularyLimitExceeded(scope: String) =
+    AnkiReadFailure(
+        AnkiErrorCode.UNSUPPORTED_OPERATION,
+        retryable = false,
+        stableMessage =
+            "Known-word filtering supports at most " +
+                "${AnkiLimitsV1.ScanFirstFields.KNOWN_TOTAL_SCANNED_NOTE_MAX_COUNT} notes in $scope",
+    )
 
 private fun targetInvalid(message: String) =
     AnkiReadFailure(

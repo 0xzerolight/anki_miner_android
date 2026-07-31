@@ -101,6 +101,9 @@ def configure_tokenizer(payload: Mapping[str, object]) -> str:
                 expected_tree_sha256=tree_sha256,
             )
         except TokenizerContractError as error:
+            if error.code == "unidic_tree_replaced":
+                _configuration_requires_restart = True
+                raise _restart_required_error() from error
             raise _safe_contract_error(error) from error
 
         try:

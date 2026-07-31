@@ -2,6 +2,9 @@ package com.ankiminer.android.engine
 
 /** Public Java-reflected surface called synchronously by the Python bridge. */
 interface EngineCallbacks {
+    /** Local cancellation admission observed by Python while its curation gate is parked. */
+    fun cancellationRequested(): Boolean = false
+
     fun registerJob(message: String): String
 
     fun onStart(message: String)

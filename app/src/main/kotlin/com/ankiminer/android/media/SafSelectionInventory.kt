@@ -2,6 +2,7 @@ package com.ankiminer.android.media
 
 import android.content.Context
 import android.content.SharedPreferences
+import java.io.IOException
 import java.nio.charset.StandardCharsets
 import java.util.Locale
 
@@ -55,6 +56,13 @@ internal interface SafSelectionInventory {
         selection: SafSelectionRecord?,
     )
 
+    /**
+     * Persist one ownership transaction. Durable implementations must commit all entries together.
+     */
+    fun putSelections(selections: Map<SafSelectionSlot, SafSelectionRecord?>) {
+        selections.forEach(::putSelection)
+    }
+
     fun text(slot: SafSelectionSlot): String?
 
     fun putText(
@@ -67,6 +75,11 @@ internal interface SafSelectionInventory {
     fun pruneMissingGrants(grantedUris: Set<String>)
 }
 
+internal class SafSelectionPersistenceException(
+    message: String,
+    cause: Throwable? = null,
+) : IOException(message, cause)
+
 internal class TransientSafSelectionInventory : SafSelectionInventory {
     private val monitor = Any()
     private val selections = mutableMapOf<SafSelectionSlot, SafSelectionRecord>()
@@ -78,9 +91,19 @@ internal class TransientSafSelectionInventory : SafSelectionInventory {
     override fun putSelection(
         slot: SafSelectionSlot,
         selection: SafSelectionRecord?,
+    ) = putSelections(mapOf(slot to selection))
+
+    override fun putSelections(
+        selections: Map<SafSelectionSlot, SafSelectionRecord?>,
     ) {
         synchronized(monitor) {
-            if (selection == null) selections.remove(slot) else selections[slot] = selection
+            selections.forEach { (slot, selection) ->
+                if (selection == null) {
+                    this.selections.remove(slot)
+                } else {
+                    this.selections[slot] = selection
+                }
+            }
         }
     }
 
@@ -130,37 +153,34 @@ internal class AndroidSafSelectionInventory(
 
     override fun selection(slot: SafSelectionSlot): SafSelectionRecord? =
         synchronized(monitor) {
-            val record =
-                safSelectionRecordOrNull(
-                    uri = preferences.getString(slot.uriKey, null),
-                    displayName = preferences.getString(slot.displayNameKey, null),
-                )
-            if (
-                record == null &&
-                (preferences.contains(slot.uriKey) || preferences.contains(slot.displayNameKey))
-            ) {
-                preferences.edit()
-                    .remove(slot.uriKey)
-                    .remove(slot.displayNameKey)
-                    .commit()
-            }
-            record
+            safSelectionRecordOrNull(
+                uri = preferences.getString(slot.uriKey, null),
+                displayName = preferences.getString(slot.displayNameKey, null),
+            )
         }
 
     override fun putSelection(
         slot: SafSelectionSlot,
         selection: SafSelectionRecord?,
+    ) = putSelections(mapOf(slot to selection))
+
+    override fun putSelections(
+        selections: Map<SafSelectionSlot, SafSelectionRecord?>,
     ) {
         synchronized(monitor) {
             val editor = preferences.edit()
-            if (selection == null) {
-                editor.remove(slot.uriKey).remove(slot.displayNameKey)
-            } else {
-                editor
-                    .putString(slot.uriKey, selection.uri)
-                    .putString(slot.displayNameKey, selection.displayName)
+            selections.forEach { (slot, selection) ->
+                if (selection == null) {
+                    editor.remove(slot.uriKey).remove(slot.displayNameKey)
+                } else {
+                    editor
+                        .putString(slot.uriKey, selection.uri)
+                        .putString(slot.displayNameKey, selection.displayName)
+                }
             }
-            check(editor.commit()) { "Could not persist SAF selection inventory" }
+            if (!editor.commit()) {
+                throw SafSelectionPersistenceException("Could not persist SAF selection inventory")
+            }
         }
     }
 
@@ -195,7 +215,12 @@ internal class AndroidSafSelectionInventory(
         synchronized(monitor) {
             val staleSlots =
                 DOCUMENT_SLOTS.filter { slot ->
-                    selection(slot)?.uri?.let { it !in grantedUris } == true
+                    val selection = selection(slot)
+                    (
+                        selection == null &&
+                            (preferences.contains(slot.uriKey) ||
+                                preferences.contains(slot.displayNameKey))
+                    ) || selection?.uri?.let { it !in grantedUris } == true
                 }.toMutableSet()
             val retainedSource =
                 selection(SafSelectionSlot.READING_SOURCE)
@@ -219,7 +244,11 @@ internal class AndroidSafSelectionInventory(
             if (clearSeries) {
                 editor.remove(SafSelectionSlot.READING_SUBTITLE_SERIES.textKey)
             }
-            check(editor.commit()) { "Could not reconcile SAF selection inventory" }
+            if (!editor.commit()) {
+                throw SafSelectionPersistenceException(
+                    "Could not reconcile SAF selection inventory",
+                )
+            }
         }
     }
 

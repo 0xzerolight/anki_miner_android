@@ -48,6 +48,28 @@ anki_miner_require_no_emulator() {
     fi
 }
 
+anki_miner_acquire_emulator_lock() {
+    local lock_directory lock_path
+
+    if [[ -n "${ANKI_MINER_EMULATOR_LOCK_FD:-}" ]]; then
+        return 0
+    fi
+    if ! command -v flock >/dev/null 2>&1; then
+        echo "Refusing to start an emulator because flock is unavailable." >&2
+        return 1
+    fi
+    lock_directory="$ANKI_MINER_ANDROID_TOOLCHAIN_ROOT/.locks"
+    lock_path="$lock_directory/emulator.lock"
+    mkdir -p "$lock_directory"
+    exec {ANKI_MINER_EMULATOR_LOCK_FD}>"$lock_path"
+    if ! flock --exclusive --nonblock "$ANKI_MINER_EMULATOR_LOCK_FD"; then
+        exec {ANKI_MINER_EMULATOR_LOCK_FD}>&-
+        unset ANKI_MINER_EMULATOR_LOCK_FD
+        echo "Refusing to start another emulator launcher while one already owns the lock." >&2
+        return 1
+    fi
+}
+
 anki_miner_require_emulator_capacity() {
     local meminfo_path available_kib swap_total_kib swap_free_kib
     local minimum_available_kib minimum_swap_free_kib

@@ -48,4 +48,32 @@ class WordListFileFormatTest {
 
         assertEquals(2, WordListFileFormat.entryCount(file))
     }
+
+    @Test
+    fun installNormalizationRemovesUtf8BomFromFirstWord() {
+        val file = temporaryFolder.newFile("bom-word.txt")
+        file.writeBytes(
+            byteArrayOf(0xef.toByte(), 0xbb.toByte(), 0xbf.toByte()) +
+                "猫\n".toByteArray(),
+        )
+
+        val entryCount = WordListFileFormat.normalizeForInstall(file)
+
+        assertEquals(1, entryCount)
+        assertEquals("猫\n", file.readText(Charsets.UTF_8))
+    }
+
+    @Test
+    fun installNormalizationMakesBomPrefixedFirstCommentAComment() {
+        val file = temporaryFolder.newFile("bom-comment.txt")
+        file.writeBytes(
+            byteArrayOf(0xef.toByte(), 0xbb.toByte(), 0xbf.toByte()) +
+                "# comment\n猫\n".toByteArray(),
+        )
+
+        val entryCount = WordListFileFormat.normalizeForInstall(file)
+
+        assertEquals(1, entryCount)
+        assertEquals("# comment\n猫\n", file.readText(Charsets.UTF_8))
+    }
 }

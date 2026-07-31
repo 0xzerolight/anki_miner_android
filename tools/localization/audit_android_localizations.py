@@ -38,6 +38,12 @@ class StringResource:
     xliff_signature: tuple[tuple[str, int], ...]
 
 
+@dataclass(frozen=True)
+class CatalogResource:
+    kind: str
+    items: dict[str, StringResource]
+
+
 def _counter_signature(values: list[str]) -> tuple[tuple[str, int], ...]:
     return tuple(sorted(Counter(values).items()))
 
@@ -97,7 +103,21 @@ def _xliff_signature(element: ElementTree.Element) -> tuple[tuple[str, int], ...
     return _counter_signature(placeholders)
 
 
-def read_catalog(path: Path) -> dict[str, StringResource]:
+def _string_resource(
+    element: ElementTree.Element,
+    *,
+    path: Path,
+    key: str,
+) -> StringResource:
+    text = "".join(element.itertext())
+    return StringResource(
+        text=text,
+        format_signature=_printf_signature(text, path=path, key=key),
+        xliff_signature=_xliff_signature(element),
+    )
+
+
+def read_catalog(path: Path) -> dict[str, CatalogResource]:
     try:
         root = ElementTree.parse(path).getroot()
     except (OSError, ElementTree.ParseError) as failure:
@@ -105,19 +125,34 @@ def read_catalog(path: Path) -> dict[str, StringResource]:
     if root.tag != "resources":
         raise CatalogError(f"{path}: root element must be <resources>")
 
-    resources: dict[str, StringResource] = {}
+    resources: dict[str, CatalogResource] = {}
     for element in root.findall("string"):
         key = element.attrib.get("name", "").strip()
         if not key:
             raise CatalogError(f"{path}: <string> is missing a name")
         if key in resources:
             raise CatalogError(f"{path}: duplicate key: {key}")
-        text = "".join(element.itertext())
-        resources[key] = StringResource(
-            text=text,
-            format_signature=_printf_signature(text, path=path, key=key),
-            xliff_signature=_xliff_signature(element),
+        resources[key] = CatalogResource(
+            kind="string",
+            items={"value": _string_resource(element, path=path, key=key)},
         )
+    for element in root.findall("plurals"):
+        key = element.attrib.get("name", "").strip()
+        if not key:
+            raise CatalogError(f"{path}: <plurals> is missing a name")
+        if key in resources:
+            raise CatalogError(f"{path}: duplicate key: {key}")
+        items: dict[str, StringResource] = {}
+        for item in element.findall("item"):
+            quantity = item.attrib.get("quantity", "").strip()
+            if not quantity:
+                raise CatalogError(f"{path}: <plurals> {key} has an item without quantity")
+            if quantity in items:
+                raise CatalogError(f"{path}: duplicate plural quantity for {key}: {quantity}")
+            items[quantity] = _string_resource(item, path=path, key=f"{key}[{quantity}]")
+        if "other" not in items:
+            raise CatalogError(f"{path}: <plurals> {key} is missing quantity=other")
+        resources[key] = CatalogResource(kind="plurals", items=items)
     return resources
 
 
@@ -137,7 +172,7 @@ def audit(resource_root: Path) -> tuple[int, list[Path]]:
     source_path = resource_root / "values/strings.xml"
     source = read_catalog(source_path)
     if not source:
-        raise CatalogError(f"{source_path}: source catalog has no <string> resources")
+        raise CatalogError(f"{source_path}: source catalog has no resources")
 
     catalogs = locale_catalogs(resource_root)
     failures: list[str] = []
@@ -155,19 +190,31 @@ def audit(resource_root: Path) -> tuple[int, list[Path]]:
         for key in sorted(source_keys & translation_keys):
             source_resource = source[key]
             translated_resource = translation[key]
-            source_signature = (
-                source_resource.format_signature,
-                source_resource.xliff_signature,
-            )
-            translation_signature = (
-                translated_resource.format_signature,
-                translated_resource.xliff_signature,
-            )
-            if source_signature != translation_signature:
+            if source_resource.kind != translated_resource.kind:
                 failures.append(
-                    f"{relative}: format mismatch for {key}: "
-                    f"source={source_signature}; translation={translation_signature}"
+                    f"{relative}: resource kind mismatch for {key}: "
+                    f"source={source_resource.kind}; translation={translated_resource.kind}"
                 )
+                continue
+            for quantity, translated_item in translated_resource.items.items():
+                source_item = source_resource.items.get(quantity) or source_resource.items.get("other")
+                if source_item is None:
+                    failures.append(f"{relative}: source plural {key} has no comparable quantity for {quantity}")
+                    continue
+                source_signature = (
+                    source_item.format_signature,
+                    source_item.xliff_signature,
+                )
+                translation_signature = (
+                    translated_item.format_signature,
+                    translated_item.xliff_signature,
+                )
+                label = key if source_resource.kind == "string" else f"{key}[{quantity}]"
+                if source_signature != translation_signature:
+                    failures.append(
+                        f"{relative}: format mismatch for {label}: "
+                        f"source={source_signature}; translation={translation_signature}"
+                    )
 
     if failures:
         raise CatalogError("\n".join(failures))
@@ -194,8 +241,8 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     for catalog in catalogs:
-        print(f"{catalog.relative_to(args.resource_root.resolve())}: {source_count} strings verified")
-    print(f"Localization audit passed: {source_count} source strings; {len(catalogs)} locale catalog(s) verified")
+        print(f"{catalog.relative_to(args.resource_root.resolve())}: {source_count} resources verified")
+    print(f"Localization audit passed: {source_count} source resources; {len(catalogs)} locale catalog(s) verified")
     return 0
 
 

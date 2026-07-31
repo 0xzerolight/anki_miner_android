@@ -71,6 +71,7 @@ internal class CachedSentenceAudioSynthesizer(
 ) : SentenceAudioSynthesizer {
     private val root = cacheRoot.absoluteFile.normalize()
     private val closed = AtomicBoolean(false)
+    private val pinnedFiles = linkedSetOf<File>()
     private var backendState: OfflineTtsBackendOpenResult? = null
 
     init {
@@ -113,12 +114,13 @@ internal class CachedSentenceAudioSynthesizer(
             val target = File(root, cacheFilename(backend.voiceIdentity, utf8))
             if (validPublishedFile(target)) {
                 target.setLastModified(System.currentTimeMillis())
+                pinnedFiles += target
                 return@synchronized SentenceAudioSynthesis.ready(target)
             }
             if (target.exists() && !target.delete()) {
                 return@synchronized SentenceAudioSynthesis.failed("cache_unavailable")
             }
-            if (!pruneTo(cacheBudgetBytes - maxFileBytes, preserve = null)) {
+            if (!pruneTo(cacheBudgetBytes - maxFileBytes, preserve = pinnedFiles)) {
                 return@synchronized SentenceAudioSynthesis.failed("cache_unavailable")
             }
             if (availableBytes(root) < maxFileBytes + reserveBytes) {
@@ -148,7 +150,9 @@ internal class CachedSentenceAudioSynthesizer(
                     return@synchronized SentenceAudioSynthesis.failed("cache_publish_failed")
                 }
                 target.setLastModified(System.currentTimeMillis())
-                if (!pruneTo(cacheBudgetBytes, preserve = target)) {
+                pinnedFiles += target
+                if (!pruneTo(cacheBudgetBytes, preserve = pinnedFiles)) {
+                    pinnedFiles -= target
                     target.delete()
                     return@synchronized SentenceAudioSynthesis.failed("cache_unavailable")
                 }
@@ -171,8 +175,10 @@ internal class CachedSentenceAudioSynthesizer(
                 // Optional engine teardown must not mask run finalization.
             }
             backendState = null
+            pinnedFiles.clear()
             try {
                 cleanupPartials()
+                pruneTo(cacheBudgetBytes, preserve = emptySet())
             } catch (_: SecurityException) {
                 // App cache cleanup is best effort after the backend is closed.
             }
@@ -183,7 +189,7 @@ internal class CachedSentenceAudioSynthesizer(
         return try {
             if ((!root.exists() && !root.mkdirs()) || !root.isDirectory) return false
             cleanupPartials()
-            pruneTo(cacheBudgetBytes, preserve = null)
+            pruneTo(cacheBudgetBytes, preserve = pinnedFiles)
         } catch (_: SecurityException) {
             false
         }
@@ -197,7 +203,7 @@ internal class CachedSentenceAudioSynthesizer(
 
     private fun pruneTo(
         limit: Long,
-        preserve: File?,
+        preserve: Set<File>,
     ): Boolean {
         val owned =
             root.listFiles()
@@ -212,7 +218,7 @@ internal class CachedSentenceAudioSynthesizer(
         var total = candidates.sumOf { file -> file.length().coerceAtLeast(0L) }
         for (candidate in candidates) {
             if (total <= limit) break
-            if (preserve != null && candidate == preserve) continue
+            if (candidate in preserve) continue
             val length = candidate.length().coerceAtLeast(0L)
             if (candidate.delete()) total -= length
         }
