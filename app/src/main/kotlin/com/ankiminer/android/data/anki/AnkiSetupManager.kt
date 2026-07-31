@@ -3,6 +3,7 @@ package com.ankiminer.android.data.anki
 import com.ankiminer.android.R
 import com.ankiminer.android.anki.protocol.AnkiErrorCode
 import com.ankiminer.android.anki.provider.AnkiCancellation
+import com.ankiminer.android.anki.provider.AnkiReadFailure
 import com.ankiminer.android.anki.provider.AnkiRemediationCommand
 import com.ankiminer.android.anki.provider.AnkiRemediationInventory
 import com.ankiminer.android.anki.provider.ModelSummary
@@ -70,6 +71,7 @@ internal interface AnkiSetupBackend {
     fun verifyNoteType(
         noteType: String?,
         fieldMap: Map<String, String>,
+        cardTypeMarkerField: String?,
         cancellation: AnkiCancellation,
     ): NoteTypeSetupStatus
 
@@ -86,10 +88,18 @@ internal interface AnkiSetupBackend {
 internal interface AnkiSetupManager {
     val state: StateFlow<AnkiSetupManagerState>
 
-    fun refresh(noteType: String?, fieldMap: Map<String, String>)
+    fun refresh(
+        noteType: String?,
+        fieldMap: Map<String, String>,
+        cardTypeMarkerField: String? = null,
+    )
 
-    suspend fun refreshAndAwait(noteType: String?, fieldMap: Map<String, String>) {
-        refresh(noteType, fieldMap)
+    suspend fun refreshAndAwait(
+        noteType: String?,
+        fieldMap: Map<String, String>,
+        cardTypeMarkerField: String? = null,
+    ) {
+        refresh(noteType, fieldMap, cardTypeMarkerField)
     }
 
     fun reconcileInterruptedWork()
@@ -123,16 +133,25 @@ internal class ProcessAnkiSetupManager(
     private data class PendingRefresh(
         val noteType: String?,
         val fieldMap: Map<String, String>,
+        val cardTypeMarkerField: String?,
         val completions: List<CompletableDeferred<Unit>>,
     )
 
-    override fun refresh(noteType: String?, fieldMap: Map<String, String>) {
-        enqueueRefresh(noteType, fieldMap, completion = null)
+    override fun refresh(
+        noteType: String?,
+        fieldMap: Map<String, String>,
+        cardTypeMarkerField: String?,
+    ) {
+        enqueueRefresh(noteType, fieldMap, cardTypeMarkerField, completion = null)
     }
 
-    override suspend fun refreshAndAwait(noteType: String?, fieldMap: Map<String, String>) {
+    override suspend fun refreshAndAwait(
+        noteType: String?,
+        fieldMap: Map<String, String>,
+        cardTypeMarkerField: String?,
+    ) {
         val completion = CompletableDeferred<Unit>()
-        enqueueRefresh(noteType, fieldMap, completion)
+        enqueueRefresh(noteType, fieldMap, cardTypeMarkerField, completion)
         completion.await()
     }
 
@@ -197,17 +216,45 @@ internal class ProcessAnkiSetupManager(
     private fun refreshProviderSetup(
         noteType: String?,
         fieldMap: Map<String, String>,
+        cardTypeMarkerField: String?,
     ) {
         try {
             val available = backend.listNoteTypes(AnkiCancellation.NONE)
             val decks = backend.listDeckNames(AnkiCancellation.NONE)
-            val status = backend.verifyNoteType(noteType, fieldMap, AnkiCancellation.NONE)
+            val status =
+                backend.verifyNoteType(
+                    noteType,
+                    fieldMap,
+                    cardTypeMarkerField,
+                    AnkiCancellation.NONE,
+                )
             mutableState.update { current ->
                 current.copy(
                     availableNoteTypes = available,
                     availableDeckNames = decks,
                     noteTypeStatus = status,
                     failure = null,
+                )
+            }
+        } catch (failure: AnkiReadFailure) {
+            mutableState.update { current ->
+                current.copy(
+                    availableNoteTypes = emptyList(),
+                    availableDeckNames = emptyList(),
+                    noteTypeStatus =
+                        NoteTypeSetupStatus.ProviderError(
+                            reason = failure.providerErrorReason,
+                            code = failure.code,
+                            retryable = failure.retryable,
+                            stableMessage = failure.stableMessage,
+                        ),
+                    failure =
+                        AnkiSetupFailure(
+                            failure.code.wireName,
+                            failure.stableMessage,
+                            origin = AnkiSetupFailureOrigin.TARGET,
+                            action = AnkiSetupFailureAction.RETRY,
+                        ),
                 )
             }
         } catch (_: RuntimeException) {
@@ -255,6 +302,7 @@ internal class ProcessAnkiSetupManager(
     private fun enqueueRefresh(
         noteType: String?,
         fieldMap: Map<String, String>,
+        cardTypeMarkerField: String?,
         completion: CompletableDeferred<Unit>?,
     ) {
         val startNow =
@@ -266,6 +314,7 @@ internal class ProcessAnkiSetupManager(
                         PendingRefresh(
                             noteType = noteType,
                             fieldMap = fieldMap.toMap(),
+                            cardTypeMarkerField = cardTypeMarkerField,
                             completions = completions,
                         )
                     false
@@ -279,6 +328,7 @@ internal class ProcessAnkiSetupManager(
                 PendingRefresh(
                     noteType = noteType,
                     fieldMap = fieldMap.toMap(),
+                    cardTypeMarkerField = cardTypeMarkerField,
                     completions = listOfNotNull(completion),
                 ),
             )
@@ -290,7 +340,11 @@ internal class ProcessAnkiSetupManager(
             AnkiSetupOperation.REFRESHING,
             work = {
                 refreshRecoveryInventory()
-                refreshProviderSetup(refresh.noteType, refresh.fieldMap)
+                refreshProviderSetup(
+                    refresh.noteType,
+                    refresh.fieldMap,
+                    refresh.cardTypeMarkerField,
+                )
             },
             completions = refresh.completions,
         )

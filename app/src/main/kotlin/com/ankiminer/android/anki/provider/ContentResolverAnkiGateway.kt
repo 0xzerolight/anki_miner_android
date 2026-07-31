@@ -658,7 +658,9 @@ private fun excludedDeckSelection(deckName: String): String =
     buildString(deckName.length + 8) {
         append("deck:\"")
         for (character in deckName) {
-            if (character == '\\' || character == '"') append('\\')
+            if (character == '\\' || character == '"' || character == '*' || character == '_') {
+                append('\\')
+            }
             append(character)
         }
         append('"')

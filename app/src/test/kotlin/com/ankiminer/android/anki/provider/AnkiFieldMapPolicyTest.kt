@@ -116,6 +116,50 @@ class AnkiFieldMapPolicyTest {
     }
 
     @Test
+    fun `manual assignment rejects the active card type marker destination`() {
+        val existing = mapOf("word" to "Word")
+
+        val assigned =
+            AnkiFieldMapPolicy.assign(
+                currentFieldMap = existing,
+                logicalKey = "definition",
+                destination = "IsClickCard",
+                fieldNames = listOf("Word", "IsClickCard", "Meaning"),
+                reservedDestinations = setOf("IsClickCard"),
+            )
+
+        assertNull(assigned)
+        assertTrue(
+            !AnkiFieldMapPolicy.isDestinationAvailable(
+                currentFieldMap = existing,
+                logicalKey = "definition",
+                destination = "IsClickCard",
+                fieldNames = listOf("Word", "IsClickCard", "Meaning"),
+                reservedDestinations = setOf("IsClickCard"),
+            ),
+        )
+    }
+
+    @Test
+    fun `note type merge keeps an active marker out of retained and automatic mappings`() {
+        val result =
+            AnkiFieldMapPolicy.merge(
+                currentNoteType = "Old",
+                selectedNoteType = "New",
+                fieldNames = listOf("Word", "IsClickCard", "Meaning"),
+                currentFieldMap =
+                    mapOf(
+                        "word" to "Old Word",
+                        "definition" to "IsClickCard",
+                    ),
+                reservedDestinations = setOf("IsClickCard"),
+            )
+
+        assertEquals("Word", result.fieldMap["word"])
+        assertTrue(result.fieldMap.values.none { it == "IsClickCard" })
+    }
+
+    @Test
     fun `blank word selection cannot remove the first field owner`() {
         assertNull(
             AnkiFieldMapPolicy.assign(

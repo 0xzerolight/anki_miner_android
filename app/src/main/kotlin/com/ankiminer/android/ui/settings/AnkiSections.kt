@@ -195,6 +195,8 @@ internal fun AnkiTargetCard(
                                     logicalKey = key,
                                     destination = field,
                                     fieldNames = fields,
+                                    reservedDestinations =
+                                        setOfNotNull(state.cardTypeMarkerField),
                                 )
                             },
                         )
