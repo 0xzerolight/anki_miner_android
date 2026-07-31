@@ -16,6 +16,7 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 
 ### Changed
 
+- Diagnostics records follow an eight-kind severity and volume taxonomy: INFO is limited to phases, user actions, and external batches; per-item detail is DEBUG-only. Exported Kotlin and Python logs share one line grammar, with TAB-prefixed throwable continuations.
 - Python log timestamps now use UTC ISO-8601 with millisecond precision and a trailing `Z`, matching Kotlin logs so the two files sort into one timeline.
 - Sentence deduplication is off by default. It keeps one word per sentence and runs before curation, so it withheld candidates that were never shown.
 - The Setup category is gone. The Japanese tokenizer card moved to Diagnostics and appears only when it is missing or failing, instead of a healthy install presenting itself as a fault report with a repair button.

@@ -301,7 +301,17 @@ internal class JournalBackedNoteMutationService(
             try {
                 journal.materialize(durableRequest.key, materialization)
             } catch (failure: RuntimeException) {
-                if (runCatching { journal.parent(durableRequest.key)?.activeRequestIndex }.getOrNull() == index) {
+                if (
+                    runCatching { journal.parent(durableRequest.key)?.activeRequestIndex }
+                        .onFailure { lookupFailure ->
+                            AppLog.ignored(
+                                LogComponent.JOURNAL,
+                                "note.materialize.parent",
+                                "original_materialization_failure_retained",
+                                lookupFailure,
+                            )
+                        }.getOrNull() == index
+                ) {
                     throw failure
                 }
                 val error = stableInternal("The note media bindings could not be durably admitted")
@@ -450,7 +460,16 @@ internal class JournalBackedNoteMutationService(
                     "providerEntry=true;noteId=${receipt.noteId};receipt=canonical",
                 )
             } catch (failure: RuntimeException) {
-                val parent = runCatching { journal.parent(durableRequest.key) }.getOrNull()
+                val parent =
+                    runCatching { journal.parent(durableRequest.key) }
+                        .onFailure { lookupFailure ->
+                            AppLog.ignored(
+                                LogComponent.JOURNAL,
+                                "note.receipt.parent",
+                                "original_receipt_failure_retained",
+                                lookupFailure,
+                            )
+                        }.getOrNull()
                 if (
                     parent?.activeRequestIndex != index ||
                     parent.activeNoteId != receipt.noteId ||
@@ -541,7 +560,16 @@ internal class JournalBackedNoteMutationService(
             // This transaction is the sole attachment-verification and CREATED-row boundary.
             journal.completeVerified(durableRequest.key, index, noteId, "noteId=$noteId;postcheck=exact")
         } catch (failure: RuntimeException) {
-            val parent = runCatching { journal.parent(durableRequest.key) }.getOrNull()
+            val parent =
+                runCatching { journal.parent(durableRequest.key) }
+                    .onFailure { lookupFailure ->
+                        AppLog.ignored(
+                            LogComponent.JOURNAL,
+                            "note.complete.parent",
+                            "original_completion_failure_retained",
+                            lookupFailure,
+                        )
+                    }.getOrNull()
             if (parent?.activeRequestIndex == null && journal.results(durableRequest.key).getOrNull(index) is AlignedResult.NoteCreated) {
                 return null
             }
