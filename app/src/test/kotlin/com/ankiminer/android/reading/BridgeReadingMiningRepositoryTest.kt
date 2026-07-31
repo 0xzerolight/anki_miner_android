@@ -1,9 +1,15 @@
 package com.ankiminer.android.reading
 
 import com.ankiminer.android.R
+import com.ankiminer.android.anki.protocol.AnkiErrorCode
 import com.ankiminer.android.anki.protocol.ReleaseState
 import com.ankiminer.android.anki.provider.AnkiCancellation
+import com.ankiminer.android.anki.provider.AnkiReadFailure
 import com.ankiminer.android.data.RuntimeWorkCoordinator
+import com.ankiminer.android.diagnostics.log.AppLog
+import com.ankiminer.android.diagnostics.log.LogLevel
+import com.ankiminer.android.diagnostics.log.NoOpSink
+import com.ankiminer.android.diagnostics.log.RecordingLogSink
 import com.ankiminer.android.engine.BridgeJsonCodec
 import com.ankiminer.android.engine.BridgeJsonValue
 import com.ankiminer.android.engine.BridgeMessage
@@ -51,7 +57,9 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -61,10 +69,123 @@ class BridgeReadingMiningRepositoryTest {
     val temporary = TemporaryFolder()
 
     private val executors = mutableListOf<ExecutorService>()
+    private val recorded = RecordingLogSink()
+
+    @Before
+    fun installRecordingSink() {
+        AppLog.setMinLevel(LogLevel.INFO)
+        // Two installs: the first discards whatever a previous test class left in the pre-install
+        // buffer, so the second starts from a known-empty recorder.
+        AppLog.install(NoOpSink)
+        AppLog.install(recorded)
+    }
 
     @After
     fun stopExecutors() {
         executors.forEach(ExecutorService::shutdownNow)
+        AppLog.install(NoOpSink)
+    }
+
+    @Test
+    fun `every phase the run passes through is logged, in order, with its trigger`() {
+        val harness = harness(expressionAudioFieldMapped = true)
+
+        runBlocking { harness.repository.startReading(INPUT) }
+        val curating =
+            awaitState(harness.repository) { it is MiningRunState.Curating } as MiningRunState.Curating
+        runBlocking {
+            harness.repository.confirmCuration(
+                curating.request.runId,
+                curating.request.requestId,
+                FIRST_SELECTION,
+            )
+        }
+        assertTrue(harness.bridge.curationSubmitted.await(2, TimeUnit.SECONDS))
+        harness.bridge.allowTerminal.countDown()
+        awaitState(harness.repository, MiningRunState::isTerminal)
+
+        assertEquals(
+            listOf(
+                "c=reading op=phase from=PREPARING to=REGISTERED outcome=ok detail=registration",
+                "c=reading op=phase from=REGISTERED to=CURATING outcome=ok detail=curation_needed",
+                "c=reading op=phase from=CURATING to=PROMOTING outcome=ok detail=curation_final",
+                "c=reading op=phase from=PROMOTING to=RUNNING outcome=ok detail=foreground_started",
+                "c=reading op=phase from=RUNNING to=FINALIZING outcome=ok detail=finish",
+            ),
+            recordsFor("op=phase"),
+        )
+    }
+
+    @Test
+    fun `the terminal mapping is logged with its outcome, code and notice count`() {
+        val harness = harness(expressionAudioFieldMapped = true, raisedFailure = true)
+
+        runBlocking { harness.repository.startReading(INPUT) }
+        val curating =
+            awaitState(harness.repository) { it is MiningRunState.Curating } as MiningRunState.Curating
+        runBlocking {
+            harness.repository.confirmCuration(
+                curating.request.runId,
+                curating.request.requestId,
+                FIRST_SELECTION,
+            )
+        }
+        assertTrue(harness.bridge.curationSubmitted.await(2, TimeUnit.SECONDS))
+        harness.bridge.allowTerminal.countDown()
+        awaitState(harness.repository, MiningRunState::isTerminal)
+
+        assertEquals(
+            listOf("c=reading op=run.terminal outcome=fail code=engine_error retryable=true notices=0"),
+            recordsFor("op=run.terminal"),
+        )
+    }
+
+    @Test
+    fun `a protocol violation names the callback that raised it`() {
+        val harness = harness(expressionAudioFieldMapped = true)
+
+        runBlocking { harness.repository.startReading(INPUT) }
+        awaitState(harness.repository) { it is MiningRunState.Curating }
+
+        // A progress.start envelope arriving on onStage: one of the ~24 messages that all resolve to
+        // the same user string, and the callback name is the only thing that separates them.
+        assertThrows(IllegalStateException::class.java) {
+            harness.bridge.runCallbacks!!.onStage(PROGRESS_START)
+        }
+        harness.bridge.allowTerminal.countDown()
+        awaitState(harness.repository, MiningRunState::isTerminal)
+
+        val record = recorded.records.single { it.contains("op=onStage") }
+        assertTrue(record, record.contains(" E run=- c=reading op=onStage outcome=fail"))
+        assertTrue(record, record.contains("Unexpected onStage message"))
+    }
+
+    @Test
+    fun `an Anki callback failure carries the provider code and its cause`() {
+        val harness =
+            harness(
+                expressionAudioFieldMapped = true,
+                ankiFailure =
+                    AnkiReadFailure(
+                        AnkiErrorCode.PROVIDER_UNAVAILABLE,
+                        retryable = true,
+                        stableMessage = "AnkiDroid is unavailable",
+                        cause = IllegalStateException("provider died"),
+                    ),
+            )
+
+        runBlocking { harness.repository.startReading(INPUT) }
+        awaitState(harness.repository) { it is MiningRunState.Curating }
+
+        assertThrows(AnkiReadFailure::class.java) {
+            harness.bridge.runCallbacks!!.ankiVerifyTarget(ANKI_VERIFY_REQUEST)
+        }
+        harness.bridge.allowTerminal.countDown()
+        awaitState(harness.repository, MiningRunState::isTerminal)
+
+        val record = recorded.records.single { it.contains("op=ankiVerifyTarget") }
+        assertTrue(record, record.contains(" E run=- c=reading op=ankiVerifyTarget outcome=fail code=PROVIDER_UNAVAILABLE"))
+        assertTrue(record, record.contains("Caused by: java.lang.IllegalStateException: provider died"))
     }
 
     @Test
@@ -760,6 +881,7 @@ class BridgeReadingMiningRepositoryTest {
         fallbackState: ReleaseState = ReleaseState.ABSENT,
         cache: File? = null,
         foregroundFailure: Boolean = false,
+        ankiFailure: RuntimeException? = null,
     ): Harness {
         val runExecutor = Executors.newSingleThreadExecutor().also(executors::add)
         val controlExecutor = Executors.newSingleThreadExecutor().also(executors::add)
@@ -774,7 +896,7 @@ class BridgeReadingMiningRepositoryTest {
                 readingRunFailure = readingRunFailure,
                 raisedFailure = raisedFailure,
             )
-        val anki = FakeAnkiCallbacks(fallbackState)
+        val anki = FakeAnkiCallbacks(fallbackState, ankiFailure)
         val foreground = FakeForegroundStarter(foregroundFailure)
         val openCount = AtomicInteger()
         val repository =
@@ -853,6 +975,13 @@ class BridgeReadingMiningRepositoryTest {
             nonceSource = ReadingSourceStageNonceSource { "11111111111111111111111111111111" },
         )
 
+    /** Record heads from `c=` onward: the timestamp, level and run id are not what these assert. */
+    private fun recordsFor(op: String): List<String> =
+        recorded.records
+            .map { it.substringBefore('\n') }
+            .filter { it.contains(op) }
+            .map { it.substring(it.indexOf("c=")) }
+
     private fun awaitState(
         repository: ReadingMiningRepository,
         predicate: (MiningRunState) -> Boolean,
@@ -877,6 +1006,7 @@ class BridgeReadingMiningRepositoryTest {
 
     private class FakeAnkiCallbacks(
         private val fallbackState: ReleaseState = ReleaseState.ABSENT,
+        private val failure: RuntimeException? = null,
     ) : CoordinatorAnkiCallbacks {
         var cancellation: AnkiCancellation? = null
         val fallbackRuns = Collections.synchronizedList(mutableListOf<String>())
@@ -889,7 +1019,7 @@ class BridgeReadingMiningRepositoryTest {
             return runId == RUN_ID
         }
 
-        override fun verifyTarget(rawRequest: String): String = error("not called")
+        override fun verifyTarget(rawRequest: String): String = throw (failure ?: error("not called"))
 
         override fun scanFirstFields(rawRequest: String): String = error("not called")
 
@@ -1121,6 +1251,8 @@ class BridgeReadingMiningRepositoryTest {
         val PROGRESS_START =
             """{"schemaVersion":1,"type":"progress.start","payload":{"runId":"$RUN_ID","total":3,"description":"Preparing curation"}}"""
         const val MINED_TERM = "猫"
+        const val ANKI_VERIFY_REQUEST =
+            """{"schemaVersion":1,"type":"anki.verify.request","payload":{}}"""
 
         /** Shaped like a real phase-4 event: the engine names the term it just looked up. */
         val HOSTILE_PROGRESS =
