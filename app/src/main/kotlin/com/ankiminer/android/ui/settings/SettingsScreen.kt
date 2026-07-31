@@ -138,23 +138,23 @@ internal fun SettingsRoute(
     }
     val dictionaryPicker =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-            uri?.let { setupViewModel.importCustomDictionary(it.toString()) }
+            setupViewModel.completePendingSettingsImport(uri?.toString())
         }
     val frequencyPicker =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-            uri?.let { setupViewModel.importFrequencySource(it.toString()) }
+            setupViewModel.completePendingSettingsImport(uri?.toString())
         }
     val pitchPicker =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-            uri?.let { setupViewModel.importPitchAccent(it.toString()) }
+            setupViewModel.completePendingSettingsImport(uri?.toString())
         }
     val audioPackPicker =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-            uri?.let { setupViewModel.importAudioPack(it.toString()) }
+            setupViewModel.completePendingSettingsImport(uri?.toString())
         }
     val knownWordsPicker =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-            uri?.let { setupViewModel.importKnownWords(it.toString()) }
+            setupViewModel.completePendingSettingsImport(uri?.toString())
         }
     // One launcher per kind: the contract callback cannot receive which list was chosen.
     val blacklistPicker =
@@ -199,11 +199,31 @@ internal fun SettingsRoute(
         requestedCategory = requestedCategory,
         requestedCategoryItemIndex = requestedCategoryItemIndex,
         onCategoryRequestConsumed = onCategoryRequestConsumed,
-        onImportCustom = { dictionaryPicker.launch(CUSTOM_DICTIONARY_MIME_TYPES) },
-        onImportFrequency = { frequencyPicker.launch(FREQUENCY_MIME_TYPES) },
-        onImportPitch = { pitchPicker.launch(PITCH_MIME_TYPES) },
-        onImportAudioPack = { audioPackPicker.launch(AUDIO_PACK_MIME_TYPES) },
-        onImportKnownWords = { knownWordsPicker.launch(KNOWN_WORDS_MIME_TYPES) },
+        onImportCustom = {
+            if (setupViewModel.prepareCustomDictionaryImport()) {
+                dictionaryPicker.launch(CUSTOM_DICTIONARY_MIME_TYPES)
+            }
+        },
+        onImportFrequency = {
+            if (setupViewModel.prepareFrequencyImport()) {
+                frequencyPicker.launch(FREQUENCY_MIME_TYPES)
+            }
+        },
+        onImportPitch = {
+            if (setupViewModel.preparePitchAccentImport()) {
+                pitchPicker.launch(PITCH_MIME_TYPES)
+            }
+        },
+        onImportAudioPack = {
+            if (setupViewModel.prepareAudioPackImport()) {
+                audioPackPicker.launch(AUDIO_PACK_MIME_TYPES)
+            }
+        },
+        onImportKnownWords = {
+            if (setupViewModel.prepareKnownWordsImport()) {
+                knownWordsPicker.launch(KNOWN_WORDS_MIME_TYPES)
+            }
+        },
         onImportWordList = { kind ->
             when (kind) {
                 WordListKind.BLACKLIST -> blacklistPicker.launch(WORD_LIST_MIME_TYPES)
