@@ -1,4 +1,13 @@
-"""Android-owned composition and execution of one local video mining run."""
+"""Android-owned composition and execution of one local video mining run.
+
+Optional data sources warn and disable themselves when they cannot load, so a
+missing dictionary or word list degrades the run instead of failing it. That
+rule stops at ``MemoryError``, and a phone reaches it far sooner than a desktop:
+the wordset union alone is roughly 45 MiB across 480K entries. Swallowing an
+allocation failure would silently drop the proper-noun filter the user
+configured and keep writing cards from a memory-starved interpreter. Mirrors
+``service_factory`` upstream, which re-raises at the same six catches.
+"""
 
 from __future__ import annotations
 
@@ -536,6 +545,8 @@ def _build_processor(
         if has_indexed_dictionary:
             try:
                 definition_service.ensure_loaded()
+            except MemoryError:
+                raise  # never an optional-source miss; see the module note
             except Exception as error:
                 _show_optional_failure(adapters.presenter, "Couldn't load dictionary chain", error)
 
@@ -566,6 +577,8 @@ def _build_processor(
                     # unreadable on-disk index. Not an error; pitch fields stay
                     # empty for the run.
                     adapters.presenter.show_warning("No pitch accent source could be loaded")
+            except MemoryError:
+                raise  # never an optional-source miss; see the module note
             except Exception as error:
                 _show_optional_failure(adapters.presenter, "Couldn't load pitch accent data", error)
                 pitch_accent_service = None
@@ -582,6 +595,8 @@ def _build_processor(
                         frequency_providers.append(provider)
                 if frequency_providers:
                     frequency_service = MultiFrequencyService(frequency_providers)
+            except MemoryError:
+                raise  # never an optional-source miss; see the module note
             except Exception as error:
                 for provider in candidates:
                     _close_without_masking(provider, "frequency provider")
@@ -592,6 +607,8 @@ def _build_processor(
             known_word_db = KnownWordDB(config.known_words_db_path)
             if config.use_known_words_db:
                 known_word_db.initialize()
+        except MemoryError:
+            raise  # never an optional-source miss; see the module note
         except Exception as error:
             _show_optional_failure(adapters.presenter, "Couldn't initialize known word database", error)
             known_word_db = None
@@ -604,6 +621,8 @@ def _build_processor(
                     whitelist_path=(config.whitelist_path if config.use_whitelist else None),
                 )
                 word_list_service.load()
+            except MemoryError:
+                raise  # never an optional-source miss; see the module note
             except Exception as error:
                 _show_optional_failure(adapters.presenter, "Couldn't load word lists", error)
                 word_list_service = None
@@ -615,6 +634,8 @@ def _build_processor(
                 wordset_service.load()
                 if not wordset_service.is_available():
                     wordset_service = None
+            except MemoryError:
+                raise  # never an optional-source miss; see the module note
             except Exception as error:
                 _show_optional_failure(adapters.presenter, "Couldn't load name wordsets", error)
                 wordset_service = None

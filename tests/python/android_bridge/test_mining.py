@@ -1461,3 +1461,32 @@ def test_mining_module_keeps_all_engine_imports_after_bootstrap_and_excludes_cut
             "anki_miner.services.google_translate_audio_fetcher",
         }
     )
+
+
+def test_optional_source_memory_error_fails_the_run(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Exhaustion must not disable the filter and let mining keep writing cards."""
+    source = Path(mining.__file__).read_text(encoding="utf-8")
+    tree = ast.parse(source)
+
+    guarded = 0
+    optional = 0
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Try):
+            continue
+        warns_and_disables = any(
+            isinstance(handler.type, ast.Name)
+            and handler.type.id == "Exception"
+            and "_show_optional_failure" in ast.dump(handler)
+            for handler in node.handlers
+        )
+        if not warns_and_disables:
+            continue
+        optional += 1
+        for handler in node.handlers:
+            if isinstance(handler.type, ast.Name) and handler.type.id == "MemoryError":
+                assert any(isinstance(stmt, ast.Raise) for stmt in handler.body)
+                guarded += 1
+                break
+
+    assert optional > 0
+    assert guarded == optional, "every optional-source catch must re-raise MemoryError"
