@@ -109,7 +109,7 @@ class TesterDiagnosticsTest {
                                         "Secret video failure detail",
                                         true,
                                         "f0123abcd",
-                                        "foreground_start_unconfirmed",
+                                        "foreground_start_failed",
                                     ),
                                 result = null,
                             ),
@@ -163,7 +163,7 @@ class TesterDiagnosticsTest {
         assertTrue(diagnostics.report.contains("mining.run_id=run_0123456789abcdef0123456789abcdef"))
         // The code is reported while the message it accompanies is not: the message is localized
         // free text, the code is neither.
-        assertTrue(diagnostics.report.contains("mining.failure_code=foreground_start_unconfirmed"))
+        assertTrue(diagnostics.report.contains("mining.failure_code=foreground_start_failed"))
         assertTrue(diagnostics.report.length <= 4_096)
 
         listOf(
