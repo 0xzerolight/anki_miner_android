@@ -1709,12 +1709,13 @@ internal class BridgeMiningRepository(
     }
 
     private fun executeCancellation(generation: Long) {
-        val task = { sendCancellation(generation) }
+        val runId = synchronized(monitor) { activeFor(generation)?.runId }
+        val task = { LogContext.withRunId(runId) { sendCancellation(generation) } }
         try {
             controlExecutor.execute(task)
         } catch (_: RuntimeException) {
             try {
-                Thread({ sendCancellation(generation) }, "anki-miner-cancel-fallback")
+                Thread(task, "anki-miner-cancel-fallback")
                     .apply { isDaemon = true }
                     .start()
             } catch (_: RuntimeException) {

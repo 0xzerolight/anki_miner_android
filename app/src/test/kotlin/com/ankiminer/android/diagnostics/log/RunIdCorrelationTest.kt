@@ -20,6 +20,7 @@ import com.ankiminer.android.mining.MiningInputOwnerFactory
 import com.ankiminer.android.mining.MiningRunState
 import com.ankiminer.android.mining.MiningRuntimePaths
 import com.ankiminer.android.mining.MiningSource
+import com.ankiminer.android.mining.MiningTaskExecutor
 import com.ankiminer.android.mining.SourceGrantReleaser
 import com.ankiminer.android.mining.VideoMiningInput
 import com.ankiminer.android.mining.asMiningTaskExecutor
@@ -40,6 +41,7 @@ import java.io.File
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -144,6 +146,49 @@ class RunIdCorrelationTest {
         assertNull(observed.get(3, TimeUnit.SECONDS))
     }
 
+    @Test
+    fun `video cancellation dispatch carries the run id on the control worker`() {
+        AppLog.setMinLevel(LogLevel.DEBUG)
+        val bridge = CancellableBridge(VIDEO_RUN_ID)
+        val video = videoRepository(bridge, RuntimeWorkCoordinator())
+
+        runBlocking { video.startVideo(VIDEO_INPUT) }
+        bridge.awaitRegistration()
+        runBlocking { video.cancel(VIDEO_RUN_ID) }
+
+        assertEquals(VIDEO_RUN_ID, bridge.cancellationRunId.get(3, TimeUnit.SECONDS))
+        assertTrue(
+            recorded.records.any { record ->
+                record.contains(" D run=$VIDEO_RUN_ID c=bridge op=cancel.probe ")
+            },
+        )
+        awaitTerminal(video.state.value) { video.state.value }
+    }
+
+    @Test
+    fun `reading cancellation fallback carries the run id when control rejects`() {
+        AppLog.setMinLevel(LogLevel.DEBUG)
+        val bridge = CancellableBridge(READING_RUN_ID)
+        val reading =
+            readingRepository(
+                bridge,
+                RuntimeWorkCoordinator(),
+                MiningTaskExecutor { throw RejectedExecutionException("test rejection") },
+            )
+
+        runBlocking { reading.startReading(readingInput()) }
+        bridge.awaitRegistration()
+        runBlocking { reading.cancel(READING_RUN_ID) }
+
+        assertEquals(READING_RUN_ID, bridge.cancellationRunId.get(3, TimeUnit.SECONDS))
+        assertTrue(
+            recorded.records.any { record ->
+                record.contains(" D run=$READING_RUN_ID c=bridge op=cancel.probe ")
+            },
+        )
+        awaitTerminal(reading.state.value) { reading.state.value }
+    }
+
     private fun List<String>.phaseHeads(): List<String> =
         map { it.substringBefore('\n') }
             .filter { it.contains("op=phase") }
@@ -155,6 +200,7 @@ class RunIdCorrelationTest {
     private fun videoRepository(
         bridge: PyBridge,
         coordinator: RuntimeWorkCoordinator,
+        control: MiningTaskExecutor = controlExecutor.asMiningTaskExecutor(),
     ) = BridgeMiningRepository(
         pyBridge = bridge,
         anki = FakeAnkiCallbacks(),
@@ -164,7 +210,7 @@ class RunIdCorrelationTest {
         sourceGrantReleaser = SourceGrantReleaser { },
         foregroundStarter = completedForegroundStarter(),
         runExecutor = runExecutor.asMiningTaskExecutor(),
-        controlExecutor = controlExecutor.asMiningTaskExecutor(),
+        controlExecutor = control,
         strings = testStringResourceResolver,
         runtimeWorkCoordinator = coordinator,
     )
@@ -172,6 +218,7 @@ class RunIdCorrelationTest {
     private fun readingRepository(
         bridge: PyBridge,
         coordinator: RuntimeWorkCoordinator,
+        control: MiningTaskExecutor = controlExecutor.asMiningTaskExecutor(),
     ): BridgeReadingMiningRepository {
         // The codec rejects a staged path that is not inside cacheDir, so the stager's root has
         // to be derived from the very cacheDir the repository reports.
@@ -205,7 +252,7 @@ class RunIdCorrelationTest {
             sourceGrantReleaser = SourceGrantReleaser { },
             foregroundStarter = completedForegroundStarter(),
             runExecutor = runExecutor.asMiningTaskExecutor(),
-            controlExecutor = controlExecutor.asMiningTaskExecutor(),
+            controlExecutor = control,
             strings = testStringResourceResolver,
             runtimeWorkCoordinator = coordinator,
         )
@@ -322,6 +369,55 @@ class RunIdCorrelationTest {
         }
     }
 
+    private class CancellableBridge(
+        private val runId: String,
+    ) : PyBridge {
+        private val registered = CompletableFuture<Unit>()
+        private val cancellation = CompletableFuture<Unit>()
+        val cancellationRunId = CompletableFuture<String?>()
+
+        fun awaitRegistration() {
+            registered.get(3, TimeUnit.SECONDS)
+        }
+
+        override fun dispatch(
+            rawRequest: String,
+            callbacks: EngineCallbacks?,
+        ): String =
+            when (val request = BridgeJsonCodec.decode(rawRequest)) {
+                is BridgeMessage.TokenizerConfigure ->
+                    BridgeJsonCodec.encodeTokenizerReady(
+                        TokenizerIdentity(
+                            dicDir = request.configuration.dicDir,
+                            resourceId = request.configuration.resourceId,
+                            treeSha256 = request.configuration.treeSha256,
+                            backend = request.configuration.backend,
+                            fileCount = 6,
+                            totalBytes = 1024,
+                        ),
+                    )
+                is BridgeMessage.VideoRun,
+                is BridgeMessage.ReadingRun,
+                -> runUntilCancelled(requireNotNull(callbacks))
+                is BridgeMessage.JobCancel -> {
+                    AppLog.d(LogComponent.BRIDGE, "cancel.probe") {
+                        arrayOf("outcome" to "ok")
+                    }
+                    cancellationRunId.complete(LogContext.runId())
+                    cancellation.complete(Unit)
+                    cancelled(runId)
+                }
+                else -> error("Unexpected request: $request")
+            }
+
+        private fun runUntilCancelled(callbacks: EngineCallbacks): String {
+            callbacks.registerJob(registration(runId))
+            registered.complete(Unit)
+            cancellation.get(3, TimeUnit.SECONDS)
+            return terminal(runId).also(callbacks::onComplete)
+        }
+    }
+
     private companion object {
         const val VIDEO_RUN_ID = "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         const val READING_RUN_ID = "run_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
@@ -343,5 +439,8 @@ class RunIdCorrelationTest {
                 """"elapsedTime":1.0,"comprehensionPercentage":100.0,"cardIds":[],"videoFile":"",""" +
                 """"subtitleFile":"Novel.txt","minedForms":[],"ankiWriteState":"no_note_write",""" +
                 """"failureIsTransient":false},"error":null}}"""
+
+        fun cancelled(runId: String) =
+            """{"schemaVersion":1,"type":"job.cancelled","payload":{"runId":"$runId","newlyCancelled":true}}"""
     }
 }
