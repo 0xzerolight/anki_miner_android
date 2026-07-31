@@ -376,8 +376,6 @@ class AnkiMinerApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        val verboseLogging = runBlocking { diagnosticsSettings.verboseLogging.first() }
-        AppLog.setMinLevel(if (verboseLogging) LogLevel.DEBUG else LogLevel.INFO)
         val buildIdentity = currentTesterBuildIdentity()
         AppLog.i(
             LogComponent.APP,
@@ -393,7 +391,6 @@ class AnkiMinerApplication : Application() {
             "runtimeWheelBuildKey" to buildIdentity.runtimeWheelBuildKey,
             "tokenizerPublicationBuildKey" to buildIdentity.tokenizerPublicationBuildKey,
             "deviceRuntimeAccepted" to buildIdentity.deviceRuntimeAccepted,
-            "verboseLogging" to verboseLogging,
         )
         // Load-bearing ordering: this is the first task submitted to the process Python executor.
         // It starts Chaquopy and establishes ANKI_MINER_HOME before any engine import.
