@@ -91,6 +91,36 @@ class AndroidLocalizationAuditTest(unittest.TestCase):
             self.assertIn("source=", result.stderr)
             self.assertIn("translation=", result.stderr)
 
+    def test_plural_placeholder_mismatches_fail(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            resource_root = Path(temporary)
+            self._write_catalog(
+                resource_root,
+                "values",
+                (
+                    '<string name="alpha">Alpha</string>'
+                    '<plurals name="copies">'
+                    '<item quantity="one">%1$d copy</item>'
+                    '<item quantity="other">%1$d copies</item>'
+                    "</plurals>"
+                ),
+            )
+            self._write_catalog(
+                resource_root,
+                "values-ja",
+                (
+                    '<string name="alpha">アルファ</string>'
+                    '<plurals name="copies">'
+                    '<item quantity="other">%1$s 件</item>'
+                    "</plurals>"
+                ),
+            )
+
+            result = self._run_audit(resource_root)
+
+            self.assertNotEqual(0, result.returncode)
+            self.assertIn("format mismatch for copies[other]", result.stderr)
+
     def test_positional_reordering_and_escaped_percent_are_safe(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             resource_root = Path(temporary)
