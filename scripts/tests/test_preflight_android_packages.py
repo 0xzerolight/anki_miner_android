@@ -13,17 +13,10 @@ sys.path.insert(0, str(SCRIPTS_DIR))
 from preflight_android_packages import preflight  # noqa: E402
 from verify_android_toolchain import VerificationError, read_lock  # noqa: E402
 
-LOCKED_PACKAGES = {
-    "platform-tools": "37.0.0",
-    "emulator": "36.6.11",
-    "platforms;android-36": "2",
-    "build-tools;36.0.0": "36.0.0",
-    "cmake;3.22.1": "3.22.1",
-    "ndk;28.2.13676358": "28.2.13676358",
-    "system-images;android-26;google_apis;x86_64": "16",
-    "system-images;android-36;google_apis;x86_64": "7",
-    "system-images;android-36;google_apis_ps16k;x86_64": "7",
-}
+# Derived from the lock, not restated: a hand-copied table silently goes stale
+# the next time a package is re-pinned, and these tests then fail for a reason
+# that has nothing to do with what they cover.
+LOCKED_PACKAGES = {package: revision for package, revision, _ in read_lock(SCRIPTS_DIR / "android-sdk-packages.lock")}
 
 
 def write_listing(path: Path, revisions: dict[str, str]) -> None:

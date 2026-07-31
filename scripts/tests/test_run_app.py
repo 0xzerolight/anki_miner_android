@@ -132,6 +132,11 @@ fi
 """,
         )
 
+        # This test races liveness detection against the boot timeout, and the
+        # shared 1 s budget lets a loaded machine time out first and report the
+        # wrong failure. Only the timeout test needs that budget to be short.
+        self.environment["ANKI_MINER_EMULATOR_BOOT_TIMEOUT_SECONDS"] = "10"
+
         result = self._run_launcher()
 
         self.assertNotEqual(0, result.returncode)
