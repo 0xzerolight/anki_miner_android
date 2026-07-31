@@ -1,7 +1,7 @@
 # Stable-channel metadata queried 2026-07-31 with cmdline-tools build 14742923.
 # path|revision|package.xml relative to ANDROID_HOME
 platform-tools|37.0.1|platform-tools/package.xml
-emulator|36.6.11|emulator/package.xml
+emulator|37.1.11|emulator/package.xml
 platforms;android-36|2|platforms/android-36/package.xml
 build-tools;36.0.0|36.0.0|build-tools/36.0.0/package.xml
 cmake;3.22.1|3.22.1|cmake/3.22.1/package.xml
