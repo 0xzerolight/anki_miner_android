@@ -134,6 +134,7 @@ internal object TesterDiagnosticsBuilder {
                 // truncates the tail, and the keys that point into the log must survive it.
                 line("resources.fault_id", safeCode(setup.failure?.faultId))
                 line("mining.fault_id", miningFaultId(video.runState, reading.runState))
+                line("mining.run_id", miningRunId(video.runState, reading.runState))
                 line("anki.provider", ankiReadiness(setup.anki))
                 line("anki.recovery_startup", ankiRecoveryReadiness(setup.ankiRecovery))
                 line(
@@ -168,12 +169,19 @@ internal object TesterDiagnosticsBuilder {
         appendLine(value)
     }
 
+    /**
+     * The failed arm is the one state in this report a tester reaches with no way to describe it:
+     * the UI says only "restart the app". Naming the stage and the fault separates a missing ABI
+     * wheel from a home mismatch from an OOM. [safeFaultToken] is reapplied here for the same reason
+     * it is on `anki.last_fault` — this line's `key=value` grammar cannot survive a newline.
+     */
     private fun pythonReadiness(readiness: PythonRuntimeReadiness): String =
         when (readiness) {
             PythonRuntimeReadiness.Pending -> "pending"
             PythonRuntimeReadiness.Starting -> "starting"
             is PythonRuntimeReadiness.Ready -> "ready"
-            is PythonRuntimeReadiness.Failed -> "failed"
+            is PythonRuntimeReadiness.Failed ->
+                "failed:${readiness.stage.name.lowercase(Locale.ROOT)}:${safeFaultToken(readiness.fault)}"
         }
 
     private fun ankiReadiness(readiness: AnkiProviderReadiness): String =
@@ -222,6 +230,14 @@ internal object TesterDiagnosticsBuilder {
      */
     private fun miningFaultId(vararg states: MiningRunState): String =
         safeCode(states.firstNotNullOfOrNull { (it as? MiningRunState.Failed)?.failure?.faultId })
+
+    /**
+     * The run id the failed lane has always carried and never shown. Records emitted underneath the
+     * run carry it as `run=`, so it selects that run's story out of the exported log — and unlike
+     * the fault id it is there for a Kotlin-side failure, which has no Python traceback behind it.
+     */
+    private fun miningRunId(vararg states: MiningRunState): String =
+        safeCode(states.firstNotNullOfOrNull { (it as? MiningRunState.Failed)?.runId })
 
     private fun videoPending(state: VideoMiningUiState): String =
         pendingLabels(
