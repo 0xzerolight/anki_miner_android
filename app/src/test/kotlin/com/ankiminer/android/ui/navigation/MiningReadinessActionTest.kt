@@ -13,6 +13,7 @@ import com.ankiminer.android.anki.provider.NoteTypeSetupStatus
 import com.ankiminer.android.data.RuntimeWorkCoordinator
 import com.ankiminer.android.data.anki.AnkiRecoveryInventoryStatus
 import com.ankiminer.android.data.resources.ResourceStartupReadiness
+import com.ankiminer.android.engine.PythonBootstrapStage
 import com.ankiminer.android.engine.PythonRuntimeReadiness
 import com.ankiminer.android.vm.MiningReadinessAction
 import com.ankiminer.android.vm.SetupUiState
@@ -63,7 +64,13 @@ internal class MiningReadinessActionTest(
                 ),
                 arrayOf(
                     "failed python checks again",
-                    ready.copy(python = PythonRuntimeReadiness.Failed),
+                    ready.copy(
+                        python =
+                            PythonRuntimeReadiness.Failed(
+                                PythonBootstrapStage.START,
+                                "UnsatisfiedLinkError @ Python.start:1",
+                            ),
+                    ),
                     MiningReadinessAction.CHECK_AGAIN,
                 ),
                 arrayOf(

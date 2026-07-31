@@ -113,7 +113,11 @@ class PythonRuntimeBootstrapTest {
         gate.enqueueFirst(Executor(queued::set)) { error("private detail") }
         queued.get().run()
 
-        assertEquals(PythonRuntimeReadiness.Failed, gate.readiness.value)
+        val readiness = gate.readiness.value as PythonRuntimeReadiness.Failed
+        // Nothing in the initializer runs outside a stage block once startup has finished, so an
+        // untagged throw is a startup throw.
+        assertEquals(PythonBootstrapStage.START, readiness.stage)
+        assertTrue(readiness.fault, readiness.fault.startsWith("IllegalStateException @ "))
         val failure =
             try {
                 gate.await { }
@@ -123,5 +127,77 @@ class PythonRuntimeBootstrapTest {
             }
         assertEquals("The embedded Python runtime is unavailable", failure.message)
         assertEquals("private detail", failure.cause?.message)
+    }
+
+    @Test
+    fun `a tagged failure reports its stage and still surfaces its own cause`() {
+        val queued = AtomicReference<Runnable>()
+        val gate = PythonRuntimeBootstrapGate<Any> { error("unreachable") }
+        val cause = IllegalStateException("Python bootstrap did not confirm the requested engine home")
+        gate.enqueueFirst(Executor(queued::set)) {
+            throw PythonBootstrapFailure(PythonBootstrapStage.HANDSHAKE, cause)
+        }
+        queued.get().run()
+
+        val readiness = gate.readiness.value as PythonRuntimeReadiness.Failed
+        assertEquals(PythonBootstrapStage.HANDSHAKE, readiness.stage)
+        // The wrapper's own name would be PythonBootstrapFailure: the token has to digest what
+        // actually failed, not the tag around it.
+        assertTrue(readiness.fault, readiness.fault.startsWith("IllegalStateException @ "))
+        val failure =
+            try {
+                gate.await { }
+                throw AssertionError("failure expected")
+            } catch (expected: PythonRuntimeUnavailableException) {
+                expected
+            }
+        // await() rethrows ExecutionException.cause, so completing with the wrapper would put
+        // PythonBootstrapFailure here instead of the failure a caller needs to see.
+        assertSame(cause, failure.cause)
+    }
+
+    @Test
+    fun `a bootstrap error is reported as a startup fault and still escapes the runnable`() {
+        val queued = AtomicReference<Runnable>()
+        val gate = PythonRuntimeBootstrapGate<Any> { error("unreachable") }
+        val fatal = OutOfMemoryError("bootstrap heap")
+        gate.enqueueFirst(Executor(queued::set)) { throw fatal }
+
+        val escaped =
+            try {
+                queued.get().run()
+                throw AssertionError("the error must not be swallowed")
+            } catch (expected: OutOfMemoryError) {
+                expected
+            }
+
+        assertSame(fatal, escaped)
+        val readiness = gate.readiness.value as PythonRuntimeReadiness.Failed
+        assertEquals(PythonBootstrapStage.START, readiness.stage)
+        assertTrue(readiness.fault, readiness.fault.startsWith("OutOfMemoryError"))
+    }
+
+    @Test
+    fun `a stage block tags an exception and lets an error through untouched`() {
+        val rejected = IllegalStateException("the boundary rejected the bootstrap request")
+        val tagged =
+            try {
+                pythonBootstrapStage(PythonBootstrapStage.DISPATCH) { throw rejected }
+            } catch (expected: PythonBootstrapFailure) {
+                expected
+            }
+        assertEquals(PythonBootstrapStage.DISPATCH, tagged.stage)
+        assertSame(rejected, tagged.cause)
+
+        // Python.start raises this when the ABI has no native wheel. Tagging it would make the
+        // gate's Error rethrow unreachable and leave the process running on a half-loaded runtime.
+        val missingWheel = UnsatisfiedLinkError("no native wheel for this ABI")
+        val escaped =
+            try {
+                pythonBootstrapStage(PythonBootstrapStage.START) { throw missingWheel }
+            } catch (expected: UnsatisfiedLinkError) {
+                expected
+            }
+        assertSame(missingWheel, escaped)
     }
 }

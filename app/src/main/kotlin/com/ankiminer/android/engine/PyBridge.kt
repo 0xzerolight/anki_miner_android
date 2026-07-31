@@ -49,35 +49,45 @@ internal class ChaquopyPythonRuntime(
 
     private fun initialize(): Runtime {
         val startedNanos = System.nanoTime()
-        if (!Python.isStarted()) {
-            Python.start(AndroidPlatform(applicationContext))
-        }
-        AppLog.i(
-            LogComponent.BOOTSTRAP,
-            "python.start",
-            "ms" to (System.nanoTime() - startedNanos) / 1_000_000L,
-        )
+        // Interpreter startup and the bridge module import share a stage: both fail on the same
+        // causes -- a missing native wheel for this ABI, a truncated asset set -- and neither has
+        // reached the protocol yet.
+        val boundary =
+            pythonBootstrapStage(PythonBootstrapStage.START) {
+                if (!Python.isStarted()) {
+                    Python.start(AndroidPlatform(applicationContext))
+                }
+                AppLog.i(
+                    LogComponent.BOOTSTRAP,
+                    "python.start",
+                    "ms" to (System.nanoTime() - startedNanos) / 1_000_000L,
+                )
+                Python.getInstance().getModule("android_bridge.boundary")
+            }
         val requestedHome = filesDir.canonicalPath
-        val boundary = Python.getInstance().getModule("android_bridge.boundary")
-        val bootstrapRequest = BridgeJsonCodec.encodeBootstrapInitialize(requestedHome)
         val rawReady =
-            boundary
-                .callAttr("dispatch", bootstrapRequest)
-                .toJava(String::class.java)
-        val ready = BridgeJsonCodec.decode(rawReady)
-        // ANKI_MINER_HOME freezes at import, so a mismatch here means every later path resolves
-        // somewhere else. The check message cannot name the two homes; this record can.
-        if (ready !is BridgeMessage.BootstrapReady || ready.home != requestedHome) {
-            AppLog.e(
-                LogComponent.BOOTSTRAP,
-                "python.home",
-                null,
-                "requested" to requestedHome,
-                "confirmed" to (ready as? BridgeMessage.BootstrapReady)?.home,
-            )
-        }
-        check(ready is BridgeMessage.BootstrapReady && ready.home == requestedHome) {
-            "Python bootstrap did not confirm the requested engine home"
+            pythonBootstrapStage(PythonBootstrapStage.DISPATCH) {
+                val bootstrapRequest = BridgeJsonCodec.encodeBootstrapInitialize(requestedHome)
+                boundary
+                    .callAttr("dispatch", bootstrapRequest)
+                    .toJava(String::class.java)
+            }
+        pythonBootstrapStage(PythonBootstrapStage.HANDSHAKE) {
+            val ready = BridgeJsonCodec.decode(rawReady)
+            // ANKI_MINER_HOME freezes at import, so a mismatch here means every later path resolves
+            // somewhere else. The check message cannot name the two homes; this record can.
+            if (ready !is BridgeMessage.BootstrapReady || ready.home != requestedHome) {
+                AppLog.e(
+                    LogComponent.BOOTSTRAP,
+                    "python.home",
+                    null,
+                    "requested" to requestedHome,
+                    "confirmed" to (ready as? BridgeMessage.BootstrapReady)?.home,
+                )
+            }
+            check(ready is BridgeMessage.BootstrapReady && ready.home == requestedHome) {
+                "Python bootstrap did not confirm the requested engine home"
+            }
         }
         AppLog.i(LogComponent.BOOTSTRAP, "python.home", "home" to requestedHome)
         // Before tokenizer.configure and any engine work: the app starts Python work at launch

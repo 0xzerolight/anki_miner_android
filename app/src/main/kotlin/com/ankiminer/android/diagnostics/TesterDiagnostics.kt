@@ -173,7 +173,7 @@ internal object TesterDiagnosticsBuilder {
             PythonRuntimeReadiness.Pending -> "pending"
             PythonRuntimeReadiness.Starting -> "starting"
             is PythonRuntimeReadiness.Ready -> "ready"
-            PythonRuntimeReadiness.Failed -> "failed"
+            is PythonRuntimeReadiness.Failed -> "failed"
         }
 
     private fun ankiReadiness(readiness: AnkiProviderReadiness): String =
