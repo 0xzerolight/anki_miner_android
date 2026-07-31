@@ -520,9 +520,7 @@ def load_vendored_inventory(manifest: Path, abi: str) -> ExpectedInventory:
                 max_total_size=MAX_REQUIREMENT_TOTAL_SIZE,
             )
             metadata_paths = [
-                member
-                for member, info in infos.items()
-                if not info.is_dir() and member.endswith(".dist-info/METADATA")
+                member for member, info in infos.items() if not info.is_dir() and member.endswith(".dist-info/METADATA")
             ]
             if len(metadata_paths) != 1:
                 raise RuntimeArtifactError(f"{label}: expected one METADATA payload: {path}")

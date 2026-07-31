@@ -657,11 +657,14 @@ def inspect_zip(
                     )
                 if expected_native is not None and not is_elf:
                     raise ArtifactError(f"{entry_name}: manifest S1a native payload is not an ELF")
-                if is_native_library_payload(
-                    entry_path,
-                    depth=depth,
-                    requirement_owner=requirement_owner,
-                ) and not is_elf:
+                if (
+                    is_native_library_payload(
+                        entry_path,
+                        depth=depth,
+                        requirement_owner=requirement_owner,
+                    )
+                    and not is_elf
+                ):
                     raise ArtifactError(f"{entry_name}: native library payload is not an ELF")
                 if not (is_elf or is_archive or attribution is not None):
                     continue

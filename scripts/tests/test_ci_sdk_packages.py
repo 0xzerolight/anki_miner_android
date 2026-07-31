@@ -74,7 +74,7 @@ class CiSdkPackagesTest(unittest.TestCase):
 
         self.assertIn("preflight_android_packages.py", source)
         self.assertIn("--sdkmanager-list", source)
-        self.assertIn("--lock \"$SCRIPT_DIR/android-sdk-packages.lock\"", source)
+        self.assertIn('--lock "$SCRIPT_DIR/android-sdk-packages.lock"', source)
 
 
 if __name__ == "__main__":

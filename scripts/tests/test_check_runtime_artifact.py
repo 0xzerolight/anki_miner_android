@@ -238,9 +238,7 @@ class ArtifactFixture:
                 "1.0",
                 {
                     "requests-1.0.dist-info/METADATA": self.common["requests-1.0.dist-info/METADATA"],
-                    "requests-1.0.dist-info/licenses/LICENSE": self.common[
-                        "requests-1.0.dist-info/licenses/LICENSE"
-                    ],
+                    "requests-1.0.dist-info/licenses/LICENSE": self.common["requests-1.0.dist-info/licenses/LICENSE"],
                     "requests/__init__.py": self.common["requests/__init__.py"],
                 },
             ),
@@ -325,9 +323,7 @@ class RuntimeArtifactPositiveTests(unittest.TestCase):
 class RuntimeArtifactInventoryTests(unittest.TestCase):
     def test_vendored_manifest_audit_rejects_mutated_packaged_native(self) -> None:
         with fixture() as value:
-            value.common["requests-1.0.dist-info/licenses/LICENSE"] = value.common.pop(
-                "requests-1.0.dist-info/LICENSE"
-            )
+            value.common["requests-1.0.dist-info/licenses/LICENSE"] = value.common.pop("requests-1.0.dist-info/LICENSE")
             value.write_artifact()
             manifest = value.write_vendored_manifest()
             result = checker.audit_vendored_artifact(value.artifact, manifest, value.abi)

@@ -18,8 +18,7 @@ EXTERNAL_UNIDIC_TESTS = (
     "#externalUniDicMatchesAllGoldensThroughPythonKotlinAndJni",
 )
 SELECTOR_GATED_TESTS = (
-    "com.ankiminer.android.EngineGoldenV2InstrumentedTest"
-    "#allCompleteSectionsReplayThroughPackagedEngine",
+    "com.ankiminer.android.EngineGoldenV2InstrumentedTest" "#allCompleteSectionsReplayThroughPackagedEngine",
     "com.ankiminer.android.ReadingGoldenInstrumentedTest"
     "#desktopReadingSourcesAndMokuroCardReplayThroughPackagedBridge",
     "com.ankiminer.android.S4EngineSmokeInstrumentedTest" "#pinnedDesktopChainRunsThroughPackagedEngine",
@@ -29,24 +28,16 @@ SELECTOR_GATED_TESTS = (
     "#production_repository_mines_real_media_and_cancels_an_active_ffmpeg_child",
 )
 UI_AUDIT_TESTS = (
-    "com.ankiminer.android.uiaudit.UiAuditJankFlowTest"
-    "#curationList200CandidatesScrollsBottomThenTop",
+    "com.ankiminer.android.uiaudit.UiAuditJankFlowTest" "#curationList200CandidatesScrollsBottomThenTop",
     "com.ankiminer.android.uiaudit.UiAuditJankFlowTest" "#settingsFullScrollsDownThenUp",
-    "com.ankiminer.android.uiaudit.UiAuditJankFlowTest"
-    "#readingResultsLongListScrollsDownThenUp",
+    "com.ankiminer.android.uiaudit.UiAuditJankFlowTest" "#readingResultsLongListScrollsDownThenUp",
     "com.ankiminer.android.uiaudit.UiAuditJankFlowTest" "#wizardStepsThroughEveryScreen",
-    "com.ankiminer.android.uiaudit.UiAuditScreenshotTest"
-    "#captureVideoStatesAcrossThemeAndFontScaleMatrix",
-    "com.ankiminer.android.uiaudit.UiAuditScreenshotTest"
-    "#captureReadingStatesAcrossThemeAndFontScaleMatrix",
-    "com.ankiminer.android.uiaudit.UiAuditScreenshotTest"
-    "#captureSettingsStatesAcrossThemeAndFontScaleMatrix",
-    "com.ankiminer.android.uiaudit.UiAuditScreenshotTest"
-    "#captureReadinessActionsAcrossThemeAndFontScaleMatrix",
-    "com.ankiminer.android.uiaudit.UiAuditScreenshotTest"
-    "#captureEveryWizardStepAcrossThemeAndFontScaleMatrix",
-    "com.ankiminer.android.uiaudit.UiAuditScreenshotTest"
-    "#captureAttributionAndNoticesAcrossThemeAndFontScaleMatrix",
+    "com.ankiminer.android.uiaudit.UiAuditScreenshotTest" "#captureVideoStatesAcrossThemeAndFontScaleMatrix",
+    "com.ankiminer.android.uiaudit.UiAuditScreenshotTest" "#captureReadingStatesAcrossThemeAndFontScaleMatrix",
+    "com.ankiminer.android.uiaudit.UiAuditScreenshotTest" "#captureSettingsStatesAcrossThemeAndFontScaleMatrix",
+    "com.ankiminer.android.uiaudit.UiAuditScreenshotTest" "#captureReadinessActionsAcrossThemeAndFontScaleMatrix",
+    "com.ankiminer.android.uiaudit.UiAuditScreenshotTest" "#captureEveryWizardStepAcrossThemeAndFontScaleMatrix",
+    "com.ankiminer.android.uiaudit.UiAuditScreenshotTest" "#captureAttributionAndNoticesAcrossThemeAndFontScaleMatrix",
 )
 UNEXECUTED_TESTS = EXTERNAL_UNIDIC_TESTS + SELECTOR_GATED_TESTS + UI_AUDIT_TESTS
 ASSUMPTION_GATED_TESTS = (
@@ -140,9 +131,7 @@ class Api26InstrumentationScriptTest(unittest.TestCase):
             )
             instrumentation_command = adb_log.read_text(encoding="utf-8").splitlines()[-1]
             self.assertEqual(
-                "shell am instrument -w -r -e notClass "
-                + ",".join(UNEXECUTED_TESTS)
-                + " com.ankiminer.android.test/"
+                "shell am instrument -w -r -e notClass " + ",".join(UNEXECUTED_TESTS) + " com.ankiminer.android.test/"
                 "androidx.test.runner.AndroidJUnitRunner",
                 instrumentation_command,
             )

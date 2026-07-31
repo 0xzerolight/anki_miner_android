@@ -469,7 +469,7 @@ internal class SetupViewModel(
 
     /** Snapshot picker metadata before Android may recreate this ViewModel. */
     fun prepareCustomDictionaryImport(): Boolean {
-        val state = uiState.value
+        val state = currentState()
         if (state.busy || !SLOT_ID.matches(state.customSlotId)) return false
         savePendingSettingsImport(
             PendingSettingsImport(
@@ -482,7 +482,7 @@ internal class SetupViewModel(
 
     /** Snapshot picker metadata before Android may recreate this ViewModel. */
     fun prepareFrequencyImport(): Boolean {
-        val state = uiState.value
+        val state = currentState()
         if (state.busy || state.frequencySourceName.isBlank()) return false
         val target = ResourceIdentity.frequencyTarget(state.frequencySourceName, state.frequencySources)
         savePendingSettingsImport(
@@ -498,7 +498,7 @@ internal class SetupViewModel(
 
     /** Snapshot picker metadata before Android may recreate this ViewModel. */
     fun preparePitchAccentImport(): Boolean {
-        val state = uiState.value
+        val state = currentState()
         if (state.busy || state.pitchSourceName.isBlank()) return false
         val target = ResourceIdentity.pitchTarget(state.pitchSourceName, state.pitchSources)
         savePendingSettingsImport(
@@ -514,7 +514,7 @@ internal class SetupViewModel(
 
     /** Snapshot picker metadata before Android may recreate this ViewModel. */
     fun prepareAudioPackImport(): Boolean {
-        val state = uiState.value
+        val state = currentState()
         if (state.busy || !state.audioPackIdValid) return false
         savePendingSettingsImport(
             PendingSettingsImport(
@@ -527,7 +527,7 @@ internal class SetupViewModel(
 
     /** Snapshot picker metadata before Android may recreate this ViewModel. */
     fun prepareKnownWordsImport(): Boolean {
-        val state = uiState.value
+        val state = currentState()
         if (state.busy) return false
         savePendingSettingsImport(
             PendingSettingsImport(
@@ -545,7 +545,7 @@ internal class SetupViewModel(
             clearPendingSettingsImport()
             return
         }
-        val state = uiState.value
+        val state = currentState()
         if (state.busy) return
         val resourceState = resources.state.value
         when (pending.kind) {
