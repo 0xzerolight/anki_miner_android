@@ -3,7 +3,6 @@ package com.ankiminer.android.diagnostics
 import android.app.ActivityManager
 import android.content.Context
 import android.content.pm.PackageManager
-import android.net.Uri
 import android.os.Build
 import androidx.core.content.FileProvider
 import com.ankiminer.android.data.settings.AppSettings
@@ -23,9 +22,10 @@ import java.util.zip.Deflater
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-internal data class StagedDiagnosticsBundle(
+internal data class StagedBundle(
     val file: File,
-    val uri: Uri,
+    val uri: String,
+    val sizeBytes: Long,
     val entries: List<BundleEntryResult>,
 )
 
@@ -46,7 +46,7 @@ internal class DiagnosticsBundleStager(
         diagnostics: String,
         settings: AppSettings,
         verboseLogging: Boolean,
-    ): StagedDiagnosticsBundle =
+    ): StagedBundle =
         captureGate.run {
             withContext(Dispatchers.IO) {
                 root.mkdirs()
@@ -108,14 +108,15 @@ internal class DiagnosticsBundleStager(
                     }
                     destination.setLastModified(captured.toEpochMilli())
                     DiagnosticsBundleJanitor(root).clean()
-                    StagedDiagnosticsBundle(
+                    StagedBundle(
                         file = destination,
                         uri =
                             FileProvider.getUriForFile(
                                 context,
                                 "${context.packageName}.diagnostics",
                                 destination,
-                            ),
+                            ).toString(),
+                        sizeBytes = destination.length(),
                         entries = entries,
                     )
                 } finally {

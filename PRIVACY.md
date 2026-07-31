@@ -30,6 +30,19 @@ The app only contacts the network for these purposes, and only over HTTPS:
 It does not request access to your device's media library or contacts, and it
 uses the Storage Access Framework so you pick individual files yourself.
 
+## Diagnostics exports
+
+Settings can build a diagnostics bundle only when you request one. The bundle
+contains the tester report, Anki Miner's Python and Kotlin logs, this app's own
+system-log records, recent process-exit details, and a manifest. It never reads
+or includes another app's logs.
+
+Log content is redacted with a fresh per-bundle salt before each archive entry
+is written. The manifest deliberately excludes Build.SERIAL, SSAID, accounts,
+IP and MAC addresses, and package inventory. Run IDs remain so maintainers can
+correlate one mining run across files. You choose whether to save the ZIP or
+send it through Android's share sheet; Anki Miner does not upload it itself.
+
 ## Removing your data
 
 Uninstalling the app removes its settings, downloaded resources, and private

@@ -13,6 +13,7 @@ import com.ankiminer.android.data.RuntimeWorkCoordinator
 import com.ankiminer.android.data.resources.AndroidResourceDocumentWriter
 import com.ankiminer.android.data.resources.AndroidResourceManager
 import com.ankiminer.android.data.resources.PinnedResourceDownloader
+import com.ankiminer.android.data.resources.ResourceDocumentWriter
 import com.ankiminer.android.data.resources.ResourceManager
 import com.ankiminer.android.data.resources.ResourceStartupReadiness
 import com.ankiminer.android.data.resources.SafArchiveStager
@@ -21,8 +22,10 @@ import com.ankiminer.android.data.settings.AppSettingsRepository
 import com.ankiminer.android.data.settings.DataStoreAppSettingsRepository
 import com.ankiminer.android.data.settings.DataStoreDiagnosticsSettingsRepository
 import com.ankiminer.android.data.settings.DiagnosticsSettingsRepository
+import com.ankiminer.android.diagnostics.AndroidDiagnosticsExporter
 import com.ankiminer.android.diagnostics.DiagnosticsBundleJanitor
 import com.ankiminer.android.diagnostics.DiagnosticsBundleStager
+import com.ankiminer.android.diagnostics.DiagnosticsExporter
 import com.ankiminer.android.diagnostics.currentTesterBuildIdentity
 import com.ankiminer.android.diagnostics.log.AppLog
 import com.ankiminer.android.diagnostics.log.CompositeSink
@@ -130,6 +133,24 @@ class AnkiMinerApplication : Application() {
     ) {
         DiagnosticsBundleStager(this, logFileSink, safSelectionInventory)
     }
+    private val resourceDocumentWriter: ResourceDocumentWriter by lazy(
+        LazyThreadSafetyMode.SYNCHRONIZED,
+    ) {
+        AndroidResourceDocumentWriter(contentResolver)
+    }
+
+    internal fun createDiagnosticsExporter(buildDiagnostics: () -> String): DiagnosticsExporter =
+        AndroidDiagnosticsExporter(
+            stagingRoot = File(cacheDir, DiagnosticsBundleJanitor.DIRECTORY_NAME),
+            documentWriter = resourceDocumentWriter,
+            stageBundle = {
+                diagnosticsBundleStager.stage(
+                    diagnostics = buildDiagnostics(),
+                    settings = settingsRepository.settings.first(),
+                    verboseLogging = diagnosticsSettings.verboseLogging.first(),
+                )
+            },
+        )
     private val runtimeWorkCoordinator = RuntimeWorkCoordinator()
     internal val runtimeWorkState
         get() = runtimeWorkCoordinator.activeKind
@@ -222,7 +243,7 @@ class AnkiMinerApplication : Application() {
             controlExecutor = resourceControlExecutor,
             runtimeWorkCoordinator = runtimeWorkCoordinator,
             safStager = SafArchiveStager(contentResolver, resourceStagingRoot),
-            documentWriter = AndroidResourceDocumentWriter(contentResolver),
+            documentWriter = resourceDocumentWriter,
             strings = stringResourceResolver,
         )
     }
