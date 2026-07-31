@@ -89,7 +89,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        notificationRunId.value = MiningForegroundService.consumeOpenedRunId(intent)
+        notificationRunId.value =
+            savedInstanceState?.getString(PENDING_NOTIFICATION_RUN_ID)
+                ?: MiningForegroundService.consumeOpenedRunId(intent)
         setContent {
             val app = application as AnkiMinerApplication
             val nullableSettings =
@@ -174,6 +176,13 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         notificationRunId.value = MiningForegroundService.consumeOpenedRunId(intent)
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        notificationRunId.value?.let { runId ->
+            outState.putString(PENDING_NOTIFICATION_RUN_ID, runId)
+        }
+        super.onSaveInstanceState(outState)
     }
 
     override fun onResume() {
@@ -276,6 +285,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private companion object {
+        const val PENDING_NOTIFICATION_RUN_ID = "pending_notification_run_id"
         const val ACTION_TTS_SETTINGS = "com.android.settings.TTS_SETTINGS"
         const val ANKIDROID_RELEASES_URL =
             "https://github.com/ankidroid/Anki-Android/releases"

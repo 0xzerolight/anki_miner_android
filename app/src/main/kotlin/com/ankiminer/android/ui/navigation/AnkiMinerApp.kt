@@ -51,6 +51,7 @@ import com.ankiminer.android.diagnostics.AnkiFaultRecorder
 import com.ankiminer.android.diagnostics.TesterDiagnosticsBuilder
 import com.ankiminer.android.diagnostics.TesterDiagnosticsShareAction
 import com.ankiminer.android.diagnostics.currentTesterBuildIdentity
+import com.ankiminer.android.mining.isTerminal
 import com.ankiminer.android.mining.runId
 import com.ankiminer.android.ui.attribution.AttributionScreen
 import com.ankiminer.android.ui.attribution.NoticesScreen
@@ -141,7 +142,8 @@ internal enum class AnkiMinerDestination(
 internal fun miningWorkflowVisible(
     setupReady: Boolean,
     workflow: NavigationWorkflowState,
-): Boolean = setupReady || workflow != NavigationWorkflowState.IDLE
+    hasRetainedRun: Boolean = false,
+): Boolean = setupReady || workflow != NavigationWorkflowState.IDLE || hasRetainedRun
 
 internal fun compactNavigation(
     widthDp: Int,
@@ -173,6 +175,7 @@ internal fun AnkiMinerAppShell(
     onDestinationSelected: (AnkiMinerDestination) -> Unit,
     onNavigateBack: () -> Unit = {},
     modifier: Modifier = Modifier,
+    overlay: @Composable () -> Unit = {},
     content: @Composable (Modifier) -> Unit,
 ) {
     BoxWithConstraints(modifier) {
@@ -275,6 +278,7 @@ internal fun AnkiMinerAppShell(
                     .consumeWindowInsets(padding),
             )
         }
+        overlay()
     }
 }
 
@@ -308,6 +312,8 @@ internal fun AnkiMinerApp(
         videoViewModel.navigationWorkflowState.collectAsStateWithLifecycle()
     val readingWorkflow by
         readingViewModel.navigationWorkflowState.collectAsStateWithLifecycle()
+    val videoRunState by videoViewModel.uiState.collectAsStateWithLifecycle()
+    val readingRunState by readingViewModel.uiState.collectAsStateWithLifecycle()
     val buildIdentity = remember { currentTesterBuildIdentity() }
     val diagnosticsIdentity =
         remember(buildIdentity) {
@@ -371,43 +377,15 @@ internal fun AnkiMinerApp(
         onNotificationRunHandled()
     }
 
-    if (
+    val wizardIsVisible =
         wizardVisible(
             wizardSeen = setup.wizardSeen,
             rerunRequested = wizardRerunRequested,
             sessionDismissed = wizardDismissedForSession || wizardRedirectedToSettings,
             completion = setup.wizardCompletion,
         )
-    ) {
+    if (wizardIsVisible) {
         LaunchedEffect(setupViewModel) { setupViewModel.refresh() }
-        OnboardingWizard(
-            state = setup,
-            viewModel = setupViewModel,
-            onRequestPermissions = onRequestPermissions,
-            onOpenAppSettings = onOpenAppSettings,
-            onInstallAnkiDroid = onInstallAnkiDroid,
-            onOpenAnkiDroid = onOpenAnkiDroid,
-            onFinished = {
-                wizardRerunRequested = false
-                wizardRedirectedToSettings = false
-                if (setup.wizardSeen != true) setupViewModel.markWizardSeen()
-            },
-            onCustomizeFields = {
-                wizardRerunRequested = false
-                wizardRedirectedToSettings = true
-                requestedSettingsCategory = SettingsCategory.ANKI
-                requestedSettingsItemIndex = 3
-                navigateTo(AnkiMinerDestination.SETTINGS)
-            },
-            onResolveRecovery = {
-                wizardRerunRequested = false
-                wizardRedirectedToSettings = true
-                requestedSettingsCategory = SettingsCategory.ANKI
-                requestedSettingsItemIndex = 4
-                navigateTo(AnkiMinerDestination.SETTINGS)
-            },
-        )
-        return
     }
 
     val snackbarHostState = remember { SnackbarHostState() }
@@ -448,6 +426,37 @@ internal fun AnkiMinerApp(
         snackbarHostState = snackbarHostState,
         onDestinationSelected = ::navigateTo,
         onNavigateBack = { navController.popBackStack() },
+        overlay = {
+            if (wizardIsVisible) {
+                OnboardingWizard(
+                    state = setup,
+                    viewModel = setupViewModel,
+                    onRequestPermissions = onRequestPermissions,
+                    onOpenAppSettings = onOpenAppSettings,
+                    onInstallAnkiDroid = onInstallAnkiDroid,
+                    onOpenAnkiDroid = onOpenAnkiDroid,
+                    onFinished = {
+                        wizardRerunRequested = false
+                        wizardRedirectedToSettings = false
+                        if (setup.wizardSeen != true) setupViewModel.markWizardSeen()
+                    },
+                    onCustomizeFields = {
+                        wizardRerunRequested = false
+                        wizardRedirectedToSettings = true
+                        requestedSettingsCategory = SettingsCategory.ANKI
+                        requestedSettingsItemIndex = 3
+                        navigateTo(AnkiMinerDestination.SETTINGS)
+                    },
+                    onResolveRecovery = {
+                        wizardRerunRequested = false
+                        wizardRedirectedToSettings = true
+                        requestedSettingsCategory = SettingsCategory.ANKI
+                        requestedSettingsItemIndex = 4
+                        navigateTo(AnkiMinerDestination.SETTINGS)
+                    },
+                )
+            }
+        },
     ) { shellModifier ->
         NavHost(
             navController = navController,
@@ -461,7 +470,13 @@ internal fun AnkiMinerApp(
             popExitTransition = { fadeOut(tween(AnkiMinerTokens.Motion.ExitMs)) },
         ) {
             composable(AnkiMinerDestination.VIDEO.route) {
-                if (miningWorkflowVisible(setup.isMiningReady, videoWorkflow)) {
+                if (
+                    miningWorkflowVisible(
+                        setupReady = setup.isMiningReady,
+                        workflow = videoWorkflow,
+                        hasRetainedRun = videoRunState.runState.isTerminal,
+                    )
+                ) {
                     VideoMiningRoute(
                         viewModel = videoViewModel,
                         onReturnToActiveRun =
@@ -486,7 +501,13 @@ internal fun AnkiMinerApp(
                 }
             }
             composable(AnkiMinerDestination.READING.route) {
-                if (miningWorkflowVisible(setup.isMiningReady, readingWorkflow)) {
+                if (
+                    miningWorkflowVisible(
+                        setupReady = setup.isMiningReady,
+                        workflow = readingWorkflow,
+                        hasRetainedRun = readingRunState.runState.isTerminal,
+                    )
+                ) {
                     ReadingMiningRoute(
                         viewModel = readingViewModel,
                         onReturnToActiveRun =

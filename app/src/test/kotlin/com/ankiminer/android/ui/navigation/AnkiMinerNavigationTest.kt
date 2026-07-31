@@ -27,6 +27,13 @@ class AnkiMinerNavigationTest {
                 workflow = NavigationWorkflowState.RUNNING,
             ),
         )
+        assertTrue(
+            miningWorkflowVisible(
+                setupReady = false,
+                workflow = NavigationWorkflowState.IDLE,
+                hasRetainedRun = true,
+            ),
+        )
     }
 
     @Test
