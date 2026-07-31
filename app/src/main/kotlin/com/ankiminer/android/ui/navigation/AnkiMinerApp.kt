@@ -51,6 +51,9 @@ import com.ankiminer.android.diagnostics.AnkiFaultRecorder
 import com.ankiminer.android.diagnostics.TesterDiagnosticsBuilder
 import com.ankiminer.android.diagnostics.TesterDiagnosticsShareAction
 import com.ankiminer.android.diagnostics.currentTesterBuildIdentity
+import com.ankiminer.android.mining.MiningRunKind
+import com.ankiminer.android.mining.MiningRunState
+import com.ankiminer.android.mining.isTerminal
 import com.ankiminer.android.mining.runId
 import com.ankiminer.android.ui.attribution.AttributionScreen
 import com.ankiminer.android.ui.attribution.NoticesScreen
@@ -352,12 +355,17 @@ internal fun AnkiMinerApp(
 
     LaunchedEffect(notificationRunId) {
         if (notificationRunId == null) return@LaunchedEffect
-        val videoRunId = videoViewModel.uiState.value.runState.runId
-        val readingRunId = readingViewModel.uiState.value.runState.runId
+        val videoRun = videoViewModel.uiState.value.runState
+        val readingRun = readingViewModel.uiState.value.runState
+        val foregroundKind = MiningRunKind.fromForegroundRunId(notificationRunId)
         val destination =
-            when (notificationRunId) {
-                videoRunId -> AnkiMinerDestination.VIDEO
-                readingRunId -> AnkiMinerDestination.READING
+            when {
+                notificationRunId == videoRun.runId -> AnkiMinerDestination.VIDEO
+                notificationRunId == readingRun.runId -> AnkiMinerDestination.READING
+                foregroundKind == MiningRunKind.VIDEO && videoRun.isActive() ->
+                    AnkiMinerDestination.VIDEO
+                foregroundKind == MiningRunKind.READING && readingRun.isActive() ->
+                    AnkiMinerDestination.READING
                 else -> null
             }
         if (destination != null) {
@@ -560,6 +568,8 @@ internal fun AnkiMinerApp(
         }
     }
 }
+
+private fun MiningRunState.isActive(): Boolean = this != MiningRunState.Idle && !isTerminal
 
 @Composable
 internal fun MiningReadinessNotice(

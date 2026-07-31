@@ -263,16 +263,19 @@ sealed interface MiningRunState {
         val runId: String?,
         val progress: MiningProgress?,
         val cancellationToken: MiningCancellationToken? = null,
+        val cancellationPending: Boolean = false,
     ) : MiningRunState
 
     data class Curating(
         val request: CurationRequest,
         val pageSubmissionPending: Boolean = false,
+        val cancellationPending: Boolean = false,
     ) : MiningRunState
 
     data class Running(
         val runId: String,
         val progress: MiningProgress,
+        val cancellationPending: Boolean = false,
     ) : MiningRunState
 
     data class Success(
@@ -306,6 +309,15 @@ val MiningRunState.runId: String?
 
 val MiningRunState.cancellationToken: MiningCancellationToken?
     get() = (this as? MiningRunState.Starting)?.cancellationToken
+
+val MiningRunState.cancellationPending: Boolean
+    get() =
+        when (this) {
+            is MiningRunState.Starting -> cancellationPending
+            is MiningRunState.Curating -> cancellationPending
+            is MiningRunState.Running -> cancellationPending
+            else -> false
+        }
 
 val MiningRunState.isTerminal: Boolean
     get() =

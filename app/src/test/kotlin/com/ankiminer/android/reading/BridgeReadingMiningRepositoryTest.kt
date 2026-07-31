@@ -122,7 +122,7 @@ class BridgeReadingMiningRepositoryTest {
         assertTrue(stagedFile.toPath().startsWith(harness.cacheDir.toPath().toRealPath()))
         assertNull(wire.imageArchivePath)
         assertNull(wire.seriesName)
-        assertEquals(0, harness.foreground.startCount.get())
+        assertEquals(1, harness.foreground.startCount.get())
         assertNull(coordinator.tryAcquire(RuntimeWorkCoordinator.Kind.RESOURCE))
         assertTrue(harness.repository.detachActiveSources(INPUT))
 
@@ -163,7 +163,7 @@ class BridgeReadingMiningRepositoryTest {
         runBlocking { harness.repository.startReading(INPUT) }
         val curating =
             awaitState(harness.repository) { it is MiningRunState.Curating } as MiningRunState.Curating
-        assertEquals(0, harness.foreground.startCount.get())
+        assertEquals(1, harness.foreground.startCount.get())
 
         runBlocking {
             harness.repository.confirmCuration(
@@ -180,6 +180,60 @@ class BridgeReadingMiningRepositoryTest {
 
         assertTrue(awaitState(harness.repository, MiningRunState::isTerminal) is MiningRunState.Success)
         assertEquals(1, harness.foreground.lease.closeCount.get())
+    }
+
+    @Test
+    fun `eligible foreground ownership starts before reading source staging`() {
+        val harness = harness(expressionAudioFieldMapped = true)
+
+        runBlocking { harness.repository.startReading(INPUT) }
+        val curating =
+            awaitState(harness.repository) { it is MiningRunState.Curating } as MiningRunState.Curating
+
+        assertEquals(1, harness.foregroundStartsAtOpen.get())
+        runBlocking { harness.repository.cancel(curating.request.runId) }
+        harness.bridge.allowTerminal.countDown()
+        awaitState(harness.repository, MiningRunState::isTerminal)
+    }
+
+    @Test
+    fun `process recreation surfaces an interrupted reading run`() {
+        val interruptionStore = FakeMiningRunInterruptionStore()
+        val activeHarness = harness(interruptionStore = interruptionStore)
+
+        runBlocking { activeHarness.repository.startReading(INPUT) }
+        val curating =
+            awaitState(activeHarness.repository) { it is MiningRunState.Curating } as
+                MiningRunState.Curating
+        val recreated = harness(interruptionStore = interruptionStore)
+
+        val interrupted = recreated.repository.state.value as MiningRunState.Failed
+        assertEquals(RUN_ID, interrupted.runId)
+        assertEquals("Background mining stopped unexpectedly", interrupted.failure.message)
+
+        runBlocking { activeHarness.repository.cancel(curating.request.runId) }
+        activeHarness.bridge.allowTerminal.countDown()
+        awaitState(activeHarness.repository, MiningRunState::isTerminal)
+    }
+
+    @Test
+    fun `cancelling pending reading foreground start bypasses control timeout`() {
+        val harness =
+            harness(
+                expressionAudioFieldMapped = true,
+                pendingForegroundStart = true,
+            )
+
+        runBlocking { harness.repository.startReading(INPUT) }
+        assertTrue(harness.foreground.started.await(2, TimeUnit.SECONDS))
+        val token =
+            requireNotNull((harness.repository.state.value as MiningRunState.Starting).cancellationToken)
+
+        runBlocking { harness.repository.cancel(token) }
+
+        assertTrue(harness.foreground.future.isCancelled)
+        assertTrue(awaitState(harness.repository, MiningRunState::isTerminal) is MiningRunState.Cancelled)
+        assertEquals(0, harness.openCount.get())
     }
 
     @Test
@@ -207,7 +261,7 @@ class BridgeReadingMiningRepositoryTest {
     }
 
     @Test
-    fun `epub selection promotes foreground only when curation is nonempty`() {
+    fun `epub selection owns foreground before curation for every outcome`() {
         val selectedHarness =
             harness(inputBytes = mapOf(EPUB_DOCUMENT.uri to "epub".toByteArray()))
 
@@ -250,7 +304,7 @@ class BridgeReadingMiningRepositoryTest {
         }
 
         assertTrue(emptyHarness.bridge.curationSubmitted.await(2, TimeUnit.SECONDS))
-        assertEquals(0, emptyHarness.foreground.startCount.get())
+        assertEquals(1, emptyHarness.foreground.startCount.get())
         emptyHarness.bridge.allowTerminal.countDown()
         assertTrue(
             awaitState(emptyHarness.repository, MiningRunState::isTerminal) is
@@ -265,7 +319,11 @@ class BridgeReadingMiningRepositoryTest {
                 MiningRunState.Curating
         runBlocking { cancelledHarness.repository.cancel(cancelledCuration.request.runId) }
         assertTrue(cancelledHarness.bridge.cancellationSubmitted.await(2, TimeUnit.SECONDS))
-        assertEquals(0, cancelledHarness.foreground.startCount.get())
+        assertEquals(1, cancelledHarness.foreground.startCount.get())
+        assertTrue(
+            (cancelledHarness.repository.state.value as MiningRunState.Curating)
+                .cancellationPending,
+        )
         cancelledHarness.bridge.allowTerminal.countDown()
         assertTrue(
             awaitState(cancelledHarness.repository, MiningRunState::isTerminal) is
@@ -274,7 +332,7 @@ class BridgeReadingMiningRepositoryTest {
     }
 
     @Test
-    fun `empty media-workload selection completes without foreground promotion`() {
+    fun `empty media-workload selection closes its preparation foreground`() {
         val harness = harness(expressionAudioFieldMapped = true)
 
         runBlocking { harness.repository.startReading(INPUT) }
@@ -290,15 +348,15 @@ class BridgeReadingMiningRepositoryTest {
 
         assertTrue(harness.bridge.curationSubmitted.await(2, TimeUnit.SECONDS))
         assertEquals(emptyList<CurationSelection>(), harness.bridge.selection)
-        assertEquals(0, harness.foreground.startCount.get())
+        assertEquals(1, harness.foreground.startCount.get())
         harness.bridge.allowTerminal.countDown()
 
         assertTrue(awaitState(harness.repository, MiningRunState::isTerminal) is MiningRunState.Success)
-        assertEquals(0, harness.foreground.lease.closeCount.get())
+        assertEquals(1, harness.foreground.lease.closeCount.get())
     }
 
     @Test
-    fun `cancelling parked reading removes the private stage without foreground promotion`() {
+    fun `cancelling parked text reading removes the private stage without foreground`() {
         val harness = harness()
 
         runBlocking { harness.repository.startReading(INPUT) }
@@ -339,7 +397,7 @@ class BridgeReadingMiningRepositoryTest {
         val second = awaitState(harness.repository) {
             (it as? MiningRunState.Curating)?.request?.page?.pageIndex == 1L
         } as MiningRunState.Curating
-        assertEquals(0, harness.foreground.startCount.get())
+        assertEquals(1, harness.foreground.startCount.get())
 
         runBlocking {
             harness.repository.confirmCuration(
@@ -448,6 +506,125 @@ class BridgeReadingMiningRepositoryTest {
 
         assertTrue(awaitState(harness.repository, MiningRunState::isTerminal) is MiningRunState.Success)
         assertTrue(synthesizer.closed.get())
+    }
+
+    @Test
+    fun `TTS callback raced with cancellation returns cancelled without mining fault`() {
+        val audio = File(temporary.root, "android_tts_v1_${"b".repeat(64)}.wav").apply {
+            writeBytes(byteArrayOf(1))
+        }
+        val synthesizer = FakeSentenceAudioSynthesizer(audio)
+        val harness =
+            harness(
+                ttsEnabled = true,
+                invokeTts = true,
+                invokeTtsAfterCancellation = true,
+                sentenceAudioFactory = SentenceAudioSynthesizerFactory { synthesizer },
+            )
+
+        runBlocking { harness.repository.startReading(INPUT) }
+        val curating =
+            awaitState(harness.repository) { it is MiningRunState.Curating } as MiningRunState.Curating
+        runBlocking {
+            harness.repository.confirmCuration(
+                curating.request.runId,
+                curating.request.requestId,
+                FIRST_SELECTION,
+            )
+        }
+        assertTrue(harness.bridge.ttsWindowReached.await(2, TimeUnit.SECONDS))
+
+        runBlocking { harness.repository.cancel(curating.request.runId) }
+        harness.bridge.allowTtsCallback.countDown()
+
+        assertTrue(harness.bridge.ttsSubmitted.await(2, TimeUnit.SECONDS))
+        assertTrue(requireNotNull(harness.bridge.ttsResult.get()).contains("\"outcome\":\"cancelled\""))
+        assertEquals(0, synthesizer.synthesizeCount.get())
+        harness.bridge.allowTerminal.countDown()
+        assertTrue(awaitState(harness.repository, MiningRunState::isTerminal) is MiningRunState.Cancelled)
+    }
+
+    @Test
+    fun `terminal callback atomically closes reading cancellation admission`() {
+        val harness = harness(pauseAfterTerminalCallback = true)
+
+        runBlocking { harness.repository.startReading(INPUT) }
+        val curating =
+            awaitState(harness.repository) { it is MiningRunState.Curating } as MiningRunState.Curating
+        runBlocking {
+            harness.repository.confirmCuration(
+                curating.request.runId,
+                curating.request.requestId,
+                emptyList(),
+            )
+        }
+        harness.bridge.allowTerminal.countDown()
+        assertTrue(harness.bridge.terminalCallbackDelivered.await(2, TimeUnit.SECONDS))
+
+        var rejected: RuntimeException? = null
+        try {
+            runBlocking { harness.repository.cancel(curating.request.runId) }
+        } catch (failure: RuntimeException) {
+            rejected = failure
+        }
+        harness.bridge.allowDispatchReturn.countDown()
+
+        assertTrue(rejected is com.ankiminer.android.mining.MiningCommandException)
+        assertTrue(awaitState(harness.repository, MiningRunState::isTerminal) is MiningRunState.Success)
+        assertEquals(0, harness.bridge.cancellationAttempts.get())
+    }
+
+    @Test
+    fun `failed reading cancellation dispatch retries and releases parked run`() {
+        val harness = harness(cancelFailuresBeforeSuccess = 1)
+
+        runBlocking { harness.repository.startReading(INPUT) }
+        val curating =
+            awaitState(harness.repository) { it is MiningRunState.Curating } as MiningRunState.Curating
+        runBlocking { harness.repository.cancel(curating.request.runId) }
+
+        assertTrue(harness.bridge.cancellationSubmitted.await(2, TimeUnit.SECONDS))
+        assertEquals(2, harness.bridge.cancellationAttempts.get())
+        harness.bridge.allowTerminal.countDown()
+        assertTrue(awaitState(harness.repository, MiningRunState::isTerminal) is MiningRunState.Cancelled)
+    }
+
+    @Test
+    fun `rejected reading control task falls back to cancellation worker`() {
+        val harness = harness(rejectControlTasks = true)
+
+        runBlocking { harness.repository.startReading(INPUT) }
+        val curating =
+            awaitState(harness.repository) { it is MiningRunState.Curating } as MiningRunState.Curating
+        runBlocking { harness.repository.cancel(curating.request.runId) }
+
+        assertTrue(harness.bridge.cancellationSubmitted.await(2, TimeUnit.SECONDS))
+        harness.bridge.allowTerminal.countDown()
+        assertTrue(awaitState(harness.repository, MiningRunState::isTerminal) is MiningRunState.Cancelled)
+    }
+
+    @Test
+    fun `late reading cancellation no-active acknowledgement cannot replace success`() {
+        val harness = harness(pauseCancellationUntilTerminal = true)
+
+        runBlocking { harness.repository.startReading(INPUT) }
+        val curating =
+            awaitState(harness.repository) { it is MiningRunState.Curating } as MiningRunState.Curating
+        runBlocking {
+            harness.repository.confirmCuration(
+                curating.request.runId,
+                curating.request.requestId,
+                emptyList(),
+            )
+        }
+        assertTrue(harness.bridge.curationSubmitted.await(2, TimeUnit.SECONDS))
+        runBlocking { harness.repository.cancel(curating.request.runId) }
+        assertTrue(harness.bridge.cancellationDispatchReached.await(2, TimeUnit.SECONDS))
+
+        harness.bridge.allowTerminal.countDown()
+
+        assertTrue(awaitState(harness.repository, MiningRunState::isTerminal) is MiningRunState.Success)
+        assertEquals(1, harness.bridge.cancellationAttempts.get())
     }
 
     @Test
@@ -689,6 +866,14 @@ class BridgeReadingMiningRepositoryTest {
         presenterWarning: String? = null,
         terminalErrorCount: Int = 0,
         readingRunFailure: RuntimeException? = null,
+        pendingForegroundStart: Boolean = false,
+        pauseAfterTerminalCallback: Boolean = false,
+        cancelFailuresBeforeSuccess: Int = 0,
+        pauseCancellationUntilTerminal: Boolean = false,
+        rejectControlTasks: Boolean = false,
+        invokeTtsAfterCancellation: Boolean = false,
+        interruptionStore: com.ankiminer.android.mining.MiningRunInterruptionStore =
+            com.ankiminer.android.mining.NoOpMiningRunInterruptionStore,
         cache: File? = null,
     ): Harness {
         val runExecutor = Executors.newSingleThreadExecutor().also(executors::add)
@@ -702,15 +887,27 @@ class BridgeReadingMiningRepositoryTest {
                 presenterWarning = presenterWarning,
                 terminalErrorCount = terminalErrorCount,
                 readingRunFailure = readingRunFailure,
+                pauseAfterTerminalCallback = pauseAfterTerminalCallback,
+                cancelFailuresBeforeSuccess = cancelFailuresBeforeSuccess,
+                pauseCancellationUntilTerminal = pauseCancellationUntilTerminal,
+                invokeTtsAfterCancellation = invokeTtsAfterCancellation,
             )
         val anki = FakeAnkiCallbacks()
-        val foreground = FakeForegroundStarter()
+        val foreground = FakeForegroundStarter(pendingForegroundStart)
         val openCount = AtomicInteger()
+        val foregroundStartsAtOpen = AtomicInteger(-1)
         val repository =
             BridgeReadingMiningRepository(
                 pyBridge = bridge,
                 anki = anki,
-                sourceStager = stager(stageRoot, openCount, inputBytes),
+                sourceStager =
+                    stager(
+                        stageRoot,
+                        openCount,
+                        inputBytes,
+                        foreground.startCount,
+                        foregroundStartsAtOpen,
+                    ),
                 tokenizerResourceProvider =
                     InstalledTokenizerResourceProvider {
                         InstalledTokenizerResource(
@@ -723,7 +920,12 @@ class BridgeReadingMiningRepositoryTest {
                 sourceGrantReleaser = SourceGrantReleaser(releases::add),
                 foregroundStarter = foreground,
                 runExecutor = runExecutor.asMiningTaskExecutor(),
-                controlExecutor = controlExecutor.asMiningTaskExecutor(),
+                controlExecutor =
+                    if (rejectControlTasks) {
+                        MiningTaskExecutor { throw IllegalStateException("test control rejection") }
+                    } else {
+                        controlExecutor.asMiningTaskExecutor()
+                    },
                 strings = testStringResourceResolver,
                 runtimeWorkCoordinator = runtimeWorkCoordinator,
                 configSnapshotResolver =
@@ -751,20 +953,33 @@ class BridgeReadingMiningRepositoryTest {
                     },
                 sentenceAudioSynthesizerFactory = sentenceAudioFactory,
                 foregroundStartTimeoutSeconds = 2,
+                interruptionStore = interruptionStore,
             )
-        return Harness(repository, bridge, anki, foreground, cacheDir, stageRoot)
+        return Harness(
+            repository,
+            bridge,
+            anki,
+            foreground,
+            cacheDir,
+            stageRoot,
+            openCount,
+            foregroundStartsAtOpen,
+        )
     }
 
     private fun stager(
         root: File,
         openCount: AtomicInteger,
         inputBytes: Map<String, ByteArray> = mapOf(INPUT_DOCUMENT.uri to "novel".toByteArray()),
+        foregroundStarts: AtomicInteger? = null,
+        foregroundStartsAtOpen: AtomicInteger? = null,
     ): ReadingSourceStager =
         ReadingSourceStager(
             stagingRoot = root,
             inputOpener =
                 ReadingSourceInputOpener { document, _ ->
                     openCount.incrementAndGet()
+                    foregroundStartsAtOpen?.set(foregroundStarts?.get() ?: -1)
                     ByteArrayInputStream(requireNotNull(inputBytes[document.uri]))
                 },
             limits =
@@ -802,6 +1017,8 @@ class BridgeReadingMiningRepositoryTest {
         val foreground: FakeForegroundStarter,
         val cacheDir: File,
         val stageRoot: File,
+        val openCount: AtomicInteger,
+        val foregroundStartsAtOpen: AtomicInteger,
     )
 
     private class FakeAnkiCallbacks : CoordinatorAnkiCallbacks {
@@ -832,9 +1049,13 @@ class BridgeReadingMiningRepositoryTest {
         }
     }
 
-    private class FakeForegroundStarter : com.ankiminer.android.mining.MiningForegroundStarter {
+    private class FakeForegroundStarter(
+        private val pending: Boolean = false,
+    ) : com.ankiminer.android.mining.MiningForegroundStarter {
         val startCount = AtomicInteger()
         val lease = FakeForegroundLease()
+        val started = CountDownLatch(1)
+        val future = CompletableFuture<MiningForegroundLease>()
 
         override fun startSession(
             runId: String,
@@ -842,12 +1063,14 @@ class BridgeReadingMiningRepositoryTest {
             listener: MiningForegroundSessionListener,
         ): CompletableFuture<MiningForegroundLease> {
             startCount.incrementAndGet()
+            started.countDown()
             lease.sessionIdentity =
                 MiningForegroundSessionIdentity(
                     runId,
                     generation,
                     "00000000-0000-0000-0000-000000000001",
                 )
+            if (pending) return future
             return CompletableFuture.completedFuture(lease)
         }
     }
@@ -890,12 +1113,66 @@ class BridgeReadingMiningRepositoryTest {
         }
     }
 
+    private class FakeMiningRunInterruptionStore :
+        com.ankiminer.android.mining.MiningRunInterruptionStore {
+        private var current: com.ankiminer.android.mining.InterruptedMiningRun? = null
+
+        override fun current(): com.ankiminer.android.mining.InterruptedMiningRun? = current
+
+        override fun begin(
+            kind: com.ankiminer.android.mining.MiningRunKind,
+            ownerId: String,
+        ): Boolean {
+            if (current != null) return false
+            current =
+                com.ankiminer.android.mining.InterruptedMiningRun(
+                    kind,
+                    ownerId,
+                    runId = null,
+                )
+            return true
+        }
+
+        override fun registered(
+            kind: com.ankiminer.android.mining.MiningRunKind,
+            ownerId: String,
+            runId: String,
+        ): Boolean {
+            if (
+                current !=
+                com.ankiminer.android.mining.InterruptedMiningRun(
+                    kind,
+                    ownerId,
+                    runId = null,
+                )
+            ) {
+                return false
+            }
+            current = com.ankiminer.android.mining.InterruptedMiningRun(kind, ownerId, runId)
+            return true
+        }
+
+        override fun complete(
+            kind: com.ankiminer.android.mining.MiningRunKind,
+            ownerId: String,
+        ): Boolean {
+            val active = current ?: return true
+            if (active.kind != kind || active.ownerId != ownerId) return false
+            current = null
+            return true
+        }
+    }
+
     private class FakeReadingPyBridge(
         private val pagedCuration: Boolean = false,
         private val invokeTts: Boolean = false,
         private val presenterWarning: String? = null,
         private val terminalErrorCount: Int = 0,
         private val readingRunFailure: RuntimeException? = null,
+        private val pauseAfterTerminalCallback: Boolean = false,
+        private val cancelFailuresBeforeSuccess: Int = 0,
+        private val pauseCancellationUntilTerminal: Boolean = false,
+        private val invokeTtsAfterCancellation: Boolean = false,
     ) : PyBridge {
         val readingRequest = AtomicReference<ReadingMiningWireRequest?>()
         val curationSubmitted = CountDownLatch(1)
@@ -903,7 +1180,15 @@ class BridgeReadingMiningRepositoryTest {
         val cancellationSubmitted = CountDownLatch(1)
         val allowTerminal = CountDownLatch(1)
         val ttsSubmitted = CountDownLatch(if (invokeTts) 1 else 0)
+        val ttsWindowReached = CountDownLatch(if (invokeTtsAfterCancellation) 1 else 0)
+        val allowTtsCallback = CountDownLatch(if (invokeTtsAfterCancellation) 1 else 0)
         val ttsResult = AtomicReference<String?>()
+        val terminalCallbackDelivered = CountDownLatch(if (pauseAfterTerminalCallback) 1 else 0)
+        val allowDispatchReturn = CountDownLatch(if (pauseAfterTerminalCallback) 1 else 0)
+        val cancellationDispatchReached =
+            CountDownLatch(if (pauseCancellationUntilTerminal) 1 else 0)
+        val cancellationAttempts = AtomicInteger()
+        private val terminalDelivered = AtomicBoolean()
         private val cancelled = AtomicBoolean()
         @Volatile
         var runCallbacks: EngineCallbacks? = null
@@ -947,9 +1232,21 @@ class BridgeReadingMiningRepositoryTest {
                     }
                 }
                 is BridgeMessage.JobCancel -> {
-                    cancelled.set(true)
-                    cancellationSubmitted.countDown()
-                    JOB_CANCELLED
+                    val attempt = cancellationAttempts.incrementAndGet()
+                    cancellationDispatchReached.countDown()
+                    if (pauseCancellationUntilTerminal) {
+                        check(waitUntil(3, TimeUnit.SECONDS) { terminalDelivered.get() })
+                    }
+                    if (attempt <= cancelFailuresBeforeSuccess) {
+                        throw IllegalStateException("test cancellation transport failure")
+                    }
+                    if (terminalDelivered.get()) {
+                        NO_ACTIVE_JOB
+                    } else {
+                        cancelled.set(true)
+                        cancellationSubmitted.countDown()
+                        JOB_CANCELLED
+                    }
                 }
                 else -> error("Unexpected request: $request")
             }
@@ -972,7 +1269,11 @@ class BridgeReadingMiningRepositoryTest {
             while (curationSubmitted.count > 0 && cancellationSubmitted.count > 0) {
                 Thread.sleep(2)
             }
-            if (invokeTts && !cancelled.get()) {
+            if (invokeTtsAfterCancellation) {
+                ttsWindowReached.countDown()
+                check(allowTtsCallback.await(3, TimeUnit.SECONDS))
+            }
+            if (invokeTts && (!cancelled.get() || invokeTtsAfterCancellation)) {
                 ttsResult.set(callbacks.synthesizeSentenceAudio(TTS_REQUEST))
                 ttsSubmitted.countDown()
             }
@@ -987,7 +1288,23 @@ class BridgeReadingMiningRepositoryTest {
             } else {
                 callbacks.onError(terminal)
             }
+            terminalDelivered.set(true)
+            terminalCallbackDelivered.countDown()
+            check(allowDispatchReturn.await(3, TimeUnit.SECONDS))
             return terminal
+        }
+
+        private fun waitUntil(
+            timeout: Long,
+            unit: TimeUnit,
+            predicate: () -> Boolean,
+        ): Boolean {
+            val deadline = System.nanoTime() + unit.toNanos(timeout)
+            while (System.nanoTime() < deadline) {
+                if (predicate()) return true
+                Thread.sleep(2)
+            }
+            return predicate()
         }
 
         private fun terminalPayload(): String {
@@ -1063,6 +1380,8 @@ class BridgeReadingMiningRepositoryTest {
             """{"schemaVersion":1,"type":"curation.page.accepted","payload":{"runId":"$RUN_ID","requestId":"$REQUEST_ID","pageIndex":1,"finalPage":true}}"""
         val JOB_CANCELLED =
             """{"schemaVersion":1,"type":"job.cancelled","payload":{"runId":"$RUN_ID","newlyCancelled":true}}"""
+        val NO_ACTIVE_JOB =
+            """{"schemaVersion":1,"type":"bridge.error","payload":{"code":"no_active_job","message":"There is no active Python mining job","requestType":"job.cancel"}}"""
         val SUCCESS_TERMINAL =
             """{"schemaVersion":1,"type":"mining.terminal","payload":{"runId":"$RUN_ID","outcome":"success","result":{"totalWordsFound":1,"newWordsFound":0,"cardsCreated":0,"errors":[],"elapsedTime":1.0,"comprehensionPercentage":100.0,"cardIds":[],"videoFile":"","subtitleFile":"Novel.txt","minedForms":[],"ankiWriteState":"no_note_write","failureIsTransient":false},"error":null}}"""
         val CANCELLED_TERMINAL =

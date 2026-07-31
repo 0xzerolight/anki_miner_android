@@ -35,11 +35,14 @@ import com.ankiminer.android.mining.MiningFailure
 import com.ankiminer.android.mining.MiningForegroundStarter
 import com.ankiminer.android.mining.MiningProgress
 import com.ankiminer.android.mining.MiningRunAdmissionGate
-import com.ankiminer.android.mining.MiningStage
 import com.ankiminer.android.mining.MiningRunAdmissionState
+import com.ankiminer.android.mining.MiningRunInterruptionStore
+import com.ankiminer.android.mining.MiningRunKind
 import com.ankiminer.android.mining.MiningRunState
 import com.ankiminer.android.mining.MiningRuntimePaths
+import com.ankiminer.android.mining.MiningStage
 import com.ankiminer.android.mining.MiningTaskExecutor
+import com.ankiminer.android.mining.NoOpMiningRunInterruptionStore
 import com.ankiminer.android.mining.ProcessingResult
 import com.ankiminer.android.mining.SecureMiningCancellationTokenFactory
 import com.ankiminer.android.mining.SourceGrantReleaser
@@ -54,6 +57,8 @@ import com.ankiminer.android.tts.SentenceAudioCallbackDispatcher
 import com.ankiminer.android.tts.SentenceAudioSynthesizer
 import com.ankiminer.android.tts.SentenceAudioSynthesizerFactory
 import java.text.Normalizer
+import java.util.Locale
+import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -103,10 +108,10 @@ internal fun interface ReadingConfigSnapshotResolver {
  * Process-scoped reading runner with the same parked-curation boundary as video mining.
  *
  * The source is copied to a bounded app-private stage before Python sees it. That stage remains
- * owned until the engine has returned, Anki run state has been released, and the foreground lease
- * has closed. A foreground service starts only after final curation when at least one candidate is
- * selected and the frozen workload includes Mokuro images, offline TTS, or local expression audio.
- * The run and control executors remain independent so control can reach parked Python.
+ * owned until the engine has returned, Anki run state has been released, and any foreground lease
+ * has closed. Eligible media work claims foreground ownership before staging; text-only work uses
+ * durable interruption state. The run and control executors remain independent so control can
+ * reach parked Python.
  */
 internal class BridgeReadingMiningRepository(
     private val pyBridge: PyBridge,
@@ -130,6 +135,7 @@ internal class BridgeReadingMiningRepository(
     private val cancellationTokenFactory: MiningCancellationTokenFactory =
         SecureMiningCancellationTokenFactory(),
     private val foregroundStartTimeoutSeconds: Long = 15,
+    private val interruptionStore: MiningRunInterruptionStore = NoOpMiningRunInterruptionStore,
 ) : ReadingMiningRepository {
     private enum class Phase {
         PREPARING,
@@ -147,6 +153,13 @@ internal class BridgeReadingMiningRepository(
         val retryable: Boolean = false,
     )
 
+    private data class CancellationAction(
+        val generation: Long,
+        val cancellation: CoordinatorAnkiCancellation,
+        val foregroundStart: CompletableFuture<MiningForegroundLease>?,
+        val foregroundLease: MiningForegroundLease?,
+    )
+
     private class ActiveRun(
         val generation: Long,
         val input: ReadingMiningInput,
@@ -160,11 +173,15 @@ internal class BridgeReadingMiningRepository(
         var curation: CurationRequest? = null
         var terminalCallback: BridgeMessage.Terminal? = null
         var stickyFault: ProtocolFault? = null
+        var cancellationDispatchFault: ProtocolFault? = null
         var cancelRequested = false
-        var cancelCommandSent = false
+        var cancellationDispatchInFlight = false
+        var cancellationAcknowledged = false
+        var foregroundStart: CompletableFuture<MiningForegroundLease>? = null
         var foregroundLease: MiningForegroundLease? = null
         var foregroundClosingExpected = false
         var sourcesDetached = false
+        var interruptionRecorded = false
         var configSnapshot: MiningConfigSnapshot? = null
         var sentenceAudioSynthesizer: SentenceAudioSynthesizer? = null
         var sentenceAudioDispatcher: SentenceAudioCallbackDispatcher? = null
@@ -174,7 +191,15 @@ internal class BridgeReadingMiningRepository(
     }
 
     private val monitor = Any()
-    private val mutableState = MutableStateFlow<MiningRunState>(MiningRunState.Idle)
+    private val startupInterruption =
+        interruptionStore.current()?.takeIf { it.kind == MiningRunKind.READING }
+    private val mutableState =
+        MutableStateFlow<MiningRunState>(
+            startupInterruption?.let { interruption ->
+                ProtocolFault(strings.resolve(R.string.mining_failure_background_stopped))
+                    .toFailed(interruption.runId, result = null)
+            } ?: MiningRunState.Idle,
+        )
     override val state: StateFlow<MiningRunState> = mutableState.asStateFlow()
     internal val admissionState: StateFlow<MiningRunAdmissionState> = admissionGate.state
     private var active: ActiveRun? = null
@@ -332,10 +357,14 @@ internal class BridgeReadingMiningRepository(
                     throw MiningCommandException("The mining run cannot be cancelled")
                 }
                 markCancellationLocked(run)
-                run.generation to run.cancellation
+                CancellationAction(
+                    generation = run.generation,
+                    cancellation = run.cancellation,
+                    foregroundStart = run.foregroundStart,
+                    foregroundLease = run.foregroundLease,
+                )
             }
-        cancellation.second.cancel()
-        executeControl(cancellation.first) { sendCancellation(cancellation.first) }
+        forwardCancellation(cancellation)
     }
 
     override suspend fun cancel(token: MiningCancellationToken) {
@@ -346,16 +375,32 @@ internal class BridgeReadingMiningRepository(
                     throw MiningCommandException("The mining run cannot be cancelled")
                 }
                 markCancellationLocked(run)
-                run.generation to run.cancellation
+                CancellationAction(
+                    generation = run.generation,
+                    cancellation = run.cancellation,
+                    foregroundStart = run.foregroundStart,
+                    foregroundLease = run.foregroundLease,
+                )
             }
-        cancellation.second.cancel()
-        executeControl(cancellation.first) { sendCancellation(cancellation.first) }
+        forwardCancellation(cancellation)
     }
 
     override suspend fun reset() {
         synchronized(monitor) {
             if (active != null || !mutableState.value.isTerminal) {
                 throw MiningCommandException("Only a terminal mining run can be reset")
+            }
+            val interruption = startupInterruption
+            if (
+                interruption != null &&
+                !interruptionStore.complete(
+                    MiningRunKind.READING,
+                    interruption.ownerId,
+                )
+            ) {
+                throw MiningCommandException(
+                    strings.resolve(R.string.mining_failure_background_stopped),
+                )
             }
             savedCurationSessionState = null
             mutableState.value = MiningRunState.Idle
@@ -367,6 +412,8 @@ internal class BridgeReadingMiningRepository(
         var terminal: BridgeMessage.Terminal? = null
         try {
             val run = requireActive(generation)
+            if (run.cancellation.isCancelled()) return
+            if (!beginInterruptionRecord(generation)) return
             if (run.cancellation.isCancelled()) return
             run.configSnapshot =
                 try {
@@ -408,6 +455,9 @@ internal class BridgeReadingMiningRepository(
             if (run.cancellation.isCancelled()) return
             configureTokenizer(run, tokenizer)
             if (run.cancellation.isCancelled()) return
+            run.requiresMediaForeground = requiresMediaForeground(run)
+            if (run.requiresMediaForeground && !startForegroundOwnership(generation)) return
+            if (run.cancellation.isCancelled()) return
             stagedSource =
                 try {
                     sourceStager.stage(
@@ -438,7 +488,8 @@ internal class BridgeReadingMiningRepository(
                 }
             if (run.cancellation.isCancelled()) return
             run.requiresMediaForeground =
-                stagedSource.sourceKind == StagedReadingSourceKind.EPUB ||
+                run.requiresMediaForeground ||
+                    stagedSource.sourceKind == StagedReadingSourceKind.EPUB ||
                     stagedSource.imageArchivePath != null ||
                     requireNotNull(run.configSnapshot).androidTtsEnabled == true ||
                     requireNotNull(run.configSnapshot).mapsExpressionAudioField()
@@ -631,6 +682,18 @@ internal class BridgeReadingMiningRepository(
             } catch (_: RuntimeException) {
                 recordFault(generation, strings.resolve(R.string.mining_failure_background_cleanup))
             }
+            val interruption =
+                synchronized(monitor) {
+                    activeFor(generation)?.let { run ->
+                        if (run.interruptionRecorded) run.cancellationToken.value else null
+                    }
+                }
+            if (
+                interruption != null &&
+                !interruptionStore.complete(MiningRunKind.READING, interruption)
+            ) {
+                recordFault(generation, strings.resolve(R.string.mining_failure_background_cleanup))
+            }
 
             val detachedInput: ReadingMiningInput?
             val runFault: ProtocolFault?
@@ -638,7 +701,7 @@ internal class BridgeReadingMiningRepository(
             synchronized(monitor) {
                 val run = activeFor(generation) ?: return
                 detachedInput = run.input.takeIf { run.sourcesDetached }
-                runFault = run.stickyFault
+                runFault = run.stickyFault ?: run.cancellationDispatchFault
                 presenterNotices = run.presenterNotices.toList()
                 active = null
                 savedCurationSessionState = null
@@ -729,70 +792,129 @@ internal class BridgeReadingMiningRepository(
         }
     }
 
-    private fun promoteAndSubmitCuration(
-        generation: Long,
-        request: CurationRequest,
-        rawResponse: String,
-    ) {
+    private fun startForegroundOwnership(generation: Long): Boolean {
         val listener =
             MiningForegroundSessionListener { identity, reason ->
                 onForegroundCancellation(identity, reason)
             }
+        val foregroundRunId =
+            synchronized(monitor) {
+                activeFor(generation)?.cancellationToken?.foregroundRunId(MiningRunKind.READING)
+                    ?: return false
+            }
         val future =
             try {
-                foregroundStarter.startSession(request.runId, generation, listener)
+                foregroundStarter.startSession(foregroundRunId, generation, listener)
             } catch (_: RuntimeException) {
-                recordFaultAndCancel(generation, strings.resolve(R.string.mining_failure_background_start))
-                return
+                if (!isCancellationRequested(generation)) {
+                    recordFaultAndCancel(
+                        generation,
+                        strings.resolve(R.string.mining_failure_background_start),
+                    )
+                }
+                return false
             }
+        val await =
+            synchronized(monitor) {
+                val run = activeFor(generation)
+                if (run == null || run.phase == Phase.FINALIZING || run.cancelRequested) {
+                    false
+                } else {
+                    run.foregroundStart = future
+                    true
+                }
+            }
+        if (!await) {
+            future.cancel(false)
+            return false
+        }
         val lease =
             try {
                 future.get(foregroundStartTimeoutSeconds, TimeUnit.SECONDS)
             } catch (_: Exception) {
                 future.cancel(false)
-                recordFaultAndCancel(generation, strings.resolve(R.string.mining_failure_background_start_unsafe))
-                return
+                synchronized(monitor) {
+                    activeFor(generation)?.takeIf { it.foregroundStart === future }?.foregroundStart = null
+                }
+                if (!isCancellationRequested(generation)) {
+                    recordFaultAndCancel(
+                        generation,
+                        strings.resolve(R.string.mining_failure_background_start_unsafe),
+                    )
+                }
+                return false
             }
-
-        var submit = false
         var initialProgress: MiningProgress? = null
-        synchronized(monitor) {
-            val run = activeFor(generation)
-            if (run != null && run.runId == request.runId && run.phase != Phase.FINALIZING) {
-                run.foregroundLease = lease
-                initialProgress = run.progress
-                if (!run.cancelRequested && run.phase == Phase.PROMOTING) {
-                    run.phase = Phase.RUNNING
-                    submit = true
+        val accepted =
+            synchronized(monitor) {
+                val run = activeFor(generation)
+                if (
+                    run == null ||
+                    run.phase == Phase.FINALIZING ||
+                    run.cancelRequested ||
+                    run.foregroundStart !== future
+                ) {
+                    false
                 } else {
-                    run.foregroundClosingExpected = true
+                    run.foregroundStart = null
+                    run.foregroundLease = lease
+                    initialProgress = run.progress
+                    true
                 }
             }
-        }
-        if (!submit) {
+        if (!accepted) {
             try {
                 lease.close()
             } catch (_: RuntimeException) {
                 recordFault(generation, strings.resolve(R.string.mining_failure_background_cleanup))
             }
-            sendCancellation(generation)
-            return
+            return false
         }
-        initialProgress?.let { progress ->
-            if (!publishForegroundProgress(generation, lease, progress)) {
-                sendCancellation(generation)
-                return
+        return initialProgress?.let { publishForegroundProgress(generation, lease, it) } ?: true
+    }
+
+    private fun beginInterruptionRecord(generation: Long): Boolean {
+        val ownerId =
+            synchronized(monitor) {
+                activeFor(generation)?.cancellationToken?.value ?: return false
             }
+        if (!interruptionStore.begin(MiningRunKind.READING, ownerId)) {
+            recordFault(generation, strings.resolve(R.string.mining_failure_background_stopped))
+            return false
         }
-        val stillRunnable =
+        synchronized(monitor) {
+            val run = activeFor(generation)
+            if (run == null || run.phase == Phase.FINALIZING) {
+                interruptionStore.complete(MiningRunKind.READING, ownerId)
+                return false
+            }
+            run.interruptionRecorded = true
+        }
+        return true
+    }
+
+    private fun promoteAndSubmitCuration(
+        generation: Long,
+        request: CurationRequest,
+        rawResponse: String,
+    ) {
+        val shouldSubmit =
             synchronized(monitor) {
                 val run = activeFor(generation)
-                run != null &&
-                    run.runId == request.runId &&
-                    !run.cancelRequested &&
-                    run.phase == Phase.RUNNING
+                if (
+                    run != null &&
+                        run.runId == request.runId &&
+                        run.foregroundLease != null &&
+                        !run.cancelRequested &&
+                        run.phase == Phase.PROMOTING
+                ) {
+                    run.phase = Phase.RUNNING
+                    true
+                } else {
+                    false
+                }
             }
-        if (!stillRunnable) {
+        if (!shouldSubmit) {
             sendCancellation(generation)
             return
         }
@@ -800,9 +922,9 @@ internal class BridgeReadingMiningRepository(
     }
 
     /**
-     * Resume text-only reading work without claiming the media-processing foreground-service
-     * type. The run remains user initiated and cancellable, but Android may stop it after the app
-     * leaves the foreground; a later retry starts cleanly from the selected source.
+     * Resume text-only reading work without claiming the ineligible media-processing
+     * foreground-service type. Durable interruption state makes an Android process stop explicit
+     * and recoverable instead of silently returning the repository to Idle.
      */
     private fun submitFinalCurationWithoutForeground(
         generation: Long,
@@ -923,17 +1045,29 @@ internal class BridgeReadingMiningRepository(
         val cancellation =
             synchronized(monitor) {
                 val run = activeFor(identity.generation) ?: return
-                if (run.runId != identity.runId || run.foregroundClosingExpected) return
-                if (reason != MiningForegroundCancellationReason.USER_REQUESTED) {
+                if (
+                    run.foregroundClosingExpected ||
+                    (run.foregroundLease != null && run.foregroundLease?.identity != identity)
+                ) {
+                    return
+                }
+                if (
+                    reason != MiningForegroundCancellationReason.USER_REQUESTED &&
+                    !run.cancelRequested
+                ) {
                     if (run.stickyFault == null) {
                         run.stickyFault = ProtocolFault(strings.resolve(R.string.mining_failure_background_stopped))
                     }
                 }
                 markCancellationLocked(run)
-                run.generation to run.cancellation
+                CancellationAction(
+                    generation = run.generation,
+                    cancellation = run.cancellation,
+                    foregroundStart = run.foregroundStart,
+                    foregroundLease = run.foregroundLease,
+                )
             }
-        cancellation.second.cancel()
-        executeControl(cancellation.first) { sendCancellation(cancellation.first) }
+        forwardCancellation(cancellation)
     }
 
     private fun sendCancellation(generation: Long) {
@@ -941,26 +1075,63 @@ internal class BridgeReadingMiningRepository(
             synchronized(monitor) {
                 val run = activeFor(generation) ?: return
                 val registered = run.runId ?: return
-                if (run.cancelCommandSent || run.phase == Phase.FINALIZING) return
-                run.cancelCommandSent = true
+                if (
+                    run.cancellationAcknowledged ||
+                    run.cancellationDispatchInFlight ||
+                    run.phase == Phase.FINALIZING
+                ) {
+                    return
+                }
+                run.cancellationDispatchInFlight = true
                 registered
             }
-        val response =
-            try {
-                pyBridge.dispatch(BridgeJsonCodec.encodeJobCancel(runId), null)
-            } catch (_: RuntimeException) {
-                recordFault(generation, strings.resolve(R.string.mining_failure_cancellation_dispatch))
+        var failureMessage = strings.resolve(R.string.mining_failure_cancellation_dispatch)
+        repeat(MAX_CANCELLATION_DISPATCH_ATTEMPTS) {
+            val response =
+                try {
+                    pyBridge.dispatch(BridgeJsonCodec.encodeJobCancel(runId), null)
+                } catch (_: RuntimeException) {
+                    failureMessage = strings.resolve(R.string.mining_failure_cancellation_dispatch)
+                    return@repeat
+                }
+            val decoded =
+                try {
+                    BridgeJsonCodec.decode(response, expectedRunId = runId)
+                } catch (_: RuntimeException) {
+                    failureMessage = strings.resolve(R.string.mining_failure_cancellation_ack_invalid)
+                    return@repeat
+                }
+            val accepted =
+                decoded is BridgeMessage.JobCancelled ||
+                    (
+                        decoded is BridgeMessage.Error &&
+                            decoded.code == "no_active_job" &&
+                            synchronized(monitor) {
+                                activeFor(generation)?.terminalCallback?.runId == runId
+                            }
+                    )
+            if (accepted) {
+                synchronized(monitor) {
+                    activeFor(generation)?.let { run ->
+                        run.cancellationDispatchInFlight = false
+                        run.cancellationAcknowledged = true
+                        run.cancellationDispatchFault = null
+                    }
+                }
                 return
             }
-        val decoded =
-            try {
-                BridgeJsonCodec.decode(response, expectedRunId = runId)
-            } catch (_: RuntimeException) {
-                recordFault(generation, strings.resolve(R.string.mining_failure_cancellation_ack_invalid))
-                return
+            failureMessage = strings.resolve(R.string.mining_failure_cancellation_not_acknowledged)
+        }
+        synchronized(monitor) {
+            activeFor(generation)?.let { run ->
+                run.cancellationDispatchInFlight = false
+                if (run.terminalCallback != null) {
+                    run.cancellationAcknowledged = true
+                    run.cancellationDispatchFault = null
+                } else {
+                    run.cancellationDispatchFault = ProtocolFault(failureMessage)
+                }
             }
-        if (decoded !is BridgeMessage.JobCancelled) {
-            recordFault(generation, strings.resolve(R.string.mining_failure_cancellation_not_acknowledged))
         }
     }
 
@@ -1001,9 +1172,23 @@ internal class BridgeReadingMiningRepository(
                             runId = run.runId,
                             progress = progress,
                             cancellationToken = run.cancellationToken,
+                            cancellationPending = run.phase == Phase.CANCELLING,
                         )
-                Phase.PROMOTING, Phase.RUNNING, Phase.CANCELLING ->
-                    run.runId?.let { mutableState.value = MiningRunState.Running(it, progress) }
+                Phase.PROMOTING, Phase.RUNNING ->
+                    run.runId?.let {
+                        mutableState.value =
+                            MiningRunState.Running(
+                                it,
+                                progress,
+                            )
+                    }
+                Phase.CANCELLING ->
+                    mutableState.value =
+                        when (val state = mutableState.value) {
+                            is MiningRunState.Starting -> state.copy(progress = progress)
+                            is MiningRunState.Running -> state.copy(progress = progress)
+                            else -> state
+                        }
                 Phase.CURATING, Phase.ADVANCING, Phase.FINALIZING -> Unit
             }
             lease = run.foregroundLease
@@ -1058,6 +1243,14 @@ internal class BridgeReadingMiningRepository(
             recordFaultAndCancel(generation, strings.resolve(R.string.mining_failure_anki_not_ready))
             throw IllegalStateException("Anki run registration was rejected")
         }
+        interruptionStore.registered(
+            MiningRunKind.READING,
+            synchronized(monitor) {
+                activeFor(generation)?.cancellationToken?.value
+                    ?: throw IllegalStateException("Mining registration is stale")
+            },
+            request.runId,
+        )
         val forwardCancellation =
             synchronized(monitor) {
                 val run = activeFor(generation) ?: throw IllegalStateException("Mining registration is stale")
@@ -1067,10 +1260,11 @@ internal class BridgeReadingMiningRepository(
                         runId = run.runId,
                         progress = run.progress,
                         cancellationToken = run.cancellationToken,
+                        cancellationPending = run.cancelRequested,
                     )
                 run.cancelRequested
             }
-        if (forwardCancellation) executeControl(generation) { sendCancellation(generation) }
+        if (forwardCancellation) executeCancellation(generation)
         return BridgeJsonCodec.encodeRegistrationAccepted(request.runId)
     }
 
@@ -1129,6 +1323,8 @@ internal class BridgeReadingMiningRepository(
                 throw IllegalStateException("Terminal callback was duplicated")
             }
             run.terminalCallback = terminal
+            run.phase = Phase.FINALIZING
+            run.cancellationDispatchFault = null
         }
     }
 
@@ -1357,7 +1553,7 @@ internal class BridgeReadingMiningRepository(
                     val runId = run.runId
                         ?: throw IllegalStateException("Sentence-audio callback arrived before registration")
                     if (
-                        run.phase != Phase.RUNNING ||
+                        (run.phase != Phase.RUNNING && run.phase != Phase.CANCELLING) ||
                             run.configSnapshot?.androidTtsEnabled != true
                     ) {
                         throw IllegalStateException("Sentence-audio callback is out of order")
@@ -1391,6 +1587,38 @@ internal class BridgeReadingMiningRepository(
     private fun markCancellationLocked(run: ActiveRun) {
         run.cancelRequested = true
         if (run.phase != Phase.FINALIZING) run.phase = Phase.CANCELLING
+        mutableState.value =
+            when (val state = mutableState.value) {
+                is MiningRunState.Starting -> state.copy(cancellationPending = true)
+                is MiningRunState.Curating -> state.copy(cancellationPending = true)
+                is MiningRunState.Running -> state.copy(cancellationPending = true)
+                else -> state
+            }
+    }
+
+    private fun forwardCancellation(action: CancellationAction) {
+        action.cancellation.cancel()
+        action.foregroundStart?.cancel(false)
+        action.foregroundLease?.markCancelling()
+        executeCancellation(action.generation)
+    }
+
+    private fun executeCancellation(generation: Long) {
+        val task = { sendCancellation(generation) }
+        try {
+            controlExecutor.execute(task)
+        } catch (_: RuntimeException) {
+            try {
+                Thread({ sendCancellation(generation) }, "anki-miner-cancel-fallback")
+                    .apply { isDaemon = true }
+                    .start()
+            } catch (_: RuntimeException) {
+                synchronized(monitor) {
+                    activeFor(generation)?.cancellationDispatchFault =
+                        ProtocolFault(strings.resolve(R.string.mining_failure_control_worker))
+                }
+            }
+        }
     }
 
     private fun recordFaultAndCancel(
@@ -1402,13 +1630,14 @@ internal class BridgeReadingMiningRepository(
                 val run = activeFor(generation) ?: return
                 if (run.stickyFault == null) run.stickyFault = ProtocolFault(message)
                 markCancellationLocked(run)
-                Pair(
-                    run.cancellation,
-                    run.runId != null && !run.cancelCommandSent && run.phase != Phase.FINALIZING,
+                CancellationAction(
+                    generation = run.generation,
+                    cancellation = run.cancellation,
+                    foregroundStart = run.foregroundStart,
+                    foregroundLease = run.foregroundLease,
                 )
             }
-        action.first.cancel()
-        if (action.second) executeControl(generation) { sendCancellation(generation) }
+        forwardCancellation(action)
     }
 
     private fun recordFault(
@@ -1490,6 +1719,18 @@ internal class BridgeReadingMiningRepository(
             is ReadingSourceSelection.MokuroArchivePair -> listOf(sidecar, archive)
         }
 
+    private fun requiresMediaForeground(run: ActiveRun): Boolean {
+        val config = requireNotNull(run.configSnapshot)
+        if (config.androidTtsEnabled || config.mapsExpressionAudioField()) return true
+        return when (val selection = run.input.selection) {
+            is ReadingSourceSelection.MokuroArchivePair -> true
+            is ReadingSourceSelection.Single -> {
+                val name = selection.document.displayName.lowercase(Locale.ROOT)
+                name.endsWith(".epub") || name.endsWith(".cbz") || name.endsWith(".zip")
+            }
+        }
+    }
+
     /**
      * True when the run will actually fetch expression audio, mirroring the engine's true fetch
      * condition ([anki_miner] audio_stage: `expression_audio_fetcher is not None and
@@ -1513,5 +1754,6 @@ internal class BridgeReadingMiningRepository(
             setOf("provider_unavailable", "query_failed", "timeout", "processing_failed", "engine_error")
         const val MAX_PRESENTER_NOTICES = 16
         const val MAX_RESULT_ERRORS = 256
+        const val MAX_CANCELLATION_DISPATCH_ATTEMPTS = 2
     }
 }
