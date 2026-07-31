@@ -51,6 +51,42 @@ scripts/health.sh
 to start while any emulator is running. It is a superset of the CI "Secretless
 host checks" job.
 
+## Diagnostics logs and bundles
+
+Diagnostics use eight event kinds; other events do not get records.
+
+| Kind | Level | Emission bound |
+|------|-------|----------------|
+| lifecycle (component or run begin/end) | INFO | process and runs |
+| state (machine transition) | INFO per run; DEBUG per row | phases; rows |
+| boundary (call leaving the process) | DEBUG per call; INFO per batch | calls; batches |
+| counter (end-of-phase aggregate) | INFO | phases |
+| handled (caught; continues degraded) | WARN with throwable | failures |
+| fatal (caught; operation aborts) | ERROR with throwable | failures |
+| invariant (`check`/`require` assertion broke) | ERROR | bugs |
+| ignored (best-effort silence) | DEBUG with `reason=` | cleanups |
+
+ERROR means the user's operation will not complete or an asserted invariant
+broke; WARN means the operation continues degraded. INFO is limited to
+`O(phases + user actions + external batches)`, never words, notes, rows, or
+progress ticks. Per-item detail is DEBUG and uses a lambda so disabled DEBUG
+records allocate no fields.
+
+Each record starts on one line. Throwable continuation lines are TAB-prefixed;
+a line starting with a digit begins a new record. This is the complete parse
+rule for Kotlin and Python logs in an exported bundle.
+
+A requested diagnostics ZIP has a 6 MiB uncompressed budget. It records a
+README and manifest, the tester report, a redaction summary, current and rotated
+Python and Kotlin logs, this app's logcat tail, and up to eight recent process
+exit reasons. The manifest marks entries that were truncated, dropped, missing,
+or unavailable. Export redaction uses a fresh salt and replaces detected app
+paths, file/document identifiers, selected display names and series names,
+deck/note-type/field/tag text, Japanese text, and the build user with tokens
+which remain stable only within that ZIP. Run IDs remain for correlation.
+`Build.SERIAL`, SSAID, accounts, IP/MAC addresses, and package inventory are
+excluded; AnkiDroid's version is the only peer-package lookup.
+
 ## Emulator lanes
 
 Three pinned AVDs, one per lane. Each lane owns a fixed AVD, console port and
@@ -159,10 +195,18 @@ GitHub Release together with a `SHA256SUMS` and `NOTICE.md`. Release variants
 fail before compilation unless `ankiMinerSourceCommit` is a full lowercase Git
 SHA. Debug variants may use `development`.
 
-Also retain `app/build/outputs/mapping/deviceRelease/mapping.txt` for this
-build, under the released version, before the next build overwrites it: it is
-the only way to turn a minified stack trace from that exact APK back into
-readable symbols, and it cannot be regenerated later from source.
+Retain `app/build/outputs/mapping/deviceRelease/mapping.txt` under the released
+version before the next build overwrites it. To symbolicate a Java/Kotlin stack
+from that exact APK, save the obfuscated stack as `trace.txt`, then run:
+
+```bash
+"$ANDROID_CMDLINE_TOOLS_HOME/bin/retrace" \
+  app/build/outputs/mapping/deviceRelease/mapping.txt trace.txt
+```
+
+The mapping must come from the same build as the stack trace. It is the only
+way to restore minified symbols and cannot be regenerated later from source;
+see Android's [R8 retrace documentation](https://developer.android.com/tools/retrace).
 
 ## Regenerating the vendored wheels
 

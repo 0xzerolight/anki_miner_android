@@ -33,15 +33,21 @@ uses the Storage Access Framework so you pick individual files yourself.
 ## Diagnostics exports
 
 Settings can build a diagnostics bundle only when you request one. The bundle
-contains the tester report, Anki Miner's Python and Kotlin logs, this app's own
-system-log records, recent process-exit details, and a manifest. It never reads
-or includes another app's logs.
+contains a README and manifest, the tester report, a redaction summary, current
+and rotated Python and Kotlin logs, this app's own system-log tail, and recent
+process-exit details. Entries may be tail-truncated or dropped to keep the
+uncompressed archive within 6 MiB; the manifest records that status. It never
+reads or includes another app's logs.
 
 Log content is redacted with a fresh per-bundle salt before each archive entry
-is written. The manifest deliberately excludes Build.SERIAL, SSAID, accounts,
-IP and MAC addresses, and package inventory. Run IDs remain so maintainers can
-correlate one mining run across files. You choose whether to save the ZIP or
-send it through Android's share sheet; Anki Miner does not upload it itself.
+is written. Detected app paths, file/document identifiers, selected display and
+series names, deck/note-type/field/tag text, Japanese text, and the build user
+become tokens stable only within that archive. Run IDs remain so maintainers can
+correlate one mining run across files. The bundle deliberately excludes
+Build.SERIAL, SSAID, accounts, IP and MAC addresses, and package inventory;
+AnkiDroid's version is the only peer-package lookup. You choose whether to save
+the ZIP or send it through Android's share sheet; Anki Miner does not upload it
+itself.
 
 ## Removing your data
 
