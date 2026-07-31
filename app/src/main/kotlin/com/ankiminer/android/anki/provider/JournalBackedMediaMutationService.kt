@@ -37,8 +37,11 @@ import com.ankiminer.android.anki.protocol.StoredMedia
 import com.ankiminer.android.anki.protocol.UncertainMedia
 import java.util.concurrent.atomic.AtomicBoolean
 import com.ankiminer.android.diagnostics.compactFaultToken
+import com.ankiminer.android.diagnostics.log.AppLog
+import com.ankiminer.android.diagnostics.log.LogComponent
 import java.nio.ByteBuffer
 import java.security.MessageDigest
+import java.util.concurrent.CancellationException
 
 internal data class StoreMediaMutationOutcome(
     val result: StoreMediaResult,
@@ -452,8 +455,31 @@ internal class JournalBackedMediaMutationService(
                                 fileUri = granted.contentUri,
                                 preferredName = asset.preferredName,
                             ),
+                        ).also { receipt ->
+                            if (receipt == null) {
+                                AppLog.w(
+                                    LogComponent.MEDIA,
+                                    "media.store",
+                                    Throwable("AnkiDroid returned a null media-store receipt"),
+                                    "outcome" to "fail",
+                                    "entry_id" to promotion.child.id,
+                                    "media_key" to asset.assetId,
+                                    "receipt" to "null",
+                                )
+                            }
+                        }
+                    } catch (_: CancellationException) {
+                        null
+                    } catch (failure: RuntimeException) {
+                        AppLog.e(
+                            LogComponent.MEDIA,
+                            "media.store",
+                            failure,
+                            "outcome" to "fail",
+                            "entry_id" to promotion.child.id,
+                            "media_key" to asset.assetId,
+                            "receipt" to "exception",
                         )
-                    } catch (_: RuntimeException) {
                         null
                     }
                 val receipt =

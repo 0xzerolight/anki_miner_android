@@ -495,6 +495,7 @@ internal class PinnedResourceDownloader(
             (ZonedDateTime.parse(text, DateTimeFormatter.RFC_1123_DATE_TIME).toInstant().toEpochMilli() -
                 currentTimeMillis())
                 .coerceIn(0L, RETRY_MAX_DELAY_MILLIS)
+            // instrumentation: silent — invalid server retry metadata falls back to local backoff
         } catch (_: DateTimeParseException) {
             null
         }

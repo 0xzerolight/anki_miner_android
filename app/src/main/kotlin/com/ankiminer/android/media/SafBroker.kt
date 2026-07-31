@@ -5,6 +5,8 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.provider.OpenableColumns
+import com.ankiminer.android.diagnostics.log.AppLog
+import com.ankiminer.android.diagnostics.log.LogComponent
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -134,11 +136,22 @@ internal class AndroidSafBroker(
         )
 
     override suspend fun reconcileStartup() {
-        CancellableProviderIo.execute(
-            scope = cleanupScope,
-            timeoutMillis = providerIoTimeoutMillis,
-        ) { cancellation ->
-            startupReconciler.reconcile(cancellation)
+        val result =
+            CancellableProviderIo.execute(
+                scope = cleanupScope,
+                timeoutMillis = providerIoTimeoutMillis,
+            ) { cancellation ->
+                startupReconciler.reconcile(cancellation)
+            }
+        result?.let {
+            AppLog.i(
+                LogComponent.SAF,
+                "startup.reconcile",
+                "outcome" to "ok",
+                "retained" to it.retained,
+                "released" to it.released,
+                "orphaned" to it.orphaned,
+            )
         }
     }
 
@@ -402,6 +415,12 @@ internal interface PersistedSafGrantAccess {
     ) = releaseReadGrant(uri)
 }
 
+internal data class SafStartupReconciliation(
+    val retained: Int,
+    val released: Int,
+    val orphaned: Int,
+)
+
 /** One-shot process-start reconciliation; a failed pass remains retryable on the next retain. */
 internal class OrphanedSafGrantReconciler(
     private val access: PersistedSafGrantAccess,
@@ -410,25 +429,34 @@ internal class OrphanedSafGrantReconciler(
     private val reconciled = AtomicBoolean()
     private val commitMonitor = Any()
 
-    fun reconcile(cancellation: ProviderIoCancellation = ProviderIoCancellation.NONE) {
-        if (reconciled.get()) return
+    fun reconcile(
+        cancellation: ProviderIoCancellation = ProviderIoCancellation.NONE,
+    ): SafStartupReconciliation? {
+        if (reconciled.get()) return null
         val grants = access.readGrantUris(cancellation).toSet()
-        val orphaned =
+        val plan =
             synchronized(commitMonitor) {
-                if (reconciled.get()) return
+                if (reconciled.get()) return null
+                val ownedBefore = selectionInventory.ownedUris()
                 selectionInventory.pruneMissingGrants(grants)
                 val ownedUris = selectionInventory.ownedUris()
                 reconciled.set(true)
-                grants.filterNot(ownedUris::contains)
+                val releaseUris = grants.filterNot(ownedUris::contains)
+                SafStartupReconciliation(
+                    retained = grants.count(ownedUris::contains),
+                    released = releaseUris.size,
+                    orphaned = ownedBefore.count { it !in ownedUris },
+                ) to releaseUris
             }
         try {
-            orphaned.forEach { uri ->
+            plan.second.forEach { uri ->
                 access.releaseReadGrant(uri, cancellation)
             }
         } catch (failure: Throwable) {
             reconciled.set(false)
             throw failure
         }
+        return plan.first
     }
 
     internal fun isReconciled(): Boolean = reconciled.get()

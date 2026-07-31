@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import queue
 import re
 import threading
@@ -136,6 +137,40 @@ def test_one_active_job_and_fresh_cancel_event_per_run() -> None:
     assert second.run_id != first.run_id
     assert second.cancel_event is not first.cancel_event
     assert not second.cancel_event.is_set()
+
+
+def test_reject_helper_preserves_protocol_code_without_claiming_log_ownership(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    registry = JobRegistry()
+    registry.begin()
+    caplog.set_level(logging.ERROR, logger="android_bridge.jobs")
+
+    with pytest.raises(BridgeProtocolError) as error:
+        registry.begin()
+
+    assert error.value.code == "job_already_active"
+    assert caplog.records == []
+
+
+def test_finish_emits_warning_summary_after_releasing_registry_lock(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import android_bridge.bootstrap as bootstrap
+
+    registry = JobRegistry()
+    handle = registry.begin()
+    lock_owned_during_summary: list[bool] = []
+
+    monkeypatch.setattr(
+        bootstrap,
+        "emit_run_warning_summary",
+        lambda: lock_owned_during_summary.append(registry._lock._is_owned()),
+    )
+
+    registry.finish(handle.run_id)
+
+    assert lock_owned_during_summary == [False]
 
 
 def test_kotlin_cancellation_check_releases_parked_curation() -> None:

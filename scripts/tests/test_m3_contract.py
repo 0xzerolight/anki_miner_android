@@ -42,7 +42,11 @@ class M3ContractTest(unittest.TestCase):
         )
         launch = application[application.index("safBroker.reconcileStartup()") - 120 :]
         self.assertIn("try {", launch[:160])
-        self.assertIn("catch (_: Exception)", launch[:320])
+        self.assertIn("catch (failure: Exception)", launch[:320])
+        self.assertIn("AppLog.w(", launch[:640])
+        self.assertIn("LogComponent.SAF", launch[:640])
+        self.assertIn('"startup.reconcile"', launch[:640])
+        self.assertIn('"outcome" to "fail"', launch[:640])
 
 
 if __name__ == "__main__":

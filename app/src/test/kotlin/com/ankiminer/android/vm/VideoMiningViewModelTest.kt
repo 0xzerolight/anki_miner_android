@@ -6,6 +6,10 @@ import androidx.lifecycle.ViewModelStore
 import com.ankiminer.android.MainDispatcherRule
 import com.ankiminer.android.data.RuntimeWorkCoordinator
 import com.ankiminer.android.diagnostics.TesterDiagnosticsShareAction
+import com.ankiminer.android.diagnostics.log.AppLog
+import com.ankiminer.android.diagnostics.log.LogLevel
+import com.ankiminer.android.diagnostics.log.NoOpSink
+import com.ankiminer.android.diagnostics.log.RecordingLogSink
 import com.ankiminer.android.media.SafAccessException
 import com.ankiminer.android.media.SafAccessFailureKind
 import com.ankiminer.android.media.SafBroker
@@ -323,6 +327,33 @@ class VideoMiningViewModelTest {
                     ?.single { it.candidateId == first.candidateId }
                     ?.sentenceId,
             )
+        }
+
+    @Test
+    fun curationCommandLogCarriesRunId() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val recorded = RecordingLogSink()
+            AppLog.setMinLevel(LogLevel.INFO)
+            AppLog.install(NoOpSink)
+            AppLog.install(recorded)
+            try {
+                val request = curationRequest()
+                val repository = RecordingRepository(MiningRunState.Curating(request))
+                val viewModel = VideoMiningViewModel(repository, ImmediateSafBroker())
+                runCurrent()
+
+                viewModel.confirmCuration()
+                runCurrent()
+
+                val record =
+                    recorded.records.single {
+                        it.contains("c=ui op=command") && it.contains("command=curation")
+                    }
+                assertTrue(record, record.contains(" run=${request.runId} "))
+                assertFalse(record, record.contains(" run=- "))
+            } finally {
+                AppLog.install(NoOpSink)
+            }
         }
 
     @Test

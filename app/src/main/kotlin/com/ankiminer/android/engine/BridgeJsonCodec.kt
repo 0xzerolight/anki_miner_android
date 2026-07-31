@@ -1,6 +1,8 @@
 package com.ankiminer.android.engine
 
 import com.ankiminer.android.anki.generated.UnicodeContractV151
+import com.ankiminer.android.diagnostics.log.AppLog
+import com.ankiminer.android.diagnostics.log.LogComponent
 import com.ankiminer.android.mining.AnkiWriteState
 import com.ankiminer.android.mining.CurationCandidate
 import com.ankiminer.android.mining.CurationPage
@@ -51,6 +53,7 @@ object BridgeJsonCodec {
     private const val NEGATIVE_LONG_BOUNDARY_AS_DOUBLE = -9.223372036854776E18
 
     private val messageTypePattern = Regex("[a-z][a-z0-9]*(?:\\.[a-z][a-z0-9]*)+")
+    private val logLevelNames = setOf("info", "debug")
     private val runIdPattern = Regex("run_[0-9a-f]{32}")
     private val curationIdPattern = Regex("curation_[0-9a-f]{32}")
     private val candidateIdPattern = Regex("candidate_[0-9a-f]{32}")
@@ -58,6 +61,9 @@ object BridgeJsonCodec {
     private val tokenizerResourceIdPattern = Regex("[A-Za-z0-9](?:[A-Za-z0-9._-]{0,126}[A-Za-z0-9_-])?")
     private val configResourceIdPattern = Regex("(?!.*\\.\\.)[A-Za-z0-9](?:[A-Za-z0-9._-]{0,126}[A-Za-z0-9_-])?")
     private val sha256Pattern = Regex("[0-9a-f]{64}")
+    // Mirrors android_bridge/faults.py: an id neither side can parse is a
+    // protocol error, not a correlation key worth showing anyone.
+    private val faultIdPattern = Regex("f[0-9a-f]{8}")
     private val errorCodePattern = Regex("[a-z][a-z0-9]*(?:_[a-z0-9]+)*")
 
     private val factory: JsonFactory =
@@ -83,6 +89,20 @@ object BridgeJsonCodec {
         raw: String,
         expectedRunId: String? = null,
         expectedRequestId: String? = null,
+    ): BridgeMessage =
+        decode(raw, expectedRunId, expectedRequestId, logFailure = true)
+
+    internal fun decodeCallback(
+        raw: String,
+        expectedRunId: String,
+    ): BridgeMessage =
+        decode(raw, expectedRunId, expectedRequestId = null, logFailure = false)
+
+    private fun decode(
+        raw: String,
+        expectedRunId: String?,
+        expectedRequestId: String?,
+        logFailure: Boolean,
     ): BridgeMessage {
         if (raw.startsWith('\uFEFF')) fail(BridgeProtocolCategory.INVALID_JSON, "a leading BOM is not JSON whitespace")
         val bytes = strictUtf8(raw)
@@ -91,21 +111,24 @@ object BridgeJsonCodec {
             try {
                 factory.createParser(bytes).use { parser -> readEnvelope(parser, raw) }
             } catch (error: BridgeProtocolException) {
+                // Every classification raised inside readEnvelope funnels through this one clause,
+                // so this record covers all of them and none of them needs a line of its own.
+                if (logFailure) warnDecode(error.category, bytes.size, error)
                 throw error
             } catch (error: StreamConstraintsException) {
-                fail(BridgeProtocolCategory.INVALID_JSON, "bridge JSON exceeds a structural limit", error)
+                failDecode(BridgeProtocolCategory.INVALID_JSON, "bridge JSON exceeds a structural limit", bytes.size, error, logFailure)
             } catch (error: JsonParseException) {
                 val duplicate = error.originalMessage.contains("Duplicate field", ignoreCase = true)
                 val surrogate = error.originalMessage.contains("surrogate", ignoreCase = true)
                 when {
-                    duplicate -> fail(BridgeProtocolCategory.DUPLICATE_JSON_KEY, "bridge JSON contains a duplicate key", error)
-                    surrogate -> fail(BridgeProtocolCategory.INVALID_UTF8, "bridge JSON contains an invalid Unicode scalar", error)
-                    else -> fail(BridgeProtocolCategory.INVALID_JSON, "malformed bridge JSON", error)
+                    duplicate -> failDecode(BridgeProtocolCategory.DUPLICATE_JSON_KEY, "bridge JSON contains a duplicate key", bytes.size, error, logFailure)
+                    surrogate -> failDecode(BridgeProtocolCategory.INVALID_UTF8, "bridge JSON contains an invalid Unicode scalar", bytes.size, error, logFailure)
+                    else -> failDecode(BridgeProtocolCategory.INVALID_JSON, "malformed bridge JSON", bytes.size, error, logFailure)
                 }
             } catch (error: IOException) {
-                fail(BridgeProtocolCategory.INVALID_JSON, "malformed bridge JSON", error)
+                failDecode(BridgeProtocolCategory.INVALID_JSON, "malformed bridge JSON", bytes.size, error, logFailure)
             } catch (error: IllegalArgumentException) {
-                fail(BridgeProtocolCategory.INVALID_VALUE, "bridge payload violates its model invariants", error)
+                failDecode(BridgeProtocolCategory.INVALID_VALUE, "bridge payload violates its model invariants", bytes.size, error, logFailure)
             }
         val (runId, requestId) = identifiers(decoded)
         if (expectedRunId != null && runId != null && runId != expectedRunId) {
@@ -144,6 +167,9 @@ object BridgeJsonCodec {
 
     fun encodeJobCancel(runId: String): String =
         encode("job.cancel") { generator -> generator.writeStringField("runId", runId) }
+
+    fun encodeDiagnosticsLogLevelSet(level: String): String =
+        encode("diagnostics.loglevel.set") { generator -> generator.writeStringField("level", level) }
 
     fun encodeCurationResponse(
         request: CurationRequest,
@@ -232,6 +258,8 @@ object BridgeJsonCodec {
             "curation.page.response" -> readCurationPageResponse(payload)
             "curation.accepted" -> readCurationAccepted(payload)
             "curation.page.accepted" -> readCurationPageAccepted(payload)
+            "diagnostics.loglevel.set" -> BridgeMessage.DiagnosticsLogLevelSet(logLevel(payload, type))
+            "diagnostics.loglevel.applied" -> BridgeMessage.DiagnosticsLogLevelApplied(logLevel(payload, type))
             "job.cancel" -> BridgeMessage.JobCancel(singleRunId(payload, type))
             "job.cancelled" -> readJobCancelled(payload)
             "mining.terminal" -> readTerminal(payload, raw)
@@ -239,8 +267,18 @@ object BridgeJsonCodec {
         }
 
     private fun readBridgeError(payload: Map<String, BridgeJsonValue>): BridgeMessage.Error {
-        val allowed = setOf("code", "message", "requestType")
-        if (payload.keys !in setOf(setOf("code", "message"), allowed)) {
+        val required = setOf("code", "message")
+        // Both optional fields are independently present or absent: only a
+        // decode that got far enough to know the request type carries one, and
+        // only a collapsed non-protocol exception carries the other.
+        val accepted =
+            setOf(
+                required,
+                required + "requestType",
+                required + "faultId",
+                required + "requestType" + "faultId",
+            )
+        if (payload.keys !in accepted) {
             fail(BridgeProtocolCategory.INVALID_PAYLOAD, "bridge.error has missing or unknown fields")
         }
         val code = text(payload.getValue("code"), "bridge error code")
@@ -249,7 +287,12 @@ object BridgeJsonCodec {
         if (requestType != null && !messageTypePattern.matches(requestType)) {
             fail(BridgeProtocolCategory.INVALID_VALUE, "bridge error request type is invalid")
         }
-        return BridgeMessage.Error(code, text(payload.getValue("message"), "bridge error message"), requestType)
+        return BridgeMessage.Error(
+            code = code,
+            message = text(payload.getValue("message"), "bridge error message"),
+            requestType = requestType,
+            faultId = payload["faultId"]?.let { opaque(it, faultIdPattern, "bridge error fault id") },
+        )
     }
 
     private fun readProgressStart(payload: Map<String, BridgeJsonValue>): BridgeMessage.ProgressStart {
@@ -323,8 +366,10 @@ object BridgeJsonCodec {
             val severity =
                 try {
                     ValidationSeverity.valueOf(text(issue.getValue("severity"), "validation severity"))
-                } catch (_: IllegalArgumentException) {
-                    fail(BridgeProtocolCategory.INVALID_VALUE, "validation severity is invalid")
+                } catch (failure: IllegalArgumentException) {
+                    // Bound rather than discarded so the record warnDecode writes when this reaches
+                    // the decode clause names the rejected constant; the message here cannot.
+                    fail(BridgeProtocolCategory.INVALID_VALUE, "validation severity is invalid", failure)
                 }
             ValidationIssue(
                 text(issue.getValue("component"), "validation component"),
@@ -400,10 +445,20 @@ object BridgeJsonCodec {
     }
 
     private fun readTerminalError(payload: Map<String, BridgeJsonValue>): TerminalError {
-        requireExact(payload, setOf("code", "message"), "terminal error")
+        // Deliberately not requireExact with faultId added: requireExact is set
+        // equality, so that would make the id mandatory and reject every
+        // cancelled and cleanup_failed terminal, which carry none.
+        val required = setOf("code", "message")
+        if (payload.keys !in setOf(required, required + "faultId")) {
+            fail(BridgeProtocolCategory.INVALID_PAYLOAD, "terminal error has missing or unknown fields")
+        }
         val code = text(payload.getValue("code"), "terminal error code")
         if (!errorCodePattern.matches(code)) fail(BridgeProtocolCategory.INVALID_VALUE, "terminal error code is invalid")
-        return TerminalError(code, text(payload.getValue("message"), "terminal error message"))
+        return TerminalError(
+            code = code,
+            message = text(payload.getValue("message"), "terminal error message"),
+            faultId = payload["faultId"]?.let { opaque(it, faultIdPattern, "terminal error fault id") },
+        )
     }
 
     private fun validateTerminal(
@@ -1021,6 +1076,9 @@ object BridgeJsonCodec {
                 generator.writeEndObject()
             }
         } catch (error: IOException) {
+            // Not a BridgeProtocolException, so warnDecode's clause never sees it, and every caller
+            // maps the IllegalStateException onto a generic command failure.
+            AppLog.w(LogComponent.BRIDGE, "codec.encode", error, "type" to type, "outcome" to "fail")
             throw IllegalStateException("failed to encode bridge message", error)
         }
         if (output.size() > MAX_ENVELOPE_UTF8_BYTES) fail(BridgeProtocolCategory.INPUT_TOO_LARGE, "encoded bridge message is too large")
@@ -1165,6 +1223,17 @@ object BridgeJsonCodec {
             is BridgeMessage.Terminal -> message.runId to null
             else -> null to null
         }
+
+    /** The wire vocabulary of the verbose-logging toggle: INFO is always on, DEBUG is the switch. */
+    private fun logLevel(
+        payload: Map<String, BridgeJsonValue>,
+        context: String,
+    ): String {
+        requireExact(payload, setOf("level"), context)
+        return text(payload.getValue("level"), "log level").also {
+            if (it !in logLevelNames) fail(BridgeProtocolCategory.INVALID_VALUE, "log level is invalid")
+        }
+    }
 
     private fun singleRunId(
         payload: Map<String, BridgeJsonValue>,
@@ -1467,6 +1536,41 @@ object BridgeJsonCodec {
         message: String,
         cause: Throwable? = null,
     ): Nothing = throw BridgeProtocolException(category, message, cause)
+
+    /** [fail] with the classification recorded first. */
+    private fun failDecode(
+        category: BridgeProtocolCategory,
+        message: String,
+        bytes: Int,
+        cause: Throwable,
+        logFailure: Boolean,
+    ): Nothing {
+        if (logFailure) warnDecode(category, bytes, cause)
+        fail(category, message, cause)
+    }
+
+    /**
+     * Records why an envelope was rejected.
+     *
+     * Every caller collapses the whole [BridgeProtocolException] family onto one user string, so a
+     * malformed envelope, a size-limit rejection and a duplicate key are indistinguishable in the
+     * field without this. The envelope itself is never logged: it carries mined Japanese sentences
+     * and curation candidate text, and its size is the only property of it that is safe to record.
+     */
+    private fun warnDecode(
+        category: BridgeProtocolCategory,
+        bytes: Int,
+        cause: Throwable,
+    ) {
+        AppLog.w(
+            LogComponent.BRIDGE,
+            "codec.decode",
+            cause,
+            "category" to category.name,
+            "bytes" to bytes,
+            "outcome" to "fail",
+        )
+    }
 
     private val ANKI_FIELDS =
         setOf(

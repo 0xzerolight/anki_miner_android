@@ -218,6 +218,87 @@ class BridgeJsonCodecTest {
     }
 
     @Test
+    fun `terminal error carries an optional fault id without making it mandatory`() {
+        val runId = "run_${"a".repeat(32)}"
+        fun terminal(error: String) =
+            """{"schemaVersion":1,"type":"mining.terminal","payload":{"runId":"$runId","outcome":"failed","result":null,"error":$error}}"""
+
+        val withFault =
+            BridgeJsonCodec.decode(
+                terminal("""{"code":"internal_error","message":"Internal mining failure","faultId":"f0123abcd"}"""),
+            ) as BridgeMessage.Terminal
+        assertEquals("f0123abcd", withFault.error?.faultId)
+
+        val withoutFault =
+            BridgeJsonCodec.decode(
+                terminal("""{"code":"internal_error","message":"Internal mining failure"}"""),
+            ) as BridgeMessage.Terminal
+        assertEquals(null, withoutFault.error?.faultId)
+
+        assertEquals(
+            BridgeProtocolCategory.INVALID_VALUE,
+            protocolFailure {
+                BridgeJsonCodec.decode(terminal("""{"code":"internal_error","message":"x","faultId":"nope"}"""))
+            }.category,
+        )
+        assertEquals(
+            BridgeProtocolCategory.INVALID_PAYLOAD,
+            protocolFailure {
+                BridgeJsonCodec.decode(terminal("""{"code":"internal_error","message":"x","retryable":false}"""))
+            }.category,
+        )
+    }
+
+    @Test
+    fun `terminals that are not faults still decode without a fault id`() {
+        // The regression guard for the accepted-key-sets idiom: an exact key set including faultId
+        // would make it mandatory and break cancel, a core shipping path.
+        val runId = "run_${"a".repeat(32)}"
+        val cancelled =
+            """{"schemaVersion":1,"type":"mining.terminal","payload":{"runId":"$runId","outcome":"cancelled","result":null,"error":{"code":"cancelled","message":"Mining was cancelled"}}}"""
+        val cleanupFailed =
+            fixtures("contracts/mining_protocol_v1.json", "valid").first { it.name == "cleanup failure retains result" }
+
+        val decodedCancel = BridgeJsonCodec.decode(cancelled) as BridgeMessage.Terminal
+        assertEquals("cancelled", decodedCancel.error?.code)
+        assertEquals(null, decodedCancel.error?.faultId)
+
+        val decodedCleanup = BridgeJsonCodec.decode(cleanupFailed.message) as BridgeMessage.Terminal
+        assertEquals("cleanup_failed", decodedCleanup.error?.code)
+        assertEquals(null, decodedCleanup.error?.faultId)
+    }
+
+    @Test
+    fun `bridge error accepts a fault id beside an optional request type`() {
+        fun bridgeError(payload: String) = """{"schemaVersion":1,"type":"bridge.error","payload":$payload}"""
+
+        val full =
+            BridgeJsonCodec.decode(
+                bridgeError(
+                    """{"code":"internal_error","message":"Internal bridge failure","requestType":"job.cancel","faultId":"f0123abcd"}""",
+                ),
+            ) as BridgeMessage.Error
+        assertEquals("f0123abcd", full.faultId)
+        assertEquals("job.cancel", full.requestType)
+
+        val withoutRequestType =
+            BridgeJsonCodec.decode(
+                bridgeError("""{"code":"internal_error","message":"Internal bridge failure","faultId":"f0123abcd"}"""),
+            ) as BridgeMessage.Error
+        assertEquals("f0123abcd", withoutRequestType.faultId)
+        assertEquals(null, withoutRequestType.requestType)
+
+        assertEquals(
+            null,
+            (BridgeJsonCodec.decode(bridgeError("""{"code":"internal_error","message":"x"}""")) as BridgeMessage.Error).faultId,
+        )
+        assertEquals(
+            BridgeProtocolCategory.INVALID_VALUE,
+            protocolFailure { BridgeJsonCodec.decode(bridgeError("""{"code":"x","message":"x","faultId":"f0123abc"}""")) }.category,
+        )
+    }
+
+    @Test
     fun `malformed duplicate trailing BOM and surrogate inputs fail closed`() {
         val cases =
             listOf(
@@ -242,6 +323,33 @@ class BridgeJsonCodecTest {
 
         val mathematical = """{"schemaVersion":1.0,"type":"progress.start","payload":{"runId":"$runId","total":2.0,"description":"x"}}"""
         assertEquals(2L, (BridgeJsonCodec.decode(mathematical) as BridgeMessage.ProgressStart).total)
+    }
+
+    @Test
+    fun `diagnostics log level messages round-trip and reject levels outside the vocabulary`() {
+        val request = BridgeJsonCodec.decode(BridgeJsonCodec.encodeDiagnosticsLogLevelSet("debug"))
+        val applied =
+            BridgeJsonCodec.decode(
+                """{"schemaVersion":1,"type":"diagnostics.loglevel.applied","payload":{"level":"info"}}""",
+            )
+
+        assertEquals(BridgeMessage.DiagnosticsLogLevelSet("debug"), request)
+        assertEquals(BridgeMessage.DiagnosticsLogLevelApplied("info"), applied)
+
+        // Only reachable through decode: encode() self-validates its own output, so the encoder
+        // can never present the codec with a level it did not write.
+        val rejected =
+            listOf(
+                """{"schemaVersion":1,"type":"diagnostics.loglevel.set","payload":{"level":"trace"}}""",
+                """{"schemaVersion":1,"type":"diagnostics.loglevel.set","payload":{"level":"DEBUG"}}""",
+                """{"schemaVersion":1,"type":"diagnostics.loglevel.applied","payload":{"level":"warning"}}""",
+                """{"schemaVersion":1,"type":"diagnostics.loglevel.set","payload":{"level":1}}""",
+                """{"schemaVersion":1,"type":"diagnostics.loglevel.set","payload":{}}""",
+                """{"schemaVersion":1,"type":"diagnostics.loglevel.set","payload":{"level":"info","extra":1}}""",
+            )
+        rejected.forEach { raw ->
+            assertThrows(raw, BridgeProtocolException::class.java) { BridgeJsonCodec.decode(raw) }
+        }
     }
 
     @Test

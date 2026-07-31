@@ -1,14 +1,64 @@
 package com.ankiminer.android.service
 
+import com.ankiminer.android.diagnostics.log.AppLog
+import com.ankiminer.android.diagnostics.log.LogLevel
+import com.ankiminer.android.diagnostics.log.NoOpSink
+import com.ankiminer.android.diagnostics.log.RecordingLogSink
 import java.util.concurrent.Executor
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
+import org.junit.Before
 import org.junit.Test
 
 class ForegroundSessionRegistryTest {
     private val directExecutor = Executor { command -> command.run() }
+    private val recorded = RecordingLogSink()
+
+    @Before
+    fun installRecordingSink() {
+        AppLog.setMinLevel(LogLevel.INFO)
+        AppLog.install(NoOpSink)
+        AppLog.install(recorded)
+    }
+
+    @After
+    fun clearRecordingSink() {
+        AppLog.install(NoOpSink)
+    }
+
+    @Test
+    fun `registry logs each successful lifecycle transition once`() {
+        val registry = ForegroundSessionRegistry(directExecutor)
+        val identity = identity()
+        val registration = registry.register(identity) { _, _ -> fail("unexpected cancellation") }
+
+        assertTrue(registry.claimStart(identity, SERVICE_TOKEN))
+        assertTrue(registry.foregroundStarted(identity, SERVICE_TOKEN))
+        assertTrue(registry.beginExpectedClose(identity))
+        registry.expectedServiceWasAbsent(identity)
+
+        assertEquals(
+            listOf(
+                "c=service op=phase from=NONE to=PENDING outcome=ok detail=register " +
+                    "runId=run-1 generation=1 leaseId=00000000-0000-4000-8000-000000000001",
+                "c=service op=phase from=PENDING to=CLAIMED outcome=ok detail=start_claimed " +
+                    "runId=run-1 generation=1 leaseId=00000000-0000-4000-8000-000000000001",
+                "c=service op=phase from=CLAIMED to=ACTIVE outcome=ok detail=foreground_started " +
+                    "runId=run-1 generation=1 leaseId=00000000-0000-4000-8000-000000000001",
+                "c=service op=phase from=ACTIVE to=CLOSING outcome=ok detail=expected_close " +
+                    "runId=run-1 generation=1 leaseId=00000000-0000-4000-8000-000000000001",
+                "c=service op=phase from=CLOSING to=NONE outcome=ok detail=service_absent " +
+                    "runId=run-1 generation=1 leaseId=00000000-0000-4000-8000-000000000001",
+            ),
+            recorded.records.map { record ->
+                record.substringBefore('\n').substring(record.indexOf("c="))
+            },
+        )
+        assertFalse(registration.started.isCompletedExceptionally)
+    }
 
     @Test
     fun `start handshake completes only after foreground promotion`() {

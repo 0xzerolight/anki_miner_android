@@ -1,6 +1,10 @@
 package com.ankiminer.android.data.resources
 
 import com.ankiminer.android.data.RuntimeWorkCoordinator
+import com.ankiminer.android.diagnostics.log.AppLog
+import com.ankiminer.android.diagnostics.log.LogLevel
+import com.ankiminer.android.diagnostics.log.NoOpSink
+import com.ankiminer.android.diagnostics.log.RecordingLogSink
 import com.ankiminer.android.data.settings.AppSettings
 import com.ankiminer.android.data.settings.AppSettingsRepository
 import com.ankiminer.android.data.settings.ResourceChainSelection
@@ -33,6 +37,35 @@ import org.junit.rules.TemporaryFolder
 class ResourceManagerTest {
     @get:Rule
     val temporary = TemporaryFolder()
+
+    @Test
+    fun cancellationCodesEmitOnlyDebugSkipRecords() =
+        runTest {
+            val recorded = RecordingLogSink()
+            AppLog.setMinLevel(LogLevel.DEBUG)
+            AppLog.install(NoOpSink)
+            AppLog.install(recorded)
+            try {
+                Harness(rootName = "manager-download", stagingFailureCode = "resource_operation_cancelled")
+                    .manager.importKnownWords(INPUT_URI, KnownWordsSourceFormat.JSON)
+                Harness(
+                    rootName = "manager-bridge",
+                    bridgeFailureCode = "resource_operation_cancelled",
+                    autoRecover = false,
+                )
+                    .manager.recoverAndRefresh()
+
+                val cancellations = recorded.records.filter { it.contains("op=operation.run") }
+                assertEquals(2, cancellations.size)
+                assertTrue(cancellations.all { it.contains(" D run=- c=resources") })
+                assertTrue(cancellations.all { it.contains("code=resource_operation_cancelled") })
+                assertTrue(cancellations.all { it.contains("outcome=skip") })
+                assertFalse(cancellations.any { it.contains(" E run=") || it.contains("outcome=fail") })
+            } finally {
+                AppLog.setMinLevel(LogLevel.INFO)
+                AppLog.install(NoOpSink)
+            }
+        }
 
     @Test
     fun busyFailuresKeepStableOriginAndRetryMetadataUntilDismissed() =
@@ -611,11 +644,14 @@ class ResourceManagerTest {
         }
 
     private inner class Harness(
+        rootName: String = "manager",
         initialUserCount: Int = 0,
         runtimeWorkCoordinator: RuntimeWorkCoordinator = RuntimeWorkCoordinator(),
         sourceLabel: String = "known-word file",
         reportedSourceSizeBytes: Long? = 16,
         stagingAvailableBytes: Long = Long.MAX_VALUE / 2,
+        stagingFailureCode: String? = null,
+        bridgeFailureCode: String? = null,
         installedPitchSourceId: String? = null,
         autoRecover: Boolean = true,
         resourceExecutor: Executor = DIRECT_EXECUTOR,
@@ -631,18 +667,19 @@ class ResourceManagerTest {
         committedDictionaryDecodeFailure: Boolean = false,
         committedPitchDecodeFailure: Boolean = false,
     ) {
-        val root = temporary.newFolder("manager")
+        val root = temporary.newFolder(rootName)
         val bridgeRoot = File(root, "bridge").apply { mkdirs() }
         val stagingRoot = File(root, "staging").apply { mkdirs() }
         val downloadRoot = File(root, "downloads")
         val pendingRoot = File(root, "resource-pending-known-words")
         val broker = RecordingSafBroker(reportedSourceSizeBytes)
-        val stager = RecordingArchiveStager(stagingRoot, sourceLabel)
+        val stager = RecordingArchiveStager(stagingRoot, sourceLabel, stagingFailureCode)
         val writer = RecordingDocumentWriter(onFirstExportWrite)
         val bridge =
             FakeResourceBridge(
                 bridgeRoot,
                 initialUserCount,
+                bridgeFailureCode,
                 installedPitchSourceId,
                 failRefreshAfterDictionaryImport,
                 failKnownWordsImportOnce,
@@ -717,6 +754,7 @@ class ResourceManagerTest {
     private class RecordingArchiveStager(
         private val stagingRoot: File,
         private val expectedSourceLabel: String = "known-word file",
+        private val failureCode: String? = null,
     ) : ResourceArchiveStager {
         val stagedFiles = mutableListOf<File>()
         var lastMaximumBytes: Long? = null
@@ -733,6 +771,7 @@ class ResourceManagerTest {
         ): StagedArchive {
             assertEquals(INPUT_URI, sourceUri)
             assertEquals(expectedSourceLabel, sourceLabel)
+            failureCode?.let { throw ResourceDownloadException(it, "cancelled") }
             lastMaximumBytes = maximumBytes
             cancellation.check()
             val file = File(stagingRoot, "$operationId-custom$fileSuffix")
@@ -796,6 +835,7 @@ class ResourceManagerTest {
     private class FakeResourceBridge(
         private val bridgeFilesRoot: File,
         initialUserCount: Int,
+        private val failureCode: String? = null,
         private val installedPitchSourceId: String?,
         private val failRefreshAfterDictionaryImport: Boolean,
         failKnownWordsImportOnce: Boolean,
@@ -830,6 +870,7 @@ class ResourceManagerTest {
         override fun dispatch(rawRequest: String, callbacks: EngineCallbacks?): String {
             assertNull(callbacks)
             requests += rawRequest
+            failureCode?.let { throw ResourceBridgeException(it, "cancelled") }
             return when (requestType(rawRequest)) {
                 "resource.catalog.get" -> catalogResponse()
                 "resource.dictionary.list" -> dictionaryListResponse()

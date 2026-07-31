@@ -120,6 +120,7 @@ internal class AndroidMiningRunInterruptionStore(
             try {
                 file.delete()
                 !file.baseFile.exists()
+                // instrumentation: silent — false leaves the unknown record recovery-blocking
             } catch (_: RuntimeException) {
                 false
             }
@@ -155,6 +156,7 @@ internal class AndroidMiningRunInterruptionStore(
             try {
                 file.delete()
                 !file.baseFile.exists()
+                // instrumentation: silent — false retains explicit interrupted-run recovery
             } catch (_: RuntimeException) {
                 false
             }
@@ -183,6 +185,7 @@ internal class AndroidMiningRunInterruptionStore(
                 ownerId = lines[2],
                 runId = lines[3].takeUnless { it == NO_RUN_ID },
             )
+            // instrumentation: silent — null keeps malformed durable state recovery-blocking
         } catch (_: Exception) {
             null
         }
@@ -205,6 +208,7 @@ internal class AndroidMiningRunInterruptionStore(
             output.flush()
             file.finishWrite(output)
             true
+            // instrumentation: silent — failWrite and false preserve prior durable state
         } catch (_: Exception) {
             runCatching { file.failWrite(output) }
             false

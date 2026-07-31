@@ -397,6 +397,8 @@ data class ResourceFailure(
     val code: String,
     val message: String,
     val retryable: Boolean,
+    /** Opaque key joining this failure to the Python traceback in the exported log. */
+    val faultId: String? = null,
     val origin: ResourceFailureOrigin = ResourceFailureOrigin.SETUP,
     val retry: ResourceFailureRetry =
         ResourceFailureRetry(
@@ -462,7 +464,10 @@ data class CatalogDictionaryStatus(
 class ResourceBridgeException(
     val code: String,
     override val message: String,
-) : IllegalStateException(message)
+    /** Opaque key joining this failure to the Python traceback in the exported log. */
+    val faultId: String? = null,
+    cause: Throwable? = null,
+) : IllegalStateException(message, cause)
 
 class ResourceDownloadException(
     val stableCode: String,

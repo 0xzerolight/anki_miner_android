@@ -130,6 +130,12 @@ internal object TesterDiagnosticsBuilder {
                 )
                 line("resources.operation", setup.operation?.phase?.name?.lowercase(Locale.ROOT) ?: NONE)
                 line("resources.failure", safeCode(setup.failure?.code))
+                // Both fault ids sit with anki.last_fault, above the lane lines: MAX_REPORT_CHARS
+                // truncates the tail, and the keys that point into the log must survive it.
+                line("resources.fault_id", safeCode(setup.failure?.faultId))
+                line("mining.fault_id", miningFaultId(video.runState, reading.runState))
+                line("mining.run_id", miningRunId(video.runState, reading.runState))
+                line("mining.failure_code", miningFailureCode(video.runState, reading.runState))
                 line("anki.provider", ankiReadiness(setup.anki))
                 line("anki.recovery_startup", ankiRecoveryReadiness(setup.ankiRecovery))
                 line(
@@ -164,12 +170,23 @@ internal object TesterDiagnosticsBuilder {
         appendLine(value)
     }
 
+    /**
+     * The failed arm is the one state in this report a tester reaches with no way to describe it:
+     * the UI shows `status_failed_restart` whatever went wrong. Naming the stage and the fault
+     * separates a missing ABI wheel from a home mismatch from an OOM.
+     *
+     * [safeFaultToken] is reapplied even though the producer already bounds and whitelists the
+     * token, for the reason it is reapplied on `anki.last_fault`: this line's `key=value` grammar
+     * survives neither a newline nor a second `=`, and the sanitizer is what makes that true here
+     * regardless of what any future producer puts in the field.
+     */
     private fun pythonReadiness(readiness: PythonRuntimeReadiness): String =
         when (readiness) {
             PythonRuntimeReadiness.Pending -> "pending"
             PythonRuntimeReadiness.Starting -> "starting"
             is PythonRuntimeReadiness.Ready -> "ready"
-            PythonRuntimeReadiness.Failed -> "failed"
+            is PythonRuntimeReadiness.Failed ->
+                "failed:${readiness.stage.name.lowercase(Locale.ROOT)}:${safeFaultToken(readiness.fault)}"
         }
 
     private fun ankiReadiness(readiness: AnkiProviderReadiness): String =
@@ -211,6 +228,33 @@ internal object TesterDiagnosticsBuilder {
             is MiningRunState.Failed -> "failed"
         }
 
+    /**
+     * The one value in this report that points into the exported log: it joins the failure a tester
+     * pasted to the Python traceback behind it. One mining run is admitted at a time, so at most one
+     * lane holds a fresh failure and the scan order is not a tie-break in practice.
+     */
+    private fun miningFaultId(vararg states: MiningRunState): String =
+        safeCode(states.firstNotNullOfOrNull { (it as? MiningRunState.Failed)?.failure?.faultId })
+
+    /**
+     * The run id the failed lane has always carried and never shown. Records emitted underneath the
+     * run carry it as `run=`, so it selects that run's story out of the exported log.
+     *
+     * It is present in cases the fault id is not: a Kotlin-side failure has no Python traceback and
+     * so no fault id, but it still carries the run id whenever the run got far enough to be assigned
+     * one. A run that failed before that has neither.
+     */
+    private fun miningRunId(vararg states: MiningRunState): String =
+        safeCode(states.firstNotNullOfOrNull { (it as? MiningRunState.Failed)?.runId })
+
+    /**
+     * The locale-independent half of the failure. `MiningFailure.message` is localized and is never
+     * put in this report, so without a code a report from a non-English device says only that a
+     * mining run failed.
+     */
+    private fun miningFailureCode(vararg states: MiningRunState): String =
+        safeCode(states.firstNotNullOfOrNull { (it as? MiningRunState.Failed)?.failure?.diagnostic })
+
     private fun videoPending(state: VideoMiningUiState): String =
         pendingLabels(
             "start" to state.startPending,
@@ -230,8 +274,16 @@ internal object TesterDiagnosticsBuilder {
     private fun pendingLabels(vararg values: Pair<String, Boolean>): String =
         values.filter { it.second }.joinToString(",") { it.first }.ifBlank { NONE }
 
+    /**
+     * Truncated before the alphabet check, not after: `SAFE_CODE` bounds length as well, so an
+     * over-long code used to render `none` — no signal at all — and a prefix is strictly better.
+     * That degradation only ever applies to a name: every id-shaped value on these lines is
+     * pattern-bounded at its producer (`f[0-9a-f]{8}` for both fault ids, `run_[0-9a-f]{32}` for the
+     * run id), so no lookup key can be cut into a key that finds nothing. The alphabet is still
+     * checked in full, so a code carrying anything else is refused rather than mangled.
+     */
     private fun safeCode(value: String?): String =
-        value?.takeIf { SAFE_CODE.matches(it) } ?: NONE
+        value?.take(MAX_CODE_CHARS)?.takeIf { SAFE_CODE.matches(it) } ?: NONE
 
     /**
      * The recorder already whitelists its alphabet; re-applying the report's own sanitizer keeps this
@@ -260,6 +312,9 @@ internal object TesterDiagnosticsBuilder {
     private const val MAX_ABIS = 8
     private const val MAX_BUILD_VALUE_CHARS = 128
     private const val MAX_REPORT_CHARS = 4_096
+    private const val MAX_CODE_CHARS = 64
+
+    // Length bound repeated from MAX_CODE_CHARS so the pattern is still safe on its own.
     private val SAFE_CODE = Regex("[a-z0-9_.-]{1,64}")
     private val SAFE_BUILD_CHARACTERS =
         ('a'..'z') + ('A'..'Z') + ('0'..'9') + setOf('.', '_', '-', '+', ':', '/')

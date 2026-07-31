@@ -1,5 +1,8 @@
 package com.ankiminer.android.anki.provider
 
+import com.ankiminer.android.diagnostics.log.AppLog
+import com.ankiminer.android.diagnostics.log.LogComponent
+
 /** Stable, UI-safe reasons why the primary AnkiDroid seam is or is not usable. */
 internal sealed interface AnkiProviderReadiness {
     data object NotChecked : AnkiProviderReadiness
@@ -84,7 +87,8 @@ internal class AnkiProviderReadinessProbe(
                 ProviderFailureKind.CANCELLED,
                 -> AnkiProviderReadiness.Uninitialized
             }
-        } catch (_: RuntimeException) {
+        } catch (failure: RuntimeException) {
+            AppLog.e(LogComponent.ANKI, "readiness.collection", failure, "outcome" to "fail")
             return AnkiProviderReadiness.Uninitialized
         }
 
@@ -104,7 +108,8 @@ internal class AnkiProviderReadinessProbe(
                 ProviderFailureKind.API_DISABLED -> ProviderAccessStatus.ApiDisabled
                 else -> ProviderAccessStatus.Absent
             }
-        } catch (_: RuntimeException) {
+        } catch (failure: RuntimeException) {
+            AppLog.e(LogComponent.ANKI, "readiness.access", failure, "outcome" to "fail")
             ProviderAccessStatus.Absent
         }
 }

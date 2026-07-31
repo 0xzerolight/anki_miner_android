@@ -56,6 +56,9 @@ keystore.properties
 signing.properties
 signing-private/
 
+# Agent scratch
+.superpowers/
+
 # OS
 .DS_Store
 Thumbs.db

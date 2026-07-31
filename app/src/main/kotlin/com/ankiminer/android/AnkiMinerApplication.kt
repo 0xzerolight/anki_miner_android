@@ -13,15 +13,30 @@ import com.ankiminer.android.data.RuntimeWorkCoordinator
 import com.ankiminer.android.data.resources.AndroidResourceDocumentWriter
 import com.ankiminer.android.data.resources.AndroidResourceManager
 import com.ankiminer.android.data.resources.PinnedResourceDownloader
+import com.ankiminer.android.data.resources.ResourceDocumentWriter
 import com.ankiminer.android.data.resources.ResourceManager
 import com.ankiminer.android.data.resources.ResourceStartupReadiness
 import com.ankiminer.android.data.resources.SafArchiveStager
 import com.ankiminer.android.data.resources.WordListKind
 import com.ankiminer.android.data.settings.AppSettingsRepository
 import com.ankiminer.android.data.settings.DataStoreAppSettingsRepository
+import com.ankiminer.android.data.settings.DataStoreDiagnosticsSettingsRepository
+import com.ankiminer.android.data.settings.DiagnosticsSettingsRepository
+import com.ankiminer.android.diagnostics.AndroidDiagnosticsExporter
+import com.ankiminer.android.diagnostics.DiagnosticsBundleJanitor
+import com.ankiminer.android.diagnostics.DiagnosticsBundleStager
+import com.ankiminer.android.diagnostics.DiagnosticsExporter
+import com.ankiminer.android.diagnostics.currentTesterBuildIdentity
+import com.ankiminer.android.diagnostics.log.AppLog
+import com.ankiminer.android.diagnostics.log.CompositeSink
+import com.ankiminer.android.diagnostics.log.FileLogSink
+import com.ankiminer.android.diagnostics.log.LogComponent
+import com.ankiminer.android.diagnostics.log.LogLevel
+import com.ankiminer.android.diagnostics.log.LogcatSink
 import com.ankiminer.android.engine.ChaquopyPyBridge
 import com.ankiminer.android.engine.ChaquopyPythonRuntime
 import com.ankiminer.android.engine.PythonRuntimeReadiness
+import com.ankiminer.android.engine.applyPythonLogLevelSafely
 import com.ankiminer.android.localization.AndroidStringResourceResolver
 import com.ankiminer.android.localization.StringResourceResolver
 import com.ankiminer.android.media.AndroidSafBroker
@@ -51,6 +66,7 @@ import com.ankiminer.android.reading.ReadingMiningRepository
 import com.ankiminer.android.service.MiningForegroundSessionController
 import com.ankiminer.android.tts.AndroidSentenceAudioSynthesizerFactory
 import java.io.File
+import java.io.IOException
 import java.util.concurrent.Executors
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -130,7 +146,45 @@ class AnkiMinerApplication : Application() {
     private val ankiSetupExecutor by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         Executors.newSingleThreadExecutor { task -> Thread(task, "anki-miner-setup") }
     }
+
+    /** Its own thread so a level change never queues behind a curation submit. */
+    private val diagnosticsExecutor by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        Executors.newSingleThreadExecutor { task -> Thread(task, "anki-miner-diagnostics") }
+    }
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    /**
+     * Retained rather than built inline in [AppLog.install], because the diagnostics export needs
+     * this exact instance: [FileLogSink.snapshot] runs on the writer coroutine, which is the only
+     * way to copy the files without a rotation halfway through a rename. A second instance would
+     * hold a second handle on the same file and know nothing about the first one's queue.
+     */
+    internal val logFileSink: FileLogSink by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        FileLogSink(filesDir, scope = applicationScope)
+    }
+    internal val diagnosticsBundleStager: DiagnosticsBundleStager by lazy(
+        LazyThreadSafetyMode.SYNCHRONIZED,
+    ) {
+        DiagnosticsBundleStager(this, logFileSink, safSelectionInventory)
+    }
+    private val resourceDocumentWriter: ResourceDocumentWriter by lazy(
+        LazyThreadSafetyMode.SYNCHRONIZED,
+    ) {
+        AndroidResourceDocumentWriter(contentResolver)
+    }
+
+    internal fun createDiagnosticsExporter(buildDiagnostics: () -> String): DiagnosticsExporter =
+        AndroidDiagnosticsExporter(
+            stagingRoot = File(cacheDir, DiagnosticsBundleJanitor.DIRECTORY_NAME),
+            documentWriter = resourceDocumentWriter,
+            stageBundle = {
+                diagnosticsBundleStager.stage(
+                    diagnostics = buildDiagnostics(),
+                    settings = settingsRepository.settings.first(),
+                    verboseLogging = diagnosticsSettings.verboseLogging.first(),
+                )
+            },
+        )
     private val runtimeWorkCoordinator = RuntimeWorkCoordinator()
     private val miningRunInterruptionStore by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         AndroidMiningRunInterruptionStore(noBackupFilesDir)
@@ -138,7 +192,7 @@ class AnkiMinerApplication : Application() {
     internal val runtimeWorkState
         get() = runtimeWorkCoordinator.activeKind
     private val pythonRuntime by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
-        ChaquopyPythonRuntime(this)
+        ChaquopyPythonRuntime(this, diagnosticsSettings)
     }
     private val pyBridge by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         ChaquopyPyBridge(pythonRuntime)
@@ -168,6 +222,12 @@ class AnkiMinerApplication : Application() {
 
     internal val settingsRepository: AppSettingsRepository by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         DataStoreAppSettingsRepository(this)
+    }
+
+    internal val diagnosticsSettings: DiagnosticsSettingsRepository by lazy(
+        LazyThreadSafetyMode.SYNCHRONIZED,
+    ) {
+        DataStoreDiagnosticsSettingsRepository(this)
     }
 
     internal val ankiSetupManager: AnkiSetupManager by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
@@ -226,7 +286,7 @@ class AnkiMinerApplication : Application() {
             controlExecutor = resourceControlExecutor,
             runtimeWorkCoordinator = runtimeWorkCoordinator,
             safStager = SafArchiveStager(contentResolver, resourceStagingRoot),
-            documentWriter = AndroidResourceDocumentWriter(contentResolver),
+            documentWriter = resourceDocumentWriter,
             strings = stringResourceResolver,
         )
     }
@@ -316,14 +376,69 @@ class AnkiMinerApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        val buildIdentity = currentTesterBuildIdentity()
+        AppLog.i(
+            LogComponent.APP,
+            "startup",
+            "outcome" to "ok",
+            "applicationId" to buildIdentity.applicationId,
+            "versionName" to buildIdentity.versionName,
+            "versionCode" to buildIdentity.versionCode,
+            "sourceCommit" to buildIdentity.sourceCommit,
+            "sdkInt" to buildIdentity.sdkInt,
+            "supportedAbis" to buildIdentity.supportedAbis.joinToString(","),
+            "pythonVersion" to buildIdentity.pythonVersion,
+            "runtimeWheelBuildKey" to buildIdentity.runtimeWheelBuildKey,
+            "tokenizerPublicationBuildKey" to buildIdentity.tokenizerPublicationBuildKey,
+            "deviceRuntimeAccepted" to buildIdentity.deviceRuntimeAccepted,
+        )
         // Load-bearing ordering: this is the first task submitted to the process Python executor.
         // It starts Chaquopy and establishes ANKI_MINER_HOME before any engine import.
         pythonRuntime.enqueueFirst(miningRunExecutor)
+        // Installed after the enqueue so nothing displaces the bootstrap as the first task on the
+        // Python executor. Logging before this point is not lost: install() replays the pre-install
+        // buffer, which is the only place a Python startup failure can be recorded at all, because
+        // the engine's own file handler is created inside bootstrap.initialize.
+        AppLog.install(CompositeSink(LogcatSink(), logFileSink))
+        applicationScope.launch(Dispatchers.IO) {
+            try {
+                DiagnosticsBundleJanitor(
+                    File(cacheDir, DiagnosticsBundleJanitor.DIRECTORY_NAME),
+                ).clean()
+            } catch (failure: RuntimeException) {
+                AppLog.w(LogComponent.DIAG, "bundle.janitor", failure, "outcome" to "fail")
+            }
+        }
+        applicationScope.launch {
+            diagnosticsSettings.verboseLogging.distinctUntilChanged().collect { verbose ->
+                val level = if (verbose) LogLevel.DEBUG else LogLevel.INFO
+                AppLog.setMinLevel(level)
+                diagnosticsExecutor.execute {
+                    applyPythonLogLevelSafely(level) { raw -> pyBridge.dispatch(raw, null) }
+                }
+            }
+        }
         miningRunExecutor.execute {
             try {
                 SafInputCacheJanitor(this).removeOrphans()
+            } catch (failure: Exception) {
+                AppLog.w(
+                    LogComponent.MEDIA,
+                    "startup.orphans.saf_input",
+                    failure,
+                    "outcome" to "fail",
+                )
+                // A current run creates collision-resistant names and owns its own cleanup.
+            }
+            try {
                 readingSourceStaging.janitor.removeOrphans()
-            } catch (_: Exception) {
+            } catch (failure: Exception) {
+                AppLog.w(
+                    LogComponent.READING,
+                    "startup.orphans.reading",
+                    failure,
+                    "outcome" to "fail",
+                )
                 // A current run creates collision-resistant names and owns its own cleanup.
             }
         }
@@ -347,7 +462,13 @@ class AnkiMinerApplication : Application() {
         applicationScope.launch {
             try {
                 safBroker.reconcileStartup()
-            } catch (_: Exception) {
+            } catch (failure: Exception) {
+                AppLog.w(
+                    LogComponent.SAF,
+                    "startup.reconcile",
+                    failure,
+                    "outcome" to "fail",
+                )
                 // Best effort only. The first later retain retries reconciliation and surfaces a
                 // provider failure to that picker without crashing process startup.
             }
@@ -382,10 +503,37 @@ class AnkiMinerApplication : Application() {
                     ?: return@runOnExecutor
             try {
                 miningAdmissionGate.evaluate(CoordinatorAnkiCancellation())
-            } catch (_: Exception) {
+            } catch (failure: Exception) {
+                AppLog.w(
+                    LogComponent.MINING,
+                    "admission.refresh",
+                    failure,
+                    "outcome" to "fail",
+                )
                 // The fail-closed admission state remains visible and is rechecked at run start.
             } finally {
                 lease.close()
+            }
+        }
+    }
+
+    /**
+     * Persist the tester logging switch. Scoped to the process, not the Activity, so the write
+     * still completes if the settings screen is torn down the instant after the tap; the collector
+     * in [onCreate] applies whatever lands.
+     */
+    internal fun setVerboseLogging(enabled: Boolean) {
+        applicationScope.launch {
+            try {
+                diagnosticsSettings.setVerboseLogging(enabled)
+            } catch (failure: IOException) {
+                AppLog.w(
+                    LogComponent.SETTINGS,
+                    "verboseLogging.write",
+                    failure,
+                    "enabled" to enabled,
+                    "outcome" to "fail",
+                )
             }
         }
     }
@@ -495,7 +643,13 @@ class AnkiMinerApplication : Application() {
                         true,
                     )
             }
-        } catch (_: RuntimeException) {
+        } catch (failure: RuntimeException) {
+            AppLog.w(
+                LogComponent.ANKI,
+                "target.probe",
+                failure,
+                "outcome" to "fail",
+            )
             AnkiMiningTargetReadiness.Blocked(
                 stringResourceResolver.resolve(R.string.mining_target_inspection_failed),
                 true,

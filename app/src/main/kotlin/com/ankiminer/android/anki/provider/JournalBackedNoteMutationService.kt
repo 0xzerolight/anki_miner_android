@@ -38,6 +38,9 @@ import com.ankiminer.android.anki.protocol.ExactDeckCreateDuplicateScope
 import com.ankiminer.android.anki.protocol.FailedNote
 import com.ankiminer.android.anki.protocol.NotAttemptedNote
 import com.ankiminer.android.anki.protocol.UncertainNote
+import com.ankiminer.android.diagnostics.log.AppLog
+import com.ankiminer.android.diagnostics.log.LogComponent
+import java.util.concurrent.CancellationException
 
 internal data class CreateNotesMutationOutcome(
     val result: CreateNotesResult,
@@ -298,6 +301,7 @@ internal class JournalBackedNoteMutationService(
             val materialization = prepared[index].materialization
             try {
                 journal.materialize(durableRequest.key, materialization)
+                // instrumentation: silent — refusal becomes a journaled aligned failure below
             } catch (_: ActiveNoteMaterializationRefused) {
                 val error = stableInternal("The note media bindings could not be durably admitted")
                 journal.append(
@@ -395,8 +399,31 @@ internal class JournalBackedNoteMutationService(
                             materialization.joinedFields,
                             materialization.providerTagsWire,
                         ),
+                    ).also { receipt ->
+                        if (receipt == null) {
+                            AppLog.w(
+                                LogComponent.JOURNAL,
+                                "note.insert",
+                                Throwable("AnkiDroid returned a null note-insert receipt"),
+                                "outcome" to "fail",
+                                "entry_id" to noteChildId,
+                                "note_ordinal" to index,
+                                "receipt" to "null",
+                            )
+                        }
+                    }
+                } catch (_: CancellationException) {
+                    null
+                } catch (failure: RuntimeException) {
+                    AppLog.e(
+                        LogComponent.JOURNAL,
+                        "note.insert",
+                        failure,
+                        "outcome" to "fail",
+                        "entry_id" to noteChildId,
+                        "note_ordinal" to index,
+                        "receipt" to "exception",
                     )
-                } catch (_: RuntimeException) {
                     null
                 }
             val receipt = NoteInsertReceiptValidator.validate(rawReceipt)
@@ -422,7 +449,16 @@ internal class JournalBackedNoteMutationService(
                     "providerEntry=true;noteId=${receipt.noteId};receipt=canonical",
                 )
             } catch (failure: RuntimeException) {
-                val parent = runCatching { journal.parent(durableRequest.key) }.getOrNull()
+                val parent =
+                    runCatching { journal.parent(durableRequest.key) }
+                        .onFailure { lookupFailure ->
+                            AppLog.ignored(
+                                LogComponent.JOURNAL,
+                                "note.receipt.parent",
+                                "original_receipt_failure_retained",
+                                lookupFailure,
+                            )
+                        }.getOrNull()
                 if (
                     parent?.activeRequestIndex != index ||
                     parent.activeNoteId != receipt.noteId ||
@@ -513,7 +549,16 @@ internal class JournalBackedNoteMutationService(
             // This transaction is the sole attachment-verification and CREATED-row boundary.
             journal.completeVerified(durableRequest.key, index, noteId, "noteId=$noteId;postcheck=exact")
         } catch (failure: RuntimeException) {
-            val parent = runCatching { journal.parent(durableRequest.key) }.getOrNull()
+            val parent =
+                runCatching { journal.parent(durableRequest.key) }
+                    .onFailure { lookupFailure ->
+                        AppLog.ignored(
+                            LogComponent.JOURNAL,
+                            "note.complete.parent",
+                            "original_completion_failure_retained",
+                            lookupFailure,
+                        )
+                    }.getOrNull()
             if (parent?.activeRequestIndex == null && journal.results(durableRequest.key).getOrNull(index) is AlignedResult.NoteCreated) {
                 return null
             }
@@ -628,10 +673,33 @@ internal class JournalBackedNoteMutationService(
                             targetDeckId = intent.targetDeckId,
                         ),
                     )
-                } catch (_: RuntimeException) {
+                } catch (_: CancellationException) {
+                    null
+                } catch (failure: RuntimeException) {
+                    AppLog.e(
+                        LogComponent.JOURNAL,
+                        "card.route",
+                        failure,
+                        "outcome" to "fail",
+                        "entry_id" to childId,
+                        "note_ordinal" to index,
+                        "receipt" to "exception",
+                    )
                     null
                 }
             if (affected != 1) {
+                if (affected != null) {
+                    AppLog.w(
+                        LogComponent.JOURNAL,
+                        "card.route",
+                        Throwable("AnkiDroid returned a non-one card-routing count"),
+                        "outcome" to "fail",
+                        "entry_id" to childId,
+                        "note_ordinal" to index,
+                        "receipt" to "count",
+                        "affected" to affected,
+                    )
+                }
                 val error = postCommitUnknown("AnkiDroid returned no attributable card-routing receipt")
                 journal.completeRouting(
                     childId,

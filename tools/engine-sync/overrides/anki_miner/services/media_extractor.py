@@ -453,6 +453,14 @@ class MediaExtractorService:
         if progress_callback and not was_cancelled:
             progress_callback.on_complete()
 
+        logger.info(
+            "media_extraction_batch outcome=%s attempted=%d ok=%d failed=%d cancelled=%d",
+            "skip" if was_cancelled else ("ok" if len(media_data_list) == completed else "fail"),
+            len(words),
+            len(media_data_list),
+            completed - len(media_data_list),
+            len(words) - completed,
+        )
         return media_data_list
 
     def extract_cover_art(
@@ -705,7 +713,8 @@ class MediaExtractorService:
                     **no_window_kwargs(),  # hide the Windows cmd.exe flash (Issue #79)
                 )
         except (subprocess.SubprocessError, OSError) as e:
-            logger.warning("%s error%s: %s", op_name, suffix, e)
+            logger.debug("%s error%s: %s", op_name, suffix, e)
+            logger.warning("%s error", op_name, exc_info=True)
             return False
         if proc_registry is not None and not proc_registry.register(proc):
             # Cancel raced the spawn: kill the fresh process; the context
@@ -719,17 +728,20 @@ class MediaExtractorService:
             with proc:  # closes pipes and waits on every path — no zombies
                 try:
                     _, stderr = proc.communicate(timeout=timeout)
-                except subprocess.TimeoutExpired:
+                except subprocess.TimeoutExpired as e:
                     _kill_quietly(proc)
                     proc.communicate()  # drain pipes + reap the killed process
-                    logger.warning("%s timed out%s after %ss", op_name, suffix, timeout)
+                    logger.debug("%s timed out%s after %ss", op_name, suffix, timeout)
+                    e.cmd = Path(cmd[0]).name
+                    logger.warning("%s timed out after %ss", op_name, timeout, exc_info=True)
                     return False
                 except (subprocess.SubprocessError, OSError, ValueError) as e:
                     # ValueError covers UnicodeDecodeError from communicate()'s
                     # decode of non-ASCII ffmpeg stderr (defence-in-depth alongside
                     # errors="replace" on the Popen above).
                     _kill_quietly(proc)
-                    logger.warning("%s error%s: %s", op_name, suffix, e)
+                    logger.debug("%s error%s: %s", op_name, suffix, e)
+                    logger.warning("%s error", op_name, exc_info=True)
                     return False
         finally:
             if proc_registry is not None:
@@ -740,7 +752,28 @@ class MediaExtractorService:
             # Killed by a batch cancel — expected, not an ffmpeg failure.
             logger.debug("%s cancelled%s", op_name, suffix)
             return False
-        logger.warning("%s failed%s: ffmpeg exit code %s: %s", op_name, suffix, proc.returncode, stderr)
+        logger.debug(
+            "%s failed%s: argv0=%s word=%s stderr=%s",
+            op_name,
+            suffix,
+            Path(cmd[0]).name,
+            Path(context).stem.rsplit("_", 2)[0] if context else "-",
+            stderr,
+        )
+        logger.warning(
+            "%s failed: argv0=%s ffmpeg exit code %s stderr=%s",
+            op_name,
+            Path(cmd[0]).name,
+            proc.returncode,
+            (
+                stderr.replace(context, "<output>").replace(
+                    Path(context).stem.rsplit("_", 2)[0], "<word>"
+                )
+                if context
+                else stderr
+            )[:2048],
+            exc_info=RuntimeError(f"{op_name} exited with code {proc.returncode}"),
+        )
         return False
 
     def _extract_static_screenshot(

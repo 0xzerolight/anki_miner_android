@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import logging
 import math
+import os
 import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
@@ -20,6 +22,8 @@ from .unicode_contract import (
     is_category_c,
     is_nfc,
 )
+
+logger = logging.getLogger(__name__)
 
 _RESOURCE_ID_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,126}[A-Za-z0-9_-])?$")
 
@@ -482,6 +486,34 @@ def _android_path_overrides(paths: AndroidPaths) -> dict[str, Path]:
     }
 
 
+def _verify_ffmpeg_binary(tool: str, path: Path) -> None:
+    try:
+        resolved = path.resolve(strict=False)
+        stat_result = os.stat(resolved)
+    except (OSError, RuntimeError):
+        logger.error(
+            "ffmpeg_binary_verification_failed outcome=fail tool=%s path=%s reason=stat_failed",
+            tool,
+            path,
+            exc_info=True,
+        )
+        return
+    if not os.access(resolved, os.X_OK):
+        logger.error(
+            "ffmpeg_binary_verification_failed outcome=fail tool=%s path=%s reason=not_executable",
+            tool,
+            resolved,
+            exc_info=PermissionError(f"{tool} binary is not executable"),
+        )
+        return
+    logger.info(
+        "ffmpeg_binary_verified outcome=ok tool=%s path=%s size=%d",
+        tool,
+        resolved,
+        stat_result.st_size,
+    )
+
+
 def map_config_settings(
     settings: Mapping[str, object],
     paths: AndroidPaths,
@@ -604,6 +636,8 @@ def map_config_settings(
 
     engine_config = replace(base, **updates)  # type: ignore[arg-type]
     validate_anki_request_config(engine_config)
+    _verify_ffmpeg_binary("ffmpeg", engine_config.ffmpeg_location)
+    _verify_ffmpeg_binary("ffprobe", engine_config.ffprobe_location)
     return AndroidConfigSnapshot(
         # ``updates`` is validated field-by-field above; mypy cannot preserve
         # those dependent key/value types through a heterogeneous dict.

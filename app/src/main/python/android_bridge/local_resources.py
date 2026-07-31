@@ -12,6 +12,7 @@ from __future__ import annotations
 import contextlib
 import csv
 import json
+import logging
 import os
 import sqlite3
 import stat
@@ -22,6 +23,8 @@ from pathlib import Path, PurePosixPath
 from . import resources as core
 from .bootstrap import require_initialized
 from .protocol import BridgeProtocolError, encode_message
+
+logger = logging.getLogger(__name__)
 
 _FREQUENCY_FORMATS = frozenset({"zip", "csv", "tsv", "txt"})
 _PITCH_FORMATS = frozenset({"zip", "csv", "tsv"})
@@ -1137,6 +1140,7 @@ def _migrate_legacy_pitch_csv(home: Path) -> None:
     except Exception:
         # Desktop intentionally treats a malformed legacy file as a non-fatal
         # startup condition. Inventory below makes the failed migration visible.
+        # instrumentation: intentionally silent — inventory owns malformed legacy visibility
         pass
     finally:
         if operation_root.exists():
@@ -1267,7 +1271,7 @@ def _read_index_meta(index_dir: Path) -> dict[str, str] | None:
             ):
                 return raw
     except (OSError, UnicodeError, json.JSONDecodeError):
-        pass
+        logger.debug("Failed to read resource index sidecar metadata", exc_info=True)
     try:
         connection = sqlite3.connect(f"file:{db_path.as_posix()}?mode=ro", uri=True)
         try:
@@ -1283,7 +1287,7 @@ def _read_index_meta(index_dir: Path) -> dict[str, str] | None:
         ):
             return dict(rows)
     except (sqlite3.Error, OSError):
-        pass
+        logger.debug("Failed to read resource index SQLite metadata", exc_info=True)
     return None
 
 
@@ -1355,7 +1359,7 @@ def _audio_inventory(home: Path) -> list[dict[str, object]]:
         expected_content = child / "content"
         configured_content = Path(meta.get("pack_dir", ""))
         content_available = False
-        with contextlib.suppress(OSError):
+        try:
             content_available = (
                 version == 1
                 and count > 0
@@ -1363,6 +1367,8 @@ def _audio_inventory(home: Path) -> list[dict[str, object]]:
                 and not expected_content.is_symlink()
                 and configured_content == expected_content
             )
+        except OSError:
+            logger.debug("Failed to inspect audio-pack content availability", exc_info=True)
         result.append(
             {
                 "packId": child.name,

@@ -7,6 +7,7 @@ import com.ankiminer.android.data.anki.AnkiSetupFailure
 import com.ankiminer.android.data.resources.ResourceFailure
 import com.ankiminer.android.data.resources.ResourceOperationPhase
 import com.ankiminer.android.data.resources.ResourceOperationProgress
+import com.ankiminer.android.engine.PythonBootstrapStage
 import com.ankiminer.android.engine.PythonRuntimeReadiness
 import com.ankiminer.android.media.SafDocument
 import com.ankiminer.android.mining.MiningFailure
@@ -84,6 +85,7 @@ class TesterDiagnosticsTest {
                                 code = "download_retry_exhausted",
                                 message = "Could not read /private/$privateReadingName",
                                 retryable = true,
+                                faultId = "fbeef1234",
                             ),
                         ankiFailure =
                             AnkiSetupFailure(
@@ -101,8 +103,14 @@ class TesterDiagnosticsTest {
                         video = DocumentSlotState(privateDocument(privateVideoName)),
                         runState =
                             MiningRunState.Failed(
-                                runId = "secret-video-run-id",
-                                failure = MiningFailure("Secret video failure detail", true),
+                                runId = "run_0123456789abcdef0123456789abcdef",
+                                failure =
+                                    MiningFailure(
+                                        "Secret video failure detail",
+                                        true,
+                                        "f0123abcd",
+                                        "foreground_start_failed",
+                                    ),
                                 result = null,
                             ),
                         startPending = true,
@@ -148,6 +156,14 @@ class TesterDiagnosticsTest {
         assertTrue(diagnostics.report.contains("video.pending=start"))
         assertTrue(diagnostics.report.contains("reading.run=starting"))
         assertTrue(diagnostics.report.contains("reading.pending=cancel"))
+        // The fault id is opaque by construction, so reporting it leaks nothing while giving a
+        // pasted report the key that finds the traceback.
+        assertTrue(diagnostics.report.contains("mining.fault_id=f0123abcd"))
+        assertTrue(diagnostics.report.contains("resources.fault_id=fbeef1234"))
+        assertTrue(diagnostics.report.contains("mining.run_id=run_0123456789abcdef0123456789abcdef"))
+        // The code is reported while the message it accompanies is not: the message is localized
+        // free text, the code is neither.
+        assertTrue(diagnostics.report.contains("mining.failure_code=foreground_start_failed"))
         assertTrue(diagnostics.report.length <= 4_096)
 
         listOf(
@@ -155,7 +171,6 @@ class TesterDiagnosticsTest {
             privateVideoName,
             privateReadingName,
             "secret-operation-id",
-            "secret-video-run-id",
             "secret-reading-run-id",
             "Secret video failure detail",
             "secret collection",
@@ -176,6 +191,8 @@ class TesterDiagnosticsTest {
             )
 
         assertTrue(withoutFault.report.contains("anki.last_fault=none"))
+        assertTrue(withoutFault.report.contains("mining.run_id=none"))
+        assertTrue(withoutFault.report.contains("mining.failure_code=none"))
 
         val withFault =
             TesterDiagnosticsBuilder.build(
@@ -192,6 +209,131 @@ class TesterDiagnosticsTest {
                 "anki.last_fault=storeMedia:JournalInvariantViolation @ SqliteStore.reserveMedia:1609",
             ),
         )
+    }
+
+    @Test
+    fun `a run id is reported only once its run has failed`() {
+        val report =
+            TesterDiagnosticsBuilder.build(
+                build = plainIdentity(),
+                setup = SetupUiState(),
+                video =
+                    VideoMiningUiState(
+                        runState =
+                            MiningRunState.Running(
+                                runId = "run_00000000000000000000000000000001",
+                                progress = MiningProgress(current = 1, total = 2, description = "Mining"),
+                            ),
+                    ),
+                // A second in-flight state, and a different one: the main fixture's failed video
+                // lane is scanned first, so no other test can reach a non-failed lane at all.
+                reading =
+                    ReadingMiningUiState(
+                        runState =
+                            MiningRunState.Starting(
+                                runId = "run_00000000000000000000000000000002",
+                                progress = null,
+                            ),
+                    ),
+            ).report
+
+        // A run still in flight has nothing to look up yet, and reporting its id would make the
+        // line mean two different things depending on when Share was pressed.
+        assertTrue(report, report.contains("video.run=running"))
+        assertTrue(report, report.contains("reading.run=starting"))
+        assertTrue(report, report.contains("mining.run_id=none"))
+    }
+
+    @Test
+    fun `an over-long failure code is cut to a prefix rather than dropped`() {
+        // The engine's terminal code pattern is length-unbounded, so this is reachable from Python.
+        val longCode = "e".repeat(70)
+        val report =
+            TesterDiagnosticsBuilder.build(
+                build = plainIdentity(),
+                setup = SetupUiState(),
+                video =
+                    VideoMiningUiState(
+                        runState =
+                            MiningRunState.Failed(
+                                runId = null,
+                                failure = MiningFailure("Mining failed", false, null, longCode),
+                                result = null,
+                            ),
+                    ),
+                reading = ReadingMiningUiState(),
+            ).report
+
+        assertTrue(report, report.contains("mining.failure_code=${"e".repeat(64)}\n"))
+
+        // A code outside the alphabet is still refused outright: truncating is for length only.
+        val hostile =
+            TesterDiagnosticsBuilder.build(
+                build = plainIdentity(),
+                setup = SetupUiState(),
+                video =
+                    VideoMiningUiState(
+                        runState =
+                            MiningRunState.Failed(
+                                runId = null,
+                                failure = MiningFailure("Mining failed", false, null, "Engine Error!"),
+                                result = null,
+                            ),
+                    ),
+                reading = ReadingMiningUiState(),
+            ).report
+
+        assertTrue(hostile, hostile.contains("mining.failure_code=none\n"))
+    }
+
+    @Test
+    fun `a failed python runtime is reported with its stage and fault`() {
+        val report =
+            TesterDiagnosticsBuilder.build(
+                build = plainIdentity(),
+                setup =
+                    SetupUiState(
+                        python =
+                            PythonRuntimeReadiness.Failed(
+                                PythonBootstrapStage.HANDSHAKE,
+                                "IllegalStateException @ ChaquopyPythonRuntime.initialize:88",
+                            ),
+                    ),
+                video = VideoMiningUiState(),
+                reading = ReadingMiningUiState(),
+            ).report
+
+        // Trailing newline: the value has to be the whole line, because separating a missing wheel
+        // from a home mismatch is the entire point of carrying it.
+        assertTrue(
+            report,
+            report.contains(
+                "python.readiness=failed:handshake:IllegalStateException @ " +
+                    "ChaquopyPythonRuntime.initialize:88\n",
+            ),
+        )
+    }
+
+    @Test
+    fun `a python fault cannot break the report grammar`() {
+        val report =
+            TesterDiagnosticsBuilder.build(
+                build = plainIdentity(),
+                setup =
+                    SetupUiState(
+                        python =
+                            PythonRuntimeReadiness.Failed(
+                                PythonBootstrapStage.START,
+                                "UnsatisfiedLinkError\nanki.failure=forged",
+                            ),
+                    ),
+                video = VideoMiningUiState(),
+                reading = ReadingMiningUiState(),
+            ).report
+
+        // Both the newline and the `=` are replaced, so a fault token can neither end the line early
+        // nor forge a second key on it.
+        assertTrue(report, report.contains("python.readiness=failed:start:UnsatisfiedLinkError_anki.failure_forged\n"))
     }
 
     private fun plainIdentity(): TesterBuildIdentity =

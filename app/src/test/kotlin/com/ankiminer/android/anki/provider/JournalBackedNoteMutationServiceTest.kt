@@ -33,14 +33,34 @@ import com.ankiminer.android.anki.protocol.FailedNote
 import com.ankiminer.android.anki.protocol.ReleaseState
 import com.ankiminer.android.anki.protocol.UncertainNote
 import com.ankiminer.android.anki.protocol.VerifyTargetRequest
+import com.ankiminer.android.diagnostics.log.AppLog
+import com.ankiminer.android.diagnostics.log.LogLevel
+import com.ankiminer.android.diagnostics.log.NoOpSink
+import com.ankiminer.android.diagnostics.log.RecordingLogSink
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 
 class JournalBackedNoteMutationServiceTest {
+    private val recorded = RecordingLogSink()
+
+    @Before
+    fun installRecordingSink() {
+        AppLog.setMinLevel(LogLevel.INFO)
+        AppLog.install(NoOpSink)
+        AppLog.install(recorded)
+    }
+
+    @After
+    fun detachRecordingSink() {
+        AppLog.install(NoOpSink)
+    }
+
     @Test
     fun `exact note receipt readback and card routing produce one durable created row`() =
         withHarness { harness ->
@@ -155,6 +175,44 @@ class JournalBackedNoteMutationServiceTest {
     }
 
     @Test
+    fun `note insert exception and genuine null receipt produce different records`() {
+        withHarness { harness ->
+            harness.provider.insertBlock = { throw IllegalStateException("insert fault") }
+            harness.service.create(harness.owner, harness.request())
+        }
+        withHarness { harness ->
+            harness.provider.noteReceipt = null
+            harness.service.create(harness.owner, harness.request())
+        }
+
+        val records = recorded.records.filter { it.contains("op=note.insert") }
+        assertEquals(2, records.size)
+        assertTrue(
+            records[0],
+            records[0].contains(
+                " E run=- c=journal op=note.insert outcome=fail entry_id=100 " +
+                    "note_ordinal=0 receipt=exception",
+            ),
+        )
+        assertTrue(records[0], records[0].contains("java.lang.IllegalStateException: insert fault"))
+        assertTrue(
+            records[1],
+            records[1].contains(
+                " W run=- c=journal op=note.insert outcome=fail entry_id=100 " +
+                    "note_ordinal=0 receipt=null",
+            ),
+        )
+        assertTrue(
+            records[1],
+            records[1].contains(
+                "java.lang.Throwable: AnkiDroid returned a null note-insert receipt",
+            ),
+        )
+        assertFalse(records[1], records[1].contains("IllegalStateException"))
+        assertFalse(records.joinToString(), records.joinToString().contains("猫"))
+    }
+
+    @Test
     fun `conditional template subset already in target completes without a routing write`() =
         withHarness { harness ->
             harness.reads.cards = listOf(CardIdentity(CARD_ID, NOTE_ID, 2, TARGET.deck.id))
@@ -182,6 +240,46 @@ class JournalBackedNoteMutationServiceTest {
             assertEquals(RoutingIntentState.COMMIT_UNCERTAIN, harness.journal.intents.single().state)
             assertEquals("post_commit_uncertain", outcome.result.error?.code?.wireName)
         }
+
+    @Test
+    fun `card route exception and genuine count receipt produce different records`() {
+        withHarness { harness ->
+            harness.reads.cards = listOf(CardIdentity(CARD_ID, NOTE_ID, 0, DEFAULT_DECK_ID))
+            harness.provider.routeBlock = { throw IllegalStateException("route fault") }
+            harness.service.create(harness.owner, harness.request())
+        }
+        withHarness { harness ->
+            harness.reads.cards = listOf(CardIdentity(CARD_ID, NOTE_ID, 0, DEFAULT_DECK_ID))
+            harness.provider.routeBlock = { 0 }
+            harness.service.create(harness.owner, harness.request())
+        }
+
+        val records = recorded.records.filter { it.contains("op=card.route") }
+        assertEquals(2, records.size)
+        assertTrue(
+            records[0],
+            records[0].contains(
+                " E run=- c=journal op=card.route outcome=fail entry_id=101 " +
+                    "note_ordinal=0 receipt=exception",
+            ),
+        )
+        assertTrue(records[0], records[0].contains("java.lang.IllegalStateException: route fault"))
+        assertTrue(
+            records[1],
+            records[1].contains(
+                " W run=- c=journal op=card.route outcome=fail entry_id=101 " +
+                    "note_ordinal=0 receipt=count affected=0",
+            ),
+        )
+        assertTrue(
+            records[1],
+            records[1].contains(
+                "java.lang.Throwable: AnkiDroid returned a non-one card-routing count",
+            ),
+        )
+        assertFalse(records[1], records[1].contains("IllegalStateException"))
+        assertFalse(records.joinToString(), records.joinToString().contains("猫"))
+    }
 
     @Test
     fun `count-one routing with unreadable postcheck remains uncertain and is not reissued`() =

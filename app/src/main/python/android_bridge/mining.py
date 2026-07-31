@@ -11,7 +11,6 @@ configured and keep writing cards from a memory-starved interpreter. Mirrors
 
 from __future__ import annotations
 
-import contextlib
 import logging
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import ExitStack
@@ -24,6 +23,7 @@ from .config_map import (
     AndroidPaths,
     map_config_settings,
 )
+from .faults import record_fault
 from .jobs import JobRegistry, registry
 from .protocol import (
     BridgeProtocolError,
@@ -187,12 +187,16 @@ class _ExpressionAudioSourceChain:
         for fetcher in self._fetchers:
             close = getattr(fetcher, "close", None)
             if callable(close):
-                with contextlib.suppress(Exception):
+                try:
                     close()
+                except Exception:
+                    logger.debug("Expression-audio source close failed", exc_info=True)
         close_lifetime = getattr(self._cache_lifetime, "close", None)
         if callable(close_lifetime):
-            with contextlib.suppress(Exception):
+            try:
                 close_lifetime()
+            except Exception:
+                logger.debug("Expression-audio cache lifetime close failed", exc_info=True)
 
 
 class _PostProcessCleanupError(Exception):
@@ -305,8 +309,14 @@ def _map_config(request: _VideoRequest, files_dir: Path) -> object:
     ).engine_config
 
 
-def _show_optional_failure(presenter: object, message: str, error: Exception) -> None:
-    logger.warning("%s: %s", message, error)
+def _show_optional_failure(
+    presenter: object,
+    message: str,
+    error: Exception,
+    *,
+    service: str,
+) -> None:
+    logger.warning("optional_service_failed service=%s message=%s", service, message, exc_info=error)
     presenter.show_warning(f"{message}: {error}")
 
 
@@ -531,7 +541,12 @@ def _build_processor(
         try:
             dictionary_registry.load()
         except OSError as error:
-            _show_optional_failure(adapters.presenter, "Couldn't scan dictionaries folder", error)
+            _show_optional_failure(
+                adapters.presenter,
+                "Couldn't scan dictionaries folder",
+                error,
+                service="dictionary_registry",
+            )
         providers = _android_dictionary_provider_chain(
             dictionary_registry.build_provider_chain(config),
             adapters.cancel_event.is_set,
@@ -548,7 +563,12 @@ def _build_processor(
             except MemoryError:
                 raise  # never an optional-source miss; see the module note
             except Exception as error:
-                _show_optional_failure(adapters.presenter, "Couldn't load dictionary chain", error)
+                _show_optional_failure(
+                    adapters.presenter,
+                    "Couldn't load dictionary chain",
+                    error,
+                    service="dictionary_chain",
+                )
 
         subtitle_parser = SubtitleParserService(
             config,
@@ -580,7 +600,12 @@ def _build_processor(
             except MemoryError:
                 raise  # never an optional-source miss; see the module note
             except Exception as error:
-                _show_optional_failure(adapters.presenter, "Couldn't load pitch accent data", error)
+                _show_optional_failure(
+                    adapters.presenter,
+                    "Couldn't load pitch accent data",
+                    error,
+                    service="pitch_accent",
+                )
                 pitch_accent_service = None
 
         if config.frequency_active:
@@ -600,7 +625,12 @@ def _build_processor(
             except Exception as error:
                 for provider in candidates:
                     _close_without_masking(provider, "frequency provider")
-                _show_optional_failure(adapters.presenter, "Couldn't load frequency data", error)
+                _show_optional_failure(
+                    adapters.presenter,
+                    "Couldn't load frequency data",
+                    error,
+                    service="frequency",
+                )
                 frequency_service = None
 
         try:
@@ -610,7 +640,12 @@ def _build_processor(
         except MemoryError:
             raise  # never an optional-source miss; see the module note
         except Exception as error:
-            _show_optional_failure(adapters.presenter, "Couldn't initialize known word database", error)
+            _show_optional_failure(
+                adapters.presenter,
+                "Couldn't initialize known word database",
+                error,
+                service="known_words",
+            )
             known_word_db = None
 
         word_list_service = None
@@ -624,7 +659,12 @@ def _build_processor(
             except MemoryError:
                 raise  # never an optional-source miss; see the module note
             except Exception as error:
-                _show_optional_failure(adapters.presenter, "Couldn't load word lists", error)
+                _show_optional_failure(
+                    adapters.presenter,
+                    "Couldn't load word lists",
+                    error,
+                    service="word_lists",
+                )
                 word_list_service = None
 
         wordset_service = None
@@ -637,7 +677,12 @@ def _build_processor(
             except MemoryError:
                 raise  # never an optional-source miss; see the module note
             except Exception as error:
-                _show_optional_failure(adapters.presenter, "Couldn't load name wordsets", error)
+                _show_optional_failure(
+                    adapters.presenter,
+                    "Couldn't load name wordsets",
+                    error,
+                    service="name_wordsets",
+                )
                 wordset_service = None
 
         stats_service = StatsService(config.stats_db_path)
@@ -769,15 +814,32 @@ def _exception_terminal(
     error: BaseException,
     *,
     cancelled: bool,
+    log: logging.Logger,
 ) -> tuple[str, str]:
+    """Classify a raised failure into a terminal, logging it under a fault id.
+
+    ``log`` is the calling lane's logger, required rather than defaulted so the
+    record's logger name always names the lane that failed. The caller must not
+    log the same exception again, or the fault id and the traceback land in
+    different records.
+    """
+
     outcome = "cancelled" if cancelled else "failed"
+    fault_id: str | None = None
     if cancelled:
         code = "cancelled"
         message = str(error) or "Mining was cancelled"
     elif isinstance(error, BridgeProtocolError):
         code = error.code
         message = str(error)
+        # A stable machine code and a deliberate message already identify this
+        # failure, so it needs a traceback but not a correlation key.
+        log.error("Mining failed with protocol error code=%s outcome=fail", code, exc_info=error)
     else:
+        # Record before importing the engine: this import is itself a known
+        # failure mode (ANKI_MINER_HOME ordering, the PyQt6 shim), and if it
+        # raises, the exception being classified must still have left a record.
+        fault_id = record_fault(log, "Mining failed", error)
         # Only deliberate engine-domain messages cross the public boundary.
         # Raw RuntimeError/OSError text can contain filesystem/provider detail.
         from anki_miner.exceptions.base import AnkiMinerException
@@ -788,13 +850,16 @@ def _exception_terminal(
         else:
             code = "internal_error"
             message = "Internal mining failure"
+    terminal_error: dict[str, object] = {"code": code, "message": message}
+    if fault_id is not None:
+        terminal_error["faultId"] = fault_id
     return outcome, encode_message(
         "mining.terminal",
         {
             "runId": run_id,
             "outcome": outcome,
             "result": None,
-            "error": {"code": code, "message": message},
+            "error": terminal_error,
         },
     )
 
@@ -847,6 +912,13 @@ def run_video(
             if adapters.cancel_event.is_set():
                 raise AnkiOperationCancelled("runVideo", "Mining was cancelled", False)
             config = _map_config(request, files_dir)
+            from anki_miner.utils.ffmpeg_resolver import resolve_ffmpeg
+
+            if resolve_ffmpeg(config) == "ffmpeg":
+                logger.error(
+                    "ffmpeg_fallback_to_path outcome=fail",
+                    exc_info=RuntimeError("Bundled ffmpeg resolved to the PATH fallback"),
+                )
             if adapters.cancel_event.is_set():
                 raise AnkiOperationCancelled("runVideo", "Mining was cancelled", False)
             result = _process_episode(request, config, adapters)
@@ -854,10 +926,9 @@ def run_video(
         except _PostProcessCleanupError as error:
             outcome, terminal = _cleanup_failure_terminal(handle.run_id, error.result)
         except AnkiOperationCancelled as error:
-            outcome, terminal = _exception_terminal(handle.run_id, error, cancelled=True)
+            outcome, terminal = _exception_terminal(handle.run_id, error, cancelled=True, log=logger)
         except Exception as error:
-            logger.exception("Video mining failed")
-            outcome, terminal = _exception_terminal(handle.run_id, error, cancelled=False)
+            outcome, terminal = _exception_terminal(handle.run_id, error, cancelled=False, log=logger)
     finally:
         owner.finish(handle.run_id)
 

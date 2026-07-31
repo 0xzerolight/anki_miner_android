@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import android_bridge.bootstrap as bootstrap
@@ -8,6 +9,7 @@ import android_bridge.tokenizer_selection as tokenizer_selection
 import android_bridge.unidic_resource as unidic_resource
 import pytest
 from android_bridge import boundary
+from android_bridge.faults import FAULT_ID_PATTERN
 from android_bridge.protocol import decode_envelope, encode_message
 from android_bridge.unidic_resource import (
     UNIDIC_REQUIRED_FILES,
@@ -345,6 +347,7 @@ def test_registration_internal_error_is_redacted_by_guarded_boundary(
     raw = _dispatch(_payload("/unidic"))
     response = decode_envelope(raw, expected_type="bridge.error")
 
+    assert re.fullmatch(FAULT_ID_PATTERN, response.payload.pop("faultId"))
     assert response.payload == {
         "code": "internal_error",
         "message": "Internal bridge failure",

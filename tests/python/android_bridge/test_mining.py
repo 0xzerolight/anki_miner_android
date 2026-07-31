@@ -3,6 +3,7 @@ from __future__ import annotations
 import ast
 import importlib
 import json
+import re
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -13,6 +14,7 @@ import android_bridge.jobs as jobs_module
 import android_bridge.mining as mining
 import pytest
 from android_bridge.anki_adapter import AnkiOperationCancelled
+from android_bridge.faults import FAULT_ID_PATTERN
 from android_bridge.jobs import JobRegistry
 from android_bridge.protocol import BridgeProtocolError, decode_envelope, encode_message
 
@@ -273,6 +275,58 @@ def test_registration_callback_exception_is_protocol_error_and_releases_job(
     assert registry.active_run_id is None
 
 
+def test_synchronous_callback_failure_has_one_terminal_stack_owner(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    from anki_miner.utils import ffmpeg_resolver
+
+    registry = JobRegistry()
+    monkeypatch.setattr(mining, "_ensure_runtime_ready", lambda: Path("/files"))
+    monkeypatch.setattr(mining, "_map_config", lambda *_: object())
+    monkeypatch.setattr(ffmpeg_resolver, "resolve_ffmpeg", lambda _config: "/native/libffmpeg.so")
+
+    class ExplodingCallbacks(RecordingCallbacks):
+        def ankiVerifyTarget(self, _raw: str) -> str:
+            raise RuntimeError("private callback failure")
+
+    def process(_request: object, _config: object, adapters: object) -> object:
+        adapters.anki.verify_target({})
+        raise AssertionError("unreachable")
+
+    monkeypatch.setattr(mining, "_process_episode", process)
+    callbacks = ExplodingCallbacks(registry=registry)
+
+    with caplog.at_level("ERROR"):
+        returned = mining.run_video(_request(), callbacks, job_registry=registry)
+
+    terminal = decode_envelope(returned, expected_type="mining.terminal")
+    assert terminal.payload["error"]["code"] == "callback_failed"
+    owners = [record for record in caplog.records if record.exc_info]
+    assert len(owners) == 1
+    assert owners[0].name == mining.logger.name
+    assert "code=callback_failed" in owners[0].getMessage()
+    assert "outcome=fail" in owners[0].getMessage()
+    assert "private callback failure" in caplog.text
+
+
+def test_ffmpeg_path_fallback_error_has_outcome_and_throwable(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    registry = JobRegistry()
+    callbacks = RecordingCallbacks(registry=registry)
+    _stub_execution(monkeypatch, FakeResult())
+
+    with caplog.at_level("ERROR", logger=mining.logger.name):
+        mining.run_video(_request(), callbacks, job_registry=registry)
+
+    fallback = [record for record in caplog.records if "ffmpeg_fallback_to_path" in record.msg]
+    assert len(fallback) == 1
+    assert "outcome=fail" in fallback[0].getMessage()
+    assert fallback[0].exc_info is not None
+
+
 def test_cancellation_raced_through_registration_skips_expensive_composition(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -496,11 +550,13 @@ def test_ordinary_failure_after_admission_becomes_failed_terminal(
     terminal = decode_envelope(returned, expected_type="mining.terminal")
     assert terminal.payload["outcome"] == "failed"
     assert terminal.payload["result"] is None
-    assert terminal.payload["error"] == (
-        {"code": "invalid_config_field", "message": "bad setting"}
-        if during == "map"
-        else {"code": "internal_error", "message": "Internal mining failure"}
-    )
+    error = terminal.payload["error"]
+    if during == "map":
+        # A protocol error already names itself; it gets no correlation key.
+        assert error == {"code": "invalid_config_field", "message": "bad setting"}
+    else:
+        assert re.fullmatch(FAULT_ID_PATTERN, error.pop("faultId"))
+        assert error == {"code": "internal_error", "message": "Internal mining failure"}
     if during == "process":
         assert "engine exploded" not in returned
     assert callbacks.terminals == [("error", returned)]
@@ -1192,6 +1248,7 @@ def test_offline_dictionary_error_is_reworded_for_android() -> None:
         "run_" + "a" * 32,
         SetupError(_OFFLINE_DICTIONARY_REQUIRED_MESSAGE),
         cancelled=False,
+        log=mining.logger,
     )
     payload = json.loads(terminal)["payload"]
     assert payload["error"]["code"] == "engine_error"
@@ -1205,8 +1262,61 @@ def test_offline_dictionary_error_is_reworded_for_android() -> None:
         "run_" + "b" * 32,
         SetupError("Something else went wrong"),
         cancelled=False,
+        log=mining.logger,
     )
     assert json.loads(other)["payload"]["error"]["message"] == "Something else went wrong"
+
+
+def test_raised_failures_carry_a_fault_id_matching_their_logged_traceback(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    pytest.importorskip("requests")
+    from anki_miner.exceptions import SetupError
+
+    with caplog.at_level("ERROR", logger=mining.logger.name):
+        _outcome, engine_terminal = mining._exception_terminal(
+            "run_" + "a" * 32,
+            SetupError("Something else went wrong"),
+            cancelled=False,
+            log=mining.logger,
+        )
+        _outcome, internal_terminal = mining._exception_terminal(
+            "run_" + "b" * 32,
+            RuntimeError("secret /storage/emulated/0/episode.mkv"),
+            cancelled=False,
+            log=mining.logger,
+        )
+        _outcome, cancelled_terminal = mining._exception_terminal(
+            "run_" + "c" * 32,
+            AnkiOperationCancelled("createNotes", "stopped", False),
+            cancelled=True,
+            log=mining.logger,
+        )
+
+    engine_error = json.loads(engine_terminal)["payload"]["error"]
+    internal_error = json.loads(internal_terminal)["payload"]["error"]
+    engine_fault = engine_error.pop("faultId")
+    internal_fault = internal_error.pop("faultId")
+
+    # Messages stay byte-identical: the id rides beside them, never inside them.
+    assert engine_error == {"code": "engine_error", "message": "Something else went wrong"}
+    assert internal_error == {"code": "internal_error", "message": "Internal mining failure"}
+    assert json.loads(cancelled_terminal)["payload"]["error"] == {
+        "code": "cancelled",
+        "message": "stopped",
+    }
+
+    assert re.fullmatch(FAULT_ID_PATTERN, engine_fault)
+    assert re.fullmatch(FAULT_ID_PATTERN, internal_fault)
+    assert engine_fault != internal_fault
+    assert "secret" not in internal_terminal
+    assert "/storage/emulated/0" not in internal_terminal
+
+    faults = [record for record in caplog.records if record.exc_info]
+    assert len(faults) == 2
+    assert [engine_fault in record.getMessage() for record in faults] == [True, False]
+    assert [internal_fault in record.getMessage() for record in faults] == [False, True]
+    assert "secret /storage/emulated/0/episode.mkv" in caplog.text
 
 
 def test_runtime_composition_injects_only_android_video_services(

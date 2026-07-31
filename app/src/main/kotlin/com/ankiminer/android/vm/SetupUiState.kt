@@ -187,7 +187,7 @@ internal data class SetupUiState(
                 python == PythonRuntimeReadiness.Pending ||
                     python == PythonRuntimeReadiness.Starting ->
                     MiningReadinessAction.WAIT
-                python == PythonRuntimeReadiness.Failed ->
+                python is PythonRuntimeReadiness.Failed ->
                     MiningReadinessAction.CHECK_AGAIN
                 resourceStartup == ResourceStartupReadiness.PENDING ||
                     resourceStartup == ResourceStartupReadiness.RECOVERING ->

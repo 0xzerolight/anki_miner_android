@@ -124,6 +124,7 @@ class SafJobFileOwner internal constructor(
             operationCancellation.invokeOnCancellation {
                 try {
                     descriptor.close()
+                    // instrumentation: silent — owner cleanup re-reads the close-once failure
                 } catch (_: Exception) {
                     // cleanupFailedOpen re-reads the close-once wrapper's stored failure.
                 }

@@ -383,6 +383,7 @@ internal class SafSelectionOwnershipTransaction(
             withContext(NonCancellable) {
                 broker.releaseReadAccess(uri)
             }
+            // instrumentation: silent — durable inventory owns eventual SAF release retry
         } catch (_: Exception) {
             broker.releaseReadAccessEventually(uri)
         }

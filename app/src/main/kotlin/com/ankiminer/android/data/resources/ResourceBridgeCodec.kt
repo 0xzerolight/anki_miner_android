@@ -25,6 +25,9 @@ object ResourceBridgeCodec {
     private val messageType = Regex("[a-z][a-z0-9]*(?:\\.[a-z][a-z0-9]*)+")
     private val pitchInstalledFormats = setOf("yomitan-pitch", "csv", "tsv")
 
+    /** Same shape android_bridge/faults.py mints and BridgeJsonCodec enforces. */
+    private val faultId = Regex("f[0-9a-f]{8}")
+
     private val factory: JsonFactory =
         JsonFactoryBuilder()
             .streamReadConstraints(
@@ -820,12 +823,29 @@ object ResourceBridgeCodec {
         val envelope = decodeEnvelope(raw)
         if (envelope.first == "bridge.error") {
             val error = envelope.second
-            if (error.keys !in setOf(setOf("code", "message"), setOf("code", "message", "requestType"))) {
+            // Every resource.* operation shares boundary.py's generic exception arm, so this lane
+            // sees faultId too. Rejecting it here would replace the Python code with
+            // invalid_resource_response, and that code reaches a user-visible string.
+            val required = setOf("code", "message")
+            val accepted =
+                setOf(
+                    required,
+                    required + "requestType",
+                    required + "faultId",
+                    required + "requestType" + "faultId",
+                )
+            if (error.keys !in accepted) {
                 invalid("Bridge error payload is invalid")
             }
             val code = text(error.getValue("code"), "error code")
             val message = boundedText(error.getValue("message"), "error message", 16 * 1024)
-            val bridgeFailure = ResourceBridgeException(code, message)
+            val decodedFaultId =
+                error["faultId"]?.let { value ->
+                    text(value, "error fault id").also {
+                        if (!faultId.matches(it)) invalid("Bridge error fault id is invalid")
+                    }
+                }
+            val bridgeFailure = ResourceBridgeException(code, message, decodedFaultId)
             if (code == "insufficient_storage") {
                 throw ResourceStorageException(
                     requiredBytes = null,
@@ -855,9 +875,17 @@ object ResourceBridgeCodec {
         } catch (failure: ResourceBridgeException) {
             throw failure
         } catch (failure: JsonParseException) {
-            throw ResourceBridgeException("invalid_resource_json", "Resource bridge returned malformed JSON")
+            throw ResourceBridgeException(
+                "invalid_resource_json",
+                "Resource bridge returned malformed JSON",
+                cause = failure,
+            )
         } catch (failure: Exception) {
-            throw ResourceBridgeException("invalid_resource_json", "Resource bridge returned invalid JSON")
+            throw ResourceBridgeException(
+                "invalid_resource_json",
+                "Resource bridge returned invalid JSON",
+                cause = failure,
+            )
         }
     }
 
@@ -970,8 +998,8 @@ object ResourceBridgeCodec {
         value.also {
             val uri = try {
                 URI(it)
-            } catch (_: Exception) {
-                invalid("Invalid HTTPS URL")
+            } catch (failure: Exception) {
+                invalid("Invalid HTTPS URL", failure)
             }
             if (
                 uri.scheme != "https" || uri.host.isNullOrBlank() || uri.userInfo != null ||
@@ -981,8 +1009,11 @@ object ResourceBridgeCodec {
             }
         }
 
-    private fun invalid(message: String): Nothing =
-        throw ResourceBridgeException("invalid_resource_response", message)
+    private fun invalid(
+        message: String,
+        cause: Throwable? = null,
+    ): Nothing =
+        throw ResourceBridgeException("invalid_resource_response", message, cause = cause)
 }
 
 /** Kotlin copy of the frozen Python catalog. Equality is checked before network access. */

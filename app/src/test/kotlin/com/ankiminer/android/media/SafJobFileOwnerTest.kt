@@ -1,5 +1,9 @@
 package com.ankiminer.android.media
 
+import com.ankiminer.android.diagnostics.log.AppLog
+import com.ankiminer.android.diagnostics.log.LogLevel
+import com.ankiminer.android.diagnostics.log.NoOpSink
+import com.ankiminer.android.diagnostics.log.RecordingLogSink
 import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.IOException
@@ -134,6 +138,40 @@ class SafJobFileOwnerTest {
             assertTrue(first.closed)
             assertTrue(second.closed)
         } finally {
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun closeFailurePreservesAggregateSuppressedChainWithoutPrematureLog() {
+        val recorded = RecordingLogSink()
+        AppLog.setMinLevel(LogLevel.DEBUG)
+        AppLog.install(NoOpSink)
+        AppLog.install(recorded)
+        val directory = Files.createTempDirectory("saf-owner-close-log").toFile()
+        try {
+            val first = FakeDescriptor(byteArrayOf(), closeFailure = IOException("first"))
+            val second = FakeDescriptor(byteArrayOf(), closeFailure = IOException("second"))
+            val descriptors = ArrayDeque(listOf(first, second))
+            var caches = 0
+            val owner =
+                SafJobFileOwner(
+                    DescriptorOpener { _, _ -> descriptors.removeFirst() },
+                    CacheFileFactory { suffix ->
+                        caches += 1
+                        File(directory, "copy-$caches$suffix").apply { createNewFile() }
+                    },
+                )
+            owner.openVideoUri("content://test/one")
+            owner.openVideoUri("content://test/two")
+
+            val failure = assertThrows(IOException::class.java) { owner.close() }
+
+            assertEquals("second", failure.message)
+            assertEquals(listOf("first"), failure.suppressed.map { it.message })
+            assertTrue(recorded.records.isEmpty())
+        } finally {
+            AppLog.install(NoOpSink)
             directory.deleteRecursively()
         }
     }

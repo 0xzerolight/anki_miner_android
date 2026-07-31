@@ -13,6 +13,7 @@ import android.os.DeadObjectException
 import android.os.Looper
 import android.os.OperationCanceledException
 import android.os.RemoteException
+import com.ankiminer.android.diagnostics.log.LogContext
 import com.ichi2.anki.FlashCardsContract
 import com.ichi2.anki.api.Utils
 import java.util.concurrent.ScheduledThreadPoolExecutor
@@ -68,7 +69,13 @@ internal object RealProviderDeadlineScheduler : ProviderDeadlineScheduler {
         delayMs: Long,
         action: () -> Unit,
     ): CancellationRegistration {
-        val future = executor.schedule(action, delayMs, TimeUnit.MILLISECONDS)
+        val runId = LogContext.runId()
+        val future =
+            executor.schedule(
+                { LogContext.withRunId(runId, action) },
+                delayMs,
+                TimeUnit.MILLISECONDS,
+            )
         return CancellationRegistration { future.cancel(false) }
     }
 }

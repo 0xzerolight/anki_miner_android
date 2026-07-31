@@ -250,6 +250,21 @@ data class CurationSessionState(
 data class MiningFailure(
     val message: String,
     val retryable: Boolean,
+    /**
+     * Opaque key joining this failure to the Python traceback in the exported log. Defaulted so a
+     * Kotlin-side failure, which has no Python traceback to point at, constructs unchanged.
+     */
+    val faultId: String? = null,
+    /**
+     * Stable snake_case name of what failed, for diagnostics only — never shown to the user, and no
+     * UI copy may be derived from it.
+     *
+     * [message] is localized and is the only account of the failure the UI shows, so on a non-English
+     * device the failure is described in a language the maintainer may not read; two different
+     * failures can also resolve to the same string. This is the locale-independent half. It is a
+     * code, never a throwable: this class is compared by value in the JVM tests.
+     */
+    val diagnostic: String? = null,
 ) {
     init {
         require(message.isNotBlank())

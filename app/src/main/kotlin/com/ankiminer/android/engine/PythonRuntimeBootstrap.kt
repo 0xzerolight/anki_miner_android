@@ -1,5 +1,8 @@
 package com.ankiminer.android.engine
 
+import com.ankiminer.android.diagnostics.compactFaultToken
+import com.ankiminer.android.diagnostics.log.AppLog
+import com.ankiminer.android.diagnostics.log.LogComponent
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.Executor
@@ -15,8 +18,60 @@ internal sealed interface PythonRuntimeReadiness {
 
     data class Ready(val home: String) : PythonRuntimeReadiness
 
-    data object Failed : PythonRuntimeReadiness
+    /**
+     * A missing ABI wheel, a broken Chaquopy asset set, a home mismatch and an OOM are the same
+     * catastrophic state to the UI — one line, `status_failed_restart`, for all four — but completely
+     * different bugs. The tester report is the only place [stage] and [fault] are shown at all.
+     *
+     * [fault] is a [compactFaultToken], never the throwable: this value is compared by the JVM tests
+     * and a `Throwable` field would give the data class identity equality.
+     */
+    data class Failed(
+        val stage: PythonBootstrapStage,
+        val fault: String,
+    ) : PythonRuntimeReadiness
 }
+
+/** How far Chaquopy startup got before it failed. */
+internal enum class PythonBootstrapStage {
+    ENQUEUE,
+    START,
+    DISPATCH,
+    HANDSHAKE,
+}
+
+/**
+ * Stage tag for a failure raised inside the Android initializer, which the generic
+ * [PythonRuntimeBootstrapGate] cannot know on its own.
+ *
+ * Its only producer, [pythonBootstrapStage], never tags an [Error] — see there for why. The
+ * constructor cannot enforce that, so the gate re-checks the unwrapped cause before deciding whether
+ * to rethrow.
+ */
+internal class PythonBootstrapFailure(
+    val stage: PythonBootstrapStage,
+    cause: Throwable,
+) : Exception(cause)
+
+/**
+ * Tags whatever [block] throws with [stage].
+ *
+ * Catches [Exception] rather than [Throwable] on purpose. `Python.start` raises
+ * `UnsatisfiedLinkError` when the ABI has no native wheel — the very failure this tagging exists to
+ * identify — and [PythonRuntimeBootstrapGate.enqueueFirst] rethrows an [Error] out of the bootstrap
+ * runnable so the process does not carry on over a half-loaded runtime. Reboxing an [Error] in an
+ * [Exception] subclass would make that rethrow unreachable.
+ */
+internal inline fun <T> pythonBootstrapStage(
+    stage: PythonBootstrapStage,
+    block: () -> T,
+): T =
+    try {
+        block()
+    } catch (failure: Exception) {
+        throw PythonBootstrapFailure(stage, failure)
+    }
+
 internal class PythonRuntimeUnavailableException(cause: Throwable? = null) :
     IllegalStateException("The embedded Python runtime is unavailable", cause)
 
@@ -43,13 +98,35 @@ internal class PythonRuntimeBootstrapGate<T>(
                     completion.complete(runtime)
                     mutableReadiness.value = PythonRuntimeReadiness.Ready(homeOf(runtime))
                 } catch (failure: Throwable) {
-                    mutableReadiness.value = PythonRuntimeReadiness.Failed
-                    completion.completeExceptionally(failure)
-                    if (failure is Error) throw failure
+                    // Unwrapped: the stage tag is for the readiness state only. await() rethrows
+                    // ExecutionException.cause, so completing with the wrapper would leave every
+                    // caller's PythonRuntimeUnavailableException.cause pointing at
+                    // PythonBootstrapFailure instead of the failure itself.
+                    val origin = (failure as? PythonBootstrapFailure)?.cause ?: failure
+                    // The earliest stage as a default, not an observation: this gate is generic and
+                    // an initialize() is free not to tag its phases at all. ChaquopyPythonRuntime
+                    // tags every statement of its own that can throw, which is what keeps the
+                    // default off the real bootstrap path.
+                    val stage = (failure as? PythonBootstrapFailure)?.stage ?: PythonBootstrapStage.START
+                    // The readiness state carries no stack, so this record is the only full account
+                    // of why the engine never came up — and Python's own log handler does not exist
+                    // yet at this point.
+                    AppLog.e(
+                        LogComponent.BOOTSTRAP,
+                        "python.initialize",
+                        origin,
+                        "outcome" to "fail",
+                        "stage" to stage.name,
+                    )
+                    mutableReadiness.value = PythonRuntimeReadiness.Failed(stage, compactFaultToken(origin))
+                    completion.completeExceptionally(origin)
+                    if (origin is Error) throw origin
                 }
             }
         } catch (failure: RuntimeException) {
-            mutableReadiness.value = PythonRuntimeReadiness.Failed
+            AppLog.e(LogComponent.BOOTSTRAP, "python.enqueue", failure, "outcome" to "fail")
+            mutableReadiness.value =
+                PythonRuntimeReadiness.Failed(PythonBootstrapStage.ENQUEUE, compactFaultToken(failure))
             completion.completeExceptionally(failure)
             throw failure
         }

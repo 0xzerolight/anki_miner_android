@@ -16,12 +16,19 @@ internal data class DuplicateRawSnapshot(
     val normalizedMatchingNoteIds: List<Set<Long>>,
 )
 
+/**
+ * [stableMessage] is the whole user-facing account of the failure, and it is deliberately
+ * category-level: it names what the app could not do, never what the platform said. [cause] is what
+ * the platform said. Keeping it costs nothing at the seam and turns "AnkiDroid became unavailable"
+ * in a log into a named `SecurityException` or `DeadObjectException` with a stack.
+ */
 internal class AnkiReadFailure(
     val code: AnkiErrorCode,
     val retryable: Boolean,
     val stableMessage: String,
     val providerErrorReason: NoteTypeProviderErrorReason = code.defaultProviderErrorReason(),
-) : RuntimeException(stableMessage)
+    cause: Throwable? = null,
+) : RuntimeException(stableMessage, cause)
 
 private fun AnkiErrorCode.defaultProviderErrorReason(): NoteTypeProviderErrorReason =
     when (this) {
@@ -1130,6 +1137,10 @@ internal class CheckedProvider(private val gateway: AnkiProviderGateway) {
     }
 }
 
+/**
+ * The one construction site that has a real platform throwable to hand on: everywhere else the app
+ * itself decided the read had failed, so there is nothing underneath to keep.
+ */
 private fun ProviderGatewayException.toReadFailure(): AnkiReadFailure =
     when (kind) {
         ProviderFailureKind.API_DISABLED ->
@@ -1138,12 +1149,14 @@ private fun ProviderGatewayException.toReadFailure(): AnkiReadFailure =
                 retryable = false,
                 stableMessage = "The AnkiDroid API became disabled or incompatible",
                 providerErrorReason = NoteTypeProviderErrorReason.API_DISABLED_OR_INCOMPATIBLE,
+                cause = this,
             )
         ProviderFailureKind.PERMISSION_REQUIRED ->
             AnkiReadFailure(
                 AnkiErrorCode.PERMISSION_REQUIRED,
                 retryable = false,
                 stableMessage = "AnkiDroid permission is required",
+                cause = this,
             )
         ProviderFailureKind.PROVIDER_UNAVAILABLE ->
             AnkiReadFailure(
@@ -1151,21 +1164,24 @@ private fun ProviderGatewayException.toReadFailure(): AnkiReadFailure =
                 retryable = true,
                 stableMessage = "AnkiDroid became unavailable",
                 providerErrorReason = NoteTypeProviderErrorReason.PROVIDER_BECAME_UNAVAILABLE,
+                cause = this,
             )
-        ProviderFailureKind.QUERY_FAILED -> queryFailed()
+        ProviderFailureKind.QUERY_FAILED -> queryFailed(cause = this)
         ProviderFailureKind.MUTATION_FAILED ->
             AnkiReadFailure(
                 AnkiErrorCode.WRITE_FAILED,
                 retryable = false,
                 stableMessage = "The AnkiDroid write failed",
+                cause = this,
             )
         ProviderFailureKind.TIMEOUT ->
             AnkiReadFailure(
                 AnkiErrorCode.TIMEOUT,
                 retryable = true,
                 stableMessage = "The AnkiDroid read timed out",
+                cause = this,
             )
-        ProviderFailureKind.CANCELLED -> cancelled()
+        ProviderFailureKind.CANCELLED -> cancelled(cause = this)
     }
 
 internal fun minimalExistingDeckScopes(
@@ -1278,19 +1294,23 @@ private fun checkedMultiply(
         throw queryFailed()
     }
 
-private fun cancelled() =
+private fun cancelled(cause: Throwable? = null) =
     AnkiReadFailure(
         AnkiErrorCode.CANCELLED,
         retryable = false,
         stableMessage = "The Anki operation was cancelled",
+        cause = cause,
     )
 
-private fun queryFailed(message: String = "AnkiDroid returned an invalid or failed query") =
-    AnkiReadFailure(
-        AnkiErrorCode.QUERY_FAILED,
-        retryable = true,
-        stableMessage = message,
-    )
+private fun queryFailed(
+    message: String = "AnkiDroid returned an invalid or failed query",
+    cause: Throwable? = null,
+) = AnkiReadFailure(
+    AnkiErrorCode.QUERY_FAILED,
+    retryable = true,
+    stableMessage = message,
+    cause = cause,
+)
 
 private fun knownVocabularyLimitExceeded(scope: String) =
     AnkiReadFailure(

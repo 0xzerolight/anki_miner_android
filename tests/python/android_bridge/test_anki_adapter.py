@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import html
 import json
+import logging
 import re
 import sys
 import time
@@ -13,6 +14,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
+import android_bridge.anki_adapter as anki_adapter_module
 import pytest
 from android_bridge.anki_adapter import (
     _MAX_CARD_MEDIA_BYTES,
@@ -1567,6 +1569,7 @@ def test_known_vocabulary_excludes_parent_descendants_and_whole_mixed_note(
 
 def test_known_vocabulary_later_page_timeout_discards_partial_scan_and_retries(
     initialized_bridge_home: Path,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     class TimeoutSecondPage(FakeKotlinAnki):
         def ankiScanFirstFields(self, raw: str) -> str:
@@ -1598,9 +1601,44 @@ def test_known_vocabulary_later_page_timeout_discards_partial_scan_and_retries(
     kotlin = TimeoutSecondPage()
     adapter = _adapter(_config(initialized_bridge_home), kotlin)
 
-    assert adapter.get_existing_vocabulary() == set()
-    assert adapter.get_existing_vocabulary() == set()
+    with caplog.at_level(logging.DEBUG, logger=anki_adapter_module.logger.name):
+        assert adapter.get_existing_vocabulary() == set()
+        assert adapter.get_existing_vocabulary() == set()
     assert len(kotlin.requests_for("ankiScanFirstFields")) == 4
+    records = [record for record in caplog.records if "Known-vocabulary scan failed" in record.msg]
+    assert len(records) == 4
+    assert sum(record.exc_info is not None for record in records) == 2
+    assert all("outcome=" in record.getMessage() for record in records)
+
+
+def test_dictionary_media_read_failure_has_one_stack_owner(
+    initialized_bridge_home: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    source = "dict__unreadable.png"
+    media_path = initialized_bridge_home / "dicts" / "dict" / "media" / "unreadable.png"
+    media_path.parent.mkdir(parents=True, exist_ok=True)
+    media_path.write_bytes(b"png")
+    adapter = _adapter(_config(initialized_bridge_home), FakeKotlinAnki())
+    plan = types.SimpleNamespace(
+        dictionary_media_sources=(source,),
+        dictionary_media_paths={source: media_path.resolve()},
+    )
+    monkeypatch.setattr(
+        adapter,
+        "_stream_media_digest",
+        lambda *_args: (_ for _ in ()).throw(OSError("read failed")),
+    )
+
+    with caplog.at_level(logging.DEBUG, logger=anki_adapter_module.logger.name):
+        prepared = adapter._prepare_dictionary_media(plan, object())
+
+    assert prepared.assets == ()
+    records = [record for record in caplog.records if "Dictionary media read failed" in record.msg]
+    assert len(records) == 2
+    assert sum(record.exc_info is not None for record in records) == 1
+    assert all("outcome=" in record.getMessage() for record in records)
 
 
 @pytest.mark.parametrize(

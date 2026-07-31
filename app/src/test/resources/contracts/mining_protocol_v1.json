@@ -316,6 +316,23 @@
           }
         }
       }
+    },
+    {
+      "name": "failed terminal carries a fault id",
+      "message": {
+        "schemaVersion": 1,
+        "type": "mining.terminal",
+        "payload": {
+          "runId": "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "outcome": "failed",
+          "result": null,
+          "error": {
+            "code": "internal_error",
+            "message": "Internal mining failure",
+            "faultId": "f0123abcd"
+          }
+        }
+      }
     }
   ],
   "invalid": [
@@ -881,6 +898,23 @@
             "code": "internal_error",
             "message": "failed",
             "retryable": false
+          }
+        }
+      }
+    },
+    {
+      "name": "terminal error fault id is opaque and exact",
+      "message": {
+        "schemaVersion": 1,
+        "type": "mining.terminal",
+        "payload": {
+          "runId": "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "outcome": "failed",
+          "result": null,
+          "error": {
+            "code": "internal_error",
+            "message": "Internal mining failure",
+            "faultId": "fZZZZZZZZ"
           }
         }
       }

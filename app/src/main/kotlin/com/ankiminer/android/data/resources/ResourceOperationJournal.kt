@@ -60,6 +60,7 @@ internal class ResourceOperationJournal(
                     StandardCopyOption.ATOMIC_MOVE,
                     StandardCopyOption.REPLACE_EXISTING,
                 )
+                // instrumentation: silent — unsupported atomic move uses durable replace fallback
             } catch (_: AtomicMoveNotSupportedException) {
                 Files.move(
                     candidate.toPath(),
@@ -78,6 +79,7 @@ internal class ResourceOperationJournal(
         val lines =
             try {
                 record.readLines(Charsets.UTF_8)
+                // instrumentation: silent — unreadable records enter malformed-record recovery
             } catch (_: Exception) {
                 return malformedRecord()
             }
@@ -101,6 +103,7 @@ internal class ResourceOperationJournal(
                         .takeIf { it.isNotEmpty() }
                         ?.let(KnownWordsFailureOperation::valueOf),
             )
+            // instrumentation: silent — invalid fields enter malformed-record recovery
         } catch (_: Exception) {
             malformedRecord()
         }
@@ -112,6 +115,7 @@ internal class ResourceOperationJournal(
         if (root.isDirectory) {
             try {
                 syncDirectory(root)
+                // instrumentation: silent — absent record remains safe if directory sync fails
             } catch (_: Exception) {
                 // The record is already absent from this process's view. A later recovery safely
                 // treats any crash-surviving directory entry as interrupted work.

@@ -1,6 +1,10 @@
 package com.ankiminer.android.anki.provider
 
+import com.ankiminer.android.diagnostics.log.LogContext
 import java.io.File
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
@@ -8,6 +12,24 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ProviderQueryContractTest {
+    @Test
+    fun `real deadline scheduler carries submitting run id onto watchdog thread`() {
+        val observed = AtomicReference<String?>()
+        val finished = CountDownLatch(1)
+
+        val registration =
+            LogContext.withRunId("run_deadline111111111111111111111111") {
+                RealProviderDeadlineScheduler.schedule(0L) {
+                    observed.set(LogContext.runId())
+                    finished.countDown()
+                }
+            }
+
+        assertTrue(finished.await(5, TimeUnit.SECONDS))
+        registration.close()
+        assertEquals("run_deadline111111111111111111111111", observed.get())
+    }
+
     @Test
     fun `v2 note page translation uses pinned alias and only selection arguments`() {
         val query =

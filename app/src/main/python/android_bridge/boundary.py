@@ -5,9 +5,11 @@ from __future__ import annotations
 import logging
 from collections.abc import Mapping
 
+from .faults import record_fault
 from .protocol import (
     BridgeProtocolError,
     decode_envelope,
+    encode_message,
     encode_protocol_error,
 )
 
@@ -44,6 +46,7 @@ def _dispatch_validated(
         "curation.page.response",
         "curation.response",
         "bridge.shutdown.request",
+        "diagnostics.loglevel.set",
         "mining.reading.run",
         "mining.video.run",
         "resource.catalog.get",
@@ -144,6 +147,23 @@ def _dispatch_validated(
 
         return run_reading(raw_request, callbacks)
 
+    # Needs its own branch, not just membership in the set above: the tail of
+    # this function is an unguarded fall-through to shutdown(), so a type that
+    # is declared supported and never routed would tear the job registry down
+    # instead of failing.
+    if request_type == "diagnostics.loglevel.set":
+        _exact_payload(payload, {"level"}, error_code="invalid_log_level_request")
+        from . import log_context
+
+        requested = payload["level"]
+        if not isinstance(requested, str) or requested not in log_context.LOG_LEVELS:
+            raise BridgeProtocolError(
+                "invalid_log_level_request",
+                f"Expected level in {sorted(log_context.LOG_LEVELS)!r}",
+            )
+        log_context.set_first_party_log_level(log_context.LOG_LEVELS[requested])
+        return encode_message("diagnostics.loglevel.applied", {"level": requested})
+
     if request_type == "job.cancel":
         from .jobs import cancel_job
 
@@ -163,10 +183,11 @@ def dispatch(raw_request: str, callbacks: object | None = None) -> str:
     """Dispatch one Kotlin request and always return a versioned envelope.
 
     ``BridgeProtocolError`` becomes a ``bridge.error`` carrying its stable
-    machine code. Any other ordinary Python exception is logged locally and
-    becomes a generic ``internal_error``; its type and text never cross into
-    Kotlin. Process-control exceptions derived directly from ``BaseException``
-    are logged, then re-raised rather than swallowed.
+    machine code. Any other ordinary Python exception is logged locally under an
+    opaque fault id and becomes a generic ``internal_error``; the id is the only
+    part of it that crosses, so its type and text still never reach Kotlin.
+    Process-control exceptions derived directly from ``BaseException`` are
+    logged, then re-raised rather than swallowed.
     """
 
     request_type: str | None = None
@@ -179,12 +200,19 @@ def dispatch(raw_request: str, callbacks: object | None = None) -> str:
             return _dispatch_validated(request_type, decoded.payload, raw_request)
         return _dispatch_validated(request_type, decoded.payload, raw_request, callbacks)
     except BridgeProtocolError as error:
+        logger.error("Bridge protocol error code=%s", error.code, exc_info=error)
         return encode_protocol_error(error, request_type=request_type)
-    except Exception:
-        logger.exception("Unexpected failure in Android bridge operation %r", request_type)
+    except Exception as error:
+        fault_id = record_fault(
+            logger,
+            "Unexpected failure in Android bridge operation",
+            error,
+            request=request_type,
+        )
         return encode_protocol_error(
             BridgeProtocolError("internal_error", "Internal bridge failure"),
             request_type=request_type,
+            fault_id=fault_id,
         )
     except BaseException:
         logger.exception("Process-control exception escaping Android bridge operation %r", request_type)

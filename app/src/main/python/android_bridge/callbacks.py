@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import threading
 from dataclasses import dataclass, field
 from typing import Any
@@ -16,6 +17,8 @@ from .protocol import (
     encode_message,
     to_json_value,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _invoke(callbacks: object, method_name: str, message: str) -> None:
@@ -331,6 +334,7 @@ class AndroidProgressCallback:
         the per-stage on_start/on_progress counts.
         """
 
+        logger.info("engine_stage outcome=ok index=%d total=%d name=%s", index, total, name)
         _invoke(
             self.callbacks,
             "onStage",

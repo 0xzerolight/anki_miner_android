@@ -1,9 +1,15 @@
 package com.ankiminer.android.reading
 
 import com.ankiminer.android.R
+import com.ankiminer.android.anki.protocol.AnkiErrorCode
 import com.ankiminer.android.anki.protocol.ReleaseState
 import com.ankiminer.android.anki.provider.AnkiCancellation
+import com.ankiminer.android.anki.provider.AnkiReadFailure
 import com.ankiminer.android.data.RuntimeWorkCoordinator
+import com.ankiminer.android.diagnostics.log.AppLog
+import com.ankiminer.android.diagnostics.log.LogLevel
+import com.ankiminer.android.diagnostics.log.NoOpSink
+import com.ankiminer.android.diagnostics.log.RecordingLogSink
 import com.ankiminer.android.engine.BridgeJsonCodec
 import com.ankiminer.android.engine.BridgeJsonValue
 import com.ankiminer.android.engine.BridgeMessage
@@ -25,6 +31,7 @@ import com.ankiminer.android.mining.MiningTaskExecutor
 import com.ankiminer.android.mining.SourceGrantReleaser
 import com.ankiminer.android.mining.asMiningTaskExecutor
 import com.ankiminer.android.mining.isTerminal
+import com.ankiminer.android.service.ForegroundSessionRegistry
 import com.ankiminer.android.service.MiningForegroundLease
 import com.ankiminer.android.service.MiningForegroundProgress
 import com.ankiminer.android.service.MiningForegroundSessionIdentity
@@ -51,7 +58,9 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -61,10 +70,217 @@ class BridgeReadingMiningRepositoryTest {
     val temporary = TemporaryFolder()
 
     private val executors = mutableListOf<ExecutorService>()
+    private val recorded = RecordingLogSink()
+
+    @Before
+    fun installRecordingSink() {
+        AppLog.setMinLevel(LogLevel.INFO)
+        // Two installs: the first discards whatever a previous test class left in the pre-install
+        // buffer, so the second starts from a known-empty recorder.
+        AppLog.install(NoOpSink)
+        AppLog.install(recorded)
+    }
 
     @After
     fun stopExecutors() {
         executors.forEach(ExecutorService::shutdownNow)
+        AppLog.install(NoOpSink)
+    }
+
+    @Test
+    fun `every phase the run passes through is logged, in order, with its trigger`() {
+        val harness = harness(expressionAudioFieldMapped = true)
+
+        runBlocking { harness.repository.startReading(INPUT) }
+        val curating =
+            awaitState(harness.repository) { it is MiningRunState.Curating } as MiningRunState.Curating
+        harness.bridge.runCallbacks!!.onStage(PROGRESS_STAGE)
+        runBlocking {
+            harness.repository.confirmCuration(
+                curating.request.runId,
+                curating.request.requestId,
+                FIRST_SELECTION,
+            )
+        }
+        assertTrue(harness.bridge.curationSubmitted.await(2, TimeUnit.SECONDS))
+        harness.bridge.allowTerminal.countDown()
+        awaitState(harness.repository, MiningRunState::isTerminal)
+
+        assertEquals(
+            listOf(
+                "c=reading op=phase from=PREPARING to=REGISTERED outcome=ok detail=registration",
+                "c=reading op=phase from=REGISTERED to=CURATING outcome=ok detail=curation_needed",
+                "c=reading op=phase from=CURATING to=PROMOTING outcome=ok detail=curation_final",
+                "c=reading op=phase from=PROMOTING to=RUNNING outcome=ok detail=foreground_started",
+                "c=reading op=phase from=RUNNING to=FINALIZING outcome=ok detail=terminal",
+            ),
+            recordsFor("op=phase"),
+        )
+
+        // The ambient run id, on both threads that emit these records: the run executor, which
+        // registerJob installs it on, and the control executor, which has to carry it across.
+        val onRunThread = recorded.records.single { it.contains("detail=terminal") }
+        val onControlThread = recorded.records.single { it.contains("detail=foreground_started") }
+        assertTrue(onRunThread, onRunThread.contains(" run=$RUN_ID c=reading op=phase"))
+        assertTrue(onControlThread, onControlThread.contains(" run=$RUN_ID c=reading op=phase"))
+        assertTrue(
+            recorded.records.single { it.contains("op=engine_stage") }
+                .contains("outcome=ok"),
+        )
+    }
+
+    @Test
+    fun `the terminal mapping is logged with its outcome, code and notice count`() {
+        val harness = harness(expressionAudioFieldMapped = true, raisedFailure = true)
+
+        runBlocking { harness.repository.startReading(INPUT) }
+        val curating =
+            awaitState(harness.repository) { it is MiningRunState.Curating } as MiningRunState.Curating
+        runBlocking {
+            harness.repository.confirmCuration(
+                curating.request.runId,
+                curating.request.requestId,
+                FIRST_SELECTION,
+            )
+        }
+        assertTrue(harness.bridge.curationSubmitted.await(2, TimeUnit.SECONDS))
+        harness.bridge.allowTerminal.countDown()
+        awaitState(harness.repository, MiningRunState::isTerminal)
+
+        assertEquals(
+            listOf("c=reading op=run.terminal outcome=fail code=engine_error retryable=true notices=0"),
+            recordsFor("op=run.terminal"),
+        )
+    }
+
+    @Test
+    fun `a protocol violation names the callback that raised it`() {
+        val harness = harness(expressionAudioFieldMapped = true)
+
+        runBlocking { harness.repository.startReading(INPUT) }
+        awaitState(harness.repository) { it is MiningRunState.Curating }
+
+        // A progress.start envelope arriving on onStage: one of the ~24 messages that all resolve to
+        // the same user string, and the callback name is the only thing that separates them.
+        assertThrows(IllegalStateException::class.java) {
+            harness.bridge.runCallbacks!!.onStage(PROGRESS_START)
+        }
+        harness.bridge.allowTerminal.countDown()
+        awaitState(harness.repository, MiningRunState::isTerminal)
+
+        val record = recorded.records.single { it.contains("op=onStage") }
+        assertTrue(record, record.contains(" E run=- c=reading op=onStage outcome=fail"))
+        assertTrue(record, record.contains("Unexpected onStage message"))
+    }
+
+    @Test
+    fun `a malformed callback has one owner with its callback and category`() {
+        val harness = harness(expressionAudioFieldMapped = true)
+
+        runBlocking { harness.repository.startReading(INPUT) }
+        awaitState(harness.repository) { it is MiningRunState.Curating }
+
+        assertThrows(IllegalStateException::class.java) {
+            harness.bridge.runCallbacks!!.onStage(
+                """{"schemaVersion":2,"type":"progress.stage","payload":{}}""",
+            )
+        }
+        harness.bridge.allowTerminal.countDown()
+        awaitState(harness.repository, MiningRunState::isTerminal)
+
+        val records =
+            recorded.records.filter { record ->
+                record.contains("op=codec.decode") || record.contains("op=onStage")
+            }
+        assertEquals(1, records.size)
+        val record = records.single()
+        assertTrue(
+            record,
+            record.contains(
+                " E run=- c=reading op=onStage outcome=fail " +
+                    "category=UNSUPPORTED_SCHEMA_VERSION",
+            ),
+        )
+    }
+
+    @Test
+    fun `an Anki callback failure carries the provider code and its cause`() {
+        val harness =
+            harness(
+                expressionAudioFieldMapped = true,
+                ankiFailure =
+                    AnkiReadFailure(
+                        AnkiErrorCode.PROVIDER_UNAVAILABLE,
+                        retryable = true,
+                        stableMessage = "AnkiDroid is unavailable",
+                        cause = IllegalStateException("provider died"),
+                    ),
+            )
+
+        runBlocking { harness.repository.startReading(INPUT) }
+        awaitState(harness.repository) { it is MiningRunState.Curating }
+
+        assertThrows(AnkiReadFailure::class.java) {
+            harness.bridge.runCallbacks!!.ankiVerifyTarget(ANKI_VERIFY_REQUEST)
+        }
+        harness.bridge.allowTerminal.countDown()
+        awaitState(harness.repository, MiningRunState::isTerminal)
+
+        val record = recorded.records.single { it.contains("op=ankiVerifyTarget") }
+        assertTrue(record, record.contains(" E run=- c=reading op=ankiVerifyTarget outcome=fail code=PROVIDER_UNAVAILABLE"))
+        assertTrue(record, record.contains("Caused by: java.lang.IllegalStateException: provider died"))
+    }
+
+    @Test
+    fun `foreground promotion execution failure keeps its cause and distinct fault`() {
+        // The mirror of the video lane's promotion-failure test. Without it, deleting `diagnostic`
+        // from this repository's toFailed goes undetected: the other two sites that mention it here
+        // are the terminal arm, which builds MiningFailure directly, and an assertNull.
+        val (harness, failed) = foregroundFailure(ForegroundStartFailure.EXECUTION)
+
+        assertEquals("Background mining did not start safely", failed.failure.message)
+        assertFalse(failed.failure.retryable)
+        assertEquals("foreground_start_failed", failed.failure.diagnostic)
+        val record = recorded.records.single { it.contains("op=foreground.start") }
+        assertTrue(record, record.contains("java.util.concurrent.ExecutionException"))
+        assertTrue(record, record.contains("Caused by: java.lang.IllegalStateException: test promotion failure"))
+    }
+
+    @Test
+    fun `foreground promotion timeout has a distinct fault`() {
+        val (_, failed) = foregroundFailure(ForegroundStartFailure.TIMEOUT)
+
+        assertEquals("Background mining did not start safely", failed.failure.message)
+        assertFalse(failed.failure.retryable)
+        assertEquals("foreground_start_timeout", failed.failure.diagnostic)
+        val record = recorded.records.single { it.contains("op=foreground.start") }
+        assertTrue(record, record.contains("java.util.concurrent.TimeoutException: test promotion timeout"))
+    }
+
+    @Test
+    fun `foreground promotion interruption restores the thread interrupt`() {
+        val (harness, failed) = foregroundFailure(ForegroundStartFailure.INTERRUPTION)
+
+        assertEquals("Background mining did not start safely", failed.failure.message)
+        assertFalse(failed.failure.retryable)
+        assertEquals("foreground_start_interrupted", failed.failure.diagnostic)
+        assertTrue(harness.foreground.cancelObservedInterrupt.get())
+        val record = recorded.records.single { it.contains("op=foreground.start") }
+        assertTrue(record, record.contains("java.lang.InterruptedException: test promotion interruption"))
+    }
+
+    @Test
+    fun `abandoned foreground start ends the run without propagating or logging an error`() {
+        val harness =
+            harness(
+                expressionAudioFieldMapped = true,
+                foregroundFailure = ForegroundStartFailure.ABANDONED,
+            )
+
+        runBlocking { harness.repository.startReading(INPUT) }
+
+        assertTrue(awaitState(harness.repository, MiningRunState::isTerminal) is MiningRunState.Cancelled)
+        assertFalse(recorded.records.any { it.substringBefore('\n').contains(" E run=") })
     }
 
     @Test
@@ -882,6 +1098,47 @@ class BridgeReadingMiningRepositoryTest {
         awaitState(harness.repository, MiningRunState::isTerminal)
     }
 
+    @Test
+    fun `python fault id reaches the failure state without changing its message`() {
+        val harness = harness(raisedFailure = true)
+
+        runBlocking { harness.repository.startReading(INPUT) }
+        val curating =
+            awaitState(harness.repository) { it is MiningRunState.Curating } as MiningRunState.Curating
+        runBlocking {
+            harness.repository.confirmCuration(curating.request.runId, curating.request.requestId, emptyList())
+        }
+        assertTrue(harness.bridge.curationSubmitted.await(2, TimeUnit.SECONDS))
+        harness.bridge.allowTerminal.countDown()
+
+        val failed = awaitState(harness.repository, MiningRunState::isTerminal) as MiningRunState.Failed
+        assertEquals("Mining failed", failed.failure.message)
+        assertEquals(TERMINAL_FAULT_ID, failed.failure.faultId)
+        // The engine's terminal code, kept beside the localized message it cannot replace.
+        assertEquals("engine_error", failed.failure.diagnostic)
+    }
+
+    @Test
+    fun `a Kotlin fault wins the message but keeps the Python fault id`() {
+        val harness = harness(raisedFailure = true, fallbackState = ReleaseState.DEFERRED)
+
+        runBlocking { harness.repository.startReading(INPUT) }
+        val curating =
+            awaitState(harness.repository) { it is MiningRunState.Curating } as MiningRunState.Curating
+        runBlocking {
+            harness.repository.confirmCuration(curating.request.runId, curating.request.requestId, emptyList())
+        }
+        assertTrue(harness.bridge.curationSubmitted.await(2, TimeUnit.SECONDS))
+        harness.bridge.allowTerminal.countDown()
+
+        val failed = awaitState(harness.repository, MiningRunState::isTerminal) as MiningRunState.Failed
+        assertEquals("Anki cleanup remained incomplete", failed.failure.message)
+        assertEquals(TERMINAL_FAULT_ID, failed.failure.faultId)
+        // The Kotlin fault owns the message, so it owns the code too. This site has no code of its
+        // own, and inheriting the engine's would claim a Python origin the failure does not have.
+        assertNull(failed.failure.diagnostic)
+    }
+
     private fun zipBytes(vararg members: Pair<String, ByteArray>): ByteArray {
         val bytes = java.io.ByteArrayOutputStream()
         java.util.zip.ZipOutputStream(bytes).use { zip ->
@@ -906,6 +1163,8 @@ class BridgeReadingMiningRepositoryTest {
         presenterWarning: String? = null,
         terminalErrorCount: Int = 0,
         readingRunFailure: RuntimeException? = null,
+        raisedFailure: Boolean = false,
+        fallbackState: ReleaseState = ReleaseState.ABSENT,
         pendingForegroundStart: Boolean = false,
         pauseAfterTerminalCallback: Boolean = false,
         cancelFailuresBeforeSuccess: Int = 0,
@@ -915,9 +1174,13 @@ class BridgeReadingMiningRepositoryTest {
         interruptionStore: com.ankiminer.android.mining.MiningRunInterruptionStore =
             com.ankiminer.android.mining.NoOpMiningRunInterruptionStore,
         cache: File? = null,
+        foregroundFailure: ForegroundStartFailure? = null,
+        ankiFailure: RuntimeException? = null,
     ): Harness {
         val runExecutor = Executors.newSingleThreadExecutor().also(executors::add)
         val controlExecutor = Executors.newSingleThreadExecutor().also(executors::add)
+        val controlFailure = AtomicReference<Throwable?>()
+        val controlTaskCompleted = CountDownLatch(1)
         val cacheDir = cache ?: temporary.newFolder("cache-${executors.size}")
         val stageRoot = readingSourceStagingRoot(cacheDir)
         val bridge =
@@ -927,13 +1190,14 @@ class BridgeReadingMiningRepositoryTest {
                 presenterWarning = presenterWarning,
                 terminalErrorCount = terminalErrorCount,
                 readingRunFailure = readingRunFailure,
+                raisedFailure = raisedFailure,
                 pauseAfterTerminalCallback = pauseAfterTerminalCallback,
                 cancelFailuresBeforeSuccess = cancelFailuresBeforeSuccess,
                 pauseCancellationUntilTerminal = pauseCancellationUntilTerminal,
                 invokeTtsAfterCancellation = invokeTtsAfterCancellation,
             )
-        val anki = FakeAnkiCallbacks()
-        val foreground = FakeForegroundStarter(pendingForegroundStart)
+        val anki = FakeAnkiCallbacks(fallbackState, ankiFailure)
+        val foreground = FakeForegroundStarter(foregroundFailure, pendingForegroundStart)
         val openCount = AtomicInteger()
         val foregroundStartsAtOpen = AtomicInteger(-1)
         val repository =
@@ -964,7 +1228,17 @@ class BridgeReadingMiningRepositoryTest {
                     if (rejectControlTasks) {
                         MiningTaskExecutor { throw IllegalStateException("test control rejection") }
                     } else {
-                        controlExecutor.asMiningTaskExecutor()
+                        MiningTaskExecutor { task ->
+                            controlExecutor.execute {
+                                try {
+                                    task()
+                                } catch (failure: Throwable) {
+                                    controlFailure.compareAndSet(null, failure)
+                                } finally {
+                                    controlTaskCompleted.countDown()
+                                }
+                            }
+                        }
                     },
                 strings = testStringResourceResolver,
                 runtimeWorkCoordinator = runtimeWorkCoordinator,
@@ -1002,9 +1276,25 @@ class BridgeReadingMiningRepositoryTest {
             foreground,
             cacheDir,
             stageRoot,
+            controlFailure,
+            controlTaskCompleted,
             openCount,
             foregroundStartsAtOpen,
         )
+    }
+
+    private fun foregroundFailure(
+        failure: ForegroundStartFailure,
+    ): Pair<Harness, MiningRunState.Failed> {
+        val harness =
+            harness(
+                expressionAudioFieldMapped = true,
+                foregroundFailure = failure,
+            )
+        runBlocking { harness.repository.startReading(INPUT) }
+        val failed =
+            awaitState(harness.repository, MiningRunState::isTerminal) as MiningRunState.Failed
+        return harness to failed
     }
 
     private fun stager(
@@ -1037,6 +1327,13 @@ class BridgeReadingMiningRepositoryTest {
             nonceSource = ReadingSourceStageNonceSource { "11111111111111111111111111111111" },
         )
 
+    /** Record heads from `c=` onward: the timestamp, level and run id are not what these assert. */
+    private fun recordsFor(op: String): List<String> =
+        recorded.records
+            .map { it.substringBefore('\n') }
+            .filter { it.contains(op) }
+            .map { it.substring(it.indexOf("c=")) }
+
     private fun awaitState(
         repository: ReadingMiningRepository,
         predicate: (MiningRunState) -> Boolean,
@@ -1057,11 +1354,16 @@ class BridgeReadingMiningRepositoryTest {
         val foreground: FakeForegroundStarter,
         val cacheDir: File,
         val stageRoot: File,
+        val controlFailure: AtomicReference<Throwable?>,
+        val controlTaskCompleted: CountDownLatch,
         val openCount: AtomicInteger,
         val foregroundStartsAtOpen: AtomicInteger,
     )
 
-    private class FakeAnkiCallbacks : CoordinatorAnkiCallbacks {
+    private class FakeAnkiCallbacks(
+        private val fallbackState: ReleaseState = ReleaseState.ABSENT,
+        private val failure: RuntimeException? = null,
+    ) : CoordinatorAnkiCallbacks {
         var cancellation: AnkiCancellation? = null
         val fallbackRuns = Collections.synchronizedList(mutableListOf<String>())
 
@@ -1073,7 +1375,7 @@ class BridgeReadingMiningRepositoryTest {
             return runId == RUN_ID
         }
 
-        override fun verifyTarget(rawRequest: String): String = error("not called")
+        override fun verifyTarget(rawRequest: String): String = throw (failure ?: error("not called"))
 
         override fun scanFirstFields(rawRequest: String): String = error("not called")
 
@@ -1085,17 +1387,26 @@ class BridgeReadingMiningRepositoryTest {
 
         override fun releaseRunStateFallback(runId: String): ReleaseState {
             fallbackRuns += runId
-            return ReleaseState.ABSENT
+            return fallbackState
         }
     }
 
+    private enum class ForegroundStartFailure {
+        ABANDONED,
+        EXECUTION,
+        TIMEOUT,
+        INTERRUPTION,
+    }
+
     private class FakeForegroundStarter(
+        private val failure: ForegroundStartFailure? = null,
         private val pending: Boolean = false,
     ) : com.ankiminer.android.mining.MiningForegroundStarter {
         val startCount = AtomicInteger()
         val lease = FakeForegroundLease()
         val started = CountDownLatch(1)
         val future = CompletableFuture<MiningForegroundLease>()
+        val cancelObservedInterrupt = AtomicBoolean()
 
         override fun startSession(
             runId: String,
@@ -1104,6 +1415,44 @@ class BridgeReadingMiningRepositoryTest {
         ): CompletableFuture<MiningForegroundLease> {
             startCount.incrementAndGet()
             started.countDown()
+            when (failure) {
+                ForegroundStartFailure.ABANDONED -> {
+                    val identity =
+                        MiningForegroundSessionIdentity(
+                            runId,
+                            generation,
+                            "00000000-0000-0000-0000-000000000001",
+                        )
+                    val registry =
+                        ForegroundSessionRegistry(
+                            java.util.concurrent.Executor { command -> command.run() },
+                        )
+                    val registration = registry.register(identity, listener)
+                    check(registry.cancelAbandonedStart(identity))
+                    @Suppress("UNCHECKED_CAST")
+                    return registration.started as CompletableFuture<MiningForegroundLease>
+                }
+
+                ForegroundStartFailure.EXECUTION -> {
+                    return CompletableFuture<MiningForegroundLease>().also {
+                        it.completeExceptionally(IllegalStateException("test promotion failure"))
+                    }
+                }
+
+                ForegroundStartFailure.TIMEOUT ->
+                    return ThrowingForegroundFuture(
+                        java.util.concurrent.TimeoutException("test promotion timeout"),
+                        cancelObservedInterrupt,
+                    )
+
+                ForegroundStartFailure.INTERRUPTION ->
+                    return ThrowingForegroundFuture(
+                        InterruptedException("test promotion interruption"),
+                        cancelObservedInterrupt,
+                    )
+
+                null -> Unit
+            }
             lease.sessionIdentity =
                 MiningForegroundSessionIdentity(
                     runId,
@@ -1112,6 +1461,21 @@ class BridgeReadingMiningRepositoryTest {
                 )
             if (pending) return future
             return CompletableFuture.completedFuture(lease)
+        }
+    }
+
+    private class ThrowingForegroundFuture(
+        private val failure: Exception,
+        private val cancelObservedInterrupt: AtomicBoolean,
+    ) : CompletableFuture<MiningForegroundLease>() {
+        override fun get(
+            timeout: Long,
+            unit: TimeUnit,
+        ): MiningForegroundLease = throw failure
+
+        override fun cancel(mayInterruptIfRunning: Boolean): Boolean {
+            cancelObservedInterrupt.set(Thread.currentThread().isInterrupted)
+            return super.cancel(mayInterruptIfRunning)
         }
     }
 
@@ -1219,6 +1583,7 @@ class BridgeReadingMiningRepositoryTest {
         private val presenterWarning: String? = null,
         private val terminalErrorCount: Int = 0,
         private val readingRunFailure: RuntimeException? = null,
+        private val raisedFailure: Boolean = false,
         private val pauseAfterTerminalCallback: Boolean = false,
         private val cancelFailuresBeforeSuccess: Int = 0,
         private val pauseCancellationUntilTerminal: Boolean = false,
@@ -1339,7 +1704,7 @@ class BridgeReadingMiningRepositoryTest {
                 return CANCELLED_TERMINAL
             }
             val terminal = terminalPayload()
-            if (terminalErrorCount == 0) {
+            if (terminalErrorCount == 0 && !raisedFailure) {
                 callbacks.onComplete(terminal)
             } else {
                 callbacks.onError(terminal)
@@ -1351,6 +1716,7 @@ class BridgeReadingMiningRepositoryTest {
         }
 
         private fun terminalPayload(): String {
+            if (raisedFailure) return RAISED_FAILURE_TERMINAL
             if (terminalErrorCount == 0) return SUCCESS_TERMINAL
             val errors =
                 (0 until terminalErrorCount).joinToString(prefix = "[", postfix = "]") {
@@ -1398,7 +1764,11 @@ class BridgeReadingMiningRepositoryTest {
             """{"schemaVersion":1,"type":"job.registration.request","payload":{"runId":"$RUN_ID"}}"""
         val PROGRESS_START =
             """{"schemaVersion":1,"type":"progress.start","payload":{"runId":"$RUN_ID","total":3,"description":"Preparing curation"}}"""
+        val PROGRESS_STAGE =
+            """{"schemaVersion":1,"type":"progress.stage","payload":{"runId":"$RUN_ID","index":2,"total":5,"name":"Extracting media"}}"""
         const val MINED_TERM = "猫"
+        const val ANKI_VERIFY_REQUEST =
+            """{"schemaVersion":1,"type":"anki.verify.request","payload":{}}"""
 
         /** Shaped like a real phase-4 event: the engine names the term it just looked up. */
         val HOSTILE_PROGRESS =
@@ -1429,6 +1799,9 @@ class BridgeReadingMiningRepositoryTest {
             """{"schemaVersion":1,"type":"mining.terminal","payload":{"runId":"$RUN_ID","outcome":"success","result":{"totalWordsFound":1,"newWordsFound":0,"cardsCreated":0,"errors":[],"elapsedTime":1.0,"comprehensionPercentage":100.0,"cardIds":[],"videoFile":"","subtitleFile":"Novel.txt","minedForms":[],"ankiWriteState":"no_note_write","failureIsTransient":false},"error":null}}"""
         val CANCELLED_TERMINAL =
             """{"schemaVersion":1,"type":"mining.terminal","payload":{"runId":"$RUN_ID","outcome":"cancelled","result":null,"error":{"code":"cancelled","message":"Mining was cancelled"}}}"""
+        const val TERMINAL_FAULT_ID = "f0123abcd"
+        val RAISED_FAILURE_TERMINAL =
+            """{"schemaVersion":1,"type":"mining.terminal","payload":{"runId":"$RUN_ID","outcome":"failed","result":null,"error":{"code":"engine_error","message":"Mining failed","faultId":"$TERMINAL_FAULT_ID"}}}"""
     }
 }
 

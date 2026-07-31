@@ -775,7 +775,7 @@ internal fun pythonStatus(value: PythonRuntimeReadiness): String =
         PythonRuntimeReadiness.Pending -> stringResource(R.string.status_queued)
         PythonRuntimeReadiness.Starting -> stringResource(R.string.status_starting)
         is PythonRuntimeReadiness.Ready -> stringResource(R.string.status_ready)
-        PythonRuntimeReadiness.Failed -> stringResource(R.string.status_failed_restart)
+        is PythonRuntimeReadiness.Failed -> stringResource(R.string.status_failed_restart)
     }
 
 @Composable

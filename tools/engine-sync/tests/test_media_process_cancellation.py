@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import importlib.util
+import logging
 import subprocess
 import sys
 import threading
@@ -75,6 +76,35 @@ class _BlockingProcess:
         if timeout is not None:
             self.killed.wait(2)
         return "", ""
+
+
+class _FinishedProcess:
+    def __init__(
+        self,
+        *,
+        returncode: int = 1,
+        stderr: str = "",
+        communicate_error: Exception | None = None,
+    ) -> None:
+        self.returncode = returncode
+        self.stderr = stderr
+        self.communicate_error = communicate_error
+        self.killed = False
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args: object) -> None:
+        return None
+
+    def kill(self) -> None:
+        self.killed = True
+
+    def communicate(self, timeout: float | None = None) -> tuple[str, str]:
+        del timeout
+        if self.communicate_error is not None:
+            raise self.communicate_error
+        return "", self.stderr
 
 
 class _Registry:
@@ -255,6 +285,152 @@ class MediaProcessCancellationTests(unittest.TestCase):
         self.assertEqual([registry], calls)
         self.assertEqual([7, 7], sorted(results))
 
+    def test_ffmpeg_exception_warnings_keep_mined_context_debug_only(self) -> None:
+        media = self._media_extractor()
+        service = object.__new__(media.MediaExtractorService)
+        context = "殺す_100_1.jpg"
+        cases = (
+            (OSError("spawn failed"), None),
+            (None, _BlockingProcess(timeout_once=True)),
+            (None, _FinishedProcess(communicate_error=ValueError("decode failed"))),
+        )
+
+        for spawn_error, process in cases:
+            with self.subTest(spawn_error=spawn_error, process=type(process).__name__):
+                popen = (
+                    mock.Mock(side_effect=spawn_error)
+                    if spawn_error is not None
+                    else mock.Mock(return_value=process)
+                )
+                with (
+                    mock.patch.object(media.subprocess, "Popen", popen),
+                    self.assertLogs(media.logger, level=logging.DEBUG) as captured,
+                ):
+                    self.assertFalse(
+                        service._run_ffmpeg(
+                            ["ffmpeg", "-i", "video.mkv", context],
+                            "clip extraction",
+                            timeout=1,
+                            context=context,
+                        )
+                    )
+
+                debug_messages = [
+                    record.getMessage()
+                    for record in captured.records
+                    if record.levelno == logging.DEBUG
+                ]
+                warnings = [
+                    record
+                    for record in captured.records
+                    if record.levelno == logging.WARNING
+                ]
+                self.assertTrue(any(context in message for message in debug_messages))
+                self.assertEqual(1, len(warnings))
+                self.assertNotIn(context, warnings[0].getMessage())
+                self.assertNotIn("殺す", warnings[0].getMessage())
+                self.assertIsNotNone(warnings[0].exc_info)
+
+    def test_ffmpeg_nonzero_warning_bounds_redacted_stderr_and_has_throwable(self) -> None:
+        media = self._media_extractor()
+        service = object.__new__(media.MediaExtractorService)
+        context = "殺す_100_1.jpg"
+        process = _FinishedProcess(
+            returncode=17,
+            stderr=f"codec failure writing {context}: " + ("x" * 4096),
+        )
+
+        with (
+            mock.patch.object(media.subprocess, "Popen", return_value=process),
+            self.assertLogs(media.logger, level=logging.DEBUG) as captured,
+        ):
+            self.assertFalse(
+                service._run_ffmpeg(
+                    ["ffmpeg", "-i", "video.mkv", context],
+                    "clip extraction",
+                    timeout=1,
+                    context=context,
+                )
+            )
+
+        debug_message = next(
+            record.getMessage()
+            for record in captured.records
+            if record.levelno == logging.DEBUG
+        )
+        warning = next(
+            record
+            for record in captured.records
+            if record.levelno == logging.WARNING
+        )
+        bounded_stderr = warning.getMessage().partition("stderr=")[2]
+        self.assertIn(context, debug_message)
+        self.assertIn("codec failure", bounded_stderr)
+        self.assertLessEqual(len(bounded_stderr), 2048)
+        self.assertNotIn(context, warning.getMessage())
+        self.assertNotIn("殺す", warning.getMessage())
+        self.assertIsNotNone(warning.exc_info)
+
+    def test_cancelled_batch_separates_cancelled_items_from_failures(self) -> None:
+        media = self._media_extractor()
+        service = object.__new__(media.MediaExtractorService)
+        service.config = SimpleNamespace(
+            max_parallel_workers=1,
+            screenshot_animated=False,
+        )
+        service._CANCEL_POLL_INTERVAL = 0.01
+        cancel = threading.Event()
+        call_lock = threading.Lock()
+        calls = 0
+
+        def extract(*_args: object, **kwargs: object):
+            nonlocal calls
+            with call_lock:
+                calls += 1
+                call_number = calls
+            if call_number > 1:
+                registry = kwargs["proc_registry"]
+                while not registry.cancelled:
+                    threading.Event().wait(0.001)
+            return SimpleNamespace(
+                has_audio=True,
+                has_screenshot=True,
+                screenshot_path=None,
+                screenshot_filename=None,
+            )
+
+        class Progress:
+            def on_start(self, *_args: object) -> None:
+                pass
+
+            def on_progress(self, *_args: object) -> None:
+                cancel.set()
+
+            def on_error(self, *_args: object) -> None:
+                raise AssertionError("successful extraction must not report an error")
+
+            def on_complete(self) -> None:
+                raise AssertionError("cancelled extraction must not report completion")
+
+        words = [SimpleNamespace(lemma=value) for value in ("one", "two", "three")]
+        service.extract_media = extract
+
+        with self.assertLogs(media.logger, level=logging.INFO) as captured:
+            result = service.extract_media_batch(
+                Path("video.mkv"),
+                words,
+                progress_callback=Progress(),
+                cancelled_check=cancel.is_set,
+                animated_format=None,
+            )
+
+        self.assertEqual(1, len(result))
+        summary = captured.records[-1].getMessage()
+        self.assertIn("attempted=3", summary)
+        self.assertIn("ok=1", summary)
+        self.assertIn("failed=0", summary)
+        self.assertIn("cancelled=2", summary)
+        self.assertIn("outcome=skip", summary)
     def test_media_batch_never_queues_more_than_the_worker_bound(self) -> None:
         media = self._media_extractor()
         service = object.__new__(media.MediaExtractorService)

@@ -1,6 +1,7 @@
 package com.ankiminer.android.ui.settings
 
 import android.os.Build
+import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -31,12 +32,14 @@ import com.ankiminer.android.data.resources.WordListKind
 import com.ankiminer.android.data.settings.AudioFormat
 import com.ankiminer.android.data.settings.PitchCategoryFormat
 import com.ankiminer.android.data.settings.ThemeMode
+import com.ankiminer.android.diagnostics.DiagnosticsExportStep
 import com.ankiminer.android.diagnostics.TesterDiagnosticsIdentity
 import com.ankiminer.android.localization.LocalizedStringResource
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
 import com.ankiminer.android.ui.theme.SupportingText
 import com.ankiminer.android.ui.theme.actionBorder
 import com.ankiminer.android.ui.theme.outlinedActionButtonColors
+import com.ankiminer.android.vm.DiagnosticsExportState
 import com.ankiminer.android.vm.SettingsDraft
 import com.ankiminer.android.vm.SettingsFieldKey
 import com.ankiminer.android.vm.SetupUiState
@@ -52,7 +55,10 @@ internal data class SettingsScreenCallbacks(
     val onOpenAnkiDroid: () -> Unit,
     val onOpenSpeechSettings: () -> Unit,
     val onShareDiagnostics: () -> Unit,
-    val onShareEngineLog: () -> Unit,
+    val onSaveDiagnosticsBundle: () -> Unit,
+    val onShareDiagnosticsBundle: () -> Unit,
+    val onRetryDiagnosticsExport: () -> Unit,
+    val onDismissDiagnosticsExport: () -> Unit,
     val onReturnToActiveRun: (() -> Unit)?,
     val onAttributions: () -> Unit,
     val onRunSetupWizard: (() -> Unit)?,
@@ -64,6 +70,8 @@ internal data class SettingsScreenCallbacks(
     val onImportWordList: (WordListKind) -> Unit,
     val onExportKnownWords: () -> Unit,
     val onManageKnownWords: () -> Unit,
+    val verboseLogging: Boolean,
+    val onVerboseLoggingChange: (Boolean) -> Unit,
 )
 
 internal enum class KnownWordsFailureTarget {
@@ -94,6 +102,7 @@ internal fun LazyListScope.settingsCategoryContent(
     setup: SetupUiState,
     setupViewModel: SetupViewModel,
     diagnostics: TesterDiagnosticsIdentity,
+    diagnosticsExport: DiagnosticsExportState,
     callbacks: SettingsScreenCallbacks,
 ) {
     when (category) {
@@ -151,6 +160,7 @@ internal fun LazyListScope.settingsCategoryContent(
                 setup,
                 setupViewModel,
                 diagnostics,
+                diagnosticsExport,
                 callbacks,
             )
     }
@@ -835,6 +845,7 @@ private fun LazyListScope.diagnosticsSettings(
     setup: SetupUiState,
     setupViewModel: SetupViewModel,
     diagnostics: TesterDiagnosticsIdentity,
+    diagnosticsExport: DiagnosticsExportState,
     callbacks: SettingsScreenCallbacks,
 ) {
     settingsCard("diagnostic-runtime") {
@@ -887,6 +898,19 @@ private fun LazyListScope.diagnosticsSettings(
             )
         }
     }
+    settingsCard("diagnostic-logging") {
+        SettingsSection(stringResource(R.string.settings_verbose_logging_section)) {
+            BooleanSetting(
+                label = stringResource(R.string.settings_verbose_logging),
+                checked = callbacks.verboseLogging,
+                onCheckedChange = callbacks.onVerboseLoggingChange,
+            )
+            Text(
+                stringResource(R.string.settings_verbose_logging_detail),
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+    }
     settingsCard("reset-actions") {
         SettingsSection(stringResource(R.string.settings_reset_section)) {
             SettingsResetAction.entries.forEach { action ->
@@ -930,14 +954,46 @@ private fun LazyListScope.diagnosticsSettings(
                 Text(stringResource(R.string.settings_share_diagnostics))
             }
             Text(
-                stringResource(R.string.settings_engine_log_privacy),
+                stringResource(R.string.settings_diagnostics_bundle_privacy),
                 style = MaterialTheme.typography.bodySmall,
             )
             OutlinedButton(
-                onClick = callbacks.onShareEngineLog,
+                onClick = callbacks.onSaveDiagnosticsBundle,
+                enabled = diagnosticsExport !is DiagnosticsExportState.Working &&
+                    diagnosticsExport !is DiagnosticsExportState.Ready,
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text(stringResource(R.string.settings_share_engine_log))
+                Text(stringResource(R.string.settings_save_diagnostics_bundle))
+            }
+            OutlinedButton(
+                onClick = callbacks.onShareDiagnosticsBundle,
+                enabled = diagnosticsExport !is DiagnosticsExportState.Working &&
+                    diagnosticsExport !is DiagnosticsExportState.Ready,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(stringResource(R.string.settings_share_diagnostics_bundle))
+            }
+            when (diagnosticsExport) {
+                DiagnosticsExportState.Idle,
+                is DiagnosticsExportState.Ready,
+                -> Unit
+                is DiagnosticsExportState.Working ->
+                    Text(
+                        stringResource(diagnosticsExportStepLabel(diagnosticsExport.step)),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                DiagnosticsExportState.Saved ->
+                    Text(
+                        stringResource(R.string.diagnostics_export_saved),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                is DiagnosticsExportState.Failed ->
+                    InlineFailureContainer(
+                        message = stringResource(diagnosticsExport.message.resourceId),
+                        actionLabel = stringResource(R.string.b3_retry),
+                        onAction = callbacks.onRetryDiagnosticsExport,
+                        onDismiss = callbacks.onDismissDiagnosticsExport,
+                    )
             }
         }
     }
@@ -947,6 +1003,17 @@ private fun LazyListScope.diagnosticsSettings(
         }
     }
 }
+
+@StringRes
+private fun diagnosticsExportStepLabel(step: DiagnosticsExportStep): Int =
+    when (step) {
+        DiagnosticsExportStep.PREPARING ->
+            R.string.diagnostics_export_preparing
+        DiagnosticsExportStep.BUILDING ->
+            R.string.diagnostics_export_building
+        DiagnosticsExportStep.COPYING ->
+            R.string.diagnostics_export_copying
+    }
 
 /** Internal rather than private: the shared Settings header renders the SETUP-origin failure. */
 @Composable

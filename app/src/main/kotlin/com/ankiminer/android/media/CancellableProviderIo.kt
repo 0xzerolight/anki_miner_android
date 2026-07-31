@@ -73,6 +73,7 @@ internal class ProviderIoCancellationController : ProviderIoCancellation {
     private fun listenerSafely(listener: () -> Unit) {
         try {
             listener()
+            // instrumentation: silent — sticky cancellation outlives an already closed resource
         } catch (_: Exception) {
             // Sticky cancellation survives a resource which another cleanup path already closed.
         }
@@ -271,6 +272,7 @@ internal object CancellableProviderIo {
     private fun cancelSafely(cancel: () -> Unit) {
         try {
             cancel()
+            // instrumentation: silent — operation cleanup re-observes stored close failure
         } catch (_: Exception) {
             // The operation thread re-observes stored resource-close failures during cleanup.
         }
@@ -375,6 +377,7 @@ internal object CancellableProviderIo {
         fun cancelSafely() {
             try {
                 cancel()
+                // instrumentation: silent — operation thread re-observes stored close failure
             } catch (_: Exception) {
                 // close() re-observes the stored failure on the operation thread.
             }

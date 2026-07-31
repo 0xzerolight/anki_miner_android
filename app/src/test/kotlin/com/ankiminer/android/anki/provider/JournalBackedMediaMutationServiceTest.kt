@@ -35,13 +35,33 @@ import com.ankiminer.android.anki.protocol.NotAttemptedMedia
 import com.ankiminer.android.anki.protocol.StoreMediaRequest
 import com.ankiminer.android.anki.protocol.StoredMedia
 import com.ankiminer.android.anki.protocol.UncertainMedia
+import com.ankiminer.android.diagnostics.log.AppLog
+import com.ankiminer.android.diagnostics.log.LogLevel
+import com.ankiminer.android.diagnostics.log.NoOpSink
+import com.ankiminer.android.diagnostics.log.RecordingLogSink
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 
 class JournalBackedMediaMutationServiceTest {
+    private val recorded = RecordingLogSink()
+
+    @Before
+    fun installRecordingSink() {
+        AppLog.setMinLevel(LogLevel.INFO)
+        AppLog.install(NoOpSink)
+        AppLog.install(recorded)
+    }
+
+    @After
+    fun detachRecordingSink() {
+        AppLog.install(NoOpSink)
+    }
+
     @Test
     fun `result-ready replay reconstructs exact stored acknowledgements without side effects`() {
         val request = request(2)
@@ -402,6 +422,43 @@ class JournalBackedMediaMutationServiceTest {
             assertEquals(MediaClaimState.COMMIT_UNCERTAIN, fixture.journal.claims.values.single().state)
             assertEquals(1, fixture.journal.uncertainCompletionCount)
         }
+    }
+
+    @Test
+    fun `media store exception and genuine null receipt produce different records`() {
+        val request = request(1)
+        val exceptionFixture = Fixture(request)
+        exceptionFixture.provider.storeFailure = IllegalStateException("store fault")
+        exceptionFixture.execute()
+        val nullFixture = Fixture(request)
+        nullFixture.provider.receipts.add(null)
+        nullFixture.execute()
+
+        val records = recorded.records.filter { it.contains("op=media.store") }
+        assertEquals(2, records.size)
+        assertTrue(
+            records[0],
+            records[0].contains(
+                " E run=- c=media op=media.store outcome=fail entry_id=100 " +
+                    "media_key=${request.assets.single().assetId} receipt=exception",
+            ),
+        )
+        assertTrue(records[0], records[0].contains("java.lang.IllegalStateException: store fault"))
+        assertTrue(
+            records[1],
+            records[1].contains(
+                " W run=- c=media op=media.store outcome=fail entry_id=100 " +
+                    "media_key=${request.assets.single().assetId} receipt=null",
+            ),
+        )
+        assertTrue(
+            records[1],
+            records[1].contains(
+                "java.lang.Throwable: AnkiDroid returned a null media-store receipt",
+            ),
+        )
+        assertFalse(records[1], records[1].contains("IllegalStateException"))
+        assertFalse(records.joinToString(), records.joinToString().contains("clip0"))
     }
 
     @Test

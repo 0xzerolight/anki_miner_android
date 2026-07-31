@@ -1,5 +1,7 @@
 package com.ankiminer.android.reading
 
+import com.ankiminer.android.diagnostics.log.AppLog
+import com.ankiminer.android.diagnostics.log.LogComponent
 import com.ankiminer.android.media.BoundedFileCopier
 import com.ankiminer.android.media.BoundedFileCopyPolicy
 import com.ankiminer.android.media.BoundedFileCopyProgress
@@ -430,6 +432,14 @@ internal class ReadingSourceStager(
                             },
                     )
                 } catch (failure: ZipException) {
+                    AppLog.w(
+                        LogComponent.READING,
+                        "embedded_sidecar.copy",
+                        failure,
+                        "extension" to "mokuro",
+                        "nameBytes" to selected.name.toByteArray(StandardCharsets.UTF_8).size,
+                        "outcome" to "fail",
+                    )
                     throw embeddedSidecarUnreadable(failure)
                 }
             if (copied == 0L) throw EmptyReadingSourceException(ReadingSourceStageRole.MOKURO_SIDECAR)
