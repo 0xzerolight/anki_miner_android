@@ -40,6 +40,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusDirection
@@ -689,6 +690,8 @@ internal fun MessageSnackbarEffect(
     onAction: () -> Unit = {},
     onDismiss: () -> Unit = {},
 ) {
+    val currentOnAction by rememberUpdatedState(onAction)
+    val currentOnDismiss by rememberUpdatedState(onDismiss)
     LaunchedEffect(message) {
         if (message != null) {
             val result =
@@ -697,11 +700,11 @@ internal fun MessageSnackbarEffect(
                     actionLabel = actionLabel,
                     withDismissAction = true,
                     duration = SnackbarDuration.Long,
-                )
+            )
             if (result == SnackbarResult.ActionPerformed) {
-                onAction()
+                currentOnAction()
             } else {
-                onDismiss()
+                currentOnDismiss()
             }
         }
     }
