@@ -387,27 +387,38 @@ class BridgeMiningRepositoryTest {
     }
 
     @Test
-    fun `foreground promotion failure cancels Python and dominates terminal cancellation`() {
-        val harness = harness(foregroundFailure = true)
+    fun `foreground promotion execution failure keeps its cause and distinct fault`() {
+        val (harness, failed) = foregroundFailure(ForegroundStartFailure.EXECUTION)
 
-        runBlocking { harness.repository.startVideo(INPUT) }
-        val curating = awaitState(harness.repository) { it is MiningRunState.Curating } as MiningRunState.Curating
-        runBlocking {
-            harness.repository.confirmCuration(
-                curating.request.runId,
-                curating.request.requestId,
-                FIRST_SELECTION,
-            )
-        }
-
-        assertTrue(harness.bridge.cancellationSubmitted.await(2, TimeUnit.SECONDS))
-        harness.bridge.allowTerminal.countDown()
-        val failed = awaitState(harness.repository, MiningRunState::isTerminal) as MiningRunState.Failed
         assertEquals("Background mining did not start safely", failed.failure.message)
         assertFalse(failed.failure.retryable)
-        // "unconfirmed", not "timeout": this fixture completes the future exceptionally, so the
-        // bounded get() raises ExecutionException and never reaches its deadline.
-        assertEquals("foreground_start_unconfirmed", failed.failure.diagnostic)
+        assertEquals("foreground_start_failed", failed.failure.diagnostic)
+        val record = recorded.records.single { it.contains("op=foreground.start") }
+        assertTrue(record, record.contains("java.util.concurrent.ExecutionException"))
+        assertTrue(record, record.contains("Caused by: java.lang.IllegalStateException: test promotion failure"))
+    }
+
+    @Test
+    fun `foreground promotion timeout has a distinct fault`() {
+        val (_, failed) = foregroundFailure(ForegroundStartFailure.TIMEOUT)
+
+        assertEquals("Background mining did not start safely", failed.failure.message)
+        assertFalse(failed.failure.retryable)
+        assertEquals("foreground_start_timeout", failed.failure.diagnostic)
+        val record = recorded.records.single { it.contains("op=foreground.start") }
+        assertTrue(record, record.contains("java.util.concurrent.TimeoutException: test promotion timeout"))
+    }
+
+    @Test
+    fun `foreground promotion interruption restores the thread interrupt`() {
+        val (harness, failed) = foregroundFailure(ForegroundStartFailure.INTERRUPTION)
+
+        assertEquals("Background mining did not start safely", failed.failure.message)
+        assertFalse(failed.failure.retryable)
+        assertEquals("foreground_start_interrupted", failed.failure.diagnostic)
+        assertTrue(harness.foreground.cancelObservedInterrupt.get())
+        val record = recorded.records.single { it.contains("op=foreground.start") }
+        assertTrue(record, record.contains("java.lang.InterruptedException: test promotion interruption"))
     }
 
     @Test
@@ -545,7 +556,7 @@ class BridgeMiningRepositoryTest {
                 tokenizerResourceProvider = InstalledTokenizerResourceProvider { error("must not inspect") },
                 runtimePaths = MiningRuntimePaths(File("/tmp/cache"), File("/tmp/native")),
                 sourceGrantReleaser = SourceGrantReleaser { },
-                foregroundStarter = FakeForegroundStarter(fail = false),
+                foregroundStarter = FakeForegroundStarter(failure = null),
                 runExecutor = MiningTaskExecutor { task -> queuedRun.set(task) },
                 controlExecutor = controlExecutor.asMiningTaskExecutor(),
                 strings = testStringResourceResolver,
@@ -598,7 +609,7 @@ class BridgeMiningRepositoryTest {
                     },
                 runtimePaths = MiningRuntimePaths(File("/tmp/cache"), File("/tmp/native")),
                 sourceGrantReleaser = SourceGrantReleaser { },
-                foregroundStarter = FakeForegroundStarter(fail = false),
+                foregroundStarter = FakeForegroundStarter(failure = null),
                 runExecutor = runExecutor.asMiningTaskExecutor(),
                 controlExecutor = controlExecutor.asMiningTaskExecutor(),
                 strings = testStringResourceResolver,
@@ -744,7 +755,7 @@ class BridgeMiningRepositoryTest {
     }
 
     private fun harness(
-        foregroundFailure: Boolean = false,
+        foregroundFailure: ForegroundStartFailure? = null,
         mismatchedTerminal: Boolean = false,
         fallbackState: ReleaseState = ReleaseState.ABSENT,
         releases: MutableList<String> = Collections.synchronizedList(mutableListOf()),
@@ -799,6 +810,27 @@ class BridgeMiningRepositoryTest {
                 foregroundStartTimeoutSeconds = 2,
             )
         return Harness(repository, bridge, anki, inputOwner, foreground)
+    }
+
+    private fun foregroundFailure(
+        failure: ForegroundStartFailure,
+    ): Pair<Harness, MiningRunState.Failed> {
+        val harness = harness(foregroundFailure = failure)
+        runBlocking { harness.repository.startVideo(INPUT) }
+        val curating =
+            awaitState(harness.repository) { it is MiningRunState.Curating } as MiningRunState.Curating
+        runBlocking {
+            harness.repository.confirmCuration(
+                curating.request.runId,
+                curating.request.requestId,
+                FIRST_SELECTION,
+            )
+        }
+        assertTrue(harness.bridge.cancellationSubmitted.await(2, TimeUnit.SECONDS))
+        harness.bridge.allowTerminal.countDown()
+        val failed =
+            awaitState(harness.repository, MiningRunState::isTerminal) as MiningRunState.Failed
+        return harness to failed
     }
 
     /** Record heads from `c=` onward: the timestamp, level and run id are not what these assert. */
@@ -873,11 +905,18 @@ class BridgeMiningRepositoryTest {
         }
     }
 
+    private enum class ForegroundStartFailure {
+        EXECUTION,
+        TIMEOUT,
+        INTERRUPTION,
+    }
+
     private class FakeForegroundStarter(
-        private val fail: Boolean,
+        private val failure: ForegroundStartFailure?,
     ) : MiningForegroundStarter {
         val startCount = AtomicInteger()
         val lease = FakeForegroundLease()
+        val cancelObservedInterrupt = AtomicBoolean()
 
         override fun startSession(
             runId: String,
@@ -885,10 +924,26 @@ class BridgeMiningRepositoryTest {
             listener: MiningForegroundSessionListener,
         ): CompletableFuture<MiningForegroundLease> {
             startCount.incrementAndGet()
-            if (fail) {
-                return CompletableFuture<MiningForegroundLease>().also {
-                    it.completeExceptionally(IllegalStateException("test promotion failure"))
+            when (failure) {
+                ForegroundStartFailure.EXECUTION -> {
+                    return CompletableFuture<MiningForegroundLease>().also {
+                        it.completeExceptionally(IllegalStateException("test promotion failure"))
+                    }
                 }
+
+                ForegroundStartFailure.TIMEOUT ->
+                    return ThrowingForegroundFuture(
+                        java.util.concurrent.TimeoutException("test promotion timeout"),
+                        cancelObservedInterrupt,
+                    )
+
+                ForegroundStartFailure.INTERRUPTION ->
+                    return ThrowingForegroundFuture(
+                        InterruptedException("test promotion interruption"),
+                        cancelObservedInterrupt,
+                    )
+
+                null -> Unit
             }
             lease.sessionIdentity =
                 MiningForegroundSessionIdentity(
@@ -897,6 +952,21 @@ class BridgeMiningRepositoryTest {
                     "00000000-0000-0000-0000-000000000001",
                 )
             return CompletableFuture.completedFuture(lease)
+        }
+    }
+
+    private class ThrowingForegroundFuture(
+        private val failure: Exception,
+        private val cancelObservedInterrupt: AtomicBoolean,
+    ) : CompletableFuture<MiningForegroundLease>() {
+        override fun get(
+            timeout: Long,
+            unit: TimeUnit,
+        ): MiningForegroundLease = throw failure
+
+        override fun cancel(mayInterruptIfRunning: Boolean): Boolean {
+            cancelObservedInterrupt.set(Thread.currentThread().isInterrupted)
+            return super.cancel(mayInterruptIfRunning)
         }
     }
 

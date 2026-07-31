@@ -27,7 +27,9 @@ import com.ankiminer.android.service.MiningForegroundSessionIdentity
 import com.ankiminer.android.service.MiningForegroundSessionListener
 import java.text.Normalizer
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.ExecutionException
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -693,23 +695,29 @@ internal class BridgeMiningRepository(
         val lease =
             try {
                 future.get(foregroundStartTimeoutSeconds, TimeUnit.SECONDS)
-            } catch (failure: Exception) {
-                // One arm on purpose: a TimeoutException, an ExecutionException wrapping the real
-                // ForegroundServiceStartNotAllowedException and an InterruptedException are
-                // indistinguishable to the code here, which is why the fault code stays
-                // foreground_start_unconfirmed. This record is what names which one it was.
-                AppLog.e(
-                    LogComponent.MINING,
-                    "foreground.start",
-                    failure,
-                    "outcome" to "fail",
-                    "timeoutSeconds" to foregroundStartTimeoutSeconds,
-                )
-                future.cancel(false)
-                recordFaultAndCancel(
+            } catch (failure: TimeoutException) {
+                handleForegroundStartFailure(
                     generation,
-                    strings.resolve(R.string.mining_failure_background_start_unsafe),
-                    diagnostic = "foreground_start_unconfirmed",
+                    future,
+                    failure,
+                    "foreground_start_timeout",
+                )
+                return
+            } catch (failure: ExecutionException) {
+                handleForegroundStartFailure(
+                    generation,
+                    future,
+                    failure,
+                    "foreground_start_failed",
+                )
+                return
+            } catch (failure: InterruptedException) {
+                Thread.currentThread().interrupt()
+                handleForegroundStartFailure(
+                    generation,
+                    future,
+                    failure,
+                    "foreground_start_interrupted",
                 )
                 return
             }
@@ -760,6 +768,28 @@ internal class BridgeMiningRepository(
         }
 
         submitFinalCurationResponse(generation, request, rawResponse)
+    }
+
+    private fun handleForegroundStartFailure(
+        generation: Long,
+        future: CompletableFuture<MiningForegroundLease>,
+        failure: Exception,
+        diagnostic: String,
+    ) {
+        AppLog.e(
+            LogComponent.MINING,
+            "foreground.start",
+            failure,
+            "outcome" to "fail",
+            "code" to diagnostic,
+            "timeoutSeconds" to foregroundStartTimeoutSeconds,
+        )
+        future.cancel(false)
+        recordFaultAndCancel(
+            generation,
+            strings.resolve(R.string.mining_failure_background_start_unsafe),
+            diagnostic = diagnostic,
+        )
     }
 
     /** Continue a zero-selection run without claiming a media-processing foreground service. */
