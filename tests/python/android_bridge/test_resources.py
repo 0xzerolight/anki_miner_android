@@ -1344,14 +1344,17 @@ def test_malformed_pitch_slot_is_exposed_for_same_id_replacement(
     ]
 
 
-def _ajt_audio_zip(path: Path) -> Path:
+def _ajt_audio_zip(
+    path: Path,
+    audio_bytes: bytes = b"fixture mp3",
+) -> Path:
     index = {
         "headwords": {"猫": ["cat.mp3"]},
         "files": {"cat.mp3": {"kana_reading": "ねこ"}},
     }
     with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         archive.writestr("fixture-pack/index.json", json.dumps(index, ensure_ascii=False))
-        archive.writestr("fixture-pack/media/cat.mp3", b"fixture mp3")
+        archive.writestr("fixture-pack/media/cat.mp3", audio_bytes)
     return path
 
 
@@ -1444,6 +1447,63 @@ def test_audio_pack_zip_is_private_self_contained_and_inventory_visible(
             "contentAvailable": True,
         }
     ]
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="local-resource importers require the runtime engine dependency set",
+)
+def test_replacing_audio_pack_does_not_reuse_previous_run_cache(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from android_bridge import mining
+    from android_bridge.expression_audio_fetcher import _RunAudioCache
+    from anki_miner.services.audio_packs.fetcher import LocalAudioPackFetcher
+
+    home = _local_home(tmp_path, monkeypatch)
+    first_source = _ajt_audio_zip(tmp_path / "audio-first.zip", b"first recording")
+    request = {
+        "operationId": "audio-first",
+        "sourcePath": str(first_source),
+        "packId": "fixture-pack",
+        "overwrite": False,
+    }
+    local_resources.import_audio_pack(request)
+
+    installed = home / "audio_packs" / "fixture-pack"
+    cache_root = home / "audio_cache" / "local_packs"
+
+    def fetch_for_one_run() -> bytes:
+        lifetime = _RunAudioCache(cache_root)
+        fetcher = LocalAudioPackFetcher(
+            db_path=installed / "index.sqlite",
+            pack_dir=installed / "content",
+            pack_id="fixture-pack",
+            cache_dir=cache_root,
+        )
+        chain = mining._ExpressionAudioSourceChain([fetcher], cache_lifetime=lifetime)
+        try:
+            cached = chain.fetch("猫", "ねこ")
+            assert cached is not None
+            return cached.read_bytes()
+        finally:
+            chain.close()
+
+    assert fetch_for_one_run() == b"first recording"
+    assert list(cache_root.rglob("*")) == []
+
+    replacement = _ajt_audio_zip(tmp_path / "audio-replacement.zip", b"corrected recording")
+    local_resources.import_audio_pack(
+        {
+            **request,
+            "operationId": "audio-replacement",
+            "sourcePath": str(replacement),
+            "overwrite": True,
+        }
+    )
+
+    assert fetch_for_one_run() == b"corrected recording"
 
 
 def test_audio_pack_streaming_extractor_rejects_links(

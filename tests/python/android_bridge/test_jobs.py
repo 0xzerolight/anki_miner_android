@@ -138,6 +138,35 @@ def test_one_active_job_and_fresh_cancel_event_per_run() -> None:
     assert not second.cancel_event.is_set()
 
 
+def test_kotlin_cancellation_check_releases_parked_curation() -> None:
+    registry = JobRegistry()
+    handle = registry.begin()
+    emitted = threading.Event()
+    cancellation_requested = threading.Event()
+    returned: list[object] = []
+
+    def wait() -> None:
+        returned.append(
+            registry.await_curation(
+                handle.run_id,
+                [FakeWord("猫", "猫", "猫だ", 0, 1, 1)],
+                lambda _raw: emitted.set(),
+                cancellation_requested.is_set,
+            ),
+        )
+
+    thread = threading.Thread(target=wait, daemon=True)
+    thread.start()
+    assert emitted.wait(1), "curation request was not emitted"
+
+    cancellation_requested.set()
+    thread.join(1)
+
+    assert not thread.is_alive()
+    assert returned == [None]
+    assert handle.cancel_event.is_set()
+
+
 def test_selection_returns_original_objects_and_chosen_sentence_variant() -> None:
     registry = JobRegistry()
     original = FakeWord("食べた", "食べる", "最初の文", 1, 2, 1)
@@ -395,6 +424,26 @@ def test_repeated_cancellation_is_idempotent() -> None:
     thread.join(1)
 
     assert returned == [None]
+
+
+def test_correlated_cancellation_after_finish_is_idempotent() -> None:
+    registry = JobRegistry()
+    handle = registry.begin()
+
+    registry.finish(handle.run_id)
+
+    assert registry.cancel(handle.run_id) is False
+
+
+def test_unrelated_cancellation_after_finish_remains_rejected() -> None:
+    registry = JobRegistry()
+    handle = registry.begin()
+    registry.finish(handle.run_id)
+
+    with pytest.raises(BridgeProtocolError) as failure:
+        registry.cancel("run_ffffffffffffffffffffffffffffffff")
+
+    assert failure.value.code == "no_active_job"
 
 
 def test_sequential_curation_rejects_prior_response_without_poisoning_current_gate() -> None:

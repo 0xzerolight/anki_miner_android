@@ -29,6 +29,7 @@ import com.ankiminer.android.media.AndroidSafSelectionInventory
 import com.ankiminer.android.media.SafBroker
 import com.ankiminer.android.media.SafInputCacheJanitor
 import com.ankiminer.android.mining.AndroidMiningInputOwnerFactory
+import com.ankiminer.android.mining.AndroidMiningRunInterruptionStore
 import com.ankiminer.android.mining.BridgeMiningRepository
 import com.ankiminer.android.mining.BuiltInInstalledTokenizerResourceProvider
 import com.ankiminer.android.mining.CoordinatorAnkiCancellation
@@ -131,6 +132,9 @@ class AnkiMinerApplication : Application() {
     }
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val runtimeWorkCoordinator = RuntimeWorkCoordinator()
+    private val miningRunInterruptionStore by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        AndroidMiningRunInterruptionStore(noBackupFilesDir)
+    }
     internal val runtimeWorkState
         get() = runtimeWorkCoordinator.activeKind
     private val pythonRuntime by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
@@ -271,6 +275,7 @@ class AnkiMinerApplication : Application() {
                 resourceManager.state.value.startupReadiness == ResourceStartupReadiness.READY
             },
             strings = stringResourceResolver,
+            interruptionStore = miningRunInterruptionStore,
         )
     }
 
@@ -305,6 +310,7 @@ class AnkiMinerApplication : Application() {
             },
             sentenceAudioSynthesizerFactory = AndroidSentenceAudioSynthesizerFactory(this),
             strings = stringResourceResolver,
+            interruptionStore = miningRunInterruptionStore,
         )
     }
 

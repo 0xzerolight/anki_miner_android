@@ -18,6 +18,7 @@ import com.ankiminer.android.mining.MiningRunState
 import com.ankiminer.android.mining.MiningSource
 import com.ankiminer.android.mining.RuntimeWorkConflict
 import com.ankiminer.android.mining.VideoMiningInput
+import com.ankiminer.android.mining.cancellationPending
 import com.ankiminer.android.mining.cancellationToken
 import com.ankiminer.android.mining.isTerminal
 import com.ankiminer.android.mining.runId
@@ -119,7 +120,7 @@ class VideoMiningViewModel internal constructor(
                 curation = curation,
                 startPending = local.pending.start,
                 curationPending = local.pending.curation || repositoryCurationPending,
-                cancelPending = local.pending.cancel,
+                cancelPending = local.pending.cancel || runState.cancellationPending,
                 resetPending = local.pending.reset,
                 commandError = local.commandError,
                 runtimeConflict =

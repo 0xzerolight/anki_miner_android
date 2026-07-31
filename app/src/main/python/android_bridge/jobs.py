@@ -23,6 +23,7 @@ _SENTENCE_ID_RE = re.compile(r"^sentence_[0-9a-f]{32}$")
 CURATION_PAGE_MAX_CANDIDATES = 100
 CURATION_PAGE_MAX_UTF8_BYTES = 512 * 1024
 _MAX_CURATED_SOURCE_ITEMS = ANKI_LIMITS_V1["createCall"]["maxSourceItems"]
+_CURATION_CANCELLATION_POLL_SECONDS = 0.05
 
 
 @dataclass(frozen=True)
@@ -287,6 +288,7 @@ class JobRegistry:
     def __init__(self) -> None:
         self._lock = threading.RLock()
         self._active: _JobState | None = None
+        self._last_finished_run_id: str | None = None
         self._shutdown = False
 
     def begin(self) -> JobHandle:
@@ -324,7 +326,15 @@ class JobRegistry:
         """
 
         with self._lock:
-            state = self._require_active(run_id)
+            if not isinstance(run_id, str) or not _RUN_ID_RE.fullmatch(run_id):
+                raise BridgeProtocolError("invalid_run_id", "runId is not a valid opaque run ID")
+            state = self._active
+            if state is None:
+                if self._last_finished_run_id == run_id:
+                    return False
+                raise BridgeProtocolError("no_active_job", "There is no active Python mining job")
+            if state.handle.run_id != run_id:
+                raise BridgeProtocolError("stale_run", "The response belongs to a stale mining run")
             first = not state.handle.cancel_event.is_set()
             state.handle.cancel_event.set()
             if state.curation is not None:
@@ -342,6 +352,7 @@ class JobRegistry:
                 state.curation.cancelled = True
                 state.curation.page_resolved = True
                 state.curation.event.set()
+            self._last_finished_run_id = run_id
             self._active = None
 
     def shutdown(self) -> None:
@@ -361,6 +372,7 @@ class JobRegistry:
         run_id: str,
         candidates: Sequence[object],
         emit_request: Callable[[str], None],
+        cancellation_requested: Callable[[], bool] | None = None,
     ) -> list[object] | None:
         """Publish candidates and park until Kotlin confirms or cancels.
 
@@ -373,6 +385,11 @@ class JobRegistry:
             raise BridgeProtocolError("invalid_candidates", "Curation candidates must be a sequence")
         if not callable(emit_request):
             raise BridgeProtocolError("invalid_callback", "emit_request must be callable")
+        if cancellation_requested is not None and not callable(cancellation_requested):
+            raise BridgeProtocolError(
+                "invalid_callback",
+                "cancellation_requested must be callable",
+            )
 
         with self._lock:
             state = self._require_active(run_id)
@@ -456,7 +473,11 @@ class JobRegistry:
                     self._complete_curation_locked(state, gate)
                 raise
 
-            gate.event.wait()
+            while not gate.event.wait(
+                _CURATION_CANCELLATION_POLL_SECONDS if cancellation_requested is not None else None,
+            ):
+                if cancellation_requested is not None and cancellation_requested():
+                    self.cancel(run_id)
             with self._lock:
                 if state.handle.cancel_event.is_set() or gate.cancelled:
                     self._complete_curation_locked(state, gate)
