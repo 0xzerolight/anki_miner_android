@@ -145,7 +145,7 @@ class AndroidSentenceAudioFetcher:
             # a callback exception, or a malformed response abort reading mining.
             if not self._logged_callback_failure:
                 self._logged_callback_failure = True
-                logger.warning("Android sentence TTS skipped: %s", type(error).__name__)
+                logger.warning("Android sentence TTS skipped", exc_info=error)
             self._report_warning("invalid_tts_callback")
             return None
 
@@ -196,4 +196,4 @@ class AndroidSentenceAudioFetcher:
             self._warning_callback(message)
         except Exception:
             # Optional warning delivery must never turn optional sentence audio into a fatal run.
-            logger.warning("Android sentence TTS warning callback failed")
+            logger.warning("Android sentence TTS warning callback failed", exc_info=True)

@@ -200,6 +200,7 @@ def dispatch(raw_request: str, callbacks: object | None = None) -> str:
             return _dispatch_validated(request_type, decoded.payload, raw_request)
         return _dispatch_validated(request_type, decoded.payload, raw_request, callbacks)
     except BridgeProtocolError as error:
+        logger.error("Bridge protocol error code=%s", error.code, exc_info=error)
         return encode_protocol_error(error, request_type=request_type)
     except Exception as error:
         fault_id = record_fault(

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import contextlib
 import logging
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import ExitStack
@@ -171,8 +170,10 @@ class _ExpressionAudioSourceChain:
         for fetcher in self._fetchers:
             close = getattr(fetcher, "close", None)
             if callable(close):
-                with contextlib.suppress(Exception):
+                try:
                     close()
+                except Exception:
+                    logger.debug("Expression-audio source close failed", exc_info=True)
 
 
 class _PostProcessCleanupError(Exception):
@@ -285,8 +286,14 @@ def _map_config(request: _VideoRequest, files_dir: Path) -> object:
     ).engine_config
 
 
-def _show_optional_failure(presenter: object, message: str, error: Exception) -> None:
-    logger.warning("%s: %s", message, error)
+def _show_optional_failure(
+    presenter: object,
+    message: str,
+    error: Exception,
+    *,
+    service: str,
+) -> None:
+    logger.warning("optional_service_failed service=%s message=%s", service, message, exc_info=error)
     presenter.show_warning(f"{message}: {error}")
 
 
@@ -503,7 +510,12 @@ def _build_processor(
         try:
             dictionary_registry.load()
         except OSError as error:
-            _show_optional_failure(adapters.presenter, "Couldn't scan dictionaries folder", error)
+            _show_optional_failure(
+                adapters.presenter,
+                "Couldn't scan dictionaries folder",
+                error,
+                service="dictionary_registry",
+            )
         providers = _android_dictionary_provider_chain(
             dictionary_registry.build_provider_chain(config),
             adapters.cancel_event.is_set,
@@ -518,7 +530,12 @@ def _build_processor(
             try:
                 definition_service.ensure_loaded()
             except Exception as error:
-                _show_optional_failure(adapters.presenter, "Couldn't load dictionary chain", error)
+                _show_optional_failure(
+                    adapters.presenter,
+                    "Couldn't load dictionary chain",
+                    error,
+                    service="dictionary_chain",
+                )
 
         subtitle_parser = SubtitleParserService(
             config,
@@ -548,7 +565,12 @@ def _build_processor(
                     # empty for the run.
                     adapters.presenter.show_warning("No pitch accent source could be loaded")
             except Exception as error:
-                _show_optional_failure(adapters.presenter, "Couldn't load pitch accent data", error)
+                _show_optional_failure(
+                    adapters.presenter,
+                    "Couldn't load pitch accent data",
+                    error,
+                    service="pitch_accent",
+                )
                 pitch_accent_service = None
 
         if config.frequency_active:
@@ -566,7 +588,12 @@ def _build_processor(
             except Exception as error:
                 for provider in candidates:
                     _close_without_masking(provider, "frequency provider")
-                _show_optional_failure(adapters.presenter, "Couldn't load frequency data", error)
+                _show_optional_failure(
+                    adapters.presenter,
+                    "Couldn't load frequency data",
+                    error,
+                    service="frequency",
+                )
                 frequency_service = None
 
         try:
@@ -574,7 +601,12 @@ def _build_processor(
             if config.use_known_words_db:
                 known_word_db.initialize()
         except Exception as error:
-            _show_optional_failure(adapters.presenter, "Couldn't initialize known word database", error)
+            _show_optional_failure(
+                adapters.presenter,
+                "Couldn't initialize known word database",
+                error,
+                service="known_words",
+            )
             known_word_db = None
 
         word_list_service = None
@@ -586,7 +618,12 @@ def _build_processor(
                 )
                 word_list_service.load()
             except Exception as error:
-                _show_optional_failure(adapters.presenter, "Couldn't load word lists", error)
+                _show_optional_failure(
+                    adapters.presenter,
+                    "Couldn't load word lists",
+                    error,
+                    service="word_lists",
+                )
                 word_list_service = None
 
         wordset_service = None
@@ -597,7 +634,12 @@ def _build_processor(
                 if not wordset_service.is_available():
                     wordset_service = None
             except Exception as error:
-                _show_optional_failure(adapters.presenter, "Couldn't load name wordsets", error)
+                _show_optional_failure(
+                    adapters.presenter,
+                    "Couldn't load name wordsets",
+                    error,
+                    service="name_wordsets",
+                )
                 wordset_service = None
 
         stats_service = StatsService(config.stats_db_path)

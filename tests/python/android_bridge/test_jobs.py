@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import queue
 import re
 import threading
@@ -135,6 +136,18 @@ def test_one_active_job_and_fresh_cancel_event_per_run() -> None:
     assert second.run_id != first.run_id
     assert second.cancel_event is not first.cancel_event
     assert not second.cancel_event.is_set()
+
+
+def test_reject_helper_logs_and_preserves_protocol_code(caplog: pytest.LogCaptureFixture) -> None:
+    registry = JobRegistry()
+    registry.begin()
+    caplog.set_level(logging.ERROR, logger="android_bridge.jobs")
+
+    with pytest.raises(BridgeProtocolError) as error:
+        registry.begin()
+
+    assert error.value.code == "job_already_active"
+    assert "bridge_protocol_rejected code=job_already_active" in caplog.messages
 
 
 def test_selection_returns_original_objects_and_chosen_sentence_variant() -> None:
