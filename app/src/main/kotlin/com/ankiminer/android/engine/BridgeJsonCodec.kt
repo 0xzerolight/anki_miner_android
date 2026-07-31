@@ -1,6 +1,8 @@
 package com.ankiminer.android.engine
 
 import com.ankiminer.android.anki.generated.UnicodeContractV151
+import com.ankiminer.android.diagnostics.log.AppLog
+import com.ankiminer.android.diagnostics.log.LogComponent
 import com.ankiminer.android.mining.AnkiWriteState
 import com.ankiminer.android.mining.CurationCandidate
 import com.ankiminer.android.mining.CurationPage
@@ -95,21 +97,24 @@ object BridgeJsonCodec {
             try {
                 factory.createParser(bytes).use { parser -> readEnvelope(parser, raw) }
             } catch (error: BridgeProtocolException) {
+                // Every classification raised inside readEnvelope funnels through this one clause,
+                // so this record covers all of them and none of them needs a line of its own.
+                warnDecode(error.category, bytes.size, error)
                 throw error
             } catch (error: StreamConstraintsException) {
-                fail(BridgeProtocolCategory.INVALID_JSON, "bridge JSON exceeds a structural limit", error)
+                failDecode(BridgeProtocolCategory.INVALID_JSON, "bridge JSON exceeds a structural limit", bytes.size, error)
             } catch (error: JsonParseException) {
                 val duplicate = error.originalMessage.contains("Duplicate field", ignoreCase = true)
                 val surrogate = error.originalMessage.contains("surrogate", ignoreCase = true)
                 when {
-                    duplicate -> fail(BridgeProtocolCategory.DUPLICATE_JSON_KEY, "bridge JSON contains a duplicate key", error)
-                    surrogate -> fail(BridgeProtocolCategory.INVALID_UTF8, "bridge JSON contains an invalid Unicode scalar", error)
-                    else -> fail(BridgeProtocolCategory.INVALID_JSON, "malformed bridge JSON", error)
+                    duplicate -> failDecode(BridgeProtocolCategory.DUPLICATE_JSON_KEY, "bridge JSON contains a duplicate key", bytes.size, error)
+                    surrogate -> failDecode(BridgeProtocolCategory.INVALID_UTF8, "bridge JSON contains an invalid Unicode scalar", bytes.size, error)
+                    else -> failDecode(BridgeProtocolCategory.INVALID_JSON, "malformed bridge JSON", bytes.size, error)
                 }
             } catch (error: IOException) {
-                fail(BridgeProtocolCategory.INVALID_JSON, "malformed bridge JSON", error)
+                failDecode(BridgeProtocolCategory.INVALID_JSON, "malformed bridge JSON", bytes.size, error)
             } catch (error: IllegalArgumentException) {
-                fail(BridgeProtocolCategory.INVALID_VALUE, "bridge payload violates its model invariants", error)
+                failDecode(BridgeProtocolCategory.INVALID_VALUE, "bridge payload violates its model invariants", bytes.size, error)
             }
         val (runId, requestId) = identifiers(decoded)
         if (expectedRunId != null && runId != null && runId != expectedRunId) {
@@ -347,8 +352,10 @@ object BridgeJsonCodec {
             val severity =
                 try {
                     ValidationSeverity.valueOf(text(issue.getValue("severity"), "validation severity"))
-                } catch (_: IllegalArgumentException) {
-                    fail(BridgeProtocolCategory.INVALID_VALUE, "validation severity is invalid")
+                } catch (failure: IllegalArgumentException) {
+                    // Bound rather than discarded so the record warnDecode writes when this reaches
+                    // the decode clause names the rejected constant; the message here cannot.
+                    fail(BridgeProtocolCategory.INVALID_VALUE, "validation severity is invalid", failure)
                 }
             ValidationIssue(
                 text(issue.getValue("component"), "validation component"),
@@ -1055,6 +1062,9 @@ object BridgeJsonCodec {
                 generator.writeEndObject()
             }
         } catch (error: IOException) {
+            // Not a BridgeProtocolException, so warnDecode's clause never sees it, and every caller
+            // maps the IllegalStateException onto a generic command failure.
+            AppLog.w(LogComponent.BRIDGE, "codec.encode", error, "type" to type, "outcome" to "fail")
             throw IllegalStateException("failed to encode bridge message", error)
         }
         if (output.size() > MAX_ENVELOPE_UTF8_BYTES) fail(BridgeProtocolCategory.INPUT_TOO_LARGE, "encoded bridge message is too large")
@@ -1512,6 +1522,40 @@ object BridgeJsonCodec {
         message: String,
         cause: Throwable? = null,
     ): Nothing = throw BridgeProtocolException(category, message, cause)
+
+    /** [fail] with the classification recorded first. */
+    private fun failDecode(
+        category: BridgeProtocolCategory,
+        message: String,
+        bytes: Int,
+        cause: Throwable,
+    ): Nothing {
+        warnDecode(category, bytes, cause)
+        fail(category, message, cause)
+    }
+
+    /**
+     * Records why an envelope was rejected.
+     *
+     * Every caller collapses the whole [BridgeProtocolException] family onto one user string, so a
+     * malformed envelope, a size-limit rejection and a duplicate key are indistinguishable in the
+     * field without this. The envelope itself is never logged: it carries mined Japanese sentences
+     * and curation candidate text, and its size is the only property of it that is safe to record.
+     */
+    private fun warnDecode(
+        category: BridgeProtocolCategory,
+        bytes: Int,
+        cause: Throwable,
+    ) {
+        AppLog.w(
+            LogComponent.BRIDGE,
+            "codec.decode",
+            cause,
+            "category" to category.name,
+            "bytes" to bytes,
+            "outcome" to "fail",
+        )
+    }
 
     private val ANKI_FIELDS =
         setOf(

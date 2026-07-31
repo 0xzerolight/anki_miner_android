@@ -5,6 +5,7 @@ import android.os.Looper
 import com.ankiminer.android.data.settings.DiagnosticsSettingsRepository
 import com.ankiminer.android.diagnostics.log.AppLog
 import com.ankiminer.android.diagnostics.log.LogComponent
+import com.chaquo.python.PyException
 import com.chaquo.python.PyObject
 import com.chaquo.python.Python
 import com.chaquo.python.android.AndroidPlatform
@@ -122,12 +123,95 @@ internal class ChaquopyPyBridge(
             "Python bridge calls must run on a worker thread"
         }
         val boundary = runtime.awaitRuntime().boundary
-        val result =
-            if (callbacks == null) {
-                boundary.callAttr("dispatch", rawRequest)
-            } else {
-                boundary.callAttr("dispatch", rawRequest, callbacks)
+        // Resolved outside the DEBUG guard because the failure record needs it too, and it is a
+        // bounded prefix scan rather than a parse.
+        val type = bridgeEnvelopeType(rawRequest)
+        val startedNanos = System.nanoTime()
+        AppLog.d(LogComponent.BRIDGE, "dispatch") {
+            arrayOf("at" to "enter", "type" to type, "bytes" to utf8Length(rawRequest))
+        }
+        val response =
+            try {
+                val result =
+                    if (callbacks == null) {
+                        boundary.callAttr("dispatch", rawRequest)
+                    } else {
+                        boundary.callAttr("dispatch", rawRequest, callbacks)
+                    }
+                result.toJava(String::class.java)
+            } catch (failure: PyException) {
+                // The Chaquopy message embeds the whole Python traceback, and this is the only place
+                // it exists as a throwable: the bridge protocol turns everything else into an error
+                // envelope, so an exception escaping here means Python failed outside the protocol.
+                AppLog.e(
+                    LogComponent.BRIDGE,
+                    "dispatch",
+                    failure,
+                    "type" to type,
+                    "outcome" to "fail",
+                    "ms" to elapsedMillis(startedNanos),
+                )
+                throw failure
             }
-        return result.toJava(String::class.java)
+        AppLog.d(LogComponent.BRIDGE, "dispatch") {
+            arrayOf(
+                "at" to "exit",
+                "outcome" to "ok",
+                "ms" to elapsedMillis(startedNanos),
+                "bytes" to utf8Length(response),
+            )
+        }
+        return response
     }
 }
+
+/** Characters of the envelope prefix scanned for the message type. */
+private const val TYPE_PREFIX_WINDOW = 128
+private const val TYPE_MARKER = "\"type\":\""
+private const val UNKNOWN_TYPE = "?"
+
+/**
+ * The bridge message type, read out of the fixed envelope prefix `BridgeJsonCodec.encode` writes.
+ *
+ * Deliberately not a parse: the payload carries mined Japanese sentences and curation candidate
+ * text, and none of it may reach a log record. Anything that does not look like an envelope yields
+ * [UNKNOWN_TYPE] rather than throwing, because a log call may not fail its caller.
+ */
+internal fun bridgeEnvelopeType(rawRequest: String): String {
+    val window =
+        if (rawRequest.length > TYPE_PREFIX_WINDOW) rawRequest.substring(0, TYPE_PREFIX_WINDOW) else rawRequest
+    val marker = window.indexOf(TYPE_MARKER)
+    if (marker < 0) return UNKNOWN_TYPE
+    val from = marker + TYPE_MARKER.length
+    val end = window.indexOf('"', from)
+    return if (end < 0) UNKNOWN_TYPE else window.substring(from, end)
+}
+
+/**
+ * UTF-8 length without encoding the string. A curation envelope reaches a megabyte, and
+ * `toByteArray()` would copy all of it once per dispatch just to count it.
+ *
+ * An unpaired surrogate counts as 3 — the width of the U+FFFD a lenient encoder substitutes. It is
+ * a defensive value and not a size the bridge ever sees: `BridgeJsonCodec.strictUtf8` encodes with
+ * `CodingErrorAction.REPORT`, so an envelope holding one is rejected before it can be dispatched.
+ * `String.toByteArray` does not agree here — it substitutes a single `?` — which is why nothing
+ * asserts the two are equal for this input.
+ */
+internal fun utf8Length(text: String): Int {
+    var total = 0
+    var index = 0
+    while (index < text.length) {
+        val codePoint = text.codePointAt(index)
+        total +=
+            when {
+                codePoint < 0x80 -> 1
+                codePoint < 0x800 -> 2
+                codePoint < 0x10000 -> 3
+                else -> 4
+            }
+        index += Character.charCount(codePoint)
+    }
+    return total
+}
+
+private fun elapsedMillis(startedNanos: Long): Long = (System.nanoTime() - startedNanos) / 1_000_000L
