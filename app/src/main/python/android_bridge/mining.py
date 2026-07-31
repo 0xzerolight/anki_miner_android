@@ -869,6 +869,10 @@ def run_video(
             if adapters.cancel_event.is_set():
                 raise AnkiOperationCancelled("runVideo", "Mining was cancelled", False)
             config = _map_config(request, files_dir)
+            from anki_miner.utils.ffmpeg_resolver import resolve_ffmpeg
+
+            if resolve_ffmpeg(config) == "ffmpeg":
+                logger.error("ffmpeg_fallback_to_path")
             if adapters.cancel_event.is_set():
                 raise AnkiOperationCancelled("runVideo", "Mining was cancelled", False)
             result = _process_episode(request, config, adapters)

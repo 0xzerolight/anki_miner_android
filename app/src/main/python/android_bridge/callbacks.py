@@ -335,6 +335,7 @@ class AndroidProgressCallback:
         the per-stage on_start/on_progress counts.
         """
 
+        logger.info("engine_stage index=%d total=%d name=%s", index, total, name)
         _invoke(
             self.callbacks,
             "onStage",

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import json
+import logging
 import os
 from dataclasses import fields, replace
 from pathlib import Path
@@ -79,6 +80,25 @@ def test_empty_snapshot_preserves_all_102_desktop_defaults_except_targeted_andro
         field.name: getattr(expected, field.name) for field in desktop_fields
     }
     assert mapped.android_tts_enabled is False
+
+
+def test_ffmpeg_binary_verification_logs_non_executable_and_missing_paths(
+    caplog: pytest.LogCaptureFixture,
+    tmp_path: Path,
+) -> None:
+    paths = _paths(tmp_path)
+    paths.native_library_dir.mkdir()
+    ffmpeg = paths.native_library_dir / "libffmpeg.so"
+    ffmpeg.write_bytes(b"not executable")
+    ffmpeg.chmod(0o644)
+    caplog.set_level(logging.ERROR, logger="android_bridge.config_map")
+
+    map_config_settings({}, paths)
+
+    failures = [record.getMessage() for record in caplog.records if "ffmpeg_binary_verification_failed" in record.msg]
+    assert len(failures) == 2
+    assert any("tool=ffmpeg" in failure and "reason=not_executable" in failure for failure in failures)
+    assert any("tool=ffprobe" in failure and "reason=stat_failed" in failure for failure in failures)
 
 
 def test_typed_fields_and_entries_are_reconstructed(tmp_path: Path) -> None:

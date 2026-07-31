@@ -307,6 +307,9 @@ class JobRegistry:
             handle = JobHandle(run_id=_opaque_id("run"), cancel_event=threading.Event())
             self._active = _JobState(handle=handle)
             log_context.set_active_run(handle.run_id)
+            from .bootstrap import begin_run_warning_count
+
+            begin_run_warning_count()
             return handle
 
     @property
@@ -350,6 +353,9 @@ class JobRegistry:
                 state.curation.cancelled = True
                 state.curation.page_resolved = True
                 state.curation.event.set()
+            from .bootstrap import emit_run_warning_summary
+
+            emit_run_warning_summary()
             self._active = None
             log_context.set_active_run(None)
 
