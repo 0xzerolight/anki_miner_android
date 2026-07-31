@@ -1,6 +1,7 @@
 package com.ankiminer.android.media
 
 import android.content.Context
+import android.os.SystemClock
 import androidx.lifecycle.SavedStateHandle
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -24,6 +25,19 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class SafSelectionProcessDeathInstrumentedTest {
     private val context = ApplicationProvider.getApplicationContext<Context>()
+
+    /** Polls [condition] on the main thread until it holds or the budget runs out. */
+    private fun awaitRestored(condition: () -> Boolean) {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val deadline = SystemClock.uptimeMillis() + RESTORE_TIMEOUT_MILLIS
+        while (SystemClock.uptimeMillis() < deadline) {
+            var satisfied = false
+            instrumentation.runOnMainSync { satisfied = condition() }
+            if (satisfied) return
+            Thread.sleep(25)
+        }
+        instrumentation.waitForIdleSync()
+    }
 
     @Test
     fun freshViewModelsRestoreDurableSelectionsStartThenClearAllGrants() {
@@ -69,6 +83,9 @@ class SafSelectionProcessDeathInstrumentedTest {
                 )
         }
         instrumentation.waitForIdleSync()
+        // Restoration publishes only after a durable write on the IO dispatcher, which
+        // waitForIdleSync does not cover — it waits on the main looper alone.
+        awaitRestored { video.uiState.value.subtitle.document?.displayName != null }
 
         instrumentation.runOnMainSync {
             assertEquals("episode.mkv", video.uiState.value.video.document?.displayName)
@@ -187,6 +204,7 @@ class SafSelectionProcessDeathInstrumentedTest {
     }
 
     private companion object {
+        const val RESTORE_TIMEOUT_MILLIS = 10_000L
         const val VIDEO_URI = "content://provider/video"
         const val SUBTITLE_URI = "content://provider/subtitle"
         const val READING_URI = "content://provider/reading"

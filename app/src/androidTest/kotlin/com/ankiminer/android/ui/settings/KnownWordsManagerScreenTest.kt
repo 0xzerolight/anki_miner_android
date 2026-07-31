@@ -14,6 +14,7 @@ import com.ankiminer.android.data.resources.KnownWordsFailureOperation
 import com.ankiminer.android.data.resources.KnownWordsInventory
 import com.ankiminer.android.data.resources.KnownWordsPage
 import com.ankiminer.android.data.resources.ResourceFailure
+import com.ankiminer.android.data.resources.ResourceStartupReadiness
 import com.ankiminer.android.data.resources.ResourceFailureAction
 import com.ankiminer.android.data.resources.ResourceFailureOrigin
 import com.ankiminer.android.data.resources.ResourceFailureRetry
@@ -36,6 +37,9 @@ class KnownWordsManagerScreenTest {
                 KnownWordsManagerScreen(
                     state =
                         SetupUiState(
+                            // READY: every control on this screen is gated on !state.busy,
+                            // and a PENDING startup makes the whole screen inert.
+                            resourceStartup = ResourceStartupReadiness.READY,
                             knownWords =
                                 KnownWordsInventory(
                                     totalCount = 1_000,
@@ -86,6 +90,7 @@ class KnownWordsManagerScreenTest {
                 KnownWordsManagerScreen(
                     state =
                         SetupUiState(
+                            resourceStartup = ResourceStartupReadiness.READY,
                             knownWordsPage =
                                 KnownWordsPage(
                                     query = "猫",
