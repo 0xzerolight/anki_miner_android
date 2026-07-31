@@ -138,6 +138,35 @@ def test_one_active_job_and_fresh_cancel_event_per_run() -> None:
     assert not second.cancel_event.is_set()
 
 
+def test_kotlin_cancellation_check_releases_parked_curation() -> None:
+    registry = JobRegistry()
+    handle = registry.begin()
+    emitted = threading.Event()
+    cancellation_requested = threading.Event()
+    returned: list[object] = []
+
+    def wait() -> None:
+        returned.append(
+            registry.await_curation(
+                handle.run_id,
+                [FakeWord("猫", "猫", "猫だ", 0, 1, 1)],
+                lambda _raw: emitted.set(),
+                cancellation_requested.is_set,
+            ),
+        )
+
+    thread = threading.Thread(target=wait, daemon=True)
+    thread.start()
+    assert emitted.wait(1), "curation request was not emitted"
+
+    cancellation_requested.set()
+    thread.join(1)
+
+    assert not thread.is_alive()
+    assert returned == [None]
+    assert handle.cancel_event.is_set()
+
+
 def test_selection_returns_original_objects_and_chosen_sentence_variant() -> None:
     registry = JobRegistry()
     original = FakeWord("食べた", "食べる", "最初の文", 1, 2, 1)

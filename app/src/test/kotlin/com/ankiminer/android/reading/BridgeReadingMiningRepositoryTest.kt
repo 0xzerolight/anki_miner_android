@@ -217,6 +217,25 @@ class BridgeReadingMiningRepositoryTest {
     }
 
     @Test
+    fun `failed reading interruption cleanup is retried by reset`() {
+        val interruptionStore = FakeMiningRunInterruptionStore(failCompletions = 1)
+        val harness = harness(interruptionStore = interruptionStore)
+
+        runBlocking { harness.repository.startReading(INPUT) }
+        val curating =
+            awaitState(harness.repository) { it is MiningRunState.Curating } as
+                MiningRunState.Curating
+        runBlocking { harness.repository.cancel(curating.request.runId) }
+        harness.bridge.allowTerminal.countDown()
+
+        assertTrue(awaitState(harness.repository, MiningRunState::isTerminal) is MiningRunState.Failed)
+        assertTrue(interruptionStore.hasBlockedRecord())
+        runBlocking { harness.repository.reset() }
+        assertTrue(harness.repository.state.value is MiningRunState.Idle)
+        assertFalse(interruptionStore.hasBlockedRecord())
+    }
+
+    @Test
     fun `cancelling pending reading foreground start bypasses control timeout`() {
         val harness =
             harness(
@@ -587,6 +606,24 @@ class BridgeReadingMiningRepositoryTest {
         assertEquals(2, harness.bridge.cancellationAttempts.get())
         harness.bridge.allowTerminal.countDown()
         assertTrue(awaitState(harness.repository, MiningRunState::isTerminal) is MiningRunState.Cancelled)
+    }
+
+    @Test
+    fun `local reading cancellation releases curation after all dispatches fail`() {
+        val harness = harness(cancelFailuresBeforeSuccess = Int.MAX_VALUE)
+
+        runBlocking { harness.repository.startReading(INPUT) }
+        val curating =
+            awaitState(harness.repository) { it is MiningRunState.Curating } as MiningRunState.Curating
+        runBlocking { harness.repository.cancel(curating.request.runId) }
+
+        assertTrue(harness.bridge.localCancellationObserved.await(2, TimeUnit.SECONDS))
+        assertTrue(waitUntil(2, TimeUnit.SECONDS) { harness.bridge.cancellationAttempts.get() == 2 })
+        assertEquals(2, harness.bridge.cancellationAttempts.get())
+        harness.bridge.allowTerminal.countDown()
+
+        assertTrue(awaitState(harness.repository, MiningRunState::isTerminal) is MiningRunState.Cancelled)
+        assertEquals(1, harness.foreground.lease.closeCount.get())
     }
 
     @Test
@@ -1113,11 +1150,17 @@ class BridgeReadingMiningRepositoryTest {
         }
     }
 
-    private class FakeMiningRunInterruptionStore :
+    private class FakeMiningRunInterruptionStore(
+        private var failCompletions: Int = 0,
+    ) :
         com.ankiminer.android.mining.MiningRunInterruptionStore {
         private var current: com.ankiminer.android.mining.InterruptedMiningRun? = null
 
         override fun current(): com.ankiminer.android.mining.InterruptedMiningRun? = current
+
+        override fun hasBlockedRecord(): Boolean = current != null
+
+        override fun clearUnrecognizedRecord(): Boolean = current == null
 
         override fun begin(
             kind: com.ankiminer.android.mining.MiningRunKind,
@@ -1156,6 +1199,10 @@ class BridgeReadingMiningRepositoryTest {
             kind: com.ankiminer.android.mining.MiningRunKind,
             ownerId: String,
         ): Boolean {
+            if (failCompletions > 0) {
+                failCompletions -= 1
+                return false
+            }
             val active = current ?: return true
             if (active.kind != kind || active.ownerId != ownerId) return false
             current = null
@@ -1187,6 +1234,7 @@ class BridgeReadingMiningRepositoryTest {
         val allowDispatchReturn = CountDownLatch(if (pauseAfterTerminalCallback) 1 else 0)
         val cancellationDispatchReached =
             CountDownLatch(if (pauseCancellationUntilTerminal) 1 else 0)
+        val localCancellationObserved = CountDownLatch(1)
         val cancellationAttempts = AtomicInteger()
         private val terminalDelivered = AtomicBoolean()
         private val cancelled = AtomicBoolean()
@@ -1267,6 +1315,11 @@ class BridgeReadingMiningRepositoryTest {
             }
             callbacks.onCurationNeeded(if (pagedCuration) CURATION_PAGE_1_REQUEST else CURATION_REQUEST)
             while (curationSubmitted.count > 0 && cancellationSubmitted.count > 0) {
+                if (callbacks.cancellationRequested()) {
+                    cancelled.set(true)
+                    localCancellationObserved.countDown()
+                    break
+                }
                 Thread.sleep(2)
             }
             if (invokeTtsAfterCancellation) {

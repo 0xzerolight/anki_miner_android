@@ -28,6 +28,7 @@ import com.ankiminer.android.mining.CurationSelection
 import com.ankiminer.android.mining.CurationSessionState
 import com.ankiminer.android.mining.InstalledTokenizerResource
 import com.ankiminer.android.mining.InstalledTokenizerResourceProvider
+import com.ankiminer.android.mining.InterruptedMiningRun
 import com.ankiminer.android.mining.MiningCancellationToken
 import com.ankiminer.android.mining.MiningCancellationTokenFactory
 import com.ankiminer.android.mining.MiningCommandException
@@ -191,14 +192,18 @@ internal class BridgeReadingMiningRepository(
     }
 
     private val monitor = Any()
-    private val startupInterruption =
-        interruptionStore.current()?.takeIf { it.kind == MiningRunKind.READING }
+    private val startupRecord = interruptionStore.current()
+    private val startupInterruption = startupRecord?.takeIf { it.kind == MiningRunKind.READING }
+    private val startupUnrecognizedInterruption =
+        startupRecord == null && interruptionStore.hasBlockedRecord()
     private val mutableState =
         MutableStateFlow<MiningRunState>(
-            startupInterruption?.let { interruption ->
+            if (startupInterruption != null || startupUnrecognizedInterruption) {
                 ProtocolFault(strings.resolve(R.string.mining_failure_background_stopped))
-                    .toFailed(interruption.runId, result = null)
-            } ?: MiningRunState.Idle,
+                    .toFailed(startupInterruption?.runId, result = null)
+            } else {
+                MiningRunState.Idle
+            },
         )
     override val state: StateFlow<MiningRunState> = mutableState.asStateFlow()
     internal val admissionState: StateFlow<MiningRunAdmissionState> = admissionGate.state
@@ -206,6 +211,7 @@ internal class BridgeReadingMiningRepository(
     private var nextGeneration = 1L
     private var restartRequired: ProtocolFault? = null
     private var savedCurationSessionState: CurationSessionState? = null
+    private var pendingInterruptionCleanup: InterruptedMiningRun? = null
 
     init {
         require(foregroundStartTimeoutSeconds > 0)
@@ -390,18 +396,24 @@ internal class BridgeReadingMiningRepository(
             if (active != null || !mutableState.value.isTerminal) {
                 throw MiningCommandException("Only a terminal mining run can be reset")
             }
-            val interruption = startupInterruption
-            if (
-                interruption != null &&
-                !interruptionStore.complete(
-                    MiningRunKind.READING,
-                    interruption.ownerId,
-                )
-            ) {
+            val interruption = pendingInterruptionCleanup ?: startupInterruption
+            val cleaned =
+                when {
+                    interruption != null ->
+                        interruptionStore.complete(
+                            MiningRunKind.READING,
+                            interruption.ownerId,
+                        )
+                    startupUnrecognizedInterruption ->
+                        interruptionStore.clearUnrecognizedRecord()
+                    else -> true
+                }
+            if (!cleaned) {
                 throw MiningCommandException(
                     strings.resolve(R.string.mining_failure_background_stopped),
                 )
             }
+            pendingInterruptionCleanup = null
             savedCurationSessionState = null
             mutableState.value = MiningRunState.Idle
         }
@@ -685,13 +697,24 @@ internal class BridgeReadingMiningRepository(
             val interruption =
                 synchronized(monitor) {
                     activeFor(generation)?.let { run ->
-                        if (run.interruptionRecorded) run.cancellationToken.value else null
+                        if (run.interruptionRecorded) {
+                            InterruptedMiningRun(
+                                MiningRunKind.READING,
+                                run.cancellationToken.value,
+                                run.runId,
+                            )
+                        } else {
+                            null
+                        }
                     }
                 }
             if (
                 interruption != null &&
-                !interruptionStore.complete(MiningRunKind.READING, interruption)
+                !interruptionStore.complete(MiningRunKind.READING, interruption.ownerId)
             ) {
+                synchronized(monitor) {
+                    pendingInterruptionCleanup = interruption
+                }
                 recordFault(generation, strings.resolve(R.string.mining_failure_background_cleanup))
             }
 
@@ -1425,6 +1448,13 @@ internal class BridgeReadingMiningRepository(
     private inner class RunCallbacks(
         private val generation: Long,
     ) : EngineCallbacks {
+        override fun cancellationRequested(): Boolean =
+            synchronized(monitor) {
+                activeFor(generation)?.let { run ->
+                    run.cancelRequested || run.cancellation.isCancelled()
+                } ?: true
+            }
+
         override fun registerJob(message: String): String =
             try {
                 registerJob(generation, message)

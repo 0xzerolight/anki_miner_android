@@ -122,14 +122,18 @@ internal class BridgeMiningRepository(
     }
 
     private val monitor = Any()
-    private val startupInterruption =
-        interruptionStore.current()?.takeIf { it.kind == MiningRunKind.VIDEO }
+    private val startupRecord = interruptionStore.current()
+    private val startupInterruption = startupRecord?.takeIf { it.kind == MiningRunKind.VIDEO }
+    private val startupUnrecognizedInterruption =
+        startupRecord == null && interruptionStore.hasBlockedRecord()
     private val mutableState =
         MutableStateFlow<MiningRunState>(
-            startupInterruption?.let { interruption ->
+            if (startupInterruption != null || startupUnrecognizedInterruption) {
                 ProtocolFault(strings.resolve(R.string.mining_failure_background_stopped))
-                    .toFailed(interruption.runId, result = null)
-            } ?: MiningRunState.Idle,
+                    .toFailed(startupInterruption?.runId, result = null)
+            } else {
+                MiningRunState.Idle
+            },
         )
     override val state: StateFlow<MiningRunState> = mutableState.asStateFlow()
     internal val admissionState: StateFlow<MiningRunAdmissionState> = admissionGate.state
@@ -137,6 +141,7 @@ internal class BridgeMiningRepository(
     private var nextGeneration = 1L
     private var restartRequired: ProtocolFault? = null
     private var savedCurationSessionState: CurationSessionState? = null
+    private var pendingInterruptionCleanup: InterruptedMiningRun? = null
 
     init {
         require(foregroundStartTimeoutSeconds > 0)
@@ -316,18 +321,24 @@ internal class BridgeMiningRepository(
             if (active != null || !mutableState.value.isTerminal) {
                 throw MiningCommandException("Only a terminal mining run can be reset")
             }
-            val interruption = startupInterruption
-            if (
-                interruption != null &&
-                !interruptionStore.complete(
-                    MiningRunKind.VIDEO,
-                    interruption.ownerId,
-                )
-            ) {
+            val interruption = pendingInterruptionCleanup ?: startupInterruption
+            val cleaned =
+                when {
+                    interruption != null ->
+                        interruptionStore.complete(
+                            MiningRunKind.VIDEO,
+                            interruption.ownerId,
+                        )
+                    startupUnrecognizedInterruption ->
+                        interruptionStore.clearUnrecognizedRecord()
+                    else -> true
+                }
+            if (!cleaned) {
                 throw MiningCommandException(
                     strings.resolve(R.string.mining_failure_background_stopped),
                 )
             }
+            pendingInterruptionCleanup = null
             savedCurationSessionState = null
             mutableState.value = MiningRunState.Idle
         }
@@ -577,13 +588,24 @@ internal class BridgeMiningRepository(
             val interruption =
                 synchronized(monitor) {
                     activeFor(generation)?.let { run ->
-                        if (run.interruptionRecorded) run.cancellationToken.value else null
+                        if (run.interruptionRecorded) {
+                            InterruptedMiningRun(
+                                MiningRunKind.VIDEO,
+                                run.cancellationToken.value,
+                                run.runId,
+                            )
+                        } else {
+                            null
+                        }
                     }
                 }
             if (
                 interruption != null &&
-                !interruptionStore.complete(MiningRunKind.VIDEO, interruption)
+                !interruptionStore.complete(MiningRunKind.VIDEO, interruption.ownerId)
             ) {
+                synchronized(monitor) {
+                    pendingInterruptionCleanup = interruption
+                }
                 recordFault(generation, strings.resolve(R.string.mining_failure_background_cleanup))
             }
 
@@ -1283,6 +1305,13 @@ internal class BridgeMiningRepository(
     private inner class RunCallbacks(
         private val generation: Long,
     ) : EngineCallbacks {
+        override fun cancellationRequested(): Boolean =
+            synchronized(monitor) {
+                activeFor(generation)?.let { run ->
+                    run.cancelRequested || run.cancellation.isCancelled()
+                } ?: true
+            }
+
         override fun registerJob(message: String): String =
             try {
                 registerJob(generation, message)

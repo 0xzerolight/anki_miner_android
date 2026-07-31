@@ -50,6 +50,12 @@ internal data class InterruptedMiningRun(
 internal interface MiningRunInterruptionStore {
     fun current(): InterruptedMiningRun?
 
+    /** True when any durable record, including an unreadable one, blocks new admission. */
+    fun hasBlockedRecord(): Boolean
+
+    /** Remove a record only when it cannot be decoded as an owned run. */
+    fun clearUnrecognizedRecord(): Boolean
+
     fun begin(
         kind: MiningRunKind,
         ownerId: String,
@@ -69,6 +75,10 @@ internal interface MiningRunInterruptionStore {
 
 internal data object NoOpMiningRunInterruptionStore : MiningRunInterruptionStore {
     override fun current(): InterruptedMiningRun? = null
+
+    override fun hasBlockedRecord(): Boolean = false
+
+    override fun clearUnrecognizedRecord(): Boolean = true
 
     override fun begin(
         kind: MiningRunKind,
@@ -96,6 +106,23 @@ internal class AndroidMiningRunInterruptionStore(
     override fun current(): InterruptedMiningRun? =
         synchronized(lock) {
             readLocked()
+        }
+
+    override fun hasBlockedRecord(): Boolean =
+        synchronized(lock) {
+            readLocked() != null || file.baseFile.exists()
+        }
+
+    override fun clearUnrecognizedRecord(): Boolean =
+        synchronized(lock) {
+            if (readLocked() != null) return@synchronized false
+            if (!file.baseFile.exists()) return@synchronized true
+            try {
+                file.delete()
+                !file.baseFile.exists()
+            } catch (_: RuntimeException) {
+                false
+            }
         }
 
     override fun begin(
