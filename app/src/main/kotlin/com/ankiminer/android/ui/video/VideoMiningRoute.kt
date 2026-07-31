@@ -9,9 +9,11 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.ankiminer.android.vm.VideoMiningViewModel
 
 private val VIDEO_MIME_TYPES = arrayOf("video/*", "application/octet-stream")
-private val SUBTITLE_MIME_TYPES =
+internal val SUBTITLE_MIME_TYPES =
     arrayOf(
         "application/x-subrip",
+        "application/x-ass",
+        "application/x-ssa",
         "text/*",
         "application/octet-stream",
     )

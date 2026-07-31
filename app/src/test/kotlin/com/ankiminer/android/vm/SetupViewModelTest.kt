@@ -1,6 +1,7 @@
 package com.ankiminer.android.vm
 
 import com.ankiminer.android.MainDispatcherRule
+import androidx.lifecycle.SavedStateHandle
 import com.ankiminer.android.anki.provider.AnkiProviderReadiness
 import com.ankiminer.android.anki.provider.AnkiRecoveryReadiness
 import com.ankiminer.android.anki.provider.AnkiRemediationCommand
@@ -40,6 +41,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 
@@ -47,6 +49,45 @@ import org.junit.Test
 class SetupViewModelTest {
     @get:Rule
     val mainDispatcherRule = MainDispatcherRule()
+
+    @Test
+    fun `picker result after recreation keeps the prepared frequency import metadata`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val savedState = SavedStateHandle()
+            val resources = FakeResourceManager()
+            val repository = FakeSettingsRepository(AppSettings())
+            val original =
+                viewModel(
+                    repository = repository,
+                    setup = FakeAnkiSetupManager(emptyList()),
+                    resources = resources,
+                    savedStateHandle = savedState,
+                )
+            advanceUntilIdle()
+            original.setFrequencySourceName("Custom TSV")
+            original.setFrequencyFormat(FrequencySourceFormat.TSV)
+            advanceUntilIdle()
+
+            assertTrue(original.prepareFrequencyImport())
+
+            val restored =
+                viewModel(
+                    repository = repository,
+                    setup = FakeAnkiSetupManager(emptyList()),
+                    resources = resources,
+                    savedStateHandle = savedState,
+                )
+            advanceUntilIdle()
+            restored.completePendingSettingsImport("content://test/frequency.tsv")
+            advanceUntilIdle()
+
+            assertEquals(
+                listOf(Triple("content://test/frequency.tsv", "custom-tsv", false)),
+                resources.frequencyImports,
+            )
+            assertEquals(listOf("Custom TSV"), resources.frequencySourceNames)
+            assertEquals(listOf(FrequencySourceFormat.TSV), resources.frequencyFormats)
+        }
 
     @Test
     fun `same note type reselection performs no settings write or refresh`() =
@@ -528,6 +569,7 @@ class SetupViewModelTest {
         repository: FakeSettingsRepository,
         setup: FakeAnkiSetupManager,
         resources: FakeResourceManager = FakeResourceManager(),
+        savedStateHandle: SavedStateHandle = SavedStateHandle(),
     ): SetupViewModel =
         SetupViewModel(
             resources = resources,
@@ -546,6 +588,7 @@ class SetupViewModelTest {
             runtimeWorkState = MutableStateFlow<RuntimeWorkCoordinator.Kind?>(null),
             refreshExternalReadiness = {},
             strings = testStringResourceResolver,
+            savedStateHandle = savedStateHandle,
         )
 
     private fun model(name: String, vararg fields: String) =
@@ -616,6 +659,7 @@ class SetupViewModelTest {
 
         val frequencyImports = mutableListOf<Triple<String, String, Boolean>>()
         val frequencySourceNames = mutableListOf<String>()
+        val frequencyFormats = mutableListOf<FrequencySourceFormat>()
         val pitchImports = mutableListOf<Pair<String, Boolean>>()
         private val mutableState =
             MutableStateFlow(
@@ -653,6 +697,7 @@ class SetupViewModelTest {
         ) {
             frequencyImports += Triple(uri, sourceId, replace)
             frequencySourceNames += sourceName
+            frequencyFormats += format
         }
 
         override suspend fun importPitchAccent(

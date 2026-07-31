@@ -364,10 +364,12 @@ class AppSettingsRepositoryTest {
                     onRestoreMiningDefaults = {
                         callbackCounts[SettingsResetAction.RESTORE_MINING_DEFAULTS] = 1
                         launch { repository.update(AppSettings::restoreMiningDefaults) }
+                        true
                     },
                     onResetAnkiTarget = {
                         callbackCounts[SettingsResetAction.RESET_ANKI_TARGET] = 1
                         launch { repository.update(AppSettings::resetAnkiTarget) }
+                        true
                     },
                     onResetResourceChoices = {
                         callbackCounts[SettingsResetAction.RESET_RESOURCE_CHOICES] = 1
@@ -380,6 +382,7 @@ class AppSettingsRepositoryTest {
                                 )
                             }
                         }
+                        true
                     },
                 )
                 advanceUntilIdle()
@@ -394,6 +397,18 @@ class AppSettingsRepositoryTest {
                 assertEquals(requestedAction.name, original, repository.settings.first())
             }
         }
+
+    @Test
+    fun `reset confirmation remains pending until the view model accepts it`() {
+        val requested =
+            SettingsResetConfirmationState().request(SettingsResetAction.RESET_ANKI_TARGET)
+
+        assertEquals(
+            SettingsResetAction.RESET_ANKI_TARGET,
+            requested.confirmIfAccepted(accepted = false).pendingAction,
+        )
+        assertNull(requested.confirmIfAccepted(accepted = true).pendingAction)
+    }
 
     @Test
     fun `legacy duplicate raw field map is quarantined without erasing unrelated settings`() {

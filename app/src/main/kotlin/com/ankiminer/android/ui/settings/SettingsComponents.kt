@@ -40,6 +40,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusDirection
@@ -160,13 +161,7 @@ internal fun NumericField(
         error = error,
         keyboardOptions =
             KeyboardOptions(
-                keyboardType =
-                    when {
-                        integer && allowNegative -> KeyboardType.Number
-                        integer -> KeyboardType.Number
-                        allowNegative -> KeyboardType.Decimal
-                        else -> KeyboardType.Decimal
-                    },
+                keyboardType = numericKeyboardType(integer, allowNegative),
                 imeAction = imeAction,
             ),
         keyboardActions =
@@ -184,6 +179,17 @@ internal fun NumericField(
                 },
     )
 }
+
+internal fun numericKeyboardType(
+    integer: Boolean,
+    allowNegative: Boolean,
+): KeyboardType =
+    when {
+        integer && allowNegative -> KeyboardType.NumberSigned
+        integer -> KeyboardType.Number
+        allowNegative -> KeyboardType.DecimalSigned
+        else -> KeyboardType.Decimal
+    }
 
 /**
  * One line. The checkbox already shows the resolved value, so the "Resolved value: On" caption is
@@ -684,6 +690,8 @@ internal fun MessageSnackbarEffect(
     onAction: () -> Unit = {},
     onDismiss: () -> Unit = {},
 ) {
+    val currentOnAction by rememberUpdatedState(onAction)
+    val currentOnDismiss by rememberUpdatedState(onDismiss)
     LaunchedEffect(message) {
         if (message != null) {
             val result =
@@ -692,11 +700,11 @@ internal fun MessageSnackbarEffect(
                     actionLabel = actionLabel,
                     withDismissAction = true,
                     duration = SnackbarDuration.Long,
-                )
+            )
             if (result == SnackbarResult.ActionPerformed) {
-                onAction()
+                currentOnAction()
             } else {
-                onDismiss()
+                currentOnDismiss()
             }
         }
     }

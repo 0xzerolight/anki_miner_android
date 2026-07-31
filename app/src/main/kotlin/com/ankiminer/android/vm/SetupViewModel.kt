@@ -1,7 +1,9 @@
 package com.ankiminer.android.vm
 
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.createSavedStateHandle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.CreationExtras
 import com.ankiminer.android.R
@@ -48,6 +50,7 @@ internal class SetupViewModel(
     private val runtimeWorkState: StateFlow<RuntimeWorkCoordinator.Kind?>,
     private val refreshExternalReadiness: () -> Unit,
     private val strings: StringResourceResolver,
+    private val savedStateHandle: SavedStateHandle = SavedStateHandle(),
 ) : ViewModel() {
     private data class LocalState(
         val lookupTerm: String = "猫",
@@ -81,6 +84,22 @@ internal class SetupViewModel(
     val wizardDismissedForSession: StateFlow<Boolean> = _wizardDismissedForSession.asStateFlow()
     private val settings = settingsRepository.settings
     private val repository = settingsRepository
+
+    private enum class PendingSettingsImportKind {
+        CUSTOM_DICTIONARY,
+        FREQUENCY,
+        PITCH,
+        AUDIO_PACK,
+        KNOWN_WORDS,
+    }
+
+    private data class PendingSettingsImport(
+        val kind: PendingSettingsImportKind,
+        val targetIdentity: String? = null,
+        val sourceName: String? = null,
+        val format: String? = null,
+    )
+
     private val settingsAnkiAndRuntime =
         combine(settings, ankiSetup.state, runtimeWorkState) { appSettings, ankiState, runtimeKind ->
             Triple(appSettings, ankiState, runtimeKind)
@@ -420,8 +439,8 @@ internal class SetupViewModel(
                         // The record's identity, not a freshly derived one: a name match targets
                         // the id already on disk so the priority chain entry survives.
                         sourceId = pending.identity,
-                        sourceName = state.frequencySourceName,
-                        format = state.frequencyFormat,
+                        sourceName = requireNotNull(pending.sourceName),
+                        format = requireNotNull(pending.frequencyFormat),
                         replace = true,
                     )
                 ResourceReplaceKind.PITCH ->
@@ -430,8 +449,8 @@ internal class SetupViewModel(
                         // As with frequency: the record's identity, so a name match
                         // replaces the slot already on disk and keeps its chain entry.
                         sourceId = pending.identity,
-                        sourceName = state.pitchSourceName,
-                        format = state.pitchFormat,
+                        sourceName = requireNotNull(pending.sourceName),
+                        format = requireNotNull(pending.pitchFormat),
                         replace = true,
                     )
                 ResourceReplaceKind.AUDIO_PACK ->
@@ -448,14 +467,158 @@ internal class SetupViewModel(
         local.update { it.copy(pendingReplace = null) }
     }
 
+    /** Snapshot picker metadata before Android may recreate this ViewModel. */
+    fun prepareCustomDictionaryImport(): Boolean {
+        val state = uiState.value
+        if (state.busy || !SLOT_ID.matches(state.customSlotId)) return false
+        savePendingSettingsImport(
+            PendingSettingsImport(
+                kind = PendingSettingsImportKind.CUSTOM_DICTIONARY,
+                targetIdentity = state.customSlotId,
+            ),
+        )
+        return true
+    }
+
+    /** Snapshot picker metadata before Android may recreate this ViewModel. */
+    fun prepareFrequencyImport(): Boolean {
+        val state = uiState.value
+        if (state.busy || state.frequencySourceName.isBlank()) return false
+        val target = ResourceIdentity.frequencyTarget(state.frequencySourceName, state.frequencySources)
+        savePendingSettingsImport(
+            PendingSettingsImport(
+                kind = PendingSettingsImportKind.FREQUENCY,
+                targetIdentity = target.identity,
+                sourceName = state.frequencySourceName,
+                format = state.frequencyFormat.name,
+            ),
+        )
+        return true
+    }
+
+    /** Snapshot picker metadata before Android may recreate this ViewModel. */
+    fun preparePitchAccentImport(): Boolean {
+        val state = uiState.value
+        if (state.busy || state.pitchSourceName.isBlank()) return false
+        val target = ResourceIdentity.pitchTarget(state.pitchSourceName, state.pitchSources)
+        savePendingSettingsImport(
+            PendingSettingsImport(
+                kind = PendingSettingsImportKind.PITCH,
+                targetIdentity = target.identity,
+                sourceName = state.pitchSourceName,
+                format = state.pitchFormat.name,
+            ),
+        )
+        return true
+    }
+
+    /** Snapshot picker metadata before Android may recreate this ViewModel. */
+    fun prepareAudioPackImport(): Boolean {
+        val state = uiState.value
+        if (state.busy || !state.audioPackIdValid) return false
+        savePendingSettingsImport(
+            PendingSettingsImport(
+                kind = PendingSettingsImportKind.AUDIO_PACK,
+                targetIdentity = state.audioPackId,
+            ),
+        )
+        return true
+    }
+
+    /** Snapshot picker metadata before Android may recreate this ViewModel. */
+    fun prepareKnownWordsImport(): Boolean {
+        val state = uiState.value
+        if (state.busy) return false
+        savePendingSettingsImport(
+            PendingSettingsImport(
+                kind = PendingSettingsImportKind.KNOWN_WORDS,
+                format = state.knownWordsFormat.name,
+            ),
+        )
+        return true
+    }
+
+    /** Consume a restored picker result using exactly the metadata visible when it was launched. */
+    fun completePendingSettingsImport(uri: String?) {
+        val pending = pendingSettingsImport() ?: return
+        if (uri == null) {
+            clearPendingSettingsImport()
+            return
+        }
+        val state = uiState.value
+        if (state.busy) return
+        val resourceState = resources.state.value
+        when (pending.kind) {
+            PendingSettingsImportKind.CUSTOM_DICTIONARY -> {
+                val target =
+                    ResourceImportTarget(
+                        identity = requireNotNull(pending.targetIdentity),
+                        installedName =
+                            resourceState.dictionaries
+                                .firstOrNull { it.occupied && it.slotId == pending.targetIdentity }
+                                ?.sourceName,
+                    )
+                dispatchCustomDictionaryImport(uri, target)
+            }
+            PendingSettingsImportKind.FREQUENCY -> {
+                val target =
+                    ResourceImportTarget(
+                        identity = requireNotNull(pending.targetIdentity),
+                        installedName =
+                            resourceState.frequencySources
+                                .firstOrNull { it.sourceId == pending.targetIdentity }
+                                ?.sourceName,
+                    )
+                dispatchFrequencyImport(
+                    uri = uri,
+                    target = target,
+                    sourceName = requireNotNull(pending.sourceName),
+                    format = FrequencySourceFormat.valueOf(requireNotNull(pending.format)),
+                )
+            }
+            PendingSettingsImportKind.PITCH -> {
+                val target =
+                    ResourceImportTarget(
+                        identity = requireNotNull(pending.targetIdentity),
+                        installedName =
+                            resourceState.pitchSources
+                                .firstOrNull { it.sourceId == pending.targetIdentity }
+                                ?.sourceName,
+                    )
+                dispatchPitchImport(
+                    uri = uri,
+                    target = target,
+                    sourceName = requireNotNull(pending.sourceName),
+                    format = PitchAccentSourceFormat.valueOf(requireNotNull(pending.format)),
+                )
+            }
+            PendingSettingsImportKind.AUDIO_PACK -> {
+                val target =
+                    ResourceImportTarget(
+                        identity = requireNotNull(pending.targetIdentity),
+                        installedName =
+                            resourceState.audioPacks
+                                .firstOrNull { it.packId == pending.targetIdentity }
+                                ?.sourceName,
+                    )
+                dispatchAudioPackImport(uri, target)
+            }
+            PendingSettingsImportKind.KNOWN_WORDS ->
+                viewModelScope.launch {
+                    resources.previewKnownWords(
+                        uri,
+                        KnownWordsSourceFormat.valueOf(requireNotNull(pending.format)),
+                    )
+                }
+        }
+        clearPendingSettingsImport()
+    }
+
     fun importCustomDictionary(uri: String) {
         val state = currentState()
         if (state.busy || !SLOT_ID.matches(state.customSlotId)) return
         val target = ResourceIdentity.customDictionaryTarget(state.customSlotId, state.dictionaries)
-        if (stagePendingReplace(ResourceReplaceKind.CUSTOM_DICTIONARY, target, uri)) return
-        viewModelScope.launch {
-            resources.importCustomDictionary(uri, target.identity, replace = false)
-        }
+        dispatchCustomDictionaryImport(uri, target)
     }
 
     fun setCustomSlotId(value: String) {
@@ -475,16 +638,7 @@ internal class SetupViewModel(
         if (state.busy || state.frequencySourceName.isBlank()) return
         val target =
             ResourceIdentity.frequencyTarget(state.frequencySourceName, state.frequencySources)
-        if (stagePendingReplace(ResourceReplaceKind.FREQUENCY, target, uri)) return
-        viewModelScope.launch {
-            resources.importFrequencySource(
-                uri = uri,
-                sourceId = target.identity,
-                sourceName = state.frequencySourceName,
-                format = state.frequencyFormat,
-                replace = false,
-            )
-        }
+        dispatchFrequencyImport(uri, target, state.frequencySourceName, state.frequencyFormat)
     }
 
     fun setPitchSourceName(value: String) {
@@ -499,16 +653,7 @@ internal class SetupViewModel(
         val state = currentState()
         if (state.busy || state.pitchSourceName.isBlank()) return
         val target = ResourceIdentity.pitchTarget(state.pitchSourceName, state.pitchSources)
-        if (stagePendingReplace(ResourceReplaceKind.PITCH, target, uri)) return
-        viewModelScope.launch {
-            resources.importPitchAccent(
-                uri = uri,
-                sourceId = target.identity,
-                sourceName = state.pitchSourceName,
-                format = state.pitchFormat,
-                replace = false,
-            )
-        }
+        dispatchPitchImport(uri, target, state.pitchSourceName, state.pitchFormat)
     }
 
     fun setAudioPackId(value: String) {
@@ -519,6 +664,79 @@ internal class SetupViewModel(
         val state = currentState()
         if (state.busy || !state.audioPackIdValid) return
         val target = ResourceIdentity.audioPackTarget(state.audioPackId, state.audioPacks)
+        dispatchAudioPackImport(uri, target)
+    }
+
+    private fun dispatchCustomDictionaryImport(
+        uri: String,
+        target: ResourceImportTarget,
+    ) {
+        if (stagePendingReplace(ResourceReplaceKind.CUSTOM_DICTIONARY, target, uri)) return
+        viewModelScope.launch {
+            resources.importCustomDictionary(uri, target.identity, replace = false)
+        }
+    }
+
+    private fun dispatchFrequencyImport(
+        uri: String,
+        target: ResourceImportTarget,
+        sourceName: String,
+        format: FrequencySourceFormat,
+    ) {
+        if (
+            stagePendingReplace(
+                kind = ResourceReplaceKind.FREQUENCY,
+                target = target,
+                uri = uri,
+                sourceName = sourceName,
+                frequencyFormat = format,
+            )
+        ) {
+            return
+        }
+        viewModelScope.launch {
+            resources.importFrequencySource(
+                uri = uri,
+                sourceId = target.identity,
+                sourceName = sourceName,
+                format = format,
+                replace = false,
+            )
+        }
+    }
+
+    private fun dispatchPitchImport(
+        uri: String,
+        target: ResourceImportTarget,
+        sourceName: String,
+        format: PitchAccentSourceFormat,
+    ) {
+        if (
+            stagePendingReplace(
+                kind = ResourceReplaceKind.PITCH,
+                target = target,
+                uri = uri,
+                sourceName = sourceName,
+                pitchFormat = format,
+            )
+        ) {
+            return
+        }
+        viewModelScope.launch {
+            resources.importPitchAccent(
+                uri = uri,
+                sourceId = target.identity,
+                sourceName = sourceName,
+                format = format,
+                replace = false,
+            )
+        }
+    }
+
+    private fun dispatchAudioPackImport(
+        uri: String,
+        target: ResourceImportTarget,
+    ) {
         if (stagePendingReplace(ResourceReplaceKind.AUDIO_PACK, target, uri)) return
         viewModelScope.launch {
             resources.importAudioPack(uri, target.identity, replace = false)
@@ -533,6 +751,9 @@ internal class SetupViewModel(
         kind: ResourceReplaceKind,
         target: ResourceImportTarget,
         uri: String,
+        sourceName: String? = null,
+        frequencyFormat: FrequencySourceFormat? = null,
+        pitchFormat: PitchAccentSourceFormat? = null,
     ): Boolean {
         val installedLabel = target.installedName ?: return false
         local.update {
@@ -543,10 +764,68 @@ internal class SetupViewModel(
                         identity = target.identity,
                         installedLabel = installedLabel,
                         uri = uri,
+                        sourceName = sourceName,
+                        frequencyFormat = frequencyFormat,
+                        pitchFormat = pitchFormat,
                     ),
             )
         }
         return true
+    }
+
+    private fun savePendingSettingsImport(pending: PendingSettingsImport) {
+        savedStateHandle[PENDING_SETTINGS_IMPORT_KIND_KEY] = pending.kind.name
+        savedStateHandle[PENDING_SETTINGS_IMPORT_TARGET_KEY] = pending.targetIdentity
+        savedStateHandle[PENDING_SETTINGS_IMPORT_SOURCE_NAME_KEY] = pending.sourceName
+        savedStateHandle[PENDING_SETTINGS_IMPORT_FORMAT_KEY] = pending.format
+    }
+
+    private fun pendingSettingsImport(): PendingSettingsImport? {
+        val kind =
+            savedStateHandle.get<String>(PENDING_SETTINGS_IMPORT_KIND_KEY)?.let { rawKind ->
+                runCatching { PendingSettingsImportKind.valueOf(rawKind) }.getOrNull()
+            } ?: run {
+                clearPendingSettingsImport()
+                return null
+            }
+        val pending =
+            PendingSettingsImport(
+                kind = kind,
+                targetIdentity = savedStateHandle[PENDING_SETTINGS_IMPORT_TARGET_KEY],
+                sourceName = savedStateHandle[PENDING_SETTINGS_IMPORT_SOURCE_NAME_KEY],
+                format = savedStateHandle[PENDING_SETTINGS_IMPORT_FORMAT_KEY],
+            )
+        val valid =
+            when (kind) {
+                PendingSettingsImportKind.CUSTOM_DICTIONARY,
+                PendingSettingsImportKind.AUDIO_PACK,
+                -> !pending.targetIdentity.isNullOrBlank()
+                PendingSettingsImportKind.FREQUENCY ->
+                    !pending.targetIdentity.isNullOrBlank() &&
+                        !pending.sourceName.isNullOrBlank() &&
+                        enumValueOrNull<FrequencySourceFormat>(pending.format) != null
+                PendingSettingsImportKind.PITCH ->
+                    !pending.targetIdentity.isNullOrBlank() &&
+                        !pending.sourceName.isNullOrBlank() &&
+                        enumValueOrNull<PitchAccentSourceFormat>(pending.format) != null
+                PendingSettingsImportKind.KNOWN_WORDS ->
+                    enumValueOrNull<KnownWordsSourceFormat>(pending.format) != null
+            }
+        if (!valid) {
+            clearPendingSettingsImport()
+            return null
+        }
+        return pending
+    }
+
+    private inline fun <reified T : Enum<T>> enumValueOrNull(value: String?): T? =
+        value?.let { runCatching { enumValueOf<T>(it) }.getOrNull() }
+
+    private fun clearPendingSettingsImport() {
+        savedStateHandle.remove<String>(PENDING_SETTINGS_IMPORT_KIND_KEY)
+        savedStateHandle.remove<String>(PENDING_SETTINGS_IMPORT_TARGET_KEY)
+        savedStateHandle.remove<String>(PENDING_SETTINGS_IMPORT_SOURCE_NAME_KEY)
+        savedStateHandle.remove<String>(PENDING_SETTINGS_IMPORT_FORMAT_KEY)
     }
 
     /**
@@ -757,24 +1036,31 @@ internal class SetupViewModel(
         private val runtimeWorkState: StateFlow<RuntimeWorkCoordinator.Kind?>,
         private val refreshExternalReadiness: () -> Unit,
         private val strings: StringResourceResolver,
+        private val savedStateHandleFactory: (CreationExtras) -> SavedStateHandle =
+            { extras -> extras.createSavedStateHandle() },
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>, extras: CreationExtras): T {
             require(modelClass.isAssignableFrom(SetupViewModel::class.java))
             return SetupViewModel(
-                resources,
-                settings,
-                ankiSetup,
-                python,
-                admission,
-                runtimeWorkState,
-                refreshExternalReadiness,
-                strings,
+                resources = resources,
+                settingsRepository = settings,
+                ankiSetup = ankiSetup,
+                pythonReadiness = python,
+                miningAdmission = admission,
+                runtimeWorkState = runtimeWorkState,
+                refreshExternalReadiness = refreshExternalReadiness,
+                strings = strings,
+                savedStateHandle = savedStateHandleFactory(extras),
             ) as T
         }
     }
 
     private companion object {
         val SLOT_ID = Regex("(?!.*(?:\\.\\.|--))[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?")
+        const val PENDING_SETTINGS_IMPORT_KIND_KEY = "settingsImport.kind"
+        const val PENDING_SETTINGS_IMPORT_TARGET_KEY = "settingsImport.target"
+        const val PENDING_SETTINGS_IMPORT_SOURCE_NAME_KEY = "settingsImport.sourceName"
+        const val PENDING_SETTINGS_IMPORT_FORMAT_KEY = "settingsImport.format"
     }
 }
