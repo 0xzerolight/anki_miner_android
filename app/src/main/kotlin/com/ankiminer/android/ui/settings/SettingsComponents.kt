@@ -160,13 +160,7 @@ internal fun NumericField(
         error = error,
         keyboardOptions =
             KeyboardOptions(
-                keyboardType =
-                    when {
-                        integer && allowNegative -> KeyboardType.Number
-                        integer -> KeyboardType.Number
-                        allowNegative -> KeyboardType.Decimal
-                        else -> KeyboardType.Decimal
-                    },
+                keyboardType = numericKeyboardType(integer, allowNegative),
                 imeAction = imeAction,
             ),
         keyboardActions =
@@ -184,6 +178,17 @@ internal fun NumericField(
                 },
     )
 }
+
+internal fun numericKeyboardType(
+    integer: Boolean,
+    allowNegative: Boolean,
+): KeyboardType =
+    when {
+        integer && allowNegative -> KeyboardType.NumberSigned
+        integer -> KeyboardType.Number
+        allowNegative -> KeyboardType.DecimalSigned
+        else -> KeyboardType.Decimal
+    }
 
 /**
  * One line. The checkbox already shows the resolved value, so the "Resolved value: On" caption is
