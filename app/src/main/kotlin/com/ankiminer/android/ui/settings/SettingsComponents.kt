@@ -180,14 +180,20 @@ internal fun NumericField(
     )
 }
 
+/**
+ * Compose has no signed numeric [KeyboardType]: `Number` maps to `TYPE_CLASS_NUMBER` and
+ * `Decimal` adds only `TYPE_NUMBER_FLAG_DECIMAL`, so neither offers a minus key and a negative
+ * value cannot be typed at all. `Phone` (`TYPE_CLASS_PHONE`) is the only built-in numeric layout
+ * that carries `-`, so signed fields use it and rely on field validation to reject the other
+ * symbols the phone pad exposes.
+ */
 internal fun numericKeyboardType(
     integer: Boolean,
     allowNegative: Boolean,
 ): KeyboardType =
     when {
-        integer && allowNegative -> KeyboardType.NumberSigned
+        allowNegative -> KeyboardType.Phone
         integer -> KeyboardType.Number
-        allowNegative -> KeyboardType.DecimalSigned
         else -> KeyboardType.Decimal
     }
 
