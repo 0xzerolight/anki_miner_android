@@ -14,11 +14,15 @@ import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import com.ankiminer.android.MainActivity
 import com.ankiminer.android.R
+import com.ankiminer.android.diagnostics.log.AppLog
+import com.ankiminer.android.diagnostics.log.LogComponent
 import java.util.UUID
+import java.util.concurrent.TimeUnit
 
 class MiningForegroundService : Service() {
     private val registry = ProcessMiningForegroundSessions.registry
     private val serviceToken = UUID.randomUUID().toString()
+    private val createdAtNanos = System.nanoTime()
     private var sessionIdentity: MiningForegroundSessionIdentity? = null
     private lateinit var cpuWakeLease: MiningCpuWakeLease
 
@@ -83,7 +87,7 @@ class MiningForegroundService : Service() {
         val activeIdentity = sessionIdentity
         if (activeIdentity != null) {
             if (identity == activeIdentity) {
-                failActiveSession()
+                failActiveSession("start")
             }
             // A stale start must never terminate or mutate the current generation.
             return
@@ -123,13 +127,13 @@ class MiningForegroundService : Service() {
         }
         val snapshot = registry.snapshotForService(identity, serviceToken)
         if (snapshot == null) {
-            failActiveSession()
+            failActiveSession("update")
             return
         }
         try {
             startForegroundTyped(buildNotification(identity, snapshot.progress))
-        } catch (_: RuntimeException) {
-            failActiveSession()
+        } catch (failure: RuntimeException) {
+            failActiveSession("update", failure)
         }
     }
 
@@ -147,18 +151,27 @@ class MiningForegroundService : Service() {
                 MiningForegroundCancellationReason.USER_REQUESTED,
             )
         ) {
-            failActiveSession()
+            failActiveSession("cancel")
             return
         }
         try {
             startForegroundTyped(buildCancellingNotification(identity))
-        } catch (_: RuntimeException) {
-            failActiveSession()
+        } catch (failure: RuntimeException) {
+            failActiveSession("cancel", failure)
         }
     }
 
     private fun handleSystemTimeout() {
         val identity = sessionIdentity
+        AppLog.i(
+            LogComponent.SERVICE,
+            "foreground.timeout",
+            "outcome" to "ok",
+            "ms" to TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - createdAtNanos),
+            "runId" to identity?.runId,
+            "generation" to identity?.generation,
+            "leaseId" to identity?.leaseId,
+        )
         if (identity != null) {
             registry.beginServiceTermination(
                 identity,
@@ -170,16 +183,39 @@ class MiningForegroundService : Service() {
     }
 
     private fun handleMalformedIntent(intent: Intent?) {
+        AppLog.w(
+            LogComponent.SERVICE,
+            "intent.decode",
+            IllegalArgumentException("Malformed foreground-service intent"),
+            "outcome" to "ignored",
+            "action" to intent?.action,
+            "extraKeys" to (intent?.extras?.keySet()?.sorted() ?: emptyList<String>()),
+        )
         val identity = intent?.let(::decodeIdentity)
         if (identity != null && identity == sessionIdentity) {
-            failActiveSession()
+            failActiveSession("malformed")
         } else if (sessionIdentity == null) {
             stopImmediately()
         }
     }
 
-    private fun failActiveSession() {
+    private fun failActiveSession(
+        site: String,
+        failure: RuntimeException? = null,
+    ) {
         val identity = sessionIdentity ?: return
+        if (failure != null) {
+            AppLog.e(
+                LogComponent.SERVICE,
+                "notification.post",
+                failure,
+                "outcome" to "fail",
+                "site" to site,
+                "runId" to identity.runId,
+                "generation" to identity.generation,
+                "leaseId" to identity.leaseId,
+            )
+        }
         registry.beginServiceTermination(
             identity,
             serviceToken,
