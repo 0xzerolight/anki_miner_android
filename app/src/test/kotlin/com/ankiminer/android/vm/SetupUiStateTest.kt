@@ -64,7 +64,11 @@ class SetupUiStateTest {
         assertFalse(recovered.copy(ankiOperation = AnkiSetupOperation.REFRESHING).isMiningReady)
         assertTrue(recovered.copy(resourceStartup = ResourceStartupReadiness.PENDING).busy)
         assertTrue(recovered.copy(resourceStartup = ResourceStartupReadiness.RECOVERING).busy)
-        assertTrue(recovered.copy(resourceStartup = ResourceStartupReadiness.FAILED).busy)
+        // FAILED is terminal, not in-progress: it must not report busy, or the WAIT
+        // branch would shadow its own CHECK_AGAIN action and strand the user.
+        val startupFailed = recovered.copy(resourceStartup = ResourceStartupReadiness.FAILED)
+        assertFalse(startupFailed.busy)
+        assertEquals(MiningReadinessAction.CHECK_AGAIN, startupFailed.miningReadinessAction)
         assertTrue(
             recovered.copy(runtimeWorkKind = RuntimeWorkCoordinator.Kind.MINING).isMiningReady,
         )

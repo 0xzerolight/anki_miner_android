@@ -159,6 +159,34 @@ internal class SetupViewModel(
             SetupUiState(),
         )
 
+    /**
+     * [uiState] is a `combine(...).stateIn(...)`, so its value lags one dispatch behind
+     * [local]: a `set…` followed by a dispatch in the same frame would otherwise act on
+     * the previous input. Command handlers read through this so the fields the user just
+     * edited are always current. [SetupUiState.lookupSlotId] is deliberately not merged —
+     * the combine resolves it against the installed dictionaries.
+     */
+    private fun currentState(): SetupUiState {
+        val localState = local.value
+        return uiState.value.copy(
+            deckPersistence = localState.deckPersistence,
+            failedDeckName = localState.failedDeckName,
+            fieldMapChanges = localState.fieldMapChanges,
+            wizardCompletion = localState.wizardCompletion,
+            pendingReplace = localState.pendingReplace,
+            lookupTerm = localState.lookupTerm,
+            customSlotId = localState.customSlotId,
+            frequencySourceName = localState.frequencySourceName,
+            frequencyFormat = localState.frequencyFormat,
+            pitchSourceName = localState.pitchSourceName,
+            pitchFormat = localState.pitchFormat,
+            audioPackId = localState.audioPackId,
+            knownWordsFormat = localState.knownWordsFormat,
+            wordListTarget = localState.wordListTarget,
+            knownWordsSearch = localState.knownWordsSearch,
+        )
+    }
+
     fun refresh() {
         viewModelScope.launch {
             if (runtimeWorkState.value != null) {
@@ -182,7 +210,7 @@ internal class SetupViewModel(
     }
 
     fun selectNoteType(name: String) {
-        val state = uiState.value
+        val state = currentState()
         if (state.busy || state.noteType == name) return
         val fields = state.availableNoteTypes.firstOrNull { it.name == name }?.fieldNames ?: return
         val merged =
@@ -200,14 +228,14 @@ internal class SetupViewModel(
     }
 
     fun selectDeck(deckName: String) {
-        val state = uiState.value
+        val state = currentState()
         if (state.busy || deckName !in state.deckSelection.choices.map(DeckChoice::deckName)) return
         if (state.deckName == deckName) return
         persistDeckSelection(deckName)
     }
 
     fun retryDeckSelection() {
-        val state = uiState.value
+        val state = currentState()
         if (state.busy || state.deckPersistence != DeckPersistenceStatus.FAILED) return
         persistDeckSelection(state.failedDeckName ?: return)
     }
@@ -242,7 +270,7 @@ internal class SetupViewModel(
     }
 
     fun setFieldMapping(key: String, field: String) {
-        val state = uiState.value
+        val state = currentState()
         if (state.busy) return
         val fields =
             state.availableNoteTypes.firstOrNull { it.name == state.noteType }?.fieldNames
@@ -263,7 +291,7 @@ internal class SetupViewModel(
      * until the user chooses a field.
      */
     fun selectCardType(cardType: CardType?) {
-        val state = uiState.value
+        val state = currentState()
         if (state.busy) return
         if (cardType == null) {
             viewModelScope.launch {
@@ -291,7 +319,7 @@ internal class SetupViewModel(
     }
 
     fun setCardTypeMarkerField(field: String) {
-        val state = uiState.value
+        val state = currentState()
         if (state.busy) return
         val destination = field.takeIf { it.isNotEmpty() }
         if (destination != null && state.fieldMap.any { (_, mapped) -> mapped == destination }) return
@@ -299,28 +327,28 @@ internal class SetupViewModel(
     }
 
     fun verifyNoteType() {
-        if (uiState.value.busy) return
-        ankiSetup.refresh(uiState.value.noteType, uiState.value.fieldMap)
+        if (currentState().busy) return
+        ankiSetup.refresh(currentState().noteType, currentState().fieldMap)
     }
 
     fun reconcileInterruptedWork() {
-        if (!uiState.value.busy) ankiSetup.reconcileInterruptedWork()
+        if (!currentState().busy) ankiSetup.reconcileInterruptedWork()
     }
 
     fun retryStagingCleanup(remediationId: Long) {
-        if (!uiState.value.busy) {
+        if (!currentState().busy) {
             ankiSetup.performRemediation(AnkiRemediationCommand.RetryStagingCleanup(remediationId))
         }
     }
 
     fun acknowledgeUnattachedMedia(remediationId: Long) {
-        if (!uiState.value.busy) {
+        if (!currentState().busy) {
             ankiSetup.performRemediation(AnkiRemediationCommand.AcknowledgeUnattachedMedia(remediationId))
         }
     }
 
     fun acknowledgeUncertainMedia(remediationId: Long) {
-        if (!uiState.value.busy) {
+        if (!currentState().busy) {
             ankiSetup.performRemediation(AnkiRemediationCommand.AcknowledgeUncertainMedia(remediationId))
         }
     }
@@ -329,7 +357,7 @@ internal class SetupViewModel(
         remediationId: Long,
         outcome: AnkiExternalReviewOutcome,
     ) {
-        if (!uiState.value.busy) {
+        if (!currentState().busy) {
             ankiSetup.performRemediation(
                 AnkiRemediationCommand.ResolveAfterExternalReview(remediationId, outcome),
             )
@@ -339,18 +367,18 @@ internal class SetupViewModel(
     fun dismissAnkiFailure() = ankiSetup.dismissFailure()
 
     fun installUniDic() {
-        if (uiState.value.busy) return
+        if (currentState().busy) return
         viewModelScope.launch { resources.installUniDic() }
     }
 
     fun installCatalogDictionary(resourceId: String) {
-        if (uiState.value.busy) return
+        if (currentState().busy) return
         val status =
-            uiState.value.catalogDictionaries.firstOrNull { it.resource.resourceId == resourceId }
+            currentState().catalogDictionaries.firstOrNull { it.resource.resourceId == resourceId }
                 ?: return
         if (status.slotOccupied) {
             val occupant =
-                uiState.value.dictionaries
+                currentState().dictionaries
                     .firstOrNull { it.occupied && it.slotId == status.resource.slotId }
                     ?.sourceName
                     ?: status.resource.slotId
@@ -372,7 +400,7 @@ internal class SetupViewModel(
 
     /** Dispatches the import the pending record describes, this time authorised to overwrite. */
     fun confirmPendingReplace() {
-        val state = uiState.value
+        val state = currentState()
         if (state.busy) return
         val pending = state.pendingReplace ?: return
         local.update { it.copy(pendingReplace = null) }
@@ -421,7 +449,7 @@ internal class SetupViewModel(
     }
 
     fun importCustomDictionary(uri: String) {
-        val state = uiState.value
+        val state = currentState()
         if (state.busy || !SLOT_ID.matches(state.customSlotId)) return
         val target = ResourceIdentity.customDictionaryTarget(state.customSlotId, state.dictionaries)
         if (stagePendingReplace(ResourceReplaceKind.CUSTOM_DICTIONARY, target, uri)) return
@@ -443,7 +471,7 @@ internal class SetupViewModel(
     }
 
     fun importFrequencySource(uri: String) {
-        val state = uiState.value
+        val state = currentState()
         if (state.busy || state.frequencySourceName.isBlank()) return
         val target =
             ResourceIdentity.frequencyTarget(state.frequencySourceName, state.frequencySources)
@@ -468,7 +496,7 @@ internal class SetupViewModel(
     }
 
     fun importPitchAccent(uri: String) {
-        val state = uiState.value
+        val state = currentState()
         if (state.busy || state.pitchSourceName.isBlank()) return
         val target = ResourceIdentity.pitchTarget(state.pitchSourceName, state.pitchSources)
         if (stagePendingReplace(ResourceReplaceKind.PITCH, target, uri)) return
@@ -488,7 +516,7 @@ internal class SetupViewModel(
     }
 
     fun importAudioPack(uri: String) {
-        val state = uiState.value
+        val state = currentState()
         if (state.busy || !state.audioPackIdValid) return
         val target = ResourceIdentity.audioPackTarget(state.audioPackId, state.audioPacks)
         if (stagePendingReplace(ResourceReplaceKind.AUDIO_PACK, target, uri)) return
@@ -540,26 +568,26 @@ internal class SetupViewModel(
     }
 
     fun importKnownWords(uri: String) {
-        val state = uiState.value
+        val state = currentState()
         if (state.busy) return
         val format = state.knownWordsFormat
         viewModelScope.launch { resources.previewKnownWords(uri, format) }
     }
 
     fun importWordList(uri: String, kind: WordListKind) {
-        if (uiState.value.busy) return
+        if (currentState().busy) return
         local.update { it.copy(wordListTarget = kind) }
         viewModelScope.launch { resources.importWordList(uri, kind) }
     }
 
     fun removeWordList(kind: WordListKind) {
-        if (uiState.value.busy) return
+        if (currentState().busy) return
         local.update { it.copy(wordListTarget = kind) }
         viewModelScope.launch { resources.removeWordList(kind) }
     }
 
     fun confirmKnownWordsImport() {
-        if (!uiState.value.busy) viewModelScope.launch { resources.confirmKnownWordsImport() }
+        if (!currentState().busy) viewModelScope.launch { resources.confirmKnownWordsImport() }
     }
 
     fun dismissKnownWordsImportPreview() = resources.dismissKnownWordsImportPreview()
@@ -569,27 +597,27 @@ internal class SetupViewModel(
     }
 
     fun searchKnownWords() {
-        val state = uiState.value
+        val state = currentState()
         if (!state.busy) viewModelScope.launch { resources.searchKnownWords(state.knownWordsSearch) }
     }
 
     fun loadMoreKnownWords() {
-        val state = uiState.value
+        val state = currentState()
         if (!state.busy) {
             viewModelScope.launch { resources.searchKnownWords(state.knownWordsSearch, loadMore = true) }
         }
     }
 
     fun removeKnownWord(word: String) {
-        if (!uiState.value.busy) viewModelScope.launch { resources.removeKnownWords(listOf(word)) }
+        if (!currentState().busy) viewModelScope.launch { resources.removeKnownWords(listOf(word)) }
     }
 
     fun resetKnownWords(scope: KnownWordsResetScope) {
-        if (!uiState.value.busy) viewModelScope.launch { resources.resetKnownWords(scope) }
+        if (!currentState().busy) viewModelScope.launch { resources.resetKnownWords(scope) }
     }
 
     fun exportKnownWords(uri: String) {
-        if (!uiState.value.busy) viewModelScope.launch { resources.exportKnownWords(uri) }
+        if (!currentState().busy) viewModelScope.launch { resources.exportKnownWords(uri) }
     }
 
     fun setLookupTerm(value: String) {
@@ -597,13 +625,13 @@ internal class SetupViewModel(
     }
 
     fun setLookupSlot(value: String) {
-        if (uiState.value.dictionaries.any { it.isUsable && it.slotId == value }) {
+        if (currentState().dictionaries.any { it.isUsable && it.slotId == value }) {
             local.update { it.copy(lookupSlotId = value) }
         }
     }
 
     fun lookup() {
-        val state = uiState.value
+        val state = currentState()
         val slot = state.lookupSlotId ?: return
         if (state.busy || state.lookupTerm.isBlank()) return
         viewModelScope.launch { resources.lookup(slot, state.lookupTerm) }
@@ -614,7 +642,7 @@ internal class SetupViewModel(
     fun dismissFailure() = resources.dismissFailure()
 
     fun retryResourceFailure() {
-        val state = uiState.value
+        val state = currentState()
         val failure = state.failure ?: return
         if (
             state.busy &&
