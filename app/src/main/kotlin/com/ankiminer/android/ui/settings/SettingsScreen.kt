@@ -36,6 +36,9 @@ import com.ankiminer.android.diagnostics.TesterDiagnosticsIdentity
 import com.ankiminer.android.localization.LocalizedStringResource
 import com.ankiminer.android.ui.mining.RuntimeConflictNotice
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
+import com.ankiminer.android.vm.DiagnosticsDelivery
+import com.ankiminer.android.vm.DiagnosticsExportState
+import com.ankiminer.android.vm.DiagnosticsViewModel
 import com.ankiminer.android.vm.SettingsDraft
 import com.ankiminer.android.vm.SettingsSaveState
 import com.ankiminer.android.vm.SettingsViewModel
@@ -103,6 +106,7 @@ internal fun excludedDeckChoices(
 internal fun SettingsRoute(
     viewModel: SettingsViewModel,
     setupViewModel: SetupViewModel,
+    diagnosticsViewModel: DiagnosticsViewModel,
     diagnostics: TesterDiagnosticsIdentity,
     onRequestPermissions: () -> Unit,
     onOpenAppSettings: () -> Unit,
@@ -110,7 +114,7 @@ internal fun SettingsRoute(
     onOpenAnkiDroid: () -> Unit,
     onOpenSpeechSettings: () -> Unit,
     onShareDiagnostics: () -> Unit,
-    onShareEngineLog: () -> Unit,
+    onShareDiagnosticsBundle: (uri: String, fileName: String) -> Boolean,
     verboseLogging: Boolean,
     onVerboseLoggingChange: (Boolean) -> Unit,
     onReturnToActiveRun: (() -> Unit)? = null,
@@ -132,6 +136,7 @@ internal fun SettingsRoute(
     val saveError by viewModel.error.collectAsStateWithLifecycle()
     val resources by viewModel.resourceState.collectAsStateWithLifecycle()
     val setup by setupViewModel.uiState.collectAsStateWithLifecycle()
+    val diagnosticsExport by diagnosticsViewModel.state.collectAsStateWithLifecycle()
     if (!draftState.loaded) {
         Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             CircularProgressIndicator()
@@ -173,6 +178,24 @@ internal fun SettingsRoute(
         ) { uri ->
             uri?.let { setupViewModel.exportKnownWords(it.toString()) }
         }
+    val diagnosticsBundlePicker =
+        rememberLauncherForActivityResult(
+            ActivityResultContracts.CreateDocument("application/zip"),
+        ) { uri ->
+            if (uri == null) {
+                diagnosticsViewModel.deliveryCancelled()
+            } else {
+                diagnosticsViewModel.copyToDocument(uri.toString())
+            }
+        }
+    LaunchedEffect(diagnosticsExport) {
+        val ready = diagnosticsExport as? DiagnosticsExportState.Ready ?: return@LaunchedEffect
+        when (ready.delivery) {
+            DiagnosticsDelivery.SAVE -> diagnosticsBundlePicker.launch(ready.bundle.file.name)
+            DiagnosticsDelivery.SHARE ->
+                diagnosticsViewModel.deliverShare(onShareDiagnosticsBundle)
+        }
+    }
     SettingsScreen(
         draft = draftState.draft,
         resources = resources,
@@ -182,6 +205,7 @@ internal fun SettingsRoute(
         saveError = saveError,
         saving = saving,
         diagnostics = diagnostics,
+        diagnosticsExport = diagnosticsExport,
         onRetrySave = viewModel::retrySave,
         onDraftChange = viewModel::updateDraft,
         onRestoreMiningDefaults = viewModel::restoreMiningDefaults,
@@ -193,7 +217,14 @@ internal fun SettingsRoute(
         onOpenAnkiDroid = onOpenAnkiDroid,
         onOpenSpeechSettings = onOpenSpeechSettings,
         onShareDiagnostics = onShareDiagnostics,
-        onShareEngineLog = onShareEngineLog,
+        onSaveDiagnosticsBundle = {
+            diagnosticsViewModel.export(DiagnosticsDelivery.SAVE)
+        },
+        onShareDiagnosticsBundle = {
+            diagnosticsViewModel.export(DiagnosticsDelivery.SHARE)
+        },
+        onRetryDiagnosticsExport = diagnosticsViewModel::retry,
+        onDismissDiagnosticsExport = diagnosticsViewModel::dismissFailure,
         onReturnToActiveRun = onReturnToActiveRun,
         onAttributions = onAttributions,
         onRunSetupWizard = onRunSetupWizard,
@@ -229,6 +260,7 @@ private fun SettingsScreen(
     saveError: LocalizedStringResource?,
     saving: Boolean,
     diagnostics: TesterDiagnosticsIdentity,
+    diagnosticsExport: DiagnosticsExportState,
     onRetrySave: () -> Unit,
     onDraftChange: (SettingsDraft) -> Unit,
     onRestoreMiningDefaults: () -> Unit,
@@ -240,7 +272,10 @@ private fun SettingsScreen(
     onOpenAnkiDroid: () -> Unit,
     onOpenSpeechSettings: () -> Unit,
     onShareDiagnostics: () -> Unit,
-    onShareEngineLog: () -> Unit,
+    onSaveDiagnosticsBundle: () -> Unit,
+    onShareDiagnosticsBundle: () -> Unit,
+    onRetryDiagnosticsExport: () -> Unit,
+    onDismissDiagnosticsExport: () -> Unit,
     onReturnToActiveRun: (() -> Unit)?,
     onAttributions: () -> Unit,
     onRunSetupWizard: (() -> Unit)?,
@@ -321,7 +356,10 @@ private fun SettingsScreen(
             onOpenAnkiDroid = onOpenAnkiDroid,
             onOpenSpeechSettings = onOpenSpeechSettings,
             onShareDiagnostics = onShareDiagnostics,
-            onShareEngineLog = onShareEngineLog,
+            onSaveDiagnosticsBundle = onSaveDiagnosticsBundle,
+            onShareDiagnosticsBundle = onShareDiagnosticsBundle,
+            onRetryDiagnosticsExport = onRetryDiagnosticsExport,
+            onDismissDiagnosticsExport = onDismissDiagnosticsExport,
             onReturnToActiveRun = onReturnToActiveRun,
             onAttributions = onAttributions,
             onRunSetupWizard = onRunSetupWizard,
@@ -413,6 +451,7 @@ private fun SettingsScreen(
             setup = setup,
             setupViewModel = setupViewModel,
             diagnostics = diagnostics,
+            diagnosticsExport = diagnosticsExport,
             callbacks = callbacks,
         )
     }

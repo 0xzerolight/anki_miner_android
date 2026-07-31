@@ -4,6 +4,10 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 
 ## [0.1.8] - 2026-07-29
 
+### Added
+
+- Settings can build a redacted multi-file diagnostics bundle, save it as a ZIP, or send it through Android's share sheet. The bundle includes the app's own logcat records but never another app's logs.
+
 ### Fixed
 
 - Pitch accent overlines covered every mora on note types that draw the mora box unconditionally and hide low mora with `border-color: transparent`, because the engine inlined a colour on low-mora lines and an inline style beats an author declaration. Nothing is declared on those lines now, so no note type's own styling can be defeated by it (#5).
@@ -12,6 +16,7 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 
 ### Changed
 
+- Python log timestamps now use UTC ISO-8601 with millisecond precision and a trailing `Z`, matching Kotlin logs so the two files sort into one timeline.
 - Sentence deduplication is off by default. It keeps one word per sentence and runs before curation, so it withheld candidates that were never shown.
 - The Setup category is gone. The Japanese tokenizer card moved to Diagnostics and appears only when it is missing or failing, instead of a healthy install presenting itself as a fault report with a repair button.
 - Installed bundled dictionaries and healthy resource inventories are hidden, leaving the dictionary, frequency, audio, and pitch cards to show only what is missing or broken. Inventories duplicated what the priority editor already listed; the broken case is the only one that added anything.

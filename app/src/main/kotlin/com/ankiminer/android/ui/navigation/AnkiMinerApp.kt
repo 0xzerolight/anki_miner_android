@@ -72,6 +72,7 @@ import com.ankiminer.android.ui.video.VideoMiningRoute
 import com.ankiminer.android.ui.video.VideoMiningTestTags
 import com.ankiminer.android.ui.wizard.OnboardingWizard
 import com.ankiminer.android.ui.wizard.wizardVisible
+import com.ankiminer.android.vm.DiagnosticsViewModel
 import com.ankiminer.android.vm.MiningReadinessAction
 import com.ankiminer.android.vm.NavigationWorkflowState
 import com.ankiminer.android.vm.ReadingMiningViewModel
@@ -284,6 +285,7 @@ internal fun AnkiMinerApp(
     readingViewModel: ReadingMiningViewModel,
     setupViewModel: SetupViewModel,
     settingsViewModel: SettingsViewModel,
+    diagnosticsViewModel: DiagnosticsViewModel,
     notificationRunId: String?,
     onNotificationRunHandled: () -> Unit,
     onRequestPermissions: () -> Unit,
@@ -292,7 +294,7 @@ internal fun AnkiMinerApp(
     onOpenAnkiDroid: () -> Unit,
     onOpenSpeechSettings: () -> Unit,
     onShareDiagnostics: (String) -> Unit,
-    onShareEngineLog: () -> Unit,
+    onShareDiagnosticsBundle: (uri: String, fileName: String) -> Boolean,
     verboseLogging: Boolean,
     onVerboseLoggingChange: (Boolean) -> Unit,
 ) {
@@ -516,6 +518,7 @@ internal fun AnkiMinerApp(
                 SettingsRoute(
                     viewModel = settingsViewModel,
                     setupViewModel = setupViewModel,
+                    diagnosticsViewModel = diagnosticsViewModel,
                     diagnostics = diagnosticsIdentity,
                     onRequestPermissions = onRequestPermissions,
                     onOpenAppSettings = onOpenAppSettings,
@@ -523,7 +526,7 @@ internal fun AnkiMinerApp(
                     onOpenAnkiDroid = onOpenAnkiDroid,
                     onOpenSpeechSettings = onOpenSpeechSettings,
                     onShareDiagnostics = diagnosticsShareAction::share,
-                    onShareEngineLog = onShareEngineLog,
+                    onShareDiagnosticsBundle = onShareDiagnosticsBundle,
                     verboseLogging = verboseLogging,
                     onVerboseLoggingChange = onVerboseLoggingChange,
                     onReturnToActiveRun =

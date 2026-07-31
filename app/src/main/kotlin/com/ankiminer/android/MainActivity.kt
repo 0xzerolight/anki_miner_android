@@ -1,6 +1,7 @@
 package com.ankiminer.android
 
 import android.content.ActivityNotFoundException
+import android.content.ClipData
 import android.content.Intent
 import android.graphics.Color
 import android.net.Uri
@@ -22,12 +23,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.toArgb
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.ankiminer.android.anki.provider.ANKIDROID_PACKAGE
 import com.ankiminer.android.data.settings.AppSettings
 import com.ankiminer.android.data.settings.ThemeMode
-import com.ankiminer.android.diagnostics.EngineLogReader
+import com.ankiminer.android.diagnostics.AnkiFaultRecorder
+import com.ankiminer.android.diagnostics.TesterDiagnosticsBuilder
+import com.ankiminer.android.diagnostics.currentTesterBuildIdentity
 import com.ankiminer.android.mining.MiningRepositoryFactory
 import com.ankiminer.android.mining.MiningRuntimePermissions
 import com.ankiminer.android.reading.ReadingRepositoryFactory
@@ -37,16 +39,13 @@ import com.ankiminer.android.ui.theme.AnkiMinerTheme
 import com.ankiminer.android.ui.theme.LaunchNeutral
 import com.ankiminer.android.ui.theme.SystemBarIconAppearance
 import com.ankiminer.android.ui.theme.systemBarIconAppearance
+import com.ankiminer.android.vm.DiagnosticsViewModel
 import com.ankiminer.android.vm.ReadingMiningViewModel
 import com.ankiminer.android.vm.SettingsViewModel
 import com.ankiminer.android.vm.SetupViewModel
 import com.ankiminer.android.vm.VideoMiningViewModel
-import java.io.File
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
     private val notificationRunId = MutableStateFlow<String?>(null)
@@ -140,6 +139,23 @@ class MainActivity : ComponentActivity() {
                     viewModel(factory = readingViewModelFactory)
                 val setupViewModel: SetupViewModel = viewModel(factory = setupViewModelFactory)
                 val settingsViewModel: SettingsViewModel = viewModel(factory = settingsViewModelFactory)
+                val diagnosticsBuild = remember { currentTesterBuildIdentity() }
+                val diagnosticsViewModelFactory =
+                    remember(app, setupViewModel, miningViewModel, readingViewModel) {
+                        DiagnosticsViewModel.Factory(
+                            app.createDiagnosticsExporter {
+                                TesterDiagnosticsBuilder.build(
+                                    build = diagnosticsBuild,
+                                    setup = setupViewModel.uiState.value,
+                                    video = miningViewModel.uiState.value,
+                                    reading = readingViewModel.uiState.value,
+                                    lastAnkiFault = AnkiFaultRecorder.lastFault(),
+                                ).report
+                            },
+                        )
+                    }
+                val diagnosticsViewModel: DiagnosticsViewModel =
+                    viewModel(factory = diagnosticsViewModelFactory)
                 val openedRunId = notificationRunId.collectAsStateWithLifecycle().value
                 val permissions =
                     MiningRuntimePermissions.requestableFor(android.os.Build.VERSION.SDK_INT)
@@ -157,6 +173,7 @@ class MainActivity : ComponentActivity() {
                     readingViewModel = readingViewModel,
                     setupViewModel = setupViewModel,
                     settingsViewModel = settingsViewModel,
+                    diagnosticsViewModel = diagnosticsViewModel,
                     notificationRunId = openedRunId,
                     onNotificationRunHandled = { notificationRunId.value = null },
                     onRequestPermissions = {
@@ -168,7 +185,7 @@ class MainActivity : ComponentActivity() {
                     onOpenAnkiDroid = ::openAnkiDroid,
                     onOpenSpeechSettings = ::openSpeechSettings,
                     onShareDiagnostics = ::shareDiagnostics,
-                    onShareEngineLog = ::shareEngineLog,
+                    onShareDiagnosticsBundle = ::shareDiagnosticsBundle,
                     verboseLogging = verboseLogging,
                     onVerboseLoggingChange = app::setVerboseLogging,
                 )
@@ -247,22 +264,32 @@ class MainActivity : ComponentActivity() {
         openAppSettings()
     }
 
-    private fun shareEngineLog() {
-        lifecycleScope.launch {
-            val tail =
-                withContext(Dispatchers.IO) {
-                    EngineLogReader(File(filesDir, "anki_miner.log")).tail()
-                }
-            if (tail.isBlank()) {
-                Toast.makeText(this@MainActivity, R.string.engine_log_empty, Toast.LENGTH_LONG).show()
-                return@launch
-            }
-            shareText(getString(R.string.engine_log_share_subject), tail)
-        }
-    }
-
     private fun shareDiagnostics(report: String) {
         shareText(getString(R.string.diagnostics_share_subject), report)
+    }
+
+    private fun shareDiagnosticsBundle(
+        uri: String,
+        fileName: String,
+    ): Boolean {
+        val attachment = Uri.parse(uri)
+        val subject = getString(R.string.diagnostics_bundle_share_subject)
+        val send =
+            Intent(Intent.ACTION_SEND).apply {
+                type = "application/zip"
+                putExtra(Intent.EXTRA_SUBJECT, subject)
+                putExtra(Intent.EXTRA_STREAM, attachment)
+                clipData = ClipData.newUri(contentResolver, fileName, attachment)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+        return try {
+            startActivity(Intent.createChooser(send, subject))
+            true
+        } catch (_: ActivityNotFoundException) {
+            false
+        } catch (_: SecurityException) {
+            false
+        }
     }
 
     private fun shareText(subject: String, text: String) {
@@ -275,9 +302,9 @@ class MainActivity : ComponentActivity() {
         try {
             startActivity(Intent.createChooser(send, subject))
         } catch (_: ActivityNotFoundException) {
-            Toast.makeText(this, R.string.diagnostics_action_unavailable, Toast.LENGTH_LONG).show()
+            Toast.makeText(this, R.string.diagnostics_report_action_unavailable, Toast.LENGTH_LONG).show()
         } catch (_: SecurityException) {
-            Toast.makeText(this, R.string.diagnostics_action_unavailable, Toast.LENGTH_LONG).show()
+            Toast.makeText(this, R.string.diagnostics_report_action_unavailable, Toast.LENGTH_LONG).show()
         }
     }
 
