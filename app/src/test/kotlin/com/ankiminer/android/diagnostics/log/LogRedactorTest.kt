@@ -121,13 +121,12 @@ class LogRedactorTest {
 
         assertFalse(redacted, redacted.contains("Anime"))
         assertFalse(redacted, redacted.contains("01.mkv"))
-        // The errno text is absorbed and hashed rather than left readable. On a line with no field
-        // structure there is no way to tell the rest of a message from the rest of a directory
-        // name, and for a privacy control the acceptable failure is over-redaction.
         assertTrue(
             redacted,
             redacted.matches(
-                Regex("\tjava\\.io\\.FileNotFoundException: <path-[0-9a-f]{6}>: <text-[0-9a-f]{6}>"),
+                Regex(
+                    "\tjava\\.io\\.FileNotFoundException: <path-[0-9a-f]{6}>: open failed: ENOENT",
+                ),
             ),
         )
     }
@@ -166,6 +165,80 @@ class LogRedactorTest {
     }
 
     @Test
+    fun `an exception message keeps its failure reason after the path`() {
+        // ENOENT against EACCES is missing-file against permission-denied, and that is frequently
+        // the whole answer to a bug report.
+        val redacted =
+            redactor().redact(
+                "\tjava.io.FileNotFoundException: /storage/emulated/0/My Anime/ep 01.mkv: " +
+                    "open failed: ENOENT (No such file or directory)",
+            )
+
+        assertFalse(redacted, redacted.contains("Anime"))
+        assertFalse(redacted, redacted.contains("01.mkv"))
+        assertFalse(redacted, redacted.contains("<text-"))
+        assertTrue(
+            redacted,
+            redacted.matches(
+                Regex(
+                    "\tjava\\.io\\.FileNotFoundException: <path-[0-9a-f]{6}>: " +
+                        "open failed: ENOENT \\(No such file or directory\\)",
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun `a colon inside a title does not end absorption early`() {
+        // Stopping at any colon-space would publish the rest of the title here. Absorption only
+        // stops once the colon follows a file extension, so a path can still continue past one.
+        val redacted =
+            redactor().redact(
+                "\tIOException: /storage/emulated/0/Movies/Star Wars: A New Hope.mkv: open failed",
+            )
+
+        listOf("Star", "Wars", "A New Hope", "Hope.mkv").forEach { secret ->
+            assertFalse(redacted, redacted.contains(secret))
+        }
+        assertTrue(
+            redacted,
+            redacted.matches(Regex("\tIOException: <path-[0-9a-f]{6}>: open failed")),
+        )
+    }
+
+    @Test
+    fun `a directory with no extension still absorbs to end of line`() {
+        // No colon-space, and nothing that looks like a file name, so the stop never fires and the
+        // folder stays protected.
+        val redacted = redactor().redact("\tIOException: /storage/emulated/0/My Anime Shows (dir missing)")
+
+        listOf("Anime", "Shows", "dir missing").forEach { secret ->
+            assertFalse(redacted, redacted.contains(secret))
+        }
+        assertTrue(
+            redacted,
+            redacted.matches(Regex("\tIOException: <path-[0-9a-f]{6}> <text-[0-9a-f]{6}>")),
+        )
+    }
+
+    @Test
+    fun `one path carries one token across all five carriers`() {
+        val redactor = redactor()
+        val path = "/storage/emulated/0/My Anime/ep 01.mkv"
+
+        val quoted = redactor.redact("path=\"$path\"")
+        val bare = redactor.redact("\tIOException: $path")
+        val parenthesised = redactor.redact("\tIOException: opened ($path)")
+        val repr = redactor.redact("\tPyException: FileNotFoundError: '$path'")
+        val exception = redactor.redact("\tjava.io.FileNotFoundException: $path: open failed: ENOENT")
+
+        val token = Regex("<path-[0-9a-f]{6}>").find(quoted)!!.value
+        listOf(bare, parenthesised, repr, exception).forEach { carrier ->
+            assertTrue("$carrier should carry $token", carrier.contains(token))
+        }
+    }
+
+    @Test
     fun `a quote in a file name does not truncate a continuation line`() {
         // renderText does not escape ", so a display name holding one — which
         // isValidSafSelectionRecord explicitly admits — reaches the line raw.
@@ -175,7 +248,7 @@ class LogRedactorTest {
         assertFalse(path, path.contains("Hi"))
         assertFalse(path, path.contains("ep.mkv"))
         assertFalse(leaf, leaf.contains("Hi"))
-        assertTrue(path, path.matches(Regex("\tIOException: <path-[0-9a-f]{6}>: <text-[0-9a-f]{6}>")))
+        assertTrue(path, path.matches(Regex("\tIOException: <path-[0-9a-f]{6}>: nope")))
         assertTrue(leaf, leaf.matches(Regex("\tIOException: <files>/media/<file-[0-9a-f]{6}>\\.mkv")))
     }
 

@@ -604,7 +604,34 @@ private val CONTINUATION_TAIL = tailOf("\\s\\\\")
  * different paths into one token, and left `tokenCounts()` reporting one path where there were two.
  * A spaced value on a record line is always quoted, so nothing legitimate is lost to the guard.
  */
-private fun absorbing(tail: String) = "(?: ++(?![A-Za-z0-9_.]++=)$tail)*+"
+private fun absorbing(tail: String) = "(?:$PATH_ALREADY_ENDED ++(?![A-Za-z0-9_.]++=)$tail)*+"
+
+/**
+ * The other end of absorption: stop once the path has plainly finished.
+ *
+ * Absorbing to end of line costs the failure reason on every exception, and `ENOENT` against
+ * `EACCES` is often the whole answer to a bug report:
+ *
+ * ```
+ * …/ep 01.mkv: open failed: ENOENT
+ *              ^ everything from here was being hashed away
+ * ```
+ *
+ * A colon-space is the separator between a Java or Python exception message and its detail, and it
+ * is vanishingly rare inside a directory name — but *only* checking for colon-space would leak, and
+ * on an ordinary input: `…/Movies/Star Wars: A New Hope.mkv` would stop at `Wars:` and publish the
+ * rest of the title. Colon-space in a Western film title is not exotic.
+ *
+ * So the test is narrower. Absorption stops at a colon-space only when what precedes the colon is a
+ * *file extension* — the path has reached a file name and cannot continue. `ep 01.mkv:` stops;
+ * `Star Wars:` does not, because a path can still continue after it, and it runs on to consume the
+ * whole title. A directory path has no extension anywhere, so it is unaffected and still absorbs to
+ * end of line.
+ *
+ * Bounded so it is a legal lookbehind, and bounded by the same 1-8 alphanumerics [extensionOfToken]
+ * accepts, so the two agree on what an extension is.
+ */
+private const val PATH_ALREADY_ENDED = "(?<!\\.[A-Za-z0-9]{1,8}:)"
 
 /**
  * Rule 2, quoted branch: the closing quote is an exact right edge, so this one needs no absorption.
