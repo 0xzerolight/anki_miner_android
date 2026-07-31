@@ -72,6 +72,9 @@ data class MiningForegroundProgress(
 interface MiningForegroundLease : AutoCloseable {
     val identity: MiningForegroundSessionIdentity
 
+    /** Makes cancellation presentation monotonic for this live session. */
+    fun markCancelling(): Boolean = false
+
     /** Returns false once this lease is no longer the live foreground session. */
     fun updateProgress(progress: MiningForegroundProgress): Boolean
 

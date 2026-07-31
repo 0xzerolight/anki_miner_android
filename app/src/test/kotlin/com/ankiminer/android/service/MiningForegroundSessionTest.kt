@@ -3,6 +3,7 @@ package com.ankiminer.android.service
 import java.lang.reflect.Modifier
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class MiningForegroundSessionTest {
@@ -35,5 +36,39 @@ class MiningForegroundSessionTest {
         }
 
         assertEquals(MiningForegroundProgress(1, 2), MiningForegroundProgress(1, 2))
+    }
+
+    @Test
+    fun `cold stale command stops only an ownerless service`() {
+        val current =
+            MiningForegroundSessionIdentity(
+                runId = "run-current",
+                generation = 2,
+                leaseId = "00000000-0000-4000-8000-000000000002",
+            )
+        val stale =
+            MiningForegroundSessionIdentity(
+                runId = "run-stale",
+                generation = 1,
+                leaseId = "00000000-0000-4000-8000-000000000001",
+            )
+
+        assertEquals(
+            ForegroundCommandDisposition.STOP_COLD_SERVICE,
+            foregroundCommandDisposition(activeIdentity = null, commandIdentity = stale),
+        )
+        assertEquals(
+            ForegroundCommandDisposition.STOP_COLD_SERVICE,
+            foregroundCommandDisposition(activeIdentity = null, commandIdentity = null),
+        )
+        assertEquals(
+            ForegroundCommandDisposition.IGNORE_STALE_COMMAND,
+            foregroundCommandDisposition(activeIdentity = current, commandIdentity = stale),
+        )
+        assertEquals(
+            ForegroundCommandDisposition.HANDLE_ACTIVE_COMMAND,
+            foregroundCommandDisposition(activeIdentity = current, commandIdentity = current),
+        )
+        assertTrue(current != stale)
     }
 }

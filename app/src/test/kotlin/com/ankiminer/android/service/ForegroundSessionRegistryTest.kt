@@ -114,6 +114,43 @@ class ForegroundSessionRegistryTest {
     }
 
     @Test
+    fun `accepted cancellation remains sticky across later progress`() {
+        val registry = ForegroundSessionRegistry(directExecutor)
+        val identity = identity()
+        val reasons = mutableListOf<MiningForegroundCancellationReason>()
+        val registration = registry.register(identity) { _, reason -> reasons += reason }
+        activate(registry, registration, identity)
+
+        assertTrue(
+            registry.requestCancellation(
+                identity,
+                SERVICE_TOKEN,
+                MiningForegroundCancellationReason.USER_REQUESTED,
+            ),
+        )
+        assertTrue(registry.updateProgress(identity, MiningForegroundProgress(1, 2)))
+
+        val snapshot = requireNotNull(registry.snapshotForService(identity, SERVICE_TOKEN))
+        assertEquals(MiningForegroundProgress(1, 2), snapshot.progress)
+        assertTrue(snapshot.cancelling)
+        assertEquals(listOf(MiningForegroundCancellationReason.USER_REQUESTED), reasons)
+    }
+
+    @Test
+    fun `app cancellation marks active lease without redelivering cancellation`() {
+        val registry = ForegroundSessionRegistry(directExecutor)
+        val identity = identity()
+        val reasons = mutableListOf<MiningForegroundCancellationReason>()
+        val registration = registry.register(identity) { _, reason -> reasons += reason }
+        activate(registry, registration, identity)
+
+        assertTrue(registry.markCancelling(identity))
+
+        assertTrue(requireNotNull(registry.snapshotForService(identity, SERVICE_TOKEN)).cancelling)
+        assertTrue(reasons.isEmpty())
+    }
+
+    @Test
     fun `abandoned start closes an already promoted race`() {
         val registry = ForegroundSessionRegistry(directExecutor)
         val identity = identity()

@@ -15,12 +15,14 @@ internal class ForegroundSessionRegistry(
 
     internal data class ServiceSnapshot(
         val progress: MiningForegroundProgress,
+        val cancelling: Boolean,
     )
 
     private enum class Phase {
         PENDING,
         CLAIMED,
         ACTIVE,
+        CANCELLING,
         CLOSING,
     }
 
@@ -175,7 +177,10 @@ internal class ForegroundSessionRegistry(
     ): Boolean =
         synchronized(lock) {
             val record = current
-            if (record?.identity != identity || record.phase != Phase.ACTIVE) {
+            if (
+                record?.identity != identity ||
+                (record.phase != Phase.ACTIVE && record.phase != Phase.CANCELLING)
+            ) {
                 false
             } else {
                 record.progress = progress
@@ -191,12 +196,32 @@ internal class ForegroundSessionRegistry(
             val record = current
             if (
                 record?.identity != identity ||
-                record.phase != Phase.ACTIVE ||
+                (record.phase != Phase.ACTIVE && record.phase != Phase.CANCELLING) ||
                 record.serviceToken != serviceToken
             ) {
                 null
             } else {
-                ServiceSnapshot(record.progress)
+                ServiceSnapshot(
+                    progress = record.progress,
+                    cancelling = record.phase == Phase.CANCELLING,
+                )
+            }
+        }
+
+    fun markCancelling(identity: MiningForegroundSessionIdentity): Boolean =
+        synchronized(lock) {
+            val record = current
+            if (record?.identity != identity) {
+                false
+            } else {
+                when (record.phase) {
+                    Phase.ACTIVE -> {
+                        record.phase = Phase.CANCELLING
+                        true
+                    }
+                    Phase.CANCELLING -> true
+                    Phase.PENDING, Phase.CLAIMED, Phase.CLOSING -> false
+                }
             }
         }
 
@@ -210,11 +235,12 @@ internal class ForegroundSessionRegistry(
                 val record = current
                 if (
                     record?.identity != identity ||
-                    record.phase != Phase.ACTIVE ||
+                    (record.phase != Phase.ACTIVE && record.phase != Phase.CANCELLING) ||
                     record.serviceToken != serviceToken
                 ) {
                     false to null
                 } else {
+                    record.phase = Phase.CANCELLING
                     true to cancellationNotification(record, reason)
                 }
             }
@@ -225,7 +251,10 @@ internal class ForegroundSessionRegistry(
     fun beginExpectedClose(identity: MiningForegroundSessionIdentity): Boolean =
         synchronized(lock) {
             val record = current
-            if (record?.identity != identity || record.phase != Phase.ACTIVE) {
+            if (
+                record?.identity != identity ||
+                (record.phase != Phase.ACTIVE && record.phase != Phase.CANCELLING)
+            ) {
                 false
             } else {
                 record.phase = Phase.CLOSING
@@ -243,7 +272,7 @@ internal class ForegroundSessionRegistry(
                 val record = current
                 if (
                     record?.identity != identity ||
-                    record.phase != Phase.ACTIVE ||
+                    (record.phase != Phase.ACTIVE && record.phase != Phase.CANCELLING) ||
                     record.serviceToken != serviceToken
                 ) {
                     null
@@ -260,7 +289,10 @@ internal class ForegroundSessionRegistry(
         val cancellation =
             synchronized(lock) {
                 val record = current
-                if (record?.identity != identity || record.phase != Phase.ACTIVE) {
+                if (
+                    record?.identity != identity ||
+                    (record.phase != Phase.ACTIVE && record.phase != Phase.CANCELLING)
+                ) {
                     null
                 } else {
                     record.phase = Phase.CLOSING
@@ -318,6 +350,11 @@ internal class ForegroundSessionRegistry(
                                 record,
                                 MiningForegroundCancellationReason.SERVICE_LOST,
                             )
+                    }
+
+                    Phase.CANCELLING -> {
+                        completion = null
+                        cancellation = null
                     }
 
                     Phase.CLOSING -> {
