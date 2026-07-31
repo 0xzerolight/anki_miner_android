@@ -227,9 +227,9 @@ private fun SettingsScreen(
     diagnostics: TesterDiagnosticsIdentity,
     onRetrySave: () -> Unit,
     onDraftChange: (SettingsDraft) -> Unit,
-    onRestoreMiningDefaults: () -> Unit,
-    onResetAnkiTarget: () -> Unit,
-    onResetResourceChoices: () -> Unit,
+    onRestoreMiningDefaults: () -> Boolean,
+    onResetAnkiTarget: () -> Boolean,
+    onResetResourceChoices: () -> Boolean,
     onRequestPermissions: () -> Unit,
     onOpenAppSettings: () -> Unit,
     onInstallAnkiDroid: () -> Unit,
@@ -275,14 +275,14 @@ private fun SettingsScreen(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        val (nextState, confirmedAction) = resetConfirmation.confirm()
-                        resetConfirmation = nextState
-                        dispatchConfirmedSettingsReset(
-                            action = confirmedAction,
-                            onRestoreMiningDefaults = onRestoreMiningDefaults,
-                            onResetAnkiTarget = onResetAnkiTarget,
-                            onResetResourceChoices = onResetResourceChoices,
-                        )
+                        val accepted =
+                            dispatchConfirmedSettingsReset(
+                                action = resetConfirmation.pendingAction,
+                                onRestoreMiningDefaults = onRestoreMiningDefaults,
+                                onResetAnkiTarget = onResetAnkiTarget,
+                                onResetResourceChoices = onResetResourceChoices,
+                            )
+                        resetConfirmation = resetConfirmation.confirmIfAccepted(accepted)
                     },
                 ) {
                     Text(stringResource(settingsResetLabel(action)))
