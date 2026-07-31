@@ -43,6 +43,61 @@ _THIRD_PARTY_LOG_CEILING = {
 }
 
 
+class _RunWarningCounter(logging.Handler):
+    """Count WARNING+ records while one engine run owns the bridge."""
+
+    def __init__(self) -> None:
+        super().__init__(level=logging.WARNING)
+        self._counter_lock = threading.Lock()
+        self._active = False
+        self._warnings = 0
+        self._errors = 0
+        self._by_logger: dict[str, int] = {}
+
+    def begin_run(self) -> None:
+        with self._counter_lock:
+            self._active = True
+            self._warnings = 0
+            self._errors = 0
+            self._by_logger.clear()
+
+    def finish_run(self) -> tuple[int, int, tuple[tuple[str, int], ...]]:
+        with self._counter_lock:
+            self._active = False
+            return self._warnings, self._errors, tuple(sorted(self._by_logger.items()))
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            with self._counter_lock:
+                if not self._active or record.levelno < logging.WARNING:
+                    return
+                if record.levelno >= logging.ERROR:
+                    self._errors += 1
+                else:
+                    self._warnings += 1
+                self._by_logger[record.name] = self._by_logger.get(record.name, 0) + 1
+        except Exception:
+            self.handleError(record)
+
+
+_run_warning_counter = _RunWarningCounter()
+
+
+def begin_run_warning_count() -> None:
+    _run_warning_counter.begin_run()
+
+
+def emit_run_warning_summary() -> None:
+    warnings, errors, by_logger = _run_warning_counter.finish_run()
+    by = ",".join(f"{name}:{count}" for name, count in by_logger) or "-"
+    logging.getLogger(__name__).info(
+        "run.summary warnings=%d errors=%d by=%s",
+        warnings,
+        errors,
+        by,
+    )
+
+
 def _install_file_logging(home: str) -> None:
     """Attach one capped file handler so engine warnings become retrievable.
 
@@ -78,6 +133,7 @@ def _install_file_logging(home: str) -> None:
         handler.addFilter(log_context.RunContextFilter())
         root = logging.getLogger()
         root.addHandler(handler)
+        root.addHandler(_run_warning_counter)
         if root.level > logging.INFO:
             root.setLevel(logging.INFO)
         # Explicit rather than inherited, so the tester switch

@@ -28,7 +28,6 @@ and the standard library stay top-level, matching ``jisho_provider``.
 
 from __future__ import annotations
 
-import contextlib
 import hashlib
 import ipaddress
 import json
@@ -441,10 +440,12 @@ class CustomAudioFetcher:
                     return []
                 content_length = response.headers.get("Content-Length")
                 if isinstance(content_length, str):
-                    with contextlib.suppress(ValueError):
+                    try:
                         if int(content_length) > _MAX_JSON_BYTES:
                             self._bump("oversized_response")
                             return []
+                    except ValueError:
+                        logger.debug("custom_json Content-Length is invalid", exc_info=True)
                 chunks: list[bytes] = []
                 total = 0
                 for chunk in response.iter_content(chunk_size=8192):
@@ -472,7 +473,7 @@ class CustomAudioFetcher:
             from anki_miner.services.audio_fetch_common import classify_request_exception
 
             self._bump(classify_request_exception(exc))
-            logger.debug("custom_json directory request failed: %s", type(exc).__name__)
+            logger.debug("custom_json directory request failed", exc_info=exc)
             return []
 
         try:

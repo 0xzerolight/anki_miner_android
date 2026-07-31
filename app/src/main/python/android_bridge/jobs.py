@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import re
 import threading
 import uuid
@@ -11,6 +12,8 @@ from typing import Any, cast
 
 from . import log_context
 from .protocol import BridgeProtocolError, decode_envelope, decode_message, encode_message
+
+logger = logging.getLogger(__name__)
 
 _RUN_ID_RE = re.compile(r"^run_[0-9a-f]{32}$")
 _REQUEST_ID_RE = re.compile(r"^curation_[0-9a-f]{32}$")
@@ -22,6 +25,12 @@ _SENTENCE_ID_RE = re.compile(r"^sentence_[0-9a-f]{32}$")
 # BridgeJsonCodec and curation.schema.json.
 CURATION_PAGE_MAX_CANDIDATES = 100
 CURATION_PAGE_MAX_UTF8_BYTES = 512 * 1024
+
+
+def _reject(code: str, message: str, **fields: object) -> BridgeProtocolError:
+    details = "".join(f" {name}={value}" for name, value in sorted(fields.items()))
+    logger.error("bridge_protocol_rejected code=%s%s", code, details)
+    return BridgeProtocolError(code, message)
 
 
 @dataclass(frozen=True)
@@ -169,7 +178,7 @@ def _utf8_size(raw: str) -> int:
     try:
         return len(raw.encode("utf-8"))
     except UnicodeEncodeError as exc:
-        raise BridgeProtocolError("invalid_utf8", "Curation payload contains an invalid Unicode scalar") from exc
+        raise _reject("invalid_utf8", "Curation payload contains an invalid Unicode scalar") from exc
 
 
 def _page_payload(
@@ -247,7 +256,7 @@ def _partition_pages(
             continue
 
         if not current_ids:
-            raise BridgeProtocolError(
+            raise _reject(
                 "curation_candidate_too_large",
                 "One curation candidate exceeds the bounded page envelope",
             )
@@ -264,7 +273,7 @@ def _partition_pages(
             )
             > CURATION_PAGE_MAX_UTF8_BYTES
         ):
-            raise BridgeProtocolError(
+            raise _reject(
                 "curation_candidate_too_large",
                 "One curation candidate exceeds the bounded page envelope",
             )
@@ -272,7 +281,7 @@ def _partition_pages(
     if current_ids:
         pages.append(_CurationPagePlan(tuple(current_ids), current_start))
     if len(pages) < 2:
-        raise BridgeProtocolError(
+        raise _reject(
             "invalid_curation_paging",
             "Paged curation must contain at least two non-empty pages",
         )
@@ -292,12 +301,15 @@ class JobRegistry:
 
         with self._lock:
             if self._shutdown:
-                raise BridgeProtocolError("registry_shutdown", "The job registry has shut down")
+                raise _reject("registry_shutdown", "The job registry has shut down")
             if self._active is not None:
-                raise BridgeProtocolError("job_already_active", "Only one Python mining job may run at a time")
+                raise _reject("job_already_active", "Only one Python mining job may run at a time")
             handle = JobHandle(run_id=_opaque_id("run"), cancel_event=threading.Event())
             self._active = _JobState(handle=handle)
             log_context.set_active_run(handle.run_id)
+            from .bootstrap import begin_run_warning_count
+
+            begin_run_warning_count()
             return handle
 
     @property
@@ -307,12 +319,12 @@ class JobRegistry:
 
     def _require_active(self, run_id: str) -> _JobState:
         if not isinstance(run_id, str) or not _RUN_ID_RE.fullmatch(run_id):
-            raise BridgeProtocolError("invalid_run_id", "runId is not a valid opaque run ID")
+            raise _reject("invalid_run_id", "runId is not a valid opaque run ID")
         state = self._active
         if state is None:
-            raise BridgeProtocolError("no_active_job", "There is no active Python mining job")
+            raise _reject("no_active_job", "There is no active Python mining job")
         if state.handle.run_id != run_id:
-            raise BridgeProtocolError("stale_run", "The response belongs to a stale mining run")
+            raise _reject("stale_run", "The response belongs to a stale mining run")
         return state
 
     def cancel(self, run_id: str) -> bool:
@@ -341,6 +353,9 @@ class JobRegistry:
                 state.curation.cancelled = True
                 state.curation.page_resolved = True
                 state.curation.event.set()
+            from .bootstrap import emit_run_warning_summary
+
+            emit_run_warning_summary()
             self._active = None
             log_context.set_active_run(None)
 
@@ -378,16 +393,16 @@ class JobRegistry:
         """
 
         if not isinstance(candidates, Sequence) or isinstance(candidates, (str, bytes, bytearray)):
-            raise BridgeProtocolError("invalid_candidates", "Curation candidates must be a sequence")
+            raise _reject("invalid_candidates", "Curation candidates must be a sequence")
         if not callable(emit_request):
-            raise BridgeProtocolError("invalid_callback", "emit_request must be callable")
+            raise _reject("invalid_callback", "emit_request must be callable")
 
         with self._lock:
             state = self._require_active(run_id)
             if state.handle.cancel_event.is_set():
                 return None
             if state.curation is not None:
-                raise BridgeProtocolError("curation_already_pending", "A curation request is already pending")
+                raise _reject("curation_already_pending", "A curation request is already pending")
 
             request_id = _opaque_id("curation")
             refs: dict[str, _CandidateRef] = {}
@@ -470,7 +485,7 @@ class JobRegistry:
                     self._complete_curation_locked(state, gate)
                     return None
                 if not gate.page_resolved:
-                    raise BridgeProtocolError(
+                    raise _reject(
                         "invalid_curation_state",
                         "Curation wait was released without a page response",
                     )
@@ -503,7 +518,7 @@ class JobRegistry:
             ),
         )
         if len(payloads) > CURATION_PAGE_MAX_CANDIDATES or _utf8_size(raw) > CURATION_PAGE_MAX_UTF8_BYTES:
-            raise BridgeProtocolError(
+            raise _reject(
                 "invalid_curation_paging",
                 "A planned curation page exceeds its runtime bound",
             )
@@ -524,26 +539,26 @@ class JobRegistry:
 
         decoded = decode_envelope(raw_response)
         if decoded.message_type not in {"curation.response", "curation.page.response"}:
-            raise BridgeProtocolError("invalid_curation_response", "Unsupported curation response type")
+            raise _reject("invalid_curation_response", "Unsupported curation response type")
         payload = decoded.payload
         paged_response = decoded.message_type == "curation.page.response"
         expected_fields = (
             {"runId", "requestId", "pageIndex", "selection"} if paged_response else {"runId", "requestId", "selection"}
         )
         if set(payload) != expected_fields:
-            raise BridgeProtocolError("invalid_curation_response", "Curation response fields are invalid")
+            raise _reject("invalid_curation_response", "Curation response fields are invalid")
         run_id = payload["runId"]
         request_id = payload["requestId"]
         if not isinstance(run_id, str) or not _RUN_ID_RE.fullmatch(run_id):
-            raise BridgeProtocolError("invalid_curation_response", "runId is not a valid opaque run ID")
+            raise _reject("invalid_curation_response", "runId is not a valid opaque run ID")
         if not isinstance(request_id, str) or not _REQUEST_ID_RE.fullmatch(request_id):
-            raise BridgeProtocolError(
+            raise _reject(
                 "invalid_curation_response",
                 "requestId is not a valid opaque request ID",
             )
         raw_page_index = payload.get("pageIndex")
         if paged_response and (type(raw_page_index) is not int or cast(int, raw_page_index) < 0):
-            raise BridgeProtocolError(
+            raise _reject(
                 "invalid_curation_response",
                 "pageIndex must be a non-negative integer",
             )
@@ -554,35 +569,35 @@ class JobRegistry:
             gate = state.curation
             if gate is None:
                 if state.last_request_id == request_id and state.last_page_index == page_index:
-                    raise BridgeProtocolError("duplicate_curation_response", "Curation was already resolved")
-                raise BridgeProtocolError(
+                    raise _reject("duplicate_curation_response", "Curation was already resolved")
+                raise _reject(
                     "stale_curation_request",
                     "The curation request is no longer pending",
                 )
             if gate.request_id != request_id:
-                raise BridgeProtocolError(
+                raise _reject(
                     "stale_curation_request",
                     "The response belongs to a stale curation request",
                 )
             if gate.paged != paged_response:
-                raise BridgeProtocolError(
+                raise _reject(
                     "invalid_curation_response",
                     "Curation response type does not match the pending request",
                 )
             if gate.paged and page_index != gate.page_index:
-                raise BridgeProtocolError(
+                raise _reject(
                     "stale_curation_page",
                     "The response belongs to a stale curation page",
                 )
             if gate.page_resolved:
-                raise BridgeProtocolError("duplicate_curation_response", "Curation was already resolved")
+                raise _reject("duplicate_curation_response", "Curation was already resolved")
 
             selection = payload["selection"]
             if selection is None:
                 gate.cancelled = True
             elif isinstance(selection, list):
                 if len(selection) > CURATION_PAGE_MAX_CANDIDATES:
-                    raise BridgeProtocolError(
+                    raise _reject(
                         "invalid_curation_response",
                         "Curation selection exceeds the page item limit",
                     )
@@ -591,7 +606,7 @@ class JobRegistry:
                 )
                 gate.selected.extend(self._resolve_selection(gate, selection, allowed_candidate_ids))
             else:
-                raise BridgeProtocolError("invalid_curation_response", "selection must be null or an array")
+                raise _reject("invalid_curation_response", "selection must be null or an array")
 
             final_page = gate.final_page or gate.cancelled
             gate.page_resolved = True
@@ -612,31 +627,31 @@ class JobRegistry:
         seen_candidates: set[str] = set()
         for item in selection:
             if not isinstance(item, dict) or not set(item).issubset({"candidateId", "sentenceId"}):
-                raise BridgeProtocolError(
+                raise _reject(
                     "invalid_curation_response",
                     "Each selection must identify a candidate",
                 )
             if "candidateId" not in item:
-                raise BridgeProtocolError("invalid_curation_response", "candidateId is required")
+                raise _reject("invalid_curation_response", "candidateId is required")
             candidate_id = item["candidateId"]
             if not isinstance(candidate_id, str) or not _CANDIDATE_ID_RE.fullmatch(candidate_id):
-                raise BridgeProtocolError("invalid_curation_response", "candidateId is not a valid opaque ID")
+                raise _reject("invalid_curation_response", "candidateId is not a valid opaque ID")
             has_sentence_id = "sentenceId" in item
             sentence_id = item.get("sentenceId")
             if has_sentence_id and (not isinstance(sentence_id, str) or not _SENTENCE_ID_RE.fullmatch(sentence_id)):
-                raise BridgeProtocolError(
+                raise _reject(
                     "invalid_curation_response",
                     "sentenceId must be omitted or contain a valid opaque ID",
                 )
             if candidate_id in seen_candidates:
-                raise BridgeProtocolError("duplicate_candidate", "A candidate may only be selected once")
+                raise _reject("duplicate_candidate", "A candidate may only be selected once")
             candidate = gate.candidates.get(candidate_id)
             if candidate is None or candidate_id not in allowed_candidate_ids:
-                raise BridgeProtocolError("unknown_candidate", "The selected candidate is unknown")
+                raise _reject("unknown_candidate", "The selected candidate is unknown")
             chosen_sentence_id = cast(str, sentence_id) if has_sentence_id else candidate.default_sentence_id
             chosen = candidate.sentences.get(chosen_sentence_id)
             if chosen is None:
-                raise BridgeProtocolError("unknown_sentence", "The sentence does not belong to this candidate")
+                raise _reject("unknown_sentence", "The sentence does not belong to this candidate")
             seen_candidates.add(candidate_id)
             resolved.append(chosen)
         return resolved
@@ -658,7 +673,7 @@ def begin_job() -> JobHandle:
 def cancel_job(raw_request: str) -> str:
     payload = decode_message(raw_request, expected_type="job.cancel")
     if set(payload) != {"runId"} or not isinstance(payload.get("runId"), str):
-        raise BridgeProtocolError("invalid_cancel_request", "job.cancel requires exactly one string runId")
+        raise _reject("invalid_cancel_request", "job.cancel requires exactly one string runId")
     first = _REGISTRY.cancel(payload["runId"])
     return encode_message("job.cancelled", {"runId": payload["runId"], "newlyCancelled": first})
 

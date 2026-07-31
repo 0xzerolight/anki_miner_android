@@ -1272,6 +1272,13 @@ internal class BridgeReadingMiningRepository(
         generation: Long,
         message: BridgeMessage.ProgressStage,
     ) {
+        AppLog.i(
+            LogComponent.READING,
+            "engine_stage",
+            "index" to message.index,
+            "total" to message.total,
+            "name" to message.name,
+        )
         // The stage becomes the outer band of the bar and its label; the per-stage
         // item counts restart inside it. Keep the current counts so the bar does
         // not jump backwards between an on_stage and the on_start that follows.

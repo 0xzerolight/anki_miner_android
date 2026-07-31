@@ -179,6 +179,37 @@ print(json.dumps({
     assert "anki_miner.services.media_extractor" in data["content"]
 
 
+def test_run_warning_summary_resets_counts_between_runs(tmp_path: Path) -> None:
+    result = _run(
+        """
+import json, logging, logging.handlers, sys
+from android_bridge.bootstrap import initialize
+from android_bridge.jobs import JobRegistry
+initialize(sys.argv[1])
+registry = JobRegistry()
+first = registry.begin()
+logging.getLogger("anki_miner.first").warning("first warning")
+registry.finish(first.run_id)
+second = registry.begin()
+logging.getLogger("anki_miner.second").error("second error")
+registry.finish(second.run_id)
+handler = next(
+    h for h in logging.getLogger().handlers if isinstance(h, logging.handlers.RotatingFileHandler)
+)
+handler.flush()
+lines = open(handler.baseFilename, encoding="utf-8").read().splitlines()
+print(json.dumps([line.split("android_bridge.bootstrap: ", 1)[-1] for line in lines if "run.summary " in line]))
+""",
+        tmp_path,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == [
+        "run.summary warnings=1 errors=0 by=anki_miner.first:1",
+        "run.summary warnings=0 errors=1 by=anki_miner.second:1",
+    ]
+
+
 def test_installed_log_line_carries_a_stamped_run_id(tmp_path: Path) -> None:
     """A vendored-style logger name is stamped with no edit to anki_miner.
 

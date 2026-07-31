@@ -94,6 +94,7 @@ class RunContextFilter(logging.Filter):
             run_id = current_run_id() or "-"
         except Exception:
             run_id = "-"
+        # instrumentation: intentionally silent — logging here would recurse through this Filter
         with suppress(Exception):
             record.run_id = run_id
         return True

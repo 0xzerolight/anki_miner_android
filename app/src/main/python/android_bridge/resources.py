@@ -11,6 +11,7 @@ from __future__ import annotations
 import contextlib
 import hashlib
 import json
+import logging
 import os
 import re
 import shutil
@@ -33,6 +34,8 @@ from .resource_catalog import (
     load_resource_catalog,
 )
 from .tokenizer_contract import TokenizerContractError
+
+logger = logging.getLogger(__name__)
 
 _COPY_CHUNK_BYTES = 1024 * 1024
 _MANIFEST_NAME = "install.manifest.json"
@@ -200,7 +203,7 @@ def _fsync_directory(path: Path) -> None:
     try:
         os.fsync(descriptor)
     except OSError:
-        pass
+        logger.debug("Failed to fsync resource directory", exc_info=True)
     finally:
         os.close(descriptor)
 
