@@ -487,14 +487,14 @@ def _android_path_overrides(paths: AndroidPaths) -> dict[str, Path]:
 
 
 def _verify_ffmpeg_binary(tool: str, path: Path) -> None:
-    resolved = path.resolve(strict=False)
     try:
+        resolved = path.resolve(strict=False)
         stat_result = os.stat(resolved)
-    except OSError:
+    except (OSError, RuntimeError):
         logger.error(
             "ffmpeg_binary_verification_failed tool=%s path=%s reason=stat_failed",
             tool,
-            resolved,
+            path,
             exc_info=True,
         )
         return

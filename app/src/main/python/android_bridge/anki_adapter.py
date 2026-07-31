@@ -1073,9 +1073,20 @@ class AndroidAnkiAdapter:
                 cursor = next_cursor
         except AnkiCallbackError as error:
             if error.code == "timeout" and error.retryable:
-                logger.warning(
-                    "Failed to fetch existing vocabulary (filtering disabled): %s",
+                logger.debug(
+                    "Known-vocabulary scan failed code=%s retryable=%s message=%s",
+                    error.code,
+                    error.retryable,
                     error,
+                    exc_info=error,
+                )
+                logger.warning(
+                    "Known-vocabulary scan failed; filtering disabled",
+                    exc_info=(
+                        RuntimeError,
+                        RuntimeError("Known-vocabulary callback timed out"),
+                        error.__traceback__,
+                    ),
                 )
                 return set()
             _raise_callback_error(error)
@@ -1820,7 +1831,21 @@ class AndroidAnkiAdapter:
                 resolved_path = runtime_path.resolve()
                 digest = self._stream_media_digest(resolved_path, work_budget)
             except OSError as error:
-                logger.warning("Failed to read dict media file %s: %s", source, error)
+                logger.debug(
+                    "Dictionary media read failed source=%s path=%s error=%s",
+                    source,
+                    runtime_path,
+                    error,
+                    exc_info=error,
+                )
+                logger.warning(
+                    "Dictionary media read failed; skipping asset",
+                    exc_info=(
+                        OSError,
+                        OSError("Dictionary media read failed"),
+                        error.__traceback__,
+                    ),
+                )
                 continue
             if planned_path is None or resolved_path != planned_path:
                 # The bytes were deliberately charged to the runtime work

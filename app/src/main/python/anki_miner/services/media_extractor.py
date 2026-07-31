@@ -437,6 +437,12 @@ class MediaExtractorService:
         if progress_callback and not was_cancelled:
             progress_callback.on_complete()
 
+        logger.info(
+            "media_extraction_batch attempted=%d ok=%d failed=%d",
+            len(words),
+            len(media_data_list),
+            len(words) - len(media_data_list),
+        )
         return media_data_list
 
     def extract_cover_art(
@@ -724,7 +730,20 @@ class MediaExtractorService:
             # Killed by a batch cancel — expected, not an ffmpeg failure.
             logger.debug("%s cancelled%s", op_name, suffix)
             return False
-        logger.warning("%s failed%s: ffmpeg exit code %s: %s", op_name, suffix, proc.returncode, stderr)
+        logger.debug(
+            "%s failed%s: argv0=%s word=%s stderr=%s",
+            op_name,
+            suffix,
+            Path(cmd[0]).name,
+            Path(context).stem.rsplit("_", 2)[0] if context else "-",
+            stderr,
+        )
+        logger.warning(
+            "%s failed: argv0=%s ffmpeg exit code %s",
+            op_name,
+            Path(cmd[0]).name,
+            proc.returncode,
+        )
         return False
 
     def _extract_static_screenshot(

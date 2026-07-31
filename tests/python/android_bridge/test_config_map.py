@@ -84,6 +84,7 @@ def test_empty_snapshot_preserves_all_102_desktop_defaults_except_targeted_andro
 
 def test_ffmpeg_binary_verification_logs_non_executable_and_missing_paths(
     caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     paths = _paths(tmp_path)
@@ -99,6 +100,35 @@ def test_ffmpeg_binary_verification_logs_non_executable_and_missing_paths(
     assert len(failures) == 2
     assert any("tool=ffmpeg" in failure and "reason=not_executable" in failure for failure in failures)
     assert any("tool=ffprobe" in failure and "reason=stat_failed" in failure for failure in failures)
+
+    caplog.clear()
+    original_resolve = Path.resolve
+
+    def fail_native_binary_resolution(path: Path, strict: bool = False) -> Path:
+        if path.name == "libffmpeg.so":
+            raise RuntimeError("simulated symlink loop")
+        if path.name == "libffprobe.so":
+            raise OSError("simulated resolution failure")
+        return original_resolve(path, strict=strict)
+
+    monkeypatch.setattr(Path, "resolve", fail_native_binary_resolution)
+
+    mapped = map_config_settings({}, paths)
+
+    assert mapped.engine_config.ffmpeg_location == ffmpeg
+    assert mapped.engine_config.ffprobe_location == paths.native_library_dir / "libffprobe.so"
+    resolution_failures = [record for record in caplog.records if "ffmpeg_binary_verification_failed" in record.msg]
+    assert len(resolution_failures) == 2
+    assert {record.exc_info[0] for record in resolution_failures if record.exc_info} == {
+        OSError,
+        RuntimeError,
+    }
+    messages = [record.getMessage() for record in resolution_failures]
+    assert any(f"tool=ffmpeg path={ffmpeg} reason=stat_failed" in message for message in messages)
+    assert any(
+        f"tool=ffprobe path={paths.native_library_dir / 'libffprobe.so'} reason=stat_failed" in message
+        for message in messages
+    )
 
 
 def test_typed_fields_and_entries_are_reconstructed(tmp_path: Path) -> None:
