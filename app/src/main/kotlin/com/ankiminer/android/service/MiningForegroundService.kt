@@ -51,6 +51,13 @@ internal fun decodeMiningForegroundIntentIdentity(
         } else {
             runCatching {
                 MiningForegroundSessionIdentity(runId, generation, leaseId)
+            }.onFailure { failure ->
+                AppLog.ignored(
+                    LogComponent.SERVICE,
+                    "intent.identity",
+                    "malformed_intent_warning_follows",
+                    failure,
+                )
             }.getOrNull()
         }
     if (identity == null && warnOnFailure) {
@@ -407,6 +414,13 @@ class MiningForegroundService : Service() {
             val leaseId = intent.getStringExtra(EXTRA_LEASE_ID) ?: return null
             return runCatching {
                 MiningForegroundSessionIdentity(runId, generation, leaseId).runId
+            }.onFailure { failure ->
+                AppLog.ignored(
+                    LogComponent.SERVICE,
+                    "notification.identity",
+                    "invalid_notification_identity",
+                    failure,
+                )
             }.getOrNull()
         }
 
