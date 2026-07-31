@@ -38,6 +38,7 @@ import com.ankiminer.android.mining.MiningProgress
 import com.ankiminer.android.mining.MiningRunAdmissionGate
 import com.ankiminer.android.mining.MiningRunAdmissionState
 import com.ankiminer.android.mining.MiningRunInterruptionStore
+import com.ankiminer.android.mining.foregroundRunId
 import com.ankiminer.android.mining.MiningRunKind
 import com.ankiminer.android.mining.MiningRunState
 import com.ankiminer.android.mining.MiningRuntimePaths
@@ -211,6 +212,8 @@ internal class BridgeReadingMiningRepository(
     private var nextGeneration = 1L
     private var restartRequired: ProtocolFault? = null
     private var savedCurationSessionState: CurationSessionState? = null
+    /** Run whose terminal callback already arrived; correlates late cancel replies. */
+    private var terminatedRunId: String? = null
     private var pendingInterruptionCleanup: InterruptedMiningRun? = null
 
     init {
@@ -726,6 +729,10 @@ internal class BridgeReadingMiningRepository(
                 detachedInput = run.input.takeIf { run.sourcesDetached }
                 runFault = run.stickyFault ?: run.cancellationDispatchFault
                 presenterNotices = run.presenterNotices.toList()
+                // A cancellation dispatch can still be in flight here. Remember which run
+                // reported terminal so a late no_active_job reply is recognised as the
+                // acknowledgement for THIS run instead of being retried.
+                terminatedRunId = run.terminalCallback?.runId ?: terminatedRunId
                 active = null
                 savedCurationSessionState = null
             }
@@ -1130,7 +1137,8 @@ internal class BridgeReadingMiningRepository(
                         decoded is BridgeMessage.Error &&
                             decoded.code == "no_active_job" &&
                             synchronized(monitor) {
-                                activeFor(generation)?.terminalCallback?.runId == runId
+                                activeFor(generation)?.terminalCallback?.runId == runId ||
+                                    terminatedRunId == runId
                             }
                     )
             if (accepted) {
@@ -1751,7 +1759,7 @@ internal class BridgeReadingMiningRepository(
 
     private fun requiresMediaForeground(run: ActiveRun): Boolean {
         val config = requireNotNull(run.configSnapshot)
-        if (config.androidTtsEnabled || config.mapsExpressionAudioField()) return true
+        if (config.androidTtsEnabled == true || config.mapsExpressionAudioField()) return true
         return when (val selection = run.input.selection) {
             is ReadingSourceSelection.MokuroArchivePair -> true
             is ReadingSourceSelection.Single -> {

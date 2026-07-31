@@ -7,6 +7,8 @@ internal val testStringResourceResolver =
         when (resourceId) {
             R.string.mining_failure_background_start_unsafe ->
                 "Background mining did not start safely"
+            R.string.mining_failure_background_stopped ->
+                "Background mining stopped unexpectedly"
             R.string.mining_failure_terminal_disagreement ->
                 "Python terminal callback and return value disagreed"
             R.string.mining_failure_anki_cleanup_incomplete ->

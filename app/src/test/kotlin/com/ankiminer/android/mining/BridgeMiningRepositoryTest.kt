@@ -1127,19 +1127,6 @@ class BridgeMiningRepositoryTest {
             return terminal
         }
 
-        private fun waitUntil(
-            timeout: Long,
-            unit: TimeUnit,
-            predicate: () -> Boolean,
-        ): Boolean {
-            val deadline = System.nanoTime() + unit.toNanos(timeout)
-            while (System.nanoTime() < deadline) {
-                if (predicate()) return true
-                Thread.sleep(2)
-            }
-            return predicate()
-        }
-
         private fun terminalPayload(): String {
             if (terminalErrorCount == 0) return SUCCESS_TERMINAL
             val errors =
@@ -1206,4 +1193,18 @@ class BridgeMiningRepositoryTest {
         val CANCELLED_TERMINAL =
             """{"schemaVersion":1,"type":"mining.terminal","payload":{"runId":"$RUN_ID","outcome":"cancelled","result":null,"error":{"code":"cancelled","message":"Mining was cancelled"}}}"""
     }
+}
+
+/** Polls [predicate] until it holds or [timeout] elapses. Shared by the tests and the fakes. */
+private fun waitUntil(
+    timeout: Long,
+    unit: TimeUnit,
+    predicate: () -> Boolean,
+): Boolean {
+    val deadline = System.nanoTime() + unit.toNanos(timeout)
+    while (System.nanoTime() < deadline) {
+        if (predicate()) return true
+        Thread.sleep(2)
+    }
+    return predicate()
 }

@@ -141,6 +141,8 @@ internal class BridgeMiningRepository(
     private var nextGeneration = 1L
     private var restartRequired: ProtocolFault? = null
     private var savedCurationSessionState: CurationSessionState? = null
+    /** Run whose terminal callback already arrived; correlates late cancel replies. */
+    private var terminatedRunId: String? = null
     private var pendingInterruptionCleanup: InterruptedMiningRun? = null
 
     init {
@@ -617,6 +619,10 @@ internal class BridgeMiningRepository(
                 detachedInput = run.input.takeIf { run.sourcesDetached }
                 runFault = run.stickyFault ?: run.cancellationDispatchFault
                 presenterNotices = run.presenterNotices.toList()
+                // A cancellation dispatch can still be in flight here. Remember which run
+                // reported terminal so a late no_active_job reply is recognised as the
+                // acknowledgement for THIS run instead of being retried.
+                terminatedRunId = run.terminalCallback?.runId ?: terminatedRunId
                 active = null
                 savedCurationSessionState = null
             }
@@ -1013,7 +1019,8 @@ internal class BridgeMiningRepository(
                         decoded is BridgeMessage.Error &&
                             decoded.code == "no_active_job" &&
                             synchronized(monitor) {
-                                activeFor(generation)?.terminalCallback?.runId == runId
+                                activeFor(generation)?.terminalCallback?.runId == runId ||
+                                    terminatedRunId == runId
                             }
                     )
             if (accepted) {
