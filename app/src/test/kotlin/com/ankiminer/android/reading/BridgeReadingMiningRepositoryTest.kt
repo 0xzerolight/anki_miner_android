@@ -68,6 +68,32 @@ class BridgeReadingMiningRepositoryTest {
     }
 
     @Test
+    fun `foreground promotion failure cancels Python and names the fault`() {
+        // The mirror of the video lane's promotion-failure test. Without it, deleting `diagnostic`
+        // from this repository's toFailed goes undetected: the other two sites that mention it here
+        // are the terminal arm, which builds MiningFailure directly, and an assertNull.
+        val harness = harness(expressionAudioFieldMapped = true, foregroundFailure = true)
+
+        runBlocking { harness.repository.startReading(INPUT) }
+        val curating =
+            awaitState(harness.repository) { it is MiningRunState.Curating } as MiningRunState.Curating
+        runBlocking {
+            harness.repository.confirmCuration(
+                curating.request.runId,
+                curating.request.requestId,
+                FIRST_SELECTION,
+            )
+        }
+
+        assertTrue(harness.bridge.cancellationSubmitted.await(2, TimeUnit.SECONDS))
+        harness.bridge.allowTerminal.countDown()
+        val failed = awaitState(harness.repository, MiningRunState::isTerminal) as MiningRunState.Failed
+        assertEquals("Background mining did not start safely", failed.failure.message)
+        assertFalse(failed.failure.retryable)
+        assertEquals("foreground_start_unconfirmed", failed.failure.diagnostic)
+    }
+
+    @Test
     fun `engine progress descriptions never reach the foreground notification`() {
         val harness = harness(expressionAudioFieldMapped = true)
 
@@ -733,6 +759,7 @@ class BridgeReadingMiningRepositoryTest {
         raisedFailure: Boolean = false,
         fallbackState: ReleaseState = ReleaseState.ABSENT,
         cache: File? = null,
+        foregroundFailure: Boolean = false,
     ): Harness {
         val runExecutor = Executors.newSingleThreadExecutor().also(executors::add)
         val controlExecutor = Executors.newSingleThreadExecutor().also(executors::add)
@@ -748,7 +775,7 @@ class BridgeReadingMiningRepositoryTest {
                 raisedFailure = raisedFailure,
             )
         val anki = FakeAnkiCallbacks(fallbackState)
-        val foreground = FakeForegroundStarter()
+        val foreground = FakeForegroundStarter(foregroundFailure)
         val openCount = AtomicInteger()
         val repository =
             BridgeReadingMiningRepository(
@@ -878,7 +905,9 @@ class BridgeReadingMiningRepositoryTest {
         }
     }
 
-    private class FakeForegroundStarter : com.ankiminer.android.mining.MiningForegroundStarter {
+    private class FakeForegroundStarter(
+        private val fail: Boolean = false,
+    ) : com.ankiminer.android.mining.MiningForegroundStarter {
         val startCount = AtomicInteger()
         val lease = FakeForegroundLease()
 
@@ -888,6 +917,11 @@ class BridgeReadingMiningRepositoryTest {
             listener: MiningForegroundSessionListener,
         ): CompletableFuture<MiningForegroundLease> {
             startCount.incrementAndGet()
+            if (fail) {
+                return CompletableFuture<MiningForegroundLease>().also {
+                    it.completeExceptionally(IllegalStateException("test promotion failure"))
+                }
+            }
             lease.sessionIdentity =
                 MiningForegroundSessionIdentity(
                     runId,

@@ -225,13 +225,65 @@ class TesterDiagnosticsTest {
                                 progress = MiningProgress(current = 1, total = 2, description = "Mining"),
                             ),
                     ),
-                reading = ReadingMiningUiState(),
+                // A second in-flight state, and a different one: the main fixture's failed video
+                // lane is scanned first, so no other test can reach a non-failed lane at all.
+                reading =
+                    ReadingMiningUiState(
+                        runState =
+                            MiningRunState.Starting(
+                                runId = "run_00000000000000000000000000000002",
+                                progress = null,
+                            ),
+                    ),
             ).report
 
         // A run still in flight has nothing to look up yet, and reporting its id would make the
         // line mean two different things depending on when Share was pressed.
         assertTrue(report, report.contains("video.run=running"))
+        assertTrue(report, report.contains("reading.run=starting"))
         assertTrue(report, report.contains("mining.run_id=none"))
+    }
+
+    @Test
+    fun `an over-long failure code is cut to a prefix rather than dropped`() {
+        // The engine's terminal code pattern is length-unbounded, so this is reachable from Python.
+        val longCode = "e".repeat(70)
+        val report =
+            TesterDiagnosticsBuilder.build(
+                build = plainIdentity(),
+                setup = SetupUiState(),
+                video =
+                    VideoMiningUiState(
+                        runState =
+                            MiningRunState.Failed(
+                                runId = null,
+                                failure = MiningFailure("Mining failed", false, null, longCode),
+                                result = null,
+                            ),
+                    ),
+                reading = ReadingMiningUiState(),
+            ).report
+
+        assertTrue(report, report.contains("mining.failure_code=${"e".repeat(64)}\n"))
+
+        // A code outside the alphabet is still refused outright: truncating is for length only.
+        val hostile =
+            TesterDiagnosticsBuilder.build(
+                build = plainIdentity(),
+                setup = SetupUiState(),
+                video =
+                    VideoMiningUiState(
+                        runState =
+                            MiningRunState.Failed(
+                                runId = null,
+                                failure = MiningFailure("Mining failed", false, null, "Engine Error!"),
+                                result = null,
+                            ),
+                    ),
+                reading = ReadingMiningUiState(),
+            ).report
+
+        assertTrue(hostile, hostile.contains("mining.failure_code=none\n"))
     }
 
     @Test

@@ -20,10 +20,11 @@ internal sealed interface PythonRuntimeReadiness {
 
     /**
      * A missing ABI wheel, a broken Chaquopy asset set, a home mismatch and an OOM are the same
-     * catastrophic state to the UI but completely different bugs, and the tester report is the only
-     * place a person ever sees this. [fault] is a [compactFaultToken], never the throwable: this
-     * value is compared by the JVM tests and a `Throwable` field would give the data class identity
-     * equality.
+     * catastrophic state to the UI — one line, `status_failed_restart`, for all four — but completely
+     * different bugs. The tester report is the only place [stage] and [fault] are shown at all.
+     *
+     * [fault] is a [compactFaultToken], never the throwable: this value is compared by the JVM tests
+     * and a `Throwable` field would give the data class identity equality.
      */
     data class Failed(
         val stage: PythonBootstrapStage,
@@ -43,7 +44,9 @@ internal enum class PythonBootstrapStage {
  * Stage tag for a failure raised inside the Android initializer, which the generic
  * [PythonRuntimeBootstrapGate] cannot know on its own.
  *
- * Never carries an [Error]: see [pythonBootstrapStage].
+ * Its only producer, [pythonBootstrapStage], never tags an [Error] — see there for why. The
+ * constructor cannot enforce that, so the gate re-checks the unwrapped cause before deciding whether
+ * to rethrow.
  */
 internal class PythonBootstrapFailure(
     val stage: PythonBootstrapStage,
@@ -100,8 +103,10 @@ internal class PythonRuntimeBootstrapGate<T>(
                     // caller's PythonRuntimeUnavailableException.cause pointing at
                     // PythonBootstrapFailure instead of the failure itself.
                     val origin = (failure as? PythonBootstrapFailure)?.cause ?: failure
-                    // An untagged throw is one the initializer's stage blocks did not cover, which
-                    // on this path means startup: nothing later runs outside one.
+                    // The earliest stage as a default, not an observation: this gate is generic and
+                    // an initialize() is free not to tag its phases at all. ChaquopyPythonRuntime
+                    // tags every statement of its own that can throw, which is what keeps the
+                    // default off the real bootstrap path.
                     val stage = (failure as? PythonBootstrapFailure)?.stage ?: PythonBootstrapStage.START
                     // The readiness state carries no stack, so this record is the only full account
                     // of why the engine never came up — and Python's own log handler does not exist

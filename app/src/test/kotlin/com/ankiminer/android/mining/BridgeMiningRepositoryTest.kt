@@ -280,8 +280,8 @@ class BridgeMiningRepositoryTest {
         val failed = awaitState(harness.repository, MiningRunState::isTerminal) as MiningRunState.Failed
         assertEquals("Background mining did not start safely", failed.failure.message)
         assertFalse(failed.failure.retryable)
-        // "unconfirmed", not "timeout": the bounded get() also reports the start having been
-        // rejected outright, which is what this fixture does.
+        // "unconfirmed", not "timeout": this fixture completes the future exceptionally, so the
+        // bounded get() raises ExecutionException and never reaches its deadline.
         assertEquals("foreground_start_unconfirmed", failed.failure.diagnostic)
     }
 

@@ -114,8 +114,8 @@ class PythonRuntimeBootstrapTest {
         queued.get().run()
 
         val readiness = gate.readiness.value as PythonRuntimeReadiness.Failed
-        // Nothing in the initializer runs outside a stage block once startup has finished, so an
-        // untagged throw is a startup throw.
+        // This initialize() is an untagged lambda, which is what the generic gate has to cope with;
+        // the default is the earliest stage, not a claim about where the throw came from.
         assertEquals(PythonBootstrapStage.START, readiness.stage)
         assertTrue(readiness.fault, readiness.fault.startsWith("IllegalStateException @ "))
         val failure =

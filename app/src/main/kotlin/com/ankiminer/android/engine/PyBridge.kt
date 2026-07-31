@@ -64,7 +64,10 @@ internal class ChaquopyPythonRuntime(
                 )
                 Python.getInstance().getModule("android_bridge.boundary")
             }
-        val requestedHome = filesDir.canonicalPath
+        // Tagged, not bare: getCanonicalPath throws IOException, and an untagged throw here would be
+        // reported as a startup failure -- naming Python.start for a fault that happened after the
+        // interpreter came up fine. DISPATCH is where it belongs; it is the request's only input.
+        val requestedHome = pythonBootstrapStage(PythonBootstrapStage.DISPATCH) { filesDir.canonicalPath }
         val rawReady =
             pythonBootstrapStage(PythonBootstrapStage.DISPATCH) {
                 val bootstrapRequest = BridgeJsonCodec.encodeBootstrapInitialize(requestedHome)
