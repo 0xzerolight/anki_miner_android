@@ -706,7 +706,12 @@ class AnkiProviderCallbacksTest {
 
     @Test
     fun `typed read failure logs retained provider cause at callback consumer`() {
-        val providerCause = SecurityException("provider permission changed")
+        val platformCause = SecurityException("provider permission changed")
+        val providerCause =
+            ProviderGatewayException(
+                ProviderFailureKind.PERMISSION_REQUIRED,
+                platformCause,
+            )
         val harness =
             harness(
                 mediaMutations =
@@ -730,10 +735,13 @@ class AnkiProviderCallbacksTest {
         assertTrue(
             record,
             record.contains(
-                " E run=$RUN_ID c=anki op=storeMedia outcome=fail code=permission_required",
+                " E run=$RUN_ID c=anki op=storeMedia outcome=fail code=permission_required " +
+                    "kind=PERMISSION_REQUIRED",
             ),
         )
+        assertTrue(record, record.contains("ProviderGatewayException: PERMISSION_REQUIRED"))
         assertTrue(record, record.contains("java.lang.SecurityException: provider permission changed"))
+        assertEquals(1, "SecurityException".toRegex().findAll(record).count())
         assertFalse(record, record.contains("AnkiReadFailure"))
     }
 

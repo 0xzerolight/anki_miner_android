@@ -200,6 +200,12 @@ class JournalBackedNoteMutationServiceTest {
                     "note_ordinal=0 receipt=null",
             ),
         )
+        assertTrue(
+            records[1],
+            records[1].contains(
+                "java.lang.Throwable: AnkiDroid returned a null note-insert receipt",
+            ),
+        )
         assertFalse(records[1], records[1].contains("IllegalStateException"))
         assertFalse(records.joinToString(), records.joinToString().contains("猫"))
     }
@@ -261,6 +267,12 @@ class JournalBackedNoteMutationServiceTest {
             records[1].contains(
                 " W run=- c=journal op=card.route outcome=fail entry_id=101 " +
                     "note_ordinal=0 receipt=count affected=0",
+            ),
+        )
+        assertTrue(
+            records[1],
+            records[1].contains(
+                "java.lang.Throwable: AnkiDroid returned a non-one card-routing count",
             ),
         )
         assertFalse(records[1], records[1].contains("IllegalStateException"))

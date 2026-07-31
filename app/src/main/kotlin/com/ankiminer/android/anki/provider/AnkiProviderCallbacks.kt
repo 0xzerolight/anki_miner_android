@@ -313,12 +313,19 @@ internal class AnkiProviderCallbacks(
     ): AnkiResponse =
         when (failure) {
             is AnkiReadFailure -> {
+                val providerKind =
+                    (failure.cause as? ProviderGatewayException)?.kind?.name
+                val fields =
+                    buildList<Pair<String, Any?>>(3) {
+                        add("outcome" to "fail")
+                        add("code" to failure.code.wireName)
+                        if (providerKind != null) add("kind" to providerKind)
+                    }
                 AppLog.e(
                     LogComponent.ANKI,
                     request.operation.wireName,
                     failure.cause ?: failure,
-                    "outcome" to "fail",
-                    "code" to failure.code.wireName,
+                    *fields.toTypedArray(),
                 )
                 request.error(failure.code, failure.stableMessage, failure.retryable)
             }

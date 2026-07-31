@@ -19,6 +19,46 @@ import com.ankiminer.android.diagnostics.log.LogComponent
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 
+internal fun warnMalformedForegroundIntent(
+    action: String?,
+    extraKeys: Set<String>,
+) {
+    AppLog.w(
+        LogComponent.SERVICE,
+        "intent.decode",
+        IllegalArgumentException("Malformed foreground-service intent"),
+        "outcome" to "ignored",
+        "action" to action,
+        "extraKeys" to extraKeys.sorted(),
+    )
+}
+
+internal fun decodeMiningForegroundIntentIdentity(
+    action: String?,
+    extraKeys: Set<String>,
+    runId: String?,
+    generation: Long,
+    leaseId: String?,
+    warnOnFailure: Boolean = true,
+): MiningForegroundSessionIdentity? {
+    val identity =
+        if (
+            extraKeys != MiningForegroundService.IDENTITY_EXTRA_KEYS ||
+                runId == null ||
+                leaseId == null
+        ) {
+            null
+        } else {
+            runCatching {
+                MiningForegroundSessionIdentity(runId, generation, leaseId)
+            }.getOrNull()
+        }
+    if (identity == null && warnOnFailure) {
+        warnMalformedForegroundIntent(action, extraKeys)
+    }
+    return identity
+}
+
 class MiningForegroundService : Service() {
     private val registry = ProcessMiningForegroundSessions.registry
     private val serviceToken = UUID.randomUUID().toString()
@@ -84,16 +124,16 @@ class MiningForegroundService : Service() {
 
     private fun handleStart(intent: Intent) {
         val identity = decodeIdentity(intent)
+        if (identity == null) {
+            if (sessionIdentity == null) stopImmediately()
+            return
+        }
         val activeIdentity = sessionIdentity
         if (activeIdentity != null) {
             if (identity == activeIdentity) {
                 failActiveSession("start")
             }
             // A stale start must never terminate or mutate the current generation.
-            return
-        }
-        if (identity == null) {
-            stopImmediately()
             return
         }
         if (!registry.claimStart(identity, serviceToken)) {
@@ -120,8 +160,11 @@ class MiningForegroundService : Service() {
 
     private fun handleUpdate(intent: Intent) {
         val identity = decodeIdentity(intent)
+        if (identity == null) {
+            return
+        }
         val activeIdentity = sessionIdentity
-        if (identity == null || identity != activeIdentity) {
+        if (identity != activeIdentity) {
             // Old notification/update intents are inert against a newer generation.
             return
         }
@@ -139,8 +182,11 @@ class MiningForegroundService : Service() {
 
     private fun handleCancel(intent: Intent) {
         val identity = decodeIdentity(intent)
+        if (identity == null) {
+            return
+        }
         val activeIdentity = sessionIdentity
-        if (identity == null || identity != activeIdentity) {
+        if (identity != activeIdentity) {
             // An obsolete notification action cannot cancel the current run.
             return
         }
@@ -183,15 +229,11 @@ class MiningForegroundService : Service() {
     }
 
     private fun handleMalformedIntent(intent: Intent?) {
-        AppLog.w(
-            LogComponent.SERVICE,
-            "intent.decode",
-            IllegalArgumentException("Malformed foreground-service intent"),
-            "outcome" to "ignored",
-            "action" to intent?.action,
-            "extraKeys" to (intent?.extras?.keySet()?.sorted() ?: emptyList<String>()),
+        warnMalformedForegroundIntent(
+            intent?.action,
+            intent?.extras?.keySet() ?: emptySet(),
         )
-        val identity = intent?.let(::decodeIdentity)
+        val identity = intent?.let { decodeIdentity(it, warnOnFailure = false) }
         if (identity != null && identity == sessionIdentity) {
             failActiveSession("malformed")
         } else if (sessionIdentity == null) {
@@ -306,22 +348,18 @@ class MiningForegroundService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
 
-    private fun decodeIdentity(intent: Intent): MiningForegroundSessionIdentity? {
-        if (intent.extras?.keySet() != IDENTITY_EXTRA_KEYS) return null
-        if (
-            !intent.hasExtra(EXTRA_RUN_ID) ||
-            !intent.hasExtra(EXTRA_GENERATION) ||
-            !intent.hasExtra(EXTRA_LEASE_ID)
-        ) {
-            return null
-        }
-        val runId = intent.getStringExtra(EXTRA_RUN_ID) ?: return null
-        val generation = intent.getLongExtra(EXTRA_GENERATION, Long.MIN_VALUE)
-        val leaseId = intent.getStringExtra(EXTRA_LEASE_ID) ?: return null
-        return runCatching {
-            MiningForegroundSessionIdentity(runId, generation, leaseId)
-        }.getOrNull()
-    }
+    private fun decodeIdentity(
+        intent: Intent,
+        warnOnFailure: Boolean = true,
+    ): MiningForegroundSessionIdentity? =
+        decodeMiningForegroundIntentIdentity(
+            action = intent.action,
+            extraKeys = intent.extras?.keySet() ?: emptySet(),
+            runId = intent.getStringExtra(EXTRA_RUN_ID),
+            generation = intent.getLongExtra(EXTRA_GENERATION, Long.MIN_VALUE),
+            leaseId = intent.getStringExtra(EXTRA_LEASE_ID),
+            warnOnFailure = warnOnFailure,
+        )
 
     companion object {
         private const val NOTIFICATION_CHANNEL_ID = "mining"
@@ -336,7 +374,7 @@ class MiningForegroundService : Service() {
         private const val EXTRA_RUN_ID = "run_id"
         private const val EXTRA_GENERATION = "generation"
         private const val EXTRA_LEASE_ID = "lease_id"
-        private val IDENTITY_EXTRA_KEYS = setOf(EXTRA_RUN_ID, EXTRA_GENERATION, EXTRA_LEASE_ID)
+        internal val IDENTITY_EXTRA_KEYS = setOf(EXTRA_RUN_ID, EXTRA_GENERATION, EXTRA_LEASE_ID)
 
         internal fun serviceIntent(context: Context): Intent =
             Intent(context, MiningForegroundService::class.java)

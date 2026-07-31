@@ -404,7 +404,7 @@ internal class JournalBackedMediaMutationService(
                                 AppLog.w(
                                     LogComponent.MEDIA,
                                     "media.store",
-                                    null,
+                                    Throwable("AnkiDroid returned a null media-store receipt"),
                                     "outcome" to "fail",
                                     "entry_id" to promotion.child.id,
                                     "media_key" to asset.assetId,

@@ -450,6 +450,12 @@ class JournalBackedMediaMutationServiceTest {
                     "media_key=${request.assets.single().assetId} receipt=null",
             ),
         )
+        assertTrue(
+            records[1],
+            records[1].contains(
+                "java.lang.Throwable: AnkiDroid returned a null media-store receipt",
+            ),
+        )
         assertFalse(records[1], records[1].contains("IllegalStateException"))
         assertFalse(records.joinToString(), records.joinToString().contains("clip0"))
     }

@@ -405,7 +405,7 @@ internal class JournalBackedNoteMutationService(
                             AppLog.w(
                                 LogComponent.JOURNAL,
                                 "note.insert",
-                                null,
+                                Throwable("AnkiDroid returned a null note-insert receipt"),
                                 "outcome" to "fail",
                                 "entry_id" to noteChildId,
                                 "note_ordinal" to index,
@@ -675,7 +675,7 @@ internal class JournalBackedNoteMutationService(
                     AppLog.w(
                         LogComponent.JOURNAL,
                         "card.route",
-                        null,
+                        Throwable("AnkiDroid returned a non-one card-routing count"),
                         "outcome" to "fail",
                         "entry_id" to childId,
                         "note_ordinal" to index,
