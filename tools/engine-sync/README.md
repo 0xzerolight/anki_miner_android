@@ -81,14 +81,29 @@ No hosted nightly HEAD-parity workflow exists yet, so this remains an advisory
 local tool rather than a current CI or release gate. It never replaces the
 attested overlay or pinned fixture used by release gates.
 
-Hosted derivation is not absent altogether: the desktop repository carries
-`.github/workflows/android-engine-goldens.yml`, which derives the v2 contract in
-a hash-frozen runtime and byte-compares it against the desktop-side committed
-fixture. It is paths-scoped push/PR plus `workflow_dispatch`, deliberately not
-nightly and deliberately never a required status check. It derives a pinned
-revision (dispatch can override it), not desktop HEAD, and it verifies the
-desktop copy of the fixture — which currently pins an earlier revision than this
-repository's `engine.lock`. It is therefore not a check on the Android fixture.
+Hosted derivation is absent altogether, and that is the settled design. The
+desktop repository carried `.github/workflows/android-engine-goldens.yml` — a
+paths-scoped derive-and-byte-compare in a hash-frozen runtime — until it was
+removed on 2026-07-31 for three reasons:
+
+- It verified a desktop-side *duplicate* of `golden/engine-v2.json` pinned to an
+  older revision than this repository's `engine.lock`, so it was never a check on
+  the Android fixture.
+- The derived artifact embeds `provenance.tool.files[…]`, the hash of the exporter
+  that produced it. Editing any of the three desktop exporter scripts therefore
+  broke the byte-compare by construction, and the only fix was regenerating the
+  duplicate inside the frozen runtime — a CI round-trip per exporter edit.
+- It derived a fixed old pin, so it could not detect drift against desktop HEAD.
+  It stayed green for two weeks while the exporter was broken against the current
+  engine (`PitchAccentService` gone, `_GoldenPresenter` missing `show_stage`); the
+  breakage surfaced by hand during a pin bump, not from CI.
+
+Re-derivation is deliberately manual: `run_goldens_v2.py` at `engine.lock` for the
+committed contract, `run_head_goldens_v2.py` for advisory HEAD parity. The desktop
+repo keeps `scripts/dump_engine_goldens.py`,
+`scripts/engine_golden_contract_v2.py`, `scripts/prepare_golden_unidic.py` and
+`tests/fixtures/goldens/engine-v2.schema.json` solely because this tooling reads
+them by path; its own `tests/fixtures/goldens/engine-v2.json` is gone.
 
 `run_reading_goldens.py` owns the separate M4 reading contract. It derives
 Aozora, subtitle, EPUB, and Mokuro loader snapshots plus a real Mokuro
