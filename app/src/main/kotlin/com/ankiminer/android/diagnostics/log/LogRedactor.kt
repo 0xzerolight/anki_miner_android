@@ -34,6 +34,15 @@ internal class LogRedactor(private val rules: RedactionRules) {
     fun redact(line: String): String {
         if (line.isEmpty()) return line
         val segments = Segments(line)
+        // The record header is sealed before anything runs. LogRecord's format has exactly one parse
+        // rule — a line starting with a digit begins a new record — and a deck named "2026" would
+        // otherwise rewrite every timestamp in that user's bundle into <deck-177502>-07-30T…,
+        // collapsing continuation-line parsing for the whole file.
+        //
+        // Matched rather than taken blind: a bundle also carries logcat, whose own header is a
+        // different length, and sealing 24 characters of `I/AnkiMiner( 1234): /data/…` would hide
+        // the front of a path and leave the rest of it in the clear.
+        RECORD_HEADER.find(line)?.let { header -> segments.sealPrefix(header.value.length) }
         // Rule 1. Rewritten in place rather than sealed, because rule 3 has to see the root token it
         // produces in order to know a leaf filename is under an app directory.
         rules.literalAlternation?.let { roots ->
@@ -99,7 +108,9 @@ internal class LogRedactor(private val rules: RedactionRules) {
  * @property literalReplacements lookup shared by both literal passes: roots map to readable symbolic
  *   tokens, user-supplied names to hashed ones.
  * @property patterns the remaining rules, in the order they must run.
- * @property salt 16 bytes minted per bundle.
+ * @property salt 16 bytes minted per bundle. Being a [ByteArray] makes the generated [equals] and
+ *   [hashCode] identity-based for this whole class; nothing compares these, and a value comparison
+ *   would be meaningless anyway because [tokens] is mutable.
  * @property tokens the memo behind every hashed token; shared by everything built from this instance.
  */
 internal data class RedactionRules(
@@ -108,7 +119,27 @@ internal data class RedactionRules(
     val patterns: List<Pair<Regex, (MatchResult) -> String>>,
     val salt: ByteArray,
     val tokens: TokenMint = TokenMint(salt),
-)
+) {
+    /**
+     * Shape only, and this override is load-bearing.
+     *
+     * The generated `toString()` renders [literalReplacements] — every plaintext-to-token pair, the
+     * complete de-anonymization table — and [patterns], whose `Regex.toString()` hands back
+     * `\Qsomeuser\E` for the `Build.USER` rule. A single `AppLog.d(..., "rules" to rules)` in the
+     * export would write the key straight into the file being exported, and it would look like
+     * ordinary debug logging in review.
+     */
+    override fun toString(): String {
+        val roots = literalReplacements.values.count(SYMBOLIC_TOKEN::matches)
+        return "RedactionRules(roots=$roots, " +
+            "literals=${literalReplacements.size - roots}, patterns=${patterns.size})"
+    }
+
+    private companion object {
+        /** `<files>`, `<extfiles-0>` — a rule 1 replacement, as opposed to a hashed token. */
+        val SYMBOLIC_TOKEN = Regex("<[a-z]+(?:-\\d+)?>")
+    }
+}
 
 /**
  * Mints stable, non-reversible tokens for one bundle.
@@ -256,8 +287,24 @@ internal object RedactionRulesFactory {
             // A one- or two-character literal replaced everywhere shreds the file: it would hit
             // every English word that happens to contain those characters.
             if (text.length < MIN_LITERAL_LENGTH) return
-            if (text in replacements || text in literals) return
-            literals[text] = tokens.token(kind, text) + if (keepExtension) extensionOf(text) else ""
+            // Every spelling the file can hold, not just the one the user typed. The renderer
+            // escapes a value before writing it, so a deck named `My "Best" Deck` is only ever on
+            // disk as `My \"Best\" Deck` and an alternation built from the raw setting could never
+            // match it. escapeForValue/escapeForText are the renderer's own functions, called rather
+            // than reimplemented so the two cannot drift.
+            val spellings =
+                linkedSetOf(text, escapeForValue(text), escapeForText(text))
+                    .filter { spelling ->
+                        spelling.length >= MIN_LITERAL_LENGTH &&
+                            spelling !in replacements &&
+                            spelling !in literals
+                    }
+            if (spellings.isEmpty()) return
+            // One token for all of them: they are the same secret written three ways, and a
+            // maintainer correlating across lines must not see two.
+            val replacement =
+                tokens.token(kind, text) + if (keepExtension) extensionOf(text) else ""
+            spellings.forEach { spelling -> literals[spelling] = replacement }
         }
         safUserText.forEach { literal("saf", it, keepExtension = true) }
         literal("deck", settings.deckName)
@@ -273,45 +320,76 @@ internal object RedactionRulesFactory {
 
         val patterns =
             buildList<Pair<Regex, (MatchResult) -> String>> {
-                // Each of rules 2 and 3 is two passes, quoted first. One alternation would work
-                // just as well, but the branches capture different groups, and two passes keep the
-                // leaf group at index 1 in both.
-                val path = { match: MatchResult -> tokens.token("path", match.value) }
+                // Each of rules 2, 3 and 4 is two passes, quoted first: the branches differ enough
+                // that one alternation would need two capture groups per rule.
+                val path = { match: MatchResult ->
+                    // Trailing sentence punctuation is trimmed back out of the token. An exception
+                    // message ends `…/ep.mkv: open failed`, and without this the colon would land
+                    // inside the hashed text — so the same file would carry a different token here
+                    // than on the line that opened it, and correlating a path across the bundle is
+                    // the whole point of a stable token.
+                    val trimmed = match.value.trimEnd(*TRAILING_PUNCTUATION)
+                    if (trimmed.length < 2) {
+                        match.value
+                    } else {
+                        tokens.token("path", trimmed) + match.value.substring(trimmed.length)
+                    }
+                }
                 add(QUOTED_ABSOLUTE_PATH to path)
                 add(ABSOLUTE_PATH to path)
                 val leafOf = { match: MatchResult ->
-                    val leaf = match.groupValues[1]
-                    // The extension survives: .mkv against .ass is exactly the signal a
-                    // media-extraction bug needs, and it identifies nobody.
-                    match.value.dropLast(leaf.length) + tokens.token("file", leaf) + extensionOf(leaf)
+                    // The tail is group 1, so whatever precedes it is the root token rule 1 left.
+                    val captured = match.groupValues[1]
+                    val root = match.value.dropLast(captured.length)
+                    val tail = captured.trimEnd(*TRAILING_PUNCTUATION)
+                    val leaf = tail.substringAfterLast('/')
+                    if (leaf.isEmpty()) {
+                        match.value
+                    } else {
+                        // Directories under an app root are the app's own and stay readable. The
+                        // extension survives too: .mkv against .ass is exactly the signal a
+                        // media-extraction bug needs, and it identifies nobody.
+                        root + tail.dropLast(leaf.length) +
+                            tokens.token("file", leaf) +
+                            extensionOf(leaf) +
+                            captured.substring(tail.length)
+                    }
                 }
                 add(QUOTED_APP_ROOT_LEAF to leafOf)
                 add(APP_ROOT_LEAF to leafOf)
-                add(
-                    CONTENT_URI to { match ->
-                        val remainder = match.groupValues[2]
-                        // The authority distinguishes a FUSE provider from a cloud one and is worth
-                        // keeping; the document id is the user's file.
-                        if (remainder.length < 2) {
-                            match.value
-                        } else {
-                            "content://${match.groupValues[1]}/" + tokens.token("doc", remainder)
-                        }
-                    },
-                )
+                val documentId = { match: MatchResult ->
+                    val captured = match.groupValues[2]
+                    val remainder = captured.trimEnd(*TRAILING_PUNCTUATION)
+                    // The authority distinguishes a FUSE provider from a cloud one and is worth
+                    // keeping; the document id is the user's file.
+                    if (remainder.length < 2) {
+                        match.value
+                    } else {
+                        "content://${match.groupValues[1]}/" +
+                            tokens.token("doc", remainder) +
+                            captured.substring(remainder.length)
+                    }
+                }
+                add(QUOTED_CONTENT_URI to documentId)
+                add(CONTENT_URI to documentId)
                 literalAlternation?.let { regex ->
                     add(regex to { match -> literals[match.value] ?: match.value })
                 }
                 add(
                     JAPANESE_RUN to { match ->
+                        // Normalized here rather than left to the mint, so the length is measured on
+                        // the same string the memo is keyed by. Measuring the raw match instead let
+                        // NFD か+U+3099 and NFC が share a token whose :n was whichever arrived
+                        // first — the token was right and the length was a coin toss.
+                        val normalized = Normalizer.normalize(match.value, Normalizer.Form.NFC)
                         // The length rides along so a truncation or off-by-one in the engine is
                         // still visible in a redacted bundle. It is a count of CODE POINTS, not of
                         // UTF-16 units: the engine that produces these strings is Python, whose
                         // len() counts code points, so an astral kanji reads as 1 here and as 1
                         // there. A maintainer comparing <jp-…:12> against an engine length is
                         // comparing like with like.
-                        val length = match.value.codePointCount(0, match.value.length)
-                        tokens.token("jp", match.value, detail = length.toString())
+                        val length = normalized.codePointCount(0, normalized.length)
+                        tokens.token("jp", normalized, detail = length.toString())
                     },
                 )
                 add(
@@ -366,6 +444,17 @@ internal object RedactionRulesFactory {
 private class Segments(line: String) {
     private var runs = mutableListOf(Run(line, sealed = false))
 
+    /** Seals the first [length] characters, so no rule can rewrite the fixed record header. */
+    fun sealPrefix(length: Int) {
+        val run = runs.single()
+        if (length <= 0 || length >= run.text.length) return
+        runs =
+            mutableListOf(
+                Run(run.text.take(length), sealed = true),
+                Run(run.text.substring(length), sealed = false),
+            )
+    }
+
     /** Rewrites open runs without sealing the result, for a rule whose output a later rule needs. */
     fun rewriteOpen(transform: (String) -> String) {
         for (index in runs.indices) {
@@ -409,54 +498,101 @@ private class Segments(line: String) {
     private class Run(val text: String, val sealed: Boolean)
 }
 
+/**
+ * The fixed part of a record header — the rendered timestamp, exactly [TIMESTAMP_LENGTH] characters.
+ * Anchored, so it can only ever seal the front of a line that really is one of our records.
+ */
+private val RECORD_HEADER = Regex("^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z")
+
 private const val PATH_ROOTS = "storage|sdcard|mnt|data|system"
 
 private const val APP_ROOTS = "files|cache|nobackup|nativelib|extfiles-\\d+"
 
 /**
- * Characters that cannot occur inside a path in this log's grammar: the quote that ends a field
- * value, the backslash that opens an escape, and the line terminators. TAB is here because it
- * prefixes a continuation line.
+ * One character of a quoted field value: an ordinary character, or a renderer escape consumed whole.
  *
- * A space is deliberately absent. Anime and media file names are full of them, and stopping at the
- * first one leaks the folder and the file name — which is most of what rule 2 exists to hide.
+ * The escape alternative is what stops a path truncating at its own contents. `renderValue` writes a
+ * `"` as `\"` and a `\` as `\\`, both legal in an ext4 file name, so a class that treated the
+ * backslash as a hard stop would end the match *inside* the value and leak the rest of
+ * `path="/storage/emulated/0/Say \"Hi\"/ep.mkv"`. Only an unescaped quote closes a value.
  *
- * A comma is deliberately absent too, and for a sharper reason. Stopping at one would truncate the
- * token for `path="/storage/…/Vol,2/ep.mkv"` and leak the rest, while buying nothing: a rendered
- * list value never reaches the quoted branch, because the lookbehind demands the path begin
- * immediately after the opening quote, and the unquoted branch already splits on whitespace. For a
- * privacy control the acceptable failure is over-redaction, never under-redaction.
+ * A space is deliberately ordinary here. Media file names are full of them, and stopping at the
+ * first one leaks the folder and the file name — most of what rules 2 and 3 exist to hide.
  */
-private const val PATH_STOP = "\"\\\\\\t\\r\\n"
+private const val QUOTED_UNIT = "(?:[^\"\\\\\\t\\r\\n]|\\\\.)"
+
+/** [QUOTED_UNIT] minus the space, so a match cannot end on one and eat the value's trailing space. */
+private const val QUOTED_UNIT_NO_SPACE = "(?:[^ \"\\\\\\t\\r\\n]|\\\\.)"
+
+/** One character of an unquoted run: no escape grammar, because whitespace is the only edge. */
+private const val BARE_UNIT = "[^\\s\"\\\\]"
+
+/**
+ * How an unquoted path crosses a space, and the answer to the biggest hole this control had.
+ *
+ * `renderText` writes throwable messages onto continuation lines with no quoting at all, so
+ * `\tjava.io.FileNotFoundException: /storage/emulated/0/My Anime/ep 01.mkv: open failed` has no
+ * right edge to stop at — and exception messages carrying paths are the most common content in this
+ * file. A whitespace-terminated match leaked everything after `My`.
+ *
+ * So a space is absorbed when a later token still continues the path: one that holds a `/`, or that
+ * looks like a file name. Intervening plain words are absorbed with it, because `Kimi no Na wa.mkv`
+ * only reveals itself as a path at its last token. The skip is capped so a stray `module.name` far
+ * down an English sentence cannot drag the whole sentence in, and so the match stays linear.
+ *
+ * Swallowing a few English words after a file name is the correct failure for a privacy control.
+ */
+private const val PATH_CONTINUATION_SKIP = 8
+private const val PATH_CONTINUATION =
+    "(?:(?: $BARE_UNIT+){0,$PATH_CONTINUATION_SKIP}?" +
+        "(?: (?=$BARE_UNIT*(?:/|\\.[A-Za-z0-9]{1,8}))$BARE_UNIT+))*+"
 
 /**
  * Rule 2, quoted branch, and the reason it comes first: the record renderer quotes any value holding
- * a space (a space is not a bare-token character), so a path with spaces is always a whole quoted
- * field and the closing quote is a hard right edge. The final character may not be a space, so a
- * value ending in one keeps it outside the token and the field structure survives unchanged.
+ * a space (a space is not a bare-token character), so a path with spaces is usually a whole quoted
+ * field and the closing quote is a hard right edge.
  */
 private val QUOTED_ABSOLUTE_PATH =
-    Regex("(?<=\")/(?:$PATH_ROOTS)/[^$PATH_STOP]*[^ $PATH_STOP]")
+    Regex("(?<=\")/(?:$PATH_ROOTS)/$QUOTED_UNIT*$QUOTED_UNIT_NO_SPACE")
 
 /**
- * Rule 2, unquoted branch: a continuation line carrying an exception message has no quoting to
- * bound it, so this one stops at whitespace. The lookbehind keeps the match at a path boundary, so a
- * directory named `data` inside a longer path cannot start a second, bogus match. `/` is
- * deliberately absent from it: `file:///data` must still match.
+ * Rule 2, unquoted branch: continuation lines, and any path that sits mid-sentence inside a quoted
+ * value rather than at its start. The lookbehind keeps the match at a path boundary, so a directory
+ * named `data` inside a longer path cannot start a second, bogus match. `/` is deliberately absent
+ * from it: `file:///data` must still match.
+ *
+ * The tail is one flat class rather than a repeated group. That is not a style choice: a nested
+ * quantifier over thousands of path segments recurses inside `java.util.regex` and throws
+ * `StackOverflowError`, and an `Error` on `Dispatchers.IO` kills the export outright instead of
+ * degrading it — which matters most for logcat, whose content nobody here controls.
  */
 private val ABSOLUTE_PATH =
-    Regex("(?<![A-Za-z0-9._\\-])/(?:$PATH_ROOTS)(?:/[^\\s\"\\\\]+)+")
+    Regex("(?<![A-Za-z0-9._\\-])/(?:$PATH_ROOTS)/$BARE_UNIT*$PATH_CONTINUATION")
 
-/** Rule 3, quoted branch. Same right edge as [QUOTED_ABSOLUTE_PATH], for the same reason. */
+/**
+ * Rule 3, quoted branch. Captures the whole tail; the leaf is split off in code.
+ *
+ * Splitting in code rather than in the pattern is what lets the tail be one flat class — see
+ * [ABSOLUTE_PATH] — and it is also why `<files>//media/secret.mkv` no longer defeats the rule: a
+ * segment-by-segment group could not cross the empty segment, and left the leaf in the clear.
+ */
 private val QUOTED_APP_ROOT_LEAF =
-    Regex("(?<=\")<(?:$APP_ROOTS)>(?:/[^/$PATH_STOP]+)*/([^/$PATH_STOP]*[^ /$PATH_STOP])")
+    Regex("(?<=\")<(?:$APP_ROOTS)>(/$QUOTED_UNIT*$QUOTED_UNIT_NO_SPACE)")
 
 /** Rule 3, unquoted branch. Anchored on the symbolic root token rule 1 leaves behind. */
 private val APP_ROOT_LEAF =
-    Regex("<(?:$APP_ROOTS)>(?:/[^/\\s\"\\\\]+)*/([^/\\s\"\\\\]+)")
+    Regex("<(?:$APP_ROOTS)>(/$BARE_UNIT*$PATH_CONTINUATION)")
 
-/** Rule 4. */
-private val CONTENT_URI = Regex("content://([A-Za-z0-9._\\-]+)(/[^\\s\"\\\\]*)?")
+/**
+ * Rule 4, quoted branch. `DocumentsContract.getDocumentId` returns the *decoded* id and logcat
+ * prints decoded URIs, so a document id holds the file name verbatim, spaces and all.
+ */
+private val QUOTED_CONTENT_URI =
+    Regex("(?<=\")content://([A-Za-z0-9._\\-]+)(/$QUOTED_UNIT*$QUOTED_UNIT_NO_SPACE)?")
+
+/** Rule 4, unquoted branch. */
+private val CONTENT_URI =
+    Regex("content://([A-Za-z0-9._\\-]+)(/$BARE_UNIT*$PATH_CONTINUATION)?")
 
 /**
  * Rule 7. Hiragana, katakana including the halfwidth forms, CJK Unified Ideographs with Extension A
@@ -478,7 +614,7 @@ private val CONTENT_URI = Regex("content://([A-Za-z0-9._\\-]+)(/[^\\s\"\\\\]*)?"
 private val JAPANESE_RUN =
     Regex(
         "[\\u3005\\u3006\\u303B\\u3040-\\u309F\\u30A0-\\u30FF" +
-            "\\u3400-\\u4DBF\\u4E00-\\u9FFF\\uF900-\\uFAFF\\uFF66-\\uFF9D" +
+            "\\u3400-\\u4DBF\\u4E00-\\u9FFF\\uF900-\\uFAFF\\uFF66-\\uFF9F" +
             "\\x{20000}-\\x{2A6DF}\\x{2F800}-\\x{2FA1F}]+",
     )
 
@@ -489,6 +625,13 @@ private val PERCENT_RUN = Regex("(?:%[0-9A-Fa-f]{2}){3,}")
 private val EMULATED_USER = Regex("/storage/emulated/(\\d+)")
 
 private const val MAX_EXTENSION = 8
+
+/**
+ * Sentence punctuation trimmed off the end of a match before it is hashed, then written back after
+ * the token. Absorbing a space means a match now routinely ends in the punctuation of the message
+ * around it, and hashing that would give the same file a different token on every line.
+ */
+private val TRAILING_PUNCTUATION = charArrayOf(':', ',', ';', '.', '!', '?', ')', ']', '}')
 
 /**
  * The extension only survives when it is short and alphanumeric. An extension is copied through
@@ -529,7 +672,7 @@ private fun isJapanese(codePoint: Int): Boolean =
         codePoint in 0x3400..0x4DBF ||
         codePoint in 0x4E00..0x9FFF ||
         codePoint in 0xF900..0xFAFF ||
-        codePoint in 0xFF66..0xFF9D ||
+        codePoint in 0xFF66..0xFF9F ||
         codePoint in 0x20000..0x2A6DF ||
         codePoint in 0x2F800..0x2FA1F
 

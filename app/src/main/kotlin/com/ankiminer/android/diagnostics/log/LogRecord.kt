@@ -61,7 +61,20 @@ private const val BARE_PUNCTUATION = "._:/@+-"
 private fun renderValue(value: Any?): String {
     val text = value?.toString() ?: return ABSENT
     if (isBareToken(text)) return text
-    val quoted = StringBuilder(text.length + 2).append('"')
+    return "\"" + escapeForValue(text) + "\""
+}
+
+/**
+ * How a field value reads once it is inside the quotes.
+ *
+ * Exposed because the export redactor has to search for user-supplied text — a deck name, a SAF
+ * display name — in the file, and the file holds the *escaped* spelling. A deck named `My "Best"
+ * Deck` is stored as `My \"Best\" Deck`, so a redaction alternation built from the raw setting can
+ * never match it. The redactor registers what this function returns alongside the raw form, and it
+ * calls this function rather than reimplementing it so the two cannot drift apart.
+ */
+internal fun escapeForValue(text: String): String {
+    val quoted = StringBuilder(text.length)
     for (character in text) {
         when {
             character == '"' -> quoted.append("\\\"")
@@ -71,7 +84,7 @@ private fun renderValue(value: Any?): String {
             else -> quoted.append(character)
         }
     }
-    return quoted.append('"').toString()
+    return quoted.toString()
 }
 
 /**
@@ -158,7 +171,16 @@ private fun appendFailure(
  * a literal `C:\new` is indistinguishable from an escaped newline, and the later redaction pass has
  * to round-trip these lines.
  */
-private fun renderText(text: String): String {
+private fun renderText(text: String): String = escapeForText(text)
+
+/**
+ * How a continuation line reads: no quoting, so only what would end the line early is escaped.
+ *
+ * Exposed for the same reason as [escapeForValue] — an exception message is the most common place a
+ * user's file name reaches the log, and the redactor has to search for the spelling that is actually
+ * written.
+ */
+internal fun escapeForText(text: String): String {
     if (text.none { it == '\n' || it == '\\' || isControl(it) }) return text
     val safe = StringBuilder(text.length)
     for (character in text) {

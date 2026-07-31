@@ -109,6 +109,67 @@ class LogRedactorTest {
     }
 
     @Test
+    fun `an unquoted path with spaces on a continuation line is redacted whole`() {
+        // renderText writes throwable messages with no quoting at all, so this line has no closing
+        // quote to bound the match. Exception messages carrying paths are the most common content
+        // in this file, and the quoted-branch fix did not reach them.
+        val redacted =
+            redactor().redact(
+                "\tjava.io.FileNotFoundException: /storage/emulated/0/My Anime/ep 01.mkv: " +
+                    "open failed: ENOENT",
+            )
+
+        assertFalse(redacted, redacted.contains("Anime"))
+        assertFalse(redacted, redacted.contains("01.mkv"))
+        assertTrue(
+            redacted,
+            redacted.matches(
+                Regex(
+                    "\tjava\\.io\\.FileNotFoundException: <path-[0-9a-f]{6}>: open failed: ENOENT",
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun `a path mid sentence inside a quoted value is redacted whole`() {
+        // The quoted branch needs the path at offset 0 of the value, so this one falls through to
+        // the unquoted branch and depends on the same space absorption.
+        val redacted =
+            redactor().redact("msg=\"failed to open /storage/emulated/0/My Anime/ep.mkv for reading\"")
+
+        assertFalse(redacted, redacted.contains("Anime"))
+        assertTrue(
+            redacted,
+            redacted.matches(Regex("msg=\"failed to open <path-[0-9a-f]{6}> for reading\"")),
+        )
+    }
+
+    @Test
+    fun `an unquoted app root leaf with spaces is redacted whole`() {
+        val redacted = redactor().redact("\tjava.io.IOException: $filesDir/media/My Video 01.mkv (open)")
+
+        assertFalse(redacted, redacted.contains("My Video"))
+        assertTrue(
+            redacted,
+            redacted.matches(
+                Regex("\tjava\\.io\\.IOException: <files>/media/<file-[0-9a-f]{6}>\\.mkv \\(open\\)"),
+            ),
+        )
+    }
+
+    @Test
+    fun `the same path carries one token whether or not a sentence punctuates it`() {
+        val redactor = redactor()
+
+        val bare = redactor.redact("path=/storage/emulated/0/Movies/ep.mkv")
+        val punctuated = redactor.redact("\tjava.io.IOException: /storage/emulated/0/Movies/ep.mkv: nope")
+
+        val token = Regex("<path-[0-9a-f]{6}>").find(bare)!!.value
+        assertTrue(punctuated, punctuated.contains("$token:"))
+    }
+
+    @Test
     fun `a path behind a file scheme still matches`() {
         // A slash is deliberately absent from the boundary lookbehind for exactly this shape.
         val redacted = redactor().redact("uri=file:///storage/emulated/0/Movies/ep.mkv")
@@ -137,7 +198,48 @@ class LogRedactorTest {
         assertTrue(redacted, redacted.matches(Regex("<files>/<file-[0-9a-f]{6}>")))
     }
 
+    @Test
+    fun `a quoted path containing escaped quotes is redacted past the escape`() {
+        // Both " and \ are legal in an ext4 file name, and the renderer writes them escaped. A
+        // pattern that treated the backslash as a hard stop ended the match inside the value.
+        val redacted = redactor().redact("path=\"${escapeForValue("/storage/emulated/0/Say \"Hi\"/ep.mkv")}\"")
+
+        assertFalse(redacted, redacted.contains("Hi"))
+        assertTrue(redacted, redacted.matches(Regex("path=\"<path-[0-9a-f]{6}>\"")))
+    }
+
+    @Test
+    fun `a double slash under an app root does not leave the leaf in the clear`() {
+        val redacted = redactor().redact("$filesDir//media/secret.mkv")
+
+        assertFalse(redacted, redacted.contains("secret"))
+        assertTrue(redacted, redacted.matches(Regex("<files>//media/<file-[0-9a-f]{6}>\\.mkv")))
+    }
+
     // Rule 4
+
+    @Test
+    fun `a document id containing spaces is redacted whole`() {
+        // getDocumentId returns the decoded id and logcat prints decoded URIs, so the file name
+        // arrives verbatim, spaces and all.
+        val redacted =
+            redactor().redact(
+                "uri=content://com.android.externalstorage.documents/document/" +
+                    "primary:Anime/Kimi no Na wa.mkv end",
+            )
+
+        assertFalse(redacted, redacted.contains("Kimi"))
+        assertFalse(redacted, redacted.contains("Na wa"))
+        assertTrue(
+            redacted,
+            redacted.matches(
+                Regex(
+                    "uri=content://com\\.android\\.externalstorage\\.documents/" +
+                        "<doc-[0-9a-f]{6}> end",
+                ),
+            ),
+        )
+    }
 
     @Test
     fun `a content uri keeps its authority and loses its document id`() {
@@ -206,6 +308,36 @@ class LogRedactorTest {
         assertTrue(redacted, redacted.contains("note=\"<notetype-"))
         assertTrue(redacted, redacted.contains("field=<field-"))
         assertTrue(redacted, redacted.contains("tags=<tag-"))
+    }
+
+    @Test
+    fun `a literal is matched in the escaped spelling the renderer actually writes`() {
+        // The log never holds the typed text: renderValue escapes it on the way in. An alternation
+        // built only from the raw setting matched nothing and leaked the name in full.
+        val settings = AppSettings(deckName = "My \"Best\" Deck", tags = "path\\to\\tag")
+        val line = "deck=\"${escapeForValue("My \"Best\" Deck")}\" tags=\"${escapeForValue("path\\to\\tag")}\""
+
+        val redacted = redactor(settings = settings).redact(line)
+
+        assertFalse(redacted, redacted.contains("Best"))
+        assertFalse(redacted, redacted.contains("to"))
+        assertTrue(redacted, redacted.matches(Regex("deck=\"<deck-[0-9a-f]{6}>\" tags=\"<tag-[0-9a-f]{6}>\"")))
+    }
+
+    @Test
+    fun `a saf display name holding a quote is matched in both spellings`() {
+        // isValidSafSelectionRecord rejects only / \ and control characters, so a display name with
+        // a quote in it is explicitly admitted, and rip names like this are ordinary.
+        val name = "Kimi no Na wa \"Special\".mkv"
+        val redactor = redactor(safUserText = listOf(name))
+
+        val escaped = redactor.redact("name=\"${escapeForValue(name)}\"")
+        val raw = redactor.redact("\tjava.io.IOException: $name missing")
+
+        assertFalse(escaped, escaped.contains("Special"))
+        assertFalse(raw, raw.contains("Special"))
+        val token = Regex("<saf-[0-9a-f]{6}>").find(escaped)!!.value
+        assertTrue(raw, raw.contains(token))
     }
 
     @Test
@@ -324,6 +456,83 @@ class LogRedactorTest {
         assertTrue(redacted, redacted.matches(Regex("root=<path-[0-9a-f]{6}>")))
     }
 
+    // Ordering, the record header, and the rules object itself
+
+    @Test
+    fun `rule 1 claims an app root before rule 2 can hash the whole path`() {
+        // The TemporaryFolder roots never live under /storage or /data, so nothing else in this
+        // suite exercises the ordering that keeps an app root readable.
+        val root = File("/storage/emulated/0/Android/data/com.ankiminer.android/files")
+
+        val redacted =
+            redactor(roots = mapOf("files" to root)).redact("$root/media/clip.mkv")
+
+        assertFalse(redacted, redacted.contains("<path-"))
+        assertTrue(redacted, redacted.matches(Regex("<files>/media/<file-[0-9a-f]{6}>\\.mkv")))
+    }
+
+    @Test
+    fun `a deck named data does not pre-empt rule 2 on an absolute path`() {
+        // The hazard the two-pass structure exists for: one alternation covering roots and user
+        // literals together would rewrite /data/... into /<deck>/... and leak the rest of the path.
+        val redacted =
+            redactor(settings = AppSettings(deckName = "data"))
+                .redact("deck=data path=/data/user/0/com.ankiminer.android/secret.mkv")
+
+        assertFalse(redacted, redacted.contains("secret"))
+        assertTrue(
+            redacted,
+            redacted.matches(Regex("deck=<deck-[0-9a-f]{6}> path=<path-[0-9a-f]{6}>")),
+        )
+    }
+
+    @Test
+    fun `the record header is never rewritten by a literal`() {
+        // LogRecord's one parse rule is that a line starting with a digit begins a record. A deck
+        // named 2026 would otherwise mangle every timestamp in that user's bundle.
+        val header = "2026-07-30T12:00:00.000Z"
+        assertEquals(TIMESTAMP_LENGTH, header.length)
+
+        val redacted =
+            redactor(settings = AppSettings(deckName = "2026"))
+                .redact("$header I run=abc c=diag op=x deck=2026")
+
+        assertTrue(redacted, redacted.startsWith("$header I run=abc c=diag op=x deck=<deck-"))
+    }
+
+    @Test
+    fun `the rules object prints its shape and never its mapping`() {
+        // One AppLog.d(..., "rules" to rules) must not write the de-anonymization table into the
+        // file being exported.
+        val rules =
+            rules(
+                settings = AppSettings(deckName = "Immersion", noteType = "JP Mining Note"),
+                safUserText = listOf("episode.mkv"),
+                buildUser = "somebody",
+            )
+
+        val printed = rules.toString()
+
+        assertFalse(printed, printed.contains("Immersion"))
+        assertFalse(printed, printed.contains("JP Mining Note"))
+        assertFalse(printed, printed.contains("episode"))
+        assertFalse(printed, printed.contains("somebody"))
+        assertTrue(printed, printed.matches(Regex("RedactionRules\\(roots=\\d+, literals=\\d+, patterns=\\d+\\)")))
+    }
+
+    @Test
+    fun `newSalt is sixteen random bytes`() {
+        // The most load-bearing line in the file, and the whole suite would stay green if its body
+        // were replaced by ByteArray(16) — all zeros, every token reproducible by anyone.
+        val first = RedactionRulesFactory.newSalt()
+        val second = RedactionRulesFactory.newSalt()
+
+        assertEquals(16, first.size)
+        assertEquals(16, second.size)
+        assertFalse(first.all { it == 0.toByte() })
+        assertFalse(first.contentEquals(second))
+    }
+
     // Token stability
 
     @Test
@@ -385,10 +594,14 @@ class LogRedactorTest {
         val record =
             "2026-07-30T12:00:00.000Z E run=abc c=media op=media.extract " +
                 "path=\"$filesDir/殺す.mkv\" note=\"he said \\\"go\\\" then \\n stopped\"" +
-                "\n\tjava.io.IOException: $cacheDir/job/clip.mkv (カタカナ)" +
+                "\n\tjava.io.IOException: $filesDir/殺す.mkv (カタカナ)" +
                 "\n\t    at com.ankiminer.android.media.Extractor.run(Extractor.kt:41)"
 
-        val redacted = record.lines().joinToString("\n") { redactor().redact(it) }
+        // One redactor across every line. Building one per line inside the lambda gave each line its
+        // own TokenMint, so the multi-line test quietly proved nothing about cross-line stability —
+        // which is the only reason to write a multi-line test.
+        val redactor = redactor()
+        val redacted = record.lines().joinToString("\n") { redactor.redact(it) }
 
         assertEquals(record.lines().size, redacted.lines().size)
         assertEquals(3, redacted.lines().size)
@@ -397,6 +610,24 @@ class LogRedactorTest {
         assertFalse(redacted, redacted.contains("殺す"))
         assertFalse(redacted, redacted.contains("カタカナ"))
         assertTrue(redacted, redacted.contains("at com.ankiminer.android.media.Extractor.run"))
+        // The same file on a quoted field and on a continuation line carries the same token.
+        val token = Regex("<file-[0-9a-f]{6}>").find(redacted.lines()[0])!!.value
+        assertTrue(redacted.lines()[1], redacted.lines()[1].contains(token))
+    }
+
+    @Test
+    fun `a pathologically deep path does not blow the regex stack`() {
+        // A nested quantifier over path segments recurses inside java.util.regex and throws
+        // StackOverflowError. An Error on Dispatchers.IO kills the export outright rather than
+        // degrading it, and logcat's content is written by code nobody here controls.
+        val deep = (0 until 5000).joinToString("") { "/seg$it" }
+
+        val underRoot = redactor().redact("$filesDir$deep/leaf.mkv")
+        val absolute = redactor().redact("path=/storage/emulated/0$deep/leaf.mkv")
+
+        assertTrue(underRoot, underRoot.startsWith("<files>/seg0/"))
+        assertFalse(underRoot, underRoot.contains("leaf.mkv"))
+        assertTrue(absolute, absolute.matches(Regex("path=<path-[0-9a-f]{6}>")))
     }
 
     // Streaming
