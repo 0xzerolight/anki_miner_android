@@ -1,5 +1,6 @@
 package com.ankiminer.android.anki.provider
 
+import android.database.sqlite.SQLiteFullException
 import com.ankiminer.android.anki.journal.ActiveNoteMaterialization
 import com.ankiminer.android.anki.journal.ActiveNoteMaterializationRefused
 import com.ankiminer.android.anki.journal.ActiveNoteTermination
@@ -365,6 +366,21 @@ class JournalBackedNoteMutationServiceTest {
         withHarness { harness ->
             harness.journal.materializeFailure =
                 ActiveNoteMaterializationRefused("Active note media binding differs from durable claim")
+
+            val outcome = harness.service.create(harness.owner, harness.request())
+
+            assertTrue(outcome.result.results.single() is FailedNote)
+            assertEquals(0, harness.provider.insertCalls)
+            assertNull(harness.journal.parentRecord.activeRequestIndex)
+        }
+
+    @Test
+    fun `a rolled-back materialization fault stays one row failure`() =
+        withHarness { harness ->
+            // Materialization runs inside one write transaction that commits only on the
+            // non-throwing path, so a full or locked database leaves nothing durable. Narrowing
+            // the catch to the typed refusal made these end the whole batch instead of one note.
+            harness.journal.materializeFailure = SQLiteFullException("database or disk is full")
 
             val outcome = harness.service.create(harness.owner, harness.request())
 
