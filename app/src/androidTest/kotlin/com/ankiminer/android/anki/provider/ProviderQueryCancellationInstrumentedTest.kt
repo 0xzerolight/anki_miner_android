@@ -171,6 +171,29 @@ class ProviderQueryCancellationInstrumentedTest {
     }
 
     @Test
+    fun bulk_reads_get_the_bulk_deadline_and_every_other_read_keeps_the_interactive_one() {
+        // The deadline is armed for the whole cursor walk, so a ceiling-bounded scan of up to a
+        // million rows cannot share the deadline a screen waits on: the timeout would always beat
+        // the row ceiling, and the ceiling is the bound that refuses with a reason.
+        val scheduler = CapturingDeadlineScheduler()
+        val gateway =
+            ContentResolverAnkiGateway(
+                context = ApplicationProvider.getApplicationContext(),
+                workerThreadGuard = WorkerThreadGuard { },
+                deadlineScheduler = scheduler,
+                accessStatusOverride = { AVAILABLE },
+                resolverQueryOverride =
+                    ProviderResolverQuery { _, _, _, _, _, _ -> MatrixCursor(arrayOf("_id")) },
+            )
+
+        gateway.query(NOTE_SNAPSHOT_QUERY, TestCancellation())?.close()
+        assertEquals(30_000L, scheduler.lastDelayMs)
+
+        gateway.query(BULK_NOTE_SNAPSHOT_QUERY, TestCancellation())?.close()
+        assertEquals(300_000L, scheduler.lastDelayMs)
+    }
+
+    @Test
     fun gateway_constructor_and_close_failure_still_release_every_registration() {
         val cancellation = TestCancellation()
         val scheduler = CapturingDeadlineScheduler()
@@ -274,12 +297,14 @@ class ProviderQueryCancellationInstrumentedTest {
         private var action: (() -> Unit)? = null
         var closeCount = 0
             private set
+        var lastDelayMs: Long? = null
+            private set
 
         override fun schedule(
             delayMs: Long,
             action: () -> Unit,
         ): CancellationRegistration {
-            assertEquals(30_000L, delayMs)
+            lastDelayMs = delayMs
             this.action = action
             return CancellationRegistration { closeCount += 1 }
         }
@@ -330,5 +355,7 @@ class ProviderQueryCancellationInstrumentedTest {
                 projection = ProviderQueryShapes.NOTE_ID_PROJECTION,
                 sortOrder = ProviderOrder.NOTE_ID_ASCENDING,
             )
+        val BULK_NOTE_SNAPSHOT_QUERY =
+            NOTE_SNAPSHOT_QUERY.copy(deadline = ProviderReadDeadline.BULK)
     }
 }

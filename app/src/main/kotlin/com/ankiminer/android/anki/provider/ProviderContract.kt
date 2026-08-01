@@ -75,12 +75,27 @@ internal enum class ProviderOrder {
     NOTE_ID_ASCENDING,
 }
 
+/**
+ * How long one query's whole cursor walk may take, which is not one number for every read.
+ *
+ * The deadline is armed when the cursor opens and disarmed when it closes, so it bounds the entire
+ * Binder walk rather than a single row. [INTERACTIVE] suits the bounded reads a screen waits on.
+ * [BULK] is for the ceiling-bounded full-table walks the known-vocabulary scan makes: at the
+ * interactive deadline a large deck tree could not finish, and its row ceiling — the bound that is
+ * supposed to refuse loudly — could never fire, because the deadline always tripped first.
+ */
+internal enum class ProviderReadDeadline {
+    INTERACTIVE,
+    BULK,
+}
+
 internal data class ProviderQuery(
     val endpoint: ProviderEndpoint,
     val endpointId: Long? = null,
     val projection: List<ProviderColumn>,
     val selection: ProviderSelection? = null,
     val sortOrder: ProviderOrder? = null,
+    val deadline: ProviderReadDeadline = ProviderReadDeadline.INTERACTIVE,
 ) {
     init {
         require(ProviderQueryShapes.isAllowed(this)) {

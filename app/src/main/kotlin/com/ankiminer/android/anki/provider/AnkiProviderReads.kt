@@ -324,6 +324,7 @@ internal class AnkiProviderReadService(
                         endpoint = ProviderEndpoint.CARDS,
                         projection = ProviderQueryShapes.CARD_NOTE_DECK_PROJECTION,
                         selection = ProviderSelection.CardsInDeck(scope.deckName),
+                        deadline = ProviderReadDeadline.BULK,
                     )
                 var scannedCardRows = 0
                 provider.queryRequired(query, cancellation).use { cursor ->
@@ -383,6 +384,7 @@ internal class AnkiProviderReadService(
                     endpoint = ProviderEndpoint.NOTES_BROWSER,
                     projection = ProviderQueryShapes.NOTE_ID_PROJECTION,
                     selection = ProviderSelection.ExcludedDeck(deckName),
+                    deadline = ProviderReadDeadline.BULK,
                 )
             provider.queryRequired(query, cancellation).use { cursor ->
                 requireProjection(cursor, query)
@@ -596,6 +598,7 @@ internal class AnkiProviderReadService(
                 endpoint = ProviderEndpoint.NOTES_V2,
                 projection = ProviderQueryShapes.NOTE_ID_PROJECTION,
                 sortOrder = ProviderOrder.NOTE_ID_ASCENDING,
+                deadline = ProviderReadDeadline.BULK,
             )
     }
 }
