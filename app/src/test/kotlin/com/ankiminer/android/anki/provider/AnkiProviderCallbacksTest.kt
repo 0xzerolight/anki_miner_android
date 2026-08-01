@@ -681,9 +681,14 @@ class AnkiProviderCallbacksTest {
         assertTrue(encoded.contains("(storeMedia: IllegalStateException @ "))
         assertFalse(encoded.contains(private))
         assertFalse(encoded.contains("Media lease is not acquired"))
-        val recorded = requireNotNull(AnkiFaultRecorder.lastFault())
-        assertTrue(recorded.startsWith("storeMedia:IllegalStateException @ "))
-        assertFalse(recorded.contains("Books"))
+        val fault = requireNotNull(AnkiFaultRecorder.lastFault())
+        assertTrue(fault.startsWith("storeMedia:IllegalStateException @ "))
+        assertFalse(fault.contains("Books"))
+        // The token names an R8-minified frame, so the token alone cannot locate the throw. The
+        // stack behind this entry is the diagnostics bundle's only copy of it.
+        val record = recorded.records.single()
+        assertTrue(record, record.contains("c=anki op=storeMedia outcome=fail code=internal_error fault="))
+        assertTrue(record, record.contains("java.lang.IllegalStateException: Media lease is not acquired"))
     }
 
     @Test
