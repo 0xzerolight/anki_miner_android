@@ -1410,11 +1410,7 @@ class AnkiJsonCodecBoundaryTest {
                                         value.string("token"),
                                     )
                                 }
-                            KnownVocabularyScope(
-                                scope.strings("excludedDecks"),
-                                cursor,
-                                scope["deckName"]?.asString("deckName"),
-                            )
+                            KnownVocabularyScope(scope.strings("excludedDecks"), cursor)
                         }
                         "duplicates" ->
                             DuplicateScanScope(

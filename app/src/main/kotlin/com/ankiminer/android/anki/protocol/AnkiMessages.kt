@@ -72,7 +72,6 @@ internal data class KnownVocabularyCursor(
 internal data class KnownVocabularyScope(
     val excludedDecks: List<String>,
     val cursor: KnownVocabularyCursor?,
-    val deckName: String? = null,
 ) : ScanScope
 
 internal data class DuplicateCandidate(

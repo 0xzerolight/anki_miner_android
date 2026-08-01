@@ -244,16 +244,12 @@ internal class AnkiProviderReadService(
         scope: KnownVocabularyScope,
     ): KnownVocabularyResult {
         val cancellation = registry.cancellation(owner)
-        val traversalScope =
-            KnownTraversalScope(
-                excludedDecks = scope.excludedDecks,
-                deckName = scope.deckName,
-            )
+        val traversalScope = KnownTraversalScope(excludedDecks = scope.excludedDecks)
         val lease =
             if (scope.cursor == null) {
                 val initialization = registry.beginKnownTraversal(owner, traversalScope)
                 try {
-                    val noteIds = snapshotKnownNoteIds(owner, traversalScope, cancellation)
+                    val noteIds = snapshotKnownNoteIds(traversalScope, cancellation)
                     registry.finishKnownTraversalInitialization(owner, initialization, noteIds)
                 } catch (error: RuntimeException) {
                     registry.abortKnownTraversalInitialization(owner, initialization)
@@ -291,84 +287,24 @@ internal class AnkiProviderReadService(
     }
 
     private fun snapshotKnownNoteIds(
-        owner: AnkiRunStateRegistry.RunOwner,
         scope: KnownTraversalScope,
         cancellation: AnkiCancellation,
     ): List<Long> {
-        val snapshot =
-            if (scope.deckName == null) {
-                val allNotes = ArrayList<Long>()
-                provider.queryRequired(NOTE_ID_SNAPSHOT_QUERY, cancellation).use { cursor ->
-                    requireProjection(cursor, NOTE_ID_SNAPSHOT_QUERY)
-                    var prior = 0L
-                    while (cursor.moveToNext()) {
-                        ensureActive(cancellation)
-                        val id = cursor.positiveLong(ProviderColumn.NOTE_ID)
-                        if (id <= prior) throw queryFailed()
-                        prior = id
-                        allNotes += id
-                        if (allNotes.size > AnkiLimitsV1.ScanFirstFields.KNOWN_TOTAL_SCANNED_NOTE_MAX_COUNT) {
-                            throw knownVocabularyLimitExceeded("an Anki collection")
-                        }
-                    }
+        val snapshot = ArrayList<Long>()
+        provider.queryRequired(NOTE_ID_SNAPSHOT_QUERY, cancellation).use { cursor ->
+            requireProjection(cursor, NOTE_ID_SNAPSHOT_QUERY)
+            var prior = 0L
+            while (cursor.moveToNext()) {
+                ensureActive(cancellation)
+                val id = cursor.positiveLong(ProviderColumn.NOTE_ID)
+                if (id <= prior) throw queryFailed()
+                prior = id
+                snapshot += id
+                if (snapshot.size > AnkiLimitsV1.ScanFirstFields.KNOWN_TOTAL_SCANNED_NOTE_MAX_COUNT) {
+                    throw knownVocabularyLimitExceeded("an Anki collection")
                 }
-                allNotes
-            } else {
-                val target = registry.target(owner) ?: throw invalidRequest("The Anki target has not been verified")
-                if (scope.deckName != target.deck.name) {
-                    throw invalidRequest("The known-vocabulary deck scope does not match the verified target")
-                }
-                val exactNotes = linkedSetOf<Long>()
-                val query =
-                    ProviderQuery(
-                        endpoint = ProviderEndpoint.CARDS,
-                        projection = ProviderQueryShapes.CARD_NOTE_DECK_PROJECTION,
-                        selection = ProviderSelection.CardsInDeck(scope.deckName),
-                        deadline = ProviderReadDeadline.BULK,
-                    )
-                var scannedCardRows = 0
-                provider.queryRequired(query, cancellation).use { cursor ->
-                    requireProjection(cursor, query)
-                    while (cursor.moveToNext()) {
-                        ensureActive(cancellation)
-                        // `deck:"Name"` is a deck-TREE scope, so subdeck rows cross Binder too.
-                        // Counted per row and checked before the cell reads, so the walk refuses on
-                        // reaching the first row past its budget without pulling that row's cells.
-                        scannedCardRows = checkedAdd(scannedCardRows, 1)
-                        if (
-                            scannedCardRows >
-                            AnkiLimitsV1.ScanFirstFields.KNOWN_TOTAL_SCANNED_CARD_ROW_MAX_COUNT
-                        ) {
-                            throw knownVocabularyDeckTreeTooLarge()
-                        }
-                        val noteId = cursor.positiveLong(ProviderColumn.CARD_NOTE_ID)
-                        val deckId = cursor.positiveLong(ProviderColumn.CARD_DECK_ID)
-                        // A card borrowed by a filtered deck reports that deck here and keeps its
-                        // home deck in the original-deck link (0 when it is not borrowed). Testing
-                        // the current deck alone dropped every card in a Custom Study session, so
-                        // those notes read as unknown and got mined again as duplicates.
-                        //
-                        // The target is verified non-dynamic, so a card sitting in it is home there
-                        // and the extra cell stays off the hot path of this row-ceilinged walk.
-                        if (deckId != target.deck.id) {
-                            val originalDeckId =
-                                cursor.nonNegativeLong(ProviderColumn.CARD_ORIGINAL_DECK_ID)
-                            if (originalDeckId != target.deck.id) continue
-                        }
-                        exactNotes += noteId
-                        // The note ceiling binds the RESULT, as it does for every other scan: this
-                        // snapshot is returned as `scannedNotes`, which anki_adapter.py refuses
-                        // above the same constant. The row budget above cannot stand in for it.
-                        if (
-                            exactNotes.size >
-                            AnkiLimitsV1.ScanFirstFields.KNOWN_TOTAL_SCANNED_NOTE_MAX_COUNT
-                        ) {
-                            throw knownVocabularyLimitExceeded("the selected Anki deck")
-                        }
-                    }
-                }
-                exactNotes.sorted()
             }
+        }
         if (scope.excludedDecks.isEmpty() || snapshot.isEmpty()) return snapshot
 
         val existingNames = targets.readAllDeckNames(cancellation)
@@ -1360,25 +1296,7 @@ private fun knownVocabularyLimitExceeded(scope: String) =
     )
 
 /**
- * The deck tree walked to collect those notes has its own budget, in card rows rather than notes.
- *
- * `deck:"Name"` is a deck-TREE selection over the CARDS endpoint, so the walk crosses one row per
- * card in the whole tree while only exact-deck rows can contribute a note. Rows therefore have no
- * fixed ratio to the result and cannot share its ceiling: spending the note budget on them costs a
- * deck of 60k notes at two cards each its scan. This bound exists only to stop an unbounded walk.
- */
-private fun knownVocabularyDeckTreeTooLarge() =
-    AnkiReadFailure(
-        AnkiErrorCode.QUERY_FAILED,
-        retryable = false,
-        stableMessage =
-            "Known-word filtering scans at most " +
-                "${AnkiLimitsV1.ScanFirstFields.KNOWN_TOTAL_SCANNED_CARD_ROW_MAX_COUNT} cards " +
-                "in the selected Anki deck and its subdecks",
-    )
-
-/**
- * The excluded-deck walk has its own budget too, for the same reason as the deck tree.
+ * The excluded-deck walk has its own budget too.
  *
  * Its rows are the notes of the *excluded* decks, which are subtracted from the result rather than
  * counted into it, so they have no ratio to the scan's own size. Spending the note ceiling on them

@@ -947,7 +947,7 @@ class AnkiRunStateRegistryTest {
         val registry = AnkiRunStateRegistry()
         assertTrue(registry.register(RUN_ID, AnkiCancellation.NONE))
         registry.withOwner(RUN_ID) { owner ->
-            val scope = KnownTraversalScope(listOf("Excluded"), "Mining")
+            val scope = KnownTraversalScope(listOf("Excluded"))
             val initialization = registry.beginKnownTraversal(owner, scope)
             val first =
                 registry.finishKnownTraversalInitialization(
@@ -960,14 +960,7 @@ class AnkiRunStateRegistryTest {
             assertThrows(InvalidCapabilityException::class.java) {
                 registry.reserveKnownPage(
                     owner,
-                    KnownTraversalScope(listOf("Wrong"), "Mining"),
-                    requireNotNull(cursor),
-                )
-            }
-            assertThrows(InvalidCapabilityException::class.java) {
-                registry.reserveKnownPage(
-                    owner,
-                    KnownTraversalScope(listOf("Excluded"), "Other"),
+                    KnownTraversalScope(listOf("Wrong")),
                     requireNotNull(cursor),
                 )
             }

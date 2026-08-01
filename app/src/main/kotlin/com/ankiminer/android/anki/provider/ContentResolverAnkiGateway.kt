@@ -652,8 +652,6 @@ internal fun compileProviderSelection(
         null -> CompiledProviderSelection(null, null)
         is ProviderSelection.ExcludedDeck ->
             CompiledProviderSelection(excludedDeckSelection(selection.deckName), null)
-        is ProviderSelection.CardsInDeck ->
-            CompiledProviderSelection(excludedDeckSelection(selection.deckName), null)
         is ProviderSelection.CardsForNote ->
             CompiledProviderSelection("nid:${selection.noteId}", null)
         is ProviderSelection.NoteIds -> {

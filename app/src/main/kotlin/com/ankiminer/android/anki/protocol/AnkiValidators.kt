@@ -205,7 +205,6 @@ internal object AnkiValidators {
     private fun validateScan(request: ScanFirstFieldsRequest) {
         when (val scope = request.scope) {
             is KnownVocabularyScope -> {
-                scope.deckName?.let(::validateDeckName)
                 requireCountAtMost(scope.excludedDecks.size, AnkiLimitsV1.Names.ExcludedDecks.MAX_ITEM_COUNT, "excluded decks")
                 requireUnique(scope.excludedDecks, "excluded deck names")
                 var total = 0

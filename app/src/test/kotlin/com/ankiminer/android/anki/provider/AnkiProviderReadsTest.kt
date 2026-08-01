@@ -727,231 +727,6 @@ class AnkiProviderReadsTest {
     }
 
     @Test
-    fun `known vocabulary exact deck scope excludes children and other decks`() {
-        val fixture = fixture()
-        fixture.gateway.queryHandler = targetQueryHandler()
-        fixture.withOwner { owner -> fixture.verifyExistingTarget(owner, verifyRequest()) }
-        fixture.gateway.queries.clear()
-        fixture.gateway.queryHandler = { query, _ ->
-            when {
-                query.endpoint == ProviderEndpoint.CARDS -> {
-                    assertEquals(ProviderSelection.CardsInDeck("Mining"), query.selection)
-                    FakeProviderCursor(
-                        query.projection,
-                        listOf(
-                            mapOf(
-                                ProviderColumn.CARD_NOTE_ID to integer(3L),
-                                ProviderColumn.CARD_DECK_ID to integer(20L),
-                                ProviderColumn.CARD_ORIGINAL_DECK_ID to integer(0L),
-                            ),
-                            mapOf(
-                                ProviderColumn.CARD_NOTE_ID to integer(2L),
-                                ProviderColumn.CARD_DECK_ID to integer(21L),
-                                ProviderColumn.CARD_ORIGINAL_DECK_ID to integer(0L),
-                            ),
-                            mapOf(
-                                ProviderColumn.CARD_NOTE_ID to integer(1L),
-                                ProviderColumn.CARD_DECK_ID to integer(20L),
-                                ProviderColumn.CARD_ORIGINAL_DECK_ID to integer(0L),
-                            ),
-                            mapOf(
-                                ProviderColumn.CARD_NOTE_ID to integer(1L),
-                                ProviderColumn.CARD_DECK_ID to integer(20L),
-                                ProviderColumn.CARD_ORIGINAL_DECK_ID to integer(0L),
-                            ),
-                        ),
-                    )
-                }
-                query.selection is ProviderSelection.NoteIds -> {
-                    assertEquals(listOf(1L, 3L), (query.selection as ProviderSelection.NoteIds).ids)
-                    FakeProviderCursor(
-                        query.projection,
-                        listOf(
-                            mapOf(
-                                ProviderColumn.NOTE_ID to integer(3L),
-                                ProviderColumn.NOTE_FIELDS to text("three\u001fmeaning"),
-                            ),
-                            mapOf(
-                                ProviderColumn.NOTE_ID to integer(1L),
-                                ProviderColumn.NOTE_FIELDS to text("one\u001fmeaning"),
-                            ),
-                        ),
-                    )
-                }
-                else -> error("unexpected query $query")
-            }
-        }
-
-        val result =
-            fixture.withOwner { owner ->
-                fixture.reads.scanFirstFields(owner, knownRequest(deckName = "Mining"))
-            } as KnownVocabularyResult
-
-        assertEquals(listOf("one", "three"), result.firstFields)
-        assertEquals(2, result.scannedNotes)
-        assertNull(result.nextCursor)
-    }
-
-    @Test
-    fun `known vocabulary keeps cards a filtered deck borrowed from the target`() {
-        val fixture = fixture()
-        fixture.gateway.queryHandler = targetQueryHandler()
-        fixture.withOwner { owner -> fixture.verifyExistingTarget(owner, verifyRequest()) }
-        fixture.gateway.queries.clear()
-        fixture.gateway.queryHandler = { query, _ ->
-            when {
-                query.endpoint == ProviderEndpoint.CARDS ->
-                    FakeProviderCursor(
-                        query.projection,
-                        listOf(
-                            // Custom Study over "Mining" moved this card into a filtered deck; its
-                            // home deck is still the target, so its note is already mined.
-                            mapOf(
-                                ProviderColumn.CARD_NOTE_ID to integer(1L),
-                                ProviderColumn.CARD_DECK_ID to integer(99L),
-                                ProviderColumn.CARD_ORIGINAL_DECK_ID to integer(20L),
-                            ),
-                            // A subdeck card borrowed by the same session stays out: its home deck
-                            // is the subdeck, not the target.
-                            mapOf(
-                                ProviderColumn.CARD_NOTE_ID to integer(2L),
-                                ProviderColumn.CARD_DECK_ID to integer(99L),
-                                ProviderColumn.CARD_ORIGINAL_DECK_ID to integer(21L),
-                            ),
-                        ),
-                    )
-                query.selection is ProviderSelection.NoteIds -> {
-                    assertEquals(listOf(1L), (query.selection as ProviderSelection.NoteIds).ids)
-                    FakeProviderCursor(
-                        query.projection,
-                        listOf(
-                            mapOf(
-                                ProviderColumn.NOTE_ID to integer(1L),
-                                ProviderColumn.NOTE_FIELDS to text("one\u001fmeaning"),
-                            ),
-                        ),
-                    )
-                }
-                else -> error("unexpected query $query")
-            }
-        }
-
-        val result =
-            fixture.withOwner { owner ->
-                fixture.reads.scanFirstFields(owner, knownRequest(deckName = "Mining"))
-            } as KnownVocabularyResult
-
-        assertEquals(listOf("one"), result.firstFields)
-        assertEquals(1, result.scannedNotes)
-    }
-
-    @Test
-    fun `deck card scan accepts a deck whose card rows outnumber the note ceiling`() {
-        // 60000 notes at two cards each is 120000 rows: past the note ceiling as a row count,
-        // well under it as the note count the ceiling actually governs. Spending one budget on
-        // both refused this deck, which is the whole reason the row budget is a separate limit.
-        var cardCellReads = 0
-        val cardCursor =
-            exactDeckCardCursor(rowCount = 120_000, cardsPerNote = 2) { cardCellReads += 1 }
-        val fixture = deckCardScanFixture(cardCursor)
-
-        val result =
-            fixture.withOwner { owner ->
-                fixture.reads.scanFirstFields(owner, knownRequest(deckName = "Mining"))
-            } as KnownVocabularyResult
-
-        // Two cells on every one of the 120000 rows: the traversal ran to the end of the cursor,
-        // so neither ceiling refused it and the snapshot holds all 60000 notes.
-        assertEquals(240_000, cardCellReads)
-        assertEquals(1, cardCursor.closeCount)
-        // scannedNotes is this page, not the snapshot — 60000 notes page at 256 with a cursor.
-        assertEquals(256, result.firstFields.size)
-        assertEquals(256, result.scannedNotes)
-        assertEquals(1L, result.nextCursor?.ordinal)
-    }
-
-    @Test
-    fun `deck card scan holds the note ceiling at exactly 100000 exact deck notes`() {
-        var acceptedCellReads = 0
-        val acceptedCursor =
-            exactDeckCardCursor(rowCount = 100_000, cardsPerNote = 1) { acceptedCellReads += 1 }
-        val accepted = deckCardScanFixture(acceptedCursor)
-
-        accepted.withOwner { owner ->
-            accepted.reads.scanFirstFields(owner, knownRequest(deckName = "Mining"))
-        } as KnownVocabularyResult
-
-        assertEquals(200_000, acceptedCellReads)
-        assertEquals(1, acceptedCursor.closeCount)
-
-        // One more distinct note in the target deck, and the snapshot exceeds what it may hand back
-        // as scannedNotes — anki_adapter.py refuses above the same constant.
-        var refusedCellReads = 0
-        val refusedCursor =
-            exactDeckCardCursor(rowCount = 100_001, cardsPerNote = 1) { refusedCellReads += 1 }
-        val refused = deckCardScanFixture(refusedCursor)
-
-        val failure =
-            assertThrows(AnkiReadFailure::class.java) {
-                refused.withOwner { owner ->
-                    refused.reads.scanFirstFields(owner, knownRequest(deckName = "Mining"))
-                }
-            }
-        assertEquals(AnkiErrorCode.QUERY_FAILED, failure.code)
-        assertEquals(false, failure.retryable)
-        assertEquals(
-            "Known-word filtering supports at most 100000 notes in the selected Anki deck",
-            failure.stableMessage,
-        )
-        // Unlike the row budget, this ceiling has to read the row's cells to learn its note, so the
-        // refusing row is read and then rejected rather than refused before its cells.
-        assertEquals(200_002, refusedCellReads)
-        assertEquals(1, refusedCursor.closeCount)
-    }
-
-    @Test
-    fun `deck card scan closes at row 1000001 of subdeck rows before reading its cells`() {
-        var cardCellReads = 0
-        // Every row belongs to a subdeck, so none matches the verified target deck (20) and none
-        // can ever contribute a note. `deck:"Mining"` returns them regardless, so the walk needs a
-        // bound of its own or a deck under a large tree scans without end.
-        val cardCursor =
-            GeneratedFakeProviderCursor(
-                ProviderQueryShapes.CARD_NOTE_DECK_PROJECTION,
-                rowCount = 1_000_001,
-                rowAt = { index ->
-                    mapOf(
-                        ProviderColumn.CARD_NOTE_ID to integer(index + 1L),
-                        ProviderColumn.CARD_DECK_ID to integer(21L),
-                        ProviderColumn.CARD_ORIGINAL_DECK_ID to integer(0L),
-                    )
-                },
-                beforeCell = { cardCellReads += 1 },
-            )
-        val fixture = deckCardScanFixture(cardCursor)
-
-        val failure =
-            assertThrows(AnkiReadFailure::class.java) {
-                fixture.withOwner { owner ->
-                    fixture.reads.scanFirstFields(owner, knownRequest(deckName = "Mining"))
-                }
-            }
-        assertEquals(AnkiErrorCode.QUERY_FAILED, failure.code)
-        assertEquals(false, failure.retryable)
-        // The refusal names card rows and the subdecks, because that is what ran out. Calling them
-        // notes would quote a number the deck never reached.
-        assertEquals(
-            "Known-word filtering scans at most 1000000 cards in " +
-                "the selected Anki deck and its subdecks",
-            failure.stableMessage,
-        )
-        // Three cells per row for the first 1000000 rows — a row outside the target deck also has
-        // to be tested against its home deck — and row 1000001 is refused before its cells.
-        assertEquals(3_000_000, cardCellReads)
-        assertEquals(1, cardCursor.closeCount)
-    }
-
-    @Test
     fun `known continuation failure is nonretryable after consuming its cursor`() {
         val fixture = fixture(tokens = listOf("cursor_${"a".repeat(32)}"))
         fixture.gateway.queryHandler = { query, _ ->
@@ -1317,12 +1092,12 @@ class AnkiProviderReadsTest {
     }
 
     @Test
-    fun `a large excluded deck does not abort a small deck-scoped scan`() {
+    fun `a large excluded deck does not abort a small scan`() {
         val fixture = fixture()
         fixture.gateway.queryHandler = targetQueryHandler()
         fixture.withOwner { owner -> fixture.verifyExistingTarget(owner, verifyRequest()) }
         fixture.gateway.queries.clear()
-        // The target holds one note; the excluded deck holds far more rows than the note ceiling.
+        // The collection holds one note; the excluded deck holds far more rows than the note ceiling.
         // Spending the result ceiling on them aborted the run, while the identical run without the
         // exclusion configured succeeded.
         val browserCursor =
@@ -1333,16 +1108,10 @@ class AnkiProviderReadsTest {
             )
         fixture.gateway.queryHandler = { query, _ ->
             when {
-                query.endpoint == ProviderEndpoint.CARDS ->
+                query.endpoint == ProviderEndpoint.NOTES_V2 && query.selection == null ->
                     FakeProviderCursor(
                         query.projection,
-                        listOf(
-                            mapOf(
-                                ProviderColumn.CARD_NOTE_ID to integer(1L),
-                                ProviderColumn.CARD_DECK_ID to integer(20L),
-                                ProviderColumn.CARD_ORIGINAL_DECK_ID to integer(0L),
-                            ),
-                        ),
+                        listOf(mapOf(ProviderColumn.NOTE_ID to integer(1L))),
                     )
                 query.endpoint == ProviderEndpoint.DECKS ->
                     FakeProviderCursor(query.projection, listOf(deckRow(name = "Core")))
@@ -1363,10 +1132,7 @@ class AnkiProviderReadsTest {
 
         val result =
             fixture.withOwner { owner ->
-                fixture.reads.scanFirstFields(
-                    owner,
-                    knownRequest(deckName = "Mining", excluded = listOf("Core")),
-                )
+                fixture.reads.scanFirstFields(owner, knownRequest(excluded = listOf("Core")))
             } as KnownVocabularyResult
 
         assertEquals(listOf("one"), result.firstFields)
@@ -1893,60 +1659,11 @@ class AnkiProviderReadsTest {
     private fun verifyRequest(required: List<String> = listOf("Expression")) =
         VerifyTargetRequest(RUN_ID, REQUEST_ID, "Mining", "Mining", required)
 
-    /** Rows all in the verified target deck (20), [cardsPerNote] consecutive rows per note. */
-    private fun exactDeckCardCursor(
-        rowCount: Int,
-        cardsPerNote: Int,
-        beforeCell: (ProviderColumn) -> Unit = {},
-    ) = GeneratedFakeProviderCursor(
-        ProviderQueryShapes.CARD_NOTE_DECK_PROJECTION,
-        rowCount = rowCount,
-        rowAt = { index ->
-            mapOf(
-                ProviderColumn.CARD_NOTE_ID to integer(index / cardsPerNote + 1L),
-                ProviderColumn.CARD_DECK_ID to integer(20L),
-                ProviderColumn.CARD_ORIGINAL_DECK_ID to integer(0L),
-            )
-        },
-        beforeCell = beforeCell,
-    )
-
-    /** A verified "Mining" target whose CARDS traversal is [cardCursor] and whose pages resolve. */
-    private fun deckCardScanFixture(cardCursor: GeneratedFakeProviderCursor): Fixture {
-        val fixture = fixture()
-        fixture.gateway.queryHandler = targetQueryHandler()
-        fixture.withOwner { owner -> fixture.verifyExistingTarget(owner, verifyRequest()) }
-        fixture.gateway.queries.clear()
-        fixture.gateway.queryHandler = { query, _ ->
-            when {
-                query.endpoint == ProviderEndpoint.CARDS -> cardCursor
-                query.selection is ProviderSelection.NoteIds ->
-                    FakeProviderCursor(
-                        query.projection,
-                        (query.selection as ProviderSelection.NoteIds).ids.map { id ->
-                            mapOf(
-                                ProviderColumn.NOTE_ID to integer(id),
-                                ProviderColumn.NOTE_FIELDS to text("word-$id\u001fmeaning"),
-                            )
-                        },
-                    )
-                else -> error("unexpected query $query")
-            }
-        }
-        return fixture
-    }
-
     private fun knownRequest(
         excluded: List<String> = emptyList(),
         cursor: com.ankiminer.android.anki.protocol.KnownVocabularyCursor? = null,
         requestId: String = REQUEST_ID,
-        deckName: String? = null,
-    ) =
-        ScanFirstFieldsRequest(
-            RUN_ID,
-            requestId,
-            KnownVocabularyScope(excluded, cursor, deckName),
-        )
+    ) = ScanFirstFieldsRequest(RUN_ID, requestId, KnownVocabularyScope(excluded, cursor))
 
     private fun duplicateRequest(
         scope: DuplicateScanScope,

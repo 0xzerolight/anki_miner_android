@@ -580,14 +580,12 @@ class FakeKotlinAnki:
                 cursor_state = self._known_cursors.pop(cursor["token"])
                 assert cursor_state["runId"] == request["runId"]
                 assert cursor_state["excludedDecks"] == tuple(scope["excludedDecks"])
-                assert cursor_state["deckName"] == scope.get("deckName")
                 assert cursor_state["ordinal"] == cursor["ordinal"]
                 start = cursor_state["start"]
                 scanned_before = cursor_state["scannedNotes"]
                 next_ordinal = cursor["ordinal"] + 1
             limits = scope["limits"]
             excluded = scope["excludedDecks"]
-            target_deck = scope.get("deckName")
             page_fields: list[str] = []
             page_utf8_bytes = 0
             scanned_notes = 0
@@ -608,16 +606,14 @@ class FakeKotlinAnki:
                     for deck in decks
                     for excluded_deck in excluded
                 )
-                note_is_in_scope = target_deck is None or target_deck in decks
                 if (
-                    note_is_in_scope
-                    and not note_is_excluded
+                    not note_is_excluded
                     and page_fields
                     and page_utf8_bytes + field_bytes > limits["maxTotalUtf8Bytes"]
                 ):
                     break
                 scanned_notes += 1
-                if note_is_in_scope and not note_is_excluded:
+                if not note_is_excluded:
                     page_fields.append(field)
                     page_utf8_bytes += field_bytes
             next_index = start + scanned_notes
@@ -640,7 +636,6 @@ class FakeKotlinAnki:
                 self._known_cursors[token] = {
                     "runId": request["runId"],
                     "excludedDecks": tuple(scope["excludedDecks"]),
-                    "deckName": target_deck,
                     "ordinal": next_ordinal,
                     "start": next_index,
                     "scannedNotes": total_scanned,

@@ -514,13 +514,8 @@ internal object AnkiJsonCodec {
             }
             return when (kind) {
                 "knownVocabulary" -> {
-                    val required = setOf("kind", "excludedDecks", "cursor", "limits")
-                    val accepted = if (deckNameSeen) required + "deckName" else required
-                    requireExactSeen(seen, accepted, "known-vocabulary scope")
+                    requireExactSeen(seen, setOf("kind", "excludedDecks", "cursor", "limits"), "known-vocabulary scope")
                     if (!cursorSeen) missingPayload("cursor")
-                    if (deckNameSeen && deckName == null) {
-                        fail(AnkiProtocolCategory.INVALID_VALUE, "known-vocabulary deck name must not be null")
-                    }
                     requireExactLimits(
                         limits!!,
                         mapOf(
@@ -531,7 +526,7 @@ internal object AnkiJsonCodec {
                             "maxTotalUtf8Bytes" to AnkiLimitsV1.ScanFirstFields.KNOWN_PAGE_MAX_UTF8_BYTES.toLong(),
                         ),
                     )
-                    KnownVocabularyScope(excludedDecks!!, cursor, deckName)
+                    KnownVocabularyScope(excludedDecks!!, cursor)
                 }
                 "duplicates" -> {
                     requireExactSeen(

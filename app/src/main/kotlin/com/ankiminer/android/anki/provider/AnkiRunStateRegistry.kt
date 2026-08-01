@@ -119,7 +119,6 @@ internal data class KnownTraversalInitialization(
 
 internal data class KnownTraversalScope(
     val excludedDecks: List<String>,
-    val deckName: String?,
 )
 
 internal data class KnownPageLease(

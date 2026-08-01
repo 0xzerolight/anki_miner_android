@@ -292,11 +292,7 @@ def _scan_scope(value: object) -> _Object:
     if kind == "knownVocabulary":
         scope = _mapping(
             value,
-            (
-                {"kind", "deckName", "excludedDecks", "cursor", "limits"}
-                if "deckName" in value
-                else {"kind", "excludedDecks", "cursor", "limits"}
-            ),
+            {"kind", "excludedDecks", "cursor", "limits"},
             "known-vocabulary scope",
         )
         cursor_value = scope["cursor"]
@@ -327,19 +323,13 @@ def _scan_scope(value: object) -> _Object:
                     ("token", _string(raw_cursor["token"], "cursor token")),
                 )
             )
-        fields: list[tuple[str, object]] = [("kind", "knownVocabulary")]
-        if "deckName" in scope:
-            fields.append(("deckName", _string(scope["deckName"], "deckName")))
-        fields.extend(
+        return _Object(
             (
-                (
-                    "excludedDecks",
-                    _string_list(scope["excludedDecks"], "excludedDecks"),
-                ),
+                ("kind", "knownVocabulary"),
+                ("excludedDecks", _string_list(scope["excludedDecks"], "excludedDecks")),
                 ("cursor", cursor),
             )
         )
-        return _Object(tuple(fields))
     if kind == "duplicates":
         scope = _mapping(
             value,

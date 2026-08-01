@@ -195,11 +195,10 @@
     "knownVocabularyScope": {
       "type": "object",
       "additionalProperties": false,
-      "$comment": "Kotlin scans at most maxScannedNotes notes per page and maxTotalScannedNotes across the complete stable provider traversal. Optional deckName restricts the traversal to notes with a card in that exact verified target deck; child decks do not match. An excluded deck excludes the entire note when any of its cards is in that deck or a descendant; a parent exclusion therefore covers all subdecks. cursor is null on the first page and otherwise exactly the prior nextCursor. Kotlin retains the traversal snapshot and immutable run/scope/ordinal/total binding behind each opaque one-use token; tokens expire when consumed, on terminal completion, on error, or when the run is cancelled/terminated. A cursor from another run or scope, a replay, and continuation at the total ceiling fail closed. Kotlin must fail rather than truncate or skip an oversized first field.",
+      "$comment": "Kotlin scans at most maxScannedNotes notes per page and maxTotalScannedNotes across the complete stable provider traversal. An excluded deck excludes the entire note when any of its cards is in that deck or a descendant; a parent exclusion therefore covers all subdecks. cursor is null on the first page and otherwise exactly the prior nextCursor. Kotlin retains the traversal snapshot and immutable run/scope/ordinal/total binding behind each opaque one-use token; tokens expire when consumed, on terminal completion, on error, or when the run is cancelled/terminated. A cursor from another run or scope, a replay, and continuation at the total ceiling fail closed. Kotlin must fail rather than truncate or skip an oversized first field.",
       "required": ["kind", "excludedDecks", "cursor", "limits"],
       "properties": {
         "kind": {"const": "knownVocabulary"},
-        "deckName": {"$ref": "#/$defs/deckName"},
         "excludedDecks": {
           "type": "array",
           "maxItems": 256,
