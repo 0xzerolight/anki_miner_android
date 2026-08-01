@@ -2,16 +2,29 @@
 
 All notable project changes will be recorded here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and releases will use semantic versioning once a public version exists.
 
-## [Unreleased]
+## [0.2.0] - 2026-08-01
 
 ### Added
 
-- A diagnostics bundle records in its manifest that the log sink was disabled, and by what, so an empty log file can be told apart from a quiet one.
+- Settings can build a redacted multi-file diagnostics bundle, save it as a ZIP, or send it through Android's share sheet. The bundle includes the app's own logcat records but never another app's logs.
+- A verbose diagnostics logging setting raises the level for this app's own Kotlin and Python records only, and reverts itself after seven days so a switch left on cannot rotate away the run it was meant to capture.
+- A diagnostics bundle records in its manifest that the log sink was disabled, and by what, so an empty log file can be told apart from a quiet one. The bundle also reports whether the shipped ffmpeg and ffprobe binaries answer, and summarises the warnings a run's engine raised.
+- Subtitles can be filtered by a regular expression before mining, with the desktop's presets available as a starting point. Patterns are checked as they are typed against the same length and unbounded-repeat limits the desktop enforces.
+- Bracketed subtitle annotations — speaker labels, sound effects — can be stripped before the text reaches the tokenizer.
+- Word lists: a blacklist and a whitelist can be imported from a plain-text file and enabled independently. The file is validated as UTF-8 and kept by the app, so the engine re-reads it at the start of every run.
+- Duplicate cards can be allowed explicitly, rather than always being skipped.
+- Note types built on the JP Mining Note conventions can be marked as such, so the engine writes its marker field instead of guessing from field names. The conventional field is preselected when the note type has it.
+- Pitch accent is a multi-source resource now, with its own priority chain, per-source validity reporting, and an identifier derived from the display name — so a second import lands beside the first instead of replacing it.
 
 ### Changed
 
-- Duplicate mode looks for known words in the target deck rather than across the whole collection, which is how the desktop scopes duplicates. The scan collects at most 100,000 notes from that deck, the same ceiling every other scan holds, and separately gives up on a deck tree wider than 1,000,000 cards: `deck:"Name"` reaches subdecks too, and their rows are read only to be discarded.
+- The vendored Japanese mining engine is re-pinned to current desktop, which brings the pitch accent source chain, the corrected Unicode normalisation for stored known words, and the fixes accumulated upstream since the previous pin.
+- Mining progress composes each stage's fraction inside that stage's band, so the bar advances once from empty to full instead of restarting five times per run.
+- Diagnostics records follow an eight-kind severity and volume taxonomy: INFO is limited to phases, user actions, and external batches; per-item detail is DEBUG-only. Exported Kotlin and Python logs share one line grammar, with TAB-prefixed throwable continuations.
+- Python log timestamps now use UTC ISO-8601 with millisecond precision and a trailing `Z`, matching Kotlin logs so the two files sort into one timeline.
+- Duplicate mode looks for known words in the target deck rather than across the whole collection, which is how the desktop scopes duplicates. The scan collects at most 100,000 notes from that deck, the same ceiling every other scan holds, and separately gives up on a deck tree wider than 1,000,000 cards: `deck:"Name"` reaches subdecks too, and their rows are read only to be discarded. Decks excluded from the scan are subtracted from it rather than counted into it, so they hold a budget of their own instead of consuming the target's; the whole walk is given the five-minute deadline that bulk reads get, not the thirty seconds an interactive read holds; and a collection over any of the three ceilings is reported as a condition of that collection, naming what it exceeded, instead of surfacing as "Unexpected error" with a stack.
 - A run parked in curation releases its CPU wake lock while it waits for an answer and takes it again on confirmation, so a long read through the candidate list no longer holds the device awake for nothing. The foreground service stays up throughout.
+- Checking a media batch for colliding filenames decides each pair by inspection and runs its full sweep only for a real collision, where the sweep's reason is needed. The sweep ran for every pair before, inside the write transaction and with every other writer waiting behind it.
 
 ### Fixed
 
@@ -26,12 +39,15 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 - The app shell behind the onboarding wizard is inert. TalkBack could swipe past the wizard onto the navigation bar and activate it, and keyboard focus could search into the screens behind it.
 - A resource operation cancelled while it was already committing reports plain cancellation, instead of a delivery failure offering to retry work that had finished.
 - A media read that passes its deadline cancels its worker rather than leaving it blocked on an unresponsive provider for the rest of the session.
+- Cards a filtered deck has borrowed from the target deck count as known. `deck:"Name"` reaches them, but they come back carrying the filtered deck's id, so a Custom Study session made its own notes look unmined and they were offered and written again as duplicates. The pre-insert duplicate check missed them for the same reason.
+- A media asset left quarantined by an earlier run degrades that one row instead of failing the whole run. Recovery ran before the batch existed to degrade into, so the call after a quarantine died outright — the same failure as issue #6, one call later (#6).
+- A note whose creation is rolled back fails on its own. A full or locked database ended the entire batch, where every other fault there fails one row.
+- A settings reset that cannot be applied keeps its dialog open and says why, instead of closing having reset nothing and reported nothing.
+- Speech synthesis uses any installed offline Japanese voice rather than only the system default, ignores voices the engine reports as not installed, and reserves "install a voice" guidance for a genuinely missing one — an engine failure or a slow start says that instead.
+- Downloaded and cached expression audio is validated with the bundled ffprobe and bounded by one deadline across both the lookup and the download, so a stalled source cannot hold a run open indefinitely.
+- A provider fault that cannot be attributed to a note now carries its stack into the diagnostics bundle. It carried only an opaque identifier, and the frame that identifier named is minified out of a release build, so the throw site could not be found from a bug report.
 
 ## [0.1.8] - 2026-07-29
-
-### Added
-
-- Settings can build a redacted multi-file diagnostics bundle, save it as a ZIP, or send it through Android's share sheet. The bundle includes the app's own logcat records but never another app's logs.
 
 ### Fixed
 
@@ -41,8 +57,6 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 
 ### Changed
 
-- Diagnostics records follow an eight-kind severity and volume taxonomy: INFO is limited to phases, user actions, and external batches; per-item detail is DEBUG-only. Exported Kotlin and Python logs share one line grammar, with TAB-prefixed throwable continuations.
-- Python log timestamps now use UTC ISO-8601 with millisecond precision and a trailing `Z`, matching Kotlin logs so the two files sort into one timeline.
 - Sentence deduplication is off by default. It keeps one word per sentence and runs before curation, so it withheld candidates that were never shown.
 - The Setup category is gone. The Japanese tokenizer card moved to Diagnostics and appears only when it is missing or failing, instead of a healthy install presenting itself as a fault report with a repair button.
 - Installed bundled dictionaries and healthy resource inventories are hidden, leaving the dictionary, frequency, audio, and pitch cards to show only what is missing or broken. Inventories duplicated what the priority editor already listed; the broken case is the only one that added anything.
