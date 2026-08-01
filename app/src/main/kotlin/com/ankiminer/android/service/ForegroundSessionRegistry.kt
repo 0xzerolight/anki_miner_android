@@ -18,6 +18,7 @@ internal class ForegroundSessionRegistry(
     internal data class ServiceSnapshot(
         val progress: MiningForegroundProgress,
         val cancelling: Boolean,
+        val cpuWakeParked: Boolean,
     )
 
     private enum class Phase {
@@ -36,6 +37,7 @@ internal class ForegroundSessionRegistry(
         var serviceToken: String? = null,
         var progress: MiningForegroundProgress = MiningForegroundProgress(),
         var cancellationDelivered: Boolean = false,
+        var cpuWakeParked: Boolean = false,
     )
 
     /**
@@ -216,6 +218,27 @@ internal class ForegroundSessionRegistry(
             }
         }
 
+    /**
+     * Records whether the run wants its CPU wake lock dropped; the service applies it on the next
+     * command. Curation is the only wait that sets it, and the service stays in the foreground.
+     */
+    fun setCpuWakeParked(
+        identity: MiningForegroundSessionIdentity,
+        parked: Boolean,
+    ): Boolean =
+        synchronized(lock) {
+            val record = current
+            if (
+                record?.identity != identity ||
+                (record.phase != Phase.ACTIVE && record.phase != Phase.CANCELLING)
+            ) {
+                false
+            } else {
+                record.cpuWakeParked = parked
+                true
+            }
+        }
+
     fun snapshotForService(
         identity: MiningForegroundSessionIdentity,
         serviceToken: String,
@@ -232,6 +255,7 @@ internal class ForegroundSessionRegistry(
                 ServiceSnapshot(
                     progress = record.progress,
                     cancelling = record.phase == Phase.CANCELLING,
+                    cpuWakeParked = record.cpuWakeParked,
                 )
             }
         }

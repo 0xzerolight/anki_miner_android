@@ -16,6 +16,8 @@ import com.ankiminer.android.MainActivity
 import com.ankiminer.android.R
 import com.ankiminer.android.diagnostics.log.AppLog
 import com.ankiminer.android.diagnostics.log.LogComponent
+import com.ankiminer.android.localization.LocalizedStringResource
+import com.ankiminer.android.localization.byteProgressResource
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 
@@ -31,6 +33,25 @@ internal fun warnMalformedForegroundIntent(
         "action" to action,
         "extraKeys" to extraKeys.sorted(),
     )
+}
+
+/**
+ * Resource and arguments for the notification's progress line, or null while indeterminate.
+ *
+ * Separate from the builder because the service needs a real `Context` and the host unit build has
+ * no Robolectric, so the unit-to-resource choice would otherwise be untested.
+ */
+internal fun miningNotificationProgressText(progress: MiningForegroundProgress): LocalizedStringResource? {
+    val completed = progress.completed ?: return null
+    val total = progress.total ?: return null
+    return when (progress.unit) {
+        MiningForegroundProgressUnit.ITEMS ->
+            LocalizedStringResource(R.string.mining_notification_count, listOf(completed, total))
+        // The same scale selection the mining screen renders bytes through, so the notification and
+        // the screen cannot disagree about one copy's units.
+        MiningForegroundProgressUnit.BYTES ->
+            byteProgressResource(completed.toLong(), total.toLong())
+    }
 }
 
 internal fun decodeMiningForegroundIntentIdentity(
@@ -186,6 +207,7 @@ class MiningForegroundService : Service() {
             return
         }
         try {
+            applyCpuWakeState(currentIdentity, snapshot.cpuWakeParked)
             startForegroundTyped(
                 if (snapshot.cancelling) {
                     buildCancellingNotification(currentIdentity)
@@ -195,6 +217,30 @@ class MiningForegroundService : Service() {
             )
         } catch (failure: RuntimeException) {
             failActiveSession("update", failure)
+        }
+    }
+
+    /**
+     * Idempotent, so it is safe to run on every command rather than needing its own intent action.
+     */
+    private fun applyCpuWakeState(
+        identity: MiningForegroundSessionIdentity,
+        parked: Boolean,
+    ) {
+        val alreadyApplied = if (parked) !cpuWakeLease.isOwned() else cpuWakeLease.isOwned()
+        if (alreadyApplied) return
+        if (parked) cpuWakeLease.park() else cpuWakeLease.acquire()
+        // acquire() is a no-op once the lease is closed, so the wanted state has to be re-read
+        // rather than assumed: a resume racing teardown legitimately does nothing.
+        val reached = parked != cpuWakeLease.isOwned()
+        AppLog.d(LogComponent.SERVICE, "cpu_wake") {
+            arrayOf(
+                "outcome" to if (reached) "ok" else "skip",
+                "parked" to parked,
+                "runId" to identity.runId,
+                "generation" to identity.generation,
+                "leaseId" to identity.leaseId,
+            )
         }
     }
 
@@ -319,15 +365,9 @@ class MiningForegroundService : Service() {
         progress: MiningForegroundProgress,
     ): Notification {
         val text =
-            if (progress.completed != null && progress.total != null) {
-                getString(
-                    R.string.mining_notification_count,
-                    progress.completed,
-                    progress.total,
-                )
-            } else {
-                getString(R.string.mining_notification_preparing)
-            }
+            miningNotificationProgressText(progress)
+                ?.let { getString(it.resourceId, *it.formatArguments.toTypedArray()) }
+                ?: getString(R.string.mining_notification_preparing)
         return baseNotification(identity, text)
             .setProgress(
                 progress.total ?: 0,

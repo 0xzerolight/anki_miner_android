@@ -34,6 +34,7 @@ import com.ankiminer.android.mining.isTerminal
 import com.ankiminer.android.service.ForegroundSessionRegistry
 import com.ankiminer.android.service.MiningForegroundLease
 import com.ankiminer.android.service.MiningForegroundProgress
+import com.ankiminer.android.service.MiningForegroundProgressUnit
 import com.ankiminer.android.service.MiningForegroundSessionIdentity
 import com.ankiminer.android.service.MiningForegroundSessionListener
 import com.ankiminer.android.tts.SentenceAudioSynthesis
@@ -396,6 +397,89 @@ class BridgeReadingMiningRepositoryTest {
 
         assertTrue(awaitState(harness.repository, MiningRunState::isTerminal) is MiningRunState.Success)
         assertEquals(1, harness.foreground.lease.closeCount.get())
+    }
+
+    @Test
+    fun `curation parks the cpu wake lease and confirming re-arms it`() {
+        val harness = harness(expressionAudioFieldMapped = true)
+
+        runBlocking { harness.repository.startReading(INPUT) }
+        val curating =
+            awaitState(harness.repository) { it is MiningRunState.Curating } as MiningRunState.Curating
+
+        // The FGS stays up across the wait; only the media-processing wake lease is dropped.
+        assertEquals(listOf(true), harness.foreground.lease.cpuWakeEvents)
+        assertEquals(0, harness.foreground.lease.closeCount.get())
+
+        runBlocking {
+            harness.repository.confirmCuration(
+                curating.request.runId,
+                curating.request.requestId,
+                FIRST_SELECTION,
+            )
+        }
+
+        assertEquals(listOf(true, false), harness.foreground.lease.cpuWakeEvents)
+        harness.bridge.allowTerminal.countDown()
+        awaitState(harness.repository, MiningRunState::isTerminal)
+    }
+
+    @Test
+    fun `cancelling during curation tears the parked wake lease down exactly once`() {
+        val harness = harness(expressionAudioFieldMapped = true)
+
+        runBlocking { harness.repository.startReading(INPUT) }
+        val curating =
+            awaitState(harness.repository) { it is MiningRunState.Curating } as MiningRunState.Curating
+        assertEquals(listOf(true), harness.foreground.lease.cpuWakeEvents)
+
+        runBlocking { harness.repository.cancel(curating.request.runId) }
+        harness.bridge.allowTerminal.countDown()
+        awaitState(harness.repository, MiningRunState::isTerminal)
+
+        // No resume on the way out, and the lease close is the single teardown.
+        assertEquals(listOf(true), harness.foreground.lease.cpuWakeEvents)
+        assertEquals(1, harness.foreground.lease.closeCount.get())
+    }
+
+    @Test
+    fun `staging bytes reach the notification as bytes and engine counts as items`() {
+        val harness = harness(expressionAudioFieldMapped = true)
+
+        runBlocking { harness.repository.startReading(INPUT) }
+        val curating =
+            awaitState(harness.repository) { it is MiningRunState.Curating } as MiningRunState.Curating
+        runBlocking {
+            harness.repository.confirmCuration(
+                curating.request.runId,
+                curating.request.requestId,
+                FIRST_SELECTION,
+            )
+        }
+        assertTrue(harness.bridge.curationSubmitted.await(2, TimeUnit.SECONDS))
+        harness.bridge.runCallbacks!!.onProgress(HOSTILE_PROGRESS)
+
+        val published = harness.foreground.lease.published
+        // "novel" is five staged bytes; without a unit they rendered as five items.
+        assertTrue(
+            published.toString(),
+            MiningForegroundProgress(
+                completed = 5,
+                total = 5,
+                unit = MiningForegroundProgressUnit.BYTES,
+            ) in published,
+        )
+        assertEquals(
+            MiningForegroundProgress(
+                completed = 2,
+                total = 3,
+                unit = MiningForegroundProgressUnit.ITEMS,
+            ),
+            published.last(),
+        )
+
+        harness.bridge.allowTerminal.countDown()
+        awaitState(harness.repository, MiningRunState::isTerminal)
     }
 
     @Test
@@ -1322,6 +1406,7 @@ class BridgeReadingMiningRepositoryTest {
                     jobMaxBytes = 2048,
                     freeSpaceReserveBytes = 0,
                     bufferBytes = 2,
+                    checkpointIntervalBytes = 1,
                 ),
             availableBytes = { 1_000_000L },
             nonceSource = ReadingSourceStageNonceSource { "11111111111111111111111111111111" },
@@ -1486,8 +1571,21 @@ class BridgeReadingMiningRepositoryTest {
         val closeCount = AtomicInteger()
         val published = CopyOnWriteArrayList<MiningForegroundProgress>()
 
+        /** True for a park, false for a resume, in call order. */
+        val cpuWakeEvents = CopyOnWriteArrayList<Boolean>()
+
         override fun updateProgress(progress: MiningForegroundProgress): Boolean {
             published += progress
+            return true
+        }
+
+        override fun parkCpuWake(): Boolean {
+            cpuWakeEvents += true
+            return true
+        }
+
+        override fun resumeCpuWake(): Boolean {
+            cpuWakeEvents += false
             return true
         }
 

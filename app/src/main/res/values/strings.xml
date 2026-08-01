@@ -360,6 +360,8 @@
     <string name="anki_setup_working">Updating verified Anki setup…</string>
     <string name="cancel">Cancel</string>
     <string name="confirm">Confirm</string>
+    <string name="progress_bytes">%1$d of %2$d bytes</string>
+    <string name="progress_kibibytes">%1$.1f of %2$.1f KiB</string>
     <string name="progress_mebibytes">%1$.1f of %2$.1f MiB</string>
     <string name="resource_phase_preparing">Preparing…</string>
     <string name="resource_phase_downloading">Downloading…</string>

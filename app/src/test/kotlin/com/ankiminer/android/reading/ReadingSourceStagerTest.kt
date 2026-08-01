@@ -874,6 +874,8 @@ class ReadingSourceStagerTest {
         jobMaxBytes = jobMaxBytes,
         freeSpaceReserveBytes = reserveBytes,
         bufferBytes = 2,
+        // Byte-scale fixtures assert per-buffer progress; production coalesces onto megabytes.
+        checkpointIntervalBytes = 1,
     )
 
     /**

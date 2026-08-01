@@ -10,16 +10,28 @@ internal data class BoundedFileCopyPolicy(
     val maxBytes: Long,
     val freeSpaceReserveBytes: Long,
     val bufferBytes: Int = DEFAULT_BUFFER_BYTES,
+    /**
+     * Minimum copied bytes between two checkpoints. A checkpoint publishes progress and re-probes
+     * free space; between them the copy only reads and writes.
+     *
+     * Doing both per buffer means doing both every 256 KiB. Every progress event travels the whole
+     * progress path — the coordinator's global monitor, a state emission, then a foreground
+     * notification rebuild behind an ActivityManager round trip — and a 2 GiB source produced
+     * roughly 8,200 of them. The first and the final progress events are always delivered.
+     */
+    val checkpointIntervalBytes: Long = DEFAULT_CHECKPOINT_INTERVAL_BYTES,
 ) {
     init {
         require(maxBytes > 0L) { "Copy limit must be positive" }
         require(freeSpaceReserveBytes >= 0L) { "Free-space reserve must not be negative" }
         require(bufferBytes in 1..MAX_BUFFER_BYTES) { "Copy buffer size is invalid" }
+        require(checkpointIntervalBytes > 0L) { "Checkpoint interval must be positive" }
     }
 
     private companion object {
         const val DEFAULT_BUFFER_BYTES = 256 * 1024
         const val MAX_BUFFER_BYTES = 1024 * 1024
+        const val DEFAULT_CHECKPOINT_INTERVAL_BYTES = 1024L * 1024
     }
 }
 
@@ -76,8 +88,11 @@ internal class FileCopySizeMismatchException(
  * [destination] must be a private staging file owned by the caller. It is always removed when
  * the operation fails, including preflight and progress-listener failures. A known source size is
  * checked before the source stream is opened; unknown sizes are bounded while streaming. Usable
- * space is checked both before opening the source and before every write so the configured reserve
- * is not deliberately consumed.
+ * space is checked before opening the source and again whenever the bytes a probe pre-authorized
+ * run out, so the configured reserve is not deliberately consumed.
+ *
+ * Progress is coalesced onto [BoundedFileCopyPolicy.checkpointIntervalBytes]; the first event and
+ * the event carrying the final byte count are always delivered.
  */
 internal class BoundedFileCopier(
     private val availableBytes: (File) -> Long = { it.usableSpace },
@@ -113,6 +128,8 @@ internal class BoundedFileCopier(
                     FileOutputStream(destination, false).use { output ->
                         val buffer = ByteArray(policy.bufferBytes)
                         var copied = 0L
+                        var reportedBytes = 0L
+                        var authorizedBytes = 0L
                         while (true) {
                             checkCancellation(cancellation)
                             val count = input.read(buffer)
@@ -127,13 +144,37 @@ internal class BoundedFileCopier(
                             if (knownSizeBytes != null && next > knownSizeBytes) {
                                 throw FileCopySizeMismatchException(knownSizeBytes, next)
                             }
-                            checkAvailableStorage(
-                                storageRoot,
-                                requiredStorageBytes(count.toLong(), policy.freeSpaceReserveBytes),
-                            )
+                            if (count > authorizedBytes) {
+                                // One probe authorizes a whole interval, and demands the reserve on
+                                // top of it, so no byte is written into unverified space. Bounding
+                                // the interval by what is still copyable keeps a small source from
+                                // demanding free space it will never use.
+                                val remaining = (knownSizeBytes ?: policy.maxBytes) - copied
+                                val chunk =
+                                    maxOf(
+                                        minOf(policy.checkpointIntervalBytes, remaining),
+                                        count.toLong(),
+                                    )
+                                checkAvailableStorage(
+                                    storageRoot,
+                                    requiredStorageBytes(chunk, policy.freeSpaceReserveBytes),
+                                )
+                                authorizedBytes = chunk
+                            }
                             checkCancellation(cancellation)
                             output.write(buffer, 0, count)
+                            authorizedBytes -= count
                             copied = next
+                            if (copied - reportedBytes >= policy.checkpointIntervalBytes) {
+                                reportedBytes = copied
+                                progressListener.onProgress(
+                                    BoundedFileCopyProgress(copied, knownSizeBytes),
+                                )
+                            }
+                        }
+                        if (copied != reportedBytes) {
+                            // The determinate bar has to arrive at its total even when the last
+                            // buffers fell inside one coalescing interval.
                             progressListener.onProgress(
                                 BoundedFileCopyProgress(copied, knownSizeBytes),
                             )

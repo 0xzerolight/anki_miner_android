@@ -84,15 +84,41 @@ class MiningForegroundSessionController private constructor(
         private val applicationContext: Context,
         private val registry: ForegroundSessionRegistry,
     ) : MiningForegroundLease {
+        private val redrawMonitor = Any()
+        private var lastRedrawn: MiningForegroundProgress? = null
+
         override fun markCancelling(): Boolean {
             if (!registry.markCancelling(identity)) return false
             return notifyService()
         }
 
         override fun updateProgress(progress: MiningForegroundProgress): Boolean {
+            // The registry keeps the live counts either way, so a skipped redraw cannot make the
+            // snapshot the service reads stale, and a dead session is still detected here.
             if (!registry.updateProgress(identity, progress)) return false
+            if (!claimRedraw(progress)) return true
             return notifyService()
         }
+
+        override fun parkCpuWake(): Boolean = setCpuWakeParked(parked = true)
+
+        override fun resumeCpuWake(): Boolean = setCpuWakeParked(parked = false)
+
+        private fun setCpuWakeParked(parked: Boolean): Boolean {
+            if (!registry.setCpuWakeParked(identity, parked)) return false
+            return notifyService()
+        }
+
+        /** Every producer reaches the notification through here, so the guard belongs here. */
+        private fun claimRedraw(progress: MiningForegroundProgress): Boolean =
+            synchronized(redrawMonitor) {
+                val previous = lastRedrawn
+                if (previous != null && !miningNotificationRedrawRequired(previous, progress)) {
+                    return false
+                }
+                lastRedrawn = progress
+                true
+            }
 
         private fun notifyService(): Boolean {
             return try {

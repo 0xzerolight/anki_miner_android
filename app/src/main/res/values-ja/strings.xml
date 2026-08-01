@@ -352,6 +352,8 @@
     <string name="anki_setup_working">検証済みのAnkiセットアップを更新中…</string>
     <string name="cancel">キャンセル</string>
     <string name="confirm">確認</string>
+    <string name="progress_bytes">%2$d バイト中 %1$d バイト</string>
+    <string name="progress_kibibytes">%2$.1f KiB 中 %1$.1f KiB</string>
     <string name="progress_mebibytes">%2$.1f MiB 中 %1$.1f MiB</string>
     <string name="resource_phase_preparing">準備中…</string>
     <string name="resource_phase_downloading">ダウンロード中…</string>

@@ -81,6 +81,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import com.ankiminer.android.R
+import com.ankiminer.android.localization.byteProgressResource
 import com.ankiminer.android.media.SafDocument
 import com.ankiminer.android.mining.CurationCandidate
 import com.ankiminer.android.mining.CurationPage
@@ -253,20 +254,18 @@ internal fun MiningProgressPanel(
                             progress.total,
                             requireNotNull(percentage),
                         )
-                    // Raw byte counts read as nonsense next to an item count.
+                    // Raw byte counts read as nonsense next to an item count, and a fixed
+                    // mebibyte scale reads "0.0 of 0.0 MiB" for the sub-megabyte reading sources
+                    // that are the ordinary case.
                     MiningProgressUnit.BYTES ->
-                        stringResource(
-                            R.string.progress_mebibytes,
-                            progress.current / MEBIBYTE_F,
-                            progress.total / MEBIBYTE_F,
-                        )
+                        byteProgressResource(progress.current, progress.total).let {
+                            stringResource(it.resourceId, *it.formatArguments.toTypedArray())
+                        }
                 },
             )
         }
     }
 }
-
-private const val MEBIBYTE_F = 1024f * 1024f
 
 @Composable
 internal fun MiningFailureCard(

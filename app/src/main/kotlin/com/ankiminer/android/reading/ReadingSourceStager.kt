@@ -112,6 +112,7 @@ internal data class ReadingSourceStageLimits(
     val jobMaxBytes: Long = DEFAULT_JOB_MAX_BYTES,
     val freeSpaceReserveBytes: Long = DEFAULT_FREE_SPACE_RESERVE_BYTES,
     val bufferBytes: Int = DEFAULT_BUFFER_BYTES,
+    val checkpointIntervalBytes: Long = DEFAULT_CHECKPOINT_INTERVAL_BYTES,
 ) {
     init {
         require(textMaxBytes > 0L)
@@ -122,6 +123,7 @@ internal data class ReadingSourceStageLimits(
         require(jobMaxBytes > 0L)
         require(freeSpaceReserveBytes >= 0L)
         require(bufferBytes in 1..MAX_BUFFER_BYTES)
+        require(checkpointIntervalBytes > 0L)
     }
 
     fun maxBytes(role: ReadingSourceStageRole): Long =
@@ -148,6 +150,7 @@ internal data class ReadingSourceStageLimits(
         const val DEFAULT_FREE_SPACE_RESERVE_BYTES = 256L * 1024 * 1024
         const val DEFAULT_BUFFER_BYTES = 256 * 1024
         const val MAX_BUFFER_BYTES = 1024 * 1024
+        const val DEFAULT_CHECKPOINT_INTERVAL_BYTES = 1024L * 1024
     }
 }
 
@@ -267,6 +270,7 @@ internal class ReadingSourceStager(
                         maxBytes = effectiveMaxBytes,
                         freeSpaceReserveBytes = limits.freeSpaceReserveBytes,
                         bufferBytes = limits.bufferBytes,
+                        checkpointIntervalBytes = limits.checkpointIntervalBytes,
                     )
                 val copied =
                     try {
@@ -415,6 +419,7 @@ internal class ReadingSourceStager(
                     maxBytes = minOf(limits.mokuroSidecarMaxBytes, remainingJobBytes),
                     freeSpaceReserveBytes = limits.freeSpaceReserveBytes,
                     bufferBytes = limits.bufferBytes,
+                    checkpointIntervalBytes = limits.checkpointIntervalBytes,
                 )
             val copied =
                 try {
