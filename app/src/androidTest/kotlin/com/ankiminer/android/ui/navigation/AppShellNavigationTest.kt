@@ -1,5 +1,6 @@
 package com.ankiminer.android.ui.navigation
 
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.SnackbarHostState
@@ -10,7 +11,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.focus.FocusManager
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createComposeRule
@@ -24,7 +31,8 @@ import com.ankiminer.android.R
 import com.ankiminer.android.ui.mining.RuntimeConflictNotice
 import com.ankiminer.android.ui.theme.AnkiMinerTheme
 import com.ankiminer.android.vm.NavigationWorkflowState
-import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 
@@ -84,46 +92,97 @@ class AppShellNavigationTest {
         composeRule.onNodeWithContentDescription(videoDescription).assertIsDisplayed()
     }
 
+    /**
+     * Covers both routes an overlay has to close, because they fail independently: semantics
+     * removal is what stops TalkBack, and focus-search refusal is what stops a hardware keyboard.
+     * The semantics leg cannot stand in for the focus leg — a cleared subtree is still focusable,
+     * and a focusable one is reachable by D-pad and Tab whether or not it has semantics.
+     */
     @Test
-    fun overlayLeavesNoShellDestinationReachableBehindIt() {
+    fun overlayLeavesShellUnreachableToBothAccessibilityAndFocusSearch() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val settingsLabel = context.getString(R.string.nav_settings)
         val overlayVisible = mutableStateOf(false)
-        var selections = 0
+        val overlayFocus = FocusRequester()
+        var shellFocused = false
+        lateinit var focusManager: FocusManager
 
         composeRule.setContent {
+            focusManager = LocalFocusManager.current
             AnkiMinerTheme(darkTheme = false) {
                 AnkiMinerAppShell(
                     currentDestination = AnkiMinerDestination.VIDEO,
                     snackbarHostState = remember { SnackbarHostState() },
-                    onDestinationSelected = { selections += 1 },
+                    onDestinationSelected = {},
                     modifier = Modifier.width(400.dp).height(800.dp),
                     overlay =
                         if (!overlayVisible.value) {
                             null
                         } else {
-                            { Text(OVERLAY_TEXT) }
+                            {
+                                Text(
+                                    text = OVERLAY_TEXT,
+                                    modifier = Modifier.focusRequester(overlayFocus).focusable(),
+                                )
+                            }
                         },
                 ) { shellModifier ->
-                    Text(SHELL_CONTENT_TEXT, modifier = shellModifier)
+                    Text(
+                        text = SHELL_CONTENT_TEXT,
+                        modifier =
+                            shellModifier
+                                .onFocusChanged { if (it.isFocused) shellFocused = true }
+                                .focusable(),
+                    )
                 }
             }
         }
 
         composeRule.onNodeWithText(SHELL_CONTENT_TEXT).assertIsDisplayed()
         composeRule.onNodeWithText(settingsLabel).assertIsDisplayed()
+        // Without an overlay the same content is focus-reachable, so the assertion below that it
+        // stops being reachable is about the overlay and not about an already-unfocusable subtree.
+        // Stepped rather than a single move: the NavigationBar items are focusable too and the
+        // traversal order between them and the body is Scaffold's business, not this test's.
+        repeat(FOCUS_TRAVERSAL_STEPS) {
+            composeRule.runOnIdle {
+                if (!shellFocused) focusManager.moveFocus(FocusDirection.Next)
+            }
+        }
+        composeRule.runOnIdle { assertTrue("shell was never focus-reachable", shellFocused) }
 
         composeRule.runOnIdle { overlayVisible.value = true }
+        // The wizard does this with its own FocusRequester: a direct grant, not a focus search,
+        // so it is unaffected by the entry refusal that then keeps search out.
+        composeRule.runOnIdle { overlayFocus.requestFocus() }
 
         composeRule.onNodeWithText(OVERLAY_TEXT).assertIsDisplayed()
         // Not merely covered: gone from the semantics tree, so TalkBack can neither traverse to
         // the navigation items nor fire an accessibility action on one.
         composeRule.onNodeWithText(SHELL_CONTENT_TEXT).assertDoesNotExist()
         composeRule.onNodeWithText(settingsLabel).assertDoesNotExist()
-        assertEquals(0, selections)
+
+        // Armed only now, so the focus the shell held while the overlay was appearing cannot be
+        // mistaken for focus search getting back in.
+        composeRule.runOnIdle { shellFocused = false }
+        listOf(
+            FocusDirection.Next,
+            FocusDirection.Previous,
+            FocusDirection.Up,
+            FocusDirection.Down,
+        ).forEach { direction ->
+            repeat(FOCUS_TRAVERSAL_STEPS) {
+                composeRule.runOnIdle { focusManager.moveFocus(direction) }
+            }
+        }
+        composeRule.runOnIdle {
+            assertFalse("focus search reached the shell behind the overlay", shellFocused)
+        }
     }
 
     private companion object {
+        /** Enough Tab presses to cover the body plus all three navigation destinations. */
+        const val FOCUS_TRAVERSAL_STEPS = 8
         const val OVERLAY_TEXT = "overlay owns the window"
         const val SHELL_CONTENT_TEXT = "shell content behind the overlay"
     }

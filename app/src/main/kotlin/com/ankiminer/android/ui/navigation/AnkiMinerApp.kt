@@ -173,17 +173,40 @@ internal fun activeWorkflowDestination(
 /**
  * Makes the shell inert while [AnkiMinerAppShell]'s overlay owns the window.
  *
- * The overlay is a plain sibling that covers the shell visually and nothing more. Accessibility
- * traversal and accessibility actions never touch the pointer pipeline, and Compose dispatches
- * pointer events to children before their ancestors, so an ancestor cannot block a
- * `NavigationBarItem` by reacting after it. Clearing semantics takes the whole subtree out of the
- * accessibility tree, which removes both traversal and every action on it; deactivating focus
- * takes it out of focus search; consuming the initial pointer pass consumes each change before any
- * descendant is offered it.
+ * The overlay is a plain sibling that covers the shell visually and nothing more, so each input
+ * route has to be closed on its own terms.
+ *
+ * `clearAndSetSemantics` takes the subtree out of the accessibility tree. Accessibility traversal
+ * and accessibility actions never touch the pointer pipeline, so covering the screen does not stop
+ * them; removing the nodes does, because they then get no virtual view id to traverse to or act on.
+ *
+ * `onEnter { cancelFocusChange() }` is what stops focus search, and it needs the `focusGroup()`
+ * below it as the boundary to fire at. `canFocus = false` cannot do this job on its own, in either
+ * arrangement. With the group: `focusGroup()` contributes its own focus target, and a focus target
+ * resolves its properties by walking ancestors only as far as the *first* focus target above it, so
+ * a `canFocus = false` sitting above the group never reaches the `NavigationBarItem`s inside it.
+ * Without the group: a deactivated node is skipped as a focus candidate but is still traversed
+ * *through* to its children — precisely what makes focus groups work at all — and the propagation
+ * would in any case stop at the first group inside the content, which every scrollable contributes.
+ * `canFocus = false` is kept only to deactivate the shell root itself.
+ *
+ * `onExit` is deliberately left at its default. Refusing exit would trap focus that was already
+ * inside the shell when the overlay appeared, locking a hardware-keyboard user out of the overlay
+ * entirely — strictly worse than the leak being fixed. The wizard pulls focus to its heading with
+ * an explicit `FocusRequester.requestFocus`, a direct grant rather than a focus search and so
+ * unaffected by `onEnter`; `onEnter` then keeps search from coming back in.
+ *
+ * The pointer pass must be `Initial`. Compose hit-tests children before their ancestors, so an
+ * ancestor consuming on the default `Main` pass reacts after a `NavigationBarItem` has already
+ * handled the tap. Consuming while the event tunnels down means `clickable`'s
+ * `awaitFirstDown(requireUnconsumed = true)` declines it.
  */
 private fun Modifier.inertBehindOverlay(): Modifier =
     clearAndSetSemantics { }
-        .focusProperties { canFocus = false }
+        .focusProperties {
+            canFocus = false
+            onEnter = { cancelFocusChange() }
+        }
         .focusGroup()
         .pointerInput(Unit) {
             awaitPointerEventScope {
