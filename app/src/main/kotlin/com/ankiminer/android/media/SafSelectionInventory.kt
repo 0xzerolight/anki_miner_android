@@ -63,6 +63,17 @@ internal interface SafSelectionInventory {
         selections.forEach(::putSelection)
     }
 
+    /**
+     * Drop one slot from a caller that cannot suspend, such as a UI-thread clear.
+     *
+     * The removal must be visible to [selection] before this returns; only reaching storage may
+     * be deferred. Callers that must not release a SAF grant until the removal is durable use
+     * [putSelection] on an IO dispatcher instead.
+     */
+    fun clearSelectionEventually(slot: SafSelectionSlot) {
+        putSelection(slot, null)
+    }
+
     fun text(slot: SafSelectionSlot): String?
 
     fun putText(
@@ -181,6 +192,30 @@ internal class AndroidSafSelectionInventory(
             if (!editor.commit()) {
                 throw SafSelectionPersistenceException("Could not persist SAF selection inventory")
             }
+        }
+    }
+
+    /**
+     * Written with `apply`, unlike [putSelections]. Clearing runs from non-suspending UI callbacks
+     * (`clearSource`, `clearArchive`, selection restore), where `commit` puts a disk write in front
+     * of a frame. `apply` still mutates the in-memory map synchronously under [monitor], so every
+     * read after this call — including the restore that follows a clear — already sees the slot
+     * gone; only the file write moves to a background thread, and the platform flushes it before
+     * the activity or service handoff that precedes a background process kill.
+     *
+     * A hard kill inside that window leaves the record on disk, and nothing reconciles it away.
+     * The grant release that accompanies a clear is itself asynchronous
+     * (`SafBroker.releaseReadAccessEventually` launches on its cleanup scope), so the same window
+     * loses the release too; [pruneMissingGrants] then finds a record whose grant is still held and
+     * keeps it. The residual is "the clear did not stick": record and grant still agree, the next
+     * start restores a selection the user cleared, and clearing again fixes it. That is milder than
+     * a lost selection, and it is what is traded for removing a certain main-thread disk write from
+     * every clear. Writes that must be durable before their grant is released keep [putSelections]
+     * and its `commit`.
+     */
+    override fun clearSelectionEventually(slot: SafSelectionSlot) {
+        synchronized(monitor) {
+            preferences.edit().remove(slot.uriKey).remove(slot.displayNameKey).apply()
         }
     }
 

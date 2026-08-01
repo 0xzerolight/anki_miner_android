@@ -40,6 +40,7 @@ import com.ankiminer.android.mining.MiningCommandException
 import com.ankiminer.android.mining.MiningFailure
 import com.ankiminer.android.mining.MiningForegroundStarter
 import com.ankiminer.android.mining.MiningProgress
+import com.ankiminer.android.mining.MiningProgressUnit
 import com.ankiminer.android.mining.MiningRunAdmissionGate
 import com.ankiminer.android.mining.MiningRunAdmissionState
 import com.ankiminer.android.mining.MiningRunInterruptionStore
@@ -53,11 +54,13 @@ import com.ankiminer.android.mining.NoOpMiningRunInterruptionStore
 import com.ankiminer.android.mining.ProcessingResult
 import com.ankiminer.android.mining.SecureMiningCancellationTokenFactory
 import com.ankiminer.android.mining.SourceGrantReleaser
+import com.ankiminer.android.mining.StartupInterruption
 import com.ankiminer.android.mining.isTerminal
 import com.ankiminer.android.mining.runId
 import com.ankiminer.android.service.MiningForegroundCancellationReason
 import com.ankiminer.android.service.MiningForegroundLease
 import com.ankiminer.android.service.MiningForegroundProgress
+import com.ankiminer.android.service.MiningForegroundProgressUnit
 import com.ankiminer.android.service.MiningForegroundSessionIdentity
 import com.ankiminer.android.service.MiningForegroundSessionListener
 import com.ankiminer.android.tts.SentenceAudioCallbackDispatcher
@@ -214,17 +217,22 @@ internal class BridgeReadingMiningRepository(
     }
 
     private val monitor = Any()
-    private val startupRecord = interruptionStore.current()
-    private val startupInterruption = startupRecord?.takeIf { it.kind == MiningRunKind.READING }
-    private val startupUnrecognizedInterruption =
-        startupRecord == null && interruptionStore.hasBlockedRecord()
+    private val startupInterruption = interruptionStore.startupInterruption()
+
+    /** Recognised whichever lane wrote it: one durable record covers both, so either can clear it. */
+    private val startupInterruptedRun =
+        (startupInterruption as? StartupInterruption.Interrupted)?.record
+
+    /** Only this lane's own run id belongs in this lane's state. */
+    private val startupRunId =
+        startupInterruptedRun?.takeIf { it.kind == MiningRunKind.READING }?.runId
     private val mutableState =
         MutableStateFlow<MiningRunState>(
-            if (startupInterruption != null || startupUnrecognizedInterruption) {
-                ProtocolFault(strings.resolve(R.string.mining_failure_background_stopped))
-                    .toFailed(startupInterruption?.runId, result = null)
-            } else {
+            if (startupInterruption is StartupInterruption.None) {
                 MiningRunState.Idle
+            } else {
+                ProtocolFault(strings.resolve(R.string.mining_failure_background_stopped))
+                    .toFailed(startupRunId, result = null)
             },
         )
     override val state: StateFlow<MiningRunState> = mutableState.asStateFlow()
@@ -341,12 +349,14 @@ internal class BridgeReadingMiningRepository(
                 throw MiningCommandException("The curation selection is invalid")
             }
         var transition: PhaseTransition? = null
+        var resumingLease: MiningForegroundLease? = null
         val (generation, hasSelectedCandidate) =
             synchronized(monitor) {
                 val run = active ?: throw MiningCommandException("No curation request is pending")
                 if (run.curation !== request || run.phase != Phase.CURATING) {
                     throw MiningCommandException("The curation response is stale")
                 }
+                resumingLease = run.foregroundLease
                 run.hasSelectedCandidate = run.hasSelectedCandidate || selection.isNotEmpty()
                 if (request.isFinalPage) {
                     transition = run.transition(Phase.PROMOTING, "curation_final")
@@ -361,6 +371,8 @@ internal class BridgeReadingMiningRepository(
                 run.generation to run.hasSelectedCandidate
             }
         transition.emit()
+        // The user's wait is over; media processing resumes whichever page follows.
+        resumingLease?.resumeCpuWake()
         if (request.isFinalPage) {
             val requiresMediaForeground =
                 hasSelectedCandidate &&
@@ -426,15 +438,17 @@ internal class BridgeReadingMiningRepository(
             if (active != null || !mutableState.value.isTerminal) {
                 throw MiningCommandException("Only a terminal mining run can be reset")
             }
-            val interruption = pendingInterruptionCleanup ?: startupInterruption
+            val interruption = pendingInterruptionCleanup ?: startupInterruptedRun
             val cleaned =
                 when {
+                    // The record's own kind, not this lane's: a crash in the other lane is cleared
+                    // from here too, otherwise its record blocks every start on this screen.
                     interruption != null ->
                         interruptionStore.complete(
-                            MiningRunKind.READING,
+                            interruption.kind,
                             interruption.ownerId,
                         )
-                    startupUnrecognizedInterruption ->
+                    startupInterruption is StartupInterruption.Unrecognized ->
                         interruptionStore.clearUnrecognizedRecord()
                     else -> true
                 }
@@ -1345,6 +1359,9 @@ internal class BridgeReadingMiningRepository(
                 current = stage.copiedBytes,
                 total = stage.expectedBytes ?: 0L,
                 description = strings.resolve(description),
+                // Staging counts bytes; without this the UI and the notification both label them
+                // items.
+                unit = MiningProgressUnit.BYTES,
             ),
         )
     }
@@ -1402,6 +1419,11 @@ internal class BridgeReadingMiningRepository(
             MiningForegroundProgress(
                 completed = progress.current.takeIf { determinate }?.toInt(),
                 total = progress.total.takeIf { determinate }?.toInt(),
+                unit =
+                    when (progress.unit) {
+                        MiningProgressUnit.ITEMS -> MiningForegroundProgressUnit.ITEMS
+                        MiningProgressUnit.BYTES -> MiningForegroundProgressUnit.BYTES
+                    },
             )
         val accepted =
             try {
@@ -1480,38 +1502,57 @@ internal class BridgeReadingMiningRepository(
         val message =
             BridgeJsonCodec.decode(raw, expectedRunId = runId) as? BridgeMessage.CurationNeeded
                 ?: throw IllegalStateException("Python sent an invalid curation request")
+        var parkingLease: MiningForegroundLease? = null
+        val admittedPhase =
+            synchronized(monitor) {
+                val run = activeFor(generation) ?: throw IllegalStateException("Curation request is stale")
+                if (run.cancelRequested) return
+                when (run.phase) {
+                    Phase.REGISTERED -> {
+                        val firstPageIndex = message.request.page?.pageIndex
+                        if (run.curation != null || (firstPageIndex != null && firstPageIndex != 0L)) {
+                            throw IllegalStateException("Curation request is duplicated or out of order")
+                        }
+                    }
+                    Phase.ADVANCING -> {
+                        val previous = run.curation
+                            ?: throw IllegalStateException("Curation page has no predecessor")
+                        val previousPage = previous.page
+                            ?: throw IllegalStateException("A single curation request cannot advance")
+                        val nextPage = message.request.page
+                            ?: throw IllegalStateException("A paged curation request cannot become single")
+                        if (
+                            previous.isFinalPage ||
+                            message.request.runId != previous.runId ||
+                            message.request.requestId != previous.requestId ||
+                            nextPage.pageIndex != previousPage.pageIndex + 1 ||
+                            nextPage.pageCount != previousPage.pageCount ||
+                            nextPage.totalCandidates != previousPage.totalCandidates ||
+                            nextPage.candidateStart !=
+                                previousPage.candidateStart + previous.candidates.size.toLong()
+                        ) {
+                            throw IllegalStateException("Curation page is duplicated or out of order")
+                        }
+                    }
+                    else -> throw IllegalStateException("Curation request is duplicated or out of order")
+                }
+                parkingLease = run.foregroundLease
+                run.phase
+            }
+        // The engine is parked on a threading.Event until the user answers. Nothing is processed
+        // meanwhile, so the six-hour media-processing wake lease has no work behind it.
+        //
+        // The lease call is a Binder round trip and cannot be held under `monitor`, so the park has
+        // to be ordered against confirmCuration's resume some other way: nothing can be confirmed
+        // until CURATING is published, and that happens below. The park is therefore complete
+        // before a confirm can even be admitted, and its resume can only follow.
+        parkingLease?.parkCpuWake()
         var transition: PhaseTransition? = null
         synchronized(monitor) {
             val run = activeFor(generation) ?: throw IllegalStateException("Curation request is stale")
-            if (run.cancelRequested) return
-            when (run.phase) {
-                Phase.REGISTERED -> {
-                    val firstPageIndex = message.request.page?.pageIndex
-                    if (run.curation != null || (firstPageIndex != null && firstPageIndex != 0L)) {
-                        throw IllegalStateException("Curation request is duplicated or out of order")
-                    }
-                }
-                Phase.ADVANCING -> {
-                    val previous = run.curation
-                        ?: throw IllegalStateException("Curation page has no predecessor")
-                    val previousPage = previous.page
-                        ?: throw IllegalStateException("A single curation request cannot advance")
-                    val nextPage = message.request.page
-                        ?: throw IllegalStateException("A paged curation request cannot become single")
-                    if (
-                        previous.isFinalPage ||
-                        message.request.runId != previous.runId ||
-                        message.request.requestId != previous.requestId ||
-                        nextPage.pageIndex != previousPage.pageIndex + 1 ||
-                        nextPage.pageCount != previousPage.pageCount ||
-                        nextPage.totalCandidates != previousPage.totalCandidates ||
-                        nextPage.candidateStart != previousPage.candidateStart + previous.candidates.size.toLong()
-                    ) {
-                        throw IllegalStateException("Curation page is duplicated or out of order")
-                    }
-                }
-                else -> throw IllegalStateException("Curation request is duplicated or out of order")
-            }
+            // Cancellation is the only thing that can move this run while the lease call is out;
+            // its own teardown closes the lease, so the park needs no undo here.
+            if (run.cancelRequested || run.phase != admittedPhase) return
             transition = run.transition(Phase.CURATING, "curation_needed")
             run.curation = message.request
             mutableState.value = MiningRunState.Curating(message.request, pageSubmissionPending = false)

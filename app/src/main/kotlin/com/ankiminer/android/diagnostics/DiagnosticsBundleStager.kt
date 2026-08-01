@@ -199,6 +199,7 @@ internal class DiagnosticsBundleStager(
             put("storage.files_free_bytes", context.filesDir.usableSpace.toString())
             put("ankidroid.version", ankiDroidVersion())
             put("verbose_logging", verboseLogging.toString())
+            putAll(DiagnosticsManifest.logSinkEntries(fileLogSink.disabledBy))
             put("capture.logcat.status", logcat.status.manifestValue)
             put("capture.logcat.exit_code", logcat.exitCode?.toString() ?: "unavailable")
             put(

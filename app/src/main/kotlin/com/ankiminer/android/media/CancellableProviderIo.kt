@@ -8,8 +8,10 @@ import java.util.concurrent.ScheduledThreadPoolExecutor
 import java.util.concurrent.ThreadFactory
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 
@@ -110,6 +112,21 @@ internal class ProviderIoCancelledException(cause: Throwable? = null) :
 internal class ProviderIoTimeoutException :
     IOException("Provider I/O exceeded its deadline")
 
+/**
+ * Cancellation for one [CancellableProviderIo.execute] operation plus the handle that rearms its
+ * deadline.
+ *
+ * The deadline bounds provider *stalls*, never total duration: an operation that keeps reporting
+ * progress through [rearm] may run arbitrarily long, which is what multi-gigabyte SAF copies need.
+ * An operation that reports nothing fails after the configured window. Detection of a stall that
+ * begins immediately after a [rearm] can take up to two windows, because the deadline is only
+ * re-evaluated when its timer fires.
+ */
+internal interface ProviderIoDeadline : ProviderIoCancellation {
+    /** Records provider progress, moving the deadline to the end of a fresh window. */
+    fun rearm()
+}
+
 internal fun interface ProviderIoDeadlineScheduler {
     fun schedule(
         delayMillis: Long,
@@ -142,11 +159,16 @@ internal object RealProviderIoDeadlineScheduler : ProviderIoDeadlineScheduler {
  * caller to the platform [CancellationSignal]. Blocking reads must run through [useResource],
  * which exposes the active stream to the cancellation listener and closes it exactly once from a
  * cancelling thread. [execute] moves provider work to a supplied process scope, returns promptly
- * on coroutine cancellation or deadline expiry, and leaves late provider completion unable to
- * resume the caller.
+ * on coroutine cancellation or stall-deadline expiry, and leaves late provider completion unable
+ * to resume the caller. Long-running operations keep their deadline alive with
+ * [ProviderIoDeadline.rearm].
  *
  * A provider may ignore both its platform signal and descriptor closure. In that case the worker
  * can remain blocked, but it owns no global SAF bookkeeping lock and cannot publish a late result.
+ * Both abort paths also cancel the launched worker job: cancellation cannot interrupt a thread
+ * already inside a blocking provider `read`, so the sticky [ProviderIoCancellation] stays the
+ * mechanism that ends the work, but the caller's scope must not retain an abandoned coroutine
+ * that would keep its dispatcher thread past the abort.
  */
 internal object CancellableProviderIo {
     fun <T : Closeable, R> useResource(
@@ -227,41 +249,90 @@ internal object CancellableProviderIo {
         scope: CoroutineScope,
         timeoutMillis: Long,
         scheduler: ProviderIoDeadlineScheduler = RealProviderIoDeadlineScheduler,
-        operation: (ProviderIoCancellation) -> T,
+        operation: (ProviderIoDeadline) -> T,
     ): T {
         require(timeoutMillis > 0L) { "Provider I/O deadline must be positive" }
         return suspendCancellableCoroutine { continuation ->
             val cancellation = ProviderIoCancellationController()
             val completed = AtomicBoolean(false)
+            val progress = AtomicLong(0L)
             val deadline = AtomicReference<ProviderIoCancellationRegistration?>()
+            val worker = AtomicReference<Job?>()
 
             fun closeDeadline() {
                 deadline.getAndSet(CLOSED_REGISTRATION)?.close()
             }
 
-            val scheduled =
-                scheduler.schedule(timeoutMillis) {
-                    if (completed.compareAndSet(false, true)) {
-                        closeDeadline()
-                        cancellation.cancel()
-                        continuation.resumeWith(Result.failure(ProviderIoTimeoutException()))
+            fun cancelWorker() {
+                worker.getAndSet(CANCELLED_WORKER)?.cancel()
+            }
+
+            fun installWorker(job: Job) {
+                if (!worker.compareAndSet(null, job)) job.cancel()
+            }
+
+            fun installDeadline(scheduled: ProviderIoCancellationRegistration) {
+                while (true) {
+                    val current = deadline.get()
+                    if (current === CLOSED_REGISTRATION) {
+                        scheduled.close()
+                        return
+                    }
+                    if (deadline.compareAndSet(current, scheduled)) {
+                        current?.close()
+                        return
                     }
                 }
-            if (!deadline.compareAndSet(null, scheduled)) scheduled.close()
+            }
+
+            fun armDeadline() {
+                val armedAt = progress.get()
+                installDeadline(
+                    scheduler.schedule(timeoutMillis) {
+                        if (progress.get() != armedAt) {
+                            // The provider delivered inside this window: slow, not stalled.
+                            armDeadline()
+                        } else if (completed.compareAndSet(false, true)) {
+                            closeDeadline()
+                            cancellation.cancel()
+                            cancelWorker()
+                            continuation.resumeWith(Result.failure(ProviderIoTimeoutException()))
+                        }
+                    },
+                )
+            }
+
+            armDeadline()
 
             continuation.invokeOnCancellation {
                 if (completed.compareAndSet(false, true)) {
                     closeDeadline()
                     cancellation.cancel()
+                    cancelWorker()
                 }
             }
-            scope.launch {
-                val result = runCatching { operation(cancellation) }
-                if (completed.compareAndSet(false, true)) {
-                    closeDeadline()
-                    continuation.resumeWith(result)
+            val handle =
+                object : ProviderIoDeadline {
+                    override fun isCancelled(): Boolean = cancellation.isCancelled()
+
+                    override fun invokeOnCancellation(
+                        listener: () -> Unit,
+                    ): ProviderIoCancellationRegistration =
+                        cancellation.invokeOnCancellation(listener)
+
+                    override fun rearm() {
+                        progress.incrementAndGet()
+                    }
                 }
-            }
+            installWorker(
+                scope.launch {
+                    val result = runCatching { operation(handle) }
+                    if (completed.compareAndSet(false, true)) {
+                        closeDeadline()
+                        continuation.resumeWith(result)
+                    }
+                },
+            )
         }
     }
 
@@ -329,6 +400,12 @@ internal object CancellableProviderIo {
         }
 
     private val CLOSED_REGISTRATION = ProviderIoCancellationRegistration { }
+
+    /**
+     * Sentinel published by `cancelWorker` so a worker installed after the abort is cancelled by
+     * whichever side loses the race, exactly like [CLOSED_REGISTRATION] does for the deadline.
+     */
+    private val CANCELLED_WORKER: Job = Job().apply { cancel() }
 
     private class CloseOnce<T : Closeable>(
         val value: T,

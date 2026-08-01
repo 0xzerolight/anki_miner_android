@@ -526,6 +526,74 @@ class ResourceManagerTest {
         }
 
     @Test
+    fun cancelStillQueuedForPythonLeavesTheCommittedMutationAlone() =
+        runTest {
+            // Production runs the cancel dispatch on its own single-thread executor, so a cancel
+            // raised as the worker commits is still undelivered when the worker returns.
+            val control = QueuedExecutor()
+            lateinit var harness: Harness
+            harness =
+                Harness(
+                    initialUserCount = 2,
+                    controlExecutor = control,
+                    onKnownWordsRemoveDispatch = { harness.manager.cancelActive() },
+                )
+
+            harness.manager.removeKnownWords(listOf("mutable0"))
+
+            assertEquals(1, control.queued.size)
+            assertNull(harness.manager.state.value.failure)
+            assertEquals(1, harness.bridge.requestsOfType("resource.knownwords.remove").size)
+            assertEquals(1, harness.bridge.userCount)
+        }
+
+    @Test
+    fun cancelDeliveryFailingAfterTheOperationEndedPublishesNothing() =
+        runTest {
+            // The disclosed cost of treating REQUESTED as non-terminal, pinned as intended: once
+            // the worker has returned there is nothing left to cancel, so a delivery failure that
+            // lands afterwards must not raise Retry against work that committed.
+            val control = QueuedExecutor()
+            lateinit var harness: Harness
+            harness =
+                Harness(
+                    initialUserCount = 2,
+                    controlExecutor = control,
+                    failCancelDelivery = true,
+                    onKnownWordsRemoveDispatch = { harness.manager.cancelActive() },
+                )
+
+            harness.manager.removeKnownWords(listOf("mutable0"))
+
+            assertNull(harness.manager.state.value.activeOperation)
+
+            control.runNext()
+
+            assertNull(harness.manager.state.value.failure)
+            assertEquals(1, harness.bridge.userCount)
+        }
+
+    @Test
+    fun audioPackImportOutOfSpaceReportsStorageNotADegenerateSizeLimit() =
+        runTest {
+            val harness =
+                Harness(
+                    sourceLabel = "audio-pack ZIP",
+                    reportedSourceSizeBytes = 64L * 1024 * 1024,
+                    stagingAvailableBytes = ARCHIVE_BUDGET_RESERVE_BYTES / 2,
+                )
+
+            harness.manager.importAudioPack(INPUT_URI, "jpod", replace = false)
+
+            val failure = requireNotNull(harness.manager.state.value.failure)
+            assertEquals("insufficient_storage", failure.code)
+            assertEquals(ResourceFailureOrigin.AUDIO, failure.origin)
+            assertTrue(harness.stager.stagedFiles.isEmpty())
+            assertNull(harness.stager.lastMaximumBytes)
+            assertEquals(listOf(INPUT_URI), harness.broker.released)
+        }
+
+    @Test
     fun audioPackBudgetTracksFreeSpaceInsteadOfAFixedTwoGigabyteCap() =
         runTest {
             val harness =
@@ -655,6 +723,7 @@ class ResourceManagerTest {
         installedPitchSourceId: String? = null,
         autoRecover: Boolean = true,
         resourceExecutor: Executor = DIRECT_EXECUTOR,
+        controlExecutor: Executor = DIRECT_EXECUTOR,
         fakePinnedDownloads: Boolean = false,
         failRefreshAfterDictionaryImport: Boolean = false,
         wordListMover: (File, File) -> Boolean = { source, target -> source.renameTo(target) },
@@ -698,7 +767,7 @@ class ResourceManagerTest {
                 bridgeFilesRoot = bridgeRoot,
                 stagingRoot = stagingRoot,
                 resourceExecutor = resourceExecutor,
-                controlExecutor = DIRECT_EXECUTOR,
+                controlExecutor = controlExecutor,
                 runtimeWorkCoordinator = runtimeWorkCoordinator,
                 downloader =
                     PinnedResourceDownloader(

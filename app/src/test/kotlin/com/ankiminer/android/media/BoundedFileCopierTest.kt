@@ -381,11 +381,135 @@ class BoundedFileCopierTest {
         assertFalse(progressFailureDestination.exists())
     }
 
+    @Test
+    fun progressAndStorageProbesCoalesceOverALargeCopy() {
+        val expectedBytes = 256L * 1024 * 1024
+        val bufferBytes = 256 * 1024
+        val buffers = expectedBytes / bufferBytes
+        val destination = temporary.newFile("large.stage")
+        val progress = mutableListOf<BoundedFileCopyProgress>()
+        val storageProbes = AtomicInteger()
+        val copier =
+            BoundedFileCopier {
+                storageProbes.incrementAndGet()
+                Long.MAX_VALUE
+            }
+
+        val copied =
+            copier.copy(
+                openSource = { ZeroInputStream(expectedBytes) },
+                destination = destination,
+                knownSizeBytes = expectedBytes,
+                policy =
+                    BoundedFileCopyPolicy(
+                        maxBytes = expectedBytes,
+                        freeSpaceReserveBytes = 0L,
+                        bufferBytes = bufferBytes,
+                        checkpointIntervalBytes = 1024L * 1024,
+                    ),
+                progressListener = FileCopyProgressListener(progress::add),
+            )
+
+        assertEquals(expectedBytes, copied)
+        // One event per buffer is the defect: 1,024 publishes and 1,024 free-space probes.
+        assertEquals(1024L, buffers)
+        // One of each per megabyte, plus the leading zero and the storage preflight.
+        assertEquals(257, progress.size)
+        assertEquals(257, storageProbes.get())
+        assertEquals(BoundedFileCopyProgress(0L, expectedBytes), progress.first())
+        assertEquals(BoundedFileCopyProgress(expectedBytes, expectedBytes), progress.last())
+        assertEquals(progress.sortedBy(BoundedFileCopyProgress::copiedBytes), progress)
+    }
+
+    @Test
+    fun anIntervalWiderThanTheSourceStillReportsTheFirstAndFinalEvents() {
+        val content = "abcdefghij".toByteArray()
+        val destination = temporary.newFile("wide-interval.stage")
+        val progress = mutableListOf<BoundedFileCopyProgress>()
+
+        val copied =
+            BoundedFileCopier { Long.MAX_VALUE }.copy(
+                openSource = { ByteArrayInputStream(content) },
+                destination = destination,
+                knownSizeBytes = content.size.toLong(),
+                policy =
+                    BoundedFileCopyPolicy(
+                        maxBytes = 64L,
+                        freeSpaceReserveBytes = 0L,
+                        bufferBytes = 2,
+                        checkpointIntervalBytes = 1024L * 1024 * 1024,
+                    ),
+                progressListener = FileCopyProgressListener(progress::add),
+            )
+
+        assertEquals(10L, copied)
+        assertEquals(
+            listOf(
+                BoundedFileCopyProgress(0L, 10L),
+                BoundedFileCopyProgress(10L, 10L),
+            ),
+            progress,
+        )
+    }
+
+    @Test
+    fun aCoalescedProbeAuthorizesItsWholeCheckpointAboveTheReserve() {
+        val destination = temporary.newFile("probe-interval.stage")
+        val availability = ArrayDeque(listOf(Long.MAX_VALUE, 9L))
+        val copier = BoundedFileCopier { availability.removeFirst() }
+
+        val failure =
+            assertThrows(FileCopyStorageException::class.java) {
+                copier.copy(
+                    openSource = { ByteArrayInputStream("abcd".toByteArray()) },
+                    destination = destination,
+                    knownSizeBytes = null,
+                    policy =
+                        BoundedFileCopyPolicy(
+                            maxBytes = 16L,
+                            freeSpaceReserveBytes = 4L,
+                            bufferBytes = 2,
+                            checkpointIntervalBytes = 6L,
+                        ),
+                )
+            }
+
+        // Six pre-authorized bytes plus the reserve, not the two bytes about to be written.
+        assertEquals(10L, failure.requiredBytes)
+        assertEquals(9L, failure.availableBytes)
+        assertTrue(availability.isEmpty())
+        assertFalse(destination.exists())
+    }
+
     private fun policy(
         maxBytes: Long,
         reserveBytes: Long = 0L,
         bufferBytes: Int = 4,
-    ) = BoundedFileCopyPolicy(maxBytes, reserveBytes, bufferBytes)
+    ) = BoundedFileCopyPolicy(
+        maxBytes = maxBytes,
+        freeSpaceReserveBytes = reserveBytes,
+        bufferBytes = bufferBytes,
+        checkpointIntervalBytes = 1L,
+    )
+
+    /** A few hundred megabytes of source without allocating a few hundred megabytes. */
+    private class ZeroInputStream(
+        private var remaining: Long,
+    ) : InputStream() {
+        override fun read(): Int = if (remaining-- > 0L) 0 else -1
+
+        override fun read(
+            buffer: ByteArray,
+            offset: Int,
+            length: Int,
+        ): Int {
+            if (remaining <= 0L) return -1
+            val count = minOf(length.toLong(), remaining).toInt()
+            buffer.fill(0, offset, offset + count)
+            remaining -= count
+            return count
+        }
+    }
 
     private class StalledInputStream(
         private val closeFailure: IOException? = null,

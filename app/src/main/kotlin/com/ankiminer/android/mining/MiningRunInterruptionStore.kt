@@ -47,13 +47,36 @@ internal data class InterruptedMiningRun(
     }
 }
 
+/**
+ * Durable state sampled once per process, before any run in it can begin. Both lanes read the same
+ * sample, so what a repository sees no longer depends on when it happens to be constructed, and a
+ * run started later in this process is never mistaken for an interrupted one.
+ */
+internal sealed interface StartupInterruption {
+    /** Nothing was left behind. */
+    data object None : StartupInterruption
+
+    /** A run of either lane that never completed. One record covers both lanes. */
+    data class Interrupted(
+        val record: InterruptedMiningRun,
+    ) : StartupInterruption
+
+    /** Bytes that could not be decoded; they still block admission until acknowledged. */
+    data object Unrecognized : StartupInterruption
+}
+
 internal interface MiningRunInterruptionStore {
-    fun current(): InterruptedMiningRun?
+    /**
+     * Durable state left behind by an earlier process. Retires as soon as this process changes the
+     * durable state, so a repository constructed after the other lane acknowledged the record
+     * starts idle instead of reporting a run that is already cleared.
+     */
+    fun startupInterruption(): StartupInterruption
 
-    /** True when any durable record, including an unreadable one, blocks new admission. */
-    fun hasBlockedRecord(): Boolean
-
-    /** Remove a record only when it cannot be decoded as an owned run. */
+    /**
+     * True when no undecodable record remains. A decodable record is never removed here: it means
+     * the undecodable bytes are already gone.
+     */
     fun clearUnrecognizedRecord(): Boolean
 
     fun begin(
@@ -67,6 +90,10 @@ internal interface MiningRunInterruptionStore {
         runId: String,
     ): Boolean
 
+    /**
+     * True when no record for this run remains, whether this call removed it or the other lane
+     * already acknowledged it.
+     */
     fun complete(
         kind: MiningRunKind,
         ownerId: String,
@@ -74,9 +101,7 @@ internal interface MiningRunInterruptionStore {
 }
 
 internal data object NoOpMiningRunInterruptionStore : MiningRunInterruptionStore {
-    override fun current(): InterruptedMiningRun? = null
-
-    override fun hasBlockedRecord(): Boolean = false
+    override fun startupInterruption(): StartupInterruption = StartupInterruption.None
 
     override fun clearUnrecognizedRecord(): Boolean = true
 
@@ -102,28 +127,35 @@ internal class AndroidMiningRunInterruptionStore(
 ) : MiningRunInterruptionStore {
     private val lock = Any()
     private val file = AtomicFile(File(root, FILE_NAME))
+    private var startupState: StartupInterruption = sampleStartupState()
 
-    override fun current(): InterruptedMiningRun? =
+    override fun startupInterruption(): StartupInterruption =
         synchronized(lock) {
-            readLocked()
-        }
-
-    override fun hasBlockedRecord(): Boolean =
-        synchronized(lock) {
-            readLocked() != null || file.baseFile.exists()
+            startupState
         }
 
     override fun clearUnrecognizedRecord(): Boolean =
         synchronized(lock) {
-            if (readLocked() != null) return@synchronized false
-            if (!file.baseFile.exists()) return@synchronized true
-            try {
-                file.delete()
-                !file.baseFile.exists()
-                // instrumentation: silent — false leaves the unknown record recovery-blocking
-            } catch (_: RuntimeException) {
-                false
+            if (readLocked() != null) {
+                // A decodable record means the undecodable bytes are gone and a run of this
+                // process wrote over them, so the startup sample is spent like every other arm.
+                startupState = StartupInterruption.None
+                return@synchronized true
             }
+            if (!file.baseFile.exists()) {
+                startupState = StartupInterruption.None
+                return@synchronized true
+            }
+            val removed =
+                try {
+                    file.delete()
+                    !file.baseFile.exists()
+                    // instrumentation: silent — false leaves the unknown record recovery-blocking
+                } catch (_: RuntimeException) {
+                    false
+                }
+            if (removed) startupState = StartupInterruption.None
+            removed
         }
 
     override fun begin(
@@ -132,7 +164,9 @@ internal class AndroidMiningRunInterruptionStore(
     ): Boolean =
         synchronized(lock) {
             if (readLocked() != null || file.baseFile.exists()) return@synchronized false
-            writeLocked(InterruptedMiningRun(kind, ownerId, runId = null))
+            val written = writeLocked(InterruptedMiningRun(kind, ownerId, runId = null))
+            if (written) startupState = StartupInterruption.None
+            written
         }
 
     override fun registered(
@@ -151,16 +185,43 @@ internal class AndroidMiningRunInterruptionStore(
         ownerId: String,
     ): Boolean =
         synchronized(lock) {
-            val current = readLocked() ?: return@synchronized !file.baseFile.exists()
-            if (current.kind != kind || current.ownerId != ownerId) return@synchronized false
-            try {
-                file.delete()
-                !file.baseFile.exists()
-                // instrumentation: silent — false retains explicit interrupted-run recovery
-            } catch (_: RuntimeException) {
-                false
+            val current = readLocked()
+            if (current == null) {
+                // Undecodable bytes still block admission; an absent file means nothing remains.
+                if (file.baseFile.exists()) return@synchronized false
+                startupState = StartupInterruption.None
+                return@synchronized true
             }
+            if (current.kind != kind || current.ownerId != ownerId) {
+                // This run's record is already gone: the other lane acknowledged the startup
+                // record and a later run wrote its own. Nothing left for this caller to remove.
+                startupState = StartupInterruption.None
+                return@synchronized true
+            }
+            val removed =
+                try {
+                    file.delete()
+                    !file.baseFile.exists()
+                    // instrumentation: silent — false retains explicit interrupted-run recovery
+                } catch (_: RuntimeException) {
+                    false
+                }
+            if (removed) startupState = StartupInterruption.None
+            removed
         }
+
+    /**
+     * Read in the constructor, before any other reference to this store exists, so no lock is
+     * needed and no run of this process can have written what is being sampled.
+     */
+    private fun sampleStartupState(): StartupInterruption {
+        val record = readLocked()
+        return when {
+            record != null -> StartupInterruption.Interrupted(record)
+            file.baseFile.exists() -> StartupInterruption.Unrecognized
+            else -> StartupInterruption.None
+        }
+    }
 
     private fun readLocked(): InterruptedMiningRun? {
         return try {

@@ -2,6 +2,31 @@
 
 All notable project changes will be recorded here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and releases will use semantic versioning once a public version exists.
 
+## [Unreleased]
+
+### Added
+
+- A diagnostics bundle records in its manifest that the log sink was disabled, and by what, so an empty log file can be told apart from a quiet one.
+
+### Changed
+
+- The known-word scan over a chosen deck counts card rows across that deck and its subdecks, where it counted note rows in the exact deck before. `deck:"Name"` has always been a deck-tree scope, so subdeck rows were crossing the process boundary uncounted and only target-deck matches met the ceiling. The 100,000-row ceiling itself is unchanged, which means a collection that scanned at 0.1.8 can now be refused: a 60,000-note deck at two cards each is over it. The refusal counts cards, and names the subdecks as the reason.
+- A run parked in curation releases its CPU wake lock while it waits for an answer and takes it again on confirmation, so a long read through the candidate list no longer holds the device awake for nothing. The foreground service stays up throughout.
+
+### Fixed
+
+- Staging progress is labelled and scaled as what it is. A copy reported its bytes as items in the notification and carried no unit at all on the reading screen, and once labelled, a subtitle file read "0.0 of 0.0 MiB"; the scale is now picked from the total, so small sources report in bytes or KiB. The notification and the mining screen share that choice, and redraws are coalesced to one per rendered percentage point instead of one per 256 KiB of copying.
+- Resource imports over the storage picker bound how long the provider may stall rather than how long the whole transfer takes, so multi-gigabyte imports that failed after sixty seconds now complete. A provider that has genuinely stopped responding still aborts the import.
+- Importing an audio pack with too little free space says so, instead of refusing the file against a one-byte size limit.
+- A settings store that cannot be read no longer terminates the app at launch. Mining stays blocked with the reason it already reports, and Settings still leaves its draft unloaded so nothing on screen can overwrite recovered preferences.
+- Resetting an interrupted run clears the record whichever screen wrote it. One record covers both lanes, so a reading crash left the mining screen refusing every start behind a reset button that did nothing, and the other way round.
+- The AnkiDroid mutation journal deleted the same resolved remediation twice while pruning old records, and the resulting failure was raised from the database's open callback, where nothing catches it. Every later open replayed it, and the AnkiDroid connection stayed broken until app data was cleared.
+- Diagnostics export no longer disables logging for the rest of the session when a snapshot fails, rebuilds its bundle when the staged file has since been pruned rather than failing every retry, and keeps redaction to user text: a record's own keys and enumerated values are sealed first, so a `key=` shape inside a quoted value can no longer rewrite the structure around it. An Activity recreation during an export opens one save picker rather than a second over the first.
+- A word-list pick survives process death, and no longer displaces an import — or a pick for the other list — already queued and waiting on startup recovery.
+- The app shell behind the onboarding wizard is inert. TalkBack could swipe past the wizard onto the navigation bar and activate it, and keyboard focus could search into the screens behind it.
+- A resource operation cancelled while it was already committing reports plain cancellation, instead of a delivery failure offering to retry work that had finished.
+- A media read that passes its deadline cancels its worker rather than leaving it blocked on an unresponsive provider for the rest of the session.
+
 ## [0.1.8] - 2026-07-29
 
 ### Added

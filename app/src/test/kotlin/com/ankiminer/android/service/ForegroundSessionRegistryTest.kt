@@ -187,6 +187,32 @@ class ForegroundSessionRegistryTest {
     }
 
     @Test
+    fun `cpu wake parking reaches the service snapshot and rejects a stale identity`() {
+        val registry = ForegroundSessionRegistry(directExecutor)
+        val identity = identity()
+        val registration = registry.register(identity) { _, _ -> fail("unexpected cancellation") }
+        activate(registry, registration, identity)
+
+        assertFalse(
+            requireNotNull(registry.snapshotForService(identity, SERVICE_TOKEN)).cpuWakeParked,
+        )
+        assertTrue(registry.setCpuWakeParked(identity, parked = true))
+        assertTrue(
+            requireNotNull(registry.snapshotForService(identity, SERVICE_TOKEN)).cpuWakeParked,
+        )
+
+        assertFalse(registry.setCpuWakeParked(identity(2), parked = false))
+        assertTrue(
+            requireNotNull(registry.snapshotForService(identity, SERVICE_TOKEN)).cpuWakeParked,
+        )
+
+        assertTrue(registry.setCpuWakeParked(identity, parked = false))
+        assertFalse(
+            requireNotNull(registry.snapshotForService(identity, SERVICE_TOKEN)).cpuWakeParked,
+        )
+    }
+
+    @Test
     fun `app cancellation marks active lease without redelivering cancellation`() {
         val registry = ForegroundSessionRegistry(directExecutor)
         val identity = identity()

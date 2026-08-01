@@ -8,6 +8,7 @@ import com.ankiminer.android.vm.SavedDocumentSelectionStore
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
@@ -504,6 +505,63 @@ class SafSelectionInventoryTest {
             )
         }
 
+    @Test
+    fun mainThreadClearNeverBlocksOnTheDurableWriteAndStaysClearedAcrossRestart() {
+        val inventory = BlockingDurableWriteInventory()
+        inventory.install(
+            SafSelectionSlot.READING_SOURCE,
+            SafSelectionRecord("content://provider/book", "book.epub"),
+        )
+        val store = restartableStore(SavedStateHandle(), inventory)
+        val returned = CountDownLatch(1)
+
+        try {
+            val caller =
+                Thread(
+                    {
+                        store.clear()
+                        returned.countDown()
+                    },
+                    "test-ui-thread",
+                )
+            caller.start()
+
+            assertTrue(
+                "clear() blocked its caller on the durable write",
+                returned.await(2, TimeUnit.SECONDS),
+            )
+            caller.join(TimeUnit.SECONDS.toMillis(2))
+            assertEquals(0, inventory.durableWrites.get())
+            // The write is deferred to storage only: the reads that follow the clear, including
+            // the restore a recreated ViewModel runs, must already see the slot gone.
+            assertNull(inventory.selection(SafSelectionSlot.READING_SOURCE))
+            assertNull(restartableStore(SavedStateHandle(), inventory).restore())
+
+            // The transactional path keeps its blocking, durable write.
+            inventory.install(
+                SafSelectionSlot.READING_SOURCE,
+                SafSelectionRecord("content://provider/book", "book.epub"),
+            )
+            inventory.finishDurableWrite.countDown()
+            runBlocking { store.clearDurably() }
+            assertEquals(1, inventory.durableWrites.get())
+            assertNull(inventory.selection(SafSelectionSlot.READING_SOURCE))
+        } finally {
+            inventory.finishDurableWrite.countDown()
+        }
+    }
+
+    private fun restartableStore(
+        savedStateHandle: SavedStateHandle,
+        inventory: SafSelectionInventory,
+    ): SavedDocumentSelectionStore =
+        SavedDocumentSelectionStore(
+            savedStateHandle = savedStateHandle,
+            keyPrefix = "test.source",
+            inventory = inventory,
+            inventorySlot = SafSelectionSlot.READING_SOURCE,
+        )
+
     private fun transaction(
         inventory: SafSelectionInventory,
         broker: SafBroker,
@@ -573,6 +631,55 @@ class SafSelectionInventoryTest {
         override fun pruneMissingGrants(grantedUris: Set<String>) {
             selections.entries.removeAll { it.value.uri !in grantedUris }
         }
+    }
+
+    /**
+     * Stands in for [AndroidSafSelectionInventory]: [putSelection] is the synchronous `commit`
+     * that must never run on the caller thread of a UI clear, while
+     * [clearSelectionEventually] mutates in memory and defers only storage.
+     */
+    private class BlockingDurableWriteInventory : SafSelectionInventory {
+        private val monitor = Any()
+        private val selections = mutableMapOf<SafSelectionSlot, SafSelectionRecord>()
+        val durableWrites = AtomicInteger()
+        val finishDurableWrite = CountDownLatch(1)
+
+        fun install(
+            slot: SafSelectionSlot,
+            selection: SafSelectionRecord,
+        ) {
+            synchronized(monitor) { selections[slot] = selection }
+        }
+
+        override fun selection(slot: SafSelectionSlot): SafSelectionRecord? =
+            synchronized(monitor) { selections[slot] }
+
+        override fun putSelection(
+            slot: SafSelectionSlot,
+            selection: SafSelectionRecord?,
+        ) {
+            durableWrites.incrementAndGet()
+            check(finishDurableWrite.await(2, TimeUnit.SECONDS)) { "durable write never released" }
+            synchronized(monitor) {
+                if (selection == null) selections.remove(slot) else selections[slot] = selection
+            }
+        }
+
+        override fun clearSelectionEventually(slot: SafSelectionSlot) {
+            synchronized(monitor) { selections.remove(slot) }
+        }
+
+        override fun text(slot: SafSelectionSlot): String? = null
+
+        override fun putText(
+            slot: SafSelectionSlot,
+            value: String?,
+        ) = Unit
+
+        override fun ownedUris(): Set<String> =
+            synchronized(monitor) { selections.values.mapTo(linkedSetOf()) { it.uri } }
+
+        override fun pruneMissingGrants(grantedUris: Set<String>) = Unit
     }
 
     private class BlockingFailedSaveInventory : SafSelectionInventory {

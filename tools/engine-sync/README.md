@@ -55,13 +55,20 @@ command at a newer desktop exporter fails rather than silently changing the
 contract. The frozen desktop v2 contract still names the earlier Android
 engine revision. Before derivation, the runner therefore materializes an
 attested exporter trio and changes only that revision constant to `engine.lock`'s
-reviewed `2d227dd` pin. Both SHA-256 and Git-blob identities bind the desktop
-sources, and the fixture records the hashes of the actual materialized files.
+pin. `android_revision_line()` reads that revision from `engine.lock` on every
+call, so the patched constant cannot lag a re-pin. Both SHA-256 and Git-blob
+identities bind the desktop sources, and the fixture records the hashes of the
+actual materialized files.
+
 Any upstream exporter change requires an explicit rebase in
-`golden_exporter_overlay.py` — all three constants for the changed file:
-`SOURCE_ATTESTATIONS` (its SHA-256 **and** its Git blob), `MATERIALIZED_SHA256`,
-and `ANDROID_REVISION_LINE`. The attestation is verified first, so updating only
-the revision line leaves the run failing at "changed since review".
+`golden_exporter_overlay.py` — two constants for the changed file:
+`SOURCE_ATTESTATIONS` (its SHA-256 **and** its Git blob) and
+`MATERIALIZED_SHA256`. The attestation is verified first, so updating only one
+leaves the run failing at "changed since review". An `engine.lock` bump changes
+the materialized bytes of `engine_golden_contract_v2.py` and therefore
+`MATERIALIZED_SHA256` too; `validate_committed_fixture` requires that dict to
+equal the committed fixture's `provenance.tool.files_sha256`, so a stale overlay
+fails the secretless CI job rather than waiting for a desktop derivation.
 
 `run_head_goldens_v2.py` derives desktop HEAD and reports semantic case drift.
 It materializes desktop HEAD's exporter outside its clean checkout and changes

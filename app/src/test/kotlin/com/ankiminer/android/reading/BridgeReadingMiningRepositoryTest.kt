@@ -25,15 +25,20 @@ import com.ankiminer.android.mining.CoordinatorAnkiCallbacks
 import com.ankiminer.android.mining.CurationSelection
 import com.ankiminer.android.mining.InstalledTokenizerResource
 import com.ankiminer.android.mining.InstalledTokenizerResourceProvider
+import com.ankiminer.android.mining.InterruptedMiningRun
+import com.ankiminer.android.mining.MiningCommandException
+import com.ankiminer.android.mining.MiningRunKind
 import com.ankiminer.android.mining.MiningRunState
 import com.ankiminer.android.mining.MiningRuntimePaths
 import com.ankiminer.android.mining.MiningTaskExecutor
 import com.ankiminer.android.mining.SourceGrantReleaser
+import com.ankiminer.android.mining.StartupInterruption
 import com.ankiminer.android.mining.asMiningTaskExecutor
 import com.ankiminer.android.mining.isTerminal
 import com.ankiminer.android.service.ForegroundSessionRegistry
 import com.ankiminer.android.service.MiningForegroundLease
 import com.ankiminer.android.service.MiningForegroundProgress
+import com.ankiminer.android.service.MiningForegroundProgressUnit
 import com.ankiminer.android.service.MiningForegroundSessionIdentity
 import com.ankiminer.android.service.MiningForegroundSessionListener
 import com.ankiminer.android.tts.SentenceAudioSynthesis
@@ -399,6 +404,123 @@ class BridgeReadingMiningRepositoryTest {
     }
 
     @Test
+    fun `curation parks the cpu wake lease and confirming re-arms it`() {
+        val harness = harness(expressionAudioFieldMapped = true)
+
+        runBlocking { harness.repository.startReading(INPUT) }
+        val curating =
+            awaitState(harness.repository) { it is MiningRunState.Curating } as MiningRunState.Curating
+
+        // The FGS stays up across the wait; only the media-processing wake lease is dropped. The
+        // park completes before Curating is published, so observing that state is enough: this is
+        // not a race with the engine thread.
+        assertEquals(listOf(true), harness.foreground.lease.cpuWakeEvents)
+        assertEquals(0, harness.foreground.lease.closeCount.get())
+
+        runBlocking {
+            harness.repository.confirmCuration(
+                curating.request.runId,
+                curating.request.requestId,
+                FIRST_SELECTION,
+            )
+        }
+
+        assertEquals(listOf(true, false), harness.foreground.lease.cpuWakeEvents)
+        harness.bridge.allowTerminal.countDown()
+        awaitState(harness.repository, MiningRunState::isTerminal)
+    }
+
+    /**
+     * A confirm landing between the park's decision and its lease call would leave the registry
+     * parked for the rest of the run, so phases 3-5 would process media with no CPU wake lock.
+     */
+    @Test
+    fun `no curation confirm is admitted while the wake park is in flight`() {
+        val harness = harness(expressionAudioFieldMapped = true)
+        val confirmDuringPark = AtomicReference<Throwable?>()
+        harness.foreground.lease.onPark = {
+            confirmDuringPark.set(
+                runCatching {
+                    runBlocking {
+                        harness.repository.confirmCuration(RUN_ID, REQUEST_ID, FIRST_SELECTION)
+                    }
+                }.exceptionOrNull(),
+            )
+        }
+
+        runBlocking { harness.repository.startReading(INPUT) }
+        awaitState(harness.repository) { it is MiningRunState.Curating }
+
+        assertTrue(
+            "a confirm racing the park was admitted: ${confirmDuringPark.get()}",
+            confirmDuringPark.get() is MiningCommandException,
+        )
+        assertEquals(listOf(true), harness.foreground.lease.cpuWakeEvents)
+
+        runBlocking { harness.repository.cancel(RUN_ID) }
+        harness.bridge.allowTerminal.countDown()
+        awaitState(harness.repository, MiningRunState::isTerminal)
+    }
+
+    @Test
+    fun `cancelling during curation tears the parked wake lease down exactly once`() {
+        val harness = harness(expressionAudioFieldMapped = true)
+
+        runBlocking { harness.repository.startReading(INPUT) }
+        val curating =
+            awaitState(harness.repository) { it is MiningRunState.Curating } as MiningRunState.Curating
+        assertEquals(listOf(true), harness.foreground.lease.cpuWakeEvents)
+
+        runBlocking { harness.repository.cancel(curating.request.runId) }
+        harness.bridge.allowTerminal.countDown()
+        awaitState(harness.repository, MiningRunState::isTerminal)
+
+        // No resume on the way out, and the lease close is the single teardown.
+        assertEquals(listOf(true), harness.foreground.lease.cpuWakeEvents)
+        assertEquals(1, harness.foreground.lease.closeCount.get())
+    }
+
+    @Test
+    fun `staging bytes reach the notification as bytes and engine counts as items`() {
+        val harness = harness(expressionAudioFieldMapped = true)
+
+        runBlocking { harness.repository.startReading(INPUT) }
+        val curating =
+            awaitState(harness.repository) { it is MiningRunState.Curating } as MiningRunState.Curating
+        runBlocking {
+            harness.repository.confirmCuration(
+                curating.request.runId,
+                curating.request.requestId,
+                FIRST_SELECTION,
+            )
+        }
+        assertTrue(harness.bridge.curationSubmitted.await(2, TimeUnit.SECONDS))
+        harness.bridge.runCallbacks!!.onProgress(HOSTILE_PROGRESS)
+
+        val published = harness.foreground.lease.published
+        // "novel" is five staged bytes; without a unit they rendered as five items.
+        assertTrue(
+            published.toString(),
+            MiningForegroundProgress(
+                completed = 5,
+                total = 5,
+                unit = MiningForegroundProgressUnit.BYTES,
+            ) in published,
+        )
+        assertEquals(
+            MiningForegroundProgress(
+                completed = 2,
+                total = 3,
+                unit = MiningForegroundProgressUnit.ITEMS,
+            ),
+            published.last(),
+        )
+
+        harness.bridge.allowTerminal.countDown()
+        awaitState(harness.repository, MiningRunState::isTerminal)
+    }
+
+    @Test
     fun `eligible foreground ownership starts before reading source staging`() {
         val harness = harness(expressionAudioFieldMapped = true)
 
@@ -421,6 +543,7 @@ class BridgeReadingMiningRepositoryTest {
         val curating =
             awaitState(activeHarness.repository) { it is MiningRunState.Curating } as
                 MiningRunState.Curating
+        interruptionStore.simulateProcessRestart()
         val recreated = harness(interruptionStore = interruptionStore)
 
         val interrupted = recreated.repository.state.value as MiningRunState.Failed
@@ -449,6 +572,101 @@ class BridgeReadingMiningRepositoryTest {
         runBlocking { harness.repository.reset() }
         assertTrue(harness.repository.state.value is MiningRunState.Idle)
         assertFalse(interruptionStore.hasBlockedRecord())
+    }
+
+    @Test
+    fun `reset clears an unrecognized interruption record`() {
+        val interruptionStore = FakeMiningRunInterruptionStore(invalidRecord = true)
+        val harness = harness(interruptionStore = interruptionStore)
+
+        assertTrue(harness.repository.state.value is MiningRunState.Failed)
+        runBlocking { harness.repository.reset() }
+
+        assertTrue(harness.repository.state.value is MiningRunState.Idle)
+        assertFalse(interruptionStore.hasBlockedRecord())
+    }
+
+    @Test
+    fun `reading reset clears an interrupted video run`() {
+        val interruptionStore = FakeMiningRunInterruptionStore(durableRecord = VIDEO_INTERRUPTION)
+        val harness = harness(interruptionStore = interruptionStore)
+
+        val interrupted = harness.repository.state.value as MiningRunState.Failed
+        assertEquals("Background mining stopped unexpectedly", interrupted.failure.message)
+        // The other lane's run id has no meaning on this screen.
+        assertNull(interrupted.runId)
+
+        runBlocking { harness.repository.reset() }
+        assertTrue(harness.repository.state.value is MiningRunState.Idle)
+        assertFalse(interruptionStore.hasBlockedRecord())
+
+        runReadingToTerminal(harness)
+    }
+
+    @Test
+    fun `both lanes constructed before a cross-lane clear can still start`() {
+        val interruptionStore = FakeMiningRunInterruptionStore(durableRecord = VIDEO_INTERRUPTION)
+        val first = harness(interruptionStore = interruptionStore)
+        val second = harness(interruptionStore = interruptionStore)
+
+        runBlocking { first.repository.reset() }
+        assertFalse(interruptionStore.hasBlockedRecord())
+
+        // The second repository cached the record the first one already cleared.
+        runBlocking { second.repository.reset() }
+        assertTrue(second.repository.state.value is MiningRunState.Idle)
+        runReadingToTerminal(second)
+    }
+
+    @Test
+    fun `reset succeeds without removing the record of a run started since`() {
+        val interruptionStore = FakeMiningRunInterruptionStore(durableRecord = VIDEO_INTERRUPTION)
+        val first = harness(interruptionStore = interruptionStore)
+        val second = harness(interruptionStore = interruptionStore)
+
+        runBlocking { first.repository.reset() }
+        runBlocking { first.repository.startReading(INPUT) }
+        val curating =
+            awaitState(first.repository) { it is MiningRunState.Curating } as
+                MiningRunState.Curating
+
+        // The record `second` cached is gone, replaced by the live run's own.
+        runBlocking { second.repository.reset() }
+        assertTrue(second.repository.state.value is MiningRunState.Idle)
+        assertTrue(interruptionStore.hasBlockedRecord())
+
+        runBlocking { first.repository.cancel(curating.request.runId) }
+        first.bridge.allowTerminal.countDown()
+        awaitState(first.repository, MiningRunState::isTerminal)
+        assertFalse(interruptionStore.hasBlockedRecord())
+    }
+
+    @Test
+    fun `a lane constructed after a cross-lane clear starts idle`() {
+        val interruptionStore = FakeMiningRunInterruptionStore(durableRecord = VIDEO_INTERRUPTION)
+        val first = harness(interruptionStore = interruptionStore)
+        runBlocking { first.repository.reset() }
+
+        val second = harness(interruptionStore = interruptionStore)
+        assertTrue(second.repository.state.value is MiningRunState.Idle)
+        runReadingToTerminal(second)
+    }
+
+    @Test
+    fun `an interrupted reading run blocks a new reading run until reset`() {
+        val interruptionStore = FakeMiningRunInterruptionStore(durableRecord = READING_INTERRUPTION)
+        val harness = harness(interruptionStore = interruptionStore)
+
+        val interrupted = harness.repository.state.value as MiningRunState.Failed
+        assertEquals(READING_INTERRUPTION.runId, interrupted.runId)
+        assertThrows(MiningCommandException::class.java) {
+            runBlocking { harness.repository.startReading(INPUT) }
+        }
+        assertTrue(interruptionStore.hasBlockedRecord())
+
+        runBlocking { harness.repository.reset() }
+        assertFalse(interruptionStore.hasBlockedRecord())
+        runReadingToTerminal(harness)
     }
 
     @Test
@@ -1322,6 +1540,7 @@ class BridgeReadingMiningRepositoryTest {
                     jobMaxBytes = 2048,
                     freeSpaceReserveBytes = 0,
                     bufferBytes = 2,
+                    checkpointIntervalBytes = 1,
                 ),
             availableBytes = { 1_000_000L },
             nonceSource = ReadingSourceStageNonceSource { "11111111111111111111111111111111" },
@@ -1333,6 +1552,17 @@ class BridgeReadingMiningRepositoryTest {
             .map { it.substringBefore('\n') }
             .filter { it.contains(op) }
             .map { it.substring(it.indexOf("c=")) }
+
+    /** Start a run and cancel it out again, so the lane is proven usable and leaves no record. */
+    private fun runReadingToTerminal(harness: Harness) {
+        runBlocking { harness.repository.startReading(INPUT) }
+        val curating =
+            awaitState(harness.repository) { it is MiningRunState.Curating } as
+                MiningRunState.Curating
+        runBlocking { harness.repository.cancel(curating.request.runId) }
+        harness.bridge.allowTerminal.countDown()
+        awaitState(harness.repository, MiningRunState::isTerminal)
+    }
 
     private fun awaitState(
         repository: ReadingMiningRepository,
@@ -1486,8 +1716,26 @@ class BridgeReadingMiningRepositoryTest {
         val closeCount = AtomicInteger()
         val published = CopyOnWriteArrayList<MiningForegroundProgress>()
 
+        /** True for a park, false for a resume, in call order. */
+        val cpuWakeEvents = CopyOnWriteArrayList<Boolean>()
+
+        /** Runs on the engine thread with the park still in flight. */
+        @Volatile
+        var onPark: (() -> Unit)? = null
+
         override fun updateProgress(progress: MiningForegroundProgress): Boolean {
             published += progress
+            return true
+        }
+
+        override fun parkCpuWake(): Boolean {
+            onPark?.invoke()
+            cpuWakeEvents += true
+            return true
+        }
+
+        override fun resumeCpuWake(): Boolean {
+            cpuWakeEvents += false
             return true
         }
 
@@ -1519,27 +1767,41 @@ class BridgeReadingMiningRepositoryTest {
 
     private class FakeMiningRunInterruptionStore(
         private var failCompletions: Int = 0,
+        private var invalidRecord: Boolean = false,
+        durableRecord: com.ankiminer.android.mining.InterruptedMiningRun? = null,
     ) :
         com.ankiminer.android.mining.MiningRunInterruptionStore {
-        private var current: com.ankiminer.android.mining.InterruptedMiningRun? = null
+        private var current: com.ankiminer.android.mining.InterruptedMiningRun? = durableRecord
+        private var startup: StartupInterruption = sample()
 
-        override fun current(): com.ankiminer.android.mining.InterruptedMiningRun? = current
+        fun hasBlockedRecord(): Boolean = current != null || invalidRecord
 
-        override fun hasBlockedRecord(): Boolean = current != null
+        /** Re-sample the durable state the way a fresh process would. */
+        fun simulateProcessRestart() {
+            startup = sample()
+        }
 
-        override fun clearUnrecognizedRecord(): Boolean = current == null
+        override fun startupInterruption(): StartupInterruption = startup
+
+        override fun clearUnrecognizedRecord(): Boolean {
+            if (current != null) return true
+            invalidRecord = false
+            startup = StartupInterruption.None
+            return true
+        }
 
         override fun begin(
             kind: com.ankiminer.android.mining.MiningRunKind,
             ownerId: String,
         ): Boolean {
-            if (current != null) return false
+            if (hasBlockedRecord()) return false
             current =
                 com.ankiminer.android.mining.InterruptedMiningRun(
                     kind,
                     ownerId,
                     runId = null,
                 )
+            startup = StartupInterruption.None
             return true
         }
 
@@ -1570,10 +1832,23 @@ class BridgeReadingMiningRepositoryTest {
                 failCompletions -= 1
                 return false
             }
-            val active = current ?: return true
-            if (active.kind != kind || active.ownerId != ownerId) return false
-            current = null
+            val active = current
+            if (active == null && invalidRecord) return false
+            if (active != null && (active.kind == kind && active.ownerId == ownerId)) {
+                current = null
+            }
+            // Anything else is already gone: the other lane cleared it, or a later run replaced it.
+            startup = StartupInterruption.None
             return true
+        }
+
+        private fun sample(): StartupInterruption {
+            val record = current
+            return when {
+                record != null -> StartupInterruption.Interrupted(record)
+                invalidRecord -> StartupInterruption.Unrecognized
+                else -> StartupInterruption.None
+            }
         }
     }
 
@@ -1743,6 +2018,20 @@ class BridgeReadingMiningRepositoryTest {
         const val TOKENIZER_SHA =
             "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
         const val MAX_RESULT_ERRORS = 256
+
+        /** A crash in the video lane leaves this behind for the reading lane to find. */
+        val VIDEO_INTERRUPTION =
+            InterruptedMiningRun(
+                MiningRunKind.VIDEO,
+                ownerId = "cancel_11111111111111111111111111111111",
+                runId = "run_22222222222222222222222222222222",
+            )
+        val READING_INTERRUPTION =
+            InterruptedMiningRun(
+                MiningRunKind.READING,
+                ownerId = "cancel_33333333333333333333333333333333",
+                runId = "run_44444444444444444444444444444444",
+            )
         val INPUT_DOCUMENT =
             SafDocument(
                 uri = "content://reading/novel",

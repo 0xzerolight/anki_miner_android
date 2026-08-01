@@ -235,19 +235,7 @@ class AppSettingsRepositoryTest {
     @Test
     fun `DataStore read IOException never emits persistable defaults`() =
         runTest {
-            val repository =
-                DataStoreAppSettingsRepository(
-                    object : DataStore<Preferences> {
-                        override val data: Flow<Preferences> =
-                            kotlinx.coroutines.flow.flow {
-                                throw IOException("transient read failure")
-                            }
-
-                        override suspend fun updateData(
-                            transform: suspend (Preferences) -> Preferences,
-                        ): Preferences = error("write not expected")
-                    },
-                )
+            val repository = DataStoreAppSettingsRepository(unreadableDataStore())
 
             try {
                 repository.settings.first()
@@ -255,6 +243,27 @@ class AppSettingsRepositoryTest {
             } catch (failure: IOException) {
                 assertEquals("transient read failure", failure.message)
             }
+        }
+
+    @Test
+    fun `DataStore read IOException degrades the nullable read to null`() =
+        runTest {
+            val repository = DataStoreAppSettingsRepository(unreadableDataStore())
+
+            // The shell and startup collect this flow: it has to complete instead of throwing into
+            // a scope with no exception handler, and null is the only value it may fall back to.
+            assertNull(repository.settingsOrNull.first())
+        }
+
+    @Test
+    fun `the nullable read carries persisted settings while the store is readable`() =
+        runTest {
+            val repository =
+                DataStoreAppSettingsRepository(createDataStore(backgroundScope, "nullable-read"))
+            val stored = populatedSettings()
+            repository.update(stored)
+
+            assertEquals(stored, repository.settingsOrNull.first())
         }
 
     @Test
@@ -535,6 +544,18 @@ class AppSettingsRepositoryTest {
             readingTtsEnabled = true,
             jishoEnabled = true,
         )
+
+    private fun unreadableDataStore(): DataStore<Preferences> =
+        object : DataStore<Preferences> {
+            override val data: Flow<Preferences> =
+                kotlinx.coroutines.flow.flow {
+                    throw IOException("transient read failure")
+                }
+
+            override suspend fun updateData(
+                transform: suspend (Preferences) -> Preferences,
+            ): Preferences = error("write not expected")
+        }
 
     private fun createDataStore(
         scope: CoroutineScope,

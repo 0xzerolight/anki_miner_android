@@ -1326,11 +1326,17 @@ internal class AndroidResourceManager(
         }
     }
 
+    /**
+     * REQUESTED is transient, not a delivery outcome: [cancelActive] sets it before queueing the
+     * bridge dispatch, so a cancel racing a committing worker is still REQUESTED here whenever the
+     * control executor has not drained. It reports plain cancellation like DELIVERED — only FAILED
+     * is a delivery failure, and the control executor publishes that itself while this operation is
+     * still active.
+     */
     private fun verifyTerminalCancellation(operation: ActiveOperation) {
         when (operation.cancelDelivery.get()) {
+            CancelDelivery.FAILED -> throw ResourceCancellationDeliveryException()
             CancelDelivery.REQUESTED,
-            CancelDelivery.FAILED,
-            -> throw ResourceCancellationDeliveryException()
             CancelDelivery.DELIVERED,
             CancelDelivery.NOT_REQUESTED,
             -> operation.cancellation.check()

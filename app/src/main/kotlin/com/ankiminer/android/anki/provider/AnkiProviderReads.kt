@@ -325,21 +325,27 @@ internal class AnkiProviderReadService(
                         projection = ProviderQueryShapes.CARD_NOTE_DECK_PROJECTION,
                         selection = ProviderSelection.CardsInDeck(scope.deckName),
                     )
+                var scannedCardRows = 0
                 provider.queryRequired(query, cancellation).use { cursor ->
                     requireProjection(cursor, query)
                     while (cursor.moveToNext()) {
                         ensureActive(cancellation)
+                        // `deck:"Name"` is a deck-TREE scope, so subdeck rows cross Binder too.
+                        // Counted per row and checked before the cell reads, so the scan refuses on
+                        // reaching row 100001 without pulling its cells, whatever deck it names.
+                        scannedCardRows = checkedAdd(scannedCardRows, 1)
+                        if (
+                            scannedCardRows >
+                            AnkiLimitsV1.ScanFirstFields.KNOWN_TOTAL_SCANNED_NOTE_MAX_COUNT
+                        ) {
+                            throw knownVocabularyLimitExceeded(
+                                "the selected Anki deck and its subdecks",
+                                unit = "cards",
+                            )
+                        }
                         val noteId = cursor.positiveLong(ProviderColumn.CARD_NOTE_ID)
                         val deckId = cursor.positiveLong(ProviderColumn.CARD_DECK_ID)
-                        if (deckId == target.deck.id) {
-                            exactNotes += noteId
-                            if (
-                                exactNotes.size >
-                                AnkiLimitsV1.ScanFirstFields.KNOWN_TOTAL_SCANNED_NOTE_MAX_COUNT
-                            ) {
-                                throw knownVocabularyLimitExceeded("the selected Anki deck")
-                            }
-                        }
+                        if (deckId == target.deck.id) exactNotes += noteId
                     }
                 }
                 exactNotes.sorted()
@@ -1312,14 +1318,24 @@ private fun queryFailed(
     cause = cause,
 )
 
-private fun knownVocabularyLimitExceeded(scope: String) =
-    AnkiReadFailure(
-        AnkiErrorCode.UNSUPPORTED_OPERATION,
-        retryable = false,
-        stableMessage =
-            "Known-word filtering supports at most " +
-                "${AnkiLimitsV1.ScanFirstFields.KNOWN_TOTAL_SCANNED_NOTE_MAX_COUNT} notes in $scope",
-    )
+/**
+ * [unit] names what the refusing scan actually counted, which is not the same everywhere.
+ *
+ * The collection and excluded-deck scans read note rows from the notes endpoints, so their ceiling
+ * is a note count. The deck-scoped scan reads the CARDS endpoint under a deck-TREE selection, so it
+ * bounds card rows — a deck of 60k notes at two cards each trips it at 60k notes, and saying "notes"
+ * there would misstate both the number and the reason. One constant, three scans, different nouns.
+ */
+private fun knownVocabularyLimitExceeded(
+    scope: String,
+    unit: String = "notes",
+) = AnkiReadFailure(
+    AnkiErrorCode.UNSUPPORTED_OPERATION,
+    retryable = false,
+    stableMessage =
+        "Known-word filtering supports at most " +
+            "${AnkiLimitsV1.ScanFirstFields.KNOWN_TOTAL_SCANNED_NOTE_MAX_COUNT} $unit in $scope",
+)
 
 private fun targetInvalid(message: String) =
     AnkiReadFailure(

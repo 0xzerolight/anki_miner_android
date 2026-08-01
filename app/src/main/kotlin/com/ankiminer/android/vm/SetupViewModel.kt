@@ -28,6 +28,8 @@ import com.ankiminer.android.data.resources.WordListKind
 import com.ankiminer.android.data.settings.AppSettings
 import com.ankiminer.android.data.settings.AppSettingsRepository
 import com.ankiminer.android.data.settings.CardType
+import com.ankiminer.android.diagnostics.log.AppLog
+import com.ankiminer.android.diagnostics.log.LogComponent
 import com.ankiminer.android.engine.PythonRuntimeReadiness
 import com.ankiminer.android.localization.StringResourceResolver
 import com.ankiminer.android.mining.MiningRunAdmissionState
@@ -39,6 +41,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -62,6 +65,7 @@ internal class SetupViewModel(
         PITCH,
         AUDIO_PACK,
         KNOWN_WORDS,
+        WORD_LIST,
     }
 
     private data class PendingResourcePicker(
@@ -71,6 +75,7 @@ internal class SetupViewModel(
         val frequencyFormat: FrequencySourceFormat? = null,
         val pitchFormat: PitchAccentSourceFormat? = null,
         val knownWordsFormat: KnownWordsSourceFormat? = null,
+        val wordListKind: WordListKind? = null,
         val uri: String? = null,
     )
 
@@ -118,13 +123,20 @@ internal class SetupViewModel(
                 knownWordsFormat =
                     savedEnum<KnownWordsSourceFormat>(STATE_KNOWN_WORDS_FORMAT)
                         ?: KnownWordsSourceFormat.JSON,
+                wordListTarget =
+                    savedEnum<WordListKind>(STATE_WORD_LIST_TARGET)
+                        ?: WordListKind.BLACKLIST,
                 pendingReplace = restorePendingReplace(),
             ),
         )
     /** In-memory only: failed persistence must re-open the wizard in a fresh ViewModel. */
     private val _wizardDismissedForSession = MutableStateFlow(false)
     val wizardDismissedForSession: StateFlow<Boolean> = _wizardDismissedForSession.asStateFlow()
-    private val settings = settingsRepository.settings
+    // uiState is an eagerly shared combine: an unreadable store must not throw into viewModelScope,
+    // which would take the process down instead of rendering setup. Falling back to defaults is
+    // display only — every write below is a read-modify-write through the strict flow, so a
+    // fallback can never be persisted, and mining stays blocked by the admission target probe.
+    private val settings = settingsRepository.settingsOrNull.map { it ?: AppSettings() }
     private val repository = settingsRepository
     private val settingsMutationMutex = Mutex()
     private var pendingPicker = restorePendingPicker()
@@ -790,13 +802,15 @@ internal class SetupViewModel(
     private fun finishPicker(
         kind: ResourcePickerKind,
         uri: String?,
+        matches: (PendingResourcePicker) -> Boolean = { true },
         fallback: () -> PendingResourcePicker?,
     ) {
         if (uri == null) {
             if (pendingPicker?.kind == kind) clearPendingPicker()
             return
         }
-        val request = pendingPicker?.takeIf { it.kind == kind } ?: fallback() ?: return
+        val request =
+            pendingPicker?.takeIf { it.kind == kind && matches(it) } ?: fallback() ?: return
         savePendingPicker(request.copy(uri = uri))
         resumePendingPicker()
     }
@@ -863,6 +877,8 @@ internal class SetupViewModel(
                     uri,
                     requireNotNull(request.knownWordsFormat),
                 )
+            ResourcePickerKind.WORD_LIST ->
+                resources.importWordList(uri, requireNotNull(request.wordListKind))
         }
     }
 
@@ -872,7 +888,8 @@ internal class SetupViewModel(
             ResourcePickerKind.FREQUENCY -> ResourceReplaceKind.FREQUENCY
             ResourcePickerKind.PITCH -> ResourceReplaceKind.PITCH
             ResourcePickerKind.AUDIO_PACK -> ResourceReplaceKind.AUDIO_PACK
-            ResourcePickerKind.KNOWN_WORDS -> null
+            // Word lists and known words overwrite in place; neither has a replace prompt.
+            ResourcePickerKind.KNOWN_WORDS, ResourcePickerKind.WORD_LIST -> null
         }
 
     private fun savePendingPicker(request: PendingResourcePicker) {
@@ -884,6 +901,7 @@ internal class SetupViewModel(
         saveString(STATE_PICKER_FREQUENCY_FORMAT, request.frequencyFormat?.name)
         saveString(STATE_PICKER_PITCH_FORMAT, request.pitchFormat?.name)
         saveString(STATE_PICKER_KNOWN_WORDS_FORMAT, request.knownWordsFormat?.name)
+        saveString(STATE_PICKER_WORD_LIST_KIND, request.wordListKind?.name)
         saveString(STATE_PICKER_URI, request.uri)
     }
 
@@ -905,6 +923,7 @@ internal class SetupViewModel(
                 frequencyFormat = savedEnum<FrequencySourceFormat>(STATE_PICKER_FREQUENCY_FORMAT),
                 pitchFormat = savedEnum<PitchAccentSourceFormat>(STATE_PICKER_PITCH_FORMAT),
                 knownWordsFormat = savedEnum<KnownWordsSourceFormat>(STATE_PICKER_KNOWN_WORDS_FORMAT),
+                wordListKind = savedEnum<WordListKind>(STATE_PICKER_WORD_LIST_KIND),
                 uri = savedStateHandle[STATE_PICKER_URI],
             )
         return restored.takeIf { request ->
@@ -921,6 +940,7 @@ internal class SetupViewModel(
                         request.sourceName != null &&
                         request.pitchFormat != null
                 ResourcePickerKind.KNOWN_WORDS -> request.knownWordsFormat != null
+                ResourcePickerKind.WORD_LIST -> request.wordListKind != null
             }
         }
     }
@@ -935,6 +955,7 @@ internal class SetupViewModel(
             STATE_PICKER_FREQUENCY_FORMAT,
             STATE_PICKER_PITCH_FORMAT,
             STATE_PICKER_KNOWN_WORDS_FORMAT,
+            STATE_PICKER_WORD_LIST_KIND,
             STATE_PICKER_URI,
         ).forEach { savedStateHandle.remove<Any>(it) }
     }
@@ -1046,16 +1067,57 @@ internal class SetupViewModel(
         onKnownWordsPicked(uri)
     }
 
+    /**
+     * The SAF result, not a picker launch: a recreated ViewModel is still recovering when it
+     * arrives, so this holds the pick like every other import instead of dropping it on [busy].
+     *
+     * Word lists are the only kind reaching the single pending slot without a `begin…Picker`
+     * gate, so this is also the only entry point that can meet a queued pick. That one is already
+     * confirmed work waiting on [resumePendingPicker]; it wins — including a queued pick for the
+     * other list, which the whitelist and blacklist launchers can otherwise displace. Only a
+     * repeat pick for the same list gets through, because that replaces its own slot.
+     */
     fun importWordList(uri: String, kind: WordListKind) {
-        if (currentState().busy) return
-        local.update { it.copy(wordListTarget = kind) }
-        viewModelScope.launch { resources.importWordList(uri, kind) }
+        setWordListTarget(kind)
+        val queued =
+            pendingPicker?.takeIf {
+                it.uri != null &&
+                    (it.kind != ResourcePickerKind.WORD_LIST || it.wordListKind != kind)
+            }
+        if (queued != null) {
+            AppLog.i(
+                LogComponent.UI,
+                "picker.result",
+                "picker" to "word_list",
+                "list" to kind.name,
+                "queued" to queued.kind.name,
+                "queuedList" to queued.wordListKind?.name,
+                "outcome" to "skip",
+            )
+            return
+        }
+        finishPicker(
+            kind = ResourcePickerKind.WORD_LIST,
+            uri = uri,
+            // The launcher knows which list this result belongs to; a restored pick for the
+            // other list must not capture it.
+            matches = { it.wordListKind == kind },
+            fallback = {
+                PendingResourcePicker(kind = ResourcePickerKind.WORD_LIST, wordListKind = kind)
+            },
+        )
     }
 
     fun removeWordList(kind: WordListKind) {
         if (currentState().busy) return
-        local.update { it.copy(wordListTarget = kind) }
+        setWordListTarget(kind)
         viewModelScope.launch { resources.removeWordList(kind) }
+    }
+
+    /** Persisted: a failed word-list operation offers the picker for [kind] after process death. */
+    private fun setWordListTarget(kind: WordListKind) {
+        savedStateHandle[STATE_WORD_LIST_TARGET] = kind.name
+        local.update { it.copy(wordListTarget = kind) }
     }
 
     fun confirmKnownWordsImport() {
@@ -1258,6 +1320,7 @@ internal class SetupViewModel(
         const val STATE_PITCH_FORMAT = "setup.pitchFormat"
         const val STATE_AUDIO_PACK_ID = "setup.audioPackId"
         const val STATE_KNOWN_WORDS_FORMAT = "setup.knownWordsFormat"
+        const val STATE_WORD_LIST_TARGET = "setup.wordListTarget"
         const val STATE_PICKER_KIND = "setup.picker.kind"
         const val STATE_PICKER_TARGET_ID = "setup.picker.targetId"
         const val STATE_PICKER_INSTALLED_LABEL = "setup.picker.installedLabel"
@@ -1265,6 +1328,7 @@ internal class SetupViewModel(
         const val STATE_PICKER_FREQUENCY_FORMAT = "setup.picker.frequencyFormat"
         const val STATE_PICKER_PITCH_FORMAT = "setup.picker.pitchFormat"
         const val STATE_PICKER_KNOWN_WORDS_FORMAT = "setup.picker.knownWordsFormat"
+        const val STATE_PICKER_WORD_LIST_KIND = "setup.picker.wordListKind"
         const val STATE_PICKER_URI = "setup.picker.uri"
         const val STATE_REPLACE_KIND = "setup.replace.kind"
         const val STATE_REPLACE_IDENTITY = "setup.replace.identity"

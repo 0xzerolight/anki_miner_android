@@ -109,12 +109,14 @@ class DiagnosticsViewModelTest {
                 )
 
                 viewModel.export(DiagnosticsDelivery.SHARE)
-                advanceUntilIdle()
+                // The reuse path now validates the handle on ioDispatcher, which is a real
+                // executor here, so the state has to be awaited rather than scheduled.
+                val ready =
+                    viewModel.state.first {
+                        it is DiagnosticsExportState.Ready
+                    } as DiagnosticsExportState.Ready
                 assertEquals(1, exporter.buildCalls)
-                assertEquals(
-                    DiagnosticsDelivery.SHARE,
-                    (viewModel.state.value as DiagnosticsExportState.Ready).delivery,
-                )
+                assertEquals(DiagnosticsDelivery.SHARE, ready.delivery)
 
                 viewModel.deliverShare { uri, name ->
                     assertEquals(SHARE_URI, uri)
@@ -170,7 +172,7 @@ class DiagnosticsViewModelTest {
             val root = Files.createTempDirectory("diagnostics-view-model").toFile()
             try {
                 val exporter = FakeDiagnosticsExporter(staged(root))
-                val viewModel = DiagnosticsViewModel(exporter)
+                val viewModel = DiagnosticsViewModel(exporter, mainDispatcherRule.dispatcher)
                 viewModel.export(DiagnosticsDelivery.SAVE)
                 advanceUntilIdle()
 
@@ -189,6 +191,55 @@ class DiagnosticsViewModelTest {
             }
         }
 
+    @Test
+    fun `a staged file reclaimed between exports is rebuilt, not republished`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val root = Files.createTempDirectory("diagnostics-view-model").toFile()
+            try {
+                val exporter = FakeDiagnosticsExporter(staged(root))
+                val viewModel = DiagnosticsViewModel(exporter, mainDispatcherRule.dispatcher)
+                viewModel.export(DiagnosticsDelivery.SAVE)
+                advanceUntilIdle()
+                assertEquals(1, exporter.buildCalls)
+
+                // cacheDir eviction, or DiagnosticsBundleJanitor's 24 h / 8 file policy.
+                assertTrue(exporter.bundle.file.delete())
+                viewModel.export(DiagnosticsDelivery.SHARE)
+                advanceUntilIdle()
+
+                assertEquals(2, exporter.buildCalls)
+                assertEquals(
+                    DiagnosticsDelivery.SHARE,
+                    (viewModel.state.value as DiagnosticsExportState.Ready).delivery,
+                )
+                assertTrue(exporter.bundle.file.isFile)
+            } finally {
+                root.deleteRecursively()
+            }
+        }
+
+    @Test
+    fun `a bundle-kind delivery failure drops the handle instead of offering it again`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val root = Files.createTempDirectory("diagnostics-view-model").toFile()
+            try {
+                val exporter = FakeDiagnosticsExporter(staged(root))
+                val viewModel = DiagnosticsViewModel(exporter, mainDispatcherRule.dispatcher)
+                viewModel.export(DiagnosticsDelivery.SAVE)
+                advanceUntilIdle()
+                exporter.copyFailure = DiagnosticsExportException(DiagnosticsExportFailure.BUNDLE)
+
+                viewModel.copyToDocument("content://documents/export.zip")
+                advanceUntilIdle()
+                viewModel.retry()
+                advanceUntilIdle()
+
+                assertEquals(2, exporter.buildCalls)
+            } finally {
+                root.deleteRecursively()
+            }
+        }
+
     private class FakeDiagnosticsExporter(
         val bundle: StagedBundle,
     ) : DiagnosticsExporter {
@@ -202,6 +253,8 @@ class DiagnosticsViewModelTest {
         var copyFailure: DiagnosticsExportException? = null
         var buildBlock: suspend () -> StagedBundle = {
             buildCalls += 1
+            // A build stages the file, so a rebuild after a reclaim puts it back.
+            bundle.file.writeText(STAGED_CONTENT)
             bundle
         }
 
@@ -227,15 +280,20 @@ class DiagnosticsViewModelTest {
             discardCalls += 1
             discardCalled.complete(Unit)
         }
+
+        /** What AndroidDiagnosticsExporter checks of a cached handle, minus the staging root. */
+        override fun isStaged(bundle: StagedBundle): Boolean =
+            bundle.file.isFile && bundle.file.length() == bundle.sizeBytes
     }
 
     private fun staged(root: File): StagedBundle {
-        val file = root.resolve("bundle.zip").apply { writeText("bundle") }
+        val file = root.resolve("bundle.zip").apply { writeText(STAGED_CONTENT) }
         return StagedBundle(file, SHARE_URI, file.length(), emptyList())
     }
 
     private companion object {
         const val IO_THREAD_NAME = "diagnostics-view-model-io-test"
         const val SHARE_URI = "content://com.ankiminer.android.diagnostics/bundle.zip"
+        const val STAGED_CONTENT = "bundle"
     }
 }

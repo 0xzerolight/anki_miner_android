@@ -33,14 +33,17 @@ import com.ankiminer.android.mining.AnkiMiningTargetReadiness
 import com.ankiminer.android.mining.MiningRunAdmissionState
 import com.ankiminer.android.mining.NotificationPermissionReadiness
 import com.ankiminer.android.localization.testStringResourceResolver
+import java.io.IOException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -774,6 +777,170 @@ class SetupViewModelTest {
             assertEquals(null, restored.uiState.value.pendingReplace)
         }
 
+    @Test
+    fun `a word list pick delivered to a recreated ViewModel lands on the list it was made for`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            listOf(WordListKind.BLACKLIST, WordListKind.WHITELIST).forEach { kind ->
+                // Process death between launching the picker and the result: the recreated
+                // ViewModel is still recovering, which used to drop the pick on the busy guard.
+                val resources = FakeResourceManager()
+                resources.setStartupReadiness(ResourceStartupReadiness.RECOVERING)
+                val restored =
+                    viewModel(
+                        FakeSettingsRepository(AppSettings()),
+                        FakeAnkiSetupManager(emptyList()),
+                        resources,
+                        SavedStateHandle(),
+                    )
+                advanceUntilIdle()
+
+                restored.importWordList("content://$kind.txt", kind)
+                advanceUntilIdle()
+                assertEquals(emptyList<Pair<String, WordListKind>>(), resources.wordListImports)
+
+                resources.setStartupReadiness(ResourceStartupReadiness.READY)
+                advanceUntilIdle()
+
+                assertEquals(listOf("content://$kind.txt" to kind), resources.wordListImports)
+                assertEquals(kind, restored.uiState.value.wordListTarget)
+            }
+        }
+
+    @Test
+    fun `a word list pick never displaces another import already queued for dispatch`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            // One pending slot: the pitch pick is confirmed work waiting on startup, and a
+            // word-list result is the only one that can arrive without its own picker gate.
+            val resources = FakeResourceManager()
+            val model =
+                viewModel(
+                    FakeSettingsRepository(AppSettings()),
+                    FakeAnkiSetupManager(emptyList()),
+                    resources,
+                    SavedStateHandle(),
+                )
+            advanceUntilIdle()
+            model.setPitchSourceName("Kanjium CSV")
+            model.setPitchFormat(PitchAccentSourceFormat.CSV)
+            assertTrue(model.beginPitchPicker())
+            // Recovery starts while the picker is up, so the pitch result queues instead of running.
+            resources.setStartupReadiness(ResourceStartupReadiness.RECOVERING)
+            model.onPitchPicked("content://pitch.csv")
+            advanceUntilIdle()
+            assertEquals(emptyList<Pair<String, Boolean>>(), resources.pitchImports)
+
+            model.importWordList("content://blacklist.txt", WordListKind.BLACKLIST)
+            resources.setStartupReadiness(ResourceStartupReadiness.READY)
+            advanceUntilIdle()
+
+            assertEquals(listOf("content://pitch.csv" to false), resources.pitchImports)
+            assertEquals(emptyList<Pair<String, WordListKind>>(), resources.wordListImports)
+        }
+
+    @Test
+    fun `a word list pick never displaces a queued pick for the other list`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val resources = FakeResourceManager()
+            resources.setStartupReadiness(ResourceStartupReadiness.RECOVERING)
+            val model =
+                viewModel(
+                    FakeSettingsRepository(AppSettings()),
+                    FakeAnkiSetupManager(emptyList()),
+                    resources,
+                    SavedStateHandle(),
+                )
+            advanceUntilIdle()
+
+            model.importWordList("content://blacklist.txt", WordListKind.BLACKLIST)
+            advanceUntilIdle()
+            assertEquals(emptyList<Pair<String, WordListKind>>(), resources.wordListImports)
+
+            // Both launchers stay live while a pick is queued, so the whitelist one can arrive here.
+            model.importWordList("content://whitelist.txt", WordListKind.WHITELIST)
+            resources.setStartupReadiness(ResourceStartupReadiness.READY)
+            advanceUntilIdle()
+
+            assertEquals(
+                listOf("content://blacklist.txt" to WordListKind.BLACKLIST),
+                resources.wordListImports,
+            )
+        }
+
+    @Test
+    fun `a repeated pick for the same word list replaces the queued one`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val resources = FakeResourceManager()
+            resources.setStartupReadiness(ResourceStartupReadiness.RECOVERING)
+            val model =
+                viewModel(
+                    FakeSettingsRepository(AppSettings()),
+                    FakeAnkiSetupManager(emptyList()),
+                    resources,
+                    SavedStateHandle(),
+                )
+            advanceUntilIdle()
+
+            model.importWordList("content://blacklist-old.txt", WordListKind.BLACKLIST)
+            advanceUntilIdle()
+            model.importWordList("content://blacklist-new.txt", WordListKind.BLACKLIST)
+            resources.setStartupReadiness(ResourceStartupReadiness.READY)
+            advanceUntilIdle()
+
+            // The slot being answered is its own, so the newer file is what imports.
+            assertEquals(
+                listOf("content://blacklist-new.txt" to WordListKind.BLACKLIST),
+                resources.wordListImports,
+            )
+        }
+
+    @Test
+    fun `an interrupted whitelist import still offers the whitelist picker after recreation`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val savedState = SavedStateHandle()
+            val first =
+                viewModel(
+                    FakeSettingsRepository(AppSettings()),
+                    FakeAnkiSetupManager(emptyList()),
+                    FakeResourceManager(),
+                    savedState,
+                )
+            advanceUntilIdle()
+            first.importWordList("content://whitelist.txt", WordListKind.WHITELIST)
+            advanceUntilIdle()
+
+            val restored =
+                viewModel(
+                    FakeSettingsRepository(AppSettings()),
+                    FakeAnkiSetupManager(emptyList()),
+                    FakeResourceManager(),
+                    savedState,
+                )
+            advanceUntilIdle()
+
+            // Retry for a WORD_LIST failure opens the picker for this target, not the default one.
+            assertEquals(WordListKind.WHITELIST, restored.uiState.value.wordListTarget)
+        }
+
+    @Test
+    fun `an unreadable settings store still renders setup`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val resources = FakeResourceManager()
+
+            // uiState is combine(...).stateIn(viewModelScope): a settings read which throws would
+            // reach Android's uncaught handler instead of rendering. Setup shows defaults, and
+            // every write here stays a read-modify-write, so nothing on screen can be persisted.
+            val viewModel =
+                viewModel(
+                    repository = UnreadableSettingsRepository(),
+                    setup = FakeAnkiSetupManager(emptyList()),
+                    resources = resources,
+                )
+            advanceUntilIdle()
+
+            assertEquals(ResourceStartupReadiness.READY, viewModel.uiState.value.resourceStartup)
+            assertNull(viewModel.uiState.value.noteType)
+        }
+
     private fun installedFrequency(sourceId: String, sourceName: String) =
         InstalledFrequencySource(
             sourceId = sourceId,
@@ -799,7 +966,7 @@ class SetupViewModelTest {
     )
 
     private fun viewModel(
-        repository: FakeSettingsRepository,
+        repository: AppSettingsRepository,
         setup: FakeAnkiSetupManager,
         resources: FakeResourceManager = FakeResourceManager(),
         savedStateHandle: SavedStateHandle = SavedStateHandle(),
@@ -826,6 +993,16 @@ class SetupViewModelTest {
 
     private fun model(name: String, vararg fields: String) =
         ModelSummary(id = name.hashCode().toLong(), name = name, fieldNames = fields.toList())
+
+    private class UnreadableSettingsRepository : AppSettingsRepository {
+        override val settings: Flow<AppSettings> =
+            flow { throw IOException("transient read failure") }
+
+        override suspend fun update(settings: AppSettings) = error("write not expected")
+
+        override suspend fun update(transform: (AppSettings) -> AppSettings) =
+            error("write not expected")
+    }
 
     private class FakeSettingsRepository(initial: AppSettings) : AppSettingsRepository {
         private val mutableSettings = MutableStateFlow(AppSettingsValidator.validate(initial))

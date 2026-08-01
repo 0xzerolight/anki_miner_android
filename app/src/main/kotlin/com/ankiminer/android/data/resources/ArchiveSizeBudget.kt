@@ -16,10 +16,17 @@ internal const val ARCHIVE_BUDGET_RESERVE_BYTES = 32L * 1024 * 1024
  * local audio packs are stored (not compressed) media, so the extracted tree is
  * about as large as the archive. Everything after extraction is a rename, so
  * twice the archive size plus the reserve is the peak.
+ *
+ * @throws ResourceStorageException when free space is already at or under the
+ * reserve. There is no budget to state then, and clamping to a positive one only
+ * produces a size limit of a few bytes that reads as an absurd cap on the file
+ * the user picked instead of as the out-of-space condition it is.
  */
-internal fun audioArchiveBudget(usableBytes: Long): Long =
-    ((usableBytes - ARCHIVE_BUDGET_RESERVE_BYTES) / 2)
-        .coerceIn(1L, AUDIO_ARCHIVE_CEILING_BYTES)
+internal fun audioArchiveBudget(usableBytes: Long): Long {
+    val budget = (usableBytes - ARCHIVE_BUDGET_RESERVE_BYTES) / 2
+    if (budget < 1L) throw ResourceStorageException(ARCHIVE_BUDGET_RESERVE_BYTES, usableBytes)
+    return budget.coerceAtMost(AUDIO_ARCHIVE_CEILING_BYTES)
+}
 
 /**
  * Free space for a staging root that the stager has not created yet.

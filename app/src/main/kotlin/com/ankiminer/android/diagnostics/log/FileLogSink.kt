@@ -154,19 +154,38 @@ internal class FileLogSink(
      */
     private fun execute(command: LogCommand) {
         try {
+            // Getting the queue onto disk is this sink's own work, so a failure here is the file
+            // being gone and disable() owns it, exactly as it does on the write path.
             drainQueuedLines()
             flushFile()
+        } catch (failure: Throwable) {
+            fail(command, failure)
+            if (failure is CancellationException) throw failure
+            disable(failure)
+            return
+        }
+        try {
             when (command) {
                 is LogCommand.Flush -> command.done.complete(Unit)
                 is LogCommand.Snapshot -> command.done.complete(copyInto(command.destDir))
             }
         } catch (failure: Throwable) {
-            when (command) {
-                is LogCommand.Flush -> command.done.completeExceptionally(failure)
-                is LogCommand.Snapshot -> command.done.completeExceptionally(failure)
-            }
+            // A snapshot is a READ of the log for the export bundle, not a write to it: a full
+            // cache or an unusable destination says nothing about the file this sink appends to.
+            // Disabling here silently dropped every later record in the process — including the
+            // ones describing the failure the user was trying to report.
+            fail(command, failure)
             if (failure is CancellationException) throw failure
-            disable(failure)
+        }
+    }
+
+    private fun fail(
+        command: LogCommand,
+        failure: Throwable,
+    ) {
+        when (command) {
+            is LogCommand.Flush -> command.done.completeExceptionally(failure)
+            is LogCommand.Snapshot -> command.done.completeExceptionally(failure)
         }
     }
 

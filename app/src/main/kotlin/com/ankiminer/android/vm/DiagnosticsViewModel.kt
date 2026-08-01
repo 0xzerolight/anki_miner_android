@@ -56,8 +56,15 @@ internal class DiagnosticsViewModel(
         launchExclusive {
             lastDelivery = delivery
             pendingBundle?.let { bundle ->
-                mutableState.value = DiagnosticsExportState.Ready(bundle, delivery)
-                return@launchExclusive
+                // The staged ZIP lives in cacheDir, which the platform reclaims and the janitor
+                // prunes, so the handle kept for a second delivery attempt may name a file that is
+                // no longer there. Republishing it made export and Retry fail identically for the
+                // rest of this ViewModel's life.
+                if (withContext(ioDispatcher) { exporter.isStaged(bundle) }) {
+                    mutableState.value = DiagnosticsExportState.Ready(bundle, delivery)
+                    return@launchExclusive
+                }
+                pendingBundle = null
             }
             mutableState.value = DiagnosticsExportState.Working(DiagnosticsExportStep.PREPARING)
             try {
@@ -70,10 +77,9 @@ internal class DiagnosticsViewModel(
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (failure: DiagnosticsExportException) {
-                mutableState.value = DiagnosticsExportState.Failed(failureMessage(failure.kind))
+                publishFailure(failure.kind)
             } catch (_: Throwable) {
-                mutableState.value =
-                    DiagnosticsExportState.Failed(failureMessage(DiagnosticsExportFailure.BUILD))
+                publishFailure(DiagnosticsExportFailure.BUILD)
             }
         }
     }
@@ -93,10 +99,9 @@ internal class DiagnosticsViewModel(
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (failure: DiagnosticsExportException) {
-                mutableState.value = DiagnosticsExportState.Failed(failureMessage(failure.kind))
+                publishFailure(failure.kind)
             } catch (_: Throwable) {
-                mutableState.value =
-                    DiagnosticsExportState.Failed(failureMessage(DiagnosticsExportFailure.COPY))
+                publishFailure(DiagnosticsExportFailure.COPY)
             }
         }
     }
@@ -116,11 +121,12 @@ internal class DiagnosticsViewModel(
                 // policy owns shared-file cleanup instead of this ViewModel.
                 pendingBundle = null
                 mutableState.value = DiagnosticsExportState.Saved
+            } catch (cancellation: CancellationException) {
+                throw cancellation
             } catch (failure: DiagnosticsExportException) {
-                mutableState.value = DiagnosticsExportState.Failed(failureMessage(failure.kind))
+                publishFailure(failure.kind)
             } catch (_: Throwable) {
-                mutableState.value =
-                    DiagnosticsExportState.Failed(failureMessage(DiagnosticsExportFailure.SHARE))
+                publishFailure(DiagnosticsExportFailure.SHARE)
             }
         }
     }
@@ -150,6 +156,15 @@ internal class DiagnosticsViewModel(
                 exportMutex.unlock()
             }
         }
+    }
+
+    /**
+     * A [DiagnosticsExportFailure.BUNDLE] failure is the exporter having already proven the staged
+     * handle unusable, so it is dropped here rather than offered again to the next export.
+     */
+    private fun publishFailure(kind: DiagnosticsExportFailure) {
+        if (kind == DiagnosticsExportFailure.BUNDLE) pendingBundle = null
+        mutableState.value = DiagnosticsExportState.Failed(failureMessage(kind))
     }
 
     private fun failureMessage(kind: DiagnosticsExportFailure): LocalizedStringResource =

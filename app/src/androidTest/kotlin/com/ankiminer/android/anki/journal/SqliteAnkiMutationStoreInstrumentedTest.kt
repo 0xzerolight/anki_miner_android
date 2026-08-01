@@ -1781,6 +1781,99 @@ class SqliteAnkiMutationStoreInstrumentedTest {
     }
 
     @Test
+    fun retentionPrunesResolvedRemediationOwnedByAPrunedCohortExactlyOnce() {
+        // Age trigger: one prunable cohort whose resolved remediation ages with it, pruned on open.
+        val ageName = databaseName()
+        var ageNow = 1_000L
+        val agePolicy =
+            JournalRetentionPolicy.forTests(
+                completedCohortLimit = 64,
+                resolvedRemediationLimit = 64,
+                maxAgeMillis = 1_000L,
+            )
+        val aged = verifyRequest(700, 1)
+        try {
+            SqliteAnkiMutationStore(
+                context,
+                ageName,
+                clock = JournalClock { ageNow },
+                retentionPolicy = agePolicy,
+                enforceBackgroundThread = false,
+            ).use { store ->
+                resolveParentRemediation(store, readyVerify(store, 700, 1), "aged cohort remediation")
+                assertTrue(
+                    store.cleanupRun(aged.key.runId, true, listOf(aged.key.requestId)).evidenceAccepted,
+                )
+                assertEquals(ParentState.RESPONSE_ACKNOWLEDGED, store.parent(aged.key)?.state)
+                assertEquals(1L, count(store.writableDatabase, "remediations"))
+            }
+            ageNow = 10_000L
+            SqliteAnkiMutationStore(
+                context,
+                ageName,
+                clock = JournalClock { ageNow },
+                retentionPolicy = agePolicy,
+                enforceBackgroundThread = false,
+            ).use { reopened ->
+                assertNull(reopened.parent(aged.key))
+                assertEquals(0L, count(reopened.writableDatabase, "remediations"))
+                assertEquals(0L, count(reopened.writableDatabase, "terminal_parent_audit"))
+            }
+        } finally {
+            context.deleteDatabase(ageName)
+        }
+
+        // Count trigger: the older cohort falls past the completed-cohort boundary while its
+        // resolved remediation simultaneously falls past the resolved-remediation boundary.
+        val countName = databaseName()
+        val countPolicy =
+            JournalRetentionPolicy.forTests(
+                completedCohortLimit = 1,
+                resolvedRemediationLimit = 1,
+                maxAgeMillis = Long.MAX_VALUE,
+            )
+        val older = verifyRequest(701, 1)
+        val newer = verifyRequest(702, 1)
+        try {
+            SqliteAnkiMutationStore(
+                context,
+                countName,
+                clock = JournalClock { 1_000L },
+                retentionPolicy = countPolicy,
+                enforceBackgroundThread = false,
+            ).use { store ->
+                resolveParentRemediation(store, readyVerify(store, 701, 1), "older cohort remediation")
+                assertTrue(
+                    store.cleanupRun(older.key.runId, true, listOf(older.key.requestId)).evidenceAccepted,
+                )
+                assertEquals(ParentState.RESPONSE_ACKNOWLEDGED, store.parent(older.key)?.state)
+
+                resolveParentRemediation(store, readyVerify(store, 702, 1), "newer cohort remediation")
+                assertTrue(
+                    store.cleanupRun(newer.key.runId, true, listOf(newer.key.requestId)).evidenceAccepted,
+                )
+                assertNull(store.parent(older.key))
+                assertEquals(ParentState.RESPONSE_ACKNOWLEDGED, store.parent(newer.key)?.state)
+                assertEquals(1L, count(store.writableDatabase, "remediations"))
+                assertEquals(1L, count(store.writableDatabase, "terminal_parent_audit"))
+            }
+            SqliteAnkiMutationStore(
+                context,
+                countName,
+                clock = JournalClock { 1_000L },
+                retentionPolicy = countPolicy,
+                enforceBackgroundThread = false,
+            ).use { reopened ->
+                assertNull(reopened.parent(older.key))
+                assertEquals(ParentState.RESPONSE_ACKNOWLEDGED, reopened.parent(newer.key)?.state)
+                assertEquals(1L, count(reopened.writableDatabase, "remediations"))
+            }
+        } finally {
+            context.deleteDatabase(countName)
+        }
+    }
+
+    @Test
     fun finalizedStoredMediaRequiresAtomicUnattachedAcknowledgementAcrossReopen() {
         val name = databaseName()
         var firstClaimId = 0L
@@ -3022,6 +3115,23 @@ class SqliteAnkiMutationStoreInstrumentedTest {
         store.storeTargetSnapshot(request.key, target)
         store.markResultReady(request, JournalResponse.VerifySuccess(request.key, target))
         return request
+    }
+
+    /** Attaches a parent-owned remediation and drives it to RESOLVED so the cohort stays prunable. */
+    private fun resolveParentRemediation(
+        store: SqliteAnkiMutationStore,
+        request: JournalRequest,
+        summary: String,
+    ) {
+        val remediation =
+            store.addRemediation(
+                RemediationDraft(
+                    parentId = requireNotNull(store.parent(request.key)).id,
+                    kind = RemediationKind.CAPACITY_EXHAUSTED,
+                    summary = summary,
+                ),
+            )
+        store.resolveRemediation(remediation.id, "$summary resolved")
     }
 
     private fun prepareCommittedNote(

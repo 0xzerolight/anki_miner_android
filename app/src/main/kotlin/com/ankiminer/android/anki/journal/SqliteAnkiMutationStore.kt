@@ -4261,8 +4261,8 @@ internal class SqliteAnkiMutationStore(
                     countBoundary,
                 )
             }
-        val remediationIds = resolvedRemediationPruneIds(db, nowEpochMillis)
-        if (candidates.isEmpty() && remediationIds.isEmpty()) return
+        val remediationProbe = resolvedRemediationPruneIds(db, nowEpochMillis)
+        if (candidates.isEmpty() && remediationProbe.isEmpty()) return
 
         db.update(
             "journal_maintenance",
@@ -4272,7 +4272,10 @@ internal class SqliteAnkiMutationStore(
         ).requireOne("enable journal retention")
         try {
             candidates.forEach { candidate -> pruneCompletedCohortDb(db, candidate) }
-            remediationIds.forEach { remediationId ->
+            // Cohort pruning already removes the resolved remediations owned by the parents it
+            // deletes, so the probe above can name rows that no longer exist. Recompute against the
+            // post-cohort state: every id here provably still exists, keeping requireOne exact.
+            resolvedRemediationPruneIds(db, nowEpochMillis).forEach { remediationId ->
                 db.delete("remediations", "id = ?", arrayOf(remediationId.toString()))
                     .requireOne("prune resolved remediation")
             }
