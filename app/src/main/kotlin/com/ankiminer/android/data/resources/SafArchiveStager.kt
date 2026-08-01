@@ -7,7 +7,9 @@ import android.os.ParcelFileDescriptor
 import com.ankiminer.android.media.CancellableProviderIo
 import com.ankiminer.android.media.ProviderIoCancellation
 import com.ankiminer.android.media.ProviderIoCancelledException
+import com.ankiminer.android.media.ProviderIoDeadlineScheduler
 import com.ankiminer.android.media.ProviderIoTimeoutException
+import com.ankiminer.android.media.RealProviderIoDeadlineScheduler
 import com.ankiminer.android.media.combine
 import java.io.File
 import java.io.FileNotFoundException
@@ -103,6 +105,7 @@ internal class SafArchiveStager(
     private val availableBytes: (File) -> Long = { it.usableSpace },
     private val providerIoScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
     private val providerIoTimeoutMillis: Long = PROVIDER_IO_TIMEOUT_MILLIS,
+    private val providerIoScheduler: ProviderIoDeadlineScheduler = RealProviderIoDeadlineScheduler,
 ) : ResourceArchiveStager {
     constructor(
         resolver: ContentResolver,
@@ -142,14 +145,16 @@ internal class SafArchiveStager(
                 CancellableProviderIo.execute(
                     scope = providerIoScope,
                     timeoutMillis = providerIoTimeoutMillis,
-                ) { deadlineCancellation ->
+                    scheduler = providerIoScheduler,
+                ) { deadline ->
                     copyProviderInput(
                         source = sourceUri,
                         destination = destination,
-                        cancellation = cancellation.combine(deadlineCancellation),
+                        cancellation = cancellation.combine(deadline),
                         maximumBytes = maximumBytes,
                         available = available,
                         sourceLabel = sourceLabel,
+                        onProviderProgress = deadline::rearm,
                         onProgress = onProgress,
                     )
                 }
@@ -174,6 +179,7 @@ internal class SafArchiveStager(
         maximumBytes: Long,
         available: Long,
         sourceLabel: String,
+        onProviderProgress: () -> Unit,
         onProgress: (Long, Long) -> Unit,
     ): StagedArchive {
         val digest = MessageDigest.getInstance("SHA-256")
@@ -188,6 +194,9 @@ internal class SafArchiveStager(
                     throwIfCancelled(cancellation)
                     val count = stream.read(buffer)
                     throwIfCancelled(cancellation)
+                    // Delivered bytes and end of stream are both provider progress. The deadline
+                    // bounds a stalled provider, never a long transfer or the closing sync.
+                    if (count != 0) onProviderProgress()
                     if (count < 0) break
                     total += count
                     if (total > maximumBytes) {
