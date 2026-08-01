@@ -23,6 +23,7 @@ from test_anki_protocol_corpus import (
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
+README_PATH = PROJECT_ROOT / "golden/README.md"
 FIXTURE_PATH = PROJECT_ROOT / "golden/bridge/anki-request-digest-v1.jsonl"
 MUTATION_PATH = PROJECT_ROOT / "golden/bridge/anki-request-digest-mutations-v1.jsonl"
 
@@ -265,6 +266,21 @@ def _materialize_mutations() -> dict[str, tuple[str, dict[str, Any]]]:
 
 
 MATERIALIZED = _materialize_mutations()
+
+
+def test_fixture_sizes_match_the_golden_readme() -> None:
+    # The expectations are read out of the prose, so a fixture change cannot be
+    # absorbed by editing this test -- golden/README.md is what has to move.
+    prose = " ".join(README_PATH.read_text(encoding="utf-8").split())
+    documented = re.search(
+        r"`bridge/anki-request-digest-v1\.jsonl` — (\d+) raw-request/canonical-form/digest vectors; "
+        r"`bridge/anki-request-digest-mutations-v1\.jsonl` — (\d+) single-leaf mutations",
+        prose,
+    )
+    assert documented is not None, "golden/README.md no longer states the request-digest counts"
+    vectors, mutations = (int(group) for group in documented.groups())
+    assert len(VECTORS) == vectors
+    assert len(MUTATIONS) == mutations
 
 
 @pytest.mark.parametrize("vector", VECTORS, ids=lambda vector: vector["id"])

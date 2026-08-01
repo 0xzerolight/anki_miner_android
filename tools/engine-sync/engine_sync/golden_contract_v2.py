@@ -15,7 +15,7 @@ from typing import Any
 import jsonschema
 
 from .core import EngineSyncError, load_lock
-from .golden_exporter_overlay import materialize_golden_exporter
+from .golden_exporter_overlay import MATERIALIZED_SHA256, materialize_golden_exporter
 
 
 SCHEMA_VERSION = 2
@@ -149,15 +149,15 @@ def validate_committed_fixture(project_root: Path) -> dict[str, Any]:
     if not SHA256_RE.fullmatch(str(tool.get("sha256", ""))):
         raise GoldenV2Error("golden v2 exporter aggregate hash is invalid")
     files = tool.get("files_sha256")
-    expected_tool_files = {
-        "dump_engine_goldens.py",
-        "engine_golden_contract_v2.py",
-        "prepare_golden_unidic.py",
-    }
-    if not isinstance(files, dict) or set(files) != expected_tool_files:
+    if not isinstance(files, dict) or set(files) != set(MATERIALIZED_SHA256):
         raise GoldenV2Error("golden v2 exporter file set changed")
     if any(not isinstance(value, str) or not SHA256_RE.fullmatch(value) for value in files.values()):
         raise GoldenV2Error("golden v2 exporter file hash is invalid")
+    if files != MATERIALIZED_SHA256:
+        raise GoldenV2Error(
+            "golden v2 exporter file hashes differ from the reviewed overlay: "
+            "tools/engine-sync/engine_sync/golden_exporter_overlay.py is stale"
+        )
 
     runtime = provenance["runtime"]
     data = provenance["data"]

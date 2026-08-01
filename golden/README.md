@@ -29,8 +29,12 @@ section through the vendored Android engine in one fresh process.
 (`.github/scripts/run-api26-instrumentation.sh`) passes only `-e notClass`. So
 that replay is opt-in, not a per-push gate. Neither CI nor `scripts/health.sh`
 re-derives either; both run only `validate_committed_fixture`, a hash-pin check
-that any self-consistent fixture passes. After an `engine.lock` bump the
-re-derivation above is therefore a manual step, and its output is the evidence.
+that any self-consistent fixture passes — it does cross-check the fixture's
+recorded exporter hashes against the reviewed overlay constants, so a re-pin
+that never updated `golden_exporter_overlay.py` fails there, but it cannot tell
+whether the recorded cases are what the engine actually produces. After an
+`engine.lock` bump the re-derivation above is therefore a manual step, and its
+output is the evidence.
 
 No hosted derivation exists in either repository, by decision. The desktop repo
 carried `.github/workflows/android-engine-goldens.yml` until 2026-07-31; it was
@@ -79,13 +83,13 @@ repository. So it too is an opt-in manual step, not a per-push gate.
 `bridge/` holds the Anki bridge-boundary corpora. They are not engine goldens:
 no exporter derives them, and no provenance block pins them.
 
-- `bridge/anki-protocol-v1.jsonl` — 118 envelope cases (45 request, 73
-  response; 41 accept, 77 reject) across the five Anki callbacks. Read by
+- `bridge/anki-protocol-v1.jsonl` — 119 envelope cases (46 request, 73
+  response; 42 accept, 77 reject) across the five Anki callbacks. Read by
   `tests/python/android_bridge/test_anki_protocol_corpus.py` and
   `app/src/test/kotlin/com/ankiminer/android/anki/AnkiJsonCodecBoundaryTest.kt`,
   so one corpus pins both decoders. `AnkiRequestDigestTest.kt` also probes for
   it, but only to locate the project root.
-- `bridge/anki-request-digest-v1.jsonl` — 19 raw-request/canonical-form/digest
+- `bridge/anki-request-digest-v1.jsonl` — 20 raw-request/canonical-form/digest
   vectors; `bridge/anki-request-digest-mutations-v1.jsonl` — 56 single-leaf
   mutations of those vectors with the digest each must produce. Both are read by
   `tests/python/android_bridge/test_request_digest.py` and
@@ -127,7 +131,7 @@ This prevents a developer's editable install or current checkout from silently
 supplying the fixtures.
 
 Run the desktop exporter through the Android-side verifier. `engine-v1.json` is
-frozen at desktop revision `ba3b3cf`, which predates the `6f57f83` recorded in
+frozen at desktop revision `ba3b3cf`, which predates the `2d227dd` recorded in
 `tools/engine-sync/engine.lock`. `run_goldens.py` takes its expected revision
 from `--lock` (default: that file), so reproducing v1 means pointing both
 `--engine-root` and `--lock` at `ba3b3cf` — against the current lock the run

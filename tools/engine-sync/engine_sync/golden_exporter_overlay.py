@@ -7,13 +7,14 @@ import os
 from pathlib import Path
 import stat
 
-from .core import EngineSyncError
+from .core import EngineSyncError, load_lock
 
 
 class GoldenExporterOverlayError(EngineSyncError):
     """The desktop exporter does not match the reviewed overlay base."""
 
 
+LOCK_PATH = Path(__file__).resolve().parents[1] / "engine.lock"
 SOURCE_ATTESTATIONS = {
     "dump_engine_goldens.py": (
         "b873ab6517f61443c8cb0669817c54501c68f7733343c95f80681ba5fd9a0762",
@@ -35,16 +36,23 @@ SCHEMA_ATTESTATION = (
 MATERIALIZED_SHA256 = {
     "dump_engine_goldens.py": SOURCE_ATTESTATIONS["dump_engine_goldens.py"][0],
     "engine_golden_contract_v2.py": (
-        "b635f9328cf2ef252dfeab2dddb2528a369daa62e6607d824333745a6a51e6e9"
+        "3c9514bdd51818dd3b680bcbffb05ba0204410f11792aed78eb81d819a023c1e"
     ),
     "prepare_golden_unidic.py": SOURCE_ATTESTATIONS["prepare_golden_unidic.py"][0],
 }
-DESKTOP_REVISION_LINE = (
-    b'PINNED_ENGINE_REVISION = "ba3b3cfbcc53e57a440c8b9f157209851408c62a"'
-)
-ANDROID_REVISION_LINE = (
-    b'PINNED_ENGINE_REVISION = "6f57f836b59d5e375a26c883482c158c06c47da9"'
-)
+
+
+def _revision_line(revision: str) -> bytes:
+    return f'PINNED_ENGINE_REVISION = "{revision}"'.encode("ascii")
+
+
+DESKTOP_REVISION_LINE = _revision_line("ba3b3cfbcc53e57a440c8b9f157209851408c62a")
+
+
+def android_revision_line(lock_path: Path | None = None) -> bytes:
+    """The revision the overlay patches in — always read from engine.lock."""
+
+    return _revision_line(load_lock(LOCK_PATH if lock_path is None else lock_path))
 
 
 def _git_blob_sha1(content: bytes) -> str:
@@ -82,7 +90,7 @@ def materialize_golden_exporter(exporter: Path, output_dir: Path) -> Path:
                 raise GoldenExporterOverlayError(
                     "desktop v2 exporter revision seam changed since review"
                 )
-            content = content.replace(DESKTOP_REVISION_LINE, ANDROID_REVISION_LINE)
+            content = content.replace(DESKTOP_REVISION_LINE, android_revision_line())
         actual = hashlib.sha256(content).hexdigest()
         if actual != MATERIALIZED_SHA256[name]:
             raise GoldenExporterOverlayError(
