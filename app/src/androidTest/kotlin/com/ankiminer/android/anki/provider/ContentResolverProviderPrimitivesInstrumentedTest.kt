@@ -59,7 +59,9 @@ class ContentResolverProviderPrimitivesInstrumentedTest {
 
     @Test
     fun exact_cards_snapshot_uses_direct_note_cards_query() {
-        val expectedProjection = arrayOf("_id", "note_id", "ord", "deck_id")
+        // `original_deck_id` is the home-deck link: a card a filtered deck borrowed reports the
+        // filtered deck in `deck_id`, so deck-scoped reads need both.
+        val expectedProjection = arrayOf("_id", "note_id", "ord", "deck_id", "original_deck_id")
         var calls = 0
         val gateway =
             queryGateway { uri, projection, selection, selectionArgs, sortOrder, signal ->
