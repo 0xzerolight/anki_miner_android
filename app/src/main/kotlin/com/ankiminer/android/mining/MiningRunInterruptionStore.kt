@@ -136,7 +136,12 @@ internal class AndroidMiningRunInterruptionStore(
 
     override fun clearUnrecognizedRecord(): Boolean =
         synchronized(lock) {
-            if (readLocked() != null) return@synchronized true
+            if (readLocked() != null) {
+                // A decodable record means the undecodable bytes are gone and a run of this
+                // process wrote over them, so the startup sample is spent like every other arm.
+                startupState = StartupInterruption.None
+                return@synchronized true
+            }
             if (!file.baseFile.exists()) {
                 startupState = StartupInterruption.None
                 return@synchronized true
