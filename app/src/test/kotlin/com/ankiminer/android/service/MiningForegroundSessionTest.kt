@@ -167,6 +167,16 @@ class MiningForegroundSessionTest {
     }
 
     @Test
+    fun `cpu wake state only moves the lease when the wanted state is not the held one`() {
+        // The service applies this on every command rather than on its own intent action, so the
+        // two already-there cases have to be no-ops or a resume would re-acquire on each redraw.
+        assertFalse(cpuWakeStateChangeRequired(parked = true, owned = false))
+        assertFalse(cpuWakeStateChangeRequired(parked = false, owned = true))
+        assertTrue(cpuWakeStateChangeRequired(parked = true, owned = true))
+        assertTrue(cpuWakeStateChangeRequired(parked = false, owned = false))
+    }
+
+    @Test
     fun `cold stale command stops only an ownerless service`() {
         val current =
             MiningForegroundSessionIdentity(

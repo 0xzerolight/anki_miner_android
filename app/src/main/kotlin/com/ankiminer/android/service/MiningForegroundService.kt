@@ -54,6 +54,18 @@ internal fun miningNotificationProgressText(progress: MiningForegroundProgress):
     }
 }
 
+/**
+ * Whether the wake lease still has to be moved to reach [parked], given that it is currently
+ * [owned].
+ *
+ * File-level for the same reason as the two above: the service needs a real wake lock, so the
+ * idempotence this relies on to run on every command would otherwise be untested.
+ */
+internal fun cpuWakeStateChangeRequired(
+    parked: Boolean,
+    owned: Boolean,
+): Boolean = parked == owned
+
 internal fun decodeMiningForegroundIntentIdentity(
     action: String?,
     extraKeys: Set<String>,
@@ -227,8 +239,7 @@ class MiningForegroundService : Service() {
         identity: MiningForegroundSessionIdentity,
         parked: Boolean,
     ) {
-        val alreadyApplied = if (parked) !cpuWakeLease.isOwned() else cpuWakeLease.isOwned()
-        if (alreadyApplied) return
+        if (!cpuWakeStateChangeRequired(parked, cpuWakeLease.isOwned())) return
         if (parked) cpuWakeLease.park() else cpuWakeLease.acquire()
         // acquire() is a no-op once the lease is closed, so the wanted state has to be re-read
         // rather than assumed: a resume racing teardown legitimately does nothing.
