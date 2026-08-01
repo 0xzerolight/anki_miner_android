@@ -1502,48 +1502,62 @@ internal class BridgeReadingMiningRepository(
         val message =
             BridgeJsonCodec.decode(raw, expectedRunId = runId) as? BridgeMessage.CurationNeeded
                 ?: throw IllegalStateException("Python sent an invalid curation request")
-        var transition: PhaseTransition? = null
         var parkingLease: MiningForegroundLease? = null
+        val admittedPhase =
+            synchronized(monitor) {
+                val run = activeFor(generation) ?: throw IllegalStateException("Curation request is stale")
+                if (run.cancelRequested) return
+                when (run.phase) {
+                    Phase.REGISTERED -> {
+                        val firstPageIndex = message.request.page?.pageIndex
+                        if (run.curation != null || (firstPageIndex != null && firstPageIndex != 0L)) {
+                            throw IllegalStateException("Curation request is duplicated or out of order")
+                        }
+                    }
+                    Phase.ADVANCING -> {
+                        val previous = run.curation
+                            ?: throw IllegalStateException("Curation page has no predecessor")
+                        val previousPage = previous.page
+                            ?: throw IllegalStateException("A single curation request cannot advance")
+                        val nextPage = message.request.page
+                            ?: throw IllegalStateException("A paged curation request cannot become single")
+                        if (
+                            previous.isFinalPage ||
+                            message.request.runId != previous.runId ||
+                            message.request.requestId != previous.requestId ||
+                            nextPage.pageIndex != previousPage.pageIndex + 1 ||
+                            nextPage.pageCount != previousPage.pageCount ||
+                            nextPage.totalCandidates != previousPage.totalCandidates ||
+                            nextPage.candidateStart !=
+                                previousPage.candidateStart + previous.candidates.size.toLong()
+                        ) {
+                            throw IllegalStateException("Curation page is duplicated or out of order")
+                        }
+                    }
+                    else -> throw IllegalStateException("Curation request is duplicated or out of order")
+                }
+                parkingLease = run.foregroundLease
+                run.phase
+            }
+        // The engine is parked on a threading.Event until the user answers. Nothing is processed
+        // meanwhile, so the six-hour media-processing wake lease has no work behind it.
+        //
+        // The lease call is a Binder round trip and cannot be held under `monitor`, so the park has
+        // to be ordered against confirmCuration's resume some other way: nothing can be confirmed
+        // until CURATING is published, and that happens below. The park is therefore complete
+        // before a confirm can even be admitted, and its resume can only follow.
+        parkingLease?.parkCpuWake()
+        var transition: PhaseTransition? = null
         synchronized(monitor) {
             val run = activeFor(generation) ?: throw IllegalStateException("Curation request is stale")
-            if (run.cancelRequested) return
-            when (run.phase) {
-                Phase.REGISTERED -> {
-                    val firstPageIndex = message.request.page?.pageIndex
-                    if (run.curation != null || (firstPageIndex != null && firstPageIndex != 0L)) {
-                        throw IllegalStateException("Curation request is duplicated or out of order")
-                    }
-                }
-                Phase.ADVANCING -> {
-                    val previous = run.curation
-                        ?: throw IllegalStateException("Curation page has no predecessor")
-                    val previousPage = previous.page
-                        ?: throw IllegalStateException("A single curation request cannot advance")
-                    val nextPage = message.request.page
-                        ?: throw IllegalStateException("A paged curation request cannot become single")
-                    if (
-                        previous.isFinalPage ||
-                        message.request.runId != previous.runId ||
-                        message.request.requestId != previous.requestId ||
-                        nextPage.pageIndex != previousPage.pageIndex + 1 ||
-                        nextPage.pageCount != previousPage.pageCount ||
-                        nextPage.totalCandidates != previousPage.totalCandidates ||
-                        nextPage.candidateStart != previousPage.candidateStart + previous.candidates.size.toLong()
-                    ) {
-                        throw IllegalStateException("Curation page is duplicated or out of order")
-                    }
-                }
-                else -> throw IllegalStateException("Curation request is duplicated or out of order")
-            }
+            // Cancellation is the only thing that can move this run while the lease call is out;
+            // its own teardown closes the lease, so the park needs no undo here.
+            if (run.cancelRequested || run.phase != admittedPhase) return
             transition = run.transition(Phase.CURATING, "curation_needed")
             run.curation = message.request
-            parkingLease = run.foregroundLease
             mutableState.value = MiningRunState.Curating(message.request, pageSubmissionPending = false)
         }
         transition.emit()
-        // The engine is parked on a threading.Event until the user answers. Nothing is processed
-        // meanwhile, so the six-hour media-processing wake lease has no work behind it.
-        parkingLease?.parkCpuWake()
     }
 
     private fun captureTerminal(

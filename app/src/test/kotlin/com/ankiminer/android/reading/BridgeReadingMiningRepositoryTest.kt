@@ -411,7 +411,9 @@ class BridgeReadingMiningRepositoryTest {
         val curating =
             awaitState(harness.repository) { it is MiningRunState.Curating } as MiningRunState.Curating
 
-        // The FGS stays up across the wait; only the media-processing wake lease is dropped.
+        // The FGS stays up across the wait; only the media-processing wake lease is dropped. The
+        // park completes before Curating is published, so observing that state is enough: this is
+        // not a race with the engine thread.
         assertEquals(listOf(true), harness.foreground.lease.cpuWakeEvents)
         assertEquals(0, harness.foreground.lease.closeCount.get())
 
@@ -424,6 +426,38 @@ class BridgeReadingMiningRepositoryTest {
         }
 
         assertEquals(listOf(true, false), harness.foreground.lease.cpuWakeEvents)
+        harness.bridge.allowTerminal.countDown()
+        awaitState(harness.repository, MiningRunState::isTerminal)
+    }
+
+    /**
+     * A confirm landing between the park's decision and its lease call would leave the registry
+     * parked for the rest of the run, so phases 3-5 would process media with no CPU wake lock.
+     */
+    @Test
+    fun `no curation confirm is admitted while the wake park is in flight`() {
+        val harness = harness(expressionAudioFieldMapped = true)
+        val confirmDuringPark = AtomicReference<Throwable?>()
+        harness.foreground.lease.onPark = {
+            confirmDuringPark.set(
+                runCatching {
+                    runBlocking {
+                        harness.repository.confirmCuration(RUN_ID, REQUEST_ID, FIRST_SELECTION)
+                    }
+                }.exceptionOrNull(),
+            )
+        }
+
+        runBlocking { harness.repository.startReading(INPUT) }
+        awaitState(harness.repository) { it is MiningRunState.Curating }
+
+        assertTrue(
+            "a confirm racing the park was admitted: ${confirmDuringPark.get()}",
+            confirmDuringPark.get() is MiningCommandException,
+        )
+        assertEquals(listOf(true), harness.foreground.lease.cpuWakeEvents)
+
+        runBlocking { harness.repository.cancel(RUN_ID) }
         harness.bridge.allowTerminal.countDown()
         awaitState(harness.repository, MiningRunState::isTerminal)
     }
@@ -1685,12 +1719,17 @@ class BridgeReadingMiningRepositoryTest {
         /** True for a park, false for a resume, in call order. */
         val cpuWakeEvents = CopyOnWriteArrayList<Boolean>()
 
+        /** Runs on the engine thread with the park still in flight. */
+        @Volatile
+        var onPark: (() -> Unit)? = null
+
         override fun updateProgress(progress: MiningForegroundProgress): Boolean {
             published += progress
             return true
         }
 
         override fun parkCpuWake(): Boolean {
+            onPark?.invoke()
             cpuWakeEvents += true
             return true
         }
