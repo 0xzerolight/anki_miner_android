@@ -121,6 +121,8 @@ internal class DiagnosticsViewModel(
                 // policy owns shared-file cleanup instead of this ViewModel.
                 pendingBundle = null
                 mutableState.value = DiagnosticsExportState.Saved
+            } catch (cancellation: CancellationException) {
+                throw cancellation
             } catch (failure: DiagnosticsExportException) {
                 publishFailure(failure.kind)
             } catch (_: Throwable) {
