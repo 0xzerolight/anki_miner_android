@@ -342,7 +342,18 @@ internal class AnkiProviderReadService(
                         }
                         val noteId = cursor.positiveLong(ProviderColumn.CARD_NOTE_ID)
                         val deckId = cursor.positiveLong(ProviderColumn.CARD_DECK_ID)
-                        if (deckId != target.deck.id) continue
+                        // A card borrowed by a filtered deck reports that deck here and keeps its
+                        // home deck in the original-deck link (0 when it is not borrowed). Testing
+                        // the current deck alone dropped every card in a Custom Study session, so
+                        // those notes read as unknown and got mined again as duplicates.
+                        //
+                        // The target is verified non-dynamic, so a card sitting in it is home there
+                        // and the extra cell stays off the hot path of this row-ceilinged walk.
+                        if (deckId != target.deck.id) {
+                            val originalDeckId =
+                                cursor.nonNegativeLong(ProviderColumn.CARD_ORIGINAL_DECK_ID)
+                            if (originalDeckId != target.deck.id) continue
+                        }
                         exactNotes += noteId
                         // The note ceiling binds the RESULT, as it does for every other scan: this
                         // snapshot is returned as `scannedNotes`, which anki_adapter.py refuses
@@ -534,7 +545,7 @@ internal class AnkiProviderReadService(
                             noteId = id,
                             templateCount = target.model.templates.size,
                             cancellation = cancellation,
-                        ).any { it.deckId == target.deck.id }
+                        ).any { it.homeDeckId == target.deck.id }
                 ) {
                     val checksumHits = checkedAdd(hitsPerChecksum[checksum] ?: 0, 1)
                     if (checksumHits > AnkiLimitsV1.ScanFirstFields.DUPLICATE_HIT_PER_CANDIDATE_MAX_ITEM_COUNT) {
@@ -1004,6 +1015,7 @@ internal class GlobalCardReader(private val provider: CheckedProvider) {
                     noteId = cursor.positiveLong(ProviderColumn.CARD_NOTE_ID),
                     ordinal = cursor.exactInt(ProviderColumn.CARD_ORDINAL),
                     deckId = cursor.positiveLong(ProviderColumn.CARD_DECK_ID),
+                    originalDeckId = cursor.nonNegativeLong(ProviderColumn.CARD_ORIGINAL_DECK_ID),
                 )
             if (
                 result.id != cardId ||
@@ -1044,6 +1056,7 @@ internal class GlobalCardReader(private val provider: CheckedProvider) {
                         noteId = cursor.positiveLong(ProviderColumn.CARD_NOTE_ID),
                         ordinal = cursor.exactInt(ProviderColumn.CARD_ORDINAL),
                         deckId = cursor.positiveLong(ProviderColumn.CARD_DECK_ID),
+                    originalDeckId = cursor.nonNegativeLong(ProviderColumn.CARD_ORIGINAL_DECK_ID),
                     )
                 if (
                     card.noteId != noteId ||

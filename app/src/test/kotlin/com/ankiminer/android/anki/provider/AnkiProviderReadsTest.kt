@@ -742,18 +742,22 @@ class AnkiProviderReadsTest {
                             mapOf(
                                 ProviderColumn.CARD_NOTE_ID to integer(3L),
                                 ProviderColumn.CARD_DECK_ID to integer(20L),
+                                ProviderColumn.CARD_ORIGINAL_DECK_ID to integer(0L),
                             ),
                             mapOf(
                                 ProviderColumn.CARD_NOTE_ID to integer(2L),
                                 ProviderColumn.CARD_DECK_ID to integer(21L),
+                                ProviderColumn.CARD_ORIGINAL_DECK_ID to integer(0L),
                             ),
                             mapOf(
                                 ProviderColumn.CARD_NOTE_ID to integer(1L),
                                 ProviderColumn.CARD_DECK_ID to integer(20L),
+                                ProviderColumn.CARD_ORIGINAL_DECK_ID to integer(0L),
                             ),
                             mapOf(
                                 ProviderColumn.CARD_NOTE_ID to integer(1L),
                                 ProviderColumn.CARD_DECK_ID to integer(20L),
+                                ProviderColumn.CARD_ORIGINAL_DECK_ID to integer(0L),
                             ),
                         ),
                     )
@@ -786,6 +790,59 @@ class AnkiProviderReadsTest {
         assertEquals(listOf("one", "three"), result.firstFields)
         assertEquals(2, result.scannedNotes)
         assertNull(result.nextCursor)
+    }
+
+    @Test
+    fun `known vocabulary keeps cards a filtered deck borrowed from the target`() {
+        val fixture = fixture()
+        fixture.gateway.queryHandler = targetQueryHandler()
+        fixture.withOwner { owner -> fixture.verifyExistingTarget(owner, verifyRequest()) }
+        fixture.gateway.queries.clear()
+        fixture.gateway.queryHandler = { query, _ ->
+            when {
+                query.endpoint == ProviderEndpoint.CARDS ->
+                    FakeProviderCursor(
+                        query.projection,
+                        listOf(
+                            // Custom Study over "Mining" moved this card into a filtered deck; its
+                            // home deck is still the target, so its note is already mined.
+                            mapOf(
+                                ProviderColumn.CARD_NOTE_ID to integer(1L),
+                                ProviderColumn.CARD_DECK_ID to integer(99L),
+                                ProviderColumn.CARD_ORIGINAL_DECK_ID to integer(20L),
+                            ),
+                            // A subdeck card borrowed by the same session stays out: its home deck
+                            // is the subdeck, not the target.
+                            mapOf(
+                                ProviderColumn.CARD_NOTE_ID to integer(2L),
+                                ProviderColumn.CARD_DECK_ID to integer(99L),
+                                ProviderColumn.CARD_ORIGINAL_DECK_ID to integer(21L),
+                            ),
+                        ),
+                    )
+                query.selection is ProviderSelection.NoteIds -> {
+                    assertEquals(listOf(1L), (query.selection as ProviderSelection.NoteIds).ids)
+                    FakeProviderCursor(
+                        query.projection,
+                        listOf(
+                            mapOf(
+                                ProviderColumn.NOTE_ID to integer(1L),
+                                ProviderColumn.NOTE_FIELDS to text("one\u001fmeaning"),
+                            ),
+                        ),
+                    )
+                }
+                else -> error("unexpected query $query")
+            }
+        }
+
+        val result =
+            fixture.withOwner { owner ->
+                fixture.reads.scanFirstFields(owner, knownRequest(deckName = "Mining"))
+            } as KnownVocabularyResult
+
+        assertEquals(listOf("one"), result.firstFields)
+        assertEquals(1, result.scannedNotes)
     }
 
     @Test
@@ -866,6 +923,7 @@ class AnkiProviderReadsTest {
                     mapOf(
                         ProviderColumn.CARD_NOTE_ID to integer(index + 1L),
                         ProviderColumn.CARD_DECK_ID to integer(21L),
+                        ProviderColumn.CARD_ORIGINAL_DECK_ID to integer(0L),
                     )
                 },
                 beforeCell = { cardCellReads += 1 },
@@ -887,8 +945,9 @@ class AnkiProviderReadsTest {
                 "the selected Anki deck and its subdecks",
             failure.stableMessage,
         )
-        // Two cells per row for the first 1000000 rows; row 1000001 is refused before its cells.
-        assertEquals(2_000_000, cardCellReads)
+        // Three cells per row for the first 1000000 rows — a row outside the target deck also has
+        // to be tested against its home deck — and row 1000001 is refused before its cells.
+        assertEquals(3_000_000, cardCellReads)
         assertEquals(1, cardCursor.closeCount)
     }
 
@@ -1782,6 +1841,7 @@ class AnkiProviderReadsTest {
             mapOf(
                 ProviderColumn.CARD_NOTE_ID to integer(index / cardsPerNote + 1L),
                 ProviderColumn.CARD_DECK_ID to integer(20L),
+                ProviderColumn.CARD_ORIGINAL_DECK_ID to integer(0L),
             )
         },
         beforeCell = beforeCell,

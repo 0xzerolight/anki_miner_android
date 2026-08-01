@@ -54,8 +54,21 @@ internal data class CardIdentity(
     val id: Long,
     val noteId: Long,
     val ordinal: Int,
+    /** Where the card sits right now, which is the filtered deck while it is being custom-studied. */
     val deckId: Long,
-)
+    /** Anki's home-deck link: the deck the card came from, or 0 when it is not in a filtered deck. */
+    val originalDeckId: Long = 0L,
+) {
+    /**
+     * The deck that owns the card, which is what deck-scoped reads mean by "in the target deck".
+     *
+     * Routing compares [deckId] instead: moving a card is about where it currently is. Reads that
+     * ask whether a note is already mined must use this, or a Custom Study session over the target
+     * hides every card it borrowed and those words get mined again as duplicates.
+     */
+    val homeDeckId: Long
+        get() = if (originalDeckId > 0L) originalDeckId else deckId
+}
 
 /**
  * Exact raw card rows observed through `notes/{noteId}/cards`.

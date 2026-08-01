@@ -464,6 +464,7 @@ internal class ContentResolverAnkiGateway(
                 ProviderColumn.CARD_NOTE_ID -> FlashCardsContract.Card.NOTE_ID
                 ProviderColumn.CARD_ORDINAL -> FlashCardsContract.Card.CARD_ORD
                 ProviderColumn.CARD_DECK_ID -> FlashCardsContract.Card.DECK_ID
+                ProviderColumn.CARD_ORIGINAL_DECK_ID -> FlashCardsContract.Card.ORIGINAL_DECK_ID
             }
 
     private inner class AndroidProviderCursor(
