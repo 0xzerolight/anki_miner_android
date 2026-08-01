@@ -43,6 +43,16 @@ internal interface DiagnosticsExporter {
     fun shareUriFor(bundle: StagedBundle): String
 
     fun discard(bundle: StagedBundle)
+
+    /**
+     * Whether [bundle] still names the file that was staged for it.
+     *
+     * Staged bundles live in `cacheDir`, which Android reclaims under pressure and which
+     * [DiagnosticsBundleJanitor] prunes on every app start, so a handle held across a failed
+     * delivery can be dead long before its holder is. Touches the filesystem: call it off the main
+     * thread.
+     */
+    fun isStaged(bundle: StagedBundle): Boolean
 }
 
 internal class AndroidDiagnosticsExporter(
@@ -145,12 +155,17 @@ internal class AndroidDiagnosticsExporter(
         }
     }
 
-    private fun requireValidBundle(bundle: StagedBundle): File {
-        val root = canonicalOrNull(stagingRoot)
+    override fun isStaged(bundle: StagedBundle): Boolean = stagedFileOrNull(bundle) != null
+
+    private fun requireValidBundle(bundle: StagedBundle): File =
+        stagedFileOrNull(bundle)
             ?: throw DiagnosticsExportException(DiagnosticsExportFailure.BUNDLE)
+
+    /** The one validation, so a liveness check and a delivery can never disagree about a handle. */
+    private fun stagedFileOrNull(bundle: StagedBundle): File? {
+        val root = canonicalOrNull(stagingRoot) ?: return null
         val raw = bundle.file
-        val source = canonicalOrNull(raw)
-            ?: throw DiagnosticsExportException(DiagnosticsExportFailure.BUNDLE)
+        val source = canonicalOrNull(raw) ?: return null
         if (
             !source.toPath().startsWith(root.toPath()) ||
             source == root ||
@@ -160,7 +175,7 @@ internal class AndroidDiagnosticsExporter(
             source.length() != bundle.sizeBytes ||
             source.length() > MAX_STAGED_BUNDLE_BYTES
         ) {
-            throw DiagnosticsExportException(DiagnosticsExportFailure.BUNDLE)
+            return null
         }
         return source
     }

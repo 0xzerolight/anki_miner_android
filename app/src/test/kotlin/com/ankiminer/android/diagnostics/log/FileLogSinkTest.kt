@@ -136,6 +136,36 @@ class FileLogSinkTest {
         }
 
     @Test
+    fun `a failed snapshot leaves the sink writing`() =
+        runTest {
+            val directory = temporaryFolder.newFolder("snapshot-failure")
+            // A regular file where the snapshot wants a directory: mkdirs() cannot create it and
+            // the copy has nowhere to land. This is the near-full-cache export in miniature.
+            val destination = temporaryFolder.newFile("occupied-destination")
+            val sink = newSink(directory)
+
+            sink.write("before-snapshot")
+            var thrown: Throwable? = null
+            try {
+                sink.snapshot(destination)
+            } catch (failure: IOException) {
+                thrown = failure
+            }
+
+            assertNotNull(thrown)
+            // The export failed; the log it was exporting must not have died with it.
+            assertNull(sink.disabledBy)
+
+            sink.write("after-snapshot")
+            sink.flush()
+
+            assertEquals(
+                listOf("before-snapshot", "after-snapshot"),
+                logIn(directory).readLines(),
+            )
+        }
+
+    @Test
     fun `concurrent producers never interleave a partial line`() =
         runTest {
             val directory = temporaryFolder.newFolder("concurrent")
