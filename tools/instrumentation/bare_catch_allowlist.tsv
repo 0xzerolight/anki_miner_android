@@ -5,7 +5,7 @@ app/src/main/kotlin/com/ankiminer/android/anki/provider/AndroidAnkiMediaStaging.
 app/src/main/kotlin/com/ankiminer/android/anki/provider/AnkiMediaStaging.kt	271,276,345,416,443,457	Existing discarded catches are pinned at audit introduction; new sites require review.
 app/src/main/kotlin/com/ankiminer/android/anki/provider/AnkiProviderCallbacks.kt	135,420,453,459,481	Existing discarded catches are pinned at audit introduction; new sites require review.
 app/src/main/kotlin/com/ankiminer/android/anki/provider/AnkiProviderReadiness.kt	58	Existing discarded catches are pinned at audit introduction; new sites require review.
-app/src/main/kotlin/com/ankiminer/android/anki/provider/AnkiProviderReads.kt	221,713,734,786,808,856,968,1261,1271,1289,1299	Existing discarded catches are pinned at audit introduction; new sites require review.
+app/src/main/kotlin/com/ankiminer/android/anki/provider/AnkiProviderReads.kt	221,720,741,793,815,863,975,1268,1278,1296,1306	Existing discarded catches are pinned at audit introduction; new sites require review.
 app/src/main/kotlin/com/ankiminer/android/anki/provider/AnkiRunStateRegistry.kt	286,884,1050,1074,1076,1120	Existing discarded catches are pinned at audit introduction; new sites require review.
 app/src/main/kotlin/com/ankiminer/android/anki/provider/ContentResolverAnkiGateway.kt	358,380	Existing discarded catches are pinned at audit introduction; new sites require review.
 app/src/main/kotlin/com/ankiminer/android/anki/provider/DurableTargetVerifier.kt	243,386	Existing discarded catches are pinned at audit introduction; new sites require review.

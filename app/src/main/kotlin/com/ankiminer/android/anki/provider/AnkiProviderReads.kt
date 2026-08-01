@@ -331,21 +331,28 @@ internal class AnkiProviderReadService(
                     while (cursor.moveToNext()) {
                         ensureActive(cancellation)
                         // `deck:"Name"` is a deck-TREE scope, so subdeck rows cross Binder too.
-                        // Counted per row and checked before the cell reads, so the scan refuses on
-                        // reaching row 100001 without pulling its cells, whatever deck it names.
+                        // Counted per row and checked before the cell reads, so the walk refuses on
+                        // reaching the first row past its budget without pulling that row's cells.
                         scannedCardRows = checkedAdd(scannedCardRows, 1)
                         if (
                             scannedCardRows >
-                            AnkiLimitsV1.ScanFirstFields.KNOWN_TOTAL_SCANNED_NOTE_MAX_COUNT
+                            AnkiLimitsV1.ScanFirstFields.KNOWN_TOTAL_SCANNED_CARD_ROW_MAX_COUNT
                         ) {
-                            throw knownVocabularyLimitExceeded(
-                                "the selected Anki deck and its subdecks",
-                                unit = "cards",
-                            )
+                            throw knownVocabularyDeckTreeTooLarge()
                         }
                         val noteId = cursor.positiveLong(ProviderColumn.CARD_NOTE_ID)
                         val deckId = cursor.positiveLong(ProviderColumn.CARD_DECK_ID)
-                        if (deckId == target.deck.id) exactNotes += noteId
+                        if (deckId != target.deck.id) continue
+                        exactNotes += noteId
+                        // The note ceiling binds the RESULT, as it does for every other scan: this
+                        // snapshot is returned as `scannedNotes`, which anki_adapter.py refuses
+                        // above the same constant. The row budget above cannot stand in for it.
+                        if (
+                            exactNotes.size >
+                            AnkiLimitsV1.ScanFirstFields.KNOWN_TOTAL_SCANNED_NOTE_MAX_COUNT
+                        ) {
+                            throw knownVocabularyLimitExceeded("the selected Anki deck")
+                        }
                     }
                 }
                 exactNotes.sorted()
@@ -1318,24 +1325,32 @@ private fun queryFailed(
     cause = cause,
 )
 
+private fun knownVocabularyLimitExceeded(scope: String) =
+    AnkiReadFailure(
+        AnkiErrorCode.UNSUPPORTED_OPERATION,
+        retryable = false,
+        stableMessage =
+            "Known-word filtering supports at most " +
+                "${AnkiLimitsV1.ScanFirstFields.KNOWN_TOTAL_SCANNED_NOTE_MAX_COUNT} notes in $scope",
+    )
+
 /**
- * [unit] names what the refusing scan actually counted, which is not the same everywhere.
+ * The deck tree walked to collect those notes has its own budget, in card rows rather than notes.
  *
- * The collection and excluded-deck scans read note rows from the notes endpoints, so their ceiling
- * is a note count. The deck-scoped scan reads the CARDS endpoint under a deck-TREE selection, so it
- * bounds card rows — a deck of 60k notes at two cards each trips it at 60k notes, and saying "notes"
- * there would misstate both the number and the reason. One constant, three scans, different nouns.
+ * `deck:"Name"` is a deck-TREE selection over the CARDS endpoint, so the walk crosses one row per
+ * card in the whole tree while only exact-deck rows can contribute a note. Rows therefore have no
+ * fixed ratio to the result and cannot share its ceiling: spending the note budget on them costs a
+ * deck of 60k notes at two cards each its scan. This bound exists only to stop an unbounded walk.
  */
-private fun knownVocabularyLimitExceeded(
-    scope: String,
-    unit: String = "notes",
-) = AnkiReadFailure(
-    AnkiErrorCode.UNSUPPORTED_OPERATION,
-    retryable = false,
-    stableMessage =
-        "Known-word filtering supports at most " +
-            "${AnkiLimitsV1.ScanFirstFields.KNOWN_TOTAL_SCANNED_NOTE_MAX_COUNT} $unit in $scope",
-)
+private fun knownVocabularyDeckTreeTooLarge() =
+    AnkiReadFailure(
+        AnkiErrorCode.UNSUPPORTED_OPERATION,
+        retryable = false,
+        stableMessage =
+            "Known-word filtering scans at most " +
+                "${AnkiLimitsV1.ScanFirstFields.KNOWN_TOTAL_SCANNED_CARD_ROW_MAX_COUNT} cards " +
+                "in the selected Anki deck and its subdecks",
+    )
 
 private fun targetInvalid(message: String) =
     AnkiReadFailure(

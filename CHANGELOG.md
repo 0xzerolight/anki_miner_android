@@ -10,7 +10,7 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 
 ### Changed
 
-- The known-word scan over a chosen deck counts card rows across that deck and its subdecks, where it counted note rows in the exact deck before. `deck:"Name"` has always been a deck-tree scope, so subdeck rows were crossing the process boundary uncounted and only target-deck matches met the ceiling. The 100,000-row ceiling itself is unchanged, which means a collection that scanned at 0.1.8 can now be refused: a 60,000-note deck at two cards each is over it. The refusal counts cards, and names the subdecks as the reason.
+- Duplicate mode looks for known words in the target deck rather than across the whole collection, which is how the desktop scopes duplicates. The scan collects at most 100,000 notes from that deck, the same ceiling every other scan holds, and separately gives up on a deck tree wider than 1,000,000 cards: `deck:"Name"` reaches subdecks too, and their rows are read only to be discarded.
 - A run parked in curation releases its CPU wake lock while it waits for an answer and takes it again on confirmation, so a long read through the candidate list no longer holds the device awake for nothing. The foreground service stays up throughout.
 
 ### Fixed
