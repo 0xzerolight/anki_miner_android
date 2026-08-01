@@ -742,18 +742,22 @@ class AnkiProviderReadsTest {
                             mapOf(
                                 ProviderColumn.CARD_NOTE_ID to integer(3L),
                                 ProviderColumn.CARD_DECK_ID to integer(20L),
+                                ProviderColumn.CARD_ORIGINAL_DECK_ID to integer(0L),
                             ),
                             mapOf(
                                 ProviderColumn.CARD_NOTE_ID to integer(2L),
                                 ProviderColumn.CARD_DECK_ID to integer(21L),
+                                ProviderColumn.CARD_ORIGINAL_DECK_ID to integer(0L),
                             ),
                             mapOf(
                                 ProviderColumn.CARD_NOTE_ID to integer(1L),
                                 ProviderColumn.CARD_DECK_ID to integer(20L),
+                                ProviderColumn.CARD_ORIGINAL_DECK_ID to integer(0L),
                             ),
                             mapOf(
                                 ProviderColumn.CARD_NOTE_ID to integer(1L),
                                 ProviderColumn.CARD_DECK_ID to integer(20L),
+                                ProviderColumn.CARD_ORIGINAL_DECK_ID to integer(0L),
                             ),
                         ),
                     )
@@ -786,6 +790,59 @@ class AnkiProviderReadsTest {
         assertEquals(listOf("one", "three"), result.firstFields)
         assertEquals(2, result.scannedNotes)
         assertNull(result.nextCursor)
+    }
+
+    @Test
+    fun `known vocabulary keeps cards a filtered deck borrowed from the target`() {
+        val fixture = fixture()
+        fixture.gateway.queryHandler = targetQueryHandler()
+        fixture.withOwner { owner -> fixture.verifyExistingTarget(owner, verifyRequest()) }
+        fixture.gateway.queries.clear()
+        fixture.gateway.queryHandler = { query, _ ->
+            when {
+                query.endpoint == ProviderEndpoint.CARDS ->
+                    FakeProviderCursor(
+                        query.projection,
+                        listOf(
+                            // Custom Study over "Mining" moved this card into a filtered deck; its
+                            // home deck is still the target, so its note is already mined.
+                            mapOf(
+                                ProviderColumn.CARD_NOTE_ID to integer(1L),
+                                ProviderColumn.CARD_DECK_ID to integer(99L),
+                                ProviderColumn.CARD_ORIGINAL_DECK_ID to integer(20L),
+                            ),
+                            // A subdeck card borrowed by the same session stays out: its home deck
+                            // is the subdeck, not the target.
+                            mapOf(
+                                ProviderColumn.CARD_NOTE_ID to integer(2L),
+                                ProviderColumn.CARD_DECK_ID to integer(99L),
+                                ProviderColumn.CARD_ORIGINAL_DECK_ID to integer(21L),
+                            ),
+                        ),
+                    )
+                query.selection is ProviderSelection.NoteIds -> {
+                    assertEquals(listOf(1L), (query.selection as ProviderSelection.NoteIds).ids)
+                    FakeProviderCursor(
+                        query.projection,
+                        listOf(
+                            mapOf(
+                                ProviderColumn.NOTE_ID to integer(1L),
+                                ProviderColumn.NOTE_FIELDS to text("one\u001fmeaning"),
+                            ),
+                        ),
+                    )
+                }
+                else -> error("unexpected query $query")
+            }
+        }
+
+        val result =
+            fixture.withOwner { owner ->
+                fixture.reads.scanFirstFields(owner, knownRequest(deckName = "Mining"))
+            } as KnownVocabularyResult
+
+        assertEquals(listOf("one"), result.firstFields)
+        assertEquals(1, result.scannedNotes)
     }
 
     @Test
@@ -840,7 +897,7 @@ class AnkiProviderReadsTest {
                     refused.reads.scanFirstFields(owner, knownRequest(deckName = "Mining"))
                 }
             }
-        assertEquals(AnkiErrorCode.UNSUPPORTED_OPERATION, failure.code)
+        assertEquals(AnkiErrorCode.QUERY_FAILED, failure.code)
         assertEquals(false, failure.retryable)
         assertEquals(
             "Known-word filtering supports at most 100000 notes in the selected Anki deck",
@@ -866,6 +923,7 @@ class AnkiProviderReadsTest {
                     mapOf(
                         ProviderColumn.CARD_NOTE_ID to integer(index + 1L),
                         ProviderColumn.CARD_DECK_ID to integer(21L),
+                        ProviderColumn.CARD_ORIGINAL_DECK_ID to integer(0L),
                     )
                 },
                 beforeCell = { cardCellReads += 1 },
@@ -878,7 +936,7 @@ class AnkiProviderReadsTest {
                     fixture.reads.scanFirstFields(owner, knownRequest(deckName = "Mining"))
                 }
             }
-        assertEquals(AnkiErrorCode.UNSUPPORTED_OPERATION, failure.code)
+        assertEquals(AnkiErrorCode.QUERY_FAILED, failure.code)
         assertEquals(false, failure.retryable)
         // The refusal names card rows and the subdecks, because that is what ran out. Calling them
         // notes would quote a number the deck never reached.
@@ -887,8 +945,9 @@ class AnkiProviderReadsTest {
                 "the selected Anki deck and its subdecks",
             failure.stableMessage,
         )
-        // Two cells per row for the first 1000000 rows; row 1000001 is refused before its cells.
-        assertEquals(2_000_000, cardCellReads)
+        // Three cells per row for the first 1000000 rows — a row outside the target deck also has
+        // to be tested against its home deck — and row 1000001 is refused before its cells.
+        assertEquals(3_000_000, cardCellReads)
         assertEquals(1, cardCursor.closeCount)
     }
 
@@ -1058,7 +1117,7 @@ class AnkiProviderReadsTest {
         val failure = assertThrows(AnkiReadFailure::class.java) {
             fixture.withOwner { owner -> fixture.reads.scanFirstFields(owner, knownRequest()) }
         }
-        assertEquals(AnkiErrorCode.UNSUPPORTED_OPERATION, failure.code)
+        assertEquals(AnkiErrorCode.QUERY_FAILED, failure.code)
         assertEquals(false, failure.retryable)
         assertEquals(
             "Known-word filtering supports at most 100000 notes in an Anki collection",
@@ -1207,13 +1266,13 @@ class AnkiProviderReadsTest {
     }
 
     @Test
-    fun `excluded deck browser scan closes at row 100001 before reading its cells`() {
+    fun `excluded deck browser scan closes at row 1000001 before reading its cells`() {
         val fixture = fixture()
         var browserCellReads = 0
         val browserCursor =
             GeneratedFakeProviderCursor(
                 listOf(ProviderColumn.NOTE_ID),
-                rowCount = 100_001,
+                rowCount = 1_000_001,
                 rowAt = { index ->
                     mapOf(ProviderColumn.NOTE_ID to integer(index + 1L))
                 },
@@ -1242,12 +1301,76 @@ class AnkiProviderReadsTest {
                     )
                 }
             }
-        // Same typed, non-retryable refusal as the unexcluded scan: the ceiling is a limit,
-        // not a provider error.
-        assertEquals(AnkiErrorCode.UNSUPPORTED_OPERATION, failure.code)
+        // Same non-retryable refusal as the unexcluded scan. The connection class is deliberate:
+        // the protocol class reaches the user as an unhandled app bug, and an over-large collection
+        // is a condition of theirs, not a protocol violation.
+        assertEquals(AnkiErrorCode.QUERY_FAILED, failure.code)
         assertEquals(false, failure.retryable)
-        assertEquals(100_000, browserCellReads)
+        // The refusal names the excluded decks and their own budget, not the result ceiling: these
+        // rows are subtracted from the scan rather than counted into it.
+        assertEquals(
+            "Known-word filtering scans at most 1000000 notes in the excluded Anki decks",
+            failure.stableMessage,
+        )
+        assertEquals(1_000_000, browserCellReads)
         assertEquals(1, browserCursor.closeCount)
+    }
+
+    @Test
+    fun `a large excluded deck does not abort a small deck-scoped scan`() {
+        val fixture = fixture()
+        fixture.gateway.queryHandler = targetQueryHandler()
+        fixture.withOwner { owner -> fixture.verifyExistingTarget(owner, verifyRequest()) }
+        fixture.gateway.queries.clear()
+        // The target holds one note; the excluded deck holds far more rows than the note ceiling.
+        // Spending the result ceiling on them aborted the run, while the identical run without the
+        // exclusion configured succeeded.
+        val browserCursor =
+            GeneratedFakeProviderCursor(
+                listOf(ProviderColumn.NOTE_ID),
+                rowCount = 150_000,
+                rowAt = { index -> mapOf(ProviderColumn.NOTE_ID to integer(index + 2L)) },
+            )
+        fixture.gateway.queryHandler = { query, _ ->
+            when {
+                query.endpoint == ProviderEndpoint.CARDS ->
+                    FakeProviderCursor(
+                        query.projection,
+                        listOf(
+                            mapOf(
+                                ProviderColumn.CARD_NOTE_ID to integer(1L),
+                                ProviderColumn.CARD_DECK_ID to integer(20L),
+                                ProviderColumn.CARD_ORIGINAL_DECK_ID to integer(0L),
+                            ),
+                        ),
+                    )
+                query.endpoint == ProviderEndpoint.DECKS ->
+                    FakeProviderCursor(query.projection, listOf(deckRow(name = "Core")))
+                query.endpoint == ProviderEndpoint.NOTES_BROWSER -> browserCursor
+                query.selection is ProviderSelection.NoteIds ->
+                    FakeProviderCursor(
+                        query.projection,
+                        listOf(
+                            mapOf(
+                                ProviderColumn.NOTE_ID to integer(1L),
+                                ProviderColumn.NOTE_FIELDS to text("one\u001fmeaning"),
+                            ),
+                        ),
+                    )
+                else -> error("unexpected query $query")
+            }
+        }
+
+        val result =
+            fixture.withOwner { owner ->
+                fixture.reads.scanFirstFields(
+                    owner,
+                    knownRequest(deckName = "Mining", excluded = listOf("Core")),
+                )
+            } as KnownVocabularyResult
+
+        assertEquals(listOf("one"), result.firstFields)
+        assertEquals(1, result.scannedNotes)
     }
 
     @Test
@@ -1782,6 +1905,7 @@ class AnkiProviderReadsTest {
             mapOf(
                 ProviderColumn.CARD_NOTE_ID to integer(index / cardsPerNote + 1L),
                 ProviderColumn.CARD_DECK_ID to integer(20L),
+                ProviderColumn.CARD_ORIGINAL_DECK_ID to integer(0L),
             )
         },
         beforeCell = beforeCell,

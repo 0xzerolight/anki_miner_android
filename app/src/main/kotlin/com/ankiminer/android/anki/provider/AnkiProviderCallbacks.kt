@@ -396,6 +396,10 @@ internal class AnkiProviderCallbacks(
      * the failure unattributable: no log, no digest, nothing on the wire, so a field report of this
      * shape (Issue #6) could not be traced to a throw site. The token carries the exception class and
      * topmost frame only, never the exception message.
+     *
+     * The log entry is what makes the token usable. R8 minifies the frame the token names, so a
+     * diagnostics bundle carrying the token alone still cannot locate the throw; the stack behind
+     * this entry is the only copy in the bundle.
      */
     private fun unattributableFailureMessage(
         operation: AnkiOperation,
@@ -403,6 +407,14 @@ internal class AnkiProviderCallbacks(
     ): String {
         val token = compactFaultToken(failure)
         AnkiFaultRecorder.record(operation.wireName, token)
+        AppLog.e(
+            LogComponent.ANKI,
+            operation.wireName,
+            failure,
+            "outcome" to "fail",
+            "code" to AnkiErrorCode.INTERNAL_ERROR.wireName,
+            "fault" to token,
+        )
         return "$UNATTRIBUTABLE_FAILURE (${operation.wireName}: $token)"
     }
 

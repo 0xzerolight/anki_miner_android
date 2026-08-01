@@ -22,6 +22,7 @@ import com.ankiminer.android.anki.provider.templateRow
 import com.ankiminer.android.engine.BridgeJsonValue
 import com.ankiminer.android.ui.settings.SettingsResetAction
 import com.ankiminer.android.ui.settings.SettingsResetConfirmationState
+import com.ankiminer.android.ui.settings.confirmDispatching
 import com.ankiminer.android.ui.settings.dispatchConfirmedSettingsReset
 import java.io.File
 import java.io.IOException
@@ -365,8 +366,8 @@ class AppSettingsRepositoryTest {
             SettingsResetAction.entries.forEach { requestedAction ->
                 val callbackCounts = SettingsResetAction.entries.associateWith { 0 }.toMutableMap()
                 val requested = SettingsResetConfirmationState().request(requestedAction)
-                val cancelled = requested.cancel()
-                val (finalState, confirmedAction) = cancelled.confirm()
+                val finalState = requested.cancel()
+                val confirmedAction = finalState.pendingAction
 
                 dispatchConfirmedSettingsReset(
                     action = confirmedAction,
@@ -417,6 +418,33 @@ class AppSettingsRepositoryTest {
             requested.confirmIfAccepted(accepted = false).pendingAction,
         )
         assertNull(requested.confirmIfAccepted(accepted = true).pendingAction)
+    }
+
+    @Test
+    fun `a refused reset keeps its dialog up and a dispatched one closes it`() {
+        // `save()` returns false when settings never loaded, so nothing was reset. Closing the
+        // dialog anyway left the user with no reset and no reason.
+        SettingsResetAction.entries.forEach { action ->
+            var dispatched = 0
+            val requested = SettingsResetConfirmationState().request(action)
+
+            val refused =
+                requested.confirmDispatching(
+                    onRestoreMiningDefaults = { dispatched += 1; false },
+                    onResetAnkiTarget = { dispatched += 1; false },
+                    onResetResourceChoices = { dispatched += 1; false },
+                )
+            assertEquals(action.name, action, refused.pendingAction)
+
+            val accepted =
+                requested.confirmDispatching(
+                    onRestoreMiningDefaults = { dispatched += 1; true },
+                    onResetAnkiTarget = { dispatched += 1; true },
+                    onResetResourceChoices = { dispatched += 1; true },
+                )
+            assertNull(action.name, accepted.pendingAction)
+            assertEquals(action.name, 2, dispatched)
+        }
     }
 
     @Test

@@ -48,6 +48,7 @@ internal enum class ProviderColumn {
     CARD_NOTE_ID,
     CARD_ORDINAL,
     CARD_DECK_ID,
+    CARD_ORIGINAL_DECK_ID,
 }
 
 internal sealed interface ProviderSelection {
@@ -74,12 +75,27 @@ internal enum class ProviderOrder {
     NOTE_ID_ASCENDING,
 }
 
+/**
+ * How long one query's whole cursor walk may take, which is not one number for every read.
+ *
+ * The deadline is armed when the cursor opens and disarmed when it closes, so it bounds the entire
+ * Binder walk rather than a single row. [INTERACTIVE] suits the bounded reads a screen waits on.
+ * [BULK] is for the ceiling-bounded full-table walks the known-vocabulary scan makes: at the
+ * interactive deadline a large deck tree could not finish, and its row ceiling — the bound that is
+ * supposed to refuse loudly — could never fire, because the deadline always tripped first.
+ */
+internal enum class ProviderReadDeadline {
+    INTERACTIVE,
+    BULK,
+}
+
 internal data class ProviderQuery(
     val endpoint: ProviderEndpoint,
     val endpointId: Long? = null,
     val projection: List<ProviderColumn>,
     val selection: ProviderSelection? = null,
     val sortOrder: ProviderOrder? = null,
+    val deadline: ProviderReadDeadline = ProviderReadDeadline.INTERACTIVE,
 ) {
     init {
         require(ProviderQueryShapes.isAllowed(this)) {
@@ -134,10 +150,15 @@ internal object ProviderQueryShapes {
             ProviderColumn.DECK_DYNAMIC,
         )
     val CARD_ID_PROJECTION = listOf(ProviderColumn.CARD_ID)
+    // `deck:"Name"` matches a card through its home deck, so a card borrowed by a filtered deck
+    // still comes back — carrying the filtered deck's ID. Both card projections therefore read the
+    // home-deck link as well; without it a Custom Study session hides those cards from every
+    // deck-scoped read.
     val CARD_NOTE_DECK_PROJECTION =
         listOf(
             ProviderColumn.CARD_NOTE_ID,
             ProviderColumn.CARD_DECK_ID,
+            ProviderColumn.CARD_ORIGINAL_DECK_ID,
         )
     val CARD_IDENTITY_PROJECTION =
         listOf(
@@ -145,6 +166,7 @@ internal object ProviderQueryShapes {
             ProviderColumn.CARD_NOTE_ID,
             ProviderColumn.CARD_ORDINAL,
             ProviderColumn.CARD_DECK_ID,
+            ProviderColumn.CARD_ORIGINAL_DECK_ID,
         )
 
     fun isAllowed(query: ProviderQuery): Boolean {

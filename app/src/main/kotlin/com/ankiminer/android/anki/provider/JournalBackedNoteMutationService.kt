@@ -1,7 +1,6 @@
 package com.ankiminer.android.anki.provider
 
 import com.ankiminer.android.anki.journal.ActiveNoteMaterialization
-import com.ankiminer.android.anki.journal.ActiveNoteMaterializationRefused
 import com.ankiminer.android.anki.journal.ActiveNoteTermination
 import com.ankiminer.android.anki.journal.AlignedResult
 import com.ankiminer.android.anki.journal.AnkiMutationStore
@@ -9,6 +8,7 @@ import com.ankiminer.android.anki.journal.ChildState
 import com.ankiminer.android.anki.journal.ChildlessRoutingOutcome
 import com.ankiminer.android.anki.journal.DurableDuplicateDecision
 import com.ankiminer.android.anki.journal.DurableMediaBinding
+import com.ankiminer.android.anki.journal.JournalCorruptionException
 import com.ankiminer.android.anki.journal.JournalError
 import com.ankiminer.android.anki.journal.JournalErrorCode
 import com.ankiminer.android.anki.journal.JournalRequest
@@ -302,7 +302,32 @@ internal class JournalBackedNoteMutationService(
             try {
                 journal.materialize(durableRequest.key, materialization)
                 // instrumentation: silent — refusal becomes a journaled aligned failure below
-            } catch (_: ActiveNoteMaterializationRefused) {
+            } catch (failure: JournalCorruptionException) {
+                // Corruption is never one row's problem, and its evidence must not be overwritten
+                // by an ordinary failed row.
+                throw failure
+            } catch (failure: RuntimeException) {
+                // Everything else that reaches here rolled back: materialization runs entirely
+                // inside one write transaction that commits only on the non-throwing path. A disk
+                // -full or locked database on one note is a row failure, not a run failure —
+                // narrowing this to the typed refusal made those end the whole batch. The probe
+                // still guards the one case that is not a rollback: a throw after the commit, when
+                // the parent already carries this note as active.
+                val activeIndex =
+                    runCatching { journal.parent(durableRequest.key)?.activeRequestIndex }
+                        .onFailure { probeFailure ->
+                            // The probe failing is itself evidence: the degrade below then rests on
+                            // an unread parent, so the entry has to survive for the bundle.
+                            AppLog.w(
+                                LogComponent.ANKI,
+                                "createNotes",
+                                probeFailure,
+                                "outcome" to "fail",
+                                "probe" to "materialization_commit",
+                            )
+                        }
+                        .getOrNull()
+                if (activeIndex == index) throw failure
                 val error = stableInternal("The note media bindings could not be durably admitted")
                 journal.append(
                     durableRequest.key,

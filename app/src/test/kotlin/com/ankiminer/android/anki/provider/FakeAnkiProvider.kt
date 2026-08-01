@@ -205,12 +205,15 @@ internal fun cardRow(
     noteId: Long,
     ordinal: Long,
     deckId: Long,
+    /** 0 unless the card is currently borrowed by a filtered deck, as AnkiDroid reports it. */
+    originalDeckId: Long = 0L,
 ): Map<ProviderColumn, ProviderCell> =
     mapOf(
         ProviderColumn.CARD_ID to integer(id),
         ProviderColumn.CARD_NOTE_ID to integer(noteId),
         ProviderColumn.CARD_ORDINAL to integer(ordinal),
         ProviderColumn.CARD_DECK_ID to integer(deckId),
+        ProviderColumn.CARD_ORIGINAL_DECK_ID to integer(originalDeckId),
     )
 
 internal fun noteRow(

@@ -1085,22 +1085,12 @@ class AndroidAnkiAdapter:
                 seen_cursor_tokens.add(token)
                 cursor = next_cursor
         except AnkiCallbackError as error:
-            if error.code == "timeout" and error.retryable:
-                logger.debug(
-                    "Known-vocabulary scan failed outcome=ignored code=%s retryable=%s message=%s",
-                    error.code,
-                    error.retryable,
-                    error,
-                )
-                logger.warning(
-                    "Known-vocabulary scan failed; filtering disabled outcome=skip",
-                    exc_info=(
-                        RuntimeError,
-                        RuntimeError("Known-vocabulary callback timed out"),
-                        error.__traceback__,
-                    ),
-                )
-                return set()
+            # Desktop degrades this read to an empty set on a timeout, where a timeout means one
+            # 30s HTTP batch of 1000 notes was slow. The provider scan is not that shape: it is a
+            # single ceiling-bounded walk on a bulk deadline, so a timeout here means the walk did
+            # not finish at all. Degrading silently then re-mines the user's whole existing deck --
+            # every word fetched, synthesized and cut again -- only to have the pre-insert
+            # duplicate check reject it. The condition is the user's to act on, so it is raised.
             _raise_callback_error(error)
         except Exception:
             self._callbacks.mark_response_failure()

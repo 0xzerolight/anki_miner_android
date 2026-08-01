@@ -324,6 +324,7 @@ internal class AnkiProviderReadService(
                         endpoint = ProviderEndpoint.CARDS,
                         projection = ProviderQueryShapes.CARD_NOTE_DECK_PROJECTION,
                         selection = ProviderSelection.CardsInDeck(scope.deckName),
+                        deadline = ProviderReadDeadline.BULK,
                     )
                 var scannedCardRows = 0
                 provider.queryRequired(query, cancellation).use { cursor ->
@@ -342,7 +343,18 @@ internal class AnkiProviderReadService(
                         }
                         val noteId = cursor.positiveLong(ProviderColumn.CARD_NOTE_ID)
                         val deckId = cursor.positiveLong(ProviderColumn.CARD_DECK_ID)
-                        if (deckId != target.deck.id) continue
+                        // A card borrowed by a filtered deck reports that deck here and keeps its
+                        // home deck in the original-deck link (0 when it is not borrowed). Testing
+                        // the current deck alone dropped every card in a Custom Study session, so
+                        // those notes read as unknown and got mined again as duplicates.
+                        //
+                        // The target is verified non-dynamic, so a card sitting in it is home there
+                        // and the extra cell stays off the hot path of this row-ceilinged walk.
+                        if (deckId != target.deck.id) {
+                            val originalDeckId =
+                                cursor.nonNegativeLong(ProviderColumn.CARD_ORIGINAL_DECK_ID)
+                            if (originalDeckId != target.deck.id) continue
+                        }
                         exactNotes += noteId
                         // The note ceiling binds the RESULT, as it does for every other scan: this
                         // snapshot is returned as `scannedNotes`, which anki_adapter.py refuses
@@ -372,6 +384,7 @@ internal class AnkiProviderReadService(
                     endpoint = ProviderEndpoint.NOTES_BROWSER,
                     projection = ProviderQueryShapes.NOTE_ID_PROJECTION,
                     selection = ProviderSelection.ExcludedDeck(deckName),
+                    deadline = ProviderReadDeadline.BULK,
                 )
             provider.queryRequired(query, cancellation).use { cursor ->
                 requireProjection(cursor, query)
@@ -379,13 +392,13 @@ internal class AnkiProviderReadService(
                 while (cursor.moveToNext()) {
                     ensureActive(cancellation)
                     // Counted per row and checked before the cell read, so the scan refuses on
-                    // reaching row 100001 without pulling its cells.
+                    // reaching the first row past its budget without pulling that row's cells.
                     excludedBrowserRows = checkedAdd(excludedBrowserRows, 1)
                     if (
                         excludedBrowserRows >
-                        AnkiLimitsV1.ScanFirstFields.KNOWN_TOTAL_SCANNED_NOTE_MAX_COUNT
+                        AnkiLimitsV1.ScanFirstFields.KNOWN_TOTAL_SCANNED_EXCLUDED_ROW_MAX_COUNT
                     ) {
-                        throw knownVocabularyLimitExceeded("the excluded Anki decks")
+                        throw knownVocabularyExcludedScanTooLarge()
                     }
                     val id = cursor.positiveLong(ProviderColumn.NOTE_ID)
                     if (!seen.add(id)) throw queryFailed()
@@ -534,7 +547,7 @@ internal class AnkiProviderReadService(
                             noteId = id,
                             templateCount = target.model.templates.size,
                             cancellation = cancellation,
-                        ).any { it.deckId == target.deck.id }
+                        ).any { it.homeDeckId == target.deck.id }
                 ) {
                     val checksumHits = checkedAdd(hitsPerChecksum[checksum] ?: 0, 1)
                     if (checksumHits > AnkiLimitsV1.ScanFirstFields.DUPLICATE_HIT_PER_CANDIDATE_MAX_ITEM_COUNT) {
@@ -585,6 +598,7 @@ internal class AnkiProviderReadService(
                 endpoint = ProviderEndpoint.NOTES_V2,
                 projection = ProviderQueryShapes.NOTE_ID_PROJECTION,
                 sortOrder = ProviderOrder.NOTE_ID_ASCENDING,
+                deadline = ProviderReadDeadline.BULK,
             )
     }
 }
@@ -1004,6 +1018,7 @@ internal class GlobalCardReader(private val provider: CheckedProvider) {
                     noteId = cursor.positiveLong(ProviderColumn.CARD_NOTE_ID),
                     ordinal = cursor.exactInt(ProviderColumn.CARD_ORDINAL),
                     deckId = cursor.positiveLong(ProviderColumn.CARD_DECK_ID),
+                    originalDeckId = cursor.nonNegativeLong(ProviderColumn.CARD_ORIGINAL_DECK_ID),
                 )
             if (
                 result.id != cardId ||
@@ -1044,6 +1059,7 @@ internal class GlobalCardReader(private val provider: CheckedProvider) {
                         noteId = cursor.positiveLong(ProviderColumn.CARD_NOTE_ID),
                         ordinal = cursor.exactInt(ProviderColumn.CARD_ORDINAL),
                         deckId = cursor.positiveLong(ProviderColumn.CARD_DECK_ID),
+                    originalDeckId = cursor.nonNegativeLong(ProviderColumn.CARD_ORIGINAL_DECK_ID),
                     )
                 if (
                     card.noteId != noteId ||
@@ -1325,9 +1341,18 @@ private fun queryFailed(
     cause = cause,
 )
 
+/**
+ * Over-limit scans answer in the connection class, not the protocol class.
+ *
+ * `unsupported_operation` is a protocol code, and `anki_adapter` turns protocol codes into
+ * `BridgeProtocolError` -- a `ValueError`, outside the engine's `AnkiMinerException` handler. A
+ * collection that is simply large therefore reached the user as "Unexpected error" with a stack
+ * logged as an app bug. It is a condition of their collection, so it takes the same class the
+ * predecessor refusal used and arrives as a sentence they can act on.
+ */
 private fun knownVocabularyLimitExceeded(scope: String) =
     AnkiReadFailure(
-        AnkiErrorCode.UNSUPPORTED_OPERATION,
+        AnkiErrorCode.QUERY_FAILED,
         retryable = false,
         stableMessage =
             "Known-word filtering supports at most " +
@@ -1344,12 +1369,31 @@ private fun knownVocabularyLimitExceeded(scope: String) =
  */
 private fun knownVocabularyDeckTreeTooLarge() =
     AnkiReadFailure(
-        AnkiErrorCode.UNSUPPORTED_OPERATION,
+        AnkiErrorCode.QUERY_FAILED,
         retryable = false,
         stableMessage =
             "Known-word filtering scans at most " +
                 "${AnkiLimitsV1.ScanFirstFields.KNOWN_TOTAL_SCANNED_CARD_ROW_MAX_COUNT} cards " +
                 "in the selected Anki deck and its subdecks",
+    )
+
+/**
+ * The excluded-deck walk has its own budget too, for the same reason as the deck tree.
+ *
+ * Its rows are the notes of the *excluded* decks, which are subtracted from the result rather than
+ * counted into it, so they have no ratio to the scan's own size. Spending the note ceiling on them
+ * aborted a 2k-note target simply because the user excluded a large Core deck — while the identical
+ * run without that exclusion succeeded. In collection scope the collection-wide cap already bounded
+ * this walk; in deck scope nothing does, so the bound has to be its own.
+ */
+private fun knownVocabularyExcludedScanTooLarge() =
+    AnkiReadFailure(
+        AnkiErrorCode.QUERY_FAILED,
+        retryable = false,
+        stableMessage =
+            "Known-word filtering scans at most " +
+                "${AnkiLimitsV1.ScanFirstFields.KNOWN_TOTAL_SCANNED_EXCLUDED_ROW_MAX_COUNT} notes " +
+                "in the excluded Anki decks",
     )
 
 private fun targetInvalid(message: String) =

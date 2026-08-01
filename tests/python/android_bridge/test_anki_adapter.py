@@ -1567,9 +1567,8 @@ def test_known_vocabulary_excludes_parent_descendants_and_whole_mixed_note(
     assert adapter.get_existing_vocabulary() == {"採用"}
 
 
-def test_known_vocabulary_later_page_timeout_discards_partial_scan_and_retries(
+def test_known_vocabulary_later_page_timeout_discards_the_partial_scan(
     initialized_bridge_home: Path,
-    caplog: pytest.LogCaptureFixture,
 ) -> None:
     class TimeoutSecondPage(FakeKotlinAnki):
         def ankiScanFirstFields(self, raw: str) -> str:
@@ -1598,17 +1597,18 @@ def test_known_vocabulary_later_page_timeout_discards_partial_scan_and_retries(
                 },
             )
 
+    from anki_miner.exceptions import AnkiConnectionError
+
     kotlin = TimeoutSecondPage()
     adapter = _adapter(_config(initialized_bridge_home), kotlin)
 
-    with caplog.at_level(logging.DEBUG, logger=anki_adapter_module.logger.name):
-        assert adapter.get_existing_vocabulary() == set()
-        assert adapter.get_existing_vocabulary() == set()
+    # Page one's words must not become the answer: they are a fraction of the collection, and
+    # caching them would filter the rest of the run against a set that is known to be short.
+    for _ in range(2):
+        with pytest.raises(AnkiConnectionError, match="slow second page"):
+            adapter.get_existing_vocabulary()
+        assert adapter._existing_vocab_cache is None
     assert len(kotlin.requests_for("ankiScanFirstFields")) == 4
-    records = [record for record in caplog.records if "Known-vocabulary scan failed" in record.msg]
-    assert len(records) == 4
-    assert sum(record.exc_info is not None for record in records) == 2
-    assert all("outcome=" in record.getMessage() for record in records)
 
 
 def test_dictionary_media_read_failure_has_one_stack_owner(
@@ -1712,17 +1712,43 @@ def test_known_vocabulary_response_rejects_reused_opaque_cursor_token(
     assert exc_info.value.code == "invalid_anki_response"
 
 
-def test_retryable_vocab_timeout_degrades_without_poisoning_cache(
+def test_retryable_vocab_timeout_is_reported_instead_of_disabling_filtering(
     initialized_bridge_home: Path,
 ) -> None:
+    from anki_miner.exceptions import AnkiConnectionError
+
+    # The scan is one ceiling-bounded walk on a bulk deadline, not a 1000-note HTTP batch, so a
+    # timeout means it never finished. Degrading to an empty set re-mined the user's whole existing
+    # deck for the pre-insert duplicate check to reject, and said nothing about why.
     config = _config(initialized_bridge_home)
     kotlin = FakeKotlinAnki()
     kotlin.errors["scanFirstFields"] = ("timeout", "slow query", True)
     adapter = _adapter(config, kotlin)
 
-    assert adapter.get_existing_vocabulary() == set()
-    assert adapter.get_existing_vocabulary() == set()
-    assert len(kotlin.requests_for("ankiScanFirstFields")) == 2
+    with pytest.raises(AnkiConnectionError, match="slow query"):
+        adapter.get_existing_vocabulary()
+    assert adapter._existing_vocab_cache is None
+    assert len(kotlin.requests_for("ankiScanFirstFields")) == 1
+
+
+def test_scan_limit_refusal_reaches_the_engine_as_an_actionable_error(
+    initialized_bridge_home: Path,
+) -> None:
+    # A collection over the scan ceiling is a condition of the user's collection. Answering with a
+    # protocol code made it a BridgeProtocolError -- a ValueError, outside the engine's
+    # AnkiMinerException handler -- so the engine reported it as "Unexpected error" and logged a
+    # stack as an app bug.
+    from anki_miner.exceptions import AnkiMinerException
+
+    kotlin = FakeKotlinAnki()
+    kotlin.errors["scanFirstFields"] = (
+        "query_failed",
+        "Known-word filtering supports at most 100000 notes in an Anki collection",
+        False,
+    )
+
+    with pytest.raises(AnkiMinerException, match="at most 100000 notes"):
+        _adapter(_config(initialized_bridge_home), kotlin).get_existing_vocabulary()
 
 
 def test_nonretryable_vocab_query_failure_is_hard(
@@ -2132,7 +2158,7 @@ def test_outgoing_duplicate_media_is_not_stored(
     assert kotlin.requests_for("ankiStoreMedia") == []
 
 
-def test_vocab_timeout_provider_duplicate_media_is_not_stored(
+def test_unfiltered_provider_duplicate_media_is_not_stored(
     initialized_bridge_home: Path,
     tmp_path: Path,
 ) -> None:
@@ -2147,13 +2173,9 @@ def test_vocab_timeout_provider_duplicate_media_is_not_stored(
     kotlin = FakeKotlinAnki()
     kotlin.duplicate_fields = ["猫"]
     adapter = _adapter(_config(initialized_bridge_home), kotlin)
-    kotlin.errors["scanFirstFields"] = (
-        "timeout",
-        "known-vocabulary scan timed out",
-        True,
-    )
+    # The known-word scan does not see this note -- it is a card the scan's scope misses, not a
+    # failed scan -- so the word reaches creation and only the pre-insert duplicate check stops it.
     assert adapter.get_existing_vocabulary() == set()
-    del kotlin.errors["scanFirstFields"]
 
     created_ids = adapter.create_cards_batch(
         [

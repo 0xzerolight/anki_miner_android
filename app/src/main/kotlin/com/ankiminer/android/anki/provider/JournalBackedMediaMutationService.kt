@@ -260,7 +260,6 @@ internal class JournalBackedMediaMutationService(
             ReplayResult.LiveOwnerRequired -> throw mediaMutationConflict("Media replay requires a live run owner")
         }
 
-        ensureStagingRecovered()
         journal.begin(durableRequest)
         val admissions =
             try {
@@ -665,7 +664,12 @@ internal class JournalBackedMediaMutationService(
      * already refused admission keep their own typed refusal — the reason is more precise than the
      * recovery one and the caller has no other place to learn it.
      *
-     * The pre-`journal.begin` call keeps the hard throw: there is no durable batch to degrade yet.
+     * There is no pre-`journal.begin` recovery call: its throw had no durable batch to degrade, so
+     * it escaped `store()` as a top-level `media_store_failed`, and `anki_adapter` raises on any
+     * top-level error whatever its code. A quarantine that outlives one batch therefore killed the
+     * next `storeMedia` call outright — the same run-fatal shape this degrade exists to prevent,
+     * one call later. The request is validated to carry at least one asset, so the in-loop call
+     * guards index 0 and the recovery refusal always has a batch to degrade.
      */
     private fun degradeRemainingRowsLocally(
         request: StoreMediaRequest,

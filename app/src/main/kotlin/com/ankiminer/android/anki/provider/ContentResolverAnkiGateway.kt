@@ -93,6 +93,7 @@ internal class ContentResolverAnkiGateway(
     context: Context,
     private val workerThreadGuard: WorkerThreadGuard = AndroidWorkerThreadGuard,
     private val readTimeoutMs: Long = DEFAULT_READ_TIMEOUT_MS,
+    private val bulkReadTimeoutMs: Long = DEFAULT_BULK_READ_TIMEOUT_MS,
     private val deadlineScheduler: ProviderDeadlineScheduler = RealProviderDeadlineScheduler,
     private val accessStatusOverride: (() -> ProviderAccessStatus)? = null,
     private val resolverQueryOverride: ProviderResolverQuery? = null,
@@ -105,6 +106,7 @@ internal class ContentResolverAnkiGateway(
 
     init {
         require(readTimeoutMs > 0L) { "provider read timeout must be positive" }
+        require(bulkReadTimeoutMs >= readTimeoutMs) { "bulk reads must not get the shorter deadline" }
     }
 
     override fun accessStatus(): ProviderAccessStatus {
@@ -161,7 +163,11 @@ internal class ContentResolverAnkiGateway(
         val queryCancellation =
             ProviderQueryCancellation(
                 cancellation = cancellation,
-                timeoutMs = readTimeoutMs,
+                timeoutMs =
+                    when (query.deadline) {
+                        ProviderReadDeadline.INTERACTIVE -> readTimeoutMs
+                        ProviderReadDeadline.BULK -> bulkReadTimeoutMs
+                    },
                 scheduler = deadlineScheduler,
             )
         var cursor: Cursor? = null
@@ -464,6 +470,7 @@ internal class ContentResolverAnkiGateway(
                 ProviderColumn.CARD_NOTE_ID -> FlashCardsContract.Card.NOTE_ID
                 ProviderColumn.CARD_ORDINAL -> FlashCardsContract.Card.CARD_ORD
                 ProviderColumn.CARD_DECK_ID -> FlashCardsContract.Card.DECK_ID
+                ProviderColumn.CARD_ORIGINAL_DECK_ID -> FlashCardsContract.Card.ORIGINAL_DECK_ID
             }
 
     private inner class AndroidProviderCursor(
@@ -526,6 +533,11 @@ internal class ContentResolverAnkiGateway(
         const val LEGACY_API_SPEC = 1
         const val MINIMUM_API_SPEC = 2
         const val DEFAULT_READ_TIMEOUT_MS = 30_000L
+
+        // Sized against the walks it covers, not against a screen: the known-vocabulary scan may
+        // cross up to a million card rows and a million excluded-deck rows before its own ceilings
+        // refuse. Those ceilings are the intended bound; this only stops a hung provider.
+        const val DEFAULT_BULK_READ_TIMEOUT_MS = 300_000L
         const val PROVIDER_INFO_FLAGS =
             PackageManager.GET_META_DATA or PackageManager.MATCH_DISABLED_COMPONENTS
     }
