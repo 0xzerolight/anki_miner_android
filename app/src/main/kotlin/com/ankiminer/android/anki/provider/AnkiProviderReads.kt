@@ -390,13 +390,13 @@ internal class AnkiProviderReadService(
                 while (cursor.moveToNext()) {
                     ensureActive(cancellation)
                     // Counted per row and checked before the cell read, so the scan refuses on
-                    // reaching row 100001 without pulling its cells.
+                    // reaching the first row past its budget without pulling that row's cells.
                     excludedBrowserRows = checkedAdd(excludedBrowserRows, 1)
                     if (
                         excludedBrowserRows >
-                        AnkiLimitsV1.ScanFirstFields.KNOWN_TOTAL_SCANNED_NOTE_MAX_COUNT
+                        AnkiLimitsV1.ScanFirstFields.KNOWN_TOTAL_SCANNED_EXCLUDED_ROW_MAX_COUNT
                     ) {
-                        throw knownVocabularyLimitExceeded("the excluded Anki decks")
+                        throw knownVocabularyExcludedScanTooLarge()
                     }
                     val id = cursor.positiveLong(ProviderColumn.NOTE_ID)
                     if (!seen.add(id)) throw queryFailed()
@@ -1363,6 +1363,25 @@ private fun knownVocabularyDeckTreeTooLarge() =
             "Known-word filtering scans at most " +
                 "${AnkiLimitsV1.ScanFirstFields.KNOWN_TOTAL_SCANNED_CARD_ROW_MAX_COUNT} cards " +
                 "in the selected Anki deck and its subdecks",
+    )
+
+/**
+ * The excluded-deck walk has its own budget too, for the same reason as the deck tree.
+ *
+ * Its rows are the notes of the *excluded* decks, which are subtracted from the result rather than
+ * counted into it, so they have no ratio to the scan's own size. Spending the note ceiling on them
+ * aborted a 2k-note target simply because the user excluded a large Core deck — while the identical
+ * run without that exclusion succeeded. In collection scope the collection-wide cap already bounded
+ * this walk; in deck scope nothing does, so the bound has to be its own.
+ */
+private fun knownVocabularyExcludedScanTooLarge() =
+    AnkiReadFailure(
+        AnkiErrorCode.UNSUPPORTED_OPERATION,
+        retryable = false,
+        stableMessage =
+            "Known-word filtering scans at most " +
+                "${AnkiLimitsV1.ScanFirstFields.KNOWN_TOTAL_SCANNED_EXCLUDED_ROW_MAX_COUNT} notes " +
+                "in the excluded Anki decks",
     )
 
 private fun targetInvalid(message: String) =
