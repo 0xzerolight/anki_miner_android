@@ -58,7 +58,11 @@ private const val CONTINUATION = "\n\t"
 private const val FRAME_INDENT = "\n\t    "
 private const val MAX_FRAMES = 200
 private const val BARE_PUNCTUATION = "._:/@+-"
-private val ALLOWED_OUTCOMES = setOf("ok", "fail", "skip", "ignored")
+/**
+ * The wire domain for `outcome`, shared with the export redactor: these are code constants, and the
+ * redactor has to know that so a user literal spelled the same way cannot rewrite one.
+ */
+internal val ALLOWED_OUTCOMES = setOf("ok", "fail", "skip", "ignored")
 
 private fun validateRecordGrammar(
     level: LogLevel,
@@ -117,7 +121,8 @@ private fun renderKey(key: String): String {
 
 private fun isBareToken(text: String): Boolean = text.isNotEmpty() && text.all(::isBareCharacter)
 
-private fun isBareCharacter(character: Char): Boolean =
+/** Also the export redactor's test for a field key, called rather than reimplemented there. */
+internal fun isBareCharacter(character: Char): Boolean =
     character in 'A'..'Z' ||
         character in 'a'..'z' ||
         character in '0'..'9' ||

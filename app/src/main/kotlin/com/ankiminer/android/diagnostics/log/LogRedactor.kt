@@ -39,8 +39,15 @@ internal class LogRedactor(private val rules: RedactionRules) {
         // still takes the conservative grammar below.
         val timestampPrefix = TIMESTAMP_PREFIX.find(line)
         val kotlinRecordPrefix = KOTLIN_RECORD_PREFIX.find(line)
-        val sealedPrefix = kotlinRecordPrefix ?: timestampPrefix
-        sealedPrefix?.let { prefix -> segments.sealPrefix(prefix.value.length) }
+        val prefixLength = (kotlinRecordPrefix ?: timestampPrefix)?.value?.length ?: 0
+        segments.sealSpans(
+            buildList {
+                if (prefixLength > 0) add(0 until prefixLength)
+                // Only a complete record prefix proves the rest of the line is LogRecord's
+                // key=value grammar, so only then is there a skeleton to seal under it.
+                if (kotlinRecordPrefix != null) addAll(recordSkeleton(line, prefixLength))
+            },
+        )
         // Rule 1. Rewritten in place rather than sealed, because rule 3 has to see the root token it
         // produces in order to know a leaf filename is under an app directory.
         rules.literalAlternation?.let { roots ->
@@ -501,19 +508,28 @@ internal object RedactionRulesFactory {
 private class Segments(line: String) {
     private var runs = mutableListOf(Run(line, sealed = false))
 
-    /** Seals the first [length] characters, so no rule can rewrite the fixed record header. */
-    fun sealPrefix(length: Int) {
-        val run = runs.single()
-        if (length <= 0) return
-        if (length >= run.text.length) {
-            runs = mutableListOf(Run(run.text, sealed = true))
-            return
+    /**
+     * Seals [spans] of the line, so no rule can rewrite the fixed record header or the structural
+     * skeleton under it.
+     *
+     * Ascending, non-overlapping, and callable only while the line is still one run: everything
+     * sealed by position has to be sealed before the first rule moves a character.
+     */
+    fun sealSpans(spans: List<IntRange>) {
+        if (spans.isEmpty()) return
+        val line = runs.single().text
+        val next = ArrayList<Run>(spans.size * 2 + 1)
+        var consumed = 0
+        for (span in spans) {
+            val start = maxOf(span.first, consumed)
+            val end = minOf(span.last + 1, line.length)
+            if (end <= start) continue
+            if (start > consumed) next += Run(line.substring(consumed, start), sealed = false)
+            next += Run(line.substring(start, end), sealed = true)
+            consumed = end
         }
-        runs =
-            mutableListOf(
-                Run(run.text.take(length), sealed = true),
-                Run(run.text.substring(length), sealed = false),
-            )
+        if (consumed < line.length) next += Run(line.substring(consumed), sealed = false)
+        runs = next
     }
 
     /** Rewrites open runs without sealing the result, for a rule whose output a later rule needs. */
@@ -572,6 +588,84 @@ private val KOTLIN_RECORD_PREFIX =
         "^$TIMESTAMP_PATTERN [DIWE] run=$BARE_TOKEN_PATTERN " +
             "c=$BARE_TOKEN_PATTERN op=$BARE_TOKEN_PATTERN(?=\\s|$)",
     )
+
+/**
+ * Field values that come from the code rather than from the user, keyed by the field they belong to.
+ *
+ * Scoped by key deliberately: `deck=skip` is a deck genuinely named `skip` and must still be
+ * tokenised. Only `outcome=skip` is the enum.
+ */
+private val STRUCTURAL_VALUES: Map<String, Set<String>> =
+    mapOf(
+        // Validated on every record the renderer emits, so this is the whole domain.
+        "outcome" to ALLOWED_OUTCOMES,
+        // AppLog.boundary's enter/exit bracket, plus the bundle exporter's start marker.
+        "at" to setOf("enter", "exit", "start"),
+        // The provider-receipt shape the journal-backed mutation services report.
+        "receipt" to setOf("null", "exception", "count"),
+    )
+
+/**
+ * The structural skeleton of a rendered record: every ` key=`, and the values above.
+ *
+ * It has to be sealed because a user literal — a deck name, a note-type field name, a tag — is
+ * searched for across the whole open remainder of every line, and the only guard is a three
+ * character floor. A user whose excluded deck is named `skip` would otherwise export records reading
+ * `outcome=<deck-3f2a1c>`: that breaks the one-line record grammar every reader of this format
+ * relies on, and it leaks the literal by inference, because the reader knows the domain has four
+ * values and can see the other three in plain text elsewhere in the file. The same literal spelled
+ * `word` or `path` would eat field keys.
+ *
+ * Walked rather than matched with a regex because a ` key=` shape also occurs *inside* quoted values
+ * — `msg="deck Anime=1 missing"` — and sealing user text is the exact opposite of the point. The walk
+ * follows the renderer's grammar: a bare token, or a quoted run in which a backslash escapes the
+ * character after it. Anything it cannot account for ends it and leaves the remainder open, because
+ * failing to seal costs a structural token while sealing the wrong span costs a redaction.
+ */
+private fun recordSkeleton(
+    line: String,
+    from: Int,
+): List<IntRange> {
+    val spans = mutableListOf<IntRange>()
+    var index = from
+    while (index < line.length) {
+        if (line[index] != ' ') return spans
+        val keyStart = index
+        index++
+        val nameStart = index
+        while (index < line.length && isBareCharacter(line[index])) index++
+        if (index == nameStart || index == line.length || line[index] != '=') return spans
+        val key = line.substring(nameStart, index)
+        index++
+        spans += keyStart until index
+        if (index < line.length && line[index] == '"') {
+            index = endOfQuotedValue(line, index) ?: return spans
+            continue
+        }
+        val valueStart = index
+        while (index < line.length && line[index] != ' ') index++
+        if (line.substring(valueStart, index) in STRUCTURAL_VALUES[key].orEmpty()) {
+            spans += valueStart until index
+        }
+    }
+    return spans
+}
+
+/** The index just past the closing quote, or null for a value the line never closes. */
+private fun endOfQuotedValue(
+    line: String,
+    open: Int,
+): Int? {
+    var index = open + 1
+    while (index < line.length) {
+        when (line[index]) {
+            '\\' -> index += 2
+            '"' -> return index + 1
+            else -> index++
+        }
+    }
+    return null
+}
 
 private const val PATH_ROOTS = "storage|sdcard|mnt|data|system"
 

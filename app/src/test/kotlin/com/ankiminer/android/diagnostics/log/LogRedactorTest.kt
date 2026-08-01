@@ -717,6 +717,68 @@ class LogRedactorTest {
     }
 
     @Test
+    fun `a deck named after an outcome cannot rewrite the record skeleton`() {
+        // The three-character floor lets `skip`, `fail`, `word` and `path` through, and a literal
+        // runs over the whole open remainder of the line.
+        val redacted =
+            redactor(settings = AppSettings(excludedDecks = listOf("skip")))
+                .redact(RECORD_PREFIX + "at=exit outcome=skip deck=skip ms=4")
+
+        assertTrue(redacted, redacted.contains(" at=exit outcome=skip deck=<deck-"))
+        assertFalse(redacted, redacted.contains("deck=skip"))
+        assertTrue(redacted, redacted.endsWith(" ms=4"))
+        assertTrue(redacted, RECORD_GRAMMAR.matches(redacted))
+    }
+
+    @Test
+    fun `a note type field named after an outcome is still redacted as user text`() {
+        val redactor = redactor(settings = AppSettings(fieldMap = mapOf("expression" to "skip")))
+
+        val redacted = redactor.redact(RECORD_PREFIX + "outcome=skip field=skip note=\"skip it\"")
+
+        assertTrue(redacted, redacted.contains(" outcome=skip "))
+        val token = Regex("<field-[0-9a-f]{6}>").find(redacted)!!.value
+        assertTrue(redacted, redacted.contains(" field=$token "))
+        assertTrue(redacted, redacted.contains("note=\"$token it\""))
+        assertTrue(redacted, RECORD_GRAMMAR.matches(redacted))
+    }
+
+    @Test
+    fun `a literal matching a field key cannot rewrite the key`() {
+        val redacted =
+            redactor(settings = AppSettings(deckName = "word"))
+                .redact(RECORD_PREFIX + "wordIndex=3 deck=word outcome=ok")
+
+        assertTrue(redacted, redacted.contains(" wordIndex=3 deck=<deck-"))
+        assertTrue(redacted, redacted.endsWith(" outcome=ok"))
+        assertTrue(redacted, RECORD_GRAMMAR.matches(redacted))
+    }
+
+    @Test
+    fun `a field shaped run inside a quoted value stays open to redaction`() {
+        // Why the skeleton is walked rather than matched: a regex for ` key=` would seal ` Anime=`
+        // here and exempt the deck name from every rule that follows.
+        val redacted =
+            redactor(settings = AppSettings(deckName = "Anime"))
+                .redact(RECORD_PREFIX + "msg=\"deck Anime=1 missing\" outcome=fail")
+
+        assertFalse(redacted, redacted.contains("Anime"))
+        assertTrue(redacted, redacted.contains("msg=\"deck <deck-"))
+        assertTrue(redacted, redacted.endsWith(" outcome=fail"))
+    }
+
+    @Test
+    fun `a structural key holding text outside its domain is still redacted`() {
+        // The seal is scoped to the enum, not to the key: anything else in the field is user text.
+        val redacted =
+            redactor(settings = AppSettings(deckName = "Immersion"))
+                .redact(RECORD_PREFIX + "at=Immersion outcome=ok")
+
+        assertTrue(redacted, redacted.contains(" at=<deck-"))
+        assertTrue(redacted, redacted.endsWith(" outcome=ok"))
+    }
+
+    @Test
     fun `the rules object prints its shape and never its mapping`() {
         // One AppLog.d(..., "rules" to rules) must not write the de-anonymization table into the
         // file being exported.
@@ -988,6 +1050,13 @@ class LogRedactorTest {
         /** U+20B9F, written as its surrogate pair so the encoding under test is explicit. */
         const val ASTRAL_KANJI = "\uD842\uDF9F"
         const val RECORD_PREFIX = "2026-07-30T12:00:00.000Z I run=abc c=diag op=test "
+
+        /** LogGrammarTest's first-line rule, applied to what comes back out of the redactor. */
+        val RECORD_GRAMMAR =
+            Regex(
+                """^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z [DIWE] run=\S+ c=[a-z]+ """ +
+                    """op=\S+(?: [^\s=]+=(?:\S+|"(?:\\.|[^"])*"))*$""",
+            )
         val FIXED_SALT = ByteArray(16) { index -> index.toByte() }
         const val FOUR_MEBIBYTES = 4L * 1024 * 1024
         const val BOUNDED_CHUNK = 64 * 1024
