@@ -2,6 +2,12 @@
 
 All notable project changes will be recorded here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and releases will use semantic versioning once a public version exists.
 
+## [Unreleased]
+
+### Fixed
+
+- Words with several pitch accents no longer render the accents fused into one unreadable run in the pitch graph and pitch text fields; the accents are wrapped as a numbered list, matching Yomitan's own export. (#7)
+
 ## [0.2.0] - 2026-08-01
 
 ### Added
