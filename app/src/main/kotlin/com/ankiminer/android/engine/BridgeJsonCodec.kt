@@ -909,7 +909,7 @@ object BridgeJsonCodec {
                 "anki_tags", "excluded_decks", "audio_padding", "screenshot_offset", "audio_format", "audio_bitrate",
                 "screenshot_animated", "subtitle_offset", "allowed_pos", "excluded_subtypes", "excluded_wordsets",
                 "dictionary_chain", "jisho_delay", "expression_audio_chain", "reading_tts_enabled", "pitch_category_format",
-                "max_frequency_rank", "frequency_chain", "pitch_chain", "allow_duplicate_cards", "use_known_words_db",
+                "max_frequency_rank", "frequency_chain", "pitch_chain", "use_known_words_db",
                 "exclude_hiragana_only_words",
                 "exclude_katakana_only_words", "blacklist_path", "whitelist_path", "use_blacklist", "use_whitelist",
                 "subtitle_regex_filter", "subtitle_regex_replacement", "use_subtitle_regex_filter",
@@ -945,7 +945,7 @@ object BridgeJsonCodec {
             "max_frequency_rank", "max_sentence_chars" -> nonNegative(value, key)
             "max_parallel_workers" -> if (integral(value, key) !in 1L..32L) fail(BridgeProtocolCategory.INVALID_VALUE, "$key is outside 1 through 32")
             "screenshot_animated" -> if (bool(value, key)) fail(BridgeProtocolCategory.INVALID_VALUE, "screenshot_animated must be false")
-            "reading_tts_enabled", "allow_duplicate_cards", "use_known_words_db",
+            "reading_tts_enabled", "use_known_words_db",
             "exclude_hiragana_only_words", "exclude_katakana_only_words",
             "use_blacklist", "use_whitelist", "use_subtitle_regex_filter", "strip_subtitle_annotations",
             "bold_target_in_sentence", "deduplicate_sentences", "use_i_plus_one_filter",

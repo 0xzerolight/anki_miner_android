@@ -468,8 +468,6 @@ internal object AnkiJsonCodec {
             var cursor: KnownVocabularyCursor? = null
             var modelName: String? = null
             var firstFieldName: String? = null
-            var deckNameSeen = false
-            var deckName: String? = null
             var candidates: List<DuplicateCandidate>? = null
             var occurrences: List<Int>? = null
             var invalidateSeen = false
@@ -482,7 +480,6 @@ internal object AnkiJsonCodec {
                     "cursor",
                     "modelName",
                     "firstFieldName",
-                    "deckName",
                     "candidates",
                     "occurrences",
                     "invalidateBaselineToken",
@@ -498,10 +495,6 @@ internal object AnkiJsonCodec {
                     }
                     "modelName" -> modelName = readString("model name")
                     "firstFieldName" -> firstFieldName = readString("first field name")
-                    "deckName" -> {
-                        deckNameSeen = true
-                        deckName = readNullable { readString("deck name") }
-                    }
                     "candidates" -> candidates = readArray(AnkiLimitsV1.ScanFirstFields.DUPLICATE_CANDIDATE_MAX_ITEM_COUNT, 1, "duplicate candidates") { readDuplicateCandidate() }
                     "occurrences" -> occurrences = readArray(AnkiLimitsV1.ScanFirstFields.DUPLICATE_CANDIDATE_MAX_ITEM_COUNT, 1, "duplicate occurrences") { readInt("duplicate occurrence") }
                     "invalidateBaselineToken" -> {
@@ -514,13 +507,8 @@ internal object AnkiJsonCodec {
             }
             return when (kind) {
                 "knownVocabulary" -> {
-                    val required = setOf("kind", "excludedDecks", "cursor", "limits")
-                    val accepted = if (deckNameSeen) required + "deckName" else required
-                    requireExactSeen(seen, accepted, "known-vocabulary scope")
+                    requireExactSeen(seen, setOf("kind", "excludedDecks", "cursor", "limits"), "known-vocabulary scope")
                     if (!cursorSeen) missingPayload("cursor")
-                    if (deckNameSeen && deckName == null) {
-                        fail(AnkiProtocolCategory.INVALID_VALUE, "known-vocabulary deck name must not be null")
-                    }
                     requireExactLimits(
                         limits!!,
                         mapOf(
@@ -531,15 +519,14 @@ internal object AnkiJsonCodec {
                             "maxTotalUtf8Bytes" to AnkiLimitsV1.ScanFirstFields.KNOWN_PAGE_MAX_UTF8_BYTES.toLong(),
                         ),
                     )
-                    KnownVocabularyScope(excludedDecks!!, cursor, deckName)
+                    KnownVocabularyScope(excludedDecks!!, cursor)
                 }
                 "duplicates" -> {
                     requireExactSeen(
                         seen,
-                        setOf("kind", "modelName", "firstFieldName", "deckName", "candidates", "occurrences", "invalidateBaselineToken", "limits"),
+                        setOf("kind", "modelName", "firstFieldName", "candidates", "occurrences", "invalidateBaselineToken", "limits"),
                         "duplicate scope",
                     )
-                    if (!deckNameSeen) missingPayload("deckName")
                     if (!invalidateSeen) missingPayload("invalidateBaselineToken")
                     requireExactLimits(
                         limits!!,
@@ -550,7 +537,7 @@ internal object AnkiJsonCodec {
                             "maxTotalUtf8Bytes" to AnkiLimitsV1.ScanFirstFields.DUPLICATE_HIT_TOTAL_MAX_UTF8_BYTES.toLong(),
                         ),
                     )
-                    DuplicateScanScope(modelName!!, firstFieldName!!, deckName, candidates!!, occurrences!!, invalidateBaselineToken)
+                    DuplicateScanScope(modelName!!, firstFieldName!!, candidates!!, occurrences!!, invalidateBaselineToken)
                 }
                 else -> fail(AnkiProtocolCategory.INVALID_VALUE, "scan scope kind is invalid")
             }
@@ -685,14 +672,10 @@ internal object AnkiJsonCodec {
 
         private fun readCreateDuplicateScope(): CreateDuplicateScope {
             var kind: String? = null
-            var deckName: String? = null
-            var includeChildren: Boolean? = null
             var limits: Map<String, Long>? = null
-            val seen = readObjectUnion("create duplicate scope", setOf("kind", "deckName", "includeChildren", "limits")) { field ->
+            val seen = readObjectUnion("create duplicate scope", setOf("kind", "limits")) { field ->
                 when (field) {
                     "kind" -> kind = readString("create duplicate scope kind")
-                    "deckName" -> deckName = readString("duplicate scope deck")
-                    "includeChildren" -> includeChildren = readBoolean("include-children flag")
                     "limits" -> limits = readNumericObject("create duplicate limits", 2)
                     else -> unknownPayload(field)
                 }
@@ -708,11 +691,6 @@ internal object AnkiJsonCodec {
                 "collection" -> {
                     requireExactSeen(seen, setOf("kind", "limits"), "collection duplicate scope")
                     CollectionCreateDuplicateScope
-                }
-                "exactDeck" -> {
-                    requireExactSeen(seen, setOf("kind", "deckName", "includeChildren", "limits"), "exact-deck duplicate scope")
-                    if (includeChildren != false) fail(AnkiProtocolCategory.INVALID_VALUE, "exact-deck scope must exclude children")
-                    ExactDeckCreateDuplicateScope(deckName!!)
                 }
                 else -> fail(AnkiProtocolCategory.INVALID_VALUE, "create duplicate scope kind is invalid")
             }

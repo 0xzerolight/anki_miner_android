@@ -195,11 +195,10 @@
     "knownVocabularyScope": {
       "type": "object",
       "additionalProperties": false,
-      "$comment": "Kotlin scans at most maxScannedNotes notes per page and maxTotalScannedNotes across the complete stable provider traversal. Optional deckName restricts the traversal to notes with a card in that exact verified target deck; child decks do not match. An excluded deck excludes the entire note when any of its cards is in that deck or a descendant; a parent exclusion therefore covers all subdecks. cursor is null on the first page and otherwise exactly the prior nextCursor. Kotlin retains the traversal snapshot and immutable run/scope/ordinal/total binding behind each opaque one-use token; tokens expire when consumed, on terminal completion, on error, or when the run is cancelled/terminated. A cursor from another run or scope, a replay, and continuation at the total ceiling fail closed. Kotlin must fail rather than truncate or skip an oversized first field.",
+      "$comment": "Kotlin scans at most maxScannedNotes notes per page and maxTotalScannedNotes across the complete stable provider traversal. An excluded deck excludes the entire note when any of its cards is in that deck or a descendant; a parent exclusion therefore covers all subdecks. cursor is null on the first page and otherwise exactly the prior nextCursor. Kotlin retains the traversal snapshot and immutable run/scope/ordinal/total binding behind each opaque one-use token; tokens expire when consumed, on terminal completion, on error, or when the run is cancelled/terminated. A cursor from another run or scope, a replay, and continuation at the total ceiling fail closed. Kotlin must fail rather than truncate or skip an oversized first field.",
       "required": ["kind", "excludedDecks", "cursor", "limits"],
       "properties": {
         "kind": {"const": "knownVocabulary"},
-        "deckName": {"$ref": "#/$defs/deckName"},
         "excludedDecks": {
           "type": "array",
           "maxItems": 256,
@@ -245,17 +244,11 @@
       "type": "object",
       "additionalProperties": false,
       "$comment": "firstFieldName must exactly equal fieldNames[0] from this run's verified model snapshot. Kotlin atomically invalidates invalidateBaselineToken, if non-null and owned by this run, before retaining the fresh replacement baselineToken. At most one unconsumed duplicate baseline may exist per run: createNotes consumes it once, the next sequential duplicate probe invalidates an abandoned all-duplicate token, and run cancellation/termination performs final cleanup. A mismatched invalidation token fails closed.",
-      "required": ["kind", "modelName", "firstFieldName", "deckName", "candidates", "occurrences", "invalidateBaselineToken", "limits"],
+      "required": ["kind", "modelName", "firstFieldName", "candidates", "occurrences", "invalidateBaselineToken", "limits"],
       "properties": {
         "kind": {"const": "duplicates"},
         "modelName": {"$ref": "#/$defs/modelName"},
         "firstFieldName": {"$ref": "#/$defs/fieldName"},
-        "deckName": {
-          "oneOf": [
-            {"type": "null"},
-            {"$ref": "#/$defs/deckName"}
-          ]
-        },
         "candidates": {
           "type": "array",
           "minItems": 1,
@@ -547,17 +540,6 @@
         "limits": {"$ref": "#/$defs/createSnapshotLimits"}
       }
     },
-    "exactDeckCreateDuplicateScope": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["kind", "deckName", "includeChildren", "limits"],
-      "properties": {
-        "kind": {"const": "exactDeck"},
-        "deckName": {"$ref": "#/$defs/deckName"},
-        "includeChildren": {"const": false},
-        "limits": {"$ref": "#/$defs/createSnapshotLimits"}
-      }
-    },
     "createSnapshotLimits": {
       "type": "object",
       "additionalProperties": false,
@@ -570,7 +552,7 @@
     "createNotesRequest": {
       "type": "object",
       "additionalProperties": false,
-      "$comment": "Kotlin atomically consumes baselineToken only when its run/model/verified firstFieldName/candidate/scope binding exactly matches this request. It resolves every candidate's scoped checksum note IDs before inserting any note. A note is duplicate iff that immutable pre-insert snapshot contains an ID absent from the private baseline. maxTotalNoteIds counts the union of IDs across candidates. Kotlin fails rather than truncating on every declared limit and must never add IDs created by this same request to the snapshot, so repeated same-expression notes in exactDeck mode are all created when no external ID appeared. A new checksum collision may safely false-positive; a new external note must never false-negative. The exactDeck deckName must equal the top-level target deck at runtime. Callback-wide anki.error is valid only before any provider mutation. After a possible mutation Kotlin returns an aligned result, preserves every known inserted noteId, and uses a non-retryable uncertain row when commit state cannot be proven. Blind write retry is forbidden.",
+      "$comment": "Kotlin atomically consumes baselineToken only when its run/model/verified firstFieldName/candidate/scope binding exactly matches this request. It resolves every candidate's scoped checksum note IDs before inserting any note. A note is duplicate iff that immutable pre-insert snapshot contains an ID absent from the private baseline. maxTotalNoteIds counts the union of IDs across candidates. Kotlin fails rather than truncating on every declared limit and must never add IDs created by this same request to the snapshot. A new checksum collision may safely false-positive; a new external note must never false-negative. Callback-wide anki.error is valid only before any provider mutation. After a possible mutation Kotlin returns an aligned result, preserves every known inserted noteId, and uses a non-retryable uncertain row when commit state cannot be proven. Blind write retry is forbidden.",
       "required": ["runId", "requestId", "deckName", "modelName", "firstFieldName", "baselineToken", "duplicateScope", "limits", "notes"],
       "properties": {
         "runId": {"$ref": "#/$defs/runId"},
@@ -579,12 +561,7 @@
         "modelName": {"$ref": "#/$defs/modelName"},
         "firstFieldName": {"$ref": "#/$defs/fieldName"},
         "baselineToken": {"$ref": "#/$defs/baselineToken"},
-        "duplicateScope": {
-          "oneOf": [
-            {"$ref": "#/$defs/collectionCreateDuplicateScope"},
-            {"$ref": "#/$defs/exactDeckCreateDuplicateScope"}
-          ]
-        },
+        "duplicateScope": {"$ref": "#/$defs/collectionCreateDuplicateScope"},
         "limits": {"$ref": "#/$defs/createNotesLimits"},
         "notes": {
           "type": "array",

@@ -311,8 +311,6 @@ def _validate_scan_payload(payload: dict[str, Any], *, response: bool) -> None:
         total = sum(_canonical_name(deck, "deck") for deck in scope["excludedDecks"])
         if total > ANKI_LIMITS_V1["names"]["excludedDecks"]["maxTotalUtf8Bytes"]:
             _reject("invalid_value")
-        if "deckName" in scope:
-            _canonical_name(scope["deckName"], "deck")
         cursor = scope["cursor"]
         if cursor is not None:
             _positive_long(cursor["ordinal"])
@@ -326,8 +324,6 @@ def _validate_scan_payload(payload: dict[str, Any], *, response: bool) -> None:
 
     _canonical_name(scope["modelName"], "model")
     _canonical_name(scope["firstFieldName"], "field")
-    if scope["deckName"] is not None:
-        _canonical_name(scope["deckName"], "deck")
     if len({json.dumps(item, sort_keys=True) for item in scope["candidates"]}) != len(scope["candidates"]):
         _reject("invalid_value")
     for candidate in scope["candidates"]:
@@ -443,10 +439,6 @@ def _validate_create_payload(payload: dict[str, Any], *, response: bool) -> None
         _canonical_name(payload["deckName"], "deck")
         _canonical_name(payload["modelName"], "model")
         _canonical_name(payload["firstFieldName"], "field")
-        if payload["duplicateScope"]["kind"] == "exactDeck":
-            _canonical_name(payload["duplicateScope"]["deckName"], "deck")
-            if payload["duplicateScope"]["deckName"] != payload["deckName"]:
-                _reject("invalid_value")
 
         note_ids: set[str] = set()
         total_content = 0
@@ -639,7 +631,6 @@ def test_corpus_freezes_all_operation_and_result_variants() -> None:
     }
     assert {payload["duplicateScope"]["kind"] for payload in accepted_payloads if "duplicateScope" in payload} == {
         "collection",
-        "exactDeck",
     }
     assert {row["status"] for payload in accepted_payloads for row in payload.get("results", [])} == {
         "stored",

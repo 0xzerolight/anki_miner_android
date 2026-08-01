@@ -461,7 +461,6 @@ class JournalBackedNoteMutationServiceTest {
                 token = BASELINE_TOKEN,
                 target = TARGET,
                 firstFieldName = "Expression",
-                scopeDeckId = null,
                 candidates = listOf(DuplicateCandidate("猫", "猫")),
                 occurrences = listOf(0),
                 providerNoteIds = listOf(initialMatchingNoteIds),
@@ -496,7 +495,6 @@ class JournalBackedNoteMutationServiceTest {
             owner: AnkiRunStateRegistry.RunOwner,
             target: TargetSnapshot,
             candidate: DuplicateCandidate,
-            scopeDeckId: Long?,
         ): DuplicateRawSnapshot {
             duplicateReads += 1
             return DuplicateRawSnapshot(listOf(emptyList()), listOf(freshMatchingNoteIds))

@@ -292,11 +292,7 @@ def _scan_scope(value: object) -> _Object:
     if kind == "knownVocabulary":
         scope = _mapping(
             value,
-            (
-                {"kind", "deckName", "excludedDecks", "cursor", "limits"}
-                if "deckName" in value
-                else {"kind", "excludedDecks", "cursor", "limits"}
-            ),
+            {"kind", "excludedDecks", "cursor", "limits"},
             "known-vocabulary scope",
         )
         cursor_value = scope["cursor"]
@@ -327,19 +323,13 @@ def _scan_scope(value: object) -> _Object:
                     ("token", _string(raw_cursor["token"], "cursor token")),
                 )
             )
-        fields: list[tuple[str, object]] = [("kind", "knownVocabulary")]
-        if "deckName" in scope:
-            fields.append(("deckName", _string(scope["deckName"], "deckName")))
-        fields.extend(
+        return _Object(
             (
-                (
-                    "excludedDecks",
-                    _string_list(scope["excludedDecks"], "excludedDecks"),
-                ),
+                ("kind", "knownVocabulary"),
+                ("excludedDecks", _string_list(scope["excludedDecks"], "excludedDecks")),
                 ("cursor", cursor),
             )
         )
-        return _Object(tuple(fields))
     if kind == "duplicates":
         scope = _mapping(
             value,
@@ -347,7 +337,6 @@ def _scan_scope(value: object) -> _Object:
                 "kind",
                 "modelName",
                 "firstFieldName",
-                "deckName",
                 "candidates",
                 "occurrences",
                 "invalidateBaselineToken",
@@ -382,7 +371,6 @@ def _scan_scope(value: object) -> _Object:
                     "firstFieldName",
                     _string(scope["firstFieldName"], "firstFieldName"),
                 ),
-                ("deckName", _nullable_string(scope["deckName"], "deckName")),
                 ("candidates", candidates),
                 ("occurrences", occurrences),
                 (
@@ -469,21 +457,6 @@ def _create_duplicate_scope(value: object) -> _Object:
         scope = _mapping(value, {"kind", "limits"}, "collection duplicate scope")
         _validate_create_duplicate_limits(scope["limits"])
         return _Object((("kind", "collection"),))
-    if kind == "exactDeck":
-        scope = _mapping(
-            value,
-            {"kind", "deckName", "includeChildren", "limits"},
-            "exact-deck duplicate scope",
-        )
-        if _boolean(scope["includeChildren"], "includeChildren"):
-            _invalid("exact-deck duplicate scope must exclude children")
-        _validate_create_duplicate_limits(scope["limits"])
-        return _Object(
-            (
-                ("kind", "exactDeck"),
-                ("deckName", _string(scope["deckName"], "duplicate deckName")),
-            )
-        )
     _invalid("create duplicate scope kind is invalid")
 
 

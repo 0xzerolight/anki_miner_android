@@ -103,7 +103,6 @@ internal data class DuplicateBaseline(
     val token: String,
     val target: TargetSnapshot,
     val firstFieldName: String,
-    val scopeDeckId: Long?,
     val candidates: List<DuplicateCandidate>,
     val occurrences: List<Int>,
     val providerNoteIds: List<Set<Long>>,
@@ -119,7 +118,6 @@ internal data class KnownTraversalInitialization(
 
 internal data class KnownTraversalScope(
     val excludedDecks: List<String>,
-    val deckName: String?,
 )
 
 internal data class KnownPageLease(
@@ -1039,8 +1037,7 @@ internal class AnkiRunStateRegistry(
                 baseline.occurrences.any { it !in baseline.candidates.indices } ||
                 baseline.occurrences.toSet() != baseline.candidates.indices.toSet() ||
                 !BASELINE_TOKEN_PATTERN.matches(baseline.token) ||
-                baseline.firstFieldName != baseline.target.model.fieldNames.firstOrNull() ||
-                (baseline.scopeDeckId != null && baseline.scopeDeckId != baseline.target.deck.id)
+                baseline.firstFieldName != baseline.target.model.fieldNames.firstOrNull()
         ) {
             throw RunStateConflictException()
         }

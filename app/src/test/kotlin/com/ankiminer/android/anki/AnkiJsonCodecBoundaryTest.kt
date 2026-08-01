@@ -23,7 +23,6 @@ import com.ankiminer.android.anki.protocol.DuplicateCandidate
 import com.ankiminer.android.anki.protocol.DuplicateLookupResult
 import com.ankiminer.android.anki.protocol.DuplicateNote
 import com.ankiminer.android.anki.protocol.DuplicateScanScope
-import com.ankiminer.android.anki.protocol.ExactDeckCreateDuplicateScope
 import com.ankiminer.android.anki.protocol.FailedMedia
 import com.ankiminer.android.anki.protocol.FailedNote
 import com.ankiminer.android.anki.protocol.KnownVocabularyCursor
@@ -837,7 +836,6 @@ class AnkiJsonCodecBoundaryTest {
                 DuplicateScanScope(
                     "Mining",
                     "Expression",
-                    null,
                     listOf(DuplicateCandidate("a", "a"), DuplicateCandidate("b", "b")),
                     listOf(0, 1),
                     null,
@@ -1411,17 +1409,12 @@ class AnkiJsonCodecBoundaryTest {
                                         value.string("token"),
                                     )
                                 }
-                            KnownVocabularyScope(
-                                scope.strings("excludedDecks"),
-                                cursor,
-                                scope["deckName"]?.asString("deckName"),
-                            )
+                            KnownVocabularyScope(scope.strings("excludedDecks"), cursor)
                         }
                         "duplicates" ->
                             DuplicateScanScope(
                                 scope.string("modelName"),
                                 scope.string("firstFieldName"),
-                                scope.nullableString("deckName"),
                                 scope.array("candidates").map { rawCandidate ->
                                     val candidate = rawCandidate.asObject("duplicate candidate")
                                     DuplicateCandidate(
@@ -1459,7 +1452,6 @@ class AnkiJsonCodecBoundaryTest {
                 val typedScope =
                     when (scope.string("kind")) {
                         "collection" -> CollectionCreateDuplicateScope
-                        "exactDeck" -> ExactDeckCreateDuplicateScope(scope.string("deckName"))
                         else -> error("unsupported accepted create scope")
                     }
                 CreateNotesRequest(
@@ -2049,7 +2041,6 @@ class AnkiJsonCodecBoundaryTest {
                     DuplicateScanScope(
                         "Mining",
                         "Expression",
-                        null,
                         candidates,
                         candidates.indices.toList(),
                         null,
@@ -2334,7 +2325,7 @@ class AnkiJsonCodecBoundaryTest {
                 """{"key":"key$index","firstField":"field$index"}"""
             }.joinToString(prefix = "[", postfix = "]")
         val occurrences = (0 until count).joinToString(prefix = "[", postfix = "]")
-        return """{"runId":"$RUN_ID","requestId":"$REQUEST_ID","scope":{"kind":"duplicates","modelName":"Mining","firstFieldName":"Expression","deckName":null,"candidates":$candidates,"occurrences":$occurrences,"invalidateBaselineToken":null,"limits":$DUPLICATE_LIMITS}}"""
+        return """{"runId":"$RUN_ID","requestId":"$REQUEST_ID","scope":{"kind":"duplicates","modelName":"Mining","firstFieldName":"Expression","candidates":$candidates,"occurrences":$occurrences,"invalidateBaselineToken":null,"limits":$DUPLICATE_LIMITS}}"""
     }
 
     private fun storePayload(assets: List<String>): String =

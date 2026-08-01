@@ -155,7 +155,6 @@ def _full_config_payload(home: Path) -> dict[str, Any]:
         "subtitle_regex_replacement": "",
         "use_subtitle_regex_filter": True,
         "strip_subtitle_annotations": False,
-        "allow_duplicate_cards": True,
         "bold_target_in_sentence": True,
         "deduplicate_sentences": True,
         "use_i_plus_one_filter": False,
@@ -426,7 +425,6 @@ def test_anki_limits_v1_manifest_freezes_exact_units_and_values() -> None:
             "knownPageMaxItems": 256,
             "knownPageMaxUtf8Bytes": 262144,
             "knownTotalScannedNotes": 100000,
-            "knownTotalScannedCardRows": 1000000,
             "knownTotalScannedExcludedRows": 1000000,
             "knownCursorMaxCodePoints": 1024,
             "knownCursorMaxUtf8Bytes": 1024,
@@ -1457,7 +1455,6 @@ def test_unknown_curation_map_key_is_schema_invalid(
                 "kind": "duplicates",
                 "modelName": "Lapis",
                 "firstFieldName": "Expression",
-                "deckName": None,
                 "candidates": [
                     {"key": "猫", "firstField": "猫"},
                     {"key": "犬", "firstField": "<b>犬</b>"},
@@ -1677,7 +1674,6 @@ def test_verify_target_result_rejects_deck_created_true(
             "scope": {
                 "kind": "duplicates",
                 "modelName": "Lapis",
-                "deckName": None,
             },
         },
         {

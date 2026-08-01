@@ -139,6 +139,7 @@ class DataStoreAppSettingsRepository internal constructor(
                 }
             return stagePreferenceWrite(preferences) { candidate ->
                 decoded.invalidKeys.forEach { candidate -= it }
+                candidate -= Keys.legacyAllowDuplicateCards
                 if (needsWordsetMigration) {
                     candidate[Keys.enabledWordsets] =
                         EnabledWordsetPreferenceCodec.encode(migratedWordsets)
@@ -158,7 +159,8 @@ class DataStoreAppSettingsRepository internal constructor(
                 decoded.schemaVersion == null ||
                 decoded.schemaVersion < CURRENT_SCHEMA_VERSION ||
                 !preferences.contains(Keys.enabledWordsets) ||
-                !preferences.contains(Keys.wordsetDefaultsPolicy)
+                !preferences.contains(Keys.wordsetDefaultsPolicy) ||
+                preferences.contains(Keys.legacyAllowDuplicateCards)
         }
 
         internal inline fun stagePreferenceWrite(
@@ -186,7 +188,6 @@ class DataStoreAppSettingsRepository internal constructor(
                 candidate.setOrRemove(Keys.cardType, value.cardType?.wireValue)
                 candidate.setOrRemove(Keys.cardTypeMarkerField, value.cardTypeMarkerField)
                 candidate.setOrRemove(Keys.tags, value.tags)
-                candidate.setOrRemove(Keys.allowDuplicateCards, value.allowDuplicateCards)
                 candidate.setOrRemove(Keys.audioPadding, value.audioPaddingSeconds)
                 candidate.setOrRemove(Keys.screenshotOffset, value.screenshotOffsetSeconds)
                 candidate.setOrRemove(Keys.subtitleOffset, value.subtitleOffsetSeconds)
@@ -240,6 +241,7 @@ class DataStoreAppSettingsRepository internal constructor(
                 candidate[Keys.wordsetDefaultsPolicy] =
                     readWordsetPolicy(preferences) ?: PRESERVED_WORDSET_POLICY
                 candidate -= Keys.legacyExcludedWordsets
+                candidate -= Keys.legacyAllowDuplicateCards
                 candidate[Keys.readingTtsEnabled] = value.readingTtsEnabled
                 candidate[Keys.jishoEnabled] = value.jishoEnabled
             }
@@ -310,7 +312,6 @@ class DataStoreAppSettingsRepository internal constructor(
                         decoder.read(Keys.tags, null, { it }) { value ->
                             value?.let { AppSettingsValidator.validate(AppSettings(tags = it)) }
                         },
-                    allowDuplicateCards = decoder.read(Keys.allowDuplicateCards, null, { it }),
                     audioPaddingSeconds =
                         decoder.validated(Keys.audioPadding) { AppSettings(audioPaddingSeconds = it) },
                     screenshotOffsetSeconds =
@@ -524,7 +525,6 @@ class DataStoreAppSettingsRepository internal constructor(
             val cardType = register(stringPreferencesKey("card_type"))
             val cardTypeMarkerField = register(stringPreferencesKey("card_type_marker_field"))
             val tags = register(stringPreferencesKey("tags"))
-            val allowDuplicateCards = register(booleanPreferencesKey("allow_duplicate_cards"))
             val audioPadding = register(doublePreferencesKey("audio_padding_seconds"))
             val screenshotOffset = register(doublePreferencesKey("screenshot_offset_seconds"))
             val subtitleOffset = register(doublePreferencesKey("subtitle_offset_seconds"))
@@ -559,6 +559,7 @@ class DataStoreAppSettingsRepository internal constructor(
             val enabledWordsets = register(stringPreferencesKey("enabled_wordsets_v2"))
             val wordsetDefaultsPolicy = register(stringPreferencesKey("wordset_defaults_policy"))
             val legacyExcludedWordsets = stringPreferencesKey("excluded_wordsets_v1")
+            val legacyAllowDuplicateCards = booleanPreferencesKey("allow_duplicate_cards")
             val readingTtsEnabled = register(booleanPreferencesKey("reading_tts_enabled"))
             val jishoEnabled = register(booleanPreferencesKey("jisho_enabled"))
 

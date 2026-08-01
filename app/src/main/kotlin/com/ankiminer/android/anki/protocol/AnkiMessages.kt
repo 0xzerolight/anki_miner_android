@@ -72,7 +72,6 @@ internal data class KnownVocabularyCursor(
 internal data class KnownVocabularyScope(
     val excludedDecks: List<String>,
     val cursor: KnownVocabularyCursor?,
-    val deckName: String? = null,
 ) : ScanScope
 
 internal data class DuplicateCandidate(
@@ -83,7 +82,6 @@ internal data class DuplicateCandidate(
 internal data class DuplicateScanScope(
     val modelName: String,
     val firstFieldName: String,
-    val deckName: String?,
     val candidates: List<DuplicateCandidate>,
     val occurrences: List<Int>,
     val invalidateBaselineToken: String?,
@@ -148,10 +146,6 @@ internal data class CreateNote(
 internal sealed interface CreateDuplicateScope
 
 internal data object CollectionCreateDuplicateScope : CreateDuplicateScope
-
-internal data class ExactDeckCreateDuplicateScope(
-    val deckName: String,
-) : CreateDuplicateScope
 
 internal data class CreateNotesRequest(
     override val runId: String,

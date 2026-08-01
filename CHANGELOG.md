@@ -4,6 +4,10 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+### Removed
+
+- The duplicate-cards setting is withdrawn. It shipped in 0.2.0; mining skips a word that already has a note anywhere in the collection again, with no way to turn that off. The deck-scoped duplicate machinery the setting drove — the deck-scoped known-word scan, the exact-deck create scope, and the deck-scoped duplicate probe — is gone with it, so the collection-scoped scan is the only one left. Existing preferences shed the retired key on first launch.
+
 ### Fixed
 
 - Words with several pitch accents no longer render the accents fused into one unreadable run in the pitch graph and pitch text fields; the accents are wrapped as a numbered list, matching Yomitan's own export. (#7)

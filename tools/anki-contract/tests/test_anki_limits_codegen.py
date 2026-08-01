@@ -64,7 +64,7 @@ class AnkiLimitsCodegenTest(unittest.TestCase):
             numeric_leaves,
             {constant.source_path: constant.value for constant in constants},
         )
-        self.assertEqual(73, len(constants))
+        self.assertEqual(72, len(constants))
         self.assertEqual(
             len(constants),
             len({constant.kotlin_path for constant in constants}),
@@ -98,14 +98,6 @@ class AnkiLimitsCodegenTest(unittest.TestCase):
                 "KNOWN_TOTAL_SCANNED_NOTE_MAX_COUNT",
             ),
             by_source[("scanFirstFields", "knownTotalScannedNotes")].kotlin_path,
-        )
-        self.assertEqual(
-            (
-                "AnkiLimitsV1",
-                "ScanFirstFields",
-                "KNOWN_TOTAL_SCANNED_CARD_ROW_MAX_COUNT",
-            ),
-            by_source[("scanFirstFields", "knownTotalScannedCardRows")].kotlin_path,
         )
         self.assertEqual(
             (

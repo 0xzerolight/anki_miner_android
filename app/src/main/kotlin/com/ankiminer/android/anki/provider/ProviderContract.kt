@@ -55,9 +55,6 @@ internal sealed interface ProviderSelection {
     /** Exact deck scope compiled to Anki browser syntax only inside the production gateway. */
     data class ExcludedDeck(val deckName: String) : ProviderSelection
 
-    /** Deck-tree browser scope; callers must inspect returned card deck IDs for exactness. */
-    data class CardsInDeck(val deckName: String) : ProviderSelection
-
     /** Exact positive note ID compiled to the global cards browser query inside the gateway. */
     data class CardsForNote(val noteId: Long) : ProviderSelection
 
@@ -151,15 +148,9 @@ internal object ProviderQueryShapes {
         )
     val CARD_ID_PROJECTION = listOf(ProviderColumn.CARD_ID)
     // `deck:"Name"` matches a card through its home deck, so a card borrowed by a filtered deck
-    // still comes back — carrying the filtered deck's ID. Both card projections therefore read the
+    // still comes back — carrying the filtered deck's ID. The card projection therefore reads the
     // home-deck link as well; without it a Custom Study session hides those cards from every
     // deck-scoped read.
-    val CARD_NOTE_DECK_PROJECTION =
-        listOf(
-            ProviderColumn.CARD_NOTE_ID,
-            ProviderColumn.CARD_DECK_ID,
-            ProviderColumn.CARD_ORIGINAL_DECK_ID,
-        )
     val CARD_IDENTITY_PROJECTION =
         listOf(
             ProviderColumn.CARD_ID,
@@ -217,9 +208,6 @@ internal object ProviderQueryShapes {
                     when (val selection = query.selection) {
                         is ProviderSelection.CardsForNote ->
                             query.projection == CARD_ID_PROJECTION && selection.noteId > 0L
-                        is ProviderSelection.CardsInDeck ->
-                            query.projection == CARD_NOTE_DECK_PROJECTION &&
-                                selection.deckName.isValidDeckName()
                         else -> false
                     } &&
                     query.sortOrder == null
@@ -254,7 +242,6 @@ internal object ProviderQueryShapes {
                     selection.checksums.size in 1..MAX_DUPLICATE_CHECKSUMS &&
                     selection.checksums.isStrictlyIncreasingNonNegative()
             is ProviderSelection.ExcludedDeck,
-            is ProviderSelection.CardsInDeck,
             is ProviderSelection.CardsForNote,
             -> false
         }

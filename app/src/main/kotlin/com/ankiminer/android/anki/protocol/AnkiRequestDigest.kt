@@ -83,9 +83,6 @@ private class CanonicalRequestWriter {
         when (val scope = request.scope) {
             is KnownVocabularyScope -> {
                 stringField("kind", "knownVocabulary")
-                if (scope.deckName != null) {
-                    stringField("deckName", scope.deckName, leadingComma = true)
-                }
                 fieldName("excludedDecks", leadingComma = true)
                 stringArray(scope.excludedDecks)
                 fieldName("cursor", leadingComma = true)
@@ -103,7 +100,6 @@ private class CanonicalRequestWriter {
                 stringField("kind", "duplicates")
                 stringField("modelName", scope.modelName, leadingComma = true)
                 stringField("firstFieldName", scope.firstFieldName, leadingComma = true)
-                nullableStringField("deckName", scope.deckName, leadingComma = true)
                 fieldName("candidates", leadingComma = true)
                 ascii("[")
                 scope.candidates.forEachIndexed { index, candidate ->
@@ -155,14 +151,8 @@ private class CanonicalRequestWriter {
         stringField("firstFieldName", request.firstFieldName, leadingComma = true)
         stringField("baselineToken", request.baselineToken, leadingComma = true)
         fieldName("duplicateScope", leadingComma = true)
-        when (val scope = request.duplicateScope) {
+        when (request.duplicateScope) {
             CollectionCreateDuplicateScope -> ascii("{\"kind\":\"collection\"}")
-            is ExactDeckCreateDuplicateScope -> {
-                ascii("{")
-                stringField("kind", "exactDeck")
-                stringField("deckName", scope.deckName, leadingComma = true)
-                ascii("}")
-            }
         }
         fieldName("notes", leadingComma = true)
         ascii("[")

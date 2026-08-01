@@ -230,13 +230,6 @@ private fun LazyListScope.ankiSettings(
                 label = stringResource(R.string.settings_tags),
                 enabled = draft.tagsOverride,
             )
-            // A row inside the existing card: adding a whole card here would shift the item
-            // indices settingsCardIndexFor deep-links Anki setup failures to.
-            NullableToggle(
-                stringResource(R.string.settings_allow_duplicates),
-                draft.allowDuplicates,
-                false,
-            ) { callbacks.onDraftChange(draft.copy(allowDuplicates = it)) }
         }
     }
     settingsCard("anki-target") {

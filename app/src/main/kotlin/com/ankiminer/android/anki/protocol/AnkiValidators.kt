@@ -205,7 +205,6 @@ internal object AnkiValidators {
     private fun validateScan(request: ScanFirstFieldsRequest) {
         when (val scope = request.scope) {
             is KnownVocabularyScope -> {
-                scope.deckName?.let(::validateDeckName)
                 requireCountAtMost(scope.excludedDecks.size, AnkiLimitsV1.Names.ExcludedDecks.MAX_ITEM_COUNT, "excluded decks")
                 requireUnique(scope.excludedDecks, "excluded deck names")
                 var total = 0
@@ -216,7 +215,6 @@ internal object AnkiValidators {
             is DuplicateScanScope -> {
                 validateModelName(scope.modelName)
                 validateFieldName(scope.firstFieldName)
-                scope.deckName?.let(::validateDeckName)
                 requireCountBetween(scope.candidates.size, 1, AnkiLimitsV1.ScanFirstFields.DUPLICATE_CANDIDATE_MAX_ITEM_COUNT, "duplicate candidates")
                 requireUnique(scope.candidates, "duplicate candidates")
                 scope.candidates.forEach(::validateDuplicateCandidate)
@@ -288,10 +286,6 @@ internal object AnkiValidators {
         validateModelName(request.modelName)
         validateFieldName(request.firstFieldName)
         validateBaselineToken(request.baselineToken)
-        if (request.duplicateScope is ExactDeckCreateDuplicateScope) {
-            validateDeckName(request.duplicateScope.deckName)
-            if (request.duplicateScope.deckName != request.deckName) failValue("exact-deck scope does not match the target deck")
-        }
         requireCountBetween(request.notes.size, 1, AnkiLimitsV1.CreateNotes.MAX_NOTE_COUNT, "notes")
         requireUnique(request.notes.map { it.clientNoteId }, "client note IDs")
         var callbackBytes = 0
