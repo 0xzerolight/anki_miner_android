@@ -1731,6 +1731,26 @@ def test_retryable_vocab_timeout_is_reported_instead_of_disabling_filtering(
     assert len(kotlin.requests_for("ankiScanFirstFields")) == 1
 
 
+def test_scan_limit_refusal_reaches_the_engine_as_an_actionable_error(
+    initialized_bridge_home: Path,
+) -> None:
+    # A collection over the scan ceiling is a condition of the user's collection. Answering with a
+    # protocol code made it a BridgeProtocolError -- a ValueError, outside the engine's
+    # AnkiMinerException handler -- so the engine reported it as "Unexpected error" and logged a
+    # stack as an app bug.
+    from anki_miner.exceptions import AnkiMinerException
+
+    kotlin = FakeKotlinAnki()
+    kotlin.errors["scanFirstFields"] = (
+        "query_failed",
+        "Known-word filtering supports at most 100000 notes in an Anki collection",
+        False,
+    )
+
+    with pytest.raises(AnkiMinerException, match="at most 100000 notes"):
+        _adapter(_config(initialized_bridge_home), kotlin).get_existing_vocabulary()
+
+
 def test_nonretryable_vocab_query_failure_is_hard(
     initialized_bridge_home: Path,
 ) -> None:

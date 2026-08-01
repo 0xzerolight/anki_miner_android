@@ -1341,9 +1341,18 @@ private fun queryFailed(
     cause = cause,
 )
 
+/**
+ * Over-limit scans answer in the connection class, not the protocol class.
+ *
+ * `unsupported_operation` is a protocol code, and `anki_adapter` turns protocol codes into
+ * `BridgeProtocolError` -- a `ValueError`, outside the engine's `AnkiMinerException` handler. A
+ * collection that is simply large therefore reached the user as "Unexpected error" with a stack
+ * logged as an app bug. It is a condition of their collection, so it takes the same class the
+ * predecessor refusal used and arrives as a sentence they can act on.
+ */
 private fun knownVocabularyLimitExceeded(scope: String) =
     AnkiReadFailure(
-        AnkiErrorCode.UNSUPPORTED_OPERATION,
+        AnkiErrorCode.QUERY_FAILED,
         retryable = false,
         stableMessage =
             "Known-word filtering supports at most " +
@@ -1360,7 +1369,7 @@ private fun knownVocabularyLimitExceeded(scope: String) =
  */
 private fun knownVocabularyDeckTreeTooLarge() =
     AnkiReadFailure(
-        AnkiErrorCode.UNSUPPORTED_OPERATION,
+        AnkiErrorCode.QUERY_FAILED,
         retryable = false,
         stableMessage =
             "Known-word filtering scans at most " +
@@ -1379,7 +1388,7 @@ private fun knownVocabularyDeckTreeTooLarge() =
  */
 private fun knownVocabularyExcludedScanTooLarge() =
     AnkiReadFailure(
-        AnkiErrorCode.UNSUPPORTED_OPERATION,
+        AnkiErrorCode.QUERY_FAILED,
         retryable = false,
         stableMessage =
             "Known-word filtering scans at most " +

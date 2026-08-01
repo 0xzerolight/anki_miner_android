@@ -897,7 +897,7 @@ class AnkiProviderReadsTest {
                     refused.reads.scanFirstFields(owner, knownRequest(deckName = "Mining"))
                 }
             }
-        assertEquals(AnkiErrorCode.UNSUPPORTED_OPERATION, failure.code)
+        assertEquals(AnkiErrorCode.QUERY_FAILED, failure.code)
         assertEquals(false, failure.retryable)
         assertEquals(
             "Known-word filtering supports at most 100000 notes in the selected Anki deck",
@@ -936,7 +936,7 @@ class AnkiProviderReadsTest {
                     fixture.reads.scanFirstFields(owner, knownRequest(deckName = "Mining"))
                 }
             }
-        assertEquals(AnkiErrorCode.UNSUPPORTED_OPERATION, failure.code)
+        assertEquals(AnkiErrorCode.QUERY_FAILED, failure.code)
         assertEquals(false, failure.retryable)
         // The refusal names card rows and the subdecks, because that is what ran out. Calling them
         // notes would quote a number the deck never reached.
@@ -1117,7 +1117,7 @@ class AnkiProviderReadsTest {
         val failure = assertThrows(AnkiReadFailure::class.java) {
             fixture.withOwner { owner -> fixture.reads.scanFirstFields(owner, knownRequest()) }
         }
-        assertEquals(AnkiErrorCode.UNSUPPORTED_OPERATION, failure.code)
+        assertEquals(AnkiErrorCode.QUERY_FAILED, failure.code)
         assertEquals(false, failure.retryable)
         assertEquals(
             "Known-word filtering supports at most 100000 notes in an Anki collection",
@@ -1301,9 +1301,10 @@ class AnkiProviderReadsTest {
                     )
                 }
             }
-        // Same typed, non-retryable refusal as the unexcluded scan: the ceiling is a limit,
-        // not a provider error.
-        assertEquals(AnkiErrorCode.UNSUPPORTED_OPERATION, failure.code)
+        // Same non-retryable refusal as the unexcluded scan. The connection class is deliberate:
+        // the protocol class reaches the user as an unhandled app bug, and an over-large collection
+        // is a condition of theirs, not a protocol violation.
+        assertEquals(AnkiErrorCode.QUERY_FAILED, failure.code)
         assertEquals(false, failure.retryable)
         // The refusal names the excluded decks and their own budget, not the result ceiling: these
         // rows are subtracted from the scan rather than counted into it.
