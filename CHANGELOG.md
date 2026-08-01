@@ -2,6 +2,12 @@
 
 All notable project changes will be recorded here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and releases will use semantic versioning once a public version exists.
 
+## [Unreleased]
+
+### Removed
+
+- The duplicate-cards setting is withdrawn. It shipped in 0.2.0; mining skips a word that already has a note anywhere in the collection again, with no way to turn that off. The deck-scoped duplicate machinery the setting drove — the deck-scoped known-word scan, the exact-deck create scope, and the deck-scoped duplicate probe — is gone with it, so the collection-scoped scan is the only one left. Existing preferences shed the retired key on first launch.
+
 ## [0.2.0] - 2026-08-01
 
 ### Added
