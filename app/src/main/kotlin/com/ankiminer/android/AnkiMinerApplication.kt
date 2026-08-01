@@ -618,12 +618,12 @@ class AnkiMinerApplication : Application() {
             // run start like every other blocked reason.
             val settings = runBlocking { settingsRepository.settingsOrNull.first() }
             if (settings == null) {
-                AppLog.i(
-                    LogComponent.ANKI,
-                    "target.probe",
-                    "outcome" to "skip",
-                    "code" to "settings_unreadable",
-                )
+                AppLog.d(LogComponent.ANKI, "target.probe") {
+                    arrayOf(
+                        "outcome" to "skip",
+                        "code" to "settings_unreadable",
+                    )
+                }
                 return AnkiMiningTargetReadiness.Blocked(
                     stringResourceResolver.resolve(R.string.mining_target_inspection_failed),
                     true,
