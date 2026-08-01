@@ -24,6 +24,7 @@ import com.ankiminer.android.R
 import com.ankiminer.android.ui.mining.RuntimeConflictNotice
 import com.ankiminer.android.ui.theme.AnkiMinerTheme
 import com.ankiminer.android.vm.NavigationWorkflowState
+import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 
@@ -81,5 +82,49 @@ class AppShellNavigationTest {
         composeRule.onNodeWithText(returnLabel).performClick()
         composeRule.onNodeWithText(context.getString(R.string.curation_title)).assertIsDisplayed()
         composeRule.onNodeWithContentDescription(videoDescription).assertIsDisplayed()
+    }
+
+    @Test
+    fun overlayLeavesNoShellDestinationReachableBehindIt() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val settingsLabel = context.getString(R.string.nav_settings)
+        val overlayVisible = mutableStateOf(false)
+        var selections = 0
+
+        composeRule.setContent {
+            AnkiMinerTheme(darkTheme = false) {
+                AnkiMinerAppShell(
+                    currentDestination = AnkiMinerDestination.VIDEO,
+                    snackbarHostState = remember { SnackbarHostState() },
+                    onDestinationSelected = { selections += 1 },
+                    modifier = Modifier.width(400.dp).height(800.dp),
+                    overlay =
+                        if (!overlayVisible.value) {
+                            null
+                        } else {
+                            { Text(OVERLAY_TEXT) }
+                        },
+                ) { shellModifier ->
+                    Text(SHELL_CONTENT_TEXT, modifier = shellModifier)
+                }
+            }
+        }
+
+        composeRule.onNodeWithText(SHELL_CONTENT_TEXT).assertIsDisplayed()
+        composeRule.onNodeWithText(settingsLabel).assertIsDisplayed()
+
+        composeRule.runOnIdle { overlayVisible.value = true }
+
+        composeRule.onNodeWithText(OVERLAY_TEXT).assertIsDisplayed()
+        // Not merely covered: gone from the semantics tree, so TalkBack can neither traverse to
+        // the navigation items nor fire an accessibility action on one.
+        composeRule.onNodeWithText(SHELL_CONTENT_TEXT).assertDoesNotExist()
+        composeRule.onNodeWithText(settingsLabel).assertDoesNotExist()
+        assertEquals(0, selections)
+    }
+
+    private companion object {
+        const val OVERLAY_TEXT = "overlay owns the window"
+        const val SHELL_CONTENT_TEXT = "shell content behind the overlay"
     }
 }
