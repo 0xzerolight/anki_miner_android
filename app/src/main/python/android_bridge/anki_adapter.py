@@ -952,12 +952,10 @@ class AndroidAnkiAdapter:
             "maxTotalUtf8Bytes": _KNOWN_VOCABULARY_PAGE_UTF8_BYTES,
         }
         try:
-            deck_scope = {"deckName": self.config.anki_deck_name} if self.config.allow_duplicate_cards else {}
             payload = self._callbacks.scan_first_fields(
                 {
                     "scope": {
                         "kind": "knownVocabulary",
-                        **deck_scope,
                         "excludedDecks": excluded_decks,
                         "cursor": cursor,
                         "limits": limits,
@@ -2392,11 +2390,10 @@ class AndroidAnkiAdapter:
                 ),
                 preflight_media_bindings=preflight_bindings,
             )
-            if not self.config.allow_duplicate_cards:
-                if pending.key in seen_outgoing:
-                    skipped_outgoing_duplicates += 1
-                    continue
-                seen_outgoing.add(pending.key)
+            if pending.key in seen_outgoing:
+                skipped_outgoing_duplicates += 1
+                continue
+            seen_outgoing.add(pending.key)
             pending_notes.append(pending)
 
         # This is the same block planner used for provider submission. Byte
@@ -2521,13 +2518,6 @@ class AndroidAnkiAdapter:
             "maxNoteIdsPerCandidate": _MAX_DUPLICATE_HITS_PER_CANDIDATE,
             "maxTotalNoteIds": _MAX_DUPLICATE_TOTAL_HITS,
         }
-        if self.config.allow_duplicate_cards:
-            return {
-                "kind": "exactDeck",
-                "deckName": self.config.anki_deck_name,
-                "includeChildren": False,
-                "limits": snapshot_limits,
-            }
         return {"kind": "collection", "limits": snapshot_limits}
 
     @staticmethod
@@ -2680,7 +2670,7 @@ class AndroidAnkiAdapter:
             "kind": "duplicates",
             "modelName": self.config.anki_note_type,
             "firstFieldName": self._verified_field_names[0],
-            "deckName": (self.config.anki_deck_name if self.config.allow_duplicate_cards else None),
+            "deckName": None,
             "candidates": [{"key": key, "firstField": first_field} for key, first_field in unique_candidates],
             "occurrences": [candidate_indexes[candidate] for candidate in candidate_list],
             # Kotlin atomically discards this abandoned all-duplicate
