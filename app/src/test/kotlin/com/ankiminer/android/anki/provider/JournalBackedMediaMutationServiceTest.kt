@@ -671,6 +671,45 @@ class JournalBackedMediaMutationServiceTest {
     }
 
     @Test
+    fun `unrecovered staging fails the rest of the batch row locally instead of unwinding`() {
+        val request = request(3)
+        val fixture = Fixture(request)
+        fixture.provider.receipts += "file:///clip0.mp3"
+        // Asset 0 reaches AnkiDroid; only its private staged copy cannot be deleted, and recovery
+        // cannot clear the quarantine either.
+        fixture.staging.quarantineCleanup += 0
+        fixture.staging.recoveryReport =
+            AnkiMediaRecoveryReport(cleanedRecords = 0, quarantinedRecords = 1, sweptOrphans = 0)
+
+        val outcome = fixture.execute()
+
+        assertEquals(StoredMedia(request.assets[0].assetId, "clip0.mp3"), outcome.result.results[0])
+        listOf(1, 2).forEach { index ->
+            val failed = outcome.result.results[index] as FailedMedia
+            assertEquals(request.assets[index].assetId, failed.assetId)
+            assertEquals(AnkiErrorCode.MEDIA_STORE_FAILED, failed.error.code)
+            assertFalse(failed.error.retryable)
+            assertTrue(
+                "row error should name the pending recovery: ${failed.error.message}",
+                failed.error.message.contains("staging=RECOVERY_PENDING"),
+            )
+        }
+        // The batch terminates: no top-level error, a durable result, and the tail's reservations
+        // released rather than stranded.
+        assertEquals(null, outcome.result.error)
+        assertTrue(fixture.events.contains("resultReady"))
+        assertEquals(0, fixture.journal.unusedReservationCount)
+        assertEquals(setOf(11L, 12L), fixture.journal.releasedReservations)
+        assertEquals(1, fixture.provider.storeCalls)
+        assertEquals(listOf(0), fixture.staging.stagedRequests.map { it.assetId.index() })
+        assertEquals(1, fixture.staging.recoveryCalls)
+        assertEquals(
+            listOf(request.assets[0].assetId),
+            outcome.mediaAcknowledgements.map { it.assetId },
+        )
+    }
+
+    @Test
     fun `durable corruption still stops the run instead of degrading to a media failure`() {
         val request = request(1)
         val fixture = Fixture(request)
@@ -1003,10 +1042,13 @@ class JournalBackedMediaMutationServiceTest {
             return AnkiMediaCleanupOutcome.CLEANED
         }
 
+        /** Replace to model recovery that cannot clear its quarantine. */
+        var recoveryReport = AnkiMediaRecoveryReport(cleanedRecords = 1, quarantinedRecords = 0, sweptOrphans = 0)
+
         override fun recover(): AnkiMediaRecoveryReport {
             events += "recover"
             recoveryCalls += 1
-            return AnkiMediaRecoveryReport(cleanedRecords = 1, quarantinedRecords = 0, sweptOrphans = 0)
+            return recoveryReport
         }
 
         private fun record(

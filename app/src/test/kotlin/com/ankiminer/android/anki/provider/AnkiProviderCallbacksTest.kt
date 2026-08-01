@@ -705,6 +705,25 @@ class AnkiProviderCallbacksTest {
     }
 
     @Test
+    fun `pending media staging recovery is typed rather than an unattributable internal error`() {
+        AnkiFaultRecorder.clear()
+        val harness =
+            harness(
+                mediaMutations =
+                    FakeMediaMutationService { _, _ ->
+                        throw PendingMediaStagingRecoveryException()
+                    },
+            )
+
+        val encoded = harness.callbacks.ankiStoreMedia(storeMediaEnvelope())
+
+        assertTrue(encoded.contains("\"code\":\"media_store_failed\""))
+        assertTrue(encoded.contains("Anki media staging is waiting on quarantined files"))
+        assertFalse(encoded.contains("internal_error"))
+        assertNull(AnkiFaultRecorder.lastFault())
+    }
+
+    @Test
     fun `typed read failure logs retained provider cause at callback consumer`() {
         val platformCause = SecurityException("provider permission changed")
         val providerCause =
