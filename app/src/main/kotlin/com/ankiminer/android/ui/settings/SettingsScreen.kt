@@ -366,14 +366,12 @@ private fun SettingsScreen(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        val (nextState, confirmedAction) = resetConfirmation.confirm()
-                        resetConfirmation = nextState
-                        dispatchConfirmedSettingsReset(
-                            action = confirmedAction,
-                            onRestoreMiningDefaults = onRestoreMiningDefaults,
-                            onResetAnkiTarget = onResetAnkiTarget,
-                            onResetResourceChoices = onResetResourceChoices,
-                        )
+                        resetConfirmation =
+                            resetConfirmation.confirmDispatching(
+                                onRestoreMiningDefaults = onRestoreMiningDefaults,
+                                onResetAnkiTarget = onResetAnkiTarget,
+                                onResetResourceChoices = onResetResourceChoices,
+                            )
                     },
                 ) {
                     Text(stringResource(settingsResetLabel(action)))
