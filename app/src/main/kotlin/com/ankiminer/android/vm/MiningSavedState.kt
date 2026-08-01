@@ -50,8 +50,15 @@ internal class SavedDocumentSelectionStore(
         return true
     }
 
+    /**
+     * Clear from a non-suspending caller. `clearSource`, `clearArchive` and selection restore all
+     * run on the main thread, so this must not reach storage synchronously; it must still be
+     * ordered against the reads that follow, which
+     * [SafSelectionInventory.clearSelectionEventually] guarantees. Callers that need durability
+     * before releasing a SAF grant use [clearDurably].
+     */
     fun clear() {
-        inventory?.putSelection(requireNotNull(inventorySlot), null)
+        inventory?.clearSelectionEventually(requireNotNull(inventorySlot))
         publishSavedState(null)
     }
 
