@@ -789,6 +789,47 @@ class AnkiProviderReadsTest {
     }
 
     @Test
+    fun `deck card scan closes at row 100001 of subdeck rows before reading its cells`() {
+        val fixture = fixture()
+        fixture.gateway.queryHandler = targetQueryHandler()
+        fixture.withOwner { owner -> fixture.verifyExistingTarget(owner, verifyRequest()) }
+        fixture.gateway.queries.clear()
+        var cardCellReads = 0
+        // Every row belongs to a subdeck, so none matches the verified target deck (20).
+        // `deck:"Mining"` still returns them, and the ceiling must count them anyway.
+        val cardCursor =
+            GeneratedFakeProviderCursor(
+                ProviderQueryShapes.CARD_NOTE_DECK_PROJECTION,
+                rowCount = 100_001,
+                rowAt = { index ->
+                    mapOf(
+                        ProviderColumn.CARD_NOTE_ID to integer(index + 1L),
+                        ProviderColumn.CARD_DECK_ID to integer(21L),
+                    )
+                },
+                beforeCell = { cardCellReads += 1 },
+            )
+        fixture.gateway.queryHandler = { query, _ ->
+            when (query.endpoint) {
+                ProviderEndpoint.CARDS -> cardCursor
+                else -> error("unexpected query $query")
+            }
+        }
+
+        val failure =
+            assertThrows(AnkiReadFailure::class.java) {
+                fixture.withOwner { owner ->
+                    fixture.reads.scanFirstFields(owner, knownRequest(deckName = "Mining"))
+                }
+            }
+        assertEquals(AnkiErrorCode.UNSUPPORTED_OPERATION, failure.code)
+        assertEquals(false, failure.retryable)
+        // Two cells per row for the first 100000 rows; row 100001 is refused before its cells.
+        assertEquals(200_000, cardCellReads)
+        assertEquals(1, cardCursor.closeCount)
+    }
+
+    @Test
     fun `known continuation failure is nonretryable after consuming its cursor`() {
         val fixture = fixture(tokens = listOf("cursor_${"a".repeat(32)}"))
         fixture.gateway.queryHandler = { query, _ ->

@@ -325,21 +325,24 @@ internal class AnkiProviderReadService(
                         projection = ProviderQueryShapes.CARD_NOTE_DECK_PROJECTION,
                         selection = ProviderSelection.CardsInDeck(scope.deckName),
                     )
+                var scannedCardRows = 0
                 provider.queryRequired(query, cancellation).use { cursor ->
                     requireProjection(cursor, query)
                     while (cursor.moveToNext()) {
                         ensureActive(cancellation)
+                        // `deck:"Name"` is a deck-TREE scope, so subdeck rows cross Binder too.
+                        // Counted per row and checked before the cell reads, so the scan refuses on
+                        // reaching row 100001 without pulling its cells, whatever deck it names.
+                        scannedCardRows = checkedAdd(scannedCardRows, 1)
+                        if (
+                            scannedCardRows >
+                            AnkiLimitsV1.ScanFirstFields.KNOWN_TOTAL_SCANNED_NOTE_MAX_COUNT
+                        ) {
+                            throw knownVocabularyLimitExceeded("the selected Anki deck")
+                        }
                         val noteId = cursor.positiveLong(ProviderColumn.CARD_NOTE_ID)
                         val deckId = cursor.positiveLong(ProviderColumn.CARD_DECK_ID)
-                        if (deckId == target.deck.id) {
-                            exactNotes += noteId
-                            if (
-                                exactNotes.size >
-                                AnkiLimitsV1.ScanFirstFields.KNOWN_TOTAL_SCANNED_NOTE_MAX_COUNT
-                            ) {
-                                throw knownVocabularyLimitExceeded("the selected Anki deck")
-                            }
-                        }
+                        if (deckId == target.deck.id) exactNotes += noteId
                     }
                 }
                 exactNotes.sorted()
