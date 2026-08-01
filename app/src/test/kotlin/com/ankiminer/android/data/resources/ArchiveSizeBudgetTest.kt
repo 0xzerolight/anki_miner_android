@@ -2,6 +2,7 @@ package com.ankiminer.android.data.resources
 
 import java.io.File
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -31,10 +32,18 @@ class ArchiveSizeBudgetTest {
     }
 
     @Test
-    fun budgetStaysPositiveWhenStorageIsExhausted() {
-        assertEquals(1L, audioArchiveBudget(0))
-        assertEquals(1L, audioArchiveBudget(ARCHIVE_BUDGET_RESERVE_BYTES))
-        assertEquals(1L, audioArchiveBudget(-1))
+    fun exhaustedStorageIsAStorageFailureNotAOneByteLimit() {
+        // A budget of a few bytes is not a limit anyone can act on; it is out of space.
+        listOf(-1L, 0L, ARCHIVE_BUDGET_RESERVE_BYTES, ARCHIVE_BUDGET_RESERVE_BYTES + 1).forEach {
+            val failure =
+                assertThrows(ResourceStorageException::class.java) { audioArchiveBudget(it) }
+            assertEquals(it, failure.availableBytes)
+        }
+    }
+
+    @Test
+    fun roomAboveTheReserveStillProducesABudget() {
+        assertEquals(512L * 1024, audioArchiveBudget(ARCHIVE_BUDGET_RESERVE_BYTES + 1024L * 1024))
     }
 
     @Test
