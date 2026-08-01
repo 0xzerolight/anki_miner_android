@@ -26,6 +26,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.ankiminer.android.anki.provider.ANKIDROID_PACKAGE
 import com.ankiminer.android.data.settings.AppSettings
+import com.ankiminer.android.data.settings.AppSettingsRepository
 import com.ankiminer.android.data.settings.ThemeMode
 import com.ankiminer.android.diagnostics.AnkiFaultRecorder
 import com.ankiminer.android.diagnostics.TesterDiagnosticsBuilder
@@ -44,8 +45,18 @@ import com.ankiminer.android.vm.ReadingMiningViewModel
 import com.ankiminer.android.vm.SettingsViewModel
 import com.ankiminer.android.vm.SetupViewModel
 import com.ankiminer.android.vm.VideoMiningViewModel
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
+
+/**
+ * Theme the shell paints with. `null` means "not read yet" and holds the launch placeholder; a
+ * store which cannot be read resolves to the fresh-store default instead, so Settings, setup, and
+ * diagnostics stay reachable rather than the app sitting on the placeholder forever. Only the
+ * theme is taken from here — every settings write still goes through the strict flow.
+ */
+internal fun AppSettingsRepository.appShellTheme(): Flow<ThemeMode> =
+    settingsOrNull.map { it?.theme ?: AppSettings().theme }
 
 class MainActivity : ComponentActivity() {
     private val notificationRunId = MutableStateFlow<String?>(null)
@@ -93,15 +104,12 @@ class MainActivity : ComponentActivity() {
                 ?: MiningForegroundService.consumeOpenedRunId(intent)
         setContent {
             val app = application as AnkiMinerApplication
-            val nullableSettings =
-                remember(app) {
-                    app.settingsRepository.settings.map<AppSettings, AppSettings?> { it }
-                }
-            val appSettings =
-                nullableSettings
+            val shellTheme = remember(app) { app.settingsRepository.appShellTheme() }
+            val theme =
+                shellTheme
                     .collectAsStateWithLifecycle(initialValue = null)
                     .value
-            if (appSettings == null) {
+            if (theme == null) {
                 LaunchedEffect(Unit) {
                     val launchStyle = SystemBarStyle.dark(LaunchNeutral.toArgb())
                     enableEdgeToEdge(
@@ -120,7 +128,7 @@ class MainActivity : ComponentActivity() {
                 app.diagnosticsSettings.verboseLogging
                     .collectAsStateWithLifecycle(initialValue = false)
                     .value
-            val darkTheme = appSettings.theme == ThemeMode.DARK
+            val darkTheme = theme == ThemeMode.DARK
             val iconAppearance = systemBarIconAppearance(darkTheme)
             LaunchedEffect(iconAppearance) {
                 val systemBarStyle =

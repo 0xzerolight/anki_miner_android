@@ -10,7 +10,12 @@ import androidx.datastore.preferences.core.doublePreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.ankiminer.android.diagnostics.log.AppLog
+import com.ankiminer.android.diagnostics.log.LogComponent
+import java.io.IOException
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
@@ -22,6 +27,26 @@ private val Context.ankiMinerSettingsDataStore by
 
 interface AppSettingsRepository {
     val settings: Flow<AppSettings>
+
+    /**
+     * Degraded read for collectors which must outlive an unreadable store: an [IOException] ends
+     * the flow with a single `null` instead of throwing into the collector's scope, where it would
+     * reach Android's uncaught handler and take the process down at launch.
+     *
+     * Everything which writes stays on [settings], so a read that fell back can never come back as
+     * a default-backed save over recovered preferences (AM-049), and nothing here decides that
+     * mining may proceed: callers map `null` to their own blocked state.
+     */
+    val settingsOrNull: Flow<AppSettings?>
+        get() =
+            settings
+                .map<AppSettings, AppSettings?> { it }
+                .catch { failure ->
+                    if (failure is CancellationException) throw failure
+                    if (failure !is IOException) throw failure
+                    AppLog.w(LogComponent.SETTINGS, "settings.read", failure, "outcome" to "fail")
+                    emit(null)
+                }
 
     suspend fun update(settings: AppSettings)
 

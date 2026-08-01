@@ -39,6 +39,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -124,7 +125,11 @@ internal class SetupViewModel(
     /** In-memory only: failed persistence must re-open the wizard in a fresh ViewModel. */
     private val _wizardDismissedForSession = MutableStateFlow(false)
     val wizardDismissedForSession: StateFlow<Boolean> = _wizardDismissedForSession.asStateFlow()
-    private val settings = settingsRepository.settings
+    // uiState is an eagerly shared combine: an unreadable store must not throw into viewModelScope,
+    // which would take the process down instead of rendering setup. Falling back to defaults is
+    // display only — every write below is a read-modify-write through the strict flow, so a
+    // fallback can never be persisted, and mining stays blocked by the admission target probe.
+    private val settings = settingsRepository.settingsOrNull.map { it ?: AppSettings() }
     private val repository = settingsRepository
     private val settingsMutationMutex = Mutex()
     private var pendingPicker = restorePendingPicker()

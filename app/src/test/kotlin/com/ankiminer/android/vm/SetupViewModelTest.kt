@@ -33,14 +33,17 @@ import com.ankiminer.android.mining.AnkiMiningTargetReadiness
 import com.ankiminer.android.mining.MiningRunAdmissionState
 import com.ankiminer.android.mining.NotificationPermissionReadiness
 import com.ankiminer.android.localization.testStringResourceResolver
+import java.io.IOException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -774,6 +777,26 @@ class SetupViewModelTest {
             assertEquals(null, restored.uiState.value.pendingReplace)
         }
 
+    @Test
+    fun `an unreadable settings store still renders setup`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val resources = FakeResourceManager()
+
+            // uiState is combine(...).stateIn(viewModelScope): a settings read which throws would
+            // reach Android's uncaught handler instead of rendering. Setup shows defaults, and
+            // every write here stays a read-modify-write, so nothing on screen can be persisted.
+            val viewModel =
+                viewModel(
+                    repository = UnreadableSettingsRepository(),
+                    setup = FakeAnkiSetupManager(emptyList()),
+                    resources = resources,
+                )
+            advanceUntilIdle()
+
+            assertEquals(ResourceStartupReadiness.READY, viewModel.uiState.value.resourceStartup)
+            assertNull(viewModel.uiState.value.noteType)
+        }
+
     private fun installedFrequency(sourceId: String, sourceName: String) =
         InstalledFrequencySource(
             sourceId = sourceId,
@@ -799,7 +822,7 @@ class SetupViewModelTest {
     )
 
     private fun viewModel(
-        repository: FakeSettingsRepository,
+        repository: AppSettingsRepository,
         setup: FakeAnkiSetupManager,
         resources: FakeResourceManager = FakeResourceManager(),
         savedStateHandle: SavedStateHandle = SavedStateHandle(),
@@ -826,6 +849,16 @@ class SetupViewModelTest {
 
     private fun model(name: String, vararg fields: String) =
         ModelSummary(id = name.hashCode().toLong(), name = name, fieldNames = fields.toList())
+
+    private class UnreadableSettingsRepository : AppSettingsRepository {
+        override val settings: Flow<AppSettings> =
+            flow { throw IOException("transient read failure") }
+
+        override suspend fun update(settings: AppSettings) = error("write not expected")
+
+        override suspend fun update(transform: (AppSettings) -> AppSettings) =
+            error("write not expected")
+    }
 
     private class FakeSettingsRepository(initial: AppSettings) : AppSettingsRepository {
         private val mutableSettings = MutableStateFlow(AppSettingsValidator.validate(initial))

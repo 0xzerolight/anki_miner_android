@@ -18,6 +18,7 @@ import com.ankiminer.android.data.resources.ResourceManager
 import com.ankiminer.android.data.resources.ResourceStartupReadiness
 import com.ankiminer.android.data.resources.SafArchiveStager
 import com.ankiminer.android.data.resources.WordListKind
+import com.ankiminer.android.data.settings.AppSettings
 import com.ankiminer.android.data.settings.AppSettingsRepository
 import com.ankiminer.android.data.settings.DataStoreAppSettingsRepository
 import com.ankiminer.android.data.settings.DataStoreDiagnosticsSettingsRepository
@@ -105,6 +106,30 @@ internal suspend fun ResourceManager.snapshotProductionSettings(
         whitelistPath = wordListPath(WordListKind.WHITELIST),
     )
 
+/**
+ * Startup re-verification of the persisted Anki target.
+ *
+ * Runs in application scope, which has no exception handler, so it reads through the degraded flow:
+ * an unreadable store skips the refresh and leaves the previous setup state alone rather than
+ * refreshing against defaults. Mining is still blocked, with the target probe's own reason.
+ */
+internal suspend fun refreshAnkiSetupFromSettings(
+    settingsRepository: AppSettingsRepository,
+    refresh: suspend (AppSettings) -> Unit,
+) {
+    val settings = settingsRepository.settingsOrNull.first()
+    if (settings == null) {
+        AppLog.i(
+            LogComponent.SETTINGS,
+            "setup.refresh",
+            "outcome" to "skip",
+            "code" to "settings_unreadable",
+        )
+        return
+    }
+    refresh(settings)
+}
+
 internal suspend fun runStartupRecoverySequence(
     recoverResources: suspend () -> Unit,
     refreshSetup: suspend () -> Unit,
@@ -180,6 +205,9 @@ class AnkiMinerApplication : Application() {
             stageBundle = {
                 diagnosticsBundleStager.stage(
                     diagnostics = buildDiagnostics(),
+                    // Strict on purpose: the persisted deck, note type, and tags are what the
+                    // export redacts against, so an unreadable store must fail the export (the
+                    // ViewModel renders that) rather than ship an under-redacted bundle.
                     settings = settingsRepository.settings.first(),
                     verboseLogging = diagnosticsSettings.verboseLogging.first(),
                 )
@@ -552,12 +580,13 @@ class AnkiMinerApplication : Application() {
      * awaited so admission cannot publish against an older remediation inventory.
      */
     private suspend fun refreshAnkiSetupAndAwait() {
-        val settings = settingsRepository.settings.first()
-        ankiSetupManager.refreshAndAwait(
-            settings.noteType,
-            settings.fieldMap,
-            settings.cardType?.let { settings.cardTypeMarkerField },
-        )
+        refreshAnkiSetupFromSettings(settingsRepository) { settings ->
+            ankiSetupManager.refreshAndAwait(
+                settings.noteType,
+                settings.fieldMap,
+                settings.cardType?.let { settings.cardTypeMarkerField },
+            )
+        }
     }
 
     private suspend fun <T> runOnExecutor(
@@ -584,7 +613,22 @@ class AnkiMinerApplication : Application() {
             )
         }
         return try {
-            val settings = runBlocking { settingsRepository.settings.first() }
+            // Worker executor, never the main thread. A store which cannot be read blocks the run
+            // here rather than probing a default target, and the fail-closed state is rechecked at
+            // run start like every other blocked reason.
+            val settings = runBlocking { settingsRepository.settingsOrNull.first() }
+            if (settings == null) {
+                AppLog.i(
+                    LogComponent.ANKI,
+                    "target.probe",
+                    "outcome" to "skip",
+                    "code" to "settings_unreadable",
+                )
+                return AnkiMiningTargetReadiness.Blocked(
+                    stringResourceResolver.resolve(R.string.mining_target_inspection_failed),
+                    true,
+                )
+            }
             val noteType = settings.noteType
             if (noteType.isNullOrEmpty()) {
                 return AnkiMiningTargetReadiness.Blocked(
