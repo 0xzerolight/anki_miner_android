@@ -144,17 +144,21 @@ internal class BridgeMiningRepository(
     }
 
     private val monitor = Any()
-    private val startupRecord = interruptionStore.current()
-    private val startupInterruption = startupRecord?.takeIf { it.kind == MiningRunKind.VIDEO }
-    private val startupUnrecognizedInterruption =
-        startupRecord == null && interruptionStore.hasBlockedRecord()
+    private val startupInterruption = interruptionStore.startupInterruption()
+
+    /** Recognised whichever lane wrote it: one durable record covers both, so either can clear it. */
+    private val startupInterruptedRun =
+        (startupInterruption as? StartupInterruption.Interrupted)?.record
+
+    /** Only this lane's own run id belongs in this lane's state. */
+    private val startupRunId = startupInterruptedRun?.takeIf { it.kind == MiningRunKind.VIDEO }?.runId
     private val mutableState =
         MutableStateFlow<MiningRunState>(
-            if (startupInterruption != null || startupUnrecognizedInterruption) {
-                ProtocolFault(strings.resolve(R.string.mining_failure_background_stopped))
-                    .toFailed(startupInterruption?.runId, result = null)
-            } else {
+            if (startupInterruption is StartupInterruption.None) {
                 MiningRunState.Idle
+            } else {
+                ProtocolFault(strings.resolve(R.string.mining_failure_background_stopped))
+                    .toFailed(startupRunId, result = null)
             },
         )
     override val state: StateFlow<MiningRunState> = mutableState.asStateFlow()
@@ -355,15 +359,17 @@ internal class BridgeMiningRepository(
             if (active != null || !mutableState.value.isTerminal) {
                 throw MiningCommandException("Only a terminal mining run can be reset")
             }
-            val interruption = pendingInterruptionCleanup ?: startupInterruption
+            val interruption = pendingInterruptionCleanup ?: startupInterruptedRun
             val cleaned =
                 when {
+                    // The record's own kind, not this lane's: a crash in the other lane is cleared
+                    // from here too, otherwise its record blocks every start on this screen.
                     interruption != null ->
                         interruptionStore.complete(
-                            MiningRunKind.VIDEO,
+                            interruption.kind,
                             interruption.ownerId,
                         )
-                    startupUnrecognizedInterruption ->
+                    startupInterruption is StartupInterruption.Unrecognized ->
                         interruptionStore.clearUnrecognizedRecord()
                     else -> true
                 }
