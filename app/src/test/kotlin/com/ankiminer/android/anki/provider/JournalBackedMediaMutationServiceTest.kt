@@ -710,6 +710,39 @@ class JournalBackedMediaMutationServiceTest {
     }
 
     @Test
+    fun `a quarantine outliving its batch degrades the next batch instead of unwinding it`() {
+        val first = request(3)
+        val fixture = Fixture(first)
+        fixture.provider.receipts += "file:///clip0.mp3"
+        fixture.staging.quarantineCleanup += 0
+        fixture.staging.recoveryReport =
+            AnkiMediaRecoveryReport(cleanedRecords = 0, quarantinedRecords = 1, sweptOrphans = 0)
+
+        fixture.execute()
+
+        // `maxNotes = 100` against `maxAssets = 50` makes multi-batch runs ordinary, so the
+        // quarantine is still pending when the next `storeMedia` arrives. It must degrade the same
+        // way rather than escape `store()` as a top-level error and fail the whole run.
+        val second = first.copy(requestId = "anki_" + "2".repeat(32))
+        val outcome = fixture.execute(second)
+
+        assertEquals(null, outcome.result.error)
+        assertEquals(second.assets.size, outcome.result.results.size)
+        second.assets.forEachIndexed { index, asset ->
+            val failed = outcome.result.results[index] as FailedMedia
+            assertEquals(asset.assetId, failed.assetId)
+            assertEquals(AnkiErrorCode.MEDIA_STORE_FAILED, failed.error.code)
+            assertTrue(
+                "row error should name the pending recovery: ${failed.error.message}",
+                failed.error.message.contains("staging=RECOVERY_PENDING"),
+            )
+        }
+        assertTrue(fixture.events.contains("resultReady"))
+        assertEquals(0, fixture.journal.unusedReservationCount)
+        assertTrue(outcome.mediaAcknowledgements.isEmpty())
+    }
+
+    @Test
     fun `durable corruption still stops the run instead of degrading to a media failure`() {
         val request = request(1)
         val fixture = Fixture(request)
@@ -756,7 +789,12 @@ class JournalBackedMediaMutationServiceTest {
         private val reservations = linkedMapOf<Long, MediaReservationRecord>()
         val children = mutableListOf<ChildRecord>()
         val claims = linkedMapOf<String, MediaClaimRecord>()
-        private val aligned = mutableListOf<AlignedResult>()
+        // Rows are per parent, as the real store is: a run issues several `storeMedia` batches and
+        // each one's results must stay aligned to its own request.
+        private val alignedByKey = linkedMapOf<ParentKey, MutableList<AlignedResult>>()
+
+        private val aligned: MutableList<AlignedResult>
+            get() = alignedByKey.getOrPut(checkNotNull(request) { "no durable batch is open" }.key) { mutableListOf() }
         val releasedReservations = linkedSetOf<Long>()
         var leaseAcquired = false
         var leaseReleased = false
@@ -773,13 +811,15 @@ class JournalBackedMediaMutationServiceTest {
 
         val appendedEvidence: List<String>
             get() =
-                aligned
+                alignedByKey.values
+                    .flatten()
                     .filterIsInstance<AlignedResult.MediaFailed>()
                     .mapNotNull(AlignedResult.MediaFailed::compactEvidence)
 
         override fun replay(request: JournalRequest): ReplayResult {
             events += "replay"
-            return ready?.let(ReplayResult::Ready) ?: ReplayResult.Missing
+            val response = ready ?: return ReplayResult.Missing
+            return if (response.key == request.key) ReplayResult.Ready(response) else ReplayResult.Missing
         }
 
         override fun begin(request: JournalRequest) {
@@ -948,11 +988,12 @@ class JournalBackedMediaMutationServiceTest {
             result: AlignedResult,
         ) {
             events += "append:${result.status}"
-            check(result.requestIndex == aligned.size)
-            aligned += result
+            val rows = alignedByKey.getOrPut(key) { mutableListOf() }
+            check(result.requestIndex == rows.size)
+            rows += result
         }
 
-        override fun results(key: ParentKey): List<AlignedResult> = aligned.toList()
+        override fun results(key: ParentKey): List<AlignedResult> = alignedByKey[key].orEmpty().toList()
 
         override fun claim(
             key: ParentKey,
@@ -973,8 +1014,8 @@ class JournalBackedMediaMutationServiceTest {
             claims: List<MediaClaimRecord>,
         ) {
             val journalRequest = JournalRequest.from(request)
-            aligned.clear()
-            aligned += rows
+            alignedByKey.clear()
+            alignedByKey[journalRequest.key] = rows.toMutableList()
             this.claims.clear()
             claims.associateByTo(this.claims, MediaClaimRecord::assetId)
             ready = JournalResponse.StoreMedia(journalRequest.key, rows, error = null)
