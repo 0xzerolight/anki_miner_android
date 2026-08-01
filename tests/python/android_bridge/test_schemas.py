@@ -1456,7 +1456,6 @@ def test_unknown_curation_map_key_is_schema_invalid(
                 "kind": "duplicates",
                 "modelName": "Lapis",
                 "firstFieldName": "Expression",
-                "deckName": None,
                 "candidates": [
                     {"key": "猫", "firstField": "猫"},
                     {"key": "犬", "firstField": "<b>犬</b>"},
@@ -1676,7 +1675,6 @@ def test_verify_target_result_rejects_deck_created_true(
             "scope": {
                 "kind": "duplicates",
                 "modelName": "Lapis",
-                "deckName": None,
             },
         },
         {

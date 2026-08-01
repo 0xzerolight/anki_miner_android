@@ -178,19 +178,14 @@ internal class AnkiProviderReadService(
 
     /**
      * Reusable exact duplicate snapshot for baseline admission and pre-insert reconciliation.
-     * A null deck ID means collection scope; the only accepted exact scope is the target deck.
      */
     fun readDuplicateSnapshot(
         owner: AnkiRunStateRegistry.RunOwner,
         target: TargetSnapshot,
         candidates: List<com.ankiminer.android.anki.protocol.DuplicateCandidate>,
-        scopeDeckId: Long?,
     ): DuplicateRawSnapshot {
         if (registry.target(owner) != target) {
             throw invalidRequest("The duplicate lookup target is not active")
-        }
-        if (scopeDeckId != null && scopeDeckId != target.deck.id) {
-            throw invalidRequest("The duplicate lookup deck scope is not active")
         }
         if (
             candidates.size !in
@@ -207,7 +202,6 @@ internal class AnkiProviderReadService(
             readDuplicateHits(
                 target = target,
                 checksums = checksums,
-                exactDeck = scopeDeckId != null,
                 cancellation = cancellation,
             )
         val matches =
@@ -389,8 +383,7 @@ internal class AnkiProviderReadService(
         val target = registry.target(owner) ?: throw invalidRequest("The Anki target has not been verified")
         if (
             target.model.name != scope.modelName ||
-                target.model.fieldNames.first() != scope.firstFieldName ||
-                (scope.deckName != null && scope.deckName != target.deck.name)
+                target.model.fieldNames.first() != scope.firstFieldName
         ) {
             throw invalidRequest("The duplicate lookup does not match the verified target")
         }
@@ -401,7 +394,6 @@ internal class AnkiProviderReadService(
                     owner = owner,
                     target = target,
                     candidates = scope.candidates,
-                    scopeDeckId = if (scope.deckName == null) null else target.deck.id,
                 )
             val token = tokenFactory.nextToken(BASELINE_PREFIX)
             val baseline =
@@ -409,7 +401,6 @@ internal class AnkiProviderReadService(
                     token = token,
                     target = target,
                     firstFieldName = scope.firstFieldName,
-                    scopeDeckId = if (scope.deckName == null) null else target.deck.id,
                     candidates = scope.candidates,
                     occurrences = scope.occurrences,
                     providerNoteIds =
@@ -437,7 +428,6 @@ internal class AnkiProviderReadService(
     private fun readDuplicateHits(
         target: TargetSnapshot,
         checksums: List<Long>,
-        exactDeck: Boolean,
         cancellation: AnkiCancellation,
     ): List<List<RawFirstFieldHit>> {
         val uniqueChecksums = checksums.distinct().sorted()
@@ -477,36 +467,27 @@ internal class AnkiProviderReadService(
                         cursor.text(ProviderColumn.NOTE_FIELDS),
                     )
                 val firstFieldBytes = validateProviderFirstField(firstField)
-                if (
-                    !exactDeck ||
-                        cards.readForNote(
-                            noteId = id,
-                            templateCount = target.model.templates.size,
-                            cancellation = cancellation,
-                        ).any { it.homeDeckId == target.deck.id }
-                ) {
-                    val checksumHits = checkedAdd(hitsPerChecksum[checksum] ?: 0, 1)
-                    if (checksumHits > AnkiLimitsV1.ScanFirstFields.DUPLICATE_HIT_PER_CANDIDATE_MAX_ITEM_COUNT) {
-                        throw queryFailed("An Anki duplicate bucket exceeds the v1 hit limit")
-                    }
-                    hitsPerChecksum[checksum] = checksumHits
-                    val multiplicity = candidateMultiplicity.getValue(checksum)
-                    retainedHits = checkedAdd(retainedHits, multiplicity)
-                    if (retainedHits > AnkiLimitsV1.ScanFirstFields.DUPLICATE_HIT_TOTAL_MAX_ITEM_COUNT) {
-                        throw queryFailed("The Anki duplicate lookup exceeds the v1 hit limit")
-                    }
-                    retainedBytes =
-                        checkedAdd(
-                            retainedBytes,
-                            checkedMultiply(firstFieldBytes, multiplicity),
-                        )
-                    if (retainedBytes > AnkiLimitsV1.ScanFirstFields.DUPLICATE_HIT_TOTAL_MAX_UTF8_BYTES) {
-                        throw queryFailed("The Anki duplicate lookup exceeds the v1 text limit")
-                    }
-                    rows += DuplicateProviderRow(id, checksum, firstField)
-                    if (rows.size > AnkiLimitsV1.ScanFirstFields.DUPLICATE_HIT_TOTAL_MAX_ITEM_COUNT) {
-                        throw queryFailed("The Anki duplicate lookup exceeds the v1 hit limit")
-                    }
+                val checksumHits = checkedAdd(hitsPerChecksum[checksum] ?: 0, 1)
+                if (checksumHits > AnkiLimitsV1.ScanFirstFields.DUPLICATE_HIT_PER_CANDIDATE_MAX_ITEM_COUNT) {
+                    throw queryFailed("An Anki duplicate bucket exceeds the v1 hit limit")
+                }
+                hitsPerChecksum[checksum] = checksumHits
+                val multiplicity = candidateMultiplicity.getValue(checksum)
+                retainedHits = checkedAdd(retainedHits, multiplicity)
+                if (retainedHits > AnkiLimitsV1.ScanFirstFields.DUPLICATE_HIT_TOTAL_MAX_ITEM_COUNT) {
+                    throw queryFailed("The Anki duplicate lookup exceeds the v1 hit limit")
+                }
+                retainedBytes =
+                    checkedAdd(
+                        retainedBytes,
+                        checkedMultiply(firstFieldBytes, multiplicity),
+                    )
+                if (retainedBytes > AnkiLimitsV1.ScanFirstFields.DUPLICATE_HIT_TOTAL_MAX_UTF8_BYTES) {
+                    throw queryFailed("The Anki duplicate lookup exceeds the v1 text limit")
+                }
+                rows += DuplicateProviderRow(id, checksum, firstField)
+                if (rows.size > AnkiLimitsV1.ScanFirstFields.DUPLICATE_HIT_TOTAL_MAX_ITEM_COUNT) {
+                    throw queryFailed("The Anki duplicate lookup exceeds the v1 hit limit")
                 }
             }
         }

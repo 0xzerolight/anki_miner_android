@@ -75,7 +75,6 @@ class AnkiJsonCodecTest {
             DuplicateScanScope(
                 modelName = "Mining",
                 firstFieldName = "Expression",
-                deckName = null,
                 candidates = listOf(com.ankiminer.android.anki.protocol.DuplicateCandidate("猫", "<b>猫</b>")),
                 occurrences = listOf(0, 0),
                 invalidateBaselineToken = null,
@@ -448,7 +447,6 @@ class AnkiJsonCodecTest {
                             DuplicateScanScope(
                                 "Mining",
                                 "Expression",
-                                null,
                                 response.rawFirstFieldHits.indices.map { index ->
                                     com.ankiminer.android.anki.protocol.DuplicateCandidate("key-$index", "value-$index")
                                 },
@@ -522,7 +520,7 @@ class AnkiJsonCodecTest {
         """{"runId":"$RUN_ID","requestId":"$REQUEST_ID","scope":{"kind":"knownVocabulary","excludedDecks":["Suspended"],"cursor":{"ordinal":1,"token":"cursor-token"},"limits":{"maxScannedNotes":256,"maxTotalScannedNotes":100000,"maxItems":256,"maxItemUtf8Bytes":65536,"maxTotalUtf8Bytes":262144}}}"""
 
     private fun duplicateScanPayload(): String =
-        """{"runId":"$RUN_ID","requestId":"$REQUEST_ID","scope":{"kind":"duplicates","modelName":"Mining","firstFieldName":"Expression","deckName":null,"candidates":[{"key":"猫","firstField":"<b>猫</b>"}],"occurrences":[0,0],"invalidateBaselineToken":null,"limits":{"maxHitsPerCandidate":100,"maxTotalHits":1000,"maxItemUtf8Bytes":65536,"maxTotalUtf8Bytes":1048576}}}"""
+        """{"runId":"$RUN_ID","requestId":"$REQUEST_ID","scope":{"kind":"duplicates","modelName":"Mining","firstFieldName":"Expression","candidates":[{"key":"猫","firstField":"<b>猫</b>"}],"occurrences":[0,0],"invalidateBaselineToken":null,"limits":{"maxHitsPerCandidate":100,"maxTotalHits":1000,"maxItemUtf8Bytes":65536,"maxTotalUtf8Bytes":1048576}}}"""
 
     private fun storeMediaPayload(): String =
         """{"runId":"$RUN_ID","requestId":"$REQUEST_ID","assets":[{"assetId":"$ASSET_ID","sourcePath":"/tmp/clip.mp3","preferredName":"clip","requestedFilename":"clip.mp3","purpose":"card","mediaKind":"audio","expectedSizeBytes":3,"expectedSha256":"${"a".repeat(64)}"}],"limits":{"maxAssets":50,"maxAssetBytes":67108864,"maxTotalBytes":67108864}}"""

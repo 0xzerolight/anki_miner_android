@@ -337,7 +337,6 @@ def _scan_scope(value: object) -> _Object:
                 "kind",
                 "modelName",
                 "firstFieldName",
-                "deckName",
                 "candidates",
                 "occurrences",
                 "invalidateBaselineToken",
@@ -372,7 +371,6 @@ def _scan_scope(value: object) -> _Object:
                     "firstFieldName",
                     _string(scope["firstFieldName"], "firstFieldName"),
                 ),
-                ("deckName", _nullable_string(scope["deckName"], "deckName")),
                 ("candidates", candidates),
                 ("occurrences", occurrences),
                 (

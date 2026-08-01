@@ -1202,7 +1202,6 @@ class AnkiProviderReadsTest {
             DuplicateScanScope(
                 modelName = "Mining",
                 firstFieldName = "Expression",
-                deckName = null,
                 candidates =
                     listOf(
                         DuplicateCandidate("cat", "<b>cat</b>"),
@@ -1250,7 +1249,6 @@ class AnkiProviderReadsTest {
             DuplicateScanScope(
                 modelName = "Mining",
                 firstFieldName = "Expression",
-                deckName = null,
                 candidates = listOf(DuplicateCandidate("control", "control")),
                 occurrences = listOf(0),
                 invalidateBaselineToken = null,
@@ -1335,7 +1333,6 @@ class AnkiProviderReadsTest {
                 DuplicateScanScope(
                     modelName = "Mining",
                     firstFieldName = "Expression",
-                    deckName = null,
                     candidates =
                         (0 until candidateCount).map { index ->
                             DuplicateCandidate("key-$index", "key-$index")
@@ -1370,68 +1367,10 @@ class AnkiProviderReadsTest {
     }
 
     @Test
-    fun `exact-deck duplicate filter reads each notes cards endpoint once`() {
-        val fixture = fixture(tokens = listOf("baseline_${"c".repeat(32)}"))
-        fixture.gateway.checksum = { 42L }
-        fixture.gateway.queryHandler = targetThenDuplicateHandler(exactDeck = true)
-        fixture.withOwner { owner -> fixture.verifyExistingTarget(owner, verifyRequest()) }
-        val result =
-            fixture.withOwner { owner ->
-                fixture.reads.scanFirstFields(
-                    owner,
-                    duplicateRequest(
-                        DuplicateScanScope(
-                            "Mining",
-                            "Expression",
-                            "Mining",
-                            listOf(DuplicateCandidate("cat", "cat")),
-                            listOf(0),
-                            null,
-                        ),
-                    ),
-                )
-            } as DuplicateLookupResult
-        assertEquals(listOf(31L), result.rawFirstFieldHits.single().map { it.noteId })
-        val cardReads = fixture.gateway.queries.filter { it.endpoint == ProviderEndpoint.CARDS_FOR_NOTE }
-        assertEquals(listOf(31L, 32L), cardReads.map { it.endpointId })
-        assertTrue(cardReads.all { it.projection == ProviderQueryShapes.CARD_IDENTITY_PROJECTION })
-        assertTrue(fixture.gateway.queries.none { it.endpoint == ProviderEndpoint.CARDS })
-        val directReads = fixture.gateway.queries.filter { it.endpoint == ProviderEndpoint.CARD_BY_ID }
-        assertTrue(directReads.isEmpty())
-    }
-
-    @Test
-    fun `exact-deck duplicate rejects more cards than the verified template count`() {
-        val fixture = fixture(tokens = listOf("baseline_${"d".repeat(32)}"))
-        fixture.gateway.checksum = { 42L }
-        fixture.gateway.queryHandler = targetThenDuplicateHandler(exactDeck = true, malformedCardCount = true)
-        fixture.withOwner { owner -> fixture.verifyExistingTarget(owner, verifyRequest()) }
-        val failure =
-            assertThrows(AnkiReadFailure::class.java) {
-                fixture.withOwner { owner ->
-                    fixture.reads.scanFirstFields(
-                        owner,
-                        duplicateRequest(
-                            DuplicateScanScope(
-                                "Mining",
-                                "Expression",
-                                "Mining",
-                                listOf(DuplicateCandidate("cat", "cat")),
-                                listOf(0),
-                                null,
-                            ),
-                        ),
-                    )
-                }
-            }
-        assertEquals(AnkiErrorCode.QUERY_FAILED, failure.code)
-    }
-
-    @Test
     fun `cards-for-note read rejects malformed ids note ids ordinals decks and duplicate ordinals`() {
         data class CardCase(
             val name: String,
-            val cardCount: Int = 1,
+            val templateCount: Int = 1,
             val discoveredIds: List<Long>,
             val row: (Long) -> Map<ProviderColumn, ProviderCell>,
         )
@@ -1458,68 +1397,28 @@ class AnkiProviderReadsTest {
                 },
                 CardCase(
                     "duplicate ordinal",
-                    cardCount = 2,
+                    templateCount = 2,
                     discoveredIds = listOf(131L, 132L),
                 ) { id ->
                     cardRow(id, 31L, 0L, 20L)
                 },
             )
         for (case in cases) {
-            val fixture = fixture(tokens = listOf("baseline_${"f".repeat(32)}"))
-            fixture.gateway.checksum = { 42L }
-            fixture.gateway.queryHandler = { query, _ ->
+            val gateway = FakeAnkiProviderGateway()
+            gateway.queryHandler = { query, _ ->
                 when (query.endpoint) {
-                    ProviderEndpoint.MODELS ->
-                        FakeProviderCursor(
-                            query.projection,
-                            listOf(modelRow(cards = case.cardCount.toLong())),
-                        )
-                    ProviderEndpoint.MODEL_TEMPLATES ->
-                        FakeProviderCursor(
-                            query.projection,
-                            (0 until case.cardCount).map { ordinal ->
-                                templateRow(ordinal = ordinal.toLong())
-                            },
-                        )
-                    ProviderEndpoint.DECKS ->
-                        FakeProviderCursor(query.projection, listOf(deckRow()))
-                    ProviderEndpoint.NOTES_V2 ->
-                        FakeProviderCursor(
-                            query.projection,
-                            listOf(
-                                mapOf(
-                                    ProviderColumn.NOTE_ID to integer(31L),
-                                    ProviderColumn.NOTE_FIELDS to text("cat"),
-                                    ProviderColumn.NOTE_CHECKSUM to integer(42L),
-                                ),
-                            ),
-                        )
                     ProviderEndpoint.CARDS_FOR_NOTE ->
-                        FakeProviderCursor(
-                            query.projection,
-                            case.discoveredIds.map(case.row),
-                        )
+                        FakeProviderCursor(query.projection, case.discoveredIds.map(case.row))
                     else -> error("unexpected query $query")
                 }
             }
-            fixture.withOwner { owner -> fixture.verifyExistingTarget(owner, verifyRequest()) }
             val failure =
                 assertThrows(case.name, AnkiReadFailure::class.java) {
-                    fixture.withOwner { owner ->
-                        fixture.reads.scanFirstFields(
-                            owner,
-                            duplicateRequest(
-                                DuplicateScanScope(
-                                    modelName = "Mining",
-                                    firstFieldName = "Expression",
-                                    deckName = "Mining",
-                                    candidates = listOf(DuplicateCandidate("cat", "cat")),
-                                    occurrences = listOf(0),
-                                    invalidateBaselineToken = null,
-                                ),
-                            ),
-                        )
-                    }
+                    GlobalCardReader(CheckedProvider(gateway)).readForNote(
+                        noteId = 31L,
+                        templateCount = case.templateCount,
+                        cancellation = AnkiCancellation.NONE,
+                    )
                 }
             assertEquals(case.name, AnkiErrorCode.QUERY_FAILED, failure.code)
         }

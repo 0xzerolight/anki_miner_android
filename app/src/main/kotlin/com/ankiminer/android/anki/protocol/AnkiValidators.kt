@@ -215,7 +215,6 @@ internal object AnkiValidators {
             is DuplicateScanScope -> {
                 validateModelName(scope.modelName)
                 validateFieldName(scope.firstFieldName)
-                scope.deckName?.let(::validateDeckName)
                 requireCountBetween(scope.candidates.size, 1, AnkiLimitsV1.ScanFirstFields.DUPLICATE_CANDIDATE_MAX_ITEM_COUNT, "duplicate candidates")
                 requireUnique(scope.candidates, "duplicate candidates")
                 scope.candidates.forEach(::validateDuplicateCandidate)

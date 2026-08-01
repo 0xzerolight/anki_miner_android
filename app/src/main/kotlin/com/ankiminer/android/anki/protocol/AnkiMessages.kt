@@ -82,7 +82,6 @@ internal data class DuplicateCandidate(
 internal data class DuplicateScanScope(
     val modelName: String,
     val firstFieldName: String,
-    val deckName: String?,
     val candidates: List<DuplicateCandidate>,
     val occurrences: List<Int>,
     val invalidateBaselineToken: String?,

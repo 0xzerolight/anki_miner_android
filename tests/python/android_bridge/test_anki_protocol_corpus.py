@@ -324,8 +324,6 @@ def _validate_scan_payload(payload: dict[str, Any], *, response: bool) -> None:
 
     _canonical_name(scope["modelName"], "model")
     _canonical_name(scope["firstFieldName"], "field")
-    if scope["deckName"] is not None:
-        _canonical_name(scope["deckName"], "deck")
     if len({json.dumps(item, sort_keys=True) for item in scope["candidates"]}) != len(scope["candidates"]):
         _reject("invalid_value")
     for candidate in scope["candidates"]:

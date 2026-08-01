@@ -2670,7 +2670,6 @@ class AndroidAnkiAdapter:
             "kind": "duplicates",
             "modelName": self.config.anki_note_type,
             "firstFieldName": self._verified_field_names[0],
-            "deckName": None,
             "candidates": [{"key": key, "firstField": first_field} for key, first_field in unique_candidates],
             "occurrences": [candidate_indexes[candidate] for candidate in candidate_list],
             # Kotlin atomically discards this abandoned all-duplicate

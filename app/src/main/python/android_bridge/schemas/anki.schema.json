@@ -244,17 +244,11 @@
       "type": "object",
       "additionalProperties": false,
       "$comment": "firstFieldName must exactly equal fieldNames[0] from this run's verified model snapshot. Kotlin atomically invalidates invalidateBaselineToken, if non-null and owned by this run, before retaining the fresh replacement baselineToken. At most one unconsumed duplicate baseline may exist per run: createNotes consumes it once, the next sequential duplicate probe invalidates an abandoned all-duplicate token, and run cancellation/termination performs final cleanup. A mismatched invalidation token fails closed.",
-      "required": ["kind", "modelName", "firstFieldName", "deckName", "candidates", "occurrences", "invalidateBaselineToken", "limits"],
+      "required": ["kind", "modelName", "firstFieldName", "candidates", "occurrences", "invalidateBaselineToken", "limits"],
       "properties": {
         "kind": {"const": "duplicates"},
         "modelName": {"$ref": "#/$defs/modelName"},
         "firstFieldName": {"$ref": "#/$defs/fieldName"},
-        "deckName": {
-          "oneOf": [
-            {"type": "null"},
-            {"$ref": "#/$defs/deckName"}
-          ]
-        },
         "candidates": {
           "type": "array",
           "minItems": 1,

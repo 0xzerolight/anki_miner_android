@@ -836,7 +836,6 @@ class AnkiJsonCodecBoundaryTest {
                 DuplicateScanScope(
                     "Mining",
                     "Expression",
-                    null,
                     listOf(DuplicateCandidate("a", "a"), DuplicateCandidate("b", "b")),
                     listOf(0, 1),
                     null,
@@ -1416,7 +1415,6 @@ class AnkiJsonCodecBoundaryTest {
                             DuplicateScanScope(
                                 scope.string("modelName"),
                                 scope.string("firstFieldName"),
-                                scope.nullableString("deckName"),
                                 scope.array("candidates").map { rawCandidate ->
                                     val candidate = rawCandidate.asObject("duplicate candidate")
                                     DuplicateCandidate(
@@ -2043,7 +2041,6 @@ class AnkiJsonCodecBoundaryTest {
                     DuplicateScanScope(
                         "Mining",
                         "Expression",
-                        null,
                         candidates,
                         candidates.indices.toList(),
                         null,
@@ -2328,7 +2325,7 @@ class AnkiJsonCodecBoundaryTest {
                 """{"key":"key$index","firstField":"field$index"}"""
             }.joinToString(prefix = "[", postfix = "]")
         val occurrences = (0 until count).joinToString(prefix = "[", postfix = "]")
-        return """{"runId":"$RUN_ID","requestId":"$REQUEST_ID","scope":{"kind":"duplicates","modelName":"Mining","firstFieldName":"Expression","deckName":null,"candidates":$candidates,"occurrences":$occurrences,"invalidateBaselineToken":null,"limits":$DUPLICATE_LIMITS}}"""
+        return """{"runId":"$RUN_ID","requestId":"$REQUEST_ID","scope":{"kind":"duplicates","modelName":"Mining","firstFieldName":"Expression","candidates":$candidates,"occurrences":$occurrences,"invalidateBaselineToken":null,"limits":$DUPLICATE_LIMITS}}"""
     }
 
     private fun storePayload(assets: List<String>): String =

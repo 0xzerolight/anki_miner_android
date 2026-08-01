@@ -100,7 +100,6 @@ private class CanonicalRequestWriter {
                 stringField("kind", "duplicates")
                 stringField("modelName", scope.modelName, leadingComma = true)
                 stringField("firstFieldName", scope.firstFieldName, leadingComma = true)
-                nullableStringField("deckName", scope.deckName, leadingComma = true)
                 fieldName("candidates", leadingComma = true)
                 ascii("[")
                 scope.candidates.forEachIndexed { index, candidate ->

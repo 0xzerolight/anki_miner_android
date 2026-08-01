@@ -90,7 +90,7 @@ no exporter derives them, and no provenance block pins them.
   so one corpus pins both decoders. `AnkiRequestDigestTest.kt` also probes for
   it, but only to locate the project root.
 - `bridge/anki-request-digest-v1.jsonl` — 18 raw-request/canonical-form/digest
-  vectors; `bridge/anki-request-digest-mutations-v1.jsonl` — 55 single-leaf
+  vectors; `bridge/anki-request-digest-mutations-v1.jsonl` — 54 single-leaf
   mutations of those vectors with the digest each must produce. Both are read by
   `tests/python/android_bridge/test_request_digest.py` and
   `app/src/test/kotlin/com/ankiminer/android/anki/AnkiRequestDigestTest.kt`.

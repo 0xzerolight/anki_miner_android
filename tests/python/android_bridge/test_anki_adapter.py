@@ -208,7 +208,6 @@ class FakeKotlinAnki:
         self.known_note_decks: list[set[str]] = []
         self.duplicate_fields: list[str] = []
         self.duplicate_note_ids: dict[int, int] = {}
-        self.duplicate_decks: dict[str, set[str]] = {}
         self.errors: dict[str, tuple[str, str, bool]] = {}
         self.failed_media_names: set[str] = set()
         self.media_failure_errors: dict[str, tuple[str, str, bool]] = {}
@@ -247,10 +246,9 @@ class FakeKotlinAnki:
         ]
 
     def _in_duplicate_scope(self, note_id: int, first_field: str, scope: dict[str, Any]) -> bool:
-        del note_id
-        if scope["kind"] == "collection":
-            return True
-        return scope["deckName"] in self.duplicate_decks.get(first_field, set())
+        del note_id, first_field
+        assert scope["kind"] == "collection"
+        return True
 
     def _snapshot_candidate_ids(
         self,
@@ -283,7 +281,6 @@ class FakeKotlinAnki:
             "runId": request["runId"],
             "modelName": scope["modelName"],
             "firstFieldName": scope["firstFieldName"],
-            "deckName": scope["deckName"],
             "candidates": [(candidate["key"], candidate["firstField"]) for candidate in scope["candidates"]],
             "occurrences": list(scope["occurrences"]),
             "ids": {
@@ -606,11 +603,7 @@ class FakeKotlinAnki:
                     for deck in decks
                     for excluded_deck in excluded
                 )
-                if (
-                    not note_is_excluded
-                    and page_fields
-                    and page_utf8_bytes + field_bytes > limits["maxTotalUtf8Bytes"]
-                ):
+                if not note_is_excluded and page_fields and page_utf8_bytes + field_bytes > limits["maxTotalUtf8Bytes"]:
                     break
                 scanned_notes += 1
                 if not note_is_excluded:
@@ -656,7 +649,6 @@ class FakeKotlinAnki:
 
         scope = request["scope"]
         assert scope["firstFieldName"] == self._verified_first_fields[(request["runId"], scope["modelName"])]
-        deck_name = scope["deckName"]
         assert len(scope["occurrences"]) <= 100
         assert all(0 <= occurrence < len(scope["candidates"]) for occurrence in scope["occurrences"])
         raw_hit_buckets = []
@@ -666,8 +658,6 @@ class FakeKotlinAnki:
             hits = []
             for note_id, stored in records:
                 if _ankidroid_field_checksum(stored) != candidate_checksum:
-                    continue
-                if deck_name is not None and deck_name not in self.duplicate_decks.get(stored, set()):
                     continue
                 hits.append({"noteId": note_id, "firstField": stored})
             raw_hit_buckets.append(hits)
@@ -841,7 +831,6 @@ class FakeKotlinAnki:
         assert baseline["modelName"] == request["modelName"]
         assert baseline["firstFieldName"] == request["firstFieldName"]
         assert request["firstFieldName"] == self._verified_first_fields[(request["runId"], request["modelName"])]
-        assert baseline["deckName"] is None
         previous_occurrence = -1
         for note in request["notes"]:
             candidate = note["duplicateCandidate"]
@@ -903,7 +892,6 @@ class FakeKotlinAnki:
             index = len(self.duplicate_fields)
             self.duplicate_fields.append(first_field)
             self.duplicate_note_ids[index] = note_id
-            self.duplicate_decks.setdefault(first_field, set()).add(request["deckName"])
         return encode_message(
             "anki.createnotes.result",
             {
@@ -2085,7 +2073,6 @@ def test_baseline_token_binds_ordered_occurrences(
     assert create["baselineToken"].startswith("baseline_")
     assert create["baselineToken"] not in kotlin._baseline_snapshots
     assert RUN_ID not in kotlin._outstanding_baseline_by_run
-    assert scan["deckName"] is None
 
 
 def test_all_duplicate_probes_keep_one_outstanding_baseline_per_run(

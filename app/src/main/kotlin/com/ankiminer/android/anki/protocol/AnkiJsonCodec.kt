@@ -468,8 +468,6 @@ internal object AnkiJsonCodec {
             var cursor: KnownVocabularyCursor? = null
             var modelName: String? = null
             var firstFieldName: String? = null
-            var deckNameSeen = false
-            var deckName: String? = null
             var candidates: List<DuplicateCandidate>? = null
             var occurrences: List<Int>? = null
             var invalidateSeen = false
@@ -482,7 +480,6 @@ internal object AnkiJsonCodec {
                     "cursor",
                     "modelName",
                     "firstFieldName",
-                    "deckName",
                     "candidates",
                     "occurrences",
                     "invalidateBaselineToken",
@@ -498,10 +495,6 @@ internal object AnkiJsonCodec {
                     }
                     "modelName" -> modelName = readString("model name")
                     "firstFieldName" -> firstFieldName = readString("first field name")
-                    "deckName" -> {
-                        deckNameSeen = true
-                        deckName = readNullable { readString("deck name") }
-                    }
                     "candidates" -> candidates = readArray(AnkiLimitsV1.ScanFirstFields.DUPLICATE_CANDIDATE_MAX_ITEM_COUNT, 1, "duplicate candidates") { readDuplicateCandidate() }
                     "occurrences" -> occurrences = readArray(AnkiLimitsV1.ScanFirstFields.DUPLICATE_CANDIDATE_MAX_ITEM_COUNT, 1, "duplicate occurrences") { readInt("duplicate occurrence") }
                     "invalidateBaselineToken" -> {
@@ -531,10 +524,9 @@ internal object AnkiJsonCodec {
                 "duplicates" -> {
                     requireExactSeen(
                         seen,
-                        setOf("kind", "modelName", "firstFieldName", "deckName", "candidates", "occurrences", "invalidateBaselineToken", "limits"),
+                        setOf("kind", "modelName", "firstFieldName", "candidates", "occurrences", "invalidateBaselineToken", "limits"),
                         "duplicate scope",
                     )
-                    if (!deckNameSeen) missingPayload("deckName")
                     if (!invalidateSeen) missingPayload("invalidateBaselineToken")
                     requireExactLimits(
                         limits!!,
@@ -545,7 +537,7 @@ internal object AnkiJsonCodec {
                             "maxTotalUtf8Bytes" to AnkiLimitsV1.ScanFirstFields.DUPLICATE_HIT_TOTAL_MAX_UTF8_BYTES.toLong(),
                         ),
                     )
-                    DuplicateScanScope(modelName!!, firstFieldName!!, deckName, candidates!!, occurrences!!, invalidateBaselineToken)
+                    DuplicateScanScope(modelName!!, firstFieldName!!, candidates!!, occurrences!!, invalidateBaselineToken)
                 }
                 else -> fail(AnkiProtocolCategory.INVALID_VALUE, "scan scope kind is invalid")
             }

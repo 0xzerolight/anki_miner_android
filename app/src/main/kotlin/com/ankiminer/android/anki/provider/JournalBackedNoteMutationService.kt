@@ -169,7 +169,6 @@ internal interface NoteMutationReads {
         owner: AnkiRunStateRegistry.RunOwner,
         target: TargetSnapshot,
         candidate: DuplicateCandidate,
-        scopeDeckId: Long?,
     ): DuplicateRawSnapshot
 
     /** Every method below uses non-cancellable reads for mandatory post-entry reconciliation. */
@@ -197,9 +196,7 @@ internal class ExactNoteMutationReads(
         owner: AnkiRunStateRegistry.RunOwner,
         target: TargetSnapshot,
         candidate: DuplicateCandidate,
-        scopeDeckId: Long?,
-    ): DuplicateRawSnapshot =
-        ownedReads.readDuplicateSnapshot(owner, target, listOf(candidate), scopeDeckId)
+    ): DuplicateRawSnapshot = ownedReads.readDuplicateSnapshot(owner, target, listOf(candidate))
 
     override fun readTargetAfterEntry(expected: TargetSnapshot): TargetSnapshot {
         val actual =
@@ -279,7 +276,7 @@ internal class JournalBackedNoteMutationService(
             val candidate = prepared[index].candidate
             val fresh =
                 try {
-                    reads.readDuplicateBeforeEntry(owner, target, candidate, baseline.scopeDeckId)
+                    reads.readDuplicateBeforeEntry(owner, target, candidate)
                 } catch (failure: AnkiReadFailure) {
                     val error = failure.toStableNoteError("The final duplicate check failed before note insertion")
                     journal.append(
@@ -856,16 +853,11 @@ internal class JournalBackedNoteMutationService(
         baseline: DuplicateBaseline,
     ): TargetSnapshot {
         val target = registryTargetOrConflict(baseline)
-        val requestedScopeDeckId =
-            when (request.duplicateScope) {
-                com.ankiminer.android.anki.protocol.CollectionCreateDuplicateScope -> null
-            }
         if (
             target.deck.name != request.deckName ||
             target.model.name != request.modelName ||
             target.model.fieldNames.first() != request.firstFieldName ||
-            baseline.firstFieldName != request.firstFieldName ||
-            baseline.scopeDeckId != requestedScopeDeckId
+            baseline.firstFieldName != request.firstFieldName
         ) {
             throw noteMutationConflict("The createNotes request differs from its consumed duplicate baseline")
         }

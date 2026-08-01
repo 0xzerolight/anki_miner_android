@@ -52,7 +52,6 @@ _EXPECTED_MUTATION_LEAVES = {
     "scan.known.cursor.nullable",
     "scan.duplicates.modelName",
     "scan.duplicates.firstFieldName",
-    "scan.duplicates.deckName.nullable",
     "scan.duplicates.candidate.key",
     "scan.duplicates.candidate.firstField",
     "scan.duplicates.occurrences.list",
