@@ -554,6 +554,26 @@ class ResourceManagerTest {
         }
 
     @Test
+    fun audioPackImportOutOfSpaceReportsStorageNotADegenerateSizeLimit() =
+        runTest {
+            val harness =
+                Harness(
+                    sourceLabel = "audio-pack ZIP",
+                    reportedSourceSizeBytes = 64L * 1024 * 1024,
+                    stagingAvailableBytes = ARCHIVE_BUDGET_RESERVE_BYTES / 2,
+                )
+
+            harness.manager.importAudioPack(INPUT_URI, "jpod", replace = false)
+
+            val failure = requireNotNull(harness.manager.state.value.failure)
+            assertEquals("insufficient_storage", failure.code)
+            assertEquals(ResourceFailureOrigin.AUDIO, failure.origin)
+            assertTrue(harness.stager.stagedFiles.isEmpty())
+            assertNull(harness.stager.lastMaximumBytes)
+            assertEquals(listOf(INPUT_URI), harness.broker.released)
+        }
+
+    @Test
     fun audioPackBudgetTracksFreeSpaceInsteadOfAFixedTwoGigabyteCap() =
         runTest {
             val harness =
