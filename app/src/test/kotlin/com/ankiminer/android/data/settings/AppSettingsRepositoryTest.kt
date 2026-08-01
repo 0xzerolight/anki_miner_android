@@ -206,6 +206,19 @@ class AppSettingsRepositoryTest {
     }
 
     @Test
+    fun `migration drops the retired allow-duplicate-cards key`() {
+        val retired = booleanPreferencesKey("allow_duplicate_cards")
+        val preferences = preferencesOf(stringPreferencesKey("deck_name") to "Japanese", retired to true)
+
+        assertTrue(DataStoreAppSettingsRepository.migrationRequired(preferences))
+
+        val migrated = DataStoreAppSettingsRepository.migratePreferences(preferences)
+
+        assertFalse(migrated.contains(retired))
+        assertEquals("Japanese", migrated[stringPreferencesKey("deck_name")])
+    }
+
+    @Test
     fun `failed repository DataStore write preserves the complete prior store`() =
         runTest {
             val dataStore = createDataStore(backgroundScope, "failed-write")
@@ -276,7 +289,6 @@ class AppSettingsRepositoryTest {
         assertEquals(
             original.copy(
                 tags = null,
-                allowDuplicateCards = null,
                 audioPaddingSeconds = null,
                 screenshotOffsetSeconds = null,
                 subtitleOffsetSeconds = null,
@@ -539,7 +551,6 @@ class AppSettingsRepositoryTest {
             cardType = CardType.CLICK,
             cardTypeMarkerField = "IsClickCard",
             tags = "mined japanese",
-            allowDuplicateCards = true,
             audioPaddingSeconds = 0.1,
             screenshotOffsetSeconds = 0.2,
             subtitleOffsetSeconds = -0.3,
@@ -613,10 +624,6 @@ class AppSettingsRepositoryTest {
                 original.copy(cardTypeMarkerField = defaults.cardTypeMarkerField),
             ),
             corruptString("tags", original.copy(tags = defaults.tags)),
-            corruptBoolean(
-                "allow_duplicate_cards",
-                original.copy(allowDuplicateCards = defaults.allowDuplicateCards),
-            ),
             corruptDouble(
                 "audio_padding_seconds",
                 original.copy(audioPaddingSeconds = defaults.audioPaddingSeconds),
