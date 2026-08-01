@@ -325,7 +325,13 @@ internal data class MediaNamespaceLock(
     }
 }
 
-/** O(n log n) exact-name and prefix/stem collision validation for at most 16,000 locks. */
+/**
+ * Exact-name and prefix/stem collision validation for at most 16,000 locks.
+ *
+ * [requireDisjoint] sweeps a whole set in O(n log n). [refuseCandidates] answers a different
+ * question — which incoming owners to refuse — and decides each pair by inspection, falling through
+ * to the sweep only for a pair that collides.
+ */
 internal object MediaNamespaceValidator {
     /**
      * Returns only incoming owners involved in a collision. Existing locks are never decisions;
@@ -339,6 +345,7 @@ internal object MediaNamespaceValidator {
         val refused = linkedMapOf<MediaNamespaceOwner, MediaAdmissionViolation>()
         candidates.forEach { candidate ->
             for (held in existing) {
+                if (!collides(held, candidate)) continue
                 try {
                     requireDisjoint(listOf(held, candidate))
                 } catch (failure: MediaAdmissionViolation) {
@@ -350,6 +357,7 @@ internal object MediaNamespaceValidator {
         candidates.forEachIndexed { leftIndex, left ->
             for (rightIndex in leftIndex + 1 until candidates.size) {
                 val right = candidates[rightIndex]
+                if (!collides(left, right)) continue
                 try {
                     requireDisjoint(listOf(left, right))
                 } catch (failure: MediaAdmissionViolation) {
@@ -359,6 +367,35 @@ internal object MediaNamespaceValidator {
             }
         }
         return refused
+    }
+
+    /**
+     * Whether one pair violates the namespace rules, decided without allocating.
+     *
+     * The pairwise scans above run inside the media reservation's write transaction, and their
+     * upper bound is the global unresolved-claim limit times the batch's asset limit. Calling the
+     * full [requireDisjoint] sweep for every pair therefore allocated two sorted lists, an event
+     * list, an array list and a hash map per pair — hundreds of thousands of times per batch, with
+     * every other journal writer blocked behind the transaction. This decides the same question by
+     * inspection, so the sweep only runs for a pair that really collides, which is where its exact
+     * refusal reason and colliding-pair detail are needed.
+     *
+     * `MediaNamespaceValidatorTest` cross-checks this against [requireDisjoint] pair by pair; the
+     * two must never disagree.
+     */
+    private fun collides(
+        left: MediaNamespaceLock,
+        right: MediaNamespaceLock,
+    ): Boolean {
+        // The sweep never reports an owner against itself: a re-reserved asset holds its own names.
+        if (left.owner == right.owner) return false
+        if (left.directFilename == right.directFilename) return true
+        // Only provider prefixes are active in the sweep, so a stem can be covered by a prefix but
+        // never cover anything itself.
+        if (left.providerPrefix.startsWith(right.providerPrefix)) return true
+        if (right.providerPrefix.startsWith(left.providerPrefix)) return true
+        if (filenameStem(left.directFilename)?.startsWith(right.providerPrefix) == true) return true
+        return filenameStem(right.directFilename)?.startsWith(left.providerPrefix) == true
     }
 
     fun requireDisjoint(locks: List<MediaNamespaceLock>) {

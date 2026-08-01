@@ -237,6 +237,39 @@ class MediaNamespaceValidatorTest {
         assertTrue("16k namespace validation took ${elapsedMs}ms", elapsedMs < 10_000)
     }
 
+    @Test
+    fun candidateRefusalAgreesWithTheSweepOnEveryPair() {
+        // refuseCandidates decides each pair by inspection so the sweep only runs for a pair that
+        // really collides. The two must never disagree: a false negative admits a colliding asset.
+        val names = listOf("clip.ogg", "clip.opus", "alpha_1.ogg", "alpha.ogg", "a.ogg", "beta.ogg")
+        val prefixes = listOf("alpha_", "alpha_1", "alpha", "a", "beta_", "clip", "clip.")
+        val locks =
+            names.flatMapIndexed { nameIndex, name ->
+                prefixes.mapIndexed { prefixIndex, prefix ->
+                    MediaNamespaceLock(
+                        owner = MediaNamespaceOwner("run-$nameIndex", "asset-$prefixIndex"),
+                        directFilename = name,
+                        providerPrefix = prefix,
+                    )
+                }
+            }
+
+        var collisions = 0
+        locks.forEachIndexed { leftIndex, left ->
+            locks.forEachIndexed { rightIndex, right ->
+                if (leftIndex == rightIndex) return@forEachIndexed
+                val sweepRefuses =
+                    runCatching { MediaNamespaceValidator.requireDisjoint(listOf(left, right)) }.isFailure
+                // One candidate against one held lock: refusal is exactly the sweep's verdict.
+                val refused =
+                    MediaNamespaceValidator.refuseCandidates(listOf(left), listOf(right))
+                assertEquals("$left vs $right", sweepRefuses, right.owner in refused)
+                if (sweepRefuses) collisions += 1
+            }
+        }
+        assertTrue("the corpus must exercise both verdicts", collisions > 0 && collisions < locks.size * (locks.size - 1))
+    }
+
     private fun disjointLocks(count: Int): List<MediaNamespaceLock> =
         List(count) { index ->
             val suffix = index.toString().padStart(5, '0')
