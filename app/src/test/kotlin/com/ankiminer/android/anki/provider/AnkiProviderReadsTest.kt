@@ -824,6 +824,13 @@ class AnkiProviderReadsTest {
             }
         assertEquals(AnkiErrorCode.UNSUPPORTED_OPERATION, failure.code)
         assertEquals(false, failure.retryable)
+        // The deck path counts CARDS rows under a deck-tree selection, so the refusal must say
+        // cards and name the subdecks; calling them notes would misstate the number and the cause.
+        assertEquals(
+            "Known-word filtering supports at most 100000 cards in " +
+                "the selected Anki deck and its subdecks",
+            failure.stableMessage,
+        )
         // Two cells per row for the first 100000 rows; row 100001 is refused before its cells.
         assertEquals(200_000, cardCellReads)
         assertEquals(1, cardCursor.closeCount)
