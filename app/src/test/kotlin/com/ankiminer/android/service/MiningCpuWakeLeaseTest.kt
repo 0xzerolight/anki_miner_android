@@ -26,6 +26,42 @@ class MiningCpuWakeLeaseTest {
     }
 
     @Test
+    fun `parking releases once and a later acquire re-arms a fresh bound`() {
+        val lock = FakeWakeLock()
+        val lease = MiningCpuWakeLease(lock, timeoutMillis = 99)
+        lease.acquire()
+
+        lease.park()
+        lease.park()
+
+        assertFalse(lease.isOwned())
+        assertFalse(lock.isHeld)
+        assertEquals(1, lock.releaseCount)
+
+        lease.acquire()
+
+        assertTrue(lease.isOwned())
+        assertEquals(listOf(99L, 99L), lock.timeouts)
+    }
+
+    @Test
+    fun `a cancel while parked releases exactly once and cannot re-arm`() {
+        val lock = FakeWakeLock()
+        val lease = MiningCpuWakeLease(lock, timeoutMillis = 7)
+        lease.acquire()
+        lease.park()
+
+        lease.close()
+        // A stale service command racing teardown must not resurrect the platform lock.
+        lease.acquire()
+
+        assertFalse(lease.isOwned())
+        assertFalse(lock.isHeld)
+        assertEquals(1, lock.releaseCount)
+        assertEquals(listOf(7L), lock.timeouts)
+    }
+
+    @Test
     fun `failed acquisition releases a lock which became held before failure`() {
         val lock = FakeWakeLock(failAfterHolding = true)
         val lease = MiningCpuWakeLease(lock, timeoutMillis = 1)

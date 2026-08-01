@@ -120,6 +120,15 @@ interface MiningForegroundLease : AutoCloseable {
     /** Returns false once this lease is no longer the live foreground session. */
     fun updateProgress(progress: MiningForegroundProgress): Boolean
 
+    /**
+     * Drops the CPU wake lock while the run is parked in curation. The foreground service keeps
+     * running: only the media-processing lease is at issue, and no media is processed here.
+     */
+    fun parkCpuWake(): Boolean = false
+
+    /** Re-arms the CPU wake lock when the confirmed run resumes. */
+    fun resumeCpuWake(): Boolean = false
+
     /** Marks this as an expected shutdown before asking Android to stop the service. */
     override fun close()
 }

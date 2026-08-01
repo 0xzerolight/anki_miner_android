@@ -271,12 +271,14 @@ internal class BridgeMiningRepository(
                 throw MiningCommandException("The curation selection is invalid")
             }
         var transition: PhaseTransition? = null
+        var resumingLease: MiningForegroundLease? = null
         val (generation, hasSelectedCandidate) =
             synchronized(monitor) {
                 val run = active ?: throw MiningCommandException("No curation request is pending")
                 if (run.curation !== request || run.phase != Phase.CURATING) {
                     throw MiningCommandException("The curation response is stale")
                 }
+                resumingLease = run.foregroundLease
                 run.hasSelectedCandidate = run.hasSelectedCandidate || selection.isNotEmpty()
                 if (request.isFinalPage) {
                     transition = run.transition(Phase.PROMOTING, "curation_final")
@@ -291,6 +293,8 @@ internal class BridgeMiningRepository(
                 run.generation to run.hasSelectedCandidate
             }
         transition.emit()
+        // The user's wait is over; media processing resumes whichever page follows.
+        resumingLease?.resumeCpuWake()
         if (request.isFinalPage) {
             if (hasSelectedCandidate) {
                 executeControl(generation) {
@@ -1343,6 +1347,7 @@ internal class BridgeMiningRepository(
         val message = BridgeJsonCodec.decode(raw, expectedRunId = runId) as? BridgeMessage.CurationNeeded
             ?: throw IllegalStateException("Python sent an invalid curation request")
         var transition: PhaseTransition? = null
+        var parkingLease: MiningForegroundLease? = null
         synchronized(monitor) {
             val run = activeFor(generation) ?: throw IllegalStateException("Curation request is stale")
             if (run.cancelRequested) return
@@ -1376,9 +1381,13 @@ internal class BridgeMiningRepository(
             }
             transition = run.transition(Phase.CURATING, "curation_needed")
             run.curation = message.request
+            parkingLease = run.foregroundLease
             mutableState.value = MiningRunState.Curating(message.request, pageSubmissionPending = false)
         }
         transition.emit()
+        // The engine is parked on a threading.Event until the user answers. Nothing is processed
+        // meanwhile, so the six-hour media-processing wake lease has no work behind it.
+        parkingLease?.parkCpuWake()
     }
 
     private fun captureTerminal(

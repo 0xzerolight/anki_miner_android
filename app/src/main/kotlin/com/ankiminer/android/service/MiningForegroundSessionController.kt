@@ -100,6 +100,15 @@ class MiningForegroundSessionController private constructor(
             return notifyService()
         }
 
+        override fun parkCpuWake(): Boolean = setCpuWakeParked(parked = true)
+
+        override fun resumeCpuWake(): Boolean = setCpuWakeParked(parked = false)
+
+        private fun setCpuWakeParked(parked: Boolean): Boolean {
+            if (!registry.setCpuWakeParked(identity, parked)) return false
+            return notifyService()
+        }
+
         /** Every producer reaches the notification through here, so the guard belongs here. */
         private fun claimRedraw(progress: MiningForegroundProgress): Boolean =
             synchronized(redrawMonitor) {

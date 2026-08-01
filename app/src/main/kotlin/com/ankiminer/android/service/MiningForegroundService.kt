@@ -207,6 +207,7 @@ class MiningForegroundService : Service() {
             return
         }
         try {
+            applyCpuWakeState(currentIdentity, snapshot.cpuWakeParked)
             startForegroundTyped(
                 if (snapshot.cancelling) {
                     buildCancellingNotification(currentIdentity)
@@ -216,6 +217,27 @@ class MiningForegroundService : Service() {
             )
         } catch (failure: RuntimeException) {
             failActiveSession("update", failure)
+        }
+    }
+
+    /**
+     * Idempotent, so it is safe to run on every command rather than needing its own intent action.
+     */
+    private fun applyCpuWakeState(
+        identity: MiningForegroundSessionIdentity,
+        parked: Boolean,
+    ) {
+        val alreadyApplied = if (parked) !cpuWakeLease.isOwned() else cpuWakeLease.isOwned()
+        if (alreadyApplied) return
+        if (parked) cpuWakeLease.park() else cpuWakeLease.acquire()
+        AppLog.d(LogComponent.SERVICE, "cpu_wake") {
+            arrayOf(
+                "outcome" to if (parked) "skip" else "ok",
+                "parked" to parked,
+                "runId" to identity.runId,
+                "generation" to identity.generation,
+                "leaseId" to identity.leaseId,
+            )
         }
     }
 
