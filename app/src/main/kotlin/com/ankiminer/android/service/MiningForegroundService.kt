@@ -230,9 +230,12 @@ class MiningForegroundService : Service() {
         val alreadyApplied = if (parked) !cpuWakeLease.isOwned() else cpuWakeLease.isOwned()
         if (alreadyApplied) return
         if (parked) cpuWakeLease.park() else cpuWakeLease.acquire()
+        // acquire() is a no-op once the lease is closed, so the wanted state has to be re-read
+        // rather than assumed: a resume racing teardown legitimately does nothing.
+        val reached = parked != cpuWakeLease.isOwned()
         AppLog.d(LogComponent.SERVICE, "cpu_wake") {
             arrayOf(
-                "outcome" to if (parked) "skip" else "ok",
+                "outcome" to if (reached) "ok" else "skip",
                 "parked" to parked,
                 "runId" to identity.runId,
                 "generation" to identity.generation,
