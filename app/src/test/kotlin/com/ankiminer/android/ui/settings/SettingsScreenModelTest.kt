@@ -2,8 +2,14 @@ package com.ankiminer.android.ui.settings
 
 import com.ankiminer.android.data.anki.AnkiSetupFailureOrigin
 import com.ankiminer.android.data.resources.ResourceFailureOrigin
+import com.ankiminer.android.diagnostics.StagedBundle
+import com.ankiminer.android.vm.DiagnosticsDelivery
+import com.ankiminer.android.vm.DiagnosticsExportState
+import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -94,4 +100,47 @@ class SettingsScreenModelTest {
         assertTrue(saved.checked)
         assertFalse(saved.discovered)
     }
+
+    @Test
+    fun retainedReadyExportLaunchesOnePickerPerDeliveryRequest() {
+        val bundle = stagedBundle("diagnostics-1.zip")
+        val ready = DiagnosticsExportState.Ready(bundle, DiagnosticsDelivery.SAVE)
+
+        val request = diagnosticsDeliveryToLaunch(ready, launchedRequest = null)
+        assertNotNull(request)
+
+        // Rotation: a fresh composition observes an equal retained Ready and must not relaunch.
+        assertNull(
+            diagnosticsDeliveryToLaunch(
+                DiagnosticsExportState.Ready(stagedBundle("diagnostics-1.zip"), DiagnosticsDelivery.SAVE),
+                launchedRequest = request,
+            ),
+        )
+        // Same bundle, other delivery, and a rebuilt bundle are both new requests.
+        assertNotNull(
+            diagnosticsDeliveryToLaunch(
+                DiagnosticsExportState.Ready(bundle, DiagnosticsDelivery.SHARE),
+                launchedRequest = request,
+            ),
+        )
+        assertNotNull(
+            diagnosticsDeliveryToLaunch(
+                DiagnosticsExportState.Ready(stagedBundle("diagnostics-2.zip"), DiagnosticsDelivery.SAVE),
+                launchedRequest = request,
+            ),
+        )
+        // Every non-Ready state ends the request; the composition clears its key there, so a
+        // cancelled picker followed by the same request launches again.
+        DiagnosticsExportState.Idle
+            .let { assertNull(diagnosticsDeliveryToLaunch(it, launchedRequest = request)) }
+        assertEquals(request, diagnosticsDeliveryToLaunch(ready, launchedRequest = null))
+    }
+
+    private fun stagedBundle(name: String): StagedBundle =
+        StagedBundle(
+            file = File("/data/user/0/com.ankiminer.android/cache/diagnostics/$name"),
+            uri = "content://com.ankiminer.android.files/diagnostics/$name",
+            sizeBytes = 1_024L,
+            entries = emptyList(),
+        )
 }
