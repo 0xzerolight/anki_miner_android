@@ -371,6 +371,15 @@ internal class AnkiProviderCallbacks(
                     "Another Anki target verification is already active",
                     retryable = false,
                 )
+            // Only the calls with no durable batch behind them reach here; `storeMedia` degrades
+            // its remaining assets to row-local media failures instead of unwinding. Named so the
+            // one condition a user can act on never renders as an unattributable internal_error.
+            is PendingMediaStagingRecoveryException ->
+                request.error(
+                    AnkiErrorCode.MEDIA_STORE_FAILED,
+                    "Anki media staging is waiting on quarantined files from an earlier run",
+                    retryable = false,
+                )
             else ->
                 request.error(
                     AnkiErrorCode.INTERNAL_ERROR,

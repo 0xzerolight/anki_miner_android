@@ -287,7 +287,19 @@ internal class JournalBackedMediaMutationService(
                 continue
             }
             val reservation = checkNotNull(reservations[index])
-            ensureStagingRecovered()
+            try {
+                ensureStagingRecovered()
+            } catch (failure: PendingMediaStagingRecoveryException) {
+                return degradeRemainingRowsLocally(
+                    request = request,
+                    durableRequest = durableRequest,
+                    fromIndex = index,
+                    admissions = admissions,
+                    reservations = reservations,
+                    unusedReservations = unusedReservations,
+                    failure = failure,
+                )
+            }
             val staged =
                 try {
                     staging.stage(asset.toStagingRequest(request, index))
@@ -635,6 +647,59 @@ internal class JournalBackedMediaMutationService(
                 ),
             )
         }
+        return finishResult(request, durableRequest, topLevelError = null, replayed = false)
+    }
+
+    /**
+     * Degrades the unprocessed tail of the batch when staging recovery is still pending.
+     *
+     * [ensureStagingRecovered] guards every asset because a quarantined staged file must not be
+     * followed by another stage into the same directory. Letting its refusal escape the loop
+     * unwound `store()` with the durable parent still RUNNING: rows appended only for the assets
+     * already processed, no `markResultReady`, and an unattributable `internal_error` on the wire.
+     * One transient undeletable staged file therefore failed a whole mining run whose earlier media
+     * had already reached AnkiDroid.
+     *
+     * The tail takes the same `media_store_failed` row the in-loop staging failures produce, which
+     * Python treats as recoverable, so the run creates its notes without that media. Rows that were
+     * already refused admission keep their own typed refusal — the reason is more precise than the
+     * recovery one and the caller has no other place to learn it.
+     *
+     * The pre-`journal.begin` call keeps the hard throw: there is no durable batch to degrade yet.
+     */
+    private fun degradeRemainingRowsLocally(
+        request: StoreMediaRequest,
+        durableRequest: JournalRequest,
+        fromIndex: Int,
+        admissions: List<MediaReservationAdmission>,
+        reservations: List<MediaReservationRecord?>,
+        unusedReservations: MutableMap<Long, MediaReservationRecord>,
+        failure: PendingMediaStagingRecoveryException,
+    ): StoreMediaMutationOutcome {
+        val rowError = pendingStagingRecoveryMediaFailure(compactFaultToken(failure))
+        for (index in fromIndex..request.assets.lastIndex) {
+            val asset = request.assets[index]
+            val admission = admissions[index]
+            if (admission is MediaReservationAdmission.Refused) {
+                appendAdmissionRefusal(durableRequest.key, index, asset, admission.failure)
+                continue
+            }
+            reservations[index]?.let { reservation ->
+                if (unusedReservations.remove(reservation.id) != null) {
+                    journal.releaseReservation(reservation.id)
+                }
+            }
+            journal.append(
+                durableRequest.key,
+                AlignedResult.MediaFailed(
+                    requestIndex = index,
+                    itemId = asset.assetId,
+                    rowError = rowError,
+                    compactEvidence = PENDING_STAGING_RECOVERY_EVIDENCE,
+                ),
+            )
+        }
+        releaseUnusedReservations(unusedReservations)
         return finishResult(request, durableRequest, topLevelError = null, replayed = false)
     }
 
@@ -1006,6 +1071,21 @@ private fun refusedBatchMediaFailure(
     retryable = false,
 )
 
+/**
+ * The staging-recovery counterpart, shaped like [rowLocalMediaFailure] so the two read alike.
+ *
+ * `RECOVERY_PENDING` is not an [AnkiMediaStagingFailure] value — no exception was thrown here.
+ * Staging refused to hand out another private copy while a quarantined artifact is unresolved, and
+ * that is the sentence the field report needs.
+ */
+private fun pendingStagingRecoveryMediaFailure(fault: String) =
+    JournalError(
+        JournalErrorCode.MEDIA_STORE_FAILED,
+        "The media asset could not be staged for AnkiDroid " +
+            "(staging=RECOVERY_PENDING fault=$fault)",
+        retryable = false,
+    )
+
 private fun cancelledBeforeEntry() =
     JournalError(
         JournalErrorCode.CANCELLED,
@@ -1070,6 +1150,8 @@ private fun utf16Sha256(value: String): String {
 }
 
 private fun mediaMutationConflict(message: String) = IllegalStateException(message)
+
+private const val PENDING_STAGING_RECOVERY_EVIDENCE = "providerEntry=false;staging=RECOVERY_PENDING"
 
 private val REPLAYABLE_MEDIA_CLAIM_STATES =
     setOf(
