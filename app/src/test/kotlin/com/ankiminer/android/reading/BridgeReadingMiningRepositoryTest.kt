@@ -25,10 +25,14 @@ import com.ankiminer.android.mining.CoordinatorAnkiCallbacks
 import com.ankiminer.android.mining.CurationSelection
 import com.ankiminer.android.mining.InstalledTokenizerResource
 import com.ankiminer.android.mining.InstalledTokenizerResourceProvider
+import com.ankiminer.android.mining.InterruptedMiningRun
+import com.ankiminer.android.mining.MiningCommandException
+import com.ankiminer.android.mining.MiningRunKind
 import com.ankiminer.android.mining.MiningRunState
 import com.ankiminer.android.mining.MiningRuntimePaths
 import com.ankiminer.android.mining.MiningTaskExecutor
 import com.ankiminer.android.mining.SourceGrantReleaser
+import com.ankiminer.android.mining.StartupInterruption
 import com.ankiminer.android.mining.asMiningTaskExecutor
 import com.ankiminer.android.mining.isTerminal
 import com.ankiminer.android.service.ForegroundSessionRegistry
@@ -505,6 +509,7 @@ class BridgeReadingMiningRepositoryTest {
         val curating =
             awaitState(activeHarness.repository) { it is MiningRunState.Curating } as
                 MiningRunState.Curating
+        interruptionStore.simulateProcessRestart()
         val recreated = harness(interruptionStore = interruptionStore)
 
         val interrupted = recreated.repository.state.value as MiningRunState.Failed
@@ -533,6 +538,101 @@ class BridgeReadingMiningRepositoryTest {
         runBlocking { harness.repository.reset() }
         assertTrue(harness.repository.state.value is MiningRunState.Idle)
         assertFalse(interruptionStore.hasBlockedRecord())
+    }
+
+    @Test
+    fun `reset clears an unrecognized interruption record`() {
+        val interruptionStore = FakeMiningRunInterruptionStore(invalidRecord = true)
+        val harness = harness(interruptionStore = interruptionStore)
+
+        assertTrue(harness.repository.state.value is MiningRunState.Failed)
+        runBlocking { harness.repository.reset() }
+
+        assertTrue(harness.repository.state.value is MiningRunState.Idle)
+        assertFalse(interruptionStore.hasBlockedRecord())
+    }
+
+    @Test
+    fun `reading reset clears an interrupted video run`() {
+        val interruptionStore = FakeMiningRunInterruptionStore(durableRecord = VIDEO_INTERRUPTION)
+        val harness = harness(interruptionStore = interruptionStore)
+
+        val interrupted = harness.repository.state.value as MiningRunState.Failed
+        assertEquals("Background mining stopped unexpectedly", interrupted.failure.message)
+        // The other lane's run id has no meaning on this screen.
+        assertNull(interrupted.runId)
+
+        runBlocking { harness.repository.reset() }
+        assertTrue(harness.repository.state.value is MiningRunState.Idle)
+        assertFalse(interruptionStore.hasBlockedRecord())
+
+        runReadingToTerminal(harness)
+    }
+
+    @Test
+    fun `both lanes constructed before a cross-lane clear can still start`() {
+        val interruptionStore = FakeMiningRunInterruptionStore(durableRecord = VIDEO_INTERRUPTION)
+        val first = harness(interruptionStore = interruptionStore)
+        val second = harness(interruptionStore = interruptionStore)
+
+        runBlocking { first.repository.reset() }
+        assertFalse(interruptionStore.hasBlockedRecord())
+
+        // The second repository cached the record the first one already cleared.
+        runBlocking { second.repository.reset() }
+        assertTrue(second.repository.state.value is MiningRunState.Idle)
+        runReadingToTerminal(second)
+    }
+
+    @Test
+    fun `reset succeeds without removing the record of a run started since`() {
+        val interruptionStore = FakeMiningRunInterruptionStore(durableRecord = VIDEO_INTERRUPTION)
+        val first = harness(interruptionStore = interruptionStore)
+        val second = harness(interruptionStore = interruptionStore)
+
+        runBlocking { first.repository.reset() }
+        runBlocking { first.repository.startReading(INPUT) }
+        val curating =
+            awaitState(first.repository) { it is MiningRunState.Curating } as
+                MiningRunState.Curating
+
+        // The record `second` cached is gone, replaced by the live run's own.
+        runBlocking { second.repository.reset() }
+        assertTrue(second.repository.state.value is MiningRunState.Idle)
+        assertTrue(interruptionStore.hasBlockedRecord())
+
+        runBlocking { first.repository.cancel(curating.request.runId) }
+        first.bridge.allowTerminal.countDown()
+        awaitState(first.repository, MiningRunState::isTerminal)
+        assertFalse(interruptionStore.hasBlockedRecord())
+    }
+
+    @Test
+    fun `a lane constructed after a cross-lane clear starts idle`() {
+        val interruptionStore = FakeMiningRunInterruptionStore(durableRecord = VIDEO_INTERRUPTION)
+        val first = harness(interruptionStore = interruptionStore)
+        runBlocking { first.repository.reset() }
+
+        val second = harness(interruptionStore = interruptionStore)
+        assertTrue(second.repository.state.value is MiningRunState.Idle)
+        runReadingToTerminal(second)
+    }
+
+    @Test
+    fun `an interrupted reading run blocks a new reading run until reset`() {
+        val interruptionStore = FakeMiningRunInterruptionStore(durableRecord = READING_INTERRUPTION)
+        val harness = harness(interruptionStore = interruptionStore)
+
+        val interrupted = harness.repository.state.value as MiningRunState.Failed
+        assertEquals(READING_INTERRUPTION.runId, interrupted.runId)
+        assertThrows(MiningCommandException::class.java) {
+            runBlocking { harness.repository.startReading(INPUT) }
+        }
+        assertTrue(interruptionStore.hasBlockedRecord())
+
+        runBlocking { harness.repository.reset() }
+        assertFalse(interruptionStore.hasBlockedRecord())
+        runReadingToTerminal(harness)
     }
 
     @Test
@@ -1419,6 +1519,17 @@ class BridgeReadingMiningRepositoryTest {
             .filter { it.contains(op) }
             .map { it.substring(it.indexOf("c=")) }
 
+    /** Start a run and cancel it out again, so the lane is proven usable and leaves no record. */
+    private fun runReadingToTerminal(harness: Harness) {
+        runBlocking { harness.repository.startReading(INPUT) }
+        val curating =
+            awaitState(harness.repository) { it is MiningRunState.Curating } as
+                MiningRunState.Curating
+        runBlocking { harness.repository.cancel(curating.request.runId) }
+        harness.bridge.allowTerminal.countDown()
+        awaitState(harness.repository, MiningRunState::isTerminal)
+    }
+
     private fun awaitState(
         repository: ReadingMiningRepository,
         predicate: (MiningRunState) -> Boolean,
@@ -1617,27 +1728,41 @@ class BridgeReadingMiningRepositoryTest {
 
     private class FakeMiningRunInterruptionStore(
         private var failCompletions: Int = 0,
+        private var invalidRecord: Boolean = false,
+        durableRecord: com.ankiminer.android.mining.InterruptedMiningRun? = null,
     ) :
         com.ankiminer.android.mining.MiningRunInterruptionStore {
-        private var current: com.ankiminer.android.mining.InterruptedMiningRun? = null
+        private var current: com.ankiminer.android.mining.InterruptedMiningRun? = durableRecord
+        private var startup: StartupInterruption = sample()
 
-        override fun current(): com.ankiminer.android.mining.InterruptedMiningRun? = current
+        fun hasBlockedRecord(): Boolean = current != null || invalidRecord
 
-        override fun hasBlockedRecord(): Boolean = current != null
+        /** Re-sample the durable state the way a fresh process would. */
+        fun simulateProcessRestart() {
+            startup = sample()
+        }
 
-        override fun clearUnrecognizedRecord(): Boolean = current == null
+        override fun startupInterruption(): StartupInterruption = startup
+
+        override fun clearUnrecognizedRecord(): Boolean {
+            if (current != null) return true
+            invalidRecord = false
+            startup = StartupInterruption.None
+            return true
+        }
 
         override fun begin(
             kind: com.ankiminer.android.mining.MiningRunKind,
             ownerId: String,
         ): Boolean {
-            if (current != null) return false
+            if (hasBlockedRecord()) return false
             current =
                 com.ankiminer.android.mining.InterruptedMiningRun(
                     kind,
                     ownerId,
                     runId = null,
                 )
+            startup = StartupInterruption.None
             return true
         }
 
@@ -1668,10 +1793,23 @@ class BridgeReadingMiningRepositoryTest {
                 failCompletions -= 1
                 return false
             }
-            val active = current ?: return true
-            if (active.kind != kind || active.ownerId != ownerId) return false
-            current = null
+            val active = current
+            if (active == null && invalidRecord) return false
+            if (active != null && (active.kind == kind && active.ownerId == ownerId)) {
+                current = null
+            }
+            // Anything else is already gone: the other lane cleared it, or a later run replaced it.
+            startup = StartupInterruption.None
             return true
+        }
+
+        private fun sample(): StartupInterruption {
+            val record = current
+            return when {
+                record != null -> StartupInterruption.Interrupted(record)
+                invalidRecord -> StartupInterruption.Unrecognized
+                else -> StartupInterruption.None
+            }
         }
     }
 
@@ -1841,6 +1979,20 @@ class BridgeReadingMiningRepositoryTest {
         const val TOKENIZER_SHA =
             "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
         const val MAX_RESULT_ERRORS = 256
+
+        /** A crash in the video lane leaves this behind for the reading lane to find. */
+        val VIDEO_INTERRUPTION =
+            InterruptedMiningRun(
+                MiningRunKind.VIDEO,
+                ownerId = "cancel_11111111111111111111111111111111",
+                runId = "run_22222222222222222222222222222222",
+            )
+        val READING_INTERRUPTION =
+            InterruptedMiningRun(
+                MiningRunKind.READING,
+                ownerId = "cancel_33333333333333333333333333333333",
+                runId = "run_44444444444444444444444444444444",
+            )
         val INPUT_DOCUMENT =
             SafDocument(
                 uri = "content://reading/novel",
