@@ -545,12 +545,32 @@ class ResourceManagerTest {
             assertNull(harness.manager.state.value.failure)
             assertEquals(1, harness.bridge.requestsOfType("resource.knownwords.remove").size)
             assertEquals(1, harness.bridge.userCount)
+        }
 
-            // The late delivery cannot publish against an operation that already finished either.
+    @Test
+    fun cancelDeliveryFailingAfterTheOperationEndedPublishesNothing() =
+        runTest {
+            // The disclosed cost of treating REQUESTED as non-terminal, pinned as intended: once
+            // the worker has returned there is nothing left to cancel, so a delivery failure that
+            // lands afterwards must not raise Retry against work that committed.
+            val control = QueuedExecutor()
+            lateinit var harness: Harness
+            harness =
+                Harness(
+                    initialUserCount = 2,
+                    controlExecutor = control,
+                    failCancelDelivery = true,
+                    onKnownWordsRemoveDispatch = { harness.manager.cancelActive() },
+                )
+
+            harness.manager.removeKnownWords(listOf("mutable0"))
+
+            assertNull(harness.manager.state.value.activeOperation)
+
             control.runNext()
 
             assertNull(harness.manager.state.value.failure)
-            assertNull(harness.manager.state.value.activeOperation)
+            assertEquals(1, harness.bridge.userCount)
         }
 
     @Test
