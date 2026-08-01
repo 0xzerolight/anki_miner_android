@@ -135,9 +135,6 @@ internal object AnkiLimitsV1 {
         // Manifest: scanFirstFields.knownTotalScannedNotes
         const val KNOWN_TOTAL_SCANNED_NOTE_MAX_COUNT: Int = 100000
 
-        // Manifest: scanFirstFields.knownTotalScannedCardRows
-        const val KNOWN_TOTAL_SCANNED_CARD_ROW_MAX_COUNT: Int = 1000000
-
         // Manifest: scanFirstFields.knownTotalScannedExcludedRows
         const val KNOWN_TOTAL_SCANNED_EXCLUDED_ROW_MAX_COUNT: Int = 1000000
 

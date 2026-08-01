@@ -191,10 +191,6 @@ _MANIFEST_FIELDS: tuple[FieldSpec, ...] = (
             "KNOWN_TOTAL_SCANNED_NOTE_MAX_COUNT",
         ),
         _integer(
-            "knownTotalScannedCardRows",
-            "KNOWN_TOTAL_SCANNED_CARD_ROW_MAX_COUNT",
-        ),
-        _integer(
             "knownTotalScannedExcludedRows",
             "KNOWN_TOTAL_SCANNED_EXCLUDED_ROW_MAX_COUNT",
         ),
