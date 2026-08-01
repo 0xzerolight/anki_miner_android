@@ -34,6 +34,7 @@ import com.ankiminer.android.mining.isTerminal
 import com.ankiminer.android.service.ForegroundSessionRegistry
 import com.ankiminer.android.service.MiningForegroundLease
 import com.ankiminer.android.service.MiningForegroundProgress
+import com.ankiminer.android.service.MiningForegroundProgressUnit
 import com.ankiminer.android.service.MiningForegroundSessionIdentity
 import com.ankiminer.android.service.MiningForegroundSessionListener
 import com.ankiminer.android.tts.SentenceAudioSynthesis
@@ -396,6 +397,46 @@ class BridgeReadingMiningRepositoryTest {
 
         assertTrue(awaitState(harness.repository, MiningRunState::isTerminal) is MiningRunState.Success)
         assertEquals(1, harness.foreground.lease.closeCount.get())
+    }
+
+    @Test
+    fun `staging bytes reach the notification as bytes and engine counts as items`() {
+        val harness = harness(expressionAudioFieldMapped = true)
+
+        runBlocking { harness.repository.startReading(INPUT) }
+        val curating =
+            awaitState(harness.repository) { it is MiningRunState.Curating } as MiningRunState.Curating
+        runBlocking {
+            harness.repository.confirmCuration(
+                curating.request.runId,
+                curating.request.requestId,
+                FIRST_SELECTION,
+            )
+        }
+        assertTrue(harness.bridge.curationSubmitted.await(2, TimeUnit.SECONDS))
+        harness.bridge.runCallbacks!!.onProgress(HOSTILE_PROGRESS)
+
+        val published = harness.foreground.lease.published
+        // "novel" is five staged bytes; without a unit they rendered as five items.
+        assertTrue(
+            published.toString(),
+            MiningForegroundProgress(
+                completed = 5,
+                total = 5,
+                unit = MiningForegroundProgressUnit.BYTES,
+            ) in published,
+        )
+        assertEquals(
+            MiningForegroundProgress(
+                completed = 2,
+                total = 3,
+                unit = MiningForegroundProgressUnit.ITEMS,
+            ),
+            published.last(),
+        )
+
+        harness.bridge.allowTerminal.countDown()
+        awaitState(harness.repository, MiningRunState::isTerminal)
     }
 
     @Test

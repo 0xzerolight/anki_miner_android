@@ -24,6 +24,7 @@ import com.ankiminer.android.media.SafCopyRole
 import com.ankiminer.android.service.MiningForegroundCancellationReason
 import com.ankiminer.android.service.MiningForegroundLease
 import com.ankiminer.android.service.MiningForegroundProgress
+import com.ankiminer.android.service.MiningForegroundProgressUnit
 import com.ankiminer.android.service.MiningForegroundSessionIdentity
 import com.ankiminer.android.service.MiningForegroundSessionListener
 import java.text.Normalizer
@@ -1260,6 +1261,11 @@ internal class BridgeMiningRepository(
             MiningForegroundProgress(
                 completed = progress.current.takeIf { determinate }?.toInt(),
                 total = progress.total.takeIf { determinate }?.toInt(),
+                unit =
+                    when (progress.unit) {
+                        MiningProgressUnit.ITEMS -> MiningForegroundProgressUnit.ITEMS
+                        MiningProgressUnit.BYTES -> MiningForegroundProgressUnit.BYTES
+                    },
             )
         val accepted =
             try {

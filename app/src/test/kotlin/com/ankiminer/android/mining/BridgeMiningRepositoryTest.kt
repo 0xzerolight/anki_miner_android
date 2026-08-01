@@ -17,10 +17,14 @@ import com.ankiminer.android.engine.PyBridge
 import com.ankiminer.android.engine.TokenizerIdentity
 import com.ankiminer.android.engine.VideoMiningWireRequest
 import com.ankiminer.android.media.FileCopyCancelledException
+import com.ankiminer.android.media.SafCopyProgress
+import com.ankiminer.android.media.SafCopyProgressListener
+import com.ankiminer.android.media.SafCopyRole
 import com.ankiminer.android.localization.testStringResourceResolver
 import com.ankiminer.android.service.ForegroundSessionRegistry
 import com.ankiminer.android.service.MiningForegroundLease
 import com.ankiminer.android.service.MiningForegroundProgress
+import com.ankiminer.android.service.MiningForegroundProgressUnit
 import com.ankiminer.android.service.MiningForegroundSessionIdentity
 import com.ankiminer.android.service.MiningForegroundSessionListener
 import java.io.File
@@ -232,6 +236,49 @@ class BridgeMiningRepositoryTest {
                 progress.toString().contains(MINED_TERM),
             )
         }
+
+        harness.bridge.allowTerminal.countDown()
+        awaitState(harness.repository, MiningRunState::isTerminal)
+    }
+
+    @Test
+    fun `staging bytes reach the notification as bytes and engine counts as items`() {
+        val harness =
+            harness(
+                copyProgress =
+                    listOf(SafCopyProgress(SafCopyRole.VIDEO, 1L * 1024 * 1024, 4L * 1024 * 1024)),
+            )
+
+        runBlocking { harness.repository.startVideo(INPUT) }
+        val curating =
+            awaitState(harness.repository) { it is MiningRunState.Curating } as MiningRunState.Curating
+        runBlocking {
+            harness.repository.confirmCuration(
+                curating.request.runId,
+                curating.request.requestId,
+                FIRST_SELECTION,
+            )
+        }
+        assertTrue(harness.bridge.curationSubmitted.await(2, TimeUnit.SECONDS))
+        harness.bridge.runCallbacks!!.onProgress(HOSTILE_PROGRESS)
+
+        val published = harness.foreground.lease.published
+        assertTrue(
+            published.toString(),
+            MiningForegroundProgress(
+                completed = 1024 * 1024,
+                total = 4 * 1024 * 1024,
+                unit = MiningForegroundProgressUnit.BYTES,
+            ) in published,
+        )
+        assertEquals(
+            MiningForegroundProgress(
+                completed = 2,
+                total = 3,
+                unit = MiningForegroundProgressUnit.ITEMS,
+            ),
+            published.last(),
+        )
 
         harness.bridge.allowTerminal.countDown()
         awaitState(harness.repository, MiningRunState::isTerminal)
@@ -1025,6 +1072,7 @@ class BridgeMiningRepositoryTest {
         runtimeWorkCoordinator: RuntimeWorkCoordinator = RuntimeWorkCoordinator(),
         configSnapshotResolver: MiningConfigSnapshotResolver =
             MiningConfigSnapshotResolver { MiningConfigSnapshot(emptyMap(), false) },
+        copyProgress: List<SafCopyProgress> = emptyList(),
     ): Harness {
         val runExecutor = Executors.newSingleThreadExecutor().also(executors::add)
         val controlExecutor = Executors.newSingleThreadExecutor().also(executors::add)
@@ -1045,12 +1093,23 @@ class BridgeMiningRepositoryTest {
             )
         val anki = FakeAnkiCallbacks(fallbackState, ankiFailure)
         val foreground = FakeForegroundStarter(foregroundFailure, pendingForegroundStart)
-        val inputOwner = FakeInputOwner(foreground.startCount)
+        val inputOwner = FakeInputOwner(foreground.startCount, copyProgress)
         val repository =
             BridgeMiningRepository(
                 pyBridge = bridge,
                 anki = anki,
-                inputOwnerFactory = MiningInputOwnerFactory { inputOwner },
+                inputOwnerFactory =
+                    object : MiningInputOwnerFactory {
+                        override fun create(): MiningInputOwner = inputOwner
+
+                        override fun create(
+                            cancellation: AnkiCancellation,
+                            progressListener: SafCopyProgressListener,
+                        ): MiningInputOwner {
+                            inputOwner.progressListener = progressListener
+                            return inputOwner
+                        }
+                    },
                 tokenizerResourceProvider = tokenizerResourceProvider,
                 runtimePaths = MiningRuntimePaths(File("/tmp/cache"), File("/tmp/native")),
                 sourceGrantReleaser = SourceGrantReleaser(releases::add),
@@ -1131,14 +1190,17 @@ class BridgeMiningRepositoryTest {
 
     private class FakeInputOwner(
         private val foregroundStarts: AtomicInteger? = null,
+        private val copyProgress: List<SafCopyProgress> = emptyList(),
     ) : MiningInputOwner {
         val closeCount = AtomicInteger()
         val openCount = AtomicInteger()
         val foregroundStartsAtOpen = AtomicInteger(-1)
+        var progressListener: SafCopyProgressListener = SafCopyProgressListener.NONE
 
         override fun openVideo(source: MiningSource): String {
             openCount.incrementAndGet()
             foregroundStartsAtOpen.set(foregroundStarts?.get() ?: -1)
+            copyProgress.forEach(progressListener::onProgress)
             return "/tmp/video.mkv"
         }
 

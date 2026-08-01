@@ -49,14 +49,24 @@ fun interface MiningForegroundSessionListener {
     )
 }
 
+/** What [MiningForegroundProgress.completed] counts, so bytes never render as an item count. */
+enum class MiningForegroundProgressUnit {
+    ITEMS,
+    BYTES,
+}
+
 /**
  * Counts only. Engine progress descriptions embed mined terms, and a notification can be surfaced
  * on a locked device, so this type deliberately carries no channel for engine-supplied text.
  * Notification bodies are built from app-owned string resources.
+ *
+ * [unit] selects between those resources; it is a closed enum, not a caller-supplied label, so it
+ * cannot become a text channel.
  */
 data class MiningForegroundProgress(
     val completed: Int? = null,
     val total: Int? = null,
+    val unit: MiningForegroundProgressUnit = MiningForegroundProgressUnit.ITEMS,
 ) {
     init {
         require((completed == null) == (total == null)) {
@@ -87,7 +97,7 @@ internal fun miningNotificationRedrawRequired(
     if (previousTotal == null || nextTotal == null) {
         return (previousTotal == null) != (nextTotal == null)
     }
-    if (previousTotal != nextTotal) return true
+    if (previousTotal != nextTotal || previous.unit != next.unit) return true
     val nextCompleted = requireNotNull(next.completed)
     val previousCompleted = requireNotNull(previous.completed)
     if (nextCompleted == previousCompleted) return false

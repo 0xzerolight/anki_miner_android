@@ -1,8 +1,10 @@
 package com.ankiminer.android.service
 
+import com.ankiminer.android.R
 import java.lang.reflect.Modifier
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -22,9 +24,38 @@ class MiningForegroundSessionTest {
             mapOf(
                 "completed" to Integer::class.java,
                 "total" to Integer::class.java,
+                "unit" to MiningForegroundProgressUnit::class.java,
             ),
             fieldTypes,
         )
+    }
+
+    @Test
+    fun `byte counts render through the byte string and item counts through the item string`() {
+        val (itemResource, itemArguments) =
+            requireNotNull(
+                miningNotificationProgressText(
+                    MiningForegroundProgress(2, 3, MiningForegroundProgressUnit.ITEMS),
+                ),
+            )
+        assertEquals(R.string.mining_notification_count, itemResource)
+        assertEquals(listOf<Any>(2, 3), itemArguments.toList())
+
+        val (byteResource, byteArguments) =
+            requireNotNull(
+                miningNotificationProgressText(
+                    MiningForegroundProgress(
+                        1024 * 1024,
+                        4 * 1024 * 1024,
+                        MiningForegroundProgressUnit.BYTES,
+                    ),
+                ),
+            )
+        // "1,048,576 of 4,194,304 items" was the defect; megabytes are the shared byte rendering.
+        assertEquals(R.string.progress_mebibytes, byteResource)
+        assertEquals(listOf<Any>(1f, 4f), byteArguments.toList())
+
+        assertNull(miningNotificationProgressText(MiningForegroundProgress()))
     }
 
     @Test

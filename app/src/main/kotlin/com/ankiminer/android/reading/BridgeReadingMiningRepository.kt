@@ -40,6 +40,7 @@ import com.ankiminer.android.mining.MiningCommandException
 import com.ankiminer.android.mining.MiningFailure
 import com.ankiminer.android.mining.MiningForegroundStarter
 import com.ankiminer.android.mining.MiningProgress
+import com.ankiminer.android.mining.MiningProgressUnit
 import com.ankiminer.android.mining.MiningRunAdmissionGate
 import com.ankiminer.android.mining.MiningRunAdmissionState
 import com.ankiminer.android.mining.MiningRunInterruptionStore
@@ -58,6 +59,7 @@ import com.ankiminer.android.mining.runId
 import com.ankiminer.android.service.MiningForegroundCancellationReason
 import com.ankiminer.android.service.MiningForegroundLease
 import com.ankiminer.android.service.MiningForegroundProgress
+import com.ankiminer.android.service.MiningForegroundProgressUnit
 import com.ankiminer.android.service.MiningForegroundSessionIdentity
 import com.ankiminer.android.service.MiningForegroundSessionListener
 import com.ankiminer.android.tts.SentenceAudioCallbackDispatcher
@@ -1345,6 +1347,9 @@ internal class BridgeReadingMiningRepository(
                 current = stage.copiedBytes,
                 total = stage.expectedBytes ?: 0L,
                 description = strings.resolve(description),
+                // Staging counts bytes; without this the UI and the notification both label them
+                // items.
+                unit = MiningProgressUnit.BYTES,
             ),
         )
     }
@@ -1402,6 +1407,11 @@ internal class BridgeReadingMiningRepository(
             MiningForegroundProgress(
                 completed = progress.current.takeIf { determinate }?.toInt(),
                 total = progress.total.takeIf { determinate }?.toInt(),
+                unit =
+                    when (progress.unit) {
+                        MiningProgressUnit.ITEMS -> MiningForegroundProgressUnit.ITEMS
+                        MiningProgressUnit.BYTES -> MiningForegroundProgressUnit.BYTES
+                    },
             )
         val accepted =
             try {

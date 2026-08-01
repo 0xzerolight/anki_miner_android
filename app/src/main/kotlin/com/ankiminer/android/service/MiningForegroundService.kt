@@ -33,6 +33,27 @@ internal fun warnMalformedForegroundIntent(
     )
 }
 
+/**
+ * Resource id and arguments for the notification's progress line, or null while indeterminate.
+ *
+ * Separate from the builder because the service needs a real `Context` and the host unit build has
+ * no Robolectric, so the unit-to-resource choice would otherwise be untested.
+ */
+internal fun miningNotificationProgressText(progress: MiningForegroundProgress): Pair<Int, Array<Any>>? {
+    val completed = progress.completed ?: return null
+    val total = progress.total ?: return null
+    return when (progress.unit) {
+        MiningForegroundProgressUnit.ITEMS ->
+            R.string.mining_notification_count to arrayOf<Any>(completed, total)
+        // The shared byte string the resource and mining screens already render through. Whole MiB
+        // floors to "14 of 14" well before a transfer ends, so the count has to keep a decimal.
+        MiningForegroundProgressUnit.BYTES ->
+            R.string.progress_mebibytes to arrayOf<Any>(completed / MEBIBYTE_F, total / MEBIBYTE_F)
+    }
+}
+
+private const val MEBIBYTE_F = 1024f * 1024f
+
 internal fun decodeMiningForegroundIntentIdentity(
     action: String?,
     extraKeys: Set<String>,
@@ -319,15 +340,9 @@ class MiningForegroundService : Service() {
         progress: MiningForegroundProgress,
     ): Notification {
         val text =
-            if (progress.completed != null && progress.total != null) {
-                getString(
-                    R.string.mining_notification_count,
-                    progress.completed,
-                    progress.total,
-                )
-            } else {
-                getString(R.string.mining_notification_preparing)
-            }
+            miningNotificationProgressText(progress)
+                ?.let { (resource, arguments) -> getString(resource, *arguments) }
+                ?: getString(R.string.mining_notification_preparing)
         return baseNotification(identity, text)
             .setProgress(
                 progress.total ?: 0,
