@@ -95,7 +95,7 @@ class InstrumentationAuditTest(unittest.TestCase):
         result = self._run_audit(REPO_ROOT)
 
         self.assertEqual(0, result.returncode, result.stderr)
-        self.assertIn("194 bare catch site(s) verified", result.stdout)
+        self.assertIn("193 bare catch site(s) verified", result.stdout)
 
     def test_bare_catch_needs_an_annotation_or_reasoned_allowlist_entry(self) -> None:
         root = self._new_repo()

@@ -313,9 +313,21 @@ internal class JournalBackedNoteMutationService(
                 // narrowing this to the typed refusal made those end the whole batch. The probe
                 // still guards the one case that is not a rollback: a throw after the commit, when
                 // the parent already carries this note as active.
-                if (runCatching { journal.parent(durableRequest.key)?.activeRequestIndex }.getOrNull() == index) {
-                    throw failure
-                }
+                val activeIndex =
+                    runCatching { journal.parent(durableRequest.key)?.activeRequestIndex }
+                        .onFailure { probeFailure ->
+                            // The probe failing is itself evidence: the degrade below then rests on
+                            // an unread parent, so the entry has to survive for the bundle.
+                            AppLog.w(
+                                LogComponent.ANKI,
+                                "createNotes",
+                                probeFailure,
+                                "outcome" to "fail",
+                                "probe" to "materialization_commit",
+                            )
+                        }
+                        .getOrNull()
+                if (activeIndex == index) throw failure
                 val error = stableInternal("The note media bindings could not be durably admitted")
                 journal.append(
                     durableRequest.key,
