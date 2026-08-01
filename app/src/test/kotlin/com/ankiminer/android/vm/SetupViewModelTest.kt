@@ -807,6 +807,37 @@ class SetupViewModelTest {
         }
 
     @Test
+    fun `a word list pick never displaces another import already queued for dispatch`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            // One pending slot: the pitch pick is confirmed work waiting on startup, and a
+            // word-list result is the only one that can arrive without its own picker gate.
+            val resources = FakeResourceManager()
+            val model =
+                viewModel(
+                    FakeSettingsRepository(AppSettings()),
+                    FakeAnkiSetupManager(emptyList()),
+                    resources,
+                    SavedStateHandle(),
+                )
+            advanceUntilIdle()
+            model.setPitchSourceName("Kanjium CSV")
+            model.setPitchFormat(PitchAccentSourceFormat.CSV)
+            assertTrue(model.beginPitchPicker())
+            // Recovery starts while the picker is up, so the pitch result queues instead of running.
+            resources.setStartupReadiness(ResourceStartupReadiness.RECOVERING)
+            model.onPitchPicked("content://pitch.csv")
+            advanceUntilIdle()
+            assertEquals(emptyList<Pair<String, Boolean>>(), resources.pitchImports)
+
+            model.importWordList("content://blacklist.txt", WordListKind.BLACKLIST)
+            resources.setStartupReadiness(ResourceStartupReadiness.READY)
+            advanceUntilIdle()
+
+            assertEquals(listOf("content://pitch.csv" to false), resources.pitchImports)
+            assertEquals(emptyList<Pair<String, WordListKind>>(), resources.wordListImports)
+        }
+
+    @Test
     fun `an interrupted whitelist import still offers the whitelist picker after recreation`() =
         runTest(mainDispatcherRule.dispatcher) {
             val savedState = SavedStateHandle()

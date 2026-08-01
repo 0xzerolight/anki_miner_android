@@ -28,6 +28,8 @@ import com.ankiminer.android.data.resources.WordListKind
 import com.ankiminer.android.data.settings.AppSettings
 import com.ankiminer.android.data.settings.AppSettingsRepository
 import com.ankiminer.android.data.settings.CardType
+import com.ankiminer.android.diagnostics.log.AppLog
+import com.ankiminer.android.diagnostics.log.LogComponent
 import com.ankiminer.android.engine.PythonRuntimeReadiness
 import com.ankiminer.android.localization.StringResourceResolver
 import com.ankiminer.android.mining.MiningRunAdmissionState
@@ -1068,9 +1070,25 @@ internal class SetupViewModel(
     /**
      * The SAF result, not a picker launch: a recreated ViewModel is still recovering when it
      * arrives, so this holds the pick like every other import instead of dropping it on [busy].
+     *
+     * Word lists are the only kind reaching the single pending slot without a `begin…Picker`
+     * gate, so this is also the only entry point that can meet a queued pick of another kind.
+     * That one is already confirmed work waiting on [resumePendingPicker]; it wins.
      */
     fun importWordList(uri: String, kind: WordListKind) {
         setWordListTarget(kind)
+        val queued =
+            pendingPicker?.takeIf { it.kind != ResourcePickerKind.WORD_LIST && it.uri != null }
+        if (queued != null) {
+            AppLog.i(
+                LogComponent.UI,
+                "picker.result",
+                "picker" to "word_list",
+                "queued" to queued.kind.name,
+                "outcome" to "skip",
+            )
+            return
+        }
         finishPicker(
             kind = ResourcePickerKind.WORD_LIST,
             uri = uri,
