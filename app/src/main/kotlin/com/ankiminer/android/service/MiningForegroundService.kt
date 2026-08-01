@@ -16,6 +16,8 @@ import com.ankiminer.android.MainActivity
 import com.ankiminer.android.R
 import com.ankiminer.android.diagnostics.log.AppLog
 import com.ankiminer.android.diagnostics.log.LogComponent
+import com.ankiminer.android.localization.LocalizedStringResource
+import com.ankiminer.android.localization.byteProgressResource
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 
@@ -34,25 +36,23 @@ internal fun warnMalformedForegroundIntent(
 }
 
 /**
- * Resource id and arguments for the notification's progress line, or null while indeterminate.
+ * Resource and arguments for the notification's progress line, or null while indeterminate.
  *
  * Separate from the builder because the service needs a real `Context` and the host unit build has
  * no Robolectric, so the unit-to-resource choice would otherwise be untested.
  */
-internal fun miningNotificationProgressText(progress: MiningForegroundProgress): Pair<Int, Array<Any>>? {
+internal fun miningNotificationProgressText(progress: MiningForegroundProgress): LocalizedStringResource? {
     val completed = progress.completed ?: return null
     val total = progress.total ?: return null
     return when (progress.unit) {
         MiningForegroundProgressUnit.ITEMS ->
-            R.string.mining_notification_count to arrayOf<Any>(completed, total)
-        // The shared byte string the resource and mining screens already render through. Whole MiB
-        // floors to "14 of 14" well before a transfer ends, so the count has to keep a decimal.
+            LocalizedStringResource(R.string.mining_notification_count, listOf(completed, total))
+        // The same scale selection the mining screen renders bytes through, so the notification and
+        // the screen cannot disagree about one copy's units.
         MiningForegroundProgressUnit.BYTES ->
-            R.string.progress_mebibytes to arrayOf<Any>(completed / MEBIBYTE_F, total / MEBIBYTE_F)
+            byteProgressResource(completed.toLong(), total.toLong())
     }
 }
-
-private const val MEBIBYTE_F = 1024f * 1024f
 
 internal fun decodeMiningForegroundIntentIdentity(
     action: String?,
@@ -363,7 +363,7 @@ class MiningForegroundService : Service() {
     ): Notification {
         val text =
             miningNotificationProgressText(progress)
-                ?.let { (resource, arguments) -> getString(resource, *arguments) }
+                ?.let { getString(it.resourceId, *it.formatArguments.toTypedArray()) }
                 ?: getString(R.string.mining_notification_preparing)
         return baseNotification(identity, text)
             .setProgress(

@@ -1,6 +1,7 @@
 package com.ankiminer.android.service
 
 import com.ankiminer.android.R
+import com.ankiminer.android.localization.byteProgressResource
 import java.lang.reflect.Modifier
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -32,16 +33,16 @@ class MiningForegroundSessionTest {
 
     @Test
     fun `byte counts render through the byte string and item counts through the item string`() {
-        val (itemResource, itemArguments) =
+        val items =
             requireNotNull(
                 miningNotificationProgressText(
                     MiningForegroundProgress(2, 3, MiningForegroundProgressUnit.ITEMS),
                 ),
             )
-        assertEquals(R.string.mining_notification_count, itemResource)
-        assertEquals(listOf<Any>(2, 3), itemArguments.toList())
+        assertEquals(R.string.mining_notification_count, items.resourceId)
+        assertEquals(listOf<Any>(2, 3), items.formatArguments)
 
-        val (byteResource, byteArguments) =
+        val bytes =
             requireNotNull(
                 miningNotificationProgressText(
                     MiningForegroundProgress(
@@ -51,11 +52,48 @@ class MiningForegroundSessionTest {
                     ),
                 ),
             )
-        // "1,048,576 of 4,194,304 items" was the defect; megabytes are the shared byte rendering.
-        assertEquals(R.string.progress_mebibytes, byteResource)
-        assertEquals(listOf<Any>(1f, 4f), byteArguments.toList())
+        // "1,048,576 of 4,194,304 items" was the defect; the byte scale is the shared rendering.
+        assertEquals(R.string.progress_mebibytes, bytes.resourceId)
+        assertEquals(listOf<Any>(1f, 4f), bytes.formatArguments)
 
         assertNull(miningNotificationProgressText(MiningForegroundProgress()))
+    }
+
+    @Test
+    fun `a sub-megabyte copy does not render as zero megabytes`() {
+        // Subtitle tracks, plain text and many EPUBs stage under a megabyte, so a fixed mebibyte
+        // scale showed "0.0 of 0.0 MiB" for the ordinary reading source.
+        val small =
+            requireNotNull(
+                miningNotificationProgressText(
+                    MiningForegroundProgress(3, 5, MiningForegroundProgressUnit.BYTES),
+                ),
+            )
+        assertEquals(R.string.progress_bytes, small.resourceId)
+        assertEquals(listOf<Any>(3L, 5L), small.formatArguments)
+
+        val kibibytes =
+            requireNotNull(
+                miningNotificationProgressText(
+                    MiningForegroundProgress(512, 2048, MiningForegroundProgressUnit.BYTES),
+                ),
+            )
+        assertEquals(R.string.progress_kibibytes, kibibytes.resourceId)
+        assertEquals(listOf<Any>(0.5f, 2f), kibibytes.formatArguments)
+    }
+
+    @Test
+    fun `the byte scale follows the total so a unit cannot change mid-copy`() {
+        // Scale is chosen from the total alone; a copy that starts at zero bytes must not begin in
+        // one unit and end in another.
+        val units =
+            listOf(0L, 1L, 512L, 1024L, 700_000L, 1024L * 1024).map { completed ->
+                byteProgressResource(completed, 1024L * 1024).resourceId
+            }
+
+        assertEquals(List(units.size) { R.string.progress_mebibytes }, units)
+        assertEquals(R.string.progress_kibibytes, byteProgressResource(0L, 1024L).resourceId)
+        assertEquals(R.string.progress_bytes, byteProgressResource(0L, 1023L).resourceId)
     }
 
     @Test
