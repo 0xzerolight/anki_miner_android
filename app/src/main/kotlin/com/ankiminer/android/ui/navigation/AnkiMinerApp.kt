@@ -5,6 +5,7 @@ import androidx.annotation.StringRes
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -32,10 +33,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
@@ -166,8 +171,58 @@ internal fun activeWorkflowDestination(
     }
 
 /**
+ * Makes the shell inert while [AnkiMinerAppShell]'s overlay owns the window.
+ *
+ * The overlay is a plain sibling that covers the shell visually and nothing more, so each input
+ * route has to be closed on its own terms.
+ *
+ * `clearAndSetSemantics` takes the subtree out of the accessibility tree. Accessibility traversal
+ * and accessibility actions never touch the pointer pipeline, so covering the screen does not stop
+ * them; removing the nodes does, because they then get no virtual view id to traverse to or act on.
+ *
+ * `onEnter { cancelFocusChange() }` is what stops focus search, and it needs the `focusGroup()`
+ * below it as the boundary to fire at. `canFocus = false` cannot do this job on its own, in either
+ * arrangement. With the group: `focusGroup()` contributes its own focus target, and a focus target
+ * resolves its properties by walking ancestors only as far as the *first* focus target above it, so
+ * a `canFocus = false` sitting above the group never reaches the `NavigationBarItem`s inside it.
+ * Without the group: a deactivated node is skipped as a focus candidate but is still traversed
+ * *through* to its children — precisely what makes focus groups work at all — and the propagation
+ * would in any case stop at the first group inside the content, which every scrollable contributes.
+ * `canFocus = false` is kept only to deactivate the shell root itself.
+ *
+ * `onExit` is deliberately left at its default. Refusing exit would trap focus that was already
+ * inside the shell when the overlay appeared, locking a hardware-keyboard user out of the overlay
+ * entirely — strictly worse than the leak being fixed. The wizard pulls focus to its heading with
+ * an explicit `FocusRequester.requestFocus`, a direct grant rather than a focus search and so
+ * unaffected by `onEnter`; `onEnter` then keeps search from coming back in.
+ *
+ * The pointer pass must be `Initial`. Compose hit-tests children before their ancestors, so an
+ * ancestor consuming on the default `Main` pass reacts after a `NavigationBarItem` has already
+ * handled the tap. Consuming while the event tunnels down means `clickable`'s
+ * `awaitFirstDown(requireUnconsumed = true)` declines it.
+ */
+private fun Modifier.inertBehindOverlay(): Modifier =
+    clearAndSetSemantics { }
+        .focusProperties {
+            canFocus = false
+            onEnter = { cancelFocusChange() }
+        }
+        .focusGroup()
+        .pointerInput(Unit) {
+            awaitPointerEventScope {
+                while (true) {
+                    awaitPointerEvent(PointerEventPass.Initial).changes.forEach { it.consume() }
+                }
+            }
+        }
+
+/**
  * Production app chrome shared with instrumented UI capture. Legal routes intentionally hide the
  * bottom navigation, matching their production presentation.
+ *
+ * A non-null [overlay] owns the window: it renders above the shell and the shell behind it goes
+ * inert. Passing null renders no overlay, which is why this is a nullable lambda rather than a
+ * lambda plus a flag — the two can never disagree.
  */
 @Composable
 internal fun AnkiMinerAppShell(
@@ -178,7 +233,7 @@ internal fun AnkiMinerAppShell(
     onDestinationSelected: (AnkiMinerDestination) -> Unit,
     onNavigateBack: () -> Unit = {},
     modifier: Modifier = Modifier,
-    overlay: @Composable () -> Unit = {},
+    overlay: (@Composable () -> Unit)? = null,
     content: @Composable (Modifier) -> Unit,
 ) {
     BoxWithConstraints(modifier) {
@@ -188,6 +243,7 @@ internal fun AnkiMinerAppShell(
                 fontScale = LocalDensity.current.fontScale,
             )
         Scaffold(
+            modifier = if (overlay == null) Modifier else Modifier.inertBehindOverlay(),
             topBar = {
                 currentDestination?.let { destination ->
                     AppChrome(
@@ -281,7 +337,7 @@ internal fun AnkiMinerAppShell(
                     .consumeWindowInsets(padding),
             )
         }
-        overlay()
+        overlay?.invoke()
     }
 }
 
@@ -437,37 +493,40 @@ internal fun AnkiMinerApp(
         snackbarHostState = snackbarHostState,
         onDestinationSelected = ::navigateTo,
         onNavigateBack = { navController.popBackStack() },
-        overlay = {
-            if (wizardIsVisible) {
-                OnboardingWizard(
-                    state = setup,
-                    viewModel = setupViewModel,
-                    onRequestPermissions = onRequestPermissions,
-                    onOpenAppSettings = onOpenAppSettings,
-                    onInstallAnkiDroid = onInstallAnkiDroid,
-                    onOpenAnkiDroid = onOpenAnkiDroid,
-                    onFinished = {
-                        wizardRerunRequested = false
-                        wizardRedirectedToSettings = false
-                        if (setup.wizardSeen != true) setupViewModel.markWizardSeen()
-                    },
-                    onCustomizeFields = {
-                        wizardRerunRequested = false
-                        wizardRedirectedToSettings = true
-                        requestedSettingsCategory = SettingsCategory.ANKI
-                        requestedSettingsItemIndex = 3
-                        navigateTo(AnkiMinerDestination.SETTINGS)
-                    },
-                    onResolveRecovery = {
-                        wizardRerunRequested = false
-                        wizardRedirectedToSettings = true
-                        requestedSettingsCategory = SettingsCategory.ANKI
-                        requestedSettingsItemIndex = 4
-                        navigateTo(AnkiMinerDestination.SETTINGS)
-                    },
-                )
-            }
-        },
+        overlay =
+            if (!wizardIsVisible) {
+                null
+            } else {
+                {
+                    OnboardingWizard(
+                        state = setup,
+                        viewModel = setupViewModel,
+                        onRequestPermissions = onRequestPermissions,
+                        onOpenAppSettings = onOpenAppSettings,
+                        onInstallAnkiDroid = onInstallAnkiDroid,
+                        onOpenAnkiDroid = onOpenAnkiDroid,
+                        onFinished = {
+                            wizardRerunRequested = false
+                            wizardRedirectedToSettings = false
+                            if (setup.wizardSeen != true) setupViewModel.markWizardSeen()
+                        },
+                        onCustomizeFields = {
+                            wizardRerunRequested = false
+                            wizardRedirectedToSettings = true
+                            requestedSettingsCategory = SettingsCategory.ANKI
+                            requestedSettingsItemIndex = 3
+                            navigateTo(AnkiMinerDestination.SETTINGS)
+                        },
+                        onResolveRecovery = {
+                            wizardRerunRequested = false
+                            wizardRedirectedToSettings = true
+                            requestedSettingsCategory = SettingsCategory.ANKI
+                            requestedSettingsItemIndex = 4
+                            navigateTo(AnkiMinerDestination.SETTINGS)
+                        },
+                    )
+                }
+            },
     ) { shellModifier ->
         NavHost(
             navController = navController,

@@ -84,6 +84,24 @@ internal data class ExcludedDeckChoice(
     val discovered: Boolean,
 )
 
+/**
+ * The diagnostics delivery request that still has to reach a launcher, or null when there is none.
+ *
+ * [DiagnosticsExportState.Ready] is a latch held until delivery or explicit cancellation, not an
+ * event. An Activity recreation composes `SettingsRoute` from scratch against the same retained
+ * value the previous composition already acted on, so an effect keyed on that value opens a second
+ * picker on top of the first. The returned key identifies one request; the composition remembers
+ * it across recreation as [launchedRequest], which makes the launch one-shot per request instead
+ * of one per composition.
+ */
+internal fun diagnosticsDeliveryToLaunch(
+    state: DiagnosticsExportState,
+    launchedRequest: String?,
+): String? =
+    (state as? DiagnosticsExportState.Ready)
+        ?.let { ready -> "${ready.delivery.name}@${ready.bundle.file.path}" }
+        ?.takeIf { it != launchedRequest }
+
 internal fun excludedDeckChoices(
     availableDecks: List<String>,
     excludedDecks: List<String>,
@@ -188,8 +206,18 @@ internal fun SettingsRoute(
                 diagnosticsViewModel.copyToDocument(uri.toString())
             }
         }
+    var launchedDeliveryRequest by rememberSaveable { mutableStateOf<String?>(null) }
     LaunchedEffect(diagnosticsExport) {
-        val ready = diagnosticsExport as? DiagnosticsExportState.Ready ?: return@LaunchedEffect
+        val ready = diagnosticsExport as? DiagnosticsExportState.Ready
+        if (ready == null) {
+            // Idle, Failed and Saved all end the request, so the next Ready is a new one even when
+            // the ViewModel hands back the same staged bundle after a cancelled picker.
+            launchedDeliveryRequest = null
+            return@LaunchedEffect
+        }
+        val request =
+            diagnosticsDeliveryToLaunch(ready, launchedDeliveryRequest) ?: return@LaunchedEffect
+        launchedDeliveryRequest = request
         when (ready.delivery) {
             DiagnosticsDelivery.SAVE -> diagnosticsBundlePicker.launch(ready.bundle.file.name)
             DiagnosticsDelivery.SHARE ->
