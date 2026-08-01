@@ -190,6 +190,10 @@ _MANIFEST_FIELDS: tuple[FieldSpec, ...] = (
             "knownTotalScannedNotes",
             "KNOWN_TOTAL_SCANNED_NOTE_MAX_COUNT",
         ),
+        _integer(
+            "knownTotalScannedCardRows",
+            "KNOWN_TOTAL_SCANNED_CARD_ROW_MAX_COUNT",
+        ),
         _integer("knownCursorMaxCodePoints", "KNOWN_CURSOR_MAX_CODE_POINTS"),
         _integer("knownCursorMaxUtf8Bytes", "KNOWN_CURSOR_MAX_UTF8_BYTES"),
     ),

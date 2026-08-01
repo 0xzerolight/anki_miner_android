@@ -426,6 +426,7 @@ def test_anki_limits_v1_manifest_freezes_exact_units_and_values() -> None:
             "knownPageMaxItems": 256,
             "knownPageMaxUtf8Bytes": 262144,
             "knownTotalScannedNotes": 100000,
+            "knownTotalScannedCardRows": 1000000,
             "knownCursorMaxCodePoints": 1024,
             "knownCursorMaxUtf8Bytes": 1024,
         },

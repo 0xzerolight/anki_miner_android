@@ -789,18 +789,79 @@ class AnkiProviderReadsTest {
     }
 
     @Test
-    fun `deck card scan closes at row 100001 of subdeck rows before reading its cells`() {
-        val fixture = fixture()
-        fixture.gateway.queryHandler = targetQueryHandler()
-        fixture.withOwner { owner -> fixture.verifyExistingTarget(owner, verifyRequest()) }
-        fixture.gateway.queries.clear()
+    fun `deck card scan accepts a deck whose card rows outnumber the note ceiling`() {
+        // 60000 notes at two cards each is 120000 rows: past the note ceiling as a row count,
+        // well under it as the note count the ceiling actually governs. Spending one budget on
+        // both refused this deck, which is the whole reason the row budget is a separate limit.
         var cardCellReads = 0
-        // Every row belongs to a subdeck, so none matches the verified target deck (20).
-        // `deck:"Mining"` still returns them, and the ceiling must count them anyway.
+        val cardCursor =
+            exactDeckCardCursor(rowCount = 120_000, cardsPerNote = 2) { cardCellReads += 1 }
+        val fixture = deckCardScanFixture(cardCursor)
+
+        val result =
+            fixture.withOwner { owner ->
+                fixture.reads.scanFirstFields(owner, knownRequest(deckName = "Mining"))
+            } as KnownVocabularyResult
+
+        // Two cells on every one of the 120000 rows: the traversal ran to the end of the cursor,
+        // so neither ceiling refused it and the snapshot holds all 60000 notes.
+        assertEquals(240_000, cardCellReads)
+        assertEquals(1, cardCursor.closeCount)
+        // scannedNotes is this page, not the snapshot — 60000 notes page at 256 with a cursor.
+        assertEquals(256, result.firstFields.size)
+        assertEquals(256, result.scannedNotes)
+        assertEquals(1L, result.nextCursor?.ordinal)
+    }
+
+    @Test
+    fun `deck card scan holds the note ceiling at exactly 100000 exact deck notes`() {
+        var acceptedCellReads = 0
+        val acceptedCursor =
+            exactDeckCardCursor(rowCount = 100_000, cardsPerNote = 1) { acceptedCellReads += 1 }
+        val accepted = deckCardScanFixture(acceptedCursor)
+
+        accepted.withOwner { owner ->
+            accepted.reads.scanFirstFields(owner, knownRequest(deckName = "Mining"))
+        } as KnownVocabularyResult
+
+        assertEquals(200_000, acceptedCellReads)
+        assertEquals(1, acceptedCursor.closeCount)
+
+        // One more distinct note in the target deck, and the snapshot exceeds what it may hand back
+        // as scannedNotes — anki_adapter.py refuses above the same constant.
+        var refusedCellReads = 0
+        val refusedCursor =
+            exactDeckCardCursor(rowCount = 100_001, cardsPerNote = 1) { refusedCellReads += 1 }
+        val refused = deckCardScanFixture(refusedCursor)
+
+        val failure =
+            assertThrows(AnkiReadFailure::class.java) {
+                refused.withOwner { owner ->
+                    refused.reads.scanFirstFields(owner, knownRequest(deckName = "Mining"))
+                }
+            }
+        assertEquals(AnkiErrorCode.UNSUPPORTED_OPERATION, failure.code)
+        assertEquals(false, failure.retryable)
+        assertEquals(
+            "Known-word filtering supports at most 100000 notes in the selected Anki deck",
+            failure.stableMessage,
+        )
+        // Unlike the row budget, this ceiling has to read the row's cells to learn its note, so the
+        // refusing row is read and then rejected rather than refused before its cells.
+        assertEquals(200_002, refusedCellReads)
+        assertEquals(1, refusedCursor.closeCount)
+    }
+
+    @Test
+    fun `deck card scan closes at row 1000001 of subdeck rows before reading its cells`() {
+        var cardCellReads = 0
+        // Every row belongs to a subdeck, so none matches the verified target deck (20) and none
+        // can ever contribute a note. `deck:"Mining"` returns them regardless, so the walk needs a
+        // bound of its own or a deck under a large tree scans without end.
         val cardCursor =
             GeneratedFakeProviderCursor(
                 ProviderQueryShapes.CARD_NOTE_DECK_PROJECTION,
-                rowCount = 100_001,
+                rowCount = 1_000_001,
                 rowAt = { index ->
                     mapOf(
                         ProviderColumn.CARD_NOTE_ID to integer(index + 1L),
@@ -809,12 +870,7 @@ class AnkiProviderReadsTest {
                 },
                 beforeCell = { cardCellReads += 1 },
             )
-        fixture.gateway.queryHandler = { query, _ ->
-            when (query.endpoint) {
-                ProviderEndpoint.CARDS -> cardCursor
-                else -> error("unexpected query $query")
-            }
-        }
+        val fixture = deckCardScanFixture(cardCursor)
 
         val failure =
             assertThrows(AnkiReadFailure::class.java) {
@@ -824,15 +880,15 @@ class AnkiProviderReadsTest {
             }
         assertEquals(AnkiErrorCode.UNSUPPORTED_OPERATION, failure.code)
         assertEquals(false, failure.retryable)
-        // The deck path counts CARDS rows under a deck-tree selection, so the refusal must say
-        // cards and name the subdecks; calling them notes would misstate the number and the cause.
+        // The refusal names card rows and the subdecks, because that is what ran out. Calling them
+        // notes would quote a number the deck never reached.
         assertEquals(
-            "Known-word filtering supports at most 100000 cards in " +
+            "Known-word filtering scans at most 1000000 cards in " +
                 "the selected Anki deck and its subdecks",
             failure.stableMessage,
         )
-        // Two cells per row for the first 100000 rows; row 100001 is refused before its cells.
-        assertEquals(200_000, cardCellReads)
+        // Two cells per row for the first 1000000 rows; row 1000001 is refused before its cells.
+        assertEquals(2_000_000, cardCellReads)
         assertEquals(1, cardCursor.closeCount)
     }
 
@@ -1713,6 +1769,48 @@ class AnkiProviderReadsTest {
 
     private fun verifyRequest(required: List<String> = listOf("Expression")) =
         VerifyTargetRequest(RUN_ID, REQUEST_ID, "Mining", "Mining", required)
+
+    /** Rows all in the verified target deck (20), [cardsPerNote] consecutive rows per note. */
+    private fun exactDeckCardCursor(
+        rowCount: Int,
+        cardsPerNote: Int,
+        beforeCell: (ProviderColumn) -> Unit = {},
+    ) = GeneratedFakeProviderCursor(
+        ProviderQueryShapes.CARD_NOTE_DECK_PROJECTION,
+        rowCount = rowCount,
+        rowAt = { index ->
+            mapOf(
+                ProviderColumn.CARD_NOTE_ID to integer(index / cardsPerNote + 1L),
+                ProviderColumn.CARD_DECK_ID to integer(20L),
+            )
+        },
+        beforeCell = beforeCell,
+    )
+
+    /** A verified "Mining" target whose CARDS traversal is [cardCursor] and whose pages resolve. */
+    private fun deckCardScanFixture(cardCursor: GeneratedFakeProviderCursor): Fixture {
+        val fixture = fixture()
+        fixture.gateway.queryHandler = targetQueryHandler()
+        fixture.withOwner { owner -> fixture.verifyExistingTarget(owner, verifyRequest()) }
+        fixture.gateway.queries.clear()
+        fixture.gateway.queryHandler = { query, _ ->
+            when {
+                query.endpoint == ProviderEndpoint.CARDS -> cardCursor
+                query.selection is ProviderSelection.NoteIds ->
+                    FakeProviderCursor(
+                        query.projection,
+                        (query.selection as ProviderSelection.NoteIds).ids.map { id ->
+                            mapOf(
+                                ProviderColumn.NOTE_ID to integer(id),
+                                ProviderColumn.NOTE_FIELDS to text("word-$id\u001fmeaning"),
+                            )
+                        },
+                    )
+                else -> error("unexpected query $query")
+            }
+        }
+        return fixture
+    }
 
     private fun knownRequest(
         excluded: List<String> = emptyList(),
