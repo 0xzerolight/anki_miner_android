@@ -11,6 +11,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 
@@ -164,6 +165,10 @@ internal object RealProviderIoDeadlineScheduler : ProviderIoDeadlineScheduler {
  *
  * A provider may ignore both its platform signal and descriptor closure. In that case the worker
  * can remain blocked, but it owns no global SAF bookkeeping lock and cannot publish a late result.
+ * Both abort paths also cancel the launched worker job: cancellation cannot interrupt a thread
+ * already inside a blocking provider `read`, so the sticky [ProviderIoCancellation] stays the
+ * mechanism that ends the work, but the caller's scope must not retain an abandoned coroutine
+ * that would keep its dispatcher thread past the abort.
  */
 internal object CancellableProviderIo {
     fun <T : Closeable, R> useResource(
@@ -252,9 +257,18 @@ internal object CancellableProviderIo {
             val completed = AtomicBoolean(false)
             val progress = AtomicLong(0L)
             val deadline = AtomicReference<ProviderIoCancellationRegistration?>()
+            val worker = AtomicReference<Job?>()
 
             fun closeDeadline() {
                 deadline.getAndSet(CLOSED_REGISTRATION)?.close()
+            }
+
+            fun cancelWorker() {
+                worker.getAndSet(CANCELLED_WORKER)?.cancel()
+            }
+
+            fun installWorker(job: Job) {
+                if (!worker.compareAndSet(null, job)) job.cancel()
             }
 
             fun installDeadline(scheduled: ProviderIoCancellationRegistration) {
@@ -281,6 +295,7 @@ internal object CancellableProviderIo {
                         } else if (completed.compareAndSet(false, true)) {
                             closeDeadline()
                             cancellation.cancel()
+                            cancelWorker()
                             continuation.resumeWith(Result.failure(ProviderIoTimeoutException()))
                         }
                     },
@@ -293,6 +308,7 @@ internal object CancellableProviderIo {
                 if (completed.compareAndSet(false, true)) {
                     closeDeadline()
                     cancellation.cancel()
+                    cancelWorker()
                 }
             }
             val handle =
@@ -308,13 +324,15 @@ internal object CancellableProviderIo {
                         progress.incrementAndGet()
                     }
                 }
-            scope.launch {
-                val result = runCatching { operation(handle) }
-                if (completed.compareAndSet(false, true)) {
-                    closeDeadline()
-                    continuation.resumeWith(result)
-                }
-            }
+            installWorker(
+                scope.launch {
+                    val result = runCatching { operation(handle) }
+                    if (completed.compareAndSet(false, true)) {
+                        closeDeadline()
+                        continuation.resumeWith(result)
+                    }
+                },
+            )
         }
     }
 
@@ -382,6 +400,12 @@ internal object CancellableProviderIo {
         }
 
     private val CLOSED_REGISTRATION = ProviderIoCancellationRegistration { }
+
+    /**
+     * Sentinel published by `cancelWorker` so a worker installed after the abort is cancelled by
+     * whichever side loses the race, exactly like [CLOSED_REGISTRATION] does for the deadline.
+     */
+    private val CANCELLED_WORKER: Job = Job().apply { cancel() }
 
     private class CloseOnce<T : Closeable>(
         val value: T,
