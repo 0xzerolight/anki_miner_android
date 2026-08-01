@@ -2,6 +2,7 @@ package com.ankiminer.android.service
 
 import java.lang.reflect.Modifier
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -36,6 +37,64 @@ class MiningForegroundSessionTest {
         }
 
         assertEquals(MiningForegroundProgress(1, 2), MiningForegroundProgress(1, 2))
+    }
+
+    @Test
+    fun `a buffer-per-event copy redraws the notification far less than once per buffer`() {
+        val totalBytes = 512 * 1024 * 1024
+        val bufferBytes = 256 * 1024
+        val buffers = totalBytes / bufferBytes
+        var drawn = MiningForegroundProgress(0, totalBytes)
+        val redraws = mutableListOf<MiningForegroundProgress>()
+
+        repeat(buffers) { index ->
+            val next = MiningForegroundProgress((index + 1) * bufferBytes, totalBytes)
+            if (miningNotificationRedrawRequired(drawn, next)) {
+                drawn = next
+                redraws += next
+            }
+        }
+
+        assertEquals(2048, buffers)
+        // One redraw per rendered percentage point, and the last of them carries the total.
+        assertEquals(100, redraws.size)
+        assertEquals(MiningForegroundProgress(totalBytes, totalBytes), redraws.last())
+    }
+
+    @Test
+    fun `redraw guard keeps completion and determinacy changes but drops repeats`() {
+        val indeterminate = MiningForegroundProgress()
+
+        assertFalse(miningNotificationRedrawRequired(indeterminate, indeterminate))
+        assertTrue(miningNotificationRedrawRequired(indeterminate, MiningForegroundProgress(0, 400)))
+        assertTrue(miningNotificationRedrawRequired(MiningForegroundProgress(0, 400), indeterminate))
+        // A new total is a new bar even when the percentage is unchanged.
+        assertTrue(
+            miningNotificationRedrawRequired(
+                MiningForegroundProgress(1, 400),
+                MiningForegroundProgress(1, 401),
+            ),
+        )
+        assertFalse(
+            miningNotificationRedrawRequired(
+                MiningForegroundProgress(1, 400),
+                MiningForegroundProgress(2, 400),
+            ),
+        )
+        // Completion is never coalesced away, however small the last step was.
+        assertTrue(
+            miningNotificationRedrawRequired(
+                MiningForegroundProgress(399, 400),
+                MiningForegroundProgress(400, 400),
+            ),
+        )
+        // Small totals move a percentage point per item, so item counts still redraw per item.
+        assertTrue(
+            miningNotificationRedrawRequired(
+                MiningForegroundProgress(1, 30),
+                MiningForegroundProgress(2, 30),
+            ),
+        )
     }
 
     @Test

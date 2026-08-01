@@ -69,6 +69,38 @@ data class MiningForegroundProgress(
     }
 }
 
+/**
+ * Whether re-posting the notification for [next] would show the user anything [previous] does not.
+ *
+ * Publishing is a `startService` Binder round trip plus a notification rebuild, and the staging copy
+ * emits one progress event per buffer — roughly 8,200 for a 2 GiB source. Coalescing on the rendered
+ * percentage keeps a skipped event within one percentage point of what is on screen, and a completed
+ * count always redraws so a determinate bar reaches its total.
+ */
+internal fun miningNotificationRedrawRequired(
+    previous: MiningForegroundProgress,
+    next: MiningForegroundProgress,
+): Boolean {
+    val previousTotal = previous.total
+    val nextTotal = next.total
+    // Two indeterminate values render the same string, whatever their counts were.
+    if (previousTotal == null || nextTotal == null) {
+        return (previousTotal == null) != (nextTotal == null)
+    }
+    if (previousTotal != nextTotal) return true
+    val nextCompleted = requireNotNull(next.completed)
+    val previousCompleted = requireNotNull(previous.completed)
+    if (nextCompleted == previousCompleted) return false
+    if (nextCompleted == nextTotal) return true
+    return percentagePoint(nextCompleted, nextTotal) !=
+        percentagePoint(previousCompleted, previousTotal)
+}
+
+private fun percentagePoint(
+    completed: Int,
+    total: Int,
+): Int = (completed.toLong() * 100L / total.toLong()).toInt()
+
 interface MiningForegroundLease : AutoCloseable {
     val identity: MiningForegroundSessionIdentity
 

@@ -1322,6 +1322,7 @@ class BridgeReadingMiningRepositoryTest {
                     jobMaxBytes = 2048,
                     freeSpaceReserveBytes = 0,
                     bufferBytes = 2,
+                    checkpointIntervalBytes = 1,
                 ),
             availableBytes = { 1_000_000L },
             nonceSource = ReadingSourceStageNonceSource { "11111111111111111111111111111111" },
