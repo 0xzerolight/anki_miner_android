@@ -846,10 +846,7 @@ class FakeKotlinAnki:
         assert baseline["modelName"] == request["modelName"]
         assert baseline["firstFieldName"] == request["firstFieldName"]
         assert request["firstFieldName"] == self._verified_first_fields[(request["runId"], request["modelName"])]
-        expected_deck_name = (
-            request["duplicateScope"].get("deckName") if request["duplicateScope"]["kind"] == "exactDeck" else None
-        )
-        assert baseline["deckName"] == expected_deck_name
+        assert baseline["deckName"] is None
         previous_occurrence = -1
         for note in request["notes"]:
             candidate = note["duplicateCandidate"]

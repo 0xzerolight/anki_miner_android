@@ -149,10 +149,6 @@ internal sealed interface CreateDuplicateScope
 
 internal data object CollectionCreateDuplicateScope : CreateDuplicateScope
 
-internal data class ExactDeckCreateDuplicateScope(
-    val deckName: String,
-) : CreateDuplicateScope
-
 internal data class CreateNotesRequest(
     override val runId: String,
     override val requestId: String,

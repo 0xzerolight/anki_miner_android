@@ -34,7 +34,6 @@ import com.ankiminer.android.anki.protocol.CreateNotesResult
 import com.ankiminer.android.anki.protocol.CreatedNote
 import com.ankiminer.android.anki.protocol.DuplicateCandidate
 import com.ankiminer.android.anki.protocol.DuplicateNote
-import com.ankiminer.android.anki.protocol.ExactDeckCreateDuplicateScope
 import com.ankiminer.android.anki.protocol.FailedNote
 import com.ankiminer.android.anki.protocol.NotAttemptedNote
 import com.ankiminer.android.anki.protocol.UncertainNote
@@ -858,14 +857,8 @@ internal class JournalBackedNoteMutationService(
     ): TargetSnapshot {
         val target = registryTargetOrConflict(baseline)
         val requestedScopeDeckId =
-            when (val scope = request.duplicateScope) {
+            when (request.duplicateScope) {
                 com.ankiminer.android.anki.protocol.CollectionCreateDuplicateScope -> null
-                is ExactDeckCreateDuplicateScope -> {
-                    if (scope.deckName != request.deckName) {
-                        throw noteMutationConflict("The createNotes exact-deck scope changed")
-                    }
-                    target.deck.id
-                }
             }
         if (
             target.deck.name != request.deckName ||

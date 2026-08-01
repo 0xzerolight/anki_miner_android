@@ -469,21 +469,6 @@ def _create_duplicate_scope(value: object) -> _Object:
         scope = _mapping(value, {"kind", "limits"}, "collection duplicate scope")
         _validate_create_duplicate_limits(scope["limits"])
         return _Object((("kind", "collection"),))
-    if kind == "exactDeck":
-        scope = _mapping(
-            value,
-            {"kind", "deckName", "includeChildren", "limits"},
-            "exact-deck duplicate scope",
-        )
-        if _boolean(scope["includeChildren"], "includeChildren"):
-            _invalid("exact-deck duplicate scope must exclude children")
-        _validate_create_duplicate_limits(scope["limits"])
-        return _Object(
-            (
-                ("kind", "exactDeck"),
-                ("deckName", _string(scope["deckName"], "duplicate deckName")),
-            )
-        )
     _invalid("create duplicate scope kind is invalid")
 
 

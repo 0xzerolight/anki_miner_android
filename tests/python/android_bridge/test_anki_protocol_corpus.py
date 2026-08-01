@@ -443,10 +443,6 @@ def _validate_create_payload(payload: dict[str, Any], *, response: bool) -> None
         _canonical_name(payload["deckName"], "deck")
         _canonical_name(payload["modelName"], "model")
         _canonical_name(payload["firstFieldName"], "field")
-        if payload["duplicateScope"]["kind"] == "exactDeck":
-            _canonical_name(payload["duplicateScope"]["deckName"], "deck")
-            if payload["duplicateScope"]["deckName"] != payload["deckName"]:
-                _reject("invalid_value")
 
         note_ids: set[str] = set()
         total_content = 0
@@ -639,7 +635,6 @@ def test_corpus_freezes_all_operation_and_result_variants() -> None:
     }
     assert {payload["duplicateScope"]["kind"] for payload in accepted_payloads if "duplicateScope" in payload} == {
         "collection",
-        "exactDeck",
     }
     assert {row["status"] for payload in accepted_payloads for row in payload.get("results", [])} == {
         "stored",

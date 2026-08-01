@@ -547,17 +547,6 @@
         "limits": {"$ref": "#/$defs/createSnapshotLimits"}
       }
     },
-    "exactDeckCreateDuplicateScope": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["kind", "deckName", "includeChildren", "limits"],
-      "properties": {
-        "kind": {"const": "exactDeck"},
-        "deckName": {"$ref": "#/$defs/deckName"},
-        "includeChildren": {"const": false},
-        "limits": {"$ref": "#/$defs/createSnapshotLimits"}
-      }
-    },
     "createSnapshotLimits": {
       "type": "object",
       "additionalProperties": false,
@@ -570,7 +559,7 @@
     "createNotesRequest": {
       "type": "object",
       "additionalProperties": false,
-      "$comment": "Kotlin atomically consumes baselineToken only when its run/model/verified firstFieldName/candidate/scope binding exactly matches this request. It resolves every candidate's scoped checksum note IDs before inserting any note. A note is duplicate iff that immutable pre-insert snapshot contains an ID absent from the private baseline. maxTotalNoteIds counts the union of IDs across candidates. Kotlin fails rather than truncating on every declared limit and must never add IDs created by this same request to the snapshot, so repeated same-expression notes in exactDeck mode are all created when no external ID appeared. A new checksum collision may safely false-positive; a new external note must never false-negative. The exactDeck deckName must equal the top-level target deck at runtime. Callback-wide anki.error is valid only before any provider mutation. After a possible mutation Kotlin returns an aligned result, preserves every known inserted noteId, and uses a non-retryable uncertain row when commit state cannot be proven. Blind write retry is forbidden.",
+      "$comment": "Kotlin atomically consumes baselineToken only when its run/model/verified firstFieldName/candidate/scope binding exactly matches this request. It resolves every candidate's scoped checksum note IDs before inserting any note. A note is duplicate iff that immutable pre-insert snapshot contains an ID absent from the private baseline. maxTotalNoteIds counts the union of IDs across candidates. Kotlin fails rather than truncating on every declared limit and must never add IDs created by this same request to the snapshot. A new checksum collision may safely false-positive; a new external note must never false-negative. Callback-wide anki.error is valid only before any provider mutation. After a possible mutation Kotlin returns an aligned result, preserves every known inserted noteId, and uses a non-retryable uncertain row when commit state cannot be proven. Blind write retry is forbidden.",
       "required": ["runId", "requestId", "deckName", "modelName", "firstFieldName", "baselineToken", "duplicateScope", "limits", "notes"],
       "properties": {
         "runId": {"$ref": "#/$defs/runId"},
@@ -579,12 +568,7 @@
         "modelName": {"$ref": "#/$defs/modelName"},
         "firstFieldName": {"$ref": "#/$defs/fieldName"},
         "baselineToken": {"$ref": "#/$defs/baselineToken"},
-        "duplicateScope": {
-          "oneOf": [
-            {"$ref": "#/$defs/collectionCreateDuplicateScope"},
-            {"$ref": "#/$defs/exactDeckCreateDuplicateScope"}
-          ]
-        },
+        "duplicateScope": {"$ref": "#/$defs/collectionCreateDuplicateScope"},
         "limits": {"$ref": "#/$defs/createNotesLimits"},
         "notes": {
           "type": "array",

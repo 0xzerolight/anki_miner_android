@@ -288,10 +288,6 @@ internal object AnkiValidators {
         validateModelName(request.modelName)
         validateFieldName(request.firstFieldName)
         validateBaselineToken(request.baselineToken)
-        if (request.duplicateScope is ExactDeckCreateDuplicateScope) {
-            validateDeckName(request.duplicateScope.deckName)
-            if (request.duplicateScope.deckName != request.deckName) failValue("exact-deck scope does not match the target deck")
-        }
         requireCountBetween(request.notes.size, 1, AnkiLimitsV1.CreateNotes.MAX_NOTE_COUNT, "notes")
         requireUnique(request.notes.map { it.clientNoteId }, "client note IDs")
         var callbackBytes = 0

@@ -73,7 +73,6 @@ _EXPECTED_MUTATION_LEAVES = {
     "create.modelName",
     "create.firstFieldName",
     "create.baselineToken",
-    "create.duplicateScope.variant",
     "create.notes.append",
     "create.note.clientNoteId",
     "create.note.fields.key",

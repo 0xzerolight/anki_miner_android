@@ -23,7 +23,6 @@ import com.ankiminer.android.anki.protocol.DuplicateCandidate
 import com.ankiminer.android.anki.protocol.DuplicateLookupResult
 import com.ankiminer.android.anki.protocol.DuplicateNote
 import com.ankiminer.android.anki.protocol.DuplicateScanScope
-import com.ankiminer.android.anki.protocol.ExactDeckCreateDuplicateScope
 import com.ankiminer.android.anki.protocol.FailedMedia
 import com.ankiminer.android.anki.protocol.FailedNote
 import com.ankiminer.android.anki.protocol.KnownVocabularyCursor
@@ -1459,7 +1458,6 @@ class AnkiJsonCodecBoundaryTest {
                 val typedScope =
                     when (scope.string("kind")) {
                         "collection" -> CollectionCreateDuplicateScope
-                        "exactDeck" -> ExactDeckCreateDuplicateScope(scope.string("deckName"))
                         else -> error("unsupported accepted create scope")
                     }
                 CreateNotesRequest(

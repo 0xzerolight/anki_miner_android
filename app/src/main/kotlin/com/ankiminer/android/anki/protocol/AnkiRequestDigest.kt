@@ -155,14 +155,8 @@ private class CanonicalRequestWriter {
         stringField("firstFieldName", request.firstFieldName, leadingComma = true)
         stringField("baselineToken", request.baselineToken, leadingComma = true)
         fieldName("duplicateScope", leadingComma = true)
-        when (val scope = request.duplicateScope) {
+        when (request.duplicateScope) {
             CollectionCreateDuplicateScope -> ascii("{\"kind\":\"collection\"}")
-            is ExactDeckCreateDuplicateScope -> {
-                ascii("{")
-                stringField("kind", "exactDeck")
-                stringField("deckName", scope.deckName, leadingComma = true)
-                ascii("}")
-            }
         }
         fieldName("notes", leadingComma = true)
         ascii("[")

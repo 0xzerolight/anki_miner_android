@@ -685,14 +685,10 @@ internal object AnkiJsonCodec {
 
         private fun readCreateDuplicateScope(): CreateDuplicateScope {
             var kind: String? = null
-            var deckName: String? = null
-            var includeChildren: Boolean? = null
             var limits: Map<String, Long>? = null
-            val seen = readObjectUnion("create duplicate scope", setOf("kind", "deckName", "includeChildren", "limits")) { field ->
+            val seen = readObjectUnion("create duplicate scope", setOf("kind", "limits")) { field ->
                 when (field) {
                     "kind" -> kind = readString("create duplicate scope kind")
-                    "deckName" -> deckName = readString("duplicate scope deck")
-                    "includeChildren" -> includeChildren = readBoolean("include-children flag")
                     "limits" -> limits = readNumericObject("create duplicate limits", 2)
                     else -> unknownPayload(field)
                 }
@@ -708,11 +704,6 @@ internal object AnkiJsonCodec {
                 "collection" -> {
                     requireExactSeen(seen, setOf("kind", "limits"), "collection duplicate scope")
                     CollectionCreateDuplicateScope
-                }
-                "exactDeck" -> {
-                    requireExactSeen(seen, setOf("kind", "deckName", "includeChildren", "limits"), "exact-deck duplicate scope")
-                    if (includeChildren != false) fail(AnkiProtocolCategory.INVALID_VALUE, "exact-deck scope must exclude children")
-                    ExactDeckCreateDuplicateScope(deckName!!)
                 }
                 else -> fail(AnkiProtocolCategory.INVALID_VALUE, "create duplicate scope kind is invalid")
             }
