@@ -203,10 +203,15 @@ internal class AndroidSafSelectionInventory(
      * gone; only the file write moves to a background thread, and the platform flushes it before
      * the activity or service handoff that precedes a background process kill.
      *
-     * A hard kill inside that window leaves the record on disk. That is recoverable and this
-     * direction only: the reconciliation in [pruneMissingGrants] drops any slot whose URI is no
-     * longer a persisted grant, and a clear releases its grant. Writes that must be durable before
-     * their grant is released keep [putSelections] and its `commit`.
+     * A hard kill inside that window leaves the record on disk, and nothing reconciles it away.
+     * The grant release that accompanies a clear is itself asynchronous
+     * (`SafBroker.releaseReadAccessEventually` launches on its cleanup scope), so the same window
+     * loses the release too; [pruneMissingGrants] then finds a record whose grant is still held and
+     * keeps it. The residual is "the clear did not stick": record and grant still agree, the next
+     * start restores a selection the user cleared, and clearing again fixes it. That is milder than
+     * a lost selection, and it is what is traded for removing a certain main-thread disk write from
+     * every clear. Writes that must be durable before their grant is released keep [putSelections]
+     * and its `commit`.
      */
     override fun clearSelectionEventually(slot: SafSelectionSlot) {
         synchronized(monitor) {
