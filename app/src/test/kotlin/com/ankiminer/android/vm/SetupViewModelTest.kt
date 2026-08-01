@@ -778,6 +778,63 @@ class SetupViewModelTest {
         }
 
     @Test
+    fun `a word list pick delivered to a recreated ViewModel lands on the list it was made for`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            listOf(WordListKind.BLACKLIST, WordListKind.WHITELIST).forEach { kind ->
+                // Process death between launching the picker and the result: the recreated
+                // ViewModel is still recovering, which used to drop the pick on the busy guard.
+                val resources = FakeResourceManager()
+                resources.setStartupReadiness(ResourceStartupReadiness.RECOVERING)
+                val restored =
+                    viewModel(
+                        FakeSettingsRepository(AppSettings()),
+                        FakeAnkiSetupManager(emptyList()),
+                        resources,
+                        SavedStateHandle(),
+                    )
+                advanceUntilIdle()
+
+                restored.importWordList("content://$kind.txt", kind)
+                advanceUntilIdle()
+                assertEquals(emptyList<Pair<String, WordListKind>>(), resources.wordListImports)
+
+                resources.setStartupReadiness(ResourceStartupReadiness.READY)
+                advanceUntilIdle()
+
+                assertEquals(listOf("content://$kind.txt" to kind), resources.wordListImports)
+                assertEquals(kind, restored.uiState.value.wordListTarget)
+            }
+        }
+
+    @Test
+    fun `an interrupted whitelist import still offers the whitelist picker after recreation`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val savedState = SavedStateHandle()
+            val first =
+                viewModel(
+                    FakeSettingsRepository(AppSettings()),
+                    FakeAnkiSetupManager(emptyList()),
+                    FakeResourceManager(),
+                    savedState,
+                )
+            advanceUntilIdle()
+            first.importWordList("content://whitelist.txt", WordListKind.WHITELIST)
+            advanceUntilIdle()
+
+            val restored =
+                viewModel(
+                    FakeSettingsRepository(AppSettings()),
+                    FakeAnkiSetupManager(emptyList()),
+                    FakeResourceManager(),
+                    savedState,
+                )
+            advanceUntilIdle()
+
+            // Retry for a WORD_LIST failure opens the picker for this target, not the default one.
+            assertEquals(WordListKind.WHITELIST, restored.uiState.value.wordListTarget)
+        }
+
+    @Test
     fun `an unreadable settings store still renders setup`() =
         runTest(mainDispatcherRule.dispatcher) {
             val resources = FakeResourceManager()
