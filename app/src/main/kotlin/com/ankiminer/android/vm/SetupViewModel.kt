@@ -1072,19 +1072,26 @@ internal class SetupViewModel(
      * arrives, so this holds the pick like every other import instead of dropping it on [busy].
      *
      * Word lists are the only kind reaching the single pending slot without a `begin…Picker`
-     * gate, so this is also the only entry point that can meet a queued pick of another kind.
-     * That one is already confirmed work waiting on [resumePendingPicker]; it wins.
+     * gate, so this is also the only entry point that can meet a queued pick. That one is already
+     * confirmed work waiting on [resumePendingPicker]; it wins — including a queued pick for the
+     * other list, which the whitelist and blacklist launchers can otherwise displace. Only a
+     * repeat pick for the same list gets through, because that replaces its own slot.
      */
     fun importWordList(uri: String, kind: WordListKind) {
         setWordListTarget(kind)
         val queued =
-            pendingPicker?.takeIf { it.kind != ResourcePickerKind.WORD_LIST && it.uri != null }
+            pendingPicker?.takeIf {
+                it.uri != null &&
+                    (it.kind != ResourcePickerKind.WORD_LIST || it.wordListKind != kind)
+            }
         if (queued != null) {
             AppLog.i(
                 LogComponent.UI,
                 "picker.result",
                 "picker" to "word_list",
+                "list" to kind.name,
                 "queued" to queued.kind.name,
+                "queuedList" to queued.wordListKind?.name,
                 "outcome" to "skip",
             )
             return

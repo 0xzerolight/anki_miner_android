@@ -838,6 +838,62 @@ class SetupViewModelTest {
         }
 
     @Test
+    fun `a word list pick never displaces a queued pick for the other list`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val resources = FakeResourceManager()
+            resources.setStartupReadiness(ResourceStartupReadiness.RECOVERING)
+            val model =
+                viewModel(
+                    FakeSettingsRepository(AppSettings()),
+                    FakeAnkiSetupManager(emptyList()),
+                    resources,
+                    SavedStateHandle(),
+                )
+            advanceUntilIdle()
+
+            model.importWordList("content://blacklist.txt", WordListKind.BLACKLIST)
+            advanceUntilIdle()
+            assertEquals(emptyList<Pair<String, WordListKind>>(), resources.wordListImports)
+
+            // Both launchers stay live while a pick is queued, so the whitelist one can arrive here.
+            model.importWordList("content://whitelist.txt", WordListKind.WHITELIST)
+            resources.setStartupReadiness(ResourceStartupReadiness.READY)
+            advanceUntilIdle()
+
+            assertEquals(
+                listOf("content://blacklist.txt" to WordListKind.BLACKLIST),
+                resources.wordListImports,
+            )
+        }
+
+    @Test
+    fun `a repeated pick for the same word list replaces the queued one`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val resources = FakeResourceManager()
+            resources.setStartupReadiness(ResourceStartupReadiness.RECOVERING)
+            val model =
+                viewModel(
+                    FakeSettingsRepository(AppSettings()),
+                    FakeAnkiSetupManager(emptyList()),
+                    resources,
+                    SavedStateHandle(),
+                )
+            advanceUntilIdle()
+
+            model.importWordList("content://blacklist-old.txt", WordListKind.BLACKLIST)
+            advanceUntilIdle()
+            model.importWordList("content://blacklist-new.txt", WordListKind.BLACKLIST)
+            resources.setStartupReadiness(ResourceStartupReadiness.READY)
+            advanceUntilIdle()
+
+            // The slot being answered is its own, so the newer file is what imports.
+            assertEquals(
+                listOf("content://blacklist-new.txt" to WordListKind.BLACKLIST),
+                resources.wordListImports,
+            )
+        }
+
+    @Test
     fun `an interrupted whitelist import still offers the whitelist picker after recreation`() =
         runTest(mainDispatcherRule.dispatcher) {
             val savedState = SavedStateHandle()
