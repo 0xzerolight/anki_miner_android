@@ -17,6 +17,7 @@ from engine_sync.golden_contract_v2 import (
     derive_and_compare,
     validate_committed_fixture,
 )
+from engine_sync.golden_exporter_overlay import MATERIALIZED_SHA256
 
 
 class GoldenV2ContractTests(unittest.TestCase):
@@ -83,6 +84,19 @@ class GoldenV2ContractTests(unittest.TestCase):
                     destination.write_bytes(canonical_json_bytes(changed) + b"\n")
                     with self.assertRaises(GoldenV2Error):
                         validate_committed_fixture(root)
+
+    def test_fixture_validator_rejects_a_stale_exporter_overlay(self) -> None:
+        # This is the check CI runs, so an overlay left behind by a re-pin fails
+        # the secretless host job instead of waiting for a desktop derivation.
+        stale = dict(MATERIALIZED_SHA256)
+        stale["engine_golden_contract_v2.py"] = "0" * 64
+        with mock.patch("engine_sync.golden_contract_v2.MATERIALIZED_SHA256", stale):
+            with self.assertRaisesRegex(GoldenV2Error, "stale"):
+                validate_committed_fixture(self.project_root)
+        del stale["engine_golden_contract_v2.py"]
+        with mock.patch("engine_sync.golden_contract_v2.MATERIALIZED_SHA256", stale):
+            with self.assertRaisesRegex(GoldenV2Error, "file set changed"):
+                validate_committed_fixture(self.project_root)
 
     def test_derivation_rejects_byte_drift(self) -> None:
         fixture = validate_committed_fixture(self.project_root)

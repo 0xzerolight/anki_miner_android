@@ -1,12 +1,17 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
 
 from engine_sync import golden_exporter_overlay as overlay
+
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+LOCK_PATH = PROJECT_ROOT / "tools/engine-sync/engine.lock"
+FIXTURE_PATH = PROJECT_ROOT / "golden/engine-v2.json"
 
 
 def _attestation(content: bytes) -> tuple[str, str]:
@@ -38,7 +43,7 @@ class GoldenExporterOverlayTests(unittest.TestCase):
         self.expected = dict(self.contents)
         self.expected["engine_golden_contract_v2.py"] = self.expected[
             "engine_golden_contract_v2.py"
-        ].replace(overlay.DESKTOP_REVISION_LINE, overlay.ANDROID_REVISION_LINE)
+        ].replace(overlay.DESKTOP_REVISION_LINE, overlay.android_revision_line())
         self.materialized_sha256 = {
             name: hashlib.sha256(content).hexdigest()
             for name, content in self.expected.items()
@@ -68,7 +73,7 @@ class GoldenExporterOverlayTests(unittest.TestCase):
             (self.root / "output/tests/fixtures/goldens/engine-v2.schema.json").read_bytes(),
         )
         reconstructed = self.expected["engine_golden_contract_v2.py"].replace(
-            overlay.ANDROID_REVISION_LINE, overlay.DESKTOP_REVISION_LINE
+            overlay.android_revision_line(), overlay.DESKTOP_REVISION_LINE
         )
         self.assertEqual(self.contents["engine_golden_contract_v2.py"], reconstructed)
 
@@ -79,21 +84,39 @@ class GoldenExporterOverlayTests(unittest.TestCase):
         ):
             self.materialize()
 
-    def test_production_patch_targets_the_frozen_revision_exactly(self) -> None:
-        self.assertIn(b"ba3b3cfbcc53e57a440c8b9f157209851408c62a", overlay.DESKTOP_REVISION_LINE)
-        self.assertIn(b"6f57f836b59d5e375a26c883482c158c06c47da9", overlay.ANDROID_REVISION_LINE)
-        self.assertEqual(
-            "b635f9328cf2ef252dfeab2dddb2528a369daa62e6607d824333745a6a51e6e9",
-            overlay.MATERIALIZED_SHA256["engine_golden_contract_v2.py"],
-        )
-        # Both identities of the desktop source move whenever the exporter itself
-        # changes; the materializer checks them before it patches the revision.
-        self.assertEqual(
-            (
-                "0bca8b86e58a467c0a4359ccc0ffcab0f362d37c021ca435688b961c4ff54e8f",
-                "c78d56e4de8845637651a5fc5871cbe4b9695634",
-            ),
-            overlay.SOURCE_ATTESTATIONS["engine_golden_contract_v2.py"],
+
+class ProductionOverlayPinTests(unittest.TestCase):
+    """Every expectation here is derived from engine.lock or the committed fixture."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.revision = LOCK_PATH.read_text(encoding="ascii").strip()
+        fixture = json.loads(FIXTURE_PATH.read_text(encoding="utf-8"))
+        cls.fixture_files = fixture["provenance"]["tool"]["files_sha256"]
+
+    def test_overlay_reads_the_repository_engine_lock(self) -> None:
+        self.assertEqual(LOCK_PATH, overlay.LOCK_PATH)
+
+    def test_android_revision_line_tracks_engine_lock(self) -> None:
+        expected = b'PINNED_ENGINE_REVISION = "' + self.revision.encode("ascii") + b'"'
+        self.assertEqual(expected, overlay.android_revision_line())
+        self.assertNotEqual(overlay.DESKTOP_REVISION_LINE, overlay.android_revision_line())
+
+    def test_materialized_hashes_match_the_committed_fixture(self) -> None:
+        # The fixture records the hashes of the files the exporter actually ran,
+        # so a stale overlay cannot describe the pin the fixture was derived at.
+        self.assertEqual(self.fixture_files, overlay.MATERIALIZED_SHA256)
+
+    def test_unpatched_sources_pass_through_to_the_fixture_unchanged(self) -> None:
+        for name in ("dump_engine_goldens.py", "prepare_golden_unidic.py"):
+            with self.subTest(name=name):
+                self.assertEqual(
+                    overlay.SOURCE_ATTESTATIONS[name][0], self.fixture_files[name]
+                )
+        # The one patched file must differ from its desktop source attestation.
+        patched = "engine_golden_contract_v2.py"
+        self.assertNotEqual(
+            overlay.SOURCE_ATTESTATIONS[patched][0], self.fixture_files[patched]
         )
 
 

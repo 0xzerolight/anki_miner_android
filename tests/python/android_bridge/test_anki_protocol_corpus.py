@@ -25,6 +25,7 @@ from jsonschema import Draft202012Validator
 from jsonschema.exceptions import ValidationError
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
+README_PATH = PROJECT_ROOT / "golden/README.md"
 CORPUS_PATH = PROJECT_ROOT / "golden/bridge/anki-protocol-v1.jsonl"
 SCHEMA_PATH = PROJECT_ROOT / "app/src/main/python/android_bridge/schemas/anki.schema.json"
 
@@ -655,6 +656,24 @@ def test_corpus_freezes_all_operation_and_result_variants() -> None:
         "absent",
     }
     assert {payload["code"] for payload in accepted_payloads if "operation" in payload} == _ERROR_CODES
+
+
+def test_corpus_size_matches_the_golden_readme() -> None:
+    # The expectations are read out of the prose, so a corpus change cannot be
+    # absorbed by editing this test -- golden/README.md is what has to move.
+    prose = " ".join(README_PATH.read_text(encoding="utf-8").split())
+    documented = re.search(
+        r"`bridge/anki-protocol-v1\.jsonl` — (\d+) envelope cases "
+        r"\((\d+) request, (\d+) response; (\d+) accept, (\d+) reject\)",
+        prose,
+    )
+    assert documented is not None, "golden/README.md no longer states the anki-protocol-v1 counts"
+    total, request, response, accept, reject = (int(group) for group in documented.groups())
+    assert len(_CORPUS) == total
+    assert len([case for case in _CORPUS if case.direction == "request"]) == request
+    assert len([case for case in _CORPUS if case.direction == "response"]) == response
+    assert len([case for case in _CORPUS if case.expectation.outcome == "accept"]) == accept
+    assert len([case for case in _CORPUS if case.expectation.outcome == "reject"]) == reject
 
 
 def test_corpus_constructions_and_rejection_categories_stay_covered() -> None:
