@@ -75,6 +75,11 @@ data class TokenizerIdentity(
     val totalBytes: Long,
 )
 
+data class DefinitionEntry(
+    val source: String,
+    val html: String,
+)
+
 data class TerminalError(
     val code: String,
     val message: String,
@@ -143,6 +148,19 @@ sealed interface BridgeMessage {
     data class TokenizerConfigure(val configuration: TokenizerConfiguration) : BridgeMessage
 
     data class TokenizerReady(val identity: TokenizerIdentity) : BridgeMessage
+
+    data class DictionaryDefineRequest(
+        val runId: String,
+        val term: String,
+        val fallbackTerm: String?,
+    ) : BridgeMessage
+
+    data class DictionaryDefineResult(
+        val runId: String,
+        val term: String,
+        val matchedTerm: String,
+        val entries: List<DefinitionEntry>,
+    ) : BridgeMessage
 
     data class Error(
         val code: String,

@@ -171,6 +171,18 @@ object BridgeJsonCodec {
     fun encodeDiagnosticsLogLevelSet(level: String): String =
         encode("diagnostics.loglevel.set") { generator -> generator.writeStringField("level", level) }
 
+    fun encodeDictionaryDefineRequest(
+        runId: String,
+        term: String,
+        fallbackTerm: String?,
+    ): String =
+        encode("dictionary.define") { generator ->
+            generator.writeStringField("runId", runId)
+            generator.writeStringField("term", term)
+            generator.writeFieldName("fallbackTerm")
+            if (fallbackTerm == null) generator.writeNull() else generator.writeString(fallbackTerm)
+        }
+
     fun encodeCurationResponse(
         request: CurationRequest,
         selection: List<CurationSelection>?,
@@ -258,6 +270,8 @@ object BridgeJsonCodec {
             "curation.page.response" -> readCurationPageResponse(payload)
             "curation.accepted" -> readCurationAccepted(payload)
             "curation.page.accepted" -> readCurationPageAccepted(payload)
+            "dictionary.define" -> readDictionaryDefineRequest(payload)
+            "dictionary.define.result" -> readDictionaryDefineResult(payload)
             "diagnostics.loglevel.set" -> BridgeMessage.DiagnosticsLogLevelSet(logLevel(payload, type))
             "diagnostics.loglevel.applied" -> BridgeMessage.DiagnosticsLogLevelApplied(logLevel(payload, type))
             "job.cancel" -> BridgeMessage.JobCancel(singleRunId(payload, type))
@@ -609,6 +623,40 @@ object BridgeJsonCodec {
             runId(payload.getValue("runId")),
             opaque(payload.getValue("requestId"), curationIdPattern, "curation request ID"),
             readSelections(payload.getValue("selection")),
+        )
+    }
+
+    private fun readDictionaryDefineRequest(
+        payload: Map<String, BridgeJsonValue>,
+    ): BridgeMessage.DictionaryDefineRequest {
+        requireExact(payload, setOf("runId", "term", "fallbackTerm"), "dictionary.define")
+        return BridgeMessage.DictionaryDefineRequest(
+            runId(payload.getValue("runId")),
+            text(payload.getValue("term"), "definition term"),
+            nullableText(payload.getValue("fallbackTerm"), "definition fallback term"),
+        )
+    }
+
+    private fun readDictionaryDefineResult(
+        payload: Map<String, BridgeJsonValue>,
+    ): BridgeMessage.DictionaryDefineResult {
+        requireExact(
+            payload,
+            setOf("runId", "term", "matchedTerm", "entries"),
+            "dictionary.define.result",
+        )
+        return BridgeMessage.DictionaryDefineResult(
+            runId(payload.getValue("runId")),
+            text(payload.getValue("term"), "definition term"),
+            text(payload.getValue("matchedTerm"), "definition matched term"),
+            array(payload.getValue("entries"), "definition entries").map { entry ->
+                val fields = objectValue(entry, "definition entry")
+                requireExact(fields, setOf("source", "html"), "definition entry")
+                DefinitionEntry(
+                    text(fields.getValue("source"), "definition source"),
+                    text(fields.getValue("html"), "definition html"),
+                )
+            },
         )
     }
 
@@ -1218,6 +1266,8 @@ object BridgeJsonCodec {
             is BridgeMessage.CurationPageResponse -> message.runId to message.requestId
             is BridgeMessage.CurationAccepted -> message.runId to message.requestId
             is BridgeMessage.CurationPageAccepted -> message.runId to message.requestId
+            is BridgeMessage.DictionaryDefineRequest -> message.runId to null
+            is BridgeMessage.DictionaryDefineResult -> message.runId to null
             is BridgeMessage.JobCancel -> message.runId to null
             is BridgeMessage.JobCancelled -> message.runId to null
             is BridgeMessage.Terminal -> message.runId to null

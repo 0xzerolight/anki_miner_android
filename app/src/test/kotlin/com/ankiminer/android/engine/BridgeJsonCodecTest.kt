@@ -14,6 +14,8 @@ import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
+private const val DEFINE_RUN_ID = "run_00000000000000000000000000000000"
+
 class BridgeJsonCodecTest {
     @Test
     fun `all committed valid mining protocol fixtures decode`() {
@@ -350,6 +352,65 @@ class BridgeJsonCodecTest {
         rejected.forEach { raw ->
             assertThrows(raw, BridgeProtocolException::class.java) { BridgeJsonCodec.decode(raw) }
         }
+    }
+
+    @Test
+    fun `encodes a dictionary define request`() {
+        val raw = BridgeJsonCodec.encodeDictionaryDefineRequest(DEFINE_RUN_ID, "殺る", "遣る")
+        assertEquals(
+            BridgeMessage.DictionaryDefineRequest(DEFINE_RUN_ID, "殺る", "遣る"),
+            BridgeJsonCodec.decode(raw),
+        )
+    }
+
+    @Test
+    fun `encodes a dictionary define request without a fallback`() {
+        val raw = BridgeJsonCodec.encodeDictionaryDefineRequest(DEFINE_RUN_ID, "猫", null)
+        assertEquals(
+            BridgeMessage.DictionaryDefineRequest(DEFINE_RUN_ID, "猫", null),
+            BridgeJsonCodec.decode(raw),
+        )
+    }
+
+    @Test
+    fun `decodes a dictionary define result`() {
+        val raw =
+            """{"schemaVersion":1,"type":"dictionary.define.result","payload":{"runId":"$DEFINE_RUN_ID","term":"殺る","matchedTerm":"遣る","entries":[{"source":"Jitendex","html":"<div>to do</div>"}]}}"""
+        assertEquals(
+            BridgeMessage.DictionaryDefineResult(
+                runId = DEFINE_RUN_ID,
+                term = "殺る",
+                matchedTerm = "遣る",
+                entries = listOf(DefinitionEntry("Jitendex", "<div>to do</div>")),
+            ),
+            BridgeJsonCodec.decode(raw),
+        )
+    }
+
+    @Test
+    fun `decodes an empty dictionary define result`() {
+        val raw =
+            """{"schemaVersion":1,"type":"dictionary.define.result","payload":{"runId":"$DEFINE_RUN_ID","term":"ぬぬぬ","matchedTerm":"ぬぬぬ","entries":[]}}"""
+        val decoded = BridgeJsonCodec.decode(raw) as BridgeMessage.DictionaryDefineResult
+        assertTrue(decoded.entries.isEmpty())
+    }
+
+    @Test
+    fun `rejects a dictionary define result with an unknown field`() {
+        val raw =
+            """{"schemaVersion":1,"type":"dictionary.define.result","payload":{"runId":"$DEFINE_RUN_ID","term":"猫","matchedTerm":"猫","entries":[],"extra":1}}"""
+        assertThrows(BridgeProtocolException::class.java) { BridgeJsonCodec.decode(raw) }
+    }
+
+    @Test
+    fun `rejects a dictionary define result for another run`() {
+        val other = "run_${"1".repeat(32)}"
+        val raw =
+            """{"schemaVersion":1,"type":"dictionary.define.result","payload":{"runId":"$other","term":"猫","matchedTerm":"猫","entries":[]}}"""
+        assertEquals(
+            BridgeProtocolCategory.STALE_RUN,
+            protocolFailure { BridgeJsonCodec.decode(raw, DEFINE_RUN_ID) }.category,
+        )
     }
 
     @Test
