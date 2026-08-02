@@ -90,6 +90,7 @@
     <string name="result_no_items">None</string>
     <string name="result_unknown_file">Unknown file</string>
     <string name="result_error_item">• %1$s</string>
+    <string name="mining_notice_no_definition">No dictionary entry for %1$d word(s), so no card was made: %2$s</string>
     <string name="result_metric_created">Created</string>
     <string name="result_metric_skipped_new">Skipped / new</string>
     <string name="result_metric_skipped_new_value">%1$d / %2$d</string>

@@ -84,6 +84,7 @@
     <string name="result_no_items">なし</string>
     <string name="result_unknown_file">不明なファイル</string>
     <string name="result_error_item">• %1$s</string>
+    <string name="mining_notice_no_definition">辞書に項目がないため、%1$d 語はカードになりませんでした: %2$s</string>
     <string name="result_metric_created">作成</string>
     <string name="result_metric_skipped_new">スキップ / 新規</string>
     <string name="result_metric_skipped_new_value">%1$d / %2$d</string>

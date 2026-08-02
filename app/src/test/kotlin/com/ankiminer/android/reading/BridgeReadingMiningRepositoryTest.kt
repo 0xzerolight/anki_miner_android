@@ -1125,6 +1125,32 @@ class BridgeReadingMiningRepositoryTest {
     }
 
     @Test
+    fun `engine no-definition warning reaches the result restated`() {
+        val harness = harness(presenterWarning = NO_DEFINITION_WARNING)
+
+        runBlocking { harness.repository.startReading(INPUT) }
+        val curating =
+            awaitState(harness.repository) { it is MiningRunState.Curating } as MiningRunState.Curating
+        runBlocking {
+            harness.repository.confirmCuration(
+                curating.request.runId,
+                curating.request.requestId,
+                FIRST_SELECTION,
+            )
+        }
+
+        assertTrue(harness.bridge.curationSubmitted.await(2, TimeUnit.SECONDS))
+        harness.bridge.allowTerminal.countDown()
+
+        val success =
+            awaitState(harness.repository, MiningRunState::isTerminal) as MiningRunState.Success
+        assertEquals(
+            listOf("No dictionary entry for 2 word(s), so no card was made: 本好き, 編み"),
+            success.result.errors,
+        )
+    }
+
+    @Test
     fun `presenter warning survives the retained terminal error cap`() {
         val harness =
             harness(
@@ -2063,6 +2089,7 @@ class BridgeReadingMiningRepositoryTest {
         val HOSTILE_PROGRESS =
             """{"schemaVersion":1,"type":"progress.update","payload":{"runId":"$RUN_ID","current":2,"description":"Definition found: $MINED_TERM"}}"""
         const val PRESENTER_WARNING_MESSAGE = "Offline sentence audio is unavailable"
+        const val NO_DEFINITION_WARNING = "Skipped 2 words with no definition found: 本好き, 編み"
         const val PRESENTER_WARNING_PLACEHOLDER = "__WARNING__"
         val PRESENTER_WARNING =
             """{"schemaVersion":1,"type":"presenter.event","payload":{"runId":"$RUN_ID","kind":"warning","message":"$PRESENTER_WARNING_PLACEHOLDER"}}"""

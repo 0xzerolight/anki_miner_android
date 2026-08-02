@@ -21,6 +21,7 @@ import com.ankiminer.android.engine.PyBridge
 import com.ankiminer.android.engine.ReadingMiningSourceKind
 import com.ankiminer.android.engine.ReadingMiningWireRequest
 import com.ankiminer.android.engine.TokenizerConfiguration
+import com.ankiminer.android.localization.EngineNoticeRewriter
 import com.ankiminer.android.localization.StringResourceResolver
 import com.ankiminer.android.media.FileCopyCancellation
 import com.ankiminer.android.media.ProviderIoCancellationRegistration
@@ -217,6 +218,7 @@ internal class BridgeReadingMiningRepository(
     }
 
     private val monitor = Any()
+    private val noticeRewriter = EngineNoticeRewriter(strings)
     private val startupInterruption = interruptionStore.startupInterruption()
 
     /** Recognised whichever lane wrote it: one durable record covers both, so either can clear it. */
@@ -1656,7 +1658,8 @@ internal class BridgeReadingMiningRepository(
                             }.map { it.message }
                     is PresenterEvent.Processing -> emptyList()
                 }
-            notices.forEach { notice ->
+            // Rewrite before the dedup so two spellings of one notice cannot both survive.
+            notices.map(noticeRewriter::rewrite).forEach { notice ->
                 if (
                     run.presenterNotices.size < MAX_PRESENTER_NOTICES &&
                     notice !in run.presenterNotices

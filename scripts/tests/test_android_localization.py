@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib.util
 import re
 import subprocess
 import sys
@@ -338,6 +339,43 @@ class AndroidLocalizationAuditTest(unittest.TestCase):
         self.assertEqual(expected_reasons, set(reason_map))
         self._assert_distinct_non_empty_resources(list(reason_map.values()))
         self.assertIn("status.code.wireName", application)
+
+    def test_engine_notice_rewriter_still_matches_the_vendored_template(self) -> None:
+        """Pin both halves of the rewrite: the vendored engine literal and the Kotlin regex.
+
+        ``EngineNoticeRewriter`` restates a warning whose wording is owned by the vendored engine,
+        so an ``engine.lock`` re-pin that reworded it would leave the rule matching nothing and the
+        old copy back on screen with no test failing. Rendering the real template through the real
+        ``tr_format`` and running the Kotlin pattern over the result fails closed on either drift.
+        """
+        template = "Skipped %1 words with no definition found: %2%3"
+        processor = (REPO_ROOT / "app/src/main/python/anki_miner/orchestration/episode_processor.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn(template, processor)
+
+        rewriter = (
+            REPO_ROOT / "app/src/main/kotlin/com/ankiminer/android/localization/EngineNoticeRewriter.kt"
+        ).read_text(encoding="utf-8")
+        pattern_match = re.search(r'Regex\("""(.+?)"""', rewriter)
+        self.assertIsNotNone(pattern_match, "EngineNoticeRewriter no longer declares a raw-string Regex")
+        assert pattern_match is not None
+        self.assertIn("mining_notice_no_definition", rewriter)
+        self.assertIn("mining_notice_no_definition", self._source_strings())
+
+        i18n_spec = importlib.util.spec_from_file_location(
+            "_engine_i18n",
+            REPO_ROOT / "app/src/main/python/anki_miner/utils/i18n.py",
+        )
+        assert i18n_spec is not None and i18n_spec.loader is not None
+        i18n = importlib.util.module_from_spec(i18n_spec)
+        i18n_spec.loader.exec_module(i18n)
+
+        rendered = i18n.tr_format(template, 2, "本好き, 編み", " (+3 more)")
+        matched = re.fullmatch(pattern_match.group(1), rendered, re.DOTALL)
+        self.assertIsNotNone(matched, rendered)
+        assert matched is not None
+        self.assertEqual(("2", "本好き, 編み (+3 more)"), matched.groups())
 
     def test_extracted_mokuro_progress_copy_is_exact(self) -> None:
         strings = self._source_strings()
