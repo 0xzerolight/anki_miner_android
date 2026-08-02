@@ -67,6 +67,7 @@ def schemas() -> dict[str, dict[str, Any]]:
         "mining": _load_schema("mining.schema.json"),
         "engine_events": _load_schema("engine-events.schema.json"),
         "tokenizer": _load_schema("tokenizer.schema.json"),
+        "dictionary": _load_schema("dictionary.schema.json"),
     }
 
 
@@ -174,6 +175,34 @@ def test_all_checked_in_schemas_self_validate_as_draft_2020_12(
     for schema in schemas.values():
         assert schema["$schema"] == "https://json-schema.org/draft/2020-12/schema"
         Draft202012Validator.check_schema(schema)
+
+
+def test_dictionary_schema_accepts_valid_and_rejects_invalid_requests_and_results(
+    schemas: dict[str, dict[str, Any]],
+) -> None:
+    validator = Draft202012Validator(schemas["dictionary"])
+    run_id = "run_" + "a" * 32
+    valid_request = {"runId": run_id, "term": "猫", "fallbackTerm": None}
+    valid_result = {
+        "runId": run_id,
+        "term": "猫",
+        "matchedTerm": "猫",
+        "entries": [{"source": "Jitendex", "html": "<div>cat</div>"}],
+    }
+    validator.validate(valid_request)
+    validator.validate(valid_result)
+
+    invalid_request = {"runId": run_id, "term": "猫"}
+    invalid_result = {
+        "runId": run_id,
+        "term": "猫",
+        "matchedTerm": "猫",
+        "entries": [{"source": "Jitendex", "html": "<div>cat</div>", "extra": True}],
+    }
+    with pytest.raises(ValidationError):
+        validator.validate(invalid_request)
+    with pytest.raises(ValidationError):
+        validator.validate(invalid_result)
 
 
 def test_kotlin_facing_config_mining_and_event_integers_have_explicit_bounds(

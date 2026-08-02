@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://anki-miner.app/schemas/android-bridge/v1/dictionary.json",
+  "title": "Anki Miner Android on-demand dictionary lookup payload",
+  "$comment": "Offline providers only; the preview never performs network I/O. fallbackTerm is a miss-only lemma retry and never overrides a hit on term. Total entry HTML is bounded at 524288 UTF-8 bytes at runtime.",
+  "oneOf": [
+    {"$ref": "#/$defs/request"},
+    {"$ref": "#/$defs/result"}
+  ],
+  "$defs": {
+    "runId": {"type": "string", "pattern": "^run_[0-9a-f]{32}$"},
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runId", "term", "fallbackTerm"],
+      "properties": {
+        "runId": {"$ref": "#/$defs/runId"},
+        "term": {"type": "string", "minLength": 1},
+        "fallbackTerm": {"type": ["string", "null"]}
+      }
+    },
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runId", "term", "matchedTerm", "entries"],
+      "properties": {
+        "runId": {"$ref": "#/$defs/runId"},
+        "term": {"type": "string", "minLength": 1},
+        "matchedTerm": {"type": "string", "minLength": 1},
+        "entries": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["source", "html"],
+            "properties": {
+              "source": {"type": "string"},
+              "html": {"type": "string"}
+            }
+          }
+        }
+      }
+    }
+  }
+}

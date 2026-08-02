@@ -19,6 +19,13 @@ from android_bridge.jobs import JobRegistry
 from android_bridge.protocol import BridgeProtocolError, decode_envelope, encode_message
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
+LIFECYCLE_RUN_ID = "run_" + "3" * 32
+
+
+def _snapshot_present(run_id: str) -> bool:
+    from android_bridge import definitions
+
+    return definitions._run_configs.get(run_id) is not None
 
 
 @dataclass
@@ -631,6 +638,7 @@ def test_process_episode_receives_exact_desktop_contract_and_cleans_lifo(
 
     adapters = SimpleNamespace(
         anki=anki_callbacks,
+        run_id=LIFECYCLE_RUN_ID,
         cancel_event=cancel_event,
         progress=progress,
         curate=curate,
@@ -711,6 +719,94 @@ def test_process_episode_receives_exact_desktop_contract_and_cleans_lifo(
     ]
 
 
+def _episode_lifecycle_harness(
+    monkeypatch: pytest.MonkeyPatch,
+    processor: object,
+    cancel_event: threading.Event,
+) -> tuple[object, object, object]:
+    class FakeAdapter:
+        def __init__(self, *_: object, **__: object) -> None:
+            pass
+
+        def __enter__(self) -> FakeAdapter:
+            return self
+
+        def __exit__(self, *_: object) -> None:
+            pass
+
+    monkeypatch.setattr(anki_adapter_module, "AndroidAnkiAdapter", FakeAdapter)
+    monkeypatch.setattr(mining, "_build_processor", lambda *_: processor)
+    adapters = SimpleNamespace(
+        anki=object(),
+        run_id=LIFECYCLE_RUN_ID,
+        cancel_event=cancel_event,
+        progress=object(),
+        curate=lambda candidates: candidates,
+    )
+    return mining._parse_request(_request()), object(), adapters
+
+
+def test_process_episode_registers_snapshot_during_success_and_clears_after(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    visible: list[bool] = []
+
+    class FakeProcessor:
+        def process_episode(self, *_: object, **__: object) -> str:
+            visible.append(_snapshot_present(LIFECYCLE_RUN_ID))
+            return "result"
+
+        def close(self) -> None:
+            pass
+
+    args = _episode_lifecycle_harness(monkeypatch, FakeProcessor(), threading.Event())
+    assert mining._process_episode(*args) == "result"
+    assert visible == [True]
+    assert not _snapshot_present(LIFECYCLE_RUN_ID)
+
+
+def test_process_episode_clears_snapshot_when_engine_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    visible: list[bool] = []
+
+    class FakeProcessor:
+        def process_episode(self, *_: object, **__: object) -> object:
+            visible.append(_snapshot_present(LIFECYCLE_RUN_ID))
+            raise RuntimeError("engine failed")
+
+        def close(self) -> None:
+            pass
+
+    args = _episode_lifecycle_harness(monkeypatch, FakeProcessor(), threading.Event())
+    with pytest.raises(RuntimeError, match="engine failed"):
+        mining._process_episode(*args)
+    assert visible == [True]
+    assert not _snapshot_present(LIFECYCLE_RUN_ID)
+
+
+def test_process_episode_clears_snapshot_when_processing_is_cancelled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    visible: list[bool] = []
+    cancel_event = threading.Event()
+
+    class FakeProcessor:
+        def process_episode(self, *_: object, **__: object) -> str:
+            visible.append(_snapshot_present(LIFECYCLE_RUN_ID))
+            cancel_event.set()
+            return "cancelled"
+
+        def close(self) -> None:
+            pass
+
+    args = _episode_lifecycle_harness(monkeypatch, FakeProcessor(), cancel_event)
+    assert mining._process_episode(*args) == "cancelled"
+    assert visible == [True]
+    assert cancel_event.is_set()
+    assert not _snapshot_present(LIFECYCLE_RUN_ID)
+
+
 def test_process_episode_cancelled_at_entry_opens_no_resources(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -760,6 +856,7 @@ def test_process_episode_cleans_resources_when_engine_raises_baseexception(
     request = mining._parse_request(_request())
     adapters = SimpleNamespace(
         anki=object(),
+        run_id=LIFECYCLE_RUN_ID,
         cancel_event=threading.Event(),
         progress=object(),
         curate=lambda _: [],
@@ -803,6 +900,7 @@ def test_cleanup_failure_does_not_mask_engine_baseexception(
     request = mining._parse_request(_request())
     adapters = SimpleNamespace(
         anki=object(),
+        run_id=LIFECYCLE_RUN_ID,
         cancel_event=threading.Event(),
         progress=object(),
         curate=lambda _: [],
@@ -843,6 +941,7 @@ def test_processor_close_failure_still_exits_adapter(
     request = mining._parse_request(_request())
     adapters = SimpleNamespace(
         anki=object(),
+        run_id=LIFECYCLE_RUN_ID,
         cancel_event=threading.Event(),
         progress=object(),
         curate=lambda _: [],
@@ -890,6 +989,7 @@ def test_post_success_cleanup_baseexception_is_not_converted_to_failed_result(
     request = mining._parse_request(_request())
     adapters = SimpleNamespace(
         anki=object(),
+        run_id=LIFECYCLE_RUN_ID,
         cancel_event=threading.Event(),
         progress=object(),
         curate=lambda _: [],

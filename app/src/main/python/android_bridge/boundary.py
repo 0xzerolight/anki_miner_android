@@ -67,6 +67,7 @@ def _dispatch_validated(
         "resource.pitch.import",
         "resource.unidic.install",
         "tokenizer.configure",
+        "dictionary.define",
     }
     if request_type not in supported_after_bootstrap:
         raise BridgeProtocolError("unsupported_operation", f"Unsupported bridge operation: {request_type}")
@@ -126,6 +127,11 @@ def _dispatch_validated(
         from .tokenizer_runtime import configure_tokenizer
 
         return configure_tokenizer(payload)
+
+    if request_type == "dictionary.define":
+        from .definitions import define_word
+
+        return define_word(payload)
 
     if request_type == "mining.video.run":
         if callbacks is None:
