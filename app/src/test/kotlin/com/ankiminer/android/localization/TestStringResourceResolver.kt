@@ -19,6 +19,9 @@ internal val testStringResourceResolver =
                 "Install the Japanese tokenizer resource before mining"
             R.string.mining_admission_recovery_required ->
                 "Anki recovery must be resolved before another mining run"
+            R.string.mining_notice_no_definition ->
+                "No dictionary entry for ${formatArguments[0]} word(s), " +
+                    "so no card was made: ${formatArguments[1]}"
             R.string.setup_default_frequency_name -> "Imported frequency"
             R.string.setup_default_pitch_name -> "Imported pitch accent"
             else ->

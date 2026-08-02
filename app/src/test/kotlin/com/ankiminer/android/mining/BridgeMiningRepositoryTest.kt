@@ -1118,6 +1118,32 @@ class BridgeMiningRepositoryTest {
     }
 
     @Test
+    fun `engine no-definition warning reaches the result restated`() {
+        val harness = harness(presenterWarning = NO_DEFINITION_WARNING)
+
+        runBlocking { harness.repository.startVideo(INPUT) }
+        val curating =
+            awaitState(harness.repository) { it is MiningRunState.Curating } as MiningRunState.Curating
+        runBlocking {
+            harness.repository.confirmCuration(
+                curating.request.runId,
+                curating.request.requestId,
+                emptyList(),
+            )
+        }
+
+        assertTrue(harness.bridge.curationSubmitted.await(2, TimeUnit.SECONDS))
+        harness.bridge.allowTerminal.countDown()
+
+        val success =
+            awaitState(harness.repository, MiningRunState::isTerminal) as MiningRunState.Success
+        assertEquals(
+            listOf("No dictionary entry for 2 word(s), so no card was made: 本好き, 編み"),
+            success.result.errors,
+        )
+    }
+
+    @Test
     fun `presenter warning survives the retained terminal error cap`() {
         val harness =
             harness(
@@ -1775,6 +1801,7 @@ class BridgeMiningRepositoryTest {
         const val TOKENIZER_SHA = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
         const val MAX_RESULT_ERRORS = 256
         const val PRESENTER_WARNING_MESSAGE = "Offline sentence audio is unavailable"
+        const val NO_DEFINITION_WARNING = "Skipped 2 words with no definition found: 本好き, 編み"
         const val PRESENTER_WARNING_PLACEHOLDER = "__WARNING__"
         val FIRST_SELECTION = listOf(CurationSelection(CANDIDATE_ID, SENTENCE_ID))
 
