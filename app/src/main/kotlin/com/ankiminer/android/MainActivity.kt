@@ -77,6 +77,21 @@ class MainActivity : ComponentActivity() {
             timingPreviewOpener = app.timingPreviewLoader,
         )
     }
+    private val audioViewModelFactory by lazy {
+        val app = application as AnkiMinerApplication
+        MediaMiningViewModel.Factory(
+            repository = MiningRepositoryFactory.createAudio(app),
+            safBroker = app.safBroker,
+            lane = MiningLane.AUDIO,
+            definitionLookup = app.definitionLookupService,
+            cueLookup = app.subtitleCueLookupService,
+            runtimeWorkState = app.runtimeWorkState,
+            selectionInventory = app.safSelectionInventory,
+            effectiveSubtitleOffset =
+                app.settingsRepository.settings.map { it.subtitleOffsetSeconds },
+            timingPreviewOpener = app.timingPreviewLoader,
+        )
+    }
     private val setupViewModelFactory by lazy {
         val app = application as AnkiMinerApplication
         SetupViewModel.Factory(
@@ -152,21 +167,36 @@ class MainActivity : ComponentActivity() {
                 )
             }
             AnkiMinerTheme(darkTheme = darkTheme) {
-                val miningViewModel: MediaMiningViewModel = viewModel(factory = viewModelFactory)
+                val videoMiningViewModel: MediaMiningViewModel =
+                    viewModel(
+                        key = MiningLane.VIDEO.savedStateKeyPrefix,
+                        factory = viewModelFactory,
+                    )
+                val audioMiningViewModel: MediaMiningViewModel =
+                    viewModel(
+                        key = MiningLane.AUDIO.savedStateKeyPrefix,
+                        factory = audioViewModelFactory,
+                    )
                 val readingViewModel: ReadingMiningViewModel =
                     viewModel(factory = readingViewModelFactory)
                 val setupViewModel: SetupViewModel = viewModel(factory = setupViewModelFactory)
                 val settingsViewModel: SettingsViewModel = viewModel(factory = settingsViewModelFactory)
                 val diagnosticsBuild = remember { currentTesterBuildIdentity() }
                 val diagnosticsViewModelFactory =
-                    remember(app, setupViewModel, miningViewModel, readingViewModel) {
+                    remember(
+                        app,
+                        setupViewModel,
+                        videoMiningViewModel,
+                        audioMiningViewModel,
+                        readingViewModel,
+                    ) {
                         DiagnosticsViewModel.Factory(
                             app.createDiagnosticsExporter {
                                 TesterDiagnosticsBuilder.build(
                                     build = diagnosticsBuild,
                                     setup = setupViewModel.uiState.value,
-                                    video = miningViewModel.uiState.value,
-                                    audio = miningViewModel.uiState.value,
+                                    video = videoMiningViewModel.uiState.value,
+                                    audio = audioMiningViewModel.uiState.value,
                                     reading = readingViewModel.uiState.value,
                                     lastAnkiFault = AnkiFaultRecorder.lastFault(),
                                 ).report
@@ -188,8 +218,8 @@ class MainActivity : ComponentActivity() {
                         setupViewModel.permissionsReturned()
                     }
                 AnkiMinerApp(
-                    videoViewModel = miningViewModel,
-                    audioViewModel = miningViewModel,
+                    videoViewModel = videoMiningViewModel,
+                    audioViewModel = audioMiningViewModel,
                     readingViewModel = readingViewModel,
                     setupViewModel = setupViewModel,
                     settingsViewModel = settingsViewModel,

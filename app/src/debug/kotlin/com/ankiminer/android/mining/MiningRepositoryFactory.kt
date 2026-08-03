@@ -10,4 +10,11 @@ internal object MiningRepositoryFactory {
         } else {
             FakeMiningRepository()
         }
+
+    fun createAudio(application: AnkiMinerApplication): MiningRepository =
+        if (BuildConfig.S1A_PUBLICATION_VERIFIED) {
+            application.audioRepository
+        } else {
+            FakeMiningRepository()
+        }
 }
