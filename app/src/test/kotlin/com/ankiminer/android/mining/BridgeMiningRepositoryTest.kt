@@ -10,6 +10,7 @@ import com.ankiminer.android.diagnostics.log.LogLevel
 import com.ankiminer.android.diagnostics.log.NoOpSink
 import com.ankiminer.android.diagnostics.log.RecordingLogSink
 import com.ankiminer.android.engine.BridgeJsonCodec
+import com.ankiminer.android.engine.BridgeJsonValue
 import com.ankiminer.android.engine.BridgeMessage
 import com.ankiminer.android.engine.EngineCallbacks
 import com.ankiminer.android.engine.MiningConfigSnapshot
@@ -710,6 +711,94 @@ class BridgeMiningRepositoryTest {
         assertTrue(harness.bridge.cancellationSubmitted.await(2, TimeUnit.SECONDS))
         harness.bridge.allowTerminal.countDown()
         assertTrue(awaitState(harness.repository, MiningRunState::isTerminal) is MiningRunState.Cancelled)
+    }
+
+    @Test
+    fun `per-run subtitle offset override replaces the resolved snapshot value`() {
+        val harness =
+            harness(
+                configSnapshotResolver =
+                    MiningConfigSnapshotResolver {
+                        MiningConfigSnapshot(
+                            mapOf("subtitle_offset" to BridgeJsonValue.Decimal(-2.0)),
+                            false,
+                        )
+                    },
+            )
+
+        runBlocking { harness.repository.startVideo(INPUT.copy(subtitleOffsetOverride = 1.5)) }
+        val curating = awaitState(harness.repository) { it is MiningRunState.Curating } as MiningRunState.Curating
+
+        assertEquals(
+            BridgeJsonValue.Decimal(1.5),
+            harness.bridge.videoRequest.get()!!.configSnapshot.settings["subtitle_offset"],
+        )
+
+        runBlocking { harness.repository.cancel(curating.request.runId) }
+        assertTrue(harness.bridge.cancellationSubmitted.await(2, TimeUnit.SECONDS))
+        harness.bridge.allowTerminal.countDown()
+        awaitState(harness.repository, MiningRunState::isTerminal)
+    }
+
+    @Test
+    fun `null subtitle offset override keeps the resolved snapshot untouched`() {
+        val harness =
+            harness(
+                configSnapshotResolver =
+                    MiningConfigSnapshotResolver {
+                        MiningConfigSnapshot(
+                            mapOf("subtitle_offset" to BridgeJsonValue.Decimal(-2.0)),
+                            false,
+                        )
+                    },
+            )
+
+        runBlocking { harness.repository.startVideo(INPUT) }
+        val curating = awaitState(harness.repository) { it is MiningRunState.Curating } as MiningRunState.Curating
+
+        assertEquals(
+            BridgeJsonValue.Decimal(-2.0),
+            harness.bridge.videoRequest.get()!!.configSnapshot.settings["subtitle_offset"],
+        )
+
+        runBlocking { harness.repository.cancel(curating.request.runId) }
+        assertTrue(harness.bridge.cancellationSubmitted.await(2, TimeUnit.SECONDS))
+        harness.bridge.allowTerminal.countDown()
+        awaitState(harness.repository, MiningRunState::isTerminal)
+    }
+
+    @Test
+    fun `curating publishes the staged media paths and keeps them across pages`() {
+        val harness = harness(pagedCuration = true)
+
+        runBlocking { harness.repository.startVideo(INPUT) }
+        val first = awaitState(harness.repository) {
+            (it as? MiningRunState.Curating)?.request?.page?.pageIndex == 0L
+        } as MiningRunState.Curating
+        assertEquals(CurationMediaBinding("/tmp/video.mkv", "/tmp/subtitle.srt"), first.media)
+
+        runBlocking {
+            harness.repository.confirmCuration(
+                first.request.runId,
+                first.request.requestId,
+                emptyList(),
+                pageIndex = 0,
+            )
+        }
+        // Whichever Curating state is current now — the transient pageSubmissionPending
+        // one from confirmCuration or the already-accepted next page — must still carry
+        // the binding; the pending state is constructed fresh, not copied.
+        val afterConfirm = harness.repository.state.value as MiningRunState.Curating
+        assertEquals(first.media, afterConfirm.media)
+        val second = awaitState(harness.repository) {
+            (it as? MiningRunState.Curating)?.request?.page?.pageIndex == 1L
+        } as MiningRunState.Curating
+        assertEquals(first.media, second.media)
+
+        runBlocking { harness.repository.cancel(second.request.runId) }
+        assertTrue(harness.bridge.cancellationSubmitted.await(2, TimeUnit.SECONDS))
+        harness.bridge.allowTerminal.countDown()
+        awaitState(harness.repository, MiningRunState::isTerminal)
     }
 
     @Test

@@ -1,5 +1,5 @@
 path	lines	reason
-app/src/main/kotlin/com/ankiminer/android/MainActivity.kt	258,260,277,279,307,309,323,325	Existing discarded catches are pinned at audit introduction; new sites require review.
+app/src/main/kotlin/com/ankiminer/android/MainActivity.kt	262,264,281,283,311,313,327,329	Existing discarded catches are pinned at audit introduction; new sites require review.
 app/src/main/kotlin/com/ankiminer/android/anki/protocol/AnkiValidators.kt	120	Existing discarded catches are pinned at audit introduction; new sites require review.
 app/src/main/kotlin/com/ankiminer/android/anki/provider/AndroidAnkiMediaStaging.kt	187	Existing discarded catches are pinned at audit introduction; new sites require review.
 app/src/main/kotlin/com/ankiminer/android/anki/provider/AnkiMediaStaging.kt	271,276,345,416,443,457	Existing discarded catches are pinned at audit introduction; new sites require review.
@@ -32,7 +32,7 @@ app/src/main/kotlin/com/ankiminer/android/diagnostics/log/LogRedactor.kt	493	Exi
 app/src/main/kotlin/com/ankiminer/android/diagnostics/log/LogSink.kt	62,76	Existing discarded catches are pinned at audit introduction; new sites require review.
 app/src/main/kotlin/com/ankiminer/android/media/BoundedFileCopier.kt	243,253	Existing discarded catches are pinned at audit introduction; new sites require review.
 app/src/main/kotlin/com/ankiminer/android/media/SafBroker.kt	224,235,350	Existing discarded catches are pinned at audit introduction; new sites require review.
-app/src/main/kotlin/com/ankiminer/android/mining/BridgeMiningRepository.kt	247,277,413,580,745,760,850,900,1047,1058,1097,1109,1178,1185,1286,1755,1760,1814	Existing discarded catches are pinned; foreground and late-ack cancellation are control flow with orderly teardown.
+app/src/main/kotlin/com/ankiminer/android/mining/BridgeMiningRepository.kt	257,287,438,585,750,765,855,905,1052,1063,1102,1114,1183,1190,1291,1765,1770,1824	Existing discarded catches are pinned; foreground and late-ack cancellation are control flow with orderly teardown, and the tokenizer sealed-failure sites map each typed failure to a recorded fault plus a rethrown mining error.
 app/src/main/kotlin/com/ankiminer/android/mining/MiningRuntimeContracts.kt	65,283	Existing discarded catches are pinned at audit introduction; new sites require review.
 app/src/main/kotlin/com/ankiminer/android/reading/BridgeReadingMiningRepository.kt	322,352,493,688,855,870,970,1020,1171,1182,1221,1233,1302,1309,1435,1943,1948,2002	Existing discarded catches are pinned; foreground and late-ack cancellation are control flow with orderly teardown.
 app/src/main/kotlin/com/ankiminer/android/reading/ReadingSourceStager.kt	691,823,961	Existing discarded catches are pinned at audit introduction; new sites require review.
@@ -44,4 +44,4 @@ app/src/main/kotlin/com/ankiminer/android/vm/DiagnosticsViewModel.kt	81,103,128	
 app/src/main/kotlin/com/ankiminer/android/vm/ReadingMiningViewModel.kt	937,1099	Existing discarded catches are pinned at audit introduction; new sites require review.
 app/src/main/kotlin/com/ankiminer/android/vm/SettingsViewModel.kt	918,995	Existing discarded catches are pinned at audit introduction; new sites require review.
 app/src/main/kotlin/com/ankiminer/android/vm/SetupViewModel.kt	344,489,1255	Existing sites are pinned; failed post-success refresh retains persisted state so the same action retries.
-app/src/main/kotlin/com/ankiminer/android/vm/VideoMiningViewModel.kt	788,805	Existing discarded catches are pinned at audit introduction; new sites require review.
+app/src/main/kotlin/com/ankiminer/android/vm/VideoMiningViewModel.kt	998,1018	Existing discarded catches are pinned at audit introduction; new sites require review.

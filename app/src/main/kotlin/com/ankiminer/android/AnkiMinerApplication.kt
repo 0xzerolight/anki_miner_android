@@ -46,6 +46,7 @@ import com.ankiminer.android.media.AndroidSafBroker
 import com.ankiminer.android.media.AndroidSafSelectionInventory
 import com.ankiminer.android.media.SafBroker
 import com.ankiminer.android.media.SafInputCacheJanitor
+import com.ankiminer.android.media.SafJobFileOwner
 import com.ankiminer.android.mining.AndroidMiningInputOwnerFactory
 import com.ankiminer.android.mining.AndroidMiningRunInterruptionStore
 import com.ankiminer.android.mining.BridgeMiningRepository
@@ -61,19 +62,24 @@ import com.ankiminer.android.mining.MiningRuntimePaths
 import com.ankiminer.android.mining.ProviderCoordinatorAnkiCallbacks
 import com.ankiminer.android.mining.SafSourceGrantReleaser
 import com.ankiminer.android.mining.StatefulMiningRunAdmissionGate
+import com.ankiminer.android.mining.TokenizerConfigurator
 import com.ankiminer.android.mining.asMiningTaskExecutor
 import com.ankiminer.android.reading.AndroidReadingSourceStaging
 import com.ankiminer.android.reading.BridgeReadingMiningRepository
 import com.ankiminer.android.reading.ReadingConfigSnapshotResolver
 import com.ankiminer.android.reading.ReadingMiningRepository
 import com.ankiminer.android.service.MiningForegroundSessionController
+import com.ankiminer.android.subtitles.BridgeSubtitleCueLookupService
+import com.ankiminer.android.subtitles.SubtitleCueLookupService
 import com.ankiminer.android.tts.AndroidSentenceAudioSynthesizerFactory
+import com.ankiminer.android.timing.TimingPreviewLoader
 import java.io.File
 import java.io.IOException
 import java.util.concurrent.Executors
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.collect
@@ -169,12 +175,17 @@ class AnkiMinerApplication : Application() {
     }
 
     /**
-     * Shares [resourceExecutor]: a preview only runs during curation, when mining holds the
-     * exclusive runtime lease and no resource operation can occupy that thread.
+     * Preview lookups share [resourceExecutor]: curation and the pre-run timing workbench both hold
+     * the exclusive mining lease, so no resource operation can occupy that thread.
      */
     val definitionLookupService: DefinitionLookupService by
         lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
             BridgeDefinitionLookupService(pyBridge, resourceExecutor)
+        }
+
+    val subtitleCueLookupService: SubtitleCueLookupService by
+        lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+            BridgeSubtitleCueLookupService(pyBridge, resourceExecutor)
         }
 
     private val resourceControlExecutor by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
@@ -239,6 +250,18 @@ class AnkiMinerApplication : Application() {
     }
     private val tokenizerResourceProvider by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         BuiltInInstalledTokenizerResourceProvider(this)
+    }
+    internal val timingPreviewLoader: TimingPreviewLoader by lazy(
+        LazyThreadSafetyMode.SYNCHRONIZED,
+    ) {
+        TimingPreviewLoader(
+            coordinator = runtimeWorkCoordinator,
+            ownerFactory = { cancellation -> SafJobFileOwner(this, cancellation) },
+            tokenizer = TokenizerConfigurator(pyBridge, tokenizerResourceProvider),
+            cueLookup = subtitleCueLookupService,
+            io = Dispatchers.IO,
+            resourceDispatcher = resourceExecutor.asCoroutineDispatcher(),
+        )
     }
     private val readingSourceStaging by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         AndroidReadingSourceStaging(this)

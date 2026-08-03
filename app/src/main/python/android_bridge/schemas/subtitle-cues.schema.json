@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://anki-miner.app/schemas/android-bridge/v1/subtitle-cues.json",
+  "title": "Anki Miner Android raw subtitle cue payload",
+  "$comment": "Payload-only request/result schema. Cue count is capped at 20000; runtime also caps staged input and total cue text bytes.",
+  "oneOf": [
+    {"$ref": "#/$defs/request"},
+    {"$ref": "#/$defs/result"}
+  ],
+  "$defs": {
+    "runId": {"type": "string", "pattern": "^run_[0-9a-f]{32}$"},
+    "nullableRunId": {
+      "oneOf": [
+        {"$ref": "#/$defs/runId"},
+        {"type": "null"}
+      ]
+    },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runId", "subtitlePath"],
+      "properties": {
+        "runId": {"$ref": "#/$defs/nullableRunId"},
+        "subtitlePath": {"type": "string", "minLength": 1}
+      }
+    },
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runId", "subtitlePath", "cues"],
+      "properties": {
+        "runId": {"$ref": "#/$defs/nullableRunId"},
+        "subtitlePath": {"type": "string", "minLength": 1},
+        "cues": {
+          "type": "array",
+          "maxItems": 20000,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["start", "end", "text"],
+            "properties": {
+              "start": {"type": "number", "minimum": 0},
+              "end": {"type": "number", "minimum": 0},
+              "text": {"type": "string"}
+            }
+          }
+        }
+      }
+    }
+  }
+}

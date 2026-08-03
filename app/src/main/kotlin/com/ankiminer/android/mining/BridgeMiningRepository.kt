@@ -9,6 +9,7 @@ import com.ankiminer.android.diagnostics.log.AppLog
 import com.ankiminer.android.diagnostics.log.LogComponent
 import com.ankiminer.android.diagnostics.log.LogContext
 import com.ankiminer.android.engine.BridgeJsonCodec
+import com.ankiminer.android.engine.BridgeJsonValue
 import com.ankiminer.android.engine.BridgeMessage
 import com.ankiminer.android.engine.BridgeProtocolException
 import com.ankiminer.android.engine.EngineCallbacks
@@ -17,7 +18,6 @@ import com.ankiminer.android.engine.MiningOutcome
 import com.ankiminer.android.engine.PresenterEvent
 import com.ankiminer.android.engine.PresenterMessageKind
 import com.ankiminer.android.engine.PyBridge
-import com.ankiminer.android.engine.TokenizerConfiguration
 import com.ankiminer.android.engine.VideoMiningWireRequest
 import com.ankiminer.android.localization.EngineNoticeRewriter
 import com.ankiminer.android.localization.StringResourceResolver
@@ -141,11 +141,21 @@ internal class BridgeMiningRepository(
         var interruptionRecorded = false
         var configSnapshot: MiningConfigSnapshot? = null
         var hasSelectedCandidate = false
+        var videoCachePath: String? = null
+        var subtitleCachePath: String? = null
         val presenterNotices = mutableListOf<String>()
+
+        fun mediaBinding(): CurationMediaBinding? {
+            val video = videoCachePath ?: return null
+            val subtitle = subtitleCachePath ?: return null
+            return CurationMediaBinding(video, subtitle)
+        }
     }
 
     private val monitor = Any()
     private val noticeRewriter = EngineNoticeRewriter(strings)
+    private val tokenizerConfigurator =
+        TokenizerConfigurator(pyBridge, tokenizerResourceProvider)
     private val startupInterruption = interruptionStore.startupInterruption()
 
     /** Recognised whichever lane wrote it: one durable record covers both, so either can clear it. */
@@ -295,7 +305,12 @@ internal class BridgeMiningRepository(
                     mutableState.value = MiningRunState.Running(runId, progress)
                 } else {
                     transition = run.transition(Phase.ADVANCING, "curation_page")
-                    mutableState.value = MiningRunState.Curating(request, pageSubmissionPending = true)
+                    mutableState.value =
+                        MiningRunState.Curating(
+                            request,
+                            pageSubmissionPending = true,
+                            media = run.mediaBinding(),
+                        )
                 }
                 run.generation to run.hasSelectedCandidate
             }
@@ -401,7 +416,17 @@ internal class BridgeMiningRepository(
                 if (run.cancellation.isCancelled()) return
                 run.configSnapshot =
                     try {
-                        configSnapshotResolver.resolve(run.input)
+                        val resolved = configSnapshotResolver.resolve(run.input)
+                        val override = run.input.subtitleOffsetOverride
+                        if (override == null) {
+                            resolved
+                        } else {
+                            resolved.copy(
+                                settings =
+                                    resolved.settings +
+                                        ("subtitle_offset" to BridgeJsonValue.Decimal(override)),
+                            )
+                        }
                     } catch (failure: Exception) {
                         recordFault(generation, strings.resolve(R.string.mining_failure_settings_snapshot))
                         throw failure
@@ -466,6 +491,10 @@ internal class BridgeMiningRepository(
                     videoPath = inputOwner.openVideo(run.input.video)
                     if (run.cancellation.isCancelled()) return
                     subtitlePath = inputOwner.materializeSubtitle(run.input.subtitle)
+                    synchronized(monitor) {
+                        run.videoCachePath = videoPath
+                        run.subtitleCachePath = subtitlePath
+                    }
                 } catch (failure: Exception) {
                     // A cancelled copy must terminate as Cancelled: a recorded fault would win
                     // over the cancelled flag in terminalState.
@@ -516,56 +545,32 @@ internal class BridgeMiningRepository(
         run: ActiveRun,
         tokenizer: InstalledTokenizerResource,
     ) {
-        val raw =
-            try {
-                pyBridge.dispatch(
-                    BridgeJsonCodec.encodeTokenizerConfigure(
-                        TokenizerConfiguration(
-                            dicDir = tokenizer.dicDir.canonicalPath,
-                            resourceId = tokenizer.resourceId,
-                            treeSha256 = tokenizer.treeSha256,
-                            backend = tokenizer.backend,
-                        ),
-                    ),
-                    null,
-                )
-            } catch (failure: Exception) {
-                recordFault(run.generation, strings.resolve(R.string.mining_failure_tokenizer_setup))
-                throw failure
+        try {
+            tokenizerConfigurator.configure(tokenizer)
+        } catch (failure: TokenizerConfigurationFailure.Dispatch) {
+            recordFault(run.generation, strings.resolve(R.string.mining_failure_tokenizer_setup))
+            throw requireNotNull(failure.cause)
+        } catch (failure: TokenizerConfigurationFailure.Response) {
+            recordFault(run.generation, strings.resolve(R.string.mining_failure_tokenizer_response))
+            throw requireNotNull(failure.cause)
+            // instrumentation: silent — the typed failure is fully mapped to a recorded fault and a mining error.
+        } catch (_: TokenizerConfigurationFailure.Identity) {
+            recordFault(run.generation, strings.resolve(R.string.mining_failure_tokenizer_identity))
+            throw MiningCommandException("Tokenizer identity did not match its installed resource")
+        } catch (failure: TokenizerConfigurationFailure.Rejected) {
+            if (failure.restartRequired) {
+                setRestartRequired(strings.resolve(R.string.mining_failure_tokenizer_restart))
             }
-        val decoded =
-            try {
-                BridgeJsonCodec.decode(raw)
-            } catch (failure: RuntimeException) {
-                recordFault(run.generation, strings.resolve(R.string.mining_failure_tokenizer_response))
-                throw failure
-            }
-        when (val response = decoded) {
-            is BridgeMessage.TokenizerReady -> {
-                val identity = response.identity
-                if (
-                    identity.dicDir != tokenizer.dicDir.canonicalPath ||
-                    identity.resourceId != tokenizer.resourceId ||
-                    identity.treeSha256 != tokenizer.treeSha256 ||
-                    identity.backend != tokenizer.backend ||
-                    identity.fileCount <= 0 ||
-                    identity.totalBytes <= 0
-                ) {
-                    recordFault(run.generation, strings.resolve(R.string.mining_failure_tokenizer_identity))
-                    throw MiningCommandException("Tokenizer identity did not match its installed resource")
-                }
-            }
-            is BridgeMessage.Error -> {
-                if (response.code == "tokenizer_restart_required") {
-                    setRestartRequired(strings.resolve(R.string.mining_failure_tokenizer_restart))
-                }
-                recordFault(run.generation, strings.resolve(R.string.mining_failure_tokenizer_verification))
-                throw MiningCommandException("Tokenizer setup was rejected")
-            }
-            else -> {
-                recordFault(run.generation, strings.resolve(R.string.mining_failure_tokenizer_response))
-                throw MiningCommandException("Tokenizer setup returned an invalid response")
-            }
+            recordFault(run.generation, strings.resolve(R.string.mining_failure_tokenizer_verification))
+            throw MiningCommandException("Tokenizer setup was rejected")
+            // instrumentation: silent — the typed failure is fully mapped to a recorded fault and a mining error.
+        } catch (_: TokenizerConfigurationFailure.Unexpected) {
+            recordFault(run.generation, strings.resolve(R.string.mining_failure_tokenizer_response))
+            throw MiningCommandException("Tokenizer setup returned an invalid response")
+        } catch (failure: TokenizerConfigurationFailure.Required) {
+            // The repository resolves the installed resource immediately before this call.
+            recordFault(run.generation, strings.resolve(R.string.mining_failure_tokenizer_required))
+            throw failure
         }
     }
 
@@ -1408,7 +1413,12 @@ internal class BridgeMiningRepository(
             if (run.cancelRequested || run.phase != admittedPhase) return
             transition = run.transition(Phase.CURATING, "curation_needed")
             run.curation = message.request
-            mutableState.value = MiningRunState.Curating(message.request, pageSubmissionPending = false)
+            mutableState.value =
+                MiningRunState.Curating(
+                    message.request,
+                    pageSubmissionPending = false,
+                    media = run.mediaBinding(),
+                )
         }
         transition.emit()
     }

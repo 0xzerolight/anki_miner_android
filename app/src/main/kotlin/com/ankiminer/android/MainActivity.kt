@@ -67,8 +67,12 @@ class MainActivity : ComponentActivity() {
             repository = MiningRepositoryFactory.create(app),
             safBroker = app.safBroker,
             definitionLookup = app.definitionLookupService,
+            cueLookup = app.subtitleCueLookupService,
             runtimeWorkState = app.runtimeWorkState,
             selectionInventory = app.safSelectionInventory,
+            effectiveSubtitleOffset =
+                app.settingsRepository.settings.map { it.subtitleOffsetSeconds },
+            timingPreviewOpener = app.timingPreviewLoader,
         )
     }
     private val setupViewModelFactory by lazy {

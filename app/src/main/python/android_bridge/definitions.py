@@ -52,6 +52,12 @@ def clear_run_dictionaries(run_id: str) -> None:
         _run_configs.pop(run_id, None)
 
 
+def get_run_config(run_id: str) -> object | None:
+    """Return a live run's registered config, or None. Shared with subtitle.cues."""
+    with _lock:
+        return _run_configs.get(run_id)
+
+
 def _fail(code: str, message: str) -> BridgeProtocolError:
     return BridgeProtocolError(code, message)
 

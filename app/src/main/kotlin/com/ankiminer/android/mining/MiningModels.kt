@@ -29,10 +29,24 @@ data class MiningSource(
     }
 }
 
+/**
+ * Kotlin mirror of the engine dataclass default for `subtitle_offset`
+ * (`AnkiMinerConfig().subtitle_offset`). Guarded by the Python side's
+ * test_cues_engine_default_offset_is_zero so an engine re-pin cannot
+ * silently diverge.
+ */
+const val ENGINE_DEFAULT_SUBTITLE_OFFSET = 0.0
+
 data class VideoMiningInput(
     val video: MiningSource,
     val subtitle: MiningSource,
-)
+    /** Per-run override; null keeps the global setting or the engine default. */
+    val subtitleOffsetOverride: Double? = null,
+) {
+    init {
+        subtitleOffsetOverride?.let { require(it.isFinite()) }
+    }
+}
 
 /** What [MiningProgress.current] counts, so a byte count never renders as an item count. */
 enum class MiningProgressUnit {
@@ -272,6 +286,15 @@ data class MiningFailure(
     }
 }
 
+/**
+ * Media the curation UI may preview. Both paths are the run's staged cache copies,
+ * alive until the input owner closes in finishRun. Null on the reading lane.
+ */
+data class CurationMediaBinding(
+    val videoPath: String,
+    val subtitlePath: String,
+)
+
 sealed interface MiningRunState {
     data object Idle : MiningRunState
 
@@ -286,6 +309,7 @@ sealed interface MiningRunState {
         val request: CurationRequest,
         val pageSubmissionPending: Boolean = false,
         val cancellationPending: Boolean = false,
+        val media: CurationMediaBinding? = null,
     ) : MiningRunState
 
     data class Running(

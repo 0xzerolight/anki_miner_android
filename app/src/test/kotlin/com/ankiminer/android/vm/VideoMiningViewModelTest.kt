@@ -15,6 +15,7 @@ import com.ankiminer.android.diagnostics.log.LogLevel
 import com.ankiminer.android.diagnostics.log.NoOpSink
 import com.ankiminer.android.diagnostics.log.RecordingLogSink
 import com.ankiminer.android.engine.DefinitionEntry
+import com.ankiminer.android.engine.SubtitleCue
 import com.ankiminer.android.media.SafAccessException
 import com.ankiminer.android.media.SafAccessFailureKind
 import com.ankiminer.android.media.SafBroker
@@ -26,11 +27,13 @@ import com.ankiminer.android.media.SafSelectionSlot
 import com.ankiminer.android.media.TransientSafSelectionInventory
 import com.ankiminer.android.mining.AnkiWriteState
 import com.ankiminer.android.mining.CurationCandidate
+import com.ankiminer.android.mining.CurationMediaBinding
 import com.ankiminer.android.mining.CurationPage
 import com.ankiminer.android.mining.CurationRequest
 import com.ankiminer.android.mining.CurationSelection
 import com.ankiminer.android.mining.CurationSentence
 import com.ankiminer.android.mining.CurationSessionState
+import com.ankiminer.android.mining.ENGINE_DEFAULT_SUBTITLE_OFFSET
 import com.ankiminer.android.mining.FakeMiningRepository
 import com.ankiminer.android.mining.MiningFailure
 import com.ankiminer.android.mining.MiningProgress
@@ -38,10 +41,17 @@ import com.ankiminer.android.mining.MiningRepository
 import com.ankiminer.android.mining.MiningRunState
 import com.ankiminer.android.mining.ProcessingResult
 import com.ankiminer.android.mining.VideoMiningInput
+import com.ankiminer.android.subtitles.SubtitleCueLookupService
+import com.ankiminer.android.timing.TimingPreviewBusyException
+import com.ankiminer.android.timing.TimingPreviewOpener
+import com.ankiminer.android.timing.TimingPreviewSession
 import com.ankiminer.android.ui.video.DocumentSelectionError
+import com.ankiminer.android.ui.video.TimingPreviewError
 import java.util.concurrent.ConcurrentHashMap
+import kotlin.coroutines.Continuation
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
+import kotlin.coroutines.suspendCoroutine
 import kotlinx.coroutines.CancellableContinuation
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -223,6 +233,167 @@ class VideoMiningViewModelTest {
 
         assertNotNull(factory.create(VideoMiningViewModel::class.java, CreationExtras.Empty))
     }
+
+    @Test
+    fun curatingMediaLoadsCuesIntoThePlayerOnce() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val request = curationRequest()
+            val media = CurationMediaBinding("/cache/video.mkv", "/cache/subtitle.srt")
+            val cue = SubtitleCue(1.25, 2.5, "猫だ。")
+            val calls = mutableListOf<Pair<String?, String>>()
+            val lookup =
+                SubtitleCueLookupService { runId, subtitlePath ->
+                    calls += runId to subtitlePath
+                    Result.success(listOf(cue))
+                }
+            val repository =
+                RecordingRepository(MiningRunState.Curating(request, media = media))
+            val viewModel =
+                VideoMiningViewModel(
+                    repository,
+                    ImmediateSafBroker(),
+                    cueLookup = lookup,
+                )
+
+            runCurrent()
+
+            assertEquals(listOf(request.runId to media.subtitlePath), calls)
+            assertEquals(media.videoPath, viewModel.uiState.value.curation?.player?.videoPath)
+            assertEquals(listOf(cue), viewModel.uiState.value.curation?.player?.cues)
+            assertFalse(viewModel.uiState.value.curation?.player?.cuesUnavailable == true)
+        }
+
+    @Test
+    fun failedCueLookupLeavesThePlayerUsableWithoutCues() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val request = curationRequest()
+            val media = CurationMediaBinding("/cache/video.mkv", "/cache/subtitle.srt")
+            val repository =
+                RecordingRepository(MiningRunState.Curating(request, media = media))
+            val viewModel =
+                VideoMiningViewModel(
+                    repository,
+                    ImmediateSafBroker(),
+                    cueLookup =
+                        SubtitleCueLookupService { _, _ ->
+                            Result.failure(IllegalStateException("unavailable"))
+                        },
+                )
+
+            runCurrent()
+
+            val player = requireNotNull(viewModel.uiState.value.curation?.player)
+            assertEquals(media.videoPath, player.videoPath)
+            assertEquals(emptyList<SubtitleCue>(), player.cues)
+            assertTrue(player.cuesUnavailable)
+        }
+
+    @Test
+    fun curatingWithoutMediaHasNoPlayerAndDoesNotLoadCues() =
+        runTest(mainDispatcherRule.dispatcher) {
+            var calls = 0
+            val repository = RecordingRepository(MiningRunState.Curating(curationRequest()))
+            val viewModel =
+                VideoMiningViewModel(
+                    repository,
+                    ImmediateSafBroker(),
+                    cueLookup =
+                        SubtitleCueLookupService { _, _ ->
+                            calls += 1
+                            Result.success(emptyList())
+                        },
+                )
+
+            runCurrent()
+
+            assertNull(viewModel.uiState.value.curation?.player)
+            assertEquals(0, calls)
+        }
+
+    @Test
+    fun curationPageAdvanceDoesNotReloadCues() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val first = curationRequest().copy(page = CurationPage(0, 2, 0, 2))
+            val media = CurationMediaBinding("/cache/video.mkv", "/cache/subtitle.srt")
+            var calls = 0
+            val repository =
+                RecordingRepository(MiningRunState.Curating(first, media = media))
+            val viewModel =
+                VideoMiningViewModel(
+                    repository,
+                    ImmediateSafBroker(),
+                    cueLookup =
+                        SubtitleCueLookupService { _, _ ->
+                            calls += 1
+                            Result.success(emptyList())
+                        },
+                )
+            runCurrent()
+
+            repository.transitionTo(
+                MiningRunState.Curating(
+                    first.copy(
+                        requestId = "request-page-2",
+                        page = CurationPage(1, 2, 1, 2),
+                    ),
+                    media = media,
+                ),
+            )
+            runCurrent()
+
+            assertEquals(1, calls)
+            assertNotNull(viewModel.uiState.value.curation?.player)
+        }
+
+    @Test
+    fun delayedCuesFromAnOldRunCannotLandUnderTheNextRun() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val secondGate = CompletableDeferred<Unit>()
+            val firstCue = SubtitleCue(1.0, 2.0, "first")
+            val secondCue = SubtitleCue(3.0, 4.0, "second")
+            val calls = mutableListOf<String?>()
+            lateinit var firstContinuation: Continuation<Unit>
+            val lookup =
+                SubtitleCueLookupService { runId, _ ->
+                    calls += runId
+                    if (runId == "run-a") {
+                        suspendCoroutine { continuation -> firstContinuation = continuation }
+                    } else {
+                        secondGate.await()
+                    }
+                    Result.success(listOf(if (runId == "run-a") firstCue else secondCue))
+                }
+            val repository = RecordingRepository()
+            val viewModel =
+                VideoMiningViewModel(
+                    repository,
+                    ImmediateSafBroker(),
+                    cueLookup = lookup,
+                )
+            val firstRequest = curationRequest().copy(runId = "run-a", requestId = "request-a")
+            val secondRequest = curationRequest().copy(runId = "run-b", requestId = "request-b")
+            val firstMedia = CurationMediaBinding("/cache/a.mkv", "/cache/a.srt")
+            val secondMedia = CurationMediaBinding("/cache/b.mkv", "/cache/b.srt")
+
+            repository.transitionTo(MiningRunState.Curating(firstRequest, media = firstMedia))
+            runCurrent()
+            repository.transitionTo(MiningRunState.Curating(secondRequest, media = secondMedia))
+            runCurrent()
+
+            assertEquals(secondMedia.videoPath, viewModel.uiState.value.curation?.player?.videoPath)
+            assertEquals(emptyList<SubtitleCue>(), viewModel.uiState.value.curation?.player?.cues)
+
+            firstContinuation.resume(Unit)
+            runCurrent()
+
+            assertEquals(listOf("run-a", "run-b"), calls)
+            assertEquals(emptyList<SubtitleCue>(), viewModel.uiState.value.curation?.player?.cues)
+
+            secondGate.complete(Unit)
+            advanceUntilIdle()
+
+            assertEquals(listOf(secondCue), viewModel.uiState.value.curation?.player?.cues)
+        }
 
     @Test
     fun navigationWorkflowIgnoresFineGrainedProgressUpdates() =
@@ -490,6 +661,290 @@ class VideoMiningViewModelTest {
                     ?.single { it.candidateId == first.candidateId }
                     ?.sentenceId,
             )
+        }
+
+    @Test
+    fun startPassesPerRunSubtitleOffsetOverride() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository = RecordingRepository()
+            val viewModel = VideoMiningViewModel(repository, ImmediateSafBroker())
+            selectDocuments(viewModel)
+            viewModel.setSubtitleOffsetDraft("1.5")
+            runCurrent()
+
+            viewModel.start()
+            runCurrent()
+
+            assertEquals(1.5, repository.startedInputs.single().subtitleOffsetOverride!!, 0.0)
+        }
+
+    @Test
+    fun effectiveSubtitleOffsetPrefersDraftThenGlobalThenEngineDefault() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val globalOffset = MutableStateFlow<Double?>(0.25)
+            val viewModel =
+                VideoMiningViewModel(
+                    repository = RecordingRepository(),
+                    safBroker = ImmediateSafBroker(),
+                    effectiveSubtitleOffset = globalOffset,
+                )
+            runCurrent()
+            assertEquals(0.25, viewModel.uiState.value.effectiveSubtitleOffset, 0.0)
+
+            viewModel.setSubtitleOffsetDraft("1.5")
+            runCurrent()
+            assertEquals(1.5, viewModel.uiState.value.effectiveSubtitleOffset, 0.0)
+
+            viewModel.setSubtitleOffsetDraft("")
+            globalOffset.value = null
+            runCurrent()
+            assertEquals(
+                ENGINE_DEFAULT_SUBTITLE_OFFSET,
+                viewModel.uiState.value.effectiveSubtitleOffset,
+                0.0,
+            )
+        }
+
+    @Test
+    fun blankSubtitleOffsetUsesGlobalOrEngineDefault() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository = RecordingRepository()
+            val viewModel = VideoMiningViewModel(repository, ImmediateSafBroker())
+            selectDocuments(viewModel)
+            viewModel.setSubtitleOffsetDraft("")
+            runCurrent()
+
+            viewModel.start()
+            runCurrent()
+
+            assertNull(repository.startedInputs.single().subtitleOffsetOverride)
+        }
+
+    @Test
+    fun malformedOrNonFiniteSubtitleOffsetBlocksStart() =
+        runTest(mainDispatcherRule.dispatcher) {
+            listOf("abc", "1e309").forEach { draft ->
+                val repository = RecordingRepository()
+                val viewModel = VideoMiningViewModel(repository, ImmediateSafBroker())
+                selectDocuments(viewModel)
+                viewModel.setSubtitleOffsetDraft(draft)
+                runCurrent()
+
+                assertTrue(viewModel.uiState.value.subtitleOffsetDraftInvalid)
+                assertFalse(viewModel.uiState.value.canStart)
+                viewModel.start()
+                runCurrent()
+
+                assertEquals(0, repository.startCalls)
+            }
+        }
+
+    @Test
+    fun retryKeepsPerRunSubtitleOffsetOverride() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository = RecordingRepository()
+            val viewModel = VideoMiningViewModel(repository, ImmediateSafBroker())
+            selectDocuments(viewModel)
+            viewModel.setSubtitleOffsetDraft("1.5")
+            repository.transitionTo(
+                MiningRunState.Failed(
+                    runId = "run",
+                    failure = MiningFailure("retry", retryable = true),
+                    result = result(),
+                ),
+            )
+            runCurrent()
+
+            viewModel.retry()
+            runCurrent()
+
+            assertEquals(1.5, repository.startedInputs.single().subtitleOffsetOverride!!, 0.0)
+        }
+
+    @Test
+    fun subtitleOffsetDraftRestoresFromSavedStateHandle() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val savedState = SavedStateHandle()
+            val original =
+                VideoMiningViewModel(
+                    repository = RecordingRepository(),
+                    safBroker = ImmediateSafBroker(),
+                    savedStateHandle = savedState,
+                )
+            original.setSubtitleOffsetDraft("1.5")
+
+            val restored =
+                VideoMiningViewModel(
+                    repository = RecordingRepository(),
+                    safBroker = ImmediateSafBroker(),
+                    savedStateHandle = savedState,
+                )
+            runCurrent()
+
+            assertEquals("1.5", restored.uiState.value.subtitleOffsetDraft)
+        }
+
+    @Test
+    fun resetClearsSubtitleOffsetDraft() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val savedState = SavedStateHandle()
+            val repository = RecordingRepository()
+            val viewModel =
+                VideoMiningViewModel(
+                    repository = repository,
+                    safBroker = ImmediateSafBroker(),
+                    savedStateHandle = savedState,
+                )
+            viewModel.setSubtitleOffsetDraft("1.5")
+            repository.transitionTo(MiningRunState.Success("run", result()))
+            runCurrent()
+
+            viewModel.reset()
+            runCurrent()
+
+            assertEquals("", viewModel.uiState.value.subtitleOffsetDraft)
+            val restored =
+                VideoMiningViewModel(
+                    repository = RecordingRepository(),
+                    safBroker = ImmediateSafBroker(),
+                    savedStateHandle = savedState,
+                )
+            runCurrent()
+            assertEquals("", restored.uiState.value.subtitleOffsetDraft)
+        }
+
+    @Test
+    fun openingTimingPreviewLoadsUnshiftedCuesAndSeedsTheEffectiveOffset() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val cue = SubtitleCue(1.0, 2.0, "猫だ。")
+            val openedSubtitles = mutableListOf<SafDocument>()
+            val opener =
+                TimingPreviewOpener { subtitle ->
+                    openedSubtitles += subtitle
+                    Result.success(TimingPreviewSession(listOf(cue)) {})
+                }
+            val globalOffset = MutableStateFlow<Double?>(0.25)
+            val viewModel =
+                VideoMiningViewModel(
+                    repository = RecordingRepository(),
+                    safBroker = ImmediateSafBroker(),
+                    timingPreviewOpener = opener,
+                    timingPreviewCleanupDispatcher = mainDispatcherRule.dispatcher,
+                    effectiveSubtitleOffset = globalOffset,
+                )
+            selectDocuments(viewModel)
+            viewModel.setSubtitleOffsetDraft("1.5")
+            runCurrent()
+
+            viewModel.openTimingPreview()
+            runCurrent()
+
+            assertEquals("subtitle", openedSubtitles.single().displayName)
+            val state = requireNotNull(viewModel.timingPreviewState.value)
+            assertEquals(1.5, state.initialOffset, 0.0)
+            assertEquals(1.5, state.workingOffset, 0.0)
+            assertEquals(listOf(cue), state.cues)
+        }
+
+    @Test
+    fun applyingTimingPreviewWritesDraftClearsOverlayAndClosesSession() =
+        runTest(mainDispatcherRule.dispatcher) {
+            var closeCount = 0
+            val viewModel =
+                timingPreviewViewModel(
+                    session = TimingPreviewSession(emptyList()) { closeCount += 1 },
+                )
+            selectDocuments(viewModel)
+            runCurrent()
+            viewModel.openTimingPreview()
+            runCurrent()
+            viewModel.setTimingPreviewWorkingOffset(1.75)
+
+            viewModel.applyTimingPreview()
+            runCurrent()
+
+            assertEquals("1.75", viewModel.uiState.value.subtitleOffsetDraft)
+            assertNull(viewModel.timingPreviewState.value)
+            assertEquals(1, closeCount)
+        }
+
+    @Test
+    fun timingPreviewFailureExposesStableErrorWithoutOpeningOverlay() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val viewModel =
+                VideoMiningViewModel(
+                    repository = RecordingRepository(),
+                    safBroker = ImmediateSafBroker(),
+                    timingPreviewOpener =
+                        TimingPreviewOpener {
+                            Result.failure(TimingPreviewBusyException())
+                        },
+                    timingPreviewCleanupDispatcher = mainDispatcherRule.dispatcher,
+                )
+            selectDocuments(viewModel)
+            runCurrent()
+
+            viewModel.openTimingPreview()
+            runCurrent()
+
+            assertNull(viewModel.timingPreviewState.value)
+            assertEquals(TimingPreviewError.BUSY, viewModel.uiState.value.timingPreviewError)
+            assertFalse(viewModel.uiState.value.timingPreviewPending)
+        }
+
+    @Test
+    fun cancellingTimingPreviewDiscardsWorkingOffsetAndClosesSession() =
+        runTest(mainDispatcherRule.dispatcher) {
+            var closeCount = 0
+            val viewModel =
+                timingPreviewViewModel(
+                    session = TimingPreviewSession(emptyList()) { closeCount += 1 },
+                )
+            selectDocuments(viewModel)
+            viewModel.setSubtitleOffsetDraft("0.5")
+            runCurrent()
+            viewModel.openTimingPreview()
+            runCurrent()
+            viewModel.setTimingPreviewWorkingOffset(2.0)
+
+            viewModel.closeTimingPreview()
+            runCurrent()
+
+            assertEquals("0.5", viewModel.uiState.value.subtitleOffsetDraft)
+            assertNull(viewModel.timingPreviewState.value)
+            assertEquals(1, closeCount)
+        }
+
+    @Test
+    fun viewModelTeardownClosesAnOpenTimingPreviewSession() =
+        runTest(mainDispatcherRule.dispatcher) {
+            var closeCount = 0
+            val store = ViewModelStore()
+            val factory =
+                VideoMiningViewModel.Factory(
+                    repository = RecordingRepository(),
+                    safBroker = ImmediateSafBroker(),
+                    definitionLookup = NO_DEFINITION_LOOKUP,
+                    timingPreviewOpener =
+                        TimingPreviewOpener {
+                            Result.success(
+                                TimingPreviewSession(emptyList()) { closeCount += 1 },
+                            )
+                        },
+                    timingPreviewCleanupDispatcher = mainDispatcherRule.dispatcher,
+                    savedStateHandleFactory = { SavedStateHandle() },
+                )
+            val viewModel =
+                ViewModelProvider.create(store, factory)[VideoMiningViewModel::class.java]
+            selectDocuments(viewModel)
+            runCurrent()
+            viewModel.openTimingPreview()
+            runCurrent()
+
+            store.clear()
+            runCurrent()
+
+            assertEquals(1, closeCount)
         }
 
     @Test
@@ -1201,6 +1656,14 @@ class VideoMiningViewModelTest {
             savedStateHandleFactory = { SavedStateHandle() },
         )
 
+    private fun timingPreviewViewModel(session: TimingPreviewSession): VideoMiningViewModel =
+        VideoMiningViewModel(
+            repository = RecordingRepository(),
+            safBroker = ImmediateSafBroker(),
+            timingPreviewOpener = TimingPreviewOpener { Result.success(session) },
+            timingPreviewCleanupDispatcher = mainDispatcherRule.dispatcher,
+        )
+
     private class ImmediateSafBroker : SafBroker {
         val retainedUris = mutableListOf<String>()
         val releasedUris = mutableListOf<String>()
@@ -1321,6 +1784,7 @@ class VideoMiningViewModelTest {
             private set
         var confirmedKnownCandidateIds: List<String> = emptyList()
             private set
+        val startedInputs = mutableListOf<VideoMiningInput>()
         val detachedInputs = mutableListOf<VideoMiningInput>()
 
         override fun curationSessionState(): CurationSessionState? = savedCurationSessionState
@@ -1342,6 +1806,7 @@ class VideoMiningViewModelTest {
 
         override suspend fun startVideo(input: VideoMiningInput) {
             startCalls += 1
+            startedInputs += input
             startGate?.await()
             mutableState.value =
                 MiningRunState.Starting(

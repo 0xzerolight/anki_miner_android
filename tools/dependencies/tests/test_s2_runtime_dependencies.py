@@ -62,6 +62,7 @@ class RuntimeDependenciesTest(unittest.TestCase):
         self.assertEqual("2.9.8", catalog["versions"]["androidx-navigation"])
         self.assertEqual("2.21.5", catalog["versions"]["jackson"])
         self.assertEqual("1.11.0", catalog["versions"]["kotlinx-coroutines"])
+        self.assertEqual("1.10.1", catalog["versions"]["media3"])
         self.assertEqual(
             "androidx.core:core",
             catalog["libraries"]["androidx-core"]["module"],
@@ -98,6 +99,14 @@ class RuntimeDependenciesTest(unittest.TestCase):
             "androidx.navigation:navigation-compose",
             catalog["libraries"]["androidx-navigation-compose"]["module"],
         )
+        self.assertEqual(
+            "androidx.media3:media3-exoplayer",
+            catalog["libraries"]["media3-exoplayer"]["module"],
+        )
+        self.assertEqual(
+            "androidx.media3:media3-ui-compose",
+            catalog["libraries"]["media3-ui-compose"]["module"],
+        )
 
         libraries = catalog["libraries"]
         forbidden_modules = {
@@ -122,6 +131,8 @@ class RuntimeDependenciesTest(unittest.TestCase):
             "implementation(libs.androidx.compose.ui.tooling.preview)",
             "implementation(libs.jackson.core)",
             "implementation(libs.kotlinx.coroutines.core)",
+            "implementation(libs.media3.exoplayer)",
+            "implementation(libs.media3.ui.compose)",
             "debugImplementation(libs.androidx.compose.ui.tooling)",
             "debugImplementation(libs.androidx.compose.ui.test.manifest)",
         ):
@@ -145,6 +156,8 @@ class RuntimeDependenciesTest(unittest.TestCase):
                 "androidx.datastore:datastore-preferences:1.2.1",
                 "androidx.lifecycle:lifecycle-runtime-compose:2.10.0",
                 "androidx.lifecycle:lifecycle-viewmodel-compose:2.10.0",
+                "androidx.media3:media3-exoplayer:1.10.1",
+                "androidx.media3:media3-ui-compose:1.10.1",
                 "androidx.navigation:navigation-compose:2.9.8",
                 "com.fasterxml.jackson.core:jackson-core:2.21.5",
                 "org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0",

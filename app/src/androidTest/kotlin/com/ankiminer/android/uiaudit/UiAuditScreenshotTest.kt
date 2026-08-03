@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.Density
 import androidx.test.platform.app.InstrumentationRegistry
 import com.ankiminer.android.R
 import com.ankiminer.android.anki.provider.NoteTypeSetupStatus
+import com.ankiminer.android.player.FakeCurationPreviewPlayer
 import com.ankiminer.android.ui.attribution.AttributionScreen
 import com.ankiminer.android.ui.attribution.NoticesScreen
 import com.ankiminer.android.ui.navigation.AnkiMinerAppShell
@@ -90,6 +91,7 @@ class UiAuditScreenshotTest {
                         onCancel = {},
                         onRetry = {},
                         onReset = {},
+                        playerFactory = { FakeCurationPreviewPlayer() },
                         modifier = Modifier.testTag(VideoMiningTestTags.SCREEN),
                     )
                 }
