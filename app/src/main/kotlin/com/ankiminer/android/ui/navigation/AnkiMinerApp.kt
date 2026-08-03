@@ -63,6 +63,8 @@ import com.ankiminer.android.mining.isTerminal
 import com.ankiminer.android.mining.runId
 import com.ankiminer.android.ui.attribution.AttributionScreen
 import com.ankiminer.android.ui.attribution.NoticesScreen
+import com.ankiminer.android.ui.audio.AudioMiningRoute
+import com.ankiminer.android.ui.mining.TimingPreviewState
 import com.ankiminer.android.ui.reading.ReadingMiningRoute
 import com.ankiminer.android.ui.reading.ReadingMiningTestTags
 import com.ankiminer.android.ui.settings.KnownWordsManagerRoute
@@ -105,6 +107,14 @@ internal enum class AnkiMinerDestination(
         R.string.nav_video,
         R.drawable.ic_nav_video,
         R.string.nav_video_description,
+        true,
+    ),
+    AUDIO(
+        "audio",
+        R.string.nav_audio,
+        R.string.nav_audio,
+        R.drawable.ic_nav_audio,
+        R.string.nav_audio_description,
         true,
     ),
     READING(
@@ -162,15 +172,49 @@ internal fun compactNavigation(
 
 internal fun activeWorkflowDestination(
     video: NavigationWorkflowState,
+    audio: NavigationWorkflowState,
     reading: NavigationWorkflowState,
 ): AnkiMinerDestination? =
     when {
         video == NavigationWorkflowState.REVIEW -> AnkiMinerDestination.VIDEO
+        audio == NavigationWorkflowState.REVIEW -> AnkiMinerDestination.AUDIO
         reading == NavigationWorkflowState.REVIEW -> AnkiMinerDestination.READING
         video == NavigationWorkflowState.RUNNING -> AnkiMinerDestination.VIDEO
+        audio == NavigationWorkflowState.RUNNING -> AnkiMinerDestination.AUDIO
         reading == NavigationWorkflowState.RUNNING -> AnkiMinerDestination.READING
         else -> null
     }
+
+internal fun activeTimingPreviewOwner(
+    video: TimingPreviewState?,
+    audio: TimingPreviewState?,
+): AnkiMinerDestination? =
+    when {
+        video != null -> AnkiMinerDestination.VIDEO
+        audio != null -> AnkiMinerDestination.AUDIO
+        else -> null
+    }
+
+internal fun notificationRunDestination(
+    notificationRunId: String,
+    video: MiningRunState,
+    audio: MiningRunState,
+    reading: MiningRunState,
+): AnkiMinerDestination? {
+    val foregroundKind = MiningRunKind.fromForegroundRunId(notificationRunId)
+    return when {
+        notificationRunId == video.runId -> AnkiMinerDestination.VIDEO
+        notificationRunId == audio.runId -> AnkiMinerDestination.AUDIO
+        notificationRunId == reading.runId -> AnkiMinerDestination.READING
+        foregroundKind == MiningRunKind.VIDEO && video.isActive() ->
+            AnkiMinerDestination.VIDEO
+        foregroundKind == MiningRunKind.AUDIO && audio.isActive() ->
+            AnkiMinerDestination.AUDIO
+        foregroundKind == MiningRunKind.READING && reading.isActive() ->
+            AnkiMinerDestination.READING
+        else -> null
+    }
+}
 
 /**
  * Makes the shell inert while [AnkiMinerAppShell]'s overlay owns the window.
@@ -230,6 +274,7 @@ private fun Modifier.inertBehindOverlay(): Modifier =
 internal fun AnkiMinerAppShell(
     currentDestination: AnkiMinerDestination?,
     videoWorkflow: NavigationWorkflowState = NavigationWorkflowState.IDLE,
+    audioWorkflow: NavigationWorkflowState = NavigationWorkflowState.IDLE,
     readingWorkflow: NavigationWorkflowState = NavigationWorkflowState.IDLE,
     snackbarHostState: SnackbarHostState,
     onDestinationSelected: (AnkiMinerDestination) -> Unit,
@@ -261,12 +306,14 @@ internal fun AnkiMinerAppShell(
                     NavigationBar {
                         listOf(
                             AnkiMinerDestination.VIDEO,
+                            AnkiMinerDestination.AUDIO,
                             AnkiMinerDestination.READING,
                             AnkiMinerDestination.SETTINGS,
                         ).forEach { destination ->
                             val workflow =
                                 when (destination) {
                                     AnkiMinerDestination.VIDEO -> videoWorkflow
+                                    AnkiMinerDestination.AUDIO -> audioWorkflow
                                     AnkiMinerDestination.READING -> readingWorkflow
                                     else -> NavigationWorkflowState.IDLE
                                 }
@@ -346,6 +393,7 @@ internal fun AnkiMinerAppShell(
 @Composable
 internal fun AnkiMinerApp(
     videoViewModel: MediaMiningViewModel,
+    audioViewModel: MediaMiningViewModel,
     readingViewModel: ReadingMiningViewModel,
     setupViewModel: SetupViewModel,
     settingsViewModel: SettingsViewModel,
@@ -374,10 +422,14 @@ internal fun AnkiMinerApp(
         setupViewModel.wizardDismissedForSession.collectAsStateWithLifecycle()
     val videoWorkflow by
         videoViewModel.navigationWorkflowState.collectAsStateWithLifecycle()
+    val audioWorkflow by
+        audioViewModel.navigationWorkflowState.collectAsStateWithLifecycle()
     val readingWorkflow by
         readingViewModel.navigationWorkflowState.collectAsStateWithLifecycle()
     val videoRunState by videoViewModel.uiState.collectAsStateWithLifecycle()
-    val timingPreview by videoViewModel.timingPreviewState.collectAsStateWithLifecycle()
+    val audioRunState by audioViewModel.uiState.collectAsStateWithLifecycle()
+    val videoTimingPreview by videoViewModel.timingPreviewState.collectAsStateWithLifecycle()
+    val audioTimingPreview by audioViewModel.timingPreviewState.collectAsStateWithLifecycle()
     val readingRunState by readingViewModel.uiState.collectAsStateWithLifecycle()
     val buildIdentity = remember { currentTesterBuildIdentity() }
     val diagnosticsIdentity =
@@ -389,6 +441,7 @@ internal fun AnkiMinerApp(
             buildIdentity,
             setupViewModel,
             videoViewModel,
+            audioViewModel,
             readingViewModel,
             onShareDiagnostics,
         ) {
@@ -398,6 +451,7 @@ internal fun AnkiMinerApp(
                         build = buildIdentity,
                         setup = setupViewModel.uiState.value,
                         video = videoViewModel.uiState.value,
+                        audio = audioViewModel.uiState.value,
                         reading = readingViewModel.uiState.value,
                         lastAnkiFault = AnkiFaultRecorder.lastFault(),
                     ).report
@@ -424,18 +478,15 @@ internal fun AnkiMinerApp(
     LaunchedEffect(notificationRunId) {
         if (notificationRunId == null) return@LaunchedEffect
         val videoRun = videoViewModel.uiState.value.runState
+        val audioRun = audioViewModel.uiState.value.runState
         val readingRun = readingViewModel.uiState.value.runState
-        val foregroundKind = MiningRunKind.fromForegroundRunId(notificationRunId)
         val destination =
-            when {
-                notificationRunId == videoRun.runId -> AnkiMinerDestination.VIDEO
-                notificationRunId == readingRun.runId -> AnkiMinerDestination.READING
-                foregroundKind == MiningRunKind.VIDEO && videoRun.isActive() ->
-                    AnkiMinerDestination.VIDEO
-                foregroundKind == MiningRunKind.READING && readingRun.isActive() ->
-                    AnkiMinerDestination.READING
-                else -> null
-            }
+            notificationRunDestination(
+                notificationRunId = notificationRunId,
+                video = videoRun,
+                audio = audioRun,
+                reading = readingRun,
+            )
         if (destination != null) {
             navController.navigate(destination.route) {
                 popUpTo(navController.graph.findStartDestination().id) { saveState = true }
@@ -486,12 +537,19 @@ internal fun AnkiMinerApp(
     val activeWorkflowDestination =
         activeWorkflowDestination(
             video = videoWorkflow,
+            audio = audioWorkflow,
             reading = readingWorkflow,
+        )
+    val timingPreviewOwner =
+        activeTimingPreviewOwner(
+            video = videoTimingPreview,
+            audio = audioTimingPreview,
         )
 
     AnkiMinerAppShell(
         currentDestination = currentDestination,
         videoWorkflow = videoWorkflow,
+        audioWorkflow = audioWorkflow,
         readingWorkflow = readingWorkflow,
         snackbarHostState = snackbarHostState,
         onDestinationSelected = ::navigateTo,
@@ -529,10 +587,10 @@ internal fun AnkiMinerApp(
                         )
                     }
                 }
-                timingPreview != null -> {
+                timingPreviewOwner == AnkiMinerDestination.VIDEO -> {
                     {
                         TimingPreviewOverlay(
-                            state = requireNotNull(timingPreview),
+                            state = requireNotNull(videoTimingPreview),
                             videoUri =
                                 Uri.parse(
                                     requireNotNull(videoRunState.video.document).uri,
@@ -543,6 +601,24 @@ internal fun AnkiMinerApp(
                             onToggleUnshifted = videoViewModel::toggleTimingPreviewUnshifted,
                             onApply = videoViewModel::applyTimingPreview,
                             onCancel = videoViewModel::closeTimingPreview,
+                        )
+                    }
+                }
+                timingPreviewOwner == AnkiMinerDestination.AUDIO -> {
+                    {
+                        TimingPreviewOverlay(
+                            state = requireNotNull(audioTimingPreview),
+                            videoUri =
+                                Uri.parse(
+                                    requireNotNull(audioRunState.video.document).uri,
+                                ),
+                            onSelectCue = audioViewModel::selectTimingPreviewCue,
+                            onNudge = audioViewModel::nudgeTimingPreview,
+                            onSetWorking = audioViewModel::setTimingPreviewWorkingOffset,
+                            onToggleUnshifted = audioViewModel::toggleTimingPreviewUnshifted,
+                            onApply = audioViewModel::applyTimingPreview,
+                            onCancel = audioViewModel::closeTimingPreview,
+                            audioOnly = true,
                         )
                     }
                 }
@@ -573,6 +649,37 @@ internal fun AnkiMinerApp(
                         onReturnToActiveRun =
                             activeWorkflowDestination
                                 ?.takeIf { it != AnkiMinerDestination.VIDEO }
+                                ?.let { destination -> { navigateTo(destination) } },
+                        modifier = Modifier.testTag(VideoMiningTestTags.SCREEN),
+                    )
+                } else {
+                    MiningReadinessNotice(
+                        state = setup,
+                        message = stringResource(miningReadinessMessage(setup)),
+                        onRequestPermissions = onRequestPermissions,
+                        onInstallUniDic = setupViewModel::installUniDic,
+                        onInstallAnkiDroid = onInstallAnkiDroid,
+                        onOpenAnkiDroid = onOpenAnkiDroid,
+                        onCheckAgain = setupViewModel::refresh,
+                        onOpenSettings = {
+                            navigateTo(AnkiMinerDestination.SETTINGS)
+                        },
+                    )
+                }
+            }
+            composable(AnkiMinerDestination.AUDIO.route) {
+                if (
+                    miningWorkflowVisible(
+                        setupReady = setup.isMiningReady,
+                        workflow = audioWorkflow,
+                        hasRetainedRun = audioRunState.runState.isTerminal,
+                    )
+                ) {
+                    AudioMiningRoute(
+                        viewModel = audioViewModel,
+                        onReturnToActiveRun =
+                            activeWorkflowDestination
+                                ?.takeIf { it != AnkiMinerDestination.AUDIO }
                                 ?.let { destination -> { navigateTo(destination) } },
                         modifier = Modifier.testTag(VideoMiningTestTags.SCREEN),
                     )

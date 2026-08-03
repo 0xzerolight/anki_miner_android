@@ -73,6 +73,7 @@ internal object TesterDiagnosticsBuilder {
         build: TesterBuildIdentity,
         setup: SetupUiState,
         video: VideoMiningUiState,
+        audio: VideoMiningUiState,
         reading: ReadingMiningUiState,
         // Read from AnkiFaultRecorder by the caller, not here: the builder stays a pure function of
         // its arguments so no test observes a fault another test recorded.
@@ -133,9 +134,18 @@ internal object TesterDiagnosticsBuilder {
                 // Both fault ids sit with anki.last_fault, above the lane lines: MAX_REPORT_CHARS
                 // truncates the tail, and the keys that point into the log must survive it.
                 line("resources.fault_id", safeCode(setup.failure?.faultId))
-                line("mining.fault_id", miningFaultId(video.runState, reading.runState))
-                line("mining.run_id", miningRunId(video.runState, reading.runState))
-                line("mining.failure_code", miningFailureCode(video.runState, reading.runState))
+                line(
+                    "mining.fault_id",
+                    miningFaultId(video.runState, audio.runState, reading.runState),
+                )
+                line(
+                    "mining.run_id",
+                    miningRunId(video.runState, audio.runState, reading.runState),
+                )
+                line(
+                    "mining.failure_code",
+                    miningFailureCode(video.runState, audio.runState, reading.runState),
+                )
                 line("anki.provider", ankiReadiness(setup.anki))
                 line("anki.recovery_startup", ankiRecoveryReadiness(setup.ankiRecovery))
                 line(
@@ -152,6 +162,9 @@ internal object TesterDiagnosticsBuilder {
                 line("video.run", miningRun(video.runState))
                 line("video.pending", videoPending(video))
                 line("video.command_failure", video.commandError?.name?.lowercase(Locale.ROOT) ?: NONE)
+                line("audio.run", miningRun(audio.runState))
+                line("audio.pending", videoPending(audio))
+                line("audio.command_failure", audio.commandError?.name?.lowercase(Locale.ROOT) ?: NONE)
                 line("reading.run", miningRun(reading.runState))
                 line("reading.pending", readingPending(reading))
                 line("reading.command_failure", reading.commandError?.name?.lowercase(Locale.ROOT) ?: NONE)

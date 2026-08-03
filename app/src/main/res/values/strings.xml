@@ -245,9 +245,11 @@
     <string name="mining_target_inspection_failed">The Anki Miner target and recovery state could not be inspected</string>
 
     <string name="nav_video">Video</string>
+    <string name="nav_audio">Audio</string>
     <string name="nav_reading">Reading</string>
     <string name="nav_settings">Settings</string>
     <string name="nav_video_description">Video mining</string>
+    <string name="nav_audio_description">Audio mining</string>
     <string name="nav_reading_description">Reading mining</string>
     <string name="nav_settings_description">Settings</string>
     <string name="nav_workflow_running">Running</string>

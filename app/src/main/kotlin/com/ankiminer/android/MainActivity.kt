@@ -166,6 +166,7 @@ class MainActivity : ComponentActivity() {
                                     build = diagnosticsBuild,
                                     setup = setupViewModel.uiState.value,
                                     video = miningViewModel.uiState.value,
+                                    audio = miningViewModel.uiState.value,
                                     reading = readingViewModel.uiState.value,
                                     lastAnkiFault = AnkiFaultRecorder.lastFault(),
                                 ).report
@@ -188,6 +189,7 @@ class MainActivity : ComponentActivity() {
                     }
                 AnkiMinerApp(
                     videoViewModel = miningViewModel,
+                    audioViewModel = miningViewModel,
                     readingViewModel = readingViewModel,
                     setupViewModel = setupViewModel,
                     settingsViewModel = settingsViewModel,

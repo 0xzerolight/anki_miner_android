@@ -239,9 +239,11 @@
     <string name="mining_target_inspection_failed">Anki Minerの対象とリカバリの状態を確認できませんでした</string>
 
     <string name="nav_video">動画</string>
+    <string name="nav_audio">音声</string>
     <string name="nav_reading">読書</string>
     <string name="nav_settings">設定</string>
     <string name="nav_video_description">動画マイニング</string>
+    <string name="nav_audio_description">音声マイニング</string>
     <string name="nav_reading_description">読書マイニング</string>
     <string name="nav_settings_description">設定</string>
     <string name="nav_workflow_running">実行中</string>
