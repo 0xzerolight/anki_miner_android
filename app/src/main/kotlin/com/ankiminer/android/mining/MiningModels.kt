@@ -272,6 +272,15 @@ data class MiningFailure(
     }
 }
 
+/**
+ * Media the curation UI may preview. Both paths are the run's staged cache copies,
+ * alive until the input owner closes in finishRun. Null on the reading lane.
+ */
+data class CurationMediaBinding(
+    val videoPath: String,
+    val subtitlePath: String,
+)
+
 sealed interface MiningRunState {
     data object Idle : MiningRunState
 
@@ -286,6 +295,7 @@ sealed interface MiningRunState {
         val request: CurationRequest,
         val pageSubmissionPending: Boolean = false,
         val cancellationPending: Boolean = false,
+        val media: CurationMediaBinding? = null,
     ) : MiningRunState
 
     data class Running(

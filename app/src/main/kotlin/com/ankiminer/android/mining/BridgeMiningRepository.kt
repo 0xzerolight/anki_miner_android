@@ -141,7 +141,15 @@ internal class BridgeMiningRepository(
         var interruptionRecorded = false
         var configSnapshot: MiningConfigSnapshot? = null
         var hasSelectedCandidate = false
+        var videoCachePath: String? = null
+        var subtitleCachePath: String? = null
         val presenterNotices = mutableListOf<String>()
+
+        fun mediaBinding(): CurationMediaBinding? {
+            val video = videoCachePath ?: return null
+            val subtitle = subtitleCachePath ?: return null
+            return CurationMediaBinding(video, subtitle)
+        }
     }
 
     private val monitor = Any()
@@ -295,7 +303,12 @@ internal class BridgeMiningRepository(
                     mutableState.value = MiningRunState.Running(runId, progress)
                 } else {
                     transition = run.transition(Phase.ADVANCING, "curation_page")
-                    mutableState.value = MiningRunState.Curating(request, pageSubmissionPending = true)
+                    mutableState.value =
+                        MiningRunState.Curating(
+                            request,
+                            pageSubmissionPending = true,
+                            media = run.mediaBinding(),
+                        )
                 }
                 run.generation to run.hasSelectedCandidate
             }
@@ -466,6 +479,10 @@ internal class BridgeMiningRepository(
                     videoPath = inputOwner.openVideo(run.input.video)
                     if (run.cancellation.isCancelled()) return
                     subtitlePath = inputOwner.materializeSubtitle(run.input.subtitle)
+                    synchronized(monitor) {
+                        run.videoCachePath = videoPath
+                        run.subtitleCachePath = subtitlePath
+                    }
                 } catch (failure: Exception) {
                     // A cancelled copy must terminate as Cancelled: a recorded fault would win
                     // over the cancelled flag in terminalState.
@@ -1408,7 +1425,12 @@ internal class BridgeMiningRepository(
             if (run.cancelRequested || run.phase != admittedPhase) return
             transition = run.transition(Phase.CURATING, "curation_needed")
             run.curation = message.request
-            mutableState.value = MiningRunState.Curating(message.request, pageSubmissionPending = false)
+            mutableState.value =
+                MiningRunState.Curating(
+                    message.request,
+                    pageSubmissionPending = false,
+                    media = run.mediaBinding(),
+                )
         }
         transition.emit()
     }

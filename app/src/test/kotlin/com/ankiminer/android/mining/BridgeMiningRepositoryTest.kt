@@ -713,6 +713,40 @@ class BridgeMiningRepositoryTest {
     }
 
     @Test
+    fun `curating publishes the staged media paths and keeps them across pages`() {
+        val harness = harness(pagedCuration = true)
+
+        runBlocking { harness.repository.startVideo(INPUT) }
+        val first = awaitState(harness.repository) {
+            (it as? MiningRunState.Curating)?.request?.page?.pageIndex == 0L
+        } as MiningRunState.Curating
+        assertEquals(CurationMediaBinding("/tmp/video.mkv", "/tmp/subtitle.srt"), first.media)
+
+        runBlocking {
+            harness.repository.confirmCuration(
+                first.request.runId,
+                first.request.requestId,
+                emptyList(),
+                pageIndex = 0,
+            )
+        }
+        // Whichever Curating state is current now — the transient pageSubmissionPending
+        // one from confirmCuration or the already-accepted next page — must still carry
+        // the binding; the pending state is constructed fresh, not copied.
+        val afterConfirm = harness.repository.state.value as MiningRunState.Curating
+        assertEquals(first.media, afterConfirm.media)
+        val second = awaitState(harness.repository) {
+            (it as? MiningRunState.Curating)?.request?.page?.pageIndex == 1L
+        } as MiningRunState.Curating
+        assertEquals(first.media, second.media)
+
+        runBlocking { harness.repository.cancel(second.request.runId) }
+        assertTrue(harness.bridge.cancellationSubmitted.await(2, TimeUnit.SECONDS))
+        harness.bridge.allowTerminal.countDown()
+        awaitState(harness.repository, MiningRunState::isTerminal)
+    }
+
+    @Test
     fun `foreground promotion execution failure keeps its cause and distinct fault`() {
         val (harness, failed) = foregroundFailure(ForegroundStartFailure.EXECUTION)
 
