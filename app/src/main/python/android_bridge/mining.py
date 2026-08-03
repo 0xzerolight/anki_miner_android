@@ -48,6 +48,7 @@ _VIDEO_REQUEST_FIELDS = frozenset(
         "seriesName",
         "sourceLabel",
         "audioTrackOverride",
+        "audioOnly",
         "cacheDir",
         "nativeLibraryDir",
         "configSnapshot",
@@ -69,6 +70,7 @@ class _VideoRequest:
     series_name: str
     source_label: str | None
     audio_track_override: int | None
+    audio_only: bool
     cache_dir: Path
     native_library_dir: Path
     settings: Mapping[str, object]
@@ -262,6 +264,10 @@ def _parse_request(raw_request: str) -> _VideoRequest:
     if "androidTtsEnabled" in snapshot and type(android_tts_enabled) is not bool:
         raise _invalid_request("configSnapshot.androidTtsEnabled must be a boolean")
 
+    audio_only = payload["audioOnly"]
+    if type(audio_only) is not bool:
+        raise _invalid_request("audioOnly must be a boolean")
+
     subtitle_path = _absolute_path("subtitlePath", payload["subtitlePath"])
     if subtitle_path.suffix.lower() not in _SUBTITLE_SUFFIXES:
         raise _invalid_request("subtitlePath must preserve a supported subtitle filename suffix")
@@ -273,6 +279,7 @@ def _parse_request(raw_request: str) -> _VideoRequest:
         series_name=_canonical_label("seriesName", payload["seriesName"]),
         source_label=_optional_source_label(payload["sourceLabel"]),
         audio_track_override=_optional_audio_track(payload["audioTrackOverride"]),
+        audio_only=audio_only,
         cache_dir=_absolute_path("cacheDir", payload["cacheDir"]),
         native_library_dir=_absolute_path("nativeLibraryDir", payload["nativeLibraryDir"]),
         settings=dict(snapshot["settings"]),
@@ -752,7 +759,7 @@ def _process_episode(
                 series_name_override=request.series_name,
                 audio_track_override=request.audio_track_override,
                 source_label_override=request.source_label,
-                audio_only=False,
+                audio_only=request.audio_only,
                 cancel_event=adapters.cancel_event,
             )
         finally:

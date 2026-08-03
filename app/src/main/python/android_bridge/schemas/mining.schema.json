@@ -153,6 +153,7 @@
         "seriesName",
         "sourceLabel",
         "audioTrackOverride",
+        "audioOnly",
         "cacheDir",
         "nativeLibraryDir",
         "configSnapshot"
@@ -174,6 +175,7 @@
             {"$ref": "#/$defs/nonNegativeSigned64"}
           ]
         },
+        "audioOnly": {"type": "boolean"},
         "cacheDir": {"$ref": "#/$defs/absolutePath"},
         "nativeLibraryDir": {"$ref": "#/$defs/absolutePath"},
         "configSnapshot": {

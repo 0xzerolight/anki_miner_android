@@ -283,6 +283,40 @@ def test_mining_protocol_valid_and_rejected_corpora_freeze_complete_messages(
         assert list(validator.iter_errors(case["message"])), case["name"]
 
 
+@pytest.mark.parametrize("audio_only", [False, True])
+def test_video_run_schema_requires_boolean_audio_only(
+    schemas: dict[str, dict[str, Any]],
+    audio_only: bool,
+) -> None:
+    validator = Draft202012Validator(schemas["mining"], registry=_cross_schema_registry(schemas))
+    message = {
+        "schemaVersion": 1,
+        "type": "mining.video.run",
+        "payload": {
+            "videoPath": "/cache/input.media",
+            "subtitlePath": "/cache/subtitle.srt",
+            "episodeName": "Episode",
+            "seriesName": "Series",
+            "sourceLabel": None,
+            "audioTrackOverride": None,
+            "audioOnly": audio_only,
+            "cacheDir": "/cache",
+            "nativeLibraryDir": "/native",
+            "configSnapshot": {"settings": {}},
+        },
+    }
+
+    assert list(validator.iter_errors(message)) == []
+
+    missing = deepcopy(message)
+    del missing["payload"]["audioOnly"]
+    assert list(validator.iter_errors(missing))
+
+    non_boolean = deepcopy(message)
+    non_boolean["payload"]["audioOnly"] = 1
+    assert list(validator.iter_errors(non_boolean))
+
+
 def test_terminal_error_fault_id_is_optional_and_opaque(
     schemas: dict[str, dict[str, Any]],
 ) -> None:
