@@ -4,6 +4,8 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-03
+
 ### Added
 
 - The word picker shows the dictionary entry for the word you are looking at, so you can decide whether it earns a card without leaving the screen. It reads the same offline dictionaries that build the card, never the network, and says so plainly when a word has no entry. Where a word has no entry of its own but its dictionary form does, the entry is labelled with the word it actually matched rather than quietly standing in.
