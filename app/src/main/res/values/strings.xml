@@ -56,6 +56,10 @@
     <string name="curation_select_whole_page">Select all %1$d on this page</string>
     <string name="curation_include_word">Include %1$s</string>
     <string name="curation_exclude_word">Exclude %1$s</string>
+    <string name="definition_loading">Looking up…</string>
+    <string name="definition_missing">No offline dictionary entry</string>
+    <string name="definition_unavailable">Dictionary lookup unavailable</string>
+    <string name="definition_fallback">No entry for %1$s — showing %2$s</string>
     <string name="confirm_curation">Continue (%1$d)</string>
     <string name="confirm_curation_page">Next (%1$d)</string>
     <string name="confirm_curation_final_page">Finish (%1$d)</string>

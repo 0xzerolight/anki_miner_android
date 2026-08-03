@@ -56,6 +56,7 @@ import com.ankiminer.android.mining.ProcessingResult
 import com.ankiminer.android.mining.RuntimeWorkConflict
 import com.ankiminer.android.ui.mining.CurationCandidateHeader
 import com.ankiminer.android.ui.mining.CurationControls
+import com.ankiminer.android.ui.mining.CurationDefinitionPane
 import com.ankiminer.android.ui.mining.CurationFilter
 import com.ankiminer.android.ui.mining.CurationSentenceChoice
 import com.ankiminer.android.ui.mining.CurationSort
@@ -695,6 +696,18 @@ private fun LazyListScope.curationItems(
             )
         }
         if (expanded) {
+            curation.definition?.let { definition ->
+                item(
+                    key = "definition:${candidate.candidateId}",
+                    contentType = "definition",
+                ) {
+                    CurationDefinitionPane(
+                        definition = definition,
+                        term = candidate.minedForm,
+                        testTag = VideoMiningTestTags.DEFINITION,
+                    )
+                }
+            }
             candidate.sentences.forEachIndexed { index, sentence ->
                 val sentenceTestTag =
                     VideoMiningTestTags.sentence(

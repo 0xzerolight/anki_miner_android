@@ -1,6 +1,7 @@
 package com.ankiminer.android.ui.reading
 
 import androidx.compose.runtime.Immutable
+import com.ankiminer.android.dictionary.CurationDefinition
 import com.ankiminer.android.media.SafDocument
 import com.ankiminer.android.mining.CurationCandidate
 import com.ankiminer.android.mining.CurationPage
@@ -49,6 +50,7 @@ data class ReadingCurationUiState(
     val focusedCandidateId: String?,
     val previousPageSelectedCount: Int = 0,
     val page: CurationPage? = null,
+    val definition: CurationDefinition? = null,
 ) {
     val selectedCount: Int
         get() = selectedCandidateIds.size

@@ -81,6 +81,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import com.ankiminer.android.R
+import com.ankiminer.android.dictionary.CurationDefinition
 import com.ankiminer.android.localization.byteProgressResource
 import com.ankiminer.android.media.SafDocument
 import com.ankiminer.android.mining.CurationCandidate
@@ -89,6 +90,7 @@ import com.ankiminer.android.mining.CurationSentence
 import com.ankiminer.android.mining.MiningProgress
 import com.ankiminer.android.mining.MiningProgressUnit
 import com.ankiminer.android.mining.ProcessingResult
+import com.ankiminer.android.ui.settings.DictionaryHtml
 import com.ankiminer.android.ui.theme.AdaptiveActionGroup
 import com.ankiminer.android.ui.theme.AdaptivePairedActions
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
@@ -924,6 +926,73 @@ internal fun CurationCandidateHeader(
             )
         }
     }
+}
+
+@Composable
+internal fun CurationDefinitionPane(
+    definition: CurationDefinition,
+    term: String,
+    testTag: String,
+) {
+    Surface(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .testTag(testTag),
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        shape = RoundedCornerShape(0.dp),
+    ) {
+        Column {
+            HorizontalDivider()
+            when (definition) {
+                CurationDefinition.Loading -> DefinitionNotice(R.string.definition_loading)
+                CurationDefinition.Missing -> DefinitionNotice(R.string.definition_missing)
+                CurationDefinition.Unavailable ->
+                    DefinitionNotice(R.string.definition_unavailable)
+                is CurationDefinition.Loaded -> {
+                    if (definition.matchedTerm != term) {
+                        Text(
+                            text =
+                                stringResource(
+                                    R.string.definition_fallback,
+                                    term,
+                                    definition.matchedTerm,
+                                ),
+                            modifier =
+                                Modifier.padding(
+                                    horizontal = AnkiMinerTokens.Space.group,
+                                    vertical = AnkiMinerTokens.Space.line,
+                                ),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    DictionaryHtml(
+                        html = definition.entries.joinToString(separator = "\n") { it.html },
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 96.dp, max = 260.dp)
+                                .padding(horizontal = AnkiMinerTokens.Space.group),
+                        updateKey = definition.matchedTerm,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DefinitionNotice(
+    @StringRes text: Int,
+) {
+    Text(
+        text = stringResource(text),
+        modifier = Modifier.padding(AnkiMinerTokens.Space.group),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
 }
 
 @Composable

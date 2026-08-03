@@ -66,6 +66,7 @@ class MainActivity : ComponentActivity() {
         VideoMiningViewModel.Factory(
             repository = MiningRepositoryFactory.create(app),
             safBroker = app.safBroker,
+            definitionLookup = app.definitionLookupService,
             runtimeWorkState = app.runtimeWorkState,
             selectionInventory = app.safSelectionInventory,
         )
@@ -92,6 +93,7 @@ class MainActivity : ComponentActivity() {
         ReadingMiningViewModel.Factory(
             repository = ReadingRepositoryFactory.create(app),
             safBroker = app.safBroker,
+            definitionLookup = app.definitionLookupService,
             runtimeWorkState = app.runtimeWorkState,
             selectionInventory = app.safSelectionInventory,
         )

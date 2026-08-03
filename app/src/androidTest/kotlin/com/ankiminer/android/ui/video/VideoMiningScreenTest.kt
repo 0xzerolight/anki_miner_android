@@ -25,6 +25,10 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
+import androidx.test.platform.app.InstrumentationRegistry
+import com.ankiminer.android.R
+import com.ankiminer.android.dictionary.CurationDefinition
+import com.ankiminer.android.engine.DefinitionEntry
 import com.ankiminer.android.media.SafDocument
 import com.ankiminer.android.mining.AnkiWriteState
 import com.ankiminer.android.mining.CurationCandidate
@@ -830,6 +834,69 @@ class VideoMiningScreenTest {
         composeRule.onNodeWithText("Notes added before the run stopped").assertExists()
     }
 
+    @Test
+    fun definitionPaneShowsForTheExpandedCandidate() {
+        val request = request()
+        setScreen(
+            state =
+                VideoMiningUiState(
+                    runState = MiningRunState.Curating(request),
+                    curation = curationState(request, definition = CurationDefinition.Missing),
+                ),
+        )
+
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(VideoMiningTestTags.DEFINITION))
+        composeRule.onNodeWithTag(VideoMiningTestTags.DEFINITION).assertExists()
+    }
+
+    @Test
+    fun definitionPaneNamesTheWordItActuallyMatched() {
+        val request = request()
+        val firstMinedForm = request.candidates.first().minedForm
+        val expected =
+            InstrumentationRegistry.getInstrumentation().targetContext.getString(
+                R.string.definition_fallback,
+                firstMinedForm,
+                "遣る",
+            )
+        setScreen(
+            state =
+                VideoMiningUiState(
+                    runState = MiningRunState.Curating(request),
+                    curation =
+                        curationState(
+                            request,
+                            definition =
+                                CurationDefinition.Loaded(
+                                    "遣る",
+                                    listOf(DefinitionEntry("Jitendex", "<div/>")),
+                                ),
+                        ),
+                ),
+        )
+
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(VideoMiningTestTags.DEFINITION))
+        composeRule.onNodeWithText(expected).assertExists()
+    }
+
+    @Test
+    fun definitionPaneIsAbsentWithoutADefinition() {
+        val request = request()
+        setScreen(
+            state =
+                VideoMiningUiState(
+                    runState = MiningRunState.Curating(request),
+                    curation = curationState(request, definition = null),
+                ),
+        )
+
+        composeRule.onNodeWithTag(VideoMiningTestTags.DEFINITION).assertDoesNotExist()
+    }
+
     private fun setScreen(
         state: VideoMiningUiState,
         onPickVideo: () -> Unit = {},
@@ -921,6 +988,7 @@ class VideoMiningScreenTest {
             request.candidates.mapTo(linkedSetOf(), CurationCandidate::candidateId),
         focusedCandidateId: String? = selectedCandidateIds.firstOrNull(),
         previousPageSelectedCount: Int = 0,
+        definition: CurationDefinition? = null,
     ): CurationUiState =
         CurationUiState(
             runId = request.runId,
@@ -934,6 +1002,7 @@ class VideoMiningScreenTest {
             focusedCandidateId = focusedCandidateId,
             previousPageSelectedCount = previousPageSelectedCount,
             page = request.page,
+            definition = definition,
         )
 
     private fun candidate(
