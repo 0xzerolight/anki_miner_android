@@ -9,6 +9,13 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 - The word picker shows the dictionary entry for the word you are looking at, so you can decide whether it earns a card without leaving the screen. It reads the same offline dictionaries that build the card, never the network, and says so plainly when a word has no entry. Where a word has no entry of its own but its dictionary form does, the entry is labelled with the word it actually matched rather than quietly standing in.
 - A word can be marked as already known from its row in the picker. Marked words drop out of the current run and are written to the known-words list when you confirm the review — cancelling at any point, on any page, writes nothing.
 - Word and sentence can be copied from a picker row. The sentence copied is the one you have selected for the card, not the first alternative.
+- The word picker keeps the video pinned above the list and seeks it to the sentence you are looking at, so a word can be judged in context instead of from its text alone. The player shows the subtitle line for the position it is at, can be collapsed when the list needs the room, and plays the copy of the video the run itself is cutting from. A source the storage provider will not let the app seek reports that the preview is unavailable and leaves the rest of the picker working.
+- Subtitle timing can be overridden for a single run from the mining screen, leaving the default in Settings alone.
+- Subtitle timing can be tested before mining starts: the video plays against its subtitle cues, the offset can be nudged in tenths of a second and compared against the unshifted timing, and the offset you settle on is carried into the run.
+
+### Fixed
+
+- The engine's notice for words dropped before the picker no longer reads "Skipped N words", which contradicted the run's own skipped-and-new count for words that never reached the picker at all.
 
 ## [0.2.1] - 2026-08-02
 
