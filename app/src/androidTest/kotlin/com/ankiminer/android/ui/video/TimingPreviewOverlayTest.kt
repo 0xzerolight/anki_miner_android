@@ -4,7 +4,8 @@ import android.net.Uri
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.test.assertDoesNotExist
+import androidx.activity.OnBackPressedDispatcher
+import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.v2.createComposeRule
@@ -13,7 +14,6 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextReplacement
-import androidx.test.espresso.Espresso.pressBack
 import com.ankiminer.android.engine.SubtitleCue
 import com.ankiminer.android.player.FakeCurationPreviewPlayer
 import com.ankiminer.android.ui.mining.TimingPreviewState
@@ -125,8 +125,13 @@ class TimingPreviewOverlayTest {
         val fake = FakeCurationPreviewPlayer()
         var state by mutableStateOf(state())
         var visible by mutableStateOf(true)
+        // Captured from the composition so the back event travels through the same
+        // dispatcher the overlay's BackHandler registered with.
+        var backDispatcher: OnBackPressedDispatcher? = null
         composeRule.setContent {
             AnkiMinerTheme {
+                backDispatcher =
+                    LocalOnBackPressedDispatcherOwner.current?.onBackPressedDispatcher
                 if (visible) {
                     TimingPreviewOverlay(
                         state = state,
@@ -144,7 +149,9 @@ class TimingPreviewOverlayTest {
             }
         }
 
-        pressBack()
+        composeRule.runOnUiThread {
+            (backDispatcher ?: error("no back dispatcher in composition")).onBackPressed()
+        }
 
         composeRule.onNodeWithTag(VideoMiningTestTags.TIMING_PREVIEW).assertDoesNotExist()
         composeRule.runOnIdle { assertEquals(1, fake.releaseCount) }

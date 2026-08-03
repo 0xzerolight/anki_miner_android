@@ -347,7 +347,7 @@ private fun parsedOffset(value: String): Double? =
 
 private fun editableOffset(value: Double): String = value.toString()
 
-private suspend fun isSeekableVideoSource(
+internal suspend fun isSeekableVideoSource(
     context: Context,
     uri: Uri,
 ): Boolean =

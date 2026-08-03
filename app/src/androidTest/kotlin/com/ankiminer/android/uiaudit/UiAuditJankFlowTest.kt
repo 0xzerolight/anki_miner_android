@@ -22,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.test.ext.junit.rules.ActivityScenarioRule
 import androidx.test.platform.app.InstrumentationRegistry
+import com.ankiminer.android.player.FakeCurationPreviewPlayer
 import com.ankiminer.android.ui.navigation.AnkiMinerAppShell
 import com.ankiminer.android.ui.navigation.AnkiMinerDestination
 import com.ankiminer.android.ui.reading.ReadingMiningScreen
@@ -90,6 +91,7 @@ class UiAuditJankFlowTest {
                     onCancel = {},
                     onRetry = {},
                     onReset = {},
+                    playerFactory = { FakeCurationPreviewPlayer() },
                     modifier = Modifier.testTag(VideoMiningTestTags.SCREEN),
                     listState = listState,
                 )

@@ -266,7 +266,10 @@ class VideoMiningScreenTest {
         }
 
         composeRule.onNodeWithTag(CurationPlayerTestTags.SURFACE).assertIsDisplayed()
-        composeRule.waitForIdle()
+        // The initial focus seek is debounced on the real clock; waitForIdle does not wait it out.
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            fake.events.any { it.startsWith("seekTo:") }
+        }
         composeRule.runOnIdle {
             assertEquals(1, fake.boundUris.size)
             assertEquals(videoPath, fake.boundUris.single().path)
@@ -352,9 +355,9 @@ class VideoMiningScreenTest {
             .onNodeWithTag(VideoMiningTestTags.CONTENT)
             .performScrollToNode(hasTestTag(VideoMiningTestTags.candidate(second.candidateId)))
         composeRule.onNodeWithTag(VideoMiningTestTags.candidate(second.candidateId)).performClick()
-        composeRule.waitForIdle()
+        composeRule.waitUntil(timeoutMillis = 5_000) { fake.seekToCalls.isNotEmpty() }
         composeRule.runOnIdle {
-            assertEquals(second.sentences.single().startTime, fake.seekToCalls.last())
+            assertEquals(second.sentences.single().startTime, fake.seekToCalls.last(), 0.0)
             fake.seekToCalls.clear()
         }
 
@@ -362,7 +365,8 @@ class VideoMiningScreenTest {
             .onNodeWithTag(VideoMiningTestTags.CONTENT)
             .performScrollToNode(hasTestTag(VideoMiningTestTags.candidate(first.candidateId)))
         composeRule.onNodeWithTag(VideoMiningTestTags.candidate(first.candidateId)).performClick()
-        composeRule.waitForIdle()
+        // Let the focus seek land before clearing, or it would fire mid-assertion below.
+        composeRule.waitUntil(timeoutMillis = 5_000) { fake.seekToCalls.isNotEmpty() }
         composeRule.runOnIdle { fake.seekToCalls.clear() }
         val alternate = first.sentences.last()
         composeRule
@@ -373,7 +377,7 @@ class VideoMiningScreenTest {
         composeRule
             .onNodeWithTag(VideoMiningTestTags.sentence(first.candidateId, alternate.sentenceId))
             .performClick()
-        composeRule.waitForIdle()
+        composeRule.waitUntil(timeoutMillis = 5_000) { fake.seekToCalls.isNotEmpty() }
 
         composeRule.runOnIdle {
             assertEquals(listOf(alternate.startTime), fake.seekToCalls)

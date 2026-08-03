@@ -41,6 +41,7 @@ import com.ankiminer.android.data.resources.ResourceFailureRetry
 import com.ankiminer.android.data.resources.ResourceStartupReadiness
 import com.ankiminer.android.data.settings.ResourceChainSelection
 import com.ankiminer.android.engine.PythonRuntimeReadiness
+import com.ankiminer.android.engine.SubtitleCue
 import com.ankiminer.android.media.SafDocument
 import com.ankiminer.android.mining.AnkiWriteState
 import com.ankiminer.android.mining.CurationCandidate
@@ -76,6 +77,7 @@ import com.ankiminer.android.ui.settings.SettingsCategory
 import com.ankiminer.android.ui.settings.SettingsCategoryLayout
 import com.ankiminer.android.ui.settings.SystemStatusCard
 import com.ankiminer.android.ui.settings.settingsCard
+import com.ankiminer.android.ui.video.CurationPlayerUiState
 import com.ankiminer.android.ui.video.CurationUiState
 import com.ankiminer.android.ui.video.DocumentSlotState
 import com.ankiminer.android.ui.video.MiningCommandError
@@ -166,6 +168,29 @@ internal fun videoAuditState(
                                     }
                             },
                         focusedCandidateId = candidates.getOrNull(1)?.candidateId,
+                        player =
+                            CurationPlayerUiState(
+                                videoPath = "/cache/ui-audit-curation.media",
+                                cues =
+                                    listOf(
+                                        SubtitleCue(
+                                            startSeconds = 0.0,
+                                            endSeconds = 2.4,
+                                            text = "壁に古い時計を掛ける。",
+                                        ),
+                                        SubtitleCue(
+                                            startSeconds = 2.5,
+                                            endSeconds = 4.9,
+                                            text = "夜明け前の空は美しい。",
+                                        ),
+                                        SubtitleCue(
+                                            startSeconds = 5.0,
+                                            endSeconds = 7.4,
+                                            text = "懐かしい景色を思い出す。",
+                                        ),
+                                    ),
+                                cuesUnavailable = false,
+                            ),
                     ),
             )
         }
