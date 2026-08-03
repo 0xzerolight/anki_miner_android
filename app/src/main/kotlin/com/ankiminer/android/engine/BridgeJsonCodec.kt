@@ -44,6 +44,7 @@ object BridgeJsonCodec {
     // (PIPELINE_STAGE_COUNT); the ceiling is deliberately well above it so an
     // added stage is not a runtime protocol error.
     private const val MAX_PIPELINE_STAGES = 32L
+    private const val MAX_SUBTITLE_CUES = 20_000
     private const val MAX_JSON_DEPTH = 128
     private const val MAX_JSON_TOKENS = 1_000_000L
     private const val MAX_JSON_NUMBER_CHARS = 1000
@@ -183,6 +184,16 @@ object BridgeJsonCodec {
             if (fallbackTerm == null) generator.writeNull() else generator.writeString(fallbackTerm)
         }
 
+    fun encodeSubtitleCuesRequest(
+        runId: String?,
+        subtitlePath: String,
+    ): String =
+        encode("subtitle.cues") { generator ->
+            generator.writeFieldName("runId")
+            writeNullableString(generator, runId)
+            generator.writeStringField("subtitlePath", subtitlePath)
+        }
+
     fun encodeCurationResponse(
         request: CurationRequest,
         selection: List<CurationSelection>?,
@@ -279,6 +290,8 @@ object BridgeJsonCodec {
             "curation.page.accepted" -> readCurationPageAccepted(payload)
             "dictionary.define" -> readDictionaryDefineRequest(payload)
             "dictionary.define.result" -> readDictionaryDefineResult(payload)
+            "subtitle.cues" -> readSubtitleCuesRequest(payload)
+            "subtitle.cues.result" -> readSubtitleCuesResult(payload)
             "diagnostics.loglevel.set" -> BridgeMessage.DiagnosticsLogLevelSet(logLevel(payload, type))
             "diagnostics.loglevel.applied" -> BridgeMessage.DiagnosticsLogLevelApplied(logLevel(payload, type))
             "job.cancel" -> BridgeMessage.JobCancel(singleRunId(payload, type))
@@ -671,6 +684,47 @@ object BridgeJsonCodec {
                 DefinitionEntry(
                     text(fields.getValue("source"), "definition source"),
                     text(fields.getValue("html"), "definition html"),
+                )
+            },
+        )
+    }
+
+    private fun readSubtitleCuesRequest(
+        payload: Map<String, BridgeJsonValue>,
+    ): BridgeMessage.SubtitleCuesRequest {
+        requireExact(payload, setOf("runId", "subtitlePath"), "subtitle.cues")
+        return BridgeMessage.SubtitleCuesRequest(
+            nullableRunId(payload.getValue("runId")),
+            nonEmptyText(payload.getValue("subtitlePath"), "subtitlePath"),
+        )
+    }
+
+    private fun readSubtitleCuesResult(
+        payload: Map<String, BridgeJsonValue>,
+    ): BridgeMessage.SubtitleCuesResult {
+        requireExact(payload, setOf("runId", "subtitlePath", "cues"), "subtitle.cues.result")
+        val cues = array(payload.getValue("cues"), "subtitle cues")
+        if (cues.size > MAX_SUBTITLE_CUES) {
+            fail(BridgeProtocolCategory.INVALID_VALUE, "subtitle cues exceed their cue limit")
+        }
+        return BridgeMessage.SubtitleCuesResult(
+            nullableRunId(payload.getValue("runId")),
+            nonEmptyText(payload.getValue("subtitlePath"), "subtitlePath"),
+            cues.map { cue ->
+                val fields = objectValue(cue, "subtitle cue")
+                requireExact(fields, setOf("start", "end", "text"), "subtitle cue")
+                val start = number(fields.getValue("start"), "subtitle cue start")
+                val end = number(fields.getValue("end"), "subtitle cue end")
+                if (start < 0.0 || end < start) {
+                    fail(
+                        BridgeProtocolCategory.INVALID_VALUE,
+                        "subtitle cue times must satisfy end >= start >= 0",
+                    )
+                }
+                SubtitleCue(
+                    startSeconds = start,
+                    endSeconds = end,
+                    text = text(fields.getValue("text"), "subtitle cue text"),
                 )
             },
         )
@@ -1342,6 +1396,8 @@ object BridgeJsonCodec {
             is BridgeMessage.CurationPageAccepted -> message.runId to message.requestId
             is BridgeMessage.DictionaryDefineRequest -> message.runId to null
             is BridgeMessage.DictionaryDefineResult -> message.runId to null
+            is BridgeMessage.SubtitleCuesRequest -> message.runId to null
+            is BridgeMessage.SubtitleCuesResult -> message.runId to null
             is BridgeMessage.JobCancel -> message.runId to null
             is BridgeMessage.JobCancelled -> message.runId to null
             is BridgeMessage.Terminal -> message.runId to null
@@ -1426,6 +1482,14 @@ object BridgeJsonCodec {
         context: String,
     ): String? = if (value is BridgeJsonValue.Null) null else text(value, context)
 
+    private fun nonEmptyText(
+        value: BridgeJsonValue,
+        context: String,
+    ): String =
+        text(value, context).also {
+            if (it.isEmpty()) fail(BridgeProtocolCategory.INVALID_VALUE, "$context must not be empty")
+        }
+
     private fun bool(
         value: BridgeJsonValue,
         context: String,
@@ -1485,6 +1549,9 @@ object BridgeJsonCodec {
     ): List<String> = array(value, context).map { text(it, "$context item") }
 
     private fun runId(value: BridgeJsonValue): String = opaque(value, runIdPattern, "run ID")
+
+    private fun nullableRunId(value: BridgeJsonValue): String? =
+        if (value is BridgeJsonValue.Null) null else runId(value)
 
     private fun opaque(
         value: BridgeJsonValue,

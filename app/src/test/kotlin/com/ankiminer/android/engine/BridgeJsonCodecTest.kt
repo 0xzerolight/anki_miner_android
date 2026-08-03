@@ -590,6 +590,66 @@ class BridgeJsonCodecTest {
     }
 
     @Test
+    fun `encodes a subtitle cues request with a null run id`() {
+        val raw = BridgeJsonCodec.encodeSubtitleCuesRequest(null, "/cache/subtitle.srt")
+        assertEquals(
+            """{"schemaVersion":1,"type":"subtitle.cues","payload":{"runId":null,"subtitlePath":"/cache/subtitle.srt"}}""",
+            raw,
+        )
+        assertEquals(
+            BridgeMessage.SubtitleCuesRequest(null, "/cache/subtitle.srt"),
+            BridgeJsonCodec.decode(raw),
+        )
+    }
+
+    @Test
+    fun `decodes a subtitle cues result`() {
+        val raw =
+            """{"schemaVersion":1,"type":"subtitle.cues.result","payload":{"runId":"$DEFINE_RUN_ID","subtitlePath":"/cache/subtitle.srt","cues":[{"start":1.25,"end":2.5,"text":"猫だ。"},{"start":3,"end":3,"text":"犬だ。"}]}}"""
+        assertEquals(
+            BridgeMessage.SubtitleCuesResult(
+                runId = DEFINE_RUN_ID,
+                subtitlePath = "/cache/subtitle.srt",
+                cues =
+                    listOf(
+                        SubtitleCue(1.25, 2.5, "猫だ。"),
+                        SubtitleCue(3.0, 3.0, "犬だ。"),
+                    ),
+            ),
+            BridgeJsonCodec.decode(raw),
+        )
+    }
+
+    @Test
+    fun `rejects a subtitle cue without an end time`() {
+        val raw =
+            """{"schemaVersion":1,"type":"subtitle.cues.result","payload":{"runId":null,"subtitlePath":"/cache/subtitle.srt","cues":[{"start":1.25,"text":"猫だ。"}]}}"""
+        assertThrows(BridgeProtocolException::class.java) { BridgeJsonCodec.decode(raw) }
+    }
+
+    @Test
+    fun `rejects subtitle cues with non-finite times`() {
+        val rejected =
+            listOf(
+                """{"schemaVersion":1,"type":"subtitle.cues.result","payload":{"runId":null,"subtitlePath":"/cache/subtitle.srt","cues":[{"start":1e9999,"end":2.5,"text":"猫だ。"}]}}""",
+                """{"schemaVersion":1,"type":"subtitle.cues.result","payload":{"runId":null,"subtitlePath":"/cache/subtitle.srt","cues":[{"start":1.25,"end":1e9999,"text":"猫だ。"}]}}""",
+            )
+        rejected.forEach { raw ->
+            assertEquals(
+                BridgeProtocolCategory.NON_FINITE_NUMBER,
+                protocolFailure { BridgeJsonCodec.decode(raw) }.category,
+            )
+        }
+    }
+
+    @Test
+    fun `rejects a subtitle cue ending before it starts`() {
+        val raw =
+            """{"schemaVersion":1,"type":"subtitle.cues.result","payload":{"runId":null,"subtitlePath":"/cache/subtitle.srt","cues":[{"start":2.5,"end":1.25,"text":"猫だ。"}]}}"""
+        assertThrows(BridgeProtocolException::class.java) { BridgeJsonCodec.decode(raw) }
+    }
+
+    @Test
     fun `nesting and UTF-8 envelope ceilings are enforced before routing`() {
         val deep =
             """{"schemaVersion":1,"type":"bridge.error","payload":{"code":"x","message":${"[".repeat(130)}null${"]".repeat(130)}}}"""

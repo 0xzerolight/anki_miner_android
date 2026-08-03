@@ -80,6 +80,12 @@ data class DefinitionEntry(
     val html: String,
 )
 
+data class SubtitleCue(
+    val startSeconds: Double,
+    val endSeconds: Double,
+    val text: String,
+)
+
 data class TerminalError(
     val code: String,
     val message: String,
@@ -160,6 +166,17 @@ sealed interface BridgeMessage {
         val term: String,
         val matchedTerm: String,
         val entries: List<DefinitionEntry>,
+    ) : BridgeMessage
+
+    data class SubtitleCuesRequest(
+        val runId: String?,
+        val subtitlePath: String,
+    ) : BridgeMessage
+
+    data class SubtitleCuesResult(
+        val runId: String?,
+        val subtitlePath: String,
+        val cues: List<SubtitleCue>,
     ) : BridgeMessage
 
     data class Error(
