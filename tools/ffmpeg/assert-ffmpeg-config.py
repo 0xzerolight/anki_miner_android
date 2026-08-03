@@ -138,7 +138,10 @@ def main() -> int:
     except (ConfigurationError, OSError, UnicodeError) as error:
         print(f"FFmpeg configuration check failed: {error}", file=sys.stderr)
         return 1
-    print("FFmpeg configuration OK: Matroska, static JPEG, MP3/Opus/WAV, " "local protocols only")
+    print(
+        "FFmpeg configuration OK: Matroska, static JPEG, animated WebP/AVIF, "
+        "MP3/Opus/WAV, local protocols only"
+    )
     return 0
 
 

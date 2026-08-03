@@ -45,3 +45,9 @@ ${CMAKE_EXECUTABLE} .. \
 
 ${MAKE_EXECUTABLE} -j${HOST_NPROC}
 ${MAKE_EXECUTABLE} install
+
+# --enable-libaom turns on ffmpeg's libaom *decoder* as well, and
+# libavcodec/libaomdec.c includes <aom/aom_decoder.h>, which an encoder-only
+# libaom does not install. dav1d is the AV1 decoder here, so drop ffmpeg's
+# libaom decoder rather than build a second one.
+export EXTRA_BUILD_CONFIGURATION_FLAGS="${EXTRA_BUILD_CONFIGURATION_FLAGS} --disable-decoder=libaom_av1"

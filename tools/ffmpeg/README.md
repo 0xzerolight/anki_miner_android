@@ -72,6 +72,16 @@ realpath-resolved back to the real location — then build against it:
 ANKI_MINER_ANDROID_TOOLCHAIN_ROOT=/var/tmp/anki-miner-build tools/ffmpeg/build.sh --install
 ```
 
+That root needs both the pinned NDK and the pinned CMake under its own `sdk/`,
+because libaom is a CMake build and `ANDROID_CMAKE_HOME` is derived from the
+toolchain root. Symlinks are enough — only the paths ffmpeg bakes into its
+configure string have to be maintainer-free:
+
+```bash
+mkdir -p /var/tmp/anki-miner-build/sdk/cmake
+ln -sfnT "$PWD/.android-toolchain/sdk/cmake/3.22.1" /var/tmp/anki-miner-build/sdk/cmake/3.22.1
+```
+
 Acceptance gate — the shipped ELFs must embed no maintainer path (prints nothing):
 
 ```bash
