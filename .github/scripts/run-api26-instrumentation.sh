@@ -17,6 +17,7 @@ readonly reading_golden_test="com.ankiminer.android.ReadingGoldenInstrumentedTes
 readonly s4_test="com.ankiminer.android.S4EngineSmokeInstrumentedTest#pinnedDesktopChainRunsThroughPackagedEngine"
 readonly s2_test="com.ankiminer.android.anki.s2.AnkiDroidS2CapabilityInstrumentedTest#provider_and_android_adapter_complete_the_raw_round_trip"
 readonly s5_test="com.ankiminer.android.mining.S5VideoMiningAcceptanceInstrumentedTest#production_repository_mines_real_media_and_cancels_an_active_ffmpeg_child"
+readonly s5_definition_lookup_test="com.ankiminer.android.mining.S5VideoMiningAcceptanceInstrumentedTest#definitionLookupRunsBesideAParkedRun"
 readonly ui_audit_tests=(
     "com.ankiminer.android.uiaudit.UiAuditJankFlowTest#curationList200CandidatesScrollsBottomThenTop"
     "com.ankiminer.android.uiaudit.UiAuditJankFlowTest#settingsFullScrollsDownThenUp"
@@ -37,11 +38,12 @@ readonly unexecuted_tests=(
     "$s4_test"
     "$s2_test"
     "$s5_test"
+    "$s5_definition_lookup_test"
     "${ui_audit_tests[@]}"
 )
 excluded_tests="$(IFS=,; echo "${unexecuted_tests[*]}")"
 readonly excluded_tests
-# Full discovery is 196 tests. This broad API 26 lane excludes 17 allowlisted tests.
+# Full discovery is 197 tests. This broad API 26 lane excludes 18 allowlisted tests.
 # expected_executed_test_count is exact runner count after every assumption-gated or externally
 # provisioned test above is excluded. It means assertion-bearing tests executed in this lane;
 # every excluded test is reported as UNEXECUTED, never as a pass. Update this one count and the
