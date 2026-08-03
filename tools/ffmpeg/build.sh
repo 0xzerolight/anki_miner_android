@@ -65,7 +65,8 @@ export TZ=UTC
     --target-abis=arm64-v8a,x86_64 \
     --enable-libmp3lame \
     --enable-libopus \
-    --enable-libdav1d
+    --enable-libdav1d \
+    --enable-libwebp
 
 for abi in arm64-v8a x86_64; do
     output_dir="$BUILDER_ROOT/output/bin/$abi"

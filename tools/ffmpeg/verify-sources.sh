@@ -66,7 +66,7 @@ while read -r key checksum filename url extra; do
     }
 done < "$LOCK_FILE"
 
-required=(builder ffmpeg libdav1d libmp3lame libopus)
+required=(builder ffmpeg libdav1d libmp3lame libopus libwebp)
 for key in "${required[@]}"; do
     [[ -n "${seen_keys[$key]:-}" ]] || {
         echo "sources.lock: missing required key $key" >&2

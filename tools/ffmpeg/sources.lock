@@ -4,3 +4,4 @@ ffmpeg 16d0e2b20c61f6fbe6381f9d4c1c74fa6946f09e931203479f94233bd83aab19 ffmpeg-7
 libdav1d 78b15d9954b513ea92d27f39362535ded2243e1b0924fde39f37a31ebed5f76b dav1d-1.5.0.tar.gz https://code.videolan.org/videolan/dav1d/-/archive/1.5.0/dav1d-1.5.0.tar.gz
 libmp3lame ddfe36cab873794038ae2c1210557ad34857a4b6bdc515785d1da9e175b1da1e lame-3.100.tar.gz https://downloads.sourceforge.net/project/lame/lame/3.100/lame-3.100.tar.gz
 libopus 65c1d2f78b9f2fb20082c38cbe47c951ad5839345876e46941612ee87f9a7ce1 opus-1.5.2.tar.gz https://downloads.xiph.org/releases/opus/opus-1.5.2.tar.gz
+libwebp 61f873ec69e3be1b99535634340d5bde750b2e4447caa1db9f61be3fd49ab1e5 libwebp-1.4.0.tar.gz https://storage.googleapis.com/downloads.webmproject.org/releases/webp/libwebp-1.4.0.tar.gz

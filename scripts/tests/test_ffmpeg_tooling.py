@@ -53,9 +53,13 @@ class FfmpegToolingTests(unittest.TestCase):
             self.assertTrue(url.startswith("https://"))
             rows[key] = (checksum, filename, url)
 
-        self.assertEqual(rows.keys(), {"builder", "ffmpeg", "libdav1d", "libmp3lame", "libopus"})
+        self.assertEqual(
+            rows.keys(),
+            {"builder", "ffmpeg", "libdav1d", "libmp3lame", "libopus", "libwebp"},
+        )
         self.assertIn("7.1.5", rows["ffmpeg"][1])
         self.assertIn("1.5.0", rows["libdav1d"][1])
+        self.assertIn("1.4.0", rows["libwebp"][1])
         self.assertIn("69bc3f2968e5335fff43123a2bef6c54428144ce", rows["builder"][1])
 
     def test_offline_verifier_accepts_exact_files_and_rejects_corruption(self) -> None:
@@ -63,12 +67,16 @@ class FfmpegToolingTests(unittest.TestCase):
             root = Path(directory)
             cache = root / "cache"
             cache.mkdir()
+            # Must carry every key in verify-sources.sh's `required` array: the
+            # verifier enforces that array against whatever lock it is pointed
+            # at, so a new required source makes this synthetic lock exit 2.
             entries = {
                 "builder": b"builder",
                 "ffmpeg": b"ffmpeg",
                 "libdav1d": b"dav1d",
                 "libmp3lame": b"lame",
                 "libopus": b"opus",
+                "libwebp": b"webp",
             }
             lines = []
             for key, content in entries.items():
@@ -99,6 +107,7 @@ class FfmpegToolingTests(unittest.TestCase):
         self.assertIn("--enable-libopus", build)
         self.assertIn("--enable-libdav1d", build)
         self.assertIn("libdav1d-build.sh", build)
+        self.assertIn("--enable-libwebp", build)
         self.assertNotIn("sdkmanager", "\n".join((build, configure, maker, common)))
         self.assertNotIn("--enable-gpl", build)
         self.assertIn("--enable-static", configure)
@@ -216,6 +225,10 @@ class FfmpegToolingTests(unittest.TestCase):
                 "CONFIG_LIBOPUS_ENCODER",
                 "CONFIG_FILE_PROTOCOL",
                 "CONFIG_PIPE_PROTOCOL",
+                "CONFIG_LIBWEBP",
+                "CONFIG_LIBWEBP_ENCODER",
+                "CONFIG_LIBWEBP_ANIM_ENCODER",
+                "CONFIG_WEBP_MUXER",
             }.issubset(enabled)
         )
         self.assertTrue(
