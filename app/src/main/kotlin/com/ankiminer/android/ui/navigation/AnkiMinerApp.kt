@@ -83,13 +83,13 @@ import com.ankiminer.android.ui.video.VideoMiningTestTags
 import com.ankiminer.android.ui.wizard.OnboardingWizard
 import com.ankiminer.android.ui.wizard.wizardVisible
 import com.ankiminer.android.vm.DiagnosticsViewModel
+import com.ankiminer.android.vm.MediaMiningViewModel
 import com.ankiminer.android.vm.MiningReadinessAction
 import com.ankiminer.android.vm.NavigationWorkflowState
 import com.ankiminer.android.vm.ReadingMiningViewModel
 import com.ankiminer.android.vm.SettingsViewModel
 import com.ankiminer.android.vm.SetupUiState
 import com.ankiminer.android.vm.SetupViewModel
-import com.ankiminer.android.vm.VideoMiningViewModel
 
 internal enum class AnkiMinerDestination(
     val route: String,
@@ -345,7 +345,7 @@ internal fun AnkiMinerAppShell(
 
 @Composable
 internal fun AnkiMinerApp(
-    videoViewModel: VideoMiningViewModel,
+    videoViewModel: MediaMiningViewModel,
     readingViewModel: ReadingMiningViewModel,
     setupViewModel: SetupViewModel,
     settingsViewModel: SettingsViewModel,

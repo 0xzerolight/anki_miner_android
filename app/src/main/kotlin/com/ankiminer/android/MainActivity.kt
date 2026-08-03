@@ -31,6 +31,7 @@ import com.ankiminer.android.data.settings.ThemeMode
 import com.ankiminer.android.diagnostics.AnkiFaultRecorder
 import com.ankiminer.android.diagnostics.TesterDiagnosticsBuilder
 import com.ankiminer.android.diagnostics.currentTesterBuildIdentity
+import com.ankiminer.android.mining.MiningLane
 import com.ankiminer.android.mining.MiningRepositoryFactory
 import com.ankiminer.android.mining.MiningRuntimePermissions
 import com.ankiminer.android.reading.ReadingRepositoryFactory
@@ -41,10 +42,10 @@ import com.ankiminer.android.ui.theme.LaunchNeutral
 import com.ankiminer.android.ui.theme.SystemBarIconAppearance
 import com.ankiminer.android.ui.theme.systemBarIconAppearance
 import com.ankiminer.android.vm.DiagnosticsViewModel
+import com.ankiminer.android.vm.MediaMiningViewModel
 import com.ankiminer.android.vm.ReadingMiningViewModel
 import com.ankiminer.android.vm.SettingsViewModel
 import com.ankiminer.android.vm.SetupViewModel
-import com.ankiminer.android.vm.VideoMiningViewModel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
@@ -63,9 +64,10 @@ class MainActivity : ComponentActivity() {
 
     private val viewModelFactory by lazy {
         val app = application as AnkiMinerApplication
-        VideoMiningViewModel.Factory(
+        MediaMiningViewModel.Factory(
             repository = MiningRepositoryFactory.create(app),
             safBroker = app.safBroker,
+            lane = MiningLane.VIDEO,
             definitionLookup = app.definitionLookupService,
             cueLookup = app.subtitleCueLookupService,
             runtimeWorkState = app.runtimeWorkState,
@@ -150,7 +152,7 @@ class MainActivity : ComponentActivity() {
                 )
             }
             AnkiMinerTheme(darkTheme = darkTheme) {
-                val miningViewModel: VideoMiningViewModel = viewModel(factory = viewModelFactory)
+                val miningViewModel: MediaMiningViewModel = viewModel(factory = viewModelFactory)
                 val readingViewModel: ReadingMiningViewModel =
                     viewModel(factory = readingViewModelFactory)
                 val setupViewModel: SetupViewModel = viewModel(factory = setupViewModelFactory)

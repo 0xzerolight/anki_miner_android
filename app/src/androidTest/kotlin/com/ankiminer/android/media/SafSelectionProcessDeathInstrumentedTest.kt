@@ -8,13 +8,14 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.ankiminer.android.mining.CurationSelection
 import com.ankiminer.android.mining.MiningCancellationToken
+import com.ankiminer.android.mining.MiningLane
 import com.ankiminer.android.mining.MiningRepository
 import com.ankiminer.android.mining.MiningRunState
 import com.ankiminer.android.mining.VideoMiningInput
 import com.ankiminer.android.reading.ReadingMiningInput
 import com.ankiminer.android.reading.ReadingMiningRepository
+import com.ankiminer.android.vm.MediaMiningViewModel
 import com.ankiminer.android.vm.ReadingMiningViewModel
-import com.ankiminer.android.vm.VideoMiningViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import org.junit.Assert.assertEquals
@@ -63,14 +64,15 @@ class SafSelectionProcessDeathInstrumentedTest {
         val videoRepository = RecordingVideoRepository()
         val readingRepository = RecordingReadingRepository()
         val instrumentation = InstrumentationRegistry.getInstrumentation()
-        lateinit var video: VideoMiningViewModel
+        lateinit var video: MediaMiningViewModel
         lateinit var reading: ReadingMiningViewModel
 
         instrumentation.runOnMainSync {
             video =
-                VideoMiningViewModel(
+                MediaMiningViewModel(
                     repository = videoRepository,
                     safBroker = broker,
+                    lane = MiningLane.VIDEO,
                     savedStateHandle = SavedStateHandle(),
                     selectionInventory = inventory,
                 )

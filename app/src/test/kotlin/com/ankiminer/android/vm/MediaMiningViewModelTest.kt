@@ -36,6 +36,7 @@ import com.ankiminer.android.mining.CurationSessionState
 import com.ankiminer.android.mining.ENGINE_DEFAULT_SUBTITLE_OFFSET
 import com.ankiminer.android.mining.FakeMiningRepository
 import com.ankiminer.android.mining.MiningFailure
+import com.ankiminer.android.mining.MiningLane
 import com.ankiminer.android.mining.MiningProgress
 import com.ankiminer.android.mining.MiningRepository
 import com.ankiminer.android.mining.MiningRunState
@@ -54,10 +55,14 @@ import kotlin.coroutines.resumeWithException
 import kotlin.coroutines.suspendCoroutine
 import kotlinx.coroutines.CancellableContinuation
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -73,7 +78,7 @@ import org.junit.Rule
 import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
-class VideoMiningViewModelTest {
+class MediaMiningViewModelTest {
     @get:Rule
     val mainDispatcherRule = MainDispatcherRule()
 
@@ -94,7 +99,7 @@ class VideoMiningViewModelTest {
                     )
                 }
             val viewModel =
-                VideoMiningViewModel(
+                mediaViewModel(
                     repository,
                     ImmediateSafBroker(),
                     definitionLookup = lookup,
@@ -138,7 +143,7 @@ class VideoMiningViewModelTest {
                     Result.success(DefinitionResult(term, term, emptyList()))
                 }
             val viewModel =
-                VideoMiningViewModel(
+                mediaViewModel(
                     repository,
                     ImmediateSafBroker(),
                     definitionLookup = lookup,
@@ -164,7 +169,7 @@ class VideoMiningViewModelTest {
                     Result.failure(IllegalStateException("boom"))
                 }
             val viewModel =
-                VideoMiningViewModel(
+                mediaViewModel(
                     repository,
                     ImmediateSafBroker(),
                     definitionLookup = lookup,
@@ -195,7 +200,7 @@ class VideoMiningViewModelTest {
                     Result.success(DefinitionResult(term, term, emptyList()))
                 }
             val viewModel =
-                VideoMiningViewModel(
+                mediaViewModel(
                     repository,
                     ImmediateSafBroker(),
                     definitionLookup = lookup,
@@ -224,14 +229,15 @@ class VideoMiningViewModelTest {
                 Result.success(DefinitionResult(term, term, emptyList()))
             }
         val factory =
-            VideoMiningViewModel.Factory(
+            MediaMiningViewModel.Factory(
                 repository = RecordingRepository(),
                 safBroker = ImmediateSafBroker(),
+                lane = MiningLane.VIDEO,
                 definitionLookup = lookup,
                 savedStateHandleFactory = { SavedStateHandle() },
             )
 
-        assertNotNull(factory.create(VideoMiningViewModel::class.java, CreationExtras.Empty))
+        assertNotNull(factory.create(MediaMiningViewModel::class.java, CreationExtras.Empty))
     }
 
     @Test
@@ -249,7 +255,7 @@ class VideoMiningViewModelTest {
             val repository =
                 RecordingRepository(MiningRunState.Curating(request, media = media))
             val viewModel =
-                VideoMiningViewModel(
+                mediaViewModel(
                     repository,
                     ImmediateSafBroker(),
                     cueLookup = lookup,
@@ -264,6 +270,30 @@ class VideoMiningViewModelTest {
         }
 
     @Test
+    fun curatingAudioMediaMarksThePlayerAudioOnly() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val request = curationRequest()
+            val media =
+                CurationMediaBinding(
+                    videoPath = "/cache/episode.m4b",
+                    subtitlePath = "/cache/episode.srt",
+                    audioOnly = true,
+                )
+            val repository =
+                RecordingRepository(MiningRunState.Curating(request, media = media))
+            val viewModel =
+                mediaViewModel(
+                    repository = repository,
+                    safBroker = ImmediateSafBroker(),
+                    lane = MiningLane.AUDIO,
+                )
+
+            runCurrent()
+
+            assertTrue(requireNotNull(viewModel.uiState.value.curation?.player).audioOnly)
+        }
+
+    @Test
     fun failedCueLookupLeavesThePlayerUsableWithoutCues() =
         runTest(mainDispatcherRule.dispatcher) {
             val request = curationRequest()
@@ -271,7 +301,7 @@ class VideoMiningViewModelTest {
             val repository =
                 RecordingRepository(MiningRunState.Curating(request, media = media))
             val viewModel =
-                VideoMiningViewModel(
+                mediaViewModel(
                     repository,
                     ImmediateSafBroker(),
                     cueLookup =
@@ -294,7 +324,7 @@ class VideoMiningViewModelTest {
             var calls = 0
             val repository = RecordingRepository(MiningRunState.Curating(curationRequest()))
             val viewModel =
-                VideoMiningViewModel(
+                mediaViewModel(
                     repository,
                     ImmediateSafBroker(),
                     cueLookup =
@@ -319,7 +349,7 @@ class VideoMiningViewModelTest {
             val repository =
                 RecordingRepository(MiningRunState.Curating(first, media = media))
             val viewModel =
-                VideoMiningViewModel(
+                mediaViewModel(
                     repository,
                     ImmediateSafBroker(),
                     cueLookup =
@@ -365,7 +395,7 @@ class VideoMiningViewModelTest {
                 }
             val repository = RecordingRepository()
             val viewModel =
-                VideoMiningViewModel(
+                mediaViewModel(
                     repository,
                     ImmediateSafBroker(),
                     cueLookup = lookup,
@@ -399,7 +429,7 @@ class VideoMiningViewModelTest {
     fun navigationWorkflowIgnoresFineGrainedProgressUpdates() =
         runTest(mainDispatcherRule.dispatcher) {
             val repository = RecordingRepository()
-            val viewModel = VideoMiningViewModel(repository, ImmediateSafBroker())
+            val viewModel = mediaViewModel(repository, ImmediateSafBroker())
             val observed = mutableListOf<NavigationWorkflowState>()
             var diagnosticBuilds = 0
             val diagnostics =
@@ -446,7 +476,7 @@ class VideoMiningViewModelTest {
     fun savedIdleSelectionsRestoreByRevalidatingBothUris() =
         runTest(mainDispatcherRule.dispatcher) {
             val savedState = SavedStateHandle()
-            SavedDocumentSelectionStore(savedState, "videoMining.video").save(
+            SavedDocumentSelectionStore(savedState, "videoMining.document").save(
                 document("content://test/restored-video.mkv", "stale-video-name.mkv"),
             )
             SavedDocumentSelectionStore(savedState, "videoMining.subtitle").save(
@@ -455,7 +485,7 @@ class VideoMiningViewModelTest {
             val broker = ImmediateSafBroker()
 
             val viewModel =
-                VideoMiningViewModel(
+                mediaViewModel(
                     repository = RecordingRepository(),
                     safBroker = broker,
                     savedStateHandle = savedState,
@@ -497,7 +527,7 @@ class VideoMiningViewModelTest {
                     MiningRunState.Running("run", MiningProgress(1, 2, "Running")),
                 )
             val viewModel =
-                VideoMiningViewModel(
+                mediaViewModel(
                     repository = repository,
                     safBroker = ImmediateSafBroker(),
                     selectionInventory = inventory,
@@ -528,14 +558,14 @@ class VideoMiningViewModelTest {
         runTest(mainDispatcherRule.dispatcher) {
             val savedState = SavedStateHandle()
             val selectionStore =
-                SavedDocumentSelectionStore(savedState, "videoMining.video")
+                SavedDocumentSelectionStore(savedState, "videoMining.document")
             selectionStore.save(
                 document("content://test/revoked-video.mkv", "revoked-video.mkv"),
             )
             val broker = ControlledSafBroker()
 
             val viewModel =
-                VideoMiningViewModel(
+                mediaViewModel(
                     repository = RecordingRepository(),
                     safBroker = broker,
                     savedStateHandle = savedState,
@@ -554,8 +584,8 @@ class VideoMiningViewModelTest {
             assertFalse(viewModel.uiState.value.video.isResolving)
             assertNull(viewModel.uiState.value.video.document)
             assertNull(selectionStore.restore())
-            assertNull(savedState.get<String>("videoMining.video.uri"))
-            assertNull(savedState.get<String>("videoMining.video.displayName"))
+            assertNull(savedState.get<String>("videoMining.document.uri"))
+            assertNull(savedState.get<String>("videoMining.document.displayName"))
         }
 
     @Test
@@ -569,7 +599,7 @@ class VideoMiningViewModelTest {
             )
             val broker = ControlledSafBroker()
             val first =
-                VideoMiningViewModel(
+                mediaViewModel(
                     repository = RecordingRepository(),
                     safBroker = broker,
                     selectionInventory = inventory,
@@ -590,7 +620,7 @@ class VideoMiningViewModelTest {
             assertEquals(uri, inventory.selection(SafSelectionSlot.VIDEO)?.uri)
 
             val recreated =
-                VideoMiningViewModel(
+                mediaViewModel(
                     repository = RecordingRepository(),
                     safBroker = ImmediateSafBroker(),
                     selectionInventory = inventory,
@@ -610,7 +640,7 @@ class VideoMiningViewModelTest {
             val inventory = FailOnceSelectionInventory()
             val broker = ImmediateSafBroker()
             val viewModel =
-                VideoMiningViewModel(
+                mediaViewModel(
                     repository = RecordingRepository(),
                     safBroker = broker,
                     selectionInventory = inventory,
@@ -627,6 +657,105 @@ class VideoMiningViewModelTest {
         }
 
     @Test
+    fun audioLaneRejectsVideoExtensionWithoutPersistingSelection() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val inventory = TransientSafSelectionInventory()
+            val viewModel =
+                mediaViewModel(
+                    repository = RecordingRepository(),
+                    safBroker = ImmediateSafBroker(),
+                    selectionInventory = inventory,
+                    selectionIoDispatcher = mainDispatcherRule.dispatcher,
+                    lane = MiningLane.AUDIO,
+                )
+
+            viewModel.onVideoPicked("content://test/episode.mkv")
+            runCurrent()
+
+            assertEquals(DocumentSelectionError.AUDIO_TYPE, viewModel.uiState.value.video.error)
+            assertNull(viewModel.uiState.value.video.document)
+            assertNull(inventory.selection(SafSelectionSlot.AUDIO))
+        }
+
+    @Test
+    fun audioLaneAcceptsEveryDesktopAudioExtension() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val inventory = TransientSafSelectionInventory()
+            val viewModel =
+                mediaViewModel(
+                    repository = RecordingRepository(),
+                    safBroker = ImmediateSafBroker(),
+                    selectionInventory = inventory,
+                    selectionIoDispatcher = mainDispatcherRule.dispatcher,
+                    lane = MiningLane.AUDIO,
+                )
+
+            assertEquals(
+                setOf("m4b", "mp3", "m4a", "aac", "ogg", "opus", "flac", "wav"),
+                AUDIO_EXTENSIONS,
+            )
+
+            AUDIO_EXTENSIONS.forEach { extension ->
+                viewModel.onVideoPicked("content://test/episode.$extension")
+                runCurrent()
+
+                assertNull(extension, viewModel.uiState.value.video.error)
+                assertEquals(
+                    "episode.$extension",
+                    viewModel.uiState.value.video.document?.displayName,
+                )
+            }
+        }
+
+    @Test
+    fun audioLanePersistsOnlyToItsOwnDocumentSlot() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val existingVideo =
+                SafSelectionRecord(
+                    uri = "content://test/existing-video.mkv",
+                    displayName = "existing-video.mkv",
+                )
+            val inventory =
+                TransientSafSelectionInventory().also {
+                    it.putSelection(SafSelectionSlot.VIDEO, existingVideo)
+                }
+            val viewModel =
+                mediaViewModel(
+                    repository = RecordingRepository(),
+                    safBroker = ImmediateSafBroker(),
+                    selectionInventory = inventory,
+                    selectionIoDispatcher = mainDispatcherRule.dispatcher,
+                    lane = MiningLane.AUDIO,
+                )
+
+            viewModel.onVideoPicked("content://test/episode.opus")
+            runCurrent()
+
+            assertEquals(
+                "content://test/episode.opus",
+                inventory.selection(SafSelectionSlot.AUDIO)?.uri,
+            )
+            assertEquals(existingVideo, inventory.selection(SafSelectionSlot.VIDEO))
+        }
+
+    @Test
+    fun videoLaneStillAcceptsVideoExtension() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val viewModel =
+                mediaViewModel(
+                    repository = RecordingRepository(),
+                    safBroker = ImmediateSafBroker(),
+                    lane = MiningLane.VIDEO,
+                )
+
+            viewModel.onVideoPicked("content://test/episode.mkv")
+            runCurrent()
+
+            assertNull(viewModel.uiState.value.video.error)
+            assertEquals("episode.mkv", viewModel.uiState.value.video.document?.displayName)
+        }
+
+    @Test
     fun defaultCurationSelectsEverythingAndKeepsAlternateSentenceIdentity() =
         runTest(mainDispatcherRule.dispatcher) {
             val repository =
@@ -635,7 +764,7 @@ class VideoMiningViewModelTest {
                     terminalOutcomes = listOf(FakeMiningRepository.TerminalOutcome.SUCCESS),
                     workScope = this,
                 )
-            val viewModel = VideoMiningViewModel(repository, ImmediateSafBroker())
+            val viewModel = mediaViewModel(repository, ImmediateSafBroker())
             selectDocuments(viewModel)
             runCurrent()
 
@@ -667,7 +796,7 @@ class VideoMiningViewModelTest {
     fun startPassesPerRunSubtitleOffsetOverride() =
         runTest(mainDispatcherRule.dispatcher) {
             val repository = RecordingRepository()
-            val viewModel = VideoMiningViewModel(repository, ImmediateSafBroker())
+            val viewModel = mediaViewModel(repository, ImmediateSafBroker())
             selectDocuments(viewModel)
             viewModel.setSubtitleOffsetDraft("1.5")
             runCurrent()
@@ -683,7 +812,7 @@ class VideoMiningViewModelTest {
         runTest(mainDispatcherRule.dispatcher) {
             val globalOffset = MutableStateFlow<Double?>(0.25)
             val viewModel =
-                VideoMiningViewModel(
+                mediaViewModel(
                     repository = RecordingRepository(),
                     safBroker = ImmediateSafBroker(),
                     effectiveSubtitleOffset = globalOffset,
@@ -709,7 +838,7 @@ class VideoMiningViewModelTest {
     fun blankSubtitleOffsetUsesGlobalOrEngineDefault() =
         runTest(mainDispatcherRule.dispatcher) {
             val repository = RecordingRepository()
-            val viewModel = VideoMiningViewModel(repository, ImmediateSafBroker())
+            val viewModel = mediaViewModel(repository, ImmediateSafBroker())
             selectDocuments(viewModel)
             viewModel.setSubtitleOffsetDraft("")
             runCurrent()
@@ -725,7 +854,7 @@ class VideoMiningViewModelTest {
         runTest(mainDispatcherRule.dispatcher) {
             listOf("abc", "1e309").forEach { draft ->
                 val repository = RecordingRepository()
-                val viewModel = VideoMiningViewModel(repository, ImmediateSafBroker())
+                val viewModel = mediaViewModel(repository, ImmediateSafBroker())
                 selectDocuments(viewModel)
                 viewModel.setSubtitleOffsetDraft(draft)
                 runCurrent()
@@ -743,7 +872,7 @@ class VideoMiningViewModelTest {
     fun retryKeepsPerRunSubtitleOffsetOverride() =
         runTest(mainDispatcherRule.dispatcher) {
             val repository = RecordingRepository()
-            val viewModel = VideoMiningViewModel(repository, ImmediateSafBroker())
+            val viewModel = mediaViewModel(repository, ImmediateSafBroker())
             selectDocuments(viewModel)
             viewModel.setSubtitleOffsetDraft("1.5")
             repository.transitionTo(
@@ -766,7 +895,7 @@ class VideoMiningViewModelTest {
         runTest(mainDispatcherRule.dispatcher) {
             val savedState = SavedStateHandle()
             val original =
-                VideoMiningViewModel(
+                mediaViewModel(
                     repository = RecordingRepository(),
                     safBroker = ImmediateSafBroker(),
                     savedStateHandle = savedState,
@@ -774,7 +903,7 @@ class VideoMiningViewModelTest {
             original.setSubtitleOffsetDraft("1.5")
 
             val restored =
-                VideoMiningViewModel(
+                mediaViewModel(
                     repository = RecordingRepository(),
                     safBroker = ImmediateSafBroker(),
                     savedStateHandle = savedState,
@@ -785,12 +914,43 @@ class VideoMiningViewModelTest {
         }
 
     @Test
+    fun audioLaneSavedStateKeysDoNotUseTheVideoLanePrefix() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val savedState = SavedStateHandle()
+            val viewModel =
+                mediaViewModel(
+                    repository = RecordingRepository(),
+                    safBroker = ImmediateSafBroker(),
+                    savedStateHandle = savedState,
+                    lane = MiningLane.AUDIO,
+                )
+
+            viewModel.onVideoPicked("content://test/episode.m4b")
+            viewModel.onSubtitlePicked("content://test/episode.srt")
+            viewModel.setSubtitleOffsetDraft("1.5")
+            runCurrent()
+
+            assertTrue(
+                savedState.keys().containsAll(
+                    setOf(
+                        "audioMining.document.uri",
+                        "audioMining.document.displayName",
+                        "audioMining.subtitle.uri",
+                        "audioMining.subtitle.displayName",
+                        "audioMining.subtitleOffsetDraft",
+                    ),
+                ),
+            )
+            assertFalse(savedState.keys().any { it.startsWith("videoMining.") })
+        }
+
+    @Test
     fun resetClearsSubtitleOffsetDraft() =
         runTest(mainDispatcherRule.dispatcher) {
             val savedState = SavedStateHandle()
             val repository = RecordingRepository()
             val viewModel =
-                VideoMiningViewModel(
+                mediaViewModel(
                     repository = repository,
                     safBroker = ImmediateSafBroker(),
                     savedStateHandle = savedState,
@@ -804,7 +964,7 @@ class VideoMiningViewModelTest {
 
             assertEquals("", viewModel.uiState.value.subtitleOffsetDraft)
             val restored =
-                VideoMiningViewModel(
+                mediaViewModel(
                     repository = RecordingRepository(),
                     safBroker = ImmediateSafBroker(),
                     savedStateHandle = savedState,
@@ -825,7 +985,7 @@ class VideoMiningViewModelTest {
                 }
             val globalOffset = MutableStateFlow<Double?>(0.25)
             val viewModel =
-                VideoMiningViewModel(
+                mediaViewModel(
                     repository = RecordingRepository(),
                     safBroker = ImmediateSafBroker(),
                     timingPreviewOpener = opener,
@@ -872,7 +1032,7 @@ class VideoMiningViewModelTest {
     fun timingPreviewFailureExposesStableErrorWithoutOpeningOverlay() =
         runTest(mainDispatcherRule.dispatcher) {
             val viewModel =
-                VideoMiningViewModel(
+                mediaViewModel(
                     repository = RecordingRepository(),
                     safBroker = ImmediateSafBroker(),
                     timingPreviewOpener =
@@ -921,9 +1081,10 @@ class VideoMiningViewModelTest {
             var closeCount = 0
             val store = ViewModelStore()
             val factory =
-                VideoMiningViewModel.Factory(
+                MediaMiningViewModel.Factory(
                     repository = RecordingRepository(),
                     safBroker = ImmediateSafBroker(),
+                    lane = MiningLane.VIDEO,
                     definitionLookup = NO_DEFINITION_LOOKUP,
                     timingPreviewOpener =
                         TimingPreviewOpener {
@@ -935,7 +1096,7 @@ class VideoMiningViewModelTest {
                     savedStateHandleFactory = { SavedStateHandle() },
                 )
             val viewModel =
-                ViewModelProvider.create(store, factory)[VideoMiningViewModel::class.java]
+                ViewModelProvider.create(store, factory)[MediaMiningViewModel::class.java]
             selectDocuments(viewModel)
             runCurrent()
             viewModel.openTimingPreview()
@@ -957,7 +1118,7 @@ class VideoMiningViewModelTest {
             try {
                 val request = curationRequest()
                 val repository = RecordingRepository(MiningRunState.Curating(request))
-                val viewModel = VideoMiningViewModel(repository, ImmediateSafBroker())
+                val viewModel = mediaViewModel(repository, ImmediateSafBroker())
                 runCurrent()
 
                 viewModel.confirmCuration()
@@ -978,7 +1139,7 @@ class VideoMiningViewModelTest {
     fun deselectAllConfirmsEmptyListInsteadOfCancellingRun() =
         runTest(mainDispatcherRule.dispatcher) {
             val repository = FakeMiningRepository(stepDelayMillis = 0, workScope = this)
-            val viewModel = VideoMiningViewModel(repository, ImmediateSafBroker())
+            val viewModel = mediaViewModel(repository, ImmediateSafBroker())
             selectDocuments(viewModel)
             runCurrent()
             viewModel.start()
@@ -998,7 +1159,7 @@ class VideoMiningViewModelTest {
         runTest(mainDispatcherRule.dispatcher) {
             val request = curationRequest()
             val repository = RecordingRepository(MiningRunState.Curating(request))
-            val viewModel = VideoMiningViewModel(repository, ImmediateSafBroker())
+            val viewModel = mediaViewModel(repository, ImmediateSafBroker())
             runCurrent()
             val candidateId = request.candidates.first().candidateId
 
@@ -1015,7 +1176,7 @@ class VideoMiningViewModelTest {
         runTest(mainDispatcherRule.dispatcher) {
             val request = curationRequest()
             val repository = RecordingRepository(MiningRunState.Curating(request))
-            val viewModel = VideoMiningViewModel(repository, ImmediateSafBroker())
+            val viewModel = mediaViewModel(repository, ImmediateSafBroker())
             runCurrent()
 
             viewModel.markCandidateKnown(request.candidates.first().candidateId, known = true)
@@ -1045,7 +1206,7 @@ class VideoMiningViewModelTest {
                     page = CurationPage(1, 2, 1, 2),
                 )
             val repository = RecordingRepository(MiningRunState.Curating(first))
-            val viewModel = VideoMiningViewModel(repository, ImmediateSafBroker())
+            val viewModel = mediaViewModel(repository, ImmediateSafBroker())
             runCurrent()
 
             assertEquals(0L, viewModel.uiState.value.curation?.page?.pageIndex)
@@ -1079,7 +1240,7 @@ class VideoMiningViewModelTest {
                     page = CurationPage(1, 2, 1, 2),
                 )
             val repository = RecordingRepository(MiningRunState.Curating(first))
-            val viewModel = VideoMiningViewModel(repository, ImmediateSafBroker())
+            val viewModel = mediaViewModel(repository, ImmediateSafBroker())
             runCurrent()
 
             viewModel.confirmCuration()
@@ -1090,7 +1251,7 @@ class VideoMiningViewModelTest {
             assertEquals(1, viewModel.uiState.value.curation?.previousPageSelectedCount)
             assertTrue(viewModel.uiState.value.curation?.hasSelectionToLose == true)
 
-            val recreated = VideoMiningViewModel(repository, ImmediateSafBroker())
+            val recreated = mediaViewModel(repository, ImmediateSafBroker())
             runCurrent()
 
             assertEquals(1, recreated.uiState.value.curation?.previousPageSelectedCount)
@@ -1114,14 +1275,14 @@ class VideoMiningViewModelTest {
                         ),
                 )
             val repository = RecordingRepository(MiningRunState.Curating(request))
-            val first = VideoMiningViewModel(repository, ImmediateSafBroker())
+            val first = mediaViewModel(repository, ImmediateSafBroker())
             runCurrent()
 
             first.setCandidateSelected(candidate.candidateId, false)
             first.selectSentence(candidate.candidateId, alternate.sentenceId)
             runCurrent()
 
-            val recreated = VideoMiningViewModel(repository, ImmediateSafBroker())
+            val recreated = mediaViewModel(repository, ImmediateSafBroker())
             runCurrent()
 
             assertEquals(0, recreated.uiState.value.curation?.selectedCount)
@@ -1139,7 +1300,7 @@ class VideoMiningViewModelTest {
                 RecordingRepository(
                     MiningRunState.Curating(request, pageSubmissionPending = true),
                 )
-            val viewModel = VideoMiningViewModel(repository, ImmediateSafBroker())
+            val viewModel = mediaViewModel(repository, ImmediateSafBroker())
             runCurrent()
 
             assertTrue(viewModel.uiState.value.curationPending)
@@ -1158,7 +1319,7 @@ class VideoMiningViewModelTest {
                     terminalOutcomes = listOf(FakeMiningRepository.TerminalOutcome.SUCCESS),
                     workScope = this,
                 )
-            val viewModel = VideoMiningViewModel(repository, ImmediateSafBroker())
+            val viewModel = mediaViewModel(repository, ImmediateSafBroker())
             selectDocuments(viewModel)
             runCurrent()
             viewModel.start()
@@ -1187,7 +1348,7 @@ class VideoMiningViewModelTest {
                 RecordingRepository(
                     resetGate = resetGate,
                 )
-            val viewModel = VideoMiningViewModel(repository, ImmediateSafBroker())
+            val viewModel = mediaViewModel(repository, ImmediateSafBroker())
             selectDocuments(viewModel)
             runCurrent()
             repository.transitionTo(MiningRunState.Success("run", result()))
@@ -1217,7 +1378,7 @@ class VideoMiningViewModelTest {
                     resetGate = resetGate,
                     startGate = startGate,
                 )
-            val viewModel = VideoMiningViewModel(repository, ImmediateSafBroker())
+            val viewModel = mediaViewModel(repository, ImmediateSafBroker())
             selectDocuments(viewModel)
             runCurrent()
             repository.transitionTo(
@@ -1257,7 +1418,7 @@ class VideoMiningViewModelTest {
         runTest(mainDispatcherRule.dispatcher) {
             val startGate = CompletableDeferred<Unit>()
             val repository = RecordingRepository(startGate = startGate)
-            val viewModel = VideoMiningViewModel(repository, ImmediateSafBroker())
+            val viewModel = mediaViewModel(repository, ImmediateSafBroker())
             selectDocuments(viewModel)
             runCurrent()
 
@@ -1278,7 +1439,7 @@ class VideoMiningViewModelTest {
         runTest(mainDispatcherRule.dispatcher) {
             val runtimeWork = MutableStateFlow<RuntimeWorkCoordinator.Kind?>(null)
             val repository = RecordingRepository()
-            val viewModel = VideoMiningViewModel(repository, ImmediateSafBroker(), runtimeWork)
+            val viewModel = mediaViewModel(repository, ImmediateSafBroker(), runtimeWork)
             selectDocuments(viewModel)
             runCurrent()
             assertTrue(viewModel.uiState.value.canStart)
@@ -1301,7 +1462,7 @@ class VideoMiningViewModelTest {
             val startGate = CompletableDeferred<Unit>()
             val repository = RecordingRepository(startGate = startGate)
             val broker = ImmediateSafBroker()
-            val viewModel = VideoMiningViewModel(repository, broker)
+            val viewModel = mediaViewModel(repository, broker)
             selectDocuments(viewModel)
             runCurrent()
 
@@ -1332,7 +1493,7 @@ class VideoMiningViewModelTest {
                     initialState = MiningRunState.Curating(request),
                     cancelGate = cancelGate,
                 )
-            val viewModel = VideoMiningViewModel(repository, ImmediateSafBroker())
+            val viewModel = mediaViewModel(repository, ImmediateSafBroker())
             runCurrent()
 
             viewModel.cancel()
@@ -1359,7 +1520,7 @@ class VideoMiningViewModelTest {
                     initialState = MiningRunState.Curating(request),
                     acknowledgeCancellationImmediately = false,
                 )
-            val viewModel = VideoMiningViewModel(repository, ImmediateSafBroker())
+            val viewModel = mediaViewModel(repository, ImmediateSafBroker())
             runCurrent()
 
             viewModel.cancel()
@@ -1384,7 +1545,7 @@ class VideoMiningViewModelTest {
                     initialState = MiningRunState.Curating(request),
                     confirmGate = confirmGate,
                 )
-            val viewModel = VideoMiningViewModel(repository, ImmediateSafBroker())
+            val viewModel = mediaViewModel(repository, ImmediateSafBroker())
             runCurrent()
 
             viewModel.confirmCuration()
@@ -1404,7 +1565,7 @@ class VideoMiningViewModelTest {
     fun staleFailureCannotOverwriteNewerResolvedDocument() =
         runTest(mainDispatcherRule.dispatcher) {
             val broker = ControlledSafBroker()
-            val viewModel = VideoMiningViewModel(RecordingRepository(), broker)
+            val viewModel = mediaViewModel(RecordingRepository(), broker)
 
             viewModel.onVideoPicked("content://test/old")
             runCurrent()
@@ -1425,7 +1586,7 @@ class VideoMiningViewModelTest {
     fun clearInvalidatesNonCooperativeDocumentCompletion() =
         runTest(mainDispatcherRule.dispatcher) {
             val broker = ControlledSafBroker()
-            val viewModel = VideoMiningViewModel(RecordingRepository(), broker)
+            val viewModel = mediaViewModel(RecordingRepository(), broker)
 
             viewModel.onSubtitlePicked("content://test/old-subtitle")
             runCurrent()
@@ -1443,7 +1604,7 @@ class VideoMiningViewModelTest {
     fun supersededCancellableAcquireStillTransfersAndReleasesItsGrant() =
         runTest(mainDispatcherRule.dispatcher) {
             val broker = ControlledSafBroker()
-            val viewModel = VideoMiningViewModel(RecordingRepository(), broker)
+            val viewModel = mediaViewModel(RecordingRepository(), broker)
 
             viewModel.onVideoPicked("content://test/old")
             runCurrent()
@@ -1462,7 +1623,7 @@ class VideoMiningViewModelTest {
     fun replacingSelectionReleasesOnlyTheSupersededGrant() =
         runTest(mainDispatcherRule.dispatcher) {
             val broker = ImmediateSafBroker()
-            val viewModel = VideoMiningViewModel(RecordingRepository(), broker)
+            val viewModel = mediaViewModel(RecordingRepository(), broker)
 
             viewModel.onVideoPicked("content://test/old-video")
             runCurrent()
@@ -1478,7 +1639,7 @@ class VideoMiningViewModelTest {
         runTest(mainDispatcherRule.dispatcher) {
             val broker = ImmediateSafBroker()
             val repository = FakeMiningRepository(stepDelayMillis = 0, workScope = this)
-            val viewModel = VideoMiningViewModel(repository, broker)
+            val viewModel = mediaViewModel(repository, broker)
             selectDocuments(viewModel)
             runCurrent()
 
@@ -1507,7 +1668,7 @@ class VideoMiningViewModelTest {
                 ViewModelProvider.create(
                     store,
                     factory(RecordingRepository(), broker),
-                )[VideoMiningViewModel::class.java]
+                )[MediaMiningViewModel::class.java]
             selectDocuments(viewModel)
             runCurrent()
 
@@ -1529,7 +1690,7 @@ class VideoMiningViewModelTest {
                 ViewModelProvider.create(
                     store,
                     factory(RecordingRepository(), broker),
-                )[VideoMiningViewModel::class.java]
+                )[MediaMiningViewModel::class.java]
             selectDocuments(viewModel)
             runCurrent()
 
@@ -1551,7 +1712,7 @@ class VideoMiningViewModelTest {
                 ViewModelProvider.create(
                     store,
                     factory(repository, broker),
-                )[VideoMiningViewModel::class.java]
+                )[MediaMiningViewModel::class.java]
             selectDocuments(viewModel)
             runCurrent()
             viewModel.start()
@@ -1576,7 +1737,7 @@ class VideoMiningViewModelTest {
                 ViewModelProvider.create(
                     store,
                     factory(repository, broker),
-                )[VideoMiningViewModel::class.java]
+                )[MediaMiningViewModel::class.java]
             selectDocuments(viewModel)
             runCurrent()
             viewModel.start()
@@ -1601,7 +1762,7 @@ class VideoMiningViewModelTest {
                 ViewModelProvider.create(
                     store,
                     factory(repository, broker),
-                )[VideoMiningViewModel::class.java]
+                )[MediaMiningViewModel::class.java]
             viewModel.onVideoPicked("content://test/shared")
             viewModel.onSubtitlePicked("content://test/shared")
             runCurrent()
@@ -1628,7 +1789,7 @@ class VideoMiningViewModelTest {
                 ViewModelProvider.create(
                     store,
                     factory(repository, broker),
-                )[VideoMiningViewModel::class.java]
+                )[MediaMiningViewModel::class.java]
             selectDocuments(viewModel)
             runCurrent()
             repository.transitionTo(MiningRunState.Success("run", result()))
@@ -1640,7 +1801,7 @@ class VideoMiningViewModelTest {
             assertEquals(1, repository.detachedInputs.size)
         }
 
-    private fun selectDocuments(viewModel: VideoMiningViewModel) {
+    private fun selectDocuments(viewModel: MediaMiningViewModel) {
         viewModel.onVideoPicked("content://test/video")
         viewModel.onSubtitlePicked("content://test/subtitle")
     }
@@ -1648,20 +1809,51 @@ class VideoMiningViewModelTest {
     private fun factory(
         repository: MiningRepository,
         broker: SafBroker,
-    ): VideoMiningViewModel.Factory =
-        VideoMiningViewModel.Factory(
+        lane: MiningLane = MiningLane.VIDEO,
+    ): MediaMiningViewModel.Factory =
+        MediaMiningViewModel.Factory(
             repository = repository,
             safBroker = broker,
+            lane = lane,
             definitionLookup = NO_DEFINITION_LOOKUP,
             savedStateHandleFactory = { SavedStateHandle() },
         )
 
-    private fun timingPreviewViewModel(session: TimingPreviewSession): VideoMiningViewModel =
-        VideoMiningViewModel(
+    private fun timingPreviewViewModel(session: TimingPreviewSession): MediaMiningViewModel =
+        mediaViewModel(
             repository = RecordingRepository(),
             safBroker = ImmediateSafBroker(),
             timingPreviewOpener = TimingPreviewOpener { Result.success(session) },
             timingPreviewCleanupDispatcher = mainDispatcherRule.dispatcher,
+        )
+
+    private fun mediaViewModel(
+        repository: MiningRepository,
+        safBroker: SafBroker,
+        runtimeWorkState: StateFlow<RuntimeWorkCoordinator.Kind?> = MutableStateFlow(null),
+        savedStateHandle: SavedStateHandle = SavedStateHandle(),
+        selectionInventory: SafSelectionInventory? = null,
+        selectionIoDispatcher: CoroutineDispatcher = Dispatchers.IO,
+        definitionLookup: DefinitionLookupService? = null,
+        cueLookup: SubtitleCueLookupService = NO_CUE_LOOKUP,
+        effectiveSubtitleOffset: Flow<Double?> = flowOf(null),
+        timingPreviewOpener: TimingPreviewOpener? = null,
+        timingPreviewCleanupDispatcher: CoroutineDispatcher = Dispatchers.IO,
+        lane: MiningLane = MiningLane.VIDEO,
+    ): MediaMiningViewModel =
+        com.ankiminer.android.vm.MediaMiningViewModel(
+            repository = repository,
+            safBroker = safBroker,
+            lane = lane,
+            runtimeWorkState = runtimeWorkState,
+            savedStateHandle = savedStateHandle,
+            selectionInventory = selectionInventory,
+            selectionIoDispatcher = selectionIoDispatcher,
+            definitionLookup = definitionLookup,
+            cueLookup = cueLookup,
+            effectiveSubtitleOffset = effectiveSubtitleOffset,
+            timingPreviewOpener = timingPreviewOpener,
+            timingPreviewCleanupDispatcher = timingPreviewCleanupDispatcher,
         )
 
     private class ImmediateSafBroker : SafBroker {
@@ -1857,6 +2049,9 @@ class VideoMiningViewModelTest {
             DefinitionLookupService { _, term, _ ->
                 Result.success(DefinitionResult(term, term, emptyList()))
             }
+
+        val NO_CUE_LOOKUP =
+            SubtitleCueLookupService { _, _ -> Result.success(emptyList()) }
 
         fun document(
             uri: String,

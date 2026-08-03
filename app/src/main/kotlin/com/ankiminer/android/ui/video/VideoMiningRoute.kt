@@ -6,7 +6,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.ankiminer.android.vm.VideoMiningViewModel
+import com.ankiminer.android.vm.MediaMiningViewModel
 
 private val VIDEO_MIME_TYPES = arrayOf("video/*", "application/octet-stream")
 internal val SUBTITLE_MIME_TYPES =
@@ -20,7 +20,7 @@ internal val SUBTITLE_MIME_TYPES =
 
 @Composable
 fun VideoMiningRoute(
-    viewModel: VideoMiningViewModel,
+    viewModel: MediaMiningViewModel,
     onReturnToActiveRun: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {

@@ -17,11 +17,11 @@ import com.ankiminer.android.engine.SubtitleCue
 import com.ankiminer.android.media.SafBroker
 import com.ankiminer.android.media.SafDocument
 import com.ankiminer.android.media.SafSelectionInventory
-import com.ankiminer.android.media.SafSelectionSlot
 import com.ankiminer.android.mining.CurationMediaBinding
 import com.ankiminer.android.mining.CurationRequest
 import com.ankiminer.android.mining.CurationSelection
 import com.ankiminer.android.mining.ENGINE_DEFAULT_SUBTITLE_OFFSET
+import com.ankiminer.android.mining.MiningLane
 import com.ankiminer.android.mining.MiningRepository
 import com.ankiminer.android.mining.MiningRunState
 import com.ankiminer.android.mining.MiningSource
@@ -55,6 +55,7 @@ import com.ankiminer.android.ui.video.DocumentSlotState
 import com.ankiminer.android.ui.video.MiningCommandError
 import com.ankiminer.android.ui.video.TimingPreviewError
 import com.ankiminer.android.ui.video.VideoMiningUiState
+import java.util.Locale
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -77,11 +78,12 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 private const val DEFINITION_DEBOUNCE_MS = 150L
-private const val SUBTITLE_OFFSET_DRAFT_KEY = "videoMining.subtitleOffsetDraft"
+internal val AUDIO_EXTENSIONS = setOf("m4b", "mp3", "m4a", "aac", "ogg", "opus", "flac", "wav")
 
-class VideoMiningViewModel internal constructor(
+class MediaMiningViewModel internal constructor(
     private val repository: MiningRepository,
     private val safBroker: SafBroker,
+    internal val lane: MiningLane,
     private val runtimeWorkState: StateFlow<RuntimeWorkCoordinator.Kind?> = MutableStateFlow(null),
     private val savedStateHandle: SavedStateHandle = SavedStateHandle(),
     selectionInventory: SafSelectionInventory? = null,
@@ -92,6 +94,8 @@ class VideoMiningViewModel internal constructor(
     private val timingPreviewOpener: TimingPreviewOpener? = null,
     timingPreviewCleanupDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : ViewModel() {
+    private val subtitleOffsetDraftKey = "${lane.savedStateKeyPrefix}.subtitleOffsetDraft"
+
     private data class LocalState(
         val video: DocumentSlotState = DocumentSlotState(),
         val subtitle: DocumentSlotState = DocumentSlotState(),
@@ -132,7 +136,7 @@ class VideoMiningViewModel internal constructor(
     private val localState =
         MutableStateFlow(
             LocalState(
-                subtitleOffsetDraft = savedStateHandle[SUBTITLE_OFFSET_DRAFT_KEY] ?: "",
+                subtitleOffsetDraft = savedStateHandle[subtitleOffsetDraftKey] ?: "",
             ),
         )
     private val definitionState = MutableStateFlow(CurationDefinitionState())
@@ -151,17 +155,17 @@ class VideoMiningViewModel internal constructor(
     private val videoSelection =
         SavedDocumentSelectionStore(
             savedStateHandle = savedStateHandle,
-            keyPrefix = "videoMining.video",
+            keyPrefix = "${lane.savedStateKeyPrefix}.document",
             inventory = selectionInventory,
-            inventorySlot = SafSelectionSlot.VIDEO,
+            inventorySlot = lane.documentSlot,
             ioDispatcher = selectionIoDispatcher,
         )
     private val subtitleSelection =
         SavedDocumentSelectionStore(
             savedStateHandle = savedStateHandle,
-            keyPrefix = "videoMining.subtitle",
+            keyPrefix = "${lane.savedStateKeyPrefix}.subtitle",
             inventory = selectionInventory,
-            inventorySlot = SafSelectionSlot.VIDEO_SUBTITLE,
+            inventorySlot = lane.subtitleSlot,
             ioDispatcher = selectionIoDispatcher,
         )
 
@@ -366,6 +370,8 @@ class VideoMiningViewModel internal constructor(
         localState.update { local ->
             when (kind) {
                 DocumentSelectionError.VIDEO ->
+                    local.copy(video = local.video.copy(error = null))
+                DocumentSelectionError.AUDIO_TYPE ->
                     local.copy(video = local.video.copy(error = null))
                 DocumentSelectionError.SUBTITLE ->
                     local.copy(subtitle = local.subtitle.copy(error = null))
@@ -944,12 +950,22 @@ class VideoMiningViewModel internal constructor(
         val job =
             viewModelScope.launch {
                 try {
+                    var rejectionError: DocumentSelectionError? = null
                     val result =
                         SafSelectionOwnershipTransaction(
                             broker = safBroker,
                             store = selectionStore(kind),
                         ).acquirePersistPublish(
                             uri = uri,
+                            accept = { document ->
+                                if (kind == DocumentKind.VIDEO) {
+                                    documentSelectionError(document)
+                                        .also { rejectionError = it } == null
+                                } else {
+                                    true
+                                }
+                            },
+                            discardPersistedOnRejection = restoring,
                             publish = { document ->
                                 check(isCurrentDocumentRequest(kind, sequence)) {
                                     "Document request became stale before publication"
@@ -966,7 +982,9 @@ class VideoMiningViewModel internal constructor(
                         is SafSelectionOwnershipResult.Published ->
                             result.value?.let(::releaseDocument)
                         is SafSelectionOwnershipResult.Rejected ->
-                            localState.update { local -> local.withDocumentFailure(kind) }
+                            localState.update { local ->
+                                local.withSelectionRejection(kind, rejectionError)
+                            }
                     }
                 } catch (failure: CancellationException) {
                     throw failure
@@ -1083,6 +1101,12 @@ class VideoMiningViewModel internal constructor(
             DocumentKind.SUBTITLE -> subtitleSelection
         }
 
+    private fun documentSelectionError(document: SafDocument): DocumentSelectionError? {
+        if (lane != MiningLane.AUDIO) return null
+        val extension = document.displayName.substringAfterLast('.', "").lowercase(Locale.ROOT)
+        return if (extension in AUDIO_EXTENSIONS) null else DocumentSelectionError.AUDIO_TYPE
+    }
+
     private fun LocalState.withDocument(
         kind: DocumentKind,
         document: SafDocument,
@@ -1118,6 +1142,29 @@ class VideoMiningViewModel internal constructor(
                 )
         }
 
+    private fun LocalState.withSelectionRejection(
+        kind: DocumentKind,
+        error: DocumentSelectionError?,
+    ): LocalState =
+        when (kind) {
+            DocumentKind.VIDEO ->
+                copy(
+                    video =
+                        video.copy(
+                            isResolving = false,
+                            error = error ?: DocumentSelectionError.VIDEO,
+                        ),
+                )
+            DocumentKind.SUBTITLE ->
+                copy(
+                    subtitle =
+                        subtitle.copy(
+                            isResolving = false,
+                            error = error ?: DocumentSelectionError.SUBTITLE,
+                        ),
+                )
+        }
+
     private fun buildVideoInput(local: LocalState): VideoMiningInput? {
         if (local.subtitleOffsetDraftInvalid) return null
         val video = local.video.document ?: return null
@@ -1131,9 +1178,9 @@ class VideoMiningViewModel internal constructor(
 
     private fun updateSubtitleOffsetDraft(value: String) {
         if (value.isEmpty()) {
-            savedStateHandle.remove<String>(SUBTITLE_OFFSET_DRAFT_KEY)
+            savedStateHandle.remove<String>(subtitleOffsetDraftKey)
         } else {
-            savedStateHandle[SUBTITLE_OFFSET_DRAFT_KEY] = value
+            savedStateHandle[subtitleOffsetDraftKey] = value
         }
         localState.update { it.copy(subtitleOffsetDraft = value) }
     }
@@ -1270,6 +1317,7 @@ class VideoMiningViewModel internal constructor(
                 videoPath = media.videoPath,
                 cues = current?.cues.orEmpty(),
                 cuesUnavailable = current?.unavailable == true,
+                audioOnly = media.audioOnly,
             )
         }
 
@@ -1298,6 +1346,7 @@ class VideoMiningViewModel internal constructor(
     internal class Factory(
         private val repository: MiningRepository,
         private val safBroker: SafBroker,
+        private val lane: MiningLane,
         private val definitionLookup: DefinitionLookupService,
         private val cueLookup: SubtitleCueLookupService = NO_CUE_LOOKUP,
         private val effectiveSubtitleOffset: Flow<Double?> = flowOf(null),
@@ -1313,10 +1362,11 @@ class VideoMiningViewModel internal constructor(
             modelClass: Class<T>,
             extras: CreationExtras,
         ): T {
-            require(modelClass.isAssignableFrom(VideoMiningViewModel::class.java))
-            return VideoMiningViewModel(
+            require(modelClass.isAssignableFrom(MediaMiningViewModel::class.java))
+            return MediaMiningViewModel(
                 repository = repository,
                 safBroker = safBroker,
+                lane = lane,
                 runtimeWorkState = runtimeWorkState,
                 savedStateHandle = savedStateHandleFactory(extras),
                 selectionInventory = selectionInventory,

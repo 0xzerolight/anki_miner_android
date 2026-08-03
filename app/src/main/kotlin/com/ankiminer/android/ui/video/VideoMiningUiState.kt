@@ -12,6 +12,7 @@ import com.ankiminer.android.mining.RuntimeWorkConflict
 
 enum class DocumentSelectionError {
     VIDEO,
+    AUDIO_TYPE,
     SUBTITLE,
 }
 
@@ -39,6 +40,7 @@ data class CurationPlayerUiState(
     val videoPath: String,
     val cues: List<SubtitleCue>,
     val cuesUnavailable: Boolean,
+    val audioOnly: Boolean = false,
 )
 
 @Immutable
