@@ -106,6 +106,7 @@ fun VideoMiningScreen(
     onClearSubtitle: () -> Unit,
     onDismissDocumentError: (DocumentSelectionError) -> Unit,
     onDismissCommandError: () -> Unit,
+    onDismissTimingPreviewError: () -> Unit = {},
     onStart: () -> Unit,
     onFocusCandidate: (String) -> Unit,
     onSetCandidateSelected: (String, Boolean) -> Unit,
@@ -119,6 +120,7 @@ fun VideoMiningScreen(
     onRetry: () -> Unit,
     onReset: () -> Unit,
     onSubtitleOffsetDraftChange: (String) -> Unit = {},
+    onTestTiming: () -> Unit = {},
     onReturnToActiveRun: (() -> Unit)? = null,
     playerFactory: (Context) -> CurationPreviewPlayer = { ExoCurationPreviewPlayer(it) },
     modifier: Modifier = Modifier,
@@ -305,7 +307,9 @@ fun VideoMiningScreen(
                                 onClearSubtitle = onClearSubtitle,
                                 onDismissDocumentError = onDismissDocumentError,
                                 onDismissCommandError = onDismissCommandError,
+                                onDismissTimingPreviewError = onDismissTimingPreviewError,
                                 onSubtitleOffsetDraftChange = onSubtitleOffsetDraftChange,
+                                onTestTiming = onTestTiming,
                                 onStart = onStart,
                                 onReturnToActiveRun = onReturnToActiveRun,
                             )
@@ -509,7 +513,9 @@ private fun LazyListScope.setupItems(
     onClearSubtitle: () -> Unit,
     onDismissDocumentError: (DocumentSelectionError) -> Unit,
     onDismissCommandError: () -> Unit,
+    onDismissTimingPreviewError: () -> Unit,
     onSubtitleOffsetDraftChange: (String) -> Unit,
+    onTestTiming: () -> Unit,
     onStart: () -> Unit,
     onReturnToActiveRun: (() -> Unit)?,
 ) {
@@ -538,7 +544,7 @@ private fun LazyListScope.setupItems(
                         label = stringResource(R.string.video_file_label),
                         document = state.video.document,
                         isResolving = state.video.isResolving,
-                        enabled = !state.startPending,
+                        enabled = !state.startPending && !state.timingPreviewPending,
                         pickTestTag = VideoMiningTestTags.PICK_VIDEO,
                         clearTestTag = VideoMiningTestTags.CLEAR_VIDEO,
                         readKind = DocumentReadKind.VIDEO,
@@ -549,7 +555,7 @@ private fun LazyListScope.setupItems(
                         label = stringResource(R.string.subtitle_file_label),
                         document = state.subtitle.document,
                         isResolving = state.subtitle.isResolving,
-                        enabled = !state.startPending,
+                        enabled = !state.startPending && !state.timingPreviewPending,
                         pickTestTag = VideoMiningTestTags.PICK_SUBTITLE,
                         clearTestTag = VideoMiningTestTags.CLEAR_SUBTITLE,
                         readKind = DocumentReadKind.SUBTITLES,
@@ -565,6 +571,7 @@ private fun LazyListScope.setupItems(
             onChange = onSubtitleOffsetDraftChange,
             label = stringResource(R.string.video_subtitle_offset_label),
             allowNegative = true,
+            enabled = !state.timingPreviewPending,
             error =
                 stringResource(R.string.b3_validation_numeric_incomplete)
                     .takeIf { state.subtitleOffsetDraftInvalid },
@@ -605,6 +612,19 @@ private fun LazyListScope.setupItems(
     }
     item(key = "start", contentType = "actions") {
         Column(verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
+            OutlinedButton(
+                onClick = onTestTiming,
+                enabled = state.canTestTiming,
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 48.dp)
+                        .testTag(VideoMiningTestTags.TEST_TIMING),
+                colors = outlinedActionButtonColors(),
+                border = actionBorder(state.canTestTiming),
+            ) {
+                Text(stringResource(R.string.timing_preview_test_action))
+            }
             Button(
                 onClick = onStart,
                 enabled = state.canStart,
@@ -624,6 +644,16 @@ private fun LazyListScope.setupItems(
                         MiningFailureAction(
                             label = stringResource(R.string.dismiss_error),
                             onClick = onDismissCommandError,
+                        ),
+                )
+            }
+            state.timingPreviewError?.let { error ->
+                MiningFailureCard(
+                    message = stringResource(error.messageResource()),
+                    primaryAction =
+                        MiningFailureAction(
+                            label = stringResource(R.string.dismiss_error),
+                            onClick = onDismissTimingPreviewError,
                         ),
                 )
             }
@@ -1111,3 +1141,11 @@ private fun MiningCommandError.message(): String =
             MiningCommandError.RESET -> R.string.reset_error
         },
     )
+
+@StringRes
+private fun TimingPreviewError.messageResource(): Int =
+    when (this) {
+        TimingPreviewError.BUSY -> R.string.timing_preview_busy
+        TimingPreviewError.TOKENIZER_REQUIRED -> R.string.timing_preview_tokenizer_required
+        TimingPreviewError.OPEN -> R.string.timing_preview_open_error
+    }

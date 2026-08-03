@@ -1,5 +1,6 @@
 package com.ankiminer.android.ui.navigation
 
+import android.net.Uri
 import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
 import androidx.compose.animation.core.tween
@@ -76,6 +77,7 @@ import com.ankiminer.android.ui.theme.SupportingText
 import com.ankiminer.android.ui.theme.actionBorder
 import com.ankiminer.android.ui.theme.outlinedActionButtonColors
 import com.ankiminer.android.ui.theme.tonalActionButtonColors
+import com.ankiminer.android.ui.video.TimingPreviewOverlay
 import com.ankiminer.android.ui.video.VideoMiningRoute
 import com.ankiminer.android.ui.video.VideoMiningTestTags
 import com.ankiminer.android.ui.wizard.OnboardingWizard
@@ -375,6 +377,7 @@ internal fun AnkiMinerApp(
     val readingWorkflow by
         readingViewModel.navigationWorkflowState.collectAsStateWithLifecycle()
     val videoRunState by videoViewModel.uiState.collectAsStateWithLifecycle()
+    val timingPreview by videoViewModel.timingPreviewState.collectAsStateWithLifecycle()
     val readingRunState by readingViewModel.uiState.collectAsStateWithLifecycle()
     val buildIdentity = remember { currentTesterBuildIdentity() }
     val diagnosticsIdentity =
@@ -494,38 +497,56 @@ internal fun AnkiMinerApp(
         onDestinationSelected = ::navigateTo,
         onNavigateBack = { navController.popBackStack() },
         overlay =
-            if (!wizardIsVisible) {
-                null
-            } else {
-                {
-                    OnboardingWizard(
-                        state = setup,
-                        viewModel = setupViewModel,
-                        onRequestPermissions = onRequestPermissions,
-                        onOpenAppSettings = onOpenAppSettings,
-                        onInstallAnkiDroid = onInstallAnkiDroid,
-                        onOpenAnkiDroid = onOpenAnkiDroid,
-                        onFinished = {
-                            wizardRerunRequested = false
-                            wizardRedirectedToSettings = false
-                            if (setup.wizardSeen != true) setupViewModel.markWizardSeen()
-                        },
-                        onCustomizeFields = {
-                            wizardRerunRequested = false
-                            wizardRedirectedToSettings = true
-                            requestedSettingsCategory = SettingsCategory.ANKI
-                            requestedSettingsItemIndex = 3
-                            navigateTo(AnkiMinerDestination.SETTINGS)
-                        },
-                        onResolveRecovery = {
-                            wizardRerunRequested = false
-                            wizardRedirectedToSettings = true
-                            requestedSettingsCategory = SettingsCategory.ANKI
-                            requestedSettingsItemIndex = 4
-                            navigateTo(AnkiMinerDestination.SETTINGS)
-                        },
-                    )
+            when {
+                wizardIsVisible -> {
+                    {
+                        OnboardingWizard(
+                            state = setup,
+                            viewModel = setupViewModel,
+                            onRequestPermissions = onRequestPermissions,
+                            onOpenAppSettings = onOpenAppSettings,
+                            onInstallAnkiDroid = onInstallAnkiDroid,
+                            onOpenAnkiDroid = onOpenAnkiDroid,
+                            onFinished = {
+                                wizardRerunRequested = false
+                                wizardRedirectedToSettings = false
+                                if (setup.wizardSeen != true) setupViewModel.markWizardSeen()
+                            },
+                            onCustomizeFields = {
+                                wizardRerunRequested = false
+                                wizardRedirectedToSettings = true
+                                requestedSettingsCategory = SettingsCategory.ANKI
+                                requestedSettingsItemIndex = 3
+                                navigateTo(AnkiMinerDestination.SETTINGS)
+                            },
+                            onResolveRecovery = {
+                                wizardRerunRequested = false
+                                wizardRedirectedToSettings = true
+                                requestedSettingsCategory = SettingsCategory.ANKI
+                                requestedSettingsItemIndex = 4
+                                navigateTo(AnkiMinerDestination.SETTINGS)
+                            },
+                        )
+                    }
                 }
+                timingPreview != null -> {
+                    {
+                        TimingPreviewOverlay(
+                            state = requireNotNull(timingPreview),
+                            videoUri =
+                                Uri.parse(
+                                    requireNotNull(videoRunState.video.document).uri,
+                                ),
+                            onSelectCue = videoViewModel::selectTimingPreviewCue,
+                            onNudge = videoViewModel::nudgeTimingPreview,
+                            onSetWorking = videoViewModel::setTimingPreviewWorkingOffset,
+                            onToggleUnshifted = videoViewModel::toggleTimingPreviewUnshifted,
+                            onApply = videoViewModel::applyTimingPreview,
+                            onCancel = videoViewModel::closeTimingPreview,
+                        )
+                    }
+                }
+                else -> null
             },
     ) { shellModifier ->
         NavHost(

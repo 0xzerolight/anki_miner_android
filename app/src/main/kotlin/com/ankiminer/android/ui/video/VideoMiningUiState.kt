@@ -22,6 +22,12 @@ enum class MiningCommandError {
     RESET,
 }
 
+enum class TimingPreviewError {
+    BUSY,
+    TOKENIZER_REQUIRED,
+    OPEN,
+}
+
 data class DocumentSlotState(
     val document: SafDocument? = null,
     val isResolving: Boolean = false,
@@ -73,6 +79,8 @@ data class VideoMiningUiState(
     val resetPending: Boolean = false,
     val commandError: MiningCommandError? = null,
     val runtimeConflict: RuntimeWorkConflict? = null,
+    val timingPreviewPending: Boolean = false,
+    val timingPreviewError: TimingPreviewError? = null,
 ) {
     val canStart: Boolean
         get() =
@@ -83,5 +91,15 @@ data class VideoMiningUiState(
                 !subtitle.isResolving &&
                 !subtitleOffsetDraftInvalid &&
                 !startPending &&
+                !timingPreviewPending &&
                 runtimeConflict == null
+
+    val canTestTiming: Boolean
+        get() =
+            runState == MiningRunState.Idle &&
+                video.document != null &&
+                subtitle.document != null &&
+                !subtitleOffsetDraftInvalid &&
+                !startPending &&
+                !timingPreviewPending
 }

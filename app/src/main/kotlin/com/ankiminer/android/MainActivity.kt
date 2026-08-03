@@ -72,6 +72,7 @@ class MainActivity : ComponentActivity() {
             selectionInventory = app.safSelectionInventory,
             effectiveSubtitleOffset =
                 app.settingsRepository.settings.map { it.subtitleOffsetSeconds },
+            timingPreviewOpener = app.timingPreviewLoader,
         )
     }
     private val setupViewModelFactory by lazy {

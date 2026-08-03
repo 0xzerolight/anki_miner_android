@@ -42,7 +42,11 @@ import com.ankiminer.android.mining.MiningRunState
 import com.ankiminer.android.mining.ProcessingResult
 import com.ankiminer.android.mining.VideoMiningInput
 import com.ankiminer.android.subtitles.SubtitleCueLookupService
+import com.ankiminer.android.timing.TimingPreviewBusyException
+import com.ankiminer.android.timing.TimingPreviewOpener
+import com.ankiminer.android.timing.TimingPreviewSession
 import com.ankiminer.android.ui.video.DocumentSelectionError
+import com.ankiminer.android.ui.video.TimingPreviewError
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.coroutines.Continuation
 import kotlin.coroutines.resume
@@ -810,6 +814,140 @@ class VideoMiningViewModelTest {
         }
 
     @Test
+    fun openingTimingPreviewLoadsUnshiftedCuesAndSeedsTheEffectiveOffset() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val cue = SubtitleCue(1.0, 2.0, "猫だ。")
+            val openedSubtitles = mutableListOf<SafDocument>()
+            val opener =
+                TimingPreviewOpener { subtitle ->
+                    openedSubtitles += subtitle
+                    Result.success(TimingPreviewSession(listOf(cue)) {})
+                }
+            val globalOffset = MutableStateFlow<Double?>(0.25)
+            val viewModel =
+                VideoMiningViewModel(
+                    repository = RecordingRepository(),
+                    safBroker = ImmediateSafBroker(),
+                    timingPreviewOpener = opener,
+                    timingPreviewCleanupDispatcher = mainDispatcherRule.dispatcher,
+                    effectiveSubtitleOffset = globalOffset,
+                )
+            selectDocuments(viewModel)
+            viewModel.setSubtitleOffsetDraft("1.5")
+            runCurrent()
+
+            viewModel.openTimingPreview()
+            runCurrent()
+
+            assertEquals("subtitle", openedSubtitles.single().displayName)
+            val state = requireNotNull(viewModel.timingPreviewState.value)
+            assertEquals(1.5, state.initialOffset, 0.0)
+            assertEquals(1.5, state.workingOffset, 0.0)
+            assertEquals(listOf(cue), state.cues)
+        }
+
+    @Test
+    fun applyingTimingPreviewWritesDraftClearsOverlayAndClosesSession() =
+        runTest(mainDispatcherRule.dispatcher) {
+            var closeCount = 0
+            val viewModel =
+                timingPreviewViewModel(
+                    session = TimingPreviewSession(emptyList()) { closeCount += 1 },
+                )
+            selectDocuments(viewModel)
+            runCurrent()
+            viewModel.openTimingPreview()
+            runCurrent()
+            viewModel.setTimingPreviewWorkingOffset(1.75)
+
+            viewModel.applyTimingPreview()
+            runCurrent()
+
+            assertEquals("1.75", viewModel.uiState.value.subtitleOffsetDraft)
+            assertNull(viewModel.timingPreviewState.value)
+            assertEquals(1, closeCount)
+        }
+
+    @Test
+    fun timingPreviewFailureExposesStableErrorWithoutOpeningOverlay() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val viewModel =
+                VideoMiningViewModel(
+                    repository = RecordingRepository(),
+                    safBroker = ImmediateSafBroker(),
+                    timingPreviewOpener =
+                        TimingPreviewOpener {
+                            Result.failure(TimingPreviewBusyException())
+                        },
+                    timingPreviewCleanupDispatcher = mainDispatcherRule.dispatcher,
+                )
+            selectDocuments(viewModel)
+            runCurrent()
+
+            viewModel.openTimingPreview()
+            runCurrent()
+
+            assertNull(viewModel.timingPreviewState.value)
+            assertEquals(TimingPreviewError.BUSY, viewModel.uiState.value.timingPreviewError)
+            assertFalse(viewModel.uiState.value.timingPreviewPending)
+        }
+
+    @Test
+    fun cancellingTimingPreviewDiscardsWorkingOffsetAndClosesSession() =
+        runTest(mainDispatcherRule.dispatcher) {
+            var closeCount = 0
+            val viewModel =
+                timingPreviewViewModel(
+                    session = TimingPreviewSession(emptyList()) { closeCount += 1 },
+                )
+            selectDocuments(viewModel)
+            viewModel.setSubtitleOffsetDraft("0.5")
+            runCurrent()
+            viewModel.openTimingPreview()
+            runCurrent()
+            viewModel.setTimingPreviewWorkingOffset(2.0)
+
+            viewModel.closeTimingPreview()
+            runCurrent()
+
+            assertEquals("0.5", viewModel.uiState.value.subtitleOffsetDraft)
+            assertNull(viewModel.timingPreviewState.value)
+            assertEquals(1, closeCount)
+        }
+
+    @Test
+    fun viewModelTeardownClosesAnOpenTimingPreviewSession() =
+        runTest(mainDispatcherRule.dispatcher) {
+            var closeCount = 0
+            val store = ViewModelStore()
+            val factory =
+                VideoMiningViewModel.Factory(
+                    repository = RecordingRepository(),
+                    safBroker = ImmediateSafBroker(),
+                    definitionLookup = NO_DEFINITION_LOOKUP,
+                    timingPreviewOpener =
+                        TimingPreviewOpener {
+                            Result.success(
+                                TimingPreviewSession(emptyList()) { closeCount += 1 },
+                            )
+                        },
+                    timingPreviewCleanupDispatcher = mainDispatcherRule.dispatcher,
+                    savedStateHandleFactory = { SavedStateHandle() },
+                )
+            val viewModel =
+                ViewModelProvider.create(store, factory)[VideoMiningViewModel::class.java]
+            selectDocuments(viewModel)
+            runCurrent()
+            viewModel.openTimingPreview()
+            runCurrent()
+
+            store.clear()
+            runCurrent()
+
+            assertEquals(1, closeCount)
+        }
+
+    @Test
     fun curationCommandLogCarriesRunId() =
         runTest(mainDispatcherRule.dispatcher) {
             val recorded = RecordingLogSink()
@@ -1516,6 +1654,14 @@ class VideoMiningViewModelTest {
             safBroker = broker,
             definitionLookup = NO_DEFINITION_LOOKUP,
             savedStateHandleFactory = { SavedStateHandle() },
+        )
+
+    private fun timingPreviewViewModel(session: TimingPreviewSession): VideoMiningViewModel =
+        VideoMiningViewModel(
+            repository = RecordingRepository(),
+            safBroker = ImmediateSafBroker(),
+            timingPreviewOpener = TimingPreviewOpener { Result.success(session) },
+            timingPreviewCleanupDispatcher = mainDispatcherRule.dispatcher,
         )
 
     private class ImmediateSafBroker : SafBroker {

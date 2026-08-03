@@ -26,17 +26,22 @@ import com.ankiminer.android.mining.MiningRepository
 import com.ankiminer.android.mining.MiningRunState
 import com.ankiminer.android.mining.MiningSource
 import com.ankiminer.android.mining.RuntimeWorkConflict
+import com.ankiminer.android.mining.TokenizerConfigurationFailure
 import com.ankiminer.android.mining.VideoMiningInput
 import com.ankiminer.android.mining.cancellationPending
 import com.ankiminer.android.mining.cancellationToken
 import com.ankiminer.android.mining.isTerminal
 import com.ankiminer.android.mining.runId
 import com.ankiminer.android.subtitles.SubtitleCueLookupService
+import com.ankiminer.android.timing.TimingPreviewBusyException
+import com.ankiminer.android.timing.TimingPreviewOpener
+import com.ankiminer.android.timing.TimingPreviewSession
 import com.ankiminer.android.ui.mining.CurationDefinitionState
 import com.ankiminer.android.ui.mining.DefinitionQuery
 import com.ankiminer.android.ui.mining.MiningPendingAction
 import com.ankiminer.android.ui.mining.MiningPendingState
 import com.ankiminer.android.ui.mining.SharedCurationDraft
+import com.ankiminer.android.ui.mining.TimingPreviewState
 import com.ankiminer.android.ui.mining.completed
 import com.ankiminer.android.ui.mining.defaultCurationDraft
 import com.ankiminer.android.ui.mining.draftFor
@@ -48,11 +53,15 @@ import com.ankiminer.android.ui.video.CurationUiState
 import com.ankiminer.android.ui.video.DocumentSelectionError
 import com.ankiminer.android.ui.video.DocumentSlotState
 import com.ankiminer.android.ui.video.MiningCommandError
+import com.ankiminer.android.ui.video.TimingPreviewError
 import com.ankiminer.android.ui.video.VideoMiningUiState
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -80,6 +89,8 @@ class VideoMiningViewModel internal constructor(
     private val definitionLookup: DefinitionLookupService? = null,
     private val cueLookup: SubtitleCueLookupService = NO_CUE_LOOKUP,
     effectiveSubtitleOffset: Flow<Double?> = flowOf(null),
+    private val timingPreviewOpener: TimingPreviewOpener? = null,
+    timingPreviewCleanupDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : ViewModel() {
     private data class LocalState(
         val video: DocumentSlotState = DocumentSlotState(),
@@ -90,6 +101,8 @@ class VideoMiningViewModel internal constructor(
         val previousPageSelectedCount: Int = 0,
         val pending: MiningPendingState = MiningPendingState(),
         val commandError: MiningCommandError? = null,
+        val timingPreviewPending: Boolean = false,
+        val timingPreviewError: TimingPreviewError? = null,
     )
 
     private enum class DocumentKind {
@@ -124,6 +137,12 @@ class VideoMiningViewModel internal constructor(
         )
     private val definitionState = MutableStateFlow(CurationDefinitionState())
     private val cueState = MutableStateFlow<CueState?>(null)
+    private val mutableTimingPreviewState = MutableStateFlow<TimingPreviewState?>(null)
+    val timingPreviewState: StateFlow<TimingPreviewState?> = mutableTimingPreviewState
+    private val timingPreviewCleanupScope =
+        CoroutineScope(SupervisorJob() + timingPreviewCleanupDispatcher)
+    private var timingPreviewSession: TimingPreviewSession? = null
+    private var timingPreviewOpenJob: Job? = null
     private var definitionJob: Job? = null
     private var videoDocumentRequest = 0L
     private var subtitleDocumentRequest = 0L
@@ -193,6 +212,8 @@ class VideoMiningViewModel internal constructor(
                 cancelPending = local.pending.cancel || runState.cancellationPending,
                 resetPending = local.pending.reset,
                 commandError = local.commandError,
+                timingPreviewPending = local.timingPreviewPending,
+                timingPreviewError = local.timingPreviewError,
                 runtimeConflict =
                     activeKind?.toRuntimeConflict()?.takeIf { runState == MiningRunState.Idle },
             )
@@ -294,7 +315,14 @@ class VideoMiningViewModel internal constructor(
     fun onSubtitlePicked(uri: String) = resolveDocument(DocumentKind.SUBTITLE, uri)
 
     fun clearVideo() {
-        if (repository.state.value != MiningRunState.Idle || localState.value.pending.start) return
+        if (
+            repository.state.value != MiningRunState.Idle ||
+            localState.value.pending.start ||
+            localState.value.timingPreviewPending ||
+            mutableTimingPreviewState.value != null
+        ) {
+            return
+        }
         AppLog.i(
             LogComponent.UI,
             "command",
@@ -311,7 +339,14 @@ class VideoMiningViewModel internal constructor(
     }
 
     fun clearSubtitle() {
-        if (repository.state.value != MiningRunState.Idle || localState.value.pending.start) return
+        if (
+            repository.state.value != MiningRunState.Idle ||
+            localState.value.pending.start ||
+            localState.value.timingPreviewPending ||
+            mutableTimingPreviewState.value != null
+        ) {
+            return
+        }
         AppLog.i(
             LogComponent.UI,
             "command",
@@ -342,16 +377,127 @@ class VideoMiningViewModel internal constructor(
         localState.update { it.copy(commandError = null) }
     }
 
+    fun dismissTimingPreviewError() {
+        localState.update { it.copy(timingPreviewError = null) }
+    }
+
     fun setSubtitleOffsetDraft(value: String) {
         val local = localState.value
         if (
             repository.state.value != MiningRunState.Idle ||
             local.pending.start ||
-            local.pending.reset
+            local.pending.reset ||
+            local.timingPreviewPending ||
+            mutableTimingPreviewState.value != null
         ) {
             return
         }
         updateSubtitleOffsetDraft(value)
+    }
+
+    fun openTimingPreview() {
+        val opener = timingPreviewOpener ?: return
+        while (true) {
+            val local = localState.value
+            val subtitle = local.subtitle.document ?: return
+            if (
+                local.video.document == null ||
+                repository.state.value != MiningRunState.Idle ||
+                local.subtitleOffsetDraftInvalid ||
+                local.pending.start ||
+                local.pending.reset ||
+                local.timingPreviewPending ||
+                mutableTimingPreviewState.value != null
+            ) {
+                return
+            }
+            if (
+                localState.compareAndSet(
+                    local,
+                    local.copy(
+                        timingPreviewPending = true,
+                        timingPreviewError = null,
+                    ),
+                )
+            ) {
+                val initialOffset =
+                    local.subtitleOffsetOverride
+                        ?: local.globalSubtitleOffset
+                        ?: ENGINE_DEFAULT_SUBTITLE_OFFSET
+                timingPreviewOpenJob =
+                    viewModelScope.launch {
+                        try {
+                            val result = opener.open(subtitle)
+                            result.fold(
+                                onSuccess = { session ->
+                                    val current = localState.value
+                                    if (
+                                        repository.state.value != MiningRunState.Idle ||
+                                        current.subtitle.document?.uri != subtitle.uri ||
+                                        mutableTimingPreviewState.value != null
+                                    ) {
+                                        queueTimingPreviewClose(session)
+                                    } else {
+                                        timingPreviewSession = session
+                                        mutableTimingPreviewState.value =
+                                            TimingPreviewState(
+                                                initialOffset = initialOffset,
+                                                workingOffset = initialOffset,
+                                                previewingUnshifted = false,
+                                                cues = session.cues,
+                                                selectedCueIndex = null,
+                                            )
+                                    }
+                                },
+                                onFailure = { failure ->
+                                    publishTimingPreviewFailure(failure)
+                                },
+                            )
+                        } catch (failure: CancellationException) {
+                            throw failure
+                        } catch (failure: Exception) {
+                            publishTimingPreviewFailure(failure)
+                        } finally {
+                            localState.update { it.copy(timingPreviewPending = false) }
+                            timingPreviewOpenJob = null
+                        }
+                    }
+                return
+            }
+        }
+    }
+
+    fun selectTimingPreviewCue(index: Int) {
+        mutableTimingPreviewState.update { state -> state?.selectCue(index) }
+    }
+
+    fun nudgeTimingPreview(delta: Double) {
+        mutableTimingPreviewState.update { state -> state?.nudge(delta) }
+    }
+
+    fun setTimingPreviewWorkingOffset(value: Double) {
+        if (!value.isFinite()) return
+        mutableTimingPreviewState.update { state -> state?.setWorking(value) }
+    }
+
+    fun toggleTimingPreviewUnshifted() {
+        mutableTimingPreviewState.update { state -> state?.toggleUnshifted() }
+    }
+
+    fun applyTimingPreview() {
+        val state = mutableTimingPreviewState.value ?: return
+        updateSubtitleOffsetDraft(state.workingOffset.toString())
+        closeTimingPreview()
+    }
+
+    fun closeTimingPreview() {
+        mutableTimingPreviewState.value = null
+        val session = timingPreviewSession
+        timingPreviewSession = null
+        if (session != null) {
+            localState.update { it.copy(timingPreviewPending = true) }
+            queueTimingPreviewClose(session, clearPendingOnFinish = true)
+        }
     }
 
     fun start() {
@@ -363,7 +509,9 @@ class VideoMiningViewModel internal constructor(
                 local.video.isResolving ||
                 local.subtitle.isResolving ||
                 local.pending.start ||
-                local.pending.reset
+                local.pending.reset ||
+                local.timingPreviewPending ||
+                mutableTimingPreviewState.value != null
             ) {
                 return
             }
@@ -857,6 +1005,9 @@ class VideoMiningViewModel internal constructor(
         // its grant rather than publishing ownership into an unreachable LocalState.
         videoDocumentRequest += 1
         subtitleDocumentRequest += 1
+        timingPreviewOpenJob?.cancel()
+        timingPreviewOpenJob = null
+        closeTimingPreview()
         val local = localState.value
         val video = local.video.document
         val subtitle = local.subtitle.document
@@ -882,6 +1033,39 @@ class VideoMiningViewModel internal constructor(
         // retry cleanup from onCleared. Transfer release to the process-scoped broker immediately;
         // a queued viewModelScope coroutine could be cancelled before its body ever starts.
         safBroker.releaseReadAccessEventually(document.uri)
+    }
+
+    private fun publishTimingPreviewFailure(failure: Throwable) {
+        val error =
+            when (failure) {
+                is TimingPreviewBusyException -> TimingPreviewError.BUSY
+                is TokenizerConfigurationFailure.Required ->
+                    TimingPreviewError.TOKENIZER_REQUIRED
+                else -> TimingPreviewError.OPEN
+            }
+        localState.update { it.copy(timingPreviewError = error) }
+    }
+
+    private fun queueTimingPreviewClose(
+        session: TimingPreviewSession,
+        clearPendingOnFinish: Boolean = false,
+    ) {
+        timingPreviewCleanupScope.launch(NonCancellable) {
+            try {
+                session.close()
+            } catch (failure: Exception) {
+                AppLog.w(
+                    LogComponent.SAF,
+                    "timing_preview.close",
+                    failure,
+                    "outcome" to "fail",
+                )
+            } finally {
+                if (clearPendingOnFinish) {
+                    localState.update { it.copy(timingPreviewPending = false) }
+                }
+            }
+        }
     }
 
     private fun isCurrentDocumentRequest(
@@ -1117,6 +1301,8 @@ class VideoMiningViewModel internal constructor(
         private val definitionLookup: DefinitionLookupService,
         private val cueLookup: SubtitleCueLookupService = NO_CUE_LOOKUP,
         private val effectiveSubtitleOffset: Flow<Double?> = flowOf(null),
+        private val timingPreviewOpener: TimingPreviewOpener? = null,
+        private val timingPreviewCleanupDispatcher: CoroutineDispatcher = Dispatchers.IO,
         private val runtimeWorkState: StateFlow<RuntimeWorkCoordinator.Kind?> = MutableStateFlow(null),
         private val selectionInventory: SafSelectionInventory? = null,
         private val savedStateHandleFactory: (CreationExtras) -> SavedStateHandle =
@@ -1137,6 +1323,8 @@ class VideoMiningViewModel internal constructor(
                 definitionLookup = definitionLookup,
                 cueLookup = cueLookup,
                 effectiveSubtitleOffset = effectiveSubtitleOffset,
+                timingPreviewOpener = timingPreviewOpener,
+                timingPreviewCleanupDispatcher = timingPreviewCleanupDispatcher,
             ) as T
         }
     }

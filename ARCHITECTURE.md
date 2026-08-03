@@ -42,6 +42,13 @@ Historical correction (2026-07-21): commit `99058d7` superseded the 2026-07-17
 completion checkpoint's app-owned note-model statement. The checkpoint remains
 historical evidence; the user-owned note-type behavior above is current.
 
+## Timing-preview decision
+
+The pre-run subtitle timing workbench compares its working offset against
+unshifted timing (`0.0`) in A/B mode. This deliberately differs from the
+desktop workbench, whose A side starts from its initial offset: Android follows
+the S4 requirement that A/B expose the source cue timing directly.
+
 ## Project documentation
 
 Use current code, tests, this architecture overview, and `CHANGELOG.md` as

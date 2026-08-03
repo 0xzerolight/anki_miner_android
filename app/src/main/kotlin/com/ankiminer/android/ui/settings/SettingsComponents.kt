@@ -148,6 +148,7 @@ internal fun NumericField(
     label: String,
     allowNegative: Boolean = false,
     integer: Boolean = false,
+    enabled: Boolean = true,
     error: String? = null,
     imeAction: ImeAction = ImeAction.Done,
     modifier: Modifier = Modifier,
@@ -162,6 +163,7 @@ internal fun NumericField(
         // enter malformed text; keep it visible so field-keyed validation can explain the problem.
         onChange = onChange,
         label = label,
+        enabled = enabled,
         error = error,
         placeholder = placeholder,
         keyboardOptions =

@@ -18,7 +18,6 @@ import com.ankiminer.android.engine.MiningOutcome
 import com.ankiminer.android.engine.PresenterEvent
 import com.ankiminer.android.engine.PresenterMessageKind
 import com.ankiminer.android.engine.PyBridge
-import com.ankiminer.android.engine.TokenizerConfiguration
 import com.ankiminer.android.engine.VideoMiningWireRequest
 import com.ankiminer.android.localization.EngineNoticeRewriter
 import com.ankiminer.android.localization.StringResourceResolver
@@ -155,6 +154,8 @@ internal class BridgeMiningRepository(
 
     private val monitor = Any()
     private val noticeRewriter = EngineNoticeRewriter(strings)
+    private val tokenizerConfigurator =
+        TokenizerConfigurator(pyBridge, tokenizerResourceProvider)
     private val startupInterruption = interruptionStore.startupInterruption()
 
     /** Recognised whichever lane wrote it: one durable record covers both, so either can clear it. */
@@ -544,56 +545,30 @@ internal class BridgeMiningRepository(
         run: ActiveRun,
         tokenizer: InstalledTokenizerResource,
     ) {
-        val raw =
-            try {
-                pyBridge.dispatch(
-                    BridgeJsonCodec.encodeTokenizerConfigure(
-                        TokenizerConfiguration(
-                            dicDir = tokenizer.dicDir.canonicalPath,
-                            resourceId = tokenizer.resourceId,
-                            treeSha256 = tokenizer.treeSha256,
-                            backend = tokenizer.backend,
-                        ),
-                    ),
-                    null,
-                )
-            } catch (failure: Exception) {
-                recordFault(run.generation, strings.resolve(R.string.mining_failure_tokenizer_setup))
-                throw failure
+        try {
+            tokenizerConfigurator.configure(tokenizer)
+        } catch (failure: TokenizerConfigurationFailure.Dispatch) {
+            recordFault(run.generation, strings.resolve(R.string.mining_failure_tokenizer_setup))
+            throw requireNotNull(failure.cause)
+        } catch (failure: TokenizerConfigurationFailure.Response) {
+            recordFault(run.generation, strings.resolve(R.string.mining_failure_tokenizer_response))
+            throw requireNotNull(failure.cause)
+        } catch (_: TokenizerConfigurationFailure.Identity) {
+            recordFault(run.generation, strings.resolve(R.string.mining_failure_tokenizer_identity))
+            throw MiningCommandException("Tokenizer identity did not match its installed resource")
+        } catch (failure: TokenizerConfigurationFailure.Rejected) {
+            if (failure.restartRequired) {
+                setRestartRequired(strings.resolve(R.string.mining_failure_tokenizer_restart))
             }
-        val decoded =
-            try {
-                BridgeJsonCodec.decode(raw)
-            } catch (failure: RuntimeException) {
-                recordFault(run.generation, strings.resolve(R.string.mining_failure_tokenizer_response))
-                throw failure
-            }
-        when (val response = decoded) {
-            is BridgeMessage.TokenizerReady -> {
-                val identity = response.identity
-                if (
-                    identity.dicDir != tokenizer.dicDir.canonicalPath ||
-                    identity.resourceId != tokenizer.resourceId ||
-                    identity.treeSha256 != tokenizer.treeSha256 ||
-                    identity.backend != tokenizer.backend ||
-                    identity.fileCount <= 0 ||
-                    identity.totalBytes <= 0
-                ) {
-                    recordFault(run.generation, strings.resolve(R.string.mining_failure_tokenizer_identity))
-                    throw MiningCommandException("Tokenizer identity did not match its installed resource")
-                }
-            }
-            is BridgeMessage.Error -> {
-                if (response.code == "tokenizer_restart_required") {
-                    setRestartRequired(strings.resolve(R.string.mining_failure_tokenizer_restart))
-                }
-                recordFault(run.generation, strings.resolve(R.string.mining_failure_tokenizer_verification))
-                throw MiningCommandException("Tokenizer setup was rejected")
-            }
-            else -> {
-                recordFault(run.generation, strings.resolve(R.string.mining_failure_tokenizer_response))
-                throw MiningCommandException("Tokenizer setup returned an invalid response")
-            }
+            recordFault(run.generation, strings.resolve(R.string.mining_failure_tokenizer_verification))
+            throw MiningCommandException("Tokenizer setup was rejected")
+        } catch (_: TokenizerConfigurationFailure.Unexpected) {
+            recordFault(run.generation, strings.resolve(R.string.mining_failure_tokenizer_response))
+            throw MiningCommandException("Tokenizer setup returned an invalid response")
+        } catch (failure: TokenizerConfigurationFailure.Required) {
+            // The repository resolves the installed resource immediately before this call.
+            recordFault(run.generation, strings.resolve(R.string.mining_failure_tokenizer_required))
+            throw failure
         }
     }
 

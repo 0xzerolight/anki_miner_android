@@ -92,6 +92,43 @@ class VideoMiningScreenTest {
     }
 
     @Test
+    fun timingTestRequiresBothSourcesIdleRunAndValidOffset() {
+        var opened = false
+        setScreen(
+            state =
+                VideoMiningUiState(
+                    video = DocumentSlotState(document("video", "episode.mkv")),
+                    subtitle = DocumentSlotState(document("subtitle", "episode.srt")),
+                ),
+            onTestTiming = { opened = true },
+        )
+
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(VideoMiningTestTags.TEST_TIMING))
+        composeRule.onNodeWithTag(VideoMiningTestTags.TEST_TIMING).assertIsEnabled().performClick()
+
+        composeRule.runOnIdle { assertTrue(opened) }
+    }
+
+    @Test
+    fun invalidOffsetDisablesTimingTest() {
+        setScreen(
+            state =
+                VideoMiningUiState(
+                    video = DocumentSlotState(document("video", "episode.mkv")),
+                    subtitle = DocumentSlotState(document("subtitle", "episode.srt")),
+                    subtitleOffsetDraft = "invalid",
+                    subtitleOffsetDraftInvalid = true,
+                ),
+        )
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(VideoMiningTestTags.TEST_TIMING))
+        composeRule.onNodeWithTag(VideoMiningTestTags.TEST_TIMING).assertIsNotEnabled()
+    }
+
+    @Test
     fun pendingStartFreezesEverySelectedDocumentAction() {
         setScreen(
             state =
@@ -1200,6 +1237,7 @@ class VideoMiningScreenTest {
         onPickVideo: () -> Unit = {},
         onPickSubtitle: () -> Unit = {},
         onStart: () -> Unit = {},
+        onTestTiming: () -> Unit = {},
         onMarkCandidateKnown: (String, Boolean) -> Unit = { _, _ -> },
         onSetSelectionForVisible: (List<String>, Boolean) -> Unit = { _, _ -> },
         onSelectSentence: (String, String) -> Unit = { _, _ -> },
@@ -1214,6 +1252,7 @@ class VideoMiningScreenTest {
                     onPickVideo = onPickVideo,
                     onPickSubtitle = onPickSubtitle,
                     onStart = onStart,
+                    onTestTiming = onTestTiming,
                     onMarkCandidateKnown = onMarkCandidateKnown,
                     onSetSelectionForVisible = onSetSelectionForVisible,
                     onSelectSentence = onSelectSentence,
@@ -1232,6 +1271,7 @@ class VideoMiningScreenTest {
         onPickVideo: () -> Unit = {},
         onPickSubtitle: () -> Unit = {},
         onStart: () -> Unit = {},
+        onTestTiming: () -> Unit = {},
         onMarkCandidateKnown: (String, Boolean) -> Unit = { _, _ -> },
         onSetSelectionForVisible: (List<String>, Boolean) -> Unit = { _, _ -> },
         onSelectSentence: (String, String) -> Unit = { _, _ -> },
@@ -1253,6 +1293,7 @@ class VideoMiningScreenTest {
             onDismissDocumentError = {},
             onDismissCommandError = {},
             onStart = onStart,
+            onTestTiming = onTestTiming,
             onFocusCandidate = onFocusCandidate,
             onSetCandidateSelected = onSetCandidateSelected,
             onMarkCandidateKnown = onMarkCandidateKnown,
