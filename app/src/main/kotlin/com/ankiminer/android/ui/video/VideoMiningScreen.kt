@@ -471,6 +471,7 @@ private fun CurationPlayerSlot(
         overlayOffsetSeconds = 0.0,
         collapsed = collapsed,
         onToggleCollapsed = { collapsed = !collapsed },
+        audioOnly = playerState.audioOnly,
         notice =
             if (playerState.cuesUnavailable) {
                 { CuesUnavailableNotice() }
