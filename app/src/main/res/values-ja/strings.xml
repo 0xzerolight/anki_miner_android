@@ -56,6 +56,11 @@
     <string name="curation_copy_sentence">例文をコピー</string>
     <string name="curation_copied_word">単語をコピーしました</string>
     <string name="curation_copied_sentence">例文をコピーしました</string>
+    <string name="curation_preview_play_description">動画を再生</string>
+    <string name="curation_preview_pause_description">動画を一時停止</string>
+    <string name="curation_preview_collapse_description">動画プレビューを折りたたむ</string>
+    <string name="curation_preview_expand_description">動画プレビューを展開</string>
+    <string name="curation_preview_overlay_description">字幕オーバーレイ</string>
     <string name="definition_loading">検索中…</string>
     <string name="definition_missing">オフライン辞書に項目がありません</string>
     <string name="definition_unavailable">辞書検索を利用できません</string>
