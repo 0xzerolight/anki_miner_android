@@ -553,6 +553,7 @@ internal class BridgeMiningRepository(
         } catch (failure: TokenizerConfigurationFailure.Response) {
             recordFault(run.generation, strings.resolve(R.string.mining_failure_tokenizer_response))
             throw requireNotNull(failure.cause)
+            // instrumentation: silent — the typed failure is fully mapped to a recorded fault and a mining error.
         } catch (_: TokenizerConfigurationFailure.Identity) {
             recordFault(run.generation, strings.resolve(R.string.mining_failure_tokenizer_identity))
             throw MiningCommandException("Tokenizer identity did not match its installed resource")
@@ -562,6 +563,7 @@ internal class BridgeMiningRepository(
             }
             recordFault(run.generation, strings.resolve(R.string.mining_failure_tokenizer_verification))
             throw MiningCommandException("Tokenizer setup was rejected")
+            // instrumentation: silent — the typed failure is fully mapped to a recorded fault and a mining error.
         } catch (_: TokenizerConfigurationFailure.Unexpected) {
             recordFault(run.generation, strings.resolve(R.string.mining_failure_tokenizer_response))
             throw MiningCommandException("Tokenizer setup returned an invalid response")

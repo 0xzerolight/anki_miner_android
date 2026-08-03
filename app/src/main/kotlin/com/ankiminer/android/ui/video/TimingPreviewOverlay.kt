@@ -361,6 +361,7 @@ internal suspend fun isSeekableVideoSource(
                 Os.lseek(it.fileDescriptor, 0L, OsConstants.SEEK_SET)
             }
             true
+            // instrumentation: silent — any probe failure means the source cannot seek; false is the answer.
         } catch (_: Exception) {
             false
         }
