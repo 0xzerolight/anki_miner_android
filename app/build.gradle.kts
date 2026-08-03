@@ -326,6 +326,8 @@ dependencies {
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.jackson.core)
     implementation(libs.kotlinx.coroutines.core)
+    implementation(libs.media3.exoplayer)
+    implementation(libs.media3.ui.compose)
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
