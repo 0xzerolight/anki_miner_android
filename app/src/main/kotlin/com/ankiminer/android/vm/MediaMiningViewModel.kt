@@ -91,6 +91,7 @@ class MediaMiningViewModel internal constructor(
     private val definitionLookup: DefinitionLookupService? = null,
     private val cueLookup: SubtitleCueLookupService = NO_CUE_LOOKUP,
     effectiveSubtitleOffset: Flow<Double?> = flowOf(null),
+    fieldMap: Flow<Map<String, String>> = flowOf(emptyMap()),
     private val timingPreviewOpener: TimingPreviewOpener? = null,
     timingPreviewCleanupDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : ViewModel() {
@@ -101,6 +102,7 @@ class MediaMiningViewModel internal constructor(
         val subtitle: DocumentSlotState = DocumentSlotState(),
         val subtitleOffsetDraft: String = "",
         val globalSubtitleOffset: Double? = null,
+        val fieldMap: Map<String, String> = emptyMap(),
         val curationDraft: SharedCurationDraft? = null,
         val previousPageSelectedCount: Int = 0,
         val pending: MiningPendingState = MiningPendingState(),
@@ -209,6 +211,10 @@ class MediaMiningViewModel internal constructor(
                     local.subtitleOffsetOverride
                         ?: local.globalSubtitleOffset
                         ?: ENGINE_DEFAULT_SUBTITLE_OFFSET,
+                audioFieldUnmapped =
+                    lane == MiningLane.AUDIO &&
+                        local.fieldMap["audio"].isNullOrBlank() &&
+                        !local.fieldMap["picture"].isNullOrBlank(),
                 runState = runState,
                 curation = curation,
                 startPending = local.pending.start,
@@ -233,6 +239,11 @@ class MediaMiningViewModel internal constructor(
                 localState.update { local ->
                     local.copy(globalSubtitleOffset = offset?.takeIf { it.isFinite() })
                 }
+            }
+        }
+        viewModelScope.launch {
+            fieldMap.distinctUntilChanged().collect { currentFieldMap ->
+                localState.update { local -> local.copy(fieldMap = currentFieldMap) }
             }
         }
         viewModelScope.launch {
@@ -1350,6 +1361,7 @@ class MediaMiningViewModel internal constructor(
         private val definitionLookup: DefinitionLookupService,
         private val cueLookup: SubtitleCueLookupService = NO_CUE_LOOKUP,
         private val effectiveSubtitleOffset: Flow<Double?> = flowOf(null),
+        private val fieldMap: Flow<Map<String, String>> = flowOf(emptyMap()),
         private val timingPreviewOpener: TimingPreviewOpener? = null,
         private val timingPreviewCleanupDispatcher: CoroutineDispatcher = Dispatchers.IO,
         private val runtimeWorkState: StateFlow<RuntimeWorkCoordinator.Kind?> = MutableStateFlow(null),
@@ -1373,6 +1385,7 @@ class MediaMiningViewModel internal constructor(
                 definitionLookup = definitionLookup,
                 cueLookup = cueLookup,
                 effectiveSubtitleOffset = effectiveSubtitleOffset,
+                fieldMap = fieldMap,
                 timingPreviewOpener = timingPreviewOpener,
                 timingPreviewCleanupDispatcher = timingPreviewCleanupDispatcher,
             ) as T

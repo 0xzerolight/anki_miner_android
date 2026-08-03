@@ -739,6 +739,76 @@ class MediaMiningViewModelTest {
         }
 
     @Test
+    fun audioLaneWarnsWhenAudioFieldIsUnmappedAndPictureFieldIsMapped() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val viewModel =
+                mediaViewModel(
+                    repository = RecordingRepository(),
+                    safBroker = ImmediateSafBroker(),
+                    fieldMap = flowOf(mapOf("picture" to "Picture")),
+                    lane = MiningLane.AUDIO,
+                )
+
+            runCurrent()
+
+            assertTrue(viewModel.uiState.value.audioFieldUnmapped)
+        }
+
+    @Test
+    fun audioLaneDoesNotWarnWhenBothMediaFieldsAreUnmapped() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val viewModel =
+                mediaViewModel(
+                    repository = RecordingRepository(),
+                    safBroker = ImmediateSafBroker(),
+                    fieldMap = flowOf(emptyMap()),
+                    lane = MiningLane.AUDIO,
+                )
+
+            runCurrent()
+
+            assertFalse(viewModel.uiState.value.audioFieldUnmapped)
+        }
+
+    @Test
+    fun audioLaneDoesNotWarnWhenBothMediaFieldsAreMapped() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val viewModel =
+                mediaViewModel(
+                    repository = RecordingRepository(),
+                    safBroker = ImmediateSafBroker(),
+                    fieldMap =
+                        flowOf(
+                            mapOf(
+                                "audio" to "Audio",
+                                "picture" to "Picture",
+                            ),
+                        ),
+                    lane = MiningLane.AUDIO,
+                )
+
+            runCurrent()
+
+            assertFalse(viewModel.uiState.value.audioFieldUnmapped)
+        }
+
+    @Test
+    fun videoLaneDoesNotWarnWhenAudioFieldIsUnmappedAndPictureFieldIsMapped() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val viewModel =
+                mediaViewModel(
+                    repository = RecordingRepository(),
+                    safBroker = ImmediateSafBroker(),
+                    fieldMap = flowOf(mapOf("picture" to "Picture")),
+                    lane = MiningLane.VIDEO,
+                )
+
+            runCurrent()
+
+            assertFalse(viewModel.uiState.value.audioFieldUnmapped)
+        }
+
+    @Test
     fun videoLaneStillAcceptsVideoExtension() =
         runTest(mainDispatcherRule.dispatcher) {
             val viewModel =
@@ -1837,6 +1907,7 @@ class MediaMiningViewModelTest {
         definitionLookup: DefinitionLookupService? = null,
         cueLookup: SubtitleCueLookupService = NO_CUE_LOOKUP,
         effectiveSubtitleOffset: Flow<Double?> = flowOf(null),
+        fieldMap: Flow<Map<String, String>> = flowOf(emptyMap()),
         timingPreviewOpener: TimingPreviewOpener? = null,
         timingPreviewCleanupDispatcher: CoroutineDispatcher = Dispatchers.IO,
         lane: MiningLane = MiningLane.VIDEO,
@@ -1852,6 +1923,7 @@ class MediaMiningViewModelTest {
             definitionLookup = definitionLookup,
             cueLookup = cueLookup,
             effectiveSubtitleOffset = effectiveSubtitleOffset,
+            fieldMap = fieldMap,
             timingPreviewOpener = timingPreviewOpener,
             timingPreviewCleanupDispatcher = timingPreviewCleanupDispatcher,
         )

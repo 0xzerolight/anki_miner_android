@@ -74,6 +74,7 @@ class MainActivity : ComponentActivity() {
             selectionInventory = app.safSelectionInventory,
             effectiveSubtitleOffset =
                 app.settingsRepository.settings.map { it.subtitleOffsetSeconds },
+            fieldMap = app.settingsRepository.settings.map { it.fieldMap },
             timingPreviewOpener = app.timingPreviewLoader,
         )
     }
@@ -89,6 +90,7 @@ class MainActivity : ComponentActivity() {
             selectionInventory = app.safSelectionInventory,
             effectiveSubtitleOffset =
                 app.settingsRepository.settings.map { it.subtitleOffsetSeconds },
+            fieldMap = app.settingsRepository.settings.map { it.fieldMap },
             timingPreviewOpener = app.timingPreviewLoader,
         )
     }

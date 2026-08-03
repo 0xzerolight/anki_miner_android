@@ -641,6 +641,11 @@ private fun LazyListScope.setupItems(
             ) {
                 Text(stringResource(R.string.timing_preview_test_action))
             }
+            if (state.audioFieldUnmapped) {
+                MiningFailureCard(
+                    message = stringResource(R.string.audio_field_unmapped_warning),
+                )
+            }
             Button(
                 onClick = onStart,
                 enabled = state.canStart,

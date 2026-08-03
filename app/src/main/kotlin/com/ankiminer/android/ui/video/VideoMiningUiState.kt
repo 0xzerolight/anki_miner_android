@@ -73,6 +73,7 @@ data class VideoMiningUiState(
     val subtitleOffsetDraft: String = "",
     val subtitleOffsetDraftInvalid: Boolean = false,
     val effectiveSubtitleOffset: Double = ENGINE_DEFAULT_SUBTITLE_OFFSET,
+    val audioFieldUnmapped: Boolean = false,
     val runState: MiningRunState = MiningRunState.Idle,
     val curation: CurationUiState? = null,
     val startPending: Boolean = false,
