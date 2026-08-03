@@ -2,6 +2,7 @@
 <resources>
     <string name="app_name">Anki Miner</string>
     <string name="video_phase_setup_title">動画マイニング</string>
+    <string name="audio_phase_setup_title">音声マイニング</string>
     <string name="reading_phase_setup_title">読書マイニング</string>
     <string name="reading_source_label">読み物ソース</string>
     <string name="reading_archive_label">Mokuro画像アーカイブ</string>
@@ -12,8 +13,11 @@
     <string name="reading_archive_type_error">ZIPまたはCBZの画像アーカイブを選択してください。</string>
     <string name="reading_archive_name_error">アーカイブと.mokuroの名前は一致している必要があります。</string>
     <string name="video_file_label">動画</string>
+    <string name="audio_file_label">音声ファイル</string>
     <string name="subtitle_file_label">字幕</string>
+    <string name="audio_transcript_label">文字起こし</string>
     <string name="video_subtitle_offset_label">字幕タイミングオフセット（秒）</string>
+    <string name="audio_subtitle_offset_label">文字起こしタイミングオフセット（秒）</string>
     <string name="video_subtitle_offset_placeholder">現在の既定値を使用（%1$s秒）</string>
     <string name="timing_preview_test_action">タイミングをテスト</string>
     <string name="timing_preview_title">字幕タイミングをテスト</string>
@@ -42,6 +46,8 @@
     <string name="reading_document">ドキュメントを読み込み中…</string>
     <string name="reading_document_named">ドキュメントを読み込み中: %1$s…</string>
     <string name="video_file_error">アクセスが失われました。選び直してください。</string>
+    <string name="audio_file_error">アクセスが失われました。選び直してください。</string>
+    <string name="audio_selection_error_type">音声ファイルを選択してください（m4b、mp3、m4a、aac、ogg、opus、flac、wav）。</string>
     <string name="subtitle_file_error">アクセスが失われました。選び直してください。</string>
     <string name="dismiss_error">エラーを閉じる</string>
     <string name="start_mining">マイニング</string>
@@ -107,6 +113,7 @@
     <string name="failed_title">マイニングを停止しました</string>
     <string name="partial_result_title">停止前に追加されたノート</string>
     <string name="result_video">動画: %1$s</string>
+    <string name="result_audio">音声: %1$s</string>
     <string name="result_subtitle">字幕: %1$s</string>
     <string name="result_reading_source">読み物ソース: %1$s</string>
     <string name="result_reading_archive">Mokuro画像アーカイブ: %1$s</string>

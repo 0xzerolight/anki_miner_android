@@ -73,6 +73,7 @@ import com.ankiminer.android.ui.mining.DocumentReadKind
 import com.ankiminer.android.ui.mining.MiningFailureAction
 import com.ankiminer.android.ui.mining.MiningFailureCard
 import com.ankiminer.android.ui.mining.MINING_PHASE_HEADING_TEST_TAG
+import com.ankiminer.android.ui.mining.MediaMiningLabels
 import com.ankiminer.android.ui.mining.MiningPhaseTarget
 import com.ankiminer.android.ui.mining.MiningProgressPanel
 import com.ankiminer.android.ui.mining.MiningResultSource
@@ -122,6 +123,7 @@ fun VideoMiningScreen(
     onSubtitleOffsetDraftChange: (String) -> Unit = {},
     onTestTiming: () -> Unit = {},
     onReturnToActiveRun: (() -> Unit)? = null,
+    labels: MediaMiningLabels = MediaMiningLabels.VIDEO,
     playerFactory: (Context) -> CurationPreviewPlayer = { ExoCurationPreviewPlayer(it) },
     modifier: Modifier = Modifier,
     listState: LazyListState = rememberLazyListState(),
@@ -250,7 +252,7 @@ fun VideoMiningScreen(
                 focusedCandidateId = targetCuration?.focusedCandidateId,
                 onReconcile = onReconcileFocus,
             )
-            val phaseTitle = stringResource(targetState.phaseTitle())
+            val phaseTitle = stringResource(targetState.phaseTitle(labels))
             val headingFocusRequester = remember(target.key) { FocusRequester() }
             val headingModifier =
                 Modifier
@@ -300,6 +302,7 @@ fun VideoMiningScreen(
                         MiningRunState.Idle ->
                             setupItems(
                                 state = targetState,
+                                labels = labels,
                                 headingModifier = headingModifier,
                                 onPickVideo = onPickVideo,
                                 onPickSubtitle = onPickSubtitle,
@@ -369,6 +372,7 @@ fun VideoMiningScreen(
                         is MiningRunState.Success ->
                             terminalItems(
                                 title = R.string.success_title,
+                                labels = labels,
                                 headingModifier = headingModifier,
                                 result = runState.result,
                                 videoDisplayName = targetState.video.document?.displayName,
@@ -390,6 +394,7 @@ fun VideoMiningScreen(
                         is MiningRunState.Cancelled ->
                             terminalItems(
                                 title = R.string.cancelled_title,
+                                labels = labels,
                                 headingModifier = headingModifier,
                                 result = runState.result,
                                 videoDisplayName = targetState.video.document?.displayName,
@@ -411,6 +416,7 @@ fun VideoMiningScreen(
                         is MiningRunState.Failed ->
                             terminalItems(
                                 title = R.string.failed_title,
+                                labels = labels,
                                 headingModifier = headingModifier,
                                 result = runState.result,
                                 videoDisplayName = targetState.video.document?.displayName,
@@ -507,6 +513,7 @@ private fun CuesUnavailableNotice() {
 
 private fun LazyListScope.setupItems(
     state: VideoMiningUiState,
+    labels: MediaMiningLabels,
     headingModifier: Modifier,
     onPickVideo: () -> Unit,
     onPickSubtitle: () -> Unit,
@@ -523,7 +530,7 @@ private fun LazyListScope.setupItems(
     item(key = "setup_header", contentType = "header") {
         Column(verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
             PhaseTitle(
-                text = stringResource(R.string.video_phase_setup_title),
+                text = stringResource(labels.setupTitle),
                 modifier = headingModifier,
             )
             state.runtimeConflict?.let { conflict ->
@@ -542,7 +549,7 @@ private fun LazyListScope.setupItems(
             sources =
                 listOf(
                     MiningSourceItem(
-                        label = stringResource(R.string.video_file_label),
+                        label = stringResource(labels.fileLabel),
                         document = state.video.document,
                         isResolving = state.video.isResolving,
                         enabled = !state.startPending && !state.timingPreviewPending,
@@ -553,7 +560,7 @@ private fun LazyListScope.setupItems(
                         onClear = onClearVideo,
                     ),
                     MiningSourceItem(
-                        label = stringResource(R.string.subtitle_file_label),
+                        label = stringResource(labels.transcriptLabel),
                         document = state.subtitle.document,
                         isResolving = state.subtitle.isResolving,
                         enabled = !state.startPending && !state.timingPreviewPending,
@@ -570,7 +577,7 @@ private fun LazyListScope.setupItems(
         NumericField(
             value = state.subtitleOffsetDraft,
             onChange = onSubtitleOffsetDraftChange,
-            label = stringResource(R.string.video_subtitle_offset_label),
+            label = stringResource(labels.subtitleOffsetLabel),
             allowNegative = true,
             enabled = !state.timingPreviewPending,
             error =
@@ -587,14 +594,22 @@ private fun LazyListScope.setupItems(
             },
         )
     }
-    state.video.error?.let {
+    state.video.error?.let { error ->
         item(key = "video_file_error", contentType = "actions") {
             MiningFailureCard(
-                message = stringResource(R.string.video_file_error),
+                message =
+                    stringResource(
+                        when (error) {
+                            DocumentSelectionError.VIDEO -> labels.fileError
+                            DocumentSelectionError.AUDIO_TYPE ->
+                                R.string.audio_selection_error_type
+                            DocumentSelectionError.SUBTITLE -> R.string.subtitle_file_error
+                        },
+                    ),
                 primaryAction =
                     MiningFailureAction(
                         label = stringResource(R.string.dismiss_error),
-                        onClick = { onDismissDocumentError(DocumentSelectionError.VIDEO) },
+                        onClick = { onDismissDocumentError(error) },
                     ),
             )
         }
@@ -942,6 +957,7 @@ private fun LazyListScope.curationItems(
 
 private fun LazyListScope.terminalItems(
     title: Int,
+    labels: MediaMiningLabels,
     headingModifier: Modifier,
     result: ProcessingResult?,
     videoDisplayName: String?,
@@ -1000,7 +1016,7 @@ private fun LazyListScope.terminalItems(
             result = it,
             sources =
                 listOf(
-                    MiningResultSource(R.string.result_video, videoDisplayName),
+                    MiningResultSource(labels.resultSource, videoDisplayName),
                     MiningResultSource(R.string.result_subtitle, subtitleDisplayName),
                 ),
             partial = partial,
@@ -1113,9 +1129,9 @@ private fun VideoMiningUiState.phaseKey(): String =
     }
 
 @StringRes
-private fun VideoMiningUiState.phaseTitle(): Int =
+private fun VideoMiningUiState.phaseTitle(labels: MediaMiningLabels): Int =
     when (runState) {
-        MiningRunState.Idle -> R.string.video_phase_setup_title
+        MiningRunState.Idle -> labels.setupTitle
         is MiningRunState.Starting -> R.string.starting_title
         is MiningRunState.Curating -> R.string.curation_title
         is MiningRunState.Running -> R.string.running_title

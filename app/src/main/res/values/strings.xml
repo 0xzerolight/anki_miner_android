@@ -8,6 +8,7 @@
     -->
     <string name="app_name">Anki Miner</string>
     <string name="video_phase_setup_title">Video Mining</string>
+    <string name="audio_phase_setup_title">Audio Mining</string>
     <string name="reading_phase_setup_title">Reading Mining</string>
     <string name="reading_source_label">Reading source</string>
     <string name="reading_archive_label">Mokuro image archive</string>
@@ -18,8 +19,11 @@
     <string name="reading_archive_type_error">Choose a ZIP or CBZ image archive.</string>
     <string name="reading_archive_name_error">Archive and .mokuro names must match.</string>
     <string name="video_file_label">Video</string>
+    <string name="audio_file_label">Audio file</string>
     <string name="subtitle_file_label">Subtitles</string>
+    <string name="audio_transcript_label">Transcript</string>
     <string name="video_subtitle_offset_label">Subtitle timing offset (seconds)</string>
+    <string name="audio_subtitle_offset_label">Transcript timing offset (seconds)</string>
     <string name="video_subtitle_offset_placeholder">Use current default (%1$s seconds)</string>
     <string name="timing_preview_test_action">Test timing</string>
     <string name="timing_preview_title">Test subtitle timing</string>
@@ -48,6 +52,8 @@
     <string name="reading_document">Reading document…</string>
     <string name="reading_document_named">Reading document: %1$s…</string>
     <string name="video_file_error">Access lost. Choose again.</string>
+    <string name="audio_file_error">Access lost. Choose again.</string>
+    <string name="audio_selection_error_type">Pick an audio file (m4b, mp3, m4a, aac, ogg, opus, flac, wav).</string>
     <string name="subtitle_file_error">Access lost. Choose again.</string>
     <string name="dismiss_error">Dismiss error</string>
     <string name="start_mining">Mine</string>
@@ -113,6 +119,7 @@
     <string name="failed_title">Mining stopped</string>
     <string name="partial_result_title">Notes added before the run stopped</string>
     <string name="result_video">Video: %1$s</string>
+    <string name="result_audio">Audio: %1$s</string>
     <string name="result_subtitle">Subtitles: %1$s</string>
     <string name="result_reading_source">Reading source: %1$s</string>
     <string name="result_reading_archive">Mokuro image archive: %1$s</string>
