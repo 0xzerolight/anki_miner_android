@@ -4,11 +4,13 @@ import json
 import logging
 import queue
 import re
+import sqlite3
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
+from android_bridge import jobs
 from android_bridge.anki_limits import ANKI_LIMITS_V1
 from android_bridge.jobs import (
     CURATION_PAGE_MAX_CANDIDATES,
@@ -42,6 +44,17 @@ class FakeWord:
     @property
     def mined_form(self) -> str:
         return self.surface
+
+
+def _fake(surface: str) -> FakeWord:
+    return FakeWord(
+        surface=surface,
+        lemma=surface,
+        sentence=f"{surface}。",
+        start_time=0.0,
+        end_time=1.0,
+        duration=1.0,
+    )
 
 
 def _start_wait(
@@ -82,20 +95,41 @@ def _response(run_id: str, request_id: str, selection: object) -> str:
     )
 
 
+def _known_response(
+    run_id: str,
+    request_id: str,
+    selection: object,
+    known: object,
+) -> str:
+    return encode_message(
+        "curation.response",
+        {
+            "runId": run_id,
+            "requestId": request_id,
+            "selection": selection,
+            "knownCandidateIds": known,
+        },
+    )
+
+
 def _page_response(
     run_id: str,
     request_id: str,
     page_index: int,
     selection: object,
+    known: list[str] | None = None,
 ) -> str:
+    payload: dict[str, object] = {
+        "runId": run_id,
+        "requestId": request_id,
+        "pageIndex": page_index,
+        "selection": selection,
+    }
+    if known is not None:
+        payload["knownCandidateIds"] = known
     return encode_message(
         "curation.page.response",
-        {
-            "runId": run_id,
-            "requestId": request_id,
-            "pageIndex": page_index,
-            "selection": selection,
-        },
+        payload,
     )
 
 
@@ -763,3 +797,209 @@ def test_curation_schema_matches_generated_ids_and_optional_sentence_selection()
 
     registry.cancel(run_id)
     thread.join(1)
+
+
+def test_known_forms_commit_once_on_the_final_page(
+    monkeypatch: pytest.MonkeyPatch,
+    initialized_bridge_home: Path,
+) -> None:
+    del initialized_bridge_home
+    registry = JobRegistry()
+    written: list[set[str]] = []
+    monkeypatch.setattr(jobs, "_write_user_known_words", lambda path, forms: written.append(set(forms)) or 0)
+    run_id, request, returned, thread = _start_wait(registry, [_fake("食べる"), _fake("走る")])
+    request_id = request["payload"]["requestId"]
+    ids = [candidate["candidateId"] for candidate in request["payload"]["candidates"]]
+
+    registry.resolve_curation(_known_response(run_id, request_id, [{"candidateId": ids[1]}], [ids[0]]))
+    thread.join(1)
+
+    assert written == [{"食べる"}]
+    assert [word.surface for word in returned[0]] == ["走る"]
+
+
+def test_marks_accumulate_across_pages_and_commit_once(
+    monkeypatch: pytest.MonkeyPatch,
+    initialized_bridge_home: Path,
+) -> None:
+    del initialized_bridge_home
+    registry = JobRegistry()
+    written: list[set[str]] = []
+    monkeypatch.setattr(jobs, "_write_user_known_words", lambda path, forms: written.append(set(forms)) or 0)
+    run_id, emitted, returned, thread = _start_paged_wait(
+        registry,
+        [_fake(f"語{index}") for index in range(120)],
+    )
+    marked: list[str] = []
+    for page_index in range(2):
+        _raw, page = emitted.get(timeout=1)
+        ids = [candidate["candidateId"] for candidate in page["payload"]["candidates"]]
+        forms = [candidate["minedForm"] for candidate in page["payload"]["candidates"]]
+        marked.append(forms[0])
+        registry.resolve_curation(
+            _page_response(
+                run_id,
+                page["payload"]["requestId"],
+                page_index,
+                [],
+                known=[ids[0]],
+            )
+        )
+    thread.join(1)
+
+    assert written == [set(marked)]
+    assert returned == [[]]
+
+
+def test_a_later_page_cancel_writes_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
+    registry = JobRegistry()
+    written: list[set[str]] = []
+    monkeypatch.setattr(jobs, "_write_user_known_words", lambda path, forms: written.append(set(forms)) or 0)
+    run_id, emitted, returned, thread = _start_paged_wait(
+        registry,
+        [_fake(f"語{index}") for index in range(120)],
+    )
+    _raw, page = emitted.get(timeout=1)
+    ids = [candidate["candidateId"] for candidate in page["payload"]["candidates"]]
+    registry.resolve_curation(
+        _page_response(
+            run_id,
+            page["payload"]["requestId"],
+            0,
+            [],
+            known=[ids[0]],
+        )
+    )
+    registry.cancel(run_id)
+    thread.join(1)
+
+    assert returned == [None]
+    assert written == []
+
+
+def test_known_forms_are_not_written_when_the_aggregate_limit_rejects(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    registry = JobRegistry()
+    written: list[set[str]] = []
+    thread_errors: list[BaseException] = []
+    monkeypatch.setattr(jobs, "_write_user_known_words", lambda path, forms: written.append(set(forms)) or 0)
+    monkeypatch.setattr(jobs, "_MAX_CURATED_SOURCE_ITEMS", 1)
+    monkeypatch.setattr(threading, "excepthook", lambda args: thread_errors.append(args.exc_value))
+    run_id, request, returned, thread = _start_wait(
+        registry,
+        [_fake("食べる"), _fake("走る"), _fake("泳ぐ")],
+    )
+    request_id = request["payload"]["requestId"]
+    ids = [candidate["candidateId"] for candidate in request["payload"]["candidates"]]
+
+    registry.resolve_curation(
+        _known_response(
+            run_id,
+            request_id,
+            [{"candidateId": ids[0]}, {"candidateId": ids[1]}],
+            [ids[2]],
+        )
+    )
+    thread.join(1)
+
+    assert returned == []
+    assert written == []
+    assert len(thread_errors) == 1
+    assert isinstance(thread_errors[0], BridgeProtocolError)
+    assert thread_errors[0].code == "create_call_too_large"
+
+
+def test_a_failed_known_write_fails_the_run_and_creates_nothing(
+    monkeypatch: pytest.MonkeyPatch,
+    initialized_bridge_home: Path,
+) -> None:
+    del initialized_bridge_home
+    registry = JobRegistry()
+    thread_errors: list[BaseException] = []
+
+    def _boom(path: Path, forms: set[str]) -> int:
+        raise sqlite3.OperationalError("database is locked")
+
+    monkeypatch.setattr(jobs, "_write_user_known_words", _boom)
+    monkeypatch.setattr(threading, "excepthook", lambda args: thread_errors.append(args.exc_value))
+    run_id, request, returned, thread = _start_wait(registry, [_fake("食べる"), _fake("走る")])
+    request_id = request["payload"]["requestId"]
+    ids = [candidate["candidateId"] for candidate in request["payload"]["candidates"]]
+
+    registry.resolve_curation(_known_response(run_id, request_id, [{"candidateId": ids[1]}], [ids[0]]))
+    thread.join(1)
+
+    assert returned == []
+    assert len(thread_errors) == 1
+    assert isinstance(thread_errors[0], BridgeProtocolError)
+    assert thread_errors[0].code == "known_words_write_failed"
+
+
+@pytest.mark.parametrize(
+    "known_ids",
+    [
+        [UNKNOWN_CANDIDATE_ID],
+        "not-a-list",
+        [5],
+        None,
+    ],
+)
+def test_malformed_known_ids_are_rejected(known_ids: object) -> None:
+    registry = JobRegistry()
+    run_id, request, returned, thread = _start_wait(registry, [_fake("食べる")])
+    request_id = request["payload"]["requestId"]
+
+    with pytest.raises(BridgeProtocolError):
+        registry.resolve_curation(_known_response(run_id, request_id, [], known_ids))
+
+    registry.cancel(run_id)
+    thread.join(1)
+    assert returned == [None]
+
+
+def test_duplicate_known_ids_are_rejected() -> None:
+    registry = JobRegistry()
+    run_id, request, returned, thread = _start_wait(registry, [_fake("食べる")])
+    request_id = request["payload"]["requestId"]
+    candidate_id = request["payload"]["candidates"][0]["candidateId"]
+
+    with pytest.raises(BridgeProtocolError) as excinfo:
+        registry.resolve_curation(_known_response(run_id, request_id, [], [candidate_id, candidate_id]))
+    assert excinfo.value.code == "invalid_curation_response"
+
+    registry.cancel(run_id)
+    thread.join(1)
+    assert returned == [None]
+
+
+def test_a_candidate_cannot_be_both_selected_and_marked_known() -> None:
+    registry = JobRegistry()
+    run_id, request, returned, thread = _start_wait(registry, [_fake("食べる")])
+    request_id = request["payload"]["requestId"]
+    candidate_id = request["payload"]["candidates"][0]["candidateId"]
+
+    with pytest.raises(BridgeProtocolError) as excinfo:
+        registry.resolve_curation(
+            _known_response(
+                run_id,
+                request_id,
+                [{"candidateId": candidate_id}],
+                [candidate_id],
+            )
+        )
+    assert excinfo.value.code == "invalid_curation_response"
+
+    registry.cancel(run_id)
+    thread.join(1)
+    assert returned == [None]
+
+
+def test_a_response_without_known_ids_still_resolves() -> None:
+    registry = JobRegistry()
+    run_id, request, returned, thread = _start_wait(registry, [_fake("食べる")])
+
+    registry.resolve_curation(_response(run_id, request["payload"]["requestId"], []))
+    thread.join(1)
+
+    assert returned == [[]]

@@ -10,6 +10,7 @@ import com.fasterxml.jackson.core.JsonToken
 import java.io.ByteArrayOutputStream
 import java.nio.charset.StandardCharsets
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -146,6 +147,181 @@ class BridgeJsonCodecTest {
         val skipped = BridgeJsonCodec.encodeCurationResponse(request, emptyList())
         assertEquals(null, (BridgeJsonCodec.decode(cancelled) as BridgeMessage.CurationResponse).selection)
         assertEquals(emptyList<CurationSelection>(), (BridgeJsonCodec.decode(skipped) as BridgeMessage.CurationResponse).selection)
+    }
+
+    @Test
+    fun `encodes known candidate ids`() {
+        val request = curationRequest()
+        val candidateId = request.candidates.single().candidateId
+        val raw =
+            BridgeJsonCodec.encodeCurationResponse(
+                request,
+                emptyList(),
+                knownCandidateIds = listOf(candidateId),
+            )
+
+        assertTrue(raw.contains("\"knownCandidateIds\":[\"$candidateId\"]"))
+        val decoded = BridgeJsonCodec.decode(raw) as BridgeMessage.CurationResponse
+        assertEquals(listOf(candidateId), decoded.knownCandidateIds)
+    }
+
+    @Test
+    fun `omits known candidate ids when empty`() {
+        val raw =
+            BridgeJsonCodec.encodeCurationResponse(
+                curationRequest(),
+                emptyList(),
+                knownCandidateIds = emptyList(),
+            )
+
+        assertFalse(raw.contains("knownCandidateIds"))
+    }
+
+    @Test
+    fun `rejects a known candidate id outside the request`() {
+        assertThrows(BridgeProtocolException::class.java) {
+            BridgeJsonCodec.encodeCurationResponse(
+                curationRequest(),
+                emptyList(),
+                knownCandidateIds = listOf("candidate_${"f".repeat(32)}"),
+            )
+        }
+    }
+
+    @Test
+    fun `rejects a candidate that is both selected and known`() {
+        val request = curationRequest()
+        val candidateId = request.candidates.single().candidateId
+
+        assertThrows(BridgeProtocolException::class.java) {
+            BridgeJsonCodec.encodeCurationResponse(
+                request,
+                listOf(CurationSelection(candidateId, null)),
+                knownCandidateIds = listOf(candidateId),
+            )
+        }
+    }
+
+    @Test
+    fun `rejects duplicate known candidate ids`() {
+        val request = curationRequest()
+        val candidateId = request.candidates.single().candidateId
+
+        assertThrows(BridgeProtocolException::class.java) {
+            BridgeJsonCodec.encodeCurationResponse(
+                request,
+                emptyList(),
+                knownCandidateIds = listOf(candidateId, candidateId),
+            )
+        }
+    }
+
+    @Test
+    fun `decodes a curation response without known candidate ids`() {
+        val request = curationRequest()
+        val raw =
+            """{"schemaVersion":1,"type":"curation.response","payload":{"runId":"${request.runId}","requestId":"${request.requestId}","selection":[]}}"""
+
+        assertEquals(
+            emptyList<String>(),
+            (BridgeJsonCodec.decode(raw) as BridgeMessage.CurationResponse).knownCandidateIds,
+        )
+    }
+
+    @Test
+    fun `decodes a curation response with known candidate ids`() {
+        val request = curationRequest()
+        val candidateId = request.candidates.single().candidateId
+        val raw =
+            """{"schemaVersion":1,"type":"curation.response","payload":{"runId":"${request.runId}","requestId":"${request.requestId}","selection":[],"knownCandidateIds":["$candidateId"]}}"""
+
+        assertEquals(
+            listOf(candidateId),
+            (BridgeJsonCodec.decode(raw) as BridgeMessage.CurationResponse).knownCandidateIds,
+        )
+    }
+
+    @Test
+    fun `rejects a curation response with duplicate known candidate ids`() {
+        val request = curationRequest()
+        val candidateId = request.candidates.single().candidateId
+        val raw =
+            """{"schemaVersion":1,"type":"curation.response","payload":{"runId":"${request.runId}","requestId":"${request.requestId}","selection":[],"knownCandidateIds":["$candidateId","$candidateId"]}}"""
+
+        assertThrows(BridgeProtocolException::class.java) { BridgeJsonCodec.decode(raw) }
+    }
+
+    @Test
+    fun `rejects a decoded candidate that is both selected and known`() {
+        val request = curationRequest()
+        val candidateId = request.candidates.single().candidateId
+        val raw =
+            """{"schemaVersion":1,"type":"curation.response","payload":{"runId":"${request.runId}","requestId":"${request.requestId}","selection":[{"candidateId":"$candidateId"}],"knownCandidateIds":["$candidateId"]}}"""
+
+        assertThrows(BridgeProtocolException::class.java) { BridgeJsonCodec.decode(raw) }
+    }
+
+    @Test
+    fun `still rejects an unknown field on a curation response`() {
+        val request = curationRequest()
+        val raw =
+            """{"schemaVersion":1,"type":"curation.response","payload":{"runId":"${request.runId}","requestId":"${request.requestId}","selection":[],"nope":1}}"""
+
+        assertThrows(BridgeProtocolException::class.java) { BridgeJsonCodec.decode(raw) }
+    }
+
+    @Test
+    fun `decodes a curation page response without known candidate ids`() {
+        val request = curationRequest()
+        val raw =
+            """{"schemaVersion":1,"type":"curation.page.response","payload":{"runId":"${request.runId}","requestId":"${request.requestId}","pageIndex":0,"selection":[]}}"""
+
+        assertEquals(
+            emptyList<String>(),
+            (BridgeJsonCodec.decode(raw) as BridgeMessage.CurationPageResponse).knownCandidateIds,
+        )
+    }
+
+    @Test
+    fun `decodes a curation page response with known candidate ids`() {
+        val request = curationRequest()
+        val candidateId = request.candidates.single().candidateId
+        val raw =
+            """{"schemaVersion":1,"type":"curation.page.response","payload":{"runId":"${request.runId}","requestId":"${request.requestId}","pageIndex":0,"selection":[],"knownCandidateIds":["$candidateId"]}}"""
+
+        assertEquals(
+            listOf(candidateId),
+            (BridgeJsonCodec.decode(raw) as BridgeMessage.CurationPageResponse).knownCandidateIds,
+        )
+    }
+
+    @Test
+    fun `rejects a curation page response with duplicate known candidate ids`() {
+        val request = curationRequest()
+        val candidateId = request.candidates.single().candidateId
+        val raw =
+            """{"schemaVersion":1,"type":"curation.page.response","payload":{"runId":"${request.runId}","requestId":"${request.requestId}","pageIndex":0,"selection":[],"knownCandidateIds":["$candidateId","$candidateId"]}}"""
+
+        assertThrows(BridgeProtocolException::class.java) { BridgeJsonCodec.decode(raw) }
+    }
+
+    @Test
+    fun `rejects a decoded page candidate that is both selected and known`() {
+        val request = curationRequest()
+        val candidateId = request.candidates.single().candidateId
+        val raw =
+            """{"schemaVersion":1,"type":"curation.page.response","payload":{"runId":"${request.runId}","requestId":"${request.requestId}","pageIndex":0,"selection":[{"candidateId":"$candidateId"}],"knownCandidateIds":["$candidateId"]}}"""
+
+        assertThrows(BridgeProtocolException::class.java) { BridgeJsonCodec.decode(raw) }
+    }
+
+    @Test
+    fun `still rejects an unknown field on a curation page response`() {
+        val request = curationRequest()
+        val raw =
+            """{"schemaVersion":1,"type":"curation.page.response","payload":{"runId":"${request.runId}","requestId":"${request.requestId}","pageIndex":0,"selection":[],"nope":1}}"""
+
+        assertThrows(BridgeProtocolException::class.java) { BridgeJsonCodec.decode(raw) }
     }
 
     @Test

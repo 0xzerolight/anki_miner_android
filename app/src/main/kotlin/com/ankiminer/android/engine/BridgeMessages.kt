@@ -213,6 +213,7 @@ sealed interface BridgeMessage {
         val runId: String,
         val requestId: String,
         val selection: List<com.ankiminer.android.mining.CurationSelection>?,
+        val knownCandidateIds: List<String> = emptyList(),
     ) : BridgeMessage
 
     data class CurationPageResponse(
@@ -220,6 +221,7 @@ sealed interface BridgeMessage {
         val requestId: String,
         val pageIndex: Long,
         val selection: List<com.ankiminer.android.mining.CurationSelection>?,
+        val knownCandidateIds: List<String> = emptyList(),
     ) : BridgeMessage
 
     data class CurationAccepted(
