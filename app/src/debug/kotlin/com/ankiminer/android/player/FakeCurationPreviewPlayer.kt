@@ -19,6 +19,7 @@ class FakeCurationPreviewPlayer : CurationPreviewPlayer {
     val boundUris = mutableListOf<Uri>()
     val seekToCalls = mutableListOf<Double>()
     val seekAndPlayCalls = mutableListOf<Double>()
+    val events = mutableListOf<String>()
     var togglePlayPauseCount = 0
         private set
     var pauseCount = 0
@@ -32,32 +33,38 @@ class FakeCurationPreviewPlayer : CurationPreviewPlayer {
         if (boundUri == uri) return
         boundUri = uri
         boundUris += uri
+        events += "bind:$uri"
     }
 
     override fun seekTo(seconds: Double) {
         seekToCalls += seconds
+        events += "seekTo:$seconds"
         mutablePositionSeconds.value = seconds.coerceAtLeast(0.0)
         mutableIsPlaying.value = false
     }
 
     override fun seekAndPlay(seconds: Double) {
         seekAndPlayCalls += seconds
+        events += "seekAndPlay:$seconds"
         mutablePositionSeconds.value = seconds.coerceAtLeast(0.0)
         mutableIsPlaying.value = true
     }
 
     override fun togglePlayPause() {
         togglePlayPauseCount += 1
+        events += "togglePlayPause"
         mutableIsPlaying.value = !mutableIsPlaying.value
     }
 
     override fun pause() {
         pauseCount += 1
+        events += "pause"
         mutableIsPlaying.value = false
     }
 
     override fun release() {
         releaseCount += 1
+        events += "release"
         mutableIsPlaying.value = false
     }
 }

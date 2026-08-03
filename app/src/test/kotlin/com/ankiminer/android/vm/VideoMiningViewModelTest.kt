@@ -15,6 +15,7 @@ import com.ankiminer.android.diagnostics.log.LogLevel
 import com.ankiminer.android.diagnostics.log.NoOpSink
 import com.ankiminer.android.diagnostics.log.RecordingLogSink
 import com.ankiminer.android.engine.DefinitionEntry
+import com.ankiminer.android.engine.SubtitleCue
 import com.ankiminer.android.media.SafAccessException
 import com.ankiminer.android.media.SafAccessFailureKind
 import com.ankiminer.android.media.SafBroker
@@ -26,6 +27,7 @@ import com.ankiminer.android.media.SafSelectionSlot
 import com.ankiminer.android.media.TransientSafSelectionInventory
 import com.ankiminer.android.mining.AnkiWriteState
 import com.ankiminer.android.mining.CurationCandidate
+import com.ankiminer.android.mining.CurationMediaBinding
 import com.ankiminer.android.mining.CurationPage
 import com.ankiminer.android.mining.CurationRequest
 import com.ankiminer.android.mining.CurationSelection
@@ -38,10 +40,13 @@ import com.ankiminer.android.mining.MiningRepository
 import com.ankiminer.android.mining.MiningRunState
 import com.ankiminer.android.mining.ProcessingResult
 import com.ankiminer.android.mining.VideoMiningInput
+import com.ankiminer.android.subtitles.SubtitleCueLookupService
 import com.ankiminer.android.ui.video.DocumentSelectionError
 import java.util.concurrent.ConcurrentHashMap
+import kotlin.coroutines.Continuation
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
+import kotlin.coroutines.suspendCoroutine
 import kotlinx.coroutines.CancellableContinuation
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -223,6 +228,167 @@ class VideoMiningViewModelTest {
 
         assertNotNull(factory.create(VideoMiningViewModel::class.java, CreationExtras.Empty))
     }
+
+    @Test
+    fun curatingMediaLoadsCuesIntoThePlayerOnce() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val request = curationRequest()
+            val media = CurationMediaBinding("/cache/video.mkv", "/cache/subtitle.srt")
+            val cue = SubtitleCue(1.25, 2.5, "猫だ。")
+            val calls = mutableListOf<Pair<String?, String>>()
+            val lookup =
+                SubtitleCueLookupService { runId, subtitlePath ->
+                    calls += runId to subtitlePath
+                    Result.success(listOf(cue))
+                }
+            val repository =
+                RecordingRepository(MiningRunState.Curating(request, media = media))
+            val viewModel =
+                VideoMiningViewModel(
+                    repository,
+                    ImmediateSafBroker(),
+                    cueLookup = lookup,
+                )
+
+            runCurrent()
+
+            assertEquals(listOf(request.runId to media.subtitlePath), calls)
+            assertEquals(media.videoPath, viewModel.uiState.value.curation?.player?.videoPath)
+            assertEquals(listOf(cue), viewModel.uiState.value.curation?.player?.cues)
+            assertFalse(viewModel.uiState.value.curation?.player?.cuesUnavailable == true)
+        }
+
+    @Test
+    fun failedCueLookupLeavesThePlayerUsableWithoutCues() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val request = curationRequest()
+            val media = CurationMediaBinding("/cache/video.mkv", "/cache/subtitle.srt")
+            val repository =
+                RecordingRepository(MiningRunState.Curating(request, media = media))
+            val viewModel =
+                VideoMiningViewModel(
+                    repository,
+                    ImmediateSafBroker(),
+                    cueLookup =
+                        SubtitleCueLookupService { _, _ ->
+                            Result.failure(IllegalStateException("unavailable"))
+                        },
+                )
+
+            runCurrent()
+
+            val player = requireNotNull(viewModel.uiState.value.curation?.player)
+            assertEquals(media.videoPath, player.videoPath)
+            assertEquals(emptyList<SubtitleCue>(), player.cues)
+            assertTrue(player.cuesUnavailable)
+        }
+
+    @Test
+    fun curatingWithoutMediaHasNoPlayerAndDoesNotLoadCues() =
+        runTest(mainDispatcherRule.dispatcher) {
+            var calls = 0
+            val repository = RecordingRepository(MiningRunState.Curating(curationRequest()))
+            val viewModel =
+                VideoMiningViewModel(
+                    repository,
+                    ImmediateSafBroker(),
+                    cueLookup =
+                        SubtitleCueLookupService { _, _ ->
+                            calls += 1
+                            Result.success(emptyList())
+                        },
+                )
+
+            runCurrent()
+
+            assertNull(viewModel.uiState.value.curation?.player)
+            assertEquals(0, calls)
+        }
+
+    @Test
+    fun curationPageAdvanceDoesNotReloadCues() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val first = curationRequest().copy(page = CurationPage(0, 2, 0, 2))
+            val media = CurationMediaBinding("/cache/video.mkv", "/cache/subtitle.srt")
+            var calls = 0
+            val repository =
+                RecordingRepository(MiningRunState.Curating(first, media = media))
+            val viewModel =
+                VideoMiningViewModel(
+                    repository,
+                    ImmediateSafBroker(),
+                    cueLookup =
+                        SubtitleCueLookupService { _, _ ->
+                            calls += 1
+                            Result.success(emptyList())
+                        },
+                )
+            runCurrent()
+
+            repository.transitionTo(
+                MiningRunState.Curating(
+                    first.copy(
+                        requestId = "request-page-2",
+                        page = CurationPage(1, 2, 1, 2),
+                    ),
+                    media = media,
+                ),
+            )
+            runCurrent()
+
+            assertEquals(1, calls)
+            assertNotNull(viewModel.uiState.value.curation?.player)
+        }
+
+    @Test
+    fun delayedCuesFromAnOldRunCannotLandUnderTheNextRun() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val secondGate = CompletableDeferred<Unit>()
+            val firstCue = SubtitleCue(1.0, 2.0, "first")
+            val secondCue = SubtitleCue(3.0, 4.0, "second")
+            val calls = mutableListOf<String?>()
+            lateinit var firstContinuation: Continuation<Unit>
+            val lookup =
+                SubtitleCueLookupService { runId, _ ->
+                    calls += runId
+                    if (runId == "run-a") {
+                        suspendCoroutine { continuation -> firstContinuation = continuation }
+                    } else {
+                        secondGate.await()
+                    }
+                    Result.success(listOf(if (runId == "run-a") firstCue else secondCue))
+                }
+            val repository = RecordingRepository()
+            val viewModel =
+                VideoMiningViewModel(
+                    repository,
+                    ImmediateSafBroker(),
+                    cueLookup = lookup,
+                )
+            val firstRequest = curationRequest().copy(runId = "run-a", requestId = "request-a")
+            val secondRequest = curationRequest().copy(runId = "run-b", requestId = "request-b")
+            val firstMedia = CurationMediaBinding("/cache/a.mkv", "/cache/a.srt")
+            val secondMedia = CurationMediaBinding("/cache/b.mkv", "/cache/b.srt")
+
+            repository.transitionTo(MiningRunState.Curating(firstRequest, media = firstMedia))
+            runCurrent()
+            repository.transitionTo(MiningRunState.Curating(secondRequest, media = secondMedia))
+            runCurrent()
+
+            assertEquals(secondMedia.videoPath, viewModel.uiState.value.curation?.player?.videoPath)
+            assertEquals(emptyList<SubtitleCue>(), viewModel.uiState.value.curation?.player?.cues)
+
+            firstContinuation.resume(Unit)
+            runCurrent()
+
+            assertEquals(listOf("run-a", "run-b"), calls)
+            assertEquals(emptyList<SubtitleCue>(), viewModel.uiState.value.curation?.player?.cues)
+
+            secondGate.complete(Unit)
+            advanceUntilIdle()
+
+            assertEquals(listOf(secondCue), viewModel.uiState.value.curation?.player?.cues)
+        }
 
     @Test
     fun navigationWorkflowIgnoresFineGrainedProgressUpdates() =

@@ -1,6 +1,7 @@
 package com.ankiminer.android.ui.video
 
 import android.content.ClipboardManager
+import android.content.Context
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.getValue
@@ -30,6 +31,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.ankiminer.android.R
 import com.ankiminer.android.dictionary.CurationDefinition
 import com.ankiminer.android.engine.DefinitionEntry
+import com.ankiminer.android.engine.SubtitleCue
 import com.ankiminer.android.media.SafDocument
 import com.ankiminer.android.mining.AnkiWriteState
 import com.ankiminer.android.mining.CurationCandidate
@@ -40,6 +42,9 @@ import com.ankiminer.android.mining.MiningFailure
 import com.ankiminer.android.mining.MiningProgress
 import com.ankiminer.android.mining.MiningRunState
 import com.ankiminer.android.mining.ProcessingResult
+import com.ankiminer.android.player.CurationPreviewPlayer
+import com.ankiminer.android.player.FakeCurationPreviewPlayer
+import com.ankiminer.android.ui.mining.CurationPlayerTestTags
 import com.ankiminer.android.ui.mining.CURATION_SEARCH_TEST_TAG
 import com.ankiminer.android.ui.mining.MINING_FAILURE_TEST_TAG
 import com.ankiminer.android.ui.mining.MINING_PHASE_HEADING_TEST_TAG
@@ -197,6 +202,214 @@ class VideoMiningScreenTest {
             )
             assertTrue(confirmed)
         }
+    }
+
+    @Test
+    fun curationPlayerBindsBeforeSeekingAndReleasesWhenThePlayerStateDisappears() {
+        val request = request()
+        val fake = FakeCurationPreviewPlayer()
+        val videoPath = "/cache/episode.mkv"
+        var state by
+            mutableStateOf(
+                VideoMiningUiState(
+                    runState = MiningRunState.Curating(request),
+                    curation =
+                        curationState(request).copy(
+                            player = CurationPlayerUiState(videoPath, emptyList(), false),
+                        ),
+                ),
+            )
+        composeRule.setContent {
+            AnkiMinerTheme {
+                ScreenUnderTest(
+                    state = state,
+                    playerFactory = { fake },
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag(CurationPlayerTestTags.SURFACE).assertIsDisplayed()
+        composeRule.waitForIdle()
+        composeRule.runOnIdle {
+            assertEquals(1, fake.boundUris.size)
+            assertEquals(videoPath, fake.boundUris.single().path)
+            val bindIndex = fake.events.indexOfFirst { it.startsWith("bind:") }
+            val seekIndex = fake.events.indexOfFirst { it.startsWith("seekTo:") }
+            assertTrue(bindIndex >= 0)
+            assertTrue(seekIndex > bindIndex)
+            state =
+                state.copy(
+                    curation = requireNotNull(state.curation).copy(player = null),
+                )
+        }
+
+        composeRule.onNodeWithTag(CurationPlayerTestTags.SURFACE).assertDoesNotExist()
+        composeRule.runOnIdle { assertEquals(1, fake.releaseCount) }
+    }
+
+    @Test
+    fun focusAndSentenceSelectionSeekThroughTheSamePlayer() {
+        val base = request()
+        val first =
+            base.candidates.first().copy(
+                sentences =
+                    base.candidates.first().sentences.mapIndexed { index, sentence ->
+                        sentence.copy(startTime = if (index == 0) 1.5 else 4.5)
+                    },
+            )
+        val second =
+            base.candidates.last().copy(
+                sentences =
+                    base.candidates.last().sentences.map { sentence ->
+                        sentence.copy(startTime = 8.25)
+                    },
+            )
+        val request = base.copy(candidates = listOf(first, second))
+        val fake = FakeCurationPreviewPlayer()
+        var state by
+            mutableStateOf(
+                VideoMiningUiState(
+                    runState = MiningRunState.Curating(request),
+                    curation =
+                        curationState(request).copy(
+                            player =
+                                CurationPlayerUiState(
+                                    "/cache/episode.mkv",
+                                    emptyList(),
+                                    false,
+                                ),
+                        ),
+                ),
+            )
+        composeRule.setContent {
+            AnkiMinerTheme {
+                ScreenUnderTest(
+                    state = state,
+                    onFocusCandidate = { candidateId ->
+                        state =
+                            state.copy(
+                                curation =
+                                    requireNotNull(state.curation).copy(
+                                        focusedCandidateId = candidateId,
+                                    ),
+                            )
+                    },
+                    onSelectSentence = { candidateId, sentenceId ->
+                        val curation = requireNotNull(state.curation)
+                        state =
+                            state.copy(
+                                curation =
+                                    curation.copy(
+                                        sentenceIds = curation.sentenceIds + (candidateId to sentenceId),
+                                    ),
+                            )
+                    },
+                    playerFactory = { fake },
+                )
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.runOnIdle { fake.seekToCalls.clear() }
+
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(VideoMiningTestTags.candidate(second.candidateId)))
+        composeRule.onNodeWithTag(VideoMiningTestTags.candidate(second.candidateId)).performClick()
+        composeRule.waitForIdle()
+        composeRule.runOnIdle {
+            assertEquals(second.sentences.single().startTime, fake.seekToCalls.last())
+            fake.seekToCalls.clear()
+        }
+
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(VideoMiningTestTags.candidate(first.candidateId)))
+        composeRule.onNodeWithTag(VideoMiningTestTags.candidate(first.candidateId)).performClick()
+        composeRule.waitForIdle()
+        composeRule.runOnIdle { fake.seekToCalls.clear() }
+        val alternate = first.sentences.last()
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(
+                hasTestTag(VideoMiningTestTags.sentence(first.candidateId, alternate.sentenceId)),
+            )
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.sentence(first.candidateId, alternate.sentenceId))
+            .performClick()
+        composeRule.waitForIdle()
+
+        composeRule.runOnIdle {
+            assertEquals(listOf(alternate.startTime), fake.seekToCalls)
+            assertEquals(1, fake.boundUris.size)
+        }
+    }
+
+    @Test
+    fun curationPlayerCanCollapseAndTogglePlayback() {
+        val request = request()
+        val fake = FakeCurationPreviewPlayer()
+        setScreen(
+            state =
+                VideoMiningUiState(
+                    runState = MiningRunState.Curating(request),
+                    curation =
+                        curationState(request).copy(
+                            player =
+                                CurationPlayerUiState(
+                                    "/cache/episode.mkv",
+                                    emptyList(),
+                                    false,
+                                ),
+                        ),
+                ),
+            playerFactory = { fake },
+        )
+
+        composeRule.onNodeWithTag(CurationPlayerTestTags.PLAY_PAUSE).performClick()
+        composeRule.runOnIdle {
+            assertEquals(1, fake.togglePlayPauseCount)
+            assertTrue(fake.isPlaying.value)
+        }
+        composeRule.onNodeWithTag(CurationPlayerTestTags.PLAY_PAUSE).performClick()
+        composeRule.runOnIdle { assertFalse(fake.isPlaying.value) }
+
+        composeRule.onNodeWithTag(CurationPlayerTestTags.COLLAPSE).performClick()
+        composeRule.onNodeWithTag(CurationPlayerTestTags.SURFACE).assertDoesNotExist()
+        composeRule.onNodeWithTag(CurationPlayerTestTags.PLAY_PAUSE).assertDoesNotExist()
+        composeRule.onNodeWithTag(CurationPlayerTestTags.COLLAPSE).performClick()
+        composeRule.onNodeWithTag(CurationPlayerTestTags.SURFACE).assertIsDisplayed()
+    }
+
+    @Test
+    fun unavailableCuesShowANoticeWithoutDisablingPlayerControls() {
+        val request = request()
+        val fake = FakeCurationPreviewPlayer()
+        setScreen(
+            state =
+                VideoMiningUiState(
+                    runState = MiningRunState.Curating(request),
+                    curation =
+                        curationState(request).copy(
+                            player =
+                                CurationPlayerUiState(
+                                    videoPath = "/cache/episode.mkv",
+                                    cues = listOf(SubtitleCue(0.0, 1.0, "unused")),
+                                    cuesUnavailable = true,
+                                ),
+                        ),
+                ),
+            playerFactory = { fake },
+        )
+
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CUES_UNAVAILABLE)
+            .assertIsDisplayed()
+        composeRule.onNodeWithText("unused").assertDoesNotExist()
+        composeRule
+            .onNodeWithTag(CurationPlayerTestTags.PLAY_PAUSE)
+            .assertIsEnabled()
+            .performClick()
+        composeRule.runOnIdle { assertEquals(1, fake.togglePlayPauseCount) }
     }
 
     @Test
@@ -992,6 +1205,7 @@ class VideoMiningScreenTest {
         onSelectSentence: (String, String) -> Unit = { _, _ -> },
         onConfirmCuration: () -> Unit = {},
         onCancel: () -> Unit = {},
+        playerFactory: (Context) -> CurationPreviewPlayer = { FakeCurationPreviewPlayer() },
     ) {
         composeRule.setContent {
             AnkiMinerTheme {
@@ -1005,6 +1219,7 @@ class VideoMiningScreenTest {
                     onSelectSentence = onSelectSentence,
                     onConfirmCuration = onConfirmCuration,
                     onCancel = onCancel,
+                    playerFactory = playerFactory,
                 )
             }
         }
@@ -1026,6 +1241,7 @@ class VideoMiningScreenTest {
         onReset: () -> Unit = {},
         onFocusCandidate: (String) -> Unit = {},
         onSetCandidateSelected: (String, Boolean) -> Unit = { _, _ -> },
+        playerFactory: (Context) -> CurationPreviewPlayer = { FakeCurationPreviewPlayer() },
         listState: LazyListState = rememberLazyListState(),
     ) {
         VideoMiningScreen(
@@ -1048,6 +1264,7 @@ class VideoMiningScreenTest {
             onCancel = onCancel,
             onRetry = onRetry,
             onReset = onReset,
+            playerFactory = playerFactory,
             modifier = Modifier.testTag(VideoMiningTestTags.SCREEN),
             listState = listState,
         )

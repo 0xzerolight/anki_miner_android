@@ -61,6 +61,7 @@
     <string name="curation_preview_collapse_description">動画プレビューを折りたたむ</string>
     <string name="curation_preview_expand_description">動画プレビューを展開</string>
     <string name="curation_preview_overlay_description">字幕オーバーレイ</string>
+    <string name="curation_preview_cues_unavailable">プレビュー用の字幕を利用できません</string>
     <string name="definition_loading">検索中…</string>
     <string name="definition_missing">オフライン辞書に項目がありません</string>
     <string name="definition_unavailable">辞書検索を利用できません</string>

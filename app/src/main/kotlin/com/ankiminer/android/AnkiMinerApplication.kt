@@ -67,6 +67,8 @@ import com.ankiminer.android.reading.BridgeReadingMiningRepository
 import com.ankiminer.android.reading.ReadingConfigSnapshotResolver
 import com.ankiminer.android.reading.ReadingMiningRepository
 import com.ankiminer.android.service.MiningForegroundSessionController
+import com.ankiminer.android.subtitles.BridgeSubtitleCueLookupService
+import com.ankiminer.android.subtitles.SubtitleCueLookupService
 import com.ankiminer.android.tts.AndroidSentenceAudioSynthesizerFactory
 import java.io.File
 import java.io.IOException
@@ -169,12 +171,17 @@ class AnkiMinerApplication : Application() {
     }
 
     /**
-     * Shares [resourceExecutor]: a preview only runs during curation, when mining holds the
-     * exclusive runtime lease and no resource operation can occupy that thread.
+     * Preview lookups share [resourceExecutor]: they only run during curation, when mining holds
+     * the exclusive runtime lease and no resource operation can occupy that thread.
      */
     val definitionLookupService: DefinitionLookupService by
         lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
             BridgeDefinitionLookupService(pyBridge, resourceExecutor)
+        }
+
+    val subtitleCueLookupService: SubtitleCueLookupService by
+        lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+            BridgeSubtitleCueLookupService(pyBridge, resourceExecutor)
         }
 
     private val resourceControlExecutor by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {

@@ -67,6 +67,7 @@ class MainActivity : ComponentActivity() {
             repository = MiningRepositoryFactory.create(app),
             safBroker = app.safBroker,
             definitionLookup = app.definitionLookupService,
+            cueLookup = app.subtitleCueLookupService,
             runtimeWorkState = app.runtimeWorkState,
             selectionInventory = app.safSelectionInventory,
         )

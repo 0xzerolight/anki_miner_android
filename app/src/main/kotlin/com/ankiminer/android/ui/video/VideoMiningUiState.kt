@@ -2,6 +2,7 @@ package com.ankiminer.android.ui.video
 
 import androidx.compose.runtime.Immutable
 import com.ankiminer.android.dictionary.CurationDefinition
+import com.ankiminer.android.engine.SubtitleCue
 import com.ankiminer.android.media.SafDocument
 import com.ankiminer.android.mining.CurationCandidate
 import com.ankiminer.android.mining.CurationPage
@@ -27,6 +28,13 @@ data class DocumentSlotState(
 )
 
 @Immutable
+data class CurationPlayerUiState(
+    val videoPath: String,
+    val cues: List<SubtitleCue>,
+    val cuesUnavailable: Boolean,
+)
+
+@Immutable
 data class CurationUiState(
     val runId: String,
     val requestId: String,
@@ -38,6 +46,7 @@ data class CurationUiState(
     val previousPageSelectedCount: Int = 0,
     val page: CurationPage? = null,
     val definition: CurationDefinition? = null,
+    val player: CurationPlayerUiState? = null,
 ) {
     val selectedCount: Int
         get() = selectedCandidateIds.size

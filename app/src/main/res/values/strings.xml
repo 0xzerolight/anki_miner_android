@@ -67,6 +67,7 @@
     <string name="curation_preview_collapse_description">Collapse video preview</string>
     <string name="curation_preview_expand_description">Expand video preview</string>
     <string name="curation_preview_overlay_description">Subtitle overlay</string>
+    <string name="curation_preview_cues_unavailable">Subtitles unavailable for preview</string>
     <string name="definition_loading">Looking up…</string>
     <string name="definition_missing">No offline dictionary entry</string>
     <string name="definition_unavailable">Dictionary lookup unavailable</string>

@@ -65,6 +65,7 @@ fun CurationVideoPreview(
     overlayOffsetSeconds: Double,
     collapsed: Boolean,
     onToggleCollapsed: () -> Unit,
+    notice: (@Composable () -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     LaunchedEffect(player, videoUri) {
@@ -121,6 +122,7 @@ fun CurationVideoPreview(
                         modifier = Modifier.align(Alignment.BottomCenter),
                     )
                 }
+                notice?.invoke()
                 PreviewControls(
                     playing = playing,
                     onTogglePlayPause = player::togglePlayPause,

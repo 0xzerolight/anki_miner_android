@@ -1,5 +1,7 @@
 package com.ankiminer.android.ui.video
 
+import android.content.Context
+import android.net.Uri
 import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.tween
@@ -29,8 +31,10 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -39,6 +43,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -54,6 +59,8 @@ import com.ankiminer.android.mining.MiningProgress
 import com.ankiminer.android.mining.MiningRunState
 import com.ankiminer.android.mining.ProcessingResult
 import com.ankiminer.android.mining.RuntimeWorkConflict
+import com.ankiminer.android.player.CurationPreviewPlayer
+import com.ankiminer.android.player.ExoCurationPreviewPlayer
 import com.ankiminer.android.ui.mining.CurationCandidateHeader
 import com.ankiminer.android.ui.mining.CurationControls
 import com.ankiminer.android.ui.mining.CurationDefinitionPane
@@ -61,6 +68,7 @@ import com.ankiminer.android.ui.mining.CurationFilter
 import com.ankiminer.android.ui.mining.CurationRowActions
 import com.ankiminer.android.ui.mining.CurationSentenceChoice
 import com.ankiminer.android.ui.mining.CurationSort
+import com.ankiminer.android.ui.mining.CurationVideoPreview
 import com.ankiminer.android.ui.mining.DocumentReadKind
 import com.ankiminer.android.ui.mining.MiningFailureAction
 import com.ankiminer.android.ui.mining.MiningFailureCard
@@ -68,8 +76,8 @@ import com.ankiminer.android.ui.mining.MINING_PHASE_HEADING_TEST_TAG
 import com.ankiminer.android.ui.mining.MiningPhaseTarget
 import com.ankiminer.android.ui.mining.MiningProgressPanel
 import com.ankiminer.android.ui.mining.MiningResultSource
-import com.ankiminer.android.ui.mining.ReconcileCurationFocus
 import com.ankiminer.android.ui.mining.MiningSourceItem
+import com.ankiminer.android.ui.mining.ReconcileCurationFocus
 import com.ankiminer.android.ui.mining.RuntimeConflictNotice
 import com.ankiminer.android.ui.mining.SourcesCard
 import com.ankiminer.android.ui.mining.StickyCurationActions
@@ -83,6 +91,10 @@ import com.ankiminer.android.ui.theme.PhaseTitle
 import com.ankiminer.android.ui.theme.actionBorder
 import com.ankiminer.android.ui.theme.forwardButtonColors
 import com.ankiminer.android.ui.theme.outlinedActionButtonColors
+import java.io.File
+import kotlinx.coroutines.delay
+
+private const val CURATION_SEEK_DEBOUNCE_MS = 150L
 
 @Composable
 fun VideoMiningScreen(
@@ -106,6 +118,7 @@ fun VideoMiningScreen(
     onRetry: () -> Unit,
     onReset: () -> Unit,
     onReturnToActiveRun: (() -> Unit)? = null,
+    playerFactory: (Context) -> CurationPreviewPlayer = { ExoCurationPreviewPlayer(it) },
     modifier: Modifier = Modifier,
     listState: LazyListState = rememberLazyListState(),
 ) {
@@ -244,155 +257,244 @@ fun VideoMiningScreen(
                 headingFocusRequester.requestFocus()
             }
 
-            LazyColumn(
-                state = listState,
+            Column(
                 modifier =
                     Modifier
                         .fillMaxSize()
                         .padding(scaffoldPadding)
                         .consumeWindowInsets(scaffoldPadding)
-                        .testTag(VideoMiningTestTags.CONTENT)
                         .semantics { paneTitle = phaseTitle },
-                contentPadding = PaddingValues(AnkiMinerTokens.Space.content),
-                verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.group),
             ) {
-                when (val runState = targetState.runState) {
-                    MiningRunState.Idle ->
-                        setupItems(
-                            state = targetState,
-                            headingModifier = headingModifier,
-                            onPickVideo = onPickVideo,
-                            onPickSubtitle = onPickSubtitle,
-                            onClearVideo = onClearVideo,
-                            onClearSubtitle = onClearSubtitle,
-                            onDismissDocumentError = onDismissDocumentError,
-                            onDismissCommandError = onDismissCommandError,
-                            onStart = onStart,
-                            onReturnToActiveRun = onReturnToActiveRun,
+                if (
+                    targetState.runState is MiningRunState.Curating &&
+                    targetCuration?.player != null
+                ) {
+                    key(targetCuration.runId) {
+                        CurationPlayerSlot(
+                            curation = targetCuration,
+                            playerFactory = playerFactory,
+                            modifier =
+                                Modifier.padding(
+                                    start = AnkiMinerTokens.Space.content,
+                                    top = AnkiMinerTokens.Space.content,
+                                    end = AnkiMinerTokens.Space.content,
+                                ),
                         )
-                    is MiningRunState.Starting ->
-                        progressItems(
-                            progress = runState.progress,
-                            title = R.string.starting_title,
-                            headingModifier = headingModifier,
-                            canCancel =
-                                runState.cancellationToken != null || runState.runId != null,
-                            cancelPending = targetState.cancelPending,
-                            cancelError = targetState.commandError == MiningCommandError.CANCEL,
-                            onDismissCommandError = onDismissCommandError,
-                            onCancel = onCancel,
-                        )
-                    is MiningRunState.Curating ->
-                        curationItems(
-                            state = targetState,
-                            headingModifier = headingModifier,
-                            visibleCandidates = visibleCandidates,
-                            candidateHeaderTexts = candidateHeaderTexts,
-                            selectedCandidateStateText = selectedCandidateStateText,
-                            excludedCandidateStateText = excludedCandidateStateText,
-                            includeWordTemplate = includeWordTemplate,
-                            excludeWordTemplate = excludeWordTemplate,
-                            expandedCandidateId = expandedCandidateId,
-                            query = query,
-                            filter = filter,
-                            sort = sort,
-                            onQueryChanged = { query = it },
-                            onFilterChanged = { filterName = it.name },
-                            onSortChanged = { sortName = it.name },
-                            onFocusCandidate = onFocusCandidate,
-                            onSetCandidateSelected = onSetCandidateSelected,
-                            onMarkCandidateKnown = onMarkCandidateKnown,
-                            onSetSelectionForVisible = onSetSelectionForVisible,
-                            onSetSelectionForPage = onSetSelectionForPage,
-                            onReconcileFocus = onReconcileFocus,
-                            onSelectSentence = onSelectSentence,
-                            copy = copy,
-                            wordLabel = wordLabel,
-                            sentenceLabel = sentenceLabel,
-                            copiedWord = copiedWord,
-                            copiedSentence = copiedSentence,
-                        )
-                    is MiningRunState.Running ->
-                        progressItems(
-                            progress = runState.progress,
-                            title = R.string.running_title,
-                            headingModifier = headingModifier,
-                            canCancel = true,
-                            cancelPending = targetState.cancelPending,
-                            cancelError = targetState.commandError == MiningCommandError.CANCEL,
-                            onDismissCommandError = onDismissCommandError,
-                            onCancel = onCancel,
-                        )
-                    is MiningRunState.Success ->
-                        terminalItems(
-                            title = R.string.success_title,
-                            headingModifier = headingModifier,
-                            result = runState.result,
-                            videoDisplayName = targetState.video.document?.displayName,
-                            subtitleDisplayName = targetState.subtitle.document?.displayName,
-                            partial = false,
-                            failed = false,
-                            failureDetails = null,
-                            canRetry = false,
-                            busy = targetState.resetPending,
-                            resetError = targetState.commandError == MiningCommandError.RESET,
-                            detailsExpanded = resultDetailsExpanded,
-                            onToggleDetails = {
-                                resultDetailsExpanded = !resultDetailsExpanded
-                            },
-                            onDismissCommandError = onDismissCommandError,
-                            onRetry = onRetry,
-                            onReset = onReset,
-                        )
-                    is MiningRunState.Cancelled ->
-                        terminalItems(
-                            title = R.string.cancelled_title,
-                            headingModifier = headingModifier,
-                            result = runState.result,
-                            videoDisplayName = targetState.video.document?.displayName,
-                            subtitleDisplayName = targetState.subtitle.document?.displayName,
-                            partial = runState.result?.cardsCreated?.let { it > 0 } == true,
-                            failed = false,
-                            failureDetails = null,
-                            canRetry = false,
-                            busy = targetState.resetPending,
-                            resetError = targetState.commandError == MiningCommandError.RESET,
-                            detailsExpanded = resultDetailsExpanded,
-                            onToggleDetails = {
-                                resultDetailsExpanded = !resultDetailsExpanded
-                            },
-                            onDismissCommandError = onDismissCommandError,
-                            onRetry = onRetry,
-                            onReset = onReset,
-                        )
-                    is MiningRunState.Failed ->
-                        terminalItems(
-                            title = R.string.failed_title,
-                            headingModifier = headingModifier,
-                            result = runState.result,
-                            videoDisplayName = targetState.video.document?.displayName,
-                            subtitleDisplayName = targetState.subtitle.document?.displayName,
-                            partial = runState.result?.cardsCreated?.let { it > 0 } == true,
-                            failed = true,
-                            failureDetails = runState.failure.message,
-                            canRetry =
-                                runState.failure.retryable &&
-                                    targetState.video.document != null &&
-                                    targetState.subtitle.document != null,
-                            busy = targetState.resetPending || targetState.startPending,
-                            resetError = targetState.commandError == MiningCommandError.RESET,
-                            detailsExpanded = resultDetailsExpanded,
-                            onToggleDetails = {
-                                resultDetailsExpanded = !resultDetailsExpanded
-                            },
-                            onDismissCommandError = onDismissCommandError,
-                            onRetry = onRetry,
-                            onReset = onReset,
-                        )
+                    }
+                }
+                LazyColumn(
+                    state = listState,
+                    modifier =
+                        Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                            .testTag(VideoMiningTestTags.CONTENT),
+                    contentPadding = PaddingValues(AnkiMinerTokens.Space.content),
+                    verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.group),
+                ) {
+                    when (val runState = targetState.runState) {
+                        MiningRunState.Idle ->
+                            setupItems(
+                                state = targetState,
+                                headingModifier = headingModifier,
+                                onPickVideo = onPickVideo,
+                                onPickSubtitle = onPickSubtitle,
+                                onClearVideo = onClearVideo,
+                                onClearSubtitle = onClearSubtitle,
+                                onDismissDocumentError = onDismissDocumentError,
+                                onDismissCommandError = onDismissCommandError,
+                                onStart = onStart,
+                                onReturnToActiveRun = onReturnToActiveRun,
+                            )
+                        is MiningRunState.Starting ->
+                            progressItems(
+                                progress = runState.progress,
+                                title = R.string.starting_title,
+                                headingModifier = headingModifier,
+                                canCancel =
+                                    runState.cancellationToken != null || runState.runId != null,
+                                cancelPending = targetState.cancelPending,
+                                cancelError = targetState.commandError == MiningCommandError.CANCEL,
+                                onDismissCommandError = onDismissCommandError,
+                                onCancel = onCancel,
+                            )
+                        is MiningRunState.Curating ->
+                            curationItems(
+                                state = targetState,
+                                headingModifier = headingModifier,
+                                visibleCandidates = visibleCandidates,
+                                candidateHeaderTexts = candidateHeaderTexts,
+                                selectedCandidateStateText = selectedCandidateStateText,
+                                excludedCandidateStateText = excludedCandidateStateText,
+                                includeWordTemplate = includeWordTemplate,
+                                excludeWordTemplate = excludeWordTemplate,
+                                expandedCandidateId = expandedCandidateId,
+                                query = query,
+                                filter = filter,
+                                sort = sort,
+                                onQueryChanged = { query = it },
+                                onFilterChanged = { filterName = it.name },
+                                onSortChanged = { sortName = it.name },
+                                onFocusCandidate = onFocusCandidate,
+                                onSetCandidateSelected = onSetCandidateSelected,
+                                onMarkCandidateKnown = onMarkCandidateKnown,
+                                onSetSelectionForVisible = onSetSelectionForVisible,
+                                onSetSelectionForPage = onSetSelectionForPage,
+                                onReconcileFocus = onReconcileFocus,
+                                onSelectSentence = onSelectSentence,
+                                copy = copy,
+                                wordLabel = wordLabel,
+                                sentenceLabel = sentenceLabel,
+                                copiedWord = copiedWord,
+                                copiedSentence = copiedSentence,
+                            )
+                        is MiningRunState.Running ->
+                            progressItems(
+                                progress = runState.progress,
+                                title = R.string.running_title,
+                                headingModifier = headingModifier,
+                                canCancel = true,
+                                cancelPending = targetState.cancelPending,
+                                cancelError = targetState.commandError == MiningCommandError.CANCEL,
+                                onDismissCommandError = onDismissCommandError,
+                                onCancel = onCancel,
+                            )
+                        is MiningRunState.Success ->
+                            terminalItems(
+                                title = R.string.success_title,
+                                headingModifier = headingModifier,
+                                result = runState.result,
+                                videoDisplayName = targetState.video.document?.displayName,
+                                subtitleDisplayName = targetState.subtitle.document?.displayName,
+                                partial = false,
+                                failed = false,
+                                failureDetails = null,
+                                canRetry = false,
+                                busy = targetState.resetPending,
+                                resetError = targetState.commandError == MiningCommandError.RESET,
+                                detailsExpanded = resultDetailsExpanded,
+                                onToggleDetails = {
+                                    resultDetailsExpanded = !resultDetailsExpanded
+                                },
+                                onDismissCommandError = onDismissCommandError,
+                                onRetry = onRetry,
+                                onReset = onReset,
+                            )
+                        is MiningRunState.Cancelled ->
+                            terminalItems(
+                                title = R.string.cancelled_title,
+                                headingModifier = headingModifier,
+                                result = runState.result,
+                                videoDisplayName = targetState.video.document?.displayName,
+                                subtitleDisplayName = targetState.subtitle.document?.displayName,
+                                partial = runState.result?.cardsCreated?.let { it > 0 } == true,
+                                failed = false,
+                                failureDetails = null,
+                                canRetry = false,
+                                busy = targetState.resetPending,
+                                resetError = targetState.commandError == MiningCommandError.RESET,
+                                detailsExpanded = resultDetailsExpanded,
+                                onToggleDetails = {
+                                    resultDetailsExpanded = !resultDetailsExpanded
+                                },
+                                onDismissCommandError = onDismissCommandError,
+                                onRetry = onRetry,
+                                onReset = onReset,
+                            )
+                        is MiningRunState.Failed ->
+                            terminalItems(
+                                title = R.string.failed_title,
+                                headingModifier = headingModifier,
+                                result = runState.result,
+                                videoDisplayName = targetState.video.document?.displayName,
+                                subtitleDisplayName = targetState.subtitle.document?.displayName,
+                                partial = runState.result?.cardsCreated?.let { it > 0 } == true,
+                                failed = true,
+                                failureDetails = runState.failure.message,
+                                canRetry =
+                                    runState.failure.retryable &&
+                                        targetState.video.document != null &&
+                                        targetState.subtitle.document != null,
+                                busy = targetState.resetPending || targetState.startPending,
+                                resetError = targetState.commandError == MiningCommandError.RESET,
+                                detailsExpanded = resultDetailsExpanded,
+                                onToggleDetails = {
+                                    resultDetailsExpanded = !resultDetailsExpanded
+                                },
+                                onDismissCommandError = onDismissCommandError,
+                                onRetry = onRetry,
+                                onReset = onReset,
+                            )
+                    }
                 }
             }
         }
     }
+}
+
+@Composable
+private fun CurationPlayerSlot(
+    curation: CurationUiState,
+    playerFactory: (Context) -> CurationPreviewPlayer,
+    modifier: Modifier = Modifier,
+) {
+    val playerState = curation.player ?: return
+    val context = LocalContext.current
+    val player = remember(curation.runId) { playerFactory(context) }
+    val videoUri = remember(playerState.videoPath) { Uri.fromFile(File(playerState.videoPath)) }
+    var collapsed by rememberSaveable(curation.runId) { mutableStateOf(false) }
+
+    DisposableEffect(curation.runId) {
+        onDispose { player.release() }
+    }
+
+    val focusedCandidate =
+        curation.candidates.firstOrNull { it.candidateId == curation.focusedCandidateId }
+    val selectedSentenceId =
+        focusedCandidate?.let { candidate ->
+            curation.sentenceIds[candidate.candidateId] ?: candidate.defaultSentenceId
+        }
+    val selectedSentence =
+        focusedCandidate?.sentences?.firstOrNull { it.sentenceId == selectedSentenceId }
+
+    CurationVideoPreview(
+        player = player,
+        videoUri = videoUri,
+        cues = playerState.cues.takeUnless { playerState.cuesUnavailable }.orEmpty(),
+        overlayOffsetSeconds = 0.0,
+        collapsed = collapsed,
+        onToggleCollapsed = { collapsed = !collapsed },
+        notice =
+            if (playerState.cuesUnavailable) {
+                { CuesUnavailableNotice() }
+            } else {
+                null
+            },
+        modifier = modifier,
+    )
+
+    LaunchedEffect(curation.focusedCandidateId, selectedSentenceId) {
+        val sentence = selectedSentence ?: return@LaunchedEffect
+        delay(CURATION_SEEK_DEBOUNCE_MS)
+        player.seekTo(sentence.startTime)
+    }
+}
+
+@Composable
+private fun CuesUnavailableNotice() {
+    Text(
+        text = stringResource(R.string.curation_preview_cues_unavailable),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .padding(
+                    horizontal = AnkiMinerTokens.Space.related,
+                    vertical = AnkiMinerTokens.Space.micro,
+                ).testTag(VideoMiningTestTags.CUES_UNAVAILABLE),
+        color = MaterialTheme.colorScheme.error,
+        maxLines = 1,
+        style = MaterialTheme.typography.bodySmall,
+    )
 }
 
 private fun LazyListScope.setupItems(

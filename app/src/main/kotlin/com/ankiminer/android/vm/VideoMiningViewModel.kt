@@ -12,10 +12,12 @@ import com.ankiminer.android.dictionary.DefinitionLookupService
 import com.ankiminer.android.diagnostics.log.AppLog
 import com.ankiminer.android.diagnostics.log.LogComponent
 import com.ankiminer.android.diagnostics.log.LogContext
+import com.ankiminer.android.engine.SubtitleCue
 import com.ankiminer.android.media.SafBroker
 import com.ankiminer.android.media.SafDocument
 import com.ankiminer.android.media.SafSelectionInventory
 import com.ankiminer.android.media.SafSelectionSlot
+import com.ankiminer.android.mining.CurationMediaBinding
 import com.ankiminer.android.mining.CurationRequest
 import com.ankiminer.android.mining.CurationSelection
 import com.ankiminer.android.mining.MiningRepository
@@ -27,6 +29,7 @@ import com.ankiminer.android.mining.cancellationPending
 import com.ankiminer.android.mining.cancellationToken
 import com.ankiminer.android.mining.isTerminal
 import com.ankiminer.android.mining.runId
+import com.ankiminer.android.subtitles.SubtitleCueLookupService
 import com.ankiminer.android.ui.mining.CurationDefinitionState
 import com.ankiminer.android.ui.mining.DefinitionQuery
 import com.ankiminer.android.ui.mining.MiningPendingAction
@@ -38,6 +41,7 @@ import com.ankiminer.android.ui.mining.draftFor
 import com.ankiminer.android.ui.mining.forRequest
 import com.ankiminer.android.ui.mining.request
 import com.ankiminer.android.ui.mining.toCurationSessionState
+import com.ankiminer.android.ui.video.CurationPlayerUiState
 import com.ankiminer.android.ui.video.CurationUiState
 import com.ankiminer.android.ui.video.DocumentSelectionError
 import com.ankiminer.android.ui.video.DocumentSlotState
@@ -52,6 +56,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -68,6 +73,7 @@ class VideoMiningViewModel internal constructor(
     selectionInventory: SafSelectionInventory? = null,
     selectionIoDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val definitionLookup: DefinitionLookupService? = null,
+    private val cueLookup: SubtitleCueLookupService = NO_CUE_LOOKUP,
 ) : ViewModel() {
     private data class LocalState(
         val video: DocumentSlotState = DocumentSlotState(),
@@ -90,8 +96,21 @@ class VideoMiningViewModel internal constructor(
         val focusedCandidateId: String?,
     )
 
+    private data class CueLookupKey(
+        val runId: String,
+        val videoPath: String,
+        val subtitlePath: String,
+    )
+
+    private data class CueState(
+        val key: CueLookupKey,
+        val cues: List<SubtitleCue> = emptyList(),
+        val unavailable: Boolean = false,
+    )
+
     private val localState = MutableStateFlow(LocalState())
     private val definitionState = MutableStateFlow(CurationDefinitionState())
+    private val cueState = MutableStateFlow<CueState?>(null)
     private var definitionJob: Job? = null
     private var videoDocumentRequest = 0L
     private var subtitleDocumentRequest = 0L
@@ -131,13 +150,16 @@ class VideoMiningViewModel internal constructor(
             localState,
             runtimeWorkState,
             definitionState,
-        ) { runState, local, activeKind, definition ->
+            cueState,
+        ) { runState, local, activeKind, definition, cues ->
+            val curating = runState as? MiningRunState.Curating
             val curation =
-                (runState as? MiningRunState.Curating)?.request?.let { request ->
+                curating?.request?.let { request ->
                     request.toUiState(
                         draft = local.curationDraft,
                         previousPageSelectedCount = local.previousPageSelectedCount,
                         definition = definition.visible,
+                        player = curating.toPlayerUiState(cues),
                     )
                 }
             val repositoryCurationPending =
@@ -226,6 +248,12 @@ class VideoMiningViewModel internal constructor(
                         requestDefinition(request, focus?.focusedCandidateId)
                     }
             }
+        }
+        viewModelScope.launch {
+            repository.state
+                .map { runState -> (runState as? MiningRunState.Curating)?.cueLookupKey() }
+                .distinctUntilChanged()
+                .collectLatest { key -> loadCues(key) }
         }
         videoSelection.restore()?.let { selection ->
             resolveDocument(DocumentKind.VIDEO, selection.uri, restoring = true)
@@ -959,10 +987,54 @@ class VideoMiningViewModel internal constructor(
             RuntimeWorkCoordinator.Kind.ANKI_SETUP -> RuntimeWorkConflict.ANKI_SETUP
         }
 
+    private suspend fun loadCues(key: CueLookupKey?) {
+        if (key == null) {
+            cueState.value = null
+            return
+        }
+        cueState.value = CueState(key)
+        val result =
+            try {
+                cueLookup.cues(key.runId, key.subtitlePath)
+            } catch (failure: CancellationException) {
+                throw failure
+            } catch (failure: Exception) {
+                Result.failure(failure)
+            }
+        if ((repository.state.value as? MiningRunState.Curating)?.cueLookupKey() != key) return
+        cueState.value =
+            result.fold(
+                onSuccess = { cues -> CueState(key = key, cues = cues) },
+                onFailure = { CueState(key = key, unavailable = true) },
+            )
+    }
+
+    private fun MiningRunState.Curating.cueLookupKey(): CueLookupKey? =
+        media?.toCueLookupKey(request.runId)
+
+    private fun CurationMediaBinding.toCueLookupKey(runId: String): CueLookupKey =
+        CueLookupKey(
+            runId = runId,
+            videoPath = videoPath,
+            subtitlePath = subtitlePath,
+        )
+
+    private fun MiningRunState.Curating.toPlayerUiState(cues: CueState?): CurationPlayerUiState? =
+        media?.let { media ->
+            val key = media.toCueLookupKey(request.runId)
+            val current = cues?.takeIf { it.key == key }
+            CurationPlayerUiState(
+                videoPath = media.videoPath,
+                cues = current?.cues.orEmpty(),
+                cuesUnavailable = current?.unavailable == true,
+            )
+        }
+
     private fun CurationRequest.toUiState(
         draft: SharedCurationDraft?,
         previousPageSelectedCount: Int,
         definition: CurationDefinition?,
+        player: CurationPlayerUiState?,
     ): CurationUiState {
         val current = draft?.forRequest(this) ?: defaultCurationDraft()
         return CurationUiState(
@@ -976,6 +1048,7 @@ class VideoMiningViewModel internal constructor(
             focusedCandidateId = current.focusedCandidateId,
             previousPageSelectedCount = previousPageSelectedCount,
             definition = definition,
+            player = player,
         )
     }
 
@@ -983,6 +1056,7 @@ class VideoMiningViewModel internal constructor(
         private val repository: MiningRepository,
         private val safBroker: SafBroker,
         private val definitionLookup: DefinitionLookupService,
+        private val cueLookup: SubtitleCueLookupService = NO_CUE_LOOKUP,
         private val runtimeWorkState: StateFlow<RuntimeWorkCoordinator.Kind?> = MutableStateFlow(null),
         private val selectionInventory: SafSelectionInventory? = null,
         private val savedStateHandleFactory: (CreationExtras) -> SavedStateHandle =
@@ -1001,7 +1075,13 @@ class VideoMiningViewModel internal constructor(
                 savedStateHandle = savedStateHandleFactory(extras),
                 selectionInventory = selectionInventory,
                 definitionLookup = definitionLookup,
+                cueLookup = cueLookup,
             ) as T
         }
+    }
+
+    private companion object {
+        val NO_CUE_LOOKUP =
+            SubtitleCueLookupService { _, _ -> Result.success(emptyList()) }
     }
 }
