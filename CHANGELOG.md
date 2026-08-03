@@ -4,6 +4,12 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+### Added
+
+- The word picker shows the dictionary entry for the word you are looking at, so you can decide whether it earns a card without leaving the screen. It reads the same offline dictionaries that build the card, never the network, and says so plainly when a word has no entry. Where a word has no entry of its own but its dictionary form does, the entry is labelled with the word it actually matched rather than quietly standing in.
+- A word can be marked as already known from its row in the picker. Marked words drop out of the current run and are written to the known-words list when you confirm the review — cancelling at any point, on any page, writes nothing.
+- Word and sentence can be copied from a picker row. The sentence copied is the one you have selected for the card, not the first alternative.
+
 ## [0.2.1] - 2026-08-02
 
 ### Removed

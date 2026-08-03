@@ -72,6 +72,102 @@ class SharedMiningContractsTest {
     }
 
     @Test
+    fun markingACandidateKnownExcludesItFromTheRun() {
+        val request = curationRequest()
+        val firstId = request.candidates.first().candidateId
+
+        val draft = request.defaultCurationDraft().markKnown(request, firstId, known = true)
+
+        assertEquals(setOf(firstId), draft.knownCandidateIds)
+        assertFalse(firstId in draft.selectedCandidateIds)
+    }
+
+    @Test
+    fun unmarkingLeavesTheCandidateExcludedUntilTheUserReincludesIt() {
+        val request = curationRequest()
+        val firstId = request.candidates.first().candidateId
+
+        val draft =
+            request.defaultCurationDraft()
+                .markKnown(request, firstId, known = true)
+                .markKnown(request, firstId, known = false)
+
+        assertTrue(draft.knownCandidateIds.isEmpty())
+        assertFalse(firstId in draft.selectedCandidateIds)
+        assertTrue(
+            firstId in
+                draft
+                    .setCandidateSelected(request, firstId, selected = true)
+                    .selectedCandidateIds,
+        )
+    }
+
+    @Test
+    fun markedCandidateCannotBeSelected() {
+        val request = curationRequest()
+        val firstId = request.candidates.first().candidateId
+
+        val draft = request.defaultCurationDraft().markKnown(request, firstId, known = true)
+
+        assertFalse(
+            firstId in
+                draft
+                    .setCandidateSelected(request, firstId, selected = true)
+                    .selectedCandidateIds,
+        )
+    }
+
+    @Test
+    fun bulkVisibleSelectionSkipsKnownCandidates() {
+        val request = curationRequest()
+        val firstId = request.candidates.first().candidateId
+
+        val draft =
+            request.defaultCurationDraft()
+                .markKnown(request, firstId, known = true)
+                .setSelectionForVisible(
+                    request,
+                    request.candidates.map { it.candidateId },
+                    selected = true,
+                )
+
+        assertFalse(firstId in draft.selectedCandidateIds)
+    }
+
+    @Test
+    fun selectionsNeverIncludeAMarkedCandidate() {
+        val request = curationRequest()
+        val firstId = request.candidates.first().candidateId
+
+        val draft = request.defaultCurationDraft().markKnown(request, firstId, known = true)
+
+        assertTrue(draft.selections(request).none { it.candidateId == firstId })
+    }
+
+    @Test
+    fun knownMarksSurviveASessionStateRoundTrip() {
+        val request = curationRequest()
+        val firstId = request.candidates.first().candidateId
+        val draft = request.defaultCurationDraft().markKnown(request, firstId, known = true)
+
+        assertEquals(
+            draft,
+            draft.toCurationSessionState(previousPageSelectedCount = 0).draftFor(request),
+        )
+    }
+
+    @Test
+    fun sessionStateNamingAnUnknownKnownCandidateIsRejected() {
+        val request = curationRequest()
+        val state =
+            request.defaultCurationDraft()
+                .toCurationSessionState(previousPageSelectedCount = 0)
+                .copy(knownCandidateIds = setOf("candidate_${"f".repeat(32)}"))
+
+        assertNull(state.draftFor(request))
+    }
+
+    @Test
     fun deselectingACandidateLeavesItsDetailOpen() {
         val request = curationRequest(page = CurationPage(0, 2, 0, 2))
         val candidateId = request.candidates.single().candidateId

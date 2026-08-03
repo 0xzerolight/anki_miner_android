@@ -7,6 +7,8 @@ import androidx.lifecycle.createSavedStateHandle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.CreationExtras
 import com.ankiminer.android.data.RuntimeWorkCoordinator
+import com.ankiminer.android.dictionary.CurationDefinition
+import com.ankiminer.android.dictionary.DefinitionLookupService
 import com.ankiminer.android.diagnostics.log.AppLog
 import com.ankiminer.android.diagnostics.log.LogComponent
 import com.ankiminer.android.diagnostics.log.LogContext
@@ -25,11 +27,16 @@ import com.ankiminer.android.mining.cancellationPending
 import com.ankiminer.android.mining.cancellationToken
 import com.ankiminer.android.mining.isTerminal
 import com.ankiminer.android.mining.runId
+import com.ankiminer.android.ui.mining.CurationDefinitionState
+import com.ankiminer.android.ui.mining.DefinitionQuery
 import com.ankiminer.android.ui.mining.MiningPendingAction
 import com.ankiminer.android.ui.mining.MiningPendingState
 import com.ankiminer.android.ui.mining.SharedCurationDraft
+import com.ankiminer.android.ui.mining.completed
 import com.ankiminer.android.ui.mining.defaultCurationDraft
 import com.ankiminer.android.ui.mining.draftFor
+import com.ankiminer.android.ui.mining.forRequest
+import com.ankiminer.android.ui.mining.request
 import com.ankiminer.android.ui.mining.toCurationSessionState
 import com.ankiminer.android.ui.video.CurationUiState
 import com.ankiminer.android.ui.video.DocumentSelectionError
@@ -40,6 +47,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -50,6 +58,8 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
+private const val DEFINITION_DEBOUNCE_MS = 150L
+
 class VideoMiningViewModel internal constructor(
     private val repository: MiningRepository,
     private val safBroker: SafBroker,
@@ -57,6 +67,7 @@ class VideoMiningViewModel internal constructor(
     savedStateHandle: SavedStateHandle = SavedStateHandle(),
     selectionInventory: SafSelectionInventory? = null,
     selectionIoDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val definitionLookup: DefinitionLookupService? = null,
 ) : ViewModel() {
     private data class LocalState(
         val video: DocumentSlotState = DocumentSlotState(),
@@ -72,7 +83,16 @@ class VideoMiningViewModel internal constructor(
         SUBTITLE,
     }
 
+    private data class DefinitionFocusKey(
+        val runId: String,
+        val requestId: String,
+        val pageIndex: Long?,
+        val focusedCandidateId: String?,
+    )
+
     private val localState = MutableStateFlow(LocalState())
+    private val definitionState = MutableStateFlow(CurationDefinitionState())
+    private var definitionJob: Job? = null
     private var videoDocumentRequest = 0L
     private var subtitleDocumentRequest = 0L
     private var videoDocumentJob: Job? = null
@@ -106,12 +126,18 @@ class VideoMiningViewModel internal constructor(
             )
 
     val uiState: StateFlow<VideoMiningUiState> =
-        combine(repository.state, localState, runtimeWorkState) { runState, local, activeKind ->
+        combine(
+            repository.state,
+            localState,
+            runtimeWorkState,
+            definitionState,
+        ) { runState, local, activeKind, definition ->
             val curation =
                 (runState as? MiningRunState.Curating)?.request?.let { request ->
                     request.toUiState(
                         draft = local.curationDraft,
                         previousPageSelectedCount = local.previousPageSelectedCount,
+                        definition = definition.visible,
                     )
                 }
             val repositoryCurationPending =
@@ -160,6 +186,9 @@ class VideoMiningViewModel internal constructor(
                     }
                     saveCurationSession(runState.request)
                 } else if (runState.isTerminal) {
+                    definitionJob?.cancel()
+                    definitionJob = null
+                    requestDefinition(null, null)
                     repository.clearCurationSessionState(runState.runId)
                     localState.update { local ->
                         local.copy(
@@ -169,6 +198,33 @@ class VideoMiningViewModel internal constructor(
                         )
                     }
                 }
+            }
+        }
+        if (definitionLookup != null) {
+            viewModelScope.launch {
+                uiState
+                    .map { state ->
+                        state.curation?.let { curation ->
+                            DefinitionFocusKey(
+                                runId = curation.runId,
+                                requestId = curation.requestId,
+                                pageIndex = curation.page?.pageIndex,
+                                focusedCandidateId = curation.focusedCandidateId,
+                            )
+                        }
+                    }.distinctUntilChanged()
+                    .collect { focus ->
+                        val request =
+                            (repository.state.value as? MiningRunState.Curating)
+                                ?.request
+                                ?.takeIf {
+                                    focus != null &&
+                                        it.runId == focus.runId &&
+                                        it.requestId == focus.requestId &&
+                                        it.page?.pageIndex == focus.pageIndex
+                                }
+                        requestDefinition(request, focus?.focusedCandidateId)
+                    }
             }
         }
         videoSelection.restore()?.let { selection ->
@@ -296,6 +352,20 @@ class VideoMiningViewModel internal constructor(
         saveCurationSession(request)
     }
 
+    /** Stage one row for the known-word list; the repository commits only after final confirm. */
+    fun markCandidateKnown(
+        candidateId: String,
+        known: Boolean,
+    ) {
+        val request = (repository.state.value as? MiningRunState.Curating)?.request ?: return
+        if (isCurationSubmissionPending() || localState.value.pending.cancel) return
+        localState.update { local ->
+            val draft = local.curationDraft?.forRequest(request) ?: request.defaultCurationDraft()
+            local.copy(curationDraft = draft.markKnown(request, candidateId, known))
+        }
+        saveCurationSession(request)
+    }
+
     /**
      * Bulk change over the rows the user can actually see. Hidden selections survive, and focus is
      * reconciled against the projection the caller supplies.
@@ -406,6 +476,7 @@ class VideoMiningViewModel internal constructor(
             }
         }
         val selection = requireNotNull(acceptedSelection)
+        val draft = requireNotNull(acceptedDraft)
         viewModelScope.launch(LogContext.asContextElement(runState.request.runId)) {
             AppLog.i(
                 LogComponent.UI,
@@ -419,13 +490,13 @@ class VideoMiningViewModel internal constructor(
                     requestId = runState.request.requestId,
                     selection = selection,
                     pageIndex = runState.request.page?.pageIndex,
+                    knownCandidateIds = draft.knownCandidateIds.toList(),
                 )
                 if (!runState.request.isFinalPage) {
                     val previousPageSelectedCount =
                         requireNotNull(submittedPreviousPageCount)
                     repository.saveCurationSessionState(
-                        requireNotNull(acceptedDraft)
-                            .toCurationSessionState(previousPageSelectedCount),
+                        draft.toCurationSessionState(previousPageSelectedCount),
                     )
                     localState.update { local ->
                         local.copy(
@@ -819,6 +890,68 @@ class VideoMiningViewModel internal constructor(
         )
     }
 
+    private fun definitionCacheKey(request: CurationRequest?): String? =
+        request?.let { "${it.runId}:${it.requestId}:${it.page?.pageIndex ?: -1L}" }
+
+    /** Rebinds preview state, then requests the focused candidate's offline definition. */
+    private fun requestDefinition(
+        request: CurationRequest?,
+        candidateId: String?,
+    ) {
+        val lookup = definitionLookup ?: return
+        val cacheKey = definitionCacheKey(request)
+        val current = definitionState.value
+        if (current.cacheKey != cacheKey) {
+            definitionJob?.cancel()
+            definitionJob = null
+        }
+        val rebound = current.forRequest(cacheKey)
+        val candidate = request?.candidates?.firstOrNull { it.candidateId == candidateId }
+        val query =
+            candidate?.let {
+                DefinitionQuery(
+                    term = it.minedForm,
+                    // Miss-only: a canonical lemma may not replace a hit on card-front spelling.
+                    fallbackTerm =
+                        it.lemma.takeIf { lemma ->
+                            lemma.isNotBlank() && lemma != it.minedForm
+                        },
+                )
+            }
+        val transition = rebound.request(query)
+        definitionState.value = transition.state
+        val dispatch = transition.dispatch ?: return
+        dispatchDefinition(lookup, requireNotNull(request).runId, dispatch, transition.generation)
+    }
+
+    private fun dispatchDefinition(
+        lookup: DefinitionLookupService,
+        runId: String,
+        query: DefinitionQuery,
+        generation: Long,
+    ) {
+        definitionJob =
+            viewModelScope.launch {
+                delay(DEFINITION_DEBOUNCE_MS)
+                val outcome =
+                    lookup.define(runId, query.term, query.fallbackTerm).fold(
+                        onSuccess = { result ->
+                            if (result.entries.isEmpty()) {
+                                CurationDefinition.Missing
+                            } else {
+                                CurationDefinition.Loaded(result.matchedTerm, result.entries)
+                            }
+                        },
+                        onFailure = { CurationDefinition.Unavailable },
+                    )
+                val landed = definitionState.value.completed(generation, query, outcome)
+                definitionState.value = landed.state
+                landed.dispatch?.let { next ->
+                    dispatchDefinition(lookup, runId, next, landed.state.generation)
+                }
+            }
+    }
+
     private fun RuntimeWorkCoordinator.Kind.toRuntimeConflict(): RuntimeWorkConflict =
         when (this) {
             RuntimeWorkCoordinator.Kind.MINING -> RuntimeWorkConflict.MINING
@@ -829,6 +962,7 @@ class VideoMiningViewModel internal constructor(
     private fun CurationRequest.toUiState(
         draft: SharedCurationDraft?,
         previousPageSelectedCount: Int,
+        definition: CurationDefinition?,
     ): CurationUiState {
         val current = draft?.forRequest(this) ?: defaultCurationDraft()
         return CurationUiState(
@@ -837,15 +971,18 @@ class VideoMiningViewModel internal constructor(
             page = page,
             candidates = candidates,
             selectedCandidateIds = current.selectedCandidateIds,
+            knownCandidateIds = current.knownCandidateIds,
             sentenceIds = current.sentenceIds,
             focusedCandidateId = current.focusedCandidateId,
             previousPageSelectedCount = previousPageSelectedCount,
+            definition = definition,
         )
     }
 
     internal class Factory(
         private val repository: MiningRepository,
         private val safBroker: SafBroker,
+        private val definitionLookup: DefinitionLookupService,
         private val runtimeWorkState: StateFlow<RuntimeWorkCoordinator.Kind?> = MutableStateFlow(null),
         private val selectionInventory: SafSelectionInventory? = null,
         private val savedStateHandleFactory: (CreationExtras) -> SavedStateHandle =
@@ -863,6 +1000,7 @@ class VideoMiningViewModel internal constructor(
                 runtimeWorkState = runtimeWorkState,
                 savedStateHandle = savedStateHandleFactory(extras),
                 selectionInventory = selectionInventory,
+                definitionLookup = definitionLookup,
             ) as T
         }
     }

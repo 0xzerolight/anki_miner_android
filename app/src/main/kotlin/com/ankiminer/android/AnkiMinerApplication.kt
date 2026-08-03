@@ -23,6 +23,8 @@ import com.ankiminer.android.data.settings.AppSettingsRepository
 import com.ankiminer.android.data.settings.DataStoreAppSettingsRepository
 import com.ankiminer.android.data.settings.DataStoreDiagnosticsSettingsRepository
 import com.ankiminer.android.data.settings.DiagnosticsSettingsRepository
+import com.ankiminer.android.dictionary.BridgeDefinitionLookupService
+import com.ankiminer.android.dictionary.DefinitionLookupService
 import com.ankiminer.android.diagnostics.AndroidDiagnosticsExporter
 import com.ankiminer.android.diagnostics.DiagnosticsBundleJanitor
 import com.ankiminer.android.diagnostics.DiagnosticsBundleStager
@@ -165,6 +167,16 @@ class AnkiMinerApplication : Application() {
     private val resourceExecutor by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         Executors.newSingleThreadExecutor { task -> Thread(task, "anki-miner-resources") }
     }
+
+    /**
+     * Shares [resourceExecutor]: a preview only runs during curation, when mining holds the
+     * exclusive runtime lease and no resource operation can occupy that thread.
+     */
+    val definitionLookupService: DefinitionLookupService by
+        lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+            BridgeDefinitionLookupService(pyBridge, resourceExecutor)
+        }
+
     private val resourceControlExecutor by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         Executors.newSingleThreadExecutor { task -> Thread(task, "anki-miner-resource-control") }
     }

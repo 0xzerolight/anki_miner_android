@@ -171,11 +171,25 @@ object BridgeJsonCodec {
     fun encodeDiagnosticsLogLevelSet(level: String): String =
         encode("diagnostics.loglevel.set") { generator -> generator.writeStringField("level", level) }
 
+    fun encodeDictionaryDefineRequest(
+        runId: String,
+        term: String,
+        fallbackTerm: String?,
+    ): String =
+        encode("dictionary.define") { generator ->
+            generator.writeStringField("runId", runId)
+            generator.writeStringField("term", term)
+            generator.writeFieldName("fallbackTerm")
+            if (fallbackTerm == null) generator.writeNull() else generator.writeString(fallbackTerm)
+        }
+
     fun encodeCurationResponse(
         request: CurationRequest,
         selection: List<CurationSelection>?,
+        knownCandidateIds: List<String> = emptyList(),
     ): String {
         validateSelection(request, selection)
+        validateKnownCandidateIds(request, selection, knownCandidateIds)
         val type = if (request.page == null) "curation.response" else "curation.page.response"
         return encode(type) { generator ->
             generator.writeStringField("runId", request.runId)
@@ -192,6 +206,11 @@ object BridgeJsonCodec {
                     chosen.sentenceId?.let { generator.writeStringField("sentenceId", it) }
                     generator.writeEndObject()
                 }
+                generator.writeEndArray()
+            }
+            if (knownCandidateIds.isNotEmpty()) {
+                generator.writeArrayFieldStart("knownCandidateIds")
+                knownCandidateIds.forEach(generator::writeString)
                 generator.writeEndArray()
             }
         }
@@ -258,6 +277,8 @@ object BridgeJsonCodec {
             "curation.page.response" -> readCurationPageResponse(payload)
             "curation.accepted" -> readCurationAccepted(payload)
             "curation.page.accepted" -> readCurationPageAccepted(payload)
+            "dictionary.define" -> readDictionaryDefineRequest(payload)
+            "dictionary.define.result" -> readDictionaryDefineResult(payload)
             "diagnostics.loglevel.set" -> BridgeMessage.DiagnosticsLogLevelSet(logLevel(payload, type))
             "diagnostics.loglevel.applied" -> BridgeMessage.DiagnosticsLogLevelApplied(logLevel(payload, type))
             "job.cancel" -> BridgeMessage.JobCancel(singleRunId(payload, type))
@@ -604,22 +625,99 @@ object BridgeJsonCodec {
     }
 
     private fun readCurationResponse(payload: Map<String, BridgeJsonValue>): BridgeMessage.CurationResponse {
-        requireExact(payload, setOf("runId", "requestId", "selection"), "curation.response")
+        requireExactWithOptional(
+            payload,
+            setOf("runId", "requestId", "selection"),
+            setOf("knownCandidateIds"),
+            "curation.response",
+        )
+        val selections = readSelections(payload.getValue("selection"))
+        val knownCandidateIds = readKnownCandidateIds(payload)
+        requireDisjointSelectionsAndKnownIds(selections, knownCandidateIds)
         return BridgeMessage.CurationResponse(
             runId(payload.getValue("runId")),
             opaque(payload.getValue("requestId"), curationIdPattern, "curation request ID"),
-            readSelections(payload.getValue("selection")),
+            selections,
+            knownCandidateIds,
+        )
+    }
+
+    private fun readDictionaryDefineRequest(
+        payload: Map<String, BridgeJsonValue>,
+    ): BridgeMessage.DictionaryDefineRequest {
+        requireExact(payload, setOf("runId", "term", "fallbackTerm"), "dictionary.define")
+        return BridgeMessage.DictionaryDefineRequest(
+            runId(payload.getValue("runId")),
+            text(payload.getValue("term"), "definition term"),
+            nullableText(payload.getValue("fallbackTerm"), "definition fallback term"),
+        )
+    }
+
+    private fun readDictionaryDefineResult(
+        payload: Map<String, BridgeJsonValue>,
+    ): BridgeMessage.DictionaryDefineResult {
+        requireExact(
+            payload,
+            setOf("runId", "term", "matchedTerm", "entries"),
+            "dictionary.define.result",
+        )
+        return BridgeMessage.DictionaryDefineResult(
+            runId(payload.getValue("runId")),
+            text(payload.getValue("term"), "definition term"),
+            text(payload.getValue("matchedTerm"), "definition matched term"),
+            array(payload.getValue("entries"), "definition entries").map { entry ->
+                val fields = objectValue(entry, "definition entry")
+                requireExact(fields, setOf("source", "html"), "definition entry")
+                DefinitionEntry(
+                    text(fields.getValue("source"), "definition source"),
+                    text(fields.getValue("html"), "definition html"),
+                )
+            },
         )
     }
 
     private fun readCurationPageResponse(payload: Map<String, BridgeJsonValue>): BridgeMessage.CurationPageResponse {
-        requireExact(payload, setOf("runId", "requestId", "pageIndex", "selection"), "curation.page.response")
+        requireExactWithOptional(
+            payload,
+            setOf("runId", "requestId", "pageIndex", "selection"),
+            setOf("knownCandidateIds"),
+            "curation.page.response",
+        )
+        val selections = readSelections(payload.getValue("selection"))
+        val knownCandidateIds = readKnownCandidateIds(payload)
+        requireDisjointSelectionsAndKnownIds(selections, knownCandidateIds)
         return BridgeMessage.CurationPageResponse(
             runId(payload.getValue("runId")),
             opaque(payload.getValue("requestId"), curationIdPattern, "curation request ID"),
             nonNegative(payload.getValue("pageIndex"), "curation page index"),
-            readSelections(payload.getValue("selection")),
+            selections,
+            knownCandidateIds,
         )
+    }
+
+    private fun readKnownCandidateIds(payload: Map<String, BridgeJsonValue>): List<String> {
+        val value = payload["knownCandidateIds"] ?: return emptyList()
+        val ids = array(value, "known candidate IDs").map { opaque(it, candidateIdPattern, "candidate ID") }
+        if (ids.size > CURATION_PAGE_MAX_CANDIDATES) {
+            fail(BridgeProtocolCategory.INVALID_VALUE, "known candidate IDs exceed their candidate limit")
+        }
+        if (ids.toSet().size != ids.size) {
+            fail(BridgeProtocolCategory.INVALID_PAYLOAD, "known candidate IDs contain duplicates")
+        }
+        return ids
+    }
+
+    private fun requireDisjointSelectionsAndKnownIds(
+        selections: List<CurationSelection>?,
+        knownCandidateIds: List<String>,
+    ) {
+        val selectedIds = selections?.mapTo(mutableSetOf()) { it.candidateId }.orEmpty()
+        if (knownCandidateIds.any(selectedIds::contains)) {
+            fail(
+                BridgeProtocolCategory.INVALID_PAYLOAD,
+                "a candidate cannot be both selected and marked known",
+            )
+        }
     }
 
     private fun readSelections(value: BridgeJsonValue): List<CurationSelection>? {
@@ -1204,6 +1302,30 @@ object BridgeJsonCodec {
         }
     }
 
+    private fun validateKnownCandidateIds(
+        request: CurationRequest,
+        selection: List<CurationSelection>?,
+        knownCandidateIds: List<String>,
+    ) {
+        if (knownCandidateIds.size > CURATION_PAGE_MAX_CANDIDATES) {
+            fail(BridgeProtocolCategory.INVALID_VALUE, "known candidate IDs exceed their candidate limit")
+        }
+        if (knownCandidateIds.toSet().size != knownCandidateIds.size) {
+            fail(BridgeProtocolCategory.INVALID_VALUE, "known candidate IDs contain duplicates")
+        }
+        val candidateIds = request.candidates.mapTo(mutableSetOf()) { it.candidateId }
+        if (knownCandidateIds.any { it !in candidateIds }) {
+            fail(BridgeProtocolCategory.STALE_REQUEST, "known candidate IDs name an unknown candidate")
+        }
+        val selectedIds = selection?.mapTo(mutableSetOf()) { it.candidateId }.orEmpty()
+        if (knownCandidateIds.any(selectedIds::contains)) {
+            fail(
+                BridgeProtocolCategory.INVALID_VALUE,
+                "a candidate cannot be both selected and marked known",
+            )
+        }
+    }
+
     private fun identifiers(message: BridgeMessage): Pair<String?, String?> =
         when (message) {
             is BridgeMessage.JobRegistrationRequest -> message.runId to null
@@ -1218,6 +1340,8 @@ object BridgeJsonCodec {
             is BridgeMessage.CurationPageResponse -> message.runId to message.requestId
             is BridgeMessage.CurationAccepted -> message.runId to message.requestId
             is BridgeMessage.CurationPageAccepted -> message.runId to message.requestId
+            is BridgeMessage.DictionaryDefineRequest -> message.runId to null
+            is BridgeMessage.DictionaryDefineResult -> message.runId to null
             is BridgeMessage.JobCancel -> message.runId to null
             is BridgeMessage.JobCancelled -> message.runId to null
             is BridgeMessage.Terminal -> message.runId to null
@@ -1250,6 +1374,24 @@ object BridgeJsonCodec {
         category: BridgeProtocolCategory = BridgeProtocolCategory.INVALID_PAYLOAD,
     ) {
         if (actual.keys != expected) fail(category, "$context has missing or unknown fields")
+    }
+
+    /**
+     * Exact-field validation that additionally tolerates declared optional keys.
+     *
+     * Separate from [requireExact] so strictness for every other message stays untouched.
+     */
+    private fun requireExactWithOptional(
+        actual: Map<String, BridgeJsonValue>,
+        required: Set<String>,
+        optional: Set<String>,
+        context: String,
+        category: BridgeProtocolCategory = BridgeProtocolCategory.INVALID_PAYLOAD,
+    ) {
+        require(required.intersect(optional).isEmpty())
+        if (!actual.keys.containsAll(required) || !(required + optional).containsAll(actual.keys)) {
+            fail(category, "$context has missing or unknown fields")
+        }
     }
 
     private fun objectValue(

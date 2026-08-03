@@ -43,6 +43,7 @@ interface MiningRepository {
         requestId: String,
         selection: List<CurationSelection>,
         pageIndex: Long? = null,
+        knownCandidateIds: List<String> = emptyList(),
     )
 
     /** Cancel the whole run, including a worker parked for curation. */

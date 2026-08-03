@@ -11,6 +11,7 @@ object ReadingMiningTestTags {
     const val START = "reading_start_mining"
     const val PROGRESS = "reading_mining_progress"
     const val SELECT_ALL = "reading_select_all_candidates"
+    const val DEFINITION = "reading_curation_definition"
     const val CONFIRM_CURATION = "reading_confirm_curation"
     const val CANCEL = "reading_cancel_mining"
     const val RETRY = "reading_retry_mining"
@@ -21,6 +22,15 @@ object ReadingMiningTestTags {
 
     fun candidateToggle(candidateId: String): String =
         "reading_candidate_toggle:$candidateId"
+
+    fun candidateKnown(candidateId: String): String =
+        "reading_candidate_known:$candidateId"
+
+    fun candidateCopyWord(candidateId: String): String =
+        "reading_candidate_copy_word:$candidateId"
+
+    fun candidateCopySentence(candidateId: String): String =
+        "reading_candidate_copy_sentence:$candidateId"
 
     fun sentence(
         candidateId: String,

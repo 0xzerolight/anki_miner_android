@@ -13,31 +13,31 @@ SCRIPT = REPO_ROOT / ".github" / "scripts" / "run-api26-instrumentation.sh"
 RESULT_HELPER = REPO_ROOT / "scripts" / "instrumentation-result.sh"
 ANDROID_TEST_ROOT = REPO_ROOT / "app" / "src" / "androidTest"
 EXTERNAL_UNIDIC_TESTS = (
-    "com.ankiminer.android.TokenizerS1aInstrumentedTest" "#externalUniDicMatchesDesktopGoldens",
+    "com.ankiminer.android.TokenizerS1aInstrumentedTest#externalUniDicMatchesDesktopGoldens",
     "com.ankiminer.android.tokenizer.MecabNativeTokenizerInstrumentedTest"
     "#externalUniDicMatchesAllGoldensThroughPythonKotlinAndJni",
 )
 SELECTOR_GATED_TESTS = (
-    "com.ankiminer.android.EngineGoldenV2InstrumentedTest" "#allCompleteSectionsReplayThroughPackagedEngine",
-    "com.ankiminer.android.ReadingGoldenInstrumentedTest"
-    "#desktopReadingSourcesAndMokuroCardReplayThroughPackagedBridge",
-    "com.ankiminer.android.S4EngineSmokeInstrumentedTest" "#pinnedDesktopChainRunsThroughPackagedEngine",
+    "com.ankiminer.android.EngineGoldenV2InstrumentedTest#allCompleteSectionsReplayThroughPackagedEngine",
+    "com.ankiminer.android.ReadingGoldenInstrumentedTest#desktopReadingSourcesAndMokuroCardReplayThroughPackagedBridge",
+    "com.ankiminer.android.S4EngineSmokeInstrumentedTest#pinnedDesktopChainRunsThroughPackagedEngine",
     "com.ankiminer.android.anki.s2.AnkiDroidS2CapabilityInstrumentedTest"
     "#provider_and_android_adapter_complete_the_raw_round_trip",
     "com.ankiminer.android.mining.S5VideoMiningAcceptanceInstrumentedTest"
     "#production_repository_mines_real_media_and_cancels_an_active_ffmpeg_child",
+    "com.ankiminer.android.mining.S5VideoMiningAcceptanceInstrumentedTest#definitionLookupRunsBesideAParkedRun",
 )
 UI_AUDIT_TESTS = (
-    "com.ankiminer.android.uiaudit.UiAuditJankFlowTest" "#curationList200CandidatesScrollsBottomThenTop",
-    "com.ankiminer.android.uiaudit.UiAuditJankFlowTest" "#settingsFullScrollsDownThenUp",
-    "com.ankiminer.android.uiaudit.UiAuditJankFlowTest" "#readingResultsLongListScrollsDownThenUp",
-    "com.ankiminer.android.uiaudit.UiAuditJankFlowTest" "#wizardStepsThroughEveryScreen",
-    "com.ankiminer.android.uiaudit.UiAuditScreenshotTest" "#captureVideoStatesAcrossThemeAndFontScaleMatrix",
-    "com.ankiminer.android.uiaudit.UiAuditScreenshotTest" "#captureReadingStatesAcrossThemeAndFontScaleMatrix",
-    "com.ankiminer.android.uiaudit.UiAuditScreenshotTest" "#captureSettingsStatesAcrossThemeAndFontScaleMatrix",
-    "com.ankiminer.android.uiaudit.UiAuditScreenshotTest" "#captureReadinessActionsAcrossThemeAndFontScaleMatrix",
-    "com.ankiminer.android.uiaudit.UiAuditScreenshotTest" "#captureEveryWizardStepAcrossThemeAndFontScaleMatrix",
-    "com.ankiminer.android.uiaudit.UiAuditScreenshotTest" "#captureAttributionAndNoticesAcrossThemeAndFontScaleMatrix",
+    "com.ankiminer.android.uiaudit.UiAuditJankFlowTest#curationList200CandidatesScrollsBottomThenTop",
+    "com.ankiminer.android.uiaudit.UiAuditJankFlowTest#settingsFullScrollsDownThenUp",
+    "com.ankiminer.android.uiaudit.UiAuditJankFlowTest#readingResultsLongListScrollsDownThenUp",
+    "com.ankiminer.android.uiaudit.UiAuditJankFlowTest#wizardStepsThroughEveryScreen",
+    "com.ankiminer.android.uiaudit.UiAuditScreenshotTest#captureVideoStatesAcrossThemeAndFontScaleMatrix",
+    "com.ankiminer.android.uiaudit.UiAuditScreenshotTest#captureReadingStatesAcrossThemeAndFontScaleMatrix",
+    "com.ankiminer.android.uiaudit.UiAuditScreenshotTest#captureSettingsStatesAcrossThemeAndFontScaleMatrix",
+    "com.ankiminer.android.uiaudit.UiAuditScreenshotTest#captureReadinessActionsAcrossThemeAndFontScaleMatrix",
+    "com.ankiminer.android.uiaudit.UiAuditScreenshotTest#captureEveryWizardStepAcrossThemeAndFontScaleMatrix",
+    "com.ankiminer.android.uiaudit.UiAuditScreenshotTest#captureAttributionAndNoticesAcrossThemeAndFontScaleMatrix",
 )
 UNEXECUTED_TESTS = EXTERNAL_UNIDIC_TESTS + SELECTOR_GATED_TESTS + UI_AUDIT_TESTS
 ASSUMPTION_GATED_TESTS = (
@@ -92,7 +92,7 @@ class Api26InstrumentationScriptTest(unittest.TestCase):
 
             for apk in (
                 root / "app/build/outputs/apk/emulator/debug/app-emulator-debug.apk",
-                root / "app/build/outputs/apk/androidTest/emulator/debug/" "app-emulator-debug-androidTest.apk",
+                root / "app/build/outputs/apk/androidTest/emulator/debug/app-emulator-debug-androidTest.apk",
             ):
                 apk.parent.mkdir(parents=True, exist_ok=True)
                 apk.touch()

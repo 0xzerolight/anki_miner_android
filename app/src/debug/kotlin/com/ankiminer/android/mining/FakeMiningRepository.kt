@@ -36,6 +36,9 @@ internal class FakeMiningRepository(
     internal var confirmedSelection: List<CurationSelection>? = null
         private set
 
+    internal var confirmedKnownCandidateIds: List<String> = emptyList()
+        private set
+
     internal var cancelCount: Int = 0
         private set
 
@@ -67,6 +70,7 @@ internal class FakeMiningRepository(
         activeInput = input
         activeOutcome = terminalOutcomes[((runSequence - 1) % terminalOutcomes.size).toInt()]
         confirmedSelection = null
+        confirmedKnownCandidateIds = emptyList()
         savedCurationSessionState = null
 
         mutableState.value =
@@ -85,6 +89,7 @@ internal class FakeMiningRepository(
         requestId: String,
         selection: List<CurationSelection>,
         pageIndex: Long?,
+        knownCandidateIds: List<String>,
     ) {
         val curating = mutableState.value as? MiningRunState.Curating
             ?: throw MiningCommandException("No curation request is pending")
@@ -108,6 +113,7 @@ internal class FakeMiningRepository(
             throw MiningCommandException("The curation response is stale")
         }
         confirmedSelection = acceptedSelection
+        confirmedKnownCandidateIds = knownCandidateIds.toList()
         val selectedForms =
             acceptedSelection.map { selected ->
                 curating.request.candidates.single { it.candidateId == selected.candidateId }.minedForm

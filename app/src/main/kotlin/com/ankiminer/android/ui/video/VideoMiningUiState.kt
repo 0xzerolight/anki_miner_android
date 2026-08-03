@@ -1,6 +1,7 @@
 package com.ankiminer.android.ui.video
 
 import androidx.compose.runtime.Immutable
+import com.ankiminer.android.dictionary.CurationDefinition
 import com.ankiminer.android.media.SafDocument
 import com.ankiminer.android.mining.CurationCandidate
 import com.ankiminer.android.mining.CurationPage
@@ -33,8 +34,10 @@ data class CurationUiState(
     val selectedCandidateIds: Set<String>,
     val sentenceIds: Map<String, String>,
     val focusedCandidateId: String?,
+    val knownCandidateIds: Set<String> = emptySet(),
     val previousPageSelectedCount: Int = 0,
     val page: CurationPage? = null,
+    val definition: CurationDefinition? = null,
 ) {
     val selectedCount: Int
         get() = selectedCandidateIds.size

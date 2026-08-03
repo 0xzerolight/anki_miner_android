@@ -331,12 +331,18 @@ def _process_reading(
             sentence_audio_fetcher=sentence_audio_fetcher,
         )
         stack.callback(processor.close)
-        result = processor.process_reading(
-            document,
-            progress_callback=adapters.progress,
-            curation_callback=adapters.curate,
-            cancel_event=adapters.cancel_event,
-        )
+        from .definitions import clear_run_dictionaries, register_run_dictionaries
+
+        register_run_dictionaries(adapters.run_id, config)
+        try:
+            result = processor.process_reading(
+                document,
+                progress_callback=adapters.progress,
+                curation_callback=adapters.curate,
+                cancel_event=adapters.cancel_event,
+            )
+        finally:
+            clear_run_dictionaries(adapters.run_id)
     except BaseException:
         try:
             stack.close()

@@ -738,19 +738,25 @@ def _process_episode(
         )
         processor = _build_processor(config, adapters, anki_adapter)
         stack.callback(processor.close)
-        result = processor.process_episode(
-            request.video_path,
-            request.subtitle_path,
-            progress_callback=adapters.progress,
-            curation_callback=adapters.curate,
-            cross_episode_counts=None,
-            episode_name_override=request.episode_name,
-            series_name_override=request.series_name,
-            audio_track_override=request.audio_track_override,
-            source_label_override=request.source_label,
-            audio_only=False,
-            cancel_event=adapters.cancel_event,
-        )
+        from .definitions import clear_run_dictionaries, register_run_dictionaries
+
+        register_run_dictionaries(adapters.run_id, config)
+        try:
+            result = processor.process_episode(
+                request.video_path,
+                request.subtitle_path,
+                progress_callback=adapters.progress,
+                curation_callback=adapters.curate,
+                cross_episode_counts=None,
+                episode_name_override=request.episode_name,
+                series_name_override=request.series_name,
+                audio_track_override=request.audio_track_override,
+                source_label_override=request.source_label,
+                audio_only=False,
+                cancel_event=adapters.cancel_event,
+            )
+        finally:
+            clear_run_dictionaries(adapters.run_id)
     except BaseException:
         try:
             stack.close()

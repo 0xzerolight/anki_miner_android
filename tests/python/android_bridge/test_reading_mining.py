@@ -20,6 +20,13 @@ from android_bridge.jobs import JobRegistry
 from android_bridge.protocol import BridgeProtocolError, decode_envelope, encode_message
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
+LIFECYCLE_RUN_ID = "run_" + "4" * 32
+
+
+def _snapshot_present(run_id: str) -> bool:
+    from android_bridge import definitions
+
+    return definitions._run_configs.get(run_id) is not None
 
 
 @dataclass
@@ -352,6 +359,7 @@ def test_process_reading_receives_exact_desktop_contract_and_cleans_lifo(
 
     adapters = SimpleNamespace(
         anki=anki_callbacks,
+        run_id=LIFECYCLE_RUN_ID,
         cancel_event=cancel_event,
         progress=progress,
         curate=curate,
@@ -416,6 +424,94 @@ def test_process_reading_receives_exact_desktop_contract_and_cleans_lifo(
         "processor-close",
         "adapter-exit",
     ]
+
+
+def _reading_lifecycle_harness(
+    monkeypatch: pytest.MonkeyPatch,
+    processor: object,
+    cancel_event: threading.Event,
+) -> tuple[object, object, object]:
+    class FakeAdapter:
+        def __init__(self, *_: object, **__: object) -> None:
+            pass
+
+        def __enter__(self) -> FakeAdapter:
+            return self
+
+        def __exit__(self, *_: object) -> None:
+            pass
+
+    monkeypatch.setattr(anki_adapter_module, "AndroidAnkiAdapter", FakeAdapter)
+    monkeypatch.setattr(reading_mining, "_build_processor", lambda *_args, **_kwargs: processor)
+    adapters = SimpleNamespace(
+        anki=object(),
+        run_id=LIFECYCLE_RUN_ID,
+        cancel_event=cancel_event,
+        progress=object(),
+        curate=lambda candidates: candidates,
+    )
+    return object(), object(), adapters
+
+
+def test_process_reading_registers_snapshot_during_success_and_clears_after(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    visible: list[bool] = []
+
+    class FakeProcessor:
+        def process_reading(self, *_: object, **__: object) -> str:
+            visible.append(_snapshot_present(LIFECYCLE_RUN_ID))
+            return "result"
+
+        def close(self) -> None:
+            pass
+
+    args = _reading_lifecycle_harness(monkeypatch, FakeProcessor(), threading.Event())
+    assert reading_mining._process_reading(*args) == "result"
+    assert visible == [True]
+    assert not _snapshot_present(LIFECYCLE_RUN_ID)
+
+
+def test_process_reading_clears_snapshot_when_engine_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    visible: list[bool] = []
+
+    class FakeProcessor:
+        def process_reading(self, *_: object, **__: object) -> object:
+            visible.append(_snapshot_present(LIFECYCLE_RUN_ID))
+            raise RuntimeError("engine failed")
+
+        def close(self) -> None:
+            pass
+
+    args = _reading_lifecycle_harness(monkeypatch, FakeProcessor(), threading.Event())
+    with pytest.raises(RuntimeError, match="engine failed"):
+        reading_mining._process_reading(*args)
+    assert visible == [True]
+    assert not _snapshot_present(LIFECYCLE_RUN_ID)
+
+
+def test_process_reading_clears_snapshot_when_processing_is_cancelled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    visible: list[bool] = []
+    cancel_event = threading.Event()
+
+    class FakeProcessor:
+        def process_reading(self, *_: object, **__: object) -> str:
+            visible.append(_snapshot_present(LIFECYCLE_RUN_ID))
+            cancel_event.set()
+            return "cancelled"
+
+        def close(self) -> None:
+            pass
+
+    args = _reading_lifecycle_harness(monkeypatch, FakeProcessor(), cancel_event)
+    assert reading_mining._process_reading(*args) == "cancelled"
+    assert visible == [True]
+    assert cancel_event.is_set()
+    assert not _snapshot_present(LIFECYCLE_RUN_ID)
 
 
 def test_process_reading_injects_only_android_sentence_audio_when_enabled(

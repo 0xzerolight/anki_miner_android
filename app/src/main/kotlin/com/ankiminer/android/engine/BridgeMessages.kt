@@ -75,6 +75,11 @@ data class TokenizerIdentity(
     val totalBytes: Long,
 )
 
+data class DefinitionEntry(
+    val source: String,
+    val html: String,
+)
+
 data class TerminalError(
     val code: String,
     val message: String,
@@ -144,6 +149,19 @@ sealed interface BridgeMessage {
 
     data class TokenizerReady(val identity: TokenizerIdentity) : BridgeMessage
 
+    data class DictionaryDefineRequest(
+        val runId: String,
+        val term: String,
+        val fallbackTerm: String?,
+    ) : BridgeMessage
+
+    data class DictionaryDefineResult(
+        val runId: String,
+        val term: String,
+        val matchedTerm: String,
+        val entries: List<DefinitionEntry>,
+    ) : BridgeMessage
+
     data class Error(
         val code: String,
         val message: String,
@@ -195,6 +213,7 @@ sealed interface BridgeMessage {
         val runId: String,
         val requestId: String,
         val selection: List<com.ankiminer.android.mining.CurationSelection>?,
+        val knownCandidateIds: List<String> = emptyList(),
     ) : BridgeMessage
 
     data class CurationPageResponse(
@@ -202,6 +221,7 @@ sealed interface BridgeMessage {
         val requestId: String,
         val pageIndex: Long,
         val selection: List<com.ankiminer.android.mining.CurationSelection>?,
+        val knownCandidateIds: List<String> = emptyList(),
     ) : BridgeMessage
 
     data class CurationAccepted(

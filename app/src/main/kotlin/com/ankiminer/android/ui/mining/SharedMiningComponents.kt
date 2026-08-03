@@ -1,6 +1,8 @@
 package com.ankiminer.android.ui.mining
 
 import android.content.ClipData
+import android.os.Build
+import android.widget.Toast
 import androidx.annotation.StringRes
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -10,6 +12,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -81,6 +84,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import com.ankiminer.android.R
+import com.ankiminer.android.dictionary.CurationDefinition
 import com.ankiminer.android.localization.byteProgressResource
 import com.ankiminer.android.media.SafDocument
 import com.ankiminer.android.mining.CurationCandidate
@@ -89,6 +93,7 @@ import com.ankiminer.android.mining.CurationSentence
 import com.ankiminer.android.mining.MiningProgress
 import com.ankiminer.android.mining.MiningProgressUnit
 import com.ankiminer.android.mining.ProcessingResult
+import com.ankiminer.android.ui.settings.DictionaryHtml
 import com.ankiminer.android.ui.theme.AdaptiveActionGroup
 import com.ankiminer.android.ui.theme.AdaptivePairedActions
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
@@ -853,6 +858,7 @@ internal fun CurationCandidateHeader(
     expanded: Boolean,
     animateSelection: Boolean,
     enabled: Boolean,
+    toggleEnabled: Boolean,
     candidateTestTag: String,
     toggleTestTag: String,
     onFocus: () -> Unit,
@@ -907,7 +913,7 @@ internal fun CurationCandidateHeader(
             Checkbox(
                 checked = selected,
                 onCheckedChange = onToggle,
-                enabled = enabled,
+                enabled = toggleEnabled,
                 modifier =
                     Modifier
                         .minimumInteractiveComponentSize()
@@ -924,6 +930,133 @@ internal fun CurationCandidateHeader(
             )
         }
     }
+}
+
+@Composable
+internal fun CurationRowActions(
+    known: Boolean,
+    enabled: Boolean,
+    knownTestTag: String,
+    copyWordTestTag: String,
+    copySentenceTestTag: String,
+    onToggleKnown: (Boolean) -> Unit,
+    onCopyWord: () -> Unit,
+    onCopySentence: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+    ) {
+        Column {
+            HorizontalDivider()
+            FlowRow(
+                modifier =
+                    Modifier.fillMaxWidth().padding(
+                        horizontal = AnkiMinerTokens.Space.group,
+                        vertical = AnkiMinerTokens.Space.line,
+                    ),
+                horizontalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
+            ) {
+                TextButton(
+                    onClick = { onToggleKnown(!known) },
+                    enabled = enabled,
+                    modifier = Modifier.heightIn(min = 48.dp).testTag(knownTestTag),
+                ) {
+                    Text(
+                        stringResource(
+                            if (known) {
+                                R.string.curation_known_pending
+                            } else {
+                                R.string.curation_add_known
+                            },
+                        ),
+                    )
+                }
+                TextButton(
+                    onClick = onCopyWord,
+                    enabled = enabled,
+                    modifier = Modifier.heightIn(min = 48.dp).testTag(copyWordTestTag),
+                ) {
+                    Text(stringResource(R.string.curation_copy_word))
+                }
+                TextButton(
+                    onClick = onCopySentence,
+                    enabled = enabled,
+                    modifier = Modifier.heightIn(min = 48.dp).testTag(copySentenceTestTag),
+                ) {
+                    Text(stringResource(R.string.curation_copy_sentence))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+internal fun CurationDefinitionPane(
+    definition: CurationDefinition,
+    term: String,
+    testTag: String,
+) {
+    Surface(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .testTag(testTag),
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        shape = RoundedCornerShape(0.dp),
+    ) {
+        Column {
+            HorizontalDivider()
+            when (definition) {
+                CurationDefinition.Loading -> DefinitionNotice(R.string.definition_loading)
+                CurationDefinition.Missing -> DefinitionNotice(R.string.definition_missing)
+                CurationDefinition.Unavailable ->
+                    DefinitionNotice(R.string.definition_unavailable)
+                is CurationDefinition.Loaded -> {
+                    if (definition.matchedTerm != term) {
+                        Text(
+                            text =
+                                stringResource(
+                                    R.string.definition_fallback,
+                                    term,
+                                    definition.matchedTerm,
+                                ),
+                            modifier =
+                                Modifier.padding(
+                                    horizontal = AnkiMinerTokens.Space.group,
+                                    vertical = AnkiMinerTokens.Space.line,
+                                ),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    DictionaryHtml(
+                        html = definition.entries.joinToString(separator = "\n") { it.html },
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 96.dp, max = 260.dp)
+                                .padding(horizontal = AnkiMinerTokens.Space.group),
+                        updateKey = definition.matchedTerm,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DefinitionNotice(
+    @StringRes text: Int,
+) {
+    Text(
+        text = stringResource(text),
+        modifier = Modifier.padding(AnkiMinerTokens.Space.group),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
 }
 
 @Composable
@@ -1298,22 +1431,34 @@ private fun CopyDiagnosticsButton(
     modifier: Modifier = Modifier,
     colors: androidx.compose.material3.ButtonColors = ButtonDefaults.textButtonColors(),
 ) {
-    val clipboard = LocalClipboard.current
-    val scope = rememberCoroutineScope()
+    val copy = rememberClipboardWriter()
     TextButton(
-        onClick = {
-            scope.launch {
-                clipboard.setClipEntry(
-                    ClipEntry(
-                        ClipData.newPlainText("Anki Miner diagnostics", diagnostics),
-                    ),
-                )
-            }
-        },
+        onClick = { copy("Anki Miner diagnostics", diagnostics, null) },
         modifier = modifier,
         colors = colors,
     ) {
         Text(stringResource(R.string.copy_diagnostics))
+    }
+}
+
+/**
+ * The single clipboard writer in the app. [confirmation] is shown only below API 33, where the
+ * system provides no clipboard confirmation of its own; on 33+ an app toast would duplicate it.
+ */
+@Composable
+internal fun rememberClipboardWriter(): (label: String, text: String, confirmation: String?) -> Unit {
+    val clipboard = LocalClipboard.current
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    return remember(clipboard, context, scope) {
+        { label, text, confirmation ->
+            scope.launch {
+                clipboard.setClipEntry(ClipEntry(ClipData.newPlainText(label, text)))
+                if (confirmation != null && Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+                    Toast.makeText(context, confirmation, Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
     }
 }
 

@@ -3,8 +3,13 @@ package com.ankiminer.android.vm
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
+import androidx.lifecycle.viewmodel.CreationExtras
 import com.ankiminer.android.MainDispatcherRule
 import com.ankiminer.android.data.RuntimeWorkCoordinator
+import com.ankiminer.android.dictionary.CurationDefinition
+import com.ankiminer.android.dictionary.DefinitionLookupService
+import com.ankiminer.android.dictionary.DefinitionResult
+import com.ankiminer.android.engine.DefinitionEntry
 import com.ankiminer.android.media.AndroidSafBroker
 import com.ankiminer.android.media.ProviderIoCancellation
 import com.ankiminer.android.media.SafAccessException
@@ -39,11 +44,15 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -53,6 +62,163 @@ import org.junit.Test
 class ReadingMiningViewModelTest {
     @get:Rule
     val mainDispatcherRule = MainDispatcherRule()
+
+    @Test
+    fun focusingACandidateLooksUpItsDefinition() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository = RecordingReadingRepository()
+            val lookups = mutableListOf<Triple<String, String, String?>>()
+            val lookup =
+                DefinitionLookupService { runId, term, fallback ->
+                    lookups += Triple(runId, term, fallback)
+                    Result.success(
+                        DefinitionResult(
+                            term,
+                            term,
+                            listOf(DefinitionEntry("Jitendex", "<div/>")),
+                        ),
+                    )
+                }
+            val viewModel =
+                ReadingMiningViewModel(
+                    repository,
+                    ImmediateSafBroker(),
+                    definitionLookup = lookup,
+                )
+            val original = curationRequest(page = null)
+            val request =
+                original.copy(
+                    candidates =
+                        original.candidates.map { candidate ->
+                            candidate.copy(minedForm = "殺る", lemma = "遣る")
+                        },
+                )
+            repository.transitionTo(MiningRunState.Curating(request))
+            val collection =
+                backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+                    viewModel.uiState.collect {}
+                }
+
+            advanceUntilIdle()
+
+            assertEquals(1, lookups.size)
+            assertEquals(request.runId, lookups.single().first)
+            assertEquals(request.candidates.first().minedForm, lookups.single().second)
+            assertEquals(request.candidates.first().lemma, lookups.single().third)
+            assertEquals(
+                CurationDefinition.Loaded(
+                    request.candidates.first().minedForm,
+                    listOf(DefinitionEntry("Jitendex", "<div/>")),
+                ),
+                viewModel.uiState.value.curation?.definition,
+            )
+            collection.cancel()
+        }
+
+    @Test
+    fun anEmptyDefinitionResultIsARealMiss() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository = RecordingReadingRepository()
+            val lookup =
+                DefinitionLookupService { _, term, _ ->
+                    Result.success(DefinitionResult(term, term, emptyList()))
+                }
+            val viewModel =
+                ReadingMiningViewModel(
+                    repository,
+                    ImmediateSafBroker(),
+                    definitionLookup = lookup,
+                )
+            repository.transitionTo(MiningRunState.Curating(curationRequest(page = null)))
+            val collection =
+                backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+                    viewModel.uiState.collect {}
+                }
+
+            advanceUntilIdle()
+
+            assertEquals(CurationDefinition.Missing, viewModel.uiState.value.curation?.definition)
+            collection.cancel()
+        }
+
+    @Test
+    fun aFailedDefinitionLookupDegradesToUnavailable() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository = RecordingReadingRepository()
+            val lookup =
+                DefinitionLookupService { _, _, _ ->
+                    Result.failure(IllegalStateException("boom"))
+                }
+            val viewModel =
+                ReadingMiningViewModel(
+                    repository,
+                    ImmediateSafBroker(),
+                    definitionLookup = lookup,
+                )
+            repository.transitionTo(MiningRunState.Curating(curationRequest(page = null)))
+            val collection =
+                backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+                    viewModel.uiState.collect {}
+                }
+
+            advanceUntilIdle()
+
+            assertEquals(
+                CurationDefinition.Unavailable,
+                viewModel.uiState.value.curation?.definition,
+            )
+            collection.cancel()
+        }
+
+    @Test
+    fun aTerminalRunClearsTheDefinitionAndUnblocksTheNextRun() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository = RecordingReadingRepository()
+            val lookups = mutableListOf<String>()
+            val lookup =
+                DefinitionLookupService { _, term, _ ->
+                    lookups += term
+                    Result.success(DefinitionResult(term, term, emptyList()))
+                }
+            val viewModel =
+                ReadingMiningViewModel(
+                    repository,
+                    ImmediateSafBroker(),
+                    definitionLookup = lookup,
+                )
+            val collection =
+                backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+                    viewModel.uiState.collect {}
+                }
+
+            repository.transitionTo(MiningRunState.Curating(curationRequest(page = null)))
+            advanceUntilIdle()
+            repository.transitionTo(MiningRunState.Idle)
+            advanceUntilIdle()
+            assertNull(viewModel.uiState.value.curation)
+            repository.transitionTo(MiningRunState.Curating(curationRequest(page = null)))
+            advanceUntilIdle()
+
+            assertEquals(2, lookups.size)
+            collection.cancel()
+        }
+
+    @Test
+    fun productionFactoryPassesTheDefinitionLookup() {
+        val lookup =
+            DefinitionLookupService { _, term, _ ->
+                Result.success(DefinitionResult(term, term, emptyList()))
+            }
+        val factory =
+            ReadingMiningViewModel.Factory(
+                repository = RecordingReadingRepository(),
+                safBroker = ImmediateSafBroker(),
+                definitionLookup = lookup,
+                savedStateHandleFactory = { SavedStateHandle() },
+            )
+
+        assertNotNull(factory.create(ReadingMiningViewModel::class.java, CreationExtras.Empty))
+    }
 
     @Test
     fun savedMokuroPairRestoresSequentiallyAndRevalidatesBothUris() =
@@ -641,6 +807,38 @@ class ReadingMiningViewModelTest {
         }
 
     @Test
+    fun confirmingSendsTheStagedKnownMarks() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val request = curationRequest(page = null)
+            val repository = RecordingReadingRepository(MiningRunState.Curating(request))
+            val viewModel = ReadingMiningViewModel(repository, ImmediateSafBroker())
+            runCurrent()
+            val candidateId = request.candidates.first().candidateId
+
+            viewModel.markCandidateKnown(candidateId, known = true)
+            viewModel.confirmCuration()
+            runCurrent()
+
+            assertEquals(listOf(candidateId), repository.confirmedKnownCandidateIds)
+            assertTrue(repository.confirmedSelection.orEmpty().none { it.candidateId == candidateId })
+        }
+
+    @Test
+    fun cancellingDiscardsTheStagedKnownMarks() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val request = curationRequest(page = null)
+            val repository = RecordingReadingRepository(MiningRunState.Curating(request))
+            val viewModel = ReadingMiningViewModel(repository, ImmediateSafBroker())
+            runCurrent()
+
+            viewModel.markCandidateKnown(request.candidates.first().candidateId, known = true)
+            viewModel.cancel()
+            runCurrent()
+
+            assertTrue(repository.confirmedKnownCandidateIds.isEmpty())
+        }
+
+    @Test
     fun teardownTransfersBothPairGrantsToMatchingProcessRun() =
         runTest(mainDispatcherRule.dispatcher) {
             val repository = RecordingReadingRepository(detachResult = true)
@@ -915,6 +1113,8 @@ class ReadingMiningViewModelTest {
             private set
         var confirmedSelection: List<CurationSelection>? = null
             private set
+        var confirmedKnownCandidateIds: List<String> = emptyList()
+            private set
 
         override fun curationSessionState(): CurationSessionState? = savedCurationSessionState
 
@@ -947,9 +1147,11 @@ class ReadingMiningViewModelTest {
             requestId: String,
             selection: List<CurationSelection>,
             pageIndex: Long?,
+            knownCandidateIds: List<String>,
         ) {
             confirmedPageIndex = pageIndex
             confirmedSelection = selection
+            confirmedKnownCandidateIds = knownCandidateIds
             confirmGate?.await()
             if (mutableState.value is MiningRunState.Curating) {
                 mutableState.value = MiningRunState.Running(runId, MiningProgress(0, 0, "Running"))
@@ -992,10 +1194,16 @@ class ReadingMiningViewModelTest {
         ReadingMiningViewModel.Factory(
             repository = repository,
             safBroker = broker,
+            definitionLookup = NO_DEFINITION_LOOKUP,
             savedStateHandleFactory = { SavedStateHandle() },
         )
 
     private companion object {
+        val NO_DEFINITION_LOOKUP =
+            DefinitionLookupService { _, term, _ ->
+                Result.success(DefinitionResult(term, term, emptyList()))
+            }
+
         fun document(
             uri: String,
             displayName: String,

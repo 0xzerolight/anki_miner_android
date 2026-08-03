@@ -3,13 +3,18 @@ package com.ankiminer.android.vm
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
+import androidx.lifecycle.viewmodel.CreationExtras
 import com.ankiminer.android.MainDispatcherRule
 import com.ankiminer.android.data.RuntimeWorkCoordinator
+import com.ankiminer.android.dictionary.CurationDefinition
+import com.ankiminer.android.dictionary.DefinitionLookupService
+import com.ankiminer.android.dictionary.DefinitionResult
 import com.ankiminer.android.diagnostics.TesterDiagnosticsShareAction
 import com.ankiminer.android.diagnostics.log.AppLog
 import com.ankiminer.android.diagnostics.log.LogLevel
 import com.ankiminer.android.diagnostics.log.NoOpSink
 import com.ankiminer.android.diagnostics.log.RecordingLogSink
+import com.ankiminer.android.engine.DefinitionEntry
 import com.ankiminer.android.media.SafAccessException
 import com.ankiminer.android.media.SafAccessFailureKind
 import com.ankiminer.android.media.SafBroker
@@ -19,6 +24,7 @@ import com.ankiminer.android.media.SafSelectionInventory
 import com.ankiminer.android.media.SafSelectionPersistenceException
 import com.ankiminer.android.media.SafSelectionSlot
 import com.ankiminer.android.media.TransientSafSelectionInventory
+import com.ankiminer.android.mining.AnkiWriteState
 import com.ankiminer.android.mining.CurationCandidate
 import com.ankiminer.android.mining.CurationPage
 import com.ankiminer.android.mining.CurationRequest
@@ -27,7 +33,6 @@ import com.ankiminer.android.mining.CurationSentence
 import com.ankiminer.android.mining.CurationSessionState
 import com.ankiminer.android.mining.FakeMiningRepository
 import com.ankiminer.android.mining.MiningFailure
-import com.ankiminer.android.mining.AnkiWriteState
 import com.ankiminer.android.mining.MiningProgress
 import com.ankiminer.android.mining.MiningRepository
 import com.ankiminer.android.mining.MiningRunState
@@ -51,6 +56,7 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -60,6 +66,163 @@ import org.junit.Test
 class VideoMiningViewModelTest {
     @get:Rule
     val mainDispatcherRule = MainDispatcherRule()
+
+    @Test
+    fun focusingACandidateLooksUpItsDefinition() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository = RecordingRepository()
+            val lookups = mutableListOf<Triple<String, String, String?>>()
+            val lookup =
+                DefinitionLookupService { runId, term, fallback ->
+                    lookups += Triple(runId, term, fallback)
+                    Result.success(
+                        DefinitionResult(
+                            term,
+                            term,
+                            listOf(DefinitionEntry("Jitendex", "<div/>")),
+                        ),
+                    )
+                }
+            val viewModel =
+                VideoMiningViewModel(
+                    repository,
+                    ImmediateSafBroker(),
+                    definitionLookup = lookup,
+                )
+            val original = curationRequest()
+            val request =
+                original.copy(
+                    candidates =
+                        original.candidates.map { candidate ->
+                            candidate.copy(minedForm = "殺る", lemma = "遣る")
+                        },
+                )
+            repository.transitionTo(MiningRunState.Curating(request))
+            val collection =
+                backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+                    viewModel.uiState.collect {}
+                }
+
+            advanceUntilIdle()
+
+            assertEquals(1, lookups.size)
+            assertEquals(request.runId, lookups.single().first)
+            assertEquals(request.candidates.first().minedForm, lookups.single().second)
+            assertEquals(request.candidates.first().lemma, lookups.single().third)
+            assertEquals(
+                CurationDefinition.Loaded(
+                    request.candidates.first().minedForm,
+                    listOf(DefinitionEntry("Jitendex", "<div/>")),
+                ),
+                viewModel.uiState.value.curation?.definition,
+            )
+            collection.cancel()
+        }
+
+    @Test
+    fun anEmptyDefinitionResultIsARealMiss() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository = RecordingRepository()
+            val lookup =
+                DefinitionLookupService { _, term, _ ->
+                    Result.success(DefinitionResult(term, term, emptyList()))
+                }
+            val viewModel =
+                VideoMiningViewModel(
+                    repository,
+                    ImmediateSafBroker(),
+                    definitionLookup = lookup,
+                )
+            repository.transitionTo(MiningRunState.Curating(curationRequest()))
+            val collection =
+                backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+                    viewModel.uiState.collect {}
+                }
+
+            advanceUntilIdle()
+
+            assertEquals(CurationDefinition.Missing, viewModel.uiState.value.curation?.definition)
+            collection.cancel()
+        }
+
+    @Test
+    fun aFailedDefinitionLookupDegradesToUnavailable() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository = RecordingRepository()
+            val lookup =
+                DefinitionLookupService { _, _, _ ->
+                    Result.failure(IllegalStateException("boom"))
+                }
+            val viewModel =
+                VideoMiningViewModel(
+                    repository,
+                    ImmediateSafBroker(),
+                    definitionLookup = lookup,
+                )
+            repository.transitionTo(MiningRunState.Curating(curationRequest()))
+            val collection =
+                backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+                    viewModel.uiState.collect {}
+                }
+
+            advanceUntilIdle()
+
+            assertEquals(
+                CurationDefinition.Unavailable,
+                viewModel.uiState.value.curation?.definition,
+            )
+            collection.cancel()
+        }
+
+    @Test
+    fun aTerminalRunClearsTheDefinitionAndUnblocksTheNextRun() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository = RecordingRepository()
+            val lookups = mutableListOf<String>()
+            val lookup =
+                DefinitionLookupService { _, term, _ ->
+                    lookups += term
+                    Result.success(DefinitionResult(term, term, emptyList()))
+                }
+            val viewModel =
+                VideoMiningViewModel(
+                    repository,
+                    ImmediateSafBroker(),
+                    definitionLookup = lookup,
+                )
+            val collection =
+                backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+                    viewModel.uiState.collect {}
+                }
+
+            repository.transitionTo(MiningRunState.Curating(curationRequest()))
+            advanceUntilIdle()
+            repository.transitionTo(MiningRunState.Idle)
+            advanceUntilIdle()
+            assertNull(viewModel.uiState.value.curation)
+            repository.transitionTo(MiningRunState.Curating(curationRequest()))
+            advanceUntilIdle()
+
+            assertEquals(2, lookups.size)
+            collection.cancel()
+        }
+
+    @Test
+    fun productionFactoryPassesTheDefinitionLookup() {
+        val lookup =
+            DefinitionLookupService { _, term, _ ->
+                Result.success(DefinitionResult(term, term, emptyList()))
+            }
+        val factory =
+            VideoMiningViewModel.Factory(
+                repository = RecordingRepository(),
+                safBroker = ImmediateSafBroker(),
+                definitionLookup = lookup,
+                savedStateHandleFactory = { SavedStateHandle() },
+            )
+
+        assertNotNull(factory.create(VideoMiningViewModel::class.java, CreationExtras.Empty))
+    }
 
     @Test
     fun navigationWorkflowIgnoresFineGrainedProgressUpdates() =
@@ -373,6 +536,38 @@ class VideoMiningViewModelTest {
             assertEquals(emptyList<CurationSelection>(), repository.confirmedSelection)
             assertEquals(0L, (repository.state.value as MiningRunState.Success).result.cardsCreated)
             assertEquals(0, repository.cancelCount)
+        }
+
+    @Test
+    fun confirmingSendsTheStagedKnownMarks() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val request = curationRequest()
+            val repository = RecordingRepository(MiningRunState.Curating(request))
+            val viewModel = VideoMiningViewModel(repository, ImmediateSafBroker())
+            runCurrent()
+            val candidateId = request.candidates.first().candidateId
+
+            viewModel.markCandidateKnown(candidateId, known = true)
+            viewModel.confirmCuration()
+            runCurrent()
+
+            assertEquals(listOf(candidateId), repository.confirmedKnownCandidateIds)
+            assertTrue(repository.confirmedSelection.orEmpty().none { it.candidateId == candidateId })
+        }
+
+    @Test
+    fun cancellingDiscardsTheStagedKnownMarks() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val request = curationRequest()
+            val repository = RecordingRepository(MiningRunState.Curating(request))
+            val viewModel = VideoMiningViewModel(repository, ImmediateSafBroker())
+            runCurrent()
+
+            viewModel.markCandidateKnown(request.candidates.first().candidateId, known = true)
+            viewModel.cancel()
+            runCurrent()
+
+            assertTrue(repository.confirmedKnownCandidateIds.isEmpty())
         }
 
     @Test
@@ -1002,6 +1197,7 @@ class VideoMiningViewModelTest {
         VideoMiningViewModel.Factory(
             repository = repository,
             safBroker = broker,
+            definitionLookup = NO_DEFINITION_LOOKUP,
             savedStateHandleFactory = { SavedStateHandle() },
         )
 
@@ -1123,6 +1319,8 @@ class VideoMiningViewModelTest {
             private set
         var confirmedSelection: List<CurationSelection>? = null
             private set
+        var confirmedKnownCandidateIds: List<String> = emptyList()
+            private set
         val detachedInputs = mutableListOf<VideoMiningInput>()
 
         override fun curationSessionState(): CurationSessionState? = savedCurationSessionState
@@ -1157,10 +1355,12 @@ class VideoMiningViewModelTest {
             requestId: String,
             selection: List<CurationSelection>,
             pageIndex: Long?,
+            knownCandidateIds: List<String>,
         ) {
             confirmCalls += 1
             confirmedPageIndex = pageIndex
             confirmedSelection = selection
+            confirmedKnownCandidateIds = knownCandidateIds
             confirmGate?.await()
             if (mutableState.value is MiningRunState.Curating) {
                 mutableState.value =
@@ -1188,6 +1388,11 @@ class VideoMiningViewModelTest {
     }
 
     private companion object {
+        val NO_DEFINITION_LOOKUP =
+            DefinitionLookupService { _, term, _ ->
+                Result.success(DefinitionResult(term, term, emptyList()))
+            }
+
         fun document(
             uri: String,
             displayName: String,

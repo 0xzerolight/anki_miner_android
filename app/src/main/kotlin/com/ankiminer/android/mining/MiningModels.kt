@@ -239,6 +239,7 @@ data class CurationSessionState(
     val sentenceIds: Map<String, String>,
     val focusedCandidateId: String?,
     val previousPageSelectedCount: Int,
+    val knownCandidateIds: Set<String> = emptySet(),
 ) {
     init {
         require(runId.isNotBlank())

@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 import re
 import threading
 import uuid
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, cast
 
 from . import log_context
@@ -25,10 +27,27 @@ CURATION_PAGE_MAX_CANDIDATES = 100
 CURATION_PAGE_MAX_UTF8_BYTES = 512 * 1024
 _MAX_CURATED_SOURCE_ITEMS = ANKI_LIMITS_V1["createCall"]["maxSourceItems"]
 _CURATION_CANCELLATION_POLL_SECONDS = 0.05
+logger = logging.getLogger(__name__)
 
 
 def _reject(code: str, message: str) -> BridgeProtocolError:
     return BridgeProtocolError(code, message)
+
+
+def _known_words_db_path() -> Path:
+    """Mirror ``config_map``'s fixed known-words location."""
+
+    from .bootstrap import require_initialized
+
+    return Path(require_initialized()) / "known_words.db"
+
+
+def _write_user_known_words(db_path: Path, forms: set[str]) -> int:
+    """Module-level seam over the engine helper, imported after bootstrap."""
+
+    from anki_miner.services.known_word_db import add_user_known_words
+
+    return add_user_known_words(db_path, forms)
 
 
 @dataclass(frozen=True)
@@ -71,6 +90,7 @@ class _CurationGate:
     cancelled: bool = False
     failure: BridgeProtocolError | None = None
     selected: list[object] = field(default_factory=list)
+    known_forms: set[str] = field(default_factory=set)
 
     @property
     def paged(self) -> bool:
@@ -140,16 +160,23 @@ def _candidate_ref(word: object) -> _CandidateRef:
     )
 
 
+def _candidate_mined_form(reference: _CandidateRef) -> str:
+    word = reference.original
+    return _as_string(
+        getattr(word, "mined_form", None),
+        fallback=_as_string(getattr(word, "lemma", "")),
+    )
+
+
 def _candidate_payload_from_ref(candidate_id: str, reference: _CandidateRef) -> dict[str, Any]:
     word = reference.original
     sentence_payloads = [
         _sentence_payload(sentence_id, sentence) for sentence_id, sentence in reference.sentences.items()
     ]
 
-    mined_form = getattr(word, "mined_form", None)
     return {
         "candidateId": candidate_id,
-        "minedForm": _as_string(mined_form, fallback=_as_string(getattr(word, "lemma", ""))),
+        "minedForm": _candidate_mined_form(reference),
         "surface": _as_string(getattr(word, "surface", "")),
         "lemma": _as_string(getattr(word, "lemma", "")),
         "reading": _as_string(getattr(word, "reading", "")),
@@ -572,7 +599,7 @@ class JobRegistry:
         expected_fields = (
             {"runId", "requestId", "pageIndex", "selection"} if paged_response else {"runId", "requestId", "selection"}
         )
-        if set(payload) != expected_fields:
+        if set(payload) - {"knownCandidateIds"} != expected_fields:
             raise _reject("invalid_curation_response", "Curation response fields are invalid")
         run_id = payload["runId"]
         request_id = payload["requestId"]
@@ -632,13 +659,26 @@ class JobRegistry:
                     set(gate.pages[gate.page_index].candidate_ids) if gate.paged else set(gate.candidates)
                 )
                 resolved = self._resolve_selection(gate, selection, allowed_candidate_ids)
+                new_forms = self._known_forms(gate, payload, selection, allowed_candidate_ids)
                 if len(gate.selected) + len(resolved) > _MAX_CURATED_SOURCE_ITEMS:
                     gate.failure = BridgeProtocolError(
                         "create_call_too_large",
                         "The create call contains too many source cards",
                     )
                 else:
-                    gate.selected.extend(resolved)
+                    pending_forms = gate.known_forms | new_forms
+                    if gate.final_page and pending_forms:
+                        try:
+                            _write_user_known_words(_known_words_db_path(), pending_forms)
+                        except Exception as error:
+                            gate.failure = BridgeProtocolError(
+                                "known_words_write_failed",
+                                "Could not save the known words",
+                            )
+                            logger.warning("Known-words commit failed: %s", error, exc_info=error)
+                    if gate.failure is None:
+                        gate.selected.extend(resolved)
+                        gate.known_forms = set() if gate.final_page else pending_forms
             else:
                 raise _reject("invalid_curation_response", "selection must be null or an array")
 
@@ -650,6 +690,48 @@ class JobRegistry:
                 page_index=gate.page_index if gate.paged else None,
                 final_page=final_page,
             )
+
+    @staticmethod
+    def _known_forms(
+        gate: _CurationGate,
+        payload: Mapping[str, object],
+        selection: list[object],
+        allowed_candidate_ids: set[str],
+    ) -> set[str]:
+        """Return marked mined forms for this page without mutating the gate."""
+
+        known_ids = payload.get("knownCandidateIds", [])
+        if not isinstance(known_ids, list):
+            raise _reject("invalid_curation_response", "knownCandidateIds must be an array")
+        if any(not isinstance(raw, str) for raw in known_ids):
+            raise _reject(
+                "invalid_curation_response",
+                "knownCandidateIds must contain strings",
+            )
+        if len(known_ids) != len(set(known_ids)):
+            raise _reject(
+                "invalid_curation_response",
+                "knownCandidateIds contains duplicates",
+            )
+        selected_ids = {
+            chosen["candidateId"]
+            for chosen in selection
+            if isinstance(chosen, dict) and isinstance(chosen.get("candidateId"), str)
+        }
+        forms: set[str] = set()
+        for raw in known_ids:
+            if raw not in allowed_candidate_ids:
+                raise _reject(
+                    "invalid_curation_response",
+                    "knownCandidateIds contains an unknown candidate",
+                )
+            if raw in selected_ids:
+                raise _reject(
+                    "invalid_curation_response",
+                    "A candidate cannot be both selected and marked known",
+                )
+            forms.add(_candidate_mined_form(gate.candidates[raw]))
+        return forms
 
     @staticmethod
     def _resolve_selection(

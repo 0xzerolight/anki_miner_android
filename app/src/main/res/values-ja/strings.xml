@@ -50,6 +50,16 @@
     <string name="curation_select_whole_page">このページの%1$d件をすべて選択</string>
     <string name="curation_include_word">%1$sを含める</string>
     <string name="curation_exclude_word">%1$sを除外</string>
+    <string name="curation_add_known">既知の単語に追加</string>
+    <string name="curation_known_pending">既知・保留中</string>
+    <string name="curation_copy_word">単語をコピー</string>
+    <string name="curation_copy_sentence">例文をコピー</string>
+    <string name="curation_copied_word">単語をコピーしました</string>
+    <string name="curation_copied_sentence">例文をコピーしました</string>
+    <string name="definition_loading">検索中…</string>
+    <string name="definition_missing">オフライン辞書に項目がありません</string>
+    <string name="definition_unavailable">辞書検索を利用できません</string>
+    <string name="definition_fallback">%1$sの項目がないため、%2$sを表示しています</string>
     <string name="confirm_curation">続行（%1$d）</string>
     <string name="confirm_curation_page">次へ（%1$d）</string>
     <string name="confirm_curation_final_page">完了（%1$d）</string>

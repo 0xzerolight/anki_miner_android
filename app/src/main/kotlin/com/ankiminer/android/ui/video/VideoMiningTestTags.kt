@@ -10,6 +10,7 @@ object VideoMiningTestTags {
     const val START = "start_mining"
     const val PROGRESS = "mining_progress"
     const val SELECT_ALL = "select_all_candidates"
+    const val DEFINITION = "curation_definition"
     const val CONFIRM_CURATION = "confirm_curation"
     const val CANCEL = "cancel_mining"
     const val RETRY = "retry_mining"
@@ -19,6 +20,13 @@ object VideoMiningTestTags {
     fun candidate(candidateId: String): String = "candidate:$candidateId"
 
     fun candidateToggle(candidateId: String): String = "candidate_toggle:$candidateId"
+
+    fun candidateKnown(candidateId: String): String = "candidate_known:$candidateId"
+
+    fun candidateCopyWord(candidateId: String): String = "candidate_copy_word:$candidateId"
+
+    fun candidateCopySentence(candidateId: String): String =
+        "candidate_copy_sentence:$candidateId"
 
     fun sentence(
         candidateId: String,

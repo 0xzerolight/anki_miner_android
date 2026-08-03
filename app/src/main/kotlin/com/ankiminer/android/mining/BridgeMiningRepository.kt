@@ -255,6 +255,7 @@ internal class BridgeMiningRepository(
         requestId: String,
         selection: List<CurationSelection>,
         pageIndex: Long?,
+        knownCandidateIds: List<String>,
     ) {
         val request =
             synchronized(monitor) {
@@ -272,7 +273,7 @@ internal class BridgeMiningRepository(
             }
         val rawResponse =
             try {
-                BridgeJsonCodec.encodeCurationResponse(request, selection)
+                BridgeJsonCodec.encodeCurationResponse(request, selection, knownCandidateIds)
             } catch (_: RuntimeException) {
                 throw MiningCommandException("The curation selection is invalid")
             }

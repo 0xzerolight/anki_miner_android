@@ -19,11 +19,18 @@ import com.ankiminer.android.anki.provider.NoteTypeSetupStatus
 import com.ankiminer.android.data.resources.ResourceBridgeCodec
 import com.ankiminer.android.data.settings.AppSettings
 import com.ankiminer.android.debug.S3TestDocumentsProvider
+import com.ankiminer.android.dictionary.BridgeDefinitionLookupService
+import com.ankiminer.android.engine.BridgeJsonCodec
+import com.ankiminer.android.engine.BridgeMessage
+import com.ankiminer.android.engine.PyBridge
 import com.ankiminer.android.service.MiningForegroundService
 import com.ichi2.anki.FlashCardsContract
 import com.ichi2.anki.api.AddContentApi
 import java.io.File
 import java.io.FileOutputStream
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 import kotlin.system.measureTimeMillis
@@ -131,6 +138,159 @@ class S5VideoMiningAcceptanceInstrumentedTest {
         val rendered = "ANKI_MINER_S5_PROBE=$evidence"
         Log.i(EVIDENCE_TAG, rendered)
         println(rendered)
+    }
+
+    @Test
+    fun definitionLookupRunsBesideAParkedRun() {
+        assumeTrue(
+            "S5 runs only through its pinned disposable-AnkiDroid runner",
+            InstrumentationRegistry.getArguments().getString(RUN_S5_ARGUMENT) == "true",
+        )
+        check(BuildConfig.S1A_PUBLICATION_VERIFIED) {
+            "S5 requires the selected S1a tokenizer publication"
+        }
+        val python = PythonInstrumentationRuntime.awaitReady()
+        assertPinnedAnkiDroid()
+        prepareProductionResources(python)
+        val modelId = createTarget()
+        val fieldMap = AnkiFieldAutoMap.autoMap(USER_FIELDS.toList())
+        runBlocking {
+            application.settingsRepository.update(
+                AppSettings(
+                    deckName = DECK_NAME,
+                    noteType = USER_NOTE_TYPE_NAME,
+                    fieldMap = fieldMap,
+                    tags = PROBE_TAG,
+                    audioPaddingSeconds = 8.0,
+                    screenshotOffsetSeconds = 0.2,
+                    useKnownWordsDatabase = false,
+                    useIPlusOneFilter = false,
+                    useSentenceLengthFilter = false,
+                    maxParallelWorkers = 1,
+                    jishoEnabled = false,
+                ),
+            )
+        }
+        assertEquals(
+            NoteTypeSetupStatus.Verified(modelId),
+            refreshAndAwait(USER_NOTE_TYPE_NAME, fieldMap),
+        )
+        createSafFixtures(python)
+
+        runBlocking { application.miningRepository.startVideo(INPUT) }
+        val curating = awaitState { it is MiningRunState.Curating } as MiningRunState.Curating
+        assertTrue(curating.request.candidates.any { it.minedForm == SUCCESS_TERM })
+
+        // Extract the exact app-owned bridge from the production lookup service. A direct Python
+        // module call would skip ChaquopyPyBridge; a new runtime would not be the run's runtime.
+        val bridge = appOwnedChaquopyBridge()
+        val lookupResponseReady = CountDownLatch(1)
+        val releaseLookup = CountDownLatch(1)
+        val lookupExecutor =
+            Executors.newSingleThreadExecutor { task ->
+                Thread(task, "s5-definition-lookup")
+            }
+        val lookupFuture =
+            lookupExecutor.submit<BridgeMessage.DictionaryDefineResult> {
+                assertEquals("s5-definition-lookup", Thread.currentThread().name)
+                val raw =
+                    bridge.dispatch(
+                        BridgeJsonCodec.encodeDictionaryDefineRequest(
+                            curating.request.runId,
+                            SUCCESS_TERM,
+                            null,
+                        ),
+                        null,
+                    )
+                val message =
+                    BridgeJsonCodec.decode(
+                        raw,
+                        expectedRunId = curating.request.runId,
+                    )
+                check(message is BridgeMessage.DictionaryDefineResult) {
+                    "dictionary.define returned $message"
+                }
+                lookupResponseReady.countDown()
+                check(releaseLookup.await(LOOKUP_HOLD_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
+                    "definition lookup was never released"
+                }
+                message
+            }
+        try {
+            assertTrue(
+                "real dictionary.define did not return before its timeout",
+                lookupResponseReady.await(LOOKUP_TIMEOUT_MS, TimeUnit.MILLISECONDS),
+            )
+            assertFalse("lookup completed before its release latch", lookupFuture.isDone)
+            assertTrue(application.miningRepository.state.value is MiningRunState.Curating)
+
+            lateinit var terminal: MiningRunState
+            val cancelToTerminalMillis =
+                measureTimeMillis {
+                    runBlocking { application.miningRepository.cancel(curating.request.runId) }
+                    terminal =
+                        awaitState(
+                            timeoutMillis = CURATION_CANCEL_TIMEOUT_MS,
+                            predicate = MiningRunState::isTerminal,
+                        )
+                }
+            check(terminal is MiningRunState.Cancelled) {
+                "curation cancellation ended as $terminal"
+            }
+            assertTrue(
+                "curation cancellation exceeded $CURATION_CANCEL_TIMEOUT_MS ms",
+                cancelToTerminalMillis < CURATION_CANCEL_TIMEOUT_MS,
+            )
+            assertFalse("lookup completed while its release latch was closed", lookupFuture.isDone)
+
+            releaseLookup.countDown()
+            val definition = lookupFuture.get(LOOKUP_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+            assertEquals(SUCCESS_TERM, definition.term)
+            assertEquals(SUCCESS_TERM, definition.matchedTerm)
+            assertTrue("fixture dictionary returned no entries", definition.entries.isNotEmpty())
+            assertTrue(
+                "lookup did not return the installed S5 fixture definition",
+                definition.entries.any { it.html.contains(SUCCESS_DEFINITION) },
+            )
+
+            val afterRun =
+                lookupExecutor.submit<BridgeMessage> {
+                    BridgeJsonCodec.decode(
+                        bridge.dispatch(
+                            BridgeJsonCodec.encodeDictionaryDefineRequest(
+                                curating.request.runId,
+                                SUCCESS_TERM,
+                                null,
+                            ),
+                            null,
+                        ),
+                    )
+                }.get(LOOKUP_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+            check(afterRun is BridgeMessage.Error) {
+                "post-run dictionary.define returned $afterRun"
+            }
+            assertEquals("definition_run_unknown", afterRun.code)
+            assertEquals("dictionary.define", afterRun.requestType)
+            awaitForegroundServiceStopped()
+        } finally {
+            releaseLookup.countDown()
+            lookupFuture.cancel(true)
+            lookupExecutor.shutdownNow()
+        }
+    }
+
+    private fun appOwnedChaquopyBridge(): PyBridge {
+        val service = application.definitionLookupService
+        check(service is BridgeDefinitionLookupService) {
+            "production definition lookup service was replaced: ${service.javaClass.name}"
+        }
+        val field = BridgeDefinitionLookupService::class.java.getDeclaredField("bridge")
+        field.isAccessible = true
+        return (field.get(service) as PyBridge).also { bridge ->
+            check(bridge.javaClass.name == "com.ankiminer.android.engine.ChaquopyPyBridge") {
+                "production definition lookup bridge was replaced: ${bridge.javaClass.name}"
+            }
+        }
     }
 
     private fun prepareProductionResources(python: com.chaquo.python.Python) {
@@ -553,6 +713,9 @@ class S5VideoMiningAcceptanceInstrumentedTest {
         private const val SUCCESS_TIMEOUT_MS = 180_000L
         private const val ACTIVE_CHILD_TIMEOUT_MS = 20_000L
         private const val CANCELLATION_TERMINAL_TIMEOUT_MS = 10_000L
+        private const val CURATION_CANCEL_TIMEOUT_MS = 10_000L
+        private const val LOOKUP_TIMEOUT_MS = 60_000L
+        private const val LOOKUP_HOLD_TIMEOUT_MS = 70_000L
         private const val CHILD_EXIT_TIMEOUT_MS = 5_000L
         private const val SERVICE_STOP_TIMEOUT_MS = 5_000L
         private const val ANKIDROID_MEDIA_ROOT = "/storage/emulated/0/AnkiDroid/collection.media"
