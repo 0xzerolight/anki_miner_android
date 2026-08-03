@@ -9,6 +9,7 @@ import com.ankiminer.android.diagnostics.log.AppLog
 import com.ankiminer.android.diagnostics.log.LogComponent
 import com.ankiminer.android.diagnostics.log.LogContext
 import com.ankiminer.android.engine.BridgeJsonCodec
+import com.ankiminer.android.engine.BridgeJsonValue
 import com.ankiminer.android.engine.BridgeMessage
 import com.ankiminer.android.engine.BridgeProtocolException
 import com.ankiminer.android.engine.EngineCallbacks
@@ -414,7 +415,17 @@ internal class BridgeMiningRepository(
                 if (run.cancellation.isCancelled()) return
                 run.configSnapshot =
                     try {
-                        configSnapshotResolver.resolve(run.input)
+                        val resolved = configSnapshotResolver.resolve(run.input)
+                        val override = run.input.subtitleOffsetOverride
+                        if (override == null) {
+                            resolved
+                        } else {
+                            resolved.copy(
+                                settings =
+                                    resolved.settings +
+                                        ("subtitle_offset" to BridgeJsonValue.Decimal(override)),
+                            )
+                        }
                     } catch (failure: Exception) {
                         recordFault(generation, strings.resolve(R.string.mining_failure_settings_snapshot))
                         throw failure
