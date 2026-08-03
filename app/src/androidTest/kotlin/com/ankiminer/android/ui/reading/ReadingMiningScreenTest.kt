@@ -233,7 +233,7 @@ class ReadingMiningScreenTest {
 
     @Test
     fun definitionPaneShowsForTheExpandedCandidate() {
-        val request = request(CurationPage(0, 2, 0, 2))
+        val request = request(CurationPage(0, 2, 0, 4))
         setScreen(
             state =
                 ReadingMiningUiState(
@@ -250,7 +250,7 @@ class ReadingMiningScreenTest {
 
     @Test
     fun definitionPaneNamesTheWordItActuallyMatched() {
-        val request = request(CurationPage(0, 2, 0, 2))
+        val request = request(CurationPage(0, 2, 0, 4))
         val firstMinedForm = request.candidates.first().minedForm
         val expected =
             InstrumentationRegistry.getInstrumentation().targetContext.getString(
@@ -282,7 +282,7 @@ class ReadingMiningScreenTest {
 
     @Test
     fun definitionPaneIsAbsentWithoutADefinition() {
-        val request = request(CurationPage(0, 2, 0, 2))
+        val request = request(CurationPage(0, 2, 0, 4))
         setScreen(
             state =
                 ReadingMiningUiState(
