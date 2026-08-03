@@ -27,7 +27,7 @@ NDK_ROOT="$ANDROID_HOME/ndk/$ANDROID_NDK_VERSION"
     echo "Accept the Android SDK licenses, then run scripts/install-android-sdk-packages.sh." >&2
     exit 1
 }
-for command in make meson ninja patch pkg-config tar; do
+for command in cmake make meson ninja patch pkg-config tar; do
     command -v "$command" >/dev/null || {
         echo "Required host command is missing: $command" >&2
         exit 1
@@ -46,6 +46,8 @@ cp "$SCRIPT_DIR/overrides/ffmpeg-android-maker.sh" "$BUILDER_ROOT/ffmpeg-android
 cp "$SCRIPT_DIR/overrides/common-functions.sh" "$BUILDER_ROOT/scripts/common-functions.sh"
 cp "$SCRIPT_DIR/overrides/ffmpeg-build.sh" "$BUILDER_ROOT/scripts/ffmpeg/build.sh"
 cp "$SCRIPT_DIR/overrides/libdav1d-build.sh" "$BUILDER_ROOT/scripts/libdav1d/build.sh"
+cp "$SCRIPT_DIR/overrides/libaom-download.sh" "$BUILDER_ROOT/scripts/libaom/download.sh"
+cp "$SCRIPT_DIR/overrides/libaom-build.sh" "$BUILDER_ROOT/scripts/libaom/build.sh"
 cp "$SCRIPT_DIR/assert-ffmpeg-config.py" "$BUILDER_ROOT/scripts/assert-ffmpeg-config.py"
 cp "$SCRIPT_DIR/verify-elf-dynamic.sh" "$BUILDER_ROOT/scripts/verify-elf-dynamic.sh"
 chmod +x \
@@ -66,7 +68,8 @@ export TZ=UTC
     --enable-libmp3lame \
     --enable-libopus \
     --enable-libdav1d \
-    --enable-libwebp
+    --enable-libwebp \
+    --enable-libaom
 
 for abi in arm64-v8a x86_64; do
     output_dir="$BUILDER_ROOT/output/bin/$abi"

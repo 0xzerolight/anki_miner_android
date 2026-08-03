@@ -139,6 +139,50 @@ class _Registry:
             process.kill()
 
 
+def _load_media_extractor():
+    stubs = _common_stubs()
+    qt_core = _module(
+        "PyQt6.QtCore",
+        QCoreApplication=SimpleNamespace(translate=lambda _ctx, value, *_args: value),
+    )
+    stubs.update(
+        {
+            "PyQt6": _module("PyQt6", QtCore=qt_core),
+            "PyQt6.QtCore": qt_core,
+            "anki_miner.config": _module("anki_miner.config", AnkiMinerConfig=object),
+            "anki_miner.interfaces": _module("anki_miner.interfaces", ProgressCallback=object),
+            "anki_miner.models": _module(
+                "anki_miner.models", MediaData=object, TokenizedWord=object
+            ),
+            "anki_miner.utils": _module(
+                "anki_miner.utils",
+                AudioStream=object,
+                ensure_directory=lambda _path: None,
+                find_japanese_audio_stream=lambda *_args, **_kwargs: None,
+                list_audio_streams=lambda *_args, **_kwargs: [],
+                safe_filename=lambda value: value,
+            ),
+            "anki_miner.utils.audio_track_detector": _module(
+                "anki_miner.utils.audio_track_detector",
+                JAPANESE_LANGUAGE_CODES=frozenset({"jpn"}),
+            ),
+            "anki_miner.utils.ffmpeg_resolver": _module(
+                "anki_miner.utils.ffmpeg_resolver",
+                resolve_ffmpeg=lambda _config: "ffmpeg",
+                resolve_ffprobe=lambda _config: "ffprobe",
+            ),
+            "anki_miner.utils.i18n": _module(
+                "anki_miner.utils.i18n", tr_format=lambda value, *_args: value
+            ),
+        }
+    )
+    return _load(
+        PROJECT_ROOT / "tools/engine-sync/overrides/anki_miner/services/media_extractor.py",
+        "media_extractor_cancellation_test",
+        stubs,
+    )
+
+
 class MediaProcessCancellationTests(unittest.TestCase):
     def _audio_detector(self):
         return _load(
@@ -149,48 +193,7 @@ class MediaProcessCancellationTests(unittest.TestCase):
         )
 
     def _media_extractor(self):
-        stubs = _common_stubs()
-        qt_core = _module(
-            "PyQt6.QtCore",
-            QCoreApplication=SimpleNamespace(translate=lambda _ctx, value, *_args: value),
-        )
-        stubs.update(
-            {
-                "PyQt6": _module("PyQt6", QtCore=qt_core),
-                "PyQt6.QtCore": qt_core,
-                "anki_miner.config": _module("anki_miner.config", AnkiMinerConfig=object),
-                "anki_miner.interfaces": _module("anki_miner.interfaces", ProgressCallback=object),
-                "anki_miner.models": _module(
-                    "anki_miner.models", MediaData=object, TokenizedWord=object
-                ),
-                "anki_miner.utils": _module(
-                    "anki_miner.utils",
-                    AudioStream=object,
-                    ensure_directory=lambda _path: None,
-                    find_japanese_audio_stream=lambda *_args, **_kwargs: None,
-                    list_audio_streams=lambda *_args, **_kwargs: [],
-                    safe_filename=lambda value: value,
-                ),
-                "anki_miner.utils.audio_track_detector": _module(
-                    "anki_miner.utils.audio_track_detector",
-                    JAPANESE_LANGUAGE_CODES=frozenset({"jpn"}),
-                ),
-                "anki_miner.utils.ffmpeg_resolver": _module(
-                    "anki_miner.utils.ffmpeg_resolver",
-                    resolve_ffmpeg=lambda _config: "ffmpeg",
-                    resolve_ffprobe=lambda _config: "ffprobe",
-                ),
-                "anki_miner.utils.i18n": _module(
-                    "anki_miner.utils.i18n", tr_format=lambda value, *_args: value
-                ),
-            }
-        )
-        return _load(
-            PROJECT_ROOT
-            / "tools/engine-sync/overrides/anki_miner/services/media_extractor.py",
-            "media_extractor_cancellation_test",
-            stubs,
-        )
+        return _load_media_extractor()
 
     def test_ffprobe_cancel_kills_reaps_and_unregisters(self) -> None:
         detector = self._audio_detector()
@@ -507,6 +510,61 @@ class MediaProcessCancellationTests(unittest.TestCase):
 
         self.assertFalse(worker.is_alive())
         self.assertEqual(6, len(results[0]))
+
+
+class AnimatedEncoderOverlayTests(unittest.TestCase):
+    """The Android overlay encodes AVIF with libaom, not the desktop libsvtav1."""
+
+    def _animated_command(self, fmt: str) -> list[str]:
+        media = _load_media_extractor()
+        service = object.__new__(media.MediaExtractorService)
+        service.config = SimpleNamespace(
+            screenshot_animated=True,
+            screenshot_animated_format=fmt,
+            screenshot_animated_match_audio=False,
+            screenshot_animated_clip_duration=2.0,
+            screenshot_animated_fps=20,
+            screenshot_animated_height=720,
+            screenshot_animated_quality=30,
+            audio_padding=0.5,
+        )
+        captured: list[list[str]] = []
+
+        def run(cmd: list[str], *_args: object, **_kwargs: object) -> bool:
+            captured.append(cmd)
+            return False  # stops before the output-file existence check
+
+        service._run_ffmpeg = run
+        service._check_encoder_available = lambda *_a, **_k: True
+
+        self.assertFalse(
+            service._extract_animated_screenshot(
+                Path("video.mkv"), 1.0, 2.0, Path(f"out.{fmt}")
+            )
+        )
+        self.assertEqual(1, len(captured))
+        return captured[0]
+
+    def test_encoder_names_are_the_ones_this_build_carries(self) -> None:
+        media = _load_media_extractor()
+        self.assertEqual("libaom-av1", media.MediaExtractorService._encoder_for_format("avif"))
+        self.assertEqual("libwebp_anim", media.MediaExtractorService._encoder_for_format("webp"))
+
+    def test_animated_command_carries_the_resolved_encoder(self) -> None:
+        # Regression guard: the AVIF branch used to hardcode "libsvtav1"
+        # independently of _encoder_for_format, so _check_encoder_available
+        # could pass while ffmpeg was handed an encoder this build lacks.
+        avif = self._animated_command("avif")
+        self.assertNotIn("libsvtav1", avif)
+        self.assertEqual("libaom-av1", avif[avif.index("-c:v") + 1])
+
+        webp = self._animated_command("webp")
+        self.assertEqual("libwebp_anim", webp[webp.index("-c:v") + 1])
+
+    def test_avif_command_carries_speed_flags_for_the_60s_timeout(self) -> None:
+        avif = self._animated_command("avif")
+        self.assertEqual("8", avif[avif.index("-cpu-used") + 1])
+        self.assertEqual("1", avif[avif.index("-row-mt") + 1])
 
 
 if __name__ == "__main__":

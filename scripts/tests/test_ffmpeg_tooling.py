@@ -55,11 +55,15 @@ class FfmpegToolingTests(unittest.TestCase):
 
         self.assertEqual(
             rows.keys(),
-            {"builder", "ffmpeg", "libdav1d", "libmp3lame", "libopus", "libwebp"},
+            {"builder", "ffmpeg", "libaom", "libdav1d", "libmp3lame", "libopus", "libwebp"},
         )
         self.assertIn("7.1.5", rows["ffmpeg"][1])
         self.assertIn("1.5.0", rows["libdav1d"][1])
         self.assertIn("1.4.0", rows["libwebp"][1])
+        self.assertIn("3.12.1", rows["libaom"][1])
+        # Gitiles regenerates `+archive` tarballs per request, so that endpoint
+        # cannot back a pinned hash.  See overrides/libaom-download.sh.
+        self.assertNotIn("+archive", rows["libaom"][2])
         self.assertIn("69bc3f2968e5335fff43123a2bef6c54428144ce", rows["builder"][1])
 
     def test_offline_verifier_accepts_exact_files_and_rejects_corruption(self) -> None:
@@ -77,6 +81,7 @@ class FfmpegToolingTests(unittest.TestCase):
                 "libmp3lame": b"lame",
                 "libopus": b"opus",
                 "libwebp": b"webp",
+                "libaom": b"aom",
             }
             lines = []
             for key, content in entries.items():
@@ -108,6 +113,10 @@ class FfmpegToolingTests(unittest.TestCase):
         self.assertIn("--enable-libdav1d", build)
         self.assertIn("libdav1d-build.sh", build)
         self.assertIn("--enable-libwebp", build)
+        self.assertIn("--enable-libaom", build)
+        self.assertIn("libaom-download.sh", build)
+        self.assertIn("libaom-build.sh", build)
+        self.assertIn("cmake", build)
         self.assertNotIn("sdkmanager", "\n".join((build, configure, maker, common)))
         self.assertNotIn("--enable-gpl", build)
         self.assertIn("--enable-static", configure)
@@ -229,6 +238,9 @@ class FfmpegToolingTests(unittest.TestCase):
                 "CONFIG_LIBWEBP_ENCODER",
                 "CONFIG_LIBWEBP_ANIM_ENCODER",
                 "CONFIG_WEBP_MUXER",
+                "CONFIG_LIBAOM",
+                "CONFIG_LIBAOM_AV1_ENCODER",
+                "CONFIG_AVIF_MUXER",
             }.issubset(enabled)
         )
         self.assertTrue(

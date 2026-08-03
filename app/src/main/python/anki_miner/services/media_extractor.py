@@ -816,9 +816,17 @@ class MediaExtractorService:
 
     @staticmethod
     def _encoder_for_format(fmt: str) -> str:
-        """Return the ffmpeg encoder name for an animated format."""
+        """Return the ffmpeg encoder name for an animated format.
+
+        Android diverges from desktop for AVIF: the bundled ffmpeg carries
+        libaom, not libsvtav1.  libaom is already a wired component of the
+        pinned ffmpeg-android-maker, whereas SVT-AV1 has none, so taking it
+        would mean a new component directory and a parse-arguments override for
+        an encoder this build does not otherwise need.  ``_quality_to_avif_crf``
+        maps onto the AV1 CRF range either way.
+        """
         if fmt == "avif":
-            return "libsvtav1"
+            return "libaom-av1"
         if fmt == "webp":
             return "libwebp_anim"
         raise ValueError(f"Unsupported animated screenshot format: {fmt}")
@@ -831,10 +839,12 @@ class MediaExtractorService:
         """Probe ffmpeg once for an encoder; cache result.
 
         Animated screenshots are opt-in via ``config.screenshot_animated`` and
-        need specific ffmpeg encoders: AVIF needs a build with ``libsvtav1``,
-        WebP needs ``libwebp_anim``. Distro ffmpeg packages vary, so this probes
-        once and caches; a missing encoder logs a clear error and returns False
-        rather than silently producing broken files.
+        need specific ffmpeg encoders: AVIF needs a build with ``libaom-av1``
+        (``libsvtav1`` upstream), WebP needs ``libwebp_anim``. The encoder name
+        is whatever ``_encoder_for_format`` returned, so the probe and the
+        eventual command can never disagree. Distro ffmpeg packages vary, so
+        this probes once and caches; a missing encoder logs a clear error and
+        returns False rather than silently producing broken files.
         """
         with self._encoder_probe_lock:
             cached = self._animated_encoder_ok.get(encoder)
@@ -899,10 +909,14 @@ class MediaExtractorService:
         """Effective animated screenshot format usable on this ffmpeg build.
 
         Returns the configured format when its encoder is present; ``"webp"``
-        when the configured format is AVIF but ``libsvtav1`` is missing and
-        ``libwebp_anim`` is available (the AVIF -> WebP fallback that lets the
-        SVT-AV1-less macOS Intel bundle still produce animated screenshots);
-        or ``None`` when no animated encoder is available at all.
+        when the configured format is AVIF but its AV1 encoder is missing and
+        ``libwebp_anim`` is available (the AVIF -> WebP fallback); or ``None``
+        when no animated encoder is available at all.
+
+        This covers a missing *encoder* only. Android has a second reason to
+        prefer WebP that the engine cannot see: on API levels whose MIME table
+        cannot name a ``.avif`` file, AnkiDroid stores the clip as ``.bin``.
+        Kotlin decides that one and passes the format down already resolved.
 
         An unknown/unsupported configured format is returned unchanged (no
         fallback) — that is a config error, handled downstream exactly as
@@ -983,12 +997,24 @@ class MediaExtractorService:
             f"fps={fps},scale=-2:{height}",
         ]
 
+        # The encoder name comes from the resolved format, never a literal:
+        # _check_encoder_available above probed exactly this name, and a literal
+        # here would let the probe pass while ffmpeg is handed an encoder the
+        # binary does not contain.
         if fmt == "avif":
             crf = self._quality_to_avif_crf(quality)
             cmd.extend(
                 [
                     "-c:v",
-                    "libsvtav1",
+                    encoder,
+                    # libaom's default cpu-used=0 cannot encode a 720p clip
+                    # inside the 60s timeout below on phone hardware.  Row
+                    # multithreading is free on the multi-core devices this
+                    # ships to.
+                    "-cpu-used",
+                    "8",
+                    "-row-mt",
+                    "1",
                     "-crf",
                     str(crf),
                     "-pix_fmt",
@@ -1001,7 +1027,7 @@ class MediaExtractorService:
             cmd.extend(
                 [
                     "-c:v",
-                    "libwebp_anim",
+                    encoder,
                     "-quality",
                     str(max(0, min(100, quality))),
                     "-loop",

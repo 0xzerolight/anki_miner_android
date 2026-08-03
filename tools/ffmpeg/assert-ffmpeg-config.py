@@ -41,6 +41,13 @@ REQUIRED_ENABLED = frozenset(
         "CONFIG_LIBWEBP_ANIM_ENCODER",
         "CONFIG_WEBP_MUXER",
         "CONFIG_FPS_FILTER",
+        # Animated screenshot path, AVIF.  The avif muxer is mov-based and
+        # accepts only AV_CODEC_ID_AV1, so encoder and muxer are one unit:
+        # either both are present or the .avif output path is dead.  libaom is
+        # encode-only here; AV1 decode stays with dav1d.
+        "CONFIG_LIBAOM",
+        "CONFIG_LIBAOM_AV1_ENCODER",
+        "CONFIG_AVIF_MUXER",
         # AV1 software decode via dav1d, incl. AV1-in-MP4 (mov demuxer).
         "CONFIG_LIBDAV1D",
         "CONFIG_LIBDAV1D_DECODER",
