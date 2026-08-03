@@ -675,7 +675,7 @@ class JobRegistry:
                                 "known_words_write_failed",
                                 "Could not save the known words",
                             )
-                            logger.warning("Known-words commit failed: %s", error)
+                            logger.warning("Known-words commit failed: %s", error, exc_info=error)
                     if gate.failure is None:
                         gate.selected.extend(resolved)
                         gate.known_forms = set() if gate.final_page else pending_forms

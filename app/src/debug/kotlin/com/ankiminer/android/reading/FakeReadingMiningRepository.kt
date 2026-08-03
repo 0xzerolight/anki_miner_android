@@ -24,6 +24,8 @@ internal class FakeReadingMiningRepository : ReadingMiningRepository {
     private var sequence = 0L
     @Volatile
     private var savedCurationSessionState: CurationSessionState? = null
+    internal var confirmedKnownCandidateIds: List<String> = emptyList()
+        private set
 
     override fun curationSessionState(): CurationSessionState? = savedCurationSessionState
 
@@ -45,6 +47,7 @@ internal class FakeReadingMiningRepository : ReadingMiningRepository {
         }
         sequence += 1
         savedCurationSessionState = null
+        confirmedKnownCandidateIds = emptyList()
         val runId = "run_${sequence.toString(16).padStart(32, '0')}"
         mutableState.value =
             MiningRunState.Curating(
@@ -61,6 +64,7 @@ internal class FakeReadingMiningRepository : ReadingMiningRepository {
         requestId: String,
         selection: List<CurationSelection>,
         pageIndex: Long?,
+        knownCandidateIds: List<String>,
     ) {
         val current = mutableState.value as? MiningRunState.Curating
             ?: throw MiningCommandException("No curation request is pending")
@@ -75,6 +79,7 @@ internal class FakeReadingMiningRepository : ReadingMiningRepository {
             current.request.candidates.singleOrNull { it.candidateId == item.candidateId }
                 ?: throw MiningCommandException("The curation response is invalid")
         }
+        confirmedKnownCandidateIds = knownCandidateIds.toList()
         mutableState.value =
             MiningRunState.Success(
                 runId,

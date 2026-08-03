@@ -1,5 +1,6 @@
 package com.ankiminer.android.ui.video
 
+import android.content.ClipboardManager
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.getValue
@@ -897,11 +898,96 @@ class VideoMiningScreenTest {
         composeRule.onNodeWithTag(VideoMiningTestTags.DEFINITION).assertDoesNotExist()
     }
 
+    @Test
+    fun markingKnownDisablesTheCandidateCheckbox() {
+        val request = request()
+        val firstCandidateId = request.candidates.first().candidateId
+        setScreen(
+            state =
+                VideoMiningUiState(
+                    runState = MiningRunState.Curating(request),
+                    curation =
+                        curationState(
+                            request,
+                            knownCandidateIds = setOf(firstCandidateId),
+                        ),
+                ),
+        )
+
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(VideoMiningTestTags.candidateToggle(firstCandidateId)))
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.candidateToggle(firstCandidateId))
+            .assertIsNotEnabled()
+    }
+
+    @Test
+    fun knownActionReportsTheMark() {
+        val request = request()
+        val firstCandidateId = request.candidates.first().candidateId
+        var marked: Pair<String, Boolean>? = null
+        setScreen(
+            state =
+                VideoMiningUiState(
+                    runState = MiningRunState.Curating(request),
+                    curation = curationState(request),
+                ),
+            onMarkCandidateKnown = { id, known -> marked = id to known },
+        )
+
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(VideoMiningTestTags.candidateKnown(firstCandidateId)))
+        composeRule.onNodeWithTag(VideoMiningTestTags.candidateKnown(firstCandidateId)).performClick()
+
+        composeRule.runOnIdle { assertEquals(firstCandidateId to true, marked) }
+    }
+
+    @Test
+    fun copySentenceCopiesTheSelectedAlternative() {
+        val request = request()
+        val first = request.candidates.first()
+        val alternate = first.sentences.last()
+        setScreen(
+            state =
+                VideoMiningUiState(
+                    runState = MiningRunState.Curating(request),
+                    curation =
+                        curationState(
+                            request,
+                            sentenceIds =
+                                request.candidates.associate { candidate ->
+                                    candidate.candidateId to
+                                        if (candidate.candidateId == first.candidateId) {
+                                            alternate.sentenceId
+                                        } else {
+                                            candidate.defaultSentenceId
+                                        }
+                                },
+                        ),
+                ),
+        )
+
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(
+                hasTestTag(VideoMiningTestTags.candidateCopySentence(first.candidateId)),
+            )
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.candidateCopySentence(first.candidateId))
+            .performClick()
+        composeRule.waitForIdle()
+
+        assertEquals(alternate.sentence, clipboardText())
+    }
+
     private fun setScreen(
         state: VideoMiningUiState,
         onPickVideo: () -> Unit = {},
         onPickSubtitle: () -> Unit = {},
         onStart: () -> Unit = {},
+        onMarkCandidateKnown: (String, Boolean) -> Unit = { _, _ -> },
         onSetSelectionForVisible: (List<String>, Boolean) -> Unit = { _, _ -> },
         onSelectSentence: (String, String) -> Unit = { _, _ -> },
         onConfirmCuration: () -> Unit = {},
@@ -914,6 +1000,7 @@ class VideoMiningScreenTest {
                     onPickVideo = onPickVideo,
                     onPickSubtitle = onPickSubtitle,
                     onStart = onStart,
+                    onMarkCandidateKnown = onMarkCandidateKnown,
                     onSetSelectionForVisible = onSetSelectionForVisible,
                     onSelectSentence = onSelectSentence,
                     onConfirmCuration = onConfirmCuration,
@@ -930,6 +1017,7 @@ class VideoMiningScreenTest {
         onPickVideo: () -> Unit = {},
         onPickSubtitle: () -> Unit = {},
         onStart: () -> Unit = {},
+        onMarkCandidateKnown: (String, Boolean) -> Unit = { _, _ -> },
         onSetSelectionForVisible: (List<String>, Boolean) -> Unit = { _, _ -> },
         onSelectSentence: (String, String) -> Unit = { _, _ -> },
         onConfirmCuration: () -> Unit = {},
@@ -951,6 +1039,7 @@ class VideoMiningScreenTest {
             onStart = onStart,
             onFocusCandidate = onFocusCandidate,
             onSetCandidateSelected = onSetCandidateSelected,
+            onMarkCandidateKnown = onMarkCandidateKnown,
             onSetSelectionForVisible = onSetSelectionForVisible,
             onSetSelectionForPage = {},
             onReconcileFocus = { _, _ -> },
@@ -984,8 +1073,12 @@ class VideoMiningScreenTest {
 
     private fun curationState(
         request: CurationRequest,
+        knownCandidateIds: Set<String> = emptySet(),
         selectedCandidateIds: Set<String> =
-            request.candidates.mapTo(linkedSetOf(), CurationCandidate::candidateId),
+            request.candidates.mapTo(linkedSetOf(), CurationCandidate::candidateId) -
+                knownCandidateIds,
+        sentenceIds: Map<String, String> =
+            request.candidates.associate { it.candidateId to it.defaultSentenceId },
         focusedCandidateId: String? = selectedCandidateIds.firstOrNull(),
         previousPageSelectedCount: Int = 0,
         definition: CurationDefinition? = null,
@@ -995,15 +1088,23 @@ class VideoMiningScreenTest {
             requestId = request.requestId,
             candidates = request.candidates,
             selectedCandidateIds = selectedCandidateIds,
-            sentenceIds =
-                request.candidates.associate {
-                    it.candidateId to it.defaultSentenceId
-                },
+            knownCandidateIds = knownCandidateIds,
+            sentenceIds = sentenceIds,
             focusedCandidateId = focusedCandidateId,
             previousPageSelectedCount = previousPageSelectedCount,
             page = request.page,
             definition = definition,
         )
+
+    private fun clipboardText(): String? =
+        composeRule.runOnUiThread {
+            InstrumentationRegistry.getInstrumentation().targetContext
+                .getSystemService(ClipboardManager::class.java)
+                .primaryClip
+                ?.getItemAt(0)
+                ?.text
+                ?.toString()
+        }
 
     private fun candidate(
         id: String,

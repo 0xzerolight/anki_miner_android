@@ -56,6 +56,12 @@
     <string name="curation_select_whole_page">Select all %1$d on this page</string>
     <string name="curation_include_word">Include %1$s</string>
     <string name="curation_exclude_word">Exclude %1$s</string>
+    <string name="curation_add_known">Add to Known Words</string>
+    <string name="curation_known_pending">Known · pending</string>
+    <string name="curation_copy_word">Copy word</string>
+    <string name="curation_copy_sentence">Copy sentence</string>
+    <string name="curation_copied_word">Copied word</string>
+    <string name="curation_copied_sentence">Copied sentence</string>
     <string name="definition_loading">Looking up…</string>
     <string name="definition_missing">No offline dictionary entry</string>
     <string name="definition_unavailable">Dictionary lookup unavailable</string>

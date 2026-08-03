@@ -23,6 +23,15 @@ object ReadingMiningTestTags {
     fun candidateToggle(candidateId: String): String =
         "reading_candidate_toggle:$candidateId"
 
+    fun candidateKnown(candidateId: String): String =
+        "reading_candidate_known:$candidateId"
+
+    fun candidateCopyWord(candidateId: String): String =
+        "reading_candidate_copy_word:$candidateId"
+
+    fun candidateCopySentence(candidateId: String): String =
+        "reading_candidate_copy_sentence:$candidateId"
+
     fun sentence(
         candidateId: String,
         sentenceId: String,

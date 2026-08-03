@@ -807,6 +807,38 @@ class ReadingMiningViewModelTest {
         }
 
     @Test
+    fun confirmingSendsTheStagedKnownMarks() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val request = curationRequest(page = null)
+            val repository = RecordingReadingRepository(MiningRunState.Curating(request))
+            val viewModel = ReadingMiningViewModel(repository, ImmediateSafBroker())
+            runCurrent()
+            val candidateId = request.candidates.first().candidateId
+
+            viewModel.markCandidateKnown(candidateId, known = true)
+            viewModel.confirmCuration()
+            runCurrent()
+
+            assertEquals(listOf(candidateId), repository.confirmedKnownCandidateIds)
+            assertTrue(repository.confirmedSelection.orEmpty().none { it.candidateId == candidateId })
+        }
+
+    @Test
+    fun cancellingDiscardsTheStagedKnownMarks() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val request = curationRequest(page = null)
+            val repository = RecordingReadingRepository(MiningRunState.Curating(request))
+            val viewModel = ReadingMiningViewModel(repository, ImmediateSafBroker())
+            runCurrent()
+
+            viewModel.markCandidateKnown(request.candidates.first().candidateId, known = true)
+            viewModel.cancel()
+            runCurrent()
+
+            assertTrue(repository.confirmedKnownCandidateIds.isEmpty())
+        }
+
+    @Test
     fun teardownTransfersBothPairGrantsToMatchingProcessRun() =
         runTest(mainDispatcherRule.dispatcher) {
             val repository = RecordingReadingRepository(detachResult = true)
@@ -1081,6 +1113,8 @@ class ReadingMiningViewModelTest {
             private set
         var confirmedSelection: List<CurationSelection>? = null
             private set
+        var confirmedKnownCandidateIds: List<String> = emptyList()
+            private set
 
         override fun curationSessionState(): CurationSessionState? = savedCurationSessionState
 
@@ -1113,9 +1147,11 @@ class ReadingMiningViewModelTest {
             requestId: String,
             selection: List<CurationSelection>,
             pageIndex: Long?,
+            knownCandidateIds: List<String>,
         ) {
             confirmedPageIndex = pageIndex
             confirmedSelection = selection
+            confirmedKnownCandidateIds = knownCandidateIds
             confirmGate?.await()
             if (mutableState.value is MiningRunState.Curating) {
                 mutableState.value = MiningRunState.Running(runId, MiningProgress(0, 0, "Running"))

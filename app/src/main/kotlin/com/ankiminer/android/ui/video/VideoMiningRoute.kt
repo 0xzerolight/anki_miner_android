@@ -45,6 +45,7 @@ fun VideoMiningRoute(
         onStart = viewModel::start,
         onFocusCandidate = viewModel::focusCandidate,
         onSetCandidateSelected = viewModel::setCandidateSelected,
+        onMarkCandidateKnown = viewModel::markCandidateKnown,
         onSetSelectionForVisible = viewModel::setSelectionForVisible,
         onSetSelectionForPage = viewModel::setSelectionForPage,
         onReconcileFocus = viewModel::reconcileCurationFocus,

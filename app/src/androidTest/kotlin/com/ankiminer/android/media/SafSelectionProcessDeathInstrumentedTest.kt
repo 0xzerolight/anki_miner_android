@@ -162,6 +162,7 @@ class SafSelectionProcessDeathInstrumentedTest {
     private class RecordingVideoRepository : MiningRepository {
         override val state: StateFlow<MiningRunState> = MutableStateFlow(MiningRunState.Idle)
         val started = mutableListOf<VideoMiningInput>()
+        var confirmedKnownCandidateIds: List<String> = emptyList()
 
         override suspend fun startVideo(input: VideoMiningInput) {
             started += input
@@ -172,7 +173,10 @@ class SafSelectionProcessDeathInstrumentedTest {
             requestId: String,
             selection: List<CurationSelection>,
             pageIndex: Long?,
-        ) = Unit
+            knownCandidateIds: List<String>,
+        ) {
+            confirmedKnownCandidateIds = knownCandidateIds
+        }
 
         override suspend fun cancel(runId: String) = Unit
 
@@ -184,6 +188,7 @@ class SafSelectionProcessDeathInstrumentedTest {
     private class RecordingReadingRepository : ReadingMiningRepository {
         override val state: StateFlow<MiningRunState> = MutableStateFlow(MiningRunState.Idle)
         val started = mutableListOf<ReadingMiningInput>()
+        var confirmedKnownCandidateIds: List<String> = emptyList()
 
         override suspend fun startReading(input: ReadingMiningInput) {
             started += input
@@ -194,7 +199,10 @@ class SafSelectionProcessDeathInstrumentedTest {
             requestId: String,
             selection: List<CurationSelection>,
             pageIndex: Long?,
-        ) = Unit
+            knownCandidateIds: List<String>,
+        ) {
+            confirmedKnownCandidateIds = knownCandidateIds
+        }
 
         override suspend fun cancel(runId: String) = Unit
 

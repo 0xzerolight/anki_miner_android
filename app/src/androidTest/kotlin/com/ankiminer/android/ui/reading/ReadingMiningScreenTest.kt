@@ -1,5 +1,6 @@
 package com.ankiminer.android.ui.reading
 
+import android.content.ClipboardManager
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.getValue
@@ -294,6 +295,104 @@ class ReadingMiningScreenTest {
     }
 
     @Test
+    fun markingKnownDisablesTheCandidateCheckbox() {
+        val request = request(CurationPage(0, 2, 0, 4))
+        val firstCandidateId = request.candidates.first().candidateId
+        setScreen(
+            state =
+                ReadingMiningUiState(
+                    runState = MiningRunState.Curating(request),
+                    curation =
+                        curationState(
+                            request,
+                            knownCandidateIds = setOf(firstCandidateId),
+                        ),
+                ),
+        )
+
+        composeRule
+            .onNodeWithTag(ReadingMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(ReadingMiningTestTags.candidateToggle(firstCandidateId)))
+        composeRule
+            .onNodeWithTag(ReadingMiningTestTags.candidateToggle(firstCandidateId))
+            .assertIsNotEnabled()
+    }
+
+    @Test
+    fun knownActionReportsTheMark() {
+        val request = request(CurationPage(0, 2, 0, 4))
+        val firstCandidateId = request.candidates.first().candidateId
+        var marked: Pair<String, Boolean>? = null
+        setScreen(
+            state =
+                ReadingMiningUiState(
+                    runState = MiningRunState.Curating(request),
+                    curation = curationState(request),
+                ),
+            onMarkCandidateKnown = { id, known -> marked = id to known },
+        )
+
+        composeRule
+            .onNodeWithTag(ReadingMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(ReadingMiningTestTags.candidateKnown(firstCandidateId)))
+        composeRule
+            .onNodeWithTag(ReadingMiningTestTags.candidateKnown(firstCandidateId))
+            .performClick()
+
+        composeRule.runOnIdle { assertEquals(firstCandidateId to true, marked) }
+    }
+
+    @Test
+    fun copySentenceCopiesTheSelectedAlternative() {
+        val base = request(CurationPage(0, 2, 0, 4))
+        val first = base.candidates.first()
+        val alternate =
+            first.sentences.first().copy(
+                sentenceId = "sentence-alternate",
+                sentence = "朝ご飯を食べる。",
+            )
+        val request =
+            base.copy(
+                candidates =
+                    listOf(
+                        first.copy(sentences = first.sentences + alternate),
+                        base.candidates.last(),
+                    ),
+            )
+        setScreen(
+            state =
+                ReadingMiningUiState(
+                    runState = MiningRunState.Curating(request),
+                    curation =
+                        curationState(
+                            request,
+                            sentenceIds =
+                                request.candidates.associate { candidate ->
+                                    candidate.candidateId to
+                                        if (candidate.candidateId == first.candidateId) {
+                                            alternate.sentenceId
+                                        } else {
+                                            candidate.defaultSentenceId
+                                        }
+                                },
+                        ),
+                ),
+        )
+
+        composeRule
+            .onNodeWithTag(ReadingMiningTestTags.CONTENT)
+            .performScrollToNode(
+                hasTestTag(ReadingMiningTestTags.candidateCopySentence(first.candidateId)),
+            )
+        composeRule
+            .onNodeWithTag(ReadingMiningTestTags.candidateCopySentence(first.candidateId))
+            .performClick()
+        composeRule.waitForIdle()
+
+        assertEquals(alternate.sentence, clipboardText())
+    }
+
+    @Test
     fun pendingReadingPageSubmissionKeepsCancelEnabled() {
         val request = request(CurationPage(0, 2, 0, 3))
         setScreen(
@@ -331,6 +430,7 @@ class ReadingMiningScreenTest {
                     onStart = {},
                     onFocusCandidate = {},
                     onSetCandidateSelected = { _, _ -> },
+                    onMarkCandidateKnown = { _, _ -> },
                     onSetSelectionForVisible = { _, _ -> },
                     onSetSelectionForPage = {},
                     onReconcileFocus = { _, _ -> },
@@ -468,6 +568,7 @@ class ReadingMiningScreenTest {
         state: ReadingMiningUiState,
         onPickSource: () -> Unit = {},
         onStart: () -> Unit = {},
+        onMarkCandidateKnown: (String, Boolean) -> Unit = { _, _ -> },
     ) {
         composeRule.setContent {
             AnkiMinerTheme {
@@ -475,6 +576,7 @@ class ReadingMiningScreenTest {
                     state = state,
                     onPickSource = onPickSource,
                     onStart = onStart,
+                    onMarkCandidateKnown = onMarkCandidateKnown,
                 )
             }
         }
@@ -487,6 +589,7 @@ class ReadingMiningScreenTest {
         onPickSource: () -> Unit = {},
         onPickArchive: () -> Unit = {},
         onStart: () -> Unit = {},
+        onMarkCandidateKnown: (String, Boolean) -> Unit = { _, _ -> },
         listState: LazyListState = rememberLazyListState(),
     ) {
         ReadingMiningScreen(
@@ -501,6 +604,7 @@ class ReadingMiningScreenTest {
             onStart = onStart,
             onFocusCandidate = {},
             onSetCandidateSelected = { _, _ -> },
+            onMarkCandidateKnown = onMarkCandidateKnown,
             onSetSelectionForVisible = { _, _ -> },
             onSetSelectionForPage = {},
             onReconcileFocus = { _, _ -> },
@@ -527,8 +631,12 @@ class ReadingMiningScreenTest {
 
     private fun curationState(
         request: CurationRequest,
+        knownCandidateIds: Set<String> = emptySet(),
         selectedCandidateIds: Set<String> =
-            request.candidates.mapTo(linkedSetOf(), CurationCandidate::candidateId),
+            request.candidates.mapTo(linkedSetOf(), CurationCandidate::candidateId) -
+                knownCandidateIds,
+        sentenceIds: Map<String, String> =
+            request.candidates.associate { it.candidateId to it.defaultSentenceId },
         focusedCandidateId: String? = selectedCandidateIds.firstOrNull(),
         previousPageSelectedCount: Int = 0,
         definition: CurationDefinition? = null,
@@ -538,15 +646,23 @@ class ReadingMiningScreenTest {
             requestId = request.requestId,
             candidates = request.candidates,
             selectedCandidateIds = selectedCandidateIds,
-            sentenceIds =
-                request.candidates.associate {
-                    it.candidateId to it.defaultSentenceId
-                },
+            knownCandidateIds = knownCandidateIds,
+            sentenceIds = sentenceIds,
             focusedCandidateId = focusedCandidateId,
             previousPageSelectedCount = previousPageSelectedCount,
             page = request.page,
             definition = definition,
         )
+
+    private fun clipboardText(): String? =
+        composeRule.runOnUiThread {
+            InstrumentationRegistry.getInstrumentation().targetContext
+                .getSystemService(ClipboardManager::class.java)
+                .primaryClip
+                ?.getItemAt(0)
+                ?.text
+                ?.toString()
+        }
 
     private fun candidate(
         id: String,

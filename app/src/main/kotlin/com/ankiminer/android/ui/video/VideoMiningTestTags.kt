@@ -21,6 +21,13 @@ object VideoMiningTestTags {
 
     fun candidateToggle(candidateId: String): String = "candidate_toggle:$candidateId"
 
+    fun candidateKnown(candidateId: String): String = "candidate_known:$candidateId"
+
+    fun candidateCopyWord(candidateId: String): String = "candidate_copy_word:$candidateId"
+
+    fun candidateCopySentence(candidateId: String): String =
+        "candidate_copy_sentence:$candidateId"
+
     fun sentence(
         candidateId: String,
         sentenceId: String,

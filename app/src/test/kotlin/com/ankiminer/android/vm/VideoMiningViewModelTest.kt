@@ -539,6 +539,38 @@ class VideoMiningViewModelTest {
         }
 
     @Test
+    fun confirmingSendsTheStagedKnownMarks() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val request = curationRequest()
+            val repository = RecordingRepository(MiningRunState.Curating(request))
+            val viewModel = VideoMiningViewModel(repository, ImmediateSafBroker())
+            runCurrent()
+            val candidateId = request.candidates.first().candidateId
+
+            viewModel.markCandidateKnown(candidateId, known = true)
+            viewModel.confirmCuration()
+            runCurrent()
+
+            assertEquals(listOf(candidateId), repository.confirmedKnownCandidateIds)
+            assertTrue(repository.confirmedSelection.orEmpty().none { it.candidateId == candidateId })
+        }
+
+    @Test
+    fun cancellingDiscardsTheStagedKnownMarks() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val request = curationRequest()
+            val repository = RecordingRepository(MiningRunState.Curating(request))
+            val viewModel = VideoMiningViewModel(repository, ImmediateSafBroker())
+            runCurrent()
+
+            viewModel.markCandidateKnown(request.candidates.first().candidateId, known = true)
+            viewModel.cancel()
+            runCurrent()
+
+            assertTrue(repository.confirmedKnownCandidateIds.isEmpty())
+        }
+
+    @Test
     fun pagedCurationResetsDraftForSameRequestAndSubmitsExactPageIndex() =
         runTest(mainDispatcherRule.dispatcher) {
             val first = curationRequest().copy(page = CurationPage(0, 2, 0, 2))
@@ -1287,6 +1319,8 @@ class VideoMiningViewModelTest {
             private set
         var confirmedSelection: List<CurationSelection>? = null
             private set
+        var confirmedKnownCandidateIds: List<String> = emptyList()
+            private set
         val detachedInputs = mutableListOf<VideoMiningInput>()
 
         override fun curationSessionState(): CurationSessionState? = savedCurationSessionState
@@ -1321,10 +1355,12 @@ class VideoMiningViewModelTest {
             requestId: String,
             selection: List<CurationSelection>,
             pageIndex: Long?,
+            knownCandidateIds: List<String>,
         ) {
             confirmCalls += 1
             confirmedPageIndex = pageIndex
             confirmedSelection = selection
+            confirmedKnownCandidateIds = knownCandidateIds
             confirmGate?.await()
             if (mutableState.value is MiningRunState.Curating) {
                 mutableState.value =

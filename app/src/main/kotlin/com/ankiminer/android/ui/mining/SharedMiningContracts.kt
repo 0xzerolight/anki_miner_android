@@ -31,6 +31,7 @@ internal data class SharedCurationDraft(
     val selectedCandidateIds: Set<String>,
     val sentenceIds: Map<String, String>,
     val focusedCandidateId: String?,
+    val knownCandidateIds: Set<String> = emptySet(),
 ) {
     val selectedCount: Int
         get() = selectedCandidateIds.size
@@ -64,8 +65,36 @@ internal data class SharedCurationDraft(
         require(request.candidates.any { it.candidateId == candidateId })
         val current = forRequest(request)
         val ids = current.selectedCandidateIds.toMutableSet()
-        if (selected) ids.add(candidateId) else ids.remove(candidateId)
-        return current.copy(selectedCandidateIds = ids)
+        if (selected && candidateId !in current.knownCandidateIds) {
+            ids.add(candidateId)
+        } else {
+            ids.remove(candidateId)
+        }
+        return current.copy(selectedCandidateIds = ids - current.knownCandidateIds)
+    }
+
+    /**
+     * Stages a known/ignore-list mark. Writes NOTHING — Python accumulates the marks and commits
+     * them only when the final page resolves successfully, so abandoning a review at any point
+     * leaves the list untouched.
+     *
+     * Marking also excludes the row from this run: the engine filtered the known list before
+     * curation, so the row cannot disappear, and leaving it selected would build the very card the
+     * user just declined.
+     */
+    fun markKnown(
+        request: CurationRequest,
+        candidateId: String,
+        known: Boolean,
+    ): SharedCurationDraft {
+        require(request.candidates.any { it.candidateId == candidateId })
+        val current = forRequest(request)
+        val marks = current.knownCandidateIds.toMutableSet()
+        if (known) marks.add(candidateId) else marks.remove(candidateId)
+        return current.copy(
+            knownCandidateIds = marks,
+            selectedCandidateIds = current.selectedCandidateIds - candidateId,
+        )
     }
 
     /**
@@ -78,15 +107,15 @@ internal data class SharedCurationDraft(
         visibleCandidateIds: Collection<String>,
         selected: Boolean,
     ): SharedCurationDraft {
-        val known = request.candidates.mapTo(mutableSetOf()) { it.candidateId }
-        val subset = visibleCandidateIds.filterTo(linkedSetOf()) { it in known }
+        val candidateIds = request.candidates.mapTo(mutableSetOf()) { it.candidateId }
+        val subset = visibleCandidateIds.filterTo(linkedSetOf()) { it in candidateIds }
         val current = forRequest(request)
         return current.copy(
             selectedCandidateIds =
                 if (selected) {
-                    current.selectedCandidateIds + subset
+                    (current.selectedCandidateIds + subset) - current.knownCandidateIds
                 } else {
-                    current.selectedCandidateIds - subset
+                    (current.selectedCandidateIds - subset) - current.knownCandidateIds
                 },
         )
     }
@@ -127,7 +156,10 @@ internal data class SharedCurationDraft(
     fun selections(request: CurationRequest): List<CurationSelection> {
         val current = forRequest(request)
         return request.candidates.mapNotNull { candidate ->
-            if (candidate.candidateId !in current.selectedCandidateIds) {
+            if (
+                candidate.candidateId !in current.selectedCandidateIds ||
+                candidate.candidateId in current.knownCandidateIds
+            ) {
                 return@mapNotNull null
             }
             CurationSelection(
@@ -146,6 +178,7 @@ internal fun CurationRequest.defaultCurationDraft(): SharedCurationDraft =
         selectedCandidateIds = candidates.mapTo(linkedSetOf()) { it.candidateId },
         sentenceIds = candidates.associate { it.candidateId to it.defaultSentenceId },
         focusedCandidateId = candidates.firstOrNull()?.candidateId,
+        knownCandidateIds = emptySet(),
     )
 
 internal fun CurationSessionState.draftFor(
@@ -159,7 +192,13 @@ internal fun CurationSessionState.draftFor(
         return null
     }
     val candidateIds = request.candidates.mapTo(linkedSetOf()) { it.candidateId }
-    if (!candidateIds.containsAll(selectedCandidateIds)) return null
+    if (
+        !candidateIds.containsAll(selectedCandidateIds) ||
+        !candidateIds.containsAll(knownCandidateIds) ||
+        selectedCandidateIds.any { it in knownCandidateIds }
+    ) {
+        return null
+    }
     val validSentenceIds =
         request.candidates.associate { candidate ->
             candidate.candidateId to candidate.sentences.mapTo(hashSetOf()) { it.sentenceId }
@@ -180,6 +219,7 @@ internal fun CurationSessionState.draftFor(
         selectedCandidateIds = selectedCandidateIds.toSet(),
         sentenceIds = sentenceIds.toMap(),
         focusedCandidateId = focusedCandidateId,
+        knownCandidateIds = knownCandidateIds.toSet(),
     )
 }
 
@@ -194,6 +234,7 @@ internal fun SharedCurationDraft.toCurationSessionState(
         sentenceIds = sentenceIds.toMap(),
         focusedCandidateId = focusedCandidateId,
         previousPageSelectedCount = previousPageSelectedCount,
+        knownCandidateIds = knownCandidateIds.toSet(),
     )
 
 internal enum class CurationFilter {

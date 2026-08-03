@@ -34,6 +34,7 @@ data class CurationUiState(
     val selectedCandidateIds: Set<String>,
     val sentenceIds: Map<String, String>,
     val focusedCandidateId: String?,
+    val knownCandidateIds: Set<String> = emptySet(),
     val previousPageSelectedCount: Int = 0,
     val page: CurationPage? = null,
     val definition: CurationDefinition? = null,

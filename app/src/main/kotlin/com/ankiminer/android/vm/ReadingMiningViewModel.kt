@@ -415,6 +415,20 @@ class ReadingMiningViewModel internal constructor(
         saveCurationSession(request)
     }
 
+    /** Stage one row for the known-word list; the repository commits only after final confirm. */
+    fun markCandidateKnown(
+        candidateId: String,
+        known: Boolean,
+    ) {
+        val request = (repository.state.value as? MiningRunState.Curating)?.request ?: return
+        if (isCurationSubmissionPending() || localState.value.pending.cancel) return
+        localState.update { local ->
+            val draft = local.curationDraft?.forRequest(request) ?: request.defaultCurationDraft()
+            local.copy(curationDraft = draft.markKnown(request, candidateId, known))
+        }
+        saveCurationSession(request)
+    }
+
     /**
      * Bulk change over the rows the user can actually see. Hidden selections survive, and focus is
      * reconciled against the projection the caller supplies.
@@ -526,6 +540,7 @@ class ReadingMiningViewModel internal constructor(
             }
         }
         val selection = requireNotNull(acceptedSelection)
+        val draft = requireNotNull(acceptedDraft)
         viewModelScope.launch(LogContext.asContextElement(runState.request.runId)) {
             AppLog.i(
                 LogComponent.UI,
@@ -539,13 +554,13 @@ class ReadingMiningViewModel internal constructor(
                     requestId = runState.request.requestId,
                     selection = selection,
                     pageIndex = runState.request.page?.pageIndex,
+                    knownCandidateIds = draft.knownCandidateIds.toList(),
                 )
                 if (!runState.request.isFinalPage) {
                     val previousPageSelectedCount =
                         requireNotNull(submittedPreviousPageCount)
                     repository.saveCurationSessionState(
-                        requireNotNull(acceptedDraft)
-                            .toCurationSessionState(previousPageSelectedCount),
+                        draft.toCurationSessionState(previousPageSelectedCount),
                     )
                     localState.update { local ->
                         local.copy(
@@ -1228,6 +1243,7 @@ class ReadingMiningViewModel internal constructor(
             page = page,
             candidates = candidates,
             selectedCandidateIds = current.selectedCandidateIds,
+            knownCandidateIds = current.knownCandidateIds,
             sentenceIds = current.sentenceIds,
             focusedCandidateId = current.focusedCandidateId,
             previousPageSelectedCount = previousPageSelectedCount,
