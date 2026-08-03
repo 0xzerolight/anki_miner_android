@@ -68,6 +68,7 @@ def schemas() -> dict[str, dict[str, Any]]:
         "engine_events": _load_schema("engine-events.schema.json"),
         "tokenizer": _load_schema("tokenizer.schema.json"),
         "dictionary": _load_schema("dictionary.schema.json"),
+        "subtitle_cues": _load_schema("subtitle-cues.schema.json"),
     }
 
 
@@ -198,6 +199,32 @@ def test_dictionary_schema_accepts_valid_and_rejects_invalid_requests_and_result
         "term": "猫",
         "matchedTerm": "猫",
         "entries": [{"source": "Jitendex", "html": "<div>cat</div>", "extra": True}],
+    }
+    with pytest.raises(ValidationError):
+        validator.validate(invalid_request)
+    with pytest.raises(ValidationError):
+        validator.validate(invalid_result)
+
+
+def test_subtitle_cues_schema_accepts_valid_and_rejects_invalid_requests_and_results(
+    schemas: dict[str, dict[str, Any]],
+) -> None:
+    validator = Draft202012Validator(schemas["subtitle_cues"])
+    run_id = "run_" + "a" * 32
+    valid_request = {"runId": None, "subtitlePath": "/tmp/episode.srt"}
+    valid_result = {
+        "runId": run_id,
+        "subtitlePath": "/tmp/episode.srt",
+        "cues": [{"start": 1.0, "end": 2.5, "text": "こんにちは"}],
+    }
+    validator.validate(valid_request)
+    validator.validate(valid_result)
+
+    invalid_request = {"runId": "not-a-run", "subtitlePath": "/tmp/episode.srt"}
+    invalid_result = {
+        "runId": run_id,
+        "subtitlePath": "/tmp/episode.srt",
+        "cues": [{"start": -1.0, "end": 2.5, "text": "こんにちは"}],
     }
     with pytest.raises(ValidationError):
         validator.validate(invalid_request)
@@ -414,7 +441,7 @@ def test_anki_limits_v1_manifest_freezes_exact_units_and_values() -> None:
         "units": {
             "codePoints": "Unicode scalar values counted by JSON Schema maxLength",
             "items": "array entries",
-            "utf8Bytes": ("bytes after strict UTF-8 encoding of the decoded string or " "complete JSON envelope"),
+            "utf8Bytes": ("bytes after strict UTF-8 encoding of the decoded string or complete JSON envelope"),
         },
         "wire": {"numericTokenMaxChars": 1000},
         "names": {
@@ -986,7 +1013,7 @@ def _schema_limit_mismatches(schema: dict[str, Any]) -> list[str]:
         actual = _path_value(schema, schema_path)
         if actual != expected:
             mismatches.append(
-                f"{'/'.join(map(str, schema_path))}: {actual} != {expected} " f"from {'/'.join(manifest_path)}"
+                f"{'/'.join(map(str, schema_path))}: {actual} != {expected} from {'/'.join(manifest_path)}"
             )
     return mismatches
 
@@ -1806,7 +1833,7 @@ def test_anki_callback_schema_is_closed(schemas: dict[str, dict[str, Any]], payl
 
 @pytest.mark.parametrize("literal", ["NaN", "Infinity", "-Infinity"])
 def test_validation_pipeline_rejects_non_rfc_numeric_messages(literal: str) -> None:
-    raw = '{"schemaVersion":1,"type":"config.snapshot",' '"payload":{"settings":{"subtitle_offset":' + literal + "}}}"
+    raw = '{"schemaVersion":1,"type":"config.snapshot","payload":{"settings":{"subtitle_offset":' + literal + "}}}"
 
     with pytest.raises(BridgeProtocolError) as error:
         decode_envelope(raw, expected_type="config.snapshot")
