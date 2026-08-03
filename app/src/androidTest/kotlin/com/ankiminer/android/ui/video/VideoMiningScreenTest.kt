@@ -348,7 +348,10 @@ class VideoMiningScreenTest {
                 )
             }
         }
-        composeRule.waitForIdle()
+        // The seek is debounced, so idle is not enough: let the seek for the initially focused
+        // candidate land before clearing, or it fires mid-assertion below and is read as this
+        // click's seek.
+        composeRule.waitUntil(timeoutMillis = 5_000) { fake.seekToCalls.isNotEmpty() }
         composeRule.runOnIdle { fake.seekToCalls.clear() }
 
         composeRule
@@ -494,17 +497,28 @@ class VideoMiningScreenTest {
         val sentenceTag =
             VideoMiningTestTags.sentence(candidate.candidateId, candidate.defaultSentenceId)
 
+        // Every row and counter is scrolled to before it is read: on a short viewport the list
+        // holds only part of the page, and an item scrolled away is disposed, not merely hidden.
+        fun scrollTo(matcher: SemanticsMatcher) =
+            composeRule.onNodeWithTag(VideoMiningTestTags.CONTENT).performScrollToNode(matcher)
+
         // Inspecting must not exclude: the row opens the detail and leaves the count alone.
         composeRule.onNodeWithTag(sentenceTag).assertDoesNotExist()
+        scrollTo(hasTestTag(VideoMiningTestTags.candidate(candidate.candidateId)))
         composeRule.onNodeWithTag(VideoMiningTestTags.candidate(candidate.candidateId)).performClick()
+        scrollTo(hasTestTag(sentenceTag))
         composeRule.onNodeWithTag(sentenceTag).assertExists()
+        scrollTo(hasText("2 of 2 selected"))
         composeRule.onNodeWithText("2 of 2 selected").assertExists()
 
         // The checkbox excludes, and the detail stays open.
+        scrollTo(hasTestTag(VideoMiningTestTags.candidateToggle(candidate.candidateId)))
         composeRule
             .onNodeWithTag(VideoMiningTestTags.candidateToggle(candidate.candidateId))
             .performClick()
+        scrollTo(hasText("1 of 2 selected"))
         composeRule.onNodeWithText("1 of 2 selected").assertExists()
+        scrollTo(hasTestTag(sentenceTag))
         composeRule.onNodeWithTag(sentenceTag).assertExists()
     }
 
