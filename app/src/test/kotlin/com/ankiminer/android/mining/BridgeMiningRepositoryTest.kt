@@ -591,6 +591,86 @@ class BridgeMiningRepositoryTest {
     }
 
     @Test
+    fun `audio lane request marks audio only and uses stable local series label`() {
+        val harness = harness(lane = MiningLane.AUDIO)
+
+        runBlocking { harness.repository.startVideo(INPUT) }
+        val curating =
+            awaitState(harness.repository) { it is MiningRunState.Curating } as MiningRunState.Curating
+        val request = requireNotNull(harness.bridge.videoRequest.get())
+
+        assertTrue(request.audioOnly)
+        assertEquals("Local audio", request.seriesName)
+        runBlocking { harness.repository.cancel(curating.request.runId) }
+        harness.bridge.allowTerminal.countDown()
+        awaitState(harness.repository, MiningRunState::isTerminal)
+    }
+
+    @Test
+    fun `audio lane curation media binding is audio only`() {
+        val harness = harness(lane = MiningLane.AUDIO)
+
+        runBlocking { harness.repository.startVideo(INPUT) }
+        val curating =
+            awaitState(harness.repository) { it is MiningRunState.Curating } as MiningRunState.Curating
+
+        assertTrue(requireNotNull(curating.media).audioOnly)
+        runBlocking { harness.repository.cancel(curating.request.runId) }
+        harness.bridge.allowTerminal.countDown()
+        awaitState(harness.repository, MiningRunState::isTerminal)
+    }
+
+    @Test
+    fun `audio lane uses audio interruption and foreground identities`() {
+        val interruptionStore = FakeMiningRunInterruptionStore()
+        val harness =
+            harness(
+                lane = MiningLane.AUDIO,
+                interruptionStore = interruptionStore,
+            )
+
+        runBlocking { harness.repository.startVideo(INPUT) }
+        val curating =
+            awaitState(harness.repository) { it is MiningRunState.Curating } as MiningRunState.Curating
+
+        assertEquals(listOf(MiningRunKind.AUDIO), interruptionStore.beganKinds)
+        assertEquals(listOf(MiningRunKind.AUDIO), interruptionStore.registeredKinds)
+        assertTrue(harness.foreground.startedRunIds.single().startsWith("audio-"))
+        runBlocking { harness.repository.cancel(curating.request.runId) }
+        harness.bridge.allowTerminal.countDown()
+        awaitState(harness.repository, MiningRunState::isTerminal)
+
+        assertEquals(listOf(MiningRunKind.AUDIO), interruptionStore.completedKinds)
+    }
+
+    @Test
+    fun `video and audio lanes sharing one runtime coordinator are mutually exclusive`() {
+        val coordinator = RuntimeWorkCoordinator()
+        val video =
+            harness(
+                lane = MiningLane.VIDEO,
+                runtimeWorkCoordinator = coordinator,
+            )
+        val audio =
+            harness(
+                lane = MiningLane.AUDIO,
+                runtimeWorkCoordinator = coordinator,
+            )
+
+        runBlocking { video.repository.startVideo(INPUT) }
+        val curating =
+            awaitState(video.repository) { it is MiningRunState.Curating } as MiningRunState.Curating
+
+        assertThrows(MiningCommandException::class.java) {
+            runBlocking { audio.repository.startVideo(INPUT) }
+        }
+
+        runBlocking { video.repository.cancel(curating.request.runId) }
+        video.bridge.allowTerminal.countDown()
+        awaitState(video.repository, MiningRunState::isTerminal)
+    }
+
+    @Test
     fun `empty single-page selection keeps preparation foreground through completion`() {
         val harness = harness()
 
@@ -1349,6 +1429,7 @@ class BridgeMiningRepositoryTest {
         configSnapshotResolver: MiningConfigSnapshotResolver =
             MiningConfigSnapshotResolver { MiningConfigSnapshot(emptyMap(), false) },
         copyProgress: List<SafCopyProgress> = emptyList(),
+        lane: MiningLane = MiningLane.VIDEO,
     ): Harness {
         val runExecutor = Executors.newSingleThreadExecutor().also(executors::add)
         val controlExecutor = Executors.newSingleThreadExecutor().also(executors::add)
@@ -1412,6 +1493,7 @@ class BridgeMiningRepositoryTest {
                 strings = testStringResourceResolver,
                 foregroundStartTimeoutSeconds = 2,
                 interruptionStore = interruptionStore,
+                lane = lane,
             )
         return Harness(
             repository,
@@ -1546,6 +1628,7 @@ class BridgeMiningRepositoryTest {
         val started = CountDownLatch(1)
         val future = CompletableFuture<MiningForegroundLease>()
         val cancelObservedInterrupt = AtomicBoolean()
+        val startedRunIds = CopyOnWriteArrayList<String>()
 
         override fun startSession(
             runId: String,
@@ -1553,6 +1636,7 @@ class BridgeMiningRepositoryTest {
             listener: MiningForegroundSessionListener,
         ): CompletableFuture<MiningForegroundLease> {
             startCount.incrementAndGet()
+            startedRunIds += runId
             started.countDown()
             when (failure) {
                 ForegroundStartFailure.ABANDONED -> {
@@ -1660,6 +1744,9 @@ class BridgeMiningRepositoryTest {
     ) : MiningRunInterruptionStore {
         private var current: InterruptedMiningRun? = durableRecord
         private var startup: StartupInterruption = sample()
+        val beganKinds = CopyOnWriteArrayList<MiningRunKind>()
+        val registeredKinds = CopyOnWriteArrayList<MiningRunKind>()
+        val completedKinds = CopyOnWriteArrayList<MiningRunKind>()
 
         fun hasBlockedRecord(): Boolean = current != null || invalidRecord
 
@@ -1681,6 +1768,7 @@ class BridgeMiningRepositoryTest {
             kind: MiningRunKind,
             ownerId: String,
         ): Boolean {
+            beganKinds += kind
             if (hasBlockedRecord()) return false
             current = InterruptedMiningRun(kind, ownerId, runId = null)
             startup = StartupInterruption.None
@@ -1692,6 +1780,7 @@ class BridgeMiningRepositoryTest {
             ownerId: String,
             runId: String,
         ): Boolean {
+            registeredKinds += kind
             if (current != InterruptedMiningRun(kind, ownerId, runId = null)) return false
             current = InterruptedMiningRun(kind, ownerId, runId)
             return true
@@ -1701,6 +1790,7 @@ class BridgeMiningRepositoryTest {
             kind: MiningRunKind,
             ownerId: String,
         ): Boolean {
+            completedKinds += kind
             if (failCompletions > 0) {
                 failCompletions -= 1
                 return false
