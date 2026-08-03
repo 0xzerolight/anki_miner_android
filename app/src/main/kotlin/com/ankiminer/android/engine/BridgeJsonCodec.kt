@@ -866,6 +866,7 @@ object BridgeJsonCodec {
                 "seriesName",
                 "sourceLabel",
                 "audioTrackOverride",
+                "audioOnly",
                 "cacheDir",
                 "nativeLibraryDir",
                 "configSnapshot",
@@ -883,6 +884,7 @@ object BridgeJsonCodec {
             canonicalLabel(payload.getValue("seriesName"), "seriesName"),
             nullableCanonicalLabel(payload.getValue("sourceLabel"), "sourceLabel"),
             nullableNonNegative(payload.getValue("audioTrackOverride"), "audioTrackOverride"),
+            bool(payload.getValue("audioOnly"), "audioOnly"),
             absolutePath(payload.getValue("cacheDir"), "cacheDir"),
             absolutePath(payload.getValue("nativeLibraryDir"), "nativeLibraryDir"),
             readConfigSnapshot(objectValue(payload.getValue("configSnapshot"), "configSnapshot")),
@@ -1259,6 +1261,7 @@ object BridgeJsonCodec {
         writeNullableString(generator, request.sourceLabel)
         generator.writeFieldName("audioTrackOverride")
         request.audioTrackOverride?.let(generator::writeNumber) ?: generator.writeNull()
+        generator.writeBooleanField("audioOnly", request.audioOnly)
         generator.writeStringField("cacheDir", request.cacheDir)
         generator.writeStringField("nativeLibraryDir", request.nativeLibraryDir)
         generator.writeObjectFieldStart("configSnapshot")

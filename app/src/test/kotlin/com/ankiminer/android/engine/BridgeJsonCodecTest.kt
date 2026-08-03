@@ -100,25 +100,94 @@ class BridgeJsonCodecTest {
 
     @Test
     fun `video run encoder preserves subtitle suffix and typed nulls`() {
-        val raw =
-            BridgeJsonCodec.encodeVideoRun(
-                VideoMiningWireRequest(
-                    videoPath = "/proc/self/fd/8",
-                    subtitlePath = "/cache/subtitle.SRT",
-                    episodeName = "Episode 1",
-                    seriesName = "Series",
-                    sourceLabel = null,
-                    audioTrackOverride = null,
-                    cacheDir = "/cache",
-                    nativeLibraryDir = "/native",
-                    configSnapshot = MiningConfigSnapshot(emptyMap(), androidTtsEnabled = false),
-                ),
-            )
+        val raw = BridgeJsonCodec.encodeVideoRun(videoRequest(audioOnly = false))
         assertEquals(
-            "{\"schemaVersion\":1,\"type\":\"mining.video.run\",\"payload\":{\"videoPath\":\"/proc/self/fd/8\",\"subtitlePath\":\"/cache/subtitle.SRT\",\"episodeName\":\"Episode 1\",\"seriesName\":\"Series\",\"sourceLabel\":null,\"audioTrackOverride\":null,\"cacheDir\":\"/cache\",\"nativeLibraryDir\":\"/native\",\"configSnapshot\":{\"settings\":{},\"androidTtsEnabled\":false}}}",
+            "{\"schemaVersion\":1,\"type\":\"mining.video.run\",\"payload\":{\"videoPath\":\"/proc/self/fd/8\",\"subtitlePath\":\"/cache/subtitle.SRT\",\"episodeName\":\"Episode 1\",\"seriesName\":\"Series\",\"sourceLabel\":null,\"audioTrackOverride\":null,\"audioOnly\":false,\"cacheDir\":\"/cache\",\"nativeLibraryDir\":\"/native\",\"configSnapshot\":{\"settings\":{},\"androidTtsEnabled\":false}}}",
             raw,
         )
         assertTrue(BridgeJsonCodec.decode(raw) is BridgeMessage.VideoRun)
+    }
+
+    @Test
+    fun `video run encoder writes audio only as a JSON boolean`() {
+        val raw = BridgeJsonCodec.encodeVideoRun(videoRequest(audioOnly = true))
+        var audioOnlyFound = false
+
+        JsonFactory().createParser(raw).use { parser ->
+            while (parser.nextToken() != null) {
+                if (parser.currentToken() == JsonToken.FIELD_NAME && parser.currentName() == "audioOnly") {
+                    assertEquals(JsonToken.VALUE_TRUE, parser.nextToken())
+                    audioOnlyFound = true
+                }
+            }
+        }
+
+        assertTrue(audioOnlyFound)
+    }
+
+    @Test
+    fun `video run encoder emits the exact payload key set`() {
+        val raw = BridgeJsonCodec.encodeVideoRun(videoRequest(audioOnly = false))
+        val payloadKeys = linkedSetOf<String>()
+
+        JsonFactory().createParser(raw).use { parser ->
+            assertEquals(JsonToken.START_OBJECT, parser.nextToken())
+            while (parser.nextToken() != JsonToken.END_OBJECT) {
+                assertEquals(JsonToken.FIELD_NAME, parser.currentToken())
+                val fieldName = parser.currentName()
+                parser.nextToken()
+                if (fieldName != "payload") {
+                    parser.skipChildren()
+                    continue
+                }
+                assertEquals(JsonToken.START_OBJECT, parser.currentToken())
+                while (parser.nextToken() != JsonToken.END_OBJECT) {
+                    assertEquals(JsonToken.FIELD_NAME, parser.currentToken())
+                    payloadKeys += parser.currentName()
+                    parser.nextToken()
+                    parser.skipChildren()
+                }
+            }
+        }
+
+        assertEquals(
+            setOf(
+                "videoPath",
+                "subtitlePath",
+                "episodeName",
+                "seriesName",
+                "sourceLabel",
+                "audioTrackOverride",
+                "audioOnly",
+                "cacheDir",
+                "nativeLibraryDir",
+                "configSnapshot",
+            ),
+            payloadKeys,
+        )
+    }
+
+    @Test
+    fun `video run encode decode round trip preserves both audio only values`() {
+        listOf(true, false).forEach { audioOnly ->
+            val request = videoRequest(audioOnly)
+
+            assertEquals(
+                BridgeMessage.VideoRun(request),
+                BridgeJsonCodec.decode(BridgeJsonCodec.encodeVideoRun(request)),
+            )
+        }
+    }
+
+    @Test
+    fun `video run decoder rejects a missing audio only field`() {
+        val fixture =
+            fixtures("contracts/mining_protocol_v1.json", "invalid")
+                .first { it.name == "video request missing required audio only" }
+
+        assertThrows(BridgeProtocolException::class.java) {
+            BridgeJsonCodec.decode(fixture.message)
+        }
     }
 
     @Test
@@ -695,6 +764,20 @@ class BridgeJsonCodecTest {
             ),
         )
     }
+
+    private fun videoRequest(audioOnly: Boolean): VideoMiningWireRequest =
+        VideoMiningWireRequest(
+            videoPath = "/proc/self/fd/8",
+            subtitlePath = "/cache/subtitle.SRT",
+            episodeName = "Episode 1",
+            seriesName = "Series",
+            sourceLabel = null,
+            audioTrackOverride = null,
+            audioOnly = audioOnly,
+            cacheDir = "/cache",
+            nativeLibraryDir = "/native",
+            configSnapshot = MiningConfigSnapshot(emptyMap(), androidTtsEnabled = false),
+        )
 
     private fun protocolFailure(block: () -> Unit): BridgeProtocolException =
         assertThrows(BridgeProtocolException::class.java) { block() }

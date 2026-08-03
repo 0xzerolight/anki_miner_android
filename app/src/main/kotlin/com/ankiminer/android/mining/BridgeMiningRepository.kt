@@ -517,6 +517,7 @@ internal class BridgeMiningRepository(
                                 seriesName = labels.second,
                                 sourceLabel = null,
                                 audioTrackOverride = null,
+                                audioOnly = false,
                                 cacheDir = runtimePaths.cacheDir.canonicalPath,
                                 nativeLibraryDir = runtimePaths.nativeLibraryDir.canonicalPath,
                                 configSnapshot = requireNotNull(run.configSnapshot),
