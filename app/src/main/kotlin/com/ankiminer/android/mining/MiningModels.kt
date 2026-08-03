@@ -1,6 +1,7 @@
 package com.ankiminer.android.mining
 
 import androidx.compose.runtime.Immutable
+import com.ankiminer.android.media.SafSelectionSlot
 
 enum class RuntimeWorkConflict {
     MINING,
@@ -293,7 +294,35 @@ data class MiningFailure(
 data class CurationMediaBinding(
     val videoPath: String,
     val subtitlePath: String,
+    val audioOnly: Boolean = false,
 )
+
+/** Which media mining lane a repository/ViewModel pair serves. */
+internal enum class MiningLane(
+    val runKind: MiningRunKind,
+    val audioOnly: Boolean,
+    val seriesLabel: String,
+    val documentSlot: SafSelectionSlot,
+    val subtitleSlot: SafSelectionSlot,
+    val savedStateKeyPrefix: String,
+) {
+    VIDEO(
+        MiningRunKind.VIDEO,
+        false,
+        "Local video",
+        SafSelectionSlot.VIDEO,
+        SafSelectionSlot.VIDEO_SUBTITLE,
+        "videoMining",
+    ),
+    AUDIO(
+        MiningRunKind.AUDIO,
+        true,
+        "Local audio",
+        SafSelectionSlot.AUDIO,
+        SafSelectionSlot.AUDIO_SUBTITLE,
+        "audioMining",
+    ),
+}
 
 sealed interface MiningRunState {
     data object Idle : MiningRunState
