@@ -42,6 +42,7 @@ fun VideoMiningRoute(
         onClearSubtitle = viewModel::clearSubtitle,
         onDismissDocumentError = viewModel::dismissDocumentError,
         onDismissCommandError = viewModel::dismissCommandError,
+        onSubtitleOffsetDraftChange = viewModel::setSubtitleOffsetDraft,
         onStart = viewModel::start,
         onFocusCandidate = viewModel::focusCandidate,
         onSetCandidateSelected = viewModel::setCandidateSelected,

@@ -19,6 +19,8 @@
     <string name="reading_archive_name_error">Archive and .mokuro names must match.</string>
     <string name="video_file_label">Video</string>
     <string name="subtitle_file_label">Subtitles</string>
+    <string name="video_subtitle_offset_label">Subtitle timing offset (seconds)</string>
+    <string name="video_subtitle_offset_placeholder">Use current default (%1$s seconds)</string>
     <string name="no_file_selected">No file selected</string>
     <string name="choose_file">Choose</string>
     <string name="replace_file">Replace</string>

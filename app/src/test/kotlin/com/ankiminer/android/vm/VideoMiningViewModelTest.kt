@@ -33,6 +33,7 @@ import com.ankiminer.android.mining.CurationRequest
 import com.ankiminer.android.mining.CurationSelection
 import com.ankiminer.android.mining.CurationSentence
 import com.ankiminer.android.mining.CurationSessionState
+import com.ankiminer.android.mining.ENGINE_DEFAULT_SUBTITLE_OFFSET
 import com.ankiminer.android.mining.FakeMiningRepository
 import com.ankiminer.android.mining.MiningFailure
 import com.ankiminer.android.mining.MiningProgress
@@ -656,6 +657,156 @@ class VideoMiningViewModelTest {
                     ?.single { it.candidateId == first.candidateId }
                     ?.sentenceId,
             )
+        }
+
+    @Test
+    fun startPassesPerRunSubtitleOffsetOverride() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository = RecordingRepository()
+            val viewModel = VideoMiningViewModel(repository, ImmediateSafBroker())
+            selectDocuments(viewModel)
+            viewModel.setSubtitleOffsetDraft("1.5")
+            runCurrent()
+
+            viewModel.start()
+            runCurrent()
+
+            assertEquals(1.5, repository.startedInputs.single().subtitleOffsetOverride!!, 0.0)
+        }
+
+    @Test
+    fun effectiveSubtitleOffsetPrefersDraftThenGlobalThenEngineDefault() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val globalOffset = MutableStateFlow<Double?>(0.25)
+            val viewModel =
+                VideoMiningViewModel(
+                    repository = RecordingRepository(),
+                    safBroker = ImmediateSafBroker(),
+                    effectiveSubtitleOffset = globalOffset,
+                )
+            runCurrent()
+            assertEquals(0.25, viewModel.uiState.value.effectiveSubtitleOffset, 0.0)
+
+            viewModel.setSubtitleOffsetDraft("1.5")
+            runCurrent()
+            assertEquals(1.5, viewModel.uiState.value.effectiveSubtitleOffset, 0.0)
+
+            viewModel.setSubtitleOffsetDraft("")
+            globalOffset.value = null
+            runCurrent()
+            assertEquals(
+                ENGINE_DEFAULT_SUBTITLE_OFFSET,
+                viewModel.uiState.value.effectiveSubtitleOffset,
+                0.0,
+            )
+        }
+
+    @Test
+    fun blankSubtitleOffsetUsesGlobalOrEngineDefault() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository = RecordingRepository()
+            val viewModel = VideoMiningViewModel(repository, ImmediateSafBroker())
+            selectDocuments(viewModel)
+            viewModel.setSubtitleOffsetDraft("")
+            runCurrent()
+
+            viewModel.start()
+            runCurrent()
+
+            assertNull(repository.startedInputs.single().subtitleOffsetOverride)
+        }
+
+    @Test
+    fun malformedOrNonFiniteSubtitleOffsetBlocksStart() =
+        runTest(mainDispatcherRule.dispatcher) {
+            listOf("abc", "1e309").forEach { draft ->
+                val repository = RecordingRepository()
+                val viewModel = VideoMiningViewModel(repository, ImmediateSafBroker())
+                selectDocuments(viewModel)
+                viewModel.setSubtitleOffsetDraft(draft)
+                runCurrent()
+
+                assertTrue(viewModel.uiState.value.subtitleOffsetDraftInvalid)
+                assertFalse(viewModel.uiState.value.canStart)
+                viewModel.start()
+                runCurrent()
+
+                assertEquals(0, repository.startCalls)
+            }
+        }
+
+    @Test
+    fun retryKeepsPerRunSubtitleOffsetOverride() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository = RecordingRepository()
+            val viewModel = VideoMiningViewModel(repository, ImmediateSafBroker())
+            selectDocuments(viewModel)
+            viewModel.setSubtitleOffsetDraft("1.5")
+            repository.transitionTo(
+                MiningRunState.Failed(
+                    runId = "run",
+                    failure = MiningFailure("retry", retryable = true),
+                    result = result(),
+                ),
+            )
+            runCurrent()
+
+            viewModel.retry()
+            runCurrent()
+
+            assertEquals(1.5, repository.startedInputs.single().subtitleOffsetOverride!!, 0.0)
+        }
+
+    @Test
+    fun subtitleOffsetDraftRestoresFromSavedStateHandle() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val savedState = SavedStateHandle()
+            val original =
+                VideoMiningViewModel(
+                    repository = RecordingRepository(),
+                    safBroker = ImmediateSafBroker(),
+                    savedStateHandle = savedState,
+                )
+            original.setSubtitleOffsetDraft("1.5")
+
+            val restored =
+                VideoMiningViewModel(
+                    repository = RecordingRepository(),
+                    safBroker = ImmediateSafBroker(),
+                    savedStateHandle = savedState,
+                )
+            runCurrent()
+
+            assertEquals("1.5", restored.uiState.value.subtitleOffsetDraft)
+        }
+
+    @Test
+    fun resetClearsSubtitleOffsetDraft() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val savedState = SavedStateHandle()
+            val repository = RecordingRepository()
+            val viewModel =
+                VideoMiningViewModel(
+                    repository = repository,
+                    safBroker = ImmediateSafBroker(),
+                    savedStateHandle = savedState,
+                )
+            viewModel.setSubtitleOffsetDraft("1.5")
+            repository.transitionTo(MiningRunState.Success("run", result()))
+            runCurrent()
+
+            viewModel.reset()
+            runCurrent()
+
+            assertEquals("", viewModel.uiState.value.subtitleOffsetDraft)
+            val restored =
+                VideoMiningViewModel(
+                    repository = RecordingRepository(),
+                    safBroker = ImmediateSafBroker(),
+                    savedStateHandle = savedState,
+                )
+            runCurrent()
+            assertEquals("", restored.uiState.value.subtitleOffsetDraft)
         }
 
     @Test
@@ -1487,6 +1638,7 @@ class VideoMiningViewModelTest {
             private set
         var confirmedKnownCandidateIds: List<String> = emptyList()
             private set
+        val startedInputs = mutableListOf<VideoMiningInput>()
         val detachedInputs = mutableListOf<VideoMiningInput>()
 
         override fun curationSessionState(): CurationSessionState? = savedCurationSessionState
@@ -1508,6 +1660,7 @@ class VideoMiningViewModelTest {
 
         override suspend fun startVideo(input: VideoMiningInput) {
             startCalls += 1
+            startedInputs += input
             startGate?.await()
             mutableState.value =
                 MiningRunState.Starting(

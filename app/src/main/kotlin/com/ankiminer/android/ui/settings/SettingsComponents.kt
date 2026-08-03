@@ -121,11 +121,13 @@ internal fun SettingTextField(
     maxLines: Int = if (singleLine) 1 else Int.MAX_VALUE,
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
     keyboardActions: KeyboardActions = KeyboardActions.Default,
+    placeholder: @Composable (() -> Unit)? = null,
 ) {
     OutlinedTextField(
         value = value,
         onValueChange = onChange,
         label = { Text(label) },
+        placeholder = placeholder,
         // Only when the value is actually wrong. A permanent hint line under every field cost a
         // row each and said nothing the label did not.
         supportingText = error?.let { { Text(it) } },
@@ -148,6 +150,8 @@ internal fun NumericField(
     integer: Boolean = false,
     error: String? = null,
     imeAction: ImeAction = ImeAction.Done,
+    modifier: Modifier = Modifier,
+    placeholder: @Composable (() -> Unit)? = null,
 ) {
     val focusManager = LocalFocusManager.current
     val bringIntoViewRequester = remember { BringIntoViewRequester() }
@@ -159,6 +163,7 @@ internal fun NumericField(
         onChange = onChange,
         label = label,
         error = error,
+        placeholder = placeholder,
         keyboardOptions =
             KeyboardOptions(
                 keyboardType = numericKeyboardType(integer, allowNegative),
@@ -170,7 +175,7 @@ internal fun NumericField(
                 onDone = { focusManager.clearFocus() },
             ),
         modifier =
-            Modifier
+            modifier
                 .bringIntoViewRequester(bringIntoViewRequester)
                 .onFocusChanged { state ->
                     if (state.isFocused) {

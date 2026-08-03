@@ -13,6 +13,8 @@
     <string name="reading_archive_name_error">アーカイブと.mokuroの名前は一致している必要があります。</string>
     <string name="video_file_label">動画</string>
     <string name="subtitle_file_label">字幕</string>
+    <string name="video_subtitle_offset_label">字幕タイミングオフセット（秒）</string>
+    <string name="video_subtitle_offset_placeholder">現在の既定値を使用（%1$s秒）</string>
     <string name="no_file_selected">ファイル未選択</string>
     <string name="choose_file">選択</string>
     <string name="replace_file">置き換え</string>

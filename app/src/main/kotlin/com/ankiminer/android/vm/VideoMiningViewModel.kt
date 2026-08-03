@@ -7,6 +7,7 @@ import androidx.lifecycle.createSavedStateHandle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.CreationExtras
 import com.ankiminer.android.data.RuntimeWorkCoordinator
+import com.ankiminer.android.data.settings.AppSettingsDraftParser
 import com.ankiminer.android.dictionary.CurationDefinition
 import com.ankiminer.android.dictionary.DefinitionLookupService
 import com.ankiminer.android.diagnostics.log.AppLog
@@ -20,6 +21,7 @@ import com.ankiminer.android.media.SafSelectionSlot
 import com.ankiminer.android.mining.CurationMediaBinding
 import com.ankiminer.android.mining.CurationRequest
 import com.ankiminer.android.mining.CurationSelection
+import com.ankiminer.android.mining.ENGINE_DEFAULT_SUBTITLE_OFFSET
 import com.ankiminer.android.mining.MiningRepository
 import com.ankiminer.android.mining.MiningRunState
 import com.ankiminer.android.mining.MiningSource
@@ -52,32 +54,38 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 private const val DEFINITION_DEBOUNCE_MS = 150L
+private const val SUBTITLE_OFFSET_DRAFT_KEY = "videoMining.subtitleOffsetDraft"
 
 class VideoMiningViewModel internal constructor(
     private val repository: MiningRepository,
     private val safBroker: SafBroker,
     private val runtimeWorkState: StateFlow<RuntimeWorkCoordinator.Kind?> = MutableStateFlow(null),
-    savedStateHandle: SavedStateHandle = SavedStateHandle(),
+    private val savedStateHandle: SavedStateHandle = SavedStateHandle(),
     selectionInventory: SafSelectionInventory? = null,
     selectionIoDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val definitionLookup: DefinitionLookupService? = null,
     private val cueLookup: SubtitleCueLookupService = NO_CUE_LOOKUP,
+    effectiveSubtitleOffset: Flow<Double?> = flowOf(null),
 ) : ViewModel() {
     private data class LocalState(
         val video: DocumentSlotState = DocumentSlotState(),
         val subtitle: DocumentSlotState = DocumentSlotState(),
+        val subtitleOffsetDraft: String = "",
+        val globalSubtitleOffset: Double? = null,
         val curationDraft: SharedCurationDraft? = null,
         val previousPageSelectedCount: Int = 0,
         val pending: MiningPendingState = MiningPendingState(),
@@ -108,7 +116,12 @@ class VideoMiningViewModel internal constructor(
         val unavailable: Boolean = false,
     )
 
-    private val localState = MutableStateFlow(LocalState())
+    private val localState =
+        MutableStateFlow(
+            LocalState(
+                subtitleOffsetDraft = savedStateHandle[SUBTITLE_OFFSET_DRAFT_KEY] ?: "",
+            ),
+        )
     private val definitionState = MutableStateFlow(CurationDefinitionState())
     private val cueState = MutableStateFlow<CueState?>(null)
     private var definitionJob: Job? = null
@@ -167,6 +180,12 @@ class VideoMiningViewModel internal constructor(
             VideoMiningUiState(
                 video = local.video,
                 subtitle = local.subtitle,
+                subtitleOffsetDraft = local.subtitleOffsetDraft,
+                subtitleOffsetDraftInvalid = local.subtitleOffsetDraftInvalid,
+                effectiveSubtitleOffset =
+                    local.subtitleOffsetOverride
+                        ?: local.globalSubtitleOffset
+                        ?: ENGINE_DEFAULT_SUBTITLE_OFFSET,
                 runState = runState,
                 curation = curation,
                 startPending = local.pending.start,
@@ -184,6 +203,13 @@ class VideoMiningViewModel internal constructor(
         )
 
     init {
+        viewModelScope.launch {
+            effectiveSubtitleOffset.distinctUntilChanged().collect { offset ->
+                localState.update { local ->
+                    local.copy(globalSubtitleOffset = offset?.takeIf { it.isFinite() })
+                }
+            }
+        }
         viewModelScope.launch {
             repository.state.collect { runState ->
                 if (runState is MiningRunState.Curating) {
@@ -316,11 +342,22 @@ class VideoMiningViewModel internal constructor(
         localState.update { it.copy(commandError = null) }
     }
 
+    fun setSubtitleOffsetDraft(value: String) {
+        val local = localState.value
+        if (
+            repository.state.value != MiningRunState.Idle ||
+            local.pending.start ||
+            local.pending.reset
+        ) {
+            return
+        }
+        updateSubtitleOffsetDraft(value)
+    }
+
     fun start() {
         while (true) {
             val local = localState.value
-            val video = local.video.document ?: return
-            val subtitle = local.subtitle.document ?: return
+            val input = buildVideoInput(local) ?: return
             if (repository.state.value != MiningRunState.Idle ||
                 runtimeWorkState.value != null ||
                 local.video.isResolving ||
@@ -339,7 +376,7 @@ class VideoMiningViewModel internal constructor(
                     ),
                 )
             ) {
-                launchStart(video, subtitle)
+                launchStart(input)
                 return
             }
         }
@@ -606,6 +643,7 @@ class VideoMiningViewModel internal constructor(
     fun reset() {
         val runState = repository.state.value
         if (!runState.isTerminal || localState.value.pending.reset) return
+        updateSubtitleOffsetDraft("")
         localState.update {
             it.copy(
                 pending = it.pending.begin(MiningPendingAction.RESET),
@@ -648,8 +686,7 @@ class VideoMiningViewModel internal constructor(
         ) {
             return
         }
-        val video = localState.value.video.document ?: return
-        val subtitle = localState.value.subtitle.document ?: return
+        val input = buildVideoInput(localState.value) ?: return
         localState.update {
             it.copy(pending = it.pending.beginRetry(), commandError = null)
         }
@@ -665,7 +702,7 @@ class VideoMiningViewModel internal constructor(
                 localState.update {
                     it.copy(pending = it.pending.complete(MiningPendingAction.RESET))
                 }
-                repository.startVideo(video.toInput(subtitle))
+                repository.startVideo(input)
             } catch (failure: CancellationException) {
                 throw failure
             } catch (failure: RuntimeException) {
@@ -690,10 +727,7 @@ class VideoMiningViewModel internal constructor(
         }
     }
 
-    private fun launchStart(
-        video: SafDocument,
-        subtitle: SafDocument,
-    ) {
+    private fun launchStart(input: VideoMiningInput) {
         viewModelScope.launch {
             AppLog.i(
                 LogComponent.UI,
@@ -702,7 +736,7 @@ class VideoMiningViewModel internal constructor(
                 "outcome" to "ok",
             )
             try {
-                repository.startVideo(video.toInput(subtitle))
+                repository.startVideo(input)
             } catch (failure: CancellationException) {
                 throw failure
             } catch (failure: RuntimeException) {
@@ -829,7 +863,7 @@ class VideoMiningViewModel internal constructor(
         val activeOwnershipTransferred =
             if (video != null && subtitle != null) {
                 try {
-                    repository.detachActiveSources(video.toInput(subtitle))
+                    buildVideoInput(local)?.let(repository::detachActiveSources) == true
                 } catch (_: RuntimeException) {
                     false
                 }
@@ -900,11 +934,36 @@ class VideoMiningViewModel internal constructor(
                 )
         }
 
-    private fun SafDocument.toInput(subtitle: SafDocument): VideoMiningInput =
-        VideoMiningInput(
-            video = MiningSource(uri = uri, displayName = displayName),
+    private fun buildVideoInput(local: LocalState): VideoMiningInput? {
+        if (local.subtitleOffsetDraftInvalid) return null
+        val video = local.video.document ?: return null
+        val subtitle = local.subtitle.document ?: return null
+        return VideoMiningInput(
+            video = MiningSource(uri = video.uri, displayName = video.displayName),
             subtitle = MiningSource(uri = subtitle.uri, displayName = subtitle.displayName),
+            subtitleOffsetOverride = local.subtitleOffsetOverride,
         )
+    }
+
+    private fun updateSubtitleOffsetDraft(value: String) {
+        if (value.isEmpty()) {
+            savedStateHandle.remove<String>(SUBTITLE_OFFSET_DRAFT_KEY)
+        } else {
+            savedStateHandle[SUBTITLE_OFFSET_DRAFT_KEY] = value
+        }
+        localState.update { it.copy(subtitleOffsetDraft = value) }
+    }
+
+    private val LocalState.subtitleOffsetDraftInvalid: Boolean
+        get() = !AppSettingsDraftParser.isOptionalDouble(subtitleOffsetDraft)
+
+    private val LocalState.subtitleOffsetOverride: Double?
+        get() =
+            if (subtitleOffsetDraftInvalid) {
+                null
+            } else {
+                AppSettingsDraftParser.optionalDouble(subtitleOffsetDraft)
+            }
 
     private fun isCurationSubmissionPending(): Boolean =
         localState.value.pending.curation ||
@@ -1057,6 +1116,7 @@ class VideoMiningViewModel internal constructor(
         private val safBroker: SafBroker,
         private val definitionLookup: DefinitionLookupService,
         private val cueLookup: SubtitleCueLookupService = NO_CUE_LOOKUP,
+        private val effectiveSubtitleOffset: Flow<Double?> = flowOf(null),
         private val runtimeWorkState: StateFlow<RuntimeWorkCoordinator.Kind?> = MutableStateFlow(null),
         private val selectionInventory: SafSelectionInventory? = null,
         private val savedStateHandleFactory: (CreationExtras) -> SavedStateHandle =
@@ -1076,6 +1136,7 @@ class VideoMiningViewModel internal constructor(
                 selectionInventory = selectionInventory,
                 definitionLookup = definitionLookup,
                 cueLookup = cueLookup,
+                effectiveSubtitleOffset = effectiveSubtitleOffset,
             ) as T
         }
     }

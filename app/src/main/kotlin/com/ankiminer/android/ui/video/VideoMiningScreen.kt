@@ -85,6 +85,7 @@ import com.ankiminer.android.ui.mining.curateCandidates
 import com.ankiminer.android.ui.mining.miningResultItems
 import com.ankiminer.android.ui.mining.rememberCurationCandidateHeaderTexts
 import com.ankiminer.android.ui.mining.rememberClipboardWriter
+import com.ankiminer.android.ui.settings.NumericField
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
 import com.ankiminer.android.ui.theme.ExitActionButton
 import com.ankiminer.android.ui.theme.PhaseTitle
@@ -117,6 +118,7 @@ fun VideoMiningScreen(
     onCancel: () -> Unit,
     onRetry: () -> Unit,
     onReset: () -> Unit,
+    onSubtitleOffsetDraftChange: (String) -> Unit = {},
     onReturnToActiveRun: (() -> Unit)? = null,
     playerFactory: (Context) -> CurationPreviewPlayer = { ExoCurationPreviewPlayer(it) },
     modifier: Modifier = Modifier,
@@ -303,6 +305,7 @@ fun VideoMiningScreen(
                                 onClearSubtitle = onClearSubtitle,
                                 onDismissDocumentError = onDismissDocumentError,
                                 onDismissCommandError = onDismissCommandError,
+                                onSubtitleOffsetDraftChange = onSubtitleOffsetDraftChange,
                                 onStart = onStart,
                                 onReturnToActiveRun = onReturnToActiveRun,
                             )
@@ -506,6 +509,7 @@ private fun LazyListScope.setupItems(
     onClearSubtitle: () -> Unit,
     onDismissDocumentError: (DocumentSelectionError) -> Unit,
     onDismissCommandError: () -> Unit,
+    onSubtitleOffsetDraftChange: (String) -> Unit,
     onStart: () -> Unit,
     onReturnToActiveRun: (() -> Unit)?,
 ) {
@@ -553,6 +557,26 @@ private fun LazyListScope.setupItems(
                         onClear = onClearSubtitle,
                     ),
                 ),
+        )
+    }
+    item(key = "subtitle_offset", contentType = "field") {
+        NumericField(
+            value = state.subtitleOffsetDraft,
+            onChange = onSubtitleOffsetDraftChange,
+            label = stringResource(R.string.video_subtitle_offset_label),
+            allowNegative = true,
+            error =
+                stringResource(R.string.b3_validation_numeric_incomplete)
+                    .takeIf { state.subtitleOffsetDraftInvalid },
+            modifier = Modifier.testTag(VideoMiningTestTags.SUBTITLE_OFFSET_FIELD),
+            placeholder = {
+                Text(
+                    stringResource(
+                        R.string.video_subtitle_offset_placeholder,
+                        state.effectiveSubtitleOffset.toString(),
+                    ),
+                )
+            },
         )
     }
     state.video.error?.let {

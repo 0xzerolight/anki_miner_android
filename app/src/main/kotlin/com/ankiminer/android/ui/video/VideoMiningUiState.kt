@@ -6,6 +6,7 @@ import com.ankiminer.android.engine.SubtitleCue
 import com.ankiminer.android.media.SafDocument
 import com.ankiminer.android.mining.CurationCandidate
 import com.ankiminer.android.mining.CurationPage
+import com.ankiminer.android.mining.ENGINE_DEFAULT_SUBTITLE_OFFSET
 import com.ankiminer.android.mining.MiningRunState
 import com.ankiminer.android.mining.RuntimeWorkConflict
 
@@ -61,6 +62,9 @@ data class CurationUiState(
 data class VideoMiningUiState(
     val video: DocumentSlotState = DocumentSlotState(),
     val subtitle: DocumentSlotState = DocumentSlotState(),
+    val subtitleOffsetDraft: String = "",
+    val subtitleOffsetDraftInvalid: Boolean = false,
+    val effectiveSubtitleOffset: Double = ENGINE_DEFAULT_SUBTITLE_OFFSET,
     val runState: MiningRunState = MiningRunState.Idle,
     val curation: CurationUiState? = null,
     val startPending: Boolean = false,
@@ -77,6 +81,7 @@ data class VideoMiningUiState(
                 subtitle.document != null &&
                 !video.isResolving &&
                 !subtitle.isResolving &&
+                !subtitleOffsetDraftInvalid &&
                 !startPending &&
                 runtimeConflict == null
 }

@@ -70,6 +70,8 @@ class MainActivity : ComponentActivity() {
             cueLookup = app.subtitleCueLookupService,
             runtimeWorkState = app.runtimeWorkState,
             selectionInventory = app.safSelectionInventory,
+            effectiveSubtitleOffset =
+                app.settingsRepository.settings.map { it.subtitleOffsetSeconds },
         )
     }
     private val setupViewModelFactory by lazy {

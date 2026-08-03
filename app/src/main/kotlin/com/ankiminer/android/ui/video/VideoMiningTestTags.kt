@@ -7,6 +7,7 @@ object VideoMiningTestTags {
     const val PICK_SUBTITLE = "pick_subtitle"
     const val CLEAR_VIDEO = "clear_video"
     const val CLEAR_SUBTITLE = "clear_subtitle"
+    const val SUBTITLE_OFFSET_FIELD = "subtitle_offset_field"
     const val START = "start_mining"
     const val PROGRESS = "mining_progress"
     const val SELECT_ALL = "select_all_candidates"
