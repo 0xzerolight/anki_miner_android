@@ -1,5 +1,7 @@
 package com.ankiminer.android.ui.wizard
 
+import androidx.activity.OnBackPressedDispatcher
+import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -33,8 +35,11 @@ class OnboardingWizardBehaviorTest {
     @Test
     fun dismissedSkipConfirmationDoesNotFinishButConfirmedSkipDoes() {
         var finished = 0
+        var backDispatcher: OnBackPressedDispatcher? = null
         composeRule.setContent {
             AnkiMinerTheme {
+                backDispatcher =
+                    LocalOnBackPressedDispatcherOwner.current?.onBackPressedDispatcher
                 OnboardingWizardContent(
                     state = SetupUiState(wizardSeen = false),
                     step = WizardStep.WELCOME,
@@ -47,12 +52,21 @@ class OnboardingWizardBehaviorTest {
         }
 
         composeRule.onNodeWithText("Skip for now").performClick()
+        composeRule.onNodeWithText("Skip setup?").assertDoesNotExist()
+        composeRule.runOnIdle { assertEquals(1, finished) }
+
+        composeRule.runOnIdle { finished = 0 }
+        composeRule.runOnUiThread {
+            (backDispatcher ?: error("no back dispatcher in composition")).onBackPressed()
+        }
         composeRule.onNodeWithText("Skip setup?").assertIsDisplayed()
         composeRule.onNodeWithText("Cancel").performClick()
         composeRule.onNodeWithText("Skip setup?").assertDoesNotExist()
         composeRule.runOnIdle { assertEquals(0, finished) }
 
-        composeRule.onNodeWithText("Skip for now").performClick()
+        composeRule.runOnUiThread {
+            (backDispatcher ?: error("no back dispatcher in composition")).onBackPressed()
+        }
         composeRule.onNodeWithText("Skip setup").performClick()
         composeRule.runOnIdle { assertEquals(1, finished) }
     }

@@ -316,7 +316,7 @@ internal fun OnboardingWizardContent(
                     step = step,
                     saving = state.wizardCompletion == WizardCompletionStatus.SAVING,
                     onStep = callbacks.onStep,
-                    onRequestSkip = { showSkipConfirmation = true },
+                    onRequestSkip = callbacks.onFinished,
                     onFinished = callbacks.onFinished,
                     modifier = Modifier.padding(AnkiMinerTokens.Space.content),
                 )
