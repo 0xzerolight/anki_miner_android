@@ -4,6 +4,14 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+### Added
+
+- The card image can be a short looping clip of the line rather than a single frame. It is off by default, and turning it on exposes clip length and quality. Clips are slower to mine than a still and the media is several times larger, which the setting says plainly. Android stores the clip as AVIF where the platform can name that format and WebP everywhere else — the app decides, because a file the platform cannot name would be stored by AnkiDroid as an unusable `.bin`.
+
+### Fixed
+
+- Dictionary media in AVIF format was stored as `.bin` on every device, including ones that handle AVIF. The format a media file is saved under is now decided from the device's own capabilities rather than fixed at build time.
+
 ## [0.3.0] - 2026-08-03
 
 ### Added
