@@ -1,6 +1,7 @@
 package com.ankiminer.android.data.resources
 
 import java.io.IOException
+import java.util.Locale
 
 data class ResourceAttribution(
     val name: String,
@@ -133,6 +134,62 @@ enum class PitchAccentSourceFormat(
     TSV("tsv", ".tsv"),
 }
 
+enum class ResourceImportFileKind {
+    YOMITAN_ZIP,
+    JSON,
+    CSV,
+    TSV,
+    TEXT,
+}
+
+data class RetainedResourceImport(
+    val uri: String,
+    val displayName: String,
+    val fileKind: ResourceImportFileKind,
+)
+
+internal suspend fun detectResourceImportFileKind(
+    displayName: String,
+    mimeType: String?,
+    readLeadingBytes: suspend () -> ByteArray,
+): ResourceImportFileKind {
+    val extension =
+        displayName.substringAfterLast('.', missingDelimiterValue = "").lowercase(Locale.ROOT)
+    val mime = mimeType?.substringBefore(';')?.trim()?.lowercase(Locale.ROOT)
+    if (
+        extension == "json" ||
+            mime?.let { it in JSON_MIME_TYPES || it.endsWith("+json") } == true
+    ) {
+        return ResourceImportFileKind.JSON
+    }
+    if (
+        extension == "zip" ||
+            mime?.let { it in ZIP_MIME_TYPES || it.endsWith("+zip") } == true
+    ) {
+        return ResourceImportFileKind.YOMITAN_ZIP
+    }
+    when (extension) {
+        "csv" -> return ResourceImportFileKind.CSV
+        "tsv" -> return ResourceImportFileKind.TSV
+        "txt", "text" -> return ResourceImportFileKind.TEXT
+    }
+    when {
+        mime?.let { it in CSV_MIME_TYPES } == true -> return ResourceImportFileKind.CSV
+        mime?.let { it in TSV_MIME_TYPES } == true -> return ResourceImportFileKind.TSV
+        mime?.startsWith("text/") == true -> return ResourceImportFileKind.TEXT
+    }
+    if (extension.isEmpty() || mime == OCTET_STREAM_MIME_TYPE) {
+        val leadingBytes = readLeadingBytes()
+        if (
+            leadingBytes.size >= ZIP_MAGIC.size &&
+                ZIP_MAGIC.indices.all { leadingBytes[it] == ZIP_MAGIC[it] }
+        ) {
+            return ResourceImportFileKind.YOMITAN_ZIP
+        }
+    }
+    return ResourceImportFileKind.TEXT
+}
+
 enum class KnownWordsSourceFormat(
     val wireValue: String,
     val fileSuffix: String,
@@ -142,6 +199,14 @@ enum class KnownWordsSourceFormat(
     TSV("tsv", ".tsv"),
     TEXT("txt", ".txt"),
 }
+
+private val ZIP_MAGIC = byteArrayOf(0x50, 0x4b, 0x03, 0x04)
+private val ZIP_MIME_TYPES =
+    setOf("application/zip", "application/x-zip", "application/x-zip-compressed")
+private val CSV_MIME_TYPES = setOf("text/csv", "application/csv")
+private val TSV_MIME_TYPES = setOf("text/tab-separated-values", "text/tsv")
+private val JSON_MIME_TYPES = setOf("application/json", "text/json")
+private const val OCTET_STREAM_MIME_TYPE = "application/octet-stream"
 
 /**
  * A plain-text word list the engine reads by path at the start of every run.

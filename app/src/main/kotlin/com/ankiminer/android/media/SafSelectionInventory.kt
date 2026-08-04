@@ -14,6 +14,7 @@ internal enum class SafSelectionSlot(val storageKey: String) {
     READING_SOURCE("reading_source"),
     READING_ARCHIVE("reading_archive"),
     READING_SUBTITLE_SERIES("reading_subtitle_series"),
+    RESOURCE_IMPORT("resource_import"),
 }
 
 internal data class SafSelectionRecord(
@@ -308,6 +309,7 @@ internal class AndroidSafSelectionInventory(
                 SafSelectionSlot.AUDIO_SUBTITLE,
                 SafSelectionSlot.READING_SOURCE,
                 SafSelectionSlot.READING_ARCHIVE,
+                SafSelectionSlot.RESOURCE_IMPORT,
             )
     }
 }

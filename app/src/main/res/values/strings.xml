@@ -495,7 +495,6 @@
     <string name="resource_replace_confirm_title">Replace %1$s?</string>
     <string name="resource_replace_confirm_message">%1$s is replaced transactionally. If the new import fails verification, Anki Miner restores what is installed now.</string>
     <string name="pitch_replace_confirm_message">%1$s is removed as soon as the new file is verified. No backup of it is kept.</string>
-    <string name="pitch_replaces_installed">Importing replaces the installed pitch-accent data.</string>
     <string name="dictionary_replace_confirm">Replace</string>
     <string name="dictionary_repair_confirm">Repair slot</string>
     <string name="custom_dictionary_title">Import another Yomitan ZIP</string>
@@ -544,14 +543,8 @@
     <string name="bundled_wordsets_title">Bundled proper-name wordsets</string>
     <string name="bundled_wordset_item">%1$s · %2$d entries</string>
     <string name="bundled_wordsets_unavailable">Bundled wordsets could not be inventoried.</string>
-    <string name="local_resource_display_name">Display name</string>
     <string name="local_resource_inventory_invalid">%1$s [%2$s] · invalid inventory (%3$d entries); replace it before mining</string>
     <string name="pitch_inventory_invalid">%1$s · invalid inventory (%2$d entries); replace it before mining</string>
-    <string name="resource_format_yomitan_zip">Yomitan ZIP</string>
-    <string name="resource_format_csv">CSV</string>
-    <string name="resource_format_tsv">TSV</string>
-    <string name="resource_format_text">Text</string>
-    <string name="resource_format_json">JSON</string>
     <string name="local_import_complete">Local import complete</string>
     <string name="frequency_import_result">%1$s: %2$d entries; %3$d malformed rows skipped</string>
     <string name="pitch_import_result">%1$s: %2$d entries; %3$d malformed rows skipped</string>

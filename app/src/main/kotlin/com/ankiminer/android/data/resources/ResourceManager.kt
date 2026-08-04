@@ -9,6 +9,10 @@ import com.ankiminer.android.localization.StringResourceResolver
 import com.ankiminer.android.media.CancellableProviderIo
 import com.ankiminer.android.media.ProviderIoCancelledException
 import com.ankiminer.android.media.SafBroker
+import com.ankiminer.android.media.SafSelectionInventory
+import com.ankiminer.android.media.SafSelectionRecord
+import com.ankiminer.android.media.SafSelectionSlot
+import com.ankiminer.android.media.TransientSafSelectionInventory
 import com.ankiminer.android.mining.InstalledTokenizerResourceProvider
 import java.io.File
 import java.io.IOException
@@ -19,12 +23,17 @@ import java.util.concurrent.Executor
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.withContext
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlin.coroutines.suspendCoroutine
@@ -43,6 +52,13 @@ interface ResourceManager {
         slotId: String,
         replace: Boolean,
     )
+
+    /** Retain a picked import URI and derive the metadata needed to dispatch it later. */
+    suspend fun retainResourceImport(uri: String): RetainedResourceImport =
+        error("Resource import preflight is unavailable")
+
+    /** Release a retained import which the user chose not to dispatch. */
+    suspend fun releaseResourceImport(uri: String) = Unit
 
     suspend fun importFrequencySource(
         uri: String,
@@ -82,7 +98,7 @@ interface ResourceManager {
     /** Absolute path the engine should read for [kind], or null when no file is installed. */
     fun wordListPath(kind: WordListKind): String?
 
-    suspend fun previewKnownWords(uri: String, format: KnownWordsSourceFormat)
+    suspend fun previewKnownWords(uri: String, fileKind: ResourceImportFileKind)
 
     suspend fun confirmKnownWordsImport()
 
@@ -149,6 +165,7 @@ internal class AndroidResourceManager(
     private val safStager: ResourceArchiveStager,
     private val documentWriter: ResourceDocumentWriter,
     private val strings: StringResourceResolver,
+    private val safSelectionInventory: SafSelectionInventory = TransientSafSelectionInventory(),
     private val stagingAvailableBytes: (File) -> Long = ::usableSpaceForStaging,
     private val pinnedArchiveProvider: PinnedArchiveProvider? = null,
     wordListMover: (File, File) -> Boolean = { source, target -> source.renameTo(target) },
@@ -199,6 +216,8 @@ internal class AndroidResourceManager(
     override val state: StateFlow<ResourceManagerState> = mutableState.asStateFlow()
     private val operationMutex = Mutex()
     private val activeMonitor = Any()
+    private val retainedResourceImportsMonitor = Any()
+    private val retainedResourceImports = mutableMapOf<String, Int>()
     private val pendingKnownWordsRoot = File(stagingRoot.parentFile, "resource-pending-known-words")
     private val pendingAudioPackRoot = File(stagingRoot.parentFile, "resource-pending-audio-pack")
     private val operationJournal =
@@ -403,6 +422,71 @@ internal class AndroidResourceManager(
         }
     }
 
+    override suspend fun retainResourceImport(uri: String): RetainedResourceImport {
+        val retained = safBroker.retainReadAccess(uri)
+        var selectionPublished = false
+        val fileKind =
+            try {
+                val detected =
+                    detectResourceImportFileKind(
+                        displayName = retained.displayName,
+                        mimeType = retained.mimeType,
+                        readLeadingBytes = {
+                            safStager.readLeadingBytes(retained.uri, RESOURCE_IMPORT_PREFIX_BYTES)
+                        },
+                    )
+                withContext(Dispatchers.IO + NonCancellable) {
+                    safSelectionInventory.putSelection(
+                        SafSelectionSlot.RESOURCE_IMPORT,
+                        SafSelectionRecord(retained.uri, RESOURCE_IMPORT_SELECTION_LABEL),
+                    )
+                    selectionPublished = true
+                }
+                currentCoroutineContext().ensureActive()
+                detected
+            } catch (failure: Throwable) {
+                withContext(NonCancellable) {
+                    try {
+                        if (selectionPublished) {
+                            withContext(Dispatchers.IO) {
+                                clearResourceImportSelection(retained.uri)
+                            }
+                        }
+                        safBroker.releaseReadAccess(retained.uri)
+                    } catch (releaseFailure: Throwable) {
+                        failure.addSuppressed(releaseFailure)
+                    }
+                }
+                throw failure
+            }
+        synchronized(retainedResourceImportsMonitor) {
+            retainedResourceImports[retained.uri] =
+                retainedResourceImports.getOrDefault(retained.uri, 0) + 1
+        }
+        return RetainedResourceImport(
+            uri = retained.uri,
+            displayName = retained.displayName,
+            fileKind = fileKind,
+        )
+    }
+
+    override suspend fun releaseResourceImport(uri: String) {
+        val remaining =
+            synchronized(retainedResourceImportsMonitor) {
+                consumeRetainedResourceImportLocked(uri)
+            }
+        val durablyRetained =
+            safSelectionInventory.selection(SafSelectionSlot.RESOURCE_IMPORT)?.uri == uri
+        if (remaining != null || durablyRetained) {
+            withContext(NonCancellable) {
+                if (remaining == null || remaining == 0) {
+                    withContext(Dispatchers.IO) { clearResourceImportSelection(uri) }
+                }
+                safBroker.releaseReadAccess(uri)
+            }
+        }
+    }
+
     override suspend fun importFrequencySource(
         uri: String,
         sourceId: String,
@@ -417,12 +501,21 @@ internal class AndroidResourceManager(
             failureRetry = ResourceFailureRetry(ResourceFailureAction.CHOOSE_ANOTHER),
             persistForRecovery = true,
         ) { operation ->
-            val retained = runBlocking { safBroker.retainReadAccess(uri) }
+            val remainingRetainedReferences = consumeRetainedResourceImport(uri)
+            val retainedUri =
+                if (remainingRetainedReferences != null) {
+                    uri
+                } else {
+                    runBlocking { safBroker.retainReadAccess(uri) }.uri
+                }
+            val clearSelectionAfterImport =
+                remainingRetainedReferences?.let { it == 0 }
+                    ?: (safSelectionInventory.selection(SafSelectionSlot.RESOURCE_IMPORT)?.uri == uri)
             var staged: StagedArchive? = null
             try {
                 staged =
                     safStager.stage(
-                        sourceUri = retained.uri,
+                        sourceUri = retainedUri,
                         operationId = operation.id,
                         cancellation = operation.cancellation,
                         fileSuffix = format.fileSuffix,
@@ -457,7 +550,8 @@ internal class AndroidResourceManager(
                 refreshFromPython()
             } finally {
                 staged?.file?.delete()
-                runBlocking { safBroker.releaseReadAccess(retained.uri) }
+                if (clearSelectionAfterImport) clearResourceImportSelection(retainedUri)
+                runBlocking { safBroker.releaseReadAccess(retainedUri) }
             }
         }
     }
@@ -476,12 +570,21 @@ internal class AndroidResourceManager(
             failureRetry = ResourceFailureRetry(ResourceFailureAction.CHOOSE_ANOTHER),
             persistForRecovery = true,
         ) { operation ->
-            val retained = runBlocking { safBroker.retainReadAccess(uri) }
+            val remainingRetainedReferences = consumeRetainedResourceImport(uri)
+            val retainedUri =
+                if (remainingRetainedReferences != null) {
+                    uri
+                } else {
+                    runBlocking { safBroker.retainReadAccess(uri) }.uri
+                }
+            val clearSelectionAfterImport =
+                remainingRetainedReferences?.let { it == 0 }
+                    ?: (safSelectionInventory.selection(SafSelectionSlot.RESOURCE_IMPORT)?.uri == uri)
             var staged: StagedArchive? = null
             try {
                 staged =
                     safStager.stage(
-                        sourceUri = retained.uri,
+                        sourceUri = retainedUri,
                         operationId = operation.id,
                         cancellation = operation.cancellation,
                         fileSuffix = format.fileSuffix,
@@ -518,7 +621,8 @@ internal class AndroidResourceManager(
                 refreshFromPython()
             } finally {
                 staged?.file?.delete()
-                runBlocking { safBroker.releaseReadAccess(retained.uri) }
+                if (clearSelectionAfterImport) clearResourceImportSelection(retainedUri)
+                runBlocking { safBroker.releaseReadAccess(retainedUri) }
             }
         }
     }
@@ -832,7 +936,13 @@ internal class AndroidResourceManager(
         mutableState.update { it.copy(wordLists = installed) }
     }
 
-    override suspend fun previewKnownWords(uri: String, format: KnownWordsSourceFormat) {
+    override suspend fun previewKnownWords(uri: String, fileKind: ResourceImportFileKind) {
+        val format =
+            if (fileKind == ResourceImportFileKind.JSON) {
+                KnownWordsSourceFormat.JSON
+            } else {
+                KnownWordsSourceFormat.TEXT
+            }
         runOperation(
             strings.resolve(R.string.resource_operation_preview_known_words),
             ResourceOperationPhase.PREPARING,
@@ -842,12 +952,21 @@ internal class AndroidResourceManager(
         ) { operation ->
             clearPendingKnownWordsImport()
             mutableState.update { it.copy(knownWordsImportPreview = null) }
-            val retained = runBlocking { safBroker.retainReadAccess(uri) }
+            val remainingRetainedReferences = consumeRetainedResourceImport(uri)
+            val retainedUri =
+                if (remainingRetainedReferences != null) {
+                    uri
+                } else {
+                    runBlocking { safBroker.retainReadAccess(uri) }.uri
+                }
+            val clearSelectionAfterPreview =
+                remainingRetainedReferences?.let { it == 0 }
+                    ?: (safSelectionInventory.selection(SafSelectionSlot.RESOURCE_IMPORT)?.uri == uri)
             var staged: StagedArchive? = null
             try {
                 staged =
                     safStager.stage(
-                        sourceUri = retained.uri,
+                        sourceUri = retainedUri,
                         operationId = operation.id,
                         cancellation = operation.cancellation,
                         fileSuffix = format.fileSuffix,
@@ -889,7 +1008,8 @@ internal class AndroidResourceManager(
                 mutableState.update { it.copy(knownWordsImportPreview = preview) }
             } finally {
                 staged?.file?.delete()
-                runBlocking { safBroker.releaseReadAccess(retained.uri) }
+                if (clearSelectionAfterPreview) clearResourceImportSelection(retainedUri)
+                runBlocking { safBroker.releaseReadAccess(retainedUri) }
             }
         }
     }
@@ -1856,6 +1976,28 @@ internal class AndroidResourceManager(
         }
     }
 
+    private fun consumeRetainedResourceImport(uri: String): Int? =
+        synchronized(retainedResourceImportsMonitor) {
+            consumeRetainedResourceImportLocked(uri)
+        }
+
+    private fun consumeRetainedResourceImportLocked(uri: String): Int? {
+        val count = retainedResourceImports[uri] ?: return null
+        if (count == 1) {
+            retainedResourceImports.remove(uri)
+        } else {
+            retainedResourceImports[uri] = count - 1
+        }
+        return count - 1
+    }
+
+    private fun clearResourceImportSelection(uri: String) {
+        val selection = safSelectionInventory.selection(SafSelectionSlot.RESOURCE_IMPORT)
+        if (selection?.uri == uri) {
+            safSelectionInventory.putSelection(SafSelectionSlot.RESOURCE_IMPORT, null)
+        }
+    }
+
     private suspend fun <T> runOnExecutor(
         executor: Executor,
         block: () -> T,
@@ -1871,6 +2013,8 @@ internal class AndroidResourceManager(
         }
 
     private companion object {
+        const val RESOURCE_IMPORT_PREFIX_BYTES = 4
+        const val RESOURCE_IMPORT_SELECTION_LABEL = "Pending resource import"
         val RETRYABLE_FAILURES =
             setOf(
                 "download_retry_exhausted",

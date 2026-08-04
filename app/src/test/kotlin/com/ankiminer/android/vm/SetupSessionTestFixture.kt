@@ -13,6 +13,7 @@ import com.ankiminer.android.data.resources.WordListKind
 import com.ankiminer.android.data.resources.PitchAccentSourceFormat
 import com.ankiminer.android.data.resources.ResourceManager
 import com.ankiminer.android.data.resources.ResourceManagerState
+import com.ankiminer.android.data.resources.ResourceImportFileKind
 import com.ankiminer.android.data.resources.ResourceStartupReadiness
 import com.ankiminer.android.data.settings.AppSettings
 import com.ankiminer.android.data.settings.AppSettingsRepository
@@ -119,7 +120,7 @@ internal class SessionResourceManager(
 
     override fun wordListPath(kind: WordListKind): String? = null
 
-    override suspend fun previewKnownWords(uri: String, format: KnownWordsSourceFormat) = Unit
+    override suspend fun previewKnownWords(uri: String, fileKind: ResourceImportFileKind) = Unit
 
     override suspend fun confirmKnownWordsImport() = Unit
 

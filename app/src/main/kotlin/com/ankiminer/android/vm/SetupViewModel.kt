@@ -17,13 +17,14 @@ import com.ankiminer.android.data.anki.AnkiSetupManager
 import com.ankiminer.android.data.resources.FrequencySourceFormat
 import com.ankiminer.android.data.resources.KnownWordsFailureOperation
 import com.ankiminer.android.data.resources.KnownWordsResetScope
-import com.ankiminer.android.data.resources.KnownWordsSourceFormat
 import com.ankiminer.android.data.resources.PitchAccentSourceFormat
 import com.ankiminer.android.data.resources.ResourceFailureOrigin
 import com.ankiminer.android.data.resources.ResourceIdentity
+import com.ankiminer.android.data.resources.ResourceImportFileKind
 import com.ankiminer.android.data.resources.ResourceImportTarget
 import com.ankiminer.android.data.resources.ResourceManager
 import com.ankiminer.android.data.resources.ResourceStartupReadiness
+import com.ankiminer.android.data.resources.RetainedResourceImport
 import com.ankiminer.android.data.resources.WordListKind
 import com.ankiminer.android.data.settings.AppSettings
 import com.ankiminer.android.data.settings.AppSettingsRepository
@@ -74,7 +75,7 @@ internal class SetupViewModel(
         val sourceName: String? = null,
         val frequencyFormat: FrequencySourceFormat? = null,
         val pitchFormat: PitchAccentSourceFormat? = null,
-        val knownWordsFormat: KnownWordsSourceFormat? = null,
+        val resourceFileKind: ResourceImportFileKind? = null,
         val wordListKind: WordListKind? = null,
         val uri: String? = null,
     )
@@ -83,11 +84,6 @@ internal class SetupViewModel(
         val lookupTerm: String = "猫",
         val lookupSlotId: String? = null,
         val customSlotId: String = "custom-dictionary",
-        val frequencySourceName: String,
-        val frequencyFormat: FrequencySourceFormat = FrequencySourceFormat.YOMITAN_ZIP,
-        val pitchSourceName: String,
-        val pitchFormat: PitchAccentSourceFormat = PitchAccentSourceFormat.YOMITAN_ZIP,
-        val knownWordsFormat: KnownWordsSourceFormat = KnownWordsSourceFormat.JSON,
         // Which list the last word-list operation touched, so a failed import can offer the right picker.
         val wordListTarget: WordListKind = WordListKind.BLACKLIST,
         val knownWordsSearch: String = "",
@@ -104,21 +100,6 @@ internal class SetupViewModel(
                 customSlotId =
                     savedStateHandle[STATE_CUSTOM_SLOT_ID]
                         ?: "custom-dictionary",
-                frequencySourceName =
-                    savedStateHandle[STATE_FREQUENCY_SOURCE_NAME]
-                        ?: strings.resolve(R.string.setup_default_frequency_name),
-                frequencyFormat =
-                    savedEnum<FrequencySourceFormat>(STATE_FREQUENCY_FORMAT)
-                        ?: FrequencySourceFormat.YOMITAN_ZIP,
-                pitchSourceName =
-                    savedStateHandle[STATE_PITCH_SOURCE_NAME]
-                        ?: strings.resolve(R.string.setup_default_pitch_name),
-                pitchFormat =
-                    savedEnum<PitchAccentSourceFormat>(STATE_PITCH_FORMAT)
-                        ?: PitchAccentSourceFormat.YOMITAN_ZIP,
-                knownWordsFormat =
-                    savedEnum<KnownWordsSourceFormat>(STATE_KNOWN_WORDS_FORMAT)
-                        ?: KnownWordsSourceFormat.JSON,
                 wordListTarget =
                     savedEnum<WordListKind>(STATE_WORD_LIST_TARGET)
                         ?: WordListKind.BLACKLIST,
@@ -200,11 +181,6 @@ internal class SetupViewModel(
                 lookupTerm = localState.lookupTerm,
                 lookupSlotId = selectedSlot,
                 customSlotId = localState.customSlotId,
-                frequencySourceName = localState.frequencySourceName,
-                frequencyFormat = localState.frequencyFormat,
-                pitchSourceName = localState.pitchSourceName,
-                pitchFormat = localState.pitchFormat,
-                knownWordsFormat = localState.knownWordsFormat,
                 wordListTarget = localState.wordListTarget,
                 knownWordsSearch = localState.knownWordsSearch,
             )
@@ -242,11 +218,6 @@ internal class SetupViewModel(
             pendingReplace = localState.pendingReplace,
             lookupTerm = localState.lookupTerm,
             customSlotId = localState.customSlotId,
-            frequencySourceName = localState.frequencySourceName,
-            frequencyFormat = localState.frequencyFormat,
-            pitchSourceName = localState.pitchSourceName,
-            pitchFormat = localState.pitchFormat,
-            knownWordsFormat = localState.knownWordsFormat,
             wordListTarget = localState.wordListTarget,
             knownWordsSearch = localState.knownWordsSearch,
         )
@@ -589,8 +560,8 @@ internal class SetupViewModel(
                         // The record's identity, not a freshly derived one: a name match targets
                         // the id already on disk so the priority chain entry survives.
                         sourceId = pending.identity,
-                        sourceName = picker?.sourceName ?: state.frequencySourceName,
-                        format = picker?.frequencyFormat ?: state.frequencyFormat,
+                        sourceName = requireNotNull(picker?.sourceName),
+                        format = requireNotNull(picker?.frequencyFormat),
                         replace = true,
                     )
                 ResourceReplaceKind.PITCH ->
@@ -599,8 +570,8 @@ internal class SetupViewModel(
                         // As with frequency: the record's identity, so a name match
                         // replaces the slot already on disk and keeps its chain entry.
                         sourceId = pending.identity,
-                        sourceName = picker?.sourceName ?: state.pitchSourceName,
-                        format = picker?.pitchFormat ?: state.pitchFormat,
+                        sourceName = requireNotNull(picker?.sourceName),
+                        format = requireNotNull(picker?.pitchFormat),
                         replace = true,
                     )
                 ResourceReplaceKind.AUDIO_PACK ->
@@ -616,7 +587,9 @@ internal class SetupViewModel(
     fun dismissPendingReplace() {
         val discardAudioPreflight =
             currentState().pendingReplace?.kind == ResourceReplaceKind.AUDIO_PACK
+        val picker = pendingPicker
         clearPendingReplace(clearPicker = true)
+        releaseRetainedResourceImport(picker)
         if (discardAudioPreflight) {
             viewModelScope.launch { resources.discardAudioPackPreflight() }
         }
@@ -650,67 +623,43 @@ internal class SetupViewModel(
         }
     }
 
-    fun setFrequencySourceName(value: String) {
-        val sanitized = sanitizeDisplayName(value)
-        savedStateHandle[STATE_FREQUENCY_SOURCE_NAME] = sanitized
-        local.update { it.copy(frequencySourceName = sanitized) }
-    }
-
-    fun setFrequencyFormat(value: FrequencySourceFormat) {
-        savedStateHandle[STATE_FREQUENCY_FORMAT] = value.name
-        local.update { it.copy(frequencyFormat = value) }
-    }
-
     fun beginFrequencyPicker(): Boolean {
-        val state = currentState()
-        if (state.busy) return false
-        val request = frequencyPickerRequest(state) ?: return false
-        savePendingPicker(request)
+        if (currentState().busy) return false
         return true
     }
 
-    fun onFrequencyPicked(uri: String?) =
-        finishPicker(
-            ResourcePickerKind.FREQUENCY,
-            uri,
-            fallback = { frequencyPickerRequest(currentState()) },
-        )
-
-    fun importFrequencySource(uri: String) {
-        savePendingPicker(frequencyPickerRequest(currentState()) ?: return)
-        onFrequencyPicked(uri)
+    fun onFrequencyPicked(uri: String?) {
+        if (uri == null) {
+            discardPendingResourceImport(ResourcePickerKind.FREQUENCY)
+            return
+        }
+        viewModelScope.launch {
+            val source = resources.retainResourceImport(uri)
+            savePendingPicker(frequencyPickerRequest(source, currentState()))
+            resumePendingPicker()
+        }
     }
 
-    fun setPitchSourceName(value: String) {
-        val sanitized = sanitizeDisplayName(value)
-        savedStateHandle[STATE_PITCH_SOURCE_NAME] = sanitized
-        local.update { it.copy(pitchSourceName = sanitized) }
-    }
-
-    fun setPitchFormat(value: PitchAccentSourceFormat) {
-        savedStateHandle[STATE_PITCH_FORMAT] = value.name
-        local.update { it.copy(pitchFormat = value) }
-    }
+    fun importFrequencySource(uri: String) = onFrequencyPicked(uri)
 
     fun beginPitchPicker(): Boolean {
-        val state = currentState()
-        if (state.busy) return false
-        val request = pitchPickerRequest(state) ?: return false
-        savePendingPicker(request)
+        if (currentState().busy) return false
         return true
     }
 
-    fun onPitchPicked(uri: String?) =
-        finishPicker(
-            ResourcePickerKind.PITCH,
-            uri,
-            fallback = { pitchPickerRequest(currentState()) },
-        )
-
-    fun importPitchAccent(uri: String) {
-        savePendingPicker(pitchPickerRequest(currentState()) ?: return)
-        onPitchPicked(uri)
+    fun onPitchPicked(uri: String?) {
+        if (uri == null) {
+            discardPendingResourceImport(ResourcePickerKind.PITCH)
+            return
+        }
+        viewModelScope.launch {
+            val source = resources.retainResourceImport(uri)
+            savePendingPicker(pitchPickerRequest(source, currentState()))
+            resumePendingPicker()
+        }
     }
+
+    fun importPitchAccent(uri: String) = onPitchPicked(uri)
 
     fun beginAudioPackPicker(): Boolean {
         if (currentState().busy) return false
@@ -763,27 +712,35 @@ internal class SetupViewModel(
         )
     }
 
-    private fun frequencyPickerRequest(state: SetupUiState): PendingResourcePicker? {
-        if (state.frequencySourceName.isBlank()) return null
+    private fun frequencyPickerRequest(
+        source: RetainedResourceImport,
+        state: SetupUiState,
+    ): PendingResourcePicker {
+        val sourceName = derivedSourceName(source, R.string.setup_default_frequency_name)
         return PendingResourcePicker(
             kind = ResourcePickerKind.FREQUENCY,
             target =
                 ResourceIdentity.frequencyTarget(
-                    state.frequencySourceName,
+                    sourceName,
                     state.frequencySources,
                 ),
-            sourceName = state.frequencySourceName,
-            frequencyFormat = state.frequencyFormat,
+            sourceName = sourceName,
+            frequencyFormat = source.fileKind.toFrequencyFormat(),
+            uri = source.uri,
         )
     }
 
-    private fun pitchPickerRequest(state: SetupUiState): PendingResourcePicker? {
-        if (state.pitchSourceName.isBlank()) return null
+    private fun pitchPickerRequest(
+        source: RetainedResourceImport,
+        state: SetupUiState,
+    ): PendingResourcePicker {
+        val sourceName = derivedSourceName(source, R.string.setup_default_pitch_name)
         return PendingResourcePicker(
             kind = ResourcePickerKind.PITCH,
-            target = ResourceIdentity.pitchTarget(state.pitchSourceName, state.pitchSources),
-            sourceName = state.pitchSourceName,
-            pitchFormat = state.pitchFormat,
+            target = ResourceIdentity.pitchTarget(sourceName, state.pitchSources),
+            sourceName = sourceName,
+            pitchFormat = source.fileKind.toPitchFormat(),
+            uri = source.uri,
         )
     }
 
@@ -881,7 +838,7 @@ internal class SetupViewModel(
             ResourcePickerKind.KNOWN_WORDS ->
                 resources.previewKnownWords(
                     uri,
-                    requireNotNull(request.knownWordsFormat),
+                    requireNotNull(request.resourceFileKind),
                 )
             ResourcePickerKind.WORD_LIST ->
                 resources.importWordList(uri, requireNotNull(request.wordListKind))
@@ -906,7 +863,7 @@ internal class SetupViewModel(
         saveString(STATE_PICKER_SOURCE_NAME, request.sourceName)
         saveString(STATE_PICKER_FREQUENCY_FORMAT, request.frequencyFormat?.name)
         saveString(STATE_PICKER_PITCH_FORMAT, request.pitchFormat?.name)
-        saveString(STATE_PICKER_KNOWN_WORDS_FORMAT, request.knownWordsFormat?.name)
+        saveString(STATE_PICKER_RESOURCE_FILE_KIND, request.resourceFileKind?.name)
         saveString(STATE_PICKER_WORD_LIST_KIND, request.wordListKind?.name)
         saveString(STATE_PICKER_URI, request.uri)
     }
@@ -928,7 +885,7 @@ internal class SetupViewModel(
                 sourceName = savedStateHandle[STATE_PICKER_SOURCE_NAME],
                 frequencyFormat = savedEnum<FrequencySourceFormat>(STATE_PICKER_FREQUENCY_FORMAT),
                 pitchFormat = savedEnum<PitchAccentSourceFormat>(STATE_PICKER_PITCH_FORMAT),
-                knownWordsFormat = savedEnum<KnownWordsSourceFormat>(STATE_PICKER_KNOWN_WORDS_FORMAT),
+                resourceFileKind = savedEnum<ResourceImportFileKind>(STATE_PICKER_RESOURCE_FILE_KIND),
                 wordListKind = savedEnum<WordListKind>(STATE_PICKER_WORD_LIST_KIND),
                 uri = savedStateHandle[STATE_PICKER_URI],
             )
@@ -944,7 +901,7 @@ internal class SetupViewModel(
                     request.target != null &&
                         request.sourceName != null &&
                         request.pitchFormat != null
-                ResourcePickerKind.KNOWN_WORDS -> request.knownWordsFormat != null
+                ResourcePickerKind.KNOWN_WORDS -> request.resourceFileKind != null
                 ResourcePickerKind.WORD_LIST -> request.wordListKind != null
             }
         }
@@ -959,10 +916,29 @@ internal class SetupViewModel(
             STATE_PICKER_SOURCE_NAME,
             STATE_PICKER_FREQUENCY_FORMAT,
             STATE_PICKER_PITCH_FORMAT,
-            STATE_PICKER_KNOWN_WORDS_FORMAT,
+            STATE_PICKER_RESOURCE_FILE_KIND,
             STATE_PICKER_WORD_LIST_KIND,
             STATE_PICKER_URI,
         ).forEach { savedStateHandle.remove<Any>(it) }
+    }
+
+    private fun discardPendingResourceImport(kind: ResourcePickerKind) {
+        val picker = pendingPicker?.takeIf { it.kind == kind } ?: return
+        clearPendingPicker()
+        releaseRetainedResourceImport(picker)
+    }
+
+    private fun releaseRetainedResourceImport(picker: PendingResourcePicker?) {
+        val uri =
+            picker
+                ?.takeIf {
+                    it.kind == ResourcePickerKind.FREQUENCY ||
+                        it.kind == ResourcePickerKind.PITCH ||
+                        it.kind == ResourcePickerKind.KNOWN_WORDS
+                }
+                ?.uri
+                ?: return
+        viewModelScope.launch { resources.releaseResourceImport(uri) }
     }
 
     private fun setPendingReplace(pending: PendingResourceReplace) {
@@ -1033,44 +1009,74 @@ internal class SetupViewModel(
         return candidate.trim()
     }
 
-    fun setKnownWordsFormat(value: KnownWordsSourceFormat) {
-        savedStateHandle[STATE_KNOWN_WORDS_FORMAT] = value.name
-        local.update { it.copy(knownWordsFormat = value) }
+    private fun derivedSourceName(
+        source: RetainedResourceImport,
+        defaultNameResource: Int,
+    ): String {
+        val extension =
+            source.displayName.substringAfterLast(
+                delimiter = '.',
+                missingDelimiterValue = "",
+            )
+        val stem =
+            if (
+                extension.equals("zip", ignoreCase = true) ||
+                    extension.equals("csv", ignoreCase = true) ||
+                    extension.equals("tsv", ignoreCase = true) ||
+                    extension.equals("txt", ignoreCase = true) ||
+                    extension.equals("text", ignoreCase = true) ||
+                    extension.equals("json", ignoreCase = true)
+            ) {
+                source.displayName.substringBeforeLast('.')
+            } else {
+                source.displayName
+            }
+        return sanitizeDisplayName(stem).ifBlank { strings.resolve(defaultNameResource) }
     }
 
+    private fun ResourceImportFileKind.toFrequencyFormat(): FrequencySourceFormat =
+        when (this) {
+            ResourceImportFileKind.YOMITAN_ZIP -> FrequencySourceFormat.YOMITAN_ZIP
+            ResourceImportFileKind.JSON -> FrequencySourceFormat.TEXT
+            ResourceImportFileKind.CSV -> FrequencySourceFormat.CSV
+            ResourceImportFileKind.TSV -> FrequencySourceFormat.TSV
+            ResourceImportFileKind.TEXT -> FrequencySourceFormat.TEXT
+        }
+
+    private fun ResourceImportFileKind.toPitchFormat(): PitchAccentSourceFormat =
+        when (this) {
+            ResourceImportFileKind.YOMITAN_ZIP -> PitchAccentSourceFormat.YOMITAN_ZIP
+            ResourceImportFileKind.TSV -> PitchAccentSourceFormat.TSV
+            ResourceImportFileKind.JSON,
+            ResourceImportFileKind.CSV,
+            ResourceImportFileKind.TEXT,
+            -> PitchAccentSourceFormat.CSV
+        }
+
     fun beginKnownWordsPicker(): Boolean {
-        val state = currentState()
-        if (state.busy) return false
-        savePendingPicker(
-            PendingResourcePicker(
-                kind = ResourcePickerKind.KNOWN_WORDS,
-                knownWordsFormat = state.knownWordsFormat,
-            ),
-        )
+        if (currentState().busy) return false
         return true
     }
 
-    fun onKnownWordsPicked(uri: String?) =
-        finishPicker(
-            ResourcePickerKind.KNOWN_WORDS,
-            uri,
-            fallback = {
+    fun onKnownWordsPicked(uri: String?) {
+        if (uri == null) {
+            discardPendingResourceImport(ResourcePickerKind.KNOWN_WORDS)
+            return
+        }
+        viewModelScope.launch {
+            val source = resources.retainResourceImport(uri)
+            savePendingPicker(
                 PendingResourcePicker(
                     kind = ResourcePickerKind.KNOWN_WORDS,
-                    knownWordsFormat = currentState().knownWordsFormat,
-                )
-            },
-        )
-
-    fun importKnownWords(uri: String) {
-        savePendingPicker(
-            PendingResourcePicker(
-                kind = ResourcePickerKind.KNOWN_WORDS,
-                knownWordsFormat = currentState().knownWordsFormat,
-            ),
-        )
-        onKnownWordsPicked(uri)
+                    resourceFileKind = source.fileKind,
+                    uri = source.uri,
+                ),
+            )
+            resumePendingPicker()
+        }
     }
+
+    fun importKnownWords(uri: String) = onKnownWordsPicked(uri)
 
     /**
      * The SAF result, not a picker launch: a recreated ViewModel is still recovering when it
@@ -1319,11 +1325,6 @@ internal class SetupViewModel(
     private companion object {
         val SLOT_ID = Regex("(?!.*(?:\\.\\.|--))[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?")
         const val STATE_CUSTOM_SLOT_ID = "setup.customSlotId"
-        const val STATE_FREQUENCY_SOURCE_NAME = "setup.frequencySourceName"
-        const val STATE_FREQUENCY_FORMAT = "setup.frequencyFormat"
-        const val STATE_PITCH_SOURCE_NAME = "setup.pitchSourceName"
-        const val STATE_PITCH_FORMAT = "setup.pitchFormat"
-        const val STATE_KNOWN_WORDS_FORMAT = "setup.knownWordsFormat"
         const val STATE_WORD_LIST_TARGET = "setup.wordListTarget"
         const val STATE_PICKER_KIND = "setup.picker.kind"
         const val STATE_PICKER_TARGET_ID = "setup.picker.targetId"
@@ -1331,7 +1332,7 @@ internal class SetupViewModel(
         const val STATE_PICKER_SOURCE_NAME = "setup.picker.sourceName"
         const val STATE_PICKER_FREQUENCY_FORMAT = "setup.picker.frequencyFormat"
         const val STATE_PICKER_PITCH_FORMAT = "setup.picker.pitchFormat"
-        const val STATE_PICKER_KNOWN_WORDS_FORMAT = "setup.picker.knownWordsFormat"
+        const val STATE_PICKER_RESOURCE_FILE_KIND = "setup.picker.resourceFileKind"
         const val STATE_PICKER_WORD_LIST_KIND = "setup.picker.wordListKind"
         const val STATE_PICKER_URI = "setup.picker.uri"
         const val STATE_REPLACE_KIND = "setup.replace.kind"

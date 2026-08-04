@@ -487,7 +487,6 @@
     <string name="resource_replace_confirm_title">%1$sを置き換えますか？</string>
     <string name="resource_replace_confirm_message">%1$sはトランザクション処理で置き換えられます。新しいインポートの検証が失敗した場合、Anki Minerは現在インストールされているものを復元します。</string>
     <string name="pitch_replace_confirm_message">%1$sは新しいファイルの検証後ただちに削除されます。バックアップは保持されません。</string>
-    <string name="pitch_replaces_installed">インポートするとインストール済みの高低アクセントデータが置き換えられます。</string>
     <string name="dictionary_replace_confirm">置き換え</string>
     <string name="dictionary_repair_confirm">スロットを修復</string>
     <string name="custom_dictionary_title">別のYomitan ZIPをインポート</string>
@@ -536,14 +535,8 @@
     <string name="bundled_wordsets_title">同梱の固有名詞単語リスト</string>
     <string name="bundled_wordset_item">%1$s · エントリ%2$d件</string>
     <string name="bundled_wordsets_unavailable">同梱の単語リストを一覧化できませんでした。</string>
-    <string name="local_resource_display_name">表示名</string>
     <string name="local_resource_inventory_invalid">%1$s [%2$s] · 無効な一覧（エントリ%3$d件）。採掘前に置き換えてください</string>
     <string name="pitch_inventory_invalid">%1$s · 無効な一覧（エントリ%2$d件）。採掘前に置き換えてください</string>
-    <string name="resource_format_yomitan_zip">Yomitan ZIP</string>
-    <string name="resource_format_csv">CSV</string>
-    <string name="resource_format_tsv">TSV</string>
-    <string name="resource_format_text">テキスト</string>
-    <string name="resource_format_json">JSON</string>
     <string name="local_import_complete">ローカルインポート完了</string>
     <string name="frequency_import_result">%1$s: エントリ%2$d件、不正な行%3$d件をスキップ</string>
     <string name="pitch_import_result">%1$s: エントリ%2$d件、不正な行%3$d件をスキップ</string>
