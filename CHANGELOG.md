@@ -7,10 +7,12 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 ### Added
 
 - The card image can be a short looping clip of the line rather than a single frame. It is off by default, and turning it on exposes clip length and quality. Clips are slower to mine than a still and the media is several times larger, which the setting says plainly. Android stores the clip as AVIF where the platform can name that format and WebP everywhere else — the app decides, because a file the platform cannot name would be stored by AnkiDroid as an unusable `.bin`.
+- The word picker's video preview carries its own software decoders, so files the phone's hardware cannot play — 10-bit anime H.264, 10-bit HEVC, VP9 profiles, DTS/TrueHD audio — play in the preview just as they mine. Hardware decoding is still preferred where it works.
 
 ### Fixed
 
 - Dictionary media in AVIF format was stored as `.bin` on every device, including ones that handle AVIF. The format a media file is saved under is now decided from the device's own capabilities rather than fixed at build time.
+- A video the device could not decode left the word picker's preview as a silent black rectangle — mining worked, the preview just showed nothing. The preview now names the codec the device cannot play and offers a retry, and a playback error no longer leaves the player dead for the rest of the run.
 
 ## [0.3.0] - 2026-08-03
 
