@@ -28,6 +28,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.ankiminer.android.R
 import com.ankiminer.android.anki.provider.NoteTypeSetupStatus
 import com.ankiminer.android.player.FakeCurationPreviewPlayer
+import com.ankiminer.android.player.PreviewFailure
 import com.ankiminer.android.ui.attribution.AttributionScreen
 import com.ankiminer.android.ui.attribution.NoticesScreen
 import com.ankiminer.android.ui.navigation.AnkiMinerAppShell
@@ -71,31 +72,56 @@ class UiAuditScreenshotTest {
                     state = state.fileName,
                     destination = AnkiMinerDestination.VIDEO,
                 ) {
-                    VideoMiningScreen(
-                        state = videoAuditState(state),
-                        onPickVideo = {},
-                        onPickSubtitle = {},
-                        onClearVideo = {},
-                        onClearSubtitle = {},
-                        onDismissDocumentError = {},
-                        onDismissCommandError = {},
-                        onStart = {},
-                        onFocusCandidate = {},
-                        onSetCandidateSelected = { _, _ -> },
-                        onMarkCandidateKnown = { _, _ -> },
-                        onSetSelectionForVisible = { _, _ -> },
-                        onSetSelectionForPage = {},
-                        onReconcileFocus = { _, _ -> },
-                        onSelectSentence = { _, _ -> },
-                        onConfirmCuration = {},
-                        onCancel = {},
-                        onRetry = {},
-                        onReset = {},
-                        playerFactory = { FakeCurationPreviewPlayer() },
-                        modifier = Modifier.testTag(VideoMiningTestTags.SCREEN),
-                    )
+                    AuditVideoMiningScreen(state = state)
                 }
-            },
+            } +
+                CaptureTarget(
+                    screen = "video",
+                    state = "curation-preview-failure",
+                    destination = AnkiMinerDestination.VIDEO,
+                ) {
+                    AuditVideoMiningScreen(
+                        state = MiningAuditState.CURATION,
+                        playerFactory = {
+                            FakeCurationPreviewPlayer().apply {
+                                failureOnBind =
+                                    PreviewFailure.VideoTrackUnsupported("av01.0.05M.08")
+                            }
+                        },
+                    )
+                },
+        )
+    }
+
+    @Composable
+    private fun AuditVideoMiningScreen(
+        state: MiningAuditState,
+        playerFactory: (android.content.Context) -> FakeCurationPreviewPlayer = {
+            FakeCurationPreviewPlayer()
+        },
+    ) {
+        VideoMiningScreen(
+            state = videoAuditState(state),
+            onPickVideo = {},
+            onPickSubtitle = {},
+            onClearVideo = {},
+            onClearSubtitle = {},
+            onDismissDocumentError = {},
+            onDismissCommandError = {},
+            onStart = {},
+            onFocusCandidate = {},
+            onSetCandidateSelected = { _, _ -> },
+            onMarkCandidateKnown = { _, _ -> },
+            onSetSelectionForVisible = { _, _ -> },
+            onSetSelectionForPage = {},
+            onReconcileFocus = { _, _ -> },
+            onSelectSentence = { _, _ -> },
+            onConfirmCuration = {},
+            onCancel = {},
+            onRetry = {},
+            onReset = {},
+            playerFactory = playerFactory,
+            modifier = Modifier.testTag(VideoMiningTestTags.SCREEN),
         )
     }
 

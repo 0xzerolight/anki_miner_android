@@ -31,6 +31,9 @@ class FakeCurationPreviewPlayer : CurationPreviewPlayer {
     var retryCount = 0
         private set
 
+    /** Failure to surface after a bind, like the real player's onTracksChanged would. */
+    var failureOnBind: PreviewFailure? = null
+
     fun emitFailure(failure: PreviewFailure?) {
         mutableFailure.value = failure
     }
@@ -42,7 +45,7 @@ class FakeCurationPreviewPlayer : CurationPreviewPlayer {
         boundUri = uri
         boundUris += uri
         events += "bind:$uri"
-        mutableFailure.value = null
+        mutableFailure.value = failureOnBind
     }
 
     override fun seekTo(seconds: Double) {
