@@ -164,7 +164,6 @@ internal data class OnboardingWizardCallbacks(
     val onRetryDeckSelection: () -> Unit = {},
     val onSelectNoteType: (String) -> Unit = {},
     val onSetFieldMapping: (String, String) -> Unit = { _, _ -> },
-    val onVerifyNoteType: () -> Unit = {},
     val onCustomizeFields: () -> Unit = {},
     val onResolveRecovery: () -> Unit = {},
     val onRefresh: () -> Unit = {},
@@ -209,7 +208,6 @@ internal fun OnboardingWizard(
                 onRetryDeckSelection = viewModel::retryDeckSelection,
                 onSelectNoteType = viewModel::selectNoteType,
                 onSetFieldMapping = viewModel::setFieldMapping,
-                onVerifyNoteType = viewModel::verifyNoteType,
                 onCustomizeFields = onCustomizeFields,
                 onResolveRecovery = onResolveRecovery,
                 onRefresh = viewModel::refresh,
@@ -450,7 +448,6 @@ private fun WizardStepBody(
             WizardAnkiTargetCard(
                 state = state,
                 onSelectNoteType = callbacks.onSelectNoteType,
-                onVerify = callbacks.onVerifyNoteType,
                 onCustomizeFields = callbacks.onCustomizeFields,
             )
             state.ankiOperation?.let { AnkiOperationCard() }
