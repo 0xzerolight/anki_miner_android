@@ -45,38 +45,51 @@ import com.ankiminer.android.vm.SettingsViewModel
 import com.ankiminer.android.vm.SetupUiState
 import com.ankiminer.android.vm.SetupViewModel
 
-internal val CUSTOM_DICTIONARY_MIME_TYPES =
-    arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream")
-internal val FREQUENCY_MIME_TYPES =
-    arrayOf(
-        "application/zip",
-        "application/x-zip-compressed",
-        "text/csv",
-        "text/tab-separated-values",
-        "text/plain",
-        "application/octet-stream",
-    )
-internal val PITCH_MIME_TYPES =
-    arrayOf(
-        "application/zip",
-        "application/x-zip-compressed",
-        "text/csv",
-        "text/tab-separated-values",
-        "text/plain",
-        "application/octet-stream",
-    )
-internal val AUDIO_PACK_MIME_TYPES =
-    arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream")
-internal val KNOWN_WORDS_MIME_TYPES =
-    arrayOf(
-        "application/json",
-        "text/csv",
-        "text/tab-separated-values",
-        "text/plain",
-        "application/octet-stream",
-    )
+// `OpenDocument` greys out anything whose provider-reported MIME is not matched here, and the
+// post-pick classifier (`detectResourceImportFileKind`) is extension-first and far more
+// permissive, so this list is the only thing that can reject a file the import path would have
+// handled. Keep it at least as wide as the classifier; `ImportMimeTypesTest` enforces that.
+private val ZIP_IMPORT_MIME_TYPES =
+    arrayOf("application/zip", "application/x-zip", "application/x-zip-compressed")
 
-internal val WORD_LIST_MIME_TYPES = arrayOf("text/plain", "application/octet-stream")
+// `text/*` rather than the three spellings we happen to know: pre-Android 10 `MimeUtils` maps a
+// .csv to text/comma-separated-values, and providers also invent text/tsv and text/x-csv.
+private val TEXT_IMPORT_MIME_TYPES = arrayOf("text/*")
+
+// Out of reach of the wildcard. Drive and several OEM file managers report a Windows-authored
+// .csv as application/vnd.ms-excel.
+private val CSV_IMPORT_MIME_TYPES = arrayOf("application/csv", "application/vnd.ms-excel")
+
+// A hand-written list often arrives untyped from cloud providers.
+private val UNTYPED_IMPORT_MIME_TYPES = arrayOf("application/octet-stream")
+
+internal val CUSTOM_DICTIONARY_MIME_TYPES = ZIP_IMPORT_MIME_TYPES + UNTYPED_IMPORT_MIME_TYPES
+internal val FREQUENCY_MIME_TYPES =
+    ZIP_IMPORT_MIME_TYPES + TEXT_IMPORT_MIME_TYPES + CSV_IMPORT_MIME_TYPES +
+        UNTYPED_IMPORT_MIME_TYPES
+internal val PITCH_MIME_TYPES = FREQUENCY_MIME_TYPES
+internal val AUDIO_PACK_MIME_TYPES = ZIP_IMPORT_MIME_TYPES + UNTYPED_IMPORT_MIME_TYPES
+internal val KNOWN_WORDS_MIME_TYPES =
+    arrayOf("application/json") + TEXT_IMPORT_MIME_TYPES + CSV_IMPORT_MIME_TYPES +
+        UNTYPED_IMPORT_MIME_TYPES
+
+internal val WORD_LIST_MIME_TYPES = TEXT_IMPORT_MIME_TYPES + UNTYPED_IMPORT_MIME_TYPES
+
+/**
+ * Whether a picker launched with [allowed] would offer a document of [mimeType].
+ *
+ * Mirrors DocumentsUI's `MimePredicate.mimeMatches`: an exact match, or a `type/ *` entry against
+ * the same top-level type. Only the tests call this — the platform does the real matching — but
+ * they need the platform's rule to tell a genuine allowlist gap from a wildcard already covering it.
+ */
+internal fun mimeTypeIsPickable(
+    mimeType: String,
+    allowed: Array<String>,
+): Boolean =
+    allowed.any { entry ->
+        entry == mimeType ||
+            (entry.endsWith("/*") && mimeType.substringBefore('/') == entry.substringBefore('/'))
+    }
 
 internal data class ExcludedDeckChoice(
     val name: String,
