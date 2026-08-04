@@ -44,6 +44,7 @@ import com.ankiminer.android.ui.reading.ReadingDocumentSlotState
 import com.ankiminer.android.ui.reading.ReadingMiningCommandError
 import com.ankiminer.android.ui.reading.ReadingMiningUiState
 import com.ankiminer.android.ui.reading.ReadingSourceKindUi
+import com.ankiminer.android.ui.reading.ReadingSourceMode
 import com.ankiminer.android.ui.reading.isReadingArchive
 import com.ankiminer.android.ui.reading.readingArchiveMatches
 import com.ankiminer.android.ui.reading.readingSourceKind
@@ -77,7 +78,10 @@ class ReadingMiningViewModel internal constructor(
     private data class LocalState(
         val source: ReadingDocumentSlotState = ReadingDocumentSlotState(),
         val archive: ReadingDocumentSlotState = ReadingDocumentSlotState(),
+        val sourceMode: ReadingSourceMode = ReadingSourceMode.FILE,
         val sourceKind: ReadingSourceKindUi? = null,
+        val pastedText: String = "",
+        val pastedTextTruncated: Boolean = false,
         val subtitleSeriesName: String = "",
         val curationDraft: SharedCurationDraft? = null,
         val previousPageSelectedCount: Int = 0,
@@ -171,7 +175,10 @@ class ReadingMiningViewModel internal constructor(
             ReadingMiningUiState(
                 source = local.source,
                 archive = local.archive,
-                sourceKind = local.sourceKind,
+                sourceMode = local.sourceMode,
+                sourceKind = local.sourceKind.takeIf { local.sourceMode == ReadingSourceMode.FILE },
+                pastedText = local.pastedText,
+                pastedTextTruncated = local.pastedTextTruncated,
                 subtitleSeriesName = local.subtitleSeriesName,
                 runState = runState,
                 curation = curation,
@@ -277,6 +284,32 @@ class ReadingMiningViewModel internal constructor(
         }
     }
 
+    fun onSourceModeChanged(mode: ReadingSourceMode) {
+        if (repository.state.value != MiningRunState.Idle || localState.value.pending.start) return
+        localState.update { it.copy(sourceMode = mode) }
+    }
+
+    fun onPastedTextChanged(text: String) {
+        if (repository.state.value != MiningRunState.Idle || localState.value.pending.start) return
+        val bounded = text.takeCodePoints(MAX_PASTED_TEXT_CODE_POINTS)
+        localState.update {
+            it.copy(
+                pastedText = bounded,
+                pastedTextTruncated = bounded.length != text.length,
+            )
+        }
+    }
+
+    fun clearPastedText() {
+        if (repository.state.value != MiningRunState.Idle || localState.value.pending.start) return
+        localState.update {
+            it.copy(
+                pastedText = "",
+                pastedTextTruncated = false,
+            )
+        }
+    }
+
     fun onSubtitleSeriesNameChanged(value: String) {
         if (repository.state.value != MiningRunState.Idle || localState.value.pending.start) return
         val bounded = value.takeCodePoints(MAX_SERIES_NAME_CODE_POINTS)
@@ -357,8 +390,8 @@ class ReadingMiningViewModel internal constructor(
             if (
                 repository.state.value != MiningRunState.Idle ||
                 runtimeWorkState.value != null ||
-                local.source.isResolving ||
-                local.archive.isResolving ||
+                (local.sourceMode == ReadingSourceMode.FILE &&
+                    (local.source.isResolving || local.archive.isResolving)) ||
                 local.pending.start ||
                 local.pending.reset
             ) {
@@ -1102,7 +1135,10 @@ class ReadingMiningViewModel internal constructor(
             } else {
                 false
             }
-        if (!ownershipTransferred) {
+        if (
+            !ownershipTransferred ||
+            input?.selection is ReadingSourceSelection.PastedText
+        ) {
             local.source.document?.let { safBroker.releaseReadAccessEventually(it.uri) }
             local.archive.document?.let { safBroker.releaseReadAccessEventually(it.uri) }
         } else if (input?.selection is ReadingSourceSelection.Single) {
@@ -1206,6 +1242,13 @@ class ReadingMiningViewModel internal constructor(
         }
 
     private fun LocalState.toInputOrNull(): ReadingMiningInput? {
+        if (sourceMode == ReadingSourceMode.PASTED_TEXT) {
+            if (pastedText.isBlank()) return null
+            return ReadingMiningInput(
+                selection = ReadingSourceSelection.PastedText(pastedText),
+                subtitleSeriesName = null,
+            )
+        }
         val document = source.document ?: return null
         val kind = sourceKind ?: return null
         val selection =
@@ -1365,6 +1408,7 @@ class ReadingMiningViewModel internal constructor(
     }
 
     private companion object {
+        const val MAX_PASTED_TEXT_CODE_POINTS = 200_000
         const val MAX_SERIES_NAME_CODE_POINTS = 120
         const val PENDING_ARCHIVE_URI_KEY = "readingMining.pendingArchiveUri"
     }

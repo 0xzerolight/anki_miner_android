@@ -72,6 +72,22 @@ class ReadingMiningUiStateTest {
         assertTrue(state.canStart)
     }
 
+    @Test
+    fun pastedTextModeRequiresNonBlankTextAndIgnoresFileEnablement() {
+        val blank =
+            ReadingMiningUiState(
+                source = ReadingDocumentSlotState(isResolving = true),
+                archive = ReadingDocumentSlotState(isResolving = true),
+                sourceKind = ReadingSourceKindUi.MOKURO,
+                sourceMode = ReadingSourceMode.PASTED_TEXT,
+                pastedText = " \n\t ",
+            )
+
+        assertFalse(blank.canStart)
+        assertFalse(blank.acceptsArchive)
+        assertTrue(blank.copy(pastedText = "本文。").canStart)
+    }
+
     private fun document(
         uri: String,
         displayName: String,
