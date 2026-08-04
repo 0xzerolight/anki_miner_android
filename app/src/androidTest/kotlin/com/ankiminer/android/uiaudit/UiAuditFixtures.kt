@@ -501,7 +501,6 @@ internal fun setupAuditState(): SetupUiState {
         customSlotId = "custom-classical-japanese",
         frequencySourceName = "JPDB frequency 2025",
         pitchSourceName = "Kanjium pitch accents",
-        audioPackId = "jpod101-extra",
         knownWordsSearch = "美",
     )
 }

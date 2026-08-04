@@ -150,7 +150,6 @@ internal fun PitchImportCard(
 @Composable
 internal fun AudioPackImportCard(
     state: SetupUiState,
-    onIdChanged: (String) -> Unit,
     onImport: () -> Unit,
     inlineFailure: (@Composable () -> Unit)? = null,
 ) {
@@ -173,22 +172,13 @@ internal fun AudioPackImportCard(
                     )
                 }
             if (state.audioPacks.isEmpty()) Text(stringResource(R.string.audio_pack_none_installed))
-            OutlinedTextField(
-                value = state.audioPackId,
-                onValueChange = onIdChanged,
-                label = { Text(stringResource(R.string.audio_pack_id)) },
-                isError = !state.audioPackIdValid,
-                enabled = !state.busy,
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
             inlineFailure?.invoke()
             OutlinedButton(
                 onClick = onImport,
-                enabled = !state.busy && state.audioPackIdValid,
+                enabled = !state.busy,
                 modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
                 colors = outlinedActionButtonColors(),
-                border = actionBorder(!state.busy && state.audioPackIdValid),
+                border = actionBorder(!state.busy),
             ) { Text(stringResource(R.string.audio_pack_choose_zip)) }
         }
     }

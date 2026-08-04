@@ -471,6 +471,7 @@
     <string name="resource_failure_pitch_import">The selected file is not supported pitch-accent data</string>
     <string name="resource_failure_pitch_invalid">Installed pitch-accent data is damaged; replace it before mining</string>
     <string name="resource_failure_audio_pack_import">The selected ZIP is not a supported local audio pack</string>
+    <string name="resource_failure_audio_pack_reserved">This archive derives the reserved audio-pack ID “jpod101”. Rename its root folder or ZIP file.</string>
     <string name="resource_failure_known_words_import">The selected file contains no supported known words</string>
     <string name="resource_failure_inventory_unsafe">A local resource is damaged or unsafe and needs attention</string>
     <string name="resource_failure_dictionary_schema">This dictionary must be replaced because its index schema is stale</string>
@@ -511,7 +512,6 @@
     <string name="pitch_choose_file">Choose pitch-accent file</string>
     <string name="audio_pack_import_title">Import expression audio</string>
     <string name="audio_pack_none_installed">No local audio pack is installed.</string>
-    <string name="audio_pack_id">Stable audio-pack ID</string>
     <string name="audio_pack_choose_zip">Choose audio-pack ZIP</string>
     <string name="word_lists_title">Word lists</string>
     <string name="word_lists_format">Plain text, one word per line. Blank lines and lines starting with # are ignored.</string>

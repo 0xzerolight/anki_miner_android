@@ -258,6 +258,12 @@ class ResourceBridgeCodecTest {
                 packId = "nhk16",
                 overwrite = false,
             )
+        val audioPreflight =
+            ResourceBridgeCodec.encodeAudioPackPreflightRequest(
+                operation = "resource_audio_preflight",
+                sourcePath = "/private/audio.zip",
+                displayName = "NHK Audio.zip",
+            )
         val known =
             ResourceBridgeCodec.encodeKnownWordsImportRequest(
                 operation = "resource_known",
@@ -268,8 +274,20 @@ class ResourceBridgeCodecTest {
         assertTrue(frequency.contains("\"sourceFormat\":\"tsv\""))
         assertTrue(pitch.contains("\"type\":\"resource.pitch.import\""))
         assertTrue(audio.contains("\"packId\":\"nhk16\""))
+        assertTrue(audioPreflight.contains("\"displayName\":\"NHK Audio.zip\""))
+        assertEquals(
+            "nhk16",
+            ResourceBridgeCodec.decodeAudioPackPreflight(
+                """{"schemaVersion":1,"type":"resource.audiopack.preflighted","payload":{"packId":"nhk16"}}""",
+            ),
+        )
+        assertThrows(ResourceBridgeException::class.java) {
+            ResourceBridgeCodec.decodeAudioPackPreflight(
+                """{"schemaVersion":1,"type":"resource.audiopack.preflighted","payload":{"packId":"jpod101"}}""",
+            )
+        }
         assertTrue(known.contains("\"sourceFormat\":\"json\""))
-        assertTrue(listOf(frequency, pitch, audio, known).none { it.contains("content://") })
+        assertTrue(listOf(frequency, pitch, audio, audioPreflight, known).none { it.contains("content://") })
     }
 
     @Test

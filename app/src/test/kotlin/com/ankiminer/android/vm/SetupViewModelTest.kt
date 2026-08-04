@@ -10,6 +10,7 @@ import com.ankiminer.android.data.RuntimeWorkCoordinator
 import com.ankiminer.android.data.anki.AnkiSetupManager
 import com.ankiminer.android.data.anki.AnkiSetupManagerState
 import com.ankiminer.android.data.resources.FrequencySourceFormat
+import com.ankiminer.android.data.resources.InstalledAudioPack
 import com.ankiminer.android.data.resources.InstalledFrequencySource
 import com.ankiminer.android.data.resources.InstalledPitchSource
 import com.ankiminer.android.data.resources.KnownWordsResetScope
@@ -778,6 +779,51 @@ class SetupViewModelTest {
         }
 
     @Test
+    fun `audio pack preflight target survives recreation without deriving again`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val savedState = SavedStateHandle()
+            val firstResources =
+                FakeResourceManager().apply {
+                    setInstalledAudioPacks(
+                        listOf(InstalledAudioPack("jpod", "JPod", "jpod_legacy", 12, true)),
+                    )
+                }
+            val first =
+                viewModel(
+                    FakeSettingsRepository(AppSettings()),
+                    FakeAnkiSetupManager(emptyList()),
+                    firstResources,
+                    savedState,
+                )
+            advanceUntilIdle()
+
+            assertTrue(first.beginAudioPackPicker())
+            first.onAudioPackPicked("content://jpod.zip")
+            advanceUntilIdle()
+
+            assertEquals(listOf("content://jpod.zip"), firstResources.audioPreflights)
+            assertEquals("jpod", first.uiState.value.pendingReplace?.identity)
+
+            val restoredResources = FakeResourceManager()
+            val restored =
+                viewModel(
+                    FakeSettingsRepository(AppSettings()),
+                    FakeAnkiSetupManager(emptyList()),
+                    restoredResources,
+                    savedState,
+                )
+            advanceUntilIdle()
+            restored.confirmPendingReplace()
+            advanceUntilIdle()
+
+            assertEquals(emptyList<String>(), restoredResources.audioPreflights)
+            assertEquals(
+                listOf(Triple("content://jpod.zip", "jpod", true)),
+                restoredResources.audioImports,
+            )
+        }
+
+    @Test
     fun `a word list pick delivered to a recreated ViewModel lands on the list it was made for`() =
         runTest(mainDispatcherRule.dispatcher) {
             listOf(WordListKind.BLACKLIST, WordListKind.WHITELIST).forEach { kind ->
@@ -1083,6 +1129,8 @@ class SetupViewModelTest {
         val pitchImports = mutableListOf<Pair<String, Boolean>>()
         val pitchSourceNames = mutableListOf<String>()
         val pitchFormats = mutableListOf<PitchAccentSourceFormat>()
+        val audioPreflights = mutableListOf<String>()
+        val audioImports = mutableListOf<Triple<String, String, Boolean>>()
         private val mutableState =
             MutableStateFlow(
                 ResourceManagerState(startupReadiness = ResourceStartupReadiness.READY),
@@ -1096,6 +1144,10 @@ class SetupViewModelTest {
 
         fun setInstalledPitchSources(sources: List<InstalledPitchSource>) {
             mutableState.value = mutableState.value.copy(pitchSources = sources)
+        }
+
+        fun setInstalledAudioPacks(packs: List<InstalledAudioPack>) {
+            mutableState.value = mutableState.value.copy(audioPacks = packs)
         }
 
         fun setFailure(failure: ResourceFailure) {
@@ -1138,7 +1190,16 @@ class SetupViewModelTest {
             pitchFormats += format
         }
 
-        override suspend fun importAudioPack(uri: String, packId: String, replace: Boolean) = Unit
+        override suspend fun preflightAudioPack(uri: String): String {
+            audioPreflights += uri
+            return "jpod"
+        }
+
+        override suspend fun importAudioPack(uri: String, packId: String, replace: Boolean) {
+            audioImports += Triple(uri, packId, replace)
+        }
+
+        override suspend fun discardAudioPackPreflight() = Unit
 
         override suspend fun importKnownWords(uri: String, format: KnownWordsSourceFormat) {
             importCalls += uri to format

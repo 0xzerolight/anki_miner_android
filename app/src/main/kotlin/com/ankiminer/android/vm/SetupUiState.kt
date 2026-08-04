@@ -86,16 +86,12 @@ internal data class SetupUiState(
     val frequencyFormat: FrequencySourceFormat = FrequencySourceFormat.YOMITAN_ZIP,
     val pitchSourceName: String = "Imported pitch accent",
     val pitchFormat: PitchAccentSourceFormat = PitchAccentSourceFormat.YOMITAN_ZIP,
-    val audioPackId: String = "audio-pack",
     val knownWordsFormat: KnownWordsSourceFormat = KnownWordsSourceFormat.JSON,
     val wordListTarget: WordListKind = WordListKind.BLACKLIST,
     val knownWordsSearch: String = "",
 ) {
     val customSlotValid: Boolean
         get() = CUSTOM_SLOT_ID.matches(customSlotId)
-
-    val audioPackIdValid: Boolean
-        get() = CUSTOM_SLOT_ID.matches(audioPackId) && audioPackId != "jpod101"
 
     val pythonReady: Boolean
         get() = python is PythonRuntimeReadiness.Ready

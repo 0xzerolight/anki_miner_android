@@ -6,11 +6,11 @@ import java.text.Normalizer
 import java.util.Locale
 
 /**
- * On-disk identities for locally imported resources, derived from the name the user typed.
+ * On-disk identities for locally imported resources.
  *
  * The id is a real key, not a label: it is the directory name under the resource root, the key the
  * inventory round-trips, the entry persisted in the priority chain, and the id the engine looks the
- * source up by. It is also not something a user should have to invent, so it is derived here.
+ * source up by. It is also not something a user should have to invent.
  *
  * Derivation is a pure function of the display name. It deliberately does NOT consult the installed
  * inventory to dodge collisions: a suffix would resolve the collision before the user could be asked
@@ -19,9 +19,6 @@ import java.util.Locale
  * the caller the existing id so a replace writes in place.
  */
 internal object ResourceIdentity {
-    /** Ids the engine reserves for built-in sources. */
-    private const val RESERVED_AUDIO_PACK_ID = "jpod101"
-
     /**
      * Cap well under the 64-char contract so the digest fallback and any future suffix still fit.
      */
@@ -65,9 +62,6 @@ internal object ResourceIdentity {
         return "$fallbackPrefix-${digest(name)}"
     }
 
-    /** True when [packId] names a built-in source the engine will refuse to overwrite. */
-    fun isReservedAudioPackId(packId: String): Boolean = packId == RESERVED_AUDIO_PACK_ID
-
     /**
      * Where a frequency import would land, and what it would replace.
      *
@@ -93,7 +87,7 @@ internal object ResourceIdentity {
         )
     }
 
-    /** Audio packs keep an explicit id: the engine stores no display name for them to derive from. */
+    /** Audio-pack ids come from the engine preflight; this only resolves installed collisions. */
     fun audioPackTarget(
         packId: String,
         installed: List<InstalledAudioPack>,

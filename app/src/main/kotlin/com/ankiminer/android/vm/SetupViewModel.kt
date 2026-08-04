@@ -87,7 +87,6 @@ internal class SetupViewModel(
         val frequencyFormat: FrequencySourceFormat = FrequencySourceFormat.YOMITAN_ZIP,
         val pitchSourceName: String,
         val pitchFormat: PitchAccentSourceFormat = PitchAccentSourceFormat.YOMITAN_ZIP,
-        val audioPackId: String = "audio-pack",
         val knownWordsFormat: KnownWordsSourceFormat = KnownWordsSourceFormat.JSON,
         // Which list the last word-list operation touched, so a failed import can offer the right picker.
         val wordListTarget: WordListKind = WordListKind.BLACKLIST,
@@ -117,9 +116,6 @@ internal class SetupViewModel(
                 pitchFormat =
                     savedEnum<PitchAccentSourceFormat>(STATE_PITCH_FORMAT)
                         ?: PitchAccentSourceFormat.YOMITAN_ZIP,
-                audioPackId =
-                    savedStateHandle[STATE_AUDIO_PACK_ID]
-                        ?: "audio-pack",
                 knownWordsFormat =
                     savedEnum<KnownWordsSourceFormat>(STATE_KNOWN_WORDS_FORMAT)
                         ?: KnownWordsSourceFormat.JSON,
@@ -208,7 +204,6 @@ internal class SetupViewModel(
                 frequencyFormat = localState.frequencyFormat,
                 pitchSourceName = localState.pitchSourceName,
                 pitchFormat = localState.pitchFormat,
-                audioPackId = localState.audioPackId,
                 knownWordsFormat = localState.knownWordsFormat,
                 wordListTarget = localState.wordListTarget,
                 knownWordsSearch = localState.knownWordsSearch,
@@ -220,6 +215,13 @@ internal class SetupViewModel(
         )
 
     init {
+        val retainedAudioPreflight =
+            pendingPicker?.let {
+                it.kind == ResourcePickerKind.AUDIO_PACK && it.target != null
+            } == true
+        if (!retainedAudioPreflight) {
+            viewModelScope.launch { resources.discardAudioPackPreflight() }
+        }
         resumePendingPicker()
     }
 
@@ -244,7 +246,6 @@ internal class SetupViewModel(
             frequencyFormat = localState.frequencyFormat,
             pitchSourceName = localState.pitchSourceName,
             pitchFormat = localState.pitchFormat,
-            audioPackId = localState.audioPackId,
             knownWordsFormat = localState.knownWordsFormat,
             wordListTarget = localState.wordListTarget,
             knownWordsSearch = localState.knownWordsSearch,
@@ -613,7 +614,12 @@ internal class SetupViewModel(
     }
 
     fun dismissPendingReplace() {
+        val discardAudioPreflight =
+            currentState().pendingReplace?.kind == ResourceReplaceKind.AUDIO_PACK
         clearPendingReplace(clearPicker = true)
+        if (discardAudioPreflight) {
+            viewModelScope.launch { resources.discardAudioPackPreflight() }
+        }
     }
 
     fun beginCustomDictionaryPicker(): Boolean {
@@ -706,19 +712,9 @@ internal class SetupViewModel(
         onPitchPicked(uri)
     }
 
-    fun setAudioPackId(value: String) {
-        if (value.length <= 64) {
-            val normalized = value.lowercase()
-            savedStateHandle[STATE_AUDIO_PACK_ID] = normalized
-            local.update { it.copy(audioPackId = normalized) }
-        }
-    }
-
     fun beginAudioPackPicker(): Boolean {
-        val state = currentState()
-        if (state.busy) return false
-        val request = audioPackPickerRequest(state) ?: return false
-        savePendingPicker(request)
+        if (currentState().busy) return false
+        savePendingPicker(PendingResourcePicker(kind = ResourcePickerKind.AUDIO_PACK))
         return true
     }
 
@@ -726,11 +722,11 @@ internal class SetupViewModel(
         finishPicker(
             ResourcePickerKind.AUDIO_PACK,
             uri,
-            fallback = { audioPackPickerRequest(currentState()) },
+            fallback = { PendingResourcePicker(kind = ResourcePickerKind.AUDIO_PACK) },
         )
 
     fun importAudioPack(uri: String) {
-        savePendingPicker(audioPackPickerRequest(currentState()) ?: return)
+        savePendingPicker(PendingResourcePicker(kind = ResourcePickerKind.AUDIO_PACK))
         onAudioPackPicked(uri)
     }
 
@@ -791,14 +787,6 @@ internal class SetupViewModel(
         )
     }
 
-    private fun audioPackPickerRequest(state: SetupUiState): PendingResourcePicker? {
-        if (!state.audioPackIdValid) return null
-        return PendingResourcePicker(
-            kind = ResourcePickerKind.AUDIO_PACK,
-            target = ResourceIdentity.audioPackTarget(state.audioPackId, state.audioPacks),
-        )
-    }
-
     private fun finishPicker(
         kind: ResourcePickerKind,
         uri: String?,
@@ -819,13 +807,31 @@ internal class SetupViewModel(
         if (pendingPicker?.uri == null || pendingPickerJob?.isActive == true) return
         pendingPickerJob =
             viewModelScope.launch {
+                var request = pendingPicker?.takeIf { it.uri != null } ?: return@launch
+                if (request.kind == ResourcePickerKind.AUDIO_PACK && request.target == null) {
+                    val uri = requireNotNull(request.uri)
+                    val packId = resources.preflightAudioPack(uri)
+                    if (packId == null) {
+                        clearPendingPicker()
+                        return@launch
+                    }
+                    request =
+                        request.copy(
+                            target =
+                                ResourceIdentity.audioPackTarget(
+                                    packId,
+                                    resources.state.value.audioPacks,
+                                ),
+                        )
+                    savePendingPicker(request)
+                }
                 resources.state.first { state ->
                     state.startupReadiness == ResourceStartupReadiness.READY &&
                         state.activeOperation == null
                 }
                 runtimeWorkState.first { it == null }
-                val request = pendingPicker?.takeIf { it.uri != null } ?: return@launch
-                dispatchPendingPicker(request)
+                val persisted = pendingPicker?.takeIf { it.uri != null } ?: return@launch
+                dispatchPendingPicker(persisted)
             }
     }
 
@@ -928,9 +934,8 @@ internal class SetupViewModel(
             )
         return restored.takeIf { request ->
             when (request.kind) {
-                ResourcePickerKind.CUSTOM_DICTIONARY,
-                ResourcePickerKind.AUDIO_PACK,
-                -> request.target != null
+                ResourcePickerKind.CUSTOM_DICTIONARY -> request.target != null
+                ResourcePickerKind.AUDIO_PACK -> true
                 ResourcePickerKind.FREQUENCY ->
                     request.target != null &&
                         request.sourceName != null &&
@@ -1318,7 +1323,6 @@ internal class SetupViewModel(
         const val STATE_FREQUENCY_FORMAT = "setup.frequencyFormat"
         const val STATE_PITCH_SOURCE_NAME = "setup.pitchSourceName"
         const val STATE_PITCH_FORMAT = "setup.pitchFormat"
-        const val STATE_AUDIO_PACK_ID = "setup.audioPackId"
         const val STATE_KNOWN_WORDS_FORMAT = "setup.knownWordsFormat"
         const val STATE_WORD_LIST_TARGET = "setup.wordListTarget"
         const val STATE_PICKER_KIND = "setup.picker.kind"

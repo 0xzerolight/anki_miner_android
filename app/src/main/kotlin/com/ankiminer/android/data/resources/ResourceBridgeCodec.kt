@@ -131,6 +131,21 @@ object ResourceBridgeCodec {
         }
     }
 
+    fun encodeAudioPackPreflightRequest(
+        operation: String,
+        sourcePath: String,
+        displayName: String,
+    ): String {
+        requireOperationId(operation)
+        requireAbsolutePath(sourcePath)
+        requireDisplayName(displayName)
+        return encode("resource.audiopack.preflight") { generator ->
+            generator.writeStringField("operationId", operation)
+            generator.writeStringField("sourcePath", sourcePath)
+            generator.writeStringField("displayName", displayName)
+        }
+    }
+
     fun encodeAudioPackImportRequest(
         operation: String,
         sourcePath: String,
@@ -384,6 +399,14 @@ object ResourceBridgeCodec {
             skippedMalformed = nonNegative(value.getValue("skippedMalformed"), "skippedMalformed"),
             archiveSha256 = requireSha256(text(value.getValue("archiveSha256"), "archiveSha256")),
         )
+    }
+
+    fun decodeAudioPackPreflight(raw: String): String {
+        val value = payload(raw, "resource.audiopack.preflighted")
+        exact(value, setOf("packId"), "audio-pack preflight")
+        return requireSlotId(text(value.getValue("packId"), "packId")).also {
+            if (it == "jpod101") invalid("Reserved audio-pack id")
+        }
     }
 
     fun decodeImportedAudioPack(raw: String): ImportedAudioPack {

@@ -638,6 +638,139 @@ def _detect_audio_pack_root(extracted: Path) -> Path:
     return matches[0]
 
 
+def _project_audio_pack_zip(path: Path, destination: Path, operation: core._Operation) -> None:
+    from anki_miner.services.audio_packs.formats import AUDIO_EXTENSIONS
+
+    try:
+        with core._open_source(path) as (stream, _), zipfile.ZipFile(stream, "r") as archive:
+            infos = archive.infolist()
+            if not infos or len(infos) > _AUDIO_MEMBER_LIMIT:
+                raise _fail(
+                    "resource_archive_too_large",
+                    "Audio pack member count is outside its limit",
+                )
+            declared_total = sum(info.file_size for info in infos if not info.is_dir())
+            if declared_total <= 0 or declared_total > _AUDIO_TOTAL_LIMIT:
+                raise _fail("resource_archive_too_large", "Audio pack expands beyond its limit")
+            destination.mkdir(parents=True)
+            seen: set[tuple[str, ...]] = set()
+            for info in infos:
+                operation.check()
+                parts = core._safe_archive_path(info.filename, allow_directory_suffix=info.is_dir())
+                if parts in seen:
+                    raise _fail(
+                        "unsafe_resource_archive",
+                        "Audio pack contains a duplicate path",
+                    )
+                seen.add(parts)
+                if info.flag_bits & 0x1 or not core._zip_entry_is_safe_type(info):
+                    raise _fail(
+                        "unsafe_resource_archive",
+                        "Audio pack contains an encrypted, linked, or special file",
+                    )
+                if info.is_dir():
+                    continue
+                per_file_limit = _audio_member_limit(info)
+                if info.file_size < 0 or info.file_size > per_file_limit:
+                    raise _fail(
+                        "resource_archive_too_large",
+                        "Audio pack contains an oversized file",
+                    )
+                target = destination.joinpath(*parts)
+                name = target.name.lower()
+                is_detection_json = name in {"index.json", "entries.json"} and len(parts) <= 2
+                is_audio = target.suffix.lower() in AUDIO_EXTENSIONS
+                if not is_detection_json and not is_audio:
+                    continue
+                target.parent.mkdir(parents=True, exist_ok=True)
+                if is_audio:
+                    target.touch(exist_ok=False)
+                    continue
+                written = 0
+                with archive.open(info, "r") as source, target.open("xb", buffering=0) as output:
+                    while True:
+                        operation.check()
+                        chunk = source.read(core._COPY_CHUNK_BYTES)
+                        if not chunk:
+                            break
+                        written += len(chunk)
+                        if written > info.file_size or written > _AUDIO_JSON_LIMIT:
+                            raise _fail(
+                                "resource_archive_too_large",
+                                "Audio pack metadata expands beyond its limit",
+                            )
+                        core._write_all(output, chunk)
+                if written != info.file_size:
+                    raise _fail(
+                        "invalid_resource_archive",
+                        "Audio pack member length is inconsistent",
+                    )
+    except BridgeProtocolError:
+        raise
+    except OSError as exc:
+        core._raise_if_storage_exhausted(exc)
+        raise _fail("resource_install_failed", "Cannot inspect audio pack") from exc
+    except (zipfile.BadZipFile, RuntimeError, EOFError) as exc:
+        raise _fail("invalid_resource_archive", "Audio pack archive is corrupt") from exc
+
+
+def preflight_audio_pack(payload: Mapping[str, object]) -> str:
+    core._exact(
+        payload,
+        {"operationId", "sourcePath", "displayName"},
+        code="invalid_resource_request",
+    )
+    operation_id = core._operation_id(payload["operationId"])
+    source = core._absolute_path(payload["sourcePath"], name="sourcePath")
+    display_name = _display_name(payload["displayName"], label="displayName")
+    home = Path(require_initialized())
+    operation_root = _work_root(home, operation_id)
+    with core._OPERATIONS.begin(operation_id) as operation:
+        operation.check()
+        core._safe_rmtree(operation_root)
+        operation_root.mkdir(parents=True)
+        try:
+            projected = operation_root / "projected"
+            _project_audio_pack_zip(source, projected, operation)
+            pack_root = _detect_audio_pack_root(projected)
+
+            from anki_miner.services.audio_packs.importer import derive_pack_id
+
+            folder_name = pack_root.name
+            if pack_root == projected:
+                from anki_miner.services.audio_packs.formats import detect_pack_format
+
+                real_roots = [
+                    child
+                    for child in projected.iterdir()
+                    if child.is_dir()
+                    and not child.is_symlink()
+                    and child.name != "__MACOSX"
+                    and detect_pack_format(child) is not None
+                ]
+                folder_name = real_roots[0].name if len(real_roots) == 1 else PurePosixPath(display_name).stem
+            pack_id = derive_pack_id(folder_name)
+            if pack_id == "jpod101":
+                raise _fail(
+                    "audio_pack_id_reserved",
+                    "Derived audio-pack ID 'jpod101' is reserved",
+                )
+            try:
+                core._slot_id(pack_id)
+            except BridgeProtocolError as exc:
+                raise _fail(
+                    "audio_pack_import_failed",
+                    "Derived audio-pack ID is invalid",
+                ) from exc
+            return encode_message(
+                "resource.audiopack.preflighted",
+                {"packId": pack_id},
+            )
+        finally:
+            if operation_root.exists():
+                core._safe_rmtree(operation_root)
+
+
 def _validate_audio_index(db_path: Path, content: Path, operation: core._Operation) -> None:
     from anki_miner.services.audio_packs.formats import AUDIO_EXTENSIONS
 
