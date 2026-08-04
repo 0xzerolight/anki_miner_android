@@ -38,9 +38,8 @@ internal object AnkiMediaExtensions {
 
     /**
      * Extensions whose usability is a property of the device, asked at runtime rather than decided
-     * at compile time. A member keeps its real extension where
-     * [AnkiMediaMimeCapability.canNameFilesFor] answers true, and degrades to
-     * [STAGE_FALLBACK_EXTENSION] where it answers false.
+     * at compile time. A member keeps its real extension where the device MIME predicate answers
+     * true, and degrades to [STAGE_FALLBACK_EXTENSION] where it answers false.
      *
      * Image-only by construction: every audio producer extension reverse-maps at API 26
      * (aac->audio/aac, flac->audio/flac, wav->audio/x-wav, mp4->video/mp4, webm->video/webm,
@@ -93,7 +92,7 @@ internal object AnkiMediaExtensions {
     fun sanitizedExtension(
         requestedFilename: String,
         mediaKind: MediaKind,
-        capability: AnkiMediaMimeCapability,
+        canNameFilesFor: (String) -> Boolean,
     ): String? {
         val dot = requestedFilename.lastIndexOf('.')
         if (dot <= 0 || dot == requestedFilename.lastIndex) return null
@@ -104,7 +103,7 @@ internal object AnkiMediaExtensions {
                 MediaKind.IMAGE -> IMAGE_EXTENSIONS
             }
         if (candidate !in allowed) return null
-        if (candidate in DEVICE_CONDITIONAL_EXTENSIONS && !capability.canNameFilesFor(candidate)) return null
+        if (candidate in DEVICE_CONDITIONAL_EXTENSIONS && !canNameFilesFor(candidate)) return null
         return candidate
     }
 }

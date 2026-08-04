@@ -767,11 +767,9 @@ class JournalBackedMediaMutationServiceTest {
                 staging,
                 provider,
                 // A capable device: these tests are about the saga, not about the platform MIME
-                // table. PlatformAnkiMediaMimeCapability would touch MimeTypeMap, which throws
-                // under the JVM android.jar stub.
-                object : AnkiMediaMimeCapability {
-                    override fun canNameFilesFor(extension: String): Boolean = true
-                },
+                // table, and platformCanNameFilesFor would touch MimeTypeMap, which throws under the
+                // JVM android.jar stub.
+                { true },
             )
         var activeOwner: AnkiRunStateRegistry.RunOwner? = null
 
