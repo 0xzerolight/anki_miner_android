@@ -73,6 +73,7 @@ import com.ankiminer.android.ui.mining.MiningPhaseTarget
 import com.ankiminer.android.ui.mining.MiningProgressPanel
 import com.ankiminer.android.ui.mining.MiningResultSource
 import com.ankiminer.android.ui.mining.ReconcileCurationFocus
+import com.ankiminer.android.ui.mining.ResetCurationScrollOnProjectionChange
 import com.ankiminer.android.ui.mining.MiningSourceItem
 import com.ankiminer.android.ui.mining.RuntimeConflictNotice
 import com.ankiminer.android.ui.mining.SourcesCard
@@ -155,6 +156,13 @@ fun ReadingMiningScreen(
             )
         }
     ResetMiningScrollOnTransition(state = state, listState = listState)
+    ResetCurationScrollOnProjectionChange(
+        listState = listState,
+        requestId = curation?.requestId,
+        query = query,
+        filter = filter,
+        sort = sort,
+    )
 
     Scaffold(
         modifier =

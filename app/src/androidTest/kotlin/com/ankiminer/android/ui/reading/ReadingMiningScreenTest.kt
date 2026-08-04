@@ -578,7 +578,7 @@ class ReadingMiningScreenTest {
 
     @Test
     fun readingFilterMenuNarrowsTheCandidateProjection() {
-        val request = request(CurationPage(0, 1, 0, 2))
+        val request = request(CurationPage(0, 2, 0, 4))
         setScreen(
             state =
                 ReadingMiningUiState(

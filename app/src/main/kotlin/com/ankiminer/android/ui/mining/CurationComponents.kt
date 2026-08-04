@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Checkbox
@@ -395,6 +396,29 @@ internal fun rememberCurationCandidateRowTexts(
                 )
             }
         }
+    }
+}
+
+/**
+ * Returns to the first result whenever the projection changes.
+ *
+ * A keyed lazy list re-anchors on whichever row was on top, so re-sorting a hundred candidates
+ * scrolls to wherever that one row landed — which reads as a random jump. The heading used to be
+ * list item 0 and absorbed this; pinned, it no longer can.
+ *
+ * Requested rather than scrolled: the anchoring happens during measure, so a plain scrollToItem
+ * issued from composition is overwritten by it.
+ */
+@Composable
+internal fun ResetCurationScrollOnProjectionChange(
+    listState: LazyListState,
+    requestId: String?,
+    query: String,
+    filter: CurationFilter,
+    sort: CurationSort,
+) {
+    LaunchedEffect(requestId, query, filter, sort) {
+        listState.requestScrollToItem(0)
     }
 }
 

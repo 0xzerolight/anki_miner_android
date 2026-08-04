@@ -715,20 +715,32 @@ class VideoMiningScreenTest {
                 )
             }
         val request = CurationRequest("run", "request-sort", candidates)
-        setScreen(
-            state =
-                VideoMiningUiState(
-                    runState = MiningRunState.Curating(request),
-                    curation = curationState(request),
-                ),
-        )
+        lateinit var listState: LazyListState
+        composeRule.setContent {
+            AnkiMinerTheme {
+                listState = rememberLazyListState()
+                ScreenUnderTest(
+                    state =
+                        VideoMiningUiState(
+                            runState = MiningRunState.Curating(request),
+                            curation = curationState(request),
+                        ),
+                    listState = listState,
+                )
+            }
+        }
         val tailTag = VideoMiningTestTags.candidate("candidate-99")
 
         composeRule.onNodeWithTag(tailTag).assertDoesNotExist()
         composeRule.onNodeWithTag(CURATION_SORT_TEST_TAG).performClick()
         composeRule.onNodeWithText("Occurrences").performClick()
 
-        composeRule.onNodeWithTag(tailTag).assertIsDisplayed()
+        composeRule.runOnIdle {
+            assertEquals(
+                "candidate:candidate-99",
+                listState.layoutInfo.visibleItemsInfo.first().key,
+            )
+        }
     }
 
     @Test
