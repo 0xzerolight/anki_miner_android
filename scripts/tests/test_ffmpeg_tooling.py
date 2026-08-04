@@ -443,6 +443,47 @@ class FfmpegToolingTests(unittest.TestCase):
                         (destination / abi / name).read_bytes(),
                     )
 
+    def test_probe_profile_requires_a_decode_only_ffprobe(self) -> None:
+        # The second configure pass exists to keep libaom and libwebp — over 6 MB —
+        # out of a binary that only reports stream metadata. The guard has to fail
+        # on any surviving encode component, not just the ones named.
+        config_tool = _load_python_tool("assert-ffmpeg-config.py")
+        enabled = config_tool.PROBE_REQUIRED_ENABLED
+        disabled = config_tool.PROBE_REQUIRED_DISABLED
+
+        self.assertTrue({"CONFIG_FFPROBE", "CONFIG_MATROSKA_DEMUXER"}.issubset(enabled))
+        self.assertTrue({"CONFIG_FFMPEG", "CONFIG_LIBAOM", "CONFIG_LIBWEBP"}.issubset(disabled))
+        # ffprobe must keep the read surface, or a container the app was handed
+        # stops probing.
+        self.assertFalse(any(key.endswith("_DEMUXER") for key in disabled))
+
+        with tempfile.TemporaryDirectory() as directory:
+            config = Path(directory) / "config.h"
+            components = Path(directory) / "config_components.h"
+
+            def write(extra: dict[str, int] | None = None) -> None:
+                values = {key: 1 for key in enabled}
+                values.update({key: 0 for key in disabled})
+                values.update(extra or {})
+                config.write_text(
+                    "\n".join(f"#define {key} {value}" for key, value in values.items()) + "\n",
+                    encoding="utf-8",
+                )
+                components.write_text("", encoding="utf-8")
+
+            write()
+            config_tool.assert_configuration(config, components, "probe")
+
+            # A single leaked encoder fails, even one no required-disabled entry names.
+            write({"CONFIG_PNG_ENCODER": 1})
+            with self.assertRaises(config_tool.ConfigurationError):
+                config_tool.assert_configuration(config, components, "probe")
+
+            # The same config is rejected by the full profile, so the two cannot be confused.
+            write()
+            with self.assertRaises(config_tool.ConfigurationError):
+                config_tool.assert_configuration(config, components)
+
 
 if __name__ == "__main__":
     unittest.main()
