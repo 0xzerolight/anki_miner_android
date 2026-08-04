@@ -201,11 +201,14 @@ enum class KnownWordsSourceFormat(
 }
 
 private val ZIP_MAGIC = byteArrayOf(0x50, 0x4b, 0x03, 0x04)
-private val ZIP_MIME_TYPES =
+
+// Internal rather than private so the SAF picker allowlists can be tested against them. A
+// classifier that accepts a MIME type the picker does not offer is a file the user cannot select.
+internal val ZIP_MIME_TYPES =
     setOf("application/zip", "application/x-zip", "application/x-zip-compressed")
-private val CSV_MIME_TYPES = setOf("text/csv", "application/csv")
-private val TSV_MIME_TYPES = setOf("text/tab-separated-values", "text/tsv")
-private val JSON_MIME_TYPES = setOf("application/json", "text/json")
+internal val CSV_MIME_TYPES = setOf("text/csv", "application/csv")
+internal val TSV_MIME_TYPES = setOf("text/tab-separated-values", "text/tsv")
+internal val JSON_MIME_TYPES = setOf("application/json", "text/json")
 private const val OCTET_STREAM_MIME_TYPE = "application/octet-stream"
 
 /**
