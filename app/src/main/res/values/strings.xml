@@ -97,6 +97,10 @@
     <string name="curation_preview_expand_description">Expand video preview</string>
     <string name="curation_preview_overlay_description">Subtitle overlay</string>
     <string name="curation_preview_cues_unavailable">Subtitles unavailable for preview</string>
+    <string name="curation_preview_video_unsupported">This device can\'t decode this video (%1$s)</string>
+    <string name="curation_preview_audio_unsupported">This device can\'t decode this audio (%1$s)</string>
+    <string name="curation_preview_playback_failed">Preview playback failed (%1$s)</string>
+    <string name="curation_preview_retry">Retry</string>
     <string name="definition_loading">Looking up…</string>
     <string name="definition_missing">No offline dictionary entry</string>
     <string name="definition_unavailable">Dictionary lookup unavailable</string>

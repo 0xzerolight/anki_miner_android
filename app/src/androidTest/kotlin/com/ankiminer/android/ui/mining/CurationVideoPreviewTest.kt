@@ -23,7 +23,9 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.unit.dp
 import com.ankiminer.android.engine.SubtitleCue
 import com.ankiminer.android.player.FakeCurationPreviewPlayer
+import com.ankiminer.android.player.PreviewFailure
 import com.ankiminer.android.ui.theme.AnkiMinerTheme
+import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 
@@ -68,7 +70,66 @@ class CurationVideoPreviewTest {
         composeRule.onNodeWithTag(CurationPlayerTestTags.SURFACE).assertDoesNotExist()
     }
 
-    private fun setPreview(audioOnly: Boolean = false) {
+    @Test
+    fun videoTrackFailureRendersNoticeWithCodecLabel() {
+        val fake = setPreview()
+
+        composeRule.runOnUiThread {
+            fake.emitFailure(PreviewFailure.VideoTrackUnsupported("av01.0.05M.08"))
+        }
+
+        scrollTo(CurationPlayerTestTags.FAILURE_NOTICE)
+        composeRule.onNodeWithTag(CurationPlayerTestTags.FAILURE_NOTICE).assertIsDisplayed()
+        composeRule.onNodeWithText("av01.0.05M.08", substring = true).assertIsDisplayed()
+    }
+
+    @Test
+    fun audioTrackFailureRendersNotice() {
+        val fake = setPreview()
+
+        composeRule.runOnUiThread { fake.emitFailure(PreviewFailure.AudioTrackUnsupported("dts")) }
+
+        scrollTo(CurationPlayerTestTags.FAILURE_NOTICE)
+        composeRule.onNodeWithTag(CurationPlayerTestTags.FAILURE_NOTICE).assertIsDisplayed()
+    }
+
+    @Test
+    fun playbackFailureRendersNotice() {
+        val fake = setPreview()
+
+        composeRule.runOnUiThread {
+            fake.emitFailure(PreviewFailure.PlaybackFailed("ERROR_CODE_DECODER_INIT_FAILED"))
+        }
+
+        scrollTo(CurationPlayerTestTags.FAILURE_NOTICE)
+        composeRule.onNodeWithTag(CurationPlayerTestTags.FAILURE_NOTICE).assertIsDisplayed()
+    }
+
+    @Test
+    fun retryButtonInvokesPlayerRetryAndClearsNotice() {
+        val fake = setPreview()
+
+        composeRule.runOnUiThread {
+            fake.emitFailure(PreviewFailure.PlaybackFailed("ERROR_CODE_TIMEOUT"))
+        }
+
+        scrollTo(CurationPlayerTestTags.RETRY)
+        composeRule.onNodeWithTag(CurationPlayerTestTags.RETRY).performClick()
+
+        composeRule.waitForIdle()
+        assertEquals(1, fake.retryCount)
+        composeRule.onNodeWithTag(CurationPlayerTestTags.FAILURE_NOTICE).assertDoesNotExist()
+    }
+
+    @Test
+    fun noFailureRendersNoNotice() {
+        setPreview()
+
+        composeRule.onNodeWithTag(CurationPlayerTestTags.FAILURE_NOTICE).assertDoesNotExist()
+        composeRule.onNodeWithTag(CurationPlayerTestTags.RETRY).assertDoesNotExist()
+    }
+
+    private fun setPreview(audioOnly: Boolean = false): FakeCurationPreviewPlayer {
         val fake = FakeCurationPreviewPlayer()
         composeRule.setContent {
             AnkiMinerTheme {
@@ -93,6 +154,7 @@ class CurationVideoPreviewTest {
                 }
             }
         }
+        return fake
     }
 
     private fun scrollTo(tag: String) {

@@ -15,6 +15,7 @@
     "androidx.media3:media3-ui-compose:1.10.1",
     "androidx.navigation:navigation-compose:2.9.8",
     "com.fasterxml.jackson.core:jackson-core:2.21.5",
+    "io.github.anilbeesetti:nextlib-media3ext:1.10.1-0.13.0",
     "org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0"
   ],
   "formatVersion": 1,
@@ -1348,6 +1349,16 @@
       }
     },
     {
+      "coordinate": "com.google.errorprone:error_prone_annotations:2.48.0",
+      "licenses": [
+        "Apache-2.0"
+      ],
+      "artifacts": {
+        "error_prone_annotations-2.48.0.jar": "b49c5c958316ed67a09c699dda9aa749caf434d51d863dea599ef36a49b9c855",
+        "error_prone_annotations-2.48.0.pom": "189e09ad0489c325e90daaa9d5c8f406330602fa366609bca07cbcdad03ab9da"
+      }
+    },
+    {
       "coordinate": "com.google.guava:failureaccess:1.0.2",
       "licenses": [
         "Apache-2.0"
@@ -1396,6 +1407,17 @@
       "artifacts": {
         "okio-3.9.1.module": "9b90b4274a5ad602dd574d6d4b48903663b2de9a60b9fc3402248293d843e121",
         "okio-metadata-3.9.1.jar": "99c8ebbc4995f29dd58b05d75583fcc8b957db21eeeb8c5d89733f0d34955897"
+      }
+    },
+    {
+      "coordinate": "io.github.anilbeesetti:nextlib-media3ext:1.10.1-0.13.0",
+      "licenses": [
+        "GPL-3.0-only",
+        "LGPL-2.1-or-later"
+      ],
+      "artifacts": {
+        "nextlib-media3ext-1.10.1-0.13.0.aar": "e5c6c5631e1f61fafa596addff72c8f6027e380f43fa410820f57772327653a1",
+        "nextlib-media3ext-1.10.1-0.13.0.module": "75c80883407a1767e3ea4e5d38ee46d8e7399e32379d574f8a716ac3b5084a95"
       }
     },
     {

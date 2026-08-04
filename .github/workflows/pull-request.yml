@@ -228,7 +228,8 @@ jobs:
               --reject-base-unidic \
               --require-entry lib/x86_64/libanki_miner_mecab.so \
               --require-entry lib/x86_64/libffmpeg.so \
-              --require-entry lib/x86_64/libffprobe.so
+              --require-entry lib/x86_64/libffprobe.so \
+              --require-entry lib/x86_64/libmedia3ext.so
           "${{ steps.host_python.outputs.python-path }}" scripts/check_runtime_artifact.py \
             --artifact app/build/outputs/apk/emulator/debug/app-emulator-debug.apk \
             --vendored-manifest app/wheels/manifest.json \
@@ -243,7 +244,8 @@ jobs:
               --reject-base-unidic \
               --require-entry lib/arm64-v8a/libanki_miner_mecab.so \
               --require-entry lib/arm64-v8a/libffmpeg.so \
-              --require-entry lib/arm64-v8a/libffprobe.so
+              --require-entry lib/arm64-v8a/libffprobe.so \
+              --require-entry lib/arm64-v8a/libmedia3ext.so
           "${{ steps.host_python.outputs.python-path }}" scripts/check_runtime_artifact.py \
             --artifact "$device_apk" \
             --vendored-manifest app/wheels/manifest.json \

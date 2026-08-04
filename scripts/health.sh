@@ -208,7 +208,8 @@ echo "health: instrumentation executed: NO (build-only host gate)"
     --reject-base-unidic \
     --require-entry lib/x86_64/libanki_miner_mecab.so \
     --require-entry lib/x86_64/libffmpeg.so \
-    --require-entry lib/x86_64/libffprobe.so
+    --require-entry lib/x86_64/libffprobe.so \
+    --require-entry lib/x86_64/libmedia3ext.so
 python3.13 "$SCRIPT_DIR/check_runtime_artifact.py" \
     --artifact "$emulator_apk" \
     --vendored-manifest "$REPO_ROOT/app/wheels/manifest.json" \

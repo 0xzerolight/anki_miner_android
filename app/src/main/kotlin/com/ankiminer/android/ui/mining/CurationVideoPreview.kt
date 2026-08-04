@@ -20,6 +20,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -46,6 +47,7 @@ import androidx.media3.ui.compose.ContentFrame
 import com.ankiminer.android.R
 import com.ankiminer.android.engine.SubtitleCue
 import com.ankiminer.android.player.CurationPreviewPlayer
+import com.ankiminer.android.player.PreviewFailure
 import com.ankiminer.android.player.currentCue
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
 import kotlinx.coroutines.delay
@@ -56,6 +58,8 @@ object CurationPlayerTestTags {
     const val PLAY_PAUSE = "curation_player_play_pause"
     const val COLLAPSE = "curation_player_collapse"
     const val OVERLAY = "curation_player_overlay"
+    const val FAILURE_NOTICE = "curation_player_failure_notice"
+    const val RETRY = "curation_player_retry"
 }
 
 @OptIn(UnstableApi::class)
@@ -118,12 +122,21 @@ fun CurationVideoPreview(
                             .testTag(CurationPlayerTestTags.SURFACE),
                 ) {
                     if (!audioOnly) {
+                        val failure by player.failure.collectAsState()
                         ContentFrame(
                             player = player.media3Player,
                             modifier =
                                 Modifier
                                     .fillMaxSize()
                                     .testTag(CurationPlayerTestTags.VIDEO_FRAME),
+                            // media3 covers the surface exactly when no video renders; the
+                            // failure message belongs on that cover, not in a separate slot.
+                            shutter = {
+                                PreviewFailureShutter(
+                                    failure = failure,
+                                    onRetry = player::retry,
+                                )
+                            },
                         )
                     }
                     SubtitleOverlay(
@@ -146,6 +159,51 @@ fun CurationVideoPreview(
         }
     }
 }
+
+@Composable
+private fun PreviewFailureShutter(
+    failure: PreviewFailure?,
+    onRetry: () -> Unit,
+) {
+    Box(
+        modifier =
+            Modifier
+                .fillMaxSize()
+                .background(Color.Black),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (failure != null) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    text = failureMessage(failure),
+                    color = Color.White,
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier =
+                        Modifier
+                            .padding(horizontal = AnkiMinerTokens.Space.content)
+                            .testTag(CurationPlayerTestTags.FAILURE_NOTICE),
+                )
+                TextButton(
+                    onClick = onRetry,
+                    modifier = Modifier.testTag(CurationPlayerTestTags.RETRY),
+                ) {
+                    Text(stringResource(R.string.curation_preview_retry))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun failureMessage(failure: PreviewFailure): String =
+    when (failure) {
+        is PreviewFailure.VideoTrackUnsupported ->
+            stringResource(R.string.curation_preview_video_unsupported, failure.codecLabel)
+        is PreviewFailure.AudioTrackUnsupported ->
+            stringResource(R.string.curation_preview_audio_unsupported, failure.codecLabel)
+        is PreviewFailure.PlaybackFailed ->
+            stringResource(R.string.curation_preview_playback_failed, failure.errorCodeName)
+    }
 
 @Composable
 private fun SubtitleOverlay(

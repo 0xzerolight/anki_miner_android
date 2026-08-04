@@ -11,10 +11,12 @@ class FakeCurationPreviewPlayer : CurationPreviewPlayer {
 
     private val mutableIsPlaying = MutableStateFlow(false)
     private val mutablePositionSeconds = MutableStateFlow(0.0)
+    private val mutableFailure = MutableStateFlow<PreviewFailure?>(null)
     private var boundUri: Uri? = null
 
     override val isPlaying: StateFlow<Boolean> = mutableIsPlaying.asStateFlow()
     override val positionSeconds: StateFlow<Double> = mutablePositionSeconds.asStateFlow()
+    override val failure: StateFlow<PreviewFailure?> = mutableFailure.asStateFlow()
 
     val boundUris = mutableListOf<Uri>()
     val seekToCalls = mutableListOf<Double>()
@@ -26,6 +28,15 @@ class FakeCurationPreviewPlayer : CurationPreviewPlayer {
         private set
     var releaseCount = 0
         private set
+    var retryCount = 0
+        private set
+
+    /** Failure to surface after a bind, like the real player's onTracksChanged would. */
+    var failureOnBind: PreviewFailure? = null
+
+    fun emitFailure(failure: PreviewFailure?) {
+        mutableFailure.value = failure
+    }
 
     override fun tick() = Unit
 
@@ -34,6 +45,7 @@ class FakeCurationPreviewPlayer : CurationPreviewPlayer {
         boundUri = uri
         boundUris += uri
         events += "bind:$uri"
+        mutableFailure.value = failureOnBind
     }
 
     override fun seekTo(seconds: Double) {
@@ -66,5 +78,12 @@ class FakeCurationPreviewPlayer : CurationPreviewPlayer {
         releaseCount += 1
         events += "release"
         mutableIsPlaying.value = false
+    }
+
+    override fun retry() {
+        retryCount += 1
+        events += "retry"
+        boundUri = null
+        mutableFailure.value = null
     }
 }
