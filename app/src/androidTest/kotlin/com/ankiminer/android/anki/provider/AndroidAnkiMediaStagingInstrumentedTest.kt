@@ -130,7 +130,6 @@ class AndroidAnkiMediaStagingInstrumentedTest {
         // Device-conditional extensions stay IN the allowlist: staging has to be able to name a copy
         // `.avif` on a platform that can hold one. What keeps them off an incapable device is the
         // runtime predicate, asserted here against the same table the provider consults.
-        val capability = PlatformAnkiMediaMimeCapability()
         AnkiMediaExtensions.DEVICE_CONDITIONAL_EXTENSIONS.forEach { extension ->
             assertTrue(
                 "$extension must stay in ALLOWED_EXTENSIONS or staging rejects a capable device",
@@ -153,7 +152,7 @@ class AndroidAnkiMediaStagingInstrumentedTest {
                     val resolved = context.contentResolver.getType(uri)
                     val named = resolved?.let(mimeTypes::getExtensionFromMimeType)
                     val conditional = extension in AnkiMediaExtensions.DEVICE_CONDITIONAL_EXTENSIONS
-                    val capable = capability.canNameFilesFor(extension)
+                    val capable = platformCanNameFilesFor(extension)
                     val fault =
                         when {
                             stock != null && stock != resolved -> "the provider overrode the platform"

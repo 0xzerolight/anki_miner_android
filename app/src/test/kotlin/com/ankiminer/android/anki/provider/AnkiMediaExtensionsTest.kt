@@ -10,15 +10,9 @@ import org.junit.Test
 class AnkiMediaExtensionsTest {
     private val token = "a".repeat(64)
 
-    /**
-     * Every test here is about the extension partition, not about device capability, so the
-     * capability is held wide open. The device-conditional behaviour is covered by
-     * [AnkiMediaMimeCapabilityTest].
-     */
-    private val anyDevice =
-        object : AnkiMediaMimeCapability {
-            override fun canNameFilesFor(extension: String): Boolean = true
-        }
+    /** Most tests here are about the extension partition, so the device answer is held wide open. */
+    private val anyDevice = { _: String -> true }
+    private val noDevice = { _: String -> false }
 
     @Test
     fun `sanitizes the audio extensions real producers emit`() {
@@ -61,10 +55,6 @@ class AnkiMediaExtensionsTest {
         // They must reach ALLOWED_EXTENSIONS, or AnkiMediaStaging.validateRequest would reject a
         // capable device's request outright instead of naming the copy. On an incapable device the
         // sanitizer returns null for BOTH kinds so staging degrades to ".stage".
-        val noDevice =
-            object : AnkiMediaMimeCapability {
-                override fun canNameFilesFor(extension: String): Boolean = false
-            }
         AnkiMediaExtensions.DEVICE_CONDITIONAL_EXTENSIONS.forEach { extension ->
             assertTrue(extension in AnkiMediaExtensions.ALLOWED_EXTENSIONS)
             assertNull(AnkiMediaExtensions.sanitizedExtension("x.$extension", MediaKind.AUDIO, noDevice))
@@ -72,6 +62,26 @@ class AnkiMediaExtensionsTest {
         }
         // Measured 2026-08-03: null both ways on API 26, image/avif -> avif on API 36.
         assertTrue("avif" in AnkiMediaExtensions.DEVICE_CONDITIONAL_EXTENSIONS)
+    }
+
+    @Test
+    fun `an unconditional extension ignores the device answer`() {
+        // webp carries every animated screenshot on a device that cannot name avif; evicting it on a
+        // false answer would degrade those to .bin everywhere.
+        assertEquals("webp", AnkiMediaExtensions.sanitizedExtension("shot.webp", MediaKind.IMAGE, noDevice))
+        assertEquals("opus", AnkiMediaExtensions.sanitizedExtension("word.opus", MediaKind.AUDIO, noDevice))
+    }
+
+    @Test
+    fun `an unknown suffix is rejected before the platform table is consulted`() {
+        var asked = false
+        assertNull(
+            AnkiMediaExtensions.sanitizedExtension("note.txt", MediaKind.IMAGE) {
+                asked = true
+                true
+            },
+        )
+        assertFalse(asked)
     }
 
     @Test

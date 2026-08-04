@@ -1,6 +1,7 @@
 package com.ankiminer.android.engine
 
 import com.ankiminer.android.anki.generated.UnicodeContractV151
+import com.ankiminer.android.data.settings.AnimatedScreenshotLimits
 import com.ankiminer.android.diagnostics.log.AppLog
 import com.ankiminer.android.diagnostics.log.LogComponent
 import com.ankiminer.android.mining.AnkiWriteState
@@ -1104,11 +1105,11 @@ object BridgeJsonCodec {
             "screenshot_animated" -> bool(value, key)
             "screenshot_animated_format" -> requireOneOf(text(value, key), setOf("avif", "webp"), key)
             "screenshot_animated_clip_duration" ->
-                if (number(value, key) !in 0.5..10.0) {
+                if (number(value, key) !in AnimatedScreenshotLimits.CLIP_DURATION_SECONDS) {
                     fail(BridgeProtocolCategory.INVALID_VALUE, "$key is outside 0.5 through 10.0")
                 }
             "screenshot_animated_quality" ->
-                if (integral(value, key) !in 0L..100L) {
+                if (integral(value, key) !in AnimatedScreenshotLimits.QUALITY_WIRE) {
                     fail(BridgeProtocolCategory.INVALID_VALUE, "$key is outside 0 through 100")
                 }
             "reading_tts_enabled", "use_known_words_db",

@@ -23,7 +23,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.ankiminer.android.R
-import com.ankiminer.android.anki.provider.PlatformAnkiMediaMimeCapability
+import com.ankiminer.android.anki.provider.platformCanNameFilesFor
 import com.ankiminer.android.data.anki.AnkiSetupFailureOrigin
 import com.ankiminer.android.data.anki.AnkiSetupFailureAction
 import com.ankiminer.android.data.resources.KnownWordsFailureOperation
@@ -283,7 +283,7 @@ internal fun LazyListScope.mediaSettings(
         // Read once per composition: MimeTypeMap is a process-wide singleton and the answer cannot
         // change while the app runs.
         val avifNameable =
-            remember { PlatformAnkiMediaMimeCapability().canNameFilesFor("avif") }
+            remember { platformCanNameFilesFor("avif") }
         SettingsSection(stringResource(R.string.settings_media)) {
             NumericField(
                 draft.audioPadding,

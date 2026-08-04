@@ -7,6 +7,7 @@ import androidx.lifecycle.viewmodel.CreationExtras
 import com.ankiminer.android.R
 import com.ankiminer.android.data.resources.ResourceManager
 import com.ankiminer.android.data.resources.ResourceManagerState
+import com.ankiminer.android.data.settings.AnimatedScreenshotLimits
 import com.ankiminer.android.data.settings.AppSettings
 import com.ankiminer.android.data.settings.AppSettingsDraftParser
 import com.ankiminer.android.data.settings.AppSettingsRepository
@@ -77,21 +78,27 @@ internal sealed interface SettingsSaveState {
     ) : SettingsSaveState
 }
 
+/**
+ * [range] carries its own message because the generic non-negative/positive wording would not tell
+ * a user which numbers to type.
+ */
 private fun validateOptionalDouble(
     value: String,
     nonNegative: Boolean = false,
+    range: ClosedFloatingPointRange<Double>? = null,
+    rangeMessage: Int? = null,
 ): LocalizedStringResource? {
     if (value.isEmpty()) return null
     val parsed =
         value.toDoubleOrNull()
             ?: return LocalizedStringResource(R.string.b3_validation_numeric_incomplete)
     if (!parsed.isFinite()) {
-        return LocalizedStringResource(R.string.b3_validation_finite)
+        return LocalizedStringResource(rangeMessage ?: R.string.b3_validation_finite)
     }
-    return if (nonNegative && parsed < 0) {
-        LocalizedStringResource(R.string.b3_validation_non_negative)
-    } else {
-        null
+    return when {
+        range != null && parsed !in range -> LocalizedStringResource(rangeMessage!!)
+        nonNegative && parsed < 0 -> LocalizedStringResource(R.string.b3_validation_non_negative)
+        else -> null
     }
 }
 
@@ -99,44 +106,20 @@ private fun validateOptionalInt(
     value: String,
     nonNegative: Boolean = false,
     positive: Boolean = false,
+    range: IntRange? = null,
+    rangeMessage: Int? = null,
 ): LocalizedStringResource? {
     if (value.isEmpty()) return null
     val parsed =
         value.toIntOrNull()
             ?: return LocalizedStringResource(R.string.b3_validation_numeric_incomplete)
     return when {
+        range != null && parsed !in range -> LocalizedStringResource(rangeMessage!!)
         positive && parsed <= 0 ->
             LocalizedStringResource(R.string.b3_validation_positive)
         nonNegative && parsed < 0 ->
             LocalizedStringResource(R.string.b3_validation_non_negative)
         else -> null
-    }
-}
-
-// Bounds mirror AppSettingsValidator, android_bridge/config_map.py, and BridgeJsonCodec. The
-// dedicated messages exist because the generic non-negative/positive wording would not tell a user
-// what range to type.
-private fun validateAnimatedClipDuration(value: String): LocalizedStringResource? {
-    if (value.isEmpty()) return null
-    val parsed =
-        value.toDoubleOrNull()
-            ?: return LocalizedStringResource(R.string.b3_validation_numeric_incomplete)
-    return if (!parsed.isFinite() || parsed !in 0.5..10.0) {
-        LocalizedStringResource(R.string.b3_validation_animated_clip_duration)
-    } else {
-        null
-    }
-}
-
-private fun validateAnimatedQuality(value: String): LocalizedStringResource? {
-    if (value.isEmpty()) return null
-    val parsed =
-        value.toIntOrNull()
-            ?: return LocalizedStringResource(R.string.b3_validation_numeric_incomplete)
-    return if (parsed !in 0..100) {
-        LocalizedStringResource(R.string.b3_validation_animated_quality)
-    } else {
-        null
     }
 }
 
@@ -196,10 +179,16 @@ internal data class SettingsDraft(
                 // value left over from a previous edit would block every settings write with no way
                 // to reach the field and fix it.
                 if (animatedScreenshots) {
-                    validateAnimatedClipDuration(animatedScreenshotDuration)
-                        ?.let { put(SettingsFieldKey.ANIMATED_SCREENSHOT_DURATION, it) }
-                    validateAnimatedQuality(animatedScreenshotQuality)
-                        ?.let { put(SettingsFieldKey.ANIMATED_SCREENSHOT_QUALITY, it) }
+                    validateOptionalDouble(
+                        animatedScreenshotDuration,
+                        range = AnimatedScreenshotLimits.CLIP_DURATION_SECONDS,
+                        rangeMessage = R.string.b3_validation_animated_clip_duration,
+                    )?.let { put(SettingsFieldKey.ANIMATED_SCREENSHOT_DURATION, it) }
+                    validateOptionalInt(
+                        animatedScreenshotQuality,
+                        range = AnimatedScreenshotLimits.QUALITY,
+                        rangeMessage = R.string.b3_validation_animated_quality,
+                    )?.let { put(SettingsFieldKey.ANIMATED_SCREENSHOT_QUALITY, it) }
                 }
                 validateOptionalDouble(
                     subtitleOffset,

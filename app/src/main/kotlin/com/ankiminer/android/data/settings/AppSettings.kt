@@ -210,6 +210,21 @@ data class AppSettings(
     }
 }
 
+/**
+ * The animated screenshot tuning bounds, defined once for the Kotlin side.
+ *
+ * `android_bridge/config_map.py` and the config snapshot schema repeat these numbers on purpose —
+ * the bridge is a trust boundary and has to reject the same values without trusting the caller.
+ * Three copies inside Kotlin were just drift sites.
+ */
+internal object AnimatedScreenshotLimits {
+    val CLIP_DURATION_SECONDS = 0.5..10.0
+    val QUALITY = 0..100
+
+    /** The wire parses integers as [Long]; narrowing to compare against [QUALITY] would truncate. */
+    val QUALITY_WIRE = QUALITY.first.toLong()..QUALITY.last.toLong()
+}
+
 internal enum class InvalidAppSettingCode {
     NUMERIC_INCOMPLETE,
     EXCLUDED_DECKS_INVALID,
@@ -329,14 +344,12 @@ object AppSettingsValidator {
                     )
                 }
             }
-            // Ranges mirror android_bridge/config_map.py exactly; the wire codec rejects the same
-            // bounds, so a drift here surfaces as a bridge protocol failure rather than a bad card.
             // Checked under the same condition the mapper emits them, so what is validated is
             // exactly what can reach the wire — a stale value behind a disabled toggle goes nowhere
             // and must not block every other setting from saving.
             if (it.animatedScreenshotsEnabled) {
                 it.animatedScreenshotDurationSeconds?.let { seconds ->
-                    if (!seconds.isFinite() || seconds < 0.5 || seconds > 10.0) {
+                    if (!seconds.isFinite() || seconds !in AnimatedScreenshotLimits.CLIP_DURATION_SECONDS) {
                         invalid(
                             InvalidAppSettingCode.ANIMATED_SCREENSHOT_DURATION_RANGE,
                             "Clip length must be between 0.5 and 10 seconds",
@@ -344,7 +357,7 @@ object AppSettingsValidator {
                     }
                 }
                 it.animatedScreenshotQuality?.let { quality ->
-                    if (quality !in 0..100) {
+                    if (quality !in AnimatedScreenshotLimits.QUALITY) {
                         invalid(
                             InvalidAppSettingCode.ANIMATED_SCREENSHOT_QUALITY_RANGE,
                             "Clip quality must be between 0 and 100",
@@ -556,10 +569,14 @@ internal object EngineSettingsSnapshotMapper {
         blacklistPath: String? = null,
         whitelistPath: String? = null,
         /**
-         * Whether this device's MIME table can name a `.avif` file. Defaults to false so every
-         * existing caller and test keeps the format that works everywhere; only the production
-         * resolver passes the measured value. See [AnkiMediaMimeCapability] — API 26 answers no,
-         * API 36 answers yes, and a `.avif` AnkiDroid cannot name is stored as `.bin`.
+         * Whether this device's MIME table can name a `.avif` file. Defaults to false so tests keep
+         * the format that works everywhere; `AppSettingsRepository.snapshot` passes the measured
+         * value. API 26 answers no, API 36 answers yes, and a `.avif` AnkiDroid cannot name is
+         * stored as `.bin`.
+         *
+         * Worth the plumbing: measured on a 720p anime clip, AVIF is 10-46x smaller than animated
+         * WebP at equal SSIM, so a device stuck on WebP pays several hundred KB per card for a
+         * visibly worse image.
          */
         avifNameable: Boolean = false,
     ): MiningConfigSnapshot {

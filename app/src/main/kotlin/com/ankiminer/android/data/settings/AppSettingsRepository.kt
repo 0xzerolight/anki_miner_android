@@ -60,6 +60,8 @@ interface AppSettingsRepository {
         availableWordsetIds: List<String> = emptyList(),
         blacklistPath: String? = null,
         whitelistPath: String? = null,
+        /** Measured once by the caller; see the mapper's own parameter for why it matters. */
+        avifNameable: Boolean = false,
     ) =
         EngineSettingsSnapshotMapper.map(
             settings.first(),
@@ -70,6 +72,7 @@ interface AppSettingsRepository {
             availableWordsetIds,
             blacklistPath,
             whitelistPath,
+            avifNameable,
         )
 }
 

@@ -148,7 +148,9 @@ class ResourceManagerTest {
                     override suspend fun update(transform: (AppSettings) -> AppSettings) = Unit
                 }
 
-            val snapshot = harness.manager.snapshotProductionSettings(repository)
+            // MimeTypeMap is not mocked under the JVM android.jar stub; this test is about the
+            // resource chains, not the device's AVIF answer.
+            val snapshot = harness.manager.snapshotProductionSettings(repository) { false }
 
             val pitchChain =
                 snapshot.settings.getValue("pitch_chain") as BridgeJsonValue.ArrayValue
@@ -159,6 +161,34 @@ class ResourceManagerTest {
                 source.values["source_id"],
             )
             assertEquals(BridgeJsonValue.Bool(true), source.values["enabled"])
+        }
+
+    @Test
+    fun productionSnapshotAsksTheDeviceWhichAnimatedScreenshotFormatItCanStore() =
+        runTest {
+            // Regression guard for the whole point of the parameter: the mapper was tested directly
+            // with avifNameable = true while every production path took the default, so the shipped
+            // app sent "webp" on every device. Measured on a 720p anime clip, that costs several
+            // hundred KB per card for a visibly worse image than AVIF at the same SSIM.
+            val harness = Harness()
+            harness.manager.recoverAndRefresh()
+            val repository =
+                object : AppSettingsRepository {
+                    override val settings: Flow<AppSettings> =
+                        flowOf(AppSettings(animatedScreenshotsEnabled = true))
+
+                    override suspend fun update(settings: AppSettings) = Unit
+
+                    override suspend fun update(transform: (AppSettings) -> AppSettings) = Unit
+                }
+
+            suspend fun formatFor(avifNameable: Boolean) =
+                harness.manager
+                    .snapshotProductionSettings(repository) { avifNameable }
+                    .settings["screenshot_animated_format"]
+
+            assertEquals(BridgeJsonValue.Text("avif"), formatFor(avifNameable = true))
+            assertEquals(BridgeJsonValue.Text("webp"), formatFor(avifNameable = false))
         }
 
     @Test
