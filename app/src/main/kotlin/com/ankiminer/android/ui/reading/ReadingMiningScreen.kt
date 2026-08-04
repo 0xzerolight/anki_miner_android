@@ -78,6 +78,8 @@ import com.ankiminer.android.ui.mining.RuntimeConflictNotice
 import com.ankiminer.android.ui.mining.SourcesCard
 import com.ankiminer.android.ui.mining.StickyCurationActions
 import com.ankiminer.android.ui.mining.curateCandidates
+import com.ankiminer.android.ui.mining.curationGroupGap
+import com.ankiminer.android.ui.mining.curationRowContainerColor
 import com.ankiminer.android.ui.mining.miningResultItems
 import com.ankiminer.android.ui.mining.rememberCurationCandidateRowTexts
 import com.ankiminer.android.ui.mining.rememberClipboardWriter
@@ -328,7 +330,14 @@ fun ReadingMiningScreen(
                             .fillMaxWidth()
                             .testTag(ReadingMiningTestTags.CONTENT),
                     contentPadding = PaddingValues(AnkiMinerTokens.Space.content),
-                    verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.group),
+                    // Curation pays its own gaps per item, so an expanded candidate can close ranks
+                    // with its detail and read as one card.
+                    verticalArrangement =
+                        if (targetState.runState is MiningRunState.Curating) {
+                            Arrangement.Top
+                        } else {
+                            Arrangement.spacedBy(AnkiMinerTokens.Space.group)
+                        },
                 ) {
                     when (val runState = targetState.runState) {
                         MiningRunState.Idle ->
@@ -782,6 +791,7 @@ private fun LazyListScope.curationItems(
                 toggleTestTag = toggleTestTag,
                 onFocus = onFocus,
                 onToggle = onToggle,
+                modifier = Modifier.padding(bottom = curationGroupGap(last = !expanded)),
             )
         }
         if (expanded) {
@@ -790,6 +800,7 @@ private fun LazyListScope.curationItems(
                 contentType = "row_actions",
             ) {
                 CurationRowActions(
+                    containerColor = curationRowContainerColor(selected, animateSelection),
                     known = known,
                     enabled = enabled,
                     knownTestTag = ReadingMiningTestTags.candidateKnown(candidate.candidateId),
@@ -818,6 +829,8 @@ private fun LazyListScope.curationItems(
                 ) {
                     CurationDefinitionPane(
                         definition = definition,
+                        containerColor =
+                            curationRowContainerColor(selected, animateSelection),
                         term = candidate.minedForm,
                         testTag = ReadingMiningTestTags.DEFINITION,
                     )
@@ -839,12 +852,19 @@ private fun LazyListScope.curationItems(
                     CurationSentenceChoice(
                         candidate = candidate,
                         sentence = sentence,
+                        containerColor =
+                            curationRowContainerColor(selected, animateSelection),
                         selected =
                             sentence.sentenceId == curation.sentenceIds[candidate.candidateId],
                         enabled = enabled,
                         isLast = index == candidate.sentences.lastIndex,
                         testTag = sentenceTestTag,
                         onClick = onClick,
+                        modifier =
+                            Modifier.padding(
+                                bottom =
+                                    curationGroupGap(last = index == candidate.sentences.lastIndex),
+                            ),
                     )
                 }
             }

@@ -37,6 +37,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -52,6 +53,7 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.ankiminer.android.R
 import com.ankiminer.android.dictionary.CurationDefinition
@@ -417,6 +419,43 @@ internal fun ReconcileCurationFocus(
     }
 }
 
+/**
+ * Gap below one item of a candidate group: 12dp after the last part, nothing inside.
+ *
+ * The list itself spaces curation items by zero so the header, actions, definition and sentences —
+ * separate lazy items for virtualization's sake — can sit flush and read as one card.
+ */
+internal fun curationGroupGap(last: Boolean): Dp = if (last) AnkiMinerTokens.Space.group else 0.dp
+
+/**
+ * Fill for a candidate row and every part of its expanded group.
+ *
+ * The expanded parts are sibling lazy items rather than children of the header — 120 sentences in
+ * one item would defeat virtualization — so the shared colour is what makes the stack read as one
+ * card. Only the focused row animates; animating all of them would run one animation per row.
+ */
+@Composable
+internal fun curationRowContainerColor(
+    selected: Boolean,
+    animateSelection: Boolean,
+): Color {
+    val target =
+        if (selected) {
+            MaterialTheme.colorScheme.selectedRowContainer()
+        } else {
+            MaterialTheme.colorScheme.surfaceContainerLow
+        }
+    return if (animateSelection) {
+        animateColorAsState(
+            targetValue = target,
+            animationSpec = tween(durationMillis = AnkiMinerTokens.Motion.StateMs),
+            label = "focused candidate selection",
+        ).value
+    } else {
+        target
+    }
+}
+
 @Composable
 internal fun CurationCandidateRow(
     text: CurationCandidateRowText,
@@ -431,6 +470,7 @@ internal fun CurationCandidateRow(
     toggleTestTag: String,
     onFocus: () -> Unit,
     onToggle: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val shape =
         if (expanded) {
@@ -438,27 +478,12 @@ internal fun CurationCandidateRow(
         } else {
             MaterialTheme.shapes.medium
         }
-    val targetContainerColor =
-        if (selected) {
-            MaterialTheme.colorScheme.selectedRowContainer()
-        } else {
-            MaterialTheme.colorScheme.surfaceContainerLow
-        }
-    val containerColor =
-        if (animateSelection) {
-            animateColorAsState(
-                targetValue = targetContainerColor,
-                animationSpec = tween(durationMillis = 150),
-                label = "focused candidate selection",
-            ).value
-        } else {
-            targetContainerColor
-        }
+    val containerColor = curationRowContainerColor(selected, animateSelection)
     // Two targets, not one. The row opens the detail; only the checkbox includes or excludes. The
     // merged whole-row checkbox meant inspecting an included candidate silently dropped it.
     Surface(
         modifier =
-            Modifier
+            modifier
                 .fillMaxWidth()
                 .testTag(candidateTestTag)
                 .clickable(enabled = enabled, onClick = onFocus)
@@ -513,6 +538,7 @@ internal fun CurationCandidateRow(
 
 @Composable
 internal fun CurationRowActions(
+    containerColor: Color,
     known: Boolean,
     enabled: Boolean,
     knownTestTag: String,
@@ -521,10 +547,11 @@ internal fun CurationRowActions(
     onToggleKnown: (Boolean) -> Unit,
     onCopyWord: () -> Unit,
     onCopySentence: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     Surface(
-        modifier = Modifier.fillMaxWidth(),
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        modifier = modifier.fillMaxWidth(),
+        color = containerColor,
         contentColor = MaterialTheme.colorScheme.onSurface,
     ) {
         Column {
@@ -574,15 +601,17 @@ internal fun CurationRowActions(
 @Composable
 internal fun CurationDefinitionPane(
     definition: CurationDefinition,
+    containerColor: Color,
     term: String,
     testTag: String,
+    modifier: Modifier = Modifier,
 ) {
     Surface(
         modifier =
-            Modifier
+            modifier
                 .fillMaxWidth()
                 .testTag(testTag),
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        color = containerColor,
         contentColor = MaterialTheme.colorScheme.onSurface,
         shape = RoundedCornerShape(0.dp),
     ) {
@@ -642,16 +671,19 @@ private fun DefinitionNotice(
 internal fun CurationSentenceChoice(
     candidate: CurationCandidate,
     sentence: CurationSentence,
+    containerColor: Color,
     selected: Boolean,
     enabled: Boolean,
     isLast: Boolean,
     testTag: String,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val sentenceDescription =
         stringResource(R.string.sentence_selection_description, sentence.sentence)
     Surface(
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        modifier = modifier.fillMaxWidth(),
+        color = containerColor,
         contentColor = MaterialTheme.colorScheme.onSurface,
         shape =
             if (isLast) {
