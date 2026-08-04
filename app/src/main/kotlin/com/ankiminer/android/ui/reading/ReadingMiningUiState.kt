@@ -12,7 +12,7 @@ import java.text.Normalizer
 import java.util.Locale
 
 enum class ReadingSourceKindUi {
-    TEXT,
+    TXT,
     EPUB,
     SUBTITLE,
     MOKURO,
@@ -102,7 +102,7 @@ data class ReadingMiningUiState(
 
 internal fun readingSourceKind(displayName: String): ReadingSourceKindUi? =
     when (readingExtension(displayName)) {
-        "txt" -> ReadingSourceKindUi.TEXT
+        "txt" -> ReadingSourceKindUi.TXT
         "epub" -> ReadingSourceKindUi.EPUB
         "ass", "srt", "ssa", "vtt" -> ReadingSourceKindUi.SUBTITLE
         "mokuro" -> ReadingSourceKindUi.MOKURO

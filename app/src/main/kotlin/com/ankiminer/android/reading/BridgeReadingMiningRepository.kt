@@ -1351,7 +1351,7 @@ internal class BridgeReadingMiningRepository(
     ) {
         val description =
             when (stage.role) {
-                ReadingSourceStageRole.TEXT -> R.string.reading_progress_preparing_text
+                ReadingSourceStageRole.TXT -> R.string.reading_progress_preparing_text
                 ReadingSourceStageRole.EPUB -> R.string.reading_progress_preparing_epub
                 ReadingSourceStageRole.SUBTITLE -> R.string.reading_progress_preparing_subtitle
                 ReadingSourceStageRole.MOKURO_SIDECAR -> R.string.reading_progress_preparing_mokuro_sidecar

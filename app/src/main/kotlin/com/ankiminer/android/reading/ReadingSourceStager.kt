@@ -28,7 +28,7 @@ import java.util.zip.ZipException
 import java.util.zip.ZipFile
 
 internal enum class ReadingSourceStageRole {
-    TEXT,
+    TXT,
     EPUB,
     SUBTITLE,
     MOKURO_SIDECAR,
@@ -128,7 +128,7 @@ internal data class ReadingSourceStageLimits(
 
     fun maxBytes(role: ReadingSourceStageRole): Long =
         when (role) {
-            ReadingSourceStageRole.TEXT -> textMaxBytes
+            ReadingSourceStageRole.TXT -> textMaxBytes
             ReadingSourceStageRole.EPUB -> epubMaxBytes
             ReadingSourceStageRole.SUBTITLE -> subtitleMaxBytes
             ReadingSourceStageRole.MOKURO_SIDECAR -> mokuroSidecarMaxBytes
@@ -620,7 +620,7 @@ internal class ReadingSourceStager(
         }
         val role =
             when (name.extension) {
-                "txt" -> ReadingSourceStageRole.TEXT
+                "txt" -> ReadingSourceStageRole.TXT
                 "epub" -> ReadingSourceStageRole.EPUB
                 in SUBTITLE_EXTENSIONS -> ReadingSourceStageRole.SUBTITLE
                 "mokuro" -> ReadingSourceStageRole.MOKURO_SIDECAR
@@ -630,7 +630,7 @@ internal class ReadingSourceStager(
         return StagePlan(
             sourceKind =
                 when (role) {
-                    ReadingSourceStageRole.TEXT -> StagedReadingSourceKind.TXT
+                    ReadingSourceStageRole.TXT -> StagedReadingSourceKind.TXT
                     ReadingSourceStageRole.EPUB -> StagedReadingSourceKind.EPUB
                     ReadingSourceStageRole.SUBTITLE -> StagedReadingSourceKind.SUBTITLE
                     ReadingSourceStageRole.MOKURO_SIDECAR -> StagedReadingSourceKind.MOKURO

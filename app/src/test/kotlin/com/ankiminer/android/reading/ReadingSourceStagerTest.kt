@@ -56,7 +56,7 @@ class ReadingSourceStagerTest {
     fun `single reading sources preserve safe stems and canonicalize supported extensions`() {
         val cases =
             listOf(
-                SingleCase("Novel.TXT", ReadingSourceStageRole.TEXT, StagedReadingSourceKind.TXT, "Novel.txt"),
+                SingleCase("Novel.TXT", ReadingSourceStageRole.TXT, StagedReadingSourceKind.TXT, "Novel.txt"),
                 SingleCase("Book.EPUB", ReadingSourceStageRole.EPUB, StagedReadingSourceKind.EPUB, "Book.epub"),
                 SingleCase(
                     "Episode.SRT",
@@ -346,8 +346,8 @@ class ReadingSourceStagerTest {
 
         assertEquals(
             listOf(
-                ReadingSourceStageProgress(ReadingSourceStageRole.TEXT, 0L, null),
-                ReadingSourceStageProgress(ReadingSourceStageRole.TEXT, 2L, null),
+                ReadingSourceStageProgress(ReadingSourceStageRole.TXT, 0L, null),
+                ReadingSourceStageProgress(ReadingSourceStageRole.TXT, 2L, null),
             ),
             progress,
         )
@@ -417,7 +417,7 @@ class ReadingSourceStagerTest {
             assertThrows(EmptyReadingSourceException::class.java) {
                 stager(knownRoot, knownOpener).stage(ReadingSourceSelection.Single(known))
             }
-        assertEquals(ReadingSourceStageRole.TEXT, knownFailure.role)
+        assertEquals(ReadingSourceStageRole.TXT, knownFailure.role)
         assertFalse(knownRoot.exists())
         assertTrue(knownOpener.openedUris.isEmpty())
 
