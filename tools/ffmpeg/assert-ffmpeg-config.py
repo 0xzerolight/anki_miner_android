@@ -85,6 +85,48 @@ REQUIRED_DISABLED = frozenset(
 )
 ALLOWED_ENABLED_DEVICES = frozenset({"CONFIG_LAVFI_INDEV"})
 
+# The second, probe-only configure pass that produces ffprobe. It reads whatever
+# container a user hands the app, so every demuxer/decoder/parser stays; what it
+# must NOT carry is the encode surface, which is over 6 MB of libaom and libwebp
+# in a binary that only reports stream metadata.
+PROBE_REQUIRED_ENABLED = frozenset(
+    {
+        "CONFIG_FFPROBE",
+        "CONFIG_ZLIB",
+        "CONFIG_FILE_PROTOCOL",
+        "CONFIG_PIPE_PROTOCOL",
+        # The containers and streams the engine probes: user media, and the S3
+        # Matroska fixture.
+        "CONFIG_MATROSKA_DEMUXER",
+        "CONFIG_MOV_DEMUXER",
+        "CONFIG_MPEG4_DECODER",
+        "CONFIG_PCM_S16LE_DECODER",
+        "CONFIG_AV1_PARSER",
+        "CONFIG_LIBDAV1D_DECODER",
+    }
+)
+
+# Asserted as a set rather than a handful of names: the point of the pass is that
+# the encode surface is gone, and naming individual encoders would let a new one
+# slip in unnoticed.
+PROBE_REQUIRED_DISABLED = frozenset(
+    {
+        "CONFIG_FFMPEG",
+        "CONFIG_FFPLAY",
+        "CONFIG_NETWORK",
+        "CONFIG_GPL",
+        "CONFIG_NONFREE",
+        "CONFIG_LIBAOM",
+        "CONFIG_LIBWEBP",
+        "CONFIG_LIBMP3LAME",
+        "CONFIG_LIBOPUS",
+        "CONFIG_MJPEG_ENCODER",
+        "CONFIG_AVIF_MUXER",
+        "CONFIG_WEBP_MUXER",
+        "CONFIG_MATROSKA_MUXER",
+    }
+)
+
 
 class ConfigurationError(ValueError):
     pass
@@ -107,12 +149,22 @@ def read_configuration(paths: tuple[Path, ...]) -> dict[str, int]:
     return values
 
 
-def assert_configuration(config_h: Path, components_h: Path) -> None:
+def assert_configuration(config_h: Path, components_h: Path, profile: str = "full") -> None:
     values = read_configuration((config_h, components_h))
+    required_enabled = PROBE_REQUIRED_ENABLED if profile == "probe" else REQUIRED_ENABLED
+    required_disabled = PROBE_REQUIRED_DISABLED if profile == "probe" else REQUIRED_DISABLED
     failures = [
-        *(f"{key}=1 required, found {values.get(key)!r}" for key in sorted(REQUIRED_ENABLED) if values.get(key) != 1),
-        *(f"{key}=0 required, found {values.get(key)!r}" for key in sorted(REQUIRED_DISABLED) if values.get(key) != 0),
+        *(f"{key}=1 required, found {values.get(key)!r}" for key in sorted(required_enabled) if values.get(key) != 1),
+        *(f"{key}=0 required, found {values.get(key)!r}" for key in sorted(required_disabled) if values.get(key) != 0),
     ]
+    if profile == "probe":
+        # The whole point of the pass. A single surviving encoder or muxer means
+        # the encode surface came back and the binary is carrying it again.
+        leaked = sorted(
+            key for key, value in values.items() if value == 1 and key.endswith(("_ENCODER", "_MUXER", "_FILTER"))
+        )
+        if leaked:
+            failures.append("probe profile still carries encode components: " + ", ".join(leaked[:10]))
     unexpected_devices = sorted(
         key
         for key, value in values.items()
@@ -126,6 +178,7 @@ def assert_configuration(config_h: Path, components_h: Path) -> None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
+    parser.add_argument("--profile", choices=("full", "probe"), default="full")
     parser.add_argument("config_h", type=Path)
     parser.add_argument("config_components_h", type=Path)
     return parser.parse_args()
@@ -134,11 +187,16 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     try:
-        assert_configuration(args.config_h, args.config_components_h)
+        assert_configuration(args.config_h, args.config_components_h, args.profile)
     except (ConfigurationError, OSError, UnicodeError) as error:
         print(f"FFmpeg configuration check failed: {error}", file=sys.stderr)
         return 1
-    print("FFmpeg configuration OK: Matroska, static JPEG, animated WebP/AVIF, " "MP3/Opus/WAV, local protocols only")
+    if args.profile == "probe":
+        print("FFmpeg configuration OK: ffprobe, demux and decode only, no encode surface")
+    else:
+        print(
+            "FFmpeg configuration OK: Matroska, static JPEG, animated WebP/AVIF, " "MP3/Opus/WAV, local protocols only"
+        )
     return 0
 
 
