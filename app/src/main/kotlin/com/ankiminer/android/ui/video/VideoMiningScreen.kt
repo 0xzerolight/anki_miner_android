@@ -43,6 +43,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -506,7 +507,12 @@ private fun CurationPlayerSlot(
     val context = LocalContext.current
     val player = remember(curation.runId) { playerFactory(context) }
     val videoUri = remember(playerState.videoPath) { Uri.fromFile(File(playerState.videoPath)) }
-    var collapsed by rememberSaveable(curation.runId) { mutableStateOf(false) }
+    // The player and the curation controls are both pinned, so at large font scales they compete
+    // for a viewport that cannot hold either in full — and the controls are the ones that get
+    // clipped, which puts sort and bulk selection out of reach. Start folded and let the user
+    // open it; the toggle below still persists whatever they choose.
+    val startCollapsed = LocalDensity.current.fontScale >= 1.3f
+    var collapsed by rememberSaveable(curation.runId) { mutableStateOf(startCollapsed) }
 
     DisposableEffect(curation.runId) {
         onDispose { player.release() }
