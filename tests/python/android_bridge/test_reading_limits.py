@@ -201,6 +201,33 @@ def test_mokuro_json_fanout_and_txt_bytes_are_bounded_before_detector(
     assert "choose a smaller source" in str(text_size.value)
 
 
+def test_pasted_text_source_bytes_are_bounded_and_unknown_kind_stays_rejected(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "pasted.text"
+    source.write_bytes(b"12345")
+    monkeypatch.setattr(reading_limits, "MAX_PASTED_TEXT_SOURCE_BYTES", 4)
+
+    with pytest.raises(BridgeProtocolError) as oversized:
+        reading_limits.validate_source_before_load(
+            source_kind="text",
+            source_path=source,
+            image_archive_path=None,
+        )
+    assert oversized.value.code == "reading_source_too_large"
+    assert "pasted text" in str(oversized.value)
+
+    with pytest.raises(BridgeProtocolError) as unknown:
+        reading_limits.validate_source_before_load(
+            source_kind="unknown",
+            source_path=source,
+            image_archive_path=None,
+        )
+    assert unknown.value.code == "invalid_reading_source"
+    assert "unsupported" in str(unknown.value)
+
+
 def test_mokuro_page_cap_precedes_json_graph_materialization(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

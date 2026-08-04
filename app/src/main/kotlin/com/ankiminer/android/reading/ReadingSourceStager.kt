@@ -12,6 +12,7 @@ import com.ankiminer.android.media.FileCopyProgressListener
 import com.ankiminer.android.media.FileCopyStorageException
 import com.ankiminer.android.media.ProviderIoCancellation
 import com.ankiminer.android.media.SafDocument
+import java.io.ByteArrayInputStream
 import java.io.Closeable
 import java.io.File
 import java.io.IOException
@@ -28,11 +29,12 @@ import java.util.zip.ZipException
 import java.util.zip.ZipFile
 
 internal enum class ReadingSourceStageRole {
-    TEXT,
+    TXT,
     EPUB,
     SUBTITLE,
     MOKURO_SIDECAR,
     MOKURO_ARCHIVE,
+    PASTED_TEXT,
 }
 
 internal enum class StagedReadingSourceKind(
@@ -42,6 +44,7 @@ internal enum class StagedReadingSourceKind(
     EPUB("epub"),
     SUBTITLE("subtitle"),
     MOKURO("mokuro"),
+    TEXT("text"),
 }
 
 internal data class ReadingSourceStageProgress(
@@ -66,6 +69,10 @@ internal sealed interface ReadingSourceSelection {
     data class MokuroArchivePair(
         val sidecar: SafDocument,
         val archive: SafDocument,
+    ) : ReadingSourceSelection
+
+    data class PastedText(
+        val text: String,
     ) : ReadingSourceSelection
 }
 
@@ -105,6 +112,7 @@ internal class EmptyReadingSourceException(
 
 internal data class ReadingSourceStageLimits(
     val textMaxBytes: Long = DEFAULT_TEXT_MAX_BYTES,
+    val pastedTextMaxBytes: Long = DEFAULT_PASTED_TEXT_MAX_BYTES,
     val epubMaxBytes: Long = DEFAULT_EPUB_MAX_BYTES,
     val subtitleMaxBytes: Long = DEFAULT_SUBTITLE_MAX_BYTES,
     val mokuroSidecarMaxBytes: Long = DEFAULT_MOKURO_SIDECAR_MAX_BYTES,
@@ -116,6 +124,7 @@ internal data class ReadingSourceStageLimits(
 ) {
     init {
         require(textMaxBytes > 0L)
+        require(pastedTextMaxBytes > 0L)
         require(epubMaxBytes > 0L)
         require(subtitleMaxBytes > 0L)
         require(mokuroSidecarMaxBytes > 0L)
@@ -128,7 +137,8 @@ internal data class ReadingSourceStageLimits(
 
     fun maxBytes(role: ReadingSourceStageRole): Long =
         when (role) {
-            ReadingSourceStageRole.TEXT -> textMaxBytes
+            ReadingSourceStageRole.TXT -> textMaxBytes
+            ReadingSourceStageRole.PASTED_TEXT -> pastedTextMaxBytes
             ReadingSourceStageRole.EPUB -> epubMaxBytes
             ReadingSourceStageRole.SUBTITLE -> subtitleMaxBytes
             ReadingSourceStageRole.MOKURO_SIDECAR -> mokuroSidecarMaxBytes
@@ -141,6 +151,7 @@ internal data class ReadingSourceStageLimits(
         // copy gate equally strict avoids spending private storage on a source
         // the 384 MiB runtime target cannot safely process.
         const val DEFAULT_TEXT_MAX_BYTES = 8L * 1024 * 1024
+        const val DEFAULT_PASTED_TEXT_MAX_BYTES = 1024L * 1024
         const val DEFAULT_EPUB_MAX_BYTES = 256L * 1024 * 1024
         const val DEFAULT_SUBTITLE_MAX_BYTES = 8L * 1024 * 1024
         const val DEFAULT_MOKURO_SIDECAR_MAX_BYTES = 16L * 1024 * 1024
@@ -218,7 +229,7 @@ internal class StagedReadingSource internal constructor(
 }
 
 /**
- * Materializes one SAF reading selection into a private, collision-resistant, flat job directory.
+ * Materializes one reading selection into a private, collision-resistant, flat job directory.
  *
  * Every byte copy is delegated to [BoundedFileCopier], including streaming limits, storage reserve
  * checks, cancellation checkpoints, exact known-size verification, and destination fsync. A
@@ -275,9 +286,14 @@ internal class ReadingSourceStager(
                 val copied =
                     try {
                         fileCopier.copy(
-                            openSource = { inputOpener.open(entry.document, cancellation) },
+                            openSource = {
+                                when (val source = entry.source) {
+                                    is StageSource.Saf -> inputOpener.open(source.document, cancellation)
+                                    is StageSource.Inline -> ByteArrayInputStream(source.bytes)
+                                }
+                            },
                             destination = destination,
-                            knownSizeBytes = entry.document.sizeBytes,
+                            knownSizeBytes = entry.source.knownSizeBytes,
                             policy = policy,
                             cancellation = cancellation,
                             progressListener =
@@ -520,7 +536,7 @@ internal class ReadingSourceStager(
     private fun preflightKnownSizes(plan: StagePlan) {
         var knownTotal = 0L
         plan.entries.forEach { entry ->
-            val known = entry.document.sizeBytes ?: return@forEach
+            val known = entry.source.knownSizeBytes ?: return@forEach
             if (known == 0L) throw EmptyReadingSourceException(entry.role)
             val roleMax = limits.maxBytes(entry.role)
             if (known > roleMax) throw FileCopyLimitExceededException(roleMax, known)
@@ -556,7 +572,7 @@ internal class ReadingSourceStager(
     ) {
         val knownBytes =
             plan.entries.fold(0L) { total, entry ->
-                checkedAdd(total, entry.document.sizeBytes ?: 0L)
+                checkedAdd(total, entry.source.knownSizeBytes ?: 0L)
             }
         val required = checkedAdd(knownBytes, limits.freeSpaceReserveBytes)
         val available = availableBytes(stageDirectory).coerceAtLeast(0L)
@@ -597,7 +613,23 @@ internal class ReadingSourceStager(
         when (selection) {
             is ReadingSourceSelection.Single -> singlePlan(selection.document)
             is ReadingSourceSelection.MokuroArchivePair -> pairPlan(selection.sidecar, selection.archive)
+            is ReadingSourceSelection.PastedText -> pastedTextPlan(selection.text)
         }
+
+    private fun pastedTextPlan(text: String): StagePlan =
+        StagePlan(
+            sourceKind = StagedReadingSourceKind.TEXT,
+            entries =
+                listOf(
+                    StageEntry(
+                        StageSource.Inline(text.toByteArray(StandardCharsets.UTF_8)),
+                        ReadingSourceStageRole.PASTED_TEXT,
+                        PASTED_TEXT_FILE_NAME,
+                    ),
+                ),
+            detectorName = PASTED_TEXT_FILE_NAME,
+            imageArchiveName = null,
+        )
 
     private fun singlePlan(document: SafDocument): StagePlan {
         validateContentUri(document)
@@ -611,7 +643,11 @@ internal class ReadingSourceStager(
                 sourceKind = StagedReadingSourceKind.MOKURO,
                 entries =
                     listOf(
-                        StageEntry(document, ReadingSourceStageRole.MOKURO_ARCHIVE, archiveOutput),
+                        StageEntry(
+                            StageSource.Saf(document),
+                            ReadingSourceStageRole.MOKURO_ARCHIVE,
+                            archiveOutput,
+                        ),
                     ),
                 detectorName = "${name.normalizedStem}.mokuro",
                 imageArchiveName = archiveOutput,
@@ -620,7 +656,7 @@ internal class ReadingSourceStager(
         }
         val role =
             when (name.extension) {
-                "txt" -> ReadingSourceStageRole.TEXT
+                "txt" -> ReadingSourceStageRole.TXT
                 "epub" -> ReadingSourceStageRole.EPUB
                 in SUBTITLE_EXTENSIONS -> ReadingSourceStageRole.SUBTITLE
                 "mokuro" -> ReadingSourceStageRole.MOKURO_SIDECAR
@@ -630,13 +666,14 @@ internal class ReadingSourceStager(
         return StagePlan(
             sourceKind =
                 when (role) {
-                    ReadingSourceStageRole.TEXT -> StagedReadingSourceKind.TXT
+                    ReadingSourceStageRole.TXT -> StagedReadingSourceKind.TXT
                     ReadingSourceStageRole.EPUB -> StagedReadingSourceKind.EPUB
                     ReadingSourceStageRole.SUBTITLE -> StagedReadingSourceKind.SUBTITLE
                     ReadingSourceStageRole.MOKURO_SIDECAR -> StagedReadingSourceKind.MOKURO
                     ReadingSourceStageRole.MOKURO_ARCHIVE -> error("Archive cannot be a single source")
+                    ReadingSourceStageRole.PASTED_TEXT -> error("Pasted text cannot be a SAF source")
                 },
-            entries = listOf(StageEntry(document, role, outputName)),
+            entries = listOf(StageEntry(StageSource.Saf(document), role, outputName)),
             detectorName = outputName,
             imageArchiveName = null,
         )
@@ -676,8 +713,16 @@ internal class ReadingSourceStager(
             sourceKind = StagedReadingSourceKind.MOKURO,
             entries =
                 listOf(
-                    StageEntry(sidecar, ReadingSourceStageRole.MOKURO_SIDECAR, sidecarOutput),
-                    StageEntry(archive, ReadingSourceStageRole.MOKURO_ARCHIVE, archiveOutput),
+                    StageEntry(
+                        StageSource.Saf(sidecar),
+                        ReadingSourceStageRole.MOKURO_SIDECAR,
+                        sidecarOutput,
+                    ),
+                    StageEntry(
+                        StageSource.Saf(archive),
+                        ReadingSourceStageRole.MOKURO_ARCHIVE,
+                        archiveOutput,
+                    ),
                 ),
             detectorName = sidecarOutput,
             imageArchiveName = archiveOutput,
@@ -713,10 +758,28 @@ internal class ReadingSourceStager(
     )
 
     private data class StageEntry(
-        val document: SafDocument,
+        val source: StageSource,
         val role: ReadingSourceStageRole,
         val outputName: String,
     )
+
+    private sealed interface StageSource {
+        val knownSizeBytes: Long?
+
+        data class Saf(
+            val document: SafDocument,
+        ) : StageSource {
+            override val knownSizeBytes: Long?
+                get() = document.sizeBytes
+        }
+
+        class Inline(
+            val bytes: ByteArray,
+        ) : StageSource {
+            override val knownSizeBytes: Long
+                get() = bytes.size.toLong()
+        }
+    }
 
     private companion object {
         const val STAGE_DIRECTORY_ATTEMPTS = 16
@@ -991,10 +1054,11 @@ internal fun readingSourceStagingRoot(cacheDirectory: File): File =
 
 private const val READING_SOURCE_STAGING_ROOT = "reading-sources-v1"
 private const val STAGE_DIRECTORY_PREFIX = "reading-job-v1-"
+private const val PASTED_TEXT_FILE_NAME = "pasted.text"
 private val NONCE_PATTERN = Regex("[0-9a-f]{32}")
 private val OWNED_STAGE_DIRECTORY = Regex("${STAGE_DIRECTORY_PREFIX}[0-9a-f]{32}")
 private const val MAX_DISPLAY_NAME_UTF8_BYTES = 255
 private val SUBTITLE_EXTENSIONS = setOf("ass", "srt", "ssa", "vtt")
 private val ARCHIVE_EXTENSIONS = setOf("cbz", "zip")
-private val SINGLE_EXTENSIONS = setOf("txt", "epub", "mokuro") + SUBTITLE_EXTENSIONS
+private val SINGLE_EXTENSIONS = setOf("txt", "text", "epub", "mokuro") + SUBTITLE_EXTENSIONS
 private val ALL_READING_EXTENSIONS = SINGLE_EXTENSIONS + ARCHIVE_EXTENSIONS

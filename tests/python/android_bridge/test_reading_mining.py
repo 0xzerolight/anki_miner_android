@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import ast
+import importlib.util
 import re
+import sys
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 
 import android_bridge.anki_adapter as anki_adapter_module
 import android_bridge.boundary as boundary
@@ -62,6 +64,79 @@ def _request(cache_dir: Path | str = "/cache", **overrides: object) -> str:
     return encode_message("mining.reading.run", _payload(cache_dir, **overrides))
 
 
+def _load_vendored_text_source() -> ModuleType:
+    """Load only reading.text_source without importing desktop service deps."""
+
+    package_name = "_android_bridge_test_reading"
+    reading_root = PROJECT_ROOT / "app/src/main/python/anki_miner/services/reading"
+    package = ModuleType(package_name)
+    package.__path__ = [str(reading_root)]
+    sys.modules[package_name] = package
+    module_name = f"{package_name}.text_source"
+    module: ModuleType | None = None
+    try:
+        spec = importlib.util.spec_from_file_location(module_name, reading_root / "text_source.py")
+        assert spec is not None and spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[module_name] = module
+        spec.loader.exec_module(module)
+    finally:
+        for loaded_name in tuple(sys.modules):
+            if loaded_name == package_name or loaded_name.startswith(f"{package_name}."):
+                sys.modules.pop(loaded_name, None)
+    assert module is not None
+    return module
+
+
+def _staged_text_request(
+    tmp_path: Path,
+    data: bytes,
+    *,
+    job_name: str = "reading-job-v1-text",
+) -> reading_mining._ReadingRequest:
+    job_dir = tmp_path / job_name
+    job_dir.mkdir()
+    source = job_dir / "pasted.text"
+    source.write_bytes(data)
+    return reading_mining._parse_request(
+        _request(
+            tmp_path,
+            sourceKind="text",
+            sourcePath=str(source),
+        )
+    )
+
+
+def _text_detector(text_source: ModuleType) -> object:
+    def detect(_path: Path) -> list[object]:
+        pytest.fail("detector.detect must never run for a text source")
+
+    def load(ref: object, *, strip_subtitle_annotations: bool) -> object:
+        assert strip_subtitle_annotations is True
+        return text_source.load(ref)
+
+    return SimpleNamespace(detect=detect, load=load)
+
+
+def _load_staged_text_document(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    data: bytes,
+    *,
+    job_name: str,
+) -> object:
+    text_source = _load_vendored_text_source()
+    monkeypatch.setattr(reading_mining, "_reading_detector", lambda: _text_detector(text_source))
+    request = _staged_text_request(tmp_path, data, job_name=job_name)
+    return reading_mining._load_document(request, cancellation_check=lambda: False)
+
+
+def _unit_bytes(document: object) -> bytes:
+    return repr([(unit.text, unit.index, unit.location_label, unit.image_ref) for unit in document.units]).encode(
+        "utf-8"
+    )
+
+
 class RecordingCallbacks:
     def __init__(
         self,
@@ -95,6 +170,7 @@ class RecordingCallbacks:
     ("kind", "filename", "archive_name", "series_name"),
     [
         ("txt", "book.TXT", None, None),
+        ("text", "pasted.TEXT", None, None),
         ("epub", "book.EPUB", None, None),
         ("subtitle", "dialogue.VTT", None, "Subtitles"),
         ("mokuro", "volume.MOKURO", "volume.CBZ", None),
@@ -191,6 +267,52 @@ def test_request_rejects_invalid_kind_paths_labels_and_pairing(
 
 
 @pytest.mark.parametrize(
+    ("source_kind", "filename"),
+    [
+        ("text", "pasted.txt"),
+        ("txt", "pasted.text"),
+    ],
+)
+def test_request_rejects_both_text_txt_suffix_mismatches(
+    tmp_path: Path,
+    source_kind: str,
+    filename: str,
+) -> None:
+    with pytest.raises(BridgeProtocolError, match="suffix") as error:
+        reading_mining._parse_request(
+            _request(
+                tmp_path,
+                sourceKind=source_kind,
+                sourcePath=str(tmp_path / filename),
+            )
+        )
+    assert error.value.code == "invalid_reading_mining_request"
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "detail"),
+    [
+        ("seriesName", "Pasted", "seriesName is only valid for a subtitle source"),
+        ("imageArchivePath", "/cache/pasted.zip", "imageArchivePath is only valid for a mokuro source"),
+    ],
+)
+def test_request_rejects_file_kind_metadata_for_text(
+    field: str,
+    value: str,
+    detail: str,
+) -> None:
+    with pytest.raises(BridgeProtocolError, match=detail) as error:
+        reading_mining._parse_request(
+            _request(
+                sourceKind="text",
+                sourcePath="/cache/pasted.text",
+                **{field: value},
+            )
+        )
+    assert error.value.code == "invalid_reading_mining_request"
+
+
+@pytest.mark.parametrize(
     "snapshot",
     [
         None,
@@ -235,7 +357,7 @@ def test_request_requires_exact_fields_and_enforces_utf8_bounds() -> None:
         ("mokuro", ".mokuro", "manga", None),
     ],
 )
-def test_load_document_calls_desktop_detect_then_load_for_every_kind(
+def test_load_document_calls_desktop_detect_then_load_for_every_detected_file_kind(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     kind: str,
@@ -283,6 +405,211 @@ def test_load_document_calls_desktop_detect_then_load_for_every_kind(
     # silently mines speaker tags and SFX captions.
     assert calls == [("detect", source), ("load", ref, True)]
     assert document.series == (series_name if kind == "subtitle" else "reading-job-v1-nonce")
+
+
+def test_staged_text_loads_real_text_document_without_detection(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    document = _load_staged_text_document(
+        monkeypatch,
+        tmp_path,
+        "一行目。二行目。\n\n次の段落。\n".encode(),
+        job_name="happy",
+    )
+
+    assert (document.title, document.series, document.episode, document.kind) == (
+        "Text",
+        "Text",
+        "Text",
+        "book",
+    )
+    assert [unit.location_label for unit in document.units] == ["¶1", "¶1", "¶2"]
+
+
+def test_staged_text_constructs_ref_instead_of_calling_detect(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    request = _staged_text_request(tmp_path, "猫。".encode())
+    captured: list[object] = []
+
+    def detect(_path: Path) -> list[object]:
+        pytest.fail("detector.detect must never run for a text source")
+
+    def load(ref: object, *, strip_subtitle_annotations: bool) -> object:
+        assert strip_subtitle_annotations is True
+        captured.append(ref)
+        return SimpleNamespace(kind="book", units=[])
+
+    monkeypatch.setattr(
+        reading_mining,
+        "_reading_detector",
+        lambda: SimpleNamespace(detect=detect, load=load),
+    )
+
+    reading_mining._load_document(request, cancellation_check=lambda: False)
+
+    assert len(captured) == 1
+    ref = captured[0]
+    assert (ref.kind, ref.title, ref.text, ref.path, ref.image_root) == (
+        "text",
+        "Text",
+        "猫。",
+        None,
+        None,
+    )
+
+
+def test_staged_text_rejects_invalid_utf8(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    request = _staged_text_request(tmp_path, b"\xff")
+    monkeypatch.setattr(
+        reading_mining,
+        "_reading_detector",
+        lambda: SimpleNamespace(
+            detect=lambda _path: pytest.fail("text must not be detected"),
+            load=lambda *_args, **_kwargs: pytest.fail("invalid UTF-8 must fail before load"),
+        ),
+    )
+
+    with pytest.raises(BridgeProtocolError, match="UTF-8") as error:
+        reading_mining._load_document(request, cancellation_check=lambda: False)
+    assert error.value.code == "invalid_reading_mining_request"
+
+
+def test_staged_text_reread_enforces_one_mib_limit(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    request = _staged_text_request(
+        tmp_path,
+        b"x" * (1_048_576 + 1),
+    )
+    monkeypatch.setattr(reading_limits, "validate_source_before_load", lambda **_kwargs: None)
+    monkeypatch.setattr(
+        reading_mining,
+        "_reading_detector",
+        lambda: SimpleNamespace(
+            detect=lambda _path: pytest.fail("text must not be detected"),
+            load=lambda *_args, **_kwargs: pytest.fail("oversized text must fail before load"),
+        ),
+    )
+
+    with pytest.raises(BridgeProtocolError, match="pasted text exceeds") as error:
+        reading_mining._load_document(request, cancellation_check=lambda: False)
+    assert error.value.code == "reading_source_too_large"
+
+
+def test_staged_text_newline_variants_produce_byte_identical_units(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    logical = "一行目。二行目。\n\n次の段落。\n"
+    documents = [
+        _load_staged_text_document(
+            monkeypatch,
+            tmp_path,
+            variant.encode(),
+            job_name=job_name,
+        )
+        for job_name, variant in (
+            ("lf", logical),
+            ("crlf", logical.replace("\n", "\r\n")),
+            ("cr", logical.replace("\n", "\r")),
+        )
+    ]
+
+    assert [_unit_bytes(document) for document in documents] == [_unit_bytes(documents[0])] * 3
+
+
+def test_staged_text_vertical_tab_does_not_split_a_physical_line(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    document = _load_staged_text_document(
+        monkeypatch,
+        tmp_path,
+        "前半\v後半。\n".encode(),
+        job_name="vertical-tab",
+    )
+
+    assert [(unit.text, unit.location_label) for unit in document.units] == [("前半\v後半。", "¶1")]
+
+
+def test_whitespace_only_staged_text_loads_zero_units(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    document = _load_staged_text_document(
+        monkeypatch,
+        tmp_path,
+        " \t\r\n\n　\r".encode(),
+        job_name="whitespace",
+    )
+
+    assert document.units == []
+
+
+def test_staged_text_cancellation_during_load_maps_engine_error(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    text_source = _load_vendored_text_source()
+    monkeypatch.setattr(reading_mining, "_reading_detector", lambda: _text_detector(text_source))
+    request = _staged_text_request(tmp_path, "猫。犬。".encode())
+    checks = 0
+
+    def cancel_during_load() -> bool:
+        nonlocal checks
+        checks += 1
+        return checks >= 4
+
+    with pytest.raises(AnkiOperationCancelled) as error:
+        reading_mining._load_document(request, cancellation_check=cancel_during_load)
+    assert error.value.operation == "runReading"
+    assert checks >= 4
+
+
+def test_staged_text_precounts_sentence_fanout_before_unit_allocation(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    text_source = _load_vendored_text_source()
+    created: list[object] = []
+
+    def record_unit(**fields: object) -> object:
+        unit = SimpleNamespace(**fields)
+        created.append(unit)
+        return unit
+
+    monkeypatch.setattr(text_source, "ReadingUnit", record_unit)
+    monkeypatch.setattr(reading_mining, "_reading_detector", lambda: _text_detector(text_source))
+    monkeypatch.setattr(reading_limits, "MAX_DOCUMENT_UNITS", 1)
+    request = _staged_text_request(tmp_path, "猫。犬。".encode())
+
+    with pytest.raises(BridgeProtocolError) as error:
+        reading_mining._load_document(request, cancellation_check=lambda: False)
+    assert error.value.code == "reading_source_too_large"
+    assert created == []
+
+
+def test_staged_text_rejects_non_book_document_kind(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    request = _staged_text_request(tmp_path, "猫。".encode())
+    detector = SimpleNamespace(
+        detect=lambda _path: pytest.fail("text must not be detected"),
+        load=lambda *_args, **_kwargs: SimpleNamespace(kind="subtitle", units=[]),
+    )
+    monkeypatch.setattr(reading_mining, "_reading_detector", lambda: detector)
+
+    with pytest.raises(BridgeProtocolError, match="Text loader returned an invalid document kind") as error:
+        reading_mining._load_document(request, cancellation_check=lambda: False)
+    assert error.value.code == "invalid_reading_mining_request"
 
 
 def test_subtitle_series_never_leaks_random_staging_directory(

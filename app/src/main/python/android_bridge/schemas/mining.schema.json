@@ -44,7 +44,7 @@
     "readingSourcePath": {
       "allOf": [
         {"$ref": "#/$defs/privateReadingPath"},
-        {"pattern": "\\.(?:[tT][xX][tT]|[eE][pP][uU][bB]|[mM][oO][kK][uU][rR][oO]|[aA][sS][sS]|[sS][rR][tT]|[sS][sS][aA]|[vV][tT][tT])$"}
+        {"pattern": "\\.(?:[tT][xX][tT]|[tT][eE][xX][tT]|[eE][pP][uU][bB]|[mM][oO][kK][uU][rR][oO]|[aA][sS][sS]|[sS][rR][tT]|[sS][sS][aA]|[vV][tT][tT])$"}
       ]
     },
     "readingArchivePath": {
@@ -199,7 +199,7 @@
         "configSnapshot"
       ],
       "properties": {
-        "sourceKind": {"enum": ["txt", "epub", "subtitle", "mokuro"]},
+        "sourceKind": {"enum": ["txt", "text", "epub", "subtitle", "mokuro"]},
         "sourcePath": {"$ref": "#/$defs/readingSourcePath"},
         "imageArchivePath": {
           "oneOf": [
@@ -231,6 +231,10 @@
         {
           "if": {"properties": {"sourceKind": {"const": "txt"}}},
           "then": {"properties": {"sourcePath": {"pattern": "\\.[tT][xX][tT]$"}, "imageArchivePath": {"type": "null"}, "seriesName": {"type": "null"}}}
+        },
+        {
+          "if": {"properties": {"sourceKind": {"const": "text"}}},
+          "then": {"properties": {"sourcePath": {"pattern": "\\.[tT][eE][xX][tT]$"}, "imageArchivePath": {"type": "null"}, "seriesName": {"type": "null"}}}
         },
         {
           "if": {"properties": {"sourceKind": {"const": "epub"}}},

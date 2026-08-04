@@ -42,6 +42,7 @@ class ReadingSourceStagerTest {
         val limits = ReadingSourceStageLimits()
 
         assertEquals(8L * 1024 * 1024, limits.textMaxBytes)
+        assertEquals(1024L * 1024, limits.pastedTextMaxBytes)
         assertEquals(256L * 1024 * 1024, limits.epubMaxBytes)
         assertEquals(8L * 1024 * 1024, limits.subtitleMaxBytes)
         assertEquals(16L * 1024 * 1024, limits.mokuroSidecarMaxBytes)
@@ -53,10 +54,161 @@ class ReadingSourceStagerTest {
     }
 
     @Test
+    fun `pasted text stages exact UTF-8 bytes and close removes its private directory`() {
+        val root = File(temporary.root, "pasted-text")
+        val text = "走れメロス🏃\n"
+        val opener =
+            ReadingSourceInputOpener { _, _ ->
+                throw AssertionError("SAF opener invoked for pasted text")
+            }
+
+        val staged = stager(root, opener).stage(ReadingSourceSelection.PastedText(text))
+        val detector = File(staged.detectorPath)
+        val stageDirectory = checkNotNull(detector.parentFile)
+
+        assertEquals(StagedReadingSourceKind.TEXT, staged.sourceKind)
+        assertTrue(staged.imageArchivePath == null)
+        assertTrue(
+            Regex(
+                "${Regex.escape(root.absolutePath)}/reading-job-v1-[0-9a-f]{32}/pasted\\.text",
+            ).matches(staged.detectorPath),
+        )
+        assertEquals(ReadingSourceStageRole.PASTED_TEXT, staged.files.single().role)
+        assertArrayEquals(text.toByteArray(Charsets.UTF_8), detector.readBytes())
+
+        staged.close()
+        assertFalse(detector.exists())
+        assertFalse(stageDirectory.exists())
+    }
+
+    @Test
+    fun `pasted text never invokes the SAF input opener`() {
+        val root = File(temporary.root, "paste-no-saf")
+        val opener =
+            ReadingSourceInputOpener { _, _ ->
+                throw AssertionError("SAF opener invoked for pasted text")
+            }
+
+        val staged = stager(root, opener).stage(ReadingSourceSelection.PastedText("text"))
+
+        assertArrayEquals("text".toByteArray(Charsets.UTF_8), File(staged.detectorPath).readBytes())
+        staged.close()
+    }
+
+    @Test
+    fun `empty pasted text fails before creating staging residue`() {
+        val root = File(temporary.root, "empty-paste")
+        val opener =
+            ReadingSourceInputOpener { _, _ ->
+                throw AssertionError("SAF opener invoked for pasted text")
+            }
+
+        val failure =
+            assertThrows(EmptyReadingSourceException::class.java) {
+                stager(root, opener).stage(ReadingSourceSelection.PastedText(""))
+            }
+
+        assertEquals(ReadingSourceStageRole.PASTED_TEXT, failure.role)
+        assertFalse(root.exists())
+    }
+
+    @Test
+    fun `oversized pasted text fails before creating staging residue`() {
+        val root = File(temporary.root, "oversized-paste")
+        val opener =
+            ReadingSourceInputOpener { _, _ ->
+                throw AssertionError("SAF opener invoked for pasted text")
+            }
+
+        val failure =
+            assertThrows(FileCopyLimitExceededException::class.java) {
+                stager(
+                    root,
+                    opener,
+                    limits = limits(pastedTextMaxBytes = 3L),
+                ).stage(ReadingSourceSelection.PastedText("four"))
+            }
+
+        assertEquals(3L, failure.maxBytes)
+        assertEquals(4L, failure.observedBytes)
+        assertFalse(root.exists())
+    }
+
+    @Test
+    fun `pasted text storage preflight fails without staging residue`() {
+        val root = File(temporary.root, "paste-storage")
+        val opener =
+            ReadingSourceInputOpener { _, _ ->
+                throw AssertionError("SAF opener invoked for pasted text")
+            }
+
+        val failure =
+            assertThrows(FileCopyStorageException::class.java) {
+                stager(
+                    root,
+                    opener,
+                    limits = limits(reserveBytes = 2L),
+                    availableBytes = { 5L },
+                ).stage(ReadingSourceSelection.PastedText("four"))
+            }
+
+        assertEquals(6L, failure.requiredBytes)
+        assertEquals(5L, failure.availableBytes)
+        assertTrue(root.listFiles().orEmpty().isEmpty())
+    }
+
+    @Test
+    fun `pasted text cancellation before and during write leaves no staging residue`() {
+        val opener =
+            ReadingSourceInputOpener { _, _ ->
+                throw AssertionError("SAF opener invoked for pasted text")
+            }
+        val beforeRoot = File(temporary.root, "paste-cancel-before")
+
+        assertThrows(FileCopyCancelledException::class.java) {
+            stager(beforeRoot, opener).stage(
+                selection = ReadingSourceSelection.PastedText("abcdef"),
+                cancellation = FileCopyCancellation { true },
+            )
+        }
+        assertFalse(beforeRoot.exists())
+
+        val duringRoot = File(temporary.root, "paste-cancel-during")
+        val cancelled = AtomicBoolean(false)
+        assertThrows(FileCopyCancelledException::class.java) {
+            stager(duringRoot, opener).stage(
+                selection = ReadingSourceSelection.PastedText("abcdef"),
+                cancellation = FileCopyCancellation(cancelled::get),
+                progressListener =
+                    ReadingSourceStageProgressListener { progress ->
+                        if (progress.copiedBytes == 2L) cancelled.set(true)
+                    },
+            )
+        }
+        assertTrue(duringRoot.listFiles().orEmpty().isEmpty())
+    }
+
+    @Test
+    fun `picked text extension remains unsupported and never opens SAF`() {
+        val root = File(temporary.root, "picked-text-extension")
+        val document = document("content://reading/note-text", "note.text", 4L)
+        val opener = FakeReadingSourceOpener(emptyMap())
+
+        val failure =
+            assertThrows(ReadingSourceSelectionException::class.java) {
+                stager(root, opener).stage(ReadingSourceSelection.Single(document))
+            }
+
+        assertEquals(ReadingSourceSelectionFailure.UNSUPPORTED_EXTENSION, failure.failure)
+        assertTrue(opener.openedUris.isEmpty())
+        assertFalse(root.exists())
+    }
+
+    @Test
     fun `single reading sources preserve safe stems and canonicalize supported extensions`() {
         val cases =
             listOf(
-                SingleCase("Novel.TXT", ReadingSourceStageRole.TEXT, StagedReadingSourceKind.TXT, "Novel.txt"),
+                SingleCase("Novel.TXT", ReadingSourceStageRole.TXT, StagedReadingSourceKind.TXT, "Novel.txt"),
                 SingleCase("Book.EPUB", ReadingSourceStageRole.EPUB, StagedReadingSourceKind.EPUB, "Book.epub"),
                 SingleCase(
                     "Episode.SRT",
@@ -346,8 +498,8 @@ class ReadingSourceStagerTest {
 
         assertEquals(
             listOf(
-                ReadingSourceStageProgress(ReadingSourceStageRole.TEXT, 0L, null),
-                ReadingSourceStageProgress(ReadingSourceStageRole.TEXT, 2L, null),
+                ReadingSourceStageProgress(ReadingSourceStageRole.TXT, 0L, null),
+                ReadingSourceStageProgress(ReadingSourceStageRole.TXT, 2L, null),
             ),
             progress,
         )
@@ -417,7 +569,7 @@ class ReadingSourceStagerTest {
             assertThrows(EmptyReadingSourceException::class.java) {
                 stager(knownRoot, knownOpener).stage(ReadingSourceSelection.Single(known))
             }
-        assertEquals(ReadingSourceStageRole.TEXT, knownFailure.role)
+        assertEquals(ReadingSourceStageRole.TXT, knownFailure.role)
         assertFalse(knownRoot.exists())
         assertTrue(knownOpener.openedUris.isEmpty())
 
@@ -501,6 +653,17 @@ class ReadingSourceStagerTest {
         listOf(nearName, invalidFile, noncanonical, mismatch, inexactPair, nested, linked, outside)
             .forEach { assertTrue(it.exists()) }
         assertTrue(outsideFile.isFile)
+    }
+
+    @Test
+    fun `orphan janitor removes a stage containing only pasted text`() {
+        val root = File(temporary.root, "pasted-text-janitor").apply { mkdirs() }
+        val orphan = ownedDirectory(root, 'e').apply { File(this, "pasted.text").writeText("text") }
+
+        val removed = ReadingSourceStageJanitor(root).removeOrphans()
+
+        assertEquals(1, removed)
+        assertFalse(orphan.exists())
     }
 
     @Test
@@ -859,6 +1022,7 @@ class ReadingSourceStagerTest {
 
     private fun limits(
         textMaxBytes: Long = 32L,
+        pastedTextMaxBytes: Long = 32L,
         epubMaxBytes: Long = 32L,
         subtitleMaxBytes: Long = 32L,
         mokuroSidecarMaxBytes: Long = 32L,
@@ -867,6 +1031,7 @@ class ReadingSourceStagerTest {
         reserveBytes: Long = 2L,
     ) = ReadingSourceStageLimits(
         textMaxBytes = textMaxBytes,
+        pastedTextMaxBytes = pastedTextMaxBytes,
         epubMaxBytes = epubMaxBytes,
         subtitleMaxBytes = subtitleMaxBytes,
         mokuroSidecarMaxBytes = mokuroSidecarMaxBytes,

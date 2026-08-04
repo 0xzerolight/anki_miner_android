@@ -1351,7 +1351,8 @@ internal class BridgeReadingMiningRepository(
     ) {
         val description =
             when (stage.role) {
-                ReadingSourceStageRole.TEXT -> R.string.reading_progress_preparing_text
+                ReadingSourceStageRole.TXT -> R.string.reading_progress_preparing_text
+                ReadingSourceStageRole.PASTED_TEXT -> R.string.reading_progress_preparing_pasted_text
                 ReadingSourceStageRole.EPUB -> R.string.reading_progress_preparing_epub
                 ReadingSourceStageRole.SUBTITLE -> R.string.reading_progress_preparing_subtitle
                 ReadingSourceStageRole.MOKURO_SIDECAR -> R.string.reading_progress_preparing_mokuro_sidecar
@@ -2054,12 +2055,14 @@ internal class BridgeReadingMiningRepository(
             StagedReadingSourceKind.EPUB -> ReadingMiningSourceKind.EPUB
             StagedReadingSourceKind.SUBTITLE -> ReadingMiningSourceKind.SUBTITLE
             StagedReadingSourceKind.MOKURO -> ReadingMiningSourceKind.MOKURO
+            StagedReadingSourceKind.TEXT -> ReadingMiningSourceKind.TEXT
         }
 
     private fun ReadingSourceSelection.documents(): List<SafDocument> =
         when (this) {
             is ReadingSourceSelection.Single -> listOf(document)
             is ReadingSourceSelection.MokuroArchivePair -> listOf(sidecar, archive)
+            is ReadingSourceSelection.PastedText -> emptyList()
         }
 
     private fun requiresMediaForeground(run: ActiveRun): Boolean {
@@ -2067,6 +2070,7 @@ internal class BridgeReadingMiningRepository(
         if (config.androidTtsEnabled == true || config.mapsExpressionAudioField()) return true
         return when (val selection = run.input.selection) {
             is ReadingSourceSelection.MokuroArchivePair -> true
+            is ReadingSourceSelection.PastedText -> false
             is ReadingSourceSelection.Single -> {
                 val name = selection.document.displayName.lowercase(Locale.ROOT)
                 name.endsWith(".epub") || name.endsWith(".cbz") || name.endsWith(".zip")

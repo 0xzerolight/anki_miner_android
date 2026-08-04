@@ -144,6 +144,9 @@ class UiAuditJankFlowTest {
                     onCancel = {},
                     onRetry = {},
                     onReset = {},
+                    onSourceModeChanged = {},
+                    onPastedTextChanged = {},
+                    onClearPastedText = {},
                     modifier = Modifier.testTag(ReadingMiningTestTags.SCREEN),
                     listState = listState,
                 )

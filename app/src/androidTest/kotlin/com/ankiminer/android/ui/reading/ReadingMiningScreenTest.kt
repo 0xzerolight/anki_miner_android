@@ -23,6 +23,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.performTextInput
 import androidx.test.platform.app.InstrumentationRegistry
 import com.ankiminer.android.R
 import com.ankiminer.android.dictionary.CurationDefinition
@@ -73,6 +74,128 @@ class ReadingMiningScreenTest {
             assertTrue(pickedSource)
             assertTrue(started)
         }
+    }
+
+    @Test
+    fun pasteModeHidesFilePickerAndDisablesStartWhileEmpty() {
+        var state by
+            mutableStateOf(
+                ReadingMiningUiState(
+                    source = ReadingDocumentSlotState(document("source", "book.epub")),
+                    sourceKind = ReadingSourceKindUi.EPUB,
+                ),
+            )
+        composeRule.setContent {
+            AnkiMinerTheme {
+                ScreenUnderTest(
+                    state = state,
+                    onSourceModeChanged = { mode -> state = state.copy(sourceMode = mode) },
+                )
+            }
+        }
+
+        composeRule
+            .onNodeWithTag(ReadingMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(ReadingMiningTestTags.SOURCE_MODE_TEXT))
+        composeRule.onNodeWithTag(ReadingMiningTestTags.SOURCE_MODE_TEXT).performClick()
+        composeRule
+            .onNodeWithTag(ReadingMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(ReadingMiningTestTags.PASTE_TEXT))
+        composeRule.onNodeWithTag(ReadingMiningTestTags.PASTE_TEXT).assertIsDisplayed()
+        composeRule
+            .onNodeWithTag(ReadingMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(ReadingMiningTestTags.PASTE_TEXT))
+        composeRule.onNodeWithTag(ReadingMiningTestTags.PICK_SOURCE).assertDoesNotExist()
+        composeRule
+            .onNodeWithTag(ReadingMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(ReadingMiningTestTags.START))
+        composeRule.onNodeWithTag(ReadingMiningTestTags.START).assertIsNotEnabled()
+    }
+
+    @Test
+    fun pastedTextEnablesStartAndStartsOnce() {
+        var starts = 0
+        var state by
+            mutableStateOf(
+                ReadingMiningUiState(sourceMode = ReadingSourceMode.PASTED_TEXT),
+            )
+        composeRule.setContent {
+            AnkiMinerTheme {
+                ScreenUnderTest(
+                    state = state,
+                    onPastedTextChanged = { text -> state = state.copy(pastedText = text) },
+                    onStart = { starts += 1 },
+                )
+            }
+        }
+
+        composeRule
+            .onNodeWithTag(ReadingMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(ReadingMiningTestTags.PASTE_TEXT))
+        composeRule.onNodeWithTag(ReadingMiningTestTags.PASTE_TEXT).performTextInput("本文。")
+        composeRule
+            .onNodeWithTag(ReadingMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(ReadingMiningTestTags.START))
+        composeRule.onNodeWithTag(ReadingMiningTestTags.START).assertIsEnabled().performClick()
+
+        composeRule.runOnIdle { assertEquals(1, starts) }
+    }
+
+    @Test
+    fun whitespaceOnlyPastedTextKeepsStartDisabled() {
+        var state by
+            mutableStateOf(
+                ReadingMiningUiState(sourceMode = ReadingSourceMode.PASTED_TEXT),
+            )
+        composeRule.setContent {
+            AnkiMinerTheme {
+                ScreenUnderTest(
+                    state = state,
+                    onPastedTextChanged = { text -> state = state.copy(pastedText = text) },
+                )
+            }
+        }
+
+        composeRule
+            .onNodeWithTag(ReadingMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(ReadingMiningTestTags.PASTE_TEXT))
+        composeRule.onNodeWithTag(ReadingMiningTestTags.PASTE_TEXT).performTextInput(" \n\t ")
+        composeRule
+            .onNodeWithTag(ReadingMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(ReadingMiningTestTags.START))
+        composeRule.onNodeWithTag(ReadingMiningTestTags.START).assertIsNotEnabled()
+    }
+
+    @Test
+    fun switchingBackToFileModeRestoresPickedDocumentRow() {
+        var state by
+            mutableStateOf(
+                ReadingMiningUiState(
+                    source = ReadingDocumentSlotState(document("source", "retained.epub")),
+                    sourceKind = ReadingSourceKindUi.EPUB,
+                ),
+            )
+        composeRule.setContent {
+            AnkiMinerTheme {
+                ScreenUnderTest(
+                    state = state,
+                    onSourceModeChanged = { mode -> state = state.copy(sourceMode = mode) },
+                )
+            }
+        }
+
+        composeRule
+            .onNodeWithTag(ReadingMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(ReadingMiningTestTags.SOURCE_MODE_TEXT))
+        composeRule.onNodeWithTag(ReadingMiningTestTags.SOURCE_MODE_TEXT).performClick()
+        composeRule
+            .onNodeWithTag(ReadingMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(ReadingMiningTestTags.SOURCE_MODE_FILE))
+        composeRule.onNodeWithTag(ReadingMiningTestTags.SOURCE_MODE_FILE).performClick()
+        composeRule
+            .onNodeWithTag(ReadingMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(ReadingMiningTestTags.PICK_SOURCE))
+        composeRule.onNodeWithText("retained.epub").assertExists()
     }
 
     @Test
@@ -424,6 +547,9 @@ class ReadingMiningScreenTest {
                     onPickArchive = {},
                     onClearSource = {},
                     onClearArchive = {},
+                    onSourceModeChanged = {},
+                    onPastedTextChanged = {},
+                    onClearPastedText = {},
                     onSeriesNameChanged = {},
                     onDismissDocumentError = {},
                     onDismissCommandError = {},
@@ -588,6 +714,8 @@ class ReadingMiningScreenTest {
         state: ReadingMiningUiState,
         onPickSource: () -> Unit = {},
         onPickArchive: () -> Unit = {},
+        onSourceModeChanged: (ReadingSourceMode) -> Unit = {},
+        onPastedTextChanged: (String) -> Unit = {},
         onStart: () -> Unit = {},
         onMarkCandidateKnown: (String, Boolean) -> Unit = { _, _ -> },
         listState: LazyListState = rememberLazyListState(),
@@ -598,6 +726,9 @@ class ReadingMiningScreenTest {
             onPickArchive = onPickArchive,
             onClearSource = {},
             onClearArchive = {},
+            onSourceModeChanged = onSourceModeChanged,
+            onPastedTextChanged = onPastedTextChanged,
+            onClearPastedText = {},
             onSeriesNameChanged = {},
             onDismissDocumentError = {},
             onDismissCommandError = {},

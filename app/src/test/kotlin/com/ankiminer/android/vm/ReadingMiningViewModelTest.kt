@@ -22,6 +22,7 @@ import com.ankiminer.android.media.SafSelectionPersistenceException
 import com.ankiminer.android.media.SafSelectionRecord
 import com.ankiminer.android.media.SafSelectionSlot
 import com.ankiminer.android.media.TransientSafSelectionInventory
+import com.ankiminer.android.mining.AnkiWriteState
 import com.ankiminer.android.mining.CurationCandidate
 import com.ankiminer.android.mining.CurationPage
 import com.ankiminer.android.mining.CurationRequest
@@ -29,12 +30,16 @@ import com.ankiminer.android.mining.CurationSelection
 import com.ankiminer.android.mining.CurationSentence
 import com.ankiminer.android.mining.CurationSessionState
 import com.ankiminer.android.mining.MiningCancellationToken
+import com.ankiminer.android.mining.MiningFailure
 import com.ankiminer.android.mining.MiningProgress
 import com.ankiminer.android.mining.MiningRunState
+import com.ankiminer.android.mining.ProcessingResult
 import com.ankiminer.android.reading.ReadingMiningInput
 import com.ankiminer.android.reading.ReadingMiningRepository
 import com.ankiminer.android.reading.ReadingSourceSelection
 import com.ankiminer.android.ui.reading.ReadingDocumentSelectionError
+import com.ankiminer.android.ui.reading.ReadingSourceKindUi
+import com.ankiminer.android.ui.reading.ReadingSourceMode
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
@@ -219,6 +224,183 @@ class ReadingMiningViewModelTest {
 
         assertNotNull(factory.create(ReadingMiningViewModel::class.java, CreationExtras.Empty))
     }
+
+    @Test
+    fun switchingSourceModesPreservesPickedFileAndPasteDraft() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val broker = ImmediateSafBroker()
+            val viewModel = ReadingMiningViewModel(RecordingReadingRepository(), broker)
+            viewModel.onSourcePicked("content://test/novel.txt")
+            runCurrent()
+            val picked = requireNotNull(viewModel.uiState.value.source.document)
+
+            viewModel.onSourceModeChanged(ReadingSourceMode.PASTED_TEXT)
+            viewModel.onPastedTextChanged("本文。")
+            runCurrent()
+
+            assertEquals(ReadingSourceMode.PASTED_TEXT, viewModel.uiState.value.sourceMode)
+            assertEquals(picked, viewModel.uiState.value.source.document)
+            assertNull(viewModel.uiState.value.sourceKind)
+            assertEquals("本文。", viewModel.uiState.value.pastedText)
+            assertTrue(broker.releasedUris.isEmpty())
+            assertTrue(broker.eventualReleaseUris.isEmpty())
+
+            viewModel.onSourceModeChanged(ReadingSourceMode.FILE)
+            runCurrent()
+
+            assertEquals(ReadingSourceMode.FILE, viewModel.uiState.value.sourceMode)
+            assertEquals(picked, viewModel.uiState.value.source.document)
+            assertEquals(ReadingSourceKindUi.TXT, viewModel.uiState.value.sourceKind)
+            assertEquals("本文。", viewModel.uiState.value.pastedText)
+        }
+
+    @Test
+    fun blankPastedTextCannotStart() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository = RecordingReadingRepository()
+            val viewModel = ReadingMiningViewModel(repository, ImmediateSafBroker())
+            viewModel.onSourceModeChanged(ReadingSourceMode.PASTED_TEXT)
+
+            listOf("", " \n\t ").forEach { text ->
+                viewModel.onPastedTextChanged(text)
+                runCurrent()
+
+                assertFalse(viewModel.uiState.value.canStart)
+                viewModel.start()
+                runCurrent()
+            }
+
+            assertTrue(repository.startedInputs.isEmpty())
+        }
+
+    @Test
+    fun pastedTextStartPassesRawUntrimmedText() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository = RecordingReadingRepository()
+            val viewModel = ReadingMiningViewModel(repository, ImmediateSafBroker())
+            val raw = "  本文。  "
+            viewModel.onSourceModeChanged(ReadingSourceMode.PASTED_TEXT)
+            viewModel.onPastedTextChanged(raw)
+            runCurrent()
+
+            viewModel.start()
+            runCurrent()
+
+            assertEquals(
+                ReadingSourceSelection.PastedText(raw),
+                repository.startedInputs.single().selection,
+            )
+            assertNull(repository.startedInputs.single().subtitleSeriesName)
+        }
+
+    @Test
+    fun pastedTextClampsByCodePointAndClearsTruncationOnShorterEdit() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val viewModel =
+                ReadingMiningViewModel(RecordingReadingRepository(), ImmediateSafBroker())
+            val emoji = "😀"
+            val oversized = "a".repeat(199_999) + emoji + "b"
+
+            viewModel.onPastedTextChanged(oversized)
+            runCurrent()
+
+            val clamped = viewModel.uiState.value.pastedText
+            assertEquals(200_000, clamped.codePointCount(0, clamped.length))
+            assertTrue(clamped.endsWith(emoji))
+            assertTrue(viewModel.uiState.value.pastedTextTruncated)
+
+            viewModel.onPastedTextChanged("short $emoji")
+            runCurrent()
+
+            assertEquals("short $emoji", viewModel.uiState.value.pastedText)
+            assertFalse(viewModel.uiState.value.pastedTextTruncated)
+
+            viewModel.onPastedTextChanged(oversized)
+            viewModel.clearPastedText()
+            runCurrent()
+
+            assertEquals("", viewModel.uiState.value.pastedText)
+            assertFalse(viewModel.uiState.value.pastedTextTruncated)
+        }
+
+    @Test
+    fun pastedTextNeverReachesSavedStateHandle() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val savedState = SavedStateHandle()
+            val viewModel =
+                ReadingMiningViewModel(
+                    repository = RecordingReadingRepository(),
+                    safBroker = ImmediateSafBroker(),
+                    savedStateHandle = savedState,
+                )
+            val distinctive = "private-clipboard-value-934ae769"
+
+            viewModel.onSourceModeChanged(ReadingSourceMode.PASTED_TEXT)
+            viewModel.onPastedTextChanged(distinctive)
+            runCurrent()
+
+            assertEquals(distinctive, viewModel.uiState.value.pastedText)
+            assertTrue(
+                savedState.keys().none { key ->
+                    savedState.get<Any?>(key)?.toString()?.contains(distinctive) == true
+                },
+            )
+        }
+
+    @Test
+    fun pastedTextIsRetainedAfterSuccessfulRun() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository = RecordingReadingRepository()
+            val viewModel = ReadingMiningViewModel(repository, ImmediateSafBroker())
+            viewModel.onSourceModeChanged(ReadingSourceMode.PASTED_TEXT)
+            viewModel.onPastedTextChanged("成功後も残る")
+            viewModel.start()
+            runCurrent()
+
+            repository.transitionTo(MiningRunState.Success("run", result()))
+            runCurrent()
+
+            assertEquals("成功後も残る", viewModel.uiState.value.pastedText)
+        }
+
+    @Test
+    fun pastedTextIsRetainedAfterFailedRun() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository = RecordingReadingRepository()
+            val viewModel = ReadingMiningViewModel(repository, ImmediateSafBroker())
+            viewModel.onSourceModeChanged(ReadingSourceMode.PASTED_TEXT)
+            viewModel.onPastedTextChanged("失敗後も残る")
+            viewModel.start()
+            runCurrent()
+
+            repository.transitionTo(
+                MiningRunState.Failed(
+                    runId = "run",
+                    failure = MiningFailure("failed", retryable = true),
+                    result = null,
+                ),
+            )
+            runCurrent()
+
+            assertEquals("失敗後も残る", viewModel.uiState.value.pastedText)
+        }
+
+    @Test
+    fun pastedTextEditsAreIgnoredWhileRunIsActive() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository = RecordingReadingRepository()
+            val viewModel = ReadingMiningViewModel(repository, ImmediateSafBroker())
+            viewModel.onSourceModeChanged(ReadingSourceMode.PASTED_TEXT)
+            viewModel.onPastedTextChanged("original")
+            repository.transitionTo(MiningRunState.Running("run", MiningProgress(1, 2, "Running")))
+            runCurrent()
+
+            viewModel.onPastedTextChanged("replacement")
+            viewModel.clearPastedText()
+            runCurrent()
+
+            assertEquals("original", viewModel.uiState.value.pastedText)
+        }
 
     @Test
     fun savedMokuroPairRestoresSequentiallyAndRevalidatesBothUris() =
@@ -889,6 +1071,33 @@ class ReadingMiningViewModelTest {
         }
 
     @Test
+    fun teardownReleasesInactiveFileGrantDuringPastedTextRun() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository = RecordingReadingRepository(detachResult = true)
+            val broker = ImmediateSafBroker()
+            val store = ViewModelStore()
+            val viewModel =
+                ViewModelProvider.create(
+                    store,
+                    factory(repository, broker),
+                )[ReadingMiningViewModel::class.java]
+            viewModel.onSourcePicked("content://test/novel.txt")
+            runCurrent()
+            viewModel.onSourceModeChanged(ReadingSourceMode.PASTED_TEXT)
+            viewModel.onPastedTextChanged("本文。")
+            viewModel.start()
+            runCurrent()
+
+            store.clear()
+
+            assertEquals(
+                ReadingSourceSelection.PastedText("本文。"),
+                repository.detachedInputs.single().selection,
+            )
+            assertEquals(listOf("content://test/novel.txt"), broker.eventualReleaseUris)
+        }
+
+    @Test
     fun startingCancellationUsesTokenAndWaitsForRepositoryAcknowledgement() =
         runTest(mainDispatcherRule.dispatcher) {
             val token = MiningCancellationToken("cancel_0123456789abcdef0123456789abcdef")
@@ -1185,6 +1394,7 @@ class ReadingMiningViewModelTest {
         when (this) {
             is ReadingSourceSelection.Single -> listOf(document)
             is ReadingSourceSelection.MokuroArchivePair -> listOf(sidecar, archive)
+            is ReadingSourceSelection.PastedText -> emptyList()
         }
 
     private fun factory(
@@ -1242,5 +1452,21 @@ class ReadingMiningViewModelTest {
                 page = page,
             )
         }
+
+        fun result(): ProcessingResult =
+            ProcessingResult(
+                totalWordsFound = 3,
+                newWordsFound = 2,
+                cardsCreated = 1,
+                errors = emptyList(),
+                elapsedTime = 1.5,
+                comprehensionPercentage = 80.0,
+                cardIds = listOf(42),
+                videoFile = "pasted.text",
+                subtitleFile = "",
+                minedForms = listOf("本文"),
+                ankiWriteState = AnkiWriteState.NOTE_WRITE_CONFIRMED,
+                failureIsTransient = false,
+            )
     }
 }

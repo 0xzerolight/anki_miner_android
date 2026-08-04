@@ -45,6 +45,7 @@ enum class ReadingMiningSourceKind(
     val wireName: String,
 ) {
     TXT("txt"),
+    TEXT("text"),
     EPUB("epub"),
     SUBTITLE("subtitle"),
     MOKURO("mokuro"),

@@ -9,7 +9,7 @@ import org.junit.Test
 class ReadingMiningUiStateTest {
     @Test
     fun sourceClassifierAcceptsOnlySupportedReadingInputs() {
-        assertTrue(readingSourceKind("aozora.TXT") == ReadingSourceKindUi.TEXT)
+        assertTrue(readingSourceKind("aozora.TXT") == ReadingSourceKindUi.TXT)
         assertTrue(readingSourceKind("book.epub") == ReadingSourceKindUi.EPUB)
         assertTrue(readingSourceKind("episode.SRT") == ReadingSourceKindUi.SUBTITLE)
         assertTrue(readingSourceKind("page.mokuro") == ReadingSourceKindUi.MOKURO)
@@ -66,10 +66,26 @@ class ReadingMiningUiStateTest {
                     ReadingDocumentSlotState(
                         document = document("content://test/text", "novel.txt"),
                     ),
-                sourceKind = ReadingSourceKindUi.TEXT,
+                sourceKind = ReadingSourceKindUi.TXT,
             )
 
         assertTrue(state.canStart)
+    }
+
+    @Test
+    fun pastedTextModeRequiresNonBlankTextAndIgnoresFileEnablement() {
+        val blank =
+            ReadingMiningUiState(
+                source = ReadingDocumentSlotState(isResolving = true),
+                archive = ReadingDocumentSlotState(isResolving = true),
+                sourceKind = ReadingSourceKindUi.MOKURO,
+                sourceMode = ReadingSourceMode.PASTED_TEXT,
+                pastedText = " \n\t ",
+            )
+
+        assertFalse(blank.canStart)
+        assertFalse(blank.acceptsArchive)
+        assertTrue(blank.copy(pastedText = "本文。").canStart)
     }
 
     private fun document(

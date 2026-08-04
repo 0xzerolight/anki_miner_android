@@ -12,11 +12,16 @@ import java.text.Normalizer
 import java.util.Locale
 
 enum class ReadingSourceKindUi {
-    TEXT,
+    TXT,
     EPUB,
     SUBTITLE,
     MOKURO,
     MOKURO_ARCHIVE,
+}
+
+enum class ReadingSourceMode {
+    FILE,
+    PASTED_TEXT,
 }
 
 enum class ReadingDocumentSelectionError {
@@ -66,7 +71,10 @@ data class ReadingCurationUiState(
 data class ReadingMiningUiState(
     val source: ReadingDocumentSlotState = ReadingDocumentSlotState(),
     val archive: ReadingDocumentSlotState = ReadingDocumentSlotState(),
+    val sourceMode: ReadingSourceMode = ReadingSourceMode.FILE,
     val sourceKind: ReadingSourceKindUi? = null,
+    val pastedText: String = "",
+    val pastedTextTruncated: Boolean = false,
     val subtitleSeriesName: String = "",
     val runState: MiningRunState = MiningRunState.Idle,
     val curation: ReadingCurationUiState? = null,
@@ -78,31 +86,43 @@ data class ReadingMiningUiState(
     val runtimeConflict: RuntimeWorkConflict? = null,
 ) {
     val acceptsArchive: Boolean
-        get() = sourceKind == ReadingSourceKindUi.MOKURO
+        get() =
+            sourceMode == ReadingSourceMode.FILE &&
+                sourceKind == ReadingSourceKindUi.MOKURO
 
     val archiveNamesMatch: Boolean
         get() {
+            if (sourceMode != ReadingSourceMode.FILE) return false
             val sourceName = source.document?.displayName ?: return false
             val archiveName = archive.document?.displayName ?: return false
             return readingArchiveMatches(sourceName, archiveName)
         }
 
     val canStart: Boolean
-        get() =
-            runState == MiningRunState.Idle &&
-                source.document != null &&
-                sourceKind != null &&
-                !source.isResolving &&
-                !archive.isResolving &&
-                (!acceptsArchive || archive.document == null || archiveNamesMatch) &&
-                !startPending &&
-                !resetPending &&
-                runtimeConflict == null
+        get() {
+            if (
+                runState != MiningRunState.Idle ||
+                startPending ||
+                resetPending ||
+                runtimeConflict != null
+            ) {
+                return false
+            }
+            return when (sourceMode) {
+                ReadingSourceMode.FILE ->
+                    source.document != null &&
+                        sourceKind != null &&
+                        !source.isResolving &&
+                        !archive.isResolving &&
+                        (!acceptsArchive || archive.document == null || archiveNamesMatch)
+                ReadingSourceMode.PASTED_TEXT -> pastedText.isNotBlank()
+            }
+        }
 }
 
 internal fun readingSourceKind(displayName: String): ReadingSourceKindUi? =
     when (readingExtension(displayName)) {
-        "txt" -> ReadingSourceKindUi.TEXT
+        "txt" -> ReadingSourceKindUi.TXT
         "epub" -> ReadingSourceKindUi.EPUB
         "ass", "srt", "ssa", "vtt" -> ReadingSourceKindUi.SUBTITLE
         "mokuro" -> ReadingSourceKindUi.MOKURO

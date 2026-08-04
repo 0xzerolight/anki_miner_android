@@ -286,6 +286,31 @@ def test_mining_protocol_valid_and_rejected_corpora_freeze_complete_messages(
         assert list(validator.iter_errors(case["message"])), case["name"]
 
 
+def test_mining_schema_accepts_text_only_with_text_suffix(
+    schemas: dict[str, dict[str, Any]],
+) -> None:
+    validator = Draft202012Validator(schemas["mining"], registry=_cross_schema_registry(schemas))
+
+    def message(source_kind: str, source_path: str) -> dict[str, Any]:
+        return {
+            "schemaVersion": 1,
+            "type": "mining.reading.run",
+            "payload": {
+                "sourceKind": source_kind,
+                "sourcePath": source_path,
+                "imageArchivePath": None,
+                "seriesName": None,
+                "cacheDir": "/cache",
+                "nativeLibraryDir": "/native",
+                "configSnapshot": {"settings": {}},
+            },
+        }
+
+    assert list(validator.iter_errors(message("text", "/cache/job/pasted.text"))) == []
+    assert list(validator.iter_errors(message("text", "/cache/job/pasted.txt")))
+    assert list(validator.iter_errors(message("txt", "/cache/job/pasted.text")))
+
+
 @pytest.mark.parametrize("audio_only", [False, True])
 def test_video_run_schema_requires_boolean_audio_only(
     schemas: dict[str, dict[str, Any]],

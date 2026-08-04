@@ -27,6 +27,7 @@ from .protocol import BridgeProtocolError
 # the Python boundary repeats them because paths and files are untrusted at
 # every language seam.
 MAX_TXT_SOURCE_BYTES = 8 * 1024 * 1024
+MAX_PASTED_TEXT_SOURCE_BYTES = 1_048_576
 MAX_SUBTITLE_SOURCE_BYTES = 8 * 1024 * 1024
 MAX_EPUB_SOURCE_BYTES = 256 * 1024 * 1024
 MAX_MOKURO_JSON_BYTES = 16 * 1024 * 1024
@@ -613,7 +614,7 @@ def _read_eocd(path: Path, limits: ZipArchiveLimits) -> tuple[int, int, int]:
         raise _invalid_archive(limits.label)
     if total_entries == _ZIP64_U16 or central_size == _ZIP64_U32 or central_offset == _ZIP64_U32:
         raise _too_large(
-            f"The selected {limits.label} uses a ZIP64 central directory, " "which is outside the mobile safety limits"
+            f"The selected {limits.label} uses a ZIP64 central directory, which is outside the mobile safety limits"
         )
     if total_entries > limits.max_members:
         raise _too_large(
@@ -748,16 +749,15 @@ def _validate_mokuro_json(
 
     if fanout.pages > MAX_MOKURO_PAGES:
         raise _too_large(
-            f"The selected .mokuro sidecar contains too many pages " f"({fanout.pages:,} > {MAX_MOKURO_PAGES:,})"
+            f"The selected .mokuro sidecar contains too many pages ({fanout.pages:,} > {MAX_MOKURO_PAGES:,})"
         )
     if fanout.blocks > MAX_MOKURO_BLOCKS:
         raise _too_large(
-            f"The selected .mokuro sidecar contains too many text blocks "
-            f"({fanout.blocks:,} > {MAX_MOKURO_BLOCKS:,})"
+            f"The selected .mokuro sidecar contains too many text blocks ({fanout.blocks:,} > {MAX_MOKURO_BLOCKS:,})"
         )
     if fanout.lines > MAX_MOKURO_LINES:
         raise _too_large(
-            f"The selected .mokuro sidecar contains too many OCR lines " f"({fanout.lines:,} > {MAX_MOKURO_LINES:,})"
+            f"The selected .mokuro sidecar contains too many OCR lines ({fanout.lines:,} > {MAX_MOKURO_LINES:,})"
         )
     if fanout.invalid_unicode:
         raise _invalid_source("The selected .mokuro sidecar contains invalid Unicode")
@@ -814,6 +814,12 @@ def validate_source_before_load(
                 MOKURO_ARCHIVE_LIMITS,
                 cancellation_check=cancellation_check,
             )
+    elif source_kind == "text":
+        _stat_bounded(
+            source_path,
+            label="pasted text",
+            maximum=MAX_PASTED_TEXT_SOURCE_BYTES,
+        )
     else:
         raise _invalid_source("The selected reading source kind is unsupported")
     _check_cancelled(cancellation_check)
@@ -916,7 +922,7 @@ def validate_loaded_document(
     if not isinstance(units, list):
         raise _invalid_source("The reading loader returned an invalid unit list")
     if len(units) > MAX_DOCUMENT_UNITS:
-        raise _too_large(f"The reading document contains too many units " f"({len(units):,} > {MAX_DOCUMENT_UNITS:,})")
+        raise _too_large(f"The reading document contains too many units ({len(units):,} > {MAX_DOCUMENT_UNITS:,})")
 
     text_bytes = 0
     location_bytes = 0
@@ -943,7 +949,7 @@ def validate_loaded_document(
     image_refs = _iter_unique_image_refs(units)
     if len(image_refs) > MAX_UNIQUE_IMAGE_REFS:
         raise _too_large(
-            f"The reading document references too many images " f"({len(image_refs):,} > {MAX_UNIQUE_IMAGE_REFS:,})"
+            f"The reading document references too many images ({len(image_refs):,} > {MAX_UNIQUE_IMAGE_REFS:,})"
         )
     if image_refs:
         expected_image_source = source_path if source_kind == "epub" else image_archive_path

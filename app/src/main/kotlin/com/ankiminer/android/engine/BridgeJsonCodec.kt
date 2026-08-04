@@ -962,7 +962,7 @@ object BridgeJsonCodec {
                     fail(BridgeProtocolCategory.INVALID_VALUE, "seriesName is required for subtitles")
                 }
             }
-            ReadingMiningSourceKind.TXT, ReadingMiningSourceKind.EPUB -> {
+            ReadingMiningSourceKind.TXT, ReadingMiningSourceKind.TEXT, ReadingMiningSourceKind.EPUB -> {
                 if (archivePath != null) {
                     fail(
                         BridgeProtocolCategory.INVALID_VALUE,
@@ -993,6 +993,7 @@ object BridgeJsonCodec {
         val suffixes =
             when (sourceKind) {
                 ReadingMiningSourceKind.TXT -> setOf(".txt")
+                ReadingMiningSourceKind.TEXT -> setOf(".text")
                 ReadingMiningSourceKind.EPUB -> setOf(".epub")
                 ReadingMiningSourceKind.SUBTITLE -> setOf(".ass", ".srt", ".ssa", ".vtt")
                 ReadingMiningSourceKind.MOKURO -> setOf(".mokuro")

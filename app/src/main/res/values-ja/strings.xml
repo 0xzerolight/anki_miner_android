@@ -7,6 +7,12 @@
     <string name="reading_source_label">読み物ソース</string>
     <string name="reading_archive_label">Mokuro画像アーカイブ</string>
     <string name="reading_series_label">シリーズ名</string>
+    <string name="reading_source_mode_file">ファイル</string>
+    <string name="reading_source_mode_text">テキスト</string>
+    <string name="reading_paste_placeholder">ここにテキストを貼り付け…</string>
+    <string name="reading_paste_counter">文字数: %1$d</string>
+    <string name="reading_paste_truncated">上限を超えたテキストは切り詰められました。</string>
+    <string name="reading_paste_clear">貼り付けたテキストを消去</string>
     <string name="reading_source_access_error">アクセスが失われました。選び直してください。</string>
     <string name="reading_source_type_error">対応形式: TXT, EPUB, SRT, ASS, SSA, VTT, MOKURO, ZIP, CBZ。</string>
     <string name="reading_archive_access_error">アクセスが失われました。選び直してください。</string>
@@ -155,6 +161,7 @@
     <string name="mining_progress_preparing_reading_source">選択した読み物ソースを準備中</string>
     <string name="mining_progress_starting_background">バックグラウンドマイニングを開始中</string>
     <string name="reading_progress_preparing_text">テキストを準備中</string>
+    <string name="reading_progress_preparing_pasted_text">貼り付けたテキストを準備中</string>
     <string name="reading_progress_preparing_epub">EPUBを準備中</string>
     <string name="reading_progress_preparing_subtitle">字幕を準備中</string>
     <string name="reading_progress_preparing_mokuro_sidecar">mokuroサイドカーを準備中</string>
