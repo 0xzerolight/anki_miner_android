@@ -161,6 +161,7 @@
     <string name="mining_progress_preparing_reading_source">Preparing selected reading source</string>
     <string name="mining_progress_starting_background">Starting background mining</string>
     <string name="reading_progress_preparing_text">Preparing text</string>
+    <string name="reading_progress_preparing_pasted_text">Preparing pasted text</string>
     <string name="reading_progress_preparing_epub">Preparing EPUB</string>
     <string name="reading_progress_preparing_subtitle">Preparing subtitle</string>
     <string name="reading_progress_preparing_mokuro_sidecar">Preparing mokuro sidecar</string>

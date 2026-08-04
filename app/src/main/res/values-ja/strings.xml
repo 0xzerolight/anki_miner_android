@@ -155,6 +155,7 @@
     <string name="mining_progress_preparing_reading_source">選択した読み物ソースを準備中</string>
     <string name="mining_progress_starting_background">バックグラウンドマイニングを開始中</string>
     <string name="reading_progress_preparing_text">テキストを準備中</string>
+    <string name="reading_progress_preparing_pasted_text">貼り付けたテキストを準備中</string>
     <string name="reading_progress_preparing_epub">EPUBを準備中</string>
     <string name="reading_progress_preparing_subtitle">字幕を準備中</string>
     <string name="reading_progress_preparing_mokuro_sidecar">mokuroサイドカーを準備中</string>

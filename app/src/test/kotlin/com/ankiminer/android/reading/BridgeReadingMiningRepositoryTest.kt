@@ -20,6 +20,7 @@ import com.ankiminer.android.engine.ReadingMiningWireRequest
 import com.ankiminer.android.engine.ReadingMiningSourceKind
 import com.ankiminer.android.engine.TokenizerIdentity
 import com.ankiminer.android.media.SafDocument
+import com.ankiminer.android.localization.StringResourceResolver
 import com.ankiminer.android.localization.testStringResourceResolver
 import com.ankiminer.android.mining.CoordinatorAnkiCallbacks
 import com.ankiminer.android.mining.CurationSelection
@@ -711,6 +712,131 @@ class BridgeReadingMiningRepositoryTest {
 
         assertTrue(awaitState(harness.repository, MiningRunState::isTerminal) is MiningRunState.Success)
         assertEquals(0, harness.foreground.lease.closeCount.get())
+    }
+
+    @Test
+    fun `pasted text dispatches once without SAF or media foreground and cleans success`() {
+        val releases = Collections.synchronizedList(mutableListOf<String>())
+        val harness = harness(releases = releases)
+
+        runBlocking { harness.repository.startReading(PASTED_INPUT) }
+        val curating =
+            awaitState(harness.repository) { it is MiningRunState.Curating } as MiningRunState.Curating
+        val wire = requireNotNull(harness.bridge.readingRequest.get())
+        val rawRequest = harness.bridge.readingRunRequests.single()
+        val stagedFile = File(wire.sourcePath)
+
+        assertTrue(rawRequest, rawRequest.contains("\"type\":\"mining.reading.run\""))
+        assertTrue(rawRequest, rawRequest.contains("\"sourceKind\":\"text\""))
+        assertFalse(rawRequest, rawRequest.contains(PASTED_TEXT_CONTENT))
+        assertEquals(ReadingMiningSourceKind.TEXT, wire.sourceKind)
+        assertTrue(wire.sourcePath, wire.sourcePath.endsWith("${File.separator}pasted.text"))
+        assertNull(wire.seriesName)
+        assertNull(wire.imageArchivePath)
+        assertEquals(0, harness.openCount.get())
+        assertEquals(0, harness.foreground.startCount.get())
+        assertTrue(harness.repository.detachActiveSources(PASTED_INPUT))
+        assertFalse(harness.repository.detachActiveSources(PASTED_INPUT))
+
+        runBlocking {
+            harness.repository.confirmCuration(
+                curating.request.runId,
+                curating.request.requestId,
+                emptyList(),
+            )
+        }
+        assertTrue(harness.bridge.curationSubmitted.await(2, TimeUnit.SECONDS))
+        harness.bridge.allowTerminal.countDown()
+
+        assertTrue(awaitState(harness.repository, MiningRunState::isTerminal) is MiningRunState.Success)
+        assertFalse(stagedFile.exists())
+        assertTrue(harness.stageRoot.listFiles().orEmpty().isEmpty())
+        assertEquals(0, harness.openCount.get())
+        assertTrue(releases.isEmpty())
+        assertFalse(recorded.records.any { PASTED_TEXT_CONTENT in it })
+    }
+
+    @Test
+    fun `pasted text failure terminal removes its private stage`() {
+        val harness = harness(raisedFailure = true)
+
+        runBlocking { harness.repository.startReading(PASTED_INPUT) }
+        val curating =
+            awaitState(harness.repository) { it is MiningRunState.Curating } as MiningRunState.Curating
+        val stagedFile = File(requireNotNull(harness.bridge.readingRequest.get()).sourcePath)
+        runBlocking {
+            harness.repository.confirmCuration(
+                curating.request.runId,
+                curating.request.requestId,
+                emptyList(),
+            )
+        }
+        assertTrue(harness.bridge.curationSubmitted.await(2, TimeUnit.SECONDS))
+        harness.bridge.allowTerminal.countDown()
+
+        assertTrue(awaitState(harness.repository, MiningRunState::isTerminal) is MiningRunState.Failed)
+        assertFalse(stagedFile.exists())
+        assertTrue(harness.stageRoot.listFiles().orEmpty().isEmpty())
+    }
+
+    @Test
+    fun `cancelling pasted text while staging removes its private stage`() {
+        val stagingStarted = CountDownLatch(1)
+        val continueStaging = CountDownLatch(1)
+        val blockingStrings =
+            StringResourceResolver { resourceId, formatArguments ->
+                if (resourceId == R.string.reading_progress_preparing_pasted_text) {
+                    stagingStarted.countDown()
+                    check(continueStaging.await(2, TimeUnit.SECONDS))
+                }
+                testStringResourceResolver.resolve(resourceId, formatArguments)
+            }
+        val harness = harness(strings = blockingStrings)
+
+        runBlocking { harness.repository.startReading(PASTED_INPUT) }
+        assertTrue(stagingStarted.await(2, TimeUnit.SECONDS))
+        val token =
+            requireNotNull((harness.repository.state.value as MiningRunState.Starting).cancellationToken)
+        assertTrue(harness.stageRoot.listFiles().orEmpty().isNotEmpty())
+
+        runBlocking { harness.repository.cancel(token) }
+        continueStaging.countDown()
+
+        assertTrue(awaitState(harness.repository, MiningRunState::isTerminal) is MiningRunState.Cancelled)
+        assertTrue(harness.stageRoot.listFiles().orEmpty().isEmpty())
+        assertEquals(0, harness.openCount.get())
+        assertTrue(harness.bridge.readingRunRequests.isEmpty())
+    }
+
+    @Test
+    fun `pasted text with reading TTS still owns media foreground`() {
+        val audio = File(temporary.root, "android_tts_v1_${"c".repeat(64)}.wav").apply {
+            writeBytes(byteArrayOf(1))
+        }
+        val synthesizer = FakeSentenceAudioSynthesizer(audio)
+        val harness =
+            harness(
+                ttsEnabled = true,
+                invokeTts = true,
+                sentenceAudioFactory = SentenceAudioSynthesizerFactory { synthesizer },
+            )
+
+        runBlocking { harness.repository.startReading(PASTED_INPUT) }
+        val curating =
+            awaitState(harness.repository) { it is MiningRunState.Curating } as MiningRunState.Curating
+        assertEquals(1, harness.foreground.startCount.get())
+        runBlocking {
+            harness.repository.confirmCuration(
+                curating.request.runId,
+                curating.request.requestId,
+                FIRST_SELECTION,
+            )
+        }
+
+        assertTrue(harness.bridge.ttsSubmitted.await(2, TimeUnit.SECONDS))
+        harness.bridge.allowTerminal.countDown()
+        assertTrue(awaitState(harness.repository, MiningRunState::isTerminal) is MiningRunState.Success)
+        assertEquals(1, harness.foreground.lease.closeCount.get())
     }
 
     @Test
@@ -1420,6 +1546,7 @@ class BridgeReadingMiningRepositoryTest {
         cache: File? = null,
         foregroundFailure: ForegroundStartFailure? = null,
         ankiFailure: RuntimeException? = null,
+        strings: StringResourceResolver = testStringResourceResolver,
     ): Harness {
         val runExecutor = Executors.newSingleThreadExecutor().also(executors::add)
         val controlExecutor = Executors.newSingleThreadExecutor().also(executors::add)
@@ -1484,7 +1611,7 @@ class BridgeReadingMiningRepositoryTest {
                             }
                         }
                     },
-                strings = testStringResourceResolver,
+                strings = strings,
                 runtimeWorkCoordinator = runtimeWorkCoordinator,
                 configSnapshotResolver =
                     ReadingConfigSnapshotResolver {
@@ -1891,6 +2018,7 @@ class BridgeReadingMiningRepositoryTest {
         private val invokeTtsAfterCancellation: Boolean = false,
     ) : PyBridge {
         val readingRequest = AtomicReference<ReadingMiningWireRequest?>()
+        val readingRunRequests = CopyOnWriteArrayList<String>()
         val curationSubmitted = CountDownLatch(1)
         val intermediateCurationSubmitted = CountDownLatch(1)
         val cancellationSubmitted = CountDownLatch(1)
@@ -1929,6 +2057,7 @@ class BridgeReadingMiningRepositoryTest {
                         ),
                     )
                 is BridgeMessage.ReadingRun -> {
+                    readingRunRequests += rawRequest
                     readingRunFailure?.let { throw it }
                     runReading(request.request, requireNotNull(callbacks))
                 }
@@ -2066,6 +2195,12 @@ class BridgeReadingMiningRepositoryTest {
                 sizeBytes = 5L,
             )
         val INPUT = ReadingMiningInput(ReadingSourceSelection.Single(INPUT_DOCUMENT))
+        const val PASTED_TEXT_CONTENT = "本文。"
+        val PASTED_INPUT =
+            ReadingMiningInput(
+                ReadingSourceSelection.PastedText(PASTED_TEXT_CONTENT),
+                subtitleSeriesName = null,
+            )
         val EPUB_DOCUMENT =
             SafDocument(
                 uri = "content://reading/book",

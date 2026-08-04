@@ -1352,7 +1352,7 @@ internal class BridgeReadingMiningRepository(
         val description =
             when (stage.role) {
                 ReadingSourceStageRole.TXT -> R.string.reading_progress_preparing_text
-                ReadingSourceStageRole.PASTED_TEXT -> R.string.reading_progress_preparing_text
+                ReadingSourceStageRole.PASTED_TEXT -> R.string.reading_progress_preparing_pasted_text
                 ReadingSourceStageRole.EPUB -> R.string.reading_progress_preparing_epub
                 ReadingSourceStageRole.SUBTITLE -> R.string.reading_progress_preparing_subtitle
                 ReadingSourceStageRole.MOKURO_SIDECAR -> R.string.reading_progress_preparing_mokuro_sidecar
@@ -2055,7 +2055,7 @@ internal class BridgeReadingMiningRepository(
             StagedReadingSourceKind.EPUB -> ReadingMiningSourceKind.EPUB
             StagedReadingSourceKind.SUBTITLE -> ReadingMiningSourceKind.SUBTITLE
             StagedReadingSourceKind.MOKURO -> ReadingMiningSourceKind.MOKURO
-            StagedReadingSourceKind.TEXT -> error("Pasted text is not wired to the reading repository")
+            StagedReadingSourceKind.TEXT -> ReadingMiningSourceKind.TEXT
         }
 
     private fun ReadingSourceSelection.documents(): List<SafDocument> =
