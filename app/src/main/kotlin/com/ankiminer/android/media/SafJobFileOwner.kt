@@ -25,6 +25,14 @@ internal enum class SafCopyRole {
     SUBTITLE,
 }
 
+private val SUBTITLE_EXTENSIONS = setOf("ass", "srt", "ssa", "vtt")
+
+internal fun hasSupportedSubtitleExtension(displayName: String): Boolean =
+    normalizedSubtitleExtension(displayName) in SUBTITLE_EXTENSIONS
+
+private fun normalizedSubtitleExtension(displayName: String): String =
+    displayName.substringAfterLast('.', missingDelimiterValue = "").lowercase(Locale.ROOT)
+
 internal data class SafCopyProgress(
     val role: SafCopyRole,
     val copiedBytes: Long,
@@ -178,12 +186,10 @@ class SafJobFileOwner internal constructor(
 
     private fun subtitleSuffix(displayName: String): String {
         require(displayName.isNotBlank()) { "Subtitle display name must not be blank" }
-        val extension = displayName.substringAfterLast('.', missingDelimiterValue = "")
-            .lowercase(Locale.ROOT)
-        require(extension in SUBTITLE_EXTENSIONS) {
+        require(hasSupportedSubtitleExtension(displayName)) {
             "Subtitle filename must end in .srt, .ass, .ssa, or .vtt"
         }
-        return ".$extension"
+        return ".${normalizedSubtitleExtension(displayName)}"
     }
 
     override fun close() {
@@ -259,7 +265,6 @@ class SafJobFileOwner internal constructor(
         const val MAX_VIDEO_COPY_BYTES = 16L * 1024 * 1024 * 1024
         const val MAX_SUBTITLE_COPY_BYTES = 32L * 1024 * 1024
         const val FREE_SPACE_RESERVE_BYTES = 256L * 1024 * 1024
-        val SUBTITLE_EXTENSIONS = setOf("ass", "srt", "ssa", "vtt")
         val VIDEO_COPY_POLICY =
             BoundedFileCopyPolicy(
                 maxBytes = MAX_VIDEO_COPY_BYTES,

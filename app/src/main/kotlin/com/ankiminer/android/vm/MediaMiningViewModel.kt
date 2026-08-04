@@ -17,6 +17,7 @@ import com.ankiminer.android.engine.SubtitleCue
 import com.ankiminer.android.media.SafBroker
 import com.ankiminer.android.media.SafDocument
 import com.ankiminer.android.media.SafSelectionInventory
+import com.ankiminer.android.media.hasSupportedSubtitleExtension
 import com.ankiminer.android.mining.CurationMediaBinding
 import com.ankiminer.android.mining.CurationRequest
 import com.ankiminer.android.mining.CurationSelection
@@ -969,12 +970,17 @@ class MediaMiningViewModel internal constructor(
                         ).acquirePersistPublish(
                             uri = uri,
                             accept = { document ->
-                                if (kind == DocumentKind.VIDEO) {
-                                    documentSelectionError(document)
-                                        .also { rejectionError = it } == null
-                                } else {
-                                    true
-                                }
+                                val error =
+                                    when (kind) {
+                                        DocumentKind.VIDEO -> documentSelectionError(document)
+                                        DocumentKind.SUBTITLE ->
+                                            if (hasSupportedSubtitleExtension(document.displayName)) {
+                                                null
+                                            } else {
+                                                DocumentSelectionError.SUBTITLE
+                                            }
+                                    }
+                                error.also { rejectionError = it } == null
                             },
                             discardPersistedOnRejection = restoring,
                             publish = { document ->

@@ -505,6 +505,39 @@ class MediaMiningViewModelTest {
                 viewModel.uiState.value.subtitle.document?.displayName,
             )
             assertTrue(viewModel.uiState.value.canStart)
+
+            val rejectedState = SavedStateHandle()
+            val rejectedStore =
+                SavedDocumentSelectionStore(rejectedState, "videoMining.subtitle")
+            rejectedStore.save(
+                document("content://test/restored-transcript.txt", "stale-transcript.srt"),
+            )
+            val rejectedBroker = ImmediateSafBroker()
+
+            val rejectedViewModel =
+                mediaViewModel(
+                    repository = RecordingRepository(),
+                    safBroker = rejectedBroker,
+                    savedStateHandle = rejectedState,
+                )
+            runCurrent()
+
+            assertEquals(
+                DocumentSelectionError.SUBTITLE,
+                rejectedViewModel.uiState.value.subtitle.error,
+            )
+            assertNull(rejectedViewModel.uiState.value.subtitle.document)
+            assertNull(rejectedStore.restore())
+            assertNull(rejectedState.get<String>("videoMining.subtitle.uri"))
+            assertNull(rejectedState.get<String>("videoMining.subtitle.displayName"))
+            assertEquals(
+                listOf("content://test/restored-transcript.txt"),
+                rejectedBroker.retainedUris,
+            )
+            assertEquals(
+                listOf("content://test/restored-transcript.txt"),
+                rejectedBroker.releasedUris,
+            )
         }
 
     @Test
@@ -657,24 +690,54 @@ class MediaMiningViewModelTest {
         }
 
     @Test
-    fun audioLaneRejectsVideoExtensionWithoutPersistingSelection() =
+    fun unsupportedSourceAndTranscriptExtensionsAreRejectedWithoutPersistence() =
         runTest(mainDispatcherRule.dispatcher) {
-            val inventory = TransientSafSelectionInventory()
-            val viewModel =
+            val audioInventory = TransientSafSelectionInventory()
+            val audioBroker = ImmediateSafBroker()
+            val audioViewModel =
                 mediaViewModel(
                     repository = RecordingRepository(),
-                    safBroker = ImmediateSafBroker(),
-                    selectionInventory = inventory,
+                    safBroker = audioBroker,
+                    selectionInventory = audioInventory,
                     selectionIoDispatcher = mainDispatcherRule.dispatcher,
                     lane = MiningLane.AUDIO,
                 )
 
-            viewModel.onVideoPicked("content://test/episode.mkv")
+            audioViewModel.onVideoPicked("content://test/episode.mkv")
             runCurrent()
 
-            assertEquals(DocumentSelectionError.AUDIO_TYPE, viewModel.uiState.value.video.error)
-            assertNull(viewModel.uiState.value.video.document)
-            assertNull(inventory.selection(SafSelectionSlot.AUDIO))
+            assertEquals(
+                DocumentSelectionError.AUDIO_TYPE,
+                audioViewModel.uiState.value.video.error,
+            )
+            assertNull(audioViewModel.uiState.value.video.document)
+            assertNull(audioInventory.selection(SafSelectionSlot.AUDIO))
+            assertEquals(listOf("content://test/episode.mkv"), audioBroker.releasedUris)
+
+            listOf(MiningLane.VIDEO, MiningLane.AUDIO).forEach { lane ->
+                val inventory = TransientSafSelectionInventory()
+                val broker = ImmediateSafBroker()
+                val viewModel =
+                    mediaViewModel(
+                        repository = RecordingRepository(),
+                        safBroker = broker,
+                        selectionInventory = inventory,
+                        selectionIoDispatcher = mainDispatcherRule.dispatcher,
+                        lane = lane,
+                    )
+                val uri = "content://test/${lane.name}-transcript.txt"
+
+                viewModel.onSubtitlePicked(uri)
+                runCurrent()
+
+                assertEquals(
+                    DocumentSelectionError.SUBTITLE,
+                    viewModel.uiState.value.subtitle.error,
+                )
+                assertNull(viewModel.uiState.value.subtitle.document)
+                assertNull(inventory.selection(lane.subtitleSlot))
+                assertEquals(listOf(uri), broker.releasedUris)
+            }
         }
 
     @Test
@@ -1069,7 +1132,7 @@ class MediaMiningViewModelTest {
             viewModel.openTimingPreview()
             runCurrent()
 
-            assertEquals("subtitle", openedSubtitles.single().displayName)
+            assertEquals("subtitle.SRT", openedSubtitles.single().displayName)
             val state = requireNotNull(viewModel.timingPreviewState.value)
             assertEquals(1.5, state.initialOffset, 0.0)
             assertEquals(1.5, state.workingOffset, 0.0)
@@ -1542,9 +1605,9 @@ class MediaMiningViewModelTest {
             runCurrent()
 
             assertEquals("video", viewModel.uiState.value.video.document?.displayName)
-            assertEquals("subtitle", viewModel.uiState.value.subtitle.document?.displayName)
+            assertEquals("subtitle.SRT", viewModel.uiState.value.subtitle.document?.displayName)
             assertEquals(
-                listOf("content://test/video", "content://test/subtitle"),
+                listOf("content://test/video", "content://test/subtitle.SRT"),
                 broker.retainedUris,
             )
             assertEquals(emptyList<String>(), broker.eventualReleaseUris)
@@ -1746,7 +1809,7 @@ class MediaMiningViewModelTest {
             store.clear()
 
             assertEquals(
-                listOf("content://test/video", "content://test/subtitle"),
+                listOf("content://test/video", "content://test/subtitle.SRT"),
                 broker.eventualReleaseUris,
             )
         }
@@ -1767,7 +1830,7 @@ class MediaMiningViewModelTest {
             store.clear()
 
             assertEquals(
-                listOf("content://test/video", "content://test/subtitle"),
+                listOf("content://test/video", "content://test/subtitle.SRT"),
                 broker.eventualReleaseUris,
             )
         }
@@ -1792,7 +1855,7 @@ class MediaMiningViewModelTest {
             store.clear()
 
             assertEquals(
-                listOf("content://test/video", "content://test/subtitle"),
+                listOf("content://test/video", "content://test/subtitle.SRT"),
                 broker.eventualReleaseUris,
             )
         }
@@ -1819,7 +1882,10 @@ class MediaMiningViewModelTest {
             assertEquals(emptyList<String>(), broker.eventualReleaseUris)
             assertEquals(1, repository.detachedInputs.size)
             assertEquals("content://test/video", repository.detachedInputs.single().video.uri)
-            assertEquals("content://test/subtitle", repository.detachedInputs.single().subtitle.uri)
+            assertEquals(
+                "content://test/subtitle.SRT",
+                repository.detachedInputs.single().subtitle.uri,
+            )
         }
 
     @Test
@@ -1833,14 +1899,14 @@ class MediaMiningViewModelTest {
                     store,
                     factory(repository, broker),
                 )[MediaMiningViewModel::class.java]
-            viewModel.onVideoPicked("content://test/shared")
-            viewModel.onSubtitlePicked("content://test/shared")
+            viewModel.onVideoPicked("content://test/shared.srt")
+            viewModel.onSubtitlePicked("content://test/shared.srt")
             runCurrent()
 
             store.clear()
 
             assertEquals(
-                listOf("content://test/shared", "content://test/shared"),
+                listOf("content://test/shared.srt", "content://test/shared.srt"),
                 broker.eventualReleaseUris,
             )
             assertEquals(1, repository.detachedInputs.size)
@@ -1873,7 +1939,7 @@ class MediaMiningViewModelTest {
 
     private fun selectDocuments(viewModel: MediaMiningViewModel) {
         viewModel.onVideoPicked("content://test/video")
-        viewModel.onSubtitlePicked("content://test/subtitle")
+        viewModel.onSubtitlePicked("content://test/subtitle.SRT")
     }
 
     private fun factory(
