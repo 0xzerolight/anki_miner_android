@@ -51,6 +51,7 @@ class SharedMiningContractsTest {
         assertEquals(0, draft.selectedCount)
         assertEquals(emptyList<CurationSelection>(), draft.selections(request))
         assertEquals(1L, draft.pageIndex)
+        assertNull(draft.focusedCandidateId)
     }
 
     @Test

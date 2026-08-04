@@ -499,9 +499,6 @@ internal fun setupAuditState(): SetupUiState {
         lookupTerm = "掛ける",
         lookupSlotId = dictionaries.first().slotId,
         customSlotId = "custom-classical-japanese",
-        frequencySourceName = "JPDB frequency 2025",
-        pitchSourceName = "Kanjium pitch accents",
-        audioPackId = "jpod101-extra",
         knownWordsSearch = "美",
     )
 }
@@ -574,7 +571,6 @@ internal fun UiAuditSettingsFixture(
                 settingsCard("audit-known-words") {
                     KnownWordsImportCard(
                         state = setup,
-                        onFormatChanged = {},
                         onImport = {},
                         onConfirmImport = {},
                         onDismissImport = {},
@@ -656,7 +652,6 @@ private fun SettingsAnkiFixture(setup: SetupUiState) {
             onSetFieldMapping = { _, _ -> },
             onSelectCardType = {},
             onSelectCardTypeMarker = {},
-            onVerify = {},
         )
         AnkiRecoveryCard(
             state = setup,
@@ -697,8 +692,6 @@ private fun SettingsResourcesFixture(setup: SetupUiState) {
         )
         PitchImportCard(
             state = setup,
-            onNameChanged = {},
-            onFormatChanged = {},
             onImport = {},
         )
         SettingsSection(stringResource(R.string.settings_dictionary_chain)) {

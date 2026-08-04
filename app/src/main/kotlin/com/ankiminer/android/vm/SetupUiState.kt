@@ -23,9 +23,6 @@ import com.ankiminer.android.data.resources.KnownWordsImportPreview
 import com.ankiminer.android.data.resources.KnownWordsPage
 import com.ankiminer.android.data.resources.BundledWordset
 import com.ankiminer.android.data.resources.LocalResourceImportResult
-import com.ankiminer.android.data.resources.FrequencySourceFormat
-import com.ankiminer.android.data.resources.KnownWordsSourceFormat
-import com.ankiminer.android.data.resources.PitchAccentSourceFormat
 import com.ankiminer.android.data.resources.ResourceFailure
 import com.ankiminer.android.data.resources.ResourceOperationProgress
 import com.ankiminer.android.data.resources.ResourceStartupReadiness
@@ -82,20 +79,11 @@ internal data class SetupUiState(
     val lookupTerm: String = "猫",
     val lookupSlotId: String? = null,
     val customSlotId: String = "custom-dictionary",
-    val frequencySourceName: String = "Imported frequency",
-    val frequencyFormat: FrequencySourceFormat = FrequencySourceFormat.YOMITAN_ZIP,
-    val pitchSourceName: String = "Imported pitch accent",
-    val pitchFormat: PitchAccentSourceFormat = PitchAccentSourceFormat.YOMITAN_ZIP,
-    val audioPackId: String = "audio-pack",
-    val knownWordsFormat: KnownWordsSourceFormat = KnownWordsSourceFormat.JSON,
     val wordListTarget: WordListKind = WordListKind.BLACKLIST,
     val knownWordsSearch: String = "",
 ) {
     val customSlotValid: Boolean
         get() = CUSTOM_SLOT_ID.matches(customSlotId)
-
-    val audioPackIdValid: Boolean
-        get() = CUSTOM_SLOT_ID.matches(audioPackId) && audioPackId != "jpod101"
 
     val pythonReady: Boolean
         get() = python is PythonRuntimeReadiness.Ready

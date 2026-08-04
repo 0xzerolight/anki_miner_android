@@ -328,7 +328,6 @@
     <string name="disclosure_collapsed">折りたたみ</string>
     <string name="anki_field_mapping_changes">このノートタイプのフィールドの対応付けが変更されました：%1$s</string>
     <string name="anki_field_none">未対応付け</string>
-    <string name="anki_note_type_verify">再確認</string>
     <string name="anki_card_type_title">カードタイプ</string>
     <string name="anki_card_type_explainer">JP Mining Note系のノートタイプ向け:マーカーフィールドに\"x\"が書き込まれ、マイニングした全ノートが選択したタイプで表示されます。</string>
     <string name="anki_card_type_picker">カードタイプ</string>
@@ -464,6 +463,7 @@
     <string name="resource_failure_pitch_import">選択したファイルは対応するアクセントデータではありません</string>
     <string name="resource_failure_pitch_invalid">インストール済みのアクセントデータが破損しています。採掘前に置き換えてください</string>
     <string name="resource_failure_audio_pack_import">選択したZIPは対応するローカル音声パックではありません</string>
+    <string name="resource_failure_audio_pack_reserved">このアーカイブから予約済み音声パックID「jpod101」が生成されます。ルートフォルダー名またはZIPファイル名を変更してください。</string>
     <string name="resource_failure_known_words_import">選択したファイルに対応する既知単語が含まれていません</string>
     <string name="resource_failure_inventory_unsafe">ローカルリソースが破損または安全でなく、対応が必要です</string>
     <string name="resource_failure_dictionary_schema">インデックススキーマが古いため、この辞書を置き換える必要があります</string>
@@ -487,7 +487,6 @@
     <string name="resource_replace_confirm_title">%1$sを置き換えますか？</string>
     <string name="resource_replace_confirm_message">%1$sはトランザクション処理で置き換えられます。新しいインポートの検証が失敗した場合、Anki Minerは現在インストールされているものを復元します。</string>
     <string name="pitch_replace_confirm_message">%1$sは新しいファイルの検証後ただちに削除されます。バックアップは保持されません。</string>
-    <string name="pitch_replaces_installed">インポートするとインストール済みの高低アクセントデータが置き換えられます。</string>
     <string name="dictionary_replace_confirm">置き換え</string>
     <string name="dictionary_repair_confirm">スロットを修復</string>
     <string name="custom_dictionary_title">別のYomitan ZIPをインポート</string>
@@ -504,7 +503,6 @@
     <string name="pitch_choose_file">アクセントファイルを選択</string>
     <string name="audio_pack_import_title">例文音声をインポート</string>
     <string name="audio_pack_none_installed">ローカル音声パックがインストールされていません。</string>
-    <string name="audio_pack_id">固定音声パックID</string>
     <string name="audio_pack_choose_zip">音声パックZIPを選択</string>
     <string name="word_lists_title">単語リスト</string>
     <string name="word_lists_format">プレーンテキスト形式、1行に1単語。空行と#で始まる行は無視されます。</string>
@@ -537,14 +535,8 @@
     <string name="bundled_wordsets_title">同梱の固有名詞単語リスト</string>
     <string name="bundled_wordset_item">%1$s · エントリ%2$d件</string>
     <string name="bundled_wordsets_unavailable">同梱の単語リストを一覧化できませんでした。</string>
-    <string name="local_resource_display_name">表示名</string>
     <string name="local_resource_inventory_invalid">%1$s [%2$s] · 無効な一覧（エントリ%3$d件）。採掘前に置き換えてください</string>
     <string name="pitch_inventory_invalid">%1$s · 無効な一覧（エントリ%2$d件）。採掘前に置き換えてください</string>
-    <string name="resource_format_yomitan_zip">Yomitan ZIP</string>
-    <string name="resource_format_csv">CSV</string>
-    <string name="resource_format_tsv">TSV</string>
-    <string name="resource_format_text">テキスト</string>
-    <string name="resource_format_json">JSON</string>
     <string name="local_import_complete">ローカルインポート完了</string>
     <string name="frequency_import_result">%1$s: エントリ%2$d件、不正な行%3$d件をスキップ</string>
     <string name="pitch_import_result">%1$s: エントリ%2$d件、不正な行%3$d件をスキップ</string>

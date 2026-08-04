@@ -18,9 +18,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.ankiminer.android.R
-import com.ankiminer.android.data.resources.FrequencySourceFormat
-import com.ankiminer.android.data.resources.KnownWordsSourceFormat
-import com.ankiminer.android.data.resources.PitchAccentSourceFormat
 import com.ankiminer.android.data.resources.WordListKind
 import com.ankiminer.android.ui.theme.AdaptivePairedActions
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
@@ -33,8 +30,6 @@ import com.ankiminer.android.ui.theme.outlinedActionButtonColors
 @Composable
 internal fun FrequencyImportCard(
     state: SetupUiState,
-    onNameChanged: (String) -> Unit,
-    onFormatChanged: (FrequencySourceFormat) -> Unit,
     onImport: () -> Unit,
     inlineFailure: (@Composable () -> Unit)? = null,
 ) {
@@ -58,29 +53,13 @@ internal fun FrequencyImportCard(
                     )
                 }
             if (state.frequencySources.isEmpty()) Text(stringResource(R.string.frequency_none_installed))
-            OutlinedTextField(
-                value = state.frequencySourceName,
-                onValueChange = onNameChanged,
-                label = { Text(stringResource(R.string.local_resource_display_name)) },
-                isError = state.frequencySourceName.isBlank(),
-                enabled = !state.busy,
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            AdaptiveChoiceSelector(
-                values = FrequencySourceFormat.entries,
-                selected = state.frequencyFormat,
-                label = { frequencyFormatLabel(it) },
-                onSelect = onFormatChanged,
-                enabled = !state.busy,
-            )
             inlineFailure?.invoke()
             OutlinedButton(
                 onClick = onImport,
-                enabled = !state.busy && state.frequencySourceName.isNotBlank(),
+                enabled = !state.busy,
                 modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
                 colors = outlinedActionButtonColors(),
-                border = actionBorder(!state.busy && state.frequencySourceName.isNotBlank()),
+                border = actionBorder(!state.busy),
             ) { Text(stringResource(R.string.frequency_choose_file)) }
         }
     }
@@ -89,8 +68,6 @@ internal fun FrequencyImportCard(
 @Composable
 internal fun PitchImportCard(
     state: SetupUiState,
-    onNameChanged: (String) -> Unit,
-    onFormatChanged: (PitchAccentSourceFormat) -> Unit,
     onImport: () -> Unit,
     inlineFailure: (@Composable () -> Unit)? = null,
 ) {
@@ -114,34 +91,13 @@ internal fun PitchImportCard(
                     )
                 }
             if (state.pitchSources.isEmpty()) Text(stringResource(R.string.pitch_none_installed))
-            OutlinedTextField(
-                value = state.pitchSourceName,
-                onValueChange = onNameChanged,
-                label = { Text(stringResource(R.string.local_resource_display_name)) },
-                isError = state.pitchSourceName.isBlank(),
-                enabled = !state.busy,
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            AdaptiveChoiceSelector(
-                values = PitchAccentSourceFormat.entries,
-                selected = state.pitchFormat,
-                label = { pitchFormatLabel(it) },
-                onSelect = onFormatChanged,
-                enabled = !state.busy,
-            )
-            // A name that derives onto an installed slot replaces it; the confirmation
-            // that follows the picker names which one.
-            if (state.pitchSources.isNotEmpty()) {
-                SupportingText(stringResource(R.string.pitch_replaces_installed))
-            }
             inlineFailure?.invoke()
             OutlinedButton(
                 onClick = onImport,
-                enabled = !state.busy && state.pitchSourceName.isNotBlank(),
+                enabled = !state.busy,
                 modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
                 colors = outlinedActionButtonColors(),
-                border = actionBorder(!state.busy && state.pitchSourceName.isNotBlank()),
+                border = actionBorder(!state.busy),
             ) { Text(stringResource(R.string.pitch_choose_file)) }
         }
     }
@@ -150,7 +106,6 @@ internal fun PitchImportCard(
 @Composable
 internal fun AudioPackImportCard(
     state: SetupUiState,
-    onIdChanged: (String) -> Unit,
     onImport: () -> Unit,
     inlineFailure: (@Composable () -> Unit)? = null,
 ) {
@@ -173,22 +128,13 @@ internal fun AudioPackImportCard(
                     )
                 }
             if (state.audioPacks.isEmpty()) Text(stringResource(R.string.audio_pack_none_installed))
-            OutlinedTextField(
-                value = state.audioPackId,
-                onValueChange = onIdChanged,
-                label = { Text(stringResource(R.string.audio_pack_id)) },
-                isError = !state.audioPackIdValid,
-                enabled = !state.busy,
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
             inlineFailure?.invoke()
             OutlinedButton(
                 onClick = onImport,
-                enabled = !state.busy && state.audioPackIdValid,
+                enabled = !state.busy,
                 modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
                 colors = outlinedActionButtonColors(),
-                border = actionBorder(!state.busy && state.audioPackIdValid),
+                border = actionBorder(!state.busy),
             ) { Text(stringResource(R.string.audio_pack_choose_zip)) }
         }
     }
@@ -306,7 +252,6 @@ private fun WordListRow(
 @Composable
 internal fun KnownWordsImportCard(
     state: SetupUiState,
-    onFormatChanged: (KnownWordsSourceFormat) -> Unit,
     onImport: () -> Unit,
     onConfirmImport: () -> Unit,
     onDismissImport: () -> Unit,
@@ -374,13 +319,6 @@ internal fun KnownWordsImportCard(
                     } else {
                         MaterialTheme.colorScheme.error
                     },
-            )
-            AdaptiveChoiceSelector(
-                values = KnownWordsSourceFormat.entries,
-                selected = state.knownWordsFormat,
-                label = { knownWordsFormatLabel(it) },
-                onSelect = onFormatChanged,
-                enabled = !state.busy,
             )
             OutlinedButton(
                 onClick = onImport,

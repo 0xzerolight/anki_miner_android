@@ -10,6 +10,7 @@ import com.ankiminer.android.data.RuntimeWorkCoordinator
 import com.ankiminer.android.data.anki.AnkiSetupManager
 import com.ankiminer.android.data.anki.AnkiSetupManagerState
 import com.ankiminer.android.data.resources.FrequencySourceFormat
+import com.ankiminer.android.data.resources.InstalledAudioPack
 import com.ankiminer.android.data.resources.InstalledFrequencySource
 import com.ankiminer.android.data.resources.InstalledPitchSource
 import com.ankiminer.android.data.resources.KnownWordsResetScope
@@ -23,7 +24,10 @@ import com.ankiminer.android.data.resources.ResourceFailureOrigin
 import com.ankiminer.android.data.resources.ResourceFailureRetry
 import com.ankiminer.android.data.resources.ResourceManager
 import com.ankiminer.android.data.resources.ResourceManagerState
+import com.ankiminer.android.data.resources.ResourceImportFileKind
 import com.ankiminer.android.data.resources.ResourceStartupReadiness
+import com.ankiminer.android.data.resources.RetainedResourceImport
+import com.ankiminer.android.data.resources.detectResourceImportFileKind
 import com.ankiminer.android.data.settings.AppSettings
 import com.ankiminer.android.data.settings.AppSettingsRepository
 import com.ankiminer.android.data.settings.AppSettingsValidator
@@ -67,10 +71,6 @@ class SetupViewModelTest {
                     savedStateHandle = savedState,
                 )
             advanceUntilIdle()
-            original.setFrequencySourceName("Custom TSV")
-            original.setFrequencyFormat(FrequencySourceFormat.TSV)
-            advanceUntilIdle()
-
             assertTrue(original.beginFrequencyPicker())
 
             val restored =
@@ -85,10 +85,10 @@ class SetupViewModelTest {
             advanceUntilIdle()
 
             assertEquals(
-                listOf(Triple("content://test/frequency.tsv", "custom-tsv", false)),
+                listOf(Triple("content://test/frequency.tsv", "frequency", false)),
                 resources.frequencyImports,
             )
-            assertEquals(listOf("Custom TSV"), resources.frequencySourceNames)
+            assertEquals(listOf("frequency"), resources.frequencySourceNames)
             assertEquals(listOf(FrequencySourceFormat.TSV), resources.frequencyFormats)
         }
 
@@ -456,6 +456,11 @@ class SetupViewModelTest {
             val repository = FakeSettingsRepository(AppSettings())
             val setup = FakeAnkiSetupManager(emptyList())
             val resources = FakeResourceManager()
+            resources.setImportDocument(
+                uri = "content://known",
+                displayName = "known-words.json",
+                mimeType = "application/json",
+            )
             val viewModel = viewModel(repository, setup, resources)
             advanceUntilIdle()
 
@@ -471,7 +476,11 @@ class SetupViewModelTest {
             viewModel.dismissKnownWordsImportPreview()
             advanceUntilIdle()
 
-            assertEquals(listOf("content://known" to KnownWordsSourceFormat.JSON), resources.previewCalls)
+            assertEquals(listOf("content://known"), resources.retainedResourceImports)
+            assertEquals(
+                listOf("content://known" to ResourceImportFileKind.JSON),
+                resources.previewCalls,
+            )
             assertEquals(emptyList<Pair<String, KnownWordsSourceFormat>>(), resources.importCalls)
             assertEquals(1, resources.confirmCount)
             assertEquals(listOf("猫" to false, "猫" to true), resources.searchCalls)
@@ -546,12 +555,18 @@ class SetupViewModelTest {
             val model = viewModel(FakeSettingsRepository(AppSettings()), FakeAnkiSetupManager(emptyList()), resources)
             advanceUntilIdle()
 
-            model.setFrequencySourceName("JPDB v2.1")
-            advanceUntilIdle()
-            model.importFrequencySource("content://import.zip")
+            resources.setImportDocument(
+                uri = "content://import",
+                displayName = "JPDB v2.1",
+                mimeType = "application/octet-stream",
+                leadingBytes = byteArrayOf(0x50, 0x4b, 0x03, 0x04),
+            )
+            model.importFrequencySource("content://import")
             advanceUntilIdle()
 
-            assertEquals(listOf(Triple("content://import.zip", "jpdb-v2-1", false)), resources.frequencyImports)
+            assertEquals(listOf(Triple("content://import", "jpdb-v2-1", false)), resources.frequencyImports)
+            assertEquals(listOf("JPDB v2.1"), resources.frequencySourceNames)
+            assertEquals(listOf(FrequencySourceFormat.YOMITAN_ZIP), resources.frequencyFormats)
             assertEquals(null, model.uiState.value.pendingReplace)
         }
 
@@ -567,11 +582,16 @@ class SetupViewModelTest {
                 )
             advanceUntilIdle()
 
-            model.setFrequencySourceName("\u306F\u3099")
+            resources.setImportDocument(
+                uri = "content://import.csv",
+                displayName = "\u306F\u3099.csv",
+                mimeType = "text/csv",
+            )
             model.importFrequencySource("content://import.csv")
             advanceUntilIdle()
 
             assertEquals(listOf("\u3070"), resources.frequencySourceNames)
+            assertEquals(listOf(FrequencySourceFormat.CSV), resources.frequencyFormats)
         }
 
     @Test
@@ -582,8 +602,7 @@ class SetupViewModelTest {
             val model = viewModel(FakeSettingsRepository(AppSettings()), FakeAnkiSetupManager(emptyList()), resources)
             advanceUntilIdle()
 
-            model.setFrequencySourceName("JPDB v2.1")
-            advanceUntilIdle()
+            resources.setImportDocument("content://import.zip", "JPDB v2.1.zip")
             model.importFrequencySource("content://import.zip")
             advanceUntilIdle()
 
@@ -608,8 +627,7 @@ class SetupViewModelTest {
             val model = viewModel(FakeSettingsRepository(AppSettings()), FakeAnkiSetupManager(emptyList()), resources)
             advanceUntilIdle()
 
-            model.setFrequencySourceName("Imported frequency")
-            advanceUntilIdle()
+            resources.setImportDocument("content://import.zip", "Imported frequency.zip")
             model.importFrequencySource("content://import.zip")
             advanceUntilIdle()
             model.confirmPendingReplace()
@@ -627,8 +645,7 @@ class SetupViewModelTest {
             val model = viewModel(FakeSettingsRepository(AppSettings()), FakeAnkiSetupManager(emptyList()), resources)
             advanceUntilIdle()
 
-            model.setFrequencySourceName("JPDB v2.1")
-            advanceUntilIdle()
+            resources.setImportDocument("content://import.zip", "JPDB v2.1.zip")
             model.importFrequencySource("content://import.zip")
             advanceUntilIdle()
             model.dismissPendingReplace()
@@ -636,6 +653,7 @@ class SetupViewModelTest {
 
             assertEquals(emptyList<Triple<String, String, Boolean>>(), resources.frequencyImports)
             assertEquals(null, model.uiState.value.pendingReplace)
+            assertEquals(listOf("content://import.zip"), resources.releasedResourceImports)
         }
 
     @Test
@@ -645,8 +663,7 @@ class SetupViewModelTest {
             val model = viewModel(FakeSettingsRepository(AppSettings()), FakeAnkiSetupManager(emptyList()), resources)
             advanceUntilIdle()
 
-            model.setPitchSourceName("Kanjium")
-            advanceUntilIdle()
+            resources.setImportDocument("content://first.csv", "Kanjium.csv")
             model.importPitchAccent("content://first.csv")
             advanceUntilIdle()
             assertEquals(listOf("content://first.csv" to false), resources.pitchImports)
@@ -654,6 +671,7 @@ class SetupViewModelTest {
             // Pitch is a chain of named slots now: only a name that derives onto an
             // installed slot collides.
             resources.setInstalledPitchSources(listOf(installedPitch("kanjium", "Kanjium")))
+            resources.setImportDocument("content://second.csv", "Kanjium.tsv")
             advanceUntilIdle()
             model.importPitchAccent("content://second.csv")
             advanceUntilIdle()
@@ -661,41 +679,108 @@ class SetupViewModelTest {
             assertEquals("Kanjium", model.uiState.value.pendingReplace?.installedLabel)
 
             // A different name is a new slot, so it imports without asking.
-            model.setPitchSourceName("NHK 2016")
+            model.confirmPendingReplace()
             advanceUntilIdle()
+            resources.setImportDocument("content://third.csv", "NHK 2016.txt", "text/plain")
             model.importPitchAccent("content://third.csv")
             advanceUntilIdle()
             assertEquals(
-                listOf("content://first.csv" to false, "content://third.csv" to false),
+                listOf(
+                    "content://first.csv" to false,
+                    "content://second.csv" to true,
+                    "content://third.csv" to false,
+                ),
                 resources.pitchImports,
+            )
+            assertEquals(
+                listOf(
+                    PitchAccentSourceFormat.CSV,
+                    PitchAccentSourceFormat.TSV,
+                    PitchAccentSourceFormat.CSV,
+                ),
+                resources.pitchFormats,
             )
         }
 
     @Test
     fun `display names are trimmed and stripped of control characters for the bridge`() =
         runTest(mainDispatcherRule.dispatcher) {
-            val model = viewModel(FakeSettingsRepository(AppSettings()), FakeAnkiSetupManager(emptyList()))
+            val resources = FakeResourceManager()
+            val model =
+                viewModel(
+                    FakeSettingsRepository(AppSettings()),
+                    FakeAnkiSetupManager(emptyList()),
+                    resources,
+                )
             advanceUntilIdle()
 
-            model.setFrequencySourceName("  JPDB\tv2  ")
+            resources.setImportDocument(
+                uri = "content://controlled.csv",
+                displayName = "  JPDB\tv2  .csv",
+                mimeType = "text/csv",
+            )
+            model.importFrequencySource("content://controlled.csv")
+            advanceUntilIdle()
+            resources.setImportDocument(
+                uri = "content://blank.csv",
+                displayName = "\t.csv",
+                mimeType = "text/csv",
+            )
+            model.importFrequencySource("content://blank.csv")
+            advanceUntilIdle()
+            resources.setImportDocument(
+                uri = "content://extensionless",
+                displayName = "plain text",
+                mimeType = "application/octet-stream",
+                leadingBytes = "word".encodeToByteArray(),
+            )
+            model.importFrequencySource("content://extensionless")
             advanceUntilIdle()
 
-            assertEquals("JPDBv2", model.uiState.value.frequencySourceName)
+            assertEquals(
+                listOf("JPDBv2", "Imported frequency", "plain text"),
+                resources.frequencySourceNames,
+            )
+            assertEquals(
+                listOf(
+                    FrequencySourceFormat.CSV,
+                    FrequencySourceFormat.CSV,
+                    FrequencySourceFormat.TEXT,
+                ),
+                resources.frequencyFormats,
+            )
         }
 
     @Test
     fun `display name UTF-8 truncation never splits an astral scalar`() =
         runTest(mainDispatcherRule.dispatcher) {
-            val model = viewModel(FakeSettingsRepository(AppSettings()), FakeAnkiSetupManager(emptyList()))
+            val resources = FakeResourceManager()
+            val model =
+                viewModel(
+                    FakeSettingsRepository(AppSettings()),
+                    FakeAnkiSetupManager(emptyList()),
+                    resources,
+                )
             advanceUntilIdle()
 
-            model.setFrequencySourceName("a".repeat(509) + "😀")
+            resources.setImportDocument(
+                "content://frequency.csv",
+                "${"a".repeat(509)}😀.csv",
+            )
+            model.importFrequencySource("content://frequency.csv")
             advanceUntilIdle()
-            assertEquals("a".repeat(509), model.uiState.value.frequencySourceName)
+            assertEquals(listOf("a".repeat(509)), resources.frequencySourceNames)
 
-            model.setPitchSourceName("a".repeat(508) + "😀")
+            resources.setImportDocument(
+                "content://pitch",
+                "${"a".repeat(508)}😀",
+                mimeType = "application/octet-stream",
+                leadingBytes = "text".encodeToByteArray(),
+            )
+            model.importPitchAccent("content://pitch")
             advanceUntilIdle()
-            assertEquals("a".repeat(508) + "😀", model.uiState.value.pitchSourceName)
+            assertEquals(listOf("a".repeat(508) + "😀"), resources.pitchSourceNames)
+            assertEquals(listOf(PitchAccentSourceFormat.CSV), resources.pitchFormats)
         }
 
     @Test
@@ -711,8 +796,6 @@ class SetupViewModelTest {
                     savedState,
                 )
             advanceUntilIdle()
-            first.setPitchSourceName("Kanjium CSV")
-            first.setPitchFormat(PitchAccentSourceFormat.CSV)
             assertEquals(true, first.beginPitchPicker())
 
             val restoredResources = FakeResourceManager()
@@ -724,6 +807,7 @@ class SetupViewModelTest {
                     restoredResources,
                     savedState,
                 )
+            restoredResources.setImportDocument("content://pitch.csv", "Kanjium CSV.csv")
             restored.onPitchPicked("content://pitch.csv")
             advanceUntilIdle()
             assertEquals(emptyList<Pair<String, Boolean>>(), restoredResources.pitchImports)
@@ -752,9 +836,8 @@ class SetupViewModelTest {
                     savedState,
                 )
             advanceUntilIdle()
-            first.setPitchSourceName("Kanjium")
-            first.setPitchFormat(PitchAccentSourceFormat.CSV)
             assertEquals(true, first.beginPitchPicker())
+            firstResources.setImportDocument("content://kanjium.csv", "Kanjium.csv")
             first.onPitchPicked("content://kanjium.csv")
             advanceUntilIdle()
             assertEquals(ResourceReplaceKind.PITCH, first.uiState.value.pendingReplace?.kind)
@@ -775,6 +858,51 @@ class SetupViewModelTest {
             assertEquals(listOf("Kanjium"), restoredResources.pitchSourceNames)
             assertEquals(listOf(PitchAccentSourceFormat.CSV), restoredResources.pitchFormats)
             assertEquals(null, restored.uiState.value.pendingReplace)
+        }
+
+    @Test
+    fun `audio pack preflight target survives recreation without deriving again`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val savedState = SavedStateHandle()
+            val firstResources =
+                FakeResourceManager().apply {
+                    setInstalledAudioPacks(
+                        listOf(InstalledAudioPack("jpod", "JPod", "jpod_legacy", 12, true)),
+                    )
+                }
+            val first =
+                viewModel(
+                    FakeSettingsRepository(AppSettings()),
+                    FakeAnkiSetupManager(emptyList()),
+                    firstResources,
+                    savedState,
+                )
+            advanceUntilIdle()
+
+            assertTrue(first.beginAudioPackPicker())
+            first.onAudioPackPicked("content://jpod.zip")
+            advanceUntilIdle()
+
+            assertEquals(listOf("content://jpod.zip"), firstResources.audioPreflights)
+            assertEquals("jpod", first.uiState.value.pendingReplace?.identity)
+
+            val restoredResources = FakeResourceManager()
+            val restored =
+                viewModel(
+                    FakeSettingsRepository(AppSettings()),
+                    FakeAnkiSetupManager(emptyList()),
+                    restoredResources,
+                    savedState,
+                )
+            advanceUntilIdle()
+            restored.confirmPendingReplace()
+            advanceUntilIdle()
+
+            assertEquals(emptyList<String>(), restoredResources.audioPreflights)
+            assertEquals(
+                listOf(Triple("content://jpod.zip", "jpod", true)),
+                restoredResources.audioImports,
+            )
         }
 
     @Test
@@ -820,11 +948,10 @@ class SetupViewModelTest {
                     SavedStateHandle(),
                 )
             advanceUntilIdle()
-            model.setPitchSourceName("Kanjium CSV")
-            model.setPitchFormat(PitchAccentSourceFormat.CSV)
             assertTrue(model.beginPitchPicker())
             // Recovery starts while the picker is up, so the pitch result queues instead of running.
             resources.setStartupReadiness(ResourceStartupReadiness.RECOVERING)
+            resources.setImportDocument("content://pitch.csv", "Kanjium CSV.csv")
             model.onPitchPicked("content://pitch.csv")
             advanceUntilIdle()
             assertEquals(emptyList<Pair<String, Boolean>>(), resources.pitchImports)
@@ -1067,7 +1194,13 @@ class SetupViewModelTest {
     }
 
     private class FakeResourceManager : ResourceManager {
-        val previewCalls = mutableListOf<Pair<String, KnownWordsSourceFormat>>()
+        private data class ImportDocument(
+            val displayName: String,
+            val mimeType: String?,
+            val leadingBytes: ByteArray,
+        )
+
+        val previewCalls = mutableListOf<Pair<String, ResourceImportFileKind>>()
         val importCalls = mutableListOf<Pair<String, KnownWordsSourceFormat>>()
         var confirmCount = 0
         var dismissCount = 0
@@ -1083,6 +1216,11 @@ class SetupViewModelTest {
         val pitchImports = mutableListOf<Pair<String, Boolean>>()
         val pitchSourceNames = mutableListOf<String>()
         val pitchFormats = mutableListOf<PitchAccentSourceFormat>()
+        val audioPreflights = mutableListOf<String>()
+        val audioImports = mutableListOf<Triple<String, String, Boolean>>()
+        val retainedResourceImports = mutableListOf<String>()
+        val releasedResourceImports = mutableListOf<String>()
+        private val importDocuments = mutableMapOf<String, ImportDocument>()
         private val mutableState =
             MutableStateFlow(
                 ResourceManagerState(startupReadiness = ResourceStartupReadiness.READY),
@@ -1098,12 +1236,25 @@ class SetupViewModelTest {
             mutableState.value = mutableState.value.copy(pitchSources = sources)
         }
 
+        fun setInstalledAudioPacks(packs: List<InstalledAudioPack>) {
+            mutableState.value = mutableState.value.copy(audioPacks = packs)
+        }
+
         fun setFailure(failure: ResourceFailure) {
             mutableState.value = mutableState.value.copy(failure = failure)
         }
 
         fun setStartupReadiness(readiness: ResourceStartupReadiness) {
             mutableState.value = mutableState.value.copy(startupReadiness = readiness)
+        }
+
+        fun setImportDocument(
+            uri: String,
+            displayName: String,
+            mimeType: String? = null,
+            leadingBytes: ByteArray = byteArrayOf(),
+        ) {
+            importDocuments[uri] = ImportDocument(displayName, mimeType, leadingBytes)
         }
 
         override suspend fun recoverAndRefresh() = Unit
@@ -1113,6 +1264,31 @@ class SetupViewModelTest {
         override suspend fun installCatalogDictionary(resourceId: String, replace: Boolean) = Unit
 
         override suspend fun importCustomDictionary(uri: String, slotId: String, replace: Boolean) = Unit
+
+        override suspend fun retainResourceImport(uri: String): RetainedResourceImport {
+            retainedResourceImports += uri
+            val document =
+                importDocuments[uri]
+                    ?: ImportDocument(
+                        displayName = uri.substringAfterLast('/'),
+                        mimeType = null,
+                        leadingBytes = byteArrayOf(),
+                    )
+            return RetainedResourceImport(
+                uri = uri,
+                displayName = document.displayName,
+                fileKind =
+                    detectResourceImportFileKind(
+                        displayName = document.displayName,
+                        mimeType = document.mimeType,
+                        readLeadingBytes = { document.leadingBytes },
+                    ),
+            )
+        }
+
+        override suspend fun releaseResourceImport(uri: String) {
+            releasedResourceImports += uri
+        }
 
         override suspend fun importFrequencySource(
             uri: String,
@@ -1138,14 +1314,23 @@ class SetupViewModelTest {
             pitchFormats += format
         }
 
-        override suspend fun importAudioPack(uri: String, packId: String, replace: Boolean) = Unit
+        override suspend fun preflightAudioPack(uri: String): String {
+            audioPreflights += uri
+            return "jpod"
+        }
+
+        override suspend fun importAudioPack(uri: String, packId: String, replace: Boolean) {
+            audioImports += Triple(uri, packId, replace)
+        }
+
+        override suspend fun discardAudioPackPreflight() = Unit
 
         override suspend fun importKnownWords(uri: String, format: KnownWordsSourceFormat) {
             importCalls += uri to format
         }
 
-        override suspend fun previewKnownWords(uri: String, format: KnownWordsSourceFormat) {
-            previewCalls += uri to format
+        override suspend fun previewKnownWords(uri: String, fileKind: ResourceImportFileKind) {
+            previewCalls += uri to fileKind
         }
 
         val wordListImports = mutableListOf<Pair<String, WordListKind>>()

@@ -119,7 +119,6 @@ internal fun AnkiTargetCard(
     onSetFieldMapping: (String, String) -> Unit,
     onSelectCardType: (CardType?) -> Unit,
     onSelectCardTypeMarker: (String) -> Unit,
-    onVerify: () -> Unit,
     inlineFailure: (@Composable () -> Unit)? = null,
 ) {
     OutlinedCard(Modifier.fillMaxWidth()) {
@@ -233,16 +232,6 @@ internal fun AnkiTargetCard(
                 if (state.noteType != null) {
                     NoteTypeQualitySummary(state)
                 }
-                OutlinedButton(
-                    onClick = onVerify,
-                    enabled = state.ankiReady && !state.busy && state.noteType != null,
-                    colors = outlinedActionButtonColors(),
-                    border =
-                        actionBorder(
-                            enabled =
-                                state.ankiReady && !state.busy && state.noteType != null,
-                        ),
-                ) { Text(stringResource(R.string.anki_note_type_verify)) }
             }
         }
     }
@@ -314,7 +303,6 @@ private fun cardTypeLabel(cardType: CardType): String =
 internal fun WizardAnkiTargetCard(
     state: SetupUiState,
     onSelectNoteType: (String) -> Unit,
-    onVerify: () -> Unit,
     onCustomizeFields: () -> Unit,
     inlineFailure: (@Composable () -> Unit)? = null,
 ) {
@@ -348,18 +336,6 @@ internal fun WizardAnkiTargetCard(
                     noteTypeStatusText(state.noteTypeStatus),
                     modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
                 )
-                OutlinedButton(
-                    onClick = onVerify,
-                    enabled = state.ankiReady && !state.busy && state.noteType != null,
-                    colors = outlinedActionButtonColors(),
-                    border =
-                        actionBorder(
-                            enabled =
-                                state.ankiReady && !state.busy && state.noteType != null,
-                        ),
-                ) {
-                    Text(stringResource(R.string.anki_note_type_verify))
-                }
                 TextButton(onClick = onCustomizeFields) {
                     Text(stringResource(R.string.b3_wizard_customize_fields))
                 }

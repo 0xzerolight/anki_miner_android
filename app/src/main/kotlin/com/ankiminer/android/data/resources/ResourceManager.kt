@@ -9,6 +9,10 @@ import com.ankiminer.android.localization.StringResourceResolver
 import com.ankiminer.android.media.CancellableProviderIo
 import com.ankiminer.android.media.ProviderIoCancelledException
 import com.ankiminer.android.media.SafBroker
+import com.ankiminer.android.media.SafSelectionInventory
+import com.ankiminer.android.media.SafSelectionRecord
+import com.ankiminer.android.media.SafSelectionSlot
+import com.ankiminer.android.media.TransientSafSelectionInventory
 import com.ankiminer.android.mining.InstalledTokenizerResourceProvider
 import java.io.File
 import java.io.IOException
@@ -19,12 +23,17 @@ import java.util.concurrent.Executor
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.withContext
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlin.coroutines.suspendCoroutine
@@ -44,6 +53,13 @@ interface ResourceManager {
         replace: Boolean,
     )
 
+    /** Retain a picked import URI and derive the metadata needed to dispatch it later. */
+    suspend fun retainResourceImport(uri: String): RetainedResourceImport =
+        error("Resource import preflight is unavailable")
+
+    /** Release a retained import which the user chose not to dispatch. */
+    suspend fun releaseResourceImport(uri: String) = Unit
+
     suspend fun importFrequencySource(
         uri: String,
         sourceId: String,
@@ -60,11 +76,15 @@ interface ResourceManager {
         replace: Boolean,
     )
 
+    suspend fun preflightAudioPack(uri: String): String?
+
     suspend fun importAudioPack(
         uri: String,
         packId: String,
         replace: Boolean,
     )
+
+    suspend fun discardAudioPackPreflight()
 
     suspend fun importKnownWords(
         uri: String,
@@ -78,7 +98,7 @@ interface ResourceManager {
     /** Absolute path the engine should read for [kind], or null when no file is installed. */
     fun wordListPath(kind: WordListKind): String?
 
-    suspend fun previewKnownWords(uri: String, format: KnownWordsSourceFormat)
+    suspend fun previewKnownWords(uri: String, fileKind: ResourceImportFileKind)
 
     suspend fun confirmKnownWordsImport()
 
@@ -145,6 +165,7 @@ internal class AndroidResourceManager(
     private val safStager: ResourceArchiveStager,
     private val documentWriter: ResourceDocumentWriter,
     private val strings: StringResourceResolver,
+    private val safSelectionInventory: SafSelectionInventory = TransientSafSelectionInventory(),
     private val stagingAvailableBytes: (File) -> Long = ::usableSpaceForStaging,
     private val pinnedArchiveProvider: PinnedArchiveProvider? = null,
     wordListMover: (File, File) -> Boolean = { source, target -> source.renameTo(target) },
@@ -165,6 +186,11 @@ internal class AndroidResourceManager(
     private data class PendingKnownWordsImport(
         val staged: StagedArchive,
         val format: KnownWordsSourceFormat,
+    )
+
+    private data class PendingAudioPackImport(
+        val staged: StagedArchive,
+        val packId: String,
     )
 
     private sealed interface PendingKnownWordsMutation {
@@ -190,7 +216,10 @@ internal class AndroidResourceManager(
     override val state: StateFlow<ResourceManagerState> = mutableState.asStateFlow()
     private val operationMutex = Mutex()
     private val activeMonitor = Any()
+    private val retainedResourceImportsMonitor = Any()
+    private val retainedResourceImports = mutableMapOf<String, Int>()
     private val pendingKnownWordsRoot = File(stagingRoot.parentFile, "resource-pending-known-words")
+    private val pendingAudioPackRoot = File(stagingRoot.parentFile, "resource-pending-audio-pack")
     private val operationJournal =
         ResourceOperationJournal(stagingRoot.parentFile, resourceDirectorySync)
 
@@ -203,11 +232,13 @@ internal class AndroidResourceManager(
         CrashSafeWordListStore(wordListRoot, wordListMover, resourceDirectorySync)
     private var active: ActiveOperation? = null
     private var pendingKnownWordsImport: PendingKnownWordsImport? = null
+    private var pendingAudioPackImport: PendingAudioPackImport? = null
     private var pendingKnownWordsMutation: PendingKnownWordsMutation? = null
 
     override suspend fun recoverAndRefresh() {
         mutableState.update { it.copy(startupReadiness = ResourceStartupReadiness.RECOVERING) }
         val interrupted = operationJournal.read()
+        val clearInterruptedAudioInput = interrupted?.origin == ResourceFailureOrigin.AUDIO
         val retainKnownWordsInput =
             interrupted?.origin == ResourceFailureOrigin.KNOWN_WORDS &&
                 interrupted.knownWordsOperation == KnownWordsFailureOperation.IMPORT
@@ -219,6 +250,9 @@ internal class AndroidResourceManager(
                 requiresStartupReady = false,
                 waitForMutex = true,
             ) { operation ->
+                if (clearInterruptedAudioInput || !restorePendingAudioPackImport()) {
+                    clearPendingAudioPackImport()
+                }
                 if (!retainKnownWordsInput || !restorePendingKnownWordsImport()) {
                     clearPendingKnownWordsImport()
                     mutableState.update { it.copy(knownWordsImportPreview = null) }
@@ -388,6 +422,71 @@ internal class AndroidResourceManager(
         }
     }
 
+    override suspend fun retainResourceImport(uri: String): RetainedResourceImport {
+        val retained = safBroker.retainReadAccess(uri)
+        var selectionPublished = false
+        val fileKind =
+            try {
+                val detected =
+                    detectResourceImportFileKind(
+                        displayName = retained.displayName,
+                        mimeType = retained.mimeType,
+                        readLeadingBytes = {
+                            safStager.readLeadingBytes(retained.uri, RESOURCE_IMPORT_PREFIX_BYTES)
+                        },
+                    )
+                withContext(Dispatchers.IO + NonCancellable) {
+                    safSelectionInventory.putSelection(
+                        SafSelectionSlot.RESOURCE_IMPORT,
+                        SafSelectionRecord(retained.uri, RESOURCE_IMPORT_SELECTION_LABEL),
+                    )
+                    selectionPublished = true
+                }
+                currentCoroutineContext().ensureActive()
+                detected
+            } catch (failure: Throwable) {
+                withContext(NonCancellable) {
+                    try {
+                        if (selectionPublished) {
+                            withContext(Dispatchers.IO) {
+                                clearResourceImportSelection(retained.uri)
+                            }
+                        }
+                        safBroker.releaseReadAccess(retained.uri)
+                    } catch (releaseFailure: Throwable) {
+                        failure.addSuppressed(releaseFailure)
+                    }
+                }
+                throw failure
+            }
+        synchronized(retainedResourceImportsMonitor) {
+            retainedResourceImports[retained.uri] =
+                retainedResourceImports.getOrDefault(retained.uri, 0) + 1
+        }
+        return RetainedResourceImport(
+            uri = retained.uri,
+            displayName = retained.displayName,
+            fileKind = fileKind,
+        )
+    }
+
+    override suspend fun releaseResourceImport(uri: String) {
+        val remaining =
+            synchronized(retainedResourceImportsMonitor) {
+                consumeRetainedResourceImportLocked(uri)
+            }
+        val durablyRetained =
+            safSelectionInventory.selection(SafSelectionSlot.RESOURCE_IMPORT)?.uri == uri
+        if (remaining != null || durablyRetained) {
+            withContext(NonCancellable) {
+                if (remaining == null || remaining == 0) {
+                    withContext(Dispatchers.IO) { clearResourceImportSelection(uri) }
+                }
+                safBroker.releaseReadAccess(uri)
+            }
+        }
+    }
+
     override suspend fun importFrequencySource(
         uri: String,
         sourceId: String,
@@ -402,12 +501,21 @@ internal class AndroidResourceManager(
             failureRetry = ResourceFailureRetry(ResourceFailureAction.CHOOSE_ANOTHER),
             persistForRecovery = true,
         ) { operation ->
-            val retained = runBlocking { safBroker.retainReadAccess(uri) }
+            val remainingRetainedReferences = consumeRetainedResourceImport(uri)
+            val retainedUri =
+                if (remainingRetainedReferences != null) {
+                    uri
+                } else {
+                    runBlocking { safBroker.retainReadAccess(uri) }.uri
+                }
+            val clearSelectionAfterImport =
+                remainingRetainedReferences?.let { it == 0 }
+                    ?: (safSelectionInventory.selection(SafSelectionSlot.RESOURCE_IMPORT)?.uri == uri)
             var staged: StagedArchive? = null
             try {
                 staged =
                     safStager.stage(
-                        sourceUri = retained.uri,
+                        sourceUri = retainedUri,
                         operationId = operation.id,
                         cancellation = operation.cancellation,
                         fileSuffix = format.fileSuffix,
@@ -442,7 +550,8 @@ internal class AndroidResourceManager(
                 refreshFromPython()
             } finally {
                 staged?.file?.delete()
-                runBlocking { safBroker.releaseReadAccess(retained.uri) }
+                if (clearSelectionAfterImport) clearResourceImportSelection(retainedUri)
+                runBlocking { safBroker.releaseReadAccess(retainedUri) }
             }
         }
     }
@@ -461,12 +570,21 @@ internal class AndroidResourceManager(
             failureRetry = ResourceFailureRetry(ResourceFailureAction.CHOOSE_ANOTHER),
             persistForRecovery = true,
         ) { operation ->
-            val retained = runBlocking { safBroker.retainReadAccess(uri) }
+            val remainingRetainedReferences = consumeRetainedResourceImport(uri)
+            val retainedUri =
+                if (remainingRetainedReferences != null) {
+                    uri
+                } else {
+                    runBlocking { safBroker.retainReadAccess(uri) }.uri
+                }
+            val clearSelectionAfterImport =
+                remainingRetainedReferences?.let { it == 0 }
+                    ?: (safSelectionInventory.selection(SafSelectionSlot.RESOURCE_IMPORT)?.uri == uri)
             var staged: StagedArchive? = null
             try {
                 staged =
                     safStager.stage(
-                        sourceUri = retained.uri,
+                        sourceUri = retainedUri,
                         operationId = operation.id,
                         cancellation = operation.cancellation,
                         fileSuffix = format.fileSuffix,
@@ -503,28 +621,26 @@ internal class AndroidResourceManager(
                 refreshFromPython()
             } finally {
                 staged?.file?.delete()
-                runBlocking { safBroker.releaseReadAccess(retained.uri) }
+                if (clearSelectionAfterImport) clearResourceImportSelection(retainedUri)
+                runBlocking { safBroker.releaseReadAccess(retainedUri) }
             }
         }
     }
 
-    override suspend fun importAudioPack(
-        uri: String,
-        packId: String,
-        replace: Boolean,
-    ) {
-        runOperation(
+    override suspend fun preflightAudioPack(uri: String): String? {
+        var derivedPackId: String? = null
+        val succeeded = runOperation(
             strings.resolve(R.string.resource_operation_import_audio_pack),
             ResourceOperationPhase.PREPARING,
             failureOrigin = ResourceFailureOrigin.AUDIO,
             failureRetry = ResourceFailureRetry(ResourceFailureAction.CHOOSE_ANOTHER),
-            persistForRecovery = true,
+            requiresStartupReady = false,
+            waitForMutex = true,
         ) { operation ->
+            clearPendingAudioPackImport()
             val retained = runBlocking { safBroker.retainReadAccess(uri) }
             var staged: StagedArchive? = null
             try {
-                // Audio packs are multi-gigabyte. Reject on the size the picker
-                // already reported rather than after streaming the whole ZIP.
                 val budget = audioArchiveBudget(stagingAvailableBytes(stagingRoot))
                 val reported = retained.sizeBytes
                 if (reported != null && reported > budget) {
@@ -541,15 +657,101 @@ internal class AndroidResourceManager(
                     ) { current, total ->
                         updateProgress(operation, ResourceOperationPhase.PREPARING, current, total)
                     }
+                operation.cancellation.check()
+                operation.pythonStarted.set(true)
+                val stagedArchive = requireNotNull(staged)
+                val packId =
+                    ResourceBridgeCodec.decodeAudioPackPreflight(
+                        bridge.dispatch(
+                            ResourceBridgeCodec.encodeAudioPackPreflightRequest(
+                                operation.id,
+                                stagedArchive.file.canonicalPath,
+                                retained.displayName,
+                            ),
+                            null,
+                        ),
+                    )
+                if (!pendingAudioPackRoot.exists() && !pendingAudioPackRoot.mkdirs()) {
+                    throw ResourceDownloadException(
+                        "import_staging_failed",
+                        "Could not retain the audio-pack preflight",
+                    )
+                }
+                val retainedFile = File(pendingAudioPackRoot, "$packId.zip")
+                retainedFile.delete()
+                if (!stagedArchive.file.renameTo(retainedFile)) {
+                    throw ResourceDownloadException(
+                        "import_staging_failed",
+                        "Could not retain the audio-pack preflight",
+                    )
+                }
+                pendingAudioPackImport =
+                    PendingAudioPackImport(stagedArchive.copy(file = retainedFile), packId)
+                staged = null
+                derivedPackId = packId
+            } finally {
+                staged?.file?.delete()
+                runBlocking { safBroker.releaseReadAccess(retained.uri) }
+            }
+        }
+        if (!succeeded) {
+            discardAudioPackPreflight()
+            return null
+        }
+        return derivedPackId
+    }
+
+    override suspend fun importAudioPack(
+        uri: String,
+        packId: String,
+        replace: Boolean,
+    ) {
+        val pending = pendingAudioPackImport?.takeIf { it.packId == packId }
+        val completed = runOperation(
+            strings.resolve(R.string.resource_operation_import_audio_pack),
+            if (pending == null) {
+                ResourceOperationPhase.PREPARING
+            } else {
+                ResourceOperationPhase.IMPORTING
+            },
+            failureOrigin = ResourceFailureOrigin.AUDIO,
+            failureRetry = ResourceFailureRetry(ResourceFailureAction.CHOOSE_ANOTHER),
+            persistForRecovery = true,
+        ) { operation ->
+            if (pending == null) clearPendingAudioPackImport()
+            var retainedUri: String? = null
+            var staged: StagedArchive? = pending?.staged
+            try {
+                if (staged == null) {
+                    val retained = runBlocking { safBroker.retainReadAccess(uri) }
+                    retainedUri = retained.uri
+                    val budget = audioArchiveBudget(stagingAvailableBytes(stagingRoot))
+                    val reported = retained.sizeBytes
+                    if (reported != null && reported > budget) {
+                        throw archiveTooLarge(AUDIO_SOURCE_LABEL, reported, budget)
+                    }
+                    staged =
+                        safStager.stage(
+                            sourceUri = retained.uri,
+                            operationId = operation.id,
+                            cancellation = operation.cancellation,
+                            fileSuffix = ".zip",
+                            maximumBytes = budget,
+                            sourceLabel = AUDIO_SOURCE_LABEL,
+                        ) { current, total ->
+                            updateProgress(operation, ResourceOperationPhase.PREPARING, current, total)
+                        }
+                }
                 updateProgress(operation, ResourceOperationPhase.IMPORTING)
                 operation.cancellation.check()
                 operation.pythonStarted.set(true)
+                val stagedArchive = requireNotNull(staged)
                 val imported =
                     ResourceBridgeCodec.decodeImportedAudioPack(
                         bridge.dispatch(
                             ResourceBridgeCodec.encodeAudioPackImportRequest(
                                 operation.id,
-                                staged.file.canonicalPath,
+                                stagedArchive.file.canonicalPath,
                                 packId,
                                 replace,
                             ),
@@ -560,8 +762,21 @@ internal class AndroidResourceManager(
                 refreshFromPython()
             } finally {
                 staged?.file?.delete()
-                runBlocking { safBroker.releaseReadAccess(retained.uri) }
+                clearPendingAudioPackImport()
+                retainedUri?.let { retained ->
+                    runBlocking { safBroker.releaseReadAccess(retained) }
+                }
             }
+        }
+        if (!completed) discardAudioPackPreflight()
+    }
+
+    override suspend fun discardAudioPackPreflight() {
+        operationMutex.lock()
+        try {
+            runOnExecutor(resourceExecutor) { clearPendingAudioPackImport() }
+        } finally {
+            operationMutex.unlock()
         }
     }
 
@@ -721,7 +936,13 @@ internal class AndroidResourceManager(
         mutableState.update { it.copy(wordLists = installed) }
     }
 
-    override suspend fun previewKnownWords(uri: String, format: KnownWordsSourceFormat) {
+    override suspend fun previewKnownWords(uri: String, fileKind: ResourceImportFileKind) {
+        val format =
+            if (fileKind == ResourceImportFileKind.JSON) {
+                KnownWordsSourceFormat.JSON
+            } else {
+                KnownWordsSourceFormat.TEXT
+            }
         runOperation(
             strings.resolve(R.string.resource_operation_preview_known_words),
             ResourceOperationPhase.PREPARING,
@@ -731,12 +952,21 @@ internal class AndroidResourceManager(
         ) { operation ->
             clearPendingKnownWordsImport()
             mutableState.update { it.copy(knownWordsImportPreview = null) }
-            val retained = runBlocking { safBroker.retainReadAccess(uri) }
+            val remainingRetainedReferences = consumeRetainedResourceImport(uri)
+            val retainedUri =
+                if (remainingRetainedReferences != null) {
+                    uri
+                } else {
+                    runBlocking { safBroker.retainReadAccess(uri) }.uri
+                }
+            val clearSelectionAfterPreview =
+                remainingRetainedReferences?.let { it == 0 }
+                    ?: (safSelectionInventory.selection(SafSelectionSlot.RESOURCE_IMPORT)?.uri == uri)
             var staged: StagedArchive? = null
             try {
                 staged =
                     safStager.stage(
-                        sourceUri = retained.uri,
+                        sourceUri = retainedUri,
                         operationId = operation.id,
                         cancellation = operation.cancellation,
                         fileSuffix = format.fileSuffix,
@@ -778,7 +1008,8 @@ internal class AndroidResourceManager(
                 mutableState.update { it.copy(knownWordsImportPreview = preview) }
             } finally {
                 staged?.file?.delete()
-                runBlocking { safBroker.releaseReadAccess(retained.uri) }
+                if (clearSelectionAfterPreview) clearResourceImportSelection(retainedUri)
+                runBlocking { safBroker.releaseReadAccess(retainedUri) }
             }
         }
     }
@@ -1060,6 +1291,27 @@ internal class AndroidResourceManager(
                 staged = StagedArchive(file, sha256 = "", sizeBytes = file.length()),
                 format = format,
             )
+        return true
+    }
+
+    private fun clearPendingAudioPackImport() {
+        pendingAudioPackImport?.staged?.file?.delete()
+        pendingAudioPackImport = null
+        pendingAudioPackRoot.listFiles()?.forEach { it.delete() }
+        pendingAudioPackRoot.delete()
+    }
+
+    private fun restorePendingAudioPackImport(): Boolean {
+        if (pendingAudioPackImport?.staged?.file?.isFile == true) return true
+        val files = pendingAudioPackRoot.listFiles()?.filter(File::isFile).orEmpty()
+        val file = files.singleOrNull()?.takeIf { it.extension == "zip" } ?: return false
+        val packId =
+            file.name.removeSuffix(".zip").takeIf(AUDIO_PACK_ID::matches)
+                ?: return false
+        pendingAudioPackImport = PendingAudioPackImport(
+            staged = StagedArchive(file, sha256 = "", sizeBytes = file.length()),
+            packId = packId,
+        )
         return true
     }
 
@@ -1687,6 +1939,8 @@ internal class AndroidResourceManager(
                 strings.resolve(R.string.resource_failure_pitch_invalid)
             "audio_pack_import_failed" ->
                 strings.resolve(R.string.resource_failure_audio_pack_import)
+            "audio_pack_id_reserved" ->
+                strings.resolve(R.string.resource_failure_audio_pack_reserved)
             "known_words_import_failed" ->
                 strings.resolve(R.string.resource_failure_known_words_import)
             "known_words_database_unsafe", "resource_inventory_failed" ->
@@ -1722,6 +1976,28 @@ internal class AndroidResourceManager(
         }
     }
 
+    private fun consumeRetainedResourceImport(uri: String): Int? =
+        synchronized(retainedResourceImportsMonitor) {
+            consumeRetainedResourceImportLocked(uri)
+        }
+
+    private fun consumeRetainedResourceImportLocked(uri: String): Int? {
+        val count = retainedResourceImports[uri] ?: return null
+        if (count == 1) {
+            retainedResourceImports.remove(uri)
+        } else {
+            retainedResourceImports[uri] = count - 1
+        }
+        return count - 1
+    }
+
+    private fun clearResourceImportSelection(uri: String) {
+        val selection = safSelectionInventory.selection(SafSelectionSlot.RESOURCE_IMPORT)
+        if (selection?.uri == uri) {
+            safSelectionInventory.putSelection(SafSelectionSlot.RESOURCE_IMPORT, null)
+        }
+    }
+
     private suspend fun <T> runOnExecutor(
         executor: Executor,
         block: () -> T,
@@ -1737,6 +2013,8 @@ internal class AndroidResourceManager(
         }
 
     private companion object {
+        const val RESOURCE_IMPORT_PREFIX_BYTES = 4
+        const val RESOURCE_IMPORT_SELECTION_LABEL = "Pending resource import"
         val RETRYABLE_FAILURES =
             setOf(
                 "download_retry_exhausted",
@@ -1771,6 +2049,7 @@ internal class AndroidResourceManager(
         const val PITCH_ARCHIVE_LIMIT = 512L * 1024 * 1024
         const val PITCH_TEXT_LIMIT = 64L * 1024 * 1024
         const val AUDIO_SOURCE_LABEL = "audio-pack ZIP"
+        val AUDIO_PACK_ID = Regex("(?!.*(?:\\.\\.|--))[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?")
         const val KNOWN_WORDS_FILE_LIMIT = 32L * 1024 * 1024
 
         /**

@@ -52,6 +52,7 @@ def _dispatch_validated(
         "resource.catalog.get",
         "resource.cleanup",
         "resource.audiopack.import",
+        "resource.audiopack.preflight",
         "resource.dictionary.import",
         "resource.dictionary.list",
         "resource.dictionary.lookup",
@@ -82,6 +83,7 @@ def _dispatch_validated(
 
         if request_type in {
             "resource.audiopack.import",
+            "resource.audiopack.preflight",
             "resource.frequency.import",
             "resource.knownwords.import",
             "resource.knownwords.preview",
@@ -96,6 +98,7 @@ def _dispatch_validated(
 
             local_handlers = {
                 "resource.audiopack.import": local_resources.import_audio_pack,
+                "resource.audiopack.preflight": local_resources.preflight_audio_pack,
                 "resource.frequency.import": local_resources.import_frequency,
                 "resource.knownwords.import": local_resources.import_known_words,
                 "resource.knownwords.preview": local_resources.preview_known_words,

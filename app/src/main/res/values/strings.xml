@@ -334,7 +334,6 @@
     <string name="disclosure_collapsed">Collapsed</string>
     <string name="anki_field_mapping_changes">Mappings changed for this note type: %1$s</string>
     <string name="anki_field_none">Not mapped</string>
-    <string name="anki_note_type_verify">Re-check</string>
     <string name="anki_card_type_title">Card type</string>
     <string name="anki_card_type_explainer">For JP Mining Note-style note types: an \"x\" is written into the marker field so every mined note renders as the chosen type.</string>
     <string name="anki_card_type_picker">Card type</string>
@@ -472,6 +471,7 @@
     <string name="resource_failure_pitch_import">The selected file is not supported pitch-accent data</string>
     <string name="resource_failure_pitch_invalid">Installed pitch-accent data is damaged; replace it before mining</string>
     <string name="resource_failure_audio_pack_import">The selected ZIP is not a supported local audio pack</string>
+    <string name="resource_failure_audio_pack_reserved">This archive derives the reserved audio-pack ID “jpod101”. Rename its root folder or ZIP file.</string>
     <string name="resource_failure_known_words_import">The selected file contains no supported known words</string>
     <string name="resource_failure_inventory_unsafe">A local resource is damaged or unsafe and needs attention</string>
     <string name="resource_failure_dictionary_schema">This dictionary must be replaced because its index schema is stale</string>
@@ -495,7 +495,6 @@
     <string name="resource_replace_confirm_title">Replace %1$s?</string>
     <string name="resource_replace_confirm_message">%1$s is replaced transactionally. If the new import fails verification, Anki Miner restores what is installed now.</string>
     <string name="pitch_replace_confirm_message">%1$s is removed as soon as the new file is verified. No backup of it is kept.</string>
-    <string name="pitch_replaces_installed">Importing replaces the installed pitch-accent data.</string>
     <string name="dictionary_replace_confirm">Replace</string>
     <string name="dictionary_repair_confirm">Repair slot</string>
     <string name="custom_dictionary_title">Import another Yomitan ZIP</string>
@@ -512,7 +511,6 @@
     <string name="pitch_choose_file">Choose pitch-accent file</string>
     <string name="audio_pack_import_title">Import expression audio</string>
     <string name="audio_pack_none_installed">No local audio pack is installed.</string>
-    <string name="audio_pack_id">Stable audio-pack ID</string>
     <string name="audio_pack_choose_zip">Choose audio-pack ZIP</string>
     <string name="word_lists_title">Word lists</string>
     <string name="word_lists_format">Plain text, one word per line. Blank lines and lines starting with # are ignored.</string>
@@ -545,14 +543,8 @@
     <string name="bundled_wordsets_title">Bundled proper-name wordsets</string>
     <string name="bundled_wordset_item">%1$s · %2$d entries</string>
     <string name="bundled_wordsets_unavailable">Bundled wordsets could not be inventoried.</string>
-    <string name="local_resource_display_name">Display name</string>
     <string name="local_resource_inventory_invalid">%1$s [%2$s] · invalid inventory (%3$d entries); replace it before mining</string>
     <string name="pitch_inventory_invalid">%1$s · invalid inventory (%2$d entries); replace it before mining</string>
-    <string name="resource_format_yomitan_zip">Yomitan ZIP</string>
-    <string name="resource_format_csv">CSV</string>
-    <string name="resource_format_tsv">TSV</string>
-    <string name="resource_format_text">Text</string>
-    <string name="resource_format_json">JSON</string>
     <string name="local_import_complete">Local import complete</string>
     <string name="frequency_import_result">%1$s: %2$d entries; %3$d malformed rows skipped</string>
     <string name="pitch_import_result">%1$s: %2$d entries; %3$d malformed rows skipped</string>

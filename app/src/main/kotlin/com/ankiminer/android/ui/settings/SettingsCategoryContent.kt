@@ -242,7 +242,6 @@ private fun LazyListScope.ankiSettings(
             setupViewModel::setFieldMapping,
             setupViewModel::selectCardType,
             setupViewModel::setCardTypeMarkerField,
-            setupViewModel::verifyNoteType,
             inlineFailure = {
                 AnkiOriginFailure(
                     setup,
@@ -481,8 +480,6 @@ private fun LazyListScope.dictionarySettings(
     settingsCard("pitch") {
         PitchImportCard(
             state = setup,
-            onNameChanged = setupViewModel::setPitchSourceName,
-            onFormatChanged = setupViewModel::setPitchFormat,
             onImport = callbacks.onImportPitch,
             inlineFailure = {
                 ResourceOriginFailure(
@@ -606,7 +603,6 @@ private fun LazyListScope.audioSettings(
     settingsCard("audio-import") {
         AudioPackImportCard(
             state = setup,
-            onIdChanged = setupViewModel::setAudioPackId,
             onImport = callbacks.onImportAudioPack,
             inlineFailure = {
                 ResourceOriginFailure(
@@ -662,8 +658,6 @@ private fun LazyListScope.frequencySettings(
     settingsCard("frequency-import") {
         FrequencyImportCard(
             state = setup,
-            onNameChanged = setupViewModel::setFrequencySourceName,
-            onFormatChanged = setupViewModel::setFrequencyFormat,
             onImport = callbacks.onImportFrequency,
             inlineFailure = {
                 ResourceOriginFailure(
@@ -799,7 +793,6 @@ private fun LazyListScope.filteringSettings(
     settingsCard("known-words-import") {
         KnownWordsImportCard(
             state = setup,
-            onFormatChanged = setupViewModel::setKnownWordsFormat,
             onImport = callbacks.onImportKnownWords,
             onConfirmImport = setupViewModel::confirmKnownWordsImport,
             onDismissImport = setupViewModel::dismissKnownWordsImportPreview,

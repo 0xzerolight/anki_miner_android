@@ -1347,15 +1347,126 @@ def test_malformed_pitch_slot_is_exposed_for_same_id_replacement(
 def _ajt_audio_zip(
     path: Path,
     audio_bytes: bytes = b"fixture mp3",
+    root: str = "fixture-pack",
 ) -> Path:
     index = {
         "headwords": {"猫": ["cat.mp3"]},
         "files": {"cat.mp3": {"kana_reading": "ねこ"}},
     }
+    prefix = f"{root}/" if root else ""
     with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-        archive.writestr("fixture-pack/index.json", json.dumps(index, ensure_ascii=False))
-        archive.writestr("fixture-pack/media/cat.mp3", audio_bytes)
+        archive.writestr(f"{prefix}index.json", json.dumps(index, ensure_ascii=False))
+        archive.writestr(f"{prefix}media/cat.mp3", audio_bytes)
     return path
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="local-resource importers require the runtime engine dependency set",
+)
+def test_audio_pack_preflight_derives_id_without_copying_or_importing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    home = _local_home(tmp_path, monkeypatch)
+    source = _ajt_audio_zip(tmp_path / "picked-name.zip", root="nhk16_files")
+
+    monkeypatch.setattr(
+        resources,
+        "_copy_archive",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("preflight must read the staged archive in place")
+        ),
+    )
+
+    preflight = decode_envelope(
+        local_resources.preflight_audio_pack(
+            {
+                "operationId": "audio-preflight",
+                "sourcePath": str(source),
+                "displayName": "picked-name.zip",
+            }
+        ),
+        expected_type="resource.audiopack.preflighted",
+    )
+
+    assert preflight.payload == {"packId": "nhk16"}
+    assert not (home / "audio_packs").exists()
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="local-resource importers require the runtime engine dependency set",
+)
+def test_audio_pack_preflight_uses_display_name_stem_for_flat_archive(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _local_home(tmp_path, monkeypatch)
+    source = _ajt_audio_zip(tmp_path / "staged.zip", root="")
+
+    preflight = decode_envelope(
+        local_resources.preflight_audio_pack(
+            {
+                "operationId": "audio-flat",
+                "sourcePath": str(source),
+                "displayName": "My Flat Audio.zip",
+            }
+        ),
+        expected_type="resource.audiopack.preflighted",
+    )
+
+    assert preflight.payload == {"packId": "my-flat-audio"}
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="local-resource importers require the runtime engine dependency set",
+)
+def test_audio_pack_preflight_keeps_detectable_legacy_root_name(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _local_home(tmp_path, monkeypatch)
+    source = tmp_path / "renamed.zip"
+    with zipfile.ZipFile(source, "w") as archive:
+        archive.writestr("jpod_files/ねこ - 猫.mp3", b"fixture mp3")
+
+    preflight = decode_envelope(
+        local_resources.preflight_audio_pack(
+            {
+                "operationId": "audio-legacy-root",
+                "sourcePath": str(source),
+                "displayName": "renamed.zip",
+            }
+        ),
+        expected_type="resource.audiopack.preflighted",
+    )
+
+    assert preflight.payload == {"packId": "jpod"}
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="local-resource importers require the runtime engine dependency set",
+)
+def test_audio_pack_preflight_rejects_reserved_derived_id(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _local_home(tmp_path, monkeypatch)
+    source = _ajt_audio_zip(tmp_path / "staged.zip", root="jpod101")
+
+    with pytest.raises(BridgeProtocolError, match="reserved") as failure:
+        local_resources.preflight_audio_pack(
+            {
+                "operationId": "audio-reserved",
+                "sourcePath": str(source),
+                "displayName": "ignored.zip",
+            }
+        )
+
+    assert failure.value.code == "audio_pack_id_reserved"
 
 
 @pytest.mark.parametrize("storage_errno", [errno.ENOSPC, getattr(errno, "EDQUOT", 122)])

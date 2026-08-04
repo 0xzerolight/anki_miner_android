@@ -137,13 +137,6 @@ class ResourceIdentityTest {
     }
 
     @Test
-    fun reservedAudioPackIdIsReported() {
-        assertTrue(ResourceIdentity.isReservedAudioPackId("jpod101"))
-        assertFalse(ResourceIdentity.isReservedAudioPackId("jpod101-mine"))
-        assertFalse(ResourceIdentity.isReservedAudioPackId("nhk"))
-    }
-
-    @Test
     fun frequencyTargetReportsNoCollisionForAFreshName() {
         val target = ResourceIdentity.frequencyTarget("JPDB v2.1", emptyList())
 
@@ -259,7 +252,7 @@ class ResourceIdentityTest {
     }
 
     @Test
-    fun audioPackTargetKeepsTheTypedIdAndReportsACollision() {
+    fun audioPackTargetKeepsTheDerivedIdAndReportsACollision() {
         val installed = listOf(InstalledAudioPack("nhk", "nhk", "zip", 100, true))
 
         assertTrue(ResourceIdentity.audioPackTarget("nhk", installed).collides)

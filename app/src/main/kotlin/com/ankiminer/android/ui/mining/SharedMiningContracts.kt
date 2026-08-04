@@ -177,7 +177,7 @@ internal fun CurationRequest.defaultCurationDraft(): SharedCurationDraft =
         pageIndex = page?.pageIndex,
         selectedCandidateIds = candidates.mapTo(linkedSetOf()) { it.candidateId },
         sentenceIds = candidates.associate { it.candidateId to it.defaultSentenceId },
-        focusedCandidateId = candidates.firstOrNull()?.candidateId,
+        focusedCandidateId = null,
         knownCandidateIds = emptySet(),
     )
 

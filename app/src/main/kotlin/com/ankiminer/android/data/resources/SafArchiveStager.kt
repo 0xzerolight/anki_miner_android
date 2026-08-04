@@ -23,6 +23,11 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.runBlocking
 
 internal interface ResourceArchiveStager {
+    suspend fun readLeadingBytes(
+        sourceUri: String,
+        maximumBytes: Int,
+    ): ByteArray
+
     fun stage(
         sourceUri: String,
         operationId: String,
@@ -116,6 +121,36 @@ internal class SafArchiveStager(
         stagingRoot = stagingRoot,
         availableBytes = availableBytes,
     )
+
+    override suspend fun readLeadingBytes(
+        sourceUri: String,
+        maximumBytes: Int,
+    ): ByteArray {
+        require(sourceUri.startsWith("${ContentResolver.SCHEME_CONTENT}://"))
+        require(maximumBytes in 1..MAXIMUM_PREFIX_BYTES)
+        return CancellableProviderIo.execute(
+            scope = providerIoScope,
+            timeoutMillis = providerIoTimeoutMillis,
+            scheduler = providerIoScheduler,
+        ) { deadline ->
+            CancellableProviderIo.useResource(
+                cancellation = deadline,
+                open = { inputOpener.open(sourceUri, deadline) },
+            ) { stream ->
+                val prefix = ByteArray(maximumBytes)
+                var count = 0
+                while (count < prefix.size) {
+                    throwIfCancelled(deadline)
+                    val read = stream.read(prefix, count, prefix.size - count)
+                    throwIfCancelled(deadline)
+                    if (read <= 0) break
+                    count += read
+                    deadline.rearm()
+                }
+                prefix.copyOf(count)
+            }
+        }
+    }
 
     override fun stage(
         sourceUri: String,
@@ -245,6 +280,7 @@ internal class SafArchiveStager(
         const val MAXIMUM_SUPPORTED_BYTES = AUDIO_ARCHIVE_CEILING_BYTES
         const val FREE_SPACE_RESERVE_BYTES = ARCHIVE_BUDGET_RESERVE_BYTES
         const val PROVIDER_IO_TIMEOUT_MILLIS = 60_000L
+        const val MAXIMUM_PREFIX_BYTES = 64
         val FILE_SUFFIX = Regex("\\.[a-z0-9]{1,8}")
     }
 }
