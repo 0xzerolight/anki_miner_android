@@ -985,6 +985,12 @@ class MediaExtractorService:
         cmd: list[str] = [
             resolve_ffmpeg(self.config),
             "-y",
+            # A clip window past EOF encodes nothing.  libwebp_anim errors out on
+            # its own, but libaom exits 0 and leaves a valid-looking 285-byte
+            # frame-less AVIF, which the exists() check below then accepts and
+            # the card ends up with a broken image.  Measured on ffmpeg 7.1.1.
+            "-abort_on",
+            "empty_output",
             "-ss",
             str(clip_start),
             "-t",

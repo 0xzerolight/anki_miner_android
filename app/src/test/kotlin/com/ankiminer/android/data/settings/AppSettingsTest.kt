@@ -539,6 +539,25 @@ class AppSettingsTest {
     }
 
     @Test
+    fun animatedScreenshotTuningOutsideTheSupportedRangeIsIgnoredWhileTheFeatureIsOff() {
+        // The two fields are disabled when the toggle is off, so a value left behind by an earlier
+        // edit would otherwise block every settings write with no way to reach the field and fix it.
+        // Nothing is emitted while the feature is off either, so nothing invalid can reach the wire.
+        val stale =
+            AppSettings(
+                animatedScreenshotsEnabled = false,
+                animatedScreenshotDurationSeconds = 12.0,
+                animatedScreenshotQuality = 101,
+            )
+
+        val settings = EngineSettingsSnapshotMapper.map(stale, emptyList()).settings
+
+        assertEquals(BridgeJsonValue.Bool(false), settings["screenshot_animated"])
+        assertFalse("screenshot_animated_clip_duration" in settings)
+        assertFalse("screenshot_animated_quality" in settings)
+    }
+
+    @Test
     fun animatedScreenshotTuningOutsideTheSupportedRangeIsRejected() {
         listOf(
             AppSettings(animatedScreenshotsEnabled = true, animatedScreenshotDurationSeconds = 12.0),

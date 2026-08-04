@@ -566,6 +566,14 @@ class AnimatedEncoderOverlayTests(unittest.TestCase):
         self.assertEqual("8", avif[avif.index("-cpu-used") + 1])
         self.assertEqual("1", avif[avif.index("-row-mt") + 1])
 
+    def test_both_formats_abort_on_empty_output(self) -> None:
+        # A clip window past EOF encodes nothing.  libwebp_anim exits non-zero on
+        # its own, but libaom exits 0 and writes a frame-less 285-byte AVIF that
+        # the caller's exists() check accepts, putting a broken image on a card.
+        for fmt in ("avif", "webp"):
+            cmd = self._animated_command(fmt)
+            self.assertEqual("empty_output", cmd[cmd.index("-abort_on") + 1], fmt)
+
 
 if __name__ == "__main__":
     unittest.main()

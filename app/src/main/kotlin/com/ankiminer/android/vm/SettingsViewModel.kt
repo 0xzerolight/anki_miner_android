@@ -192,10 +192,15 @@ internal data class SettingsDraft(
                     screenshotOffset,
                     nonNegative = true,
                 )?.let { put(SettingsFieldKey.SCREENSHOT_OFFSET, it) }
-                validateAnimatedClipDuration(animatedScreenshotDuration)
-                    ?.let { put(SettingsFieldKey.ANIMATED_SCREENSHOT_DURATION, it) }
-                validateAnimatedQuality(animatedScreenshotQuality)
-                    ?.let { put(SettingsFieldKey.ANIMATED_SCREENSHOT_QUALITY, it) }
+                // Only while the feature is on: the two fields are disabled when it is off, so a
+                // value left over from a previous edit would block every settings write with no way
+                // to reach the field and fix it.
+                if (animatedScreenshots) {
+                    validateAnimatedClipDuration(animatedScreenshotDuration)
+                        ?.let { put(SettingsFieldKey.ANIMATED_SCREENSHOT_DURATION, it) }
+                    validateAnimatedQuality(animatedScreenshotQuality)
+                        ?.let { put(SettingsFieldKey.ANIMATED_SCREENSHOT_QUALITY, it) }
+                }
                 validateOptionalDouble(
                     subtitleOffset,
                 )?.let { put(SettingsFieldKey.SUBTITLE_OFFSET, it) }
