@@ -43,6 +43,7 @@ _READING_REQUEST_FIELDS = frozenset(
 _CONFIG_SNAPSHOT_FIELDS = frozenset({"settings", "androidTtsEnabled"})
 _SOURCE_SUFFIXES = {
     "txt": frozenset({".txt"}),
+    "text": frozenset({".text"}),
     "epub": frozenset({".epub"}),
     "subtitle": frozenset({".ass", ".srt", ".ssa", ".vtt"}),
     "mokuro": frozenset({".mokuro"}),
@@ -196,6 +197,25 @@ def _reading_detector() -> object:
     return detector
 
 
+def _read_staged_text(path: Path) -> str:
+    """Decode the Kotlin-staged paste. Kotlin wrote UTF-8; anything else is tampering."""
+
+    from . import reading_limits
+
+    try:
+        data = path.read_bytes()
+    except OSError as error:
+        raise _invalid_request("sourcePath could not be read") from error
+    # validate_source_before_load stat-bounded this; re-check the bytes actually
+    # read so the stat->read window cannot smuggle a larger file through.
+    if len(data) > reading_limits.MAX_PASTED_TEXT_SOURCE_BYTES:
+        raise BridgeProtocolError("reading_source_too_large", "The pasted text exceeds the mobile limit")
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise _invalid_request("Pasted text must be valid UTF-8") from error
+
+
 def _load_document(
     request: _ReadingRequest,
     cancellation_check: Callable[[], bool] | None = None,
@@ -230,19 +250,26 @@ def _load_document(
 
     # Function-local import preserves the bootstrap-before-engine-import rule.
     detector = _reading_detector()
-    refs = detector.detect(request.source_path)
-    if len(refs) != 1:
-        raise _invalid_request("sourcePath must detect as exactly one reading source")
-    ref = refs[0]
-    if ref.kind != request.source_kind:
-        raise _invalid_request("Detected reading kind does not match sourceKind")
+    if request.source_kind == "text":
+        from anki_miner.models.reading import ReadingSourceRef
 
-    # Initial Android mokuro support stages either a sidecar alone (text-only)
-    # or one explicit sibling archive. Do not silently consume an undeclared
-    # archive/directory merely because the desktop detector can discover it.
-    detected_image_root = ref.image_root.resolve(strict=False) if ref.image_root is not None else None
-    if detected_image_root != request.image_archive_path:
-        raise _invalid_request("Detected mokuro image companion does not match imageArchivePath")
+        # detect() never emits kind="text"; the ref is constructed, exactly as
+        # desktop's reading_text_tab does.
+        ref = ReadingSourceRef(kind="text", title="Text", text=_read_staged_text(request.source_path))
+    else:
+        refs = detector.detect(request.source_path)
+        if len(refs) != 1:
+            raise _invalid_request("sourcePath must detect as exactly one reading source")
+        ref = refs[0]
+        if ref.kind != request.source_kind:
+            raise _invalid_request("Detected reading kind does not match sourceKind")
+
+        # Initial Android mokuro support stages either a sidecar alone (text-only)
+        # or one explicit sibling archive. Do not silently consume an undeclared
+        # archive/directory merely because the desktop detector can discover it.
+        detected_image_root = ref.image_root.resolve(strict=False) if ref.image_root is not None else None
+        if detected_image_root != request.image_archive_path:
+            raise _invalid_request("Detected mokuro image companion does not match imageArchivePath")
     if cancellation_check is not None and cancellation_check():
         from .anki_adapter import AnkiOperationCancelled
 
@@ -257,13 +284,13 @@ def _load_document(
         with reading_unit_budget(
             reading_limits.MAX_DOCUMENT_UNITS,
             cancellation_check=cancellation_check,
-            precount_sentences=request.source_kind in {"txt", "epub"},
+            precount_sentences=request.source_kind in {"txt", "text", "epub"},
         ):
             document = detector.load(ref, strip_subtitle_annotations=strip_subtitle_annotations)
     except ReadingUnitLimitExceeded as error:
         raise BridgeProtocolError(
             "reading_source_too_large",
-            f"The reading document contains too many units " f"({error.observed:,} > {error.maximum:,})",
+            f"The reading document contains too many units ({error.observed:,} > {error.maximum:,})",
         ) from error
     except ReadingUnitLoadCancelled as error:
         from .anki_adapter import AnkiOperationCancelled
@@ -280,6 +307,8 @@ def _load_document(
         image_archive_path=request.image_archive_path,
         cancellation_check=cancellation_check,
     )
+    if request.source_kind == "text" and getattr(document, "kind", None) != "book":
+        raise _invalid_request("Text loader returned an invalid document kind")
     if request.source_kind == "subtitle":
         if getattr(document, "kind", None) != "subtitle":
             raise _invalid_request("Subtitle loader returned an invalid document kind")
