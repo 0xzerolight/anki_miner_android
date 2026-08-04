@@ -41,8 +41,10 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.AnnotatedString
@@ -54,9 +56,11 @@ import androidx.compose.ui.unit.dp
 import com.ankiminer.android.R
 import com.ankiminer.android.dictionary.CurationDefinition
 import com.ankiminer.android.mining.CurationCandidate
+import com.ankiminer.android.mining.CurationPage
 import com.ankiminer.android.mining.CurationSentence
 import com.ankiminer.android.ui.settings.DictionaryHtml
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
+import com.ankiminer.android.ui.theme.PhaseTitle
 import com.ankiminer.android.ui.theme.actionBorder
 import com.ankiminer.android.ui.theme.outlinedActionButtonColors
 import com.ankiminer.android.ui.theme.selectedRowContainer
@@ -82,15 +86,110 @@ private fun CurationSort.label(): Int =
     }
 
 /**
- * Search, projection and bulk selection for the candidate list.
+ * Fixed chrome above the candidate list: what phase this is, how much is selected, and every
+ * control that acts on the projection.
  *
- * Everything here is one fixed block above the list rather than scrolling items: on a hundred-row
- * page the controls used to leave the screen exactly when they became useful. Filter and sort trade
- * two scrolling chip rows for two menus, and the bulk actions — previously two full-width buttons —
- * fold into a third, which is what buys the vertical room back.
+ * It is pinned rather than scrolled because all of it stays relevant for the whole page. As list
+ * items, the heading and the search field left the screen after two flicks, and the focused
+ * heading — the accessibility anchor for the phase — was disposed along with them.
  */
 @Composable
-internal fun CurationControls(
+internal fun CurationChrome(
+    title: String,
+    headingModifier: Modifier,
+    selectedCount: Int,
+    candidateCount: Int,
+    page: CurationPage?,
+    query: String,
+    filter: CurationFilter,
+    sort: CurationSort,
+    enabled: Boolean,
+    visibleCount: Int,
+    allVisibleSelected: Boolean,
+    selectVisibleEnabled: Boolean,
+    pageCandidateCount: Int?,
+    selectAllTestTag: String,
+    onQueryChanged: (String) -> Unit,
+    onFilterChanged: (CurationFilter) -> Unit,
+    onSortChanged: (CurationSort) -> Unit,
+    onSetSelectionForVisible: (Boolean) -> Unit,
+    onSelectWholePage: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            PhaseTitle(title, headingModifier.weight(1f))
+            Text(
+                text =
+                    stringResource(
+                        if (page == null) {
+                            R.string.curation_selected_count
+                        } else {
+                            R.string.curation_selected_count_page
+                        },
+                        selectedCount,
+                        candidateCount,
+                    ),
+                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                style = MaterialTheme.typography.labelLarge,
+            )
+        }
+        page?.let {
+            Text(
+                text =
+                    stringResource(
+                        R.string.curation_page_position,
+                        it.pageIndex + 1,
+                        it.pageCount,
+                        it.candidateStart + 1,
+                        it.candidateStart + candidateCount,
+                        it.totalCandidates,
+                    ),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (it.pageIndex > 0) {
+                Text(
+                    text = stringResource(R.string.curation_previous_pages_saved),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        CurationControls(
+            query = query,
+            filter = filter,
+            sort = sort,
+            enabled = enabled,
+            visibleCount = visibleCount,
+            allVisibleSelected = allVisibleSelected,
+            selectVisibleEnabled = selectVisibleEnabled,
+            pageCandidateCount = pageCandidateCount,
+            selectAllTestTag = selectAllTestTag,
+            onQueryChanged = onQueryChanged,
+            onFilterChanged = onFilterChanged,
+            onSortChanged = onSortChanged,
+            onSetSelectionForVisible = onSetSelectionForVisible,
+            onSelectWholePage = onSelectWholePage,
+        )
+    }
+}
+
+/**
+ * Search, projection and bulk selection for the candidate list.
+ *
+ * Filter and sort trade two scrolling chip rows for two menus, and the bulk actions — previously
+ * two full-width buttons — fold into a third, which is what buys the vertical room back.
+ */
+@Composable
+private fun CurationControls(
     query: String,
     filter: CurationFilter,
     sort: CurationSort,

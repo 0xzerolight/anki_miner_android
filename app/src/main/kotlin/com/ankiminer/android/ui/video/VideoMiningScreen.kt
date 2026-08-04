@@ -46,9 +46,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.heading
-import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -62,7 +60,7 @@ import com.ankiminer.android.player.CurationPreviewPlayer
 import com.ankiminer.android.player.ExoCurationPreviewPlayer
 import com.ankiminer.android.ui.mining.CurationCandidateRow
 import com.ankiminer.android.ui.mining.CurationCandidateRowText
-import com.ankiminer.android.ui.mining.CurationControls
+import com.ankiminer.android.ui.mining.CurationChrome
 import com.ankiminer.android.ui.mining.CurationDefinitionPane
 import com.ankiminer.android.ui.mining.CurationFilter
 import com.ankiminer.android.ui.mining.CurationRowActions
@@ -251,6 +249,16 @@ fun VideoMiningScreen(
                 focusedCandidateId = targetCuration?.focusedCandidateId,
                 onReconcile = onReconcileFocus,
             )
+            // Scoped to the projection, not the whole protocol page: a filtered bulk action must
+            // not silently reach rows the search is hiding.
+            val selectableVisibleCandidateIds =
+                remember(visibleCandidateIds, targetCuration?.knownCandidateIds) {
+                    val known = targetCuration?.knownCandidateIds.orEmpty()
+                    visibleCandidateIds.filterNot(known::contains)
+                }
+            val allVisibleSelected =
+                selectableVisibleCandidateIds.isNotEmpty() &&
+                    selectedCandidateIds.containsAll(selectableVisibleCandidateIds)
             val phaseTitle = stringResource(targetState.phaseTitle(labels))
             val headingFocusRequester = remember(target.key) { FocusRequester() }
             val headingModifier =
@@ -286,6 +294,43 @@ fun VideoMiningScreen(
                                 ),
                         )
                     }
+                }
+                if (targetState.runState is MiningRunState.Curating && targetCuration != null) {
+                    CurationChrome(
+                        title = phaseTitle,
+                        headingModifier = headingModifier,
+                        selectedCount = targetCuration.selectedCount,
+                        candidateCount = targetCuration.candidates.size,
+                        page = targetCuration.page,
+                        query = query,
+                        filter = filter,
+                        sort = sort,
+                        enabled = !targetState.curationPending && !targetState.cancelPending,
+                        visibleCount = visibleCandidates.size,
+                        allVisibleSelected = allVisibleSelected,
+                        selectVisibleEnabled =
+                            selectableVisibleCandidateIds.isNotEmpty() &&
+                                !targetState.curationPending &&
+                                !targetState.cancelPending,
+                        pageCandidateCount =
+                            targetCuration.candidates.size.takeIf {
+                                visibleCandidateIds.size < it
+                            },
+                        selectAllTestTag = VideoMiningTestTags.SELECT_ALL,
+                        onQueryChanged = { query = it },
+                        onFilterChanged = { filterName = it.name },
+                        onSortChanged = { sortName = it.name },
+                        onSetSelectionForVisible = { select ->
+                            onSetSelectionForVisible(visibleCandidateIds, select)
+                        },
+                        onSelectWholePage = { onSetSelectionForPage(true) },
+                        modifier =
+                            Modifier.padding(
+                                start = AnkiMinerTokens.Space.content,
+                                top = AnkiMinerTokens.Space.content,
+                                end = AnkiMinerTokens.Space.content,
+                            ),
+                    )
                 }
                 LazyColumn(
                     state = listState,
@@ -330,7 +375,6 @@ fun VideoMiningScreen(
                         is MiningRunState.Curating ->
                             curationItems(
                                 state = targetState,
-                                headingModifier = headingModifier,
                                 visibleCandidates = visibleCandidates,
                                 candidateRowTexts = candidateRowTexts,
                                 selectedCandidateStateText = selectedCandidateStateText,
@@ -338,18 +382,9 @@ fun VideoMiningScreen(
                                 includeWordTemplate = includeWordTemplate,
                                 excludeWordTemplate = excludeWordTemplate,
                                 expandedCandidateId = expandedCandidateId,
-                                query = query,
-                                filter = filter,
-                                sort = sort,
-                                onQueryChanged = { query = it },
-                                onFilterChanged = { filterName = it.name },
-                                onSortChanged = { sortName = it.name },
                                 onFocusCandidate = onFocusCandidate,
                                 onSetCandidateSelected = onSetCandidateSelected,
                                 onMarkCandidateKnown = onMarkCandidateKnown,
-                                onSetSelectionForVisible = onSetSelectionForVisible,
-                                onSetSelectionForPage = onSetSelectionForPage,
-                                onReconcileFocus = onReconcileFocus,
                                 onSelectSentence = onSelectSentence,
                                 copy = copy,
                                 wordLabel = wordLabel,
@@ -724,7 +759,6 @@ private fun LazyListScope.progressItems(
 
 private fun LazyListScope.curationItems(
     state: VideoMiningUiState,
-    headingModifier: Modifier,
     visibleCandidates: List<CurationCandidate>,
     candidateRowTexts: Map<String, CurationCandidateRowText>,
     selectedCandidateStateText: String,
@@ -732,18 +766,9 @@ private fun LazyListScope.curationItems(
     includeWordTemplate: String,
     excludeWordTemplate: String,
     expandedCandidateId: String?,
-    query: String,
-    filter: CurationFilter,
-    sort: CurationSort,
-    onQueryChanged: (String) -> Unit,
-    onFilterChanged: (CurationFilter) -> Unit,
-    onSortChanged: (CurationSort) -> Unit,
     onFocusCandidate: (String?) -> Unit,
     onSetCandidateSelected: (String, Boolean) -> Unit,
     onMarkCandidateKnown: (String, Boolean) -> Unit,
-    onSetSelectionForVisible: (List<String>, Boolean) -> Unit,
-    onSetSelectionForPage: (Boolean) -> Unit,
-    onReconcileFocus: (List<String>, List<String>) -> Unit,
     onSelectSentence: (String, String) -> Unit,
     copy: (String, String, String?) -> Unit,
     wordLabel: String,
@@ -753,78 +778,6 @@ private fun LazyListScope.curationItems(
 ) {
     val curation = state.curation ?: return
     val enabled = !state.curationPending && !state.cancelPending
-    // Scoped to the projection, not the whole protocol page: a filtered bulk action must not
-    // silently reach rows the search is hiding.
-    val visibleCandidateIds = visibleCandidates.map { it.candidateId }
-    val selectableVisibleCandidateIds =
-        visibleCandidateIds.filterNot(curation.knownCandidateIds::contains)
-    val allVisibleSelected =
-        selectableVisibleCandidateIds.isNotEmpty() &&
-            curation.selectedCandidateIds.containsAll(selectableVisibleCandidateIds)
-
-    item(key = "curation_header", contentType = "header") {
-        Column(verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
-            PhaseTitle(
-                text = stringResource(R.string.curation_title),
-                modifier = headingModifier,
-            )
-            Text(
-                text =
-                    stringResource(
-                        if (curation.page == null) {
-                            R.string.curation_selected_count
-                        } else {
-                            R.string.curation_selected_count_page
-                        },
-                        curation.selectedCount,
-                        curation.candidates.size,
-                    ),
-                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-                style = MaterialTheme.typography.bodyLarge,
-            )
-            curation.page?.let { page ->
-                Text(
-                    text =
-                        stringResource(
-                            R.string.curation_page_position,
-                            page.pageIndex + 1,
-                            page.pageCount,
-                            page.candidateStart + 1,
-                            page.candidateStart + curation.candidates.size,
-                            page.totalCandidates,
-                        ),
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-                if (page.pageIndex > 0) {
-                    Text(
-                        text = stringResource(R.string.curation_previous_pages_saved),
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                }
-            }
-        }
-    }
-    item(key = "curation_controls", contentType = "actions") {
-        CurationControls(
-            query = query,
-            filter = filter,
-            sort = sort,
-            enabled = enabled,
-            visibleCount = visibleCandidates.size,
-            allVisibleSelected = allVisibleSelected,
-            selectVisibleEnabled = selectableVisibleCandidateIds.isNotEmpty() && enabled,
-            pageCandidateCount =
-                curation.candidates.size.takeIf { visibleCandidateIds.size < it },
-            selectAllTestTag = VideoMiningTestTags.SELECT_ALL,
-            onQueryChanged = onQueryChanged,
-            onFilterChanged = onFilterChanged,
-            onSortChanged = onSortChanged,
-            onSetSelectionForVisible = { select ->
-                onSetSelectionForVisible(visibleCandidateIds, select)
-            },
-            onSelectWholePage = { onSetSelectionForPage(true) },
-        )
-    }
     visibleCandidates.forEach { candidate ->
         val selected = candidate.candidateId in curation.selectedCandidateIds
         val known = candidate.candidateId in curation.knownCandidateIds

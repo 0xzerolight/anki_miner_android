@@ -512,7 +512,6 @@ class VideoMiningScreenTest {
         scrollTo(hasTestTag(sentenceTag))
         composeRule.onNodeWithTag(sentenceTag).assertExists()
 
-        scrollTo(hasText("2 of 2 selected"))
         composeRule.onNodeWithText("2 of 2 selected").assertExists()
 
         // The checkbox excludes, and the detail stays open.
@@ -520,7 +519,6 @@ class VideoMiningScreenTest {
         composeRule
             .onNodeWithTag(VideoMiningTestTags.candidateToggle(candidate.candidateId))
             .performClick()
-        scrollTo(hasText("1 of 2 selected"))
         composeRule.onNodeWithText("1 of 2 selected").assertExists()
         scrollTo(hasTestTag(sentenceTag))
         composeRule.onNodeWithTag(sentenceTag).assertExists()
@@ -529,7 +527,6 @@ class VideoMiningScreenTest {
         scrollTo(hasTestTag(VideoMiningTestTags.candidate(candidate.candidateId)))
         composeRule.onNodeWithTag(VideoMiningTestTags.candidate(candidate.candidateId)).performClick()
         composeRule.onNodeWithTag(sentenceTag).assertDoesNotExist()
-        scrollTo(hasText("1 of 2 selected"))
         composeRule.onNodeWithText("1 of 2 selected").assertExists()
     }
 
