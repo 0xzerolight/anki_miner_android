@@ -117,6 +117,7 @@ class MediaMiningViewModelTest {
                 backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
                     viewModel.uiState.collect {}
                 }
+            viewModel.focusCandidate(request.candidates.first().candidateId)
 
             advanceUntilIdle()
 
@@ -148,11 +149,13 @@ class MediaMiningViewModelTest {
                     ImmediateSafBroker(),
                     definitionLookup = lookup,
                 )
-            repository.transitionTo(MiningRunState.Curating(curationRequest()))
+            val request = curationRequest()
+            repository.transitionTo(MiningRunState.Curating(request))
             val collection =
                 backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
                     viewModel.uiState.collect {}
                 }
+            viewModel.focusCandidate(request.candidates.first().candidateId)
 
             advanceUntilIdle()
 
@@ -174,11 +177,13 @@ class MediaMiningViewModelTest {
                     ImmediateSafBroker(),
                     definitionLookup = lookup,
                 )
-            repository.transitionTo(MiningRunState.Curating(curationRequest()))
+            val request = curationRequest()
+            repository.transitionTo(MiningRunState.Curating(request))
             val collection =
                 backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
                     viewModel.uiState.collect {}
                 }
+            viewModel.focusCandidate(request.candidates.first().candidateId)
 
             advanceUntilIdle()
 
@@ -209,13 +214,16 @@ class MediaMiningViewModelTest {
                 backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
                     viewModel.uiState.collect {}
                 }
+            val request = curationRequest()
 
-            repository.transitionTo(MiningRunState.Curating(curationRequest()))
+            repository.transitionTo(MiningRunState.Curating(request))
+            viewModel.focusCandidate(request.candidates.first().candidateId)
             advanceUntilIdle()
             repository.transitionTo(MiningRunState.Idle)
             advanceUntilIdle()
             assertNull(viewModel.uiState.value.curation)
-            repository.transitionTo(MiningRunState.Curating(curationRequest()))
+            repository.transitionTo(MiningRunState.Curating(request))
+            viewModel.focusCandidate(request.candidates.first().candidateId)
             advanceUntilIdle()
 
             assertEquals(2, lookups.size)

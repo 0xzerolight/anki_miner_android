@@ -460,12 +460,11 @@ class VideoMiningScreenTest {
     fun rowTapOpensDetailAndCheckboxAloneChangesInclusion() {
         val request = request()
         val candidate = request.candidates.first()
-        val other = request.candidates.last()
         var state by
             mutableStateOf(
                 VideoMiningUiState(
                     runState = MiningRunState.Curating(request),
-                    curation = curationState(request).copy(focusedCandidateId = other.candidateId),
+                    curation = curationState(request, focusedCandidateId = null),
                 ),
             )
         composeRule.setContent {
@@ -508,6 +507,7 @@ class VideoMiningScreenTest {
         composeRule.onNodeWithTag(VideoMiningTestTags.candidate(candidate.candidateId)).performClick()
         scrollTo(hasTestTag(sentenceTag))
         composeRule.onNodeWithTag(sentenceTag).assertExists()
+
         scrollTo(hasText("2 of 2 selected"))
         composeRule.onNodeWithText("2 of 2 selected").assertExists()
 
@@ -520,6 +520,13 @@ class VideoMiningScreenTest {
         composeRule.onNodeWithText("1 of 2 selected").assertExists()
         scrollTo(hasTestTag(sentenceTag))
         composeRule.onNodeWithTag(sentenceTag).assertExists()
+
+        // Tapping the open header collapses its detail without changing inclusion.
+        scrollTo(hasTestTag(VideoMiningTestTags.candidate(candidate.candidateId)))
+        composeRule.onNodeWithTag(VideoMiningTestTags.candidate(candidate.candidateId)).performClick()
+        composeRule.onNodeWithTag(sentenceTag).assertDoesNotExist()
+        scrollTo(hasText("1 of 2 selected"))
+        composeRule.onNodeWithText("1 of 2 selected").assertExists()
     }
 
     @Test
@@ -640,7 +647,7 @@ class VideoMiningScreenTest {
             state =
                 VideoMiningUiState(
                     runState = MiningRunState.Curating(request),
-                    curation = curationState(request),
+                    curation = curationState(request, focusedCandidateId = candidateId),
                 ),
             onSelectSentence = { selectedCandidateId, sentenceId ->
                 selection = selectedCandidateId to sentenceId
@@ -1297,7 +1304,7 @@ class VideoMiningScreenTest {
         onCancel: () -> Unit = {},
         onRetry: () -> Unit = {},
         onReset: () -> Unit = {},
-        onFocusCandidate: (String) -> Unit = {},
+        onFocusCandidate: (String?) -> Unit = {},
         onSetCandidateSelected: (String, Boolean) -> Unit = { _, _ -> },
         playerFactory: (Context) -> CurationPreviewPlayer = { FakeCurationPreviewPlayer() },
         listState: LazyListState = rememberLazyListState(),
