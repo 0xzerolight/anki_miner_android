@@ -49,6 +49,8 @@ internal enum class SettingsCategory(
 
 internal object SettingsCategoryTestTags {
     const val LIST = "settings-category-list"
+    const val ANIMATED_SCREENSHOT_DURATION = "settings-animated-screenshot-duration"
+    const val ANIMATED_SCREENSHOT_QUALITY = "settings-animated-screenshot-quality"
 }
 
 /** Width of the fade drawn over each scrollable edge of the category tab strip. */

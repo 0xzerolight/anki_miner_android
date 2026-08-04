@@ -14,13 +14,16 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.ankiminer.android.R
+import com.ankiminer.android.anki.provider.PlatformAnkiMediaMimeCapability
 import com.ankiminer.android.data.anki.AnkiSetupFailureOrigin
 import com.ankiminer.android.data.anki.AnkiSetupFailureAction
 import com.ankiminer.android.data.resources.KnownWordsFailureOperation
@@ -272,11 +275,16 @@ private fun LazyListScope.ankiSettings(
     }
 }
 
-private fun LazyListScope.mediaSettings(
+/** Internal rather than private so the instrumented tests can compose the real group. */
+internal fun LazyListScope.mediaSettings(
     draft: SettingsDraft,
     onDraftChange: (SettingsDraft) -> Unit,
 ) {
     settingsCard("media-options") {
+        // Read once per composition: MimeTypeMap is a process-wide singleton and the answer cannot
+        // change while the app runs.
+        val avifNameable =
+            remember { PlatformAnkiMediaMimeCapability().canNameFilesFor("avif") }
         SettingsSection(stringResource(R.string.settings_media)) {
             NumericField(
                 draft.audioPadding,
@@ -292,6 +300,38 @@ private fun LazyListScope.mediaSettings(
                 error = validationMessage(draft, SettingsFieldKey.SCREENSHOT_OFFSET),
                 imeAction = ImeAction.Next,
             )
+            BooleanSetting(
+                label = stringResource(R.string.settings_animated_screenshots),
+                checked = draft.animatedScreenshots,
+                onCheckedChange = { onDraftChange(draft.copy(animatedScreenshots = it)) },
+            )
+            SupportingText(stringResource(R.string.settings_animated_screenshots_summary))
+            // A .avif this device cannot name would be stored by AnkiDroid as .bin, so the mapper
+            // sends WebP instead. Say so rather than silently producing a different format.
+            if (draft.animatedScreenshots && !avifNameable) {
+                SupportingText(stringResource(R.string.settings_animated_screenshots_webp_only))
+            }
+            NumericField(
+                draft.animatedScreenshotDuration,
+                { onDraftChange(draft.copy(animatedScreenshotDuration = it)) },
+                stringResource(R.string.settings_animated_clip_duration),
+                enabled = draft.animatedScreenshots,
+                error = validationMessage(draft, SettingsFieldKey.ANIMATED_SCREENSHOT_DURATION),
+                imeAction = ImeAction.Next,
+                modifier = Modifier.testTag(SettingsCategoryTestTags.ANIMATED_SCREENSHOT_DURATION),
+            )
+            SupportingText(stringResource(R.string.settings_animated_clip_duration_help))
+            NumericField(
+                draft.animatedScreenshotQuality,
+                { onDraftChange(draft.copy(animatedScreenshotQuality = it)) },
+                stringResource(R.string.settings_animated_quality),
+                integer = true,
+                enabled = draft.animatedScreenshots,
+                error = validationMessage(draft, SettingsFieldKey.ANIMATED_SCREENSHOT_QUALITY),
+                imeAction = ImeAction.Next,
+                modifier = Modifier.testTag(SettingsCategoryTestTags.ANIMATED_SCREENSHOT_QUALITY),
+            )
+            SupportingText(stringResource(R.string.settings_animated_quality_help))
             NumericField(
                 draft.subtitleOffset,
                 { onDraftChange(draft.copy(subtitleOffset = it)) },

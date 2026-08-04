@@ -592,6 +592,13 @@
     <string name="settings_media">メディア</string>
     <string name="settings_audio_padding">音声パディング(秒)</string>
     <string name="settings_screenshot_offset">スクリーンショットのオフセット(秒)</string>
+    <string name="settings_animated_screenshots">アニメーションスクリーンショット</string>
+    <string name="settings_animated_screenshots_summary">カード画像に静止画ではなく短いループ動画を使用します。メディアが大きくなり、作成も遅くなります。</string>
+    <string name="settings_animated_screenshots_webp_only">この端末では WebP 形式で保存されます。</string>
+    <string name="settings_animated_clip_duration">クリップの長さ(秒)</string>
+    <string name="settings_animated_clip_duration_help">0.5〜10。字幕の長さが上限になります。</string>
+    <string name="settings_animated_quality">クリップの画質</string>
+    <string name="settings_animated_quality_help">0〜100。値が大きいほどファイルも大きくなります。</string>
     <string name="settings_subtitle_offset">字幕タイミングオフセット</string>
     <string name="settings_audio_bitrate">音声ビットレート(kbps)</string>
     <string name="settings_audio_format">音声フォーマット</string>
@@ -731,6 +738,8 @@
     <string name="b3_validation_non_negative">0 以上の数値を入力してください</string>
     <string name="b3_validation_positive">1 以上の整数を入力してください</string>
     <string name="b3_validation_parallel_workers">1〜32 の整数を入力してください</string>
+    <string name="b3_validation_animated_clip_duration">0.5〜10 の数値を入力してください</string>
+    <string name="b3_validation_animated_quality">0〜100 の整数を入力してください</string>
     <string name="b3_retry">再試行</string>
     <string name="b3_choose_another">別のものを選択</string>
     <string name="b3_resolve">解決する</string>

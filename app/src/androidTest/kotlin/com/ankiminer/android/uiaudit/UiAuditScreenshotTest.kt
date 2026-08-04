@@ -150,6 +150,7 @@ class UiAuditScreenshotTest {
                 SettingsAuditState.ANKI,
                 SettingsAuditState.RESOURCES,
                 SettingsAuditState.ERROR_SNACKBAR,
+                SettingsAuditState.MEDIA,
             ).map { state ->
                 CaptureTarget(
                     screen = "settings",

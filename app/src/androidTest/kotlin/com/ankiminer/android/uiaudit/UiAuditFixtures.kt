@@ -38,7 +38,9 @@ import com.ankiminer.android.data.resources.ResourceFailure
 import com.ankiminer.android.data.resources.ResourceFailureAction
 import com.ankiminer.android.data.resources.ResourceFailureOrigin
 import com.ankiminer.android.data.resources.ResourceFailureRetry
+import com.ankiminer.android.data.resources.ResourceManagerState
 import com.ankiminer.android.data.resources.ResourceStartupReadiness
+import com.ankiminer.android.data.settings.AppSettings
 import com.ankiminer.android.data.settings.ResourceChainSelection
 import com.ankiminer.android.engine.PythonRuntimeReadiness
 import com.ankiminer.android.engine.SubtitleCue
@@ -76,12 +78,14 @@ import com.ankiminer.android.ui.settings.SettingsSection
 import com.ankiminer.android.ui.settings.SettingsCategory
 import com.ankiminer.android.ui.settings.SettingsCategoryLayout
 import com.ankiminer.android.ui.settings.SystemStatusCard
+import com.ankiminer.android.ui.settings.mediaSettings
 import com.ankiminer.android.ui.settings.settingsCard
 import com.ankiminer.android.ui.video.CurationPlayerUiState
 import com.ankiminer.android.ui.video.CurationUiState
 import com.ankiminer.android.ui.video.DocumentSlotState
 import com.ankiminer.android.ui.video.MiningCommandError
 import com.ankiminer.android.ui.video.VideoMiningUiState
+import com.ankiminer.android.vm.SettingsDraft
 import com.ankiminer.android.vm.SetupUiState
 
 internal enum class MiningAuditState(val fileName: String) {
@@ -98,6 +102,7 @@ internal enum class SettingsAuditState(val fileName: String) {
     ANKI("anki"),
     RESOURCES("dictionaries-resources"),
     ERROR_SNACKBAR("error-snackbar"),
+    MEDIA("media"),
     FULL("full"),
 }
 
@@ -535,6 +540,7 @@ internal fun UiAuditSettingsFixture(
             SettingsAuditState.RESOURCES,
             SettingsAuditState.ERROR_SNACKBAR,
             -> SettingsCategory.DICTIONARIES
+            SettingsAuditState.MEDIA -> SettingsCategory.MEDIA
             SettingsAuditState.FULL -> SettingsCategory.FILTERING
         }
     SettingsCategoryLayout(
@@ -576,6 +582,20 @@ internal fun UiAuditSettingsFixture(
                     )
                 }
             }
+            // The real media group, not a hand-built stand-in: the animated-screenshot controls
+            // carry long supporting text, which is exactly what the 200% font-scale captures are
+            // for. Rendered with the feature on so the tuning fields appear enabled.
+            SettingsCategory.MEDIA ->
+                mediaSettings(
+                    SettingsDraft.from(
+                        AppSettings(
+                            animatedScreenshotsEnabled = true,
+                            animatedScreenshotDurationSeconds = 2.0,
+                            animatedScreenshotQuality = 30,
+                        ),
+                        ResourceManagerState(),
+                    ),
+                ) {}
             else -> settingsCard("audit-placeholder") { Text(stringResource(selected.label)) }
         }
     }
