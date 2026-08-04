@@ -496,4 +496,59 @@ class AppSettingsTest {
             ResourceSelectionPreferenceCodec.decode("resource-selection-v1\n+../escape\n")
         }
     }
+
+    @Test
+    fun animatedScreenshotsAreEmittedWithTheirTuningWhenEnabled() {
+        val settings =
+            EngineSettingsSnapshotMapper.map(
+                AppSettings(
+                    animatedScreenshotsEnabled = true,
+                    animatedScreenshotDurationSeconds = 2.0,
+                    animatedScreenshotQuality = 30,
+                ),
+                emptyList(),
+            ).settings
+
+        assertEquals(BridgeJsonValue.Bool(true), settings["screenshot_animated"])
+        assertEquals(BridgeJsonValue.Decimal(2.0), settings["screenshot_animated_clip_duration"])
+        assertEquals(BridgeJsonValue.Integer(30L), settings["screenshot_animated_quality"])
+    }
+
+    @Test
+    fun animatedScreenshotFormatFollowsDeviceMimeCapability() {
+        fun formatFor(avifNameable: Boolean) =
+            EngineSettingsSnapshotMapper.map(
+                AppSettings(animatedScreenshotsEnabled = true),
+                emptyList(),
+                avifNameable = avifNameable,
+            ).settings["screenshot_animated_format"]
+
+        // API 26 cannot name a .avif file, so it must never be asked to store one.
+        assertEquals(BridgeJsonValue.Text("webp"), formatFor(avifNameable = false))
+        assertEquals(BridgeJsonValue.Text("avif"), formatFor(avifNameable = true))
+    }
+
+    @Test
+    fun animatedScreenshotTuningIsOmittedWhenTheFeatureIsOff() {
+        val settings = EngineSettingsSnapshotMapper.map(AppSettings(), emptyList()).settings
+
+        assertEquals(BridgeJsonValue.Bool(false), settings["screenshot_animated"])
+        assertFalse("screenshot_animated_format" in settings)
+        assertFalse("screenshot_animated_clip_duration" in settings)
+        assertFalse("screenshot_animated_quality" in settings)
+    }
+
+    @Test
+    fun animatedScreenshotTuningOutsideTheSupportedRangeIsRejected() {
+        listOf(
+            AppSettings(animatedScreenshotsEnabled = true, animatedScreenshotDurationSeconds = 12.0),
+            AppSettings(animatedScreenshotsEnabled = true, animatedScreenshotDurationSeconds = 0.1),
+            AppSettings(animatedScreenshotsEnabled = true, animatedScreenshotQuality = 101),
+            AppSettings(animatedScreenshotsEnabled = true, animatedScreenshotQuality = -1),
+        ).forEach { candidate ->
+            assertThrows(InvalidAppSettingException::class.java) {
+                AppSettingsValidator.validate(candidate)
+            }
+        }
+    }
 }

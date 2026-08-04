@@ -291,6 +291,9 @@ class AppSettingsRepositoryTest {
                 tags = null,
                 audioPaddingSeconds = null,
                 screenshotOffsetSeconds = null,
+                animatedScreenshotsEnabled = false,
+                animatedScreenshotDurationSeconds = null,
+                animatedScreenshotQuality = null,
                 subtitleOffsetSeconds = null,
                 audioFormat = null,
                 audioBitrateKbps = null,
@@ -553,6 +556,9 @@ class AppSettingsRepositoryTest {
             tags = "mined japanese",
             audioPaddingSeconds = 0.1,
             screenshotOffsetSeconds = 0.2,
+            animatedScreenshotsEnabled = true,
+            animatedScreenshotDurationSeconds = 2.0,
+            animatedScreenshotQuality = 30,
             subtitleOffsetSeconds = -0.3,
             audioFormat = AudioFormat.OPUS,
             audioBitrateKbps = 96,
@@ -631,6 +637,20 @@ class AppSettingsRepositoryTest {
             corruptDouble(
                 "screenshot_offset_seconds",
                 original.copy(screenshotOffsetSeconds = defaults.screenshotOffsetSeconds),
+            ),
+            corruptBoolean(
+                "screenshot_animated_enabled",
+                original.copy(animatedScreenshotsEnabled = defaults.animatedScreenshotsEnabled),
+            ),
+            corruptDouble(
+                "screenshot_animated_duration_seconds",
+                original.copy(
+                    animatedScreenshotDurationSeconds = defaults.animatedScreenshotDurationSeconds,
+                ),
+            ),
+            corruptInt(
+                "screenshot_animated_quality",
+                original.copy(animatedScreenshotQuality = defaults.animatedScreenshotQuality),
             ),
             corruptDouble(
                 "subtitle_offset_seconds",
