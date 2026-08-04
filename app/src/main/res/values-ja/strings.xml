@@ -464,6 +464,7 @@
     <string name="resource_failure_pitch_import">選択したファイルは対応するアクセントデータではありません</string>
     <string name="resource_failure_pitch_invalid">インストール済みのアクセントデータが破損しています。採掘前に置き換えてください</string>
     <string name="resource_failure_audio_pack_import">選択したZIPは対応するローカル音声パックではありません</string>
+    <string name="resource_failure_audio_pack_reserved">このアーカイブから予約済み音声パックID「jpod101」が生成されます。ルートフォルダー名またはZIPファイル名を変更してください。</string>
     <string name="resource_failure_known_words_import">選択したファイルに対応する既知単語が含まれていません</string>
     <string name="resource_failure_inventory_unsafe">ローカルリソースが破損または安全でなく、対応が必要です</string>
     <string name="resource_failure_dictionary_schema">インデックススキーマが古いため、この辞書を置き換える必要があります</string>
@@ -504,7 +505,6 @@
     <string name="pitch_choose_file">アクセントファイルを選択</string>
     <string name="audio_pack_import_title">例文音声をインポート</string>
     <string name="audio_pack_none_installed">ローカル音声パックがインストールされていません。</string>
-    <string name="audio_pack_id">固定音声パックID</string>
     <string name="audio_pack_choose_zip">音声パックZIPを選択</string>
     <string name="word_lists_title">単語リスト</string>
     <string name="word_lists_format">プレーンテキスト形式、1行に1単語。空行と#で始まる行は無視されます。</string>

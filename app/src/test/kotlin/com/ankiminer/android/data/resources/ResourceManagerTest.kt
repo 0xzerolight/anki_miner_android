@@ -583,7 +583,7 @@ class ResourceManagerTest {
                     stagingAvailableBytes = ARCHIVE_BUDGET_RESERVE_BYTES / 2,
                 )
 
-            harness.manager.importAudioPack(INPUT_URI, "jpod", replace = false)
+            harness.manager.preflightAudioPack(INPUT_URI)
 
             val failure = requireNotNull(harness.manager.state.value.failure)
             assertEquals("insufficient_storage", failure.code)
@@ -603,10 +603,13 @@ class ResourceManagerTest {
                     stagingAvailableBytes = 64L * 1024 * 1024 * 1024,
                 )
 
-            harness.manager.importAudioPack(INPUT_URI, "jpod", replace = false)
+            val packId = requireNotNull(harness.manager.preflightAudioPack(INPUT_URI))
+            harness.manager.importAudioPack(INPUT_URI, packId, replace = false)
 
             assertNull(harness.manager.state.value.failure)
+            assertEquals(1, harness.bridge.requestsOfType("resource.audiopack.preflight").size)
             assertEquals(1, harness.bridge.requestsOfType("resource.audiopack.import").size)
+            assertEquals(1, harness.stager.stagedFiles.size)
             assertTrue(harness.stager.lastMaximumBytes!! > 3L * 1024 * 1024 * 1024)
             assertEquals(listOf(INPUT_URI), harness.broker.released)
         }
@@ -621,7 +624,7 @@ class ResourceManagerTest {
                     stagingAvailableBytes = 4L * 1024 * 1024 * 1024,
                 )
 
-            harness.manager.importAudioPack(INPUT_URI, "jpod", replace = false)
+            harness.manager.preflightAudioPack(INPUT_URI)
 
             val failure = harness.manager.state.value.failure
             assertEquals(ResourceFailureOrigin.AUDIO, failure?.origin)
@@ -629,7 +632,7 @@ class ResourceManagerTest {
             // The staged copy never starts, and the message carries both sizes.
             assertTrue(harness.stager.stagedFiles.isEmpty())
             assertNull(harness.stager.lastMaximumBytes)
-            assertTrue(harness.bridge.requestTypes.none { it == "resource.audiopack.import" })
+            assertTrue(harness.bridge.requestTypes.none { it == "resource.audiopack.preflight" })
             assertTrue(failure!!.message.contains("audio-pack ZIP,8.0 GB,2.0 GB"))
             assertEquals(listOf(INPUT_URI), harness.broker.released)
         }
@@ -644,7 +647,8 @@ class ResourceManagerTest {
                     stagingAvailableBytes = 4L * 1024 * 1024 * 1024,
                 )
 
-            harness.manager.importAudioPack(INPUT_URI, "jpod", replace = false)
+            val packId = requireNotNull(harness.manager.preflightAudioPack(INPUT_URI))
+            harness.manager.importAudioPack(INPUT_URI, packId, replace = false)
 
             assertNull(harness.manager.state.value.failure)
             assertEquals(1, harness.stager.stagedFiles.size)
@@ -1020,6 +1024,11 @@ class ResourceManagerTest {
                         """{"operationId":"${stringField(rawRequest, "operationId")}","accepted":true}""",
                     )
                 }
+                "resource.audiopack.preflight" ->
+                    envelope(
+                        "resource.audiopack.preflighted",
+                        """{"packId":"jpod"}""",
+                    )
                 "resource.audiopack.import" ->
                     envelope(
                         "resource.audiopack.imported",

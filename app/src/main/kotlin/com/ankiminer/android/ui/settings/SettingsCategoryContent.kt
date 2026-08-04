@@ -606,7 +606,6 @@ private fun LazyListScope.audioSettings(
     settingsCard("audio-import") {
         AudioPackImportCard(
             state = setup,
-            onIdChanged = setupViewModel::setAudioPackId,
             onImport = callbacks.onImportAudioPack,
             inlineFailure = {
                 ResourceOriginFailure(

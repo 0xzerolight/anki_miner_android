@@ -105,7 +105,11 @@ internal class SessionResourceManager(
         replace: Boolean,
     ) = Unit
 
+    override suspend fun preflightAudioPack(uri: String): String = "jpod"
+
     override suspend fun importAudioPack(uri: String, packId: String, replace: Boolean) = Unit
+
+    override suspend fun discardAudioPackPreflight() = Unit
 
     override suspend fun importKnownWords(uri: String, format: KnownWordsSourceFormat) = Unit
 

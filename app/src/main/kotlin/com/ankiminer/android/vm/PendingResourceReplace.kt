@@ -16,8 +16,8 @@ internal enum class ResourceReplaceKind {
  * An import that would overwrite something already installed, held until the user confirms.
  *
  * Detecting the collision here rather than letting Python's occupancy guard reject it means the
- * question is asked before the file is staged, copied, validated and indexed - and before a failure
- * that `retryResourceFailure` cannot retry.
+ * question is asked before validation and indexing. Audio-pack preflight retains its one staged
+ * copy across this dialog; other imports have not staged yet.
  *
  * The record carries the picked [uri] because the dialog is raised *after* the file picker returns.
  * Deciding first would need a latched "already confirmed" flag, which goes stale in an obvious way:
