@@ -24,10 +24,15 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -41,6 +46,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.heading
@@ -84,6 +90,7 @@ import com.ankiminer.android.ui.theme.PhaseTitle
 import com.ankiminer.android.ui.theme.actionBorder
 import com.ankiminer.android.ui.theme.forwardButtonColors
 import com.ankiminer.android.ui.theme.outlinedActionButtonColors
+import com.ankiminer.android.ui.theme.segmentedActionColors
 
 @Composable
 fun ReadingMiningScreen(
@@ -92,6 +99,9 @@ fun ReadingMiningScreen(
     onPickArchive: () -> Unit,
     onClearSource: () -> Unit,
     onClearArchive: () -> Unit,
+    onSourceModeChanged: (ReadingSourceMode) -> Unit,
+    onPastedTextChanged: (String) -> Unit,
+    onClearPastedText: () -> Unit,
     onSeriesNameChanged: (String) -> Unit,
     onDismissDocumentError: (ReadingDocumentSelectionError) -> Unit,
     onDismissCommandError: () -> Unit,
@@ -239,6 +249,16 @@ fun ReadingMiningScreen(
                 onReconcile = onReconcileFocus,
             )
             val phaseTitle = stringResource(targetState.phaseTitle())
+            val terminalSourceDisplayName =
+                when (targetState.sourceMode) {
+                    ReadingSourceMode.FILE -> targetState.source.document?.displayName
+                    ReadingSourceMode.PASTED_TEXT ->
+                        stringResource(R.string.reading_source_mode_text)
+                }
+            val terminalArchiveDisplayName =
+                targetState.archive.document?.displayName.takeIf {
+                    targetState.sourceMode == ReadingSourceMode.FILE
+                }
             val headingFocusRequester = remember(target.key) { FocusRequester() }
             val headingModifier =
                 Modifier
@@ -270,6 +290,9 @@ fun ReadingMiningScreen(
                             onPickArchive = onPickArchive,
                             onClearSource = onClearSource,
                             onClearArchive = onClearArchive,
+                            onSourceModeChanged = onSourceModeChanged,
+                            onPastedTextChanged = onPastedTextChanged,
+                            onClearPastedText = onClearPastedText,
                             onSeriesNameChanged = onSeriesNameChanged,
                             onDismissDocumentError = onDismissDocumentError,
                             onDismissCommandError = onDismissCommandError,
@@ -336,8 +359,8 @@ fun ReadingMiningScreen(
                             title = R.string.success_title,
                             headingModifier = headingModifier,
                             result = runState.result,
-                            sourceDisplayName = targetState.source.document?.displayName,
-                            archiveDisplayName = targetState.archive.document?.displayName,
+                            sourceDisplayName = terminalSourceDisplayName,
+                            archiveDisplayName = terminalArchiveDisplayName,
                             partial = false,
                             failed = false,
                             failureDetails = null,
@@ -358,8 +381,8 @@ fun ReadingMiningScreen(
                             title = R.string.cancelled_title,
                             headingModifier = headingModifier,
                             result = runState.result,
-                            sourceDisplayName = targetState.source.document?.displayName,
-                            archiveDisplayName = targetState.archive.document?.displayName,
+                            sourceDisplayName = terminalSourceDisplayName,
+                            archiveDisplayName = terminalArchiveDisplayName,
                             partial = runState.result?.cardsCreated?.let { it > 0 } == true,
                             failed = false,
                             failureDetails = null,
@@ -380,8 +403,8 @@ fun ReadingMiningScreen(
                             title = R.string.failed_title,
                             headingModifier = headingModifier,
                             result = runState.result,
-                            sourceDisplayName = targetState.source.document?.displayName,
-                            archiveDisplayName = targetState.archive.document?.displayName,
+                            sourceDisplayName = terminalSourceDisplayName,
+                            archiveDisplayName = terminalArchiveDisplayName,
                             partial = runState.result?.cardsCreated?.let { it > 0 } == true,
                             failed = true,
                             failureDetails = runState.failure.message,
@@ -412,6 +435,9 @@ private fun LazyListScope.setupItems(
     onPickArchive: () -> Unit,
     onClearSource: () -> Unit,
     onClearArchive: () -> Unit,
+    onSourceModeChanged: (ReadingSourceMode) -> Unit,
+    onPastedTextChanged: (String) -> Unit,
+    onClearPastedText: () -> Unit,
     onSeriesNameChanged: (String) -> Unit,
     onDismissDocumentError: (ReadingDocumentSelectionError) -> Unit,
     onDismissCommandError: () -> Unit,
@@ -435,56 +461,74 @@ private fun LazyListScope.setupItems(
             }
         }
     }
-    item(key = "reading_sources", contentType = "candidate") {
-        SourcesCard(
-            sources =
-                buildList {
-                    add(
-                        MiningSourceItem(
-                            label = stringResource(R.string.reading_source_label),
-                            document = state.source.document,
-                            isResolving = state.source.isResolving,
-                            enabled = !state.startPending,
-                            pickTestTag = ReadingMiningTestTags.PICK_SOURCE,
-                            clearTestTag = ReadingMiningTestTags.CLEAR_SOURCE,
-                            readKind = DocumentReadKind.DOCUMENT,
-                            onPick = onPickSource,
-                            onClear = onClearSource,
-                        ),
-                    )
-                    if (state.acceptsArchive) {
-                        add(
-                            MiningSourceItem(
-                                label = stringResource(R.string.reading_archive_label),
-                                document = state.archive.document,
-                                isResolving = state.archive.isResolving,
-                                enabled = !state.startPending,
-                                pickTestTag = ReadingMiningTestTags.PICK_ARCHIVE,
-                                clearTestTag = ReadingMiningTestTags.CLEAR_ARCHIVE,
-                                readKind = DocumentReadKind.DOCUMENT,
-                                onPick = onPickArchive,
-                                onClear = onClearArchive,
-                            ),
-                        )
-                    }
-                },
-        )
-    }
-    state.source.error?.let { error ->
-        item(key = "reading_source_error", contentType = "actions") {
-            MiningFailureCard(
-                message = stringResource(error.messageResource()),
-                primaryAction =
-                    MiningFailureAction(
-                        label = stringResource(R.string.dismiss_error),
-                        onClick = { onDismissDocumentError(error) },
-                    ),
-            )
+    item(key = "reading_source_mode", contentType = "actions") {
+        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+            SegmentedButton(
+                selected = state.sourceMode == ReadingSourceMode.FILE,
+                onClick = { onSourceModeChanged(ReadingSourceMode.FILE) },
+                shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
+                modifier =
+                    Modifier
+                        .heightIn(min = 48.dp)
+                        .testTag(ReadingMiningTestTags.SOURCE_MODE_FILE),
+                enabled = !state.startPending,
+                colors = segmentedActionColors(),
+            ) {
+                Text(stringResource(R.string.reading_source_mode_file))
+            }
+            SegmentedButton(
+                selected = state.sourceMode == ReadingSourceMode.PASTED_TEXT,
+                onClick = { onSourceModeChanged(ReadingSourceMode.PASTED_TEXT) },
+                shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
+                modifier =
+                    Modifier
+                        .heightIn(min = 48.dp)
+                        .testTag(ReadingMiningTestTags.SOURCE_MODE_TEXT),
+                enabled = !state.startPending,
+                colors = segmentedActionColors(),
+            ) {
+                Text(stringResource(R.string.reading_source_mode_text))
+            }
         }
     }
-    if (state.acceptsArchive) {
-        state.archive.error?.let { error ->
-            item(key = "reading_archive_error", contentType = "actions") {
+    if (state.sourceMode == ReadingSourceMode.FILE) {
+        item(key = "reading_sources", contentType = "candidate") {
+            SourcesCard(
+                sources =
+                    buildList {
+                        add(
+                            MiningSourceItem(
+                                label = stringResource(R.string.reading_source_label),
+                                document = state.source.document,
+                                isResolving = state.source.isResolving,
+                                enabled = !state.startPending,
+                                pickTestTag = ReadingMiningTestTags.PICK_SOURCE,
+                                clearTestTag = ReadingMiningTestTags.CLEAR_SOURCE,
+                                readKind = DocumentReadKind.DOCUMENT,
+                                onPick = onPickSource,
+                                onClear = onClearSource,
+                            ),
+                        )
+                        if (state.acceptsArchive) {
+                            add(
+                                MiningSourceItem(
+                                    label = stringResource(R.string.reading_archive_label),
+                                    document = state.archive.document,
+                                    isResolving = state.archive.isResolving,
+                                    enabled = !state.startPending,
+                                    pickTestTag = ReadingMiningTestTags.PICK_ARCHIVE,
+                                    clearTestTag = ReadingMiningTestTags.CLEAR_ARCHIVE,
+                                    readKind = DocumentReadKind.DOCUMENT,
+                                    onPick = onPickArchive,
+                                    onClear = onClearArchive,
+                                ),
+                            )
+                        }
+                    },
+            )
+        }
+        state.source.error?.let { error ->
+            item(key = "reading_source_error", contentType = "actions") {
                 MiningFailureCard(
                     message = stringResource(error.messageResource()),
                     primaryAction =
@@ -495,19 +539,76 @@ private fun LazyListScope.setupItems(
                 )
             }
         }
-    }
-    if (state.sourceKind == ReadingSourceKindUi.SUBTITLE) {
-        item(key = "reading_series_name", contentType = "actions") {
+        if (state.acceptsArchive) {
+            state.archive.error?.let { error ->
+                item(key = "reading_archive_error", contentType = "actions") {
+                    MiningFailureCard(
+                        message = stringResource(error.messageResource()),
+                        primaryAction =
+                            MiningFailureAction(
+                                label = stringResource(R.string.dismiss_error),
+                                onClick = { onDismissDocumentError(error) },
+                            ),
+                    )
+                }
+            }
+        }
+        if (state.sourceKind == ReadingSourceKindUi.SUBTITLE) {
+            item(key = "reading_series_name", contentType = "actions") {
+                OutlinedTextField(
+                    value = state.subtitleSeriesName,
+                    onValueChange = onSeriesNameChanged,
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .testTag(ReadingMiningTestTags.SERIES_NAME),
+                    enabled = !state.startPending,
+                    singleLine = true,
+                    label = { Text(stringResource(R.string.reading_series_label)) },
+                )
+            }
+        }
+    } else {
+        item(key = "reading_pasted_text", contentType = "actions") {
             OutlinedTextField(
-                value = state.subtitleSeriesName,
-                onValueChange = onSeriesNameChanged,
+                value = state.pastedText,
+                onValueChange = onPastedTextChanged,
                 modifier =
                     Modifier
                         .fillMaxWidth()
-                        .testTag(ReadingMiningTestTags.SERIES_NAME),
+                        .testTag(ReadingMiningTestTags.PASTE_TEXT),
                 enabled = !state.startPending,
-                singleLine = true,
-                label = { Text(stringResource(R.string.reading_series_label)) },
+                singleLine = false,
+                minLines = 6,
+                placeholder = { Text(stringResource(R.string.reading_paste_placeholder)) },
+                trailingIcon = {
+                    if (state.pastedText.isNotEmpty()) {
+                        IconButton(
+                            onClick = onClearPastedText,
+                            enabled = !state.startPending,
+                            modifier = Modifier.testTag(ReadingMiningTestTags.CLEAR_PASTED_TEXT),
+                        ) {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_remove),
+                                contentDescription =
+                                    stringResource(R.string.reading_paste_clear),
+                            )
+                        }
+                    }
+                },
+                supportingText = {
+                    Column {
+                        Text(
+                            stringResource(
+                                R.string.reading_paste_counter,
+                                state.pastedText.codePointCount(0, state.pastedText.length),
+                            ),
+                        )
+                        if (state.pastedTextTruncated) {
+                            Text(stringResource(R.string.reading_paste_truncated))
+                        }
+                    }
+                },
             )
         }
     }
@@ -1008,9 +1109,13 @@ private fun ReadingMiningUiState.phaseTitle(): Int =
     }
 
 private fun ReadingMiningUiState.hasRetryableSelection(): Boolean =
-    source.document != null &&
-        sourceKind != null &&
-        (!acceptsArchive || archive.document == null || archiveNamesMatch)
+    when (sourceMode) {
+        ReadingSourceMode.FILE ->
+            source.document != null &&
+                sourceKind != null &&
+                (!acceptsArchive || archive.document == null || archiveNamesMatch)
+        ReadingSourceMode.PASTED_TEXT -> pastedText.isNotBlank()
+    }
 
 @StringRes
 private fun readingRuntimeConflictMessage(conflict: RuntimeWorkConflict): Int =

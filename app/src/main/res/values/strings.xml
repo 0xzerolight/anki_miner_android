@@ -13,6 +13,12 @@
     <string name="reading_source_label">Reading source</string>
     <string name="reading_archive_label">Mokuro image archive</string>
     <string name="reading_series_label">Series name</string>
+    <string name="reading_source_mode_file">File</string>
+    <string name="reading_source_mode_text">Text</string>
+    <string name="reading_paste_placeholder">Paste text here…</string>
+    <string name="reading_paste_counter">Characters: %1$d</string>
+    <string name="reading_paste_truncated">Text was truncated at the maximum length.</string>
+    <string name="reading_paste_clear">Clear pasted text</string>
     <string name="reading_source_access_error">Access lost. Choose again.</string>
     <string name="reading_source_type_error">Supported: TXT, EPUB, SRT, ASS, SSA, VTT, MOKURO, ZIP, CBZ.</string>
     <string name="reading_archive_access_error">Access lost. Choose again.</string>

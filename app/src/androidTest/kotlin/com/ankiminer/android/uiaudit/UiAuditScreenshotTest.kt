@@ -129,6 +129,9 @@ class UiAuditScreenshotTest {
                         onCancel = {},
                         onRetry = {},
                         onReset = {},
+                        onSourceModeChanged = {},
+                        onPastedTextChanged = {},
+                        onClearPastedText = {},
                         modifier = Modifier.testTag(ReadingMiningTestTags.SCREEN),
                     )
                 }
