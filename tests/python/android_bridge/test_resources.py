@@ -1360,6 +1360,178 @@ def _ajt_audio_zip(
     return path
 
 
+def _collection_members(root: str = "user_files") -> dict[str, bytes]:
+    """Two upstream-shaped packs under *root*, as archive member -> bytes.
+
+    Mirrors the local-audio-yomichan layout: an ajt pack (index.json + media/)
+    beside an nhk16 pack (entries.json + audio/).
+    """
+    index = json.dumps(
+        {"headwords": {"猫": ["cat.mp3"]}, "files": {"cat.mp3": {"kana_reading": "ねこ"}}},
+        ensure_ascii=False,
+    ).encode("utf-8")
+    prefix = f"{root}/" if root else ""
+    return {
+        f"{prefix}jpod_files/index.json": index,
+        f"{prefix}jpod_files/media/cat.mp3": b"jpod audio",
+        f"{prefix}nhk16_files/entries.json": b"[]",
+        f"{prefix}nhk16_files/audio/20170616125910.mp3": b"nhk audio",
+    }
+
+
+def _zip_of(path: Path, members: dict[str, bytes]) -> Path:
+    with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for name, data in members.items():
+            archive.writestr(name, data)
+    return path
+
+
+def _tar_xz_of(path: Path, members: dict[str, bytes]) -> Path:
+    with tarfile.open(path, "w:xz") as archive:
+        for name, data in members.items():
+            info = tarfile.TarInfo(name)
+            info.size = len(data)
+            archive.addfile(info, io.BytesIO(data))
+    return path
+
+
+def test_audio_archive_kind_reads_the_container_from_its_bytes(tmp_path: Path) -> None:
+    members = {"index.json": b"{}"}
+    zipped = _zip_of(tmp_path / "named-wrong.tar.xz", members)
+    tarred = _tar_xz_of(tmp_path / "named-wrong.zip", members)
+    plain = tmp_path / "notes.txt"
+    plain.write_bytes(b"not an archive at all")
+
+    assert local_resources._audio_archive_kind(zipped) == "zip"
+    assert local_resources._audio_archive_kind(tarred) == "tar"
+    with pytest.raises(BridgeProtocolError) as failure:
+        local_resources._audio_archive_kind(plain)
+    assert failure.value.code == "invalid_resource_archive"
+
+
+def test_audio_pack_prefix_refuses_to_widen_the_extraction(tmp_path: Path) -> None:
+    assert local_resources._audio_pack_prefix("") == ()
+    assert local_resources._audio_pack_prefix("user_files/jpod_files") == (
+        "user_files",
+        "jpod_files",
+    )
+    for escape in ("../elsewhere", "/absolute", "user_files/../../etc", 7):
+        with pytest.raises(BridgeProtocolError) as failure:
+            local_resources._audio_pack_prefix(escape)
+        assert failure.value.code == "invalid_resource_request"
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="local-resource importers require the runtime engine dependency set",
+)
+@pytest.mark.parametrize("build", [_zip_of, _tar_xz_of], ids=["zip", "tar.xz"])
+def test_audio_pack_preflight_reports_every_pack_in_the_collection(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    build,
+) -> None:
+    _local_home(tmp_path, monkeypatch)
+    source = build(tmp_path / "collection", _collection_members())
+
+    preflight = decode_envelope(
+        local_resources.preflight_audio_pack(
+            {
+                "operationId": "audio-collection",
+                "sourcePath": str(source),
+                "displayName": "local-yomichan-audio-collection",
+            }
+        ),
+        expected_type="resource.audiopack.preflighted",
+    )
+
+    assert preflight.payload == {
+        "packs": [
+            {"packId": "jpod", "packPath": "user_files/jpod_files", "format": "ajt"},
+            {"packId": "nhk16", "packPath": "user_files/nhk16_files", "format": "nhk16"},
+        ]
+    }
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="local-resource importers require the runtime engine dependency set",
+)
+def test_audio_pack_preflight_descends_a_wrapper_directory(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _local_home(tmp_path, monkeypatch)
+    source = _zip_of(tmp_path / "wrapped.zip", _collection_members("release/user_files"))
+
+    preflight = decode_envelope(
+        local_resources.preflight_audio_pack(
+            {
+                "operationId": "audio-wrapped",
+                "sourcePath": str(source),
+                "displayName": "wrapped.zip",
+            }
+        ),
+        expected_type="resource.audiopack.preflighted",
+    )
+
+    assert [pack["packId"] for pack in preflight.payload["packs"]] == ["jpod", "nhk16"]
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="local-resource importers require the runtime engine dependency set",
+)
+def test_audio_pack_preflight_names_an_archive_that_holds_no_pack(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _local_home(tmp_path, monkeypatch)
+    source = _zip_of(tmp_path / "wrong.zip", {"notes/readme.txt": b"nothing to import"})
+
+    with pytest.raises(BridgeProtocolError) as failure:
+        local_resources.preflight_audio_pack(
+            {
+                "operationId": "audio-empty",
+                "sourcePath": str(source),
+                "displayName": "wrong.zip",
+            }
+        )
+
+    assert failure.value.code == "audio_pack_none_detected"
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="local-resource importers require the runtime engine dependency set",
+)
+def test_audio_pack_import_extracts_only_the_chosen_pack(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    home = _local_home(tmp_path, monkeypatch)
+    source = _tar_xz_of(tmp_path / "collection.tar.xz", _collection_members())
+
+    imported = decode_envelope(
+        local_resources.import_audio_pack(
+            {
+                "operationId": "audio-chosen",
+                "sourcePath": str(source),
+                "packId": "jpod",
+                "packPath": "user_files/jpod_files",
+                "overwrite": False,
+            }
+        ),
+        expected_type="resource.audiopack.imported",
+    )
+
+    assert imported.payload["packId"] == "jpod"
+    assert imported.payload["format"] == "ajt"
+    content = home / "audio_packs" / "jpod" / "content"
+    assert [path.name for path in sorted(content.rglob("*.mp3"))] == ["cat.mp3"]
+    assert not (home / "audio_packs" / "nhk16").exists()
+
+
 @pytest.mark.skipif(
     importlib.util.find_spec("requests") is None,
     reason="local-resource importers require the runtime engine dependency set",
@@ -1390,7 +1562,9 @@ def test_audio_pack_preflight_derives_id_without_copying_or_importing(
         expected_type="resource.audiopack.preflighted",
     )
 
-    assert preflight.payload == {"packId": "nhk16"}
+    assert preflight.payload == {
+        "packs": [{"packId": "nhk16", "packPath": "nhk16_files", "format": "ajt"}]
+    }
     assert not (home / "audio_packs").exists()
 
 
@@ -1416,7 +1590,9 @@ def test_audio_pack_preflight_uses_display_name_stem_for_flat_archive(
         expected_type="resource.audiopack.preflighted",
     )
 
-    assert preflight.payload == {"packId": "my-flat-audio"}
+    assert preflight.payload == {
+        "packs": [{"packId": "my-flat-audio", "packPath": "", "format": "ajt"}]
+    }
 
 
 @pytest.mark.skipif(
@@ -1443,7 +1619,9 @@ def test_audio_pack_preflight_keeps_detectable_legacy_root_name(
         expected_type="resource.audiopack.preflighted",
     )
 
-    assert preflight.payload == {"packId": "jpod"}
+    assert preflight.payload == {
+        "packs": [{"packId": "jpod", "packPath": "jpod_files", "format": "jpod_legacy"}]
+    }
 
 
 @pytest.mark.skipif(
@@ -1482,7 +1660,7 @@ def test_audio_extractor_reports_storage_exhaustion(
 
     monkeypatch.setattr(resources, "_write_all", storage_full)
     with pytest.raises(BridgeProtocolError) as failure:
-        local_resources._extract_audio_zip(
+        local_resources._extract_audio_archive(
             source,
             tmp_path / "extracted",
             resources._Operation("audio-storage"),
@@ -1503,7 +1681,7 @@ def test_audio_extractor_does_not_label_write_io_as_corrupt(
     )
 
     with pytest.raises(BridgeProtocolError) as failure:
-        local_resources._extract_audio_zip(
+        local_resources._extract_audio_archive(
             source,
             tmp_path / "extracted",
             resources._Operation("audio-io"),
@@ -1529,6 +1707,7 @@ def test_audio_pack_zip_is_private_self_contained_and_inventory_visible(
                 "operationId": "audio-one",
                 "sourcePath": str(source),
                 "packId": "fixture-pack",
+                "packPath": "fixture-pack",
                 "overwrite": False,
             }
         ),
@@ -1578,6 +1757,7 @@ def test_replacing_audio_pack_does_not_reuse_previous_run_cache(
         "operationId": "audio-first",
         "sourcePath": str(first_source),
         "packId": "fixture-pack",
+        "packPath": "fixture-pack",
         "overwrite": False,
     }
     local_resources.import_audio_pack(request)
@@ -1629,7 +1809,7 @@ def test_audio_pack_streaming_extractor_rejects_links(
         archive.writestr(info, "target")
 
     with pytest.raises(BridgeProtocolError) as failure:
-        local_resources._extract_audio_zip(
+        local_resources._extract_audio_archive(
             linked,
             tmp_path / "extracted",
             resources._Operation("audio-link"),
@@ -2322,6 +2502,7 @@ def test_audio_pack_import_reads_the_staged_zip_without_copying_it(
                 "operationId": "audio-no-copy",
                 "sourcePath": str(source),
                 "packId": "fixture-pack",
+                "packPath": "fixture-pack",
                 "overwrite": False,
             }
         ),

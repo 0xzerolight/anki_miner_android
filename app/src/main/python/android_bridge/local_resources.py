@@ -13,9 +13,11 @@ import contextlib
 import csv
 import json
 import logging
+import lzma
 import os
 import sqlite3
 import stat
+import tarfile
 import zipfile
 from collections.abc import Mapping
 from pathlib import Path, PurePosixPath
@@ -40,10 +42,19 @@ _KNOWN_WORD_FILE_LIMIT = 32 * 1024 * 1024
 # core._check_free_space during extraction, not by a fixed number here. Keep
 # these in step with AUDIO_ARCHIVE_CEILING_BYTES on the Kotlin side.
 _AUDIO_ARCHIVE_LIMIT = 16 * 1024 * 1024 * 1024
-_AUDIO_MEMBER_LIMIT = 200_000
+# The upstream local-audio-yomichan collection is one archive holding four packs
+# and over 250,000 expressions, so a ceiling near that count rejects the file
+# users actually download. Sized to clear the whole collection with room spare;
+# the real bound on an import is free space, checked during extraction.
+_AUDIO_MEMBER_LIMIT = 600_000
 _AUDIO_TOTAL_LIMIT = 16 * 1024 * 1024 * 1024
 _AUDIO_FILE_LIMIT = 512 * 1024 * 1024
 _AUDIO_JSON_LIMIT = 32 * 1024 * 1024
+# Deepest an index file can sit and still describe a pack: wrapper directory,
+# user_files, the pack folder, the file. Also how far pack detection descends
+# through single-child wrapper directories.
+_AUDIO_PACK_WRAPPER_DEPTH = 4
+_AUDIO_PACK_METADATA_LIMIT = 64
 _MAX_KNOWN_WORDS = 500_000
 _MAX_WORD_BYTES = 1024
 _MAX_KNOWN_WORD_PAGE = 200
@@ -530,188 +541,444 @@ def import_pitch(payload: Mapping[str, object]) -> str:
                 core._safe_rmtree(operation_root)
 
 
-def _audio_member_limit(info: zipfile.ZipInfo) -> int:
-    return _AUDIO_JSON_LIMIT if info.filename.lower().endswith(".json") else _AUDIO_FILE_LIMIT
+_ZIP_MAGIC = b"PK\x03\x04"
+_XZ_MAGIC = b"\xfd7zXZ\x00"
+_GZIP_MAGIC = b"\x1f\x8b"
+_TAR_USTAR_OFFSET = 257
 
 
-def _extract_audio_zip(path: Path, destination: Path, operation: core._Operation) -> None:
+def _audio_archive_kind(path: Path) -> str:
+    """Return ``"zip"`` or ``"tar"`` for *path*, decided by content not by name.
+
+    The upstream local-audio-yomichan collection ships as ``.tar.xz`` while
+    single packs are usually rezipped, and a document provider's reported type
+    is not evidence of either, so the archive family comes from the bytes.
+    """
+    with core._open_source(path) as (stream, _):
+        head = stream.read(_TAR_USTAR_OFFSET + 8)
+    if head.startswith(_ZIP_MAGIC):
+        return "zip"
+    if (
+        head.startswith(_XZ_MAGIC)
+        or head.startswith(_GZIP_MAGIC)
+        or head[_TAR_USTAR_OFFSET : _TAR_USTAR_OFFSET + 5] == b"ustar"
+    ):
+        return "tar"
+    raise _fail("invalid_resource_archive", "Audio archive is not a ZIP or a tar archive")
+
+
+def _audio_member_limit(name: str) -> int:
+    return _AUDIO_JSON_LIMIT if name.lower().endswith(".json") else _AUDIO_FILE_LIMIT
+
+
+def _accept_audio_member(
+    parts: tuple[str, ...],
+    size: int,
+    seen: set[tuple[str, ...]],
+) -> int:
+    """Record *parts* as seen and return the byte limit that applies to it."""
+    if parts in seen:
+        raise _fail("unsafe_resource_archive", "Audio pack contains a duplicate path")
+    seen.add(parts)
+    limit = _audio_member_limit(parts[-1])
+    if size < 0 or size > limit:
+        raise _fail("resource_archive_too_large", "Audio pack contains an oversized file")
+    return limit
+
+
+def _audio_pack_prefix(value: object) -> tuple[str, ...]:
+    """Validate the pack subtree the caller chose during preflight.
+
+    An empty string means the archive root is the pack. Anything else runs
+    through the same path guard archive members do, so a caller cannot widen
+    the extraction beyond a subtree the preflight actually reported.
+    """
+    if type(value) is not str:
+        raise _fail("invalid_resource_request", "packPath must be a string")
+    if not value:
+        return ()
+    text = core._bounded_text(value, name="packPath", max_bytes=1024)
     try:
-        # Open through _open_source so the staged ZIP keeps the no-symlink and
-        # changed-underneath-us guards it had when it was copied first.
-        with core._open_source(path) as (stream, _), zipfile.ZipFile(stream, "r") as archive:
-            infos = archive.infolist()
-            if not infos or len(infos) > _AUDIO_MEMBER_LIMIT:
+        return core._safe_archive_path(text, allow_directory_suffix=True)
+    except BridgeProtocolError as exc:
+        raise _fail("invalid_resource_request", "packPath is invalid") from exc
+
+
+def _under_prefix(parts: tuple[str, ...], prefix: tuple[str, ...]) -> tuple[str, ...] | None:
+    """Return *parts* relative to *prefix*, or None when it lies outside it."""
+    if not prefix:
+        return parts
+    if len(parts) <= len(prefix) or parts[: len(prefix)] != prefix:
+        return None
+    return parts[len(prefix) :]
+
+
+def _copy_audio_member(
+    source,
+    target: Path,
+    size: int,
+    limit: int,
+    operation: core._Operation,
+) -> int:
+    """Write *source* to *target*, bounded by the member's own declared length.
+
+    No per-file fsync: nothing here is durable until
+    :func:`_publish_indexed_dir` renames a complete tree, and a crash before
+    that discards the operation root, so a hundred thousand fsyncs buy latency
+    and nothing else. The index, its metadata, and the directory pass are still
+    synced at the points where atomicity is actually claimed.
+    """
+    written = 0
+    with target.open("xb", buffering=0) as output:
+        while True:
+            operation.check()
+            chunk = source.read(core._COPY_CHUNK_BYTES)
+            if not chunk:
+                break
+            written += len(chunk)
+            if written > size or written > limit:
+                raise _fail(
+                    "resource_archive_too_large",
+                    "Audio pack expands beyond its limit",
+                )
+            core._write_all(output, chunk)
+    if written != size:
+        raise _fail(
+            "invalid_resource_archive",
+            "Audio pack member length is inconsistent",
+        )
+    return written
+
+
+def _extract_audio_zip(
+    path: Path,
+    destination: Path,
+    operation: core._Operation,
+    prefix: tuple[str, ...],
+) -> None:
+    # Open through _open_source so the staged ZIP keeps the no-symlink and
+    # changed-underneath-us guards it had when it was copied first.
+    with core._open_source(path) as (stream, _), zipfile.ZipFile(stream, "r") as archive:
+        infos = archive.infolist()
+        if not infos or len(infos) > _AUDIO_MEMBER_LIMIT:
+            raise _fail(
+                "resource_archive_too_large",
+                "Audio pack member count is outside its limit",
+            )
+        # Two passes over the central directory: the first validates every
+        # member and totals only the selected subtree, so a single pack out of
+        # the four-pack collection reserves and writes its own size rather than
+        # the whole archive's.
+        seen: set[tuple[str, ...]] = set()
+        selected: dict[int, tuple[str, ...]] = {}
+        declared_total = 0
+        for index, info in enumerate(infos):
+            operation.check()
+            parts = core._safe_archive_path(info.filename, allow_directory_suffix=info.is_dir())
+            if info.flag_bits & 0x1 or not core._zip_entry_is_safe_type(info):
+                raise _fail(
+                    "unsafe_resource_archive",
+                    "Audio pack contains an encrypted, linked, or special file",
+                )
+            _accept_audio_member(parts, 0 if info.is_dir() else info.file_size, seen)
+            relative = _under_prefix(parts, prefix)
+            if relative is None:
+                continue
+            selected[index] = relative
+            if not info.is_dir():
+                declared_total += info.file_size
+        if declared_total <= 0 or declared_total > _AUDIO_TOTAL_LIMIT:
+            raise _fail("resource_archive_too_large", "Audio pack expands beyond its limit")
+        core._check_free_space(destination.parent, declared_total)
+        destination.mkdir(parents=True)
+        actual_total = 0
+        for index, info in enumerate(infos):
+            relative = selected.get(index)
+            if relative is None:
+                continue
+            operation.check()
+            target = destination.joinpath(*relative)
+            if info.is_dir():
+                if target.exists():
+                    if target.is_symlink() or not target.is_dir():
+                        raise _fail(
+                            "unsafe_resource_archive",
+                            "Audio pack directory conflicts with a file",
+                        )
+                else:
+                    target.mkdir(parents=True)
+                continue
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with archive.open(info, "r") as source:
+                actual_total += _copy_audio_member(
+                    source,
+                    target,
+                    info.file_size,
+                    _audio_member_limit(relative[-1]),
+                    operation,
+                )
+            if actual_total > declared_total:
+                raise _fail("resource_archive_too_large", "Audio pack expands beyond its limit")
+        if actual_total != declared_total:
+            raise _fail("invalid_resource_archive", "Audio pack length is inconsistent")
+
+
+def _extract_audio_tar(
+    path: Path,
+    destination: Path,
+    operation: core._Operation,
+    prefix: tuple[str, ...],
+) -> None:
+    """Extract the *prefix* subtree of a streamed tar archive.
+
+    A tar has no central directory, so unlike the ZIP path there is no total to
+    reserve against or to reconcile at the end. The member count, the per-file
+    ceiling, and the running total are enforced as the stream is read, and a
+    device that fills up surfaces through ``_raise_if_storage_exhausted``.
+    """
+    destination.mkdir(parents=True)
+    seen: set[tuple[str, ...]] = set()
+    members = 0
+    actual_total = 0
+    with core._open_source(path) as (stream, _), tarfile.open(fileobj=stream, mode="r|*") as archive:
+        for member in archive:
+            operation.check()
+            members += 1
+            if members > _AUDIO_MEMBER_LIMIT:
                 raise _fail(
                     "resource_archive_too_large",
                     "Audio pack member count is outside its limit",
                 )
-            declared_total = sum(info.file_size for info in infos if not info.is_dir())
-            if declared_total <= 0 or declared_total > _AUDIO_TOTAL_LIMIT:
+            parts = core._safe_archive_path(member.name, allow_directory_suffix=False)
+            if not member.isdir() and not member.isreg():
+                raise _fail(
+                    "unsafe_resource_archive",
+                    "Audio pack contains an encrypted, linked, or special file",
+                )
+            limit = _accept_audio_member(parts, 0 if member.isdir() else member.size, seen)
+            relative = _under_prefix(parts, prefix)
+            if relative is None:
+                continue
+            target = destination.joinpath(*relative)
+            if member.isdir():
+                if target.exists():
+                    if target.is_symlink() or not target.is_dir():
+                        raise _fail(
+                            "unsafe_resource_archive",
+                            "Audio pack directory conflicts with a file",
+                        )
+                else:
+                    target.mkdir(parents=True)
+                continue
+            source = archive.extractfile(member)
+            if source is None:
+                raise _fail("unsafe_resource_archive", "Audio pack member cannot be read")
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with source:
+                actual_total += _copy_audio_member(source, target, member.size, limit, operation)
+            if actual_total > _AUDIO_TOTAL_LIMIT:
                 raise _fail("resource_archive_too_large", "Audio pack expands beyond its limit")
-            core._check_free_space(destination.parent, declared_total)
-            destination.mkdir(parents=True)
-            seen: set[tuple[str, ...]] = set()
-            actual_total = 0
-            for info in infos:
-                operation.check()
-                parts = core._safe_archive_path(info.filename, allow_directory_suffix=info.is_dir())
-                if parts in seen:
-                    raise _fail(
-                        "unsafe_resource_archive",
-                        "Audio pack contains a duplicate path",
-                    )
-                seen.add(parts)
-                if info.flag_bits & 0x1 or not core._zip_entry_is_safe_type(info):
-                    raise _fail(
-                        "unsafe_resource_archive",
-                        "Audio pack contains an encrypted, linked, or special file",
-                    )
-                target = destination.joinpath(*parts)
-                if info.is_dir():
-                    if target.exists():
-                        if target.is_symlink() or not target.is_dir():
-                            raise _fail(
-                                "unsafe_resource_archive",
-                                "Audio pack directory conflicts with a file",
-                            )
-                    else:
-                        target.mkdir(parents=True)
-                    continue
-                per_file_limit = _audio_member_limit(info)
-                if info.file_size < 0 or info.file_size > per_file_limit:
-                    raise _fail(
-                        "resource_archive_too_large",
-                        "Audio pack contains an oversized file",
-                    )
-                target.parent.mkdir(parents=True, exist_ok=True)
-                written = 0
-                with archive.open(info, "r") as source, target.open("xb", buffering=0) as output:
-                    while True:
-                        operation.check()
-                        chunk = source.read(core._COPY_CHUNK_BYTES)
-                        if not chunk:
-                            break
-                        written += len(chunk)
-                        actual_total += len(chunk)
-                        if (
-                            written > info.file_size
-                            or written > per_file_limit
-                            or actual_total > declared_total
-                            or actual_total > _AUDIO_TOTAL_LIMIT
-                        ):
-                            raise _fail(
-                                "resource_archive_too_large",
-                                "Audio pack expands beyond its limit",
-                            )
-                        core._write_all(output, chunk)
-                    os.fsync(output.fileno())
-                if written != info.file_size:
-                    raise _fail(
-                        "invalid_resource_archive",
-                        "Audio pack member length is inconsistent",
-                    )
-            if actual_total != declared_total:
-                raise _fail("invalid_resource_archive", "Audio pack length is inconsistent")
+    if actual_total <= 0:
+        raise _fail("resource_archive_too_large", "Audio pack expands beyond its limit")
+
+
+def _extract_audio_archive(
+    path: Path,
+    destination: Path,
+    operation: core._Operation,
+    *,
+    prefix: tuple[str, ...] = (),
+) -> None:
+    """Extract the *prefix* subtree of a staged audio archive, ZIP or tar."""
+    kind = _audio_archive_kind(path)
+    try:
+        if kind == "zip":
+            _extract_audio_zip(path, destination, operation, prefix)
+        else:
+            _extract_audio_tar(path, destination, operation, prefix)
     except BridgeProtocolError:
         raise
     except OSError as exc:
         core._raise_if_storage_exhausted(exc)
         raise _fail("resource_install_failed", "Cannot extract audio pack") from exc
-    except (zipfile.BadZipFile, RuntimeError, EOFError) as exc:
+    except (zipfile.BadZipFile, tarfile.TarError, lzma.LZMAError, RuntimeError, EOFError) as exc:
         raise _fail("invalid_resource_archive", "Audio pack archive is corrupt") from exc
 
 
-def _detect_audio_pack_root(extracted: Path) -> Path:
+def _audio_pack_children(directory: Path) -> list[Path]:
+    return [
+        child
+        for child in sorted(directory.iterdir())
+        if child.is_dir() and not child.is_symlink() and child.name != "__MACOSX"
+    ]
+
+
+def _detect_audio_pack_roots(projected: Path) -> list[Path]:
+    """Every supported pack in the projected tree, at the outermost level that matches.
+
+    Archives arrive shaped three ways: the pack folder alone, one ``user_files``
+    holding all four upstream packs, or either of those inside a wrapper
+    directory the archiver added. Children are tested before the directory
+    itself because the forvo and jpod_legacy detectors are content sniffs a
+    parent of real packs can satisfy by accident.
+    """
     from anki_miner.services.audio_packs.formats import detect_pack_format
 
-    if detect_pack_format(extracted) is not None:
-        return extracted
-    candidates = [
-        child for child in extracted.iterdir() if child.is_dir() and not child.is_symlink() and child.name != "__MACOSX"
-    ]
-    matches = [child for child in candidates if detect_pack_format(child) is not None]
-    if len(matches) != 1:
-        raise _fail(
-            "audio_pack_import_failed",
-            "The ZIP must contain exactly one supported local audio pack",
-        )
-    return matches[0]
+    current = projected
+    for _ in range(_AUDIO_PACK_WRAPPER_DEPTH):
+        children = _audio_pack_children(current)
+        matches = [child for child in children if detect_pack_format(child) is not None]
+        if matches:
+            return matches
+        if detect_pack_format(current) is not None:
+            return [current]
+        if len(children) != 1:
+            return []
+        current = children[0]
+    return []
 
 
-def _project_audio_pack_zip(path: Path, destination: Path, operation: core._Operation) -> None:
+def _projected_member_kind(parts: tuple[str, ...], audio_extensions: set[str]) -> str | None:
+    """Whether a member matters to detection: its metadata, its shape, or neither.
+
+    Only ``index.json`` and ``entries.json`` decide a format, and they sit at
+    most four levels deep — wrapper, ``user_files``, the pack folder, the file.
+    Audio members are materialised empty because the detectors only ever ask
+    where audio files are, never what is in them.
+    """
+    name = parts[-1].lower()
+    if name in {"index.json", "entries.json"} and len(parts) <= _AUDIO_PACK_WRAPPER_DEPTH:
+        return "json"
+    if PurePosixPath(name).suffix in audio_extensions:
+        return "audio"
+    return None
+
+
+def _project_audio_archive(path: Path, destination: Path, operation: core._Operation) -> None:
+    """Reproduce the archive's shape without copying its media.
+
+    The result is a tree of empty audio files plus the real index metadata,
+    which is everything ``detect_pack_format`` reads. It costs one pass and a
+    few megabytes rather than the multi-gigabyte extraction the import itself
+    performs, so the user picks a pack before committing to that.
+    """
     from anki_miner.services.audio_packs.formats import AUDIO_EXTENSIONS
 
+    kind = _audio_archive_kind(path)
     try:
-        with core._open_source(path) as (stream, _), zipfile.ZipFile(stream, "r") as archive:
-            infos = archive.infolist()
-            if not infos or len(infos) > _AUDIO_MEMBER_LIMIT:
-                raise _fail(
-                    "resource_archive_too_large",
-                    "Audio pack member count is outside its limit",
-                )
-            declared_total = sum(info.file_size for info in infos if not info.is_dir())
-            if declared_total <= 0 or declared_total > _AUDIO_TOTAL_LIMIT:
-                raise _fail("resource_archive_too_large", "Audio pack expands beyond its limit")
-            destination.mkdir(parents=True)
-            seen: set[tuple[str, ...]] = set()
-            for info in infos:
-                operation.check()
-                parts = core._safe_archive_path(info.filename, allow_directory_suffix=info.is_dir())
-                if parts in seen:
-                    raise _fail(
-                        "unsafe_resource_archive",
-                        "Audio pack contains a duplicate path",
-                    )
-                seen.add(parts)
-                if info.flag_bits & 0x1 or not core._zip_entry_is_safe_type(info):
-                    raise _fail(
-                        "unsafe_resource_archive",
-                        "Audio pack contains an encrypted, linked, or special file",
-                    )
-                if info.is_dir():
-                    continue
-                per_file_limit = _audio_member_limit(info)
-                if info.file_size < 0 or info.file_size > per_file_limit:
-                    raise _fail(
-                        "resource_archive_too_large",
-                        "Audio pack contains an oversized file",
-                    )
-                target = destination.joinpath(*parts)
-                name = target.name.lower()
-                is_detection_json = name in {"index.json", "entries.json"} and len(parts) <= 2
-                is_audio = target.suffix.lower() in AUDIO_EXTENSIONS
-                if not is_detection_json and not is_audio:
-                    continue
-                target.parent.mkdir(parents=True, exist_ok=True)
-                if is_audio:
-                    target.touch(exist_ok=False)
-                    continue
-                written = 0
-                with archive.open(info, "r") as source, target.open("xb", buffering=0) as output:
-                    while True:
-                        operation.check()
-                        chunk = source.read(core._COPY_CHUNK_BYTES)
-                        if not chunk:
-                            break
-                        written += len(chunk)
-                        if written > info.file_size or written > _AUDIO_JSON_LIMIT:
-                            raise _fail(
-                                "resource_archive_too_large",
-                                "Audio pack metadata expands beyond its limit",
-                            )
-                        core._write_all(output, chunk)
-                if written != info.file_size:
-                    raise _fail(
-                        "invalid_resource_archive",
-                        "Audio pack member length is inconsistent",
-                    )
+        if kind == "zip":
+            _project_audio_zip(path, destination, operation, AUDIO_EXTENSIONS)
+        else:
+            _project_audio_tar(path, destination, operation, AUDIO_EXTENSIONS)
     except BridgeProtocolError:
         raise
     except OSError as exc:
         core._raise_if_storage_exhausted(exc)
         raise _fail("resource_install_failed", "Cannot inspect audio pack") from exc
-    except (zipfile.BadZipFile, RuntimeError, EOFError) as exc:
+    except (zipfile.BadZipFile, tarfile.TarError, lzma.LZMAError, RuntimeError, EOFError) as exc:
         raise _fail("invalid_resource_archive", "Audio pack archive is corrupt") from exc
+
+
+def _project_audio_zip(
+    path: Path,
+    destination: Path,
+    operation: core._Operation,
+    audio_extensions: set[str],
+) -> None:
+    with core._open_source(path) as (stream, _), zipfile.ZipFile(stream, "r") as archive:
+        infos = archive.infolist()
+        if not infos or len(infos) > _AUDIO_MEMBER_LIMIT:
+            raise _fail(
+                "resource_archive_too_large",
+                "Audio pack member count is outside its limit",
+            )
+        declared_total = sum(info.file_size for info in infos if not info.is_dir())
+        if declared_total <= 0 or declared_total > _AUDIO_TOTAL_LIMIT:
+            raise _fail("resource_archive_too_large", "Audio pack expands beyond its limit")
+        destination.mkdir(parents=True)
+        seen: set[tuple[str, ...]] = set()
+        metadata_files = 0
+        for info in infos:
+            operation.check()
+            parts = core._safe_archive_path(info.filename, allow_directory_suffix=info.is_dir())
+            if info.flag_bits & 0x1 or not core._zip_entry_is_safe_type(info):
+                raise _fail(
+                    "unsafe_resource_archive",
+                    "Audio pack contains an encrypted, linked, or special file",
+                )
+            _accept_audio_member(parts, 0 if info.is_dir() else info.file_size, seen)
+            if info.is_dir():
+                continue
+            member_kind = _projected_member_kind(parts, audio_extensions)
+            if member_kind is None:
+                continue
+            target = destination.joinpath(*parts)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if member_kind == "audio":
+                target.touch(exist_ok=False)
+                continue
+            metadata_files = _accept_projected_metadata(metadata_files)
+            with archive.open(info, "r") as source:
+                _copy_audio_member(source, target, info.file_size, _AUDIO_JSON_LIMIT, operation)
+
+
+def _project_audio_tar(
+    path: Path,
+    destination: Path,
+    operation: core._Operation,
+    audio_extensions: set[str],
+) -> None:
+    destination.mkdir(parents=True)
+    seen: set[tuple[str, ...]] = set()
+    members = 0
+    metadata_files = 0
+    with core._open_source(path) as (stream, _), tarfile.open(fileobj=stream, mode="r|*") as archive:
+        for member in archive:
+            operation.check()
+            members += 1
+            if members > _AUDIO_MEMBER_LIMIT:
+                raise _fail(
+                    "resource_archive_too_large",
+                    "Audio pack member count is outside its limit",
+                )
+            parts = core._safe_archive_path(member.name, allow_directory_suffix=False)
+            if not member.isdir() and not member.isreg():
+                raise _fail(
+                    "unsafe_resource_archive",
+                    "Audio pack contains an encrypted, linked, or special file",
+                )
+            _accept_audio_member(parts, 0 if member.isdir() else member.size, seen)
+            if member.isdir():
+                continue
+            member_kind = _projected_member_kind(parts, audio_extensions)
+            if member_kind is None:
+                continue
+            target = destination.joinpath(*parts)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if member_kind == "audio":
+                target.touch(exist_ok=False)
+                continue
+            metadata_files = _accept_projected_metadata(metadata_files)
+            source = archive.extractfile(member)
+            if source is None:
+                raise _fail("unsafe_resource_archive", "Audio pack member cannot be read")
+            with source:
+                _copy_audio_member(source, target, member.size, _AUDIO_JSON_LIMIT, operation)
+
+
+def _accept_projected_metadata(count: int) -> int:
+    """Bound how much index metadata a preflight will read.
+
+    Every pack contributes one index file, so an archive claiming dozens is not
+    a collection — it is an attempt to make detection do the copying that the
+    projection exists to avoid.
+    """
+    if count >= _AUDIO_PACK_METADATA_LIMIT:
+        raise _fail(
+            "resource_archive_too_large",
+            "Audio archive declares too many pack indexes",
+        )
+    return count + 1
 
 
 def preflight_audio_pack(payload: Mapping[str, object]) -> str:
@@ -731,41 +998,54 @@ def preflight_audio_pack(payload: Mapping[str, object]) -> str:
         operation_root.mkdir(parents=True)
         try:
             projected = operation_root / "projected"
-            _project_audio_pack_zip(source, projected, operation)
-            pack_root = _detect_audio_pack_root(projected)
+            _project_audio_archive(source, projected, operation)
+            pack_roots = _detect_audio_pack_roots(projected)
+            if not pack_roots:
+                raise _fail(
+                    "audio_pack_none_detected",
+                    "The archive holds no supported local audio pack",
+                )
 
+            from anki_miner.services.audio_packs.formats import detect_pack_format
             from anki_miner.services.audio_packs.importer import derive_pack_id
 
-            folder_name = pack_root.name
-            if pack_root == projected:
-                from anki_miner.services.audio_packs.formats import detect_pack_format
-
-                real_roots = [
-                    child
-                    for child in projected.iterdir()
-                    if child.is_dir()
-                    and not child.is_symlink()
-                    and child.name != "__MACOSX"
-                    and detect_pack_format(child) is not None
-                ]
-                folder_name = real_roots[0].name if len(real_roots) == 1 else PurePosixPath(display_name).stem
-            pack_id = derive_pack_id(folder_name)
-            if pack_id == "jpod101":
-                raise _fail(
-                    "audio_pack_id_reserved",
-                    "Derived audio-pack ID 'jpod101' is reserved",
+            packs: list[dict[str, object]] = []
+            for pack_root in pack_roots:
+                operation.check()
+                # A pack that is itself the archive root has no folder name to
+                # derive from, so the document name stands in for it.
+                folder_name = (
+                    PurePosixPath(display_name).stem if pack_root == projected else pack_root.name
                 )
-            try:
-                core._slot_id(pack_id)
-            except BridgeProtocolError as exc:
+                pack_id = derive_pack_id(folder_name)
+                if pack_id == "jpod101":
+                    raise _fail(
+                        "audio_pack_id_reserved",
+                        "Derived audio-pack ID 'jpod101' is reserved",
+                    )
+                try:
+                    core._slot_id(pack_id)
+                except BridgeProtocolError as exc:
+                    raise _fail(
+                        "audio_pack_import_failed",
+                        "Derived audio-pack ID is invalid",
+                    ) from exc
+                packs.append(
+                    {
+                        "packId": pack_id,
+                        # Joined from parts rather than as_posix(): a root that
+                        # is the archive itself relativises to ".", which the
+                        # prefix guard rejects. Its parts are empty.
+                        "packPath": "/".join(pack_root.relative_to(projected).parts),
+                        "format": detect_pack_format(pack_root) or "",
+                    },
+                )
+            if len({pack["packId"] for pack in packs}) != len(packs):
                 raise _fail(
                     "audio_pack_import_failed",
-                    "Derived audio-pack ID is invalid",
-                ) from exc
-            return encode_message(
-                "resource.audiopack.preflighted",
-                {"packId": pack_id},
-            )
+                    "The archive holds two packs that derive the same ID",
+                )
+            return encode_message("resource.audiopack.preflighted", {"packs": packs})
         finally:
             if operation_root.exists():
                 core._safe_rmtree(operation_root)
@@ -794,19 +1074,24 @@ def _validate_audio_index(db_path: Path, content: Path, operation: core._Operati
                         "audio_pack_import_failed",
                         "Audio pack index contains an unsafe media path",
                     )
-                candidate = root.joinpath(*relative.parts).resolve()
-                try:
-                    candidate.relative_to(root)
-                except ValueError:
+                # Containment is already proved by the component check above —
+                # no absolute path, no "..", no empty part — so one lstat per row
+                # is enough. Resolving every row instead costs a full symlink
+                # walk per entry across hundreds of thousands of rows.
+                candidate = root.joinpath(*relative.parts)
+                if candidate.suffix.lower() not in AUDIO_EXTENSIONS:
                     raise _fail(
                         "audio_pack_import_failed",
-                        "Audio pack media escapes its private root",
+                        "Audio pack index references missing media",
+                    )
+                try:
+                    scanned = candidate.lstat()
+                except OSError:
+                    raise _fail(
+                        "audio_pack_import_failed",
+                        "Audio pack index references missing media",
                     ) from None
-                if (
-                    candidate.suffix.lower() not in AUDIO_EXTENSIONS
-                    or not candidate.is_file()
-                    or candidate.is_symlink()
-                ):
+                if not stat.S_ISREG(scanned.st_mode):
                     raise _fail(
                         "audio_pack_import_failed",
                         "Audio pack index references missing media",
@@ -820,7 +1105,7 @@ def _validate_audio_index(db_path: Path, content: Path, operation: core._Operati
 def import_audio_pack(payload: Mapping[str, object]) -> str:
     core._exact(
         payload,
-        {"operationId", "sourcePath", "packId", "overwrite"},
+        {"operationId", "sourcePath", "packId", "packPath", "overwrite"},
         code="invalid_resource_request",
     )
     operation_id = core._operation_id(payload["operationId"])
@@ -828,6 +1113,7 @@ def import_audio_pack(payload: Mapping[str, object]) -> str:
     pack_id = core._slot_id(payload["packId"])
     if pack_id == "jpod101":
         raise _fail("invalid_resource_request", "packId is reserved")
+    pack_prefix = _audio_pack_prefix(payload["packPath"])
     overwrite = _boolean(payload["overwrite"], label="overwrite")
     home = Path(require_initialized())
     operation_root = _work_root(home, operation_id)
@@ -846,8 +1132,17 @@ def import_audio_pack(payload: Mapping[str, object]) -> str:
                 maximum_bytes=_AUDIO_ARCHIVE_LIMIT,
             )
             extracted = operation_root / "extracted"
-            _extract_audio_zip(copied.path, extracted, operation)
-            pack_root = _detect_audio_pack_root(extracted)
+            # Only the chosen subtree is extracted, so importing one pack out of
+            # the four-pack collection costs that pack's bytes, not the whole
+            # archive's.
+            _extract_audio_archive(copied.path, extracted, operation, prefix=pack_prefix)
+            pack_roots = _detect_audio_pack_roots(extracted)
+            if len(pack_roots) != 1:
+                raise _fail(
+                    "audio_pack_none_detected",
+                    "The chosen path does not hold one supported local audio pack",
+                )
+            pack_root = pack_roots[0]
             publication_parent = operation_root / "publication"
             candidate = publication_parent / pack_id
             candidate.mkdir(parents=True)
@@ -875,8 +1170,8 @@ def import_audio_pack(payload: Mapping[str, object]) -> str:
             except (SetupError, ValueError, UnicodeError, json.JSONDecodeError) as exc:
                 operation.check()
                 raise _fail(
-                    "audio_pack_import_failed",
-                    "The ZIP does not contain a supported local audio pack",
+                    "audio_pack_index_malformed",
+                    "The chosen pack's index could not be read",
                 ) from exc
             operation.check()
             built = index_root / pack_id
