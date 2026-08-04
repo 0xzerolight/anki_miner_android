@@ -1,8 +1,5 @@
 package com.ankiminer.android.vm
 
-import com.ankiminer.android.data.resources.FrequencySourceFormat
-import com.ankiminer.android.data.resources.PitchAccentSourceFormat
-
 /** Which import flow raised a pending replace, so the dialog can word itself correctly. */
 internal enum class ResourceReplaceKind {
     CATALOG_DICTIONARY,
@@ -25,7 +22,7 @@ internal enum class ResourceReplaceKind {
  * authorises overwriting with it.
  *
  * @param identity the id actually written, which for a name-matched source is the *existing* id
- *   rather than the one derived from the typed name.
+ *   rather than the one derived from the picked document's name.
  * @param repair set when the slot is occupied but unusable, which changes the dialog's wording from
  *   replace to repair.
  */
@@ -35,9 +32,5 @@ internal data class PendingResourceReplace(
     val installedLabel: String,
     /** Null for catalog dictionaries, which download rather than import a picked file. */
     val uri: String? = null,
-    /** Snapshotted before the picker opens so confirmation cannot use restored draft defaults. */
-    val sourceName: String? = null,
-    val frequencyFormat: FrequencySourceFormat? = null,
-    val pitchFormat: PitchAccentSourceFormat? = null,
     val repair: Boolean = false,
 )

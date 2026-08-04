@@ -829,6 +829,14 @@ class ResourceManagerTest {
         var lastMaximumBytes: Long? = null
         var sourceText: String = "fixture"
 
+        override suspend fun readLeadingBytes(
+            sourceUri: String,
+            maximumBytes: Int,
+        ): ByteArray {
+            val bytes = sourceText.encodeToByteArray()
+            return bytes.copyOf(minOf(maximumBytes, bytes.size))
+        }
+
         override fun stage(
             sourceUri: String,
             operationId: String,

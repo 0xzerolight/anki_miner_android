@@ -353,6 +353,7 @@ class AnkiMinerApplication : Application() {
         val resourceStagingRoot = File(noBackupFilesDir, "resource-staging")
         AndroidResourceManager(
             safBroker = safBroker,
+            safSelectionInventory = safSelectionInventory,
             bridge = pyBridge,
             tokenizerResources = tokenizerResourceProvider,
             bridgeFilesRoot = filesDir,

@@ -481,8 +481,6 @@ private fun LazyListScope.dictionarySettings(
     settingsCard("pitch") {
         PitchImportCard(
             state = setup,
-            onNameChanged = setupViewModel::setPitchSourceName,
-            onFormatChanged = setupViewModel::setPitchFormat,
             onImport = callbacks.onImportPitch,
             inlineFailure = {
                 ResourceOriginFailure(
@@ -662,8 +660,6 @@ private fun LazyListScope.frequencySettings(
     settingsCard("frequency-import") {
         FrequencyImportCard(
             state = setup,
-            onNameChanged = setupViewModel::setFrequencySourceName,
-            onFormatChanged = setupViewModel::setFrequencyFormat,
             onImport = callbacks.onImportFrequency,
             inlineFailure = {
                 ResourceOriginFailure(

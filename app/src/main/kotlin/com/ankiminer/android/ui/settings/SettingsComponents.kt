@@ -61,14 +61,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.ankiminer.android.R
 import com.ankiminer.android.anki.provider.AnkiProviderReadiness
-import com.ankiminer.android.data.resources.FrequencySourceFormat
 import com.ankiminer.android.data.resources.ImportedAudioPack
 import com.ankiminer.android.data.resources.ImportedFrequencySource
 import com.ankiminer.android.data.resources.ImportedKnownWords
 import com.ankiminer.android.data.resources.ImportedPitchSource
 import com.ankiminer.android.data.resources.KnownWordsSourceFormat
 import com.ankiminer.android.data.resources.LocalResourceImportResult
-import com.ankiminer.android.data.resources.PitchAccentSourceFormat
 import com.ankiminer.android.data.resources.ResourceOperationPhase
 import com.ankiminer.android.data.resources.ResourceOperationProgress
 import com.ankiminer.android.data.resources.ResourceProgressUnit
@@ -743,27 +741,6 @@ internal fun LocalImportResultCard(result: LocalResourceImportResult) {
         }
     }
 }
-
-@Composable
-internal fun frequencyFormatLabel(format: FrequencySourceFormat): String =
-    stringResource(
-        when (format) {
-            FrequencySourceFormat.YOMITAN_ZIP -> R.string.resource_format_yomitan_zip
-            FrequencySourceFormat.CSV -> R.string.resource_format_csv
-            FrequencySourceFormat.TSV -> R.string.resource_format_tsv
-            FrequencySourceFormat.TEXT -> R.string.resource_format_text
-        },
-    )
-
-@Composable
-internal fun pitchFormatLabel(format: PitchAccentSourceFormat): String =
-    stringResource(
-        when (format) {
-            PitchAccentSourceFormat.YOMITAN_ZIP -> R.string.resource_format_yomitan_zip
-            PitchAccentSourceFormat.CSV -> R.string.resource_format_csv
-            PitchAccentSourceFormat.TSV -> R.string.resource_format_tsv
-        },
-    )
 
 @Composable
 internal fun knownWordsFormatLabel(format: KnownWordsSourceFormat): String =
