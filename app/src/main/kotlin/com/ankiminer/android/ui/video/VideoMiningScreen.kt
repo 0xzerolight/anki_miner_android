@@ -109,7 +109,7 @@ fun VideoMiningScreen(
     onDismissCommandError: () -> Unit,
     onDismissTimingPreviewError: () -> Unit = {},
     onStart: () -> Unit,
-    onFocusCandidate: (String) -> Unit,
+    onFocusCandidate: (String?) -> Unit,
     onSetCandidateSelected: (String, Boolean) -> Unit,
     onMarkCandidateKnown: (String, Boolean) -> Unit,
     onSetSelectionForVisible: (List<String>, Boolean) -> Unit,
@@ -739,7 +739,7 @@ private fun LazyListScope.curationItems(
     onQueryChanged: (String) -> Unit,
     onFilterChanged: (CurationFilter) -> Unit,
     onSortChanged: (CurationSort) -> Unit,
-    onFocusCandidate: (String) -> Unit,
+    onFocusCandidate: (String?) -> Unit,
     onSetCandidateSelected: (String, Boolean) -> Unit,
     onMarkCandidateKnown: (String, Boolean) -> Unit,
     onSetSelectionForVisible: (List<String>, Boolean) -> Unit,
@@ -871,7 +871,9 @@ private fun LazyListScope.curationItems(
         val candidateTestTag = VideoMiningTestTags.candidate(candidate.candidateId)
         val toggleTestTag = VideoMiningTestTags.candidateToggle(candidate.candidateId)
         val onToggle: (Boolean) -> Unit = { onSetCandidateSelected(candidate.candidateId, it) }
-        val onFocus: () -> Unit = { onFocusCandidate(candidate.candidateId) }
+        val onFocus: () -> Unit = {
+            onFocusCandidate(candidate.candidateId.takeUnless { expanded })
+        }
         item(
             key = "candidate:${candidate.candidateId}",
             contentType = "candidate",
