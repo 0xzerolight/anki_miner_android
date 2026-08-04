@@ -191,6 +191,64 @@ class BridgeJsonCodecTest {
     }
 
     @Test
+    fun `text reading run encoder preserves text suffix and typed nulls`() {
+        val raw = BridgeJsonCodec.encodeReadingRun(readingRequest())
+
+        assertEquals(
+            "{\"schemaVersion\":1,\"type\":\"mining.reading.run\",\"payload\":{\"sourceKind\":\"text\",\"sourcePath\":\"/cache/pasted.text\",\"imageArchivePath\":null,\"seriesName\":null,\"cacheDir\":\"/cache\",\"nativeLibraryDir\":\"/native\",\"configSnapshot\":{\"settings\":{},\"androidTtsEnabled\":false}}}",
+            raw,
+        )
+    }
+
+    @Test
+    fun `text reading run encode decode round trip preserves request`() {
+        val request = readingRequest()
+
+        assertEquals(
+            request,
+            (BridgeJsonCodec.decode(BridgeJsonCodec.encodeReadingRun(request)) as BridgeMessage.ReadingRun).request,
+        )
+    }
+
+    @Test
+    fun `text reading run rejects a txt source suffix`() {
+        assertThrows(BridgeProtocolException::class.java) {
+            BridgeJsonCodec.encodeReadingRun(readingRequest(sourcePath = "/cache/pasted.txt"))
+        }
+    }
+
+    @Test
+    fun `txt reading run rejects a text source suffix`() {
+        assertThrows(BridgeProtocolException::class.java) {
+            BridgeJsonCodec.encodeReadingRun(
+                readingRequest(
+                    sourceKind = ReadingMiningSourceKind.TXT,
+                    sourcePath = "/cache/pasted.text",
+                ),
+            )
+        }
+    }
+
+    @Test
+    fun `text reading run rejects subtitle and mokuro metadata`() {
+        listOf(
+            readingRequest(seriesName = "Series"),
+            readingRequest(imageArchivePath = "/cache/pasted.zip"),
+        ).forEach { request ->
+            assertThrows(BridgeProtocolException::class.java) {
+                BridgeJsonCodec.encodeReadingRun(request)
+            }
+        }
+    }
+
+    @Test
+    fun `text reading run rejects a source outside cache dir`() {
+        assertThrows(BridgeProtocolException::class.java) {
+            BridgeJsonCodec.encodeReadingRun(readingRequest(sourcePath = "/outside/pasted.text"))
+        }
+    }
+
+    @Test
     fun `curation request is typed and response validates candidate ownership`() {
         val request = curationRequest()
         val rawRequest =
@@ -821,6 +879,22 @@ class BridgeJsonCodecTest {
             sourceLabel = null,
             audioTrackOverride = null,
             audioOnly = audioOnly,
+            cacheDir = "/cache",
+            nativeLibraryDir = "/native",
+            configSnapshot = MiningConfigSnapshot(emptyMap(), androidTtsEnabled = false),
+        )
+
+    private fun readingRequest(
+        sourceKind: ReadingMiningSourceKind = ReadingMiningSourceKind.TEXT,
+        sourcePath: String = "/cache/pasted.text",
+        imageArchivePath: String? = null,
+        seriesName: String? = null,
+    ): ReadingMiningWireRequest =
+        ReadingMiningWireRequest(
+            sourceKind = sourceKind,
+            sourcePath = sourcePath,
+            imageArchivePath = imageArchivePath,
+            seriesName = seriesName,
             cacheDir = "/cache",
             nativeLibraryDir = "/native",
             configSnapshot = MiningConfigSnapshot(emptyMap(), androidTtsEnabled = false),
