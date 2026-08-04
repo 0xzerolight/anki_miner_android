@@ -46,18 +46,13 @@ ASSUMPTION_GATED_TESTS = (
     *UI_AUDIT_TESTS,
 )
 TEST_ANNOTATION = re.compile(r"^\s*@Test\b", re.MULTILINE)
-EXPECTED_COUNT = re.compile(r"readonly expected_executed_test_count=(\d+)")
-DISCOVERY_COMMENT = re.compile(
-    r"# Full discovery is (\d+) tests\. This broad API 26 lane excludes (\d+) allowlisted tests\."
-)
+# Arbitrary: the lane reports whatever the runner counted, so the script must echo this back
+# rather than compare it against anything.
+RUNNER_REPORTED_COUNT = 7
 
 
 class Api26InstrumentationScriptTest(unittest.TestCase):
     def test_excludes_all_assumption_gated_tests_and_requires_executed_results(self) -> None:
-        discovered_test_count = sum(
-            len(TEST_ANNOTATION.findall(source.read_text(encoding="utf-8")))
-            for source in ANDROID_TEST_ROOT.rglob("*.kt")
-        )
         assumption_gated_test_count = sum(
             len(TEST_ANNOTATION.findall(source.read_text(encoding="utf-8")))
             for source in ANDROID_TEST_ROOT.rglob("*.kt")
@@ -68,19 +63,6 @@ class Api26InstrumentationScriptTest(unittest.TestCase):
             assumption_gated_test_count,
             "update the explicit unexecuted allowlist whenever an instrumentation class gains assumeTrue",
         )
-        expected_test_count = discovered_test_count - len(UNEXECUTED_TESTS)
-        script_source = SCRIPT.read_text(encoding="utf-8")
-        count_match = EXPECTED_COUNT.search(script_source)
-        self.assertIsNotNone(count_match)
-        declared_count = int(count_match.group(1))
-        self.assertEqual(expected_test_count, declared_count)
-
-        discovery_match = DISCOVERY_COMMENT.search(script_source)
-        self.assertIsNotNone(discovery_match)
-        documented_discovery, documented_unexecuted = (int(value) for value in discovery_match.groups())
-        self.assertEqual(discovered_test_count, documented_discovery)
-        self.assertEqual(len(UNEXECUTED_TESTS), documented_unexecuted)
-
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             script = root / ".github" / "scripts" / SCRIPT.name
@@ -106,7 +88,7 @@ class Api26InstrumentationScriptTest(unittest.TestCase):
                 "set -euo pipefail\n"
                 'printf \'%s\\n\' "$*" >> "$ADB_LOG"\n'
                 'if [[ "$*" == "shell am instrument"* ]]; then\n'
-                f"    printf 'OK ({expected_test_count} tests)\\n"
+                f"    printf 'OK ({RUNNER_REPORTED_COUNT} tests)\\n"
                 "INSTRUMENTATION_CODE: -1\\n'\n"
                 "fi\n",
                 encoding="utf-8",
@@ -126,7 +108,7 @@ class Api26InstrumentationScriptTest(unittest.TestCase):
 
             self.assertEqual(0, result.returncode, result.stderr)
             self.assertIn(
-                f"instrumentation: API 26 executed: PASS ({expected_test_count} tests)",
+                f"instrumentation: API 26 executed: PASS ({RUNNER_REPORTED_COUNT} tests)",
                 result.stdout,
             )
             instrumentation_command = adb_log.read_text(encoding="utf-8").splitlines()[-1]

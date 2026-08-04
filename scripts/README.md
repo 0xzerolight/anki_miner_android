@@ -144,12 +144,13 @@ refuses to boot an emulator with less than 6 GiB available memory or less than
 Nothing local executes instrumentation. CI runs it on the `api26` lane through
 `.github/scripts/run-api26-instrumentation.sh`, which sources
 `scripts/instrumentation-result.sh` to validate the complete terminal contract
-emitted by `am instrument -w -r`. That script pins `expected_executed_test_count=179`
-(197 discovered, minus 18 explicitly reported UNEXECUTED tests: external-UniDic,
-selector-gated contracts, and opt-in UI audits), so adding or removing an
-instrumentation test requires editing that count and the script allowlist together.
-Nothing cross-checks these two numbers against the script, so update them here in
-the same commit.
+emitted by `am instrument -w -r`. The contract is checked by shape rather than by a
+pinned total: one OK summary over at least one test, no failure or crash markers, no
+skipped or assumption-violated test, and a single terminal code. Adding or removing an
+instrumentation test needs no bookkeeping here. The one list that does need editing is
+the script's UNEXECUTED allowlist (external-UniDic, selector-gated contracts, opt-in
+UI audits); `scripts/tests/test_api26_instrumentation_script.py` fails if a class gains
+`assumeTrue` without being added to it.
 
 Those two need a full UniDic pushed to `/data/local/tmp` first — S1a and S1b
 respectively, from a local UniDic `dicdir`:
