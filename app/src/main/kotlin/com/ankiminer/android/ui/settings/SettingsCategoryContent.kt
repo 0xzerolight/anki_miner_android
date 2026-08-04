@@ -795,7 +795,6 @@ private fun LazyListScope.filteringSettings(
     settingsCard("known-words-import") {
         KnownWordsImportCard(
             state = setup,
-            onFormatChanged = setupViewModel::setKnownWordsFormat,
             onImport = callbacks.onImportKnownWords,
             onConfirmImport = setupViewModel::confirmKnownWordsImport,
             onDismissImport = setupViewModel::dismissKnownWordsImportPreview,

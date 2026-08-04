@@ -18,7 +18,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.ankiminer.android.R
-import com.ankiminer.android.data.resources.KnownWordsSourceFormat
 import com.ankiminer.android.data.resources.WordListKind
 import com.ankiminer.android.ui.theme.AdaptivePairedActions
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
@@ -263,7 +262,6 @@ private fun WordListRow(
 @Composable
 internal fun KnownWordsImportCard(
     state: SetupUiState,
-    onFormatChanged: (KnownWordsSourceFormat) -> Unit,
     onImport: () -> Unit,
     onConfirmImport: () -> Unit,
     onDismissImport: () -> Unit,
@@ -331,13 +329,6 @@ internal fun KnownWordsImportCard(
                     } else {
                         MaterialTheme.colorScheme.error
                     },
-            )
-            AdaptiveChoiceSelector(
-                values = KnownWordsSourceFormat.entries,
-                selected = state.knownWordsFormat,
-                label = { knownWordsFormatLabel(it) },
-                onSelect = onFormatChanged,
-                enabled = !state.busy,
             )
             OutlinedButton(
                 onClick = onImport,

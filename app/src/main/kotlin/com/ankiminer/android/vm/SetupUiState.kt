@@ -23,7 +23,6 @@ import com.ankiminer.android.data.resources.KnownWordsImportPreview
 import com.ankiminer.android.data.resources.KnownWordsPage
 import com.ankiminer.android.data.resources.BundledWordset
 import com.ankiminer.android.data.resources.LocalResourceImportResult
-import com.ankiminer.android.data.resources.KnownWordsSourceFormat
 import com.ankiminer.android.data.resources.ResourceFailure
 import com.ankiminer.android.data.resources.ResourceOperationProgress
 import com.ankiminer.android.data.resources.ResourceStartupReadiness
@@ -81,7 +80,6 @@ internal data class SetupUiState(
     val lookupSlotId: String? = null,
     val customSlotId: String = "custom-dictionary",
     val audioPackId: String = "audio-pack",
-    val knownWordsFormat: KnownWordsSourceFormat = KnownWordsSourceFormat.JSON,
     val wordListTarget: WordListKind = WordListKind.BLACKLIST,
     val knownWordsSearch: String = "",
 ) {

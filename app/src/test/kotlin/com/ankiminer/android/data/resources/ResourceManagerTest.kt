@@ -112,7 +112,7 @@ class ResourceManagerTest {
             )
 
             harness.manager.dismissFailure()
-            harness.manager.previewKnownWords(INPUT_URI, KnownWordsSourceFormat.JSON)
+            harness.manager.previewKnownWords(INPUT_URI, ResourceImportFileKind.JSON)
             assertEquals(
                 KnownWordsFailureOperation.PREVIEW,
                 harness.manager.state.value.failure?.knownWordsOperation,
@@ -302,7 +302,7 @@ class ResourceManagerTest {
         runTest {
             val harness = Harness()
 
-            harness.manager.previewKnownWords(INPUT_URI, KnownWordsSourceFormat.JSON)
+            harness.manager.previewKnownWords(INPUT_URI, ResourceImportFileKind.JSON)
 
             assertEquals(listOf(INPUT_URI), harness.broker.retained)
             assertEquals(listOf(INPUT_URI), harness.broker.released)
@@ -317,6 +317,7 @@ class ResourceManagerTest {
                 harness.manager.state.value.knownWordsImportPreview,
             )
             assertEquals(1, harness.pendingRoot.listFiles().orEmpty().size)
+            assertTrue(harness.pendingRoot.listFiles().single().name.endsWith(".json"))
             assertFalse(harness.stager.stagedFiles.single().exists())
 
             harness.manager.dismissKnownWordsImportPreview()
@@ -324,7 +325,7 @@ class ResourceManagerTest {
             assertNull(harness.manager.state.value.knownWordsImportPreview)
             assertFalse(harness.pendingRoot.exists())
 
-            harness.manager.previewKnownWords(INPUT_URI, KnownWordsSourceFormat.JSON)
+            harness.manager.previewKnownWords(INPUT_URI, ResourceImportFileKind.JSON)
             harness.manager.confirmKnownWordsImport()
 
             assertNull(harness.manager.state.value.knownWordsImportPreview)
@@ -355,7 +356,7 @@ class ResourceManagerTest {
     fun failedConfirmedImportRetainsStagedInputAndRetryRepeatsImport() =
         runTest {
             val harness = Harness(failKnownWordsImportOnce = true)
-            harness.manager.previewKnownWords(INPUT_URI, KnownWordsSourceFormat.JSON)
+            harness.manager.previewKnownWords(INPUT_URI, ResourceImportFileKind.JSON)
 
             harness.manager.confirmKnownWordsImport()
 

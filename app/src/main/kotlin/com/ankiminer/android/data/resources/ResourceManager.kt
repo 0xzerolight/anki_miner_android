@@ -94,7 +94,7 @@ interface ResourceManager {
     /** Absolute path the engine should read for [kind], or null when no file is installed. */
     fun wordListPath(kind: WordListKind): String?
 
-    suspend fun previewKnownWords(uri: String, format: KnownWordsSourceFormat)
+    suspend fun previewKnownWords(uri: String, fileKind: ResourceImportFileKind)
 
     suspend fun confirmKnownWordsImport()
 
@@ -825,7 +825,13 @@ internal class AndroidResourceManager(
         mutableState.update { it.copy(wordLists = installed) }
     }
 
-    override suspend fun previewKnownWords(uri: String, format: KnownWordsSourceFormat) {
+    override suspend fun previewKnownWords(uri: String, fileKind: ResourceImportFileKind) {
+        val format =
+            if (fileKind == ResourceImportFileKind.JSON) {
+                KnownWordsSourceFormat.JSON
+            } else {
+                KnownWordsSourceFormat.TEXT
+            }
         runOperation(
             strings.resolve(R.string.resource_operation_preview_known_words),
             ResourceOperationPhase.PREPARING,
@@ -835,12 +841,21 @@ internal class AndroidResourceManager(
         ) { operation ->
             clearPendingKnownWordsImport()
             mutableState.update { it.copy(knownWordsImportPreview = null) }
-            val retained = runBlocking { safBroker.retainReadAccess(uri) }
+            val remainingRetainedReferences = consumeRetainedResourceImport(uri)
+            val retainedUri =
+                if (remainingRetainedReferences != null) {
+                    uri
+                } else {
+                    runBlocking { safBroker.retainReadAccess(uri) }.uri
+                }
+            val clearSelectionAfterPreview =
+                remainingRetainedReferences?.let { it == 0 }
+                    ?: (safSelectionInventory.selection(SafSelectionSlot.RESOURCE_IMPORT)?.uri == uri)
             var staged: StagedArchive? = null
             try {
                 staged =
                     safStager.stage(
-                        sourceUri = retained.uri,
+                        sourceUri = retainedUri,
                         operationId = operation.id,
                         cancellation = operation.cancellation,
                         fileSuffix = format.fileSuffix,
@@ -882,7 +897,8 @@ internal class AndroidResourceManager(
                 mutableState.update { it.copy(knownWordsImportPreview = preview) }
             } finally {
                 staged?.file?.delete()
-                runBlocking { safBroker.releaseReadAccess(retained.uri) }
+                if (clearSelectionAfterPreview) clearResourceImportSelection(retainedUri)
+                runBlocking { safBroker.releaseReadAccess(retainedUri) }
             }
         }
     }

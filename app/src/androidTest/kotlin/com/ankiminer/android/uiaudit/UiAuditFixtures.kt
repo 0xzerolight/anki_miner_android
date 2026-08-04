@@ -572,7 +572,6 @@ internal fun UiAuditSettingsFixture(
                 settingsCard("audit-known-words") {
                     KnownWordsImportCard(
                         state = setup,
-                        onFormatChanged = {},
                         onImport = {},
                         onConfirmImport = {},
                         onDismissImport = {},

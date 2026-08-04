@@ -65,7 +65,6 @@ import com.ankiminer.android.data.resources.ImportedAudioPack
 import com.ankiminer.android.data.resources.ImportedFrequencySource
 import com.ankiminer.android.data.resources.ImportedKnownWords
 import com.ankiminer.android.data.resources.ImportedPitchSource
-import com.ankiminer.android.data.resources.KnownWordsSourceFormat
 import com.ankiminer.android.data.resources.LocalResourceImportResult
 import com.ankiminer.android.data.resources.ResourceOperationPhase
 import com.ankiminer.android.data.resources.ResourceOperationProgress
@@ -741,17 +740,6 @@ internal fun LocalImportResultCard(result: LocalResourceImportResult) {
         }
     }
 }
-
-@Composable
-internal fun knownWordsFormatLabel(format: KnownWordsSourceFormat): String =
-    stringResource(
-        when (format) {
-            KnownWordsSourceFormat.JSON -> R.string.resource_format_json
-            KnownWordsSourceFormat.CSV -> R.string.resource_format_csv
-            KnownWordsSourceFormat.TSV -> R.string.resource_format_tsv
-            KnownWordsSourceFormat.TEXT -> R.string.resource_format_text
-        },
-    )
 
 @Composable
 internal fun pythonStatus(value: PythonRuntimeReadiness): String =

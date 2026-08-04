@@ -136,6 +136,7 @@ enum class PitchAccentSourceFormat(
 
 enum class ResourceImportFileKind {
     YOMITAN_ZIP,
+    JSON,
     CSV,
     TSV,
     TEXT,
@@ -155,6 +156,12 @@ internal suspend fun detectResourceImportFileKind(
     val extension =
         displayName.substringAfterLast('.', missingDelimiterValue = "").lowercase(Locale.ROOT)
     val mime = mimeType?.substringBefore(';')?.trim()?.lowercase(Locale.ROOT)
+    if (
+        extension == "json" ||
+            mime?.let { it in JSON_MIME_TYPES || it.endsWith("+json") } == true
+    ) {
+        return ResourceImportFileKind.JSON
+    }
     if (
         extension == "zip" ||
             mime?.let { it in ZIP_MIME_TYPES || it.endsWith("+zip") } == true
@@ -198,6 +205,7 @@ private val ZIP_MIME_TYPES =
     setOf("application/zip", "application/x-zip", "application/x-zip-compressed")
 private val CSV_MIME_TYPES = setOf("text/csv", "application/csv")
 private val TSV_MIME_TYPES = setOf("text/tab-separated-values", "text/tsv")
+private val JSON_MIME_TYPES = setOf("application/json", "text/json")
 private const val OCTET_STREAM_MIME_TYPE = "application/octet-stream"
 
 /**

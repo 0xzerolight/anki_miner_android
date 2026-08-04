@@ -23,6 +23,7 @@ import com.ankiminer.android.data.resources.ResourceFailureOrigin
 import com.ankiminer.android.data.resources.ResourceFailureRetry
 import com.ankiminer.android.data.resources.ResourceManager
 import com.ankiminer.android.data.resources.ResourceManagerState
+import com.ankiminer.android.data.resources.ResourceImportFileKind
 import com.ankiminer.android.data.resources.ResourceStartupReadiness
 import com.ankiminer.android.data.resources.RetainedResourceImport
 import com.ankiminer.android.data.resources.detectResourceImportFileKind
@@ -454,6 +455,11 @@ class SetupViewModelTest {
             val repository = FakeSettingsRepository(AppSettings())
             val setup = FakeAnkiSetupManager(emptyList())
             val resources = FakeResourceManager()
+            resources.setImportDocument(
+                uri = "content://known",
+                displayName = "known-words.json",
+                mimeType = "application/json",
+            )
             val viewModel = viewModel(repository, setup, resources)
             advanceUntilIdle()
 
@@ -469,7 +475,11 @@ class SetupViewModelTest {
             viewModel.dismissKnownWordsImportPreview()
             advanceUntilIdle()
 
-            assertEquals(listOf("content://known" to KnownWordsSourceFormat.JSON), resources.previewCalls)
+            assertEquals(listOf("content://known"), resources.retainedResourceImports)
+            assertEquals(
+                listOf("content://known" to ResourceImportFileKind.JSON),
+                resources.previewCalls,
+            )
             assertEquals(emptyList<Pair<String, KnownWordsSourceFormat>>(), resources.importCalls)
             assertEquals(1, resources.confirmCount)
             assertEquals(listOf("猫" to false, "猫" to true), resources.searchCalls)
@@ -1144,7 +1154,7 @@ class SetupViewModelTest {
             val leadingBytes: ByteArray,
         )
 
-        val previewCalls = mutableListOf<Pair<String, KnownWordsSourceFormat>>()
+        val previewCalls = mutableListOf<Pair<String, ResourceImportFileKind>>()
         val importCalls = mutableListOf<Pair<String, KnownWordsSourceFormat>>()
         var confirmCount = 0
         var dismissCount = 0
@@ -1258,8 +1268,8 @@ class SetupViewModelTest {
             importCalls += uri to format
         }
 
-        override suspend fun previewKnownWords(uri: String, format: KnownWordsSourceFormat) {
-            previewCalls += uri to format
+        override suspend fun previewKnownWords(uri: String, fileKind: ResourceImportFileKind) {
+            previewCalls += uri to fileKind
         }
 
         val wordListImports = mutableListOf<Pair<String, WordListKind>>()

@@ -538,10 +538,6 @@
     <string name="bundled_wordsets_unavailable">同梱の単語リストを一覧化できませんでした。</string>
     <string name="local_resource_inventory_invalid">%1$s [%2$s] · 無効な一覧（エントリ%3$d件）。採掘前に置き換えてください</string>
     <string name="pitch_inventory_invalid">%1$s · 無効な一覧（エントリ%2$d件）。採掘前に置き換えてください</string>
-    <string name="resource_format_csv">CSV</string>
-    <string name="resource_format_tsv">TSV</string>
-    <string name="resource_format_text">テキスト</string>
-    <string name="resource_format_json">JSON</string>
     <string name="local_import_complete">ローカルインポート完了</string>
     <string name="frequency_import_result">%1$s: エントリ%2$d件、不正な行%3$d件をスキップ</string>
     <string name="pitch_import_result">%1$s: エントリ%2$d件、不正な行%3$d件をスキップ</string>
