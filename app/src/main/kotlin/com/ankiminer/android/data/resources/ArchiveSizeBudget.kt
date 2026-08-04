@@ -3,14 +3,14 @@ package com.ankiminer.android.data.resources
 import java.io.File
 import java.util.Locale
 
-/** Absolute ceiling for a local audio-pack ZIP, independent of free space. */
+/** Absolute ceiling for a local audio-pack archive, independent of free space. */
 internal const val AUDIO_ARCHIVE_CEILING_BYTES = 16L * 1024 * 1024 * 1024
 
 /** Private-storage headroom kept free by every staged import. */
 internal const val ARCHIVE_BUDGET_RESERVE_BYTES = 32L * 1024 * 1024
 
 /**
- * Largest audio-pack ZIP this device can import right now.
+ * Largest audio-pack archive this device can import right now.
  *
  * An import holds the staged ZIP and its extracted tree at the same time, and
  * local audio packs are stored (not compressed) media, so the extracted tree is

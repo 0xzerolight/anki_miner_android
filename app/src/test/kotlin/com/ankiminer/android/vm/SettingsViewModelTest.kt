@@ -3,6 +3,7 @@ package com.ankiminer.android.vm
 import androidx.lifecycle.viewModelScope
 import com.ankiminer.android.MainDispatcherRule
 import com.ankiminer.android.R
+import com.ankiminer.android.data.resources.AudioPackCandidate
 import com.ankiminer.android.data.resources.FrequencySourceFormat
 import com.ankiminer.android.data.resources.InstalledDictionary
 import com.ankiminer.android.data.resources.InstalledPitchSource
@@ -845,11 +846,12 @@ class SettingsViewModelTest {
             replace: Boolean,
         ) = Unit
 
-        override suspend fun preflightAudioPack(uri: String): String = "jpod"
+        override suspend fun preflightAudioPack(uri: String) =
+            listOf(AudioPackCandidate("jpod", "jpod_files", "ajt"))
 
         override suspend fun importAudioPack(
             uri: String,
-            packId: String,
+            pack: AudioPackCandidate,
             replace: Boolean,
         ) = Unit
 

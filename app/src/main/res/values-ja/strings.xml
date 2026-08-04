@@ -154,6 +154,9 @@
     <string name="reset_error">マイニング画面をリセットできませんでした。</string>
     <string name="mining_notification_channel">マイニング進捗</string>
     <string name="mining_notification_channel_description">実行中のマイニングの進捗と中止操作</string>
+    <string name="resource_import_notification_channel">リソースのインポート</string>
+    <string name="resource_import_notification_channel_description">大きなローカル音声パックのインポートをバックグラウンドでも継続します</string>
+    <string name="resource_import_notification_working">処理中です。アプリを離れても中断されません。</string>
     <string name="mining_notification_title">Anki Miner がメディアを処理しています</string>
     <string name="mining_notification_preparing">選択した単語を準備しています…</string>
     <string name="mining_notification_count">%2$d件中%1$d件完了</string>
@@ -466,7 +469,9 @@
     <string name="resource_failure_frequency_import">選択したファイルは対応する頻度ソースではありません</string>
     <string name="resource_failure_pitch_import">選択したファイルは対応するアクセントデータではありません</string>
     <string name="resource_failure_pitch_invalid">インストール済みのアクセントデータが破損しています。採掘前に置き換えてください</string>
-    <string name="resource_failure_audio_pack_import">選択したZIPは対応するローカル音声パックではありません</string>
+    <string name="resource_failure_audio_pack_import">選択したアーカイブは対応するローカル音声パックではありません</string>
+    <string name="resource_failure_audio_pack_none_detected">このアーカイブには読み込めるローカル音声パックがありません。コレクションのアーカイブ自体か、その中のパックフォルダーを選んでください。</string>
+    <string name="resource_failure_audio_pack_index_malformed">選択したパックのインデックスファイルを読み込めませんでした。不完全か、新しい形式の可能性があります。</string>
     <string name="resource_failure_audio_pack_reserved">このアーカイブから予約済み音声パックID「jpod101」が生成されます。ルートフォルダー名またはZIPファイル名を変更してください。</string>
     <string name="resource_failure_known_words_import">選択したファイルに対応する既知単語が含まれていません</string>
     <string name="resource_failure_inventory_unsafe">ローカルリソースが破損または安全でなく、対応が必要です</string>
@@ -507,7 +512,10 @@
     <string name="pitch_choose_file">アクセントファイルを選択</string>
     <string name="audio_pack_import_title">例文音声をインポート</string>
     <string name="audio_pack_none_installed">ローカル音声パックがインストールされていません。</string>
-    <string name="audio_pack_choose_zip">音声パックZIPを選択</string>
+    <string name="audio_pack_choose_zip">音声パックのアーカイブを選択</string>
+    <string name="audio_pack_choice_title">どのパックを取り込みますか</string>
+    <string name="audio_pack_choice_message">このアーカイブには%1$d個のパックが含まれています。取り込むのは選んだパックだけで、他はファイル内に残るため後から追加できます。</string>
+    <string name="audio_pack_choice_item">%1$s（%2$s）</string>
     <string name="word_lists_title">単語リスト</string>
     <string name="word_lists_format">プレーンテキスト形式、1行に1単語。空行と#で始まる行は無視されます。</string>
     <string name="word_list_blacklist">ブラックリスト</string>

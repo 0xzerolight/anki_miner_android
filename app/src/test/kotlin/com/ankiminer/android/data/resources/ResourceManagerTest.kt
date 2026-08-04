@@ -609,7 +609,7 @@ class ResourceManagerTest {
         runTest {
             val harness =
                 Harness(
-                    sourceLabel = "audio-pack ZIP",
+                    sourceLabel = "audio-pack archive",
                     reportedSourceSizeBytes = 64L * 1024 * 1024,
                     stagingAvailableBytes = ARCHIVE_BUDGET_RESERVE_BYTES / 2,
                 )
@@ -629,13 +629,13 @@ class ResourceManagerTest {
         runTest {
             val harness =
                 Harness(
-                    sourceLabel = "audio-pack ZIP",
+                    sourceLabel = "audio-pack archive",
                     reportedSourceSizeBytes = 3L * 1024 * 1024 * 1024,
                     stagingAvailableBytes = 64L * 1024 * 1024 * 1024,
                 )
 
-            val packId = requireNotNull(harness.manager.preflightAudioPack(INPUT_URI))
-            harness.manager.importAudioPack(INPUT_URI, packId, replace = false)
+            val packs = requireNotNull(harness.manager.preflightAudioPack(INPUT_URI))
+            harness.manager.importAudioPack(INPUT_URI, packs.single(), replace = false)
 
             assertNull(harness.manager.state.value.failure)
             assertEquals(1, harness.bridge.requestsOfType("resource.audiopack.preflight").size)
@@ -650,7 +650,7 @@ class ResourceManagerTest {
         runTest {
             val harness =
                 Harness(
-                    sourceLabel = "audio-pack ZIP",
+                    sourceLabel = "audio-pack archive",
                     reportedSourceSizeBytes = 8L * 1024 * 1024 * 1024,
                     stagingAvailableBytes = 4L * 1024 * 1024 * 1024,
                 )
@@ -664,7 +664,7 @@ class ResourceManagerTest {
             assertTrue(harness.stager.stagedFiles.isEmpty())
             assertNull(harness.stager.lastMaximumBytes)
             assertTrue(harness.bridge.requestTypes.none { it == "resource.audiopack.preflight" })
-            assertTrue(failure!!.message.contains("audio-pack ZIP,8.0 GB,2.0 GB"))
+            assertTrue(failure!!.message.contains("audio-pack archive,8.0 GB,2.0 GB"))
             assertEquals(listOf(INPUT_URI), harness.broker.released)
         }
 
@@ -673,13 +673,13 @@ class ResourceManagerTest {
         runTest {
             val harness =
                 Harness(
-                    sourceLabel = "audio-pack ZIP",
+                    sourceLabel = "audio-pack archive",
                     reportedSourceSizeBytes = null,
                     stagingAvailableBytes = 4L * 1024 * 1024 * 1024,
                 )
 
-            val packId = requireNotNull(harness.manager.preflightAudioPack(INPUT_URI))
-            harness.manager.importAudioPack(INPUT_URI, packId, replace = false)
+            val packs = requireNotNull(harness.manager.preflightAudioPack(INPUT_URI))
+            harness.manager.importAudioPack(INPUT_URI, packs.single(), replace = false)
 
             assertNull(harness.manager.state.value.failure)
             assertEquals(1, harness.stager.stagedFiles.size)
@@ -746,6 +746,82 @@ class ResourceManagerTest {
             }
         }
 
+    /** Records the foreground-service lifecycle a long import is supposed to drive. */
+    private class RecordingForegroundLease : ResourceForegroundLease {
+        val events = mutableListOf<String>()
+        var startedWhileRunning = false
+            private set
+        private var running = false
+
+        override fun start(progress: ResourceOperationProgress) {
+            running = true
+            startedWhileRunning = true
+            events += "start:${progress.phase}"
+        }
+
+        override fun update(progress: ResourceOperationProgress) {
+            events += "update:${progress.phase}"
+        }
+
+        override fun stop() {
+            running = false
+            events += "stop"
+        }
+
+        fun isRunning(): Boolean = running
+    }
+
+    @Test
+    fun aLongAudioPackImportHoldsTheForegroundServiceForItsWholeRun() =
+        runTest {
+            val harness = Harness(sourceLabel = "audio-pack archive")
+
+            val packs = requireNotNull(harness.manager.preflightAudioPack(INPUT_URI))
+            // Preflight is bounded and cheap; only the import earns a notification.
+            assertTrue(harness.foregroundLease.events.isEmpty())
+
+            harness.manager.importAudioPack(INPUT_URI, packs.single(), replace = false)
+
+            assertNull(harness.manager.state.value.failure)
+            assertTrue(harness.foregroundLease.startedWhileRunning)
+            assertEquals("stop", harness.foregroundLease.events.last())
+            // Released once the operation ends, so no notification outlives the work.
+            assertTrue(!harness.foregroundLease.isRunning())
+        }
+
+    @Test
+    fun aFailedAudioPackImportStillReleasesTheForegroundService() =
+        runTest {
+            // Fails during staging, which is after the lease is taken: the point is
+            // that an import which dies mid-flight still puts the service down.
+            val harness =
+                Harness(
+                    sourceLabel = "audio-pack archive",
+                    stagingFailureCode = "import_staging_failed",
+                )
+
+            harness.manager.importAudioPack(
+                INPUT_URI,
+                AudioPackCandidate("jpod", "jpod_files", "ajt"),
+                replace = false,
+            )
+
+            assertEquals("import_staging_failed", harness.manager.state.value.failure?.code)
+            assertTrue(harness.foregroundLease.startedWhileRunning)
+            assertTrue(!harness.foregroundLease.isRunning())
+            assertEquals("stop", harness.foregroundLease.events.last())
+        }
+
+    @Test
+    fun aShortResourceImportRaisesNoNotification() =
+        runTest {
+            val harness = Harness()
+
+            harness.manager.importKnownWords(INPUT_URI, KnownWordsSourceFormat.JSON)
+
+            assertTrue(harness.foregroundLease.events.isEmpty())
+        }
+
     private inner class Harness(
         rootName: String = "manager",
         initialUserCount: Int = 0,
@@ -779,6 +855,7 @@ class ResourceManagerTest {
         val broker = RecordingSafBroker(reportedSourceSizeBytes)
         val stager = RecordingArchiveStager(stagingRoot, sourceLabel, stagingFailureCode)
         val writer = RecordingDocumentWriter(onFirstExportWrite)
+        val foregroundLease = RecordingForegroundLease()
         val bridge =
             FakeResourceBridge(
                 bridgeRoot,
@@ -812,6 +889,7 @@ class ResourceManagerTest {
                     ),
                 safStager = stager,
                 documentWriter = writer,
+                foregroundLease = foregroundLease,
                 strings = testStringResourceResolver,
                 stagingAvailableBytes = { stagingAvailableBytes },
                 pinnedArchiveProvider =
@@ -1066,7 +1144,7 @@ class ResourceManagerTest {
                 "resource.audiopack.preflight" ->
                     envelope(
                         "resource.audiopack.preflighted",
-                        """{"packId":"jpod"}""",
+                        """{"packs":[{"packId":"jpod","packPath":"jpod_files","format":"ajt"}]}""",
                     )
                 "resource.audiopack.import" ->
                     envelope(

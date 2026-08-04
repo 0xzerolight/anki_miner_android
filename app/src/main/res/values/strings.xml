@@ -160,6 +160,9 @@
     <string name="reset_error">The mining screen could not be reset.</string>
     <string name="mining_notification_channel">Mining progress</string>
     <string name="mining_notification_channel_description">Progress and cancellation controls for active mining runs</string>
+    <string name="resource_import_notification_channel">Resource imports</string>
+    <string name="resource_import_notification_channel_description">Keeps a large local audio-pack import running while the app is in the background</string>
+    <string name="resource_import_notification_working">Working. Leaving the app will not interrupt this.</string>
     <string name="mining_notification_title">Anki Miner is processing media</string>
     <string name="mining_notification_preparing">Preparing the selected vocabulary…</string>
     <string name="mining_notification_count">%1$d of %2$d complete</string>
@@ -474,7 +477,9 @@
     <string name="resource_failure_frequency_import">The selected file is not a supported frequency source</string>
     <string name="resource_failure_pitch_import">The selected file is not supported pitch-accent data</string>
     <string name="resource_failure_pitch_invalid">Installed pitch-accent data is damaged; replace it before mining</string>
-    <string name="resource_failure_audio_pack_import">The selected ZIP is not a supported local audio pack</string>
+    <string name="resource_failure_audio_pack_import">The selected archive is not a supported local audio pack</string>
+    <string name="resource_failure_audio_pack_none_detected">This archive holds no local audio pack the app can read. Pick the collection archive itself, or one pack folder from it.</string>
+    <string name="resource_failure_audio_pack_index_malformed">The chosen pack\'s index file could not be read. It may be incomplete or from a newer format.</string>
     <string name="resource_failure_audio_pack_reserved">This archive derives the reserved audio-pack ID “jpod101”. Rename its root folder or ZIP file.</string>
     <string name="resource_failure_known_words_import">The selected file contains no supported known words</string>
     <string name="resource_failure_inventory_unsafe">A local resource is damaged or unsafe and needs attention</string>
@@ -515,7 +520,10 @@
     <string name="pitch_choose_file">Choose pitch-accent file</string>
     <string name="audio_pack_import_title">Import expression audio</string>
     <string name="audio_pack_none_installed">No local audio pack is installed.</string>
-    <string name="audio_pack_choose_zip">Choose audio-pack ZIP</string>
+    <string name="audio_pack_choose_zip">Choose audio-pack archive</string>
+    <string name="audio_pack_choice_title">Which pack?</string>
+    <string name="audio_pack_choice_message">This archive holds %1$d packs. Importing one extracts only that pack; the others stay in the file, so you can come back and add them.</string>
+    <string name="audio_pack_choice_item">%1$s (%2$s)</string>
     <string name="word_lists_title">Word lists</string>
     <string name="word_lists_format">Plain text, one word per line. Blank lines and lines starting with # are ignored.</string>
     <string name="word_list_blacklist">Blacklist</string>

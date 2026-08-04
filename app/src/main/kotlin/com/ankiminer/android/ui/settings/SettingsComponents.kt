@@ -61,6 +61,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.ankiminer.android.R
 import com.ankiminer.android.anki.provider.AnkiProviderReadiness
+import com.ankiminer.android.data.resources.AudioPackCandidate
 import com.ankiminer.android.data.resources.ImportedAudioPack
 import com.ankiminer.android.data.resources.ImportedFrequencySource
 import com.ankiminer.android.data.resources.ImportedKnownWords
@@ -628,6 +629,56 @@ internal fun ResourceReplaceDialog(
                 )
             }
         },
+        dismissButton = {
+            TextButton(onClick = onDismiss, enabled = !busy) {
+                Text(stringResource(R.string.cancel))
+            }
+        },
+    )
+}
+
+/**
+ * Names which pack to import when the picked archive holds several.
+ *
+ * The upstream local-audio collection is one download carrying jpod, nhk16,
+ * shinmeikai8 and forvo. Importing all four would be tens of gigabytes and the
+ * better part of an hour, and the old code simply refused the file, so the pack
+ * is chosen here and only that subtree is extracted.
+ */
+@Composable
+internal fun AudioPackChoiceDialog(
+    choices: List<AudioPackCandidate>,
+    busy: Boolean,
+    onChoose: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    if (choices.isEmpty()) return
+    AlertDialog(
+        onDismissRequest = { if (!busy) onDismiss() },
+        title = { Text(stringResource(R.string.audio_pack_choice_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
+                Text(stringResource(R.string.audio_pack_choice_message, choices.size))
+                choices.forEach { candidate ->
+                    OutlinedButton(
+                        onClick = { onChoose(candidate.packId) },
+                        enabled = !busy,
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                        colors = outlinedActionButtonColors(),
+                        border = actionBorder(!busy),
+                    ) {
+                        Text(
+                            stringResource(
+                                R.string.audio_pack_choice_item,
+                                candidate.packId,
+                                candidate.format,
+                            ),
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {},
         dismissButton = {
             TextButton(onClick = onDismiss, enabled = !busy) {
                 Text(stringResource(R.string.cancel))

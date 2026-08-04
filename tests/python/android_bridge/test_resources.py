@@ -1562,9 +1562,7 @@ def test_audio_pack_preflight_derives_id_without_copying_or_importing(
         expected_type="resource.audiopack.preflighted",
     )
 
-    assert preflight.payload == {
-        "packs": [{"packId": "nhk16", "packPath": "nhk16_files", "format": "ajt"}]
-    }
+    assert preflight.payload == {"packs": [{"packId": "nhk16", "packPath": "nhk16_files", "format": "ajt"}]}
     assert not (home / "audio_packs").exists()
 
 
@@ -1590,9 +1588,7 @@ def test_audio_pack_preflight_uses_display_name_stem_for_flat_archive(
         expected_type="resource.audiopack.preflighted",
     )
 
-    assert preflight.payload == {
-        "packs": [{"packId": "my-flat-audio", "packPath": "", "format": "ajt"}]
-    }
+    assert preflight.payload == {"packs": [{"packId": "my-flat-audio", "packPath": "", "format": "ajt"}]}
 
 
 @pytest.mark.skipif(
@@ -1619,9 +1615,7 @@ def test_audio_pack_preflight_keeps_detectable_legacy_root_name(
         expected_type="resource.audiopack.preflighted",
     )
 
-    assert preflight.payload == {
-        "packs": [{"packId": "jpod", "packPath": "jpod_files", "format": "jpod_legacy"}]
-    }
+    assert preflight.payload == {"packs": [{"packId": "jpod", "packPath": "jpod_files", "format": "jpod_legacy"}]}
 
 
 @pytest.mark.skipif(

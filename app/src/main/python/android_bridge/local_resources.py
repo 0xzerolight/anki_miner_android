@@ -1014,9 +1014,7 @@ def preflight_audio_pack(payload: Mapping[str, object]) -> str:
                 operation.check()
                 # A pack that is itself the archive root has no folder name to
                 # derive from, so the document name stands in for it.
-                folder_name = (
-                    PurePosixPath(display_name).stem if pack_root == projected else pack_root.name
-                )
+                folder_name = PurePosixPath(display_name).stem if pack_root == projected else pack_root.name
                 pack_id = derive_pack_id(folder_name)
                 if pack_id == "jpod101":
                     raise _fail(

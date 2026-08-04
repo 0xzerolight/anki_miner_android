@@ -11,6 +11,8 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 
 ### Fixed
 
+- Local audio packs could not be imported from the collection people actually download. That collection is a single `.tar.xz` holding jpod, nhk16, shinmeikai8 and forvo: the picker greyed the file out entirely, the importer accepted only a ZIP containing exactly one pack, and its member ceiling sat below the collection's own entry count. Archives are now read as tar or ZIP whichever way they are named, an archive holding several packs asks which one to take and extracts only that pack, and a rejection says which of the three things went wrong instead of one message for all of them.
+- A large audio-pack import no longer dies when you leave the app. It runs under a foreground service holding a wake lock, because the import has no resume — an interrupted one starts again from zero. The import itself is also considerably faster: it no longer forces a disk sync for every one of a hundred thousand media files, nor resolves the full symlink path of every row in the pack index.
 - Dictionary media in AVIF format was stored as `.bin` on every device, including ones that handle AVIF. The format a media file is saved under is now decided from the device's own capabilities rather than fixed at build time.
 - A video the device could not decode left the word picker's preview as a silent black rectangle — mining worked, the preview just showed nothing. The preview now names the codec the device cannot play and offers a retry, and a playback error no longer leaves the player dead for the rest of the run.
 

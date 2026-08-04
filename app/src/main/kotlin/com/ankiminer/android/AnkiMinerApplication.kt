@@ -12,6 +12,7 @@ import com.ankiminer.android.data.anki.AnkiSetupManager
 import com.ankiminer.android.data.anki.ProcessAnkiSetupManager
 import com.ankiminer.android.data.RuntimeWorkCoordinator
 import com.ankiminer.android.data.resources.AndroidResourceDocumentWriter
+import com.ankiminer.android.data.resources.AndroidResourceForegroundLease
 import com.ankiminer.android.data.resources.AndroidResourceManager
 import com.ankiminer.android.data.resources.PinnedResourceDownloader
 import com.ankiminer.android.data.resources.ResourceDocumentWriter
@@ -370,6 +371,7 @@ class AnkiMinerApplication : Application() {
             runtimeWorkCoordinator = runtimeWorkCoordinator,
             safStager = SafArchiveStager(contentResolver, resourceStagingRoot),
             documentWriter = resourceDocumentWriter,
+            foregroundLease = AndroidResourceForegroundLease(this),
             strings = stringResourceResolver,
         )
     }

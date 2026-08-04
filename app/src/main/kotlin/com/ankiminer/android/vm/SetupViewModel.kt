@@ -14,6 +14,7 @@ import com.ankiminer.android.anki.provider.AnkiFieldMappingChange
 import com.ankiminer.android.anki.provider.AnkiRemediationCommand
 import com.ankiminer.android.data.RuntimeWorkCoordinator
 import com.ankiminer.android.data.anki.AnkiSetupManager
+import com.ankiminer.android.data.resources.AudioPackCandidate
 import com.ankiminer.android.data.resources.FrequencySourceFormat
 import com.ankiminer.android.data.resources.KnownWordsFailureOperation
 import com.ankiminer.android.data.resources.KnownWordsResetScope
@@ -77,6 +78,8 @@ internal class SetupViewModel(
         val pitchFormat: PitchAccentSourceFormat? = null,
         val resourceFileKind: ResourceImportFileKind? = null,
         val wordListKind: WordListKind? = null,
+        /** Where the chosen pack sits inside the picked archive; empty means its root. */
+        val audioPackPath: String? = null,
         val uri: String? = null,
     )
 
@@ -92,6 +95,9 @@ internal class SetupViewModel(
         val deckPersistence: DeckPersistenceStatus = DeckPersistenceStatus.IDLE,
         val failedDeckName: String? = null,
         val wizardCompletion: WizardCompletionStatus = WizardCompletionStatus.IDLE,
+        // In memory only. The staged archive survives a process death; this dialog does
+        // not, and re-opening the picker is cheaper than persisting a candidate list.
+        val audioPackChoices: List<AudioPackCandidate> = emptyList(),
     )
 
     private val local =
@@ -162,6 +168,7 @@ internal class SetupViewModel(
                 runtimeWorkKind = runtimeKind,
                 wizardSeen = appSettings.setupWizardSeen,
                 wizardCompletion = localState.wizardCompletion,
+                audioPackChoices = localState.audioPackChoices,
                 uniDicInstalled = resourceState.hasUniDic,
                 catalogDictionaries = resourceState.catalogDictionaries,
                 pendingReplace = localState.pendingReplace,
@@ -208,6 +215,8 @@ internal class SetupViewModel(
      * edited are always current. [SetupUiState.lookupSlotId] is deliberately not merged —
      * the combine resolves it against the installed dictionaries.
      */
+    private fun currentLocal(): LocalState = local.value
+
     private fun currentState(): SetupUiState {
         val localState = local.value
         return uiState.value.copy(
@@ -215,6 +224,7 @@ internal class SetupViewModel(
             failedDeckName = localState.failedDeckName,
             fieldMapChanges = localState.fieldMapChanges,
             wizardCompletion = localState.wizardCompletion,
+            audioPackChoices = localState.audioPackChoices,
             pendingReplace = localState.pendingReplace,
             lookupTerm = localState.lookupTerm,
             customSlotId = localState.customSlotId,
@@ -577,7 +587,13 @@ internal class SetupViewModel(
                 ResourceReplaceKind.AUDIO_PACK ->
                     resources.importAudioPack(
                         requireNotNull(pending.uri),
-                        pending.identity,
+                        // The record's identity, so a name match replaces the pack
+                        // already on disk; the path is the subtree the user chose.
+                        AudioPackCandidate(
+                            packId = pending.identity,
+                            packPath = picker?.audioPackPath.orEmpty(),
+                            format = "",
+                        ),
                         replace = true,
                     )
             }
@@ -660,6 +676,37 @@ internal class SetupViewModel(
     }
 
     fun importPitchAccent(uri: String) = onPitchPicked(uri)
+
+    /**
+     * Commits to one pack out of a multi-pack archive and lets the import proceed.
+     *
+     * The staged archive is still retained from the preflight, so this costs nothing
+     * beyond the extraction of the chosen subtree.
+     */
+    fun chooseAudioPack(packId: String) {
+        val choices = currentLocal().audioPackChoices
+        val chosen = choices.firstOrNull { it.packId == packId } ?: return
+        local.update { it.copy(audioPackChoices = emptyList()) }
+        val request = pendingPicker?.takeIf { it.kind == ResourcePickerKind.AUDIO_PACK } ?: return
+        savePendingPicker(request.withAudioPack(chosen))
+        resumePendingPicker()
+    }
+
+    /** Abandons a multi-pack archive without importing any of it. */
+    fun dismissAudioPackChoice() {
+        if (currentLocal().audioPackChoices.isEmpty()) return
+        local.update { it.copy(audioPackChoices = emptyList()) }
+        val picker = pendingPicker
+        clearPendingPicker()
+        releaseRetainedResourceImport(picker)
+        viewModelScope.launch { resources.discardAudioPackPreflight() }
+    }
+
+    private fun PendingResourcePicker.withAudioPack(pack: AudioPackCandidate) =
+        copy(
+            target = ResourceIdentity.audioPackTarget(pack.packId, resources.state.value.audioPacks),
+            audioPackPath = pack.packPath,
+        )
 
     fun beginAudioPackPicker(): Boolean {
         if (currentState().busy) return false
@@ -767,19 +814,19 @@ internal class SetupViewModel(
                 var request = pendingPicker?.takeIf { it.uri != null } ?: return@launch
                 if (request.kind == ResourcePickerKind.AUDIO_PACK && request.target == null) {
                     val uri = requireNotNull(request.uri)
-                    val packId = resources.preflightAudioPack(uri)
-                    if (packId == null) {
+                    val packs = resources.preflightAudioPack(uri)
+                    if (packs.isNullOrEmpty()) {
                         clearPendingPicker()
                         return@launch
                     }
-                    request =
-                        request.copy(
-                            target =
-                                ResourceIdentity.audioPackTarget(
-                                    packId,
-                                    resources.state.value.audioPacks,
-                                ),
-                        )
+                    // The upstream collection is one archive of four packs. Importing
+                    // all of them at once would be tens of gigabytes and an hour, so
+                    // the user names the one they want and the rest stay in the file.
+                    if (packs.size > 1) {
+                        local.update { it.copy(audioPackChoices = packs) }
+                        return@launch
+                    }
+                    request = request.withAudioPack(packs.single())
                     savePendingPicker(request)
                 }
                 resources.state.first { state ->
@@ -832,7 +879,11 @@ internal class SetupViewModel(
             ResourcePickerKind.AUDIO_PACK ->
                 resources.importAudioPack(
                     uri,
-                    requireNotNull(request.target).identity,
+                    AudioPackCandidate(
+                        packId = requireNotNull(request.target).identity,
+                        packPath = request.audioPackPath.orEmpty(),
+                        format = "",
+                    ),
                     replace = false,
                 )
             ResourcePickerKind.KNOWN_WORDS ->
@@ -865,6 +916,7 @@ internal class SetupViewModel(
         saveString(STATE_PICKER_PITCH_FORMAT, request.pitchFormat?.name)
         saveString(STATE_PICKER_RESOURCE_FILE_KIND, request.resourceFileKind?.name)
         saveString(STATE_PICKER_WORD_LIST_KIND, request.wordListKind?.name)
+        saveString(STATE_PICKER_AUDIO_PACK_PATH, request.audioPackPath)
         saveString(STATE_PICKER_URI, request.uri)
     }
 
@@ -887,6 +939,7 @@ internal class SetupViewModel(
                 pitchFormat = savedEnum<PitchAccentSourceFormat>(STATE_PICKER_PITCH_FORMAT),
                 resourceFileKind = savedEnum<ResourceImportFileKind>(STATE_PICKER_RESOURCE_FILE_KIND),
                 wordListKind = savedEnum<WordListKind>(STATE_PICKER_WORD_LIST_KIND),
+                audioPackPath = savedStateHandle[STATE_PICKER_AUDIO_PACK_PATH],
                 uri = savedStateHandle[STATE_PICKER_URI],
             )
         return restored.takeIf { request ->
@@ -1334,6 +1387,7 @@ internal class SetupViewModel(
         const val STATE_PICKER_PITCH_FORMAT = "setup.picker.pitchFormat"
         const val STATE_PICKER_RESOURCE_FILE_KIND = "setup.picker.resourceFileKind"
         const val STATE_PICKER_WORD_LIST_KIND = "setup.picker.wordListKind"
+        const val STATE_PICKER_AUDIO_PACK_PATH = "setup.picker.audioPackPath"
         const val STATE_PICKER_URI = "setup.picker.uri"
         const val STATE_REPLACE_KIND = "setup.replace.kind"
         const val STATE_REPLACE_IDENTITY = "setup.replace.identity"

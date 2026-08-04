@@ -76,11 +76,12 @@ interface ResourceManager {
         replace: Boolean,
     )
 
-    suspend fun preflightAudioPack(uri: String): String?
+    /** Every pack the picked archive holds, or null when the preflight did not complete. */
+    suspend fun preflightAudioPack(uri: String): List<AudioPackCandidate>?
 
     suspend fun importAudioPack(
         uri: String,
-        packId: String,
+        pack: AudioPackCandidate,
         replace: Boolean,
     )
 
@@ -152,6 +153,31 @@ internal fun interface PinnedArchiveProvider {
     ): StagedArchive
 }
 
+/**
+ * Keeps a long resource operation running while the app is not on screen.
+ *
+ * Importing a pack from the upstream audio collection copies gigabytes across a
+ * hundred thousand files, and the operation has no resume: interrupt it and the
+ * user starts over. Backed by a foreground service on device, and by nothing at
+ * all in host tests, which is why this is a seam and not a Context.
+ */
+internal interface ResourceForegroundLease {
+    fun start(progress: ResourceOperationProgress)
+
+    fun update(progress: ResourceOperationProgress)
+
+    fun stop()
+
+    /** For host tests and for every operation short enough not to earn a notification. */
+    object None : ResourceForegroundLease {
+        override fun start(progress: ResourceOperationProgress) = Unit
+
+        override fun update(progress: ResourceOperationProgress) = Unit
+
+        override fun stop() = Unit
+    }
+}
+
 internal class AndroidResourceManager(
     private val safBroker: SafBroker,
     private val bridge: PyBridge,
@@ -166,6 +192,7 @@ internal class AndroidResourceManager(
     private val documentWriter: ResourceDocumentWriter,
     private val strings: StringResourceResolver,
     private val safSelectionInventory: SafSelectionInventory = TransientSafSelectionInventory(),
+    private val foregroundLease: ResourceForegroundLease = ResourceForegroundLease.None,
     private val stagingAvailableBytes: (File) -> Long = ::usableSpaceForStaging,
     private val pinnedArchiveProvider: PinnedArchiveProvider? = null,
     wordListMover: (File, File) -> Boolean = { source, target -> source.renameTo(target) },
@@ -178,6 +205,7 @@ internal class AndroidResourceManager(
         val failureOrigin: ResourceFailureOrigin,
         val failureRetry: ResourceFailureRetry,
         val knownWordsOperation: KnownWordsFailureOperation?,
+        val holdsForegroundLease: Boolean = false,
         val pythonStarted: AtomicBoolean = AtomicBoolean(false),
         val cancelDelivery: AtomicReference<CancelDelivery> =
             AtomicReference(CancelDelivery.NOT_REQUESTED),
@@ -190,7 +218,7 @@ internal class AndroidResourceManager(
 
     private data class PendingAudioPackImport(
         val staged: StagedArchive,
-        val packId: String,
+        val packs: List<AudioPackCandidate>,
     )
 
     private sealed interface PendingKnownWordsMutation {
@@ -627,8 +655,8 @@ internal class AndroidResourceManager(
         }
     }
 
-    override suspend fun preflightAudioPack(uri: String): String? {
-        var derivedPackId: String? = null
+    override suspend fun preflightAudioPack(uri: String): List<AudioPackCandidate>? {
+        var detected: List<AudioPackCandidate>? = null
         val succeeded = runOperation(
             strings.resolve(R.string.resource_operation_import_audio_pack),
             ResourceOperationPhase.PREPARING,
@@ -651,7 +679,7 @@ internal class AndroidResourceManager(
                         sourceUri = retained.uri,
                         operationId = operation.id,
                         cancellation = operation.cancellation,
-                        fileSuffix = ".zip",
+                        fileSuffix = ".bin",
                         maximumBytes = budget,
                         sourceLabel = AUDIO_SOURCE_LABEL,
                     ) { current, total ->
@@ -660,7 +688,7 @@ internal class AndroidResourceManager(
                 operation.cancellation.check()
                 operation.pythonStarted.set(true)
                 val stagedArchive = requireNotNull(staged)
-                val packId =
+                val packs =
                     ResourceBridgeCodec.decodeAudioPackPreflight(
                         bridge.dispatch(
                             ResourceBridgeCodec.encodeAudioPackPreflightRequest(
@@ -677,7 +705,7 @@ internal class AndroidResourceManager(
                         "Could not retain the audio-pack preflight",
                     )
                 }
-                val retainedFile = File(pendingAudioPackRoot, "$packId.zip")
+                val retainedFile = File(pendingAudioPackRoot, PENDING_AUDIO_ARCHIVE_NAME)
                 retainedFile.delete()
                 if (!stagedArchive.file.renameTo(retainedFile)) {
                     throw ResourceDownloadException(
@@ -685,10 +713,11 @@ internal class AndroidResourceManager(
                         "Could not retain the audio-pack preflight",
                     )
                 }
+                writePendingAudioPackIndex(packs)
                 pendingAudioPackImport =
-                    PendingAudioPackImport(stagedArchive.copy(file = retainedFile), packId)
+                    PendingAudioPackImport(stagedArchive.copy(file = retainedFile), packs)
                 staged = null
-                derivedPackId = packId
+                detected = packs
             } finally {
                 staged?.file?.delete()
                 runBlocking { safBroker.releaseReadAccess(retained.uri) }
@@ -698,15 +727,17 @@ internal class AndroidResourceManager(
             discardAudioPackPreflight()
             return null
         }
-        return derivedPackId
+        return detected
     }
 
     override suspend fun importAudioPack(
         uri: String,
-        packId: String,
+        pack: AudioPackCandidate,
         replace: Boolean,
     ) {
-        val pending = pendingAudioPackImport?.takeIf { it.packId == packId }
+        // The retained archive is reused only when the preflight that produced it
+        // actually offered this pack; anything else restages from the picked URI.
+        val pending = pendingAudioPackImport?.takeIf { pack in it.packs }
         val completed = runOperation(
             strings.resolve(R.string.resource_operation_import_audio_pack),
             if (pending == null) {
@@ -717,6 +748,10 @@ internal class AndroidResourceManager(
             failureOrigin = ResourceFailureOrigin.AUDIO,
             failureRetry = ResourceFailureRetry(ResourceFailureAction.CHOOSE_ANOTHER),
             persistForRecovery = true,
+            // The only import measured in gigabytes and tens of minutes. Every
+            // other resource operation finishes well inside a foreground window
+            // and would raise a notification for nothing.
+            holdsForegroundLease = true,
         ) { operation ->
             if (pending == null) clearPendingAudioPackImport()
             var retainedUri: String? = null
@@ -735,7 +770,7 @@ internal class AndroidResourceManager(
                             sourceUri = retained.uri,
                             operationId = operation.id,
                             cancellation = operation.cancellation,
-                            fileSuffix = ".zip",
+                            fileSuffix = ".bin",
                             maximumBytes = budget,
                             sourceLabel = AUDIO_SOURCE_LABEL,
                         ) { current, total ->
@@ -752,7 +787,8 @@ internal class AndroidResourceManager(
                             ResourceBridgeCodec.encodeAudioPackImportRequest(
                                 operation.id,
                                 stagedArchive.file.canonicalPath,
-                                packId,
+                                pack.packId,
+                                pack.packPath,
                                 replace,
                             ),
                             null,
@@ -1301,18 +1337,49 @@ internal class AndroidResourceManager(
         pendingAudioPackRoot.delete()
     }
 
+    /**
+     * Records what the preflight found beside the archive it found it in.
+     *
+     * The archive survives a process death; the candidate list has to survive with
+     * it, or the restored copy is an archive nobody knows the contents of and the
+     * user restages gigabytes to learn them again.
+     */
+    private fun writePendingAudioPackIndex(packs: List<AudioPackCandidate>) {
+        File(pendingAudioPackRoot, PENDING_AUDIO_INDEX_NAME).writeText(
+            packs.joinToString("\n") { "${it.packId}\t${it.packPath}\t${it.format}" },
+            Charsets.UTF_8,
+        )
+    }
+
     private fun restorePendingAudioPackImport(): Boolean {
         if (pendingAudioPackImport?.staged?.file?.isFile == true) return true
-        val files = pendingAudioPackRoot.listFiles()?.filter(File::isFile).orEmpty()
-        val file = files.singleOrNull()?.takeIf { it.extension == "zip" } ?: return false
-        val packId =
-            file.name.removeSuffix(".zip").takeIf(AUDIO_PACK_ID::matches)
+        val archive =
+            File(pendingAudioPackRoot, PENDING_AUDIO_ARCHIVE_NAME).takeIf(File::isFile)
                 ?: return false
+        val index = File(pendingAudioPackRoot, PENDING_AUDIO_INDEX_NAME).takeIf(File::isFile)
+        val packs = index?.let { readPendingAudioPackIndex(it) } ?: return false
         pendingAudioPackImport = PendingAudioPackImport(
-            staged = StagedArchive(file, sha256 = "", sizeBytes = file.length()),
-            packId = packId,
+            staged = StagedArchive(archive, sha256 = "", sizeBytes = archive.length()),
+            packs = packs,
         )
         return true
+    }
+
+    private fun readPendingAudioPackIndex(index: File): List<AudioPackCandidate>? {
+        val rows = mutableListOf<AudioPackCandidate>()
+        for (line in index.readText(Charsets.UTF_8).lines()) {
+            if (line.isEmpty()) continue
+            val fields = line.split('\t')
+            if (fields.size != 3) return null
+            val (packId, packPath, format) = fields
+            if (!AUDIO_PACK_ID.matches(packId)) return null
+            // Written by this process, but read back after a crash, so it is
+            // treated as input rather than as a fact.
+            if (packPath.split('/').any { it == "." || it == ".." }) return null
+            rows += AudioPackCandidate(packId, packPath, format)
+        }
+        if (rows.isEmpty() || rows.distinctBy(AudioPackCandidate::packId).size != rows.size) return null
+        return rows
     }
 
     override suspend fun lookup(slotId: String, term: String) {
@@ -1375,6 +1442,7 @@ internal class AndroidResourceManager(
             ResourceFailureRetry(ResourceFailureAction.RETRY),
         knownWordsOperation: KnownWordsFailureOperation? = null,
         persistForRecovery: Boolean = false,
+        holdsForegroundLease: Boolean = false,
         requiresStartupReady: Boolean = true,
         waitForMutex: Boolean = false,
         clearMatchingFailureOnSuccess: Boolean = true,
@@ -1412,13 +1480,14 @@ internal class AndroidResourceManager(
                     failureOrigin = failureOrigin,
                     failureRetry = failureRetry,
                     knownWordsOperation = knownWordsOperation,
+                    holdsForegroundLease = holdsForegroundLease,
                 )
+            val initialProgress = ResourceOperationProgress(operation.id, label, initialPhase)
             synchronized(activeMonitor) { active = operation }
-            mutableState.update {
-                it.copy(
-                    activeOperation = ResourceOperationProgress(operation.id, label, initialPhase),
-                )
-            }
+            mutableState.update { it.copy(activeOperation = initialProgress) }
+            // Before the work starts, not after: the window this closes is exactly
+            // the one where a user taps import and immediately leaves the app.
+            if (holdsForegroundLease) foregroundLease.start(initialProgress)
             var completed = false
             try {
                 if (persistForRecovery) {
@@ -1536,9 +1605,13 @@ internal class AndroidResourceManager(
                     try {
                         if (persistForRecovery) operationJournal.clear()
                     } finally {
-                        synchronized(activeMonitor) { if (active === operation) active = null }
-                        mutableState.update { it.copy(activeOperation = null) }
-                        workLease.close()
+                        try {
+                            if (holdsForegroundLease) foregroundLease.stop()
+                        } finally {
+                            synchronized(activeMonitor) { if (active === operation) active = null }
+                            mutableState.update { it.copy(activeOperation = null) }
+                            workLease.close()
+                        }
                     }
                 }
             }
@@ -1777,11 +1850,12 @@ internal class AndroidResourceManager(
         total: Long? = null,
         unit: ResourceProgressUnit = ResourceProgressUnit.BYTES,
     ) {
-        synchronized(activeMonitor) {
-            if (active !== operation) return
-            mutableState.update { state ->
-                state.copy(
-                    activeOperation =
+        val advanced =
+            synchronized(activeMonitor) {
+                if (active !== operation) return
+                var published: ResourceOperationProgress? = null
+                mutableState.update { state ->
+                    val next =
                         state.activeOperation.advancedTo(
                             operationId = operation.id,
                             label = operation.label,
@@ -1789,10 +1863,13 @@ internal class AndroidResourceManager(
                             completed = current,
                             total = total,
                             unit = unit,
-                        ),
-                )
+                        )
+                    published = next
+                    state.copy(activeOperation = next)
+                }
+                published
             }
-        }
+        if (operation.holdsForegroundLease && advanced != null) foregroundLease.update(advanced)
     }
 
     private fun recordFailure(
@@ -1939,6 +2016,10 @@ internal class AndroidResourceManager(
                 strings.resolve(R.string.resource_failure_pitch_invalid)
             "audio_pack_import_failed" ->
                 strings.resolve(R.string.resource_failure_audio_pack_import)
+            "audio_pack_none_detected" ->
+                strings.resolve(R.string.resource_failure_audio_pack_none_detected)
+            "audio_pack_index_malformed" ->
+                strings.resolve(R.string.resource_failure_audio_pack_index_malformed)
             "audio_pack_id_reserved" ->
                 strings.resolve(R.string.resource_failure_audio_pack_reserved)
             "known_words_import_failed" ->
@@ -2048,8 +2129,14 @@ internal class AndroidResourceManager(
         const val FREQUENCY_TEXT_LIMIT = 64L * 1024 * 1024
         const val PITCH_ARCHIVE_LIMIT = 512L * 1024 * 1024
         const val PITCH_TEXT_LIMIT = 64L * 1024 * 1024
-        const val AUDIO_SOURCE_LABEL = "audio-pack ZIP"
+        const val AUDIO_SOURCE_LABEL = "audio-pack archive"
         val AUDIO_PACK_ID = Regex("(?!.*(?:\\.\\.|--))[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?")
+
+        // The retained preflight is one archive of any supported container, so its
+        // name carries no format and no pack id. Both are recorded in the index
+        // file beside it.
+        const val PENDING_AUDIO_ARCHIVE_NAME = "pending-audio-archive"
+        const val PENDING_AUDIO_INDEX_NAME = "pending-audio-packs.tsv"
         const val KNOWN_WORDS_FILE_LIMIT = 32L * 1024 * 1024
 
         /**
