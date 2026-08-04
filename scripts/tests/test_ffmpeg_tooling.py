@@ -462,8 +462,8 @@ class FfmpegToolingTests(unittest.TestCase):
             components = Path(directory) / "config_components.h"
 
             def write(extra: dict[str, int] | None = None) -> None:
-                values = {key: 1 for key in enabled}
-                values.update({key: 0 for key in disabled})
+                values = dict.fromkeys(enabled, 1)
+                values.update(dict.fromkeys(disabled, 0))
                 values.update(extra or {})
                 config.write_text(
                     "\n".join(f"#define {key} {value}" for key, value in values.items()) + "\n",
