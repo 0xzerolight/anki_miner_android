@@ -1185,6 +1185,7 @@ class ReadingMiningViewModelTest {
         when (this) {
             is ReadingSourceSelection.Single -> listOf(document)
             is ReadingSourceSelection.MokuroArchivePair -> listOf(sidecar, archive)
+            is ReadingSourceSelection.PastedText -> emptyList()
         }
 
     private fun factory(
