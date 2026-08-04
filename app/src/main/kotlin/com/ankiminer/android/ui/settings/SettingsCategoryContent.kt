@@ -242,7 +242,6 @@ private fun LazyListScope.ankiSettings(
             setupViewModel::setFieldMapping,
             setupViewModel::selectCardType,
             setupViewModel::setCardTypeMarkerField,
-            setupViewModel::verifyNoteType,
             inlineFailure = {
                 AnkiOriginFailure(
                     setup,

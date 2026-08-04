@@ -334,7 +334,6 @@
     <string name="disclosure_collapsed">Collapsed</string>
     <string name="anki_field_mapping_changes">Mappings changed for this note type: %1$s</string>
     <string name="anki_field_none">Not mapped</string>
-    <string name="anki_note_type_verify">Re-check</string>
     <string name="anki_card_type_title">Card type</string>
     <string name="anki_card_type_explainer">For JP Mining Note-style note types: an \"x\" is written into the marker field so every mined note renders as the chosen type.</string>
     <string name="anki_card_type_picker">Card type</string>

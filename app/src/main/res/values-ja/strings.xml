@@ -328,7 +328,6 @@
     <string name="disclosure_collapsed">折りたたみ</string>
     <string name="anki_field_mapping_changes">このノートタイプのフィールドの対応付けが変更されました：%1$s</string>
     <string name="anki_field_none">未対応付け</string>
-    <string name="anki_note_type_verify">再確認</string>
     <string name="anki_card_type_title">カードタイプ</string>
     <string name="anki_card_type_explainer">JP Mining Note系のノートタイプ向け:マーカーフィールドに\"x\"が書き込まれ、マイニングした全ノートが選択したタイプで表示されます。</string>
     <string name="anki_card_type_picker">カードタイプ</string>
