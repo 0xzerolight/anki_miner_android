@@ -23,6 +23,7 @@ class S3TestDocumentsProvider : ContentProvider() {
         val fixtureName =
             when (uri.path) {
                 "/seekable", "/pipe" -> FIXTURE_NAME
+                "/av1" -> AV1_FIXTURE_NAME
                 "/s5/video" -> S5_VIDEO_FIXTURE_NAME
                 "/s5/subtitle" -> S5_SUBTITLE_FIXTURE_NAME
                 else -> throw FileNotFoundException("Unknown test fixture URI: $uri")
@@ -32,7 +33,8 @@ class S3TestDocumentsProvider : ContentProvider() {
             throw FileNotFoundException("S3 fixture has not been generated")
         }
         return when (uri.path) {
-            "/seekable" -> ParcelFileDescriptor.open(fixture, ParcelFileDescriptor.MODE_READ_ONLY)
+            "/seekable", "/av1" ->
+                ParcelFileDescriptor.open(fixture, ParcelFileDescriptor.MODE_READ_ONLY)
             "/pipe" -> pipeFrom(fixture)
             "/s5/video", "/s5/subtitle" ->
                 ParcelFileDescriptor.open(fixture, ParcelFileDescriptor.MODE_READ_ONLY)
@@ -90,6 +92,7 @@ class S3TestDocumentsProvider : ContentProvider() {
 
     companion object {
         const val FIXTURE_NAME = "s3-saf-fixture.mkv"
+        const val AV1_FIXTURE_NAME = "s3-saf-av1-fixture.mkv"
         const val S5_VIDEO_FIXTURE_NAME = "s5-saf-fixture.mkv"
         const val S5_SUBTITLE_FIXTURE_NAME = "s5-saf-fixture.srt"
     }

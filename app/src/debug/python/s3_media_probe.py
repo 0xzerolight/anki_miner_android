@@ -76,6 +76,49 @@ def create_fixture(ffmpeg: str, output: str) -> None:
         raise RuntimeError("fixture generation produced no MKV")
 
 
+def create_av1_fixture(ffmpeg: str, output: str) -> None:
+    """AV1 video the API 26 emulator cannot decode (no platform or nextlib AV1 decoder).
+
+    The audio track stays universally decodable so the deselected-video failure mode keeps
+    its signature: STATE_READY, audio playing, black picture.
+    """
+    target = Path(output)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    result = _run(
+        [
+            ffmpeg,
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=size=160x90:rate=10",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=800:sample_rate=16000",
+            "-t",
+            "1.5",
+            "-c:v",
+            "libaom-av1",
+            "-cpu-used",
+            "8",
+            "-crf",
+            "50",
+            "-c:a",
+            "pcm_s16le",
+            "-metadata:s:a:0",
+            "language=jpn",
+            str(target),
+        ]
+    )
+    _require_success("av1 fixture generation", result)
+    if not target.is_file() or target.stat().st_size == 0:
+        raise RuntimeError("av1 fixture generation produced no MKV")
+
+
 def probe_and_extract(
     ffmpeg: str,
     ffprobe: str,
