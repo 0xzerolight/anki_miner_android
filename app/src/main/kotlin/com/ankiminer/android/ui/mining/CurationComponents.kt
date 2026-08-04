@@ -51,6 +51,7 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
@@ -667,6 +668,26 @@ private fun DefinitionNotice(
     )
 }
 
+private val MinedFormHighlight = SpanStyle(fontWeight = FontWeight.Bold)
+
+/**
+ * Bolds the mined form where it occurs in its example sentence.
+ *
+ * Uses `surface` — the inflected form actually present in the text — rather than `minedForm`, and
+ * falls back to plain text when it does not occur, which normalisation and conjugation both cause.
+ */
+internal fun highlightMinedForm(
+    sentence: String,
+    surface: String,
+): AnnotatedString {
+    val start = if (surface.isBlank()) -1 else sentence.indexOf(surface)
+    if (start < 0) return AnnotatedString(sentence)
+    return buildAnnotatedString {
+        append(sentence)
+        addStyle(MinedFormHighlight, start, start + surface.length)
+    }
+}
+
 @Composable
 internal fun CurationSentenceChoice(
     candidate: CurationCandidate,
@@ -681,6 +702,10 @@ internal fun CurationSentenceChoice(
 ) {
     val sentenceDescription =
         stringResource(R.string.sentence_selection_description, sentence.sentence)
+    val sentenceText =
+        remember(sentence.sentence, candidate.surface) {
+            highlightMinedForm(sentence.sentence, candidate.surface)
+        }
     Surface(
         modifier = modifier.fillMaxWidth(),
         color = containerColor,
@@ -715,11 +740,7 @@ internal fun CurationSentenceChoice(
                     enabled = enabled,
                 )
                 Column(verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.micro)) {
-                    Text(
-                        text = candidate.minedForm,
-                        style = MaterialTheme.typography.labelMedium,
-                    )
-                    Text(text = sentence.sentence, style = MaterialTheme.typography.bodyMedium)
+                    Text(text = sentenceText, style = MaterialTheme.typography.bodyMedium)
                     if (
                         sentence.sentenceFurigana.isNotBlank() &&
                         sentence.sentenceFurigana != sentence.sentence
