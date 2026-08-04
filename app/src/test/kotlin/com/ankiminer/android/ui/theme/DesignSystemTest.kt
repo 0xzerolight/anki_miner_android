@@ -93,6 +93,16 @@ class DesignSystemTest {
                     "secondaryFixed" to
                         (colors.onSecondaryFixed to colors.secondaryFixed),
                     "tertiaryFixed" to (colors.onTertiaryFixed to colors.tertiaryFixed),
+                    // Curation rows: both fills, and both text weights that sit on them. The
+                    // word is onSurface, its metadata line onSurfaceVariant.
+                    "selectedRowContainer" to
+                        (colors.onSurface to colors.selectedRowContainer()),
+                    "selectedRowContainerVariant" to
+                        (colors.onSurfaceVariant to colors.selectedRowContainer()),
+                    "unselectedRowContainer" to
+                        (colors.onSurface to colors.surfaceContainerLow),
+                    "unselectedRowContainerVariant" to
+                        (colors.onSurfaceVariant to colors.surfaceContainerLow),
                 )
             pairs.forEach { (roleName, pair) ->
                 assertTrue(
