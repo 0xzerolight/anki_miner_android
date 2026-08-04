@@ -190,6 +190,12 @@ class DataStoreAppSettingsRepository internal constructor(
                 candidate.setOrRemove(Keys.tags, value.tags)
                 candidate.setOrRemove(Keys.audioPadding, value.audioPaddingSeconds)
                 candidate.setOrRemove(Keys.screenshotOffset, value.screenshotOffsetSeconds)
+                candidate[Keys.animatedScreenshots] = value.animatedScreenshotsEnabled
+                candidate.setOrRemove(
+                    Keys.animatedScreenshotDuration,
+                    value.animatedScreenshotDurationSeconds,
+                )
+                candidate.setOrRemove(Keys.animatedScreenshotQuality, value.animatedScreenshotQuality)
                 candidate.setOrRemove(Keys.subtitleOffset, value.subtitleOffsetSeconds)
                 candidate.setOrRemove(Keys.audioFormat, value.audioFormat?.wireValue)
                 candidate.setOrRemove(Keys.audioBitrate, value.audioBitrateKbps)
@@ -317,6 +323,16 @@ class DataStoreAppSettingsRepository internal constructor(
                     screenshotOffsetSeconds =
                         decoder.validated(Keys.screenshotOffset) {
                             AppSettings(screenshotOffsetSeconds = it)
+                        },
+                    animatedScreenshotsEnabled =
+                        decoder.read(Keys.animatedScreenshots, false, { it }),
+                    animatedScreenshotDurationSeconds =
+                        decoder.validated(Keys.animatedScreenshotDuration) {
+                            AppSettings(animatedScreenshotDurationSeconds = it)
+                        },
+                    animatedScreenshotQuality =
+                        decoder.validated(Keys.animatedScreenshotQuality) {
+                            AppSettings(animatedScreenshotQuality = it)
                         },
                     subtitleOffsetSeconds =
                         decoder.validated(Keys.subtitleOffset) {
@@ -527,6 +543,10 @@ class DataStoreAppSettingsRepository internal constructor(
             val tags = register(stringPreferencesKey("tags"))
             val audioPadding = register(doublePreferencesKey("audio_padding_seconds"))
             val screenshotOffset = register(doublePreferencesKey("screenshot_offset_seconds"))
+            val animatedScreenshots = register(booleanPreferencesKey("screenshot_animated_enabled"))
+            val animatedScreenshotDuration =
+                register(doublePreferencesKey("screenshot_animated_duration_seconds"))
+            val animatedScreenshotQuality = register(intPreferencesKey("screenshot_animated_quality"))
             val subtitleOffset = register(doublePreferencesKey("subtitle_offset_seconds"))
             val audioFormat = register(stringPreferencesKey("audio_format"))
             val audioBitrate = register(intPreferencesKey("audio_bitrate_kbps"))

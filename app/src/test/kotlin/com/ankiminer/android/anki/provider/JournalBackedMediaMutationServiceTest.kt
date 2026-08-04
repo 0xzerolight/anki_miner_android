@@ -760,7 +760,19 @@ class JournalBackedMediaMutationServiceTest {
         val journal = FakeMediaJournal(events)
         val staging = FakeMediaStaging(events)
         val provider = FakeMediaProvider(events)
-        private val service = JournalBackedMediaMutationService(registry, journal, staging, provider)
+        private val service =
+            JournalBackedMediaMutationService(
+                registry,
+                journal,
+                staging,
+                provider,
+                // A capable device: these tests are about the saga, not about the platform MIME
+                // table. PlatformAnkiMediaMimeCapability would touch MimeTypeMap, which throws
+                // under the JVM android.jar stub.
+                object : AnkiMediaMimeCapability {
+                    override fun canNameFilesFor(extension: String): Boolean = true
+                },
+            )
         var activeOwner: AnkiRunStateRegistry.RunOwner? = null
 
         init {

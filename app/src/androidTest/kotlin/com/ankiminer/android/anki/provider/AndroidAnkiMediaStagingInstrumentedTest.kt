@@ -5,6 +5,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.system.Os
+import android.util.Log
 import android.webkit.MimeTypeMap
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -109,8 +110,9 @@ class AndroidAnkiMediaStagingInstrumentedTest {
      *
      * Every extension is measured before anything is asserted, and a failure prints the whole table.
      * Failing at the first bad extension hides the rest, and the only way to observe them is another
-     * emulator run — which is what [AnkiMediaExtensions.ALWAYS_FALLBACK_EXTENSIONS] has to be
-     * populated from.
+     * emulator run — which is what [AnkiMediaExtensions.DEVICE_CONDITIONAL_EXTENSIONS] has to be
+     * populated from. The whole table is logged on success too, so a passing run still yields the
+     * measurement that populates it.
      */
     private fun assertEveryAllowedExtensionSurvivesTheMimeRoundTrip(platform: AndroidAnkiMediaStagingPlatform) {
         val mimeTypes = MimeTypeMap.getSingleton()
@@ -125,9 +127,13 @@ class AndroidAnkiMediaStagingInstrumentedTest {
             )
         }
 
-        AnkiMediaExtensions.ALWAYS_FALLBACK_EXTENSIONS.forEach { extension ->
-            assertFalse(
-                "$extension is fixed to the API 26 fallback and must not be staged under its real name",
+        // Device-conditional extensions stay IN the allowlist: staging has to be able to name a copy
+        // `.avif` on a platform that can hold one. What keeps them off an incapable device is the
+        // runtime predicate, asserted here against the same table the provider consults.
+        val capability = PlatformAnkiMediaMimeCapability()
+        AnkiMediaExtensions.DEVICE_CONDITIONAL_EXTENSIONS.forEach { extension ->
+            assertTrue(
+                "$extension must stay in ALLOWED_EXTENSIONS or staging rejects a capable device",
                 extension in AnkiMediaExtensions.ALLOWED_EXTENSIONS,
             )
         }
@@ -146,27 +152,40 @@ class AndroidAnkiMediaStagingInstrumentedTest {
                     val stock = mimeTypes.getMimeTypeFromExtension(extension)
                     val resolved = context.contentResolver.getType(uri)
                     val named = resolved?.let(mimeTypes::getExtensionFromMimeType)
+                    val conditional = extension in AnkiMediaExtensions.DEVICE_CONDITIONAL_EXTENSIONS
+                    val capable = capability.canNameFilesFor(extension)
                     val fault =
                         when {
                             stock != null && stock != resolved -> "the provider overrode the platform"
+                            // Expected to degrade: staging never produces this name here, so the
+                            // provider answering nothing for it is the correct outcome.
+                            conditional && !capable -> null
                             resolved == null || resolved == OCTET_STREAM_MIME -> "AnkiDroid stores this as .bin"
                             named == null -> "AnkiDroid cannot name a file after this MIME"
                             else -> null
                         }
                     "${if (fault == null) "ok  " else "FAIL"} .$extension" +
                         " stock=$stock resolved=$resolved names=$named" +
+                        (if (conditional) " conditional capable=$capable" else "") +
                         (fault?.let { " <- $it" } ?: "") to (fault == null)
                 } finally {
                     platform.deleteDestination(path)
                 }
             }
 
+        // Logged on success as well: DEVICE_CONDITIONAL_EXTENSIONS membership is only allowed to
+        // change on a measurement, and a green run is where most measurements come from.
+        Log.i(
+            "MediaMimeRoundTrip",
+            "API ${Build.VERSION.SDK_INT}\n" + table.joinToString("\n") { it.first },
+        )
+
         if (table.any { !it.second }) {
             fail(
                 "staged media extensions AnkiDroid cannot name, on API ${Build.VERSION.SDK_INT}. " +
-                    "Park each FAIL row in AnkiMediaExtensions.ALWAYS_FALLBACK_EXTENSIONS, or give it " +
-                    "an AnkiMediaFileProvider.FILL value that reverse-maps and names the same format:\n" +
-                    table.joinToString("\n") { it.first },
+                    "Park each FAIL row in AnkiMediaExtensions.DEVICE_CONDITIONAL_EXTENSIONS, or give " +
+                    "it an AnkiMediaFileProvider.FILL value that reverse-maps and names the same " +
+                    "format:\n" + table.joinToString("\n") { it.first },
             )
         }
     }

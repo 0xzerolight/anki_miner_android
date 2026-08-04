@@ -27,6 +27,7 @@ Please leave a ⭐ star if Anki Miner helped you - it helps others find it :).
 
 ## Other Features
 
+- Animated screenshots: the card image can be a short looping clip of the line instead of a single frame. Off by default — clips take longer to mine and are several times the size of a still. Saved as AVIF where Android can store it, WebP everywhere else.
 - Extensive filtering: i+1, frequency limits, blacklist, wordsets, and more.
 - Offline Yomitan dictionary import - definitions, pitch accent, frequency - chained by priority.
 - Word audio tries AnkiConnect-Android's bounded on-device `localaudio` lookup first; imported local audio packs are the offline fallback. Sentence audio uses your device's offline Japanese text-to-speech.

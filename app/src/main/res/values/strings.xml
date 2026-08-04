@@ -600,6 +600,13 @@
     <string name="settings_media">Media</string>
     <string name="settings_audio_padding">Audio padding (seconds)</string>
     <string name="settings_screenshot_offset">Screenshot offset (seconds)</string>
+    <string name="settings_animated_screenshots">Animated screenshots</string>
+    <string name="settings_animated_screenshots_summary">Use a short looping clip for the card image instead of a single frame. Larger media and slower mining.</string>
+    <string name="settings_animated_screenshots_webp_only">This device saves clips as WebP.</string>
+    <string name="settings_animated_clip_duration">Clip length (seconds)</string>
+    <string name="settings_animated_clip_duration_help">0.5 to 10. Capped by the length of the line.</string>
+    <string name="settings_animated_quality">Clip quality</string>
+    <string name="settings_animated_quality_help">0 to 100. Higher means larger files.</string>
     <string name="settings_subtitle_offset">Subtitle timing offset</string>
     <string name="settings_audio_bitrate">Audio bitrate (kbps)</string>
     <string name="settings_audio_format">Audio format</string>
@@ -739,6 +746,8 @@
     <string name="b3_validation_non_negative">Enter zero or a positive number</string>
     <string name="b3_validation_positive">Enter a positive whole number</string>
     <string name="b3_validation_parallel_workers">Enter a whole number from 1 to 32</string>
+    <string name="b3_validation_animated_clip_duration">Enter a number from 0.5 to 10</string>
+    <string name="b3_validation_animated_quality">Enter a whole number from 0 to 100</string>
     <string name="b3_retry">Retry</string>
     <string name="b3_choose_another">Choose another</string>
     <string name="b3_resolve">Resolve</string>

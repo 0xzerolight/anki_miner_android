@@ -65,6 +65,7 @@ _BOOL_FIELDS = frozenset(
         "deduplicate_sentences",
         "use_i_plus_one_filter",
         "use_sentence_length_filter",
+        "screenshot_animated",
     }
 )
 _FLOAT_RANGES: Mapping[str, tuple[float | None, float | None]] = {
@@ -74,6 +75,9 @@ _FLOAT_RANGES: Mapping[str, tuple[float | None, float | None]] = {
     # Desktop explicitly warns not to reduce this delay.
     "jisho_delay": (0.5, None),
     "max_sentence_duration_seconds": (0.0, None),
+    # Desktop's own GUI range (media_settings_panel.py).  The engine caps the
+    # clip at the word's own duration regardless.
+    "screenshot_animated_clip_duration": (0.5, 10.0),
 }
 _INT_RANGES: Mapping[str, tuple[int | None, int | None]] = {
     "audio_bitrate": (1, None),
@@ -81,17 +85,21 @@ _INT_RANGES: Mapping[str, tuple[int | None, int | None]] = {
     "max_sentence_chars": (0, None),
     "reading_min_occurrence": (1, None),
     "max_parallel_workers": (1, 32),
+    "screenshot_animated_quality": (0, 100),
 }
 _LITERAL_FIELDS: Mapping[str, frozenset[str]] = {
     "card_type": frozenset({"", "word_and_sentence", "click", "sentence", "audio"}),
     "audio_format": frozenset({"mp3", "opus"}),
     "pitch_category_format": frozenset({"jp", "romaji"}),
+    # Kotlin resolves this from the device's MIME table, not the user: an
+    # API level that cannot name a .avif file makes AnkiDroid store the clip
+    # as .bin, which the engine has no way to detect.
+    "screenshot_animated_format": frozenset({"avif", "webp"}),
 }
 _STRING_TUPLE_FIELDS = frozenset({"excluded_decks", "allowed_pos", "excluded_subtypes", "excluded_wordsets"})
 _OPTIONAL_PATH_FIELDS = frozenset({"blacklist_path", "whitelist_path"})
 _MAPPING_FIELDS = frozenset({"anki_fields", "card_type_marker_fields"})
 _CHAIN_FIELDS = frozenset({"dictionary_chain", "frequency_chain", "pitch_chain", "expression_audio_chain"})
-_STATIC_SCREENSHOT_FIELD = "screenshot_animated"
 
 _EXPOSED_CONFIG_FIELDS = frozenset(
     _STRING_FIELDS
@@ -103,7 +111,6 @@ _EXPOSED_CONFIG_FIELDS = frozenset(
     | _OPTIONAL_PATH_FIELDS
     | _MAPPING_FIELDS
     | _CHAIN_FIELDS
-    | {_STATIC_SCREENSHOT_FIELD}
 )
 
 # Compatibility-only input.  It is captured into AndroidConfigSnapshot and is
@@ -562,14 +569,7 @@ def map_config_settings(
     for field_name, value in settings.items():
         if field_name == _LEGACY_ANDROID_TTS_FIELD:
             continue
-        if field_name == _STATIC_SCREENSHOT_FIELD:
-            if _boolean(field_name, value):
-                raise BridgeProtocolError(
-                    "unsupported_android_feature",
-                    "Android v1 supports static JPEG screenshots only",
-                )
-            updates[field_name] = False
-        elif field_name in _STRING_FIELDS:
+        if field_name in _STRING_FIELDS:
             updates[field_name] = (
                 _canonical_nonempty_string(field_name, value)
                 if field_name in {"anki_deck_name", "anki_note_type"}
@@ -620,9 +620,15 @@ def map_config_settings(
         AudioSourceEntry(kind="custom_json", url=_LOCALAUDIO_URL, enabled=True),
         *updates.get("expression_audio_chain", ()),
     )
-    # The compact native recipe intentionally contains the static JPEG path,
-    # not the desktop-only AVIF/WebP encoders.
-    updates["screenshot_animated"] = False
+    # Pinned rather than exposed.  fps/height stay at the desktop defaults so a
+    # card mined on the phone matches one mined on the desktop, and match_audio
+    # is off because it silently overrides clip_duration, which the user can
+    # see.  The format is deliberately NOT pinned here: Kotlin resolves it from
+    # the device MIME table, because a .avif AnkiDroid cannot name is stored as
+    # .bin and the engine has no way to detect that.
+    updates["screenshot_animated_fps"] = 20
+    updates["screenshot_animated_height"] = 720
+    updates["screenshot_animated_match_audio"] = False
     # ``AudioStage.reading_tts_active`` has a settled four-part desktop gate:
     # injected fetcher, master flag, mapped audio field, and a provider bit.
     # Android uses the Google-named bit only as the final compatibility gate;

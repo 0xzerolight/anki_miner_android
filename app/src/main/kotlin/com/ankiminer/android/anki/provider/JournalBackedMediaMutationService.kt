@@ -242,6 +242,7 @@ internal class JournalBackedMediaMutationService(
     private val journal: MediaMutationJournal,
     private val staging: MediaMutationStaging,
     private val provider: MediaMutationProvider,
+    private val mimeCapability: AnkiMediaMimeCapability,
 ) : MediaMutationService {
     private val stagingRecoveryRequired = AtomicBoolean(false)
     private val stagingRecoveryLock = Any()
@@ -301,7 +302,7 @@ internal class JournalBackedMediaMutationService(
             }
             val staged =
                 try {
-                    staging.stage(asset.toStagingRequest(request, index))
+                    staging.stage(asset.toStagingRequest(request, index, mimeCapability))
                 } catch (failure: AnkiMediaStagingException) {
                     stagingRecoveryRequired.set(true)
                     journal.releaseReservation(reservation.id)
@@ -969,6 +970,7 @@ private fun MediaAsset.toReservation(requestId: String) =
 private fun MediaAsset.toStagingRequest(
     request: StoreMediaRequest,
     index: Int,
+    mimeCapability: AnkiMediaMimeCapability,
 ) =
     AnkiMediaStagingRequest(
         runId = request.runId,
@@ -978,7 +980,7 @@ private fun MediaAsset.toStagingRequest(
         expectedSizeBytes = expectedSizeBytes,
         expectedSha256 = expectedSha256,
         aggregateRemainingBytes = request.assets.drop(index).sumOf(MediaAsset::expectedSizeBytes),
-        extension = AnkiMediaExtensions.sanitizedExtension(requestedFilename, mediaKind),
+        extension = AnkiMediaExtensions.sanitizedExtension(requestedFilename, mediaKind, mimeCapability),
     )
 
 private fun requireReservationBatch(

@@ -21,8 +21,10 @@ import androidx.core.content.FileProvider
  *   `getMimeTypeFromExtension` returns null, so on any API level where the platform knows an
  *   extension we return exactly what stock [FileProvider] would have.
  * * **Every value must reverse-map.** `getExtensionFromMimeType(value)` has to be non-null or
- *   AnkiDroid cannot name the file. An extension for which no value satisfies that belongs in
- *   [AnkiMediaExtensions.ALWAYS_FALLBACK_EXTENSIONS], not here.
+ *   AnkiDroid cannot name the file. An extension for which no value satisfies that on some platform
+ *   versions but does on others belongs in [AnkiMediaExtensions.DEVICE_CONDITIONAL_EXTENSIONS], and
+ *   gets no [FILL] entry — staging simply never produces that name on a device that cannot hold it.
+ *   `avif` is the standing example: API 26 answers null both ways, API 36 answers `image/avif`.
  *
  * Both rules are asserted per extension on the API 26 lane by
  * `AndroidAnkiMediaStagingInstrumentedTest`.

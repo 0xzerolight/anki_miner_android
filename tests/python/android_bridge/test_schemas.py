@@ -130,7 +130,10 @@ def _full_config_payload(home: Path) -> dict[str, Any]:
         "screenshot_offset": 1.2,
         "audio_format": "opus",
         "audio_bitrate": 128,
-        "screenshot_animated": False,
+        "screenshot_animated": True,
+        "screenshot_animated_format": "webp",
+        "screenshot_animated_clip_duration": 2.0,
+        "screenshot_animated_quality": 30,
         "subtitle_offset": -0.2,
         "allowed_pos": ["名詞", "動詞"],
         "excluded_subtypes": ["数詞"],
@@ -1245,12 +1248,25 @@ def test_config_schema_accepts_blank_desktop_field_mappings(
     )
 
 
-def test_config_schema_rejects_animated_screenshots(
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("screenshot_animated", "yes"),
+        ("screenshot_animated_format", "gif"),
+        ("screenshot_animated_clip_duration", 12.0),
+        ("screenshot_animated_clip_duration", 0.1),
+        ("screenshot_animated_quality", 101),
+        ("screenshot_animated_quality", -1),
+    ],
+)
+def test_config_schema_rejects_out_of_range_animated_screenshot_settings(
     schemas: dict[str, dict[str, Any]],
     initialized_bridge_home: Path,
+    field: str,
+    value: Any,
 ) -> None:
     payload = _full_config_payload(initialized_bridge_home)
-    payload["settings"]["screenshot_animated"] = True
+    payload["settings"][field] = value
 
     with pytest.raises(ValidationError):
         Draft202012Validator(schemas["config"]).validate(payload)

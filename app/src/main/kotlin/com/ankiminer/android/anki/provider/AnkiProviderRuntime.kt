@@ -36,6 +36,7 @@ internal class AnkiProviderRuntime(
             journal = AnkiMutationMediaJournal(store),
             staging = PrivateMediaMutationStaging(mediaStaging),
             provider = CheckedMediaMutationProvider(gateway),
+            mimeCapability = PlatformAnkiMediaMimeCapability(),
         )
     private val noteMutations =
         JournalBackedNoteMutationService(

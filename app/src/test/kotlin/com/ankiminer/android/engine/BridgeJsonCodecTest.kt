@@ -696,6 +696,53 @@ class BridgeJsonCodecTest {
         )
     }
 
+    @Test
+    fun `accepts animated screenshot settings within the supported ranges`() {
+        val decoded =
+            BridgeJsonCodec.decode(
+                videoRunWithSettings(
+                    """"screenshot_animated":true,"screenshot_animated_format":"webp",""" +
+                        """"screenshot_animated_clip_duration":2.0,"screenshot_animated_quality":30""",
+                ),
+            ) as BridgeMessage.VideoRun
+
+        assertEquals(
+            setOf(
+                "screenshot_animated",
+                "screenshot_animated_format",
+                "screenshot_animated_clip_duration",
+                "screenshot_animated_quality",
+            ),
+            decoded.request.configSnapshot.settings.keys,
+        )
+    }
+
+    @Test
+    fun `rejects animated screenshot settings outside the supported ranges`() {
+        val rejected =
+            listOf(
+                """"screenshot_animated_format":"gif"""",
+                """"screenshot_animated_clip_duration":12.0""",
+                """"screenshot_animated_clip_duration":0.1""",
+                """"screenshot_animated_quality":101""",
+                """"screenshot_animated_quality":-1""",
+            )
+        rejected.forEach { setting ->
+            assertEquals(
+                setting,
+                BridgeProtocolCategory.INVALID_VALUE,
+                protocolFailure { BridgeJsonCodec.decode(videoRunWithSettings(setting)) }.category,
+            )
+        }
+    }
+
+    private fun videoRunWithSettings(settings: String): String =
+        """{"schemaVersion":1,"type":"mining.video.run","payload":{"videoPath":"/proc/self/fd/8",""" +
+            """"subtitlePath":"/cache/subtitle.SRT","episodeName":"Episode 1","seriesName":"Series",""" +
+            """"sourceLabel":null,"audioTrackOverride":null,"cacheDir":"/cache",""" +
+            """"nativeLibraryDir":"/native","configSnapshot":{"settings":{$settings},""" +
+            """"androidTtsEnabled":false}}}"""
+
     private fun protocolFailure(block: () -> Unit): BridgeProtocolException =
         assertThrows(BridgeProtocolException::class.java) { block() }
 

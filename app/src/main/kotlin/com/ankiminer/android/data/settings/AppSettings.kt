@@ -88,6 +88,17 @@ data class AppSettings(
     val audioFormat: AudioFormat? = null,
     val audioBitrateKbps: Int? = null,
     /**
+     * Animated screenshots: the card's Picture field gets a short looping clip instead of a single
+     * frame. Off by default — it is materially slower to mine and the media is far larger.
+     *
+     * The output format is not a setting: the engine downgrades AVIF to WebP when the AV1 encoder is
+     * missing, and [EngineSettingsSnapshotMapper] downgrades it again when the device's MIME table
+     * cannot name a `.avif` file.
+     */
+    val animatedScreenshotsEnabled: Boolean = false,
+    val animatedScreenshotDurationSeconds: Double? = null,
+    val animatedScreenshotQuality: Int? = null,
+    /**
      * Structural subtitle-annotation strip: whole-line sound-effect captions, leading speaker tags,
      * and inline furigana. Engine default is on, and it runs before the user regex filter.
      */
@@ -140,6 +151,9 @@ data class AppSettings(
             subtitleOffsetSeconds = null,
             audioFormat = null,
             audioBitrateKbps = null,
+            animatedScreenshotsEnabled = false,
+            animatedScreenshotDurationSeconds = null,
+            animatedScreenshotQuality = null,
             stripSubtitleAnnotations = null,
             subtitleRegexFilter = null,
             subtitleRegexReplacement = null,
@@ -205,6 +219,8 @@ internal enum class InvalidAppSettingCode {
     NEGATIVE,
     NOT_POSITIVE,
     PARALLEL_WORKERS_RANGE,
+    ANIMATED_SCREENSHOT_DURATION_RANGE,
+    ANIMATED_SCREENSHOT_QUALITY_RANGE,
     NETWORK_AUDIO_UNSUPPORTED,
     WORDSETS_INVALID,
     FIELD_MAP_UNKNOWN_KEY,
@@ -310,6 +326,24 @@ object AppSettingsValidator {
                     invalid(
                         InvalidAppSettingCode.PARALLEL_WORKERS_RANGE,
                         "Parallel workers must be between 1 and 32",
+                    )
+                }
+            }
+            // Ranges mirror android_bridge/config_map.py exactly; the wire codec rejects the same
+            // bounds, so a drift here surfaces as a bridge protocol failure rather than a bad card.
+            it.animatedScreenshotDurationSeconds?.let { seconds ->
+                if (!seconds.isFinite() || seconds < 0.5 || seconds > 10.0) {
+                    invalid(
+                        InvalidAppSettingCode.ANIMATED_SCREENSHOT_DURATION_RANGE,
+                        "Clip length must be between 0.5 and 10 seconds",
+                    )
+                }
+            }
+            it.animatedScreenshotQuality?.let { quality ->
+                if (quality !in 0..100) {
+                    invalid(
+                        InvalidAppSettingCode.ANIMATED_SCREENSHOT_QUALITY_RANGE,
+                        "Clip quality must be between 0 and 100",
                     )
                 }
             }
@@ -516,6 +550,13 @@ internal object EngineSettingsSnapshotMapper {
         availableWordsetIds: List<String> = emptyList(),
         blacklistPath: String? = null,
         whitelistPath: String? = null,
+        /**
+         * Whether this device's MIME table can name a `.avif` file. Defaults to false so every
+         * existing caller and test keeps the format that works everywhere; only the production
+         * resolver passes the measured value. See [AnkiMediaMimeCapability] — API 26 answers no,
+         * API 36 answers yes, and a `.avif` AnkiDroid cannot name is stored as `.bin`.
+         */
+        avifNameable: Boolean = false,
     ): MiningConfigSnapshot {
         val settings = AppSettingsValidator.validate(rawSettings)
         require(installedDictionaryIds.distinct() == installedDictionaryIds)
@@ -661,7 +702,19 @@ internal object EngineSettingsSnapshotMapper {
                 )
             }
         values["expression_audio_chain"] = BridgeJsonValue.ArrayValue(expressionAudioChain)
-        values["screenshot_animated"] = bool(false)
+        // Emitted unconditionally so the key set does not depend on user settings; the tuning is
+        // emitted only when the feature is on, because the bridge pins fps/height/match_audio and
+        // would reject a stray value anyway.
+        values["screenshot_animated"] = bool(settings.animatedScreenshotsEnabled)
+        if (settings.animatedScreenshotsEnabled) {
+            values["screenshot_animated_format"] = text(if (avifNameable) "avif" else "webp")
+            settings.animatedScreenshotDurationSeconds?.let {
+                values["screenshot_animated_clip_duration"] = decimal(it)
+            }
+            settings.animatedScreenshotQuality?.let {
+                values["screenshot_animated_quality"] = integer(it)
+            }
+        }
         return MiningConfigSnapshot(
             settings = values,
             androidTtsEnabled = settings.readingTtsEnabled,

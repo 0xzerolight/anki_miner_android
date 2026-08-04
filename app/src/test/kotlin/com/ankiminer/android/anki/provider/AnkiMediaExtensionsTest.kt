@@ -10,13 +10,23 @@ import org.junit.Test
 class AnkiMediaExtensionsTest {
     private val token = "a".repeat(64)
 
+    /**
+     * Every test here is about the extension partition, not about device capability, so the
+     * capability is held wide open. The device-conditional behaviour is covered by
+     * [AnkiMediaMimeCapabilityTest].
+     */
+    private val anyDevice =
+        object : AnkiMediaMimeCapability {
+            override fun canNameFilesFor(extension: String): Boolean = true
+        }
+
     @Test
     fun `sanitizes the audio extensions real producers emit`() {
         // Downloaded expression audio (extension chosen from the response Content-Type), local audio
         // packs, and Android offline TTS. Everything past mp3/opus staged as ".stage" until now,
         // which AnkiDroid stores as ".bin".
         listOf("mp3", "opus", "ogg", "oga", "aac", "m4a", "mp4", "wav", "flac", "webm").forEach {
-            assertEquals(it, AnkiMediaExtensions.sanitizedExtension("word_ab12cd.$it", MediaKind.AUDIO))
+            assertEquals(it, AnkiMediaExtensions.sanitizedExtension("word_ab12cd.$it", MediaKind.AUDIO, anyDevice))
         }
     }
 
@@ -24,8 +34,8 @@ class AnkiMediaExtensionsTest {
     fun `sanitizes the image extensions real producers emit`() {
         // Screenshots are jpg/png, but Yomitan dictionary media also arrives as MediaKind.IMAGE and
         // ships anything in the importer's whitelist — svg pitch-accent graphics most notably.
-        listOf("jpg", "jpeg", "png", "webp", "svg", "gif", "bmp", "tif", "tiff", "ico").forEach {
-            assertEquals(it, AnkiMediaExtensions.sanitizedExtension("shot_ab12cd.$it", MediaKind.IMAGE))
+        listOf("jpg", "jpeg", "png", "webp", "avif", "svg", "gif", "bmp", "tif", "tiff", "ico").forEach {
+            assertEquals(it, AnkiMediaExtensions.sanitizedExtension("shot_ab12cd.$it", MediaKind.IMAGE, anyDevice))
         }
     }
 
@@ -37,8 +47,8 @@ class AnkiMediaExtensionsTest {
         AnkiMediaExtensions.ALLOWED_EXTENSIONS.forEach { extension ->
             val resolved =
                 listOfNotNull(
-                    AnkiMediaExtensions.sanitizedExtension("x.$extension", MediaKind.AUDIO),
-                    AnkiMediaExtensions.sanitizedExtension("x.$extension", MediaKind.IMAGE),
+                    AnkiMediaExtensions.sanitizedExtension("x.$extension", MediaKind.AUDIO, anyDevice),
+                    AnkiMediaExtensions.sanitizedExtension("x.$extension", MediaKind.IMAGE, anyDevice),
                 )
             assertEquals("extension $extension must resolve for exactly one kind", 1, resolved.size)
             assertEquals(extension, resolved.single())
@@ -47,36 +57,42 @@ class AnkiMediaExtensionsTest {
     }
 
     @Test
-    fun `always-fallback extensions reach neither the allowlist nor a staged name`() {
-        // This is a compile-time compatibility decision, not a claim about the current device.
-        // It must sanitize to null for BOTH kinds, or staging rejects instead of using .stage.
-        AnkiMediaExtensions.ALWAYS_FALLBACK_EXTENSIONS.forEach { extension ->
-            assertFalse(extension in AnkiMediaExtensions.ALLOWED_EXTENSIONS)
-            assertNull(AnkiMediaExtensions.sanitizedExtension("x.$extension", MediaKind.AUDIO))
-            assertNull(AnkiMediaExtensions.sanitizedExtension("x.$extension", MediaKind.IMAGE))
+    fun `device-conditional extensions stay in the allowlist and follow the device`() {
+        // They must reach ALLOWED_EXTENSIONS, or AnkiMediaStaging.validateRequest would reject a
+        // capable device's request outright instead of naming the copy. On an incapable device the
+        // sanitizer returns null for BOTH kinds so staging degrades to ".stage".
+        val noDevice =
+            object : AnkiMediaMimeCapability {
+                override fun canNameFilesFor(extension: String): Boolean = false
+            }
+        AnkiMediaExtensions.DEVICE_CONDITIONAL_EXTENSIONS.forEach { extension ->
+            assertTrue(extension in AnkiMediaExtensions.ALLOWED_EXTENSIONS)
+            assertNull(AnkiMediaExtensions.sanitizedExtension("x.$extension", MediaKind.AUDIO, noDevice))
+            assertNull(AnkiMediaExtensions.sanitizedExtension("x.$extension", MediaKind.IMAGE, noDevice))
         }
-        assertTrue("avif" in AnkiMediaExtensions.ALWAYS_FALLBACK_EXTENSIONS)
+        // Measured 2026-08-03: null both ways on API 26, image/avif -> avif on API 36.
+        assertTrue("avif" in AnkiMediaExtensions.DEVICE_CONDITIONAL_EXTENSIONS)
     }
 
     @Test
     fun `lowercases the suffix before matching`() {
-        assertEquals("opus", AnkiMediaExtensions.sanitizedExtension("word.OPUS", MediaKind.AUDIO))
-        assertEquals("png", AnkiMediaExtensions.sanitizedExtension("shot.PNG", MediaKind.IMAGE))
+        assertEquals("opus", AnkiMediaExtensions.sanitizedExtension("word.OPUS", MediaKind.AUDIO, anyDevice))
+        assertEquals("png", AnkiMediaExtensions.sanitizedExtension("shot.PNG", MediaKind.IMAGE, anyDevice))
     }
 
     @Test
     fun `rejects an extension that does not match its media kind`() {
-        assertNull(AnkiMediaExtensions.sanitizedExtension("shot.jpg", MediaKind.AUDIO))
-        assertNull(AnkiMediaExtensions.sanitizedExtension("word.opus", MediaKind.IMAGE))
+        assertNull(AnkiMediaExtensions.sanitizedExtension("shot.jpg", MediaKind.AUDIO, anyDevice))
+        assertNull(AnkiMediaExtensions.sanitizedExtension("word.opus", MediaKind.IMAGE, anyDevice))
     }
 
     @Test
     fun `rejects unknown or missing suffixes`() {
-        assertNull(AnkiMediaExtensions.sanitizedExtension("word.txt", MediaKind.AUDIO))
-        assertNull(AnkiMediaExtensions.sanitizedExtension("shot.txt", MediaKind.IMAGE))
-        assertNull(AnkiMediaExtensions.sanitizedExtension("noextension", MediaKind.AUDIO))
-        assertNull(AnkiMediaExtensions.sanitizedExtension("trailingdot.", MediaKind.AUDIO))
-        assertNull(AnkiMediaExtensions.sanitizedExtension(".opus", MediaKind.AUDIO))
+        assertNull(AnkiMediaExtensions.sanitizedExtension("word.txt", MediaKind.AUDIO, anyDevice))
+        assertNull(AnkiMediaExtensions.sanitizedExtension("shot.txt", MediaKind.IMAGE, anyDevice))
+        assertNull(AnkiMediaExtensions.sanitizedExtension("noextension", MediaKind.AUDIO, anyDevice))
+        assertNull(AnkiMediaExtensions.sanitizedExtension("trailingdot.", MediaKind.AUDIO, anyDevice))
+        assertNull(AnkiMediaExtensions.sanitizedExtension(".opus", MediaKind.AUDIO, anyDevice))
     }
 
     @Test

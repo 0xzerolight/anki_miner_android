@@ -134,9 +134,15 @@
         "audio_format": {"enum": ["mp3", "opus"]},
         "audio_bitrate": {"type": "integer", "minimum": 1, "maximum": 9223372036854775807},
         "screenshot_animated": {
-          "const": false,
-          "description": "Android v1 always extracts a static JPEG"
+          "type": "boolean",
+          "description": "Extract a short looping clip instead of a static JPEG"
         },
+        "screenshot_animated_format": {
+          "enum": ["avif", "webp"],
+          "description": "Resolved by Kotlin from the device MIME table, not chosen by the user"
+        },
+        "screenshot_animated_clip_duration": {"type": "number", "minimum": 0.5, "maximum": 10},
+        "screenshot_animated_quality": {"type": "integer", "minimum": 0, "maximum": 100},
         "subtitle_offset": {"type": "number"},
         "allowed_pos": {"type": "array", "items": {"type": "string"}},
         "excluded_subtypes": {"type": "array", "items": {"type": "string"}},

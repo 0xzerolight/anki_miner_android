@@ -9,7 +9,7 @@ Anki Miner for Android is licensed under GPL-3.0-or-later (see [LICENSE](LICENSE
 | Anki Miner Python engine | `app/src/main/python/anki_miner/`, `tools/engine-sync/engine.lock`, `app/src/main/python/.engine-sync-manifest.json` | GPL-3.0-or-later; full text is packaged at `app/src/main/python/anki_miner/LICENSE` |
 | AnkiDroid API source | `third_party/ankidroid-api/manifest.json`, `NOTICE.md`, `upstream/` | Per-file LGPL-3.0-only, LGPL-3.0-or-later, and the recorded permissive `FlashCardsContract` notice |
 | MeCab and mecab_for_dart-derived source | `third_party/mecab/source-manifest.json` and both `LICENSE.*` files | BSD-3-Clause |
-| FFmpeg, LAME, Opus, and dav1d CLI build | `third_party/ffmpeg/` (license texts and `NOTICE.md`), `tools/ffmpeg/sources.lock`, build recipes, and committed `jniLibs` executables | FFmpeg 7.1.5 LGPL-2.1-or-later; LAME 3.100 LGPL-2.0-or-later (GNU Library GPL v2); Opus 1.5.2 BSD-3-Clause; dav1d 1.5.0 BSD-2-Clause |
+| FFmpeg, LAME, Opus, dav1d, libwebp, and libaom CLI build | `third_party/ffmpeg/` (license texts and `NOTICE.md`), `tools/ffmpeg/sources.lock`, build recipes, and committed `jniLibs` executables | FFmpeg 7.1.5 LGPL-2.1-or-later; LAME 3.100 LGPL-2.0-or-later (GNU Library GPL v2); Opus 1.5.2 BSD-3-Clause; dav1d 1.5.0 BSD-2-Clause; libwebp 1.4.0 BSD-3-Clause; libaom 3.12.1 BSD-2-Clause |
 | Chaquopy and CPython runtime | Chaquopy target artifacts and vendored runtime wheels under `app/wheels/` | Chaquopy, Python (PSF), OpenSSL, and SQLite terms as present in the runtime |
 | Python runtime wheels | `tools/runtime-wheels/sources.lock` and publication `attributions.json` | Hash-locked per-package terms including Apache-2.0, BSD, MIT-family, MPL-2.0, FTL, IJG, and Zlib terms |
 | Fugashi/libmecab tokenizer wheels | `tools/wheels/sources.lock` and verified publication manifest | Publication verifier records and checks the packaged license files |
@@ -26,5 +26,5 @@ UniDic Lite and the recommended Jitendex/Yomitan dictionary are downloaded as da
 
 For a distributed APK, the corresponding source for the GPL/LGPL components
 must be made available at no charge at the immutable application commit embedded
-in that APK. Pinned upstream sources for FFmpeg, LAME, Opus, dav1d, MeCab, fugashi, and
+in that APK. Pinned upstream sources for FFmpeg, LAME, Opus, dav1d, libwebp, libaom, MeCab, fugashi, and
 the runtime wheels are recorded with hashes in the `sources.lock` files above.

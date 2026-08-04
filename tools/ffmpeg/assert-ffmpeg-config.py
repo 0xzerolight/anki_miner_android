@@ -31,6 +31,23 @@ REQUIRED_ENABLED = frozenset(
         "CONFIG_MJPEG_ENCODER",
         "CONFIG_IMAGE2_MUXER",
         "CONFIG_SCALE_FILTER",
+        # Animated screenshot path, WebP.  libwebp_anim is detected with
+        # check_pkg_config, not require_pkg_config: a libwebp that ships no
+        # libwebpmux.pc configures green with no animated encoder at all.
+        # This assertion runs after configure and before make, and is the only
+        # thing standing between that and a silently static release build.
+        "CONFIG_LIBWEBP",
+        "CONFIG_LIBWEBP_ENCODER",
+        "CONFIG_LIBWEBP_ANIM_ENCODER",
+        "CONFIG_WEBP_MUXER",
+        "CONFIG_FPS_FILTER",
+        # Animated screenshot path, AVIF.  The avif muxer is mov-based and
+        # accepts only AV_CODEC_ID_AV1, so encoder and muxer are one unit:
+        # either both are present or the .avif output path is dead.  libaom is
+        # encode-only here; AV1 decode stays with dav1d.
+        "CONFIG_LIBAOM",
+        "CONFIG_LIBAOM_AV1_ENCODER",
+        "CONFIG_AVIF_MUXER",
         # AV1 software decode via dav1d, incl. AV1-in-MP4 (mov demuxer).
         "CONFIG_LIBDAV1D",
         "CONFIG_LIBDAV1D_DECODER",
@@ -121,7 +138,7 @@ def main() -> int:
     except (ConfigurationError, OSError, UnicodeError) as error:
         print(f"FFmpeg configuration check failed: {error}", file=sys.stderr)
         return 1
-    print("FFmpeg configuration OK: Matroska, static JPEG, MP3/Opus/WAV, " "local protocols only")
+    print("FFmpeg configuration OK: Matroska, static JPEG, animated WebP/AVIF, " "MP3/Opus/WAV, local protocols only")
     return 0
 
 

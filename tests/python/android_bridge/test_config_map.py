@@ -197,22 +197,69 @@ def test_network_expression_audio_kinds_are_rejected(kind: str, tmp_path: Path) 
     assert error.value.code == "unsupported_audio_source"
 
 
-def test_animated_screenshots_are_rejected_in_favor_of_static_jpeg(
+def test_animated_screenshots_are_accepted_with_pinned_tuning(tmp_path: Path) -> None:
+    mapped = map_config_settings(
+        {
+            "screenshot_animated": True,
+            "screenshot_animated_format": "webp",
+            "screenshot_animated_clip_duration": 2.0,
+            "screenshot_animated_quality": 30,
+        },
+        _paths(tmp_path),
+    ).engine_config
+
+    assert mapped.screenshot_animated is True
+    assert mapped.screenshot_animated_format == "webp"
+    assert mapped.screenshot_animated_clip_duration == 2.0
+    assert mapped.screenshot_animated_quality == 30
+    # Pinned, not exposed: the engine must never see a desktop default that
+    # Android has not validated on a phone.  match_audio is off because it
+    # silently overrides clip_duration, which the user can see.
+    assert mapped.screenshot_animated_fps == 20
+    assert mapped.screenshot_animated_height == 720
+    assert mapped.screenshot_animated_match_audio is False
+
+
+def test_animated_screenshots_default_to_off(tmp_path: Path) -> None:
+    mapped = map_config_settings({}, _paths(tmp_path)).engine_config
+
+    assert mapped.screenshot_animated is False
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("screenshot_animated_clip_duration", 12.0),
+        ("screenshot_animated_clip_duration", 0.1),
+        ("screenshot_animated_quality", 101),
+        ("screenshot_animated_quality", -1),
+        ("screenshot_animated_format", "gif"),
+    ],
+)
+def test_animated_screenshot_tuning_outside_the_supported_range_is_rejected(
     tmp_path: Path,
+    field: str,
+    value: object,
+) -> None:
+    with pytest.raises(BridgeProtocolError):
+        map_config_settings({field: value}, _paths(tmp_path))
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("screenshot_animated_fps", 30),
+        ("screenshot_animated_height", 480),
+        ("screenshot_animated_match_audio", True),
+    ],
+)
+def test_pinned_animated_screenshot_fields_are_not_settable(
+    tmp_path: Path,
+    field: str,
+    value: object,
 ) -> None:
     with pytest.raises(BridgeProtocolError) as error:
-        map_config_settings({"screenshot_animated": True}, _paths(tmp_path))
-
-    assert error.value.code == "unsupported_android_feature"
-    assert "static JPEG" in str(error.value)
-
-
-def test_desktop_animated_screenshot_tuning_is_not_exposed(tmp_path: Path) -> None:
-    with pytest.raises(BridgeProtocolError) as error:
-        map_config_settings(
-            {"screenshot_animated_format": "webp"},
-            _paths(tmp_path),
-        )
+        map_config_settings({field: value}, _paths(tmp_path))
 
     assert error.value.code == "unknown_config_field"
 

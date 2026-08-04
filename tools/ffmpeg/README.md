@@ -33,10 +33,19 @@ the build exits with that single actionable prerequisite. `--install` validates
 all four executables before replacing the staged `jniLibs` tree, preserving any
 unrelated native libraries and rolling back a failed swap.
 
-Android v1 deliberately supports static JPEG screenshots only. The generated
+Screenshots are static JPEG by default and animated on request. The generated
 configuration gate proves the Matroska and MP4 inputs, AV1 decode (dav1d),
-JPEG, MP3, Opus, WAV, and local file/pipe protocol surfaces used by the engine
-and the S3 instrumented test.
+JPEG, animated WebP (libwebp), MP3, Opus, WAV, and local file/pipe protocol
+surfaces used by the engine and the S3 instrumented test.
+
+The animated WebP encoder needs watching. FFmpeg detects it with
+`check_pkg_config libwebpmux`, which is non-fatal: a libwebp that installs no
+`libwebpmux.pc` leaves `CONFIG_LIBWEBP_ANIM_ENCODER` at 0 and configure still
+succeeds, producing a green build whose animated path is silently missing.
+libwebp 1.4.0 builds mux by default (the flag is `--disable-libwebpmux`), so the
+upstream recipe needs no override — but `assert-ffmpeg-config.py` requires the
+symbol so a future version that changes that default fails the build instead of
+shipping.
 
 dav1d builds with meson/ninja, so both must be on the host PATH
 (`python3.13 -m pip install --user meson ninja` suffices). Its assembly is
@@ -61,6 +70,16 @@ realpath-resolved back to the real location — then build against it:
 
 ```bash
 ANKI_MINER_ANDROID_TOOLCHAIN_ROOT=/var/tmp/anki-miner-build tools/ffmpeg/build.sh --install
+```
+
+That root needs both the pinned NDK and the pinned CMake under its own `sdk/`,
+because libaom is a CMake build and `ANDROID_CMAKE_HOME` is derived from the
+toolchain root. Symlinks are enough — only the paths ffmpeg bakes into its
+configure string have to be maintainer-free:
+
+```bash
+mkdir -p /var/tmp/anki-miner-build/sdk/cmake
+ln -sfnT "$PWD/.android-toolchain/sdk/cmake/3.22.1" /var/tmp/anki-miner-build/sdk/cmake/3.22.1
 ```
 
 Acceptance gate — the shipped ELFs must embed no maintainer path (prints nothing):
