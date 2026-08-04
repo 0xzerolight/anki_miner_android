@@ -44,6 +44,8 @@ import kotlinx.coroutines.withContext
 internal enum class SettingsFieldKey {
     AUDIO_PADDING,
     SCREENSHOT_OFFSET,
+    ANIMATED_SCREENSHOT_DURATION,
+    ANIMATED_SCREENSHOT_QUALITY,
     SUBTITLE_OFFSET,
     BITRATE,
     MAX_DURATION,
@@ -111,6 +113,33 @@ private fun validateOptionalInt(
     }
 }
 
+// Bounds mirror AppSettingsValidator, android_bridge/config_map.py, and BridgeJsonCodec. The
+// dedicated messages exist because the generic non-negative/positive wording would not tell a user
+// what range to type.
+private fun validateAnimatedClipDuration(value: String): LocalizedStringResource? {
+    if (value.isEmpty()) return null
+    val parsed =
+        value.toDoubleOrNull()
+            ?: return LocalizedStringResource(R.string.b3_validation_numeric_incomplete)
+    return if (!parsed.isFinite() || parsed !in 0.5..10.0) {
+        LocalizedStringResource(R.string.b3_validation_animated_clip_duration)
+    } else {
+        null
+    }
+}
+
+private fun validateAnimatedQuality(value: String): LocalizedStringResource? {
+    if (value.isEmpty()) return null
+    val parsed =
+        value.toIntOrNull()
+            ?: return LocalizedStringResource(R.string.b3_validation_numeric_incomplete)
+    return if (parsed !in 0..100) {
+        LocalizedStringResource(R.string.b3_validation_animated_quality)
+    } else {
+        null
+    }
+}
+
 internal data class SettingsDraft(
     val deckName: String,
     val excludedDecks: List<String>,
@@ -118,6 +147,9 @@ internal data class SettingsDraft(
     val tagsOverride: Boolean,
     val audioPadding: String,
     val screenshotOffset: String,
+    val animatedScreenshots: Boolean,
+    val animatedScreenshotDuration: String,
+    val animatedScreenshotQuality: String,
     val subtitleOffset: String,
     val bitrate: String,
     val maxDuration: String,
@@ -160,6 +192,10 @@ internal data class SettingsDraft(
                     screenshotOffset,
                     nonNegative = true,
                 )?.let { put(SettingsFieldKey.SCREENSHOT_OFFSET, it) }
+                validateAnimatedClipDuration(animatedScreenshotDuration)
+                    ?.let { put(SettingsFieldKey.ANIMATED_SCREENSHOT_DURATION, it) }
+                validateAnimatedQuality(animatedScreenshotQuality)
+                    ?.let { put(SettingsFieldKey.ANIMATED_SCREENSHOT_QUALITY, it) }
                 validateOptionalDouble(
                     subtitleOffset,
                 )?.let { put(SettingsFieldKey.SUBTITLE_OFFSET, it) }
@@ -222,6 +258,11 @@ internal data class SettingsDraft(
             tags = tags.takeIf { tagsOverride },
             audioPaddingSeconds = AppSettingsDraftParser.optionalDouble(audioPadding),
             screenshotOffsetSeconds = AppSettingsDraftParser.optionalDouble(screenshotOffset),
+            animatedScreenshotsEnabled = animatedScreenshots,
+            animatedScreenshotDurationSeconds =
+                AppSettingsDraftParser.optionalDouble(animatedScreenshotDuration),
+            animatedScreenshotQuality =
+                AppSettingsDraftParser.optionalInt(animatedScreenshotQuality),
             subtitleOffsetSeconds = AppSettingsDraftParser.optionalDouble(subtitleOffset),
             audioFormat = audioFormat,
             audioBitrateKbps = AppSettingsDraftParser.optionalInt(bitrate),
@@ -265,6 +306,14 @@ internal data class SettingsDraft(
             screenshotOffset =
                 screenshotOffset.takeIf { SettingsFieldKey.SCREENSHOT_OFFSET !in validation }
                     ?: base.screenshotOffsetSeconds?.toString().orEmpty(),
+            animatedScreenshotDuration =
+                animatedScreenshotDuration.takeIf {
+                    SettingsFieldKey.ANIMATED_SCREENSHOT_DURATION !in validation
+                } ?: base.animatedScreenshotDurationSeconds?.toString().orEmpty(),
+            animatedScreenshotQuality =
+                animatedScreenshotQuality.takeIf {
+                    SettingsFieldKey.ANIMATED_SCREENSHOT_QUALITY !in validation
+                } ?: base.animatedScreenshotQuality?.toString().orEmpty(),
             subtitleOffset =
                 subtitleOffset.takeIf { SettingsFieldKey.SUBTITLE_OFFSET !in validation }
                     ?: base.subtitleOffsetSeconds?.toString().orEmpty(),
@@ -341,6 +390,11 @@ internal data class SettingsDraft(
                 tagsOverride = settings.tags != null,
                 audioPadding = settings.audioPaddingSeconds?.toString().orEmpty(),
                 screenshotOffset = settings.screenshotOffsetSeconds?.toString().orEmpty(),
+                animatedScreenshots = settings.animatedScreenshotsEnabled,
+                animatedScreenshotDuration =
+                    settings.animatedScreenshotDurationSeconds?.toString().orEmpty(),
+                animatedScreenshotQuality =
+                    settings.animatedScreenshotQuality?.toString().orEmpty(),
                 subtitleOffset = settings.subtitleOffsetSeconds?.toString().orEmpty(),
                 bitrate = settings.audioBitrateKbps?.toString().orEmpty(),
                 maxDuration = settings.maxSentenceDurationSeconds?.toString().orEmpty(),
@@ -388,6 +442,24 @@ private fun SettingsDraft.rebaseChangesSince(
         audioPadding = changedValue(baseline.audioPadding, audioPadding, persisted.audioPadding),
         screenshotOffset =
             changedValue(baseline.screenshotOffset, screenshotOffset, persisted.screenshotOffset),
+        animatedScreenshots =
+            changedValue(
+                baseline.animatedScreenshots,
+                animatedScreenshots,
+                persisted.animatedScreenshots,
+            ),
+        animatedScreenshotDuration =
+            changedValue(
+                baseline.animatedScreenshotDuration,
+                animatedScreenshotDuration,
+                persisted.animatedScreenshotDuration,
+            ),
+        animatedScreenshotQuality =
+            changedValue(
+                baseline.animatedScreenshotQuality,
+                animatedScreenshotQuality,
+                persisted.animatedScreenshotQuality,
+            ),
         subtitleOffset =
             changedValue(baseline.subtitleOffset, subtitleOffset, persisted.subtitleOffset),
         bitrate = changedValue(baseline.bitrate, bitrate, persisted.bitrate),
@@ -718,6 +790,10 @@ private fun settingsValidationError(
             )
         InvalidAppSettingCode.PARALLEL_WORKERS_RANGE ->
             LocalizedStringResource(R.string.settings_validation_parallel_workers)
+        InvalidAppSettingCode.ANIMATED_SCREENSHOT_DURATION_RANGE ->
+            LocalizedStringResource(R.string.b3_validation_animated_clip_duration)
+        InvalidAppSettingCode.ANIMATED_SCREENSHOT_QUALITY_RANGE ->
+            LocalizedStringResource(R.string.b3_validation_animated_quality)
         InvalidAppSettingCode.NETWORK_AUDIO_UNSUPPORTED ->
             LocalizedStringResource(R.string.settings_validation_network_audio)
         InvalidAppSettingCode.WORDSETS_INVALID ->
