@@ -40,6 +40,7 @@ DIRECT_COORDINATES = (
     "androidx.media3:media3-ui-compose:1.10.1",
     "androidx.navigation:navigation-compose:2.9.8",
     "com.fasterxml.jackson.core:jackson-core:2.21.5",
+    "io.github.anilbeesetti:nextlib-media3ext:1.10.1-0.13.0",
     "org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0",
 )
 
@@ -87,6 +88,10 @@ def _licenses(coordinate: str) -> list[str]:
         # jackson-core's packaged NOTICE identifies the small bundled works
         # covered by these additional licenses.
         return ["Apache-2.0", "MIT", "BSL-1.0", "BSD-2-Clause"]
+    if coordinate.startswith("io.github.anilbeesetti:nextlib-media3ext:"):
+        # nextlib bundles FFmpeg (LGPL-2.1-or-later components built into the
+        # packaged .so files) under a GPL-3.0 project license.
+        return ["GPL-3.0-only", "LGPL-2.1-or-later"]
     if group in {
         "androidx.activity",
         "androidx.annotation",
@@ -126,6 +131,7 @@ def _licenses(coordinate: str) -> list[str]:
         "androidx.versionedparcelable",
         "androidx.window",
         "com.fasterxml.jackson",
+        "com.google.errorprone",
         "com.google.guava",
         "com.squareup.okio",
         "org.jetbrains",

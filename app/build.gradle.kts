@@ -328,6 +328,7 @@ dependencies {
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.media3.exoplayer)
     implementation(libs.media3.ui.compose)
+    implementation(libs.nextlib.media3ext)
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)

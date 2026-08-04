@@ -63,6 +63,7 @@ class RuntimeDependenciesTest(unittest.TestCase):
         self.assertEqual("2.21.5", catalog["versions"]["jackson"])
         self.assertEqual("1.11.0", catalog["versions"]["kotlinx-coroutines"])
         self.assertEqual("1.10.1", catalog["versions"]["media3"])
+        self.assertEqual("1.10.1-0.13.0", catalog["versions"]["nextlib"])
         self.assertEqual(
             "androidx.core:core",
             catalog["libraries"]["androidx-core"]["module"],
@@ -107,6 +108,10 @@ class RuntimeDependenciesTest(unittest.TestCase):
             "androidx.media3:media3-ui-compose",
             catalog["libraries"]["media3-ui-compose"]["module"],
         )
+        self.assertEqual(
+            "io.github.anilbeesetti:nextlib-media3ext",
+            catalog["libraries"]["nextlib-media3ext"]["module"],
+        )
 
         libraries = catalog["libraries"]
         forbidden_modules = {
@@ -133,6 +138,7 @@ class RuntimeDependenciesTest(unittest.TestCase):
             "implementation(libs.kotlinx.coroutines.core)",
             "implementation(libs.media3.exoplayer)",
             "implementation(libs.media3.ui.compose)",
+            "implementation(libs.nextlib.media3ext)",
             "debugImplementation(libs.androidx.compose.ui.tooling)",
             "debugImplementation(libs.androidx.compose.ui.test.manifest)",
         ):
@@ -160,6 +166,7 @@ class RuntimeDependenciesTest(unittest.TestCase):
                 "androidx.media3:media3-ui-compose:1.10.1",
                 "androidx.navigation:navigation-compose:2.9.8",
                 "com.fasterxml.jackson.core:jackson-core:2.21.5",
+                "io.github.anilbeesetti:nextlib-media3ext:1.10.1-0.13.0",
                 "org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0",
             },
             set(self.manifest["directCoordinates"]),
