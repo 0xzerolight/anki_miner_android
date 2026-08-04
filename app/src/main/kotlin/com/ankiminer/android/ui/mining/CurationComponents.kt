@@ -26,6 +26,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -42,7 +43,6 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
@@ -52,6 +52,7 @@ import com.ankiminer.android.mining.CurationCandidate
 import com.ankiminer.android.mining.CurationSentence
 import com.ankiminer.android.ui.settings.DictionaryHtml
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
+import com.ankiminer.android.ui.theme.selectedRowContainer
 
 internal const val CURATION_SEARCH_TEST_TAG = "curation_search"
 
@@ -131,13 +132,28 @@ internal fun CurationControls(
     }
 }
 
+/** The two lines of a candidate row, built once per page rather than per scroll frame. */
+@Immutable
+internal data class CurationCandidateRowText(
+    val headline: AnnotatedString,
+    val metadata: String,
+)
+
 @Composable
-internal fun rememberCurationCandidateHeaderTexts(
+internal fun rememberCurationCandidateRowTexts(
     candidates: List<CurationCandidate>,
-): Map<String, AnnotatedString> {
+): Map<String, CurationCandidateRowText> {
     val context = LocalContext.current
     val configuration = LocalConfiguration.current
-    return remember(candidates, context, configuration) {
+    // The reading rides in the headline rather than on its own line so that a long word and its
+    // reading wrap together; it needs an explicit span because the line's base style is the word's.
+    val readingStyle =
+        SpanStyle(
+            fontSize = MaterialTheme.typography.bodyMedium.fontSize,
+            fontWeight = MaterialTheme.typography.bodyMedium.fontWeight,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    return remember(candidates, context, configuration, readingStyle) {
         val resources = context.resources
         buildMap(candidates.size) {
             candidates.forEach { candidate ->
@@ -155,23 +171,21 @@ internal fun rememberCurationCandidateHeaderTexts(
                     )
                 put(
                     candidate.candidateId,
-                    buildAnnotatedString {
-                        withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
-                            append(candidate.minedForm)
-                        }
-                        candidate.expressionReading.takeIf {
-                            it.isNotBlank() && it != candidate.minedForm
-                        }?.let { reading ->
-                            append(" · ")
-                            append(reading)
-                        }
-                        append(" · ")
-                        append(partOfSpeech)
-                        append(" · ")
-                        append(frequency)
-                        append(" · ")
-                        append(occurrences)
-                    },
+                    CurationCandidateRowText(
+                        headline =
+                            buildAnnotatedString {
+                                append(candidate.minedForm)
+                                candidate.expressionReading.takeIf {
+                                    it.isNotBlank() && it != candidate.minedForm
+                                }?.let { reading ->
+                                    withStyle(readingStyle) {
+                                        append("  ")
+                                        append(reading)
+                                    }
+                                }
+                            },
+                        metadata = "$partOfSpeech · $frequency · $occurrences",
+                    ),
                 )
             }
         }
@@ -201,8 +215,8 @@ internal fun ReconcileCurationFocus(
 }
 
 @Composable
-internal fun CurationCandidateHeader(
-    headline: AnnotatedString,
+internal fun CurationCandidateRow(
+    text: CurationCandidateRowText,
     stateText: String,
     includeLabel: String,
     selected: Boolean,
@@ -223,7 +237,7 @@ internal fun CurationCandidateHeader(
         }
     val targetContainerColor =
         if (selected) {
-            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
+            MaterialTheme.colorScheme.selectedRowContainer()
         } else {
             MaterialTheme.colorScheme.surfaceContainerLow
         }
@@ -256,7 +270,7 @@ internal fun CurationCandidateHeader(
             modifier =
                 Modifier.padding(
                     horizontal = AnkiMinerTokens.Space.group,
-                    vertical = AnkiMinerTokens.Space.line,
+                    vertical = AnkiMinerTokens.Space.related,
                 ),
             horizontalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
             verticalAlignment = Alignment.CenterVertically,
@@ -271,14 +285,25 @@ internal fun CurationCandidateHeader(
                         .testTag(toggleTestTag)
                         .semantics { contentDescription = includeLabel },
             )
-            Text(
-                text = headline,
+            Column(
                 modifier = Modifier.weight(1f),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
+                verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.micro),
+            ) {
+                Text(
+                    text = text.headline,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = text.metadata,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
     }
 }

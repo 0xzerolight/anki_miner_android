@@ -53,7 +53,6 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import com.ankiminer.android.R
 import com.ankiminer.android.mining.CurationCandidate
@@ -61,7 +60,8 @@ import com.ankiminer.android.mining.MiningProgress
 import com.ankiminer.android.mining.MiningRunState
 import com.ankiminer.android.mining.ProcessingResult
 import com.ankiminer.android.mining.RuntimeWorkConflict
-import com.ankiminer.android.ui.mining.CurationCandidateHeader
+import com.ankiminer.android.ui.mining.CurationCandidateRow
+import com.ankiminer.android.ui.mining.CurationCandidateRowText
 import com.ankiminer.android.ui.mining.CurationControls
 import com.ankiminer.android.ui.mining.CurationDefinitionPane
 import com.ankiminer.android.ui.mining.CurationFilter
@@ -82,7 +82,7 @@ import com.ankiminer.android.ui.mining.SourcesCard
 import com.ankiminer.android.ui.mining.StickyCurationActions
 import com.ankiminer.android.ui.mining.curateCandidates
 import com.ankiminer.android.ui.mining.miningResultItems
-import com.ankiminer.android.ui.mining.rememberCurationCandidateHeaderTexts
+import com.ankiminer.android.ui.mining.rememberCurationCandidateRowTexts
 import com.ankiminer.android.ui.mining.rememberClipboardWriter
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
 import com.ankiminer.android.ui.theme.ExitActionButton
@@ -229,8 +229,8 @@ fun ReadingMiningScreen(
                         sort = sort,
                     )
                 }
-            val candidateHeaderTexts =
-                rememberCurationCandidateHeaderTexts(visibleCandidates)
+            val candidateRowTexts =
+                rememberCurationCandidateRowTexts(visibleCandidates)
             val selectedCandidateStateText = stringResource(R.string.candidate_state_selected)
             val excludedCandidateStateText = stringResource(R.string.candidate_state_excluded)
             // Raw templates: formatting per row is cheap, a resource lookup per row is not.
@@ -317,7 +317,7 @@ fun ReadingMiningScreen(
                             state = targetState,
                             headingModifier = headingModifier,
                             visibleCandidates = visibleCandidates,
-                            candidateHeaderTexts = candidateHeaderTexts,
+                            candidateRowTexts = candidateRowTexts,
                             selectedCandidateStateText = selectedCandidateStateText,
                             excludedCandidateStateText = excludedCandidateStateText,
                             includeWordTemplate = includeWordTemplate,
@@ -685,7 +685,7 @@ private fun LazyListScope.curationItems(
     state: ReadingMiningUiState,
     headingModifier: Modifier,
     visibleCandidates: List<CurationCandidate>,
-    candidateHeaderTexts: Map<String, AnnotatedString>,
+    candidateRowTexts: Map<String, CurationCandidateRowText>,
     selectedCandidateStateText: String,
     excludedCandidateStateText: String,
     includeWordTemplate: String,
@@ -819,7 +819,7 @@ private fun LazyListScope.curationItems(
         val known = candidate.candidateId in curation.knownCandidateIds
         val expanded = candidate.candidateId == expandedCandidateId
         val animateSelection = candidate.candidateId == curation.focusedCandidateId
-        val headline = candidateHeaderTexts.getValue(candidate.candidateId)
+        val rowText = candidateRowTexts.getValue(candidate.candidateId)
         val stateText =
             if (selected) {
                 selectedCandidateStateText
@@ -836,8 +836,8 @@ private fun LazyListScope.curationItems(
             key = "reading_candidate:${candidate.candidateId}",
             contentType = "candidate",
         ) {
-            CurationCandidateHeader(
-                headline = headline,
+            CurationCandidateRow(
+                text = rowText,
                 stateText = stateText,
                 includeLabel =
                     if (selected) {

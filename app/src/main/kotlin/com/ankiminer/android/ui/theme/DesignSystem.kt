@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonColors
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
@@ -29,6 +30,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -80,6 +82,17 @@ internal object AnkiMinerTokens {
         const val LayoutMs = 250
     }
 }
+
+/**
+ * Container fill for a selected list row.
+ *
+ * Opaque on purpose. The previous `primaryContainer.copy(alpha = 0.45f)` composited against
+ * whatever it happened to be drawn over — `surface`, not the `surfaceContainerLow` the value was
+ * tuned against — and an alpha color cannot be contrast-checked, because a relative-luminance
+ * calculation reads only the RGB channels.
+ */
+internal fun ColorScheme.selectedRowContainer(): Color =
+    lerp(surfaceContainerLow, primaryContainer, 0.45f)
 
 /** Readable disabled colors. Fill remains distinct from every enabled action fill. */
 internal data class DisabledActionColors(
