@@ -1,4 +1,4 @@
-package com.ankiminer.android.ui.video
+package com.ankiminer.android.ui.audio
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -6,38 +6,33 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.ankiminer.android.ui.mining.MediaMiningLabels
+import com.ankiminer.android.ui.video.SUBTITLE_MIME_TYPES
+import com.ankiminer.android.ui.video.VideoMiningScreen
 import com.ankiminer.android.vm.MediaMiningViewModel
 
-private val VIDEO_MIME_TYPES = arrayOf("video/*", "application/octet-stream")
-internal val SUBTITLE_MIME_TYPES =
-    arrayOf(
-        "application/x-subrip",
-        "application/x-ass",
-        "application/x-ssa",
-        "text/*",
-        "application/octet-stream",
-    )
+internal val AUDIO_MIME_TYPES = arrayOf("audio/*", "application/octet-stream")
 
 @Composable
-fun VideoMiningRoute(
+fun AudioMiningRoute(
     viewModel: MediaMiningViewModel,
     onReturnToActiveRun: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    val videoPicker =
+    val audioPicker =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             uri?.let { viewModel.onVideoPicked(it.toString()) }
         }
-    val subtitlePicker =
+    val transcriptPicker =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             uri?.let { viewModel.onSubtitlePicked(it.toString()) }
         }
 
     VideoMiningScreen(
         state = state,
-        onPickVideo = { videoPicker.launch(VIDEO_MIME_TYPES) },
-        onPickSubtitle = { subtitlePicker.launch(SUBTITLE_MIME_TYPES) },
+        onPickVideo = { audioPicker.launch(AUDIO_MIME_TYPES) },
+        onPickSubtitle = { transcriptPicker.launch(SUBTITLE_MIME_TYPES) },
         onClearVideo = viewModel::clearVideo,
         onClearSubtitle = viewModel::clearSubtitle,
         onDismissDocumentError = viewModel::dismissDocumentError,
@@ -58,6 +53,7 @@ fun VideoMiningRoute(
         onRetry = viewModel::retry,
         onReset = viewModel::reset,
         onReturnToActiveRun = onReturnToActiveRun,
+        labels = MediaMiningLabels.AUDIO,
         modifier = modifier,
     )
 }

@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -51,6 +52,7 @@ import kotlinx.coroutines.delay
 
 object CurationPlayerTestTags {
     const val SURFACE = "curation_player_surface"
+    const val VIDEO_FRAME = "curation_player_video_frame"
     const val PLAY_PAUSE = "curation_player_play_pause"
     const val COLLAPSE = "curation_player_collapse"
     const val OVERLAY = "curation_player_overlay"
@@ -65,6 +67,7 @@ fun CurationVideoPreview(
     overlayOffsetSeconds: Double,
     collapsed: Boolean,
     onToggleCollapsed: () -> Unit,
+    audioOnly: Boolean = false,
     notice: (@Composable () -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
@@ -104,14 +107,25 @@ fun CurationVideoPreview(
                     modifier =
                         Modifier
                             .fillMaxWidth()
-                            .aspectRatio(VIDEO_ASPECT_RATIO)
+                            .then(
+                                if (audioOnly) {
+                                    Modifier.height(AudioSurfaceHeight)
+                                } else {
+                                    Modifier.aspectRatio(VIDEO_ASPECT_RATIO)
+                                },
+                            )
                             .background(Color.Black)
                             .testTag(CurationPlayerTestTags.SURFACE),
                 ) {
-                    ContentFrame(
-                        player = player.media3Player,
-                        modifier = Modifier.fillMaxSize(),
-                    )
+                    if (!audioOnly) {
+                        ContentFrame(
+                            player = player.media3Player,
+                            modifier =
+                                Modifier
+                                    .fillMaxSize()
+                                    .testTag(CurationPlayerTestTags.VIDEO_FRAME),
+                        )
+                    }
                     SubtitleOverlay(
                         text =
                             currentCue(
@@ -292,5 +306,6 @@ private fun ChevronGlyph(pointsUp: Boolean) {
 private const val VIDEO_ASPECT_RATIO = 16f / 9f
 private const val POSITION_TICK_MILLIS = 100L
 private const val OVERLAY_SCRIM_ALPHA = 0.68f
+private val AudioSurfaceHeight = 160.dp
 private val PlayerIconSize = 24.dp
 private val ChevronStrokeWidth = 2.dp

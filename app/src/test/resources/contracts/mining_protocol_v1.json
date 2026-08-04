@@ -13,6 +13,7 @@
           "seriesName": "Series",
           "sourceLabel": "Series — Episode 1",
           "audioTrackOverride": 2,
+          "audioOnly": true,
           "cacheDir": "/cache",
           "nativeLibraryDir": "/native",
           "configSnapshot": {
@@ -34,6 +35,7 @@
           "seriesName": "Series",
           "sourceLabel": null,
           "audioTrackOverride": null,
+          "audioOnly": false,
           "cacheDir": "/cache",
           "nativeLibraryDir": "/native",
           "configSnapshot": {
@@ -357,6 +359,27 @@
           "episodeName": "Episode",
           "seriesName": "Series",
           "audioTrackOverride": null,
+          "audioOnly": false,
+          "cacheDir": "/cache",
+          "nativeLibraryDir": "/native",
+          "configSnapshot": {
+            "settings": {}
+          }
+        }
+      }
+    },
+    {
+      "name": "video request missing required audio only",
+      "message": {
+        "schemaVersion": 1,
+        "type": "mining.video.run",
+        "payload": {
+          "videoPath": "/video.mkv",
+          "subtitlePath": "/subtitle.srt",
+          "episodeName": "Episode",
+          "seriesName": "Series",
+          "sourceLabel": null,
+          "audioTrackOverride": null,
           "cacheDir": "/cache",
           "nativeLibraryDir": "/native",
           "configSnapshot": {
@@ -377,6 +400,7 @@
           "seriesName": "Series",
           "sourceLabel": null,
           "audioTrackOverride": null,
+          "audioOnly": false,
           "cacheDir": "/cache",
           "nativeLibraryDir": "/native",
           "configSnapshot": {
@@ -398,6 +422,7 @@
           "seriesName": "Series",
           "sourceLabel": null,
           "audioTrackOverride": null,
+          "audioOnly": false,
           "cacheDir": "/cache",
           "nativeLibraryDir": "/native",
           "configSnapshot": {
@@ -418,6 +443,7 @@
           "seriesName": "Series",
           "sourceLabel": null,
           "audioTrackOverride": null,
+          "audioOnly": false,
           "cacheDir": "/cache",
           "nativeLibraryDir": "/native",
           "configSnapshot": {
@@ -438,6 +464,7 @@
           "seriesName": "Series",
           "sourceLabel": null,
           "audioTrackOverride": 9223372036854775808,
+          "audioOnly": false,
           "cacheDir": "/cache",
           "nativeLibraryDir": "/native",
           "configSnapshot": {
@@ -458,6 +485,7 @@
           "seriesName": "Series",
           "sourceLabel": null,
           "audioTrackOverride": null,
+          "audioOnly": false,
           "cacheDir": "/cache",
           "nativeLibraryDir": "/native",
           "configSnapshot": {
@@ -480,6 +508,7 @@
           "seriesName": "Series",
           "sourceLabel": null,
           "audioTrackOverride": null,
+          "audioOnly": false,
           "cacheDir": "/cache",
           "nativeLibraryDir": "/native",
           "configSnapshot": {

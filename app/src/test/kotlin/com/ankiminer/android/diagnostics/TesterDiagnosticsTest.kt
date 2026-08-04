@@ -115,6 +115,20 @@ class TesterDiagnosticsTest {
                             ),
                         startPending = true,
                     ),
+                audio =
+                    VideoMiningUiState(
+                        runState =
+                            MiningRunState.Running(
+                                runId = "run_00000000000000000000000000000003",
+                                progress =
+                                    MiningProgress(
+                                        current = 1,
+                                        total = 3,
+                                        description = "Mining audio",
+                                    ),
+                            ),
+                        curationPending = true,
+                    ),
                 reading =
                     ReadingMiningUiState(
                         source = ReadingDocumentSlotState(privateDocument(privateReadingName)),
@@ -154,6 +168,8 @@ class TesterDiagnosticsTest {
         assertTrue(diagnostics.report.contains("anki.recovery_failure=journal_read_failed"))
         assertTrue(diagnostics.report.contains("video.run=failed"))
         assertTrue(diagnostics.report.contains("video.pending=start"))
+        assertTrue(diagnostics.report.contains("audio.run=running"))
+        assertTrue(diagnostics.report.contains("audio.pending=curation"))
         assertTrue(diagnostics.report.contains("reading.run=starting"))
         assertTrue(diagnostics.report.contains("reading.pending=cancel"))
         // The fault id is opaque by construction, so reporting it leaks nothing while giving a
@@ -187,6 +203,7 @@ class TesterDiagnosticsTest {
                 build = plainIdentity(),
                 setup = SetupUiState(),
                 video = VideoMiningUiState(),
+                audio = VideoMiningUiState(),
                 reading = ReadingMiningUiState(),
             )
 
@@ -199,6 +216,7 @@ class TesterDiagnosticsTest {
                 build = plainIdentity(),
                 setup = SetupUiState(),
                 video = VideoMiningUiState(),
+                audio = VideoMiningUiState(),
                 reading = ReadingMiningUiState(),
                 lastAnkiFault =
                     "storeMedia:JournalInvariantViolation @ SqliteStore.reserveMedia:1609",
@@ -225,6 +243,7 @@ class TesterDiagnosticsTest {
                                 progress = MiningProgress(current = 1, total = 2, description = "Mining"),
                             ),
                     ),
+                audio = VideoMiningUiState(),
                 // A second in-flight state, and a different one: the main fixture's failed video
                 // lane is scanned first, so no other test can reach a non-failed lane at all.
                 reading =
@@ -261,6 +280,7 @@ class TesterDiagnosticsTest {
                                 result = null,
                             ),
                     ),
+                audio = VideoMiningUiState(),
                 reading = ReadingMiningUiState(),
             ).report
 
@@ -280,6 +300,7 @@ class TesterDiagnosticsTest {
                                 result = null,
                             ),
                     ),
+                audio = VideoMiningUiState(),
                 reading = ReadingMiningUiState(),
             ).report
 
@@ -300,6 +321,7 @@ class TesterDiagnosticsTest {
                             ),
                     ),
                 video = VideoMiningUiState(),
+                audio = VideoMiningUiState(),
                 reading = ReadingMiningUiState(),
             ).report
 
@@ -328,6 +350,7 @@ class TesterDiagnosticsTest {
                             ),
                     ),
                 video = VideoMiningUiState(),
+                audio = VideoMiningUiState(),
                 reading = ReadingMiningUiState(),
             ).report
 

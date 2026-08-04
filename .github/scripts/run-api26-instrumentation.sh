@@ -43,12 +43,12 @@ readonly unexecuted_tests=(
 )
 excluded_tests="$(IFS=,; echo "${unexecuted_tests[*]}")"
 readonly excluded_tests
-# Full discovery is 214 tests. This broad API 26 lane excludes 18 allowlisted tests.
+# Full discovery is 218 tests. This broad API 26 lane excludes 18 allowlisted tests.
 # expected_executed_test_count is exact runner count after every assumption-gated or externally
 # provisioned test above is excluded. It means assertion-bearing tests executed in this lane;
 # every excluded test is reported as UNEXECUTED, never as a pass. Update this one count and the
 # allowlist together if instrumentation discovery changes.
-readonly expected_executed_test_count=196
+readonly expected_executed_test_count=200
 
 [[ -f "$app_apk" ]] || {
     echo "instrumentation: app APK was not built: $app_apk" >&2

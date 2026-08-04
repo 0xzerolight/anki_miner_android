@@ -1,6 +1,8 @@
 package com.ankiminer.android.mining
 
+import com.ankiminer.android.media.SafSelectionSlot
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertThrows
@@ -104,13 +106,41 @@ class MiningModelsTest {
     fun foregroundRunIdentityRetainsWorkKindBeforePythonRegisters() {
         val token = MiningCancellationToken("cancel_0123456789abcdef0123456789abcdef")
 
-        val videoId = token.foregroundRunId(MiningRunKind.VIDEO)
-        val readingId = token.foregroundRunId(MiningRunKind.READING)
-
-        assertEquals(MiningRunKind.VIDEO, MiningRunKind.fromForegroundRunId(videoId))
-        assertEquals(MiningRunKind.READING, MiningRunKind.fromForegroundRunId(readingId))
+        MiningRunKind.entries.forEach { kind ->
+            assertEquals(
+                kind,
+                MiningRunKind.fromForegroundRunId(token.foregroundRunId(kind)),
+            )
+        }
         assertNull(MiningRunKind.fromForegroundRunId(token.value))
         assertNull(MiningRunKind.fromForegroundRunId("video-cancel_invalid"))
+    }
+
+    @Test
+    fun miningRunKindWireValuesRemainStable() {
+        assertEquals(
+            setOf("video", "reading", "audio"),
+            MiningRunKind.entries.map { it.wireValue }.toSet(),
+        )
+    }
+
+    @Test
+    fun miningLanesMapToExpectedRunKindsAndSafSlots() {
+        assertEquals(false, MiningLane.VIDEO.audioOnly)
+        assertEquals(MiningRunKind.VIDEO, MiningLane.VIDEO.runKind)
+        assertEquals(SafSelectionSlot.VIDEO, MiningLane.VIDEO.documentSlot)
+        assertEquals(SafSelectionSlot.VIDEO_SUBTITLE, MiningLane.VIDEO.subtitleSlot)
+
+        assertEquals(true, MiningLane.AUDIO.audioOnly)
+        assertEquals(MiningRunKind.AUDIO, MiningLane.AUDIO.runKind)
+        assertEquals(SafSelectionSlot.AUDIO, MiningLane.AUDIO.documentSlot)
+        assertEquals(SafSelectionSlot.AUDIO_SUBTITLE, MiningLane.AUDIO.subtitleSlot)
+    }
+
+    @Test
+    fun miningLanesUseDisjointSafSlots() {
+        assertNotEquals(MiningLane.VIDEO.documentSlot, MiningLane.AUDIO.documentSlot)
+        assertNotEquals(MiningLane.VIDEO.subtitleSlot, MiningLane.AUDIO.subtitleSlot)
     }
 
     private fun request(): CurationRequest =

@@ -12,6 +12,7 @@ import com.ankiminer.android.mining.RuntimeWorkConflict
 
 enum class DocumentSelectionError {
     VIDEO,
+    AUDIO_TYPE,
     SUBTITLE,
 }
 
@@ -39,6 +40,7 @@ data class CurationPlayerUiState(
     val videoPath: String,
     val cues: List<SubtitleCue>,
     val cuesUnavailable: Boolean,
+    val audioOnly: Boolean = false,
 )
 
 @Immutable
@@ -71,6 +73,7 @@ data class VideoMiningUiState(
     val subtitleOffsetDraft: String = "",
     val subtitleOffsetDraftInvalid: Boolean = false,
     val effectiveSubtitleOffset: Double = ENGINE_DEFAULT_SUBTITLE_OFFSET,
+    val audioFieldUnmapped: Boolean = false,
     val runState: MiningRunState = MiningRunState.Idle,
     val curation: CurationUiState? = null,
     val startPending: Boolean = false,

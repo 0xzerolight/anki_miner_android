@@ -12,6 +12,7 @@ internal enum class MiningRunKind(
 ) {
     VIDEO("video", "video-"),
     READING("reading", "reading-"),
+    AUDIO("audio", "audio-"),
     ;
 
     fun foregroundRunId(cancellationToken: MiningCancellationToken): String =

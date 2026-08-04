@@ -54,6 +54,7 @@ import com.ankiminer.android.mining.BuiltInInstalledTokenizerResourceProvider
 import com.ankiminer.android.mining.CoordinatorAnkiCancellation
 import com.ankiminer.android.mining.MiningForegroundStarter
 import com.ankiminer.android.mining.MiningConfigSnapshotResolver
+import com.ankiminer.android.mining.MiningLane
 import com.ankiminer.android.mining.MiningRepository
 import com.ankiminer.android.mining.AndroidNotificationPermissionProbe
 import com.ankiminer.android.mining.AnkiMiningTargetProbe
@@ -170,6 +171,12 @@ class AnkiMinerApplication : Application() {
     private val miningControlExecutor by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         Executors.newSingleThreadExecutor { task -> Thread(task, "anki-miner-control") }
     }
+    private val miningRunTaskExecutor by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        miningRunExecutor.asMiningTaskExecutor()
+    }
+    private val miningControlTaskExecutor by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        miningControlExecutor.asMiningTaskExecutor()
+    }
     private val resourceExecutor by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         Executors.newSingleThreadExecutor { task -> Thread(task, "anki-miner-resources") }
     }
@@ -239,6 +246,12 @@ class AnkiMinerApplication : Application() {
     private val runtimeWorkCoordinator = RuntimeWorkCoordinator()
     private val miningRunInterruptionStore by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         AndroidMiningRunInterruptionStore(noBackupFilesDir)
+    }
+    private val miningForegroundSessionController by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        MiningForegroundSessionController(this)
+    }
+    private val miningForegroundStarter by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        MiningForegroundStarter(miningForegroundSessionController::startSession)
     }
     internal val runtimeWorkState
         get() = runtimeWorkCoordinator.activeKind
@@ -365,11 +378,12 @@ class AnkiMinerApplication : Application() {
             )
     }
 
-    internal val miningRepository: MiningRepository by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+    private fun buildMediaMiningRepository(lane: MiningLane): MiningRepository =
         BridgeMiningRepository(
             pyBridge = pyBridge,
             anki = ProviderCoordinatorAnkiCallbacks(ankiProviderRuntime.callbacks),
             inputOwnerFactory = AndroidMiningInputOwnerFactory(this),
+            lane = lane,
             tokenizerResourceProvider = tokenizerResourceProvider,
             runtimePaths =
                 MiningRuntimePaths(
@@ -377,12 +391,9 @@ class AnkiMinerApplication : Application() {
                     nativeLibraryDir = File(requireNotNull(applicationInfo.nativeLibraryDir)),
                 ),
             sourceGrantReleaser = SafSourceGrantReleaser(safBroker),
-            foregroundStarter =
-                MiningForegroundSessionController(this).let { controller ->
-                    MiningForegroundStarter(controller::startSession)
-                },
-            runExecutor = miningRunExecutor.asMiningTaskExecutor(),
-            controlExecutor = miningControlExecutor.asMiningTaskExecutor(),
+            foregroundStarter = miningForegroundStarter,
+            runExecutor = miningRunTaskExecutor,
+            controlExecutor = miningControlTaskExecutor,
             admissionGate = miningAdmissionGate,
             runtimeWorkCoordinator = runtimeWorkCoordinator,
             configSnapshotResolver =
@@ -400,6 +411,13 @@ class AnkiMinerApplication : Application() {
             strings = stringResourceResolver,
             interruptionStore = miningRunInterruptionStore,
         )
+
+    internal val miningRepository: MiningRepository by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        buildMediaMiningRepository(MiningLane.VIDEO)
+    }
+
+    internal val audioRepository: MiningRepository by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        buildMediaMiningRepository(MiningLane.AUDIO)
     }
 
     internal val readingRepository: ReadingMiningRepository by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {

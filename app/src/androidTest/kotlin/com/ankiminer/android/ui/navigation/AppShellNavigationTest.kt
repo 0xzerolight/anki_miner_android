@@ -181,7 +181,7 @@ class AppShellNavigationTest {
     }
 
     private companion object {
-        /** Enough Tab presses to cover the body plus all three navigation destinations. */
+        /** Enough Tab presses to cover the body plus all four navigation destinations. */
         const val FOCUS_TRAVERSAL_STEPS = 8
         const val OVERLAY_TEXT = "overlay owns the window"
         const val SHELL_CONTENT_TEXT = "shell content behind the overlay"

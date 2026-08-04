@@ -80,6 +80,7 @@ internal class BridgeMiningRepository(
         SecureMiningCancellationTokenFactory(),
     private val foregroundStartTimeoutSeconds: Long = 15,
     private val interruptionStore: MiningRunInterruptionStore = NoOpMiningRunInterruptionStore,
+    private val lane: MiningLane = MiningLane.VIDEO,
 ) : MiningRepository {
     private enum class Phase {
         PREPARING,
@@ -117,7 +118,7 @@ internal class BridgeMiningRepository(
         val foregroundLease: MiningForegroundLease?,
     )
 
-    private class ActiveRun(
+    private inner class ActiveRun(
         val generation: Long,
         val input: VideoMiningInput,
         val cancellationToken: MiningCancellationToken,
@@ -148,7 +149,7 @@ internal class BridgeMiningRepository(
         fun mediaBinding(): CurationMediaBinding? {
             val video = videoCachePath ?: return null
             val subtitle = subtitleCachePath ?: return null
-            return CurationMediaBinding(video, subtitle)
+            return CurationMediaBinding(video, subtitle, lane.audioOnly)
         }
     }
 
@@ -163,7 +164,7 @@ internal class BridgeMiningRepository(
         (startupInterruption as? StartupInterruption.Interrupted)?.record
 
     /** Only this lane's own run id belongs in this lane's state. */
-    private val startupRunId = startupInterruptedRun?.takeIf { it.kind == MiningRunKind.VIDEO }?.runId
+    private val startupRunId = startupInterruptedRun?.takeIf { it.kind == lane.runKind }?.runId
     private val mutableState =
         MutableStateFlow<MiningRunState>(
             if (startupInterruption is StartupInterruption.None) {
@@ -517,6 +518,7 @@ internal class BridgeMiningRepository(
                                 seriesName = labels.second,
                                 sourceLabel = null,
                                 audioTrackOverride = null,
+                                audioOnly = lane.audioOnly,
                                 cacheDir = runtimePaths.cacheDir.canonicalPath,
                                 nativeLibraryDir = runtimePaths.nativeLibraryDir.canonicalPath,
                                 configSnapshot = requireNotNull(run.configSnapshot),
@@ -654,7 +656,7 @@ internal class BridgeMiningRepository(
                     activeFor(generation)?.let { run ->
                         if (run.interruptionRecorded) {
                             InterruptedMiningRun(
-                                MiningRunKind.VIDEO,
+                                lane.runKind,
                                 run.cancellationToken.value,
                                 run.runId,
                             )
@@ -665,7 +667,7 @@ internal class BridgeMiningRepository(
                 }
             if (
                 interruption != null &&
-                !interruptionStore.complete(MiningRunKind.VIDEO, interruption.ownerId)
+                !interruptionStore.complete(lane.runKind, interruption.ownerId)
             ) {
                 synchronized(monitor) {
                     pendingInterruptionCleanup = interruption
@@ -812,7 +814,7 @@ internal class BridgeMiningRepository(
             }
         val foregroundRunId =
             synchronized(monitor) {
-                activeFor(generation)?.cancellationToken?.foregroundRunId(MiningRunKind.VIDEO)
+                activeFor(generation)?.cancellationToken?.foregroundRunId(lane.runKind)
                     ?: return false
             }
         val future =
@@ -915,14 +917,14 @@ internal class BridgeMiningRepository(
             synchronized(monitor) {
                 activeFor(generation)?.cancellationToken?.value ?: return false
             }
-        if (!interruptionStore.begin(MiningRunKind.VIDEO, ownerId)) {
+        if (!interruptionStore.begin(lane.runKind, ownerId)) {
             recordFault(generation, strings.resolve(R.string.mining_failure_background_stopped))
             return false
         }
         synchronized(monitor) {
             val run = activeFor(generation)
             if (run == null || run.phase == Phase.FINALIZING) {
-                interruptionStore.complete(MiningRunKind.VIDEO, ownerId)
+                interruptionStore.complete(lane.runKind, ownerId)
                 return false
             }
             run.interruptionRecorded = true
@@ -1325,7 +1327,7 @@ internal class BridgeMiningRepository(
         }
         var transition: PhaseTransition? = null
         interruptionStore.registered(
-            MiningRunKind.VIDEO,
+            lane.runKind,
             synchronized(monitor) {
                 activeFor(generation)?.cancellationToken?.value
                     ?: throw IllegalStateException("Mining registration is stale")
@@ -1848,8 +1850,8 @@ internal class BridgeMiningRepository(
 
     private fun labelsFor(displayName: String): Pair<String, String> {
         val withoutExtension = displayName.substringBeforeLast('.', displayName)
-        val episodeLabel = canonicalLabel(withoutExtension).ifEmpty { LOCAL_VIDEO_LABEL }
-        return episodeLabel to LOCAL_VIDEO_LABEL
+        val episodeLabel = canonicalLabel(withoutExtension).ifEmpty { lane.seriesLabel }
+        return episodeLabel to lane.seriesLabel
     }
 
     private fun canonicalLabel(raw: String): String {
@@ -1877,7 +1879,6 @@ internal class BridgeMiningRepository(
         }
 
     private companion object {
-        const val LOCAL_VIDEO_LABEL = "Local video"
         val RETRYABLE_TERMINAL_ERRORS =
             setOf("provider_unavailable", "query_failed", "timeout", "processing_failed", "engine_error")
         const val MAX_PRESENTER_NOTICES = 16

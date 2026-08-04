@@ -62,6 +62,7 @@ internal fun TimingPreviewOverlay(
     onToggleUnshifted: () -> Unit,
     onApply: () -> Unit,
     onCancel: () -> Unit,
+    audioOnly: Boolean = false,
     modifier: Modifier = Modifier,
     playerFactory: (Context) -> CurationPreviewPlayer = { ExoCurationPreviewPlayer(it) },
     seekabilityProbe: suspend (Context, Uri) -> Boolean = ::isSeekableVideoSource,
@@ -120,6 +121,7 @@ internal fun TimingPreviewOverlay(
                 state = state,
                 collapsed = collapsed,
                 onToggleCollapsed = { collapsed = !collapsed },
+                audioOnly = audioOnly,
             )
             LazyColumn(
                 modifier =
@@ -269,6 +271,7 @@ private fun TimingPreviewVideo(
     state: TimingPreviewState,
     collapsed: Boolean,
     onToggleCollapsed: () -> Unit,
+    audioOnly: Boolean,
 ) {
     when (seekable) {
         null ->
@@ -289,6 +292,7 @@ private fun TimingPreviewVideo(
                 overlayOffsetSeconds = state.previewOffset,
                 collapsed = collapsed,
                 onToggleCollapsed = onToggleCollapsed,
+                audioOnly = audioOnly,
             )
         false ->
             Box(

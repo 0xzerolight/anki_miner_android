@@ -5,6 +5,7 @@ import importlib
 import json
 import re
 import threading
+from contextlib import nullcontext
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import SimpleNamespace
@@ -50,6 +51,7 @@ def _payload(**overrides: object) -> dict[str, object]:
         "seriesName": "Series",
         "sourceLabel": "Series — Episode 1",
         "audioTrackOverride": None,
+        "audioOnly": False,
         "cacheDir": "/cache",
         "nativeLibraryDir": "/native",
         "configSnapshot": {"settings": {}, "androidTtsEnabled": False},
@@ -623,8 +625,10 @@ def test_terminal_callback_failure_does_not_replace_synchronous_terminal(
     assert registry.active_run_id is None
 
 
+@pytest.mark.parametrize("audio_only", [False, True])
 def test_process_episode_receives_exact_desktop_contract_and_cleans_lifo(
     monkeypatch: pytest.MonkeyPatch,
+    audio_only: bool,
 ) -> None:
     events: list[str] = []
     cancel_event = threading.Event()
@@ -676,7 +680,7 @@ def test_process_episode_receives_exact_desktop_contract_and_cleans_lifo(
                 "series_name_override": "Series",
                 "audio_track_override": 2,
                 "source_label_override": "Source",
-                "audio_only": False,
+                "audio_only": audio_only,
                 "cancel_event": cancel_event,
             }
             return result
@@ -702,6 +706,7 @@ def test_process_episode_receives_exact_desktop_contract_and_cleans_lifo(
         series_name="Series",
         source_label="Source",
         audio_track_override=2,
+        audio_only=audio_only,
         cache_dir=Path("/cache"),
         native_library_dir=Path("/native"),
         settings={},
@@ -717,6 +722,41 @@ def test_process_episode_receives_exact_desktop_contract_and_cleans_lifo(
         "processor-close",
         "adapter-exit",
     ]
+
+
+def test_audio_only_true_from_wire_reaches_process_episode(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+    result = object()
+
+    class FakeProcessor:
+        def process_episode(self, *args: object, **kwargs: object) -> object:
+            captured["args"] = args
+            captured["kwargs"] = kwargs
+            return result
+
+        def close(self) -> None:
+            pass
+
+    monkeypatch.setattr(
+        anki_adapter_module,
+        "AndroidAnkiAdapter",
+        lambda *_args, **_kwargs: nullcontext(object()),
+    )
+    monkeypatch.setattr(mining, "_build_processor", lambda *_args: FakeProcessor())
+    adapters = SimpleNamespace(
+        anki=object(),
+        run_id=LIFECYCLE_RUN_ID,
+        cancel_event=threading.Event(),
+        progress=object(),
+        curate=object(),
+    )
+    request = mining._parse_request(_request(audioOnly=True, videoPath="/cache/input.media"))
+
+    assert mining._process_episode(request, object(), adapters) is result
+    assert captured["args"] == (Path("/cache/input.media"), Path("/cache/subtitle.srt"))
+    assert captured["kwargs"]["audio_only"] is True
 
 
 def _episode_lifecycle_harness(
@@ -1623,8 +1663,43 @@ def test_request_rejects_invalid_config_snapshot(snapshot: object) -> None:
     assert error.value.code == "invalid_video_mining_request"
 
 
+def test_request_requires_audio_only() -> None:
+    payload = _payload()
+    del payload["audioOnly"]
+
+    with pytest.raises(BridgeProtocolError):
+        mining._parse_request(encode_message("mining.video.run", payload))
+
+
+@pytest.mark.parametrize("audio_only", [1, 0, "true", None, [], {}])
+def test_request_rejects_non_boolean_audio_only(audio_only: object) -> None:
+    with pytest.raises(BridgeProtocolError) as error:
+        mining._parse_request(_request(audioOnly=audio_only))
+    assert error.value.code == "invalid_video_mining_request"
+    assert str(error.value) == "audioOnly must be a boolean"
+
+
+def test_audio_only_request_allows_media_video_path_suffix() -> None:
+    parsed = mining._parse_request(_request(videoPath="/cache/input.media", audioOnly=True))
+
+    assert parsed.video_path == Path("/cache/input.media")
+    assert parsed.audio_only is True
+
+
 def test_request_requires_exact_fields_and_preserves_fd_paths_and_identity() -> None:
     payload = _payload()
+    assert set(payload) == {
+        "videoPath",
+        "subtitlePath",
+        "episodeName",
+        "seriesName",
+        "sourceLabel",
+        "audioTrackOverride",
+        "audioOnly",
+        "cacheDir",
+        "nativeLibraryDir",
+        "configSnapshot",
+    }
     del payload["sourceLabel"]
     with pytest.raises(BridgeProtocolError):
         mining._parse_request(encode_message("mining.video.run", payload))
@@ -1646,6 +1721,7 @@ def test_request_requires_exact_fields_and_preserves_fd_paths_and_identity() -> 
     assert parsed.series_name == "Series"
     assert parsed.source_label is None
     assert parsed.audio_track_override == 2
+    assert parsed.audio_only is False
 
 
 def test_mining_module_keeps_all_engine_imports_after_bootstrap_and_excludes_cut_modules() -> None:

@@ -35,6 +35,7 @@ data class VideoMiningWireRequest(
     val seriesName: String,
     val sourceLabel: String?,
     val audioTrackOverride: Long?,
+    val audioOnly: Boolean,
     val cacheDir: String,
     val nativeLibraryDir: String,
     val configSnapshot: MiningConfigSnapshot,
