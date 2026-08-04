@@ -6,6 +6,7 @@ import com.ankiminer.android.anki.provider.AnkiProviderRuntime
 import com.ankiminer.android.anki.provider.AnkiRemediationCommand
 import com.ankiminer.android.anki.provider.NoteTypeProviderErrorReason
 import com.ankiminer.android.anki.provider.NoteTypeSetupStatus
+import com.ankiminer.android.anki.provider.platformCanNameFilesFor
 import com.ankiminer.android.data.anki.AnkiSetupBackend
 import com.ankiminer.android.data.anki.AnkiSetupManager
 import com.ankiminer.android.data.anki.ProcessAnkiSetupManager
@@ -104,6 +105,8 @@ import kotlin.coroutines.suspendCoroutine
  */
 internal suspend fun ResourceManager.snapshotProductionSettings(
     settingsRepository: AppSettingsRepository,
+    /** Injectable only because `MimeTypeMap` is not mocked under the JVM android.jar stub. */
+    canNameFilesFor: (String) -> Boolean = ::platformCanNameFilesFor,
 ) =
     settingsRepository.snapshot(
         installedDictionaryIds = installedDictionaryIds(),
@@ -113,6 +116,9 @@ internal suspend fun ResourceManager.snapshotProductionSettings(
         availableWordsetIds = bundledWordsetIds(),
         blacklistPath = wordListPath(WordListKind.BLACKLIST),
         whitelistPath = wordListPath(WordListKind.WHITELIST),
+        // Asked here rather than defaulted in the mapper: a default would silently put every device
+        // on the WebP path, which is what shipped and what nobody noticed.
+        avifNameable = canNameFilesFor("avif"),
     )
 
 /**
