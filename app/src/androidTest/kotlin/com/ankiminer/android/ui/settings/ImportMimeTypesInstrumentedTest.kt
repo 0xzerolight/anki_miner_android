@@ -26,7 +26,9 @@ class ImportMimeTypesInstrumentedTest {
             "pitch" to (PITCH_MIME_TYPES to listOf("zip", "csv", "tsv", "txt")),
             "known words" to (KNOWN_WORDS_MIME_TYPES to listOf("json", "csv", "tsv", "txt")),
             "custom dictionary" to (CUSTOM_DICTIONARY_MIME_TYPES to listOf("zip")),
-            "audio pack" to (AUDIO_PACK_MIME_TYPES to listOf("zip")),
+            // xz and gz cover the upstream local-audio collection, which is the only
+            // way most users get a pack and is not distributed as a ZIP.
+            "audio pack" to (AUDIO_PACK_MIME_TYPES to listOf("zip", "xz", "gz", "tar")),
             "word list" to (WORD_LIST_MIME_TYPES to listOf("txt")),
         )
 

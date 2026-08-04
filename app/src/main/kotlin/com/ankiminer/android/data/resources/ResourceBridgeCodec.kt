@@ -150,16 +150,19 @@ object ResourceBridgeCodec {
         operation: String,
         sourcePath: String,
         packId: String,
+        packPath: String,
         overwrite: Boolean,
     ): String {
         requireOperationId(operation)
         requireAbsolutePath(sourcePath)
         requireSlotId(packId)
         require(packId != "jpod101")
+        requireArchiveSubPath(packPath)
         return encode("resource.audiopack.import") { generator ->
             generator.writeStringField("operationId", operation)
             generator.writeStringField("sourcePath", sourcePath)
             generator.writeStringField("packId", packId)
+            generator.writeStringField("packPath", packPath)
             generator.writeBooleanField("overwrite", overwrite)
         }
     }
@@ -401,12 +404,28 @@ object ResourceBridgeCodec {
         )
     }
 
-    fun decodeAudioPackPreflight(raw: String): String {
+    fun decodeAudioPackPreflight(raw: String): List<AudioPackCandidate> {
         val value = payload(raw, "resource.audiopack.preflighted")
-        exact(value, setOf("packId"), "audio-pack preflight")
-        return requireSlotId(text(value.getValue("packId"), "packId")).also {
-            if (it == "jpod101") invalid("Reserved audio-pack id")
-        }
+        exact(value, setOf("packs"), "audio-pack preflight")
+        val packs = array(value.getValue("packs"), "packs").map { audioPackCandidate(it) }
+        if (packs.isEmpty()) invalid("Audio-pack preflight named no pack")
+        if (packs.distinctBy { it.packId }.size != packs.size) invalid("Audio-pack preflight repeats a pack id")
+        return packs
+    }
+
+    private fun audioPackCandidate(raw: BridgeJsonValue): AudioPackCandidate {
+        val value = objectValue(raw, "audio-pack candidate")
+        exact(value, setOf("packId", "packPath", "format"), "audio-pack candidate")
+        return AudioPackCandidate(
+            packId =
+                requireSlotId(text(value.getValue("packId"), "packId")).also {
+                    if (it == "jpod101") invalid("Reserved audio-pack id")
+                },
+            // Empty means the archive root is the pack, so an empty string is a
+            // value here rather than a missing one.
+            packPath = boundedText(value.getValue("packPath"), "packPath", 1024, allowEmpty = true),
+            format = boundedText(value.getValue("format"), "format", 64, allowEmpty = true),
+        )
     }
 
     fun decodeImportedAudioPack(raw: String): ImportedAudioPack {
@@ -1001,6 +1020,25 @@ object ResourceBridgeCodec {
     private fun requireSlotId(value: String): String = value.also { if (!slotId.matches(it)) invalid("Invalid dictionary slot") }
 
     private fun requireResourceId(value: String): String = value.also { if (!resourceId.matches(it)) invalid("Invalid resource id") }
+
+    /**
+     * A relative path inside an archive, or empty for the archive root.
+     *
+     * The bridge re-validates this before it selects anything, but a subtree that
+     * escapes should never reach the wire in the first place.
+     */
+    private fun requireArchiveSubPath(value: String): String =
+        value.also {
+            if (it.isEmpty()) return@also
+            if (
+                it.startsWith('/') ||
+                '\u0000' in it ||
+                '\\' in it ||
+                it.split('/').any { part -> part.isEmpty() || part == "." || part == ".." }
+            ) {
+                invalid("Invalid archive sub-path")
+            }
+        }
 
     private fun requireSha256(value: String): String = value.also { if (!sha256.matches(it)) invalid("Invalid SHA-256") }
 

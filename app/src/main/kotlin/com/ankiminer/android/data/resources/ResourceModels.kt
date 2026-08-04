@@ -274,6 +274,20 @@ data class InstalledPitchSource(
     val schemaVersion: Long,
 )
 
+/**
+ * One importable pack found inside a picked archive.
+ *
+ * The upstream collection ships four packs in a single download, so a preflight
+ * reports a list and the user chooses. [packPath] is the pack's location inside
+ * the archive, empty when the archive root is itself the pack; the import
+ * extracts only that subtree.
+ */
+data class AudioPackCandidate(
+    val packId: String,
+    val packPath: String,
+    val format: String,
+)
+
 data class ImportedAudioPack(
     val packId: String,
     val sourceName: String,

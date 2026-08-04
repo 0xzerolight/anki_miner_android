@@ -256,6 +256,7 @@ class ResourceBridgeCodecTest {
                 operation = "resource_audio",
                 sourcePath = "/private/audio.zip",
                 packId = "nhk16",
+                packPath = "user_files/nhk16_files",
                 overwrite = false,
             )
         val audioPreflight =
@@ -274,16 +275,53 @@ class ResourceBridgeCodecTest {
         assertTrue(frequency.contains("\"sourceFormat\":\"tsv\""))
         assertTrue(pitch.contains("\"type\":\"resource.pitch.import\""))
         assertTrue(audio.contains("\"packId\":\"nhk16\""))
+        assertTrue(audio.contains("\"packPath\":\"user_files/nhk16_files\""))
         assertTrue(audioPreflight.contains("\"displayName\":\"NHK Audio.zip\""))
+        // The upstream collection is one archive of four packs, so the preflight
+        // reports a list and the caller picks; the order the bridge sent survives.
         assertEquals(
-            "nhk16",
+            listOf(
+                AudioPackCandidate("jpod", "user_files/jpod_files", "ajt"),
+                AudioPackCandidate("nhk16", "user_files/nhk16_files", "nhk16"),
+            ),
             ResourceBridgeCodec.decodeAudioPackPreflight(
-                """{"schemaVersion":1,"type":"resource.audiopack.preflighted","payload":{"packId":"nhk16"}}""",
+                """{"schemaVersion":1,"type":"resource.audiopack.preflighted","payload":{"packs":[""" +
+                    """{"packId":"jpod","packPath":"user_files/jpod_files","format":"ajt"},""" +
+                    """{"packId":"nhk16","packPath":"user_files/nhk16_files","format":"nhk16"}]}}""",
             ),
         )
+        // An archive whose root is the pack has no sub-path, which is a value here.
+        assertEquals(
+            "",
+            ResourceBridgeCodec
+                .decodeAudioPackPreflight(
+                    """{"schemaVersion":1,"type":"resource.audiopack.preflighted","payload":{"packs":""" +
+                        """[{"packId":"nhk16","packPath":"","format":"nhk16"}]}}""",
+                ).single()
+                .packPath,
+        )
+        for (rejected in
+            listOf(
+                """{"packs":[{"packId":"jpod101","packPath":"","format":"ajt"}]}""",
+                """{"packs":[]}""",
+                """{"packs":[{"packId":"jpod","packPath":"a","format":"ajt"},""" +
+                    """{"packId":"jpod","packPath":"b","format":"ajt"}]}""",
+            )
+        ) {
+            assertThrows(ResourceBridgeException::class.java) {
+                ResourceBridgeCodec.decodeAudioPackPreflight(
+                    """{"schemaVersion":1,"type":"resource.audiopack.preflighted","payload":$rejected}""",
+                )
+            }
+        }
+        // A sub-path that climbs out of the archive must not reach the wire.
         assertThrows(ResourceBridgeException::class.java) {
-            ResourceBridgeCodec.decodeAudioPackPreflight(
-                """{"schemaVersion":1,"type":"resource.audiopack.preflighted","payload":{"packId":"jpod101"}}""",
+            ResourceBridgeCodec.encodeAudioPackImportRequest(
+                operation = "resource_audio",
+                sourcePath = "/private/audio.zip",
+                packId = "nhk16",
+                packPath = "user_files/../../etc",
+                overwrite = false,
             )
         }
         assertTrue(known.contains("\"sourceFormat\":\"json\""))

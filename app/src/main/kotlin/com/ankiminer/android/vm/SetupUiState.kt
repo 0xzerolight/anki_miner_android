@@ -11,6 +11,7 @@ import com.ankiminer.android.data.RuntimeWorkCoordinator
 import com.ankiminer.android.data.anki.AnkiRecoveryInventoryStatus
 import com.ankiminer.android.data.anki.AnkiSetupFailure
 import com.ankiminer.android.data.anki.AnkiSetupOperation
+import com.ankiminer.android.data.resources.AudioPackCandidate
 import com.ankiminer.android.data.resources.CatalogDictionaryStatus
 import com.ankiminer.android.data.resources.DictionaryLookup
 import com.ankiminer.android.data.resources.InstalledDictionary
@@ -60,6 +61,8 @@ internal data class SetupUiState(
     /** Tri-state startup-flash guard: null until the settings store has emitted once. */
     val wizardSeen: Boolean? = null,
     val wizardCompletion: WizardCompletionStatus = WizardCompletionStatus.IDLE,
+    /** Packs found in a picked archive that holds more than one; empty when no choice is open. */
+    val audioPackChoices: List<AudioPackCandidate> = emptyList(),
     val uniDicInstalled: Boolean = false,
     val catalogDictionaries: List<CatalogDictionaryStatus> = emptyList(),
     val pendingReplace: PendingResourceReplace? = null,

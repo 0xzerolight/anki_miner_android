@@ -9,6 +9,7 @@ import com.ankiminer.android.anki.provider.ModelSummary
 import com.ankiminer.android.data.RuntimeWorkCoordinator
 import com.ankiminer.android.data.anki.AnkiSetupManager
 import com.ankiminer.android.data.anki.AnkiSetupManagerState
+import com.ankiminer.android.data.resources.AudioPackCandidate
 import com.ankiminer.android.data.resources.FrequencySourceFormat
 import com.ankiminer.android.data.resources.InstalledAudioPack
 import com.ankiminer.android.data.resources.InstalledFrequencySource
@@ -906,6 +907,106 @@ class SetupViewModelTest {
         }
 
     @Test
+    fun `an archive holding several packs asks which one before importing any of them`() =
+        runTest {
+            val resources =
+                FakeResourceManager().apply {
+                    audioPacksInArchive =
+                        listOf(
+                            AudioPackCandidate("jpod", "user_files/jpod_files", "ajt"),
+                            AudioPackCandidate("nhk16", "user_files/nhk16_files", "nhk16"),
+                        )
+                }
+            val model =
+                viewModel(
+                    FakeSettingsRepository(AppSettings()),
+                    FakeAnkiSetupManager(emptyList()),
+                    resources,
+                )
+            advanceUntilIdle()
+
+            assertTrue(model.beginAudioPackPicker())
+            model.onAudioPackPicked("content://collection.tar.xz")
+            advanceUntilIdle()
+
+            // Nothing is extracted until the user names a pack: the upstream
+            // collection is four packs and tens of gigabytes in one file.
+            assertEquals(
+                listOf("jpod", "nhk16"),
+                model.uiState.value.audioPackChoices.map { it.packId },
+            )
+            assertTrue(resources.audioImports.isEmpty())
+
+            model.chooseAudioPack("nhk16")
+            advanceUntilIdle()
+
+            assertTrue(model.uiState.value.audioPackChoices.isEmpty())
+            assertEquals(
+                listOf(Triple("content://collection.tar.xz", "nhk16", false)),
+                resources.audioImports,
+            )
+            // Only the chosen subtree is extracted, so jpod's bytes are never touched.
+            assertEquals(listOf("user_files/nhk16_files"), resources.audioImportPaths)
+        }
+
+    @Test
+    fun `dismissing the pack choice imports nothing and drops the retained archive`() =
+        runTest {
+            val resources =
+                FakeResourceManager().apply {
+                    audioPacksInArchive =
+                        listOf(
+                            AudioPackCandidate("jpod", "user_files/jpod_files", "ajt"),
+                            AudioPackCandidate("forvo", "user_files/forvo_files", "forvo"),
+                        )
+                }
+            val model =
+                viewModel(
+                    FakeSettingsRepository(AppSettings()),
+                    FakeAnkiSetupManager(emptyList()),
+                    resources,
+                )
+            advanceUntilIdle()
+
+            assertTrue(model.beginAudioPackPicker())
+            model.onAudioPackPicked("content://collection.tar.xz")
+            advanceUntilIdle()
+            model.dismissAudioPackChoice()
+            advanceUntilIdle()
+
+            assertTrue(model.uiState.value.audioPackChoices.isEmpty())
+            assertTrue(resources.audioImports.isEmpty())
+        }
+
+    @Test
+    fun `an archive holding one pack imports it without asking`() =
+        runTest {
+            val resources =
+                FakeResourceManager().apply {
+                    audioPacksInArchive = listOf(AudioPackCandidate("nhk16", "", "nhk16"))
+                }
+            val model =
+                viewModel(
+                    FakeSettingsRepository(AppSettings()),
+                    FakeAnkiSetupManager(emptyList()),
+                    resources,
+                )
+            advanceUntilIdle()
+
+            assertTrue(model.beginAudioPackPicker())
+            model.onAudioPackPicked("content://nhk16.zip")
+            advanceUntilIdle()
+
+            assertTrue(model.uiState.value.audioPackChoices.isEmpty())
+            assertEquals(
+                listOf(Triple("content://nhk16.zip", "nhk16", false)),
+                resources.audioImports,
+            )
+            // An archive that is itself the pack has no sub-path.
+            assertEquals(listOf(""), resources.audioImportPaths)
+        }
+
+    @Test
     fun `a word list pick delivered to a recreated ViewModel lands on the list it was made for`() =
         runTest(mainDispatcherRule.dispatcher) {
             listOf(WordListKind.BLACKLIST, WordListKind.WHITELIST).forEach { kind ->
@@ -1218,6 +1319,8 @@ class SetupViewModelTest {
         val pitchFormats = mutableListOf<PitchAccentSourceFormat>()
         val audioPreflights = mutableListOf<String>()
         val audioImports = mutableListOf<Triple<String, String, Boolean>>()
+        val audioImportPaths = mutableListOf<String>()
+        var audioPacksInArchive = listOf(AudioPackCandidate("jpod", "jpod_files", "ajt"))
         val retainedResourceImports = mutableListOf<String>()
         val releasedResourceImports = mutableListOf<String>()
         private val importDocuments = mutableMapOf<String, ImportDocument>()
@@ -1314,13 +1417,14 @@ class SetupViewModelTest {
             pitchFormats += format
         }
 
-        override suspend fun preflightAudioPack(uri: String): String {
+        override suspend fun preflightAudioPack(uri: String): List<AudioPackCandidate> {
             audioPreflights += uri
-            return "jpod"
+            return audioPacksInArchive
         }
 
-        override suspend fun importAudioPack(uri: String, packId: String, replace: Boolean) {
-            audioImports += Triple(uri, packId, replace)
+        override suspend fun importAudioPack(uri: String, pack: AudioPackCandidate, replace: Boolean) {
+            audioImports += Triple(uri, pack.packId, replace)
+            audioImportPaths += pack.packPath
         }
 
         override suspend fun discardAudioPackPreflight() = Unit

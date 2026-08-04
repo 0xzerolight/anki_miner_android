@@ -6,6 +6,7 @@ import com.ankiminer.android.anki.provider.AnkiRemediationCommand
 import com.ankiminer.android.data.RuntimeWorkCoordinator
 import com.ankiminer.android.data.anki.AnkiSetupManager
 import com.ankiminer.android.data.anki.AnkiSetupManagerState
+import com.ankiminer.android.data.resources.AudioPackCandidate
 import com.ankiminer.android.data.resources.FrequencySourceFormat
 import com.ankiminer.android.data.resources.KnownWordsResetScope
 import com.ankiminer.android.data.resources.KnownWordsSourceFormat
@@ -106,9 +107,10 @@ internal class SessionResourceManager(
         replace: Boolean,
     ) = Unit
 
-    override suspend fun preflightAudioPack(uri: String): String = "jpod"
+    override suspend fun preflightAudioPack(uri: String) =
+        listOf(AudioPackCandidate("jpod", "jpod_files", "ajt"))
 
-    override suspend fun importAudioPack(uri: String, packId: String, replace: Boolean) = Unit
+    override suspend fun importAudioPack(uri: String, pack: AudioPackCandidate, replace: Boolean) = Unit
 
     override suspend fun discardAudioPackPreflight() = Unit
 

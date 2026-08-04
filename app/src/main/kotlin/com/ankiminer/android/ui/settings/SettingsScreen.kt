@@ -63,12 +63,25 @@ private val CSV_IMPORT_MIME_TYPES = arrayOf("application/csv", "application/vnd.
 // A hand-written list often arrives untyped from cloud providers.
 private val UNTYPED_IMPORT_MIME_TYPES = arrayOf("application/octet-stream")
 
+// The upstream local-audio collection ships as a .tar.xz torrent, and providers spell that
+// container at least five ways. Without these the file users actually download is greyed out in
+// the picker with no error at all, which is indistinguishable from the app being broken.
+private val TAR_IMPORT_MIME_TYPES =
+    arrayOf(
+        "application/x-xz",
+        "application/x-tar",
+        "application/x-gtar",
+        "application/x-gzip",
+        "application/gzip",
+    )
+
 internal val CUSTOM_DICTIONARY_MIME_TYPES = ZIP_IMPORT_MIME_TYPES + UNTYPED_IMPORT_MIME_TYPES
 internal val FREQUENCY_MIME_TYPES =
     ZIP_IMPORT_MIME_TYPES + TEXT_IMPORT_MIME_TYPES + CSV_IMPORT_MIME_TYPES +
         UNTYPED_IMPORT_MIME_TYPES
 internal val PITCH_MIME_TYPES = FREQUENCY_MIME_TYPES
-internal val AUDIO_PACK_MIME_TYPES = ZIP_IMPORT_MIME_TYPES + UNTYPED_IMPORT_MIME_TYPES
+internal val AUDIO_PACK_MIME_TYPES =
+    ZIP_IMPORT_MIME_TYPES + TAR_IMPORT_MIME_TYPES + UNTYPED_IMPORT_MIME_TYPES
 internal val KNOWN_WORDS_MIME_TYPES =
     arrayOf("application/json") + TEXT_IMPORT_MIME_TYPES + CSV_IMPORT_MIME_TYPES +
         UNTYPED_IMPORT_MIME_TYPES
@@ -404,6 +417,12 @@ private fun SettingsScreen(
         busy = setup.busy,
         onConfirm = setupViewModel::confirmPendingReplace,
         onDismiss = setupViewModel::dismissPendingReplace,
+    )
+    AudioPackChoiceDialog(
+        choices = setup.audioPackChoices,
+        busy = setup.busy,
+        onChoose = setupViewModel::chooseAudioPack,
+        onDismiss = setupViewModel::dismissAudioPackChoice,
     )
 
     val callbacks =

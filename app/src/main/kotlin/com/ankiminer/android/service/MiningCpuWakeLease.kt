@@ -24,12 +24,15 @@ internal class AndroidMiningCpuWakeLock private constructor(
     override fun release() = delegate.release()
 
     companion object {
-        fun create(context: Context): AndroidMiningCpuWakeLock {
+        fun create(
+            context: Context,
+            tag: String = "mining-media",
+        ): AndroidMiningCpuWakeLock {
             val manager = context.getSystemService(PowerManager::class.java)
             val wakeLock =
                 manager.newWakeLock(
                     PowerManager.PARTIAL_WAKE_LOCK,
-                    "${context.packageName}:mining-media",
+                    "${context.packageName}:$tag",
                 )
             wakeLock.setReferenceCounted(false)
             return AndroidMiningCpuWakeLock(wakeLock)
