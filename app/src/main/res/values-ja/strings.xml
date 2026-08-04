@@ -108,6 +108,9 @@
     <string name="curation_filter_excluded">除外済み</string>
     <string name="curation_sort_frequency">頻度順</string>
     <string name="curation_sort_occurrences">出現回数順</string>
+    <string name="curation_filter_action">絞り込み: %1$s</string>
+    <string name="curation_sort_action">並び替え: %1$s</string>
+    <string name="curation_bulk_action">選択…</string>
     <string name="candidate_state_selected">選択済み</string>
     <string name="candidate_state_excluded">除外済み</string>
     <string name="candidate_part_of_speech_unknown">品詞不明</string>

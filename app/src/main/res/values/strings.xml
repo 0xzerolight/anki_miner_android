@@ -114,6 +114,9 @@
     <string name="curation_filter_excluded">Excluded</string>
     <string name="curation_sort_frequency">Frequency</string>
     <string name="curation_sort_occurrences">Occurrences</string>
+    <string name="curation_filter_action">Filter: %1$s</string>
+    <string name="curation_sort_action">Sort: %1$s</string>
+    <string name="curation_bulk_action">Select…</string>
     <string name="candidate_state_selected">Selected</string>
     <string name="candidate_state_excluded">Excluded</string>
     <string name="candidate_part_of_speech_unknown">Unknown part of speech</string>

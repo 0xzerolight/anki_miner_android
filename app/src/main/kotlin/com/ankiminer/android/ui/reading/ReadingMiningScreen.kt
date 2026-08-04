@@ -85,7 +85,6 @@ import com.ankiminer.android.ui.mining.miningResultItems
 import com.ankiminer.android.ui.mining.rememberCurationCandidateRowTexts
 import com.ankiminer.android.ui.mining.rememberClipboardWriter
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
-import com.ankiminer.android.ui.theme.ExitActionButton
 import com.ankiminer.android.ui.theme.PhaseTitle
 import com.ankiminer.android.ui.theme.actionBorder
 import com.ankiminer.android.ui.theme.forwardButtonColors
@@ -764,55 +763,25 @@ private fun LazyListScope.curationItems(
         }
     }
     item(key = "reading_curation_controls", contentType = "actions") {
-        Column(verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
-            OutlinedButton(
-                onClick = {
-                    onSetSelectionForVisible(visibleCandidateIds, !allVisibleSelected)
-                },
-                enabled = selectableVisibleCandidateIds.isNotEmpty() && enabled,
-                modifier =
-                    Modifier
-                        .heightIn(min = 48.dp)
-                        .testTag(ReadingMiningTestTags.SELECT_ALL),
-                colors = outlinedActionButtonColors(),
-                border = actionBorder(selectableVisibleCandidateIds.isNotEmpty() && enabled),
-            ) {
-                Text(
-                    stringResource(
-                        if (allVisibleSelected) {
-                            R.string.deselect_visible
-                        } else {
-                            R.string.select_visible
-                        },
-                        visibleCandidates.size,
-                    ),
-                )
-            }
-            // Page-wide selection stays reachable, but named for the scope it actually reaches
-            // rather than hiding behind the same "Select all" the filtered action used to use.
-            if (visibleCandidateIds.size < curation.candidates.size) {
-                ExitActionButton(
-                    onClick = { onSetSelectionForPage(true) },
-                    enabled = enabled,
-                ) {
-                    Text(
-                        stringResource(
-                            R.string.curation_select_whole_page,
-                            curation.candidates.size,
-                        ),
-                    )
-                }
-            }
-            CurationControls(
-                query = query,
-                filter = filter,
-                sort = sort,
-                enabled = enabled,
-                onQueryChanged = onQueryChanged,
-                onFilterChanged = onFilterChanged,
-                onSortChanged = onSortChanged,
-            )
-        }
+        CurationControls(
+            query = query,
+            filter = filter,
+            sort = sort,
+            enabled = enabled,
+            visibleCount = visibleCandidates.size,
+            allVisibleSelected = allVisibleSelected,
+            selectVisibleEnabled = selectableVisibleCandidateIds.isNotEmpty() && enabled,
+            pageCandidateCount =
+                curation.candidates.size.takeIf { visibleCandidateIds.size < it },
+            selectAllTestTag = ReadingMiningTestTags.SELECT_ALL,
+            onQueryChanged = onQueryChanged,
+            onFilterChanged = onFilterChanged,
+            onSortChanged = onSortChanged,
+            onSetSelectionForVisible = { select ->
+                onSetSelectionForVisible(visibleCandidateIds, select)
+            },
+            onSelectWholePage = { onSetSelectionForPage(true) },
+        )
     }
     visibleCandidates.forEach { candidate ->
         val selected = candidate.candidateId in curation.selectedCandidateIds

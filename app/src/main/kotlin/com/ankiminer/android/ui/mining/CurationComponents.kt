@@ -4,21 +4,23 @@ import androidx.annotation.StringRes
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.FilterChip
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
@@ -28,8 +30,11 @@ import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
@@ -52,19 +57,54 @@ import com.ankiminer.android.mining.CurationCandidate
 import com.ankiminer.android.mining.CurationSentence
 import com.ankiminer.android.ui.settings.DictionaryHtml
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
+import com.ankiminer.android.ui.theme.actionBorder
+import com.ankiminer.android.ui.theme.outlinedActionButtonColors
 import com.ankiminer.android.ui.theme.selectedRowContainer
 
 internal const val CURATION_SEARCH_TEST_TAG = "curation_search"
+internal const val CURATION_FILTER_TEST_TAG = "curation_filter"
+internal const val CURATION_SORT_TEST_TAG = "curation_sort"
+internal const val CURATION_BULK_TEST_TAG = "curation_bulk_actions"
 
+@StringRes
+private fun CurationFilter.label(): Int =
+    when (this) {
+        CurationFilter.ALL -> R.string.curation_filter_all
+        CurationFilter.SELECTED -> R.string.curation_filter_selected
+        CurationFilter.EXCLUDED -> R.string.curation_filter_excluded
+    }
+
+@StringRes
+private fun CurationSort.label(): Int =
+    when (this) {
+        CurationSort.FREQUENCY -> R.string.curation_sort_frequency
+        CurationSort.OCCURRENCES -> R.string.curation_sort_occurrences
+    }
+
+/**
+ * Search, projection and bulk selection for the candidate list.
+ *
+ * Everything here is one fixed block above the list rather than scrolling items: on a hundred-row
+ * page the controls used to leave the screen exactly when they became useful. Filter and sort trade
+ * two scrolling chip rows for two menus, and the bulk actions — previously two full-width buttons —
+ * fold into a third, which is what buys the vertical room back.
+ */
 @Composable
 internal fun CurationControls(
     query: String,
     filter: CurationFilter,
     sort: CurationSort,
     enabled: Boolean,
+    visibleCount: Int,
+    allVisibleSelected: Boolean,
+    selectVisibleEnabled: Boolean,
+    pageCandidateCount: Int?,
+    selectAllTestTag: String,
     onQueryChanged: (String) -> Unit,
     onFilterChanged: (CurationFilter) -> Unit,
     onSortChanged: (CurationSort) -> Unit,
+    onSetSelectionForVisible: (Boolean) -> Unit,
+    onSelectWholePage: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
         OutlinedTextField(
@@ -78,56 +118,120 @@ internal fun CurationControls(
             singleLine = true,
             label = { Text(stringResource(R.string.curation_search)) },
         )
-        Row(
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
+            verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
         ) {
-            CurationFilter.entries.forEach { option ->
-                FilterChip(
-                    selected = filter == option,
-                    onClick = { onFilterChanged(option) },
-                    enabled = enabled,
-                    label = {
+            CurationMenuButton(
+                label =
+                    stringResource(
+                        R.string.curation_filter_action,
+                        stringResource(filter.label()),
+                    ),
+                enabled = enabled,
+                testTag = CURATION_FILTER_TEST_TAG,
+            ) { dismiss ->
+                CurationFilter.entries.forEach { option ->
+                    DropdownMenuItem(
+                        text = { Text(stringResource(option.label())) },
+                        onClick = {
+                            onFilterChanged(option)
+                            dismiss()
+                        },
+                    )
+                }
+            }
+            CurationMenuButton(
+                label =
+                    stringResource(
+                        R.string.curation_sort_action,
+                        stringResource(sort.label()),
+                    ),
+                enabled = enabled,
+                testTag = CURATION_SORT_TEST_TAG,
+            ) { dismiss ->
+                CurationSort.entries.forEach { option ->
+                    DropdownMenuItem(
+                        text = { Text(stringResource(option.label())) },
+                        onClick = {
+                            onSortChanged(option)
+                            dismiss()
+                        },
+                    )
+                }
+            }
+            CurationMenuButton(
+                label = stringResource(R.string.curation_bulk_action),
+                enabled = enabled,
+                testTag = CURATION_BULK_TEST_TAG,
+            ) { dismiss ->
+                DropdownMenuItem(
+                    text = {
                         Text(
                             stringResource(
-                                when (option) {
-                                    CurationFilter.ALL -> R.string.curation_filter_all
-                                    CurationFilter.SELECTED -> R.string.curation_filter_selected
-                                    CurationFilter.EXCLUDED -> R.string.curation_filter_excluded
+                                if (allVisibleSelected) {
+                                    R.string.deselect_visible
+                                } else {
+                                    R.string.select_visible
                                 },
+                                visibleCount,
                             ),
                         )
                     },
+                    onClick = {
+                        onSetSelectionForVisible(!allVisibleSelected)
+                        dismiss()
+                    },
+                    modifier = Modifier.testTag(selectAllTestTag),
+                    enabled = selectVisibleEnabled,
                 )
+                // Page-wide selection stays reachable, but named for the scope it actually reaches
+                // rather than hiding behind the same action the filtered one uses.
+                if (pageCandidateCount != null) {
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                stringResource(
+                                    R.string.curation_select_whole_page,
+                                    pageCandidateCount,
+                                ),
+                            )
+                        },
+                        onClick = {
+                            onSelectWholePage()
+                            dismiss()
+                        },
+                    )
+                }
             }
         }
-        Row(
+    }
+}
+
+@Composable
+private fun CurationMenuButton(
+    label: String,
+    enabled: Boolean,
+    testTag: String,
+    items: @Composable ColumnScope.(dismiss: () -> Unit) -> Unit,
+) {
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    Box {
+        OutlinedButton(
+            onClick = { expanded = true },
+            enabled = enabled,
             modifier =
                 Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
+                    .heightIn(min = AnkiMinerTokens.Layout.minTouchTarget)
+                    .testTag(testTag),
+            colors = outlinedActionButtonColors(),
+            border = actionBorder(enabled),
         ) {
-            CurationSort.entries.forEach { option ->
-                FilterChip(
-                    selected = sort == option,
-                    onClick = { onSortChanged(option) },
-                    enabled = enabled,
-                    label = {
-                        Text(
-                            stringResource(
-                                when (option) {
-                                    CurationSort.FREQUENCY -> R.string.curation_sort_frequency
-                                    CurationSort.OCCURRENCES -> R.string.curation_sort_occurrences
-                                },
-                            ),
-                        )
-                    },
-                )
-            }
+            Text(label)
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            items { expanded = false }
         }
     }
 }

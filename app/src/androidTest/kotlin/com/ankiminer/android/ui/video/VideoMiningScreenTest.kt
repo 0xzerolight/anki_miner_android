@@ -45,7 +45,10 @@ import com.ankiminer.android.mining.ProcessingResult
 import com.ankiminer.android.player.CurationPreviewPlayer
 import com.ankiminer.android.player.FakeCurationPreviewPlayer
 import com.ankiminer.android.ui.mining.CurationPlayerTestTags
+import com.ankiminer.android.ui.mining.CURATION_BULK_TEST_TAG
+import com.ankiminer.android.ui.mining.CURATION_FILTER_TEST_TAG
 import com.ankiminer.android.ui.mining.CURATION_SEARCH_TEST_TAG
+import com.ankiminer.android.ui.mining.CURATION_SORT_TEST_TAG
 import com.ankiminer.android.ui.mining.MINING_FAILURE_TEST_TAG
 import com.ankiminer.android.ui.mining.MINING_PHASE_HEADING_TEST_TAG
 import com.ankiminer.android.ui.theme.AnkiMinerTheme
@@ -205,6 +208,7 @@ class VideoMiningScreenTest {
             onConfirmCuration = { confirmed = true },
         )
 
+        composeRule.onNodeWithTag(CURATION_BULK_TEST_TAG).performClick()
         composeRule.onNodeWithTag(VideoMiningTestTags.SELECT_ALL).performClick()
         composeRule
             .onNodeWithTag(VideoMiningTestTags.CONTENT)
@@ -605,7 +609,7 @@ class VideoMiningScreenTest {
                 ),
         )
 
-        composeRule.onNodeWithTag(VideoMiningTestTags.SELECT_ALL).assertIsNotEnabled()
+        composeRule.onNodeWithTag(CURATION_BULK_TEST_TAG).assertIsNotEnabled()
         composeRule
             .onNodeWithTag(VideoMiningTestTags.candidate(request.candidates.first().candidateId))
             .assertIsNotEnabled()
@@ -665,6 +669,69 @@ class VideoMiningScreenTest {
         composeRule.runOnIdle {
             assertEquals(candidateId to sentences.last().sentenceId, selection)
         }
+    }
+
+    @Test
+    fun filterMenuNarrowsTheCandidateProjection() {
+        val candidates =
+            listOf(
+                candidate("candidate-kept", "食べる", listOf(sentence("s-0", "Sentence 0"))),
+                candidate("candidate-dropped", "斡旋", listOf(sentence("s-1", "Sentence 1"))),
+            )
+        val request = CurationRequest("run", "request-filter", candidates)
+        setScreen(
+            state =
+                VideoMiningUiState(
+                    runState = MiningRunState.Curating(request),
+                    curation =
+                        curationState(
+                            request,
+                            selectedCandidateIds = setOf("candidate-kept"),
+                        ),
+                ),
+        )
+
+        composeRule.onNodeWithTag(CURATION_FILTER_TEST_TAG).performClick()
+        composeRule.onNodeWithText("Excluded").performClick()
+
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.candidate("candidate-dropped"))
+            .assertIsDisplayed()
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.candidate("candidate-kept"))
+            .assertDoesNotExist()
+    }
+
+    @Test
+    fun sortMenuReordersTheCandidateProjection() {
+        // Frequency rank and occurrence count run in opposite directions, so the tail of one
+        // ordering is the head of the other and a composed/not-composed check is enough.
+        val candidates =
+            (0 until 100).map { index ->
+                candidate(
+                    id = "candidate-$index",
+                    form = "語彙$index",
+                    sentences = listOf(sentence("sentence-$index", "Sentence $index")),
+                ).copy(
+                    frequencyRank = index.toLong(),
+                    occurrenceCount = index.toLong(),
+                )
+            }
+        val request = CurationRequest("run", "request-sort", candidates)
+        setScreen(
+            state =
+                VideoMiningUiState(
+                    runState = MiningRunState.Curating(request),
+                    curation = curationState(request),
+                ),
+        )
+        val tailTag = VideoMiningTestTags.candidate("candidate-99")
+
+        composeRule.onNodeWithTag(tailTag).assertDoesNotExist()
+        composeRule.onNodeWithTag(CURATION_SORT_TEST_TAG).performClick()
+        composeRule.onNodeWithText("Occurrences").performClick()
+
+        composeRule.onNodeWithTag(tailTag).assertIsDisplayed()
     }
 
     @Test
