@@ -193,6 +193,7 @@ private fun firstFormatOfType(
  * no renderer handles — the player reaches `STATE_READY` with a black picture and no exception.
  * `isTypeSupportedOrEmpty` means "supported, or absent", so the audio-only lane never trips it.
  */
+@OptIn(UnstableApi::class)
 fun previewFailureFor(tracks: Tracks): PreviewFailure? {
     if (!tracks.isTypeSupportedOrEmpty(C.TRACK_TYPE_VIDEO)) {
         return PreviewFailure.VideoTrackUnsupported(
