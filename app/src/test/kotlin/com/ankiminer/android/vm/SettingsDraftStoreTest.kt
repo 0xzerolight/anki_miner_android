@@ -55,6 +55,26 @@ class SettingsDraftStoreTest {
     }
 
     @Test
+    fun animatedTuningStopsBlockingTheSaveOnceTheFeatureIsSwitchedOff() {
+        val edited =
+            SettingsDraft
+                .from(AppSettings(), resources())
+                .copy(animatedScreenshots = true, animatedScreenshotDuration = "12")
+
+        assertEquals(
+            R.string.b3_validation_animated_clip_duration,
+            edited.validation[SettingsFieldKey.ANIMATED_SCREENSHOT_DURATION]?.resourceId,
+        )
+
+        // Both tuning fields are disabled while the toggle is off, so a leftover value must not
+        // hold every other setting hostage behind a control the user cannot reach.
+        val switchedOff = edited.copy(animatedScreenshots = false)
+
+        assertTrue(switchedOff.validation.isEmpty())
+        assertTrue(switchedOff.numericValuesValid)
+    }
+
+    @Test
     fun editsAreIgnoredUntilTheFirstPersistedSettingsValueLoads() {
         val resources = resources("first")
         val initial = SettingsDraft.from(AppSettings(), resources)

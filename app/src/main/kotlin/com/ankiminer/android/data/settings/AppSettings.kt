@@ -331,20 +331,25 @@ object AppSettingsValidator {
             }
             // Ranges mirror android_bridge/config_map.py exactly; the wire codec rejects the same
             // bounds, so a drift here surfaces as a bridge protocol failure rather than a bad card.
-            it.animatedScreenshotDurationSeconds?.let { seconds ->
-                if (!seconds.isFinite() || seconds < 0.5 || seconds > 10.0) {
-                    invalid(
-                        InvalidAppSettingCode.ANIMATED_SCREENSHOT_DURATION_RANGE,
-                        "Clip length must be between 0.5 and 10 seconds",
-                    )
+            // Checked under the same condition the mapper emits them, so what is validated is
+            // exactly what can reach the wire — a stale value behind a disabled toggle goes nowhere
+            // and must not block every other setting from saving.
+            if (it.animatedScreenshotsEnabled) {
+                it.animatedScreenshotDurationSeconds?.let { seconds ->
+                    if (!seconds.isFinite() || seconds < 0.5 || seconds > 10.0) {
+                        invalid(
+                            InvalidAppSettingCode.ANIMATED_SCREENSHOT_DURATION_RANGE,
+                            "Clip length must be between 0.5 and 10 seconds",
+                        )
+                    }
                 }
-            }
-            it.animatedScreenshotQuality?.let { quality ->
-                if (quality !in 0..100) {
-                    invalid(
-                        InvalidAppSettingCode.ANIMATED_SCREENSHOT_QUALITY_RANGE,
-                        "Clip quality must be between 0 and 100",
-                    )
+                it.animatedScreenshotQuality?.let { quality ->
+                    if (quality !in 0..100) {
+                        invalid(
+                            InvalidAppSettingCode.ANIMATED_SCREENSHOT_QUALITY_RANGE,
+                            "Clip quality must be between 0 and 100",
+                        )
+                    }
                 }
             }
             resourceChain("Dictionaries", it.dictionarySources)
