@@ -4,6 +4,8 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-08-05
+
 ### Fixed
 
 - Animated screenshots no longer fail every word on most phones. The AV1 encoder in the bundled ffmpeg was built assuming the newest ARM instructions exist on every device, so on anything below the 2022 flagship generation the encoder crashed on its first frame, every word lost its clip, and the run ended with "Media extraction failed for all words". The encoder now checks the CPU at runtime and uses the fastest instructions the phone actually has — newer phones keep their speed, older phones now work.
