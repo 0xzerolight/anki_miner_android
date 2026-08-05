@@ -11,6 +11,14 @@
 #   dead weight in a binary that is committed to the repository.
 # - Uses the upstream android.cmake toolchain shim, which is the thing that
 #   feeds the NDK toolchain file the ANDROID_* variables.
+# - CONFIG_RUNTIME_CPU_DETECT=1 is mandatory on arm64. libaom compiles
+#   NEON_DOTPROD (armv8.2), NEON_I8MM (armv8.6) and SVE/SVE2 (armv9) kernels by
+#   default, and with runtime detect off rtcd.pl statically binds every
+#   function to its highest compiled variant — no dispatch tables exist, so any
+#   CPU below armv9 (SD 855/865/888, Tensor G1/G2, all mid-range SoCs) hits
+#   SIGILL on the first i8mm/SVE kernel and every AVIF encode dies (the v0.4.0
+#   "Media extraction failed for all words" report). On x86/x86_64 the flag is
+#   inert: AOM_TARGET_CPU=generic builds C-only with nothing to dispatch to.
 
 CMAKE_BUILD_DIR=aom_build_${ANDROID_ABI}
 rm -rf "${CMAKE_BUILD_DIR}"
@@ -34,7 +42,7 @@ ${CMAKE_EXECUTABLE} .. \
   -DCMAKE_BUILD_TYPE=Release \
   -DBUILD_SHARED_LIBS=0 \
   -DCONFIG_PIC=1 \
-  -DCONFIG_RUNTIME_CPU_DETECT=0 \
+  -DCONFIG_RUNTIME_CPU_DETECT=1 \
   -DCONFIG_AV1_DECODER=0 \
   -DCONFIG_AV1_HIGHBITDEPTH=0 \
   -DENABLE_TESTS=0 \

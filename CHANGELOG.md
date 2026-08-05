@@ -6,6 +6,8 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 
 ### Fixed
 
+- Animated screenshots no longer fail every word on most phones. The AV1 encoder in the bundled ffmpeg was built assuming the newest ARM instructions exist on every device, so on anything below the 2022 flagship generation the encoder crashed on its first frame, every word lost its clip, and the run ended with "Media extraction failed for all words". The encoder now checks the CPU at runtime and uses the fastest instructions the phone actually has — newer phones keep their speed, older phones now work.
+
 - The audio collection was still rejected at import, this time by an index-file ceiling. The nhk16 pack's `entries.json` is about 42 MB and the importer capped JSON members at 32 MB, so picking the archive failed immediately — reported as "The archive holds more data than this device can import" however much free space the device had. The ceiling now clears the real collection with room to spare, and an archive the importer does refuse is named by what actually tripped: a single oversized file, too many files, or expanding past the size an audio pack may reach — free space has its own message and is only blamed when it is the cause.
 
 ## [0.4.0] - 2026-08-05
