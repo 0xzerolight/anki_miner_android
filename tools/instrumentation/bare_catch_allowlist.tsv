@@ -16,7 +16,7 @@ app/src/main/kotlin/com/ankiminer/android/anki/provider/ProviderContract.kt	264	
 app/src/main/kotlin/com/ankiminer/android/anki/provider/ProviderMutationContract.kt	186,206,277,347	Existing discarded catches are pinned at audit introduction; new sites require review.
 app/src/main/kotlin/com/ankiminer/android/anki/provider/TargetSnapshots.kt	267,286,304	Existing discarded catches are pinned at audit introduction; new sites require review.
 app/src/main/kotlin/com/ankiminer/android/data/anki/AnkiSetupManager.kt	200,260,378,392	Existing discarded catches are pinned at audit introduction; new sites require review.
-app/src/main/kotlin/com/ankiminer/android/data/resources/PinnedResourceDownloader.kt	578	Existing discarded catches are pinned at audit introduction; new sites require review.
+app/src/main/kotlin/com/ankiminer/android/data/resources/PinnedResourceDownloader.kt	601	Existing discarded catches are pinned at audit introduction; new sites require review.
 app/src/main/kotlin/com/ankiminer/android/data/settings/AppSettingsRepository.kt	139,440,449,504,507	Existing discarded catches are pinned at audit introduction; new sites require review.
 app/src/main/kotlin/com/ankiminer/android/data/settings/DiagnosticsSettingsRepository.kt	53,121,128	Existing discarded catches are pinned at audit introduction; new sites require review.
 app/src/main/kotlin/com/ankiminer/android/data/settings/SubtitleRegexCheck.kt	53	Existing discarded catches are pinned at audit introduction; new sites require review.
