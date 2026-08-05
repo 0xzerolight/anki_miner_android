@@ -471,7 +471,10 @@
     <string name="resource_failure_operation">The resource operation did not complete</string>
     <string name="resource_failure_storage_unavailable">Not enough private storage is available for this resource</string>
     <string name="resource_failure_archive_mismatch">The downloaded archive did not match the pinned catalog</string>
-    <string name="resource_failure_bridge_archive_too_large">The archive holds more data than this device can import</string>
+    <string name="resource_failure_bridge_archive_too_large">The archive exceeds the app\'s import limits</string>
+    <string name="resource_failure_archive_member_oversized">A single file inside the archive is larger than an audio pack may contain</string>
+    <string name="resource_failure_archive_member_count">The archive holds more files than an audio pack may contain</string>
+    <string name="resource_failure_archive_expands">The archive expands beyond the size an audio pack may reach</string>
     <string name="resource_failure_archive_invalid">The archive is damaged or incomplete</string>
     <string name="resource_failure_archive_unsafe">The archive contains an unsafe entry and was rejected</string>
     <string name="resource_failure_archive_compression">The archive uses a compression method this app cannot read</string>

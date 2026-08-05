@@ -49,7 +49,10 @@ _AUDIO_ARCHIVE_LIMIT = 16 * 1024 * 1024 * 1024
 _AUDIO_MEMBER_LIMIT = 600_000
 _AUDIO_TOTAL_LIMIT = 16 * 1024 * 1024 * 1024
 _AUDIO_FILE_LIMIT = 512 * 1024 * 1024
-_AUDIO_JSON_LIMIT = 32 * 1024 * 1024
+# The same collection's nhk16 pack ships entries.json at ~42 MiB (43,944,140
+# bytes in the 2023-06-11 release), so a JSON ceiling under that rejects every
+# pack in the archive at preflight. Sized at 3x that real maximum.
+_AUDIO_JSON_LIMIT = 128 * 1024 * 1024
 # Deepest an index file can sit and still describe a pack: wrapper directory,
 # user_files, the pack folder, the file. Also how far pack detection descends
 # through single-child wrapper directories.
@@ -582,7 +585,7 @@ def _accept_audio_member(
     seen.add(parts)
     limit = _audio_member_limit(parts[-1])
     if size < 0 or size > limit:
-        raise _fail("resource_archive_too_large", "Audio pack contains an oversized file")
+        raise _fail("resource_archive_member_oversized", "Audio pack contains an oversized file")
     return limit
 
 
@@ -638,7 +641,7 @@ def _copy_audio_member(
             written += len(chunk)
             if written > size or written > limit:
                 raise _fail(
-                    "resource_archive_too_large",
+                    "resource_archive_expands_too_large",
                     "Audio pack expands beyond its limit",
                 )
             core._write_all(output, chunk)
@@ -662,7 +665,7 @@ def _extract_audio_zip(
         infos = archive.infolist()
         if not infos or len(infos) > _AUDIO_MEMBER_LIMIT:
             raise _fail(
-                "resource_archive_too_large",
+                "resource_archive_member_count",
                 "Audio pack member count is outside its limit",
             )
         # Two passes over the central directory: the first validates every
@@ -688,7 +691,7 @@ def _extract_audio_zip(
             if not info.is_dir():
                 declared_total += info.file_size
         if declared_total <= 0 or declared_total > _AUDIO_TOTAL_LIMIT:
-            raise _fail("resource_archive_too_large", "Audio pack expands beyond its limit")
+            raise _fail("resource_archive_expands_too_large", "Audio pack expands beyond its limit")
         core._check_free_space(destination.parent, declared_total)
         destination.mkdir(parents=True)
         actual_total = 0
@@ -718,7 +721,7 @@ def _extract_audio_zip(
                     operation,
                 )
             if actual_total > declared_total:
-                raise _fail("resource_archive_too_large", "Audio pack expands beyond its limit")
+                raise _fail("resource_archive_expands_too_large", "Audio pack expands beyond its limit")
         if actual_total != declared_total:
             raise _fail("invalid_resource_archive", "Audio pack length is inconsistent")
 
@@ -746,7 +749,7 @@ def _extract_audio_tar(
             members += 1
             if members > _AUDIO_MEMBER_LIMIT:
                 raise _fail(
-                    "resource_archive_too_large",
+                    "resource_archive_member_count",
                     "Audio pack member count is outside its limit",
                 )
             parts = core._safe_archive_path(member.name, allow_directory_suffix=False)
@@ -777,9 +780,9 @@ def _extract_audio_tar(
             with source:
                 actual_total += _copy_audio_member(source, target, member.size, limit, operation)
             if actual_total > _AUDIO_TOTAL_LIMIT:
-                raise _fail("resource_archive_too_large", "Audio pack expands beyond its limit")
+                raise _fail("resource_archive_expands_too_large", "Audio pack expands beyond its limit")
     if actual_total <= 0:
-        raise _fail("resource_archive_too_large", "Audio pack expands beyond its limit")
+        raise _fail("resource_archive_expands_too_large", "Audio pack expands beyond its limit")
 
 
 def _extract_audio_archive(
@@ -889,12 +892,12 @@ def _project_audio_zip(
         infos = archive.infolist()
         if not infos or len(infos) > _AUDIO_MEMBER_LIMIT:
             raise _fail(
-                "resource_archive_too_large",
+                "resource_archive_member_count",
                 "Audio pack member count is outside its limit",
             )
         declared_total = sum(info.file_size for info in infos if not info.is_dir())
         if declared_total <= 0 or declared_total > _AUDIO_TOTAL_LIMIT:
-            raise _fail("resource_archive_too_large", "Audio pack expands beyond its limit")
+            raise _fail("resource_archive_expands_too_large", "Audio pack expands beyond its limit")
         destination.mkdir(parents=True)
         seen: set[tuple[str, ...]] = set()
         metadata_files = 0
@@ -938,7 +941,7 @@ def _project_audio_tar(
             members += 1
             if members > _AUDIO_MEMBER_LIMIT:
                 raise _fail(
-                    "resource_archive_too_large",
+                    "resource_archive_member_count",
                     "Audio pack member count is outside its limit",
                 )
             parts = core._safe_archive_path(member.name, allow_directory_suffix=False)
@@ -975,7 +978,7 @@ def _accept_projected_metadata(count: int) -> int:
     """
     if count >= _AUDIO_PACK_METADATA_LIMIT:
         raise _fail(
-            "resource_archive_too_large",
+            "resource_archive_member_count",
             "Audio archive declares too many pack indexes",
         )
     return count + 1

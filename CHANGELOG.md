@@ -4,6 +4,10 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+### Fixed
+
+- The audio collection was still rejected at import, this time by an index-file ceiling. The nhk16 pack's `entries.json` is about 42 MB and the importer capped JSON members at 32 MB, so picking the archive failed immediately — reported as "The archive holds more data than this device can import" however much free space the device had. The ceiling now clears the real collection with room to spare, and an archive the importer does refuse is named by what actually tripped: a single oversized file, too many files, or expanding past the size an audio pack may reach — free space has its own message and is only blamed when it is the cause.
+
 ## [0.4.0] - 2026-08-05
 
 ### Added

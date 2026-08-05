@@ -1998,6 +1998,12 @@ internal class AndroidResourceManager(
                 strings.resolve(R.string.resource_failure_archive_mismatch)
             "resource_archive_too_large" ->
                 strings.resolve(R.string.resource_failure_bridge_archive_too_large)
+            "resource_archive_member_oversized" ->
+                strings.resolve(R.string.resource_failure_archive_member_oversized)
+            "resource_archive_member_count" ->
+                strings.resolve(R.string.resource_failure_archive_member_count)
+            "resource_archive_expands_too_large" ->
+                strings.resolve(R.string.resource_failure_archive_expands)
             "invalid_resource_archive" ->
                 strings.resolve(R.string.resource_failure_archive_invalid)
             "unsafe_resource_archive" ->
