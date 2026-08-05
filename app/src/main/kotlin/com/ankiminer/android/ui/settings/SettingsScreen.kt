@@ -39,6 +39,7 @@ import com.ankiminer.android.ui.theme.AnkiMinerTokens
 import com.ankiminer.android.vm.DiagnosticsDelivery
 import com.ankiminer.android.vm.DiagnosticsExportState
 import com.ankiminer.android.vm.DiagnosticsViewModel
+import com.ankiminer.android.vm.SettingsBackupState
 import com.ankiminer.android.vm.SettingsDraft
 import com.ankiminer.android.vm.SettingsSaveState
 import com.ankiminer.android.vm.SettingsViewModel
@@ -87,6 +88,11 @@ internal val KNOWN_WORDS_MIME_TYPES =
         UNTYPED_IMPORT_MIME_TYPES
 
 internal val WORD_LIST_MIME_TYPES = TEXT_IMPORT_MIME_TYPES + UNTYPED_IMPORT_MIME_TYPES
+
+// A .json is typed `application/json` by most providers, but Drive and several OEM file managers
+// report a hand-copied one as text/plain or untyped — the same lesson the CSV import filters learned.
+internal val SETTINGS_BACKUP_MIME_TYPES =
+    arrayOf("application/json") + TEXT_IMPORT_MIME_TYPES + UNTYPED_IMPORT_MIME_TYPES
 
 /**
  * Whether a picker launched with [allowed] would offer a document of [mimeType].
@@ -178,6 +184,7 @@ internal fun SettingsRoute(
     val saving by viewModel.saving.collectAsStateWithLifecycle()
     val saveState by viewModel.saveState.collectAsStateWithLifecycle()
     val saveError by viewModel.error.collectAsStateWithLifecycle()
+    val backupState by viewModel.backupState.collectAsStateWithLifecycle()
     val resources by viewModel.resourceState.collectAsStateWithLifecycle()
     val setup by setupViewModel.uiState.collectAsStateWithLifecycle()
     val diagnosticsExport by diagnosticsViewModel.state.collectAsStateWithLifecycle()
@@ -222,6 +229,16 @@ internal fun SettingsRoute(
         ) { uri ->
             uri?.let { setupViewModel.exportKnownWords(it.toString()) }
         }
+    val settingsExportPicker =
+        rememberLauncherForActivityResult(
+            ActivityResultContracts.CreateDocument("application/json"),
+        ) { uri ->
+            uri?.let { viewModel.exportSettings(it.toString()) }
+        }
+    val settingsImportPicker =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            uri?.let { viewModel.importSettings(it.toString()) }
+        }
     val diagnosticsBundlePicker =
         rememberLauncherForActivityResult(
             ActivityResultContracts.CreateDocument("application/zip"),
@@ -260,6 +277,7 @@ internal fun SettingsRoute(
         saving = saving,
         diagnostics = diagnostics,
         diagnosticsExport = diagnosticsExport,
+        backupState = backupState,
         onRetrySave = viewModel::retrySave,
         onDraftChange = viewModel::updateDraft,
         onRestoreMiningDefaults = viewModel::restoreMiningDefaults,
@@ -279,6 +297,9 @@ internal fun SettingsRoute(
         },
         onRetryDiagnosticsExport = diagnosticsViewModel::retry,
         onDismissDiagnosticsExport = diagnosticsViewModel::dismissFailure,
+        onExportSettings = { settingsExportPicker.launch("anki-miner-settings.json") },
+        onImportSettings = { settingsImportPicker.launch(SETTINGS_BACKUP_MIME_TYPES) },
+        onDismissBackupState = viewModel::dismissBackupState,
         onReturnToActiveRun = onReturnToActiveRun,
         onAttributions = onAttributions,
         onRunSetupWizard = onRunSetupWizard,
@@ -335,6 +356,7 @@ private fun SettingsScreen(
     saving: Boolean,
     diagnostics: TesterDiagnosticsIdentity,
     diagnosticsExport: DiagnosticsExportState,
+    backupState: SettingsBackupState,
     onRetrySave: () -> Unit,
     onDraftChange: (SettingsDraft) -> Unit,
     // Boolean: a reset that the store refuses must leave the confirmation queued
@@ -352,6 +374,9 @@ private fun SettingsScreen(
     onShareDiagnosticsBundle: () -> Unit,
     onRetryDiagnosticsExport: () -> Unit,
     onDismissDiagnosticsExport: () -> Unit,
+    onExportSettings: () -> Unit,
+    onImportSettings: () -> Unit,
+    onDismissBackupState: () -> Unit,
     onReturnToActiveRun: (() -> Unit)?,
     onAttributions: () -> Unit,
     onRunSetupWizard: (() -> Unit)?,
@@ -440,6 +465,10 @@ private fun SettingsScreen(
             onShareDiagnosticsBundle = onShareDiagnosticsBundle,
             onRetryDiagnosticsExport = onRetryDiagnosticsExport,
             onDismissDiagnosticsExport = onDismissDiagnosticsExport,
+            backupState = backupState,
+            onExportSettings = onExportSettings,
+            onImportSettings = onImportSettings,
+            onDismissBackupState = onDismissBackupState,
             onReturnToActiveRun = onReturnToActiveRun,
             onAttributions = onAttributions,
             onRunSetupWizard = onRunSetupWizard,

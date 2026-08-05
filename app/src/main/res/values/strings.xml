@@ -767,6 +767,13 @@
     <string name="b3_settings_save_saving">Saving…</string>
     <string name="b3_settings_save_saved">Saved</string>
     <string name="b3_settings_save_failed">Save failed</string>
+    <string name="settings_backup_section">Settings file</string>
+    <string name="settings_backup_export">Save settings to a file</string>
+    <string name="settings_backup_import">Load settings from a file</string>
+    <string name="settings_backup_detail">A settings file carries everything on this screen except which resources are installed. Loading one keeps any setting the file does not mention.</string>
+    <string name="settings_backup_exported">Settings saved.</string>
+    <string name="settings_backup_imported">%1$d settings loaded.</string>
+    <string name="settings_backup_imported_skipped">%1$d settings loaded, %2$d skipped.</string>
     <string name="settings_backup_export_failed">Settings could not be saved to that file.</string>
     <string name="settings_backup_import_failed">Settings could not be read from that file.</string>
     <string name="settings_backup_not_a_backup">That file is not an Anki Miner settings file.</string>
